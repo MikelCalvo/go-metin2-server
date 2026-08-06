@@ -1338,6 +1338,41 @@ func TestLocalContentBundleSummaryEndpointReturnsShopSellPriceMetadataForLoopbac
 	}
 }
 
+func TestLocalContentBundleSummaryEndpointReturnsMerchantAntiFlagMetadataForLoopbackPost(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	body := `{"spawn_groups":[{"ref":"practice.guarded_reward","name":"Guarded Reward","map_index":42,"x":1800,"y":2900,"race_num":101,"combat_profile":"practice_mob","reward_drop_vnums":[27001]}],"item_templates":[{"vnum":27001,"name":"Guarded Potion","stackable":true,"max_count":200,"shop_buy_price":5,"shop_sell_price":2,"anti_get":true,"anti_sell":true,"buy_reject_message":"The merchant will not sell this guarded potion to you.","sell_reject_message":"The merchant refuses this guarded potion."}],"interaction_definitions":[{"kind":"shop_preview","ref":"npc:guarded_merchant","title":"Guarded Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":2}]}]}`
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/summary", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected dry-run summary not to call live exporter, got %d calls", summaryer.calls)
+	}
+	var got contentbundle.Summary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode merchant anti-flag summary response body: %v", err)
+	}
+	if !got.ItemTemplates[0].AntiGet || !got.ItemTemplates[0].AntiSell {
+		t.Fatalf("expected item-template anti_get/anti_sell flags, got %+v", got.ItemTemplates)
+	}
+	if !got.ShopCatalogs[0].Entries[0].AntiGet || !got.ShopCatalogs[0].Entries[0].AntiSell {
+		t.Fatalf("expected shop-catalog anti_get/anti_sell flags, got %+v", got.ShopCatalogs)
+	}
+	if !got.SpawnGroups[0].RewardDropItems[0].AntiGet || !got.SpawnGroups[0].RewardDropItems[0].AntiSell {
+		t.Fatalf("expected spawn reward-drop anti_get/anti_sell flags, got %+v", got.SpawnGroups)
+	}
+	if !got.RewardDrops[0].AntiGet || !got.RewardDrops[0].AntiSell {
+		t.Fatalf("expected aggregate reward-drop anti_get/anti_sell flags, got %+v", got.RewardDrops)
+	}
+}
+
 func TestLocalContentBundleSummaryEndpointRejectsInvalidDryRunBundle(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
 	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)

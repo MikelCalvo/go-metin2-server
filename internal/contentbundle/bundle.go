@@ -357,6 +357,8 @@ type RewardDropItemSummary struct {
 	MaxCount          uint16 `json:"max_count"`
 	ShopBuyPrice      uint64 `json:"shop_buy_price,omitempty"`
 	ShopSellPrice     uint64 `json:"shop_sell_price,omitempty"`
+	AntiGet           bool   `json:"anti_get,omitempty"`
+	AntiSell          bool   `json:"anti_sell,omitempty"`
 	BuyRejectMessage  string `json:"buy_reject_message,omitempty"`
 	SellRejectMessage string `json:"sell_reject_message,omitempty"`
 	PickupRange       uint16 `json:"pickup_range,omitempty"`
@@ -370,6 +372,8 @@ type RewardDropAggregateSummary struct {
 	MaxCount          uint16 `json:"max_count"`
 	ShopBuyPrice      uint64 `json:"shop_buy_price,omitempty"`
 	ShopSellPrice     uint64 `json:"shop_sell_price,omitempty"`
+	AntiGet           bool   `json:"anti_get,omitempty"`
+	AntiSell          bool   `json:"anti_sell,omitempty"`
 	BuyRejectMessage  string `json:"buy_reject_message,omitempty"`
 	SellRejectMessage string `json:"sell_reject_message,omitempty"`
 	PickupRange       uint16 `json:"pickup_range,omitempty"`
@@ -382,6 +386,8 @@ type ItemTemplateReferenceSummary struct {
 	MaxCount          uint16 `json:"max_count"`
 	ShopBuyPrice      uint64 `json:"shop_buy_price,omitempty"`
 	ShopSellPrice     uint64 `json:"shop_sell_price,omitempty"`
+	AntiGet           bool   `json:"anti_get,omitempty"`
+	AntiSell          bool   `json:"anti_sell,omitempty"`
 	BuyRejectMessage  string `json:"buy_reject_message,omitempty"`
 	SellRejectMessage string `json:"sell_reject_message,omitempty"`
 	PickupRange       uint16 `json:"pickup_range,omitempty"`
@@ -405,6 +411,8 @@ type ShopCatalogEntrySummary struct {
 	MaxCount          uint16 `json:"max_count"`
 	ShopBuyPrice      uint64 `json:"shop_buy_price,omitempty"`
 	ShopSellPrice     uint64 `json:"shop_sell_price,omitempty"`
+	AntiGet           bool   `json:"anti_get,omitempty"`
+	AntiSell          bool   `json:"anti_sell,omitempty"`
 	BuyRejectMessage  string `json:"buy_reject_message,omitempty"`
 	SellRejectMessage string `json:"sell_reject_message,omitempty"`
 	PickupRange       uint16 `json:"pickup_range,omitempty"`
@@ -1718,6 +1726,8 @@ func shopCatalogSummary(definition interactionstore.Definition, itemTemplatesByV
 			MaxCount:          template.MaxCount,
 			ShopBuyPrice:      template.ShopBuyPrice,
 			ShopSellPrice:     template.ShopSellPrice,
+			AntiGet:           template.AntiGet,
+			AntiSell:          template.AntiSell,
 			BuyRejectMessage:  template.BuyRejectText,
 			SellRejectMessage: template.SellRejectText,
 			PickupRange:       template.PickupRange,
@@ -1782,6 +1792,8 @@ func itemTemplateReferenceSummaries(templates []itemcatalog.Template) []ItemTemp
 			MaxCount:          template.MaxCount,
 			ShopBuyPrice:      template.ShopBuyPrice,
 			ShopSellPrice:     template.ShopSellPrice,
+			AntiGet:           template.AntiGet,
+			AntiSell:          template.AntiSell,
 			BuyRejectMessage:  template.BuyRejectText,
 			SellRejectMessage: template.SellRejectText,
 			PickupRange:       template.PickupRange,
@@ -1811,6 +1823,8 @@ func rewardDropItemSummaries(dropVnums []uint32, itemTemplatesByVnum map[uint32]
 			MaxCount:          template.MaxCount,
 			ShopBuyPrice:      template.ShopBuyPrice,
 			ShopSellPrice:     template.ShopSellPrice,
+			AntiGet:           template.AntiGet,
+			AntiSell:          template.AntiSell,
 			BuyRejectMessage:  template.BuyRejectText,
 			SellRejectMessage: template.SellRejectText,
 			PickupRange:       template.PickupRange,
@@ -1860,6 +1874,8 @@ func rewardDropAggregateSummaries(countsByVnum map[uint32]int, itemTemplatesByVn
 			MaxCount:          template.MaxCount,
 			ShopBuyPrice:      template.ShopBuyPrice,
 			ShopSellPrice:     template.ShopSellPrice,
+			AntiGet:           template.AntiGet,
+			AntiSell:          template.AntiSell,
 			BuyRejectMessage:  template.BuyRejectText,
 			SellRejectMessage: template.SellRejectText,
 			PickupRange:       template.PickupRange,

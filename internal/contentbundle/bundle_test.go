@@ -409,7 +409,7 @@ func TestSummarizeExposesMerchantRejectMessagesInTemplateBackedContentSummaries(
 		t.Fatalf("summarize merchant reject-message bundle: %v", err)
 	}
 
-	wantTemplates := []ItemTemplateReferenceSummary{{Vnum: 27001, Name: "Guarded Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, BuyRejectMessage: buyRejectMessage, SellRejectMessage: sellRejectMessage}}
+	wantTemplates := []ItemTemplateReferenceSummary{{Vnum: 27001, Name: "Guarded Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, AntiGet: true, AntiSell: true, BuyRejectMessage: buyRejectMessage, SellRejectMessage: sellRejectMessage}}
 	if !reflect.DeepEqual(summary.ItemTemplates, wantTemplates) {
 		t.Fatalf("unexpected item-template reject-message summary:\n got: %#v\nwant: %#v", summary.ItemTemplates, wantTemplates)
 	}
@@ -419,7 +419,7 @@ func TestSummarizeExposesMerchantRejectMessagesInTemplateBackedContentSummaries(
 		Title:      "Guarded Merchant",
 		EntryCount: 1,
 		Entries: []ShopCatalogEntrySummary{
-			{Slot: 0, ItemVnum: 27001, ItemName: "Guarded Potion", Count: 2, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, BuyRejectMessage: buyRejectMessage, SellRejectMessage: sellRejectMessage},
+			{Slot: 0, ItemVnum: 27001, ItemName: "Guarded Potion", Count: 2, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, AntiGet: true, AntiSell: true, BuyRejectMessage: buyRejectMessage, SellRejectMessage: sellRejectMessage},
 		},
 	}}
 	if !reflect.DeepEqual(summary.ShopCatalogs, wantCatalogs) {
@@ -434,12 +434,12 @@ func TestSummarizeExposesMerchantRejectMessagesInTemplateBackedContentSummaries(
 		RaceNum:         101,
 		CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
 		RewardDropVnums: []uint32{27001},
-		RewardDropItems: []RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Guarded Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, BuyRejectMessage: buyRejectMessage, SellRejectMessage: sellRejectMessage}},
+		RewardDropItems: []RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Guarded Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, AntiGet: true, AntiSell: true, BuyRejectMessage: buyRejectMessage, SellRejectMessage: sellRejectMessage}},
 	}}
 	if !reflect.DeepEqual(summary.SpawnGroups, wantSpawnGroups) {
 		t.Fatalf("unexpected spawn-group reject-message summary:\n got: %#v\nwant: %#v", summary.SpawnGroups, wantSpawnGroups)
 	}
-	wantRewardDrops := []RewardDropAggregateSummary{{ItemVnum: 27001, ItemName: "Guarded Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, BuyRejectMessage: buyRejectMessage, SellRejectMessage: sellRejectMessage}}
+	wantRewardDrops := []RewardDropAggregateSummary{{ItemVnum: 27001, ItemName: "Guarded Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, AntiGet: true, AntiSell: true, BuyRejectMessage: buyRejectMessage, SellRejectMessage: sellRejectMessage}}
 	if !reflect.DeepEqual(summary.RewardDrops, wantRewardDrops) {
 		t.Fatalf("unexpected reward-drop reject-message summary:\n got: %#v\nwant: %#v", summary.RewardDrops, wantRewardDrops)
 	}
@@ -2040,6 +2040,9 @@ func TestCanonicalizeMerchantBundleKeepsStableBuySlotAddressing(t *testing.T) {
 	}
 	if got, want := bundle.ItemTemplates[0].Vnum, uint32(11200); got != want {
 		t.Fatalf("first item template vnum = %d, want %d", got, want)
+	}
+	if got, want := bundle.ItemTemplates[1].Vnum, uint32(27001); got != want {
+		t.Fatalf("second item template vnum = %d, want %d", got, want)
 	}
 	if len(bundle.InteractionDefinitions) != 1 {
 		t.Fatalf("expected 1 interaction definition, got %d", len(bundle.InteractionDefinitions))

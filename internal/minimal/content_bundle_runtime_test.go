@@ -663,6 +663,70 @@ func TestGameRuntimeExportContentBundleSummaryIncludesShopSellPriceMetadata(t *t
 	}
 }
 
+func TestGameRuntimeExportContentBundleSummaryIncludesMerchantAntiFlagMetadata(t *testing.T) {
+	const buyRejectMessage = "The merchant will not sell this guarded potion to you."
+	const sellRejectMessage = "The merchant refuses this guarded potion."
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	itemStore := itemcatalog.NewFileStore(t.TempDir() + "/item-templates.json")
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:             "practice.guarded_reward",
+			Name:            "Guarded Reward",
+			MapIndex:        42,
+			X:               1800,
+			Y:               2900,
+			RaceNum:         101,
+			CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropVnums: []uint32{27001},
+		}},
+		ItemTemplates: []itemcatalog.Template{{
+			Vnum:           27001,
+			Name:           "Guarded Potion",
+			Stackable:      true,
+			MaxCount:       200,
+			ShopBuyPrice:   5,
+			ShopSellPrice:  2,
+			AntiGet:        true,
+			AntiSell:       true,
+			BuyRejectText:  buyRejectMessage,
+			SellRejectText: sellRejectMessage,
+		}},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:  interactionstore.KindShopPreview,
+			Ref:   "npc:guarded_merchant",
+			Title: "Guarded Merchant",
+			Catalog: []interactionstore.MerchantCatalogEntry{
+				{Slot: 0, ItemVnum: 27001, Price: 50, Count: 2},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("import merchant anti-flag content bundle: %v", err)
+	}
+
+	summary, err := runtime.ExportContentBundleSummary()
+	if err != nil {
+		t.Fatalf("export content bundle summary with merchant anti flags: %v", err)
+	}
+	if !summary.ItemTemplates[0].AntiGet || !summary.ItemTemplates[0].AntiSell {
+		t.Fatalf("expected runtime item-template anti_get/anti_sell flags, got %+v", summary.ItemTemplates)
+	}
+	if !summary.ShopCatalogs[0].Entries[0].AntiGet || !summary.ShopCatalogs[0].Entries[0].AntiSell {
+		t.Fatalf("expected runtime shop-catalog anti_get/anti_sell flags, got %+v", summary.ShopCatalogs)
+	}
+	if !summary.SpawnGroups[0].RewardDropItems[0].AntiGet || !summary.SpawnGroups[0].RewardDropItems[0].AntiSell {
+		t.Fatalf("expected runtime spawn reward-drop anti_get/anti_sell flags, got %+v", summary.SpawnGroups)
+	}
+	if !summary.RewardDrops[0].AntiGet || !summary.RewardDrops[0].AntiSell {
+		t.Fatalf("expected runtime aggregate reward-drop anti_get/anti_sell flags, got %+v", summary.RewardDrops)
+	}
+}
+
 func TestGameRuntimeExportContentBundleSummaryIncludesWarpDestinationDetails(t *testing.T) {
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")

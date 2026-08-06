@@ -95,6 +95,7 @@ Frozen target behavior:
 
 Current owned shop operator-summary semantics:
 - `GET /local/content-bundle/summary` and dry-run `POST /local/content-bundle/summary` report deterministic `shop_catalogs` entries for every authored `shop_preview` definition
+- template-backed shop/item/reward summary rows include optional `anti_get` / `anti_sell` guard flags beside the existing buy/sell rejection messages so merchant deny metadata is inspectable without opening the full bundle
 - the same summary now reports deterministic `shop_routes` entries for every interactable static actor that resolves to a `shop_preview` definition
 - each route summary entry carries `actor_name`, source `map_index`/`x`/`y`, `ref`, merchant `title`, and catalog `entry_count`
 - per-map `maps[]` entries include `shop_preview_actor_count` and `shop_catalog_entry_count`
