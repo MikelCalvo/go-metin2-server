@@ -351,34 +351,40 @@ type SpawnGroupReferenceSummary struct {
 }
 
 type RewardDropItemSummary struct {
-	ItemVnum      uint32 `json:"item_vnum"`
-	ItemName      string `json:"item_name"`
-	Stackable     bool   `json:"stackable"`
-	MaxCount      uint16 `json:"max_count"`
-	ShopBuyPrice  uint64 `json:"shop_buy_price,omitempty"`
-	ShopSellPrice uint64 `json:"shop_sell_price,omitempty"`
-	PickupRange   uint16 `json:"pickup_range,omitempty"`
+	ItemVnum          uint32 `json:"item_vnum"`
+	ItemName          string `json:"item_name"`
+	Stackable         bool   `json:"stackable"`
+	MaxCount          uint16 `json:"max_count"`
+	ShopBuyPrice      uint64 `json:"shop_buy_price,omitempty"`
+	ShopSellPrice     uint64 `json:"shop_sell_price,omitempty"`
+	BuyRejectMessage  string `json:"buy_reject_message,omitempty"`
+	SellRejectMessage string `json:"sell_reject_message,omitempty"`
+	PickupRange       uint16 `json:"pickup_range,omitempty"`
 }
 
 type RewardDropAggregateSummary struct {
-	ItemVnum      uint32 `json:"item_vnum"`
-	ItemName      string `json:"item_name"`
-	SourceCount   int    `json:"source_count"`
-	Stackable     bool   `json:"stackable"`
-	MaxCount      uint16 `json:"max_count"`
-	ShopBuyPrice  uint64 `json:"shop_buy_price,omitempty"`
-	ShopSellPrice uint64 `json:"shop_sell_price,omitempty"`
-	PickupRange   uint16 `json:"pickup_range,omitempty"`
+	ItemVnum          uint32 `json:"item_vnum"`
+	ItemName          string `json:"item_name"`
+	SourceCount       int    `json:"source_count"`
+	Stackable         bool   `json:"stackable"`
+	MaxCount          uint16 `json:"max_count"`
+	ShopBuyPrice      uint64 `json:"shop_buy_price,omitempty"`
+	ShopSellPrice     uint64 `json:"shop_sell_price,omitempty"`
+	BuyRejectMessage  string `json:"buy_reject_message,omitempty"`
+	SellRejectMessage string `json:"sell_reject_message,omitempty"`
+	PickupRange       uint16 `json:"pickup_range,omitempty"`
 }
 
 type ItemTemplateReferenceSummary struct {
-	Vnum          uint32 `json:"vnum"`
-	Name          string `json:"name"`
-	Stackable     bool   `json:"stackable"`
-	MaxCount      uint16 `json:"max_count"`
-	ShopBuyPrice  uint64 `json:"shop_buy_price,omitempty"`
-	ShopSellPrice uint64 `json:"shop_sell_price,omitempty"`
-	PickupRange   uint16 `json:"pickup_range,omitempty"`
+	Vnum              uint32 `json:"vnum"`
+	Name              string `json:"name"`
+	Stackable         bool   `json:"stackable"`
+	MaxCount          uint16 `json:"max_count"`
+	ShopBuyPrice      uint64 `json:"shop_buy_price,omitempty"`
+	ShopSellPrice     uint64 `json:"shop_sell_price,omitempty"`
+	BuyRejectMessage  string `json:"buy_reject_message,omitempty"`
+	SellRejectMessage string `json:"sell_reject_message,omitempty"`
+	PickupRange       uint16 `json:"pickup_range,omitempty"`
 }
 
 type ShopCatalogSummary struct {
@@ -390,16 +396,18 @@ type ShopCatalogSummary struct {
 }
 
 type ShopCatalogEntrySummary struct {
-	Slot          uint16 `json:"slot"`
-	ItemVnum      uint32 `json:"item_vnum"`
-	ItemName      string `json:"item_name"`
-	Count         uint16 `json:"count"`
-	Price         uint64 `json:"price"`
-	Stackable     bool   `json:"stackable"`
-	MaxCount      uint16 `json:"max_count"`
-	ShopBuyPrice  uint64 `json:"shop_buy_price,omitempty"`
-	ShopSellPrice uint64 `json:"shop_sell_price,omitempty"`
-	PickupRange   uint16 `json:"pickup_range,omitempty"`
+	Slot              uint16 `json:"slot"`
+	ItemVnum          uint32 `json:"item_vnum"`
+	ItemName          string `json:"item_name"`
+	Count             uint16 `json:"count"`
+	Price             uint64 `json:"price"`
+	Stackable         bool   `json:"stackable"`
+	MaxCount          uint16 `json:"max_count"`
+	ShopBuyPrice      uint64 `json:"shop_buy_price,omitempty"`
+	ShopSellPrice     uint64 `json:"shop_sell_price,omitempty"`
+	BuyRejectMessage  string `json:"buy_reject_message,omitempty"`
+	SellRejectMessage string `json:"sell_reject_message,omitempty"`
+	PickupRange       uint16 `json:"pickup_range,omitempty"`
 }
 
 type ShopRouteSummary struct {
@@ -1701,16 +1709,18 @@ func shopCatalogSummary(definition interactionstore.Definition, itemTemplatesByV
 	for _, entry := range definition.Catalog {
 		template := itemcatalog.NormalizeTemplate(itemTemplatesByVnum[entry.ItemVnum])
 		summary.Entries = append(summary.Entries, ShopCatalogEntrySummary{
-			Slot:          entry.Slot,
-			ItemVnum:      entry.ItemVnum,
-			ItemName:      template.Name,
-			Count:         entry.Count,
-			Price:         entry.Price,
-			Stackable:     template.Stackable,
-			MaxCount:      template.MaxCount,
-			ShopBuyPrice:  template.ShopBuyPrice,
-			ShopSellPrice: template.ShopSellPrice,
-			PickupRange:   template.PickupRange,
+			Slot:              entry.Slot,
+			ItemVnum:          entry.ItemVnum,
+			ItemName:          template.Name,
+			Count:             entry.Count,
+			Price:             entry.Price,
+			Stackable:         template.Stackable,
+			MaxCount:          template.MaxCount,
+			ShopBuyPrice:      template.ShopBuyPrice,
+			ShopSellPrice:     template.ShopSellPrice,
+			BuyRejectMessage:  template.BuyRejectText,
+			SellRejectMessage: template.SellRejectText,
+			PickupRange:       template.PickupRange,
 		})
 	}
 	return summary
@@ -1766,13 +1776,15 @@ func itemTemplateReferenceSummaries(templates []itemcatalog.Template) []ItemTemp
 	for _, template := range templates {
 		template = itemcatalog.NormalizeTemplate(template)
 		summaries = append(summaries, ItemTemplateReferenceSummary{
-			Vnum:          template.Vnum,
-			Name:          template.Name,
-			Stackable:     template.Stackable,
-			MaxCount:      template.MaxCount,
-			ShopBuyPrice:  template.ShopBuyPrice,
-			ShopSellPrice: template.ShopSellPrice,
-			PickupRange:   template.PickupRange,
+			Vnum:              template.Vnum,
+			Name:              template.Name,
+			Stackable:         template.Stackable,
+			MaxCount:          template.MaxCount,
+			ShopBuyPrice:      template.ShopBuyPrice,
+			ShopSellPrice:     template.ShopSellPrice,
+			BuyRejectMessage:  template.BuyRejectText,
+			SellRejectMessage: template.SellRejectText,
+			PickupRange:       template.PickupRange,
 		})
 	}
 	sort.Slice(summaries, func(i int, j int) bool {
@@ -1793,13 +1805,15 @@ func rewardDropItemSummaries(dropVnums []uint32, itemTemplatesByVnum map[uint32]
 			continue
 		}
 		summaries = append(summaries, RewardDropItemSummary{
-			ItemVnum:      template.Vnum,
-			ItemName:      template.Name,
-			Stackable:     template.Stackable,
-			MaxCount:      template.MaxCount,
-			ShopBuyPrice:  template.ShopBuyPrice,
-			ShopSellPrice: template.ShopSellPrice,
-			PickupRange:   template.PickupRange,
+			ItemVnum:          template.Vnum,
+			ItemName:          template.Name,
+			Stackable:         template.Stackable,
+			MaxCount:          template.MaxCount,
+			ShopBuyPrice:      template.ShopBuyPrice,
+			ShopSellPrice:     template.ShopSellPrice,
+			BuyRejectMessage:  template.BuyRejectText,
+			SellRejectMessage: template.SellRejectText,
+			PickupRange:       template.PickupRange,
 		})
 	}
 	if len(summaries) == 0 {
@@ -1839,14 +1853,16 @@ func rewardDropAggregateSummaries(countsByVnum map[uint32]int, itemTemplatesByVn
 			continue
 		}
 		summaries = append(summaries, RewardDropAggregateSummary{
-			ItemVnum:      template.Vnum,
-			ItemName:      template.Name,
-			SourceCount:   countsByVnum[vnum],
-			Stackable:     template.Stackable,
-			MaxCount:      template.MaxCount,
-			ShopBuyPrice:  template.ShopBuyPrice,
-			ShopSellPrice: template.ShopSellPrice,
-			PickupRange:   template.PickupRange,
+			ItemVnum:          template.Vnum,
+			ItemName:          template.Name,
+			SourceCount:       countsByVnum[vnum],
+			Stackable:         template.Stackable,
+			MaxCount:          template.MaxCount,
+			ShopBuyPrice:      template.ShopBuyPrice,
+			ShopSellPrice:     template.ShopSellPrice,
+			BuyRejectMessage:  template.BuyRejectText,
+			SellRejectMessage: template.SellRejectText,
+			PickupRange:       template.PickupRange,
 		})
 	}
 	if len(summaries) == 0 {
