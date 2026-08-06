@@ -13647,6 +13647,197 @@ func TestGameRuntimeGroundRewardPickupUpdatesMapOccupancy(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeRewardDropPickupUsesTemplateAuthoredPickupRange(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x0105024A, Kind: worldruntime.EntityKindStaticActor, VID: 0x0105024A, Name: "LongRangeRewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.long_range_reward_mob",
+	}
+	killer := peerVisibilityCharacter("LongRangeRewardKiller", 0x0103014A, 0x0204014A, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapPlayerPointValueIndex] = 500
+	issuePeerTicket(t, store, "long-range-reward-killer", 0x4A4A4A4A, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "long-range-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed long-range reward killer account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:        27031,
+		Name:        "Long Range Reward Potion",
+		Stackable:   true,
+		MaxCount:    200,
+		PickupRange: 500,
+	}})
+	currentTime := time.Unix(1_700_000_431, 0)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("new long-range reward runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected long-range reward mob registration to succeed")
+	}
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{DropVnums: []uint32{27031}}) {
+		t.Fatal("expected long-range reward override to apply")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "long-range-reward-killer", 0x4A4A4A4A)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected target selection before long-range reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected long-range reward attack error on hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 4 {
+		t.Fatalf("expected long-range reward killing hit to return dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode long-range reward ground add: %v", err)
+	}
+	if ground.Vnum != 27031 {
+		t.Fatalf("expected long-range reward vnum 27031, got %+v", ground)
+	}
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{X: killer.X + 400, Y: killer.Y, Time: 0x4a4b4c4d})))
+	if err != nil {
+		t.Fatalf("unexpected move before long-range reward pickup: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected move ack before long-range reward pickup, got %d frames", len(moveOut))
+	}
+
+	pickupOut := pickupGroundItem(t, flow, ground.VID)
+	if len(pickupOut) != 3 {
+		t.Fatalf("expected template-authored long-range reward pickup to emit GROUND_DEL, ITEM_SET, and ITEM_GET, got %d frames", len(pickupOut))
+	}
+	groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, pickupOut[0]))
+	if err != nil {
+		t.Fatalf("decode long-range reward pickup ground del: %v", err)
+	}
+	if groundDel.VID != ground.VID {
+		t.Fatalf("unexpected long-range reward pickup ground del: %+v", groundDel)
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, pickupOut[1]))
+	if err != nil {
+		t.Fatalf("decode long-range reward pickup item set: %v", err)
+	}
+	if set.Vnum != 27031 || set.Count != 1 {
+		t.Fatalf("unexpected long-range reward pickup item set: %+v", set)
+	}
+	get, err := itemproto.DecodeGet(decodeSingleFrame(t, pickupOut[2]))
+	if err != nil {
+		t.Fatalf("decode long-range reward pickup item get: %v", err)
+	}
+	if get.Vnum != 27031 || get.Count != 1 || get.Arg != itemproto.GetArgNormal {
+		t.Fatalf("unexpected long-range reward pickup item get: %+v", get)
+	}
+	if runtime.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatal("expected accepted long-range reward pickup to remove ground item")
+	}
+}
+
+func TestGameRuntimeRewardDropPickupTemplateAuthoredShortRangeFailsClosed(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x0105024B, Kind: worldruntime.EntityKindStaticActor, VID: 0x0105024B, Name: "ShortRangeRewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.short_range_reward_mob",
+	}
+	killer := peerVisibilityCharacter("ShortRangeRewardKiller", 0x0103014B, 0x0204014B, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapPlayerPointValueIndex] = 500
+	issuePeerTicket(t, store, "short-range-reward-killer", 0x4B4B4B4B, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "short-range-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed short-range reward killer account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:        27032,
+		Name:        "Short Range Reward Potion",
+		Stackable:   true,
+		MaxCount:    200,
+		PickupRange: 100,
+	}})
+	currentTime := time.Unix(1_700_000_432, 0)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("new short-range reward runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected short-range reward mob registration to succeed")
+	}
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{DropVnums: []uint32{27032}}) {
+		t.Fatal("expected short-range reward override to apply")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "short-range-reward-killer", 0x4B4B4B4B)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected target selection before short-range reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected short-range reward attack error on hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 4 {
+		t.Fatalf("expected short-range reward killing hit to return dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode short-range reward ground add: %v", err)
+	}
+	if ground.Vnum != 27032 {
+		t.Fatalf("expected short-range reward vnum 27032, got %+v", ground)
+	}
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{X: killer.X + 200, Y: killer.Y, Time: 0x4b4c4d4e})))
+	if err != nil {
+		t.Fatalf("unexpected move before short-range reward pickup: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected move ack before short-range reward pickup, got %d frames", len(moveOut))
+	}
+
+	if pickupOut := pickupGroundItem(t, flow, ground.VID); len(pickupOut) != 0 {
+		t.Fatalf("expected template-authored short-range reward pickup to fail closed with no frames, got %d", len(pickupOut))
+	}
+	if !runtime.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatal("expected rejected short-range reward pickup to leave ground item pending")
+	}
+	account, err := accounts.Load("short-range-reward-killer")
+	if err != nil {
+		t.Fatalf("load short-range reward killer account: %v", err)
+	}
+	if len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected rejected short-range reward pickup not to mutate persisted inventory, got %#v", account.Characters[0].Inventory)
+	}
+}
+
 func TestGameRuntimeDeadCollectorCannotPickupPracticeMobDropReward(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{

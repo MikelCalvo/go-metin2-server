@@ -3748,7 +3748,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							}
 							if ownsLiveSharedWorldSession() {
 								for _, drop := range rewardDrops {
-									sharedWorld.RegisterGroundItem(sharedWorldID, sessionTicket.Login, previousSelected, drop.vid, drop.item)
+									sharedWorld.RegisterGroundItemWithPickupRange(sharedWorldID, sessionTicket.Login, previousSelected, drop.vid, drop.item, templatePickupRange(runtime, drop.item.Vnum))
 								}
 							}
 						}

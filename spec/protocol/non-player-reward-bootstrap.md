@@ -153,6 +153,7 @@ Current rules:
 - each drop has count `1`
 - each drop is owned by the killer's character name
 - item drops are runtime ground items first; they do not mutate persisted inventory until an explicit pickup succeeds
+- item-shaped reward drops backed by loaded authored item-template metadata inherit that template's non-zero `pickup_range`; omitted or zero `pickup_range` keeps the deterministic 300-unit bootstrap reach already used by ordinary ground handles
 - the killer receives the drop's `ITEM_GROUND_ADD` / `ITEM_OWNERSHIP` pair inline after the killing-hit death and scalar-reward frames
 - currently visible, live peers receive the same ground-add / ownership pair through the queued server-frame path after the already-owned `DEAD(target_vid)` visibility notification
 - currently visible peers that are already at the bootstrap `0`-HP floor receive neither the non-player `DEAD(target_vid)` fanout nor the reward ground-add / ownership pair for that kill; the killer still receives the ordinary self-visible reward frames
@@ -198,6 +199,7 @@ The repository can now say:
 - accepted non-player death is preserved even when reward application fails
 - scalar rewards persist before their point-change frames are emitted
 - item drops become owned ground items only after the currently loaded item-template metadata allows that reward drop for the selected killer, and persist to inventory only through the normal pickup path
+- item-shaped reward drops use the same template-authored pickup reach as ordinary dropped handles, so authored long-range rewards can be collected farther away while authored short-range rewards stay pending when the collector is outside that reach
 - timed respawn rebuild preserves authored reward descriptor metadata so later kills continue to use the same content contract
 
 Broader reward, loot-table, party, quest, and level-up systems remain future work.
