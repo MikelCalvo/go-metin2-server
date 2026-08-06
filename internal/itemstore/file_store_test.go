@@ -1636,6 +1636,62 @@ func TestFileStoreSaveThenLoadRoundTripPreservesPickupRejectText(t *testing.T) {
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripPreservesPickupRange(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:        27021,
+		Name:        "Long Reach Pickup Potion",
+		Stackable:   true,
+		MaxCount:    200,
+		PickupRange: 500,
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with pickup range: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with pickup range: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with pickup range:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with pickup range: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27021,\n      \"name\": \"Long Reach Pickup Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"pickup_range\": 500\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with pickup range:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
+func TestFileStoreRejectsPickupRangeAboveBootstrapLimit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	invalid := Snapshot{Templates: []Template{{
+		Vnum:        27021,
+		Name:        "Too Far Pickup Potion",
+		Stackable:   true,
+		MaxCount:    200,
+		PickupRange: MaxPickupRange + 1,
+	}}}
+	if err := store.Save(invalid); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for pickup_range above bootstrap limit, got %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create item template test dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"templates":[{"vnum":27021,"name":"Too Far Pickup Potion","stackable":true,"max_count":200,"pickup_range":10001}]}`), 0o644); err != nil {
+		t.Fatalf("write oversized pickup_range snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot when loading pickup_range above bootstrap limit, got %v", err)
+	}
+}
+
 func TestFileStoreSaveThenLoadRoundTripPreservesBuyRejectText(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)

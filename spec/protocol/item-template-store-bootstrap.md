@@ -14,6 +14,7 @@ The item-template store is intentionally narrow. It currently owns only the meta
 - consumable point effects: `use_effect`
 - authored use/transfer/acquisition/merchant/equipment rejection text: `use_reject_message`, `drop_reject_message`, `pickup_reject_message`, `buy_reject_message`, `sell_reject_message`, `equip_reject_message`, and `unequip_reject_message`
 - client-visible display metadata for occupied-slot refreshes: `sockets` and `attributes`
+- bootstrap ground-pickup reach metadata: `pickup_range`
 
 This is not a complete legacy item proto system yet.
 
@@ -36,6 +37,7 @@ Each template must pass the current `internal/itemstore` validation before the r
 - `max_count` must be non-zero and fit the current bootstrap client-facing count field (`<= 255`)
 - `shop_buy_price`, when authored, must fit the legacy `uint32` template price carrier; larger values fail closed at store load/save before merchant catalog or derived sell-back arithmetic can truncate or overflow them
 - `shop_sell_price`, when authored, must fit the current signed `PLAYER_POINT_CHANGE` carrier (`<= 2147483647`); larger values fail closed at store load/save before merchant sell-back arithmetic can truncate or overflow them. The current sell-back runtime treats non-zero `shop_sell_price` as the explicit per-unit sell credit before falling back to derived `shop_buy_price` / `sell_count_per_gold` behavior.
+- `pickup_range`, when authored, overrides the first bootstrap ground-item pickup reach for item stacks dropped from that template. It must be no larger than the current bootstrap cap (`10000` coordinate units); oversized values fail closed at store load/save. Omitted or zero `pickup_range` preserves the existing deterministic 300-unit pickup reach.
 - `highlight`, when set, projects to the one-byte `ITEM_SET.highlight` field for selected-character inventory/equipment bootstrap and later template-backed full item refreshes
 - `refineable`, `save`, `slow_query`, `rare`, `unique`, `make_count`, `irremovable`, `confirm_when_use`, `quest_use`, `quest_use_multiple`, `log`, and `applicable`, when set, project only to the owned `ITEM_SET.flags` bits `ITEM_FLAG_REFINEABLE`, `ITEM_FLAG_SAVE`, `ITEM_FLAG_SLOW_QUERY`, `ITEM_FLAG_RARE`, `ITEM_FLAG_UNIQUE`, `ITEM_FLAG_MAKECOUNT`, `ITEM_FLAG_IRREMOVABLE`, `ITEM_FLAG_CONFIRM_WHEN_USE`, `ITEM_FLAG_QUEST_USE`, `ITEM_FLAG_QUEST_USE_MULTIPLE`, `ITEM_FLAG_LOG`, and `ITEM_FLAG_APPLICABLE`; they are client-visible metadata in this slice and do not add runtime refine, save/durability, slow-query durability, ownership, uniqueness, make-count, quest-use, repeated quest-use, applicable-effect, or logging policy yet
 - `confirm_when_use`, when authored on a carried consumable, is a fail-closed direct-use guard for the current bootstrap `ITEM_USE` / `/use_item` path: the template still loads and projects the client-visible flag, but the runtime refuses to consume the stack or apply `use_effect` until a later slice owns the confirmation request/ack choreography

@@ -63,6 +63,7 @@ type sharedGroundItem struct {
 	OwnerHPPoint     int32
 	Item             inventory.ItemInstance
 	GoldAmount       uint32
+	PickupRange      int64
 	MapIndex         uint32
 	X                int32
 	Y                int32
@@ -116,6 +117,8 @@ const (
 	StaticActorCombatAttackFailureTargetNotTargetable    = "target_not_targetable"
 	StaticActorCombatAttackFailureTargetDead             = "target_dead"
 	StaticActorCombatAttackFailureTargetSnapshotMismatch = "target_snapshot_mismatch"
+
+	bootstrapGroundItemPickupRange = int64(300)
 )
 
 const (
@@ -1242,7 +1245,15 @@ func (r *sharedWorldRegistry) RegisterGroundItem(ownerID uint64, ownerLogin stri
 	if item.ID == 0 || item.Vnum == 0 || item.Count == 0 || item.Count > maxItemGetCountCarrier || item.Locked || item.Equipped || item.EquipSlot != inventory.EquipmentSlotNone {
 		return false
 	}
-	return r.registerGroundItem(ownerID, ownerLogin, character, vid, item, 0)
+	return r.RegisterGroundItemWithPickupRange(ownerID, ownerLogin, character, vid, item, bootstrapGroundItemPickupRange)
+}
+
+func (r *sharedWorldRegistry) RegisterGroundItemWithPickupRange(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, item inventory.ItemInstance, pickupRange int64) bool {
+	const maxItemGetCountCarrier = uint16(^uint8(0))
+	if item.ID == 0 || item.Vnum == 0 || item.Count == 0 || item.Count > maxItemGetCountCarrier || item.Locked || item.Equipped || item.EquipSlot != inventory.EquipmentSlotNone || pickupRange < 0 {
+		return false
+	}
+	return r.registerGroundItem(ownerID, ownerLogin, character, vid, item, 0, pickupRange)
 }
 
 func (r *sharedWorldRegistry) CanRegisterGroundGold(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, amount uint32) bool {
@@ -1258,7 +1269,7 @@ func (r *sharedWorldRegistry) RegisterGroundGold(ownerID uint64, ownerLogin stri
 	if amount == 0 || amount > maxPointChangeCarrier {
 		return false
 	}
-	return r.registerGroundItem(ownerID, ownerLogin, character, vid, inventory.ItemInstance{Vnum: 1, Count: 1}, amount)
+	return r.registerGroundItem(ownerID, ownerLogin, character, vid, inventory.ItemInstance{Vnum: 1, Count: 1}, amount, bootstrapGroundItemPickupRange)
 }
 
 func (r *sharedWorldRegistry) canRegisterGroundItem(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, item inventory.ItemInstance, goldAmount uint32) bool {
@@ -1282,7 +1293,7 @@ func (r *sharedWorldRegistry) canRegisterGroundItemLocked(ownerID uint64, charac
 	return true
 }
 
-func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, item inventory.ItemInstance, goldAmount uint32) bool {
+func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, item inventory.ItemInstance, goldAmount uint32, pickupRange int64) bool {
 	if r == nil || ownerID == 0 || !validRewardOwnerMetadata(ownerLogin) || !validRewardOwnerMetadata(character.Name) || vid == 0 || item.Vnum == 0 {
 		return false
 	}
@@ -1303,6 +1314,7 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 		OwnerHPPoint:     character.Points[bootstrapPlayerPointValueIndex],
 		Item:             item,
 		GoldAmount:       goldAmount,
+		PickupRange:      pickupRange,
 		MapIndex:         r.topology.EffectiveMapIndex(character),
 		X:                character.X,
 		Y:                character.Y,
@@ -1363,13 +1375,23 @@ func (r *sharedWorldRegistry) groundItemVisibleToCharacterLocked(ground sharedGr
 }
 
 func (r *sharedWorldRegistry) groundItemReachableByCharacterLocked(ground sharedGroundItem, character loginticket.Character) bool {
+	pickupRange := ground.PickupRange
+	if pickupRange == 0 {
+		pickupRange = bootstrapGroundItemPickupRange
+	}
+	return r.groundItemReachableByCharacterWithRangeLocked(ground, character, pickupRange)
+}
+
+func (r *sharedWorldRegistry) groundItemReachableByCharacterWithRangeLocked(ground sharedGroundItem, character loginticket.Character, pickupRange int64) bool {
 	if !r.groundItemVisibleToCharacterLocked(ground, character) {
 		return false
 	}
-	const bootstrapGroundItemPickupRange = int64(300)
+	if pickupRange < 0 {
+		return false
+	}
 	dx := int64(character.X) - int64(ground.X)
 	dy := int64(character.Y) - int64(ground.Y)
-	return dx*dx+dy*dy <= bootstrapGroundItemPickupRange*bootstrapGroundItemPickupRange
+	return dx*dx+dy*dy <= pickupRange*pickupRange
 }
 
 func (r *sharedWorldRegistry) groundItemVisibilityDiffLocked(previous loginticket.Character, current loginticket.Character, groundItems ...[]worldruntime.GroundItemOccupancy) sharedGroundItemVisibilityDiff {
@@ -1507,7 +1529,18 @@ func (r *sharedWorldRegistry) GroundItemVisibleTo(collectorID uint64, collector 
 }
 
 func (r *sharedWorldRegistry) GroundItemPickupFor(collectorID uint64, collector loginticket.Character, vid uint32) (sharedGroundItemPickup, bool) {
+	return r.groundItemPickupFor(collectorID, collector, vid, 0, false)
+}
+
+func (r *sharedWorldRegistry) GroundItemPickupForWithRange(collectorID uint64, collector loginticket.Character, vid uint32, pickupRange int64) (sharedGroundItemPickup, bool) {
+	return r.groundItemPickupFor(collectorID, collector, vid, pickupRange, true)
+}
+
+func (r *sharedWorldRegistry) groundItemPickupFor(collectorID uint64, collector loginticket.Character, vid uint32, pickupRange int64, explicitRange bool) (sharedGroundItemPickup, bool) {
 	if r == nil || collectorID == 0 || vid == 0 {
+		return sharedGroundItemPickup{}, false
+	}
+	if explicitRange && pickupRange < 0 {
 		return sharedGroundItemPickup{}, false
 	}
 
@@ -1519,7 +1552,14 @@ func (r *sharedWorldRegistry) GroundItemPickupFor(collectorID uint64, collector 
 		return sharedGroundItemPickup{}, false
 	}
 	ground, ok := r.groundItemsByVID[vid]
-	if !ok || !r.groundItemReachableByCharacterLocked(ground, registeredCollector) {
+	if !ok {
+		return sharedGroundItemPickup{}, false
+	}
+	if explicitRange {
+		if !r.groundItemReachableByCharacterWithRangeLocked(ground, registeredCollector, pickupRange) {
+			return sharedGroundItemPickup{}, false
+		}
+	} else if !r.groundItemReachableByCharacterLocked(ground, registeredCollector) {
 		return sharedGroundItemPickup{}, false
 	}
 	ownerName := ground.OwnerName

@@ -394,6 +394,145 @@ func TestGameRuntimeItemPickupMergedStackRefreshCarriesTemplateDisplayMetadata(t
 	}
 }
 
+func TestGameRuntimeItemPickupUsesTemplateAuthoredPickupRange(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PickupLongRange", 0x010301af, 0x020401af, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1040, Vnum: 27021, Count: 1, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 9, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "pickup-long-range", 0xafafafaf, owner)
+	if err := accounts.Save(accountstore.Account{Login: "pickup-long-range", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed long-range pickup account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:        27021,
+		Name:        "Long Range Pickup Potion",
+		Stackable:   true,
+		MaxCount:    200,
+		PickupRange: 500,
+	}})
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected long-range pickup runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-long-range", 0xafafafaf)
+	defer closeSessionFlow(t, flow)
+
+	dropOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected item drop before long-range pickup: %v", err)
+	}
+	if len(dropOut) != 4 {
+		t.Fatalf("expected long-range drop to emit ITEM_DEL, QUICKSLOT_DEL, GROUND_ADD, and OWNERSHIP, got %d frames", len(dropOut))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, dropOut[2]))
+	if err != nil {
+		t.Fatalf("decode long-range dropped ground item: %v", err)
+	}
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{X: owner.X + 400, Y: owner.Y, Time: 0x40414243})))
+	if err != nil {
+		t.Fatalf("unexpected long-range pickup move error: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected long-range pickup move ack, got %d frames", len(moveOut))
+	}
+	pickupOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientPickup(itemproto.ClientPickupPacket{VID: ground.VID})))
+	if err != nil {
+		t.Fatalf("unexpected long-range item pickup error: %v", err)
+	}
+	if len(pickupOut) != 3 {
+		t.Fatalf("expected template-authored long-range pickup to emit GROUND_DEL, ITEM_SET, and ITEM_GET, got %d frames", len(pickupOut))
+	}
+	groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, pickupOut[0]))
+	if err != nil {
+		t.Fatalf("decode long-range pickup ground del: %v", err)
+	}
+	if groundDel.VID != ground.VID {
+		t.Fatalf("unexpected long-range pickup ground del: %+v", groundDel)
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, pickupOut[1]))
+	if err != nil {
+		t.Fatalf("decode long-range pickup item set: %v", err)
+	}
+	if set.Position != itemproto.InventoryPosition(5) || set.Vnum != 27021 || set.Count != 1 {
+		t.Fatalf("unexpected long-range pickup item set: %+v", set)
+	}
+	get, err := itemproto.DecodeGet(decodeSingleFrame(t, pickupOut[2]))
+	if err != nil {
+		t.Fatalf("decode long-range pickup item get: %v", err)
+	}
+	if get.Vnum != 27021 || get.Count != 1 {
+		t.Fatalf("unexpected long-range pickup item get: %+v", get)
+	}
+	if runtime.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatalf("expected long-range pickup to remove ground item %d", ground.VID)
+	}
+}
+
+func TestGameRuntimeItemPickupTemplateAuthoredShortRangeFailsClosed(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PickupShortRange", 0x010301b2, 0x020401b2, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1041, Vnum: 27022, Count: 1, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 9, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "pickup-short-range", 0xb2b2b2b2, owner)
+	if err := accounts.Save(accountstore.Account{Login: "pickup-short-range", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed short-range pickup account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:        27022,
+		Name:        "Short Range Pickup Potion",
+		Stackable:   true,
+		MaxCount:    200,
+		PickupRange: 100,
+	}})
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected short-range pickup runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-short-range", 0xb2b2b2b2)
+	defer closeSessionFlow(t, flow)
+
+	dropOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected item drop before short-range pickup: %v", err)
+	}
+	if len(dropOut) != 4 {
+		t.Fatalf("expected short-range drop to emit ITEM_DEL, QUICKSLOT_DEL, GROUND_ADD, and OWNERSHIP, got %d frames", len(dropOut))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, dropOut[2]))
+	if err != nil {
+		t.Fatalf("decode short-range dropped ground item: %v", err)
+	}
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{X: owner.X + 200, Y: owner.Y, Time: 0x50515253})))
+	if err != nil {
+		t.Fatalf("unexpected short-range pickup move error: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected short-range pickup move ack, got %d frames", len(moveOut))
+	}
+
+	pickupOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientPickup(itemproto.ClientPickupPacket{VID: ground.VID})))
+	if err != nil {
+		t.Fatalf("unexpected short-range item pickup error: %v", err)
+	}
+	if len(pickupOut) != 0 {
+		t.Fatalf("expected template-authored short-range pickup to fail closed with no frames, got %d", len(pickupOut))
+	}
+	if !runtime.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatalf("expected short-range rejected pickup to leave ground item %d pending", ground.VID)
+	}
+	account, err := accounts.Load("pickup-short-range")
+	if err != nil {
+		t.Fatalf("load short-range pickup account: %v", err)
+	}
+	if len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected rejected short-range pickup to leave inventory empty after drop, got %#v", account.Characters[0].Inventory)
+	}
+}
+
 func TestGameRuntimeItemDropDeletesAllSourceItemQuickslots(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

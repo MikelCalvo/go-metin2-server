@@ -2414,7 +2414,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return nil, false
 			}
 			if ownsLiveSharedWorldSession() {
-				sharedWorld.RegisterGroundItem(sharedWorldID, sessionTicket.Login, previousSelected, groundVID, droppedItem)
+				sharedWorld.RegisterGroundItemWithPickupRange(sharedWorldID, sessionTicket.Login, previousSelected, groundVID, droppedItem, templatePickupRange(runtime, droppedItem.Vnum))
 			}
 			return frames, true
 		}
@@ -4710,6 +4710,17 @@ func itemPickupRejectText(template itemcatalog.Template) string {
 		return template.PickupRejectText
 	}
 	return itemPickupInventoryFullInfoMessage
+}
+
+func templatePickupRange(runtime *gameRuntime, vnum uint32) int64 {
+	if runtime == nil || vnum == 0 {
+		return bootstrapGroundItemPickupRange
+	}
+	template, ok := runtime.itemTemplates[vnum]
+	if !ok || template.PickupRange == 0 {
+		return bootstrapGroundItemPickupRange
+	}
+	return int64(template.PickupRange)
 }
 
 func runtimeTemplateGoldPeerPickupRejectText(runtime *gameRuntime, item inventory.ItemInstance) (string, bool) {

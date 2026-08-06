@@ -31,6 +31,7 @@ const (
 	ItemAttributeCount     = 7
 	BackupManifestFilename = "item-template-backup-manifest.json"
 	BackupManifestFormat   = "go-metin2-item-template-backup-v1"
+	MaxPickupRange         = 10000
 )
 
 type Template struct {
@@ -82,6 +83,7 @@ type Template struct {
 	EquipEffect       *PointEffect    `json:"equip_effect,omitempty"`
 	DropRejectText    string          `json:"drop_reject_message,omitempty"`
 	PickupRejectText  string          `json:"pickup_reject_message,omitempty"`
+	PickupRange       uint16          `json:"pickup_range,omitempty"`
 	SellRejectText    string          `json:"sell_reject_message,omitempty"`
 	EquipRejectText   string          `json:"equip_reject_message,omitempty"`
 	UnequipRejectText string          `json:"unequip_reject_message,omitempty"`
@@ -145,6 +147,7 @@ type templateJSON struct {
 	EquipEffect       *PointEffect     `json:"equip_effect,omitempty"`
 	DropRejectText    string           `json:"drop_reject_message,omitempty"`
 	PickupRejectText  string           `json:"pickup_reject_message,omitempty"`
+	PickupRange       uint16           `json:"pickup_range,omitempty"`
 	SellRejectText    string           `json:"sell_reject_message,omitempty"`
 	EquipRejectText   string           `json:"equip_reject_message,omitempty"`
 	UnequipRejectText string           `json:"unequip_reject_message,omitempty"`
@@ -198,6 +201,7 @@ func (template Template) MarshalJSON() ([]byte, error) {
 		EquipEffect:       template.EquipEffect,
 		DropRejectText:    template.DropRejectText,
 		PickupRejectText:  template.PickupRejectText,
+		PickupRange:       template.PickupRange,
 		SellRejectText:    template.SellRejectText,
 		EquipRejectText:   template.EquipRejectText,
 		UnequipRejectText: template.UnequipRejectText,
@@ -265,6 +269,7 @@ func (template *Template) UnmarshalJSON(raw []byte) error {
 		EquipEffect:       jsonTemplate.EquipEffect,
 		DropRejectText:    jsonTemplate.DropRejectText,
 		PickupRejectText:  jsonTemplate.PickupRejectText,
+		PickupRange:       jsonTemplate.PickupRange,
 		SellRejectText:    jsonTemplate.SellRejectText,
 		EquipRejectText:   jsonTemplate.EquipRejectText,
 		UnequipRejectText: jsonTemplate.UnequipRejectText,
@@ -427,6 +432,9 @@ func validTemplate(template Template) bool {
 		return false
 	}
 	if template.ShopSellPrice > uint64(1<<31-1) {
+		return false
+	}
+	if template.PickupRange > MaxPickupRange {
 		return false
 	}
 	if !template.Stackable && template.MaxCount != 1 {

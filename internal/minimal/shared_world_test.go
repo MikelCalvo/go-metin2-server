@@ -1227,6 +1227,35 @@ func TestSharedWorldRegistryRegisterGroundItemRejectsCountAboveGetCarrier(t *tes
 	}
 }
 
+func TestSharedWorldRegistryGroundItemPickupCanUseExplicitRange(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("RangeDropOwner", 0x010301b0, 0x020401b0, 1200, 2200, 0, 101, 201)
+	collector := peerVisibilityCharacter("RangeCollector", 0x010301b1, 0x020401b1, 1600, 2200, 0, 102, 202)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	collectorID, _ := registry.Join(collector, newPendingServerFrames(), nil)
+	if ownerID == 0 || collectorID == 0 {
+		t.Fatalf("expected owner and collector to join shared world, owner=%d collector=%d", ownerID, collectorID)
+	}
+	item := inventory.ItemInstance{ID: 0x30010021, Vnum: 27021, Count: 1}
+	if !registry.RegisterGroundItem(ownerID, "range-drop-owner", owner, 0x07000021, item) {
+		t.Fatal("expected ranged ground item registration to succeed")
+	}
+
+	if _, ok := registry.GroundItemPickupFor(collectorID, collector, 0x07000021); ok {
+		t.Fatal("expected default 300-unit ground pickup range to reject a 400-unit collector")
+	}
+	if _, ok := registry.GroundItemPickupForWithRange(collectorID, collector, 0x07000021, 100); ok {
+		t.Fatal("expected explicit 100-unit pickup range to reject a 400-unit collector")
+	}
+	pickup, ok := registry.GroundItemPickupForWithRange(collectorID, collector, 0x07000021, 500)
+	if !ok {
+		t.Fatal("expected explicit 500-unit pickup range to accept a 400-unit collector")
+	}
+	if pickup.Item.Vnum != item.Vnum || pickup.Item.Count != item.Count || pickup.OwnerName != owner.Name {
+		t.Fatalf("unexpected explicit-range pickup snapshot: %+v", pickup)
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundItemRejectsDeadOwner(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("DeadDropOwner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
