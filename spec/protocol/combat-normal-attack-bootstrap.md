@@ -35,12 +35,13 @@ This contract currently applies only to:
 - one currently visible in-range non-player actor still marked as `training_dummy`
 - one immediate attack-intent request against that already selected target
 - one tiny target-refresh surface that can still describe `current target`, `updated hp percent`, or `no active target`
+- one decode-and-fail-closed skill-intent guard so client `USE_SKILL` traffic cannot fall through as an unknown combat header
 - one read-only runtime snapshot of the session's current selected combat target for local/debug surfaces
 
 This contract does **not** yet claim:
 - the full gameplay meaning of every non-zero `attack_type` value beyond the first narrow bootstrap ownership boundary
 - combo chains, animation timing, attack speed, or projectile choreography
-- richer attack-result packets, hit effects, floating damage numbers, or skill systems
+- richer attack-result packets, hit effects, floating damage numbers, or accepted skill systems
 - combat against player targets
 - aggro, retaliation, patrol, or movement AI
 - broader reward systems beyond the narrow `non-player-reward-bootstrap.md` descriptor seam
@@ -217,6 +218,30 @@ Combat-profile defaults now also carry presentation metadata: `level` and descri
 If future captures or tests prove this carrier insufficient, the repository may add a richer combat packet family later.
 But the next slices should begin from this smaller contract first.
 
+## First skill-intent guard
+
+The current bootstrap runtime now also owns `USE_SKILL` as a safe `GAME`-phase ingress guard, not as accepted skill combat.
+
+The frozen client packet shape is:
+- name: `USE_SKILL`
+- direction: client -> server
+- phase: `GAME`
+- header: `0x0402`
+- payload length: `8`
+- status: documented and codec-owned in `internal/proto/combat`
+
+Payload layout:
+1. `uint32 skill_vnum` (little-endian)
+2. `uint32 target_vid` (little-endian)
+
+The current shipped behavior is intentionally conservative:
+- `internal/game` decodes `USE_SKILL` in `GAME` and routes it through a dedicated handler seam
+- the minimal runtime leaves that handler unset, so every ordinary `USE_SKILL` request fails closed with no frames
+- unsupported `USE_SKILL` does not mutate the selected target, target HP, normal-attack cadence, retaliation timers, peer queues, points, inventory, or account persistence
+- malformed `USE_SKILL` still fails at the codec/flow boundary with `ErrInvalidPayload`
+
+This slice exists so skill packets from a real client are a known safe combat-family ingress while skill formulas, buffs/debuffs, cooldowns, visual effects, and accepted skill damage remain later work.
+
 ## Repeated-hit loop and runtime-only HP ownership
 
 The current bootstrap repeated-hit rule is now frozen as narrowly as possible:
@@ -329,6 +354,7 @@ This slice does **not** yet freeze:
 - broader attack-speed rules beyond the first fixed session-local `250ms` normal-attack cadence window
 - miss/crit/block results
 - ranged `SHOOT` gameplay beyond the current decode-and-fail-closed guard
+- accepted `USE_SKILL` gameplay beyond the current decode-and-fail-closed guard
 - the broader server-driven respawn/delete-readd choreography details beyond the already-owned fixed timed rebuild that the separate death / respawn doc now freezes
 - broader hostile retaliation beyond the current owner-side self-only point-loss surfaces: one immediate piggyback on accepted practice-mob hits plus one sustained fixed-delay delayed server-origin follow-up cadence at a time
 - broader player-death / respawn semantics or broader non-combat gameplay gating for zero-HP owners after that floor is reached beyond the self-only `GC DEAD(owner_vid)` signal frozen in `player-death-bootstrap.md`
@@ -368,6 +394,7 @@ After this document lands, the repository should be able to say:
 - once that retaliation floor has already reached `0`, later same-owner combat `TARGET` and normal `ATTACK` attempts against still-engaged content practice mobs now fail closed too, so the current hostility seam no longer lets a zero-HP owner keep reacquiring or advancing dummy combat state while broader player-death semantics are still pending
 - accepted hits while one delayed follow-up beat is already pending do not stack, accelerate, or reset the current cadence timer; the runtime keeps only one queued delayed beat outstanding at a time, so a later accepted hit before the first due time keeps the original due time and produces only one delayed `PLAYER_POINT_CHANGE` when it fires
 - same-target normal `ATTACK` attempts denied inside that `250ms` cadence window stay fully silent: they do not refresh target HP, do not append immediate retaliation, and do not create or reset delayed retaliation work
+- client `USE_SKILL(0x0402)` is now codec- and dispatch-owned as an unsupported skill-combat guard; the minimal runtime decodes it in `GAME` but returns no frames and leaves selected-target HP, normal-attack cadence, retaliation timers, peer queues, points, inventory, and account persistence unchanged
 - client `SHOOT(0x0403)` is now codec- and dispatch-owned as an unsupported ranged-shot guard; the minimal runtime decodes it in `GAME` but returns no frames and leaves selected-target HP/cadence/peer queues unchanged
 - if that engaged owner loses live shared-world ownership, clears or replaces target intent, or the engaged actor dies / rebuilds before a pending delay expires, the queued follow-up beat fails closed and the current cadence stops instead of claiming broader AI cleanup
 - when the engaged actor dies, the killing hit does not append an extra owner-side retaliation point-change, any pending delayed follow-up beat is canceled before respawn, and the respawn rebuild does not resurrect stale retaliation work without a fresh target / accepted hit

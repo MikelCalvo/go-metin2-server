@@ -9,6 +9,7 @@ import (
 
 const (
 	HeaderClientAttack     uint16 = 0x0401
+	HeaderClientUseSkill   uint16 = 0x0402
 	HeaderClientShoot      uint16 = 0x0403
 	HeaderServerDamageInfo uint16 = 0x0410
 	HeaderClientTarget     uint16 = 0x0A01
@@ -17,6 +18,7 @@ const (
 	ClientAttackTypeNormal uint8 = 0
 
 	clientAttackPayloadSize     = 7
+	clientUseSkillPayloadSize   = 8
 	clientShootPayloadSize      = 1
 	clientTargetPayloadSize     = 4
 	serverDamageInfoPayloadSize = 9
@@ -33,6 +35,11 @@ type ClientAttackPacket struct {
 	TargetVID    uint32
 	CRCProcPiece uint8
 	CRCFilePiece uint8
+}
+
+type ClientUseSkillPacket struct {
+	SkillVnum uint32
+	TargetVID uint32
 }
 
 type ClientShootPacket struct {
@@ -75,6 +82,26 @@ func DecodeClientAttack(f frame.Frame) (ClientAttackPacket, error) {
 		TargetVID:    binary.LittleEndian.Uint32(f.Payload[1:5]),
 		CRCProcPiece: f.Payload[5],
 		CRCFilePiece: f.Payload[6],
+	}, nil
+}
+
+func EncodeClientUseSkill(packet ClientUseSkillPacket) []byte {
+	payload := make([]byte, clientUseSkillPayloadSize)
+	binary.LittleEndian.PutUint32(payload[0:4], packet.SkillVnum)
+	binary.LittleEndian.PutUint32(payload[4:8], packet.TargetVID)
+	return frame.Encode(HeaderClientUseSkill, payload)
+}
+
+func DecodeClientUseSkill(f frame.Frame) (ClientUseSkillPacket, error) {
+	if f.Header != HeaderClientUseSkill {
+		return ClientUseSkillPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientUseSkillPayloadSize {
+		return ClientUseSkillPacket{}, ErrInvalidPayload
+	}
+	return ClientUseSkillPacket{
+		SkillVnum: binary.LittleEndian.Uint32(f.Payload[0:4]),
+		TargetVID: binary.LittleEndian.Uint32(f.Payload[4:8]),
 	}, nil
 }
 

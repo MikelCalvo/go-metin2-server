@@ -51,6 +51,22 @@ func TestEncodeClientAttackUsesLegacyPayloadLayout(t *testing.T) {
 	}
 }
 
+func TestEncodeClientUseSkillUsesLegacyPayloadLayout(t *testing.T) {
+	raw := EncodeClientUseSkill(ClientUseSkillPacket{SkillVnum: 0x00000023, TargetVID: 0x02040107})
+	expected := frame.Encode(HeaderClientUseSkill, []byte{0x23, 0x00, 0x00, 0x00, 0x07, 0x01, 0x04, 0x02})
+	if !bytes.Equal(raw, expected) {
+		t.Fatalf("unexpected client use-skill encoding: got %x want %x", raw, expected)
+	}
+
+	decoded, err := DecodeClientUseSkill(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode client use-skill: %v", err)
+	}
+	if decoded.SkillVnum != 0x00000023 || decoded.TargetVID != 0x02040107 {
+		t.Fatalf("unexpected client use-skill packet: %+v", decoded)
+	}
+}
+
 func TestEncodeClientShootUsesLegacyPayloadLayout(t *testing.T) {
 	raw := EncodeClientShoot(ClientShootPacket{ShootType: 0x83})
 	expected := frame.Encode(HeaderClientShoot, []byte{0x83})
@@ -152,6 +168,20 @@ func TestDecodeClientAttackRejectsUnexpectedHeader(t *testing.T) {
 
 func TestDecodeClientAttackRejectsMalformedPayload(t *testing.T) {
 	_, err := DecodeClientAttack(frame.Frame{Header: HeaderClientAttack, Length: 10, Payload: []byte{0x01, 0x07, 0x01, 0x04, 0x02, 0x12}})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestDecodeClientUseSkillRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeClientUseSkill(frame.Frame{Header: HeaderClientAttack, Length: 12, Payload: []byte{0x23, 0x00, 0x00, 0x00, 0x07, 0x01, 0x04, 0x02}})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeClientUseSkillRejectsMalformedPayload(t *testing.T) {
+	_, err := DecodeClientUseSkill(frame.Frame{Header: HeaderClientUseSkill, Length: 11, Payload: []byte{0x23, 0x00, 0x00, 0x00, 0x07, 0x01, 0x04}})
 	if !errors.Is(err, ErrInvalidPayload) {
 		t.Fatalf("expected ErrInvalidPayload, got %v", err)
 	}

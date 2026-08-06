@@ -228,7 +228,7 @@ Already present:
 
 - non-player entity directory,
 - static/non-player combat profiles,
-- target selection, client-originated silent target clear, normal attack packet ingress, game-flow rejection of unsupported attack types before runtime mutation, and a decode-and-fail-closed `SHOOT` ingress guard for currently unsupported ranged shots,
+- target selection, client-originated silent target clear, normal attack packet ingress, game-flow rejection of unsupported attack types before runtime mutation, and decode-and-fail-closed `USE_SKILL` / `SHOOT` ingress guards for currently unsupported skill and ranged shots,
 - selected-target snapshot/version checks,
 - loopback combat-target introspection plus flat/exact spawn-group read models for selected-target ownership and HP debugging,
 - no-op content-bundle reimports and failed replacement rollbacks that preserve live practice-mob HP, selected-target ownership, combat snapshot/respawn state, and visibility state when authored content has not committed,
@@ -248,7 +248,7 @@ Still missing:
 - real damage formulas,
 - attack animations/types beyond the first normal path,
 - ranged/projectile `SHOOT` gameplay beyond the current safe no-op guard,
-- skill combat,
+- accepted `USE_SKILL` / skill combat beyond the current safe no-op guard,
 - PvP and duel policy,
 - mob AI: aggro radius, chase, leash, return, patrol, target switching,
 - broad loot/drop tables,
