@@ -43,6 +43,28 @@ func TestNonPlayerDirectoryRejectsStaticActorsWithUnencodableVisibilityID(t *tes
 	}
 }
 
+func TestNonPlayerDirectoryRejectsStaticActorsWithExplicitEntityVID(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	actor := StaticEntity{
+		Entity:   Entity{ID: 7, Kind: EntityKindStaticActor, VID: 0x02040107, Name: "VillageGuard"},
+		Position: NewPosition(42, 1700, 2800),
+		RaceNum:  20300,
+	}
+
+	if directory.Register(actor) {
+		t.Fatal("expected static actor with explicit entity VID to fail closed")
+	}
+	if _, ok := directory.ByEntityID(actor.Entity.ID); ok {
+		t.Fatal("expected rejected static actor not to be indexed by entity ID")
+	}
+	if _, ok := directory.ByVID(uint32(actor.Entity.ID)); ok {
+		t.Fatal("expected rejected static actor not to claim canonical visibility VID")
+	}
+	if _, ok := directory.ByVID(actor.Entity.VID); ok {
+		t.Fatal("expected rejected static actor not to claim explicit entity VID")
+	}
+}
+
 func TestNonPlayerDirectoryRejectsInvalidStaticActorNames(t *testing.T) {
 	for name, actorName := range map[string]string{
 		"blank":        "   ",
@@ -429,6 +451,30 @@ func TestNonPlayerDirectoryUpdateRejectsActorThatStopsBeingVisibilityEncodable(t
 	lookup, ok := directory.ByVID(7)
 	if !ok || lookup.RaceNum != 20300 {
 		t.Fatalf("expected original static actor VID lookup to remain after rejected update, got actor=%+v ok=%v", lookup, ok)
+	}
+}
+
+func TestNonPlayerDirectoryUpdateRejectsExplicitEntityVID(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	actor := StaticEntity{
+		Entity:   Entity{ID: 7, Kind: EntityKindStaticActor, Name: "VillageGuard"},
+		Position: NewPosition(42, 1700, 2800),
+		RaceNum:  20300,
+	}
+	if !directory.Register(actor) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+
+	updated := actor
+	updated.Entity.VID = 0x02040107
+	updated.Entity.Name = "VillageGuardMoved"
+	updated.Position = NewPosition(99, 900, 1200)
+	if directory.Update(updated) {
+		t.Fatal("expected static actor update with explicit entity VID to fail closed")
+	}
+	lookup, ok := directory.ByEntityID(actor.Entity.ID)
+	if !ok || lookup.Entity.Name != "VillageGuard" || lookup.Entity.VID != 0 || lookup.Position != actor.Position {
+		t.Fatalf("expected original static actor to survive rejected explicit VID update, got actor=%+v ok=%v", lookup, ok)
 	}
 }
 

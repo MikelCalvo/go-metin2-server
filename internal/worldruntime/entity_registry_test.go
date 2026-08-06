@@ -1078,6 +1078,9 @@ func TestStaticActorVisibilityVIDRejectsUnencodableRaceNum(t *testing.T) {
 	if vid, ok := StaticActorVisibilityVID(StaticEntity{Entity: Entity{ID: uint64(^uint32(0)) + 1}, RaceNum: 20300}); ok {
 		t.Fatalf("expected overflowing entity ID to be rejected for static actor visibility VID, got vid=%d", vid)
 	}
+	if vid, ok := StaticActorVisibilityVID(StaticEntity{Entity: Entity{ID: 99, VID: 0x02040199}, RaceNum: 20300}); ok {
+		t.Fatalf("expected explicit static actor entity VID to be rejected for derived visibility VID, got vid=%d", vid)
+	}
 }
 
 func TestEntityRegistryRejectsStaticActorEntityIDAboveVisibilityVIDRange(t *testing.T) {
@@ -1096,6 +1099,23 @@ func TestEntityRegistryRejectsStaticActorEntityIDAboveVisibilityVIDRange(t *test
 	}
 	if actors := registry.StaticActors(42); len(actors) != 0 {
 		t.Fatalf("expected rejected static actor not to enter map presence, got %+v", actors)
+	}
+}
+
+func TestEntityRegistryRejectsExplicitStaticActorEntityVID(t *testing.T) {
+	registry := NewEntityRegistry()
+	actor, ok := registry.RegisterStaticActorWithID(StaticEntity{Entity: Entity{ID: 7, VID: 0x02040107, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if ok {
+		t.Fatalf("expected static actor with explicit entity VID to fail closed, got %+v", actor)
+	}
+	if _, ok := registry.StaticActor(7); ok {
+		t.Fatal("expected rejected static actor not to be registered")
+	}
+	if _, ok := registry.StaticActorByVID(7); ok {
+		t.Fatal("expected rejected static actor not to claim canonical visibility VID")
+	}
+	if next := registry.NextEntityID(); next != 1 {
+		t.Fatalf("expected rejected static actor not to consume entity ID, got next=%d", next)
 	}
 }
 
@@ -1196,6 +1216,25 @@ func TestEntityRegistryRejectsStaticActorUpdateToUnencodableRaceNum(t *testing.T
 	}
 	if actors := registry.StaticActors(42); len(actors) != 1 || actors[0].RaceNum != 20300 {
 		t.Fatalf("expected failed race_num update to preserve map occupancy, got %+v", actors)
+	}
+}
+
+func TestEntityRegistryRejectsStaticActorUpdateWithExplicitEntityVID(t *testing.T) {
+	registry := NewEntityRegistry()
+	actor, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	updated := actor
+	updated.Entity.VID = 0x02040107
+	updated.Entity.Name = "VillageGuardMoved"
+	updated.Position = NewPosition(99, 900, 1200)
+	if result, ok := registry.UpdateStaticActor(updated); ok {
+		t.Fatalf("expected static actor update with explicit entity VID to fail closed, got %+v", result)
+	}
+	lookup, ok := registry.StaticActor(actor.Entity.ID)
+	if !ok || lookup.Entity.Name != "VillageGuard" || lookup.Entity.VID != 0 || lookup.Position != actor.Position {
+		t.Fatalf("expected original static actor to remain after rejected explicit VID update, got actor=%+v ok=%v", lookup, ok)
 	}
 }
 

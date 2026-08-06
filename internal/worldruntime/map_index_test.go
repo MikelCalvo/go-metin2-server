@@ -678,6 +678,29 @@ func TestMapIndexUpdateStaticRejectsInvalidStaticActorName(t *testing.T) {
 	}
 }
 
+func TestMapIndexUpdateStaticRejectsExplicitEntityVID(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	actor := StaticEntity{Entity: Entity{ID: 8, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	if !index.RegisterStatic(actor) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+
+	updated := actor
+	updated.Entity.VID = 0x02040108
+	updated.Entity.Name = "VillageGuardMoved"
+	updated.Position = NewPosition(99, 900, 1200)
+	if index.UpdateStatic(updated) {
+		t.Fatal("expected static actor update with explicit entity VID to fail closed")
+	}
+	actors := index.StaticActors(42)
+	if len(actors) != 1 || actors[0].Entity.Name != "VillageGuard" || actors[0].Entity.VID != 0 || actors[0].Position != actor.Position {
+		t.Fatalf("expected original map presence to remain after rejected explicit VID update, got %+v", actors)
+	}
+	if actors := index.StaticActors(99); len(actors) != 0 {
+		t.Fatalf("expected rejected explicit VID update not to insert destination map presence, got %+v", actors)
+	}
+}
+
 func TestMapIndexUpdateRejectsPlayerVisibilityVIDCollisionWithStaticActor(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	player := newPlayerEntity(99, entityRegistryCharacter("Alpha", 0x02040177, 42, 1100, 2100))
@@ -1167,6 +1190,21 @@ func TestMapIndexRejectsStaticActorsWithUnencodableVisibilityID(t *testing.T) {
 	}
 	if snapshots := index.Snapshot(); len(snapshots) != 0 {
 		t.Fatalf("expected rejected static actor not to enter map occupancy, got %+v", snapshots)
+	}
+}
+
+func TestMapIndexRegisterStaticRejectsExplicitEntityVID(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	actor := StaticEntity{Entity: Entity{ID: 7, Kind: EntityKindStaticActor, VID: 0x02040107, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+
+	if index.RegisterStatic(actor) {
+		t.Fatal("expected static actor map registration with explicit entity VID to fail closed")
+	}
+	if actors := index.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected rejected static actor not to enter map bucket, got %+v", actors)
+	}
+	if lookup, ok := index.StaticActorByVID(uint32(actor.Entity.ID)); ok {
+		t.Fatalf("expected rejected static actor not to claim canonical visibility VID, got %+v", lookup)
 	}
 }
 

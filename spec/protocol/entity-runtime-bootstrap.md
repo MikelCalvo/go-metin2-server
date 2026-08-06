@@ -86,6 +86,7 @@ The runtime now owns non-player static-actor lookup by the temporary client-visi
 
 The current owned responsibilities are:
 - index static actors by their canonical encodable visibility `VID`, currently the runtime entity ID when it fits `uint32` and the actor has a non-zero `race_num` that fits the current `CHARACTER_ADD` projection
+- reject static actors that try to set `Entity.VID` directly; non-player client-visible identity is derived only from the validated runtime entity ID for now, so player-style explicit `VID` state cannot diverge from static-actor visibility, interaction, target, or map-occupancy lookup
 - reject live cross-actor conflicts on that visibility `VID`
 - prune orphaned visibility-`VID` entries when their primary static-actor entry is already gone
 - prune non-canonical visibility-`VID` aliases that point at a surviving actor whose current canonical visibility `VID` is different
@@ -108,6 +109,7 @@ The current owned responsibilities are:
 - track static-actor membership by effective `MapIndex`
 - normalize bootstrap `MapIndex = 0` through topology-aware effective-map semantics
 - expose deterministic per-map character and static-actor snapshots for runtime callers
+- reject static-actor registration/update rows that carry an explicit entity `VID`, preserving the current rule that static actors use their runtime entity ID as the only owned client-visible `VID` carrier
 - keep register, move, update, and remove bookkeeping explicit instead of rebuilding occupancy from whole-world scans by default
 - tolerate partial teardown when either the player/static entity index or map bucket has already been cleared first, so cleanup can still remove the remaining index state
 - prune stale same-kind map-bucket ownership for the same entity ID during player/static registration before inserting the new effective-map presence, so reconnect/reclaim repair paths cannot leave ghost occupancy on older maps

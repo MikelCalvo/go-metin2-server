@@ -71,6 +71,9 @@ func (r *EntityRegistry) RegisterStaticActorWithID(actor StaticEntity) (StaticEn
 }
 
 func (r *EntityRegistry) registerStaticActor(actor StaticEntity) (StaticEntity, bool) {
+	if actor.Entity.VID != 0 {
+		return StaticEntity{}, false
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	id := actor.Entity.ID
@@ -245,7 +248,7 @@ func (r *EntityRegistry) StaticActorByVID(vid uint32) (StaticEntity, bool) {
 }
 
 func (r *EntityRegistry) UpdateStaticActor(actor StaticEntity) (StaticEntity, bool) {
-	if r == nil || actor.Entity.ID == 0 || r.staticActors == nil || r.maps == nil {
+	if r == nil || actor.Entity.ID == 0 || actor.Entity.VID != 0 || r.staticActors == nil || r.maps == nil {
 		return StaticEntity{}, false
 	}
 	r.mu.Lock()

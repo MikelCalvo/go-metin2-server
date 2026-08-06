@@ -313,7 +313,7 @@ func normalizeStaticEntityCombat(actor StaticEntity) StaticEntity {
 }
 
 func StaticActorVisibilityVID(actor StaticEntity) (uint32, bool) {
-	if !ValidStaticActorVisibilityEntityID(actor.Entity.ID) || !ValidStaticActorVisibilityRaceNum(actor.RaceNum) {
+	if actor.Entity.VID != 0 || !ValidStaticActorVisibilityEntityID(actor.Entity.ID) || !ValidStaticActorVisibilityRaceNum(actor.RaceNum) {
 		return 0, false
 	}
 	return uint32(actor.Entity.ID), true

@@ -146,7 +146,7 @@ func cloneStaticEntity(actor StaticEntity) StaticEntity {
 
 func validStaticEntity(actor StaticEntity) bool {
 	actor = normalizeStaticEntityCombat(actor)
-	if !ValidStaticActorVisibilityEntityID(actor.Entity.ID) || actor.Entity.Kind != EntityKindStaticActor || !ValidStaticActorName(actor.Entity.Name) || !actor.Position.Valid() || !ValidStaticActorVisibilityRaceNum(actor.RaceNum) || !ValidStaticActorInteractionMetadata(actor.InteractionKind, actor.InteractionRef) || !ValidStaticActorCombatProfile(actor.CombatProfile) || !ValidStaticActorSpawnGroupRef(actor.SpawnGroupRef) || !ValidStaticActorDeathReward(actor.DeathReward) {
+	if !ValidStaticActorVisibilityEntityID(actor.Entity.ID) || actor.Entity.Kind != EntityKindStaticActor || actor.Entity.VID != 0 || !ValidStaticActorName(actor.Entity.Name) || !actor.Position.Valid() || !ValidStaticActorVisibilityRaceNum(actor.RaceNum) || !ValidStaticActorInteractionMetadata(actor.InteractionKind, actor.InteractionRef) || !ValidStaticActorCombatProfile(actor.CombatProfile) || !ValidStaticActorSpawnGroupRef(actor.SpawnGroupRef) || !ValidStaticActorDeathReward(actor.DeathReward) {
 		return false
 	}
 	if actor.SpawnGroupRef != "" {
