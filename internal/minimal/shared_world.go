@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
+	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
@@ -48,6 +49,7 @@ type sharedWorldRegistry struct {
 	nextStaticActorCombatSnapshotID uint64
 	lastKnownCharacters             map[uint64]loginticket.Character
 	groundItemsByVID                map[uint32]sharedGroundItem
+	itemTemplates                   map[uint32]itemcatalog.Template
 	suppressStaticActorFanout       bool
 	pendingStaticActorImportDeletes []worldruntime.StaticEntity
 	now                             func() time.Time
@@ -302,6 +304,15 @@ func registerSharedWorldSessionEntry(directory *worldruntime.SessionDirectory, e
 		return true
 	}
 	return directory.Register(entityID, entry)
+}
+
+func (r *sharedWorldRegistry) SetItemTemplates(templates map[uint32]itemcatalog.Template) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.itemTemplates = templates
 }
 
 func (r *sharedWorldRegistry) scopesLocked() worldruntime.Scopes {
@@ -1131,7 +1142,7 @@ func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pen
 		return 0, nil
 	}
 
-	peerFrames := encodePeerVisibilityBootstrapFrames(character)
+	peerFrames := encodePeerVisibilityBootstrapFramesWithTemplates(character, r.itemTemplates)
 	for _, peerCharacter := range visibilityDiff.AddedVisiblePeers {
 		if characterAtBootstrapHPFloor(peerCharacter) {
 			continue
@@ -1658,7 +1669,7 @@ func (r *sharedWorldRegistry) UpdateCharacterWithVisibilityTransition(id uint64,
 	r.lastKnownCharacters[id] = current
 
 	removedRaw := encodeCharacterDeleteFrame(previous)
-	addedRaw := encodePeerVisibilityBootstrapFrames(current)
+	addedRaw := encodePeerVisibilityBootstrapFramesWithTemplates(current, r.itemTemplates)
 	stablePeerVIDs := make(map[uint32]struct{}, len(visibilityDiff.AddedVisiblePeers))
 	for _, peerCharacter := range visibilityDiff.AddedVisiblePeers {
 		stablePeerVIDs[peerCharacter.VID] = struct{}{}
@@ -1687,7 +1698,7 @@ func (r *sharedWorldRegistry) UpdateCharacterWithVisibilityTransition(id uint64,
 		r.enqueueToCharacterLocked(peerCharacter, addedRaw)
 	}
 
-	originFrames := buildTransferOriginFrames(visibilityDiff.RemovedVisiblePeers, originAddedVisiblePeers)
+	originFrames := buildTransferOriginFramesWithTemplates(visibilityDiff.RemovedVisiblePeers, originAddedVisiblePeers, r.itemTemplates)
 	originFrames = append(originFrames, r.buildStaticActorVisibilityTransitionFramesLocked(staticActorVisibilityDiff.RemovedVisibleActors, originAddedVisibleStaticActors)...)
 	originFrames = append(originFrames, buildGroundItemVisibilityTransitionFrames(groundItemVisibilityDiff.Removed, originAddedGroundItems)...)
 	if len(originFrames) == 0 {
@@ -1767,7 +1778,7 @@ func (r *sharedWorldRegistry) transfer(id uint64, character loginticket.Characte
 		originAddedVisibleStaticActors = nil
 		originAddedGroundItems = nil
 	}
-	originFrames := buildTransferOriginFrames(visibilityDiff.RemovedVisiblePeers, originAddedVisiblePeers)
+	originFrames := buildTransferOriginFramesWithTemplates(visibilityDiff.RemovedVisiblePeers, originAddedVisiblePeers, r.itemTemplates)
 	originFrames = append(originFrames, r.buildStaticActorVisibilityTransitionFramesLocked(staticActorVisibilityDiff.RemovedVisibleActors, originAddedVisibleStaticActors)...)
 	originFrames = append(originFrames, buildGroundItemVisibilityTransitionFrames(groundItemVisibilityDiff.Removed, originAddedGroundItems)...)
 	originEntry, _ := r.sessionEntryLocked(id)
@@ -1779,7 +1790,7 @@ func (r *sharedWorldRegistry) transfer(id uint64, character loginticket.Characte
 	r.lastKnownCharacters[id] = character
 
 	movedDelete := encodeCharacterDeleteFrame(previous)
-	movedFrames := encodePeerVisibilityBootstrapFrames(character)
+	movedFrames := encodePeerVisibilityBootstrapFramesWithTemplates(character, r.itemTemplates)
 	for _, peerCharacter := range visibilityDiff.RemovedVisiblePeers {
 		if characterAtBootstrapHPFloor(peerCharacter) {
 			continue
@@ -2817,12 +2828,16 @@ func (r *sharedWorldRegistry) markMapOccupancySnapshotStateLocked(snapshots []Ma
 }
 
 func buildTransferOriginFrames(removed []loginticket.Character, added []loginticket.Character) [][]byte {
+	return buildTransferOriginFramesWithTemplates(removed, added, nil)
+}
+
+func buildTransferOriginFramesWithTemplates(removed []loginticket.Character, added []loginticket.Character, templates map[uint32]itemcatalog.Template) [][]byte {
 	frames := make([][]byte, 0, len(removed)+len(added)*4)
 	for _, peerCharacter := range removed {
 		frames = append(frames, encodeCharacterDeleteFrame(peerCharacter))
 	}
 	for _, peerCharacter := range added {
-		frames = append(frames, encodePeerVisibilityBootstrapFrames(peerCharacter)...)
+		frames = append(frames, encodePeerVisibilityBootstrapFramesWithTemplates(peerCharacter, templates)...)
 	}
 	return frames
 }
@@ -2993,19 +3008,27 @@ func staticActorCharacterUpdatePacket(actor worldruntime.StaticEntity, vid uint3
 }
 
 func encodePeerVisibilityFrames(character loginticket.Character) [][]byte {
-	infoRaw, err := worldproto.EncodeCharacterAdditionalInfo(ticketCharacterAdditionalInfoPacket(character))
+	return encodePeerVisibilityFramesWithTemplates(character, nil)
+}
+
+func encodePeerVisibilityFramesWithTemplates(character loginticket.Character, templates map[uint32]itemcatalog.Template) [][]byte {
+	infoRaw, err := worldproto.EncodeCharacterAdditionalInfo(ticketCharacterAdditionalInfoPacketWithTemplates(character, templates))
 	if err != nil {
 		return nil
 	}
 	return [][]byte{
 		worldproto.EncodeCharacterAdd(ticketCharacterAddPacket(character)),
 		infoRaw,
-		worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacket(character)),
+		worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacketWithTemplates(character, templates)),
 	}
 }
 
 func encodePeerVisibilityBootstrapFrames(character loginticket.Character) [][]byte {
-	frames := encodePeerVisibilityFrames(character)
+	return encodePeerVisibilityBootstrapFramesWithTemplates(character, nil)
+}
+
+func encodePeerVisibilityBootstrapFramesWithTemplates(character loginticket.Character, templates map[uint32]itemcatalog.Template) [][]byte {
+	frames := encodePeerVisibilityFramesWithTemplates(character, templates)
 	if !characterAtBootstrapHPFloor(character) {
 		return frames
 	}

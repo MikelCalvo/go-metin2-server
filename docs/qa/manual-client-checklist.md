@@ -354,6 +354,7 @@ Expected result:
 
 Expected result:
 - allowed equipment moves from carried inventory to the authored equipment cell, emits the self-only item refresh burst, deletes item quickslots bound to the cleared carried source cell, leaves unrelated skill/command quickslots with the same byte slot value unchanged, applies any template-authored `equip_effect` point change only after the matching item is actually equipped in that authored cell, and refreshes visible `CHARACTER_UPDATE.parts` for projected `body` / `weapon` / `head` / `hair` equipment
+- if the wearable template authors non-zero `appearance_vnum`, `CHARACTER_UPDATE.parts` and peer-visible appearance should use that authored visible id while the equipment `ITEM_SET.vnum`, persisted equipment item, and later inventory/equipment inspection still show the original item `vnum`
 - equipment templates may now author negative `equip_effect.point_delta` penalties; on equip the visible `PLAYER_POINT_CHANGE.amount` should be the negative authored value, and on unequip the inverse positive amount should restore the point value
 - selected-character anti-flagged, mismatched-`vnum`, mismatched-slot, or transfer-guarded equipment fails closed: no item refresh, no quickslot change, no point change, no carried/equipment mutation, and no persistence change
 - corrupt/disposable fixtures that try to apply an equipment point effect without a matching valid equipped item in the authored equipment cell fail closed with no point mutation
@@ -552,6 +553,7 @@ Run this only when the QA character has one wearable `body`, `weapon`, or `head`
 Expected result:
 - successful equip/unequip still returns self-only item-slot frames in the current slice
 - successful equip/unequip now appends one visible-character refresh after the item-slot frames
+- when the equipped template authors non-zero `appearance_vnum`, that refresh shows the authored appearance id only in the visible `parts` slot; item identity remains unchanged
 - the client remains connected, inventory/equipment state stays consistent, and already-visible stable peers can refresh the same appearance without reconnecting
 
 Important note:

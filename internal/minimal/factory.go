@@ -1527,6 +1527,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 	if err := runtime.loadItemTemplates(); err != nil {
 		return nil, err
 	}
+	sharedWorld.SetItemTemplates(runtime.itemTemplates)
 	if err := runtime.loadInteractionDefinitions(); err != nil {
 		return nil, err
 	}
@@ -1823,7 +1824,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return warp.Result{}, false
 					}
 					if rebootstrap {
-						bootstrapFrames, err := worldentry.BuildBootstrapFrames(updatedLive)
+						bootstrapFrames, err := worldentry.BuildBootstrapFramesWithTemplates(updatedLive, runtime.itemTemplates)
 						if err != nil {
 							return warp.Result{}, false
 						}
@@ -2776,7 +2777,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if selected.ID == 0 {
 						return worldentry.EnterGameResult{Rejected: true}
 					}
-					bootstrapFrames, err := worldentry.BuildBootstrapFrames(selected)
+					bootstrapFrames, err := worldentry.BuildBootstrapFramesWithTemplates(selected, runtime.itemTemplates)
 					if err != nil {
 						return worldentry.EnterGameResult{Rejected: true}
 					}
@@ -2802,7 +2803,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return worldentry.EnterGameResult{Rejected: true}
 						}
 						for _, peer := range existingPeers {
-							trailingFrames = append(trailingFrames, encodePeerVisibilityBootstrapFrames(peer)...)
+							trailingFrames = append(trailingFrames, encodePeerVisibilityBootstrapFramesWithTemplates(peer, runtime.itemTemplates)...)
 						}
 					}
 					trailingFrames = append(trailingFrames, sharedWorld.VisibleStaticActorFrames(selected)...)
@@ -2972,7 +2973,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if !ownsLiveSharedWorldSession() {
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
-						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equippedItem.EquipSlot)
+						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equippedItem.EquipSlot, runtime.itemTemplates)
 						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 						if !ok {
 							return gameflow.ChatResult{Accepted: false}
@@ -3022,7 +3023,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if !ownsLiveSharedWorldSession() {
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
-						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equipSlot)
+						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equipSlot, runtime.itemTemplates)
 						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 						if !ok {
 							return gameflow.ChatResult{Accepted: false}
@@ -3110,11 +3111,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							if !ok {
 								return gameflow.ChatResult{Accepted: false}
 							}
-							bootstrapFrames, err := worldentry.BuildBootstrapFrames(restartedSelected)
+							bootstrapFrames, err := worldentry.BuildBootstrapFramesWithTemplates(restartedSelected, runtime.itemTemplates)
 							if err != nil {
 								return gameflow.ChatResult{Accepted: false}
 							}
-							peerRefreshFrames := encodePeerVisibilityFrames(restartedSelected)
+							peerRefreshFrames := encodePeerVisibilityFramesWithTemplates(restartedSelected, runtime.itemTemplates)
 							if len(peerRefreshFrames) == 0 {
 								return gameflow.ChatResult{Accepted: false}
 							}
@@ -3149,7 +3150,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							rollbackPersistedTownRestart := func() {
 								_ = saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters)
 							}
-							bootstrapFrames, err := worldentry.BuildBootstrapFrames(restartedSelected)
+							bootstrapFrames, err := worldentry.BuildBootstrapFramesWithTemplates(restartedSelected, runtime.itemTemplates)
 							if err != nil {
 								rollbackPersistedTownRestart()
 								return gameflow.ChatResult{Accepted: false}
@@ -3310,7 +3311,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							refreshLiveCharacterRegistration()
 							return gameflow.ItemMoveResult{Accepted: false}
 						}
-						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equipSlot)
+						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equipSlot, runtime.itemTemplates)
 						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 						return gameflow.ItemMoveResult{Accepted: ok, Frames: frames}
 					}
@@ -3366,7 +3367,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						} else {
 							frames = append(frames, quickslotFrames...)
 						}
-						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equippedItem.EquipSlot)
+						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equippedItem.EquipSlot, runtime.itemTemplates)
 						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 						return gameflow.ItemMoveResult{Accepted: ok, Frames: frames}
 					}
@@ -4341,10 +4342,14 @@ func ticketCharacterAddPacket(character loginticket.Character) worldproto.Charac
 }
 
 func ticketCharacterAdditionalInfoPacket(character loginticket.Character) worldproto.CharacterAdditionalInfoPacket {
+	return ticketCharacterAdditionalInfoPacketWithTemplates(character, nil)
+}
+
+func ticketCharacterAdditionalInfoPacketWithTemplates(character loginticket.Character, templates map[uint32]itemcatalog.Template) worldproto.CharacterAdditionalInfoPacket {
 	return worldproto.CharacterAdditionalInfoPacket{
 		VID:       character.VID,
 		Name:      character.Name,
-		Parts:     ticketCharacterAppearanceParts(character),
+		Parts:     ticketCharacterAppearanceParts(character, templates),
 		Empire:    character.Empire,
 		GuildID:   character.GuildID,
 		Level:     uint32(character.Level),
@@ -4355,9 +4360,13 @@ func ticketCharacterAdditionalInfoPacket(character loginticket.Character) worldp
 }
 
 func ticketCharacterUpdatePacket(character loginticket.Character) worldproto.CharacterUpdatePacket {
+	return ticketCharacterUpdatePacketWithTemplates(character, nil)
+}
+
+func ticketCharacterUpdatePacketWithTemplates(character loginticket.Character, templates map[uint32]itemcatalog.Template) worldproto.CharacterUpdatePacket {
 	return worldproto.CharacterUpdatePacket{
 		VID:         character.VID,
-		Parts:       ticketCharacterAppearanceParts(character),
+		Parts:       ticketCharacterAppearanceParts(character, templates),
 		MovingSpeed: 150,
 		AttackSpeed: 100,
 		StateFlag:   2,
@@ -4369,7 +4378,7 @@ func ticketCharacterUpdatePacket(character loginticket.Character) worldproto.Cha
 	}
 }
 
-func ticketCharacterAppearanceParts(character loginticket.Character) [worldproto.CharacterEquipmentPartCount]uint16 {
+func ticketCharacterAppearanceParts(character loginticket.Character, templates map[uint32]itemcatalog.Template) [worldproto.CharacterEquipmentPartCount]uint16 {
 	parts := [worldproto.CharacterEquipmentPartCount]uint16{character.MainPart, 0, 0, character.HairPart}
 	for _, instance := range character.Equipment {
 		if !instance.Equipped {
@@ -4377,23 +4386,35 @@ func ticketCharacterAppearanceParts(character loginticket.Character) [worldproto
 		}
 		switch instance.EquipSlot {
 		case inventory.EquipmentSlotBody:
-			parts[0] = uint16(instance.Vnum)
+			parts[0] = ticketEquipmentAppearanceVnum(instance, templates)
 		case inventory.EquipmentSlotWeapon:
-			parts[1] = uint16(instance.Vnum)
+			parts[1] = ticketEquipmentAppearanceVnum(instance, templates)
 		case inventory.EquipmentSlotHead:
-			parts[2] = uint16(instance.Vnum)
+			parts[2] = ticketEquipmentAppearanceVnum(instance, templates)
 		case inventory.EquipmentSlotHair:
-			parts[3] = uint16(instance.Vnum)
+			parts[3] = ticketEquipmentAppearanceVnum(instance, templates)
 		}
 	}
 	return parts
 }
 
-func projectedAppearanceStablePeerFrames(character loginticket.Character, slot inventory.EquipmentSlot) [][]byte {
+func ticketEquipmentAppearanceVnum(instance inventory.ItemInstance, templates map[uint32]itemcatalog.Template) uint16 {
+	template, ok := templates[instance.Vnum]
+	if !ok || template.AppearanceVnum == 0 || !itemcatalog.ValidTemplate(template) {
+		return uint16(instance.Vnum)
+	}
+	slot, ok := inventory.ParseEquipmentSlot(template.EquipSlot)
+	if !ok || slot != instance.EquipSlot {
+		return uint16(instance.Vnum)
+	}
+	return uint16(template.AppearanceVnum)
+}
+
+func projectedAppearanceStablePeerFrames(character loginticket.Character, slot inventory.EquipmentSlot, templates map[uint32]itemcatalog.Template) [][]byte {
 	if !projectedAppearanceEquipmentSlot(slot) {
 		return nil
 	}
-	return [][]byte{worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacket(character))}
+	return [][]byte{worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacketWithTemplates(character, templates))}
 }
 
 func projectedAppearanceEquipmentSlot(slot inventory.EquipmentSlot) bool {
@@ -4579,7 +4600,7 @@ func equipResultFrames(character loginticket.Character, from inventory.SlotIndex
 	if pointChange != nil {
 		frames = append(frames, encodePlayerPointChangeFrame(character.VID, *pointChange))
 	}
-	frames = append(frames, worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacket(character)))
+	frames = append(frames, worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacketWithTemplates(character, templates)))
 	return frames, nil
 }
 
@@ -4600,7 +4621,7 @@ func unequipResultFrames(character loginticket.Character, from inventory.Equipme
 	if pointChange != nil {
 		frames = append(frames, encodePlayerPointChangeFrame(character.VID, *pointChange))
 	}
-	frames = append(frames, worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacket(character)))
+	frames = append(frames, worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacketWithTemplates(character, templates)))
 	return frames, nil
 }
 
@@ -5765,6 +5786,7 @@ func (r *gameRuntime) loadItemTemplates() error {
 		if errors.Is(err, itemcatalog.ErrSnapshotNotFound) {
 			r.itemTemplates = buildItemTemplateIndex(defaultBootstrapItemTemplateSnapshot())
 			r.itemTemplatesAuthored = false
+			r.sharedWorld.SetItemTemplates(r.itemTemplates)
 			return nil
 		}
 		return err
@@ -5772,10 +5794,12 @@ func (r *gameRuntime) loadItemTemplates() error {
 	if len(snapshot.Templates) == 0 {
 		r.itemTemplates = buildItemTemplateIndex(defaultBootstrapItemTemplateSnapshot())
 		r.itemTemplatesAuthored = false
+		r.sharedWorld.SetItemTemplates(r.itemTemplates)
 		return nil
 	}
 	r.itemTemplates = buildItemTemplateIndex(snapshot)
 	r.itemTemplatesAuthored = true
+	r.sharedWorld.SetItemTemplates(r.itemTemplates)
 	return nil
 }
 
@@ -5803,6 +5827,7 @@ func (r *gameRuntime) replaceItemTemplates(snapshot itemcatalog.Snapshot) error 
 	if !r.itemTemplatesAuthored {
 		r.itemTemplates = buildItemTemplateIndex(defaultBootstrapItemTemplateSnapshot())
 	}
+	r.sharedWorld.SetItemTemplates(r.itemTemplates)
 	return nil
 }
 

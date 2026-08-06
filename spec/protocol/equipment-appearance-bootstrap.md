@@ -47,15 +47,16 @@ The first owned bootstrap appearance projection uses only data that already exis
 
 The projection precedence is:
 1. initialize visible parts from the persisted character base snapshot
-2. if a valid equipped item occupies `body`, set `parts[0] = equipped_item.Vnum`
-3. if a valid equipped item occupies `weapon`, set `parts[1] = equipped_item.Vnum`
-4. if a valid equipped item occupies `head`, set `parts[2] = equipped_item.Vnum`
-5. if a valid equipped item occupies `hair`, set `parts[3] = equipped_item.Vnum`
+2. if a valid equipped item occupies `body`, set `parts[0] = resolved appearance vnum`
+3. if a valid equipped item occupies `weapon`, set `parts[1] = resolved appearance vnum`
+4. if a valid equipped item occupies `head`, set `parts[2] = resolved appearance vnum`
+5. if a valid equipped item occupies `hair`, set `parts[3] = resolved appearance vnum`
 
-This first slice deliberately keeps the data path simple:
-- no item-template lookup is required
-- no extra appearance metadata is required
-- the equipped item `vnum` is written directly into the visible part slot for `body`, `weapon`, `head`, and `hair`
+The resolved appearance value is now template-backed when the authored template exists:
+- if the equipped item resolves to a valid loaded item template with non-zero `appearance_vnum`, that value is written into the visible part slot
+- otherwise the runtime preserves the older fallback and writes the equipped item instance `vnum` directly into the visible part slot for `body`, `weapon`, `head`, and `hair`
+- `appearance_vnum` affects only visible-character `parts`; the item instance `vnum`, `ITEM_SET.vnum`, equipped item identity, equip guards, and persisted snapshots remain unchanged
+- item-template validation rejects `appearance_vnum` on non-equipment templates, on unprojected equipment slots such as `shield`, or when the value does not fit the current `uint16` visible-parts carrier
 
 ## Packet impact
 
@@ -100,4 +101,5 @@ After this slice, the repository should be able to say:
 - reconnect-driven peer-entry bursts now also reuse that latest projected appearance when visibility is rebuilt after the runtime mutation already happened
 - duplicate-live retry-`ENTERGAME` peer-entry bursts now also reuse that latest projected appearance when a waiting `LOADING` session later enters `GAME` after the previous live owner mutated and disappeared
 - stale post-reclaim `/equip_item` / `/unequip_item` sockets may still observe self-local appearance refreshes, but they no longer change persisted/shared-world authoritative appearance or the replacement live owner's exact-name loopback inventory/equipment snapshots
+- authored `appearance_vnum` can drive the current `body`, `weapon`, `head`, and `hair` visible part values without changing item identity or `ITEM_SET.vnum`
 - the repo owns an explicit written contract for what the current bootstrap runtime does before broader live peer appearance choreography slices land

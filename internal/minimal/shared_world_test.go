@@ -2917,6 +2917,93 @@ func TestNewGameSessionFactoryProjectsPeerEquipmentAppearanceDuringBootstrap(t *
 	}
 }
 
+func TestGameRuntimeEquipProjectsTemplateAppearanceVnumWithoutMutatingItemIdentity(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	watcher := peerVisibilityCharacter("AppearanceWatcher", 0x01030701, 0x02040701, 1000, 2000, 0, 100, 200)
+	owner := peerVisibilityCharacter("AppearanceOwner", 0x01030702, 0x02040702, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 7001, Vnum: 11200, Count: 1, Slot: 8}}
+	issuePeerTicket(t, store, "appearance-watcher", 0x70707001, watcher)
+	issuePeerTicket(t, store, "appearance-owner", 0x70707002, owner)
+	for _, account := range []accountstore.Account{
+		{Login: "appearance-watcher", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}},
+		{Login: "appearance-owner", Empire: owner.Empire, Characters: []loginticket.Character{owner}},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("save preloaded appearance-vnum account %q: %v", account.Login, err)
+		}
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:           11200,
+		Name:           "Visible Practice Sword",
+		Stackable:      false,
+		MaxCount:       1,
+		EquipSlot:      inventory.EquipmentSlotWeapon.String(),
+		AppearanceVnum: 321,
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected appearance-vnum runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowWatcher, watcherEnter := enterGameWithLoginTicket(t, factory, "appearance-watcher", 0x70707001)
+	if len(watcherEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for appearance watcher, got %d", len(watcherEnter))
+	}
+	flowOwner, _ := enterGameWithLoginTicket(t, factory, "appearance-owner", 0x70707002)
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames for watcher after owner join, got %d", len(queued))
+	}
+
+	equipOut, err := flowOwner.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/equip_item 8 weapon"})))
+	if err != nil {
+		t.Fatalf("unexpected appearance-vnum equip error: %v", err)
+	}
+	if len(equipOut) != 3 {
+		t.Fatalf("expected 3 self equip frames for appearance-vnum equip, got %d", len(equipOut))
+	}
+	itemSet, err := itemproto.DecodeSet(decodeSingleFrame(t, equipOut[1]))
+	if err != nil {
+		t.Fatalf("decode appearance-vnum equipment set: %v", err)
+	}
+	if itemSet.Vnum != 11200 {
+		t.Fatalf("expected equipment ITEM_SET to preserve item vnum 11200, got %+v", itemSet)
+	}
+	selfUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, equipOut[2]))
+	if err != nil {
+		t.Fatalf("decode self appearance-vnum update: %v", err)
+	}
+	wantParts := [worldproto.CharacterEquipmentPartCount]uint16{owner.MainPart, 321, 0, owner.HairPart}
+	if selfUpdate.VID != owner.VID || selfUpdate.Parts != wantParts {
+		t.Fatalf("unexpected self appearance-vnum update: %+v want parts %+v", selfUpdate, wantParts)
+	}
+
+	peerFrames := flushServerFrames(t, flowWatcher)
+	if len(peerFrames) != 1 {
+		t.Fatalf("expected 1 queued peer appearance-vnum update after equip, got %d", len(peerFrames))
+	}
+	peerUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, peerFrames[0]))
+	if err != nil {
+		t.Fatalf("decode queued peer appearance-vnum update: %v", err)
+	}
+	if peerUpdate.VID != owner.VID || peerUpdate.Parts != wantParts {
+		t.Fatalf("unexpected queued peer appearance-vnum update: %+v want parts %+v", peerUpdate, wantParts)
+	}
+
+	persisted, err := accounts.Load("appearance-owner")
+	if err != nil {
+		t.Fatalf("load persisted appearance-vnum owner: %v", err)
+	}
+	wantEquipment := []inventory.ItemInstance{{ID: 7001, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
+	if !reflect.DeepEqual(persisted.Characters[0].Equipment, wantEquipment) {
+		t.Fatalf("appearance-vnum equip mutated item identity or equipment unexpectedly: got %+v want %+v", persisted.Characters[0].Equipment, wantEquipment)
+	}
+
+	closeSessionFlow(t, flowWatcher)
+	closeSessionFlow(t, flowOwner)
+}
+
 func TestGameRuntimeEquipHairQueuesPeerAppearanceUpdateForVisibleWatcher(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

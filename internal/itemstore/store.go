@@ -55,6 +55,7 @@ type Template struct {
 	QuestUseMultiple  bool            `json:"quest_use_multiple,omitempty"`
 	Log               bool            `json:"log,omitempty"`
 	Applicable        bool            `json:"applicable,omitempty"`
+	AppearanceVnum    uint32          `json:"appearance_vnum,omitempty"`
 	AntiSell          bool            `json:"anti_sell,omitempty"`
 	AntiDrop          bool            `json:"anti_drop,omitempty"`
 	AntiGive          bool            `json:"anti_give,omitempty"`
@@ -120,6 +121,7 @@ type templateJSON struct {
 	QuestUseMultiple  bool             `json:"quest_use_multiple,omitempty"`
 	Log               bool             `json:"log,omitempty"`
 	Applicable        bool             `json:"applicable,omitempty"`
+	AppearanceVnum    uint32           `json:"appearance_vnum,omitempty"`
 	AntiSell          bool             `json:"anti_sell,omitempty"`
 	AntiDrop          bool             `json:"anti_drop,omitempty"`
 	AntiGive          bool             `json:"anti_give,omitempty"`
@@ -177,6 +179,7 @@ func (template Template) MarshalJSON() ([]byte, error) {
 		QuestUseMultiple:  template.QuestUseMultiple,
 		Log:               template.Log,
 		Applicable:        template.Applicable,
+		AppearanceVnum:    template.AppearanceVnum,
 		AntiSell:          template.AntiSell,
 		AntiDrop:          template.AntiDrop,
 		AntiGive:          template.AntiGive,
@@ -246,6 +249,7 @@ func (template *Template) UnmarshalJSON(raw []byte) error {
 		QuestUseMultiple:  jsonTemplate.QuestUseMultiple,
 		Log:               jsonTemplate.Log,
 		Applicable:        jsonTemplate.Applicable,
+		AppearanceVnum:    jsonTemplate.AppearanceVnum,
 		AntiSell:          jsonTemplate.AntiSell,
 		AntiDrop:          jsonTemplate.AntiDrop,
 		AntiGive:          jsonTemplate.AntiGive,
@@ -442,6 +446,9 @@ func validTemplate(template Template) bool {
 	if template.PickupRange > MaxPickupRange {
 		return false
 	}
+	if template.AppearanceVnum > uint32(^uint16(0)) {
+		return false
+	}
 	if !template.Stackable && template.MaxCount != 1 {
 		return false
 	}
@@ -497,13 +504,25 @@ func validTemplate(template Template) bool {
 		return false
 	}
 	if template.EquipSlot == "" {
-		return template.EquipEffect == nil && validUseEffect(template.UseEffect, template)
+		return template.AppearanceVnum == 0 && template.EquipEffect == nil && validUseEffect(template.UseEffect, template)
 	}
 	if template.Stackable {
 		return false
 	}
-	_, ok := inventory.ParseEquipmentSlot(template.EquipSlot)
-	return ok && template.UseEffect == nil && validPointEffect(template.EquipEffect)
+	slot, ok := inventory.ParseEquipmentSlot(template.EquipSlot)
+	return ok && template.UseEffect == nil && validAppearanceVnumSlot(template.AppearanceVnum, slot) && validPointEffect(template.EquipEffect)
+}
+
+func validAppearanceVnumSlot(appearanceVnum uint32, slot inventory.EquipmentSlot) bool {
+	if appearanceVnum == 0 {
+		return true
+	}
+	switch slot {
+	case inventory.EquipmentSlotBody, inventory.EquipmentSlotWeapon, inventory.EquipmentSlotHead, inventory.EquipmentSlotHair:
+		return true
+	default:
+		return false
+	}
 }
 
 func validDisplayAttributes(attributes AttributeValues) bool {

@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
+	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
@@ -13,14 +14,18 @@ const bootstrapPlayerPointType uint8 = 1
 const bootstrapPlayerPointValueIndex = 1
 
 func BuildBootstrapFrames(character loginticket.Character) ([][]byte, error) {
-	infoRaw, err := worldproto.EncodeCharacterAdditionalInfo(bootstrapCharacterAdditionalInfoPacket(character))
+	return BuildBootstrapFramesWithTemplates(character, nil)
+}
+
+func BuildBootstrapFramesWithTemplates(character loginticket.Character, templates map[uint32]itemcatalog.Template) ([][]byte, error) {
+	infoRaw, err := worldproto.EncodeCharacterAdditionalInfo(bootstrapCharacterAdditionalInfoPacket(character, templates))
 	if err != nil {
 		return nil, err
 	}
 	frames := [][]byte{
 		worldproto.EncodeCharacterAdd(bootstrapCharacterAddPacket(character)),
 		infoRaw,
-		worldproto.EncodeCharacterUpdate(bootstrapCharacterUpdatePacket(character)),
+		worldproto.EncodeCharacterUpdate(bootstrapCharacterUpdatePacket(character, templates)),
 		worldproto.EncodePlayerPointChange(bootstrapPlayerPointChangePacket(character)),
 	}
 	for _, quickslot := range sortedBootstrapQuickslots(character.Quickslots) {
@@ -62,11 +67,11 @@ func bootstrapCharacterAddPacket(character loginticket.Character) worldproto.Cha
 	}
 }
 
-func bootstrapCharacterAdditionalInfoPacket(character loginticket.Character) worldproto.CharacterAdditionalInfoPacket {
+func bootstrapCharacterAdditionalInfoPacket(character loginticket.Character, templates map[uint32]itemcatalog.Template) worldproto.CharacterAdditionalInfoPacket {
 	return worldproto.CharacterAdditionalInfoPacket{
 		VID:       character.VID,
 		Name:      character.Name,
-		Parts:     bootstrapCharacterAppearanceParts(character),
+		Parts:     bootstrapCharacterAppearanceParts(character, templates),
 		Empire:    character.Empire,
 		GuildID:   character.GuildID,
 		Level:     uint32(character.Level),
@@ -76,10 +81,10 @@ func bootstrapCharacterAdditionalInfoPacket(character loginticket.Character) wor
 	}
 }
 
-func bootstrapCharacterUpdatePacket(character loginticket.Character) worldproto.CharacterUpdatePacket {
+func bootstrapCharacterUpdatePacket(character loginticket.Character, templates map[uint32]itemcatalog.Template) worldproto.CharacterUpdatePacket {
 	return worldproto.CharacterUpdatePacket{
 		VID:         character.VID,
-		Parts:       bootstrapCharacterAppearanceParts(character),
+		Parts:       bootstrapCharacterAppearanceParts(character, templates),
 		MovingSpeed: 150,
 		AttackSpeed: 100,
 		StateFlag:   2,
@@ -91,7 +96,7 @@ func bootstrapCharacterUpdatePacket(character loginticket.Character) worldproto.
 	}
 }
 
-func bootstrapCharacterAppearanceParts(character loginticket.Character) [worldproto.CharacterEquipmentPartCount]uint16 {
+func bootstrapCharacterAppearanceParts(character loginticket.Character, templates map[uint32]itemcatalog.Template) [worldproto.CharacterEquipmentPartCount]uint16 {
 	parts := [worldproto.CharacterEquipmentPartCount]uint16{character.MainPart, 0, 0, character.HairPart}
 	for _, instance := range character.Equipment {
 		if !instance.Equipped {
@@ -99,16 +104,28 @@ func bootstrapCharacterAppearanceParts(character loginticket.Character) [worldpr
 		}
 		switch instance.EquipSlot {
 		case inventory.EquipmentSlotBody:
-			parts[0] = uint16(instance.Vnum)
+			parts[0] = bootstrapEquipmentAppearanceVnum(instance, templates)
 		case inventory.EquipmentSlotWeapon:
-			parts[1] = uint16(instance.Vnum)
+			parts[1] = bootstrapEquipmentAppearanceVnum(instance, templates)
 		case inventory.EquipmentSlotHead:
-			parts[2] = uint16(instance.Vnum)
+			parts[2] = bootstrapEquipmentAppearanceVnum(instance, templates)
 		case inventory.EquipmentSlotHair:
-			parts[3] = uint16(instance.Vnum)
+			parts[3] = bootstrapEquipmentAppearanceVnum(instance, templates)
 		}
 	}
 	return parts
+}
+
+func bootstrapEquipmentAppearanceVnum(instance inventory.ItemInstance, templates map[uint32]itemcatalog.Template) uint16 {
+	template, ok := templates[instance.Vnum]
+	if !ok || template.AppearanceVnum == 0 || !itemcatalog.ValidTemplate(template) {
+		return uint16(instance.Vnum)
+	}
+	slot, ok := inventory.ParseEquipmentSlot(template.EquipSlot)
+	if !ok || slot != instance.EquipSlot {
+		return uint16(instance.Vnum)
+	}
+	return uint16(template.AppearanceVnum)
 }
 
 func bootstrapPlayerPointChangePacket(character loginticket.Character) worldproto.PlayerPointChangePacket {
