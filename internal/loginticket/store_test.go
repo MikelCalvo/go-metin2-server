@@ -648,6 +648,18 @@ func TestFileStoreValidateRejectsFilenameLoginKeyMismatch(t *testing.T) {
 	}
 }
 
+func TestFileStoreIssueRejectsDuplicateCharacterVIDs(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	ticket := Ticket{Login: "mkmk", LoginKey: 0x01020304, IssuedAt: time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC), Characters: []Character{
+		{ID: 1, VID: 0x01020304, Name: "MkmkWar"},
+		{ID: 2, VID: 0x01020304, Name: "MkmkNinja"},
+	}}
+
+	if err := store.Issue(ticket); !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for duplicate character vid, got %v", err)
+	}
+}
+
 func TestFileStoreIssueRejectsEmbeddedNULCharacterIdentity(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -664,6 +676,19 @@ func TestFileStoreIssueRejectsEmbeddedNULCharacterIdentity(t *testing.T) {
 				t.Fatalf("expected ErrInvalidTicket for embedded NUL %s, got %v", tc.name, err)
 			}
 		})
+	}
+}
+
+func TestFileStoreLoadRejectsDuplicateCharacterVIDs(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":"mkmk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[{"id":1,"vid":16909060,"name":"MkmkWar","inventory":[],"equipment":[],"quickslots":[]},{"id":2,"vid":16909060,"name":"MkmkNinja","inventory":[],"equipment":[],"quickslots":[]}]}`)
+	if err := os.WriteFile(store.ticketPath(0x01020304), raw, 0o644); err != nil {
+		t.Fatalf("write duplicate-vid ticket snapshot: %v", err)
+	}
+
+	_, err := store.Load("mkmk", 0x01020304)
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for duplicate character vid, got %v", err)
 	}
 }
 

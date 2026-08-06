@@ -484,6 +484,18 @@ func TestFileStoreRejectsDuplicateCharacterIDs(t *testing.T) {
 	}
 }
 
+func TestFileStoreRejectsDuplicateCharacterVIDs(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{
+		{ID: 1, VID: 0x01020304, Name: "MkmkWar"},
+		{ID: 2, VID: 0x01020304, Name: "MkmkNinja"},
+	}}
+
+	if err := store.Save(account); !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for duplicate character vid, got %v", err)
+	}
+}
+
 func TestFileStoreRejectsNonZeroCharactersWithBlankNames(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	cases := []struct {
@@ -632,6 +644,19 @@ func TestFileStoreLoadRejectsDuplicateCharacterIdentity(t *testing.T) {
 	_, err := store.Load("mkmk")
 	if !errors.Is(err, ErrInvalidAccount) {
 		t.Fatalf("expected ErrInvalidAccount for duplicate character identity, got %v", err)
+	}
+}
+
+func TestFileStoreLoadRejectsDuplicateCharacterVIDs(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":"mkmk","empire":2,"characters":[{"id":1,"vid":16909060,"name":"MkmkWar","inventory":[],"equipment":[],"quickslots":[]},{"id":2,"vid":16909060,"name":"MkmkNinja","inventory":[],"equipment":[],"quickslots":[]}]}`)
+	if err := os.WriteFile(store.accountPath("mkmk"), raw, 0o644); err != nil {
+		t.Fatalf("write duplicate-vid account snapshot: %v", err)
+	}
+
+	_, err := store.Load("mkmk")
+	if !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for duplicate character vid, got %v", err)
 	}
 }
 

@@ -928,6 +928,7 @@ func validateAccountUniqueInventorySlots(account Account) error {
 
 func validateUniqueCharacterIdentity(characters []loginticket.Character) error {
 	ids := make(map[uint32]string, len(characters))
+	vids := make(map[uint32]string, len(characters))
 	names := make(map[string]uint32, len(characters))
 	for _, character := range characters {
 		if character.ID == 0 {
@@ -953,6 +954,12 @@ func validateUniqueCharacterIdentity(characters []loginticket.Character) error {
 			return fmt.Errorf("%w: character id %d is used by %q and %q", ErrInvalidAccount, character.ID, previousName, character.Name)
 		}
 		ids[character.ID] = character.Name
+		if character.VID != 0 {
+			if previousName, ok := vids[character.VID]; ok {
+				return fmt.Errorf("%w: character vid %d is used by %q and %q", ErrInvalidAccount, character.VID, previousName, character.Name)
+			}
+			vids[character.VID] = character.Name
+		}
 
 		normalizedName := strings.ToLower(character.Name)
 		if previousID, ok := names[normalizedName]; ok {
