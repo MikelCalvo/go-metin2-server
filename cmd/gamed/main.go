@@ -149,6 +149,16 @@ func main() {
 		opsHandler,
 		func() any { return gameRuntime.StaticActorRespawns() },
 	)
+	opsHandler = ops.RegisterLocalStaticActorRespawnEndpoint(
+		opsHandler,
+		func(entityID uint64) (any, bool) {
+			respawn, ok := gameRuntime.StaticActorRespawn(entityID)
+			if !ok {
+				return nil, false
+			}
+			return respawn, true
+		},
+	)
 	opsHandler = ops.RegisterLocalSpawnGroupsEndpoint(
 		opsHandler,
 		func() any { return gameRuntime.SpawnGroups() },

@@ -795,6 +795,13 @@ func (r *gameRuntime) StaticActorRespawns() []StaticActorRespawnSnapshot {
 	return r.sharedWorld.StaticActorRespawns()
 }
 
+func (r *gameRuntime) StaticActorRespawn(entityID uint64) (StaticActorRespawnSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil {
+		return StaticActorRespawnSnapshot{}, false
+	}
+	return r.sharedWorld.StaticActorRespawn(entityID)
+}
+
 func (r *gameRuntime) InteractionVisibility() []CharacterInteractionVisibilitySnapshot {
 	if r == nil || r.sharedWorld == nil {
 		return nil

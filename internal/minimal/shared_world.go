@@ -842,10 +842,6 @@ func (r *sharedWorldRegistry) StaticActorRespawns() []StaticActorRespawnSnapshot
 	if len(r.staticActorCombatRespawnAt) == 0 {
 		return nil
 	}
-	now := time.Now()
-	if r.now != nil {
-		now = r.now()
-	}
 	entityIDs := make([]uint64, 0, len(r.staticActorCombatRespawnAt))
 	for entityID := range r.staticActorCombatRespawnAt {
 		entityIDs = append(entityIDs, entityID)
@@ -854,23 +850,51 @@ func (r *sharedWorldRegistry) StaticActorRespawns() []StaticActorRespawnSnapshot
 
 	respawns := make([]StaticActorRespawnSnapshot, 0, len(entityIDs))
 	for _, entityID := range entityIDs {
-		actor, ok := r.entities.StaticActor(entityID)
+		respawn, ok := r.staticActorRespawnLocked(entityID)
 		if !ok {
 			continue
 		}
-		readyAt := r.staticActorCombatRespawnAt[entityID]
-		remaining := readyAt.Sub(now).Milliseconds()
-		if remaining < 0 {
-			remaining = 0
-		}
-		respawns = append(respawns, StaticActorRespawnSnapshot{
-			EntityID:    entityID,
-			ReadyAt:     readyAt,
-			RemainingMs: remaining,
-			Actor:       r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor)),
-		})
+		respawns = append(respawns, respawn)
 	}
 	return respawns
+}
+
+func (r *sharedWorldRegistry) StaticActorRespawn(entityID uint64) (StaticActorRespawnSnapshot, bool) {
+	if r == nil || r.entities == nil || entityID == 0 {
+		return StaticActorRespawnSnapshot{}, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.staticActorRespawnLocked(entityID)
+}
+
+func (r *sharedWorldRegistry) staticActorRespawnLocked(entityID uint64) (StaticActorRespawnSnapshot, bool) {
+	if r == nil || r.entities == nil || entityID == 0 {
+		return StaticActorRespawnSnapshot{}, false
+	}
+	readyAt, ok := r.staticActorCombatRespawnAt[entityID]
+	if !ok {
+		return StaticActorRespawnSnapshot{}, false
+	}
+	actor, ok := r.entities.StaticActor(entityID)
+	if !ok {
+		return StaticActorRespawnSnapshot{}, false
+	}
+	now := time.Now()
+	if r.now != nil {
+		now = r.now()
+	}
+	remaining := readyAt.Sub(now).Milliseconds()
+	if remaining < 0 {
+		remaining = 0
+	}
+	return StaticActorRespawnSnapshot{
+		EntityID:    entityID,
+		ReadyAt:     readyAt,
+		RemainingMs: remaining,
+		Actor:       r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor)),
+	}, true
 }
 
 func (r *sharedWorldRegistry) combatTargetSnapshotLocked(entityID uint64) (CombatTargetSnapshot, bool) {

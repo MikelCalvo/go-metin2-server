@@ -564,10 +564,10 @@ Both responses reuse the runtime debug snapshot shape documented in `spec/protoc
 The embedded `subject` field uses the same effective connected-character snapshot shape exposed by `/local/players`, so combat-target debugging can verify the current owner location/dead-state without a second lookup.
 Both endpoints are loopback-only and read-only. The exact-name endpoint returns `404` when the character is not connected, no longer has a live session hook, has no active target, or the target no longer resolves through the current visibility/runtime combat rules; the list endpoint omits unresolved/stale selections instead of leaking hidden or invalid target data.
 
-### `GET /local/static-actor-respawns`
+### `GET /local/static-actor-respawns` and `GET /local/static-actor-respawns/{entity_id}`
 
 Returns the deterministic list of pending server-driven static-actor respawn timers for runtime-owned dead practice mobs.
-This endpoint is loopback-only, read-only, rejects non-`GET` methods with `405`, and is intended for QA/debugging of the dead interval frozen in `spec/protocol/non-player-death-respawn-bootstrap.md`.
+These endpoints are loopback-only, read-only, reject non-`GET` methods with `405`, and are intended for QA/debugging of the dead interval frozen in `spec/protocol/non-player-death-respawn-bootstrap.md`.
 
 Each row exposes:
 
@@ -578,6 +578,7 @@ Each row exposes:
 
 Rows are sorted by `entity_id`.
 Once `FlushServerFrames()` runs after a due timer and the respawn rebuild is emitted, that actor disappears from this snapshot.
+The exact-entity endpoint returns the same row shape for one pending respawn; invalid or missing entity IDs return `400`, and well-formed but absent/already-flushed respawn IDs return `404`.
 
 ### `GET /local/spawn-groups`
 

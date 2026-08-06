@@ -3384,6 +3384,103 @@ func TestLocalStaticActorRespawnsEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalStaticActorRespawnEndpointReturnsExactSnapshotForLoopbackGet(t *testing.T) {
+	snapshot := map[string]any{"entity_id": uint64(33), "ready_at": "2026-07-25T12:00:00Z", "remaining_ms": int64(1200), "actor": map[string]any{"entity_id": uint64(33), "name": "RespawnMob", "dead": true}}
+	mux := RegisterLocalStaticActorRespawnEndpoint(NewPprofMux("gamed"), func(entityID uint64) (any, bool) {
+		if entityID != 33 {
+			return nil, false
+		}
+		return snapshot, true
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actor-respawns/33", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"entity_id":33`) || !strings.Contains(string(body), `"remaining_ms":1200`) || !strings.Contains(string(body), `"actor"`) || !strings.Contains(string(body), `"dead":true`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalStaticActorRespawnEndpointRejectsInvalidEntityID(t *testing.T) {
+	mux := RegisterLocalStaticActorRespawnEndpoint(NewPprofMux("gamed"), func(uint64) (any, bool) {
+		t.Fatal("static-actor respawn lookup should not be called for invalid entity IDs")
+		return nil, false
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actor-respawns/not-an-id", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestLocalStaticActorRespawnEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	mux := RegisterLocalStaticActorRespawnEndpoint(NewPprofMux("gamed"), func(uint64) (any, bool) {
+		t.Fatal("static-actor respawn lookup should not be called for non-loopback callers")
+		return nil, false
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actor-respawns/33", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+}
+
+func TestLocalStaticActorRespawnEndpointRejectsWrongMethod(t *testing.T) {
+	mux := RegisterLocalStaticActorRespawnEndpoint(NewPprofMux("gamed"), func(uint64) (any, bool) {
+		t.Fatal("static-actor respawn lookup should not be called for wrong methods")
+		return nil, false
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actor-respawns/33", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+}
+
+func TestLocalStaticActorRespawnEndpointReturnsNotFoundForMissingEntityID(t *testing.T) {
+	mux := RegisterLocalStaticActorRespawnEndpoint(NewPprofMux("gamed"), func(uint64) (any, bool) {
+		return nil, false
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actor-respawns/33", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
 func TestLocalSpawnGroupsEndpointReturnsJSONSnapshotsForLoopbackGet(t *testing.T) {
 	snapshotter := &stubListSnapshotter{snapshots: []map[string]any{{"entity_id": uint64(44), "name": "Practice Wolf", "spawn_group_ref": "practice.wolf_1", "combat_profile": "practice_mob"}}}
 	mux := RegisterLocalSpawnGroupsEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
