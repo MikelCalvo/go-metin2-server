@@ -86,6 +86,26 @@ What is frozen now about those fields:
 
 This exact codec ownership matters because the next flow slices no longer need to guess the attack header or open-code a one-off byte layout inside `internal/minimal`.
 
+## First owned ranged-shot ingress guard
+
+Client and legacy-oracle source inspection also shows a separate client -> server `SHOOT` request in the same combat family:
+- name: `SHOOT`
+- direction: client -> server
+- phase: `GAME`
+- header: `0x0403`
+- payload length: `1`
+- payload: `uint8 shoot_type`
+
+The bootstrap runtime now owns this packet only as a safe ingress guard, not as ranged combat behavior.
+The `GAME` dispatcher decodes the fixed-width packet and can route it through a narrow handler seam, but the shipped minimal runtime leaves it unsupported and fail-closed:
+- no target HP mutation
+- no selected-target rewrite
+- no normal-attack cadence change
+- no self response frame
+- no queued peer frame
+
+This prevents a real client or packet harness from turning a known combat-family request into an unexpected-packet disconnect/error while keeping projectile, bow, skill, and hit-resolution policy out of this slice.
+
 ## Active-target prerequisite
 
 The first owned attack-intent path is intentionally target-relative rather than free-form.
@@ -304,6 +324,7 @@ This slice does **not** yet freeze:
 - broad authored combat-profile fields beyond the current runtime registry seam
 - broader attack-speed rules beyond the first fixed session-local `250ms` normal-attack cadence window
 - miss/crit/block results
+- ranged `SHOOT` gameplay beyond the current decode-and-fail-closed guard
 - the broader server-driven respawn/delete-readd choreography details beyond the already-owned fixed timed rebuild that the separate death / respawn doc now freezes
 - broader hostile retaliation beyond the current owner-side self-only point-loss surfaces: one immediate piggyback on accepted practice-mob hits plus one sustained fixed-delay delayed server-origin follow-up cadence at a time
 - broader player-death / respawn semantics or broader non-combat gameplay gating for zero-HP owners after that floor is reached beyond the self-only `GC DEAD(owner_vid)` signal frozen in `player-death-bootstrap.md`
@@ -343,6 +364,7 @@ After this document lands, the repository should be able to say:
 - once that retaliation floor has already reached `0`, later same-owner combat `TARGET` and normal `ATTACK` attempts against still-engaged content practice mobs now fail closed too, so the current hostility seam no longer lets a zero-HP owner keep reacquiring or advancing dummy combat state while broader player-death semantics are still pending
 - accepted hits while one delayed follow-up beat is already pending do not stack, accelerate, or reset the current cadence timer; the runtime keeps only one queued delayed beat outstanding at a time, so a later accepted hit before the first due time keeps the original due time and produces only one delayed `PLAYER_POINT_CHANGE` when it fires
 - same-target normal `ATTACK` attempts denied inside that `250ms` cadence window stay fully silent: they do not refresh target HP, do not append immediate retaliation, and do not create or reset delayed retaliation work
+- client `SHOOT(0x0403)` is now codec- and dispatch-owned as an unsupported ranged-shot guard; the minimal runtime decodes it in `GAME` but returns no frames and leaves selected-target HP/cadence/peer queues unchanged
 - if that engaged owner loses live shared-world ownership, clears or replaces target intent, or the engaged actor dies / rebuilds before a pending delay expires, the queued follow-up beat fails closed and the current cadence stops instead of claiming broader AI cleanup
 - when the engaged actor dies, the killing hit does not append an extra owner-side retaliation point-change, any pending delayed follow-up beat is canceled before respawn, and the respawn rebuild does not resurrect stale retaliation work without a fresh target / accepted hit
 - same-socket `/quit`, `/logout`, and `/phase_select` now all count as immediate owner-disappearance boundaries for that queued delayed cadence, and abrupt session close does too: each path removes the owner from shared-world visibility, cancels any pending delayed beat, and releases the same still-live practice mob right away; `/quit` still remains in `GAME` just long enough to return its self `CHAT_TYPE_COMMAND quit` delivery, `/logout` continues toward close, `/phase_select` returns to character select while any later fresh bootstrap still requires a new `TARGET`, and close tears the session down without a compensating gameplay packet

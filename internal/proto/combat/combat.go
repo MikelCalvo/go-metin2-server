@@ -9,6 +9,7 @@ import (
 
 const (
 	HeaderClientAttack     uint16 = 0x0401
+	HeaderClientShoot      uint16 = 0x0403
 	HeaderServerDamageInfo uint16 = 0x0410
 	HeaderClientTarget     uint16 = 0x0A01
 	HeaderServerTarget     uint16 = 0x0A10
@@ -16,6 +17,7 @@ const (
 	ClientAttackTypeNormal uint8 = 0
 
 	clientAttackPayloadSize     = 7
+	clientShootPayloadSize      = 1
 	clientTargetPayloadSize     = 4
 	serverDamageInfoPayloadSize = 9
 	serverTargetPayloadSize     = 5
@@ -31,6 +33,10 @@ type ClientAttackPacket struct {
 	TargetVID    uint32
 	CRCProcPiece uint8
 	CRCFilePiece uint8
+}
+
+type ClientShootPacket struct {
+	ShootType uint8
 }
 
 type ClientTargetPacket struct {
@@ -70,6 +76,21 @@ func DecodeClientAttack(f frame.Frame) (ClientAttackPacket, error) {
 		CRCProcPiece: f.Payload[5],
 		CRCFilePiece: f.Payload[6],
 	}, nil
+}
+
+func EncodeClientShoot(packet ClientShootPacket) []byte {
+	payload := []byte{packet.ShootType}
+	return frame.Encode(HeaderClientShoot, payload)
+}
+
+func DecodeClientShoot(f frame.Frame) (ClientShootPacket, error) {
+	if f.Header != HeaderClientShoot {
+		return ClientShootPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientShootPayloadSize {
+		return ClientShootPacket{}, ErrInvalidPayload
+	}
+	return ClientShootPacket{ShootType: f.Payload[0]}, nil
 }
 
 func EncodeClientTarget(packet ClientTargetPacket) []byte {

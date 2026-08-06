@@ -3873,6 +3873,67 @@ func TestNewGameSessionFactoryNormalAttackCadenceRejectsImmediateRepeatWithoutMu
 	}
 }
 
+func TestNewGameSessionFactoryShootIntentFailsClosedWithoutMutatingSelectedPracticeTarget(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	attacker := peerVisibilityCharacter("ShootAttacker", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "shoot-attacker", 0x11111111, attacker)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "ShootNoopDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "shoot-attacker", 0x11111111)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for attacker with visible training dummy, got %d", len(enterOut))
+	}
+	targetVID := uint32(actor.EntityID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error before shoot no-op test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before shoot no-op test, got %d", len(selectOut))
+	}
+	selected, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, selectOut[0]))
+	if err != nil {
+		t.Fatalf("decode selected target before shoot no-op test: %v", err)
+	}
+	if selected.TargetVID != targetVID || selected.HPPercent != 100 {
+		t.Fatalf("expected fresh selected target at full HP before shoot no-op test, got %+v", selected)
+	}
+
+	shootOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientShoot(combatproto.ClientShootPacket{ShootType: 0x83})))
+	if err != nil {
+		t.Fatalf("unexpected unsupported shoot error: %v", err)
+	}
+	if len(shootOut) != 0 {
+		t.Fatalf("expected unsupported shoot to fail closed with no frames, got %d", len(shootOut))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected unsupported shoot to queue no server frames, got %d", len(queued))
+	}
+
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected normal attack after unsupported shoot: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected normal attack after unsupported shoot to return target refresh plus damage-info, got %d", len(attackOut))
+	}
+	refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[0]))
+	if err != nil {
+		t.Fatalf("decode normal attack refresh after unsupported shoot: %v", err)
+	}
+	if refresh.TargetVID != targetVID || refresh.HPPercent != 90 {
+		t.Fatalf("expected unsupported shoot not to mutate target HP before normal attack, got %+v", refresh)
+	}
+}
+
 func TestNewGameSessionFactoryNormalAttackCadenceSurvivesAcceptedRetarget(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	attacker := peerVisibilityCharacter("RetargetCadence", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

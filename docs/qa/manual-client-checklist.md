@@ -696,6 +696,8 @@ Run this only when the target build has a visible authored `training_dummy` near
 - [ ] With a second living visible client watching the same standalone bootstrap dummy, confirm that watcher also sees the same plain hit-effect companion for the hit, without receiving the attacker's self-only target HP refresh
 - [ ] Clear the selected target in the client UI, then try to attack the old dummy without reselecting it if the packet harness/client path allows it
 - [ ] Confirm the old-target attack fails closed with no HP refresh or damage-info frame until a fresh non-zero `TARGET` selection succeeds again
+- [ ] If a packet harness or bow/ranged client path can emit `SHOOT(0x0403)`, send one unsupported shot while the dummy is still selected
+- [ ] Confirm that unsupported shot does not disconnect the session, emits no visible combat frames, queues no peer frames, and does not change the selected dummy's HP; the next ordinary accepted normal `ATTACK` should still move the dummy from its previous HP to the next expected value
 - [ ] If loopback ops access is available, query the same combat-target endpoint again and confirm `hp_percent` reflects the damaged runtime-owned dummy instead of resetting to `100`
 - [ ] Perform at least one more accepted normal attack
 - [ ] Confirm the selected target HP display steps down again instead of bouncing back to full on every hit
@@ -705,6 +707,7 @@ Run this only when the target build has a visible authored `training_dummy` near
 Expected result:
 - repeated accepted hits against the same selected dummy decrement HP in deterministic bootstrap-sized steps
 - the client-visible feedback is still narrow: the attacker receives selected-target refresh plus the standalone `training_dummy` hit-effect companion, and visible live peers receive only the matching hit-effect companion rather than the attacker's target HP refresh
+- the known client `SHOOT` combat-family packet is only a safe decode-and-fail-closed guard in this slice; ranged/projectile hit resolution remains out of scope
 - dummy hits do not spend items, grant items, mutate equipment, or alter saved player progression/state by themselves
 - optional loopback combat-target snapshots are read-only debugging aids; they must reflect the same selected-target runtime state that the client sees, not introduce another authoritative combat path
 

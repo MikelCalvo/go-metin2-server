@@ -34,6 +34,8 @@ type HandleTargetFunc func(combatproto.ClientTargetPacket) TargetResult
 
 type HandleAttackFunc func(combatproto.ClientAttackPacket) AttackResult
 
+type HandleShootFunc func(combatproto.ClientShootPacket) ShootResult
+
 type HandleItemUseFunc func(itemproto.ClientUsePacket) ItemUseResult
 
 type HandleItemUseToItemFunc func(itemproto.ClientUseToItemPacket) ItemUseToItemResult
@@ -70,6 +72,7 @@ type Config struct {
 	HandleInteraction   HandleInteractionFunc
 	HandleTarget        HandleTargetFunc
 	HandleAttack        HandleAttackFunc
+	HandleShoot         HandleShootFunc
 	HandleItemUse       HandleItemUseFunc
 	HandleItemUseToItem HandleItemUseToItemFunc
 	HandleItemDrop      HandleItemDropFunc
@@ -121,6 +124,11 @@ type TargetResult struct {
 }
 
 type AttackResult struct {
+	Accepted bool
+	Frames   [][]byte
+}
+
+type ShootResult struct {
 	Accepted bool
 	Frames   [][]byte
 }
@@ -179,6 +187,7 @@ type Flow struct {
 	handleInteraction   HandleInteractionFunc
 	handleTarget        HandleTargetFunc
 	handleAttack        HandleAttackFunc
+	handleShoot         HandleShootFunc
 	handleItemUse       HandleItemUseFunc
 	handleItemUseToItem HandleItemUseToItemFunc
 	handleItemDrop      HandleItemDropFunc
@@ -223,6 +232,10 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 	attackHandler := cfg.HandleAttack
 	if attackHandler == nil {
 		attackHandler = func(combatproto.ClientAttackPacket) AttackResult { return AttackResult{Accepted: false} }
+	}
+	shootHandler := cfg.HandleShoot
+	if shootHandler == nil {
+		shootHandler = func(combatproto.ClientShootPacket) ShootResult { return ShootResult{Accepted: false} }
 	}
 	itemUseHandler := cfg.HandleItemUse
 	if itemUseHandler == nil {
@@ -289,6 +302,7 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 		handleInteraction:   interactionHandler,
 		handleTarget:        targetHandler,
 		handleAttack:        attackHandler,
+		handleShoot:         shootHandler,
 		handleItemUse:       itemUseHandler,
 		handleItemUseToItem: itemUseToItemHandler,
 		handleItemDrop:      itemDropHandler,
@@ -399,6 +413,16 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			return nil, nil
 		}
 		result := f.handleAttack(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return result.Frames, nil
+	case combatproto.HeaderClientShoot:
+		packet, err := combatproto.DecodeClientShoot(in)
+		if err != nil {
+			return nil, err
+		}
+		result := f.handleShoot(packet)
 		if !result.Accepted {
 			return nil, nil
 		}
