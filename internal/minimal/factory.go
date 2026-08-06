@@ -3484,7 +3484,23 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					previousSelected := selectedPlayer.LiveCharacter()
 					previousQuickslots := selectedPlayer.LiveQuickslots()
-					result, ok := selectedPlayer.SetQuickslot(packet.Position, loginticket.Quickslot{Type: packet.Slot.Type, Slot: packet.Slot.Position})
+					quickslot := loginticket.Quickslot{Type: packet.Slot.Type, Slot: packet.Slot.Position}
+					var result loginticket.Quickslot
+					if packet.Slot.Type == quickslotproto.TypeItem {
+						if packet.Slot.Position >= uint8(inventory.CarriedInventorySlotCount) {
+							return gameflow.QuickslotResult{Accepted: false}
+						}
+						template, resolved := runtime.resolveRuntimeItemTemplate(selectedPlayer, inventory.SlotIndex(packet.Slot.Position))
+						if resolved {
+							result, ok = selectedPlayer.SetQuickslotWithTemplate(packet.Position, quickslot, template)
+						} else if runtime.itemTemplatesAuthored {
+							return gameflow.QuickslotResult{Accepted: false}
+						} else {
+							result, ok = selectedPlayer.SetQuickslot(packet.Position, quickslot)
+						}
+					} else {
+						result, ok = selectedPlayer.SetQuickslot(packet.Position, quickslot)
+					}
 					if !ok {
 						return gameflow.QuickslotResult{Accepted: false}
 					}

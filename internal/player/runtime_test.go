@@ -58,6 +58,65 @@ func TestRuntimeSetQuickslotRejectsTypeNoneWithPayloadWithoutDeletingExisting(t 
 	}
 }
 
+func TestRuntimeSetQuickslotWithTemplateRejectsMismatchedOrOverMaxItemMetadata(t *testing.T) {
+	character := loginticket.Character{
+		Inventory:  []inventory.ItemInstance{{ID: 101, Vnum: 27001, Count: 2, Slot: 5}},
+		Quickslots: []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5}},
+	}
+	tests := []struct {
+		name     string
+		template itemcatalog.Template
+	}{
+		{
+			name:     "mismatched vnum",
+			template: itemcatalog.Template{Vnum: 27002, Name: "Wrong Potion", Stackable: true, MaxCount: 200},
+		},
+		{
+			name:     "over authored max",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Single Potion", Stackable: false, MaxCount: 1},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runtime := NewRuntime(character, SessionLink{Login: "quickslot-template"})
+			result, ok := runtime.SetQuickslotWithTemplate(2, loginticket.Quickslot{Type: quickslotproto.TypeItem, Slot: 5}, tt.template)
+			if ok {
+				t.Fatalf("expected template-backed quickslot add to reject %s, got %+v", tt.name, result)
+			}
+			if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, character.Quickslots) {
+				t.Fatalf("%s template-backed quickslot add mutated live quickslots: got %+v want %+v", tt.name, got, character.Quickslots)
+			}
+		})
+	}
+}
+
+func TestRuntimeSetQuickslotWithTemplateAcceptsMatchingItemMetadata(t *testing.T) {
+	character := loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 101, Vnum: 27001, Count: 2, Slot: 5}},
+		Quickslots: []loginticket.Quickslot{
+			{Position: 3, Type: quickslotproto.TypeItem, Slot: 5},
+			{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+		},
+	}
+	runtime := NewRuntime(character, SessionLink{Login: "quickslot-template"})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+
+	result, ok := runtime.SetQuickslotWithTemplate(2, loginticket.Quickslot{Type: quickslotproto.TypeItem, Slot: 5}, template)
+	if !ok {
+		t.Fatal("expected matching template-backed quickslot add to be accepted")
+	}
+	if result != (loginticket.Quickslot{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}) {
+		t.Fatalf("unexpected accepted template-backed quickslot result: %+v", result)
+	}
+	want := []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected matching template-backed quickslots: got %+v want %+v", got, want)
+	}
+}
+
 func TestRuntimeSeparatesLivePositionFromPersistedSnapshot(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:       0x01030102,

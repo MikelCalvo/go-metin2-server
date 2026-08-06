@@ -299,6 +299,31 @@ func (r *Runtime) SetQuickslot(position uint8, slot loginticket.Quickslot) (logi
 	return result, true
 }
 
+func (r *Runtime) SetQuickslotWithTemplate(position uint8, slot loginticket.Quickslot, template itemcatalog.Template) (loginticket.Quickslot, bool) {
+	if slot.Type != quickslotproto.TypeItem {
+		return r.SetQuickslot(position, slot)
+	}
+	if r == nil || !itemcatalog.ValidTemplate(template) || template.Vnum == 0 || !validQuickslotPosition(position) || !validQuickslotTuple(slot) {
+		return loginticket.Quickslot{}, false
+	}
+	itemSlot := inventory.SlotIndex(slot.Slot)
+	if countInventorySlotOccupancy(r.liveInventory, itemSlot) != 1 {
+		return loginticket.Quickslot{}, false
+	}
+	itemIndex := findInventorySlot(r.liveInventory, itemSlot)
+	if itemIndex < 0 {
+		return loginticket.Quickslot{}, false
+	}
+	item := r.liveInventory[itemIndex]
+	if item.Equipped || item.Locked || item.Vnum != template.Vnum || item.Count == 0 || item.Count > template.MaxCount {
+		return loginticket.Quickslot{}, false
+	}
+	if err := item.Validate(); err != nil {
+		return loginticket.Quickslot{}, false
+	}
+	return r.SetQuickslot(position, slot)
+}
+
 func (r *Runtime) DeleteQuickslot(position uint8) (loginticket.Quickslot, bool) {
 	if r == nil || !validQuickslotPosition(position) {
 		return loginticket.Quickslot{}, false

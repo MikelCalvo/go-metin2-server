@@ -9,6 +9,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	contentbundle "github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
+	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
@@ -437,6 +438,86 @@ func TestGameSessionFlowQuickslotAddRejectsDuplicateItemSlotOccupancyWithoutMuta
 	}
 	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
 		t.Fatalf("duplicate-slot quickslot add mutated persisted inventory: got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+}
+
+func TestGameSessionFlowQuickslotAddRejectsMissingAuthoredItemTemplateWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("QuickslotMissingTemplate", 0x01030592, 0x02040592, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 461, Vnum: 27099, Count: 2, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "quickslot-missing-template", 0x50505092, owner)
+	if err := accounts.Save(accountstore.Account{Login: "quickslot-missing-template", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed missing-template quickslot add account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Known Potion", Stackable: true, MaxCount: 200}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected missing-template quickslot add runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "quickslot-missing-template", 0x50505092)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, quickslotproto.EncodeClientAdd(quickslotproto.ClientAddPacket{Position: 2, Slot: quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 5}})))
+	if err != nil {
+		t.Fatalf("unexpected missing-template quickslot add packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected missing-template quickslot add to emit no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after missing-template quickslot add rejection, got %d", len(queued))
+	}
+	persisted, err := accounts.Load("quickslot-missing-template")
+	if err != nil {
+		t.Fatalf("load missing-template quickslot add account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("missing-template quickslot add mutated persisted quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("missing-template quickslot add mutated inventory: got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+}
+
+func TestGameSessionFlowQuickslotAddRejectsOverTemplateMaxItemWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("QuickslotOverTemplateMax", 0x01030593, 0x02040593, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 471, Vnum: 27001, Count: 201, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "quickslot-over-template-max", 0x50505093, owner)
+	if err := accounts.Save(accountstore.Account{Login: "quickslot-over-template-max", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed over-template-max quickslot add account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Bounded Potion", Stackable: true, MaxCount: 200}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected over-template-max quickslot add runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "quickslot-over-template-max", 0x50505093)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, quickslotproto.EncodeClientAdd(quickslotproto.ClientAddPacket{Position: 2, Slot: quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 5}})))
+	if err != nil {
+		t.Fatalf("unexpected over-template-max quickslot add packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected over-template-max quickslot add to emit no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after over-template-max quickslot add rejection, got %d", len(queued))
+	}
+	persisted, err := accounts.Load("quickslot-over-template-max")
+	if err != nil {
+		t.Fatalf("load over-template-max quickslot add account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("over-template-max quickslot add mutated persisted quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("over-template-max quickslot add mutated inventory: got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
 	}
 }
 
