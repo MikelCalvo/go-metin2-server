@@ -1051,6 +1051,26 @@ func TestFileStoreBackupToRejectsMalformedActiveManifestBeforeCreatingDestinatio
 	}
 }
 
+func TestFileStoreBackupToRejectsDanglingActiveManifestSymlinkBeforeCreatingDestination(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	if err := store.Save(Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save account: %v", err)
+	}
+	missingTarget := filepath.Join(t.TempDir(), "missing-account-manifest.json")
+	if err := os.Symlink(missingTarget, filepath.Join(store.dir, BackupManifestFilename)); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "account-backup")
+
+	err := store.BackupTo(backupDir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for dangling manifest symlink, got %v", err)
+	}
+	if _, statErr := os.Stat(backupDir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected rejected backup not to create destination, stat err=%v", statErr)
+	}
+}
+
 func TestFileStoreValidateRejectsStaleBackupManifest(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}
@@ -1088,6 +1108,25 @@ func TestFileStoreValidateRejectsMalformedBackupManifest(t *testing.T) {
 	_, err := store.Validate()
 	if !errors.Is(err, ErrInvalidBackupManifest) {
 		t.Fatalf("expected ErrInvalidBackupManifest for malformed active manifest, got %v", err)
+	}
+}
+
+func TestFileStoreValidateRejectsDanglingActiveBackupManifestSymlink(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	if err := store.Save(Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save account: %v", err)
+	}
+	missingTarget := filepath.Join(t.TempDir(), "missing-account-manifest.json")
+	if err := os.Symlink(missingTarget, filepath.Join(store.dir, BackupManifestFilename)); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	if err := store.validateActiveBackupManifest(); !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected active manifest preflight to detect dangling symlink, got %v", err)
+	}
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for dangling active manifest symlink, got %v", err)
 	}
 }
 

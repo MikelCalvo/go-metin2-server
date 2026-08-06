@@ -482,6 +482,27 @@ func TestFileStoreBackupToRejectsStaleActiveBackupManifestBeforeCreatingDestinat
 	}
 }
 
+func TestFileStoreBackupToRejectsDanglingActiveBackupManifestSymlinkBeforeCreatingDestination(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save item template snapshot: %v", err)
+	}
+	missingTarget := filepath.Join(t.TempDir(), "missing-item-template-manifest.json")
+	if err := os.Symlink(missingTarget, filepath.Join(filepath.Dir(path), BackupManifestFilename)); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+
+	err := store.BackupTo(backupDir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest before backup, got %v", err)
+	}
+	if _, statErr := os.Stat(backupDir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected rejected backup not to create destination, stat err=%v", statErr)
+	}
+}
+
 func TestFileStoreValidateRejectsMalformedBackupManifest(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)
@@ -498,6 +519,26 @@ func TestFileStoreValidateRejectsMalformedBackupManifest(t *testing.T) {
 	_, err := store.Validate()
 	if !errors.Is(err, ErrInvalidBackupManifest) {
 		t.Fatalf("expected ErrInvalidBackupManifest for malformed active manifest, got %v", err)
+	}
+}
+
+func TestFileStoreValidateRejectsDanglingActiveBackupManifestSymlink(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save item template snapshot: %v", err)
+	}
+	missingTarget := filepath.Join(t.TempDir(), "missing-item-template-manifest.json")
+	if err := os.Symlink(missingTarget, filepath.Join(filepath.Dir(path), BackupManifestFilename)); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	if err := store.validateActiveBackupManifest(); !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected active manifest preflight to detect dangling symlink, got %v", err)
+	}
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for dangling active manifest symlink, got %v", err)
 	}
 }
 

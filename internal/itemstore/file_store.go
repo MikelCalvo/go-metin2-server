@@ -92,7 +92,7 @@ func (s *FileStore) validateActiveBackupManifest() error {
 	}
 	storeDir := filepath.Dir(s.path)
 	manifestPath := filepath.Join(storeDir, BackupManifestFilename)
-	if _, err := os.Stat(manifestPath); err != nil {
+	if _, err := os.Lstat(manifestPath); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
