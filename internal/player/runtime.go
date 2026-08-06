@@ -1035,8 +1035,8 @@ func (r *Runtime) UseItemRejectText(slot inventory.SlotIndex, template itemcatal
 	return template.UseRejectText, true
 }
 
-func (r *Runtime) GiveRejectText(slot inventory.SlotIndex, template itemcatalog.Template) (string, bool) {
-	if r == nil || template.GiveRejectText == "" || !template.AntiGive || slot >= inventory.CarriedInventorySlotCount || !itemcatalog.ValidTemplate(template) {
+func (r *Runtime) GiveRejectText(slot inventory.SlotIndex, count uint16, template itemcatalog.Template) (string, bool) {
+	if r == nil || template.GiveRejectText == "" || !template.AntiGive || slot >= inventory.CarriedInventorySlotCount || count == 0 || !itemcatalog.ValidTemplate(template) {
 		return "", false
 	}
 	if countInventorySlotOccupancy(r.liveInventory, slot) != 1 {
@@ -1047,7 +1047,7 @@ func (r *Runtime) GiveRejectText(slot inventory.SlotIndex, template itemcatalog.
 		return "", false
 	}
 	item := r.liveInventory[index]
-	if item.Equipped || item.Locked || item.Vnum != template.Vnum || item.Count == 0 || item.Count > template.MaxCount {
+	if item.Equipped || item.Locked || item.Vnum != template.Vnum || item.Count == 0 || item.Count > template.MaxCount || count > item.Count {
 		return "", false
 	}
 	if err := item.Validate(); err != nil {

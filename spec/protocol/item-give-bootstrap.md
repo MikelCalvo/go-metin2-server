@@ -49,6 +49,7 @@ There is one owned guard-feedback exception. When all of these are true:
 - the carried item resolves through the loaded item-template snapshot
 - the template `vnum` matches the carried item and validates normally
 - the live carried item is unlocked, well-formed, unique in that carried cell, and its live count does not exceed `template.max_count`
+- the requested `count` is non-zero and does not exceed the live carried stack count
 - the template authors `anti_give = true`
 - the template authors non-empty `give_reject_message`
 
@@ -61,7 +62,7 @@ That response is deliberately not a transfer attempt. It still performs no inven
 
 Templates that author `give_reject_message` without `anti_give` are invalid at the item-template store boundary, and embedded NUL bytes in the message fail closed before runtime boot.
 
-This keeps accidental client attempts fail-closed instead of falling into incomplete item-transfer behavior while allowing authored `anti_give` items to explain the rejection.
+Zero-count or oversized-count give attempts remain ordinary no-frame/no-mutation rejections even when the item template authors `anti_give` plus `give_reject_message`. This keeps accidental client attempts fail-closed instead of falling into incomplete item-transfer behavior while allowing valid-count authored `anti_give` items to explain the rejection.
 
 ## Deferred behavior
 
@@ -81,5 +82,5 @@ Later slices must write a new contract before broadening this packet into real g
 - `internal/proto/item` freezes `ITEM_GIVE` encode/decode round trips plus unexpected-header and invalid-payload rejection.
 - `internal/game` freezes `GAME`-phase dispatch to a handler hook, with denied results returning no frames.
 - `internal/itemstore` freezes `give_reject_message` round-trip and fail-closed validation: it is valid only with `anti_give` and rejects embedded NUL bytes.
-- `internal/player` freezes the metadata-driven, no-mutation `anti_give` rejection lookup.
-- `internal/minimal` freezes the shipped runtime fail-closed behavior with persisted inventory and quickslots unchanged after an `ITEM_GIVE` packet, plus the self-only `CHAT_TYPE_INFO` rejection frame when the carried item's template authors `anti_give` and `give_reject_message`.
+- `internal/player` freezes the metadata-driven, no-mutation `anti_give` rejection lookup, including the non-zero / not-over-stack requested-count guard.
+- `internal/minimal` freezes the shipped runtime fail-closed behavior with persisted inventory and quickslots unchanged after an `ITEM_GIVE` packet, plus the self-only `CHAT_TYPE_INFO` rejection frame when the carried item's template authors `anti_give` and `give_reject_message` and the requested count is valid for the live stack.

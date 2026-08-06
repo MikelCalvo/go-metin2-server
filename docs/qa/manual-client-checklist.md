@@ -402,7 +402,8 @@ Run this only if packet tooling or the client build can emit an item-give attemp
 
 Expected result:
 - ordinary `ITEM_GIVE` attempts are parsed by the game socket but remain unsupported in the shipped bootstrap runtime: no response frames are visible, no carried inventory/equipment/quickslot state changes, no ground actor appears, no peer receives item-transfer frames, and reconnect/operator inspection shows the selected-character snapshot unchanged
-- an `anti_give` carried item with `give_reject_message` returns exactly one self-only `CHAT_TYPE_INFO` message using that authored text, while still leaving inventory, equipment, quickslots, peers, ground handles, and persistence unchanged
+- an `anti_give` carried item with `give_reject_message` returns exactly one self-only `CHAT_TYPE_INFO` message using that authored text only when the requested count is non-zero and does not exceed the live carried stack, while still leaving inventory, equipment, quickslots, peers, ground handles, and persistence unchanged
+- zero-count or oversized-count `ITEM_GIVE` attempts remain no-frame/no-mutation rejections even when the carried item authors `anti_give` plus `give_reject_message`
 - item-template validation rejects `give_reject_message` if it contains embedded NUL bytes or is authored without `anti_give`, so malformed give-rejection text should fail before gameplay testing starts
 - this is a fail-closed guard, not a completed transfer/exchange feature
 
