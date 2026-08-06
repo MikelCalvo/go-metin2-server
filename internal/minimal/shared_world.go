@@ -143,12 +143,16 @@ type StaticActorCombatTargetAttempt struct {
 }
 
 type CombatTargetSnapshot struct {
-	SubjectEntityID uint64                     `json:"subject_entity_id"`
-	Subject         ConnectedCharacterSnapshot `json:"subject"`
-	TargetVID       uint32                     `json:"target_vid"`
-	SnapshotVersion uint64                     `json:"snapshot_version"`
-	HPPercent       uint8                      `json:"hp_percent"`
-	Actor           StaticActorSnapshot        `json:"actor"`
+	SubjectEntityID         uint64                      `json:"subject_entity_id"`
+	Subject                 ConnectedCharacterSnapshot  `json:"subject"`
+	TargetVID               uint32                      `json:"target_vid"`
+	SnapshotVersion         uint64                      `json:"snapshot_version"`
+	HPPercent               uint8                       `json:"hp_percent"`
+	Actor                   StaticActorSnapshot         `json:"actor"`
+	EngagedByEntityID       uint64                      `json:"engaged_by_entity_id,omitempty"`
+	EngagedBy               *ConnectedCharacterSnapshot `json:"engaged_by,omitempty"`
+	RetaliationPointDelta   int32                       `json:"retaliation_point_delta,omitempty"`
+	RetaliationServerOrigin bool                        `json:"retaliation_server_origin,omitempty"`
 }
 
 type StaticActorCombatAttackAttempt struct {
@@ -926,14 +930,29 @@ func (r *sharedWorldRegistry) combatTargetSnapshotLocked(entityID uint64) (Comba
 	}
 	actorSnapshot := staticActorSnapshot(r.topology, actor)
 	actorSnapshot.Dead = currentHP == 0
-	return CombatTargetSnapshot{
+	snapshot := CombatTargetSnapshot{
 		SubjectEntityID: entityID,
 		Subject:         worldruntime.ConnectedCharacterSnapshotFor(r.topology, subject),
 		TargetVID:       targetVID,
 		SnapshotVersion: r.staticActorCombatSnapshot[actor.Entity.ID],
 		HPPercent:       hpPercent,
 		Actor:           actorSnapshot,
-	}, true
+	}
+	engagedBy := r.staticActorCombatEngagedBy[actor.Entity.ID]
+	if engagedBy != 0 {
+		snapshot.EngagedByEntityID = engagedBy
+		if engagedCharacter, ok := r.playerCharacter(engagedBy); ok {
+			engagedSnapshot := worldruntime.ConnectedCharacterSnapshotFor(r.topology, engagedCharacter)
+			snapshot.EngagedBy = &engagedSnapshot
+		}
+		if actor.SpawnGroupRef != "" && staticActorSpawnGroupAggroLiteCombatKind(actor.CombatKind) {
+			if retaliationPointDelta, ok := worldruntime.BootstrapStaticActorRetaliationPointDelta(actor.CombatKind); ok {
+				snapshot.RetaliationPointDelta = retaliationPointDelta
+				snapshot.RetaliationServerOrigin = true
+			}
+		}
+	}
+	return snapshot, true
 }
 
 func (r *sharedWorldRegistry) ClearSessionCombatTarget(entityID uint64) {

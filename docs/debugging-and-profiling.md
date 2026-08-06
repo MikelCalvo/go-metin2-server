@@ -560,8 +560,13 @@ Both responses reuse the runtime debug snapshot shape documented in `spec/protoc
 - `snapshot_version`
 - `hp_percent`
 - `actor`
+- optional `engaged_by_entity_id`
+- optional `engaged_by`
+- optional `retaliation_point_delta`
+- optional `retaliation_server_origin`
 
-The embedded `subject` field uses the same effective connected-character snapshot shape exposed by `/local/players`, so combat-target debugging can verify the current owner location/dead-state without a second lookup.
+The embedded `subject` field uses the same effective connected-character snapshot shape exposed by `/local/players`, so combat-target debugging can verify the current selected subject location/dead-state without a second lookup.
+After a spawn-backed practice mob has accepted an owner-side hit, the optional engagement fields expose the current aggro-lite owner and the optional retaliation fields expose the runtime-owned owner-side point-loss cadence without introducing a new gameplay packet or mutation endpoint.
 Both endpoints are loopback-only and read-only. The exact-name endpoint returns `404` when the character is not connected, no longer has a live session hook, has no active target, or the target no longer resolves through the current visibility/runtime combat rules; the list endpoint omits unresolved/stale selections instead of leaking hidden or invalid target data.
 
 ### `GET /local/static-actor-respawns` and `GET /local/static-actor-respawns/{entity_id}`

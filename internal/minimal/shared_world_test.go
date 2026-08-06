@@ -20319,6 +20319,110 @@ func TestSharedWorldRegistryAttemptStaticActorCombatTargetResolvesVisiblePractic
 	}
 }
 
+func TestSharedWorldRegistryCombatIntrospectionReportsEngagementOwnerAndRetaliationState(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	owner := peerVisibilityCharacter("Owner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected owner join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.registerStaticActor(0, "PracticeMob", bootstrapMapIndex, 1200, 2200, 20350, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "practice.combat_introspection", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected visible spawn-backed practice-mob registration to succeed")
+	}
+	targetAttempt := registry.AttemptStaticActorCombatTarget(ownerID, uint32(actor.EntityID))
+	if !targetAttempt.Accepted {
+		t.Fatalf("expected practice-mob combat-target selection to succeed, got %+v", targetAttempt)
+	}
+	if !registry.SetSessionCombatTarget(ownerID, targetAttempt.TargetVID) {
+		t.Fatal("expected accepted target selection to be recorded")
+	}
+	attack := registry.AttemptSelectedStaticActorAttack(ownerID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, uint32(actor.EntityID))
+	if !attack.Accepted || attack.Died {
+		t.Fatalf("expected first owner attack to engage a live practice mob, got %+v", attack)
+	}
+
+	snapshot, ok := registry.CombatTargetSnapshot(ownerID)
+	if !ok {
+		t.Fatal("expected selected combat target snapshot after engagement")
+	}
+	if snapshot.EngagedByEntityID != ownerID {
+		t.Fatalf("expected combat target snapshot to expose engagement owner %d, got %+v", ownerID, snapshot)
+	}
+	if snapshot.EngagedBy == nil || snapshot.EngagedBy.Name != owner.Name || snapshot.EngagedBy.VID != owner.VID {
+		t.Fatalf("expected combat target snapshot to embed owner snapshot, got %+v", snapshot.EngagedBy)
+	}
+	if snapshot.RetaliationPointDelta != worldruntime.PracticeMobBootstrapRetaliationPointDelta {
+		t.Fatalf("expected combat target snapshot to expose practice-mob retaliation delta %d, got %+v", worldruntime.PracticeMobBootstrapRetaliationPointDelta, snapshot)
+	}
+	if !snapshot.RetaliationServerOrigin {
+		t.Fatalf("expected combat target snapshot to mark server-origin retaliation ownership, got %+v", snapshot)
+	}
+	if snapshot.Actor.RetaliationPointDelta != 0 {
+		t.Fatalf("expected actor snapshot to keep default retaliation delta implicit, got %+v", snapshot.Actor)
+	}
+
+	byName, ok := registry.CombatTargetSnapshotByName(owner.Name)
+	if !ok {
+		t.Fatal("expected exact-name combat target snapshot after engagement")
+	}
+	if byName.EngagedByEntityID != snapshot.EngagedByEntityID || byName.RetaliationPointDelta != snapshot.RetaliationPointDelta || !byName.RetaliationServerOrigin {
+		t.Fatalf("expected exact-name combat target snapshot to preserve engagement and retaliation fields, got %+v", byName)
+	}
+}
+
+func TestSharedWorldRegistryCombatIntrospectionReportsCustomRetaliationDelta(t *testing.T) {
+	const profile = "practice_introspection_delta"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 10,
+		DamagePerNormalAttack: 1,
+		AttackValue:           5,
+		DefenseValue:          4,
+		Level:                 1,
+		RespawnDelay:          worldruntime.PracticeMobBootstrapRespawnDelay,
+		RetaliationPointDelta: -3,
+	}) {
+		t.Fatal("expected custom practice-mob combat profile registration to succeed")
+	}
+
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	owner := peerVisibilityCharacter("Owner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected owner join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.registerStaticActor(0, "CustomRetaliationMob", bootstrapMapIndex, 1200, 2200, 20350, "", "", profile, "practice.combat_introspection_delta", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected spawn-backed custom-retaliation practice mob registration to succeed")
+	}
+	targetAttempt := registry.AttemptStaticActorCombatTarget(ownerID, uint32(actor.EntityID))
+	if !targetAttempt.Accepted {
+		t.Fatalf("expected custom-retaliation combat target selection to succeed, got %+v", targetAttempt)
+	}
+	if !registry.SetSessionCombatTarget(ownerID, targetAttempt.TargetVID) {
+		t.Fatal("expected accepted custom-retaliation target selection to be recorded")
+	}
+	attack := registry.AttemptSelectedStaticActorAttack(ownerID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, uint32(actor.EntityID))
+	if !attack.Accepted || attack.Died {
+		t.Fatalf("expected first custom-retaliation attack to engage a live mob, got %+v", attack)
+	}
+
+	snapshot, ok := registry.CombatTargetSnapshot(ownerID)
+	if !ok {
+		t.Fatal("expected selected custom-retaliation combat target snapshot after engagement")
+	}
+	if snapshot.RetaliationPointDelta != -3 || !snapshot.RetaliationServerOrigin {
+		t.Fatalf("expected custom-retaliation combat target snapshot to expose delta -3 and server-origin ownership, got %+v", snapshot)
+	}
+	if snapshot.Actor.RetaliationPointDelta != -3 {
+		t.Fatalf("expected actor snapshot to expose non-default retaliation delta -3, got %+v", snapshot.Actor)
+	}
+}
+
 func TestSharedWorldRegistryCombatTargetSnapshotReportsSelectedPracticeMob(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
@@ -20563,6 +20667,55 @@ func TestGameRuntimeCombatTargetSnapshotsReportsActiveSelections(t *testing.T) {
 	}
 	if snapshots[0].TargetVID != targetVID || snapshots[0].HPPercent != 100 || snapshots[0].Actor.Name != "SnapshotPracticeMob" {
 		t.Fatalf("unexpected runtime combat target snapshot: %+v", snapshots[0])
+	}
+}
+
+func TestGameRuntimeCombatTargetSnapshotsExposeEngagementAndRetaliationAfterPracticeMobHit(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	attacker := peerVisibilityCharacter("SnapshotAggro", 0x01030104, 0x02040104, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "snapshot-aggro", 0x34343434, attacker)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.registerStaticActor(0, "SnapshotAggroPracticeMob", bootstrapMapIndex, 1200, 2200, 20350, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "practice.snapshot_aggro", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected spawn-backed practice-mob registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "snapshot-aggro", 0x34343434)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.EntityID)
+	if selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(selectOut) != 1 {
+		t.Fatalf("expected target selection before runtime aggro snapshot to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
+	}
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected attack before runtime aggro snapshot: %v", err)
+	}
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target refresh, self retaliation, and damage-info before runtime aggro snapshot, got %d frames", len(attackOut))
+	}
+
+	snapshots := runtime.CombatTargetSnapshots()
+	if len(snapshots) != 1 {
+		t.Fatalf("expected one runtime combat target snapshot after engagement, got %d: %+v", len(snapshots), snapshots)
+	}
+	snapshot := snapshots[0]
+	if snapshot.TargetVID != targetVID || snapshot.HPPercent != 90 || snapshot.Actor.Name != "SnapshotAggroPracticeMob" {
+		t.Fatalf("unexpected runtime engaged combat target snapshot: %+v", snapshot)
+	}
+	if snapshot.EngagedByEntityID != snapshot.SubjectEntityID || snapshot.EngagedBy == nil || snapshot.EngagedBy.Name != attacker.Name {
+		t.Fatalf("expected runtime combat target snapshot to expose engaged owner, got %+v", snapshot)
+	}
+	if snapshot.RetaliationPointDelta != worldruntime.PracticeMobBootstrapRetaliationPointDelta || !snapshot.RetaliationServerOrigin {
+		t.Fatalf("expected runtime combat target snapshot to expose practice-mob retaliation ownership, got %+v", snapshot)
+	}
+	byName, ok := runtime.CombatTargetSnapshot(attacker.Name)
+	if !ok {
+		t.Fatal("expected runtime exact-name combat target snapshot after engagement")
+	}
+	if byName.EngagedByEntityID != snapshot.EngagedByEntityID || byName.RetaliationPointDelta != snapshot.RetaliationPointDelta || !byName.RetaliationServerOrigin {
+		t.Fatalf("expected exact-name runtime combat target snapshot to preserve engagement and retaliation fields, got %+v", byName)
 	}
 }
 
