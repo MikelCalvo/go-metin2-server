@@ -1267,6 +1267,41 @@ func TestLocalContentBundleSummaryEndpointReturnsPerMapInfoTalkActorCountsForLoo
 	}
 }
 
+func TestLocalContentBundleSummaryEndpointReturnsPickupRangeMetadataForLoopbackPost(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	body := `{"spawn_groups":[{"ref":"practice.long_reach_reward","name":"Long Reach Reward","map_index":42,"x":1800,"y":2900,"race_num":101,"combat_profile":"practice_mob","reward_drop_vnums":[27001]}],"item_templates":[{"vnum":27001,"name":"Long Reach Potion","stackable":true,"max_count":200,"shop_buy_price":5,"pickup_range":750}],"interaction_definitions":[{"kind":"shop_preview","ref":"npc:long_reach_merchant","title":"Long Reach Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":2}]}]}`
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/summary", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected dry-run summary not to call live exporter, got %d calls", summaryer.calls)
+	}
+	var got contentbundle.Summary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode pickup-range summary response body: %v", err)
+	}
+	if got.ItemTemplates[0].PickupRange != 750 {
+		t.Fatalf("expected item-template pickup_range 750, got %+v", got.ItemTemplates)
+	}
+	if got.ShopCatalogs[0].Entries[0].PickupRange != 750 {
+		t.Fatalf("expected shop-catalog pickup_range 750, got %+v", got.ShopCatalogs)
+	}
+	if got.SpawnGroups[0].RewardDropItems[0].PickupRange != 750 {
+		t.Fatalf("expected spawn reward-drop pickup_range 750, got %+v", got.SpawnGroups)
+	}
+	if got.RewardDrops[0].PickupRange != 750 {
+		t.Fatalf("expected aggregate reward-drop pickup_range 750, got %+v", got.RewardDrops)
+	}
+}
+
 func TestLocalContentBundleSummaryEndpointRejectsInvalidDryRunBundle(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
 	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)

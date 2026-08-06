@@ -356,6 +356,7 @@ type RewardDropItemSummary struct {
 	Stackable    bool   `json:"stackable"`
 	MaxCount     uint16 `json:"max_count"`
 	ShopBuyPrice uint64 `json:"shop_buy_price,omitempty"`
+	PickupRange  uint16 `json:"pickup_range,omitempty"`
 }
 
 type RewardDropAggregateSummary struct {
@@ -365,6 +366,7 @@ type RewardDropAggregateSummary struct {
 	Stackable    bool   `json:"stackable"`
 	MaxCount     uint16 `json:"max_count"`
 	ShopBuyPrice uint64 `json:"shop_buy_price,omitempty"`
+	PickupRange  uint16 `json:"pickup_range,omitempty"`
 }
 
 type ItemTemplateReferenceSummary struct {
@@ -373,6 +375,7 @@ type ItemTemplateReferenceSummary struct {
 	Stackable    bool   `json:"stackable"`
 	MaxCount     uint16 `json:"max_count"`
 	ShopBuyPrice uint64 `json:"shop_buy_price,omitempty"`
+	PickupRange  uint16 `json:"pickup_range,omitempty"`
 }
 
 type ShopCatalogSummary struct {
@@ -392,6 +395,7 @@ type ShopCatalogEntrySummary struct {
 	Stackable    bool   `json:"stackable"`
 	MaxCount     uint16 `json:"max_count"`
 	ShopBuyPrice uint64 `json:"shop_buy_price,omitempty"`
+	PickupRange  uint16 `json:"pickup_range,omitempty"`
 }
 
 type ShopRouteSummary struct {
@@ -1701,6 +1705,7 @@ func shopCatalogSummary(definition interactionstore.Definition, itemTemplatesByV
 			Stackable:    template.Stackable,
 			MaxCount:     template.MaxCount,
 			ShopBuyPrice: template.ShopBuyPrice,
+			PickupRange:  template.PickupRange,
 		})
 	}
 	return summary
@@ -1761,6 +1766,7 @@ func itemTemplateReferenceSummaries(templates []itemcatalog.Template) []ItemTemp
 			Stackable:    template.Stackable,
 			MaxCount:     template.MaxCount,
 			ShopBuyPrice: template.ShopBuyPrice,
+			PickupRange:  template.PickupRange,
 		})
 	}
 	sort.Slice(summaries, func(i int, j int) bool {
@@ -1786,6 +1792,7 @@ func rewardDropItemSummaries(dropVnums []uint32, itemTemplatesByVnum map[uint32]
 			Stackable:    template.Stackable,
 			MaxCount:     template.MaxCount,
 			ShopBuyPrice: template.ShopBuyPrice,
+			PickupRange:  template.PickupRange,
 		})
 	}
 	if len(summaries) == 0 {
@@ -1831,6 +1838,7 @@ func rewardDropAggregateSummaries(countsByVnum map[uint32]int, itemTemplatesByVn
 			Stackable:    template.Stackable,
 			MaxCount:     template.MaxCount,
 			ShopBuyPrice: template.ShopBuyPrice,
+			PickupRange:  template.PickupRange,
 		})
 	}
 	if len(summaries) == 0 {
