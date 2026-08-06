@@ -801,6 +801,30 @@ func RegisterLocalSpawnGroupsEndpoint(mux *http.ServeMux, spawnGroups func() any
 	return mux
 }
 
+func RegisterLocalSpawnGroupEndpoint(mux *http.ServeMux, spawnGroup func(uint64) (any, bool)) *http.ServeMux {
+	if mux == nil || spawnGroup == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/spawn-groups/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		entityID, ok := decodeLocalSpawnGroupEntityID(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		value, ok := spawnGroup(entityID)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalGroundItemsEndpoint(mux *http.ServeMux, groundItems func() any) *http.ServeMux {
 	if mux == nil || groundItems == nil {
 		return mux
@@ -1898,6 +1922,19 @@ func decodeLocalStaticActorEntityID(r *http.Request) (uint64, bool) {
 
 func decodeLocalStaticActorRespawnEntityID(r *http.Request) (uint64, bool) {
 	entityIDRaw := strings.TrimPrefix(r.URL.Path, "/local/static-actor-respawns/")
+	entityIDRaw = strings.TrimSpace(entityIDRaw)
+	if entityIDRaw == "" || strings.Contains(entityIDRaw, "/") {
+		return 0, false
+	}
+	entityID, err := strconv.ParseUint(entityIDRaw, 10, 64)
+	if err != nil || entityID == 0 {
+		return 0, false
+	}
+	return entityID, true
+}
+
+func decodeLocalSpawnGroupEntityID(r *http.Request) (uint64, bool) {
+	entityIDRaw := strings.TrimPrefix(r.URL.Path, "/local/spawn-groups/")
 	entityIDRaw = strings.TrimSpace(entityIDRaw)
 	if entityIDRaw == "" || strings.Contains(entityIDRaw, "/") {
 		return 0, false

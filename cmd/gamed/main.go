@@ -163,6 +163,16 @@ func main() {
 		opsHandler,
 		func() any { return gameRuntime.SpawnGroups() },
 	)
+	opsHandler = ops.RegisterLocalSpawnGroupEndpoint(
+		opsHandler,
+		func(entityID uint64) (any, bool) {
+			snapshot, ok := gameRuntime.SpawnGroup(entityID)
+			if !ok {
+				return nil, false
+			}
+			return snapshot, true
+		},
+	)
 	opsHandler = ops.RegisterLocalGroundItemsEndpoint(
 		opsHandler,
 		func() any { return gameRuntime.GroundItems() },

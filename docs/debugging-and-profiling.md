@@ -585,6 +585,9 @@ The exact-entity endpoint returns the same row shape for one pending respawn; in
 Returns the deterministic list of currently materialized spawn-backed runtime actors: static-actor snapshots whose `spawn_group_ref` is non-empty.
 This endpoint is loopback-only, read-only, rejects non-`GET` methods with `405`, and is intended for QA/debugging of the authored `spawn_groups` contract frozen in `spec/protocol/content-spawn-groups-bootstrap.md`.
 
+`GET /local/spawn-groups/{entity_id}` returns one exact spawn-backed actor row by runtime entity ID / client-visible static-actor `VID`.
+Invalid path IDs return `400`; missing entities or ordinary non-spawn static actors return `404`.
+
 Each row reuses the same static-actor snapshot shape exposed by `/local/static-actors`, including:
 
 - `entity_id`

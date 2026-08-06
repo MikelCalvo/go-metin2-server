@@ -13,7 +13,7 @@ This repository is a public rewrite built around owned protocol documentation, s
 - a shared in-process world runtime,
 - protocol codecs and fixtures for the owned packet families,
 - real-client-oriented integration tests around movement, visibility, chat, items, shops, combat, death, restart, and respawn slices,
-- local operator/debug endpoints for runtime inspection, controlled bootstrap actions, static-actor respawn timer plus spawn-group snapshot/map-occupancy/transfer visibility inspection, and strict manifest-backed item-template/account-store backup/restore preflights.
+- local operator/debug endpoints for runtime inspection, controlled bootstrap actions, static-actor respawn timer plus flat/exact spawn-group snapshot/map-occupancy/transfer visibility inspection, and strict manifest-backed item-template/account-store backup/restore preflights.
 
 Current repository shape from the latest scan:
 
@@ -229,7 +229,7 @@ Already present:
 - static/non-player combat profiles,
 - target selection, client-originated silent target clear, normal attack packet ingress, and game-flow rejection of unsupported attack types before runtime mutation,
 - selected-target snapshot/version checks,
-- loopback combat-target introspection for selected-target ownership and HP debugging,
+- loopback combat-target introspection plus flat/exact spawn-group read models for selected-target ownership and HP debugging,
 - no-op content-bundle reimports and failed replacement rollbacks that preserve live practice-mob HP, selected-target ownership, combat snapshot/respawn state, and visibility state when authored content has not committed,
 - HP mutation and HP percent refreshes,
 - self and visible-peer `DAMAGE_INFO` hit-effect emission for standalone bootstrap combat-profile and spawn-backed practice-mob non-lethal hits, while broader hit-result policy remains narrow,
