@@ -255,6 +255,24 @@ func TestValidateHandoffPersistenceConfigRejectsDirectoryStoresThatOverlap(t *te
 	}
 }
 
+func TestValidateHandoffPersistenceConfigRejectsDirectoryStorePathThatIsExistingFile(t *testing.T) {
+	root := t.TempDir()
+	accountPath := filepath.Join(root, "accounts")
+	if err := os.WriteFile(accountPath, []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("create regular file at account store path: %v", err)
+	}
+	cfg := Service{
+		Name:                "authd",
+		LoginTicketStoreDir: filepath.Join(root, "tickets"),
+		AccountStoreDir:     accountPath,
+	}
+
+	err := ValidateHandoffPersistenceConfig(cfg)
+	if !errors.Is(err, ErrPersistencePathRoleConflict) {
+		t.Fatalf("expected ErrPersistencePathRoleConflict for authd directory store path that is a file, got %v", err)
+	}
+}
+
 func TestValidatePersistenceConfigRejectsFileStoreInsideDirectoryStore(t *testing.T) {
 	root := t.TempDir()
 	cfg := Service{

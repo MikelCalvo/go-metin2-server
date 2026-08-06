@@ -28,7 +28,7 @@ type Service struct {
 var (
 	ErrPersistencePathRequired     = errors.New("persistence path is required")
 	ErrPersistencePathOverlap      = errors.New("persistence paths overlap")
-	ErrPersistencePathRoleConflict = errors.New("persistence path role conflicts with existing filesystem entry")
+	ErrPersistencePathRoleConflict = errors.New("persistence path conflicts with expected store type")
 	ErrOpsAddrRequired             = errors.New("ops bind address is required")
 	ErrOpsAddrInvalid              = errors.New("ops bind address is invalid")
 	ErrOpsAddrNotLoopback          = errors.New("ops bind address must be loopback")
@@ -42,9 +42,10 @@ const (
 )
 
 type persistencePathSelection struct {
-	Name string
-	Role persistencePathRole
-	Path string
+	Name        string
+	Role        persistencePathRole
+	Path        string
+	LexicalPath string
 }
 
 // ValidateOpsConfig fails closed when the local operations/pprof listener is
@@ -74,11 +75,12 @@ func ValidateOpsConfig(cfg Service) error {
 	return nil
 }
 
-// ValidatePersistenceConfig fails closed when bootstrap JSON stores are missing
-// or configured to share the same filesystem boundary. Directory-backed stores
-// own their full subtree, while file-backed stores own only their exact file
-// path; any overlap is rejected before runtime code can validate, back up,
-// restore, or mutate the wrong store.
+// ValidatePersistenceConfig fails closed when bootstrap JSON stores are missing,
+// configured with the wrong filesystem entry type, or configured to share the
+// same filesystem boundary. Directory-backed stores own their full subtree,
+// while file-backed stores own only their exact file path; any lexical or
+// symlink-resolved overlap is rejected before runtime code can validate, back
+// up, restore, or mutate the wrong store.
 func ValidatePersistenceConfig(cfg Service) error {
 	return validatePersistencePathSelections([]persistencePathSelection{
 		{Name: "login_ticket_store_dir", Role: persistencePathRoleDir, Path: cfg.LoginTicketStoreDir},
@@ -100,11 +102,12 @@ func ValidateHandoffPersistenceConfig(cfg Service) error {
 
 func validatePersistencePathSelections(paths []persistencePathSelection) error {
 	for i := range paths {
-		canonical, err := canonicalPersistencePath(paths[i])
+		canonical, lexical, err := canonicalPersistencePath(paths[i])
 		if err != nil {
 			return err
 		}
 		paths[i].Path = canonical
+		paths[i].LexicalPath = lexical
 	}
 	for i := range paths {
 		for j := i + 1; j < len(paths); j++ {
@@ -116,23 +119,23 @@ func validatePersistencePathSelections(paths []persistencePathSelection) error {
 	return nil
 }
 
-func canonicalPersistencePath(selection persistencePathSelection) (string, error) {
+func canonicalPersistencePath(selection persistencePathSelection) (string, string, error) {
 	trimmed := strings.TrimSpace(selection.Path)
 	if trimmed == "" {
-		return "", fmt.Errorf("%w: %s", ErrPersistencePathRequired, selection.Name)
+		return "", "", fmt.Errorf("%w: %s", ErrPersistencePathRequired, selection.Name)
 	}
 	abs, err := filepath.Abs(filepath.Clean(trimmed))
 	if err != nil {
-		return "", fmt.Errorf("resolve %s: %w", selection.Name, err)
+		return "", "", fmt.Errorf("resolve %s: %w", selection.Name, err)
 	}
 	resolved, err := resolvePersistencePath(abs)
 	if err != nil {
-		return "", fmt.Errorf("resolve %s symlinks: %w", selection.Name, err)
+		return "", "", fmt.Errorf("resolve %s symlinks: %w", selection.Name, err)
 	}
 	if err := validatePersistencePathRole(selection, resolved); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return resolved, nil
+	return resolved, abs, nil
 }
 
 func validatePersistencePathRole(selection persistencePathSelection, resolved string) error {
@@ -201,13 +204,29 @@ func resolvePersistencePathAt(path string, depth int) (string, error) {
 }
 
 func persistencePathsOverlap(a, b persistencePathSelection) bool {
-	if a.Path == b.Path {
+	if pathSelectionsOverlap(a, b, false) {
 		return true
 	}
-	if a.Role == persistencePathRoleDir && pathInsideDir(a.Path, b.Path) {
+	return pathSelectionsOverlap(a, b, true)
+}
+
+func pathSelectionsOverlap(a, b persistencePathSelection, useLexical bool) bool {
+	aPath := a.Path
+	bPath := b.Path
+	if useLexical {
+		aPath = a.LexicalPath
+		bPath = b.LexicalPath
+	}
+	if aPath == "" || bPath == "" {
+		return false
+	}
+	if aPath == bPath {
 		return true
 	}
-	if b.Role == persistencePathRoleDir && pathInsideDir(b.Path, a.Path) {
+	if a.Role == persistencePathRoleDir && pathInsideDir(aPath, bPath) {
+		return true
+	}
+	if b.Role == persistencePathRoleDir && pathInsideDir(bPath, aPath) {
 		return true
 	}
 	return false
