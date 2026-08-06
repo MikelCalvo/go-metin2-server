@@ -1257,19 +1257,27 @@ func (r *sharedWorldRegistry) RegisterGroundItemWithPickupRange(ownerID uint64, 
 }
 
 func (r *sharedWorldRegistry) CanRegisterGroundGold(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, amount uint32) bool {
+	return r.CanRegisterGroundGoldWithPickupRange(ownerID, ownerLogin, character, vid, amount, bootstrapGroundItemPickupRange)
+}
+
+func (r *sharedWorldRegistry) CanRegisterGroundGoldWithPickupRange(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, amount uint32, pickupRange int64) bool {
 	const maxPointChangeCarrier = uint32(1<<31 - 1)
-	if amount == 0 || amount > maxPointChangeCarrier {
+	if amount == 0 || amount > maxPointChangeCarrier || pickupRange < 0 {
 		return false
 	}
 	return r.canRegisterGroundItem(ownerID, ownerLogin, character, vid, inventory.ItemInstance{Vnum: 1, Count: 1}, amount)
 }
 
 func (r *sharedWorldRegistry) RegisterGroundGold(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, amount uint32) bool {
+	return r.RegisterGroundGoldWithPickupRange(ownerID, ownerLogin, character, vid, amount, bootstrapGroundItemPickupRange)
+}
+
+func (r *sharedWorldRegistry) RegisterGroundGoldWithPickupRange(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, amount uint32, pickupRange int64) bool {
 	const maxPointChangeCarrier = uint32(1<<31 - 1)
-	if amount == 0 || amount > maxPointChangeCarrier {
+	if amount == 0 || amount > maxPointChangeCarrier || pickupRange < 0 {
 		return false
 	}
-	return r.registerGroundItem(ownerID, ownerLogin, character, vid, inventory.ItemInstance{Vnum: 1, Count: 1}, amount, bootstrapGroundItemPickupRange)
+	return r.registerGroundItem(ownerID, ownerLogin, character, vid, inventory.ItemInstance{Vnum: 1, Count: 1}, amount, pickupRange)
 }
 
 func (r *sharedWorldRegistry) canRegisterGroundItem(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, item inventory.ItemInstance, goldAmount uint32) bool {

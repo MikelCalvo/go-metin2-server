@@ -3139,6 +3139,138 @@ func TestGameRuntimeItemDropWithGoldDropsCurrencyInsteadOfInventoryItem(t *testi
 	}
 }
 
+func TestGameRuntimeGoldPickupUsesTemplateAuthoredPickupRange(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("GoldLongRange", 0x010301be, 0x020401be, 1300, 2300, 0, 101, 201)
+	owner.Gold = 5000
+	issuePeerTicket(t, ticketStore, "gold-long-range", 0xbebe0001, owner)
+	if err := accounts.Save(accountstore.Account{Login: "gold-long-range", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed long-range gold account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:        1,
+		Name:        "Long Range Gold Marker",
+		Stackable:   true,
+		MaxCount:    1,
+		PickupRange: 500,
+	}})
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected long-range gold runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "gold-long-range", 0xbebe0001)
+	defer closeSessionFlow(t, flow)
+
+	dropOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Elk: 1200})))
+	if err != nil {
+		t.Fatalf("unexpected long-range gold drop error: %v", err)
+	}
+	if len(dropOut) != 3 {
+		t.Fatalf("expected long-range gold drop to emit POINT_CHANGE, GROUND_ADD, and OWNERSHIP, got %d frames", len(dropOut))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, dropOut[1]))
+	if err != nil {
+		t.Fatalf("decode long-range gold ground add: %v", err)
+	}
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{X: owner.X + 400, Y: owner.Y, Time: 0x60616263})))
+	if err != nil {
+		t.Fatalf("unexpected long-range gold move error: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected long-range gold move ack, got %d frames", len(moveOut))
+	}
+
+	pickupOut := pickupGroundItem(t, flow, ground.VID)
+	if len(pickupOut) != 3 {
+		t.Fatalf("expected template-authored long-range gold pickup to emit GROUND_DEL, POINT_CHANGE, and ITEM_GET, got %d frames", len(pickupOut))
+	}
+	groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, pickupOut[0]))
+	if err != nil {
+		t.Fatalf("decode long-range gold pickup ground del: %v", err)
+	}
+	if groundDel.VID != ground.VID {
+		t.Fatalf("unexpected long-range gold pickup ground del: %+v", groundDel)
+	}
+	point, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, pickupOut[1]))
+	if err != nil {
+		t.Fatalf("decode long-range gold pickup point change: %v", err)
+	}
+	if point != (worldproto.PlayerPointChangePacket{VID: owner.VID, Type: bootstrapGoldPointType, Amount: 1200, Value: 5000}) {
+		t.Fatalf("unexpected long-range gold pickup point change: %+v", point)
+	}
+	get, err := itemproto.DecodeGet(decodeSingleFrame(t, pickupOut[2]))
+	if err != nil {
+		t.Fatalf("decode long-range gold pickup get: %v", err)
+	}
+	if get != (itemproto.GetPacket{Vnum: 1, Count: 1, Arg: itemproto.GetArgNormal}) {
+		t.Fatalf("unexpected long-range gold pickup get: %+v", get)
+	}
+	if runtime.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatalf("expected long-range gold pickup to remove ground marker %d", ground.VID)
+	}
+}
+
+func TestGameRuntimeGoldPickupTemplateAuthoredShortRangeFailsClosed(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("GoldShortRange", 0x010301bf, 0x020401bf, 1300, 2300, 0, 101, 201)
+	owner.Gold = 5000
+	issuePeerTicket(t, ticketStore, "gold-short-range", 0xbebe0002, owner)
+	if err := accounts.Save(accountstore.Account{Login: "gold-short-range", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed short-range gold account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:        1,
+		Name:        "Short Range Gold Marker",
+		Stackable:   true,
+		MaxCount:    1,
+		PickupRange: 100,
+	}})
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected short-range gold runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "gold-short-range", 0xbebe0002)
+	defer closeSessionFlow(t, flow)
+
+	dropOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Elk: 1200})))
+	if err != nil {
+		t.Fatalf("unexpected short-range gold drop error: %v", err)
+	}
+	if len(dropOut) != 3 {
+		t.Fatalf("expected short-range gold drop to emit POINT_CHANGE, GROUND_ADD, and OWNERSHIP, got %d frames", len(dropOut))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, dropOut[1]))
+	if err != nil {
+		t.Fatalf("decode short-range gold ground add: %v", err)
+	}
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{X: owner.X + 200, Y: owner.Y, Time: 0x70717273})))
+	if err != nil {
+		t.Fatalf("unexpected short-range gold move error: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected short-range gold move ack, got %d frames", len(moveOut))
+	}
+
+	pickupOut := pickupGroundItem(t, flow, ground.VID)
+	if len(pickupOut) != 0 {
+		t.Fatalf("expected template-authored short-range gold pickup to fail closed with no frames, got %d", len(pickupOut))
+	}
+	if !runtime.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatalf("expected short-range rejected gold pickup to leave marker %d pending", ground.VID)
+	}
+	account, err := accounts.Load("gold-short-range")
+	if err != nil {
+		t.Fatalf("load short-range gold account: %v", err)
+	}
+	if account.Characters[0].Gold != 3800 {
+		t.Fatalf("expected rejected short-range gold pickup to leave dropped gold total 3800, got %d", account.Characters[0].Gold)
+	}
+}
+
 func TestGameRuntimeVisiblePeerGoldPickupHonorsAntiGiveCurrencyTemplate(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

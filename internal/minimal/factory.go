@@ -2309,7 +2309,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if groundVID == 0 {
 				return nil, false
 			}
-			if ownsLiveSharedWorldSession() && !sharedWorld.CanRegisterGroundGold(sharedWorldID, sessionTicket.Login, previousSelected, groundVID, amount) {
+			pickupRange := templatePickupRange(runtime, 1)
+			if ownsLiveSharedWorldSession() && !sharedWorld.CanRegisterGroundGoldWithPickupRange(sharedWorldID, sessionTicket.Login, previousSelected, groundVID, amount, pickupRange) {
 				return nil, false
 			}
 			selectedPlayer.SetLiveGold(selectedPlayer.LiveGold() - uint64(amount))
@@ -2329,7 +2330,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return nil, false
 			}
 			if ownsLiveSharedWorldSession() {
-				sharedWorld.RegisterGroundGold(sharedWorldID, sessionTicket.Login, previousSelected, groundVID, amount)
+				sharedWorld.RegisterGroundGoldWithPickupRange(sharedWorldID, sessionTicket.Login, previousSelected, groundVID, amount, pickupRange)
 			}
 			return frames, true
 		}
