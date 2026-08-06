@@ -296,6 +296,78 @@ func TestSummarizeExposesPickupRangeInTemplateBackedContentSummaries(t *testing.
 	}
 }
 
+func TestSummarizeExposesShopSellPriceInTemplateBackedContentSummaries(t *testing.T) {
+	const shopSellPrice uint64 = 13
+	bundle := Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:             "practice.sell_price_reward",
+			Name:            "Sell Price Reward",
+			MapIndex:        42,
+			X:               1800,
+			Y:               2900,
+			RaceNum:         101,
+			CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropVnums: []uint32{27001},
+		}},
+		ItemTemplates: []itemcatalog.Template{{
+			Vnum:          27001,
+			Name:          "Sell Price Potion",
+			Stackable:     true,
+			MaxCount:      200,
+			ShopBuyPrice:  5,
+			ShopSellPrice: shopSellPrice,
+		}},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:  interactionstore.KindShopPreview,
+			Ref:   "npc:sell_price_merchant",
+			Title: "Sell Price Merchant",
+			Catalog: []interactionstore.MerchantCatalogEntry{
+				{Slot: 0, ItemVnum: 27001, Price: 50, Count: 2},
+			},
+		}},
+	}
+
+	summary, err := Summarize(bundle)
+	if err != nil {
+		t.Fatalf("summarize shop-sell-price bundle: %v", err)
+	}
+
+	wantTemplates := []ItemTemplateReferenceSummary{{Vnum: 27001, Name: "Sell Price Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: shopSellPrice}}
+	if !reflect.DeepEqual(summary.ItemTemplates, wantTemplates) {
+		t.Fatalf("unexpected item-template shop-sell-price summary:\n got: %#v\nwant: %#v", summary.ItemTemplates, wantTemplates)
+	}
+	wantCatalogs := []ShopCatalogSummary{{
+		Kind:       interactionstore.KindShopPreview,
+		Ref:        "npc:sell_price_merchant",
+		Title:      "Sell Price Merchant",
+		EntryCount: 1,
+		Entries: []ShopCatalogEntrySummary{
+			{Slot: 0, ItemVnum: 27001, ItemName: "Sell Price Potion", Count: 2, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: shopSellPrice},
+		},
+	}}
+	if !reflect.DeepEqual(summary.ShopCatalogs, wantCatalogs) {
+		t.Fatalf("unexpected shop-catalog shop-sell-price summary:\n got: %#v\nwant: %#v", summary.ShopCatalogs, wantCatalogs)
+	}
+	wantSpawnGroups := []SpawnGroupReferenceSummary{{
+		Ref:             "practice.sell_price_reward",
+		Name:            "Sell Price Reward",
+		MapIndex:        42,
+		X:               1800,
+		Y:               2900,
+		RaceNum:         101,
+		CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+		RewardDropVnums: []uint32{27001},
+		RewardDropItems: []RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Sell Price Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: shopSellPrice}},
+	}}
+	if !reflect.DeepEqual(summary.SpawnGroups, wantSpawnGroups) {
+		t.Fatalf("unexpected spawn-group shop-sell-price summary:\n got: %#v\nwant: %#v", summary.SpawnGroups, wantSpawnGroups)
+	}
+	wantRewardDrops := []RewardDropAggregateSummary{{ItemVnum: 27001, ItemName: "Sell Price Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: shopSellPrice}}
+	if !reflect.DeepEqual(summary.RewardDrops, wantRewardDrops) {
+		t.Fatalf("unexpected reward-drop shop-sell-price summary:\n got: %#v\nwant: %#v", summary.RewardDrops, wantRewardDrops)
+	}
+}
+
 func TestBuildImportPreviewReturnsDeterministicSummaryDeltas(t *testing.T) {
 	preview, err := BuildImportPreview(
 		Bundle{

@@ -58,14 +58,16 @@
       "vnum": 11200,
       "name": "Wooden Sword",
       "stackable": false,
-      "max_count": 1
+      "max_count": 1,
+      "shop_sell_price": 100
     },
     {
       "vnum": 27001,
       "name": "Small Red Potion",
       "stackable": true,
       "max_count": 200,
-      "shop_buy_price": 5
+      "shop_buy_price": 5,
+      "shop_sell_price": 2
     }
   ],
   "interaction_definitions": [

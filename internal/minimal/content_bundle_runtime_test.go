@@ -582,6 +582,87 @@ func TestGameRuntimeExportContentBundleSummaryIncludesItemTemplateDetails(t *tes
 	}
 }
 
+func TestGameRuntimeExportContentBundleSummaryIncludesShopSellPriceMetadata(t *testing.T) {
+	const shopSellPrice uint64 = 13
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	itemStore := itemcatalog.NewFileStore(t.TempDir() + "/item-templates.json")
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:             "practice.sell_price_reward",
+			Name:            "Sell Price Reward",
+			MapIndex:        42,
+			X:               1800,
+			Y:               2900,
+			RaceNum:         101,
+			CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropVnums: []uint32{27001},
+		}},
+		ItemTemplates: []itemcatalog.Template{{
+			Vnum:          27001,
+			Name:          "Sell Price Potion",
+			Stackable:     true,
+			MaxCount:      200,
+			ShopBuyPrice:  5,
+			ShopSellPrice: shopSellPrice,
+		}},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:  interactionstore.KindShopPreview,
+			Ref:   "npc:sell_price_merchant",
+			Title: "Sell Price Merchant",
+			Catalog: []interactionstore.MerchantCatalogEntry{
+				{Slot: 0, ItemVnum: 27001, Price: 50, Count: 2},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("import shop-sell-price content bundle: %v", err)
+	}
+
+	summary, err := runtime.ExportContentBundleSummary()
+	if err != nil {
+		t.Fatalf("export content bundle summary with shop sell price: %v", err)
+	}
+	wantTemplates := []contentbundle.ItemTemplateReferenceSummary{{Vnum: 27001, Name: "Sell Price Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: shopSellPrice}}
+	if !reflect.DeepEqual(summary.ItemTemplates, wantTemplates) {
+		t.Fatalf("unexpected runtime summary item-template shop sell price:\n got: %#v\nwant: %#v", summary.ItemTemplates, wantTemplates)
+	}
+	wantCatalogs := []contentbundle.ShopCatalogSummary{{
+		Kind:       interactionstore.KindShopPreview,
+		Ref:        "npc:sell_price_merchant",
+		Title:      "Sell Price Merchant",
+		EntryCount: 1,
+		Entries: []contentbundle.ShopCatalogEntrySummary{
+			{Slot: 0, ItemVnum: 27001, ItemName: "Sell Price Potion", Count: 2, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: shopSellPrice},
+		},
+	}}
+	if !reflect.DeepEqual(summary.ShopCatalogs, wantCatalogs) {
+		t.Fatalf("unexpected runtime summary shop-catalog shop sell price:\n got: %#v\nwant: %#v", summary.ShopCatalogs, wantCatalogs)
+	}
+	wantSpawnGroups := []contentbundle.SpawnGroupReferenceSummary{{
+		Ref:             "practice.sell_price_reward",
+		Name:            "Sell Price Reward",
+		MapIndex:        42,
+		X:               1800,
+		Y:               2900,
+		RaceNum:         101,
+		CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+		RewardDropVnums: []uint32{27001},
+		RewardDropItems: []contentbundle.RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Sell Price Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: shopSellPrice}},
+	}}
+	if !reflect.DeepEqual(summary.SpawnGroups, wantSpawnGroups) {
+		t.Fatalf("unexpected runtime summary spawn-group shop sell price:\n got: %#v\nwant: %#v", summary.SpawnGroups, wantSpawnGroups)
+	}
+	wantRewardDrops := []contentbundle.RewardDropAggregateSummary{{ItemVnum: 27001, ItemName: "Sell Price Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: shopSellPrice}}
+	if !reflect.DeepEqual(summary.RewardDrops, wantRewardDrops) {
+		t.Fatalf("unexpected runtime summary reward-drop shop sell price:\n got: %#v\nwant: %#v", summary.RewardDrops, wantRewardDrops)
+	}
+}
+
 func TestGameRuntimeExportContentBundleSummaryIncludesWarpDestinationDetails(t *testing.T) {
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")

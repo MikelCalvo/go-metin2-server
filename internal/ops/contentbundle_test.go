@@ -1302,6 +1302,42 @@ func TestLocalContentBundleSummaryEndpointReturnsPickupRangeMetadataForLoopbackP
 	}
 }
 
+func TestLocalContentBundleSummaryEndpointReturnsShopSellPriceMetadataForLoopbackPost(t *testing.T) {
+	const shopSellPrice uint64 = 13
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	body := `{"spawn_groups":[{"ref":"practice.sell_price_reward","name":"Sell Price Reward","map_index":42,"x":1800,"y":2900,"race_num":101,"combat_profile":"practice_mob","reward_drop_vnums":[27001]}],"item_templates":[{"vnum":27001,"name":"Sell Price Potion","stackable":true,"max_count":200,"shop_buy_price":5,"shop_sell_price":13}],"interaction_definitions":[{"kind":"shop_preview","ref":"npc:sell_price_merchant","title":"Sell Price Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":2}]}]}`
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/summary", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected dry-run summary not to call live exporter, got %d calls", summaryer.calls)
+	}
+	var got contentbundle.Summary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode shop-sell-price summary response body: %v", err)
+	}
+	if got.ItemTemplates[0].ShopSellPrice != shopSellPrice {
+		t.Fatalf("expected item-template shop_sell_price %d, got %+v", shopSellPrice, got.ItemTemplates)
+	}
+	if got.ShopCatalogs[0].Entries[0].ShopSellPrice != shopSellPrice {
+		t.Fatalf("expected shop-catalog shop_sell_price %d, got %+v", shopSellPrice, got.ShopCatalogs)
+	}
+	if got.SpawnGroups[0].RewardDropItems[0].ShopSellPrice != shopSellPrice {
+		t.Fatalf("expected spawn reward-drop shop_sell_price %d, got %+v", shopSellPrice, got.SpawnGroups)
+	}
+	if got.RewardDrops[0].ShopSellPrice != shopSellPrice {
+		t.Fatalf("expected aggregate reward-drop shop_sell_price %d, got %+v", shopSellPrice, got.RewardDrops)
+	}
+}
+
 func TestLocalContentBundleSummaryEndpointRejectsInvalidDryRunBundle(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
 	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)

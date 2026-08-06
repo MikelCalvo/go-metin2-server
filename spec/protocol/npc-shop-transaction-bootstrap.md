@@ -212,6 +212,11 @@ The first sell/sell2 path must fail closed when any of these are true:
 - the template-authored sell credit or resulting selected-character gold value would exceed the current signed `PLAYER_POINT_CHANGE` carrier
 - persistence/writeback fails
 
+Current authored-content summary support:
+- `GET` / dry-run `POST /local/content-bundle/summary` surface non-zero template-authored `shop_sell_price` values in the top-level `item_templates` rows
+- the same sell-price metadata is repeated in template-backed `shop_catalogs[].entries`, `spawn_groups[].reward_drop_items`, and grouped `reward_drops` rows when those rows resolve through a bundled item template
+- this is an operator/QA read model only; it does not change the already-owned merchant sell validation or packet choreography
+
 Failure behavior in this bootstrap contract:
 - no partial live mutation may remain committed
 - no gold may be debited on failure
