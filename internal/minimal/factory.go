@@ -2899,6 +2899,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ChatResult{Accepted: false}
 						}
 						previousSelected := selectedPlayer.LiveCharacter()
+						liveInventory := selectedPlayer.LiveInventory()
+						if !runtime.authoredInventoryMoveSlotCountsFitTemplates(liveInventory, fromSlot, toSlot) {
+							return gameflow.ChatResult{Accepted: false}
+						}
+						if !runtime.authoredIncompatibleInventorySwapTemplatesResolve(liveInventory, fromSlot, toSlot) {
+							return gameflow.ChatResult{Accepted: false}
+						}
 						moveResult, ok := selectedPlayer.MoveInventoryItem(fromSlot, toSlot)
 						if !ok {
 							return gameflow.ChatResult{Accepted: false}

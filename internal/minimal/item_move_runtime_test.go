@@ -432,6 +432,107 @@ func TestGameRuntimeItemMoveRejectsMissingAuthoredTemplateForIncompatibleSwapWit
 	}
 }
 
+func TestGameRuntimeSlashInventoryMoveRejectsAuthoredIncompatibleSwapTemplateGuardsWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name      string
+		login     string
+		key       uint32
+		inventory []inventory.ItemInstance
+		templates []itemcatalog.Template
+	}{
+		{
+			name:  "missing source template",
+			login: "slash-swap-miss-src",
+			key:   0x6060616a,
+			inventory: []inventory.ItemInstance{
+				{ID: 6451, Vnum: 27001, Count: 3, Slot: 5},
+				{ID: 6452, Vnum: 11200, Count: 1, Slot: 6},
+			},
+			templates: []itemcatalog.Template{{Vnum: 11200, Name: "Slash Authored Sword", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotWeapon.String()}},
+		},
+		{
+			name:  "missing target template",
+			login: "slash-swap-miss-dst",
+			key:   0x6060616b,
+			inventory: []inventory.ItemInstance{
+				{ID: 6453, Vnum: 27001, Count: 3, Slot: 5},
+				{ID: 6454, Vnum: 11200, Count: 1, Slot: 6},
+			},
+			templates: []itemcatalog.Template{{Vnum: 27001, Name: "Slash Authored Potion", Stackable: true, MaxCount: 200}},
+		},
+		{
+			name:  "source stack above template max",
+			login: "slash-swap-overmax-source",
+			key:   0x6060616c,
+			inventory: []inventory.ItemInstance{
+				{ID: 6455, Vnum: 27001, Count: 201, Slot: 5},
+				{ID: 6456, Vnum: 11200, Count: 1, Slot: 6},
+			},
+			templates: []itemcatalog.Template{
+				{Vnum: 27001, Name: "Slash Bounded Potion", Stackable: true, MaxCount: 200},
+				{Vnum: 11200, Name: "Slash Bounded Sword", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotWeapon.String()},
+			},
+		},
+		{
+			name:  "target stack above template max",
+			login: "slash-swap-overmax-target",
+			key:   0x6060616d,
+			inventory: []inventory.ItemInstance{
+				{ID: 6457, Vnum: 27001, Count: 3, Slot: 5},
+				{ID: 6458, Vnum: 11200, Count: 2, Slot: 6},
+			},
+			templates: []itemcatalog.Template{
+				{Vnum: 27001, Name: "Slash Bounded Potion", Stackable: true, MaxCount: 200},
+				{Vnum: 11200, Name: "Slash Bounded Sword", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotWeapon.String()},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("SlashMoveSwapGuard", 0x0103067a, 0x0204067a, 1300, 2300, 0, 101, 201)
+			owner.Inventory = append([]inventory.ItemInstance(nil), tc.inventory...)
+			owner.Quickslots = []loginticket.Quickslot{
+				{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+				{Position: 3, Type: quickslotproto.TypeItem, Slot: 6},
+			}
+			issuePeerTicket(t, ticketStore, tc.login, tc.key, owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed slash authored-template guarded swap account: %v", err)
+			}
+			itemStore := newItemTemplateStore(t, tc.templates)
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected slash authored-template guarded swap runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, tc.key)
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/inventory_move 5 6"})))
+			if err != nil {
+				t.Fatalf("unexpected slash authored-template guarded swap error: %v", err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s slash inventory swap to emit no frames, got %d", tc.name, len(out))
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected no queued frames after %s slash inventory swap rejection, got %d", tc.name, len(queued))
+			}
+			persisted, err := accounts.Load(tc.login)
+			if err != nil {
+				t.Fatalf("load slash authored-template guarded swap account: %v", err)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("%s slash inventory swap mutated inventory: got %+v want %+v", tc.name, persisted.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("%s slash inventory swap mutated quickslots: got %+v want %+v", tc.name, persisted.Characters[0].Quickslots, owner.Quickslots)
+			}
+		})
+	}
+}
+
 func TestGameRuntimeItemMoveRejectsOverTemplateMaxIncompatibleSwapWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name      string
