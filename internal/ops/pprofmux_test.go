@@ -3212,6 +3212,105 @@ func TestLocalMapOccupancyEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T
 	}
 }
 
+func TestLocalMapOccupancyStaticActorsEndpointReturnsMapLocalStaticActorsForLoopbackGet(t *testing.T) {
+	lookup := &stubMapStaticActorsLookup{snapshots: map[uint32]any{
+		42: []map[string]any{{"entity_id": uint64(77), "name": "TrainingDummy"}},
+	}}
+	mux := RegisterLocalMapStaticActorsEndpoint(NewPprofMux("gamed"), lookup.MapStaticActors)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/42/static-actors", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if lookup.calls != 1 || lookup.lastMapIndex != 42 {
+		t.Fatalf("expected map static-actor lookup for map 42 once, got calls=%d map_index=%d", lookup.calls, lookup.lastMapIndex)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"name":"TrainingDummy"`) || !strings.Contains(body, `"entity_id":77`) {
+		t.Fatalf("unexpected JSON response body %q", body)
+	}
+}
+
+func TestLocalMapOccupancyStaticActorsEndpointRejectsInvalidMapIndex(t *testing.T) {
+	lookup := &stubMapStaticActorsLookup{}
+	mux := RegisterLocalMapStaticActorsEndpoint(NewPprofMux("gamed"), lookup.MapStaticActors)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/not-a-map/static-actors", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected map static-actor lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalMapOccupancyStaticActorsEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	lookup := &stubMapStaticActorsLookup{}
+	mux := RegisterLocalMapStaticActorsEndpoint(NewPprofMux("gamed"), lookup.MapStaticActors)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/42/static-actors", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected map static-actor lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalMapOccupancyStaticActorsEndpointRejectsWrongMethod(t *testing.T) {
+	lookup := &stubMapStaticActorsLookup{}
+	mux := RegisterLocalMapStaticActorsEndpoint(NewPprofMux("gamed"), lookup.MapStaticActors)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/maps/42/static-actors", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected map static-actor lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalMapOccupancyStaticActorsEndpointReturnsNotFoundForMissingMap(t *testing.T) {
+	lookup := &stubMapStaticActorsLookup{snapshots: map[uint32]any{}}
+	mux := RegisterLocalMapStaticActorsEndpoint(NewPprofMux("gamed"), lookup.MapStaticActors)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/42/static-actors", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+	if lookup.calls != 1 || lookup.lastMapIndex != 42 {
+		t.Fatalf("expected map static-actor lookup for map 42 once, got calls=%d map_index=%d", lookup.calls, lookup.lastMapIndex)
+	}
+}
+
 func TestLocalMapOccupancySpawnGroupsEndpointReturnsMapLocalSpawnGroupsForLoopbackGet(t *testing.T) {
 	lookup := &stubMapSpawnGroupsLookup{snapshots: map[uint32]any{
 		42: []map[string]any{{"entity_id": uint64(88), "name": "PracticeMob", "spawn_group_ref": "practice.map_mob"}},
@@ -5320,6 +5419,19 @@ type stubMapOccupancyLookup struct {
 }
 
 func (s *stubMapOccupancyLookup) MapOccupancy(mapIndex uint32) (any, bool) {
+	s.calls++
+	s.lastMapIndex = mapIndex
+	value, ok := s.snapshots[mapIndex]
+	return value, ok
+}
+
+type stubMapStaticActorsLookup struct {
+	snapshots    map[uint32]any
+	calls        int
+	lastMapIndex uint32
+}
+
+func (s *stubMapStaticActorsLookup) MapStaticActors(mapIndex uint32) (any, bool) {
 	s.calls++
 	s.lastMapIndex = mapIndex
 	value, ok := s.snapshots[mapIndex]

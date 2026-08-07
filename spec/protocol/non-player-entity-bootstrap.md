@@ -23,7 +23,7 @@ This contract applies only to:
 - runtime-owned boot-time restore plus successful create/update/delete persistence for that full static-actor snapshot on `gamed`
 - runtime-owned in-place edits of those static actors across non-player directories and map indexes while preserving entity identity
 - optional interaction-ready metadata (`interaction_kind` / `interaction_ref`) persisted and exposed through those same bootstrap actor seams without claiming interaction behavior yet
-- operator/runtime map-occupancy and static-actor snapshots that can now surface those actors through `internal/worldruntime/scopes.go`, including resolved combat profile rank metadata for combat-profile actors
+- operator/runtime map-occupancy, exact map-local static-actor subset, and static-actor snapshots that can now surface those actors through `internal/worldruntime/scopes.go`, including resolved combat profile rank metadata for combat-profile actors
 - the first loopback-only operator seed/snapshot/update/remove surface used to create, inspect, edit, and delete those runtime actors on `gamed`, including optional `combat_profile` metadata for create/update paths that need to author combat-capable bootstrap actors without a content-bundle import
 - the first client-visible enter-game bootstrap burst for static actors that already share the entering player's visible world under the current bootstrap topology/AOI policy
 - the first live operator-seed visibility burst for newly created static actors that already share some connected player's visible world under those same bootstrap topology/AOI rules
@@ -141,7 +141,7 @@ The next runtime checkpoint after this document should be able to say:
 - runtime-owned directories and map indexes can now also update that static actor in place without delete-and-recreate when its name/class/position changes
 - a deterministic file-backed static-actor snapshot store can now save/load the full bootstrap actor set by stable entity identity, and `gamed` now restores that snapshot at boot and rewrites it after successful static-actor create/update/delete mutations
 - those bootstrap static actors can now also carry optional paired `interaction_kind` / `interaction_ref` metadata through runtime state, snapshots, and operator create/update surfaces without claiming the interaction behavior itself yet
-- runtime/operator map-occupancy snapshots can now surface those static actors on their effective maps
+- runtime/operator map-occupancy snapshots and exact map-local static-actor subset lookups can now surface those static actors on their effective maps
 - relocate-preview and transfer results can now also expose explicit added/removed visible static actors beside the before/after occupancy snapshots
 - runtime/operator static-actor, visibility, map-occupancy, relocate-preview, and transfer snapshots can now expose resolved `combat_rank` for combat-profile actors without changing current packet output or combat math
 - runtime static-actor registration/update now rejects unsupported `interaction_kind` values instead of relying only on later store/bundle validation
