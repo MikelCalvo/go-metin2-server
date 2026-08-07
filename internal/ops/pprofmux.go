@@ -899,7 +899,7 @@ func RegisterLocalMapOccupancyEndpoint(mux *http.ServeMux, mapOccupancy func(uin
 	if mux == nil || mapOccupancy == nil {
 		return mux
 	}
-	mux.HandleFunc("GET /local/maps/", func(w http.ResponseWriter, r *http.Request) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
 		if !isLoopbackRemoteAddr(r.RemoteAddr) {
 			w.WriteHeader(http.StatusForbidden)
 			return
@@ -910,6 +910,32 @@ func RegisterLocalMapOccupancyEndpoint(mux *http.ServeMux, mapOccupancy func(uin
 			return
 		}
 		value, ok := mapOccupancy(mapIndex)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	}
+	mux.HandleFunc("GET /local/maps/{map_index}", handler)
+	mux.HandleFunc("GET /local/maps/", handler)
+	return mux
+}
+
+func RegisterLocalMapSpawnGroupsEndpoint(mux *http.ServeMux, spawnGroupsForMap func(uint32) (any, bool)) *http.ServeMux {
+	if mux == nil || spawnGroupsForMap == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/maps/{map_index}/spawn-groups", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		mapIndex, ok := decodeLocalMapSpawnGroupsIndex(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		value, ok := spawnGroupsForMap(mapIndex)
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -2133,7 +2159,27 @@ func decodeLocalGroundItemVID(r *http.Request) (uint32, bool) {
 }
 
 func decodeLocalMapIndex(r *http.Request) (uint32, bool) {
+	mapIndexRaw := r.PathValue("map_index")
+	if mapIndexRaw != "" {
+		return decodeLocalMapIndexRaw(mapIndexRaw)
+	}
 	return decodeLocalMapIndexWithPrefix(r, "/local/maps/")
+}
+
+func decodeLocalMapSpawnGroupsIndex(r *http.Request) (uint32, bool) {
+	return decodeLocalMapIndexRaw(r.PathValue("map_index"))
+}
+
+func decodeLocalMapIndexRaw(raw string) (uint32, bool) {
+	mapIndexRaw := strings.TrimSpace(raw)
+	if mapIndexRaw == "" || strings.Contains(mapIndexRaw, "/") {
+		return 0, false
+	}
+	mapIndex, err := strconv.ParseUint(mapIndexRaw, 0, 32)
+	if err != nil || mapIndex == 0 {
+		return 0, false
+	}
+	return uint32(mapIndex), true
 }
 
 func decodeLocalContentBundleMapIndex(r *http.Request) (uint32, bool) {

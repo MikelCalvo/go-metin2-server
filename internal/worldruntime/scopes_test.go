@@ -285,6 +285,33 @@ func TestScopesSpawnGroupSnapshotsReturnOnlySpawnBackedActorsInDeterministicOrde
 	}
 }
 
+func TestScopesSpawnGroupSnapshotsForMapReturnsOnlySpawnBackedActorsOnEffectiveMap(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	registry := NewEntityRegistryWithTopology(topology)
+	if _, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuide"}, Position: NewPosition(42, 1100, 2100), RaceNum: 20300}); !ok {
+		t.Fatal("expected plain static actor registration to succeed")
+	}
+	alpha, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "AlphaMob"}, Position: NewPosition(42, 1200, 2200), RaceNum: 20351, CombatProfile: StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.alpha", DeathReward: StaticActorDeathReward{Experience: 7, Gold: 11, DropVnums: []uint32{27002, 27001}}})
+	if !ok {
+		t.Fatal("expected alpha spawn actor registration to succeed")
+	}
+	zulu, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "ZuluMob"}, Position: NewPosition(1, 1500, 2500), RaceNum: 20350, CombatProfile: StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.zulu"})
+	if !ok {
+		t.Fatal("expected zulu spawn actor registration to succeed")
+	}
+
+	snapshots := NewScopes(topology, registry).SpawnGroupSnapshotsForMap(42)
+	if len(snapshots) != 1 {
+		t.Fatalf("expected one spawn-backed actor on map 42, got %+v", snapshots)
+	}
+	if snapshots[0].EntityID != alpha.Entity.ID || snapshots[0].MapIndex != 42 || snapshots[0].SpawnGroupRef != "practice.alpha" || snapshots[0].CombatProfile != StaticActorCombatProfilePracticeMob || !reflect.DeepEqual(snapshots[0].RewardDropVnums, []uint32{27001, 27002}) {
+		t.Fatalf("unexpected map-filtered spawn-group snapshot: %+v", snapshots[0])
+	}
+	if snapshots := NewScopes(topology, registry).SpawnGroupSnapshotsForMap(0); len(snapshots) != 1 || snapshots[0].EntityID != zulu.Entity.ID || snapshots[0].MapIndex != 1 {
+		t.Fatalf("expected map 0 to use bootstrap effective map 1 and return zulu spawn actor, got %+v", snapshots)
+	}
+}
+
 func TestScopesSpawnGroupSnapshotByRefReturnsExactAuthoredSpawnGroup(t *testing.T) {
 	topology := NewBootstrapTopology(1)
 	registry := NewEntityRegistryWithTopology(topology)

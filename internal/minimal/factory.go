@@ -1335,6 +1335,13 @@ func (r *gameRuntime) SpawnGroups() []StaticActorSnapshot {
 	return r.sharedWorld.SpawnGroups()
 }
 
+func (r *gameRuntime) SpawnGroupsForMap(mapIndex uint32) ([]StaticActorSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil {
+		return nil, false
+	}
+	return r.sharedWorld.SpawnGroupsForMap(mapIndex)
+}
+
 func (r *gameRuntime) SpawnGroup(entityID uint64) (StaticActorSnapshot, bool) {
 	if r == nil || r.sharedWorld == nil {
 		return StaticActorSnapshot{}, false

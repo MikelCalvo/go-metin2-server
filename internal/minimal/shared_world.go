@@ -2146,6 +2146,21 @@ func (r *sharedWorldRegistry) SpawnGroups() []StaticActorSnapshot {
 	return r.markStaticActorSnapshotsStateLocked(r.scopesLocked().SpawnGroupSnapshots())
 }
 
+func (r *sharedWorldRegistry) SpawnGroupsForMap(mapIndex uint32) ([]StaticActorSnapshot, bool) {
+	if r == nil || r.entities == nil || mapIndex == 0 {
+		return nil, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, snapshot := range r.mapOccupancySnapshotsLocked() {
+		if snapshot.MapIndex == mapIndex {
+			return snapshot.SpawnGroups, true
+		}
+	}
+	return nil, false
+}
+
 func (r *sharedWorldRegistry) SpawnGroup(entityID uint64) (StaticActorSnapshot, bool) {
 	if r == nil || r.entities == nil || entityID == 0 {
 		return StaticActorSnapshot{}, false

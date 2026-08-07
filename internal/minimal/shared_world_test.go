@@ -229,6 +229,86 @@ func TestGameRuntimeSpawnGroupByRefReturnsExactSpawnBackedActorOnly(t *testing.T
 	}
 }
 
+func TestGameRuntimeSpawnGroupsForMapReturnsMapLocalSpawnBackedActors(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{
+		StaticActors: []contentbundle.StaticActor{
+			{
+				Name:     "VillageGuide",
+				MapIndex: 42,
+				X:        1100,
+				Y:        2100,
+				RaceNum:  20300,
+			},
+			{
+				Name:     "MapOnlyGuide",
+				MapIndex: 99,
+				X:        1400,
+				Y:        2400,
+				RaceNum:  20301,
+			},
+		},
+		SpawnGroups: []contentbundle.SpawnGroup{
+			{
+				Ref:           "practice.map_local_alpha",
+				Name:          "MapLocalAlpha",
+				MapIndex:      42,
+				X:             1200,
+				Y:             2200,
+				RaceNum:       20350,
+				CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+			},
+			{
+				Ref:           "practice.map_local_zulu",
+				Name:          "MapLocalZulu",
+				MapIndex:      bootstrapMapIndex,
+				X:             1300,
+				Y:             2300,
+				RaceNum:       20351,
+				CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("import mixed static actor/spawn-group bundle: %v", err)
+	}
+
+	groups, ok := runtime.SpawnGroupsForMap(42)
+	if !ok {
+		t.Fatal("expected map-local spawn-group lookup to resolve map 42")
+	}
+	if len(groups) != 1 || groups[0].Name != "MapLocalAlpha" || groups[0].SpawnGroupRef != "practice.map_local_alpha" || groups[0].MapIndex != 42 {
+		t.Fatalf("unexpected map 42 spawn-group snapshots: %+v", groups)
+	}
+	groups, ok = runtime.SpawnGroupsForMap(bootstrapMapIndex)
+	if !ok {
+		t.Fatal("expected bootstrap-map spawn-group lookup to resolve")
+	}
+	if len(groups) != 1 || groups[0].Name != "MapLocalZulu" || groups[0].SpawnGroupRef != "practice.map_local_zulu" || groups[0].MapIndex != bootstrapMapIndex {
+		t.Fatalf("unexpected bootstrap-map spawn-group snapshots: %+v", groups)
+	}
+	groups, ok = runtime.SpawnGroupsForMap(99)
+	if !ok {
+		t.Fatal("expected map-local spawn-group lookup to resolve occupied map 99")
+	}
+	if len(groups) != 0 {
+		t.Fatalf("expected occupied map 99 with no spawn groups to return an empty slice, got %+v", groups)
+	}
+	if groups, ok := runtime.SpawnGroupsForMap(0); ok || len(groups) != 0 {
+		t.Fatalf("expected map 0 lookup to fail closed, got ok=%v groups=%+v", ok, groups)
+	}
+}
+
 func TestLegacyCreatePositionForEmpireCoversOwnedTownRestartTable(t *testing.T) {
 	tests := []struct {
 		name         string

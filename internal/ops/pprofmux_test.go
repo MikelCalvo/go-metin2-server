@@ -3177,7 +3177,15 @@ func TestLocalVisibilityEndpointRejectsWrongMethod(t *testing.T) {
 
 func TestLocalMapOccupancyEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
 	lookup := &stubMapOccupancyLookup{snapshots: map[uint32]any{
-		42: map[string]any{"map_index": uint32(42), "character_count": 1, "characters": []map[string]any{{"name": "Alpha"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(77), "name": "TrainingDummy"}}},
+		42: map[string]any{
+			"map_index":          uint32(42),
+			"character_count":    1,
+			"characters":         []map[string]any{{"name": "Alpha"}},
+			"static_actor_count": 1,
+			"static_actors":      []map[string]any{{"entity_id": uint64(77), "name": "TrainingDummy"}},
+			"spawn_group_count":  1,
+			"spawn_groups":       []map[string]any{{"entity_id": uint64(88), "name": "PracticeMob", "spawn_group_ref": "practice.map_mob"}},
+		},
 	}}
 	mux := RegisterLocalMapOccupancyEndpoint(NewPprofMux("gamed"), lookup.MapOccupancy)
 
@@ -3197,8 +3205,138 @@ func TestLocalMapOccupancyEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T
 		t.Fatalf("expected application/json content type, got %q", contentType)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `"map_index":42`) || !strings.Contains(body, `"character_count":1`) || !strings.Contains(body, `"name":"Alpha"`) || !strings.Contains(body, `"static_actors":[`) {
+	for _, want := range []string{`"map_index":42`, `"character_count":1`, `"name":"Alpha"`, `"static_actors":[`, `"spawn_group_count":1`, `"spawn_groups":[`, `"spawn_group_ref":"practice.map_mob"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %q", want, body)
+		}
+	}
+}
+
+func TestLocalMapOccupancySpawnGroupsEndpointReturnsMapLocalSpawnGroupsForLoopbackGet(t *testing.T) {
+	lookup := &stubMapSpawnGroupsLookup{snapshots: map[uint32]any{
+		42: []map[string]any{{"entity_id": uint64(88), "name": "PracticeMob", "spawn_group_ref": "practice.map_mob"}},
+	}}
+	mux := RegisterLocalMapSpawnGroupsEndpoint(NewPprofMux("gamed"), lookup.MapSpawnGroups)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/42/spawn-groups", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if lookup.calls != 1 || lookup.lastMapIndex != 42 {
+		t.Fatalf("expected map spawn-group lookup for map 42 once, got calls=%d map_index=%d", lookup.calls, lookup.lastMapIndex)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"spawn_group_ref":"practice.map_mob"`) || !strings.Contains(body, `"entity_id":88`) {
 		t.Fatalf("unexpected JSON response body %q", body)
+	}
+}
+
+func TestLocalMapOccupancySpawnGroupsEndpointRejectsInvalidMapIndex(t *testing.T) {
+	lookup := &stubMapSpawnGroupsLookup{}
+	mux := RegisterLocalMapSpawnGroupsEndpoint(NewPprofMux("gamed"), lookup.MapSpawnGroups)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/not-a-map/spawn-groups", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected map spawn-group lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalMapOccupancySpawnGroupsEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	lookup := &stubMapSpawnGroupsLookup{}
+	mux := RegisterLocalMapSpawnGroupsEndpoint(NewPprofMux("gamed"), lookup.MapSpawnGroups)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/42/spawn-groups", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected map spawn-group lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalMapOccupancySpawnGroupsEndpointRejectsWrongMethod(t *testing.T) {
+	lookup := &stubMapSpawnGroupsLookup{}
+	mux := RegisterLocalMapSpawnGroupsEndpoint(NewPprofMux("gamed"), lookup.MapSpawnGroups)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/maps/42/spawn-groups", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected map spawn-group lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalMapOccupancySpawnGroupsEndpointReturnsNotFoundForMissingMap(t *testing.T) {
+	lookup := &stubMapSpawnGroupsLookup{snapshots: map[uint32]any{}}
+	mux := RegisterLocalMapSpawnGroupsEndpoint(NewPprofMux("gamed"), lookup.MapSpawnGroups)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/42/spawn-groups", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+	if lookup.calls != 1 || lookup.lastMapIndex != 42 {
+		t.Fatalf("expected map spawn-group lookup for map 42 once, got calls=%d map_index=%d", lookup.calls, lookup.lastMapIndex)
+	}
+}
+
+func TestLocalMapOccupancyAndMapSpawnGroupsEndpointsCoexist(t *testing.T) {
+	occupancy := &stubMapOccupancyLookup{snapshots: map[uint32]any{42: map[string]any{"map_index": uint32(42), "character_count": 1}}}
+	spawnGroups := &stubMapSpawnGroupsLookup{snapshots: map[uint32]any{42: []map[string]any{{"entity_id": uint64(88), "spawn_group_ref": "practice.map_mob"}}}}
+	mux := RegisterLocalMapOccupancyEndpoint(NewPprofMux("gamed"), occupancy.MapOccupancy)
+	mux = RegisterLocalMapSpawnGroupsEndpoint(mux, spawnGroups.MapSpawnGroups)
+
+	occupancyReq := httptest.NewRequest(http.MethodGet, "/local/maps/42", nil)
+	occupancyReq.RemoteAddr = "127.0.0.1:12345"
+	occupancyRec := httptest.NewRecorder()
+	mux.ServeHTTP(occupancyRec, occupancyReq)
+	if occupancyRec.Code != http.StatusOK {
+		t.Fatalf("expected occupancy endpoint status %d, got %d", http.StatusOK, occupancyRec.Code)
+	}
+	if occupancy.calls != 1 || occupancy.lastMapIndex != 42 || spawnGroups.calls != 0 {
+		t.Fatalf("expected only occupancy lookup for /local/maps/42, got occupancy=%d map=%d spawn=%d", occupancy.calls, occupancy.lastMapIndex, spawnGroups.calls)
+	}
+
+	spawnReq := httptest.NewRequest(http.MethodGet, "/local/maps/42/spawn-groups", nil)
+	spawnReq.RemoteAddr = "127.0.0.1:12345"
+	spawnRec := httptest.NewRecorder()
+	mux.ServeHTTP(spawnRec, spawnReq)
+	if spawnRec.Code != http.StatusOK {
+		t.Fatalf("expected map spawn-groups endpoint status %d, got %d", http.StatusOK, spawnRec.Code)
+	}
+	if occupancy.calls != 1 || spawnGroups.calls != 1 || spawnGroups.lastMapIndex != 42 {
+		t.Fatalf("expected spawn-group lookup after occupancy, got occupancy=%d spawn=%d spawn_map=%d", occupancy.calls, spawnGroups.calls, spawnGroups.lastMapIndex)
 	}
 }
 
@@ -5179,6 +5317,19 @@ type stubMapOccupancyLookup struct {
 }
 
 func (s *stubMapOccupancyLookup) MapOccupancy(mapIndex uint32) (any, bool) {
+	s.calls++
+	s.lastMapIndex = mapIndex
+	value, ok := s.snapshots[mapIndex]
+	return value, ok
+}
+
+type stubMapSpawnGroupsLookup struct {
+	snapshots    map[uint32]any
+	calls        int
+	lastMapIndex uint32
+}
+
+func (s *stubMapSpawnGroupsLookup) MapSpawnGroups(mapIndex uint32) (any, bool) {
 	s.calls++
 	s.lastMapIndex = mapIndex
 	value, ok := s.snapshots[mapIndex]

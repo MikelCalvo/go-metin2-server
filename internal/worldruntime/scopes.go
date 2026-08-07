@@ -292,6 +292,13 @@ func (s Scopes) SpawnGroupSnapshots() []StaticActorSnapshot {
 	return staticActorSnapshots(s.Topology, spawnActors)
 }
 
+func (s Scopes) SpawnGroupSnapshotsForMap(mapIndex uint32) []StaticActorSnapshot {
+	if s.Entities == nil {
+		return nil
+	}
+	return spawnGroupSnapshots(s.Topology, s.Entities.StaticActors(mapIndex))
+}
+
 func (s Scopes) SpawnGroupSnapshotByRef(ref string) (StaticActorSnapshot, bool) {
 	if s.Entities == nil || !ValidStaticActorSpawnGroupRef(ref) || ref == "" {
 		return StaticActorSnapshot{}, false

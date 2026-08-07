@@ -207,6 +207,16 @@ func main() {
 			return snapshot, true
 		},
 	)
+	opsHandler = ops.RegisterLocalMapSpawnGroupsEndpoint(
+		opsHandler,
+		func(mapIndex uint32) (any, bool) {
+			groups, ok := gameRuntime.SpawnGroupsForMap(mapIndex)
+			if !ok {
+				return nil, false
+			}
+			return groups, true
+		},
+	)
 	opsHandler = ops.RegisterLocalConnectedCharacterEndpoint(
 		opsHandler,
 		func(name string) (any, bool) {
