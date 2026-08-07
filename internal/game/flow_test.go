@@ -953,6 +953,45 @@ func TestHandleClientFrameUseSkillWithoutHandlerIsNoOp(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameAcceptsCharacterPositionInGameAndReturnsHandlerFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	wantFrame := control.EncodePing(control.PingPacket{ServerTime: 0x01020304})
+	flow := NewFlow(machine, Config{
+		HandleCharacterPosition: func(packet combatproto.ClientCharacterPositionPacket) CharacterPositionResult {
+			if packet.Position != 1 {
+				t.Fatalf("unexpected character-position packet: %+v", packet)
+			}
+			return CharacterPositionResult{Accepted: true, Frames: [][]byte{wantFrame}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientCharacterPosition(combatproto.ClientCharacterPositionPacket{Position: 1})))
+	if err != nil {
+		t.Fatalf("unexpected character-position error: %v", err)
+	}
+	if len(out) != 1 || !bytes.Equal(out[0], wantFrame) {
+		t.Fatalf("expected handler character-position frame, got %#v", out)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameCharacterPositionWithoutHandlerIsNoOp(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{})
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientCharacterPosition(combatproto.ClientCharacterPositionPacket{Position: 1})))
+	if err != nil {
+		t.Fatalf("unexpected character-position error without handler: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected no outgoing character-position frames without handler, got %d", len(out))
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameAcceptsShopEndInGameAndReturnsFrames(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	expected := control.EncodePing(control.PingPacket{ServerTime: 0x01020304})
@@ -1296,6 +1335,18 @@ func TestHandleClientFrameRejectsMalformedAttackInGame(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	flow := NewFlow(machine, Config{})
 	_, err := flow.HandleClientFrame(frame.Frame{Header: combatproto.HeaderClientAttack, Length: 9, Payload: []byte{0x00, 0x01, 0x02}})
+	if !errors.Is(err, combatproto.ErrInvalidPayload) {
+		t.Fatalf("expected combatproto.ErrInvalidPayload, got %v", err)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameRejectsMalformedCharacterPositionInGame(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{})
+	_, err := flow.HandleClientFrame(frame.Frame{Header: combatproto.HeaderClientCharacterPosition, Length: 6, Payload: []byte{0x01, 0x02}})
 	if !errors.Is(err, combatproto.ErrInvalidPayload) {
 		t.Fatalf("expected combatproto.ErrInvalidPayload, got %v", err)
 	}

@@ -115,6 +115,22 @@ func TestEncodeClientAddFlyTargetingUsesLegacyPayloadLayout(t *testing.T) {
 	}
 }
 
+func TestEncodeClientCharacterPositionUsesLegacyPayloadLayout(t *testing.T) {
+	raw := EncodeClientCharacterPosition(ClientCharacterPositionPacket{Position: 0x01})
+	expected := frame.Encode(HeaderClientCharacterPosition, []byte{0x01})
+	if !bytes.Equal(raw, expected) {
+		t.Fatalf("unexpected client character-position encoding: got %x want %x", raw, expected)
+	}
+
+	decoded, err := DecodeClientCharacterPosition(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode client character-position: %v", err)
+	}
+	if decoded.Position != 0x01 {
+		t.Fatalf("unexpected client character-position packet: %+v", decoded)
+	}
+}
+
 func TestEncodeServerClearTargetUsesZeroTargetAndZeroHP(t *testing.T) {
 	raw := EncodeServerClearTarget()
 	expected := frame.Encode(HeaderServerTarget, []byte{0x00, 0x00, 0x00, 0x00, 0x00})
@@ -256,6 +272,20 @@ func TestDecodeClientAddFlyTargetingRejectsUnexpectedHeader(t *testing.T) {
 
 func TestDecodeClientAddFlyTargetingRejectsMalformedPayload(t *testing.T) {
 	_, err := DecodeClientAddFlyTargeting(frame.Frame{Header: HeaderClientAddFlyTargeting, Length: 15, Payload: make([]byte, clientFlyTargetingPayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestDecodeClientCharacterPositionRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeClientCharacterPosition(frame.Frame{Header: HeaderClientTarget, Length: 5, Payload: []byte{0x01}})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeClientCharacterPositionRejectsMalformedPayload(t *testing.T) {
+	_, err := DecodeClientCharacterPosition(frame.Frame{Header: HeaderClientCharacterPosition, Length: 6, Payload: []byte{0x01, 0x02}})
 	if !errors.Is(err, ErrInvalidPayload) {
 		t.Fatalf("expected ErrInvalidPayload, got %v", err)
 	}

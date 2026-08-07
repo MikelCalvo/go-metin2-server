@@ -4264,6 +4264,61 @@ func TestNewGameSessionFactoryUseSkillFailsClosedWithoutMutatingSelectedTarget(t
 	}
 }
 
+func TestNewGameSessionFactoryCharacterPositionFailsClosedWithoutMutatingSelectedTarget(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	attacker := peerVisibilityCharacter("PositionGuard", 0x01030141, 0x02040141, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "position-guard", 0x41414141, attacker)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected character-position guard runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "PositionGuardDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected character-position guard dummy registration to succeed")
+	}
+	targetVID := uint32(actor.EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "position-guard", 0x41414141)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for character-position guard with visible training dummy, got %d", len(enterOut))
+	}
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before character-position guard: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target-selection frame before character-position guard, got %d", len(selectOut))
+	}
+
+	positionOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientCharacterPosition(combatproto.ClientCharacterPositionPacket{Position: 1})))
+	if err != nil {
+		t.Fatalf("unexpected character-position guard dispatch error: %v", err)
+	}
+	if len(positionOut) != 0 {
+		t.Fatalf("expected character-position to fail closed with no frames, got %d", len(positionOut))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected character-position to queue no server frames, got %d", len(queued))
+	}
+
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected attack error after character-position guard: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected first normal attack after character-position to return target refresh plus damage-info, got %d", len(attackOut))
+	}
+	refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[0]))
+	if err != nil {
+		t.Fatalf("decode target refresh after character-position guard: %v", err)
+	}
+	if refresh.TargetVID != targetVID || refresh.HPPercent != 90 {
+		t.Fatalf("expected character-position to leave selected target at full HP before first normal hit, got %+v", refresh)
+	}
+}
+
 func TestNewGameSessionFactoryPracticeMobDeathClearsPendingServerOriginRetaliationUntilRespawn(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	attacker := peerVisibilityCharacter("Attacker", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

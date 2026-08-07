@@ -228,7 +228,7 @@ Already present:
 
 - non-player entity directory,
 - static/non-player combat profiles,
-- target selection, client-originated silent target clear, normal attack packet ingress, game-flow rejection of unsupported attack types before runtime mutation, and decode-and-fail-closed `USE_SKILL` / `SHOOT` / `FLY_TARGETING` / `ADD_FLY_TARGETING` ingress guards for currently unsupported skill, ranged-shot, and projectile-targeting traffic,
+- target selection, client-originated silent target clear, normal attack packet ingress, game-flow rejection of unsupported attack types before runtime mutation, and decode-and-fail-closed `USE_SKILL` / `SHOOT` / `FLY_TARGETING` / `ADD_FLY_TARGETING` / `CHARACTER_POSITION` ingress guards for currently unsupported skill, ranged-shot, projectile-targeting, and position/battle-position traffic,
 - selected-target snapshot/version checks,
 - loopback combat-target introspection plus flat/exact spawn-group read models for selected-target ownership and HP debugging,
 - no-op content-bundle reimports and failed replacement rollbacks that preserve live practice-mob HP, selected-target ownership, combat snapshot/respawn state, and visibility state when authored content has not committed,

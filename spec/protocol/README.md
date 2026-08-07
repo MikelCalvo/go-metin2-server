@@ -42,7 +42,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `static-actor-interaction-request.md` — first owned client-originated `GAME`-phase interaction request for a visible bootstrap static actor target by `VID`
 - `npc-service-interactions-bootstrap.md` — first frozen service-style NPC gameplay contract built on top of bootstrap static actors and the existing `INTERACT` ingress
 - `combat-training-dummy-bootstrap.md` — first frozen combat-preparation target contract around one visible `training_dummy` actor
-- `combat-normal-attack-bootstrap.md` — first owned `ATTACK` wire contract, selected-dummy normal-attack gate, deterministic bootstrap HP refresh loop, safe `USE_SKILL`/`SHOOT`/`FLY_TARGETING` ingress guards, and clear-target companion on top of the visible `training_dummy` target slice
+- `combat-normal-attack-bootstrap.md` — first owned `ATTACK` wire contract, selected-dummy normal-attack gate, deterministic bootstrap HP refresh loop, safe `USE_SKILL`/`SHOOT`/`FLY_TARGETING`/`CHARACTER_POSITION` ingress guards, and clear-target companion on top of the visible `training_dummy` target slice
 - `combat-damage-info-bootstrap.md` — first owned server `DAMAGE_INFO` codec contract plus standalone hit-effect fanout and owner self-only spawn-backed practice-mob hit-effect emission
 - `non-player-death-respawn-bootstrap.md` — first owned zero-HP death, target clear, dead-state rejection, and respawn-reset contract for bootstrap non-player combatants
 - `non-player-reward-bootstrap.md` — first non-player death reward seam, default rewardless descriptors, deterministic EXP/gold persistence, and fixed drop-vnum ground-item rewards

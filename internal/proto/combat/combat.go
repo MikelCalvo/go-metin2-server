@@ -8,24 +8,26 @@ import (
 )
 
 const (
-	HeaderClientAttack          uint16 = 0x0401
-	HeaderClientUseSkill        uint16 = 0x0402
-	HeaderClientShoot           uint16 = 0x0403
-	HeaderClientFlyTargeting    uint16 = 0x0404
-	HeaderClientAddFlyTargeting uint16 = 0x0405
-	HeaderServerDamageInfo      uint16 = 0x0410
-	HeaderClientTarget          uint16 = 0x0A01
-	HeaderServerTarget          uint16 = 0x0A10
+	HeaderClientAttack            uint16 = 0x0401
+	HeaderClientUseSkill          uint16 = 0x0402
+	HeaderClientShoot             uint16 = 0x0403
+	HeaderClientFlyTargeting      uint16 = 0x0404
+	HeaderClientAddFlyTargeting   uint16 = 0x0405
+	HeaderServerDamageInfo        uint16 = 0x0410
+	HeaderClientTarget            uint16 = 0x0A01
+	HeaderClientCharacterPosition uint16 = 0x0A60
+	HeaderServerTarget            uint16 = 0x0A10
 
 	ClientAttackTypeNormal uint8 = 0
 
-	clientAttackPayloadSize       = 7
-	clientUseSkillPayloadSize     = 8
-	clientShootPayloadSize        = 1
-	clientFlyTargetingPayloadSize = 12
-	clientTargetPayloadSize       = 4
-	serverDamageInfoPayloadSize   = 9
-	serverTargetPayloadSize       = 5
+	clientAttackPayloadSize            = 7
+	clientUseSkillPayloadSize          = 8
+	clientShootPayloadSize             = 1
+	clientFlyTargetingPayloadSize      = 12
+	clientCharacterPositionPayloadSize = 1
+	clientTargetPayloadSize            = 4
+	serverDamageInfoPayloadSize        = 9
+	serverTargetPayloadSize            = 5
 )
 
 var (
@@ -53,6 +55,10 @@ type ClientFlyTargetingPacket struct {
 	TargetVID uint32
 	X         int32
 	Y         int32
+}
+
+type ClientCharacterPositionPacket struct {
+	Position uint8
 }
 
 type ClientTargetPacket struct {
@@ -143,6 +149,20 @@ func EncodeClientAddFlyTargeting(packet ClientFlyTargetingPacket) []byte {
 
 func DecodeClientAddFlyTargeting(f frame.Frame) (ClientFlyTargetingPacket, error) {
 	return decodeClientFlyTargeting(f, HeaderClientAddFlyTargeting)
+}
+
+func EncodeClientCharacterPosition(packet ClientCharacterPositionPacket) []byte {
+	return frame.Encode(HeaderClientCharacterPosition, []byte{packet.Position})
+}
+
+func DecodeClientCharacterPosition(f frame.Frame) (ClientCharacterPositionPacket, error) {
+	if f.Header != HeaderClientCharacterPosition {
+		return ClientCharacterPositionPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientCharacterPositionPayloadSize {
+		return ClientCharacterPositionPacket{}, ErrInvalidPayload
+	}
+	return ClientCharacterPositionPacket{Position: f.Payload[0]}, nil
 }
 
 func encodeClientFlyTargeting(header uint16, packet ClientFlyTargetingPacket) []byte {
