@@ -424,6 +424,20 @@ Expected result:
 - item-template validation rejects `refine_reject_message` if it contains embedded NUL bytes or is authored on a template that also sets `refineable = true`, so contradictory refine feedback should fail before gameplay testing starts
 - this is a fail-closed guard, not a completed refine or upgrade feature
 
+### 4.5.13 Unsupported item exchange guard (`EXCHANGE`)
+
+Run this only if packet tooling or the client build can emit an exchange/trade attempt.
+
+- [ ] Attempt one `EXCHANGE START` request against a visible actor or player
+- [ ] Attempt one `EXCHANGE ITEM_ADD` request for a disposable carried item slot
+- [ ] If packet tooling allows it, repeat with `ITEM_DEL`, `ELK_ADD`, `ACCEPT`, and `CANCEL` subheaders
+- [ ] If packet tooling allows it, repeat with a malformed payload size
+
+Expected result:
+- ordinary `EXCHANGE` attempts are parsed by the game socket but remain unsupported in the shipped bootstrap runtime: no response frames are visible, no carried inventory/equipment/quickslot/gold state changes, no ground actor appears, no peer receives trade/window/finalization frames, and reconnect/operator inspection shows the selected-character snapshot unchanged
+- malformed `EXCHANGE` payload sizes fail at the codec/dispatcher boundary rather than mutating runtime state
+- this is a fail-closed guard, not a completed exchange, trade, safebox, or player-shop feature
+
 ---
 
 ## 5. Single-client movement

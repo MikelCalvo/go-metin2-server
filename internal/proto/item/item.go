@@ -15,6 +15,7 @@ const (
 	HeaderClientPickup    uint16 = 0x0505
 	HeaderClientUseToItem uint16 = 0x0506
 	HeaderClientGive      uint16 = 0x0507
+	HeaderClientExchange  uint16 = 0x0508
 	HeaderClientRefine    uint16 = 0x050C
 	HeaderDel             uint16 = 0x0510
 	HeaderSet             uint16 = 0x0511
@@ -48,6 +49,7 @@ const (
 	clientPickupPayloadSize    = 4
 	clientUseToItemPayloadSize = positionSize + positionSize
 	clientGivePayloadSize      = 4 + positionSize + 1
+	clientExchangePayloadSize  = 1 + 4 + 1 + positionSize
 	clientRefinePayloadSize    = 2
 	delPayloadSize             = positionSize
 	setPayloadSize             = positionSize + 4 + 1 + 4 + 4 + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
@@ -63,6 +65,15 @@ const (
 	GetArgNormal                 uint8 = 0
 	GetArgFromPartyMember        uint8 = 1
 	GetArgDeliveredToPartyMember uint8 = 2
+)
+
+const (
+	ExchangeSubheaderStart uint8 = iota
+	ExchangeSubheaderItemAdd
+	ExchangeSubheaderItemDel
+	ExchangeSubheaderGoldAdd
+	ExchangeSubheaderAccept
+	ExchangeSubheaderCancel
 )
 
 const (
@@ -184,6 +195,13 @@ type ClientGivePacket struct {
 	TargetVID uint32
 	Position  Position
 	Count     uint8
+}
+
+type ClientExchangePacket struct {
+	Subheader uint8
+	Arg1      uint32
+	Arg2      uint8
+	Position  Position
 }
 
 type ClientRefinePacket struct {
@@ -368,6 +386,30 @@ func DecodeClientGive(f frame.Frame) (ClientGivePacket, error) {
 		TargetVID: binary.LittleEndian.Uint32(f.Payload[0:]),
 		Position:  decodePosition(f.Payload[4 : 4+positionSize]),
 		Count:     f.Payload[4+positionSize],
+	}, nil
+}
+
+func EncodeClientExchange(packet ClientExchangePacket) []byte {
+	payload := make([]byte, clientExchangePayloadSize)
+	payload[0] = packet.Subheader
+	binary.LittleEndian.PutUint32(payload[1:], packet.Arg1)
+	payload[5] = packet.Arg2
+	encodePosition(payload[6:], packet.Position)
+	return frame.Encode(HeaderClientExchange, payload)
+}
+
+func DecodeClientExchange(f frame.Frame) (ClientExchangePacket, error) {
+	if f.Header != HeaderClientExchange {
+		return ClientExchangePacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientExchangePayloadSize {
+		return ClientExchangePacket{}, ErrInvalidPayload
+	}
+	return ClientExchangePacket{
+		Subheader: f.Payload[0],
+		Arg1:      binary.LittleEndian.Uint32(f.Payload[1:]),
+		Arg2:      f.Payload[5],
+		Position:  decodePosition(f.Payload[6:]),
 	}, nil
 }
 

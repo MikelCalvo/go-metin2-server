@@ -228,6 +228,60 @@ func TestHandleClientFrameRejectsDeniedItemGiveInGame(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameAcceptsItemExchangeInGameAndReturnsHandlerFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	wantFrame := []byte("item-exchange")
+	flow := NewFlow(machine, Config{
+		HandleItemExchange: func(packet itemproto.ClientExchangePacket) ItemExchangeResult {
+			if packet.Subheader != itemproto.ExchangeSubheaderItemAdd || packet.Arg1 != 0x01020304 || packet.Arg2 != 7 || packet.Position != itemproto.InventoryPosition(5) {
+				t.Fatalf("unexpected item exchange packet: %+v", packet)
+			}
+			return ItemExchangeResult{Accepted: true, Frames: [][]byte{wantFrame}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderItemAdd,
+		Arg1:      0x01020304,
+		Arg2:      7,
+		Position:  itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected item exchange error: %v", err)
+	}
+	if len(out) != 1 || !bytes.Equal(out[0], wantFrame) {
+		t.Fatalf("expected handler item-exchange frame, got %#v", out)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameRejectsDeniedItemExchangeInGame(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	called := false
+	flow := NewFlow(machine, Config{
+		HandleItemExchange: func(packet itemproto.ClientExchangePacket) ItemExchangeResult {
+			called = true
+			return ItemExchangeResult{Accepted: false, Frames: [][]byte{[]byte("must-not-send")}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: 0x01020304})))
+	if err != nil {
+		t.Fatalf("unexpected denied item exchange error: %v", err)
+	}
+	if !called {
+		t.Fatal("expected item exchange handler to be called")
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected denied item exchange to emit no frames, got %d", len(out))
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameAcceptsItemRefineInGameAndReturnsHandlerFrames(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	wantFrame := []byte("item-refine")

@@ -159,6 +159,7 @@ Already present:
 - consumable item use, including template-authored signed `use_effect.point_delta` values so authored negative consumables can emit self-only point decreases, optional `use_effect.consume_count` values so multi-count consumables decrement authored stack units instead of a runtime-hardcoded single item, optional `use_effect.info_message` text for the successful-use self-only info-chat placeholder, embedded-NUL rejection for `use_effect.message` / `use_effect.info_message` text at item-template load time, and optional `use_reject_message` text for guarded direct-use rejection feedback that is emitted before any hypothetical point delta from the rejected item would be applied; signed point overflow/underflow, overdrawn consume-count requests, and `confirm_when_use`, `quest_use`, `quest_use_multiple`, or `applicable` consumables fail closed,
 - `ITEM_USE_TO_ITEM` stack merge behavior,
 - `ITEM_GIVE` packet codec and `GAME` dispatch ownership with the shipped runtime intentionally fail-closed until recipient transfer/exchange semantics are frozen, plus a template-authored `anti_give` / `give_reject_message` self-only info-chat guard for valid non-zero requested counts that explains bound-item rejection without mutating inventory, quickslots, peers, ground handles, or persistence,
+- `EXCHANGE` packet codec and `GAME` dispatch ownership with the shipped runtime intentionally fail-closed until two-party trade semantics are frozen, preserving inventory, quickslots, gold, ground handles, peers, and persistence,
 - `REFINE` packet codec and `GAME` dispatch ownership with the shipped runtime intentionally fail-closed until material/cost/result semantics are frozen, plus a template-authored non-refineable `refine_reject_message` self-only info-chat guard that explains rejected carried-item refine attempts without mutating inventory, quickslots, points, peers, ground handles, or persistence,
 - quickslot add/delete/swap persistence, including rejection of item quickslot bindings to malformed, locked, authored-missing-template, mismatched-template, or over-template-max carried items, type-scoped retarget cleanup when an item/skill/command tuple is rebound to a new bar position, type-none clear hardening that rejects non-zero stale payload bytes, and fail-closed file-backed snapshot validation for duplicate non-item skill/command tuple bindings,
 - quickslot cleanup and retargeting when item mutations remove, move, or fully merge a source slot, including the bootstrap `/inventory_move` compatibility seam after the same authored-template incompatible-swap guard boundary as packet `ITEM_MOVE`, while stale/reclaimed item-drop sockets remain self-local and cannot register bootstrap ground handles or overwrite the fresh authoritative item/quickslot snapshot,
@@ -170,7 +171,7 @@ Still missing:
 - accepted refine result semantics, metin stones, bonus changers, books/scroll families,
 - complete anti-flag/class/sex/level/equipment restrictions,
 - storage/safebox/mall,
-- player trade/exchange and player shops,
+- accepted player trade/exchange and player shops,
 - compatibility-grade database persistence.
 
 ### Ground items, pickup, gold, and merchant economy

@@ -242,6 +242,43 @@ func TestDecodeClientMoveReturnsExpectedFields(t *testing.T) {
 	}
 }
 
+func TestEncodeClientExchangeBuildsAFrame(t *testing.T) {
+	position, err := CarriedInventoryPosition(5)
+	if err != nil {
+		t.Fatalf("unexpected carried inventory position error: %v", err)
+	}
+	want := frame.Encode(HeaderClientExchange, []byte{ExchangeSubheaderItemAdd, 0x44, 0x33, 0x22, 0x11, 7, WindowInventory, 5, 0})
+	got := EncodeClientExchange(ClientExchangePacket{Subheader: ExchangeSubheaderItemAdd, Arg1: 0x11223344, Arg2: 7, Position: position})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected exchange frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeClientExchangeReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeClientExchange(decodeSingleFrame(t, frame.Encode(HeaderClientExchange, []byte{ExchangeSubheaderItemAdd, 0x44, 0x33, 0x22, 0x11, 7, WindowInventory, 5, 0})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	want := ClientExchangePacket{Subheader: ExchangeSubheaderItemAdd, Arg1: 0x11223344, Arg2: 7, Position: InventoryPosition(5)}
+	if packet != want {
+		t.Fatalf("unexpected exchange packet: got %+v want %+v", packet, want)
+	}
+}
+
+func TestDecodeClientExchangeRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeClientExchange(frame.Frame{Header: HeaderClientExchange + 1, Length: 13, Payload: make([]byte, clientExchangePayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeClientExchangeRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeClientExchange(frame.Frame{Header: HeaderClientExchange, Length: 12, Payload: make([]byte, clientExchangePayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
 func TestEncodeClientDropBuildsAFrame(t *testing.T) {
 	position, err := CarriedInventoryPosition(5)
 	if err != nil {
