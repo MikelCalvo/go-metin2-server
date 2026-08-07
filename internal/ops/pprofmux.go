@@ -825,6 +825,30 @@ func RegisterLocalSpawnGroupEndpoint(mux *http.ServeMux, spawnGroup func(uint64)
 	return mux
 }
 
+func RegisterLocalSpawnGroupByRefEndpoint(mux *http.ServeMux, spawnGroupByRef func(string) (any, bool)) *http.ServeMux {
+	if mux == nil || spawnGroupByRef == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/spawn-groups/by-ref/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		ref, ok := decodeLocalSpawnGroupRef(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		value, ok := spawnGroupByRef(ref)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalGroundItemsEndpoint(mux *http.ServeMux, groundItems func() any) *http.ServeMux {
 	if mux == nil || groundItems == nil {
 		return mux
@@ -1991,6 +2015,17 @@ func decodeLocalSpawnGroupEntityID(r *http.Request) (uint64, bool) {
 		return 0, false
 	}
 	return entityID, true
+}
+
+func decodeLocalSpawnGroupRef(r *http.Request) (string, bool) {
+	ref, err := url.PathUnescape(strings.TrimPrefix(r.URL.Path, "/local/spawn-groups/by-ref/"))
+	if err != nil {
+		return "", false
+	}
+	if ref == "" || strings.Contains(ref, "/") || !worldruntime.ValidStaticActorSpawnGroupRef(ref) {
+		return "", false
+	}
+	return ref, true
 }
 
 func decodeLocalGroundItemVID(r *http.Request) (uint32, bool) {

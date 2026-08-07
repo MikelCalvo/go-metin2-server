@@ -180,6 +180,55 @@ func TestGameRuntimeSpawnGroupReturnsExactSpawnBackedActorOnly(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeSpawnGroupByRefReturnsExactSpawnBackedActorOnly(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{
+		StaticActors: []contentbundle.StaticActor{{
+			Name:     "VillageGuide",
+			MapIndex: bootstrapMapIndex,
+			X:        1100,
+			Y:        2100,
+			RaceNum:  20300,
+		}},
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:           "practice.exact_ref_snapshot",
+			Name:          "ExactRefSnapshotMob",
+			MapIndex:      bootstrapMapIndex,
+			X:             1200,
+			Y:             2200,
+			RaceNum:       20350,
+			CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+		}},
+	})
+	if err != nil {
+		t.Fatalf("import mixed static actor/spawn-group bundle: %v", err)
+	}
+
+	group, ok := runtime.SpawnGroupByRef("practice.exact_ref_snapshot")
+	if !ok {
+		t.Fatal("expected exact spawn-group ref lookup to resolve")
+	}
+	if group.Name != "ExactRefSnapshotMob" || group.SpawnGroupRef != "practice.exact_ref_snapshot" || group.CombatProfile != string(worldruntime.StaticActorCombatProfilePracticeMob) {
+		t.Fatalf("unexpected exact spawn-group ref snapshot: %+v", group)
+	}
+	if actor, ok := runtime.SpawnGroupByRef("practice.missing"); ok {
+		t.Fatalf("expected exact spawn-group ref lookup to reject missing ref, got %+v", actor)
+	}
+	if actor, ok := runtime.SpawnGroupByRef("bad ref"); ok {
+		t.Fatalf("expected exact spawn-group ref lookup to reject malformed ref, got %+v", actor)
+	}
+}
+
 func TestLegacyCreatePositionForEmpireCoversOwnedTownRestartTable(t *testing.T) {
 	tests := []struct {
 		name         string

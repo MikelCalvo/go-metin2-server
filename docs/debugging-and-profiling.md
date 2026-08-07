@@ -817,9 +817,11 @@ List currently materialized authored spawn-group actors:
 
 ```bash
 curl http://127.0.0.1:6060/local/spawn-groups
+curl http://127.0.0.1:6060/local/spawn-groups/by-ref/practice.reward_mob
 ```
 
 This snapshot filters to attackable content materialized from `spawn_groups`; use `/local/static-actors` when you need the full visible static-actor set.
+The by-ref endpoint is loopback-only like the rest of the spawn-group inspection surface and looks up the materialized actor by authored `spawn_group_ref`, returning `400` for malformed refs and `404` when a well-formed ref is not currently live.
 `/local/maps` also embeds the same spawn-backed subset per occupied map as `spawn_group_count` and `spawn_groups`, so map-local QA does not need to cross-filter `/local/static-actors` manually.
 
 List the authored interaction catalog:

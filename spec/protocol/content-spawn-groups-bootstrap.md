@@ -267,6 +267,7 @@ The shipped `gamed` runtime also exposes a loopback-only read model for the curr
 
 - `GET /local/spawn-groups`
 - `GET /local/spawn-groups/{entity_id}`
+- `GET /local/spawn-groups/by-ref/{spawn_group_ref}`
 - `GET /local/visibility`
 - `POST /local/relocate-preview`
 - `POST /local/transfer`
@@ -277,6 +278,10 @@ This is an operator/debugging surface, not a gameplay packet and not a content m
 It intentionally omits ordinary `static_actors`, even if they have a combat profile, so local QA can distinguish authored attackable spawn presence from hand-authored visible/service actors without fetching and filtering the full `/local/static-actors` list.
 `GET /local/spawn-groups/{entity_id}` returns the same snapshot shape for one currently materialized spawn-backed actor, using the runtime entity ID / client-visible static-actor `VID` as the path key.
 It returns `404` when the entity is missing or belongs to an ordinary non-spawn static actor, preserving the boundary that this endpoint is for authored `spawn_groups` only.
+`GET /local/spawn-groups/by-ref/{spawn_group_ref}` returns the same snapshot shape by the authored dotted lowercase `spawn_group_ref` identity.
+It fails closed with `400` for malformed or non-canonical refs, including refs with surrounding whitespace after URL decoding, and returns `404` when the ref is well-formed but not materialized in the current runtime.
+If runtime state ever contains more than one materialized actor with the same authored ref, the by-ref lookup also returns `404` instead of choosing an arbitrary duplicate; authored `spawn_group_ref` is intended to be unique, and ambiguous runtime ownership must fail closed.
+This gives local QA a stable authored-content lookup without first discovering the current runtime entity ID, while preserving entity-ID lookup for client-visible `VID` debugging.
 `GET /local/visibility` now carries the same subset per connected character as `visible_spawn_groups` beside the full `visible_static_actors` list.
 That per-player subset obeys the same topology/AOI visibility policy as `visible_static_actors`; actors outside the subject's visible world are omitted, and runtime-owned dead practice mobs keep `dead: true` in both arrays while they are waiting for server-driven respawn.
 The broader map-occupancy view also carries that same per-map subset:

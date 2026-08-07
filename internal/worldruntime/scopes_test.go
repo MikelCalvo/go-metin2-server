@@ -285,6 +285,50 @@ func TestScopesSpawnGroupSnapshotsReturnOnlySpawnBackedActorsInDeterministicOrde
 	}
 }
 
+func TestScopesSpawnGroupSnapshotByRefReturnsExactAuthoredSpawnGroup(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	registry := NewEntityRegistryWithTopology(topology)
+	if _, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuide"}, Position: NewPosition(42, 1100, 2100), RaceNum: 20300}); !ok {
+		t.Fatal("expected plain static actor registration to succeed")
+	}
+	alpha, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "AlphaMob"}, Position: NewPosition(1, 1200, 2200), RaceNum: 20351, CombatProfile: StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.alpha", DeathReward: StaticActorDeathReward{Experience: 7, Gold: 11, DropVnums: []uint32{27002, 27001}}})
+	if !ok {
+		t.Fatal("expected alpha spawn actor registration to succeed")
+	}
+	if _, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "ZuluMob"}, Position: NewPosition(42, 1500, 2500), RaceNum: 20350, CombatProfile: StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.zulu"}); !ok {
+		t.Fatal("expected zulu spawn actor registration to succeed")
+	}
+
+	snapshot, ok := NewScopes(topology, registry).SpawnGroupSnapshotByRef("practice.alpha")
+	if !ok {
+		t.Fatal("expected exact spawn-group ref lookup to resolve")
+	}
+	if snapshot.EntityID != alpha.Entity.ID || snapshot.Name != "AlphaMob" || snapshot.MapIndex != 1 || snapshot.SpawnGroupRef != "practice.alpha" || snapshot.CombatProfile != StaticActorCombatProfilePracticeMob || !reflect.DeepEqual(snapshot.RewardDropVnums, []uint32{27001, 27002}) {
+		t.Fatalf("unexpected exact spawn-group snapshot: %+v", snapshot)
+	}
+	if _, ok := NewScopes(topology, registry).SpawnGroupSnapshotByRef("practice.missing"); ok {
+		t.Fatal("expected missing spawn-group ref lookup to fail closed")
+	}
+	if _, ok := NewScopes(topology, registry).SpawnGroupSnapshotByRef("bad ref"); ok {
+		t.Fatal("expected malformed spawn-group ref lookup to fail closed")
+	}
+}
+
+func TestScopesSpawnGroupSnapshotByRefRejectsDuplicateAuthoredRefs(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	registry := NewEntityRegistryWithTopology(topology)
+	if _, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "AlphaMob"}, Position: NewPosition(1, 1200, 2200), RaceNum: 20351, CombatProfile: StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.duplicate"}); !ok {
+		t.Fatal("expected alpha spawn actor registration to succeed")
+	}
+	if _, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "BravoMob"}, Position: NewPosition(1, 1300, 2300), RaceNum: 20352, CombatProfile: StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.duplicate"}); !ok {
+		t.Fatal("expected bravo spawn actor registration to succeed")
+	}
+
+	if snapshot, ok := NewScopes(topology, registry).SpawnGroupSnapshotByRef("practice.duplicate"); ok {
+		t.Fatalf("expected duplicate spawn-group ref lookup to fail closed, got %+v", snapshot)
+	}
+}
+
 func TestScopesVisibleStaticActorsRepairFromMapIndexPresence(t *testing.T) {
 	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := NewEntityRegistryWithTopology(topology)

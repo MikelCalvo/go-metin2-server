@@ -3768,6 +3768,105 @@ func TestLocalSpawnGroupEndpointReturnsNotFoundForMissingEntityID(t *testing.T) 
 	}
 }
 
+func TestLocalSpawnGroupByRefEndpointReturnsExactSnapshotForLoopbackGet(t *testing.T) {
+	snapshot := map[string]any{"entity_id": uint64(44), "name": "Practice Wolf", "spawn_group_ref": "practice.wolf_1", "combat_profile": "practice_mob"}
+	mux := RegisterLocalSpawnGroupByRefEndpoint(NewPprofMux("gamed"), func(ref string) (any, bool) {
+		if ref != "practice.wolf_1" {
+			return nil, false
+		}
+		return snapshot, true
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/spawn-groups/by-ref/practice.wolf_1", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"entity_id":44`) || !strings.Contains(string(body), `"spawn_group_ref":"practice.wolf_1"`) || !strings.Contains(string(body), `"combat_profile":"practice_mob"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalSpawnGroupByRefEndpointRejectsInvalidRef(t *testing.T) {
+	mux := RegisterLocalSpawnGroupByRefEndpoint(NewPprofMux("gamed"), func(string) (any, bool) {
+		t.Fatal("spawn-group ref lookup should not be called for invalid refs")
+		return nil, false
+	})
+
+	for _, path := range []string{"/local/spawn-groups/by-ref/bad%20ref", "/local/spawn-groups/by-ref/practice.wolf_1%20"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for %s, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+}
+
+func TestLocalSpawnGroupByRefEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	mux := RegisterLocalSpawnGroupByRefEndpoint(NewPprofMux("gamed"), func(string) (any, bool) {
+		t.Fatal("spawn-group ref lookup should not be called for non-loopback callers")
+		return nil, false
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/spawn-groups/by-ref/practice.wolf_1", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+}
+
+func TestLocalSpawnGroupByRefEndpointRejectsWrongMethod(t *testing.T) {
+	mux := RegisterLocalSpawnGroupByRefEndpoint(NewPprofMux("gamed"), func(string) (any, bool) {
+		t.Fatal("spawn-group ref lookup should not be called for wrong methods")
+		return nil, false
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/local/spawn-groups/by-ref/practice.wolf_1", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+}
+
+func TestLocalSpawnGroupByRefEndpointReturnsNotFoundForMissingRef(t *testing.T) {
+	mux := RegisterLocalSpawnGroupByRefEndpoint(NewPprofMux("gamed"), func(string) (any, bool) {
+		return nil, false
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/spawn-groups/by-ref/practice.missing", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
 func TestLocalStaticActorCombatProfileEndpointRegistersProfileForLoopbackPost(t *testing.T) {
 	const profile = "ops_profile_wolf"
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)

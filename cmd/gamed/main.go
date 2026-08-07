@@ -173,6 +173,16 @@ func main() {
 			return snapshot, true
 		},
 	)
+	opsHandler = ops.RegisterLocalSpawnGroupByRefEndpoint(
+		opsHandler,
+		func(ref string) (any, bool) {
+			snapshot, ok := gameRuntime.SpawnGroupByRef(ref)
+			if !ok {
+				return nil, false
+			}
+			return snapshot, true
+		},
+	)
 	opsHandler = ops.RegisterLocalGroundItemsEndpoint(
 		opsHandler,
 		func() any { return gameRuntime.GroundItems() },
