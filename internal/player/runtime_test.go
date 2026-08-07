@@ -3003,6 +3003,84 @@ func TestRuntimeGiveRejectTextRejectsInvalidRequestedCountWithoutMutation(t *tes
 	}
 }
 
+func TestRuntimeRefineRejectTextComesFromTemplateWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:    0x01030104,
+		VID:   0x02040104,
+		Name:  "PeerFour",
+		Level: 1,
+		Inventory: []inventory.ItemInstance{
+			{ID: 103, Vnum: 11200, Count: 1, Slot: 8},
+		},
+		Quickslots: []loginticket.Quickslot{{Position: 4, Type: quickslotproto.TypeItem, Slot: 8}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-four", CharacterIndex: 1})
+	template := itemcatalog.Template{
+		Vnum:             11200,
+		Name:             "Practice Blade",
+		Stackable:        false,
+		MaxCount:         1,
+		RefineRejectText: "This item cannot be refined yet.",
+	}
+
+	text, ok := runtime.RefineRejectText(8, template)
+	if !ok {
+		t.Fatal("expected non-refineable template to provide item-refine rejection text")
+	}
+	if text != template.RefineRejectText {
+		t.Fatalf("expected template-authored refine reject text %q, got %q", template.RefineRejectText, text)
+	}
+	live := runtime.LiveCharacter()
+	if !reflect.DeepEqual(live.Inventory, persisted.Inventory) {
+		t.Fatalf("refine reject text mutated live inventory: got %#v want %#v", live.Inventory, persisted.Inventory)
+	}
+	if !reflect.DeepEqual(live.Quickslots, persisted.Quickslots) {
+		t.Fatalf("refine reject text mutated live quickslots: got %#v want %#v", live.Quickslots, persisted.Quickslots)
+	}
+	if live.Gold != persisted.Gold || live.Points != persisted.Points {
+		t.Fatalf("refine reject text mutated live scalars: gold=%d points[1]=%d", live.Gold, live.Points[1])
+	}
+	persistedAfter := runtime.PersistedSnapshot()
+	if !reflect.DeepEqual(persistedAfter.Inventory, persisted.Inventory) {
+		t.Fatalf("refine reject text mutated persisted inventory: got %#v want %#v", persistedAfter.Inventory, persisted.Inventory)
+	}
+	if !reflect.DeepEqual(persistedAfter.Quickslots, persisted.Quickslots) {
+		t.Fatalf("refine reject text mutated persisted quickslots: got %#v want %#v", persistedAfter.Quickslots, persisted.Quickslots)
+	}
+	if persistedAfter.Gold != persisted.Gold || persistedAfter.Points != persisted.Points {
+		t.Fatalf("refine reject text mutated persisted scalars: gold=%d points[1]=%d", persistedAfter.Gold, persistedAfter.Points[1])
+	}
+}
+
+func TestRuntimeRefineRejectTextRejectsMismatchedTemplateWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030105,
+		VID:       0x02040105,
+		Name:      "PeerFive",
+		Level:     1,
+		Inventory: []inventory.ItemInstance{{ID: 104, Vnum: 11200, Count: 1, Slot: 8}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-five", CharacterIndex: 1})
+	template := itemcatalog.Template{
+		Vnum:             11201,
+		Name:             "Other Practice Blade",
+		Stackable:        false,
+		MaxCount:         1,
+		RefineRejectText: "This item cannot be refined yet.",
+	}
+
+	text, ok := runtime.RefineRejectText(8, template)
+	if ok || text != "" {
+		t.Fatalf("expected mismatched template to suppress refine rejection text, got %q ok=%v", text, ok)
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) {
+		t.Fatalf("mismatched refine reject text mutated live inventory: got %#v want %#v", got.Inventory, persisted.Inventory)
+	}
+	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) {
+		t.Fatalf("mismatched refine reject text mutated persisted inventory: got %#v want %#v", got.Inventory, persisted.Inventory)
+	}
+}
+
 func TestRuntimeEquipItemWithTemplateRejectsAntiGetWithoutMutation(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030102,

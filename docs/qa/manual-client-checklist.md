@@ -415,10 +415,13 @@ Expected result:
 Run this only if packet tooling or the client build can emit a refine attempt.
 
 - [ ] Attempt one `REFINE` request for a disposable carried item slot / refine type
+- [ ] Repeat with a carried item whose loaded template is not `refineable` and authors a non-empty `refine_reject_message`
 - [ ] If packet tooling allows it, repeat with a different raw refine `type` value
 
 Expected result:
-- `REFINE` attempts are parsed by the game socket but remain unsupported in the shipped bootstrap runtime: no response frames are visible, no carried inventory/equipment/quickslot/point state changes, no ground actor appears, no peer receives item-result frames, and reconnect/operator inspection shows the selected-character snapshot unchanged
+- ordinary `REFINE` attempts are parsed by the game socket but remain unsupported in the shipped bootstrap runtime: no response frames are visible, no carried inventory/equipment/quickslot/point state changes, no ground actor appears, no peer receives item-result frames, and reconnect/operator inspection shows the selected-character snapshot unchanged
+- a non-refineable carried item with template-authored `refine_reject_message` returns exactly one self-only `CHAT_TYPE_INFO` message with that authored text, while still leaving inventory, equipment, quickslots, points, peers, ground handles, and persistence unchanged
+- item-template validation rejects `refine_reject_message` if it contains embedded NUL bytes or is authored on a template that also sets `refineable = true`, so contradictory refine feedback should fail before gameplay testing starts
 - this is a fail-closed guard, not a completed refine or upgrade feature
 
 ---

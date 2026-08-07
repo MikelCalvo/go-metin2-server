@@ -6,7 +6,7 @@ The goal is intentionally conservative:
 
 - own the client packet layout before broader refine gameplay is implemented
 - route the packet through the `GAME` phase without treating it as an unknown-header disconnect edge
-- keep the shipped runtime fail-closed with no inventory, equipment, quickslot, point, ground-item, peer, or persistence mutation until a later refine-system slice owns material, cost, success/failure, and result semantics
+- keep the shipped runtime fail-closed with no inventory, equipment, quickslot, point, ground-item, peer, or persistence mutation until a later refine-system slice owns material, cost, success/failure, and result semantics, while allowing one template-authored self-only rejection text for non-refineable carried items
 
 This is not a completed refine, upgrade, scroll, metin-stone, bonus-changer, or dragon-soul refine system.
 
@@ -33,7 +33,17 @@ The layout is frozen from the TMP4-compatible client packet struct shape in proj
 
 `internal/game` decodes `REFINE` while the session is already in `GAME` and routes it to a dedicated handler hook. The default handler denies the request with no response.
 
-The shipped minimal runtime intentionally leaves `REFINE` unsupported for now. Every packet currently fails closed:
+The shipped minimal runtime intentionally leaves accepted `REFINE` gameplay unsupported for now. Ordinary packets still fail closed with no response.
+
+The only authored feedback exception is a non-refineable carried item template that provides `refine_reject_message`:
+
+- `pos` must identify exactly one carried inventory slot owned by the selected character
+- the carried item must be well-formed, unlocked, and match the resolved template `vnum`
+- the template must be valid, must not be `refineable`, and must carry non-empty `refine_reject_message`
+- the server returns one self-only `CHAT_TYPE_INFO` frame with that exact authored text
+- no peer-facing frames are queued and no inventory, equipment, quickslot, point, ground-item, or persisted account state is mutated
+
+All other `REFINE` packets currently fail closed:
 
 - no server frames are emitted
 - no carried inventory or equipment state is mutated
@@ -42,6 +52,8 @@ The shipped minimal runtime intentionally leaves `REFINE` unsupported for now. E
 - no temporary ground item handle is registered
 - no peer-facing frames are queued
 - no selected-character account snapshot is persisted
+
+The template store rejects contradictory `refineable = true` plus `refine_reject_message` metadata before runtime boot, so this feedback path cannot be confused with accepted refine semantics.
 
 ## Deferred behavior
 
@@ -59,4 +71,6 @@ Later slices must write a new contract before broadening this packet into real g
 
 - `internal/proto/item` freezes `REFINE` encode/decode behavior plus unexpected-header and invalid-payload rejection.
 - `internal/game` freezes `GAME`-phase dispatch to a handler hook, with denied results returning no frames.
-- `internal/minimal` freezes the shipped runtime fail-closed behavior with persisted inventory, quickslots, and points unchanged after a `REFINE` packet.
+- `internal/itemstore` freezes deterministic `refine_reject_message` persistence and rejects contradictory `refineable` templates that also author that message.
+- `internal/player` freezes the no-mutation helper boundary that extracts template-authored refine rejection text from the currently carried item.
+- `internal/minimal` freezes both the shipped no-frame fail-closed behavior and the template-authored self-only info-chat rejection path with persisted inventory, quickslots, and points unchanged after a `REFINE` packet.

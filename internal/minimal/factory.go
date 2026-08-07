@@ -3292,6 +3292,17 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					stateMu.Lock()
 					defer stateMu.Unlock()
 
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || packet.Position >= uint8(inventory.CarriedInventorySlotCount) {
+						return gameflow.ItemRefineResult{Accepted: false}
+					}
+					template, ok := runtime.resolveRuntimeItemTemplate(selectedPlayer, inventory.SlotIndex(packet.Position))
+					if !ok {
+						return gameflow.ItemRefineResult{Accepted: false}
+					}
+					if message, ok := selectedPlayer.RefineRejectText(inventory.SlotIndex(packet.Position), template); ok {
+						return gameflow.ItemRefineResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}}
+					}
 					return gameflow.ItemRefineResult{Accepted: false}
 				},
 				HandleItemDrop: func(packet itemproto.ClientDropPacket) gameflow.ItemDropResult {

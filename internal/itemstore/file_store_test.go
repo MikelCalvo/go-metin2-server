@@ -1188,6 +1188,89 @@ func TestFileStoreSaveThenLoadRoundTripPreservesClientVisibleFlagMetadata(t *tes
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripPreservesRefineRejectMessage(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:             11200,
+		Name:             "Practice Blade",
+		Stackable:        false,
+		MaxCount:         1,
+		RefineRejectText: "This item cannot be refined yet.",
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with refine rejection metadata: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with refine rejection metadata: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with refine rejection metadata:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with refine rejection metadata: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 11200,\n      \"name\": \"Practice Blade\",\n      \"stackable\": false,\n      \"max_count\": 1,\n      \"refine_reject_message\": \"This item cannot be refined yet.\"\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with refine rejection metadata:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
+func TestFileStoreRejectsContradictoryRefineRejectMessage(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	snapshot := Snapshot{Templates: []Template{{
+		Vnum:             11200,
+		Name:             "Refineable Blade",
+		Stackable:        false,
+		MaxCount:         1,
+		Refineable:       true,
+		RefineRejectText: "This item cannot be refined yet.",
+	}}}
+
+	if err := store.Save(snapshot); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot when saving refine_reject_message on a refineable template, got %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create item template test dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"templates":[{"vnum":11200,"name":"Refineable Blade","stackable":false,"max_count":1,"refineable":true,"refine_reject_message":"This item cannot be refined yet."}]}`), 0o644); err != nil {
+		t.Fatalf("write contradictory refine rejection snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot when loading refine_reject_message on a refineable template, got %v", err)
+	}
+}
+
+func TestFileStoreRejectsRefineRejectMessageWithEmbeddedNUL(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	snapshot := Snapshot{Templates: []Template{{
+		Vnum:             11200,
+		Name:             "Practice Blade",
+		Stackable:        false,
+		MaxCount:         1,
+		RefineRejectText: "refine\x00blocked",
+	}}}
+
+	if err := store.Save(snapshot); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot when saving refine_reject_message with embedded NUL, got %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create item template test dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"templates":[{"vnum":11200,"name":"Practice Blade","stackable":false,"max_count":1,"refine_reject_message":"refine\u0000blocked"}]}`), 0o644); err != nil {
+		t.Fatalf("write embedded-NUL refine rejection snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot when loading refine_reject_message with embedded NUL, got %v", err)
+	}
+}
+
 func TestFileStoreSaveThenLoadRoundTripPreservesClientVisibleUseFlagMetadata(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)

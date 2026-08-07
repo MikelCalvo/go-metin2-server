@@ -42,6 +42,7 @@ type Template struct {
 	ShopBuyPrice      uint64          `json:"shop_buy_price,omitempty"`
 	ShopSellPrice     uint64          `json:"shop_sell_price,omitempty"`
 	Refineable        bool            `json:"refineable,omitempty"`
+	RefineRejectText  string          `json:"refine_reject_message,omitempty"`
 	Save              bool            `json:"save,omitempty"`
 	SellCountPerGold  bool            `json:"sell_count_per_gold,omitempty"`
 	SlowQuery         bool            `json:"slow_query,omitempty"`
@@ -108,6 +109,7 @@ type templateJSON struct {
 	ShopBuyPrice      uint64           `json:"shop_buy_price,omitempty"`
 	ShopSellPrice     uint64           `json:"shop_sell_price,omitempty"`
 	Refineable        bool             `json:"refineable,omitempty"`
+	RefineRejectText  string           `json:"refine_reject_message,omitempty"`
 	Save              bool             `json:"save,omitempty"`
 	SellCountPerGold  bool             `json:"sell_count_per_gold,omitempty"`
 	SlowQuery         bool             `json:"slow_query,omitempty"`
@@ -166,6 +168,7 @@ func (template Template) MarshalJSON() ([]byte, error) {
 		ShopBuyPrice:      template.ShopBuyPrice,
 		ShopSellPrice:     template.ShopSellPrice,
 		Refineable:        template.Refineable,
+		RefineRejectText:  template.RefineRejectText,
 		Save:              template.Save,
 		SellCountPerGold:  template.SellCountPerGold,
 		SlowQuery:         template.SlowQuery,
@@ -236,6 +239,7 @@ func (template *Template) UnmarshalJSON(raw []byte) error {
 		ShopBuyPrice:      jsonTemplate.ShopBuyPrice,
 		ShopSellPrice:     jsonTemplate.ShopSellPrice,
 		Refineable:        jsonTemplate.Refineable,
+		RefineRejectText:  jsonTemplate.RefineRejectText,
 		Save:              jsonTemplate.Save,
 		SellCountPerGold:  jsonTemplate.SellCountPerGold,
 		SlowQuery:         jsonTemplate.SlowQuery,
@@ -381,6 +385,7 @@ func normalizeSnapshot(snapshot Snapshot) Snapshot {
 func normalizeTemplate(template Template) Template {
 	template.Name = strings.TrimSpace(template.Name)
 	template.EquipSlot = normalizeEquipSlot(template.EquipSlot)
+	template.RefineRejectText = strings.TrimSpace(template.RefineRejectText)
 	template.UseRejectText = strings.TrimSpace(template.UseRejectText)
 	template.BuyRejectText = strings.TrimSpace(template.BuyRejectText)
 	template.DropRejectText = strings.TrimSpace(template.DropRejectText)
@@ -441,6 +446,12 @@ func validTemplate(template Template) bool {
 		return false
 	}
 	if template.ShopSellPrice > uint64(1<<31-1) {
+		return false
+	}
+	if !validTemplateMessage(template.RefineRejectText) {
+		return false
+	}
+	if template.RefineRejectText != "" && template.Refineable {
 		return false
 	}
 	if template.PickupRange > MaxPickupRange {
