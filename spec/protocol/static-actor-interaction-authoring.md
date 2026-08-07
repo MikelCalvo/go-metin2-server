@@ -25,6 +25,7 @@ It does **not** yet claim:
 
 The first owned catalog surface is:
 - `GET /local/interactions`
+- `GET /local/interactions/{kind}/{ref}`
 - `POST /local/interactions`
 - `PATCH /local/interactions/{kind}/{ref}`
 - `PUT /local/interactions/{kind}/{ref}`
@@ -38,6 +39,7 @@ Current rules:
 - `shop_preview` currently uses authored `title + catalog[]`
 - `warp` currently uses authored `map_index`, `x`, `y`, with optional `text`
 - create/update bodies must be valid UTF-8 before JSON decoding; malformed raw bytes are rejected before runtime mutation callbacks can see lossy replacement-character strings
+- exact lookup is read-only and loopback-only; it returns the authored definition JSON for one `kind + ref`, returns `404` when absent, and rejects blank or decoded slash-containing identities as path-ambiguous `400` requests
 - updates are full-identity upserts, not partial nested edits
 - update body `kind + ref` must match the path exactly
 - delete fails closed while any bootstrap static actor still references that definition
@@ -106,7 +108,7 @@ Current rules:
 ## Success definition
 
 After this slice, the repository should be able to say:
-- minimal `info`, `talk`, and `warp` definitions plus the structured `shop_preview` merchant catalog are authorable through loopback HTTP today
+- minimal `info`, `talk`, and `warp` definitions plus the structured `shop_preview` merchant catalog are authorable and exactly readable through loopback HTTP today
 - visible interactables can still be inspected live with compact resolved previews for the currently previewable kinds and fail-closed markers otherwise
 - bootstrap static actors, item templates, and their interaction definitions can be exported/imported as one deterministic authored-content bundle, with the structured merchant export/import shape already wired through that bundle surface
 - local operators can inspect a compact deterministic content-bundle summary, including interaction-definition previews, exact warp destinations, spawn-group identities, and item-template identities, for either the live exported bundle or a candidate bundle before deciding whether to fetch or import the full bundle payload

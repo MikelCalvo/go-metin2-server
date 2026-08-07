@@ -1230,6 +1230,27 @@ func RegisterLocalInteractionDefinitionEndpoints(mux *http.ServeMux, interaction
 	return mux
 }
 
+func RegisterLocalInteractionDefinitionLookupEndpoint(mux *http.ServeMux, interactionDefinition func(string, string) (any, int)) *http.ServeMux {
+	if mux == nil || interactionDefinition == nil {
+		return mux
+	}
+
+	mux.HandleFunc("GET /local/interactions/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		kind, ref, ok := decodeLocalInteractionDefinitionIdentity(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		definition, status := interactionDefinition(kind, ref)
+		writeLocalJSONMutationResponse(w, definition, status)
+	})
+	return mux
+}
+
 func RegisterLocalInteractionDefinitionUpdateEndpoint(mux *http.ServeMux, upsertInteractionDefinition func(interactionstore.Definition) (any, int)) *http.ServeMux {
 	if mux == nil || upsertInteractionDefinition == nil {
 		return mux

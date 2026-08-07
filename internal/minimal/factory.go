@@ -6201,6 +6201,10 @@ func (r *gameRuntime) InteractionDefinitions() []InteractionDefinition {
 	return sortedInteractionDefinitions(r.interactionDefinitions)
 }
 
+func (r *gameRuntime) InteractionDefinition(kind string, ref string) (InteractionDefinition, bool) {
+	return r.ResolveInteractionDefinition(kind, ref)
+}
+
 func (r *gameRuntime) ExportContentBundle() (contentbundle.Bundle, error) {
 	if r == nil || r.staticStore == nil || r.interactionStore == nil {
 		return contentbundle.Bundle{}, ErrContentBundleUnavailable

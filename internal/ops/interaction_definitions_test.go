@@ -56,6 +56,118 @@ func TestLocalInteractionDefinitionsEndpointRejectsNonLoopbackRemoteAddr(t *test
 	}
 }
 
+func TestLocalInteractionDefinitionLookupEndpointReturnsDefinitionForLoopbackGet(t *testing.T) {
+	lookup := &stubInteractionDefinitionLookup{status: http.StatusOK, definition: map[string]any{"kind": "talk", "ref": "npc:village_guard", "text": "Keep your blade sharp."}}
+	mux := RegisterLocalInteractionDefinitionLookupEndpoint(NewPprofMux("gamed"), lookup.InteractionDefinition)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/interactions/talk/npc:village_guard", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if lookup.calls != 1 || lookup.lastKind != "talk" || lookup.lastRef != "npc:village_guard" {
+		t.Fatalf("unexpected interaction definition lookup call state: %+v", lookup)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"kind":"talk"`) || !strings.Contains(string(body), `"ref":"npc:village_guard"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalInteractionDefinitionLookupEndpointReturnsNotFoundForMissingDefinition(t *testing.T) {
+	lookup := &stubInteractionDefinitionLookup{status: http.StatusNotFound}
+	mux := RegisterLocalInteractionDefinitionLookupEndpoint(NewPprofMux("gamed"), lookup.InteractionDefinition)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/interactions/info/lore:missing", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for missing definition, got %d", http.StatusNotFound, rec.Code)
+	}
+	if lookup.calls != 1 || lookup.lastKind != "info" || lookup.lastRef != "lore:missing" {
+		t.Fatalf("unexpected missing-definition lookup call state: %+v", lookup)
+	}
+}
+
+func TestLocalInteractionDefinitionLookupEndpointRejectsInvalidIdentityBeforeCallback(t *testing.T) {
+	lookup := &stubInteractionDefinitionLookup{status: http.StatusOK}
+	mux := RegisterLocalInteractionDefinitionLookupEndpoint(NewPprofMux("gamed"), lookup.InteractionDefinition)
+
+	for _, path := range []string{"/local/interactions/info", "/local/interactions/info/lore%2Falchemist", "/local/interactions/info/lore:alchemist/extra"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for invalid identity path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected invalid lookup paths not to call lookup callback, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalInteractionDefinitionLookupEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	lookup := &stubInteractionDefinitionLookup{status: http.StatusOK}
+	mux := RegisterLocalInteractionDefinitionLookupEndpoint(NewPprofMux("gamed"), lookup.InteractionDefinition)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/interactions/info/lore:alchemist", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected non-loopback lookup not to call callback, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalInteractionDefinitionLookupEndpointCoexistsWithInteractionCollectionGet(t *testing.T) {
+	snapshotter := &stubInteractionDefinitionSnapshotter{definitions: []map[string]any{{"kind": "info", "ref": "lore:alchemist", "text": "The alchemist studies forgotten herbs."}}}
+	lookup := &stubInteractionDefinitionLookup{status: http.StatusOK, definition: map[string]any{"kind": "info", "ref": "lore:alchemist", "text": "The alchemist studies forgotten herbs."}}
+	mux := RegisterLocalInteractionDefinitionEndpoints(NewPprofMux("gamed"), snapshotter.InteractionDefinitions, nil)
+	mux = RegisterLocalInteractionDefinitionLookupEndpoint(mux, lookup.InteractionDefinition)
+
+	collectionReq := httptest.NewRequest(http.MethodGet, "/local/interactions", nil)
+	collectionReq.RemoteAddr = "127.0.0.1:12345"
+	collectionRec := httptest.NewRecorder()
+	mux.ServeHTTP(collectionRec, collectionReq)
+
+	if collectionRec.Code != http.StatusOK {
+		t.Fatalf("expected collection status %d, got %d", http.StatusOK, collectionRec.Code)
+	}
+	if snapshotter.calls != 1 || lookup.calls != 0 {
+		t.Fatalf("expected collection GET to use snapshotter only, got snapshotter=%d lookup=%d", snapshotter.calls, lookup.calls)
+	}
+
+	lookupReq := httptest.NewRequest(http.MethodGet, "/local/interactions/info/lore:alchemist", nil)
+	lookupReq.RemoteAddr = "127.0.0.1:12345"
+	lookupRec := httptest.NewRecorder()
+	mux.ServeHTTP(lookupRec, lookupReq)
+
+	if lookupRec.Code != http.StatusOK {
+		t.Fatalf("expected lookup status %d, got %d", http.StatusOK, lookupRec.Code)
+	}
+	if snapshotter.calls != 1 || lookup.calls != 1 {
+		t.Fatalf("expected item GET to use lookup only after collection GET, got snapshotter=%d lookup=%d", snapshotter.calls, lookup.calls)
+	}
+}
+
 func TestLocalInteractionDefinitionsEndpointCreatesDefinitionForLoopbackPost(t *testing.T) {
 	creator := &stubInteractionDefinitionCreator{status: http.StatusOK, definition: map[string]any{"kind": "info", "ref": "lore:alchemist", "text": "The alchemist studies forgotten herbs."}}
 	mux := RegisterLocalInteractionDefinitionEndpoints(NewPprofMux("gamed"), nil, creator.CreateInteractionDefinition)
@@ -439,6 +551,21 @@ type stubInteractionDefinitionCreator struct {
 func (s *stubInteractionDefinitionCreator) CreateInteractionDefinition(definition interactionstore.Definition) (any, int) {
 	s.calls++
 	s.lastDefinition = definition
+	return s.definition, s.status
+}
+
+type stubInteractionDefinitionLookup struct {
+	definition map[string]any
+	status     int
+	calls      int
+	lastKind   string
+	lastRef    string
+}
+
+func (s *stubInteractionDefinitionLookup) InteractionDefinition(kind string, ref string) (any, int) {
+	s.calls++
+	s.lastKind = kind
+	s.lastRef = ref
 	return s.definition, s.status
 }
 

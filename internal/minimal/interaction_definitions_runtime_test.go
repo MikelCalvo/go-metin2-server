@@ -30,6 +30,26 @@ func TestGameRuntimeInteractionDefinitionsReturnsSortedSnapshot(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeInteractionDefinitionReturnsExactDefinitionByIdentity(t *testing.T) {
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{
+		{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "VillageGuard:\nKeep your blade sharp."},
+		{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
+	})
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	definition, ok := runtime.InteractionDefinition(interactionstore.KindTalk, "npc:village_guard")
+	want := InteractionDefinition{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "VillageGuard:\nKeep your blade sharp."}
+	if !ok || !reflect.DeepEqual(definition, want) {
+		t.Fatalf("unexpected exact interaction definition lookup: definition=%#v ok=%v want=%#v", definition, ok, want)
+	}
+	if _, ok := runtime.InteractionDefinition(interactionstore.KindInfo, "lore:missing"); ok {
+		t.Fatal("expected missing exact interaction definition lookup to fail closed")
+	}
+}
+
 func TestGameRuntimeCreateInteractionDefinitionPersistsSnapshotAndResolvesDefinition(t *testing.T) {
 	interactionStore := newInteractionDefinitionStore(t, nil)
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)

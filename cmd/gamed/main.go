@@ -355,6 +355,16 @@ func main() {
 			}
 		},
 	)
+	opsHandler = ops.RegisterLocalInteractionDefinitionLookupEndpoint(
+		opsHandler,
+		func(kind string, ref string) (any, int) {
+			definition, ok := gameRuntime.InteractionDefinition(kind, ref)
+			if !ok {
+				return nil, http.StatusNotFound
+			}
+			return definition, http.StatusOK
+		},
+	)
 	opsHandler = ops.RegisterLocalInteractionDefinitionUpdateEndpoint(
 		opsHandler,
 		func(definition interactionstore.Definition) (any, int) {
