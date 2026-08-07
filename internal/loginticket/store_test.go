@@ -121,6 +121,74 @@ func TestFileStoreLoadRejectsDuplicateInventorySlots(t *testing.T) {
 	}
 }
 
+func TestFileStoreIssueRejectsItemWindowMismatches(t *testing.T) {
+	cases := []struct {
+		name      string
+		character Character
+	}{
+		{
+			name: "equipped item in carried inventory",
+			character: Character{
+				ID:   1,
+				Name: "MkmkWar",
+				Inventory: []inventory.ItemInstance{
+					{ID: 1001, Vnum: 11200, Count: 1, Slot: 8, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+				},
+			},
+		},
+		{
+			name: "unequipped item in equipment",
+			character: Character{
+				ID:   1,
+				Name: "MkmkWar",
+				Equipment: []inventory.ItemInstance{
+					{ID: 2001, Vnum: 11200, Count: 1, Slot: 8},
+				},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := NewFileStore(t.TempDir())
+			ticket := Ticket{Login: "mkmk", LoginKey: 0x01020304, IssuedAt: time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC), Characters: []Character{tc.character}}
+			if err := store.Issue(ticket); !errors.Is(err, ErrInvalidTicket) {
+				t.Fatalf("expected ErrInvalidTicket for %s, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
+func TestFileStoreLoadRejectsItemWindowMismatches(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	cases := []struct {
+		name string
+		raw  []byte
+	}{
+		{
+			name: "equipped item in carried inventory",
+			raw:  []byte(`{"login":"mkmk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[{"id":1,"name":"MkmkWar","inventory":[{"id":1001,"vnum":11200,"count":1,"slot":8,"equipped":true,"EquipSlot":2}],"equipment":[],"quickslots":[]}]}`),
+		},
+		{
+			name: "unequipped item in equipment",
+			raw:  []byte(`{"login":"mkmk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[{"id":1,"name":"MkmkWar","inventory":[],"equipment":[{"id":2001,"vnum":11200,"count":1,"slot":8}],"quickslots":[]}]}`),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(store.ticketPath(0x01020304), tc.raw, 0o644); err != nil {
+				t.Fatalf("write %s ticket snapshot: %v", tc.name, err)
+			}
+
+			_, err := store.Load("mkmk", 0x01020304)
+			if !errors.Is(err, ErrInvalidTicket) {
+				t.Fatalf("expected ErrInvalidTicket for loaded %s, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
 func TestFileStoreLoadRejectsSymlinkedCommittedTicketSnapshot(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	target := filepath.Join(t.TempDir(), "outside-ticket.json")

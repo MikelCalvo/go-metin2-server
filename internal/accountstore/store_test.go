@@ -46,6 +46,74 @@ func TestFileStoreLoadRejectsZeroCountInventoryItem(t *testing.T) {
 	}
 }
 
+func TestFileStoreRejectsItemWindowMismatches(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	cases := []struct {
+		name      string
+		character loginticket.Character
+	}{
+		{
+			name: "equipped item in carried inventory",
+			character: loginticket.Character{
+				ID:   1,
+				Name: "MkmkWar",
+				Inventory: []inventory.ItemInstance{
+					{ID: 1001, Vnum: 11200, Count: 1, Slot: 8, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+				},
+			},
+		},
+		{
+			name: "unequipped item in equipment",
+			character: loginticket.Character{
+				ID:   1,
+				Name: "MkmkWar",
+				Equipment: []inventory.ItemInstance{
+					{ID: 2001, Vnum: 11200, Count: 1, Slot: 8},
+				},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{tc.character}}
+			if err := store.Save(account); !errors.Is(err, ErrInvalidAccount) {
+				t.Fatalf("expected ErrInvalidAccount for %s, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
+func TestFileStoreLoadRejectsItemWindowMismatches(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	cases := []struct {
+		name string
+		raw  []byte
+	}{
+		{
+			name: "equipped item in carried inventory",
+			raw:  []byte(`{"login":"mkmk","empire":2,"characters":[{"id":1,"name":"MkmkWar","inventory":[{"id":1001,"vnum":11200,"count":1,"slot":8,"equipped":true,"EquipSlot":2}],"equipment":[],"quickslots":[]}]}`),
+		},
+		{
+			name: "unequipped item in equipment",
+			raw:  []byte(`{"login":"mkmk","empire":2,"characters":[{"id":1,"name":"MkmkWar","inventory":[],"equipment":[{"id":2001,"vnum":11200,"count":1,"slot":8}],"quickslots":[]}]}`),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(store.accountPath("mkmk"), tc.raw, 0o644); err != nil {
+				t.Fatalf("write %s account snapshot: %v", tc.name, err)
+			}
+
+			_, err := store.Load("mkmk")
+			if !errors.Is(err, ErrInvalidAccount) {
+				t.Fatalf("expected ErrInvalidAccount for loaded %s, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
 func TestFileStoreLoadRejectsSymlinkedCommittedAccountSnapshot(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	target := filepath.Join(t.TempDir(), "outside-account.json")

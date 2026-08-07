@@ -997,6 +997,9 @@ func validateCharacterItemPayloads(character loginticket.Character) error {
 		if err := item.Validate(); err != nil {
 			return fmt.Errorf("%w: inventory item %d: %v", ErrInvalidAccount, item.ID, err)
 		}
+		if item.Equipped {
+			return fmt.Errorf("%w: inventory item %d is marked equipped", ErrInvalidAccount, item.ID)
+		}
 		if item.Slot >= inventory.CarriedInventorySlotCount {
 			return fmt.Errorf("%w: inventory item %d: slot %d out of range", ErrInvalidAccount, item.ID, item.Slot)
 		}
@@ -1004,6 +1007,9 @@ func validateCharacterItemPayloads(character loginticket.Character) error {
 	for _, item := range character.Equipment {
 		if err := item.Validate(); err != nil {
 			return fmt.Errorf("%w: equipment item %d: %v", ErrInvalidAccount, item.ID, err)
+		}
+		if !item.Equipped {
+			return fmt.Errorf("%w: equipment item %d is not marked equipped", ErrInvalidAccount, item.ID)
 		}
 	}
 	return nil
