@@ -135,6 +135,46 @@ func TestFileStoreLoadReturnsNotFoundForMissingSnapshot(t *testing.T) {
 	}
 }
 
+func TestFileStoreLoadRejectsSymlinkedCommittedInteractionSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	target := filepath.Join(t.TempDir(), "outside-interaction-definitions.json")
+	if err := os.WriteFile(target, []byte(`{"definitions":[{"kind":"info","ref":"lore:alchemist","text":"The alchemist studies forgotten herbs."}]}`), 0o644); err != nil {
+		t.Fatalf("write outside interaction snapshot: %v", err)
+	}
+	if err := os.Symlink(target, path); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	_, err := store.Load()
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for symlinked interaction snapshot, got %v", err)
+	}
+}
+
+func TestFileStoreValidateRejectsSymlinkedCommittedInteractionSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	target := filepath.Join(t.TempDir(), "outside-interaction-definitions.json")
+	if err := os.WriteFile(target, []byte(`{"definitions":[{"kind":"info","ref":"lore:alchemist","text":"The alchemist studies forgotten herbs."}]}`), 0o644); err != nil {
+		t.Fatalf("write outside interaction snapshot: %v", err)
+	}
+	if err := os.Symlink(target, path); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for symlinked interaction snapshot validation, got %v", err)
+	}
+}
+
 func TestFileStoreValidateReportsDeterministicInteractionSummary(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
 	store := NewFileStore(path)

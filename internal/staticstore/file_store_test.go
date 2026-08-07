@@ -94,6 +94,46 @@ func TestFileStoreLoadReturnsNotFoundForMissingSnapshot(t *testing.T) {
 	}
 }
 
+func TestFileStoreLoadRejectsSymlinkedCommittedStaticActorSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
+	store := NewFileStore(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	target := filepath.Join(t.TempDir(), "outside-static-actors.json")
+	if err := os.WriteFile(target, []byte(`{"static_actors":[{"entity_id":7,"name":"TrainingDummy","map_index":42,"x":1800,"y":2900,"race_num":20350,"combat_profile":"training_dummy"}]}`), 0o644); err != nil {
+		t.Fatalf("write outside static actor snapshot: %v", err)
+	}
+	if err := os.Symlink(target, path); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	_, err := store.Load()
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for symlinked static actor snapshot, got %v", err)
+	}
+}
+
+func TestFileStoreValidateRejectsSymlinkedCommittedStaticActorSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
+	store := NewFileStore(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	target := filepath.Join(t.TempDir(), "outside-static-actors.json")
+	if err := os.WriteFile(target, []byte(`{"static_actors":[{"entity_id":7,"name":"TrainingDummy","map_index":42,"x":1800,"y":2900,"race_num":20350,"combat_profile":"training_dummy"}]}`), 0o644); err != nil {
+		t.Fatalf("write outside static actor snapshot: %v", err)
+	}
+	if err := os.Symlink(target, path); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for symlinked static actor snapshot validation, got %v", err)
+	}
+}
+
 func TestFileStoreRejectsNULStaticActorNames(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
 	store := NewFileStore(path)

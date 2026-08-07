@@ -821,6 +821,66 @@ func TestGameRuntimePersistenceStatusReportsContentStoreFailureWithoutMaskingOth
 	}
 }
 
+func TestGameRuntimePersistenceStatusRejectsSymlinkedContentSnapshots(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	if err := ticketStore.Issue(loginticket.Ticket{Login: "mkmk", LoginKey: 0x01020304}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	accountStore := accountstore.NewFileStore(t.TempDir())
+	if err := accountStore.Save(accountstore.Account{Login: "mkmk", Empire: 2}); err != nil {
+		t.Fatalf("save account snapshot: %v", err)
+	}
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	staticPath := filepath.Join(t.TempDir(), "static-actors.json")
+	staticStore := staticstore.NewFileStore(staticPath)
+	if err := staticStore.Save(staticstore.Snapshot{StaticActors: []staticstore.StaticActor{{EntityID: 7, Name: "TrainingDummy", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20350, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy}}}); err != nil {
+		t.Fatalf("save static actor snapshot: %v", err)
+	}
+	interactionPath := filepath.Join(t.TempDir(), "interaction-definitions.json")
+	interactionStore := interactionstore.NewFileStore(interactionPath)
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."}}}); err != nil {
+		t.Fatalf("save interaction snapshot: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accountStore, staticStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	staticTarget := filepath.Join(t.TempDir(), "outside-static-actors.json")
+	if err := os.WriteFile(staticTarget, []byte(`{"static_actors":[{"entity_id":7,"name":"TrainingDummy","map_index":42,"x":1800,"y":2900,"race_num":20350,"combat_profile":"training_dummy"}]}`), 0o644); err != nil {
+		t.Fatalf("write outside static actor snapshot: %v", err)
+	}
+	if err := os.Remove(staticPath); err != nil {
+		t.Fatalf("remove committed static actor snapshot before symlink replacement: %v", err)
+	}
+	if err := os.Symlink(staticTarget, staticPath); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	interactionTarget := filepath.Join(t.TempDir(), "outside-interaction-definitions.json")
+	if err := os.WriteFile(interactionTarget, []byte(`{"definitions":[{"kind":"info","ref":"lore:alchemist","text":"The alchemist studies forgotten herbs."}]}`), 0o644); err != nil {
+		t.Fatalf("write outside interaction snapshot: %v", err)
+	}
+	if err := os.Remove(interactionPath); err != nil {
+		t.Fatalf("remove committed interaction snapshot before symlink replacement: %v", err)
+	}
+	if err := os.Symlink(interactionTarget, interactionPath); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	status := runtime.PersistenceStatus()
+	if status.OK {
+		t.Fatalf("expected aggregate persistence status to reject symlinked content snapshots: %#v", status)
+	}
+	if status.StaticActorStore.Valid || !strings.Contains(status.StaticActorStore.Error, staticstore.ErrInvalidSnapshot.Error()) {
+		t.Fatalf("expected static actor store status to reject symlinked snapshot, got %#v", status.StaticActorStore)
+	}
+	if status.InteractionStore.Valid || !strings.Contains(status.InteractionStore.Error, interactionstore.ErrInvalidSnapshot.Error()) {
+		t.Fatalf("expected interaction store status to reject symlinked snapshot, got %#v", status.InteractionStore)
+	}
+	if !status.AccountStore.Valid || !status.LoginTicketStore.Valid || !status.ItemTemplateStore.Valid {
+		t.Fatalf("expected symlinked content snapshots not to mask account/ticket/template checks: %#v", status)
+	}
+}
+
 func TestGameRuntimePersistenceStatusKeepsCheckingAfterStoreFailure(t *testing.T) {
 	accountDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(accountDir, "6d6b6d6b.json"), []byte(`{"login":"mkmk","empire":2,"characters":[`), 0o644); err != nil {

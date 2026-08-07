@@ -33,6 +33,9 @@ func (s *FileStore) Load() (Snapshot, error) {
 		return Snapshot{}, ErrStorePathRequired
 	}
 
+	if err := rejectCommittedSnapshotSymlink(s.path); err != nil {
+		return Snapshot{}, err
+	}
 	raw, err := os.ReadFile(s.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -222,6 +225,20 @@ func (s *FileStore) Save(snapshot Snapshot) error {
 	}
 	if err := syncDir(filepath.Dir(s.path)); err != nil {
 		return fmt.Errorf("sync static actor store dir: %w", err)
+	}
+	return nil
+}
+
+func rejectCommittedSnapshotSymlink(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("stat static actor snapshot: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: static actor snapshot %q is a symlink", ErrInvalidSnapshot, filepath.Base(path))
 	}
 	return nil
 }
