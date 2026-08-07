@@ -1,6 +1,7 @@
 package combat
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 
@@ -23,6 +24,9 @@ const (
 	HeaderClientOnClick           uint16 = 0x0A02
 	HeaderClientCharacterPosition uint16 = 0x0A60
 	HeaderServerTarget            uint16 = 0x0A10
+	HeaderServerTargetUpdate      uint16 = 0x0A11
+	HeaderServerTargetDelete      uint16 = 0x0A12
+	HeaderServerTargetCreateNew   uint16 = 0x0A13
 
 	ClientAttackTypeNormal uint8 = 0
 
@@ -30,6 +34,10 @@ const (
 	ServerPVPModeAgree   uint8 = 1
 	ServerPVPModeFight   uint8 = 2
 	ServerPVPModeRevenge uint8 = 3
+
+	ServerTargetMarkerTypeNone      uint8 = 0
+	ServerTargetMarkerTypeLocation  uint8 = 1
+	ServerTargetMarkerTypeCharacter uint8 = 2
 
 	clientAttackPayloadSize            = 7
 	clientUseSkillPayloadSize          = 8
@@ -43,11 +51,16 @@ const (
 	serverCreateFlyPayloadSize         = 9
 	serverPVPPayloadSize               = 9
 	serverTargetPayloadSize            = 5
+	serverTargetCreateNewNameSize      = 33
+	serverTargetCreateNewPayloadSize   = 4 + serverTargetCreateNewNameSize + 4 + 1
+	serverTargetUpdatePayloadSize      = 12
+	serverTargetDeletePayloadSize      = 4
 )
 
 var (
 	ErrUnexpectedHeader = errors.New("unexpected combat packet header")
 	ErrInvalidPayload   = errors.New("invalid combat packet payload")
+	ErrStringTooLong    = errors.New("string does not fit fixed-width combat packet field")
 )
 
 type ClientAttackPacket struct {
@@ -116,6 +129,23 @@ type ServerPVPPacket struct {
 
 type ServerDuelStartPacket struct {
 	OpponentVIDs []uint32
+}
+
+type ServerTargetCreateNewPacket struct {
+	ID         int32
+	TargetName string
+	VID        uint32
+	Type       uint8
+}
+
+type ServerTargetUpdatePacket struct {
+	ID int32
+	X  int32
+	Y  int32
+}
+
+type ServerTargetDeletePacket struct {
+	ID int32
 }
 
 func EncodeClientAttack(packet ClientAttackPacket) []byte {
@@ -386,6 +416,70 @@ func DecodeServerDuelStart(f frame.Frame) (ServerDuelStartPacket, error) {
 	return ServerDuelStartPacket{OpponentVIDs: vids}, nil
 }
 
+func EncodeServerTargetCreateNew(packet ServerTargetCreateNewPacket) ([]byte, error) {
+	payload := make([]byte, serverTargetCreateNewPayloadSize)
+	binary.LittleEndian.PutUint32(payload[0:4], uint32(packet.ID))
+	if err := putFixedString(payload[4:37], packet.TargetName); err != nil {
+		return nil, err
+	}
+	binary.LittleEndian.PutUint32(payload[37:41], packet.VID)
+	payload[41] = packet.Type
+	return frame.Encode(HeaderServerTargetCreateNew, payload), nil
+}
+
+func DecodeServerTargetCreateNew(f frame.Frame) (ServerTargetCreateNewPacket, error) {
+	if f.Header != HeaderServerTargetCreateNew {
+		return ServerTargetCreateNewPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != serverTargetCreateNewPayloadSize {
+		return ServerTargetCreateNewPacket{}, ErrInvalidPayload
+	}
+	return ServerTargetCreateNewPacket{
+		ID:         int32(binary.LittleEndian.Uint32(f.Payload[0:4])),
+		TargetName: parseFixedString(f.Payload[4:37]),
+		VID:        binary.LittleEndian.Uint32(f.Payload[37:41]),
+		Type:       f.Payload[41],
+	}, nil
+}
+
+func EncodeServerTargetUpdate(packet ServerTargetUpdatePacket) []byte {
+	payload := make([]byte, serverTargetUpdatePayloadSize)
+	binary.LittleEndian.PutUint32(payload[0:4], uint32(packet.ID))
+	binary.LittleEndian.PutUint32(payload[4:8], uint32(packet.X))
+	binary.LittleEndian.PutUint32(payload[8:12], uint32(packet.Y))
+	return frame.Encode(HeaderServerTargetUpdate, payload)
+}
+
+func DecodeServerTargetUpdate(f frame.Frame) (ServerTargetUpdatePacket, error) {
+	if f.Header != HeaderServerTargetUpdate {
+		return ServerTargetUpdatePacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != serverTargetUpdatePayloadSize {
+		return ServerTargetUpdatePacket{}, ErrInvalidPayload
+	}
+	return ServerTargetUpdatePacket{
+		ID: int32(binary.LittleEndian.Uint32(f.Payload[0:4])),
+		X:  int32(binary.LittleEndian.Uint32(f.Payload[4:8])),
+		Y:  int32(binary.LittleEndian.Uint32(f.Payload[8:12])),
+	}, nil
+}
+
+func EncodeServerTargetDelete(packet ServerTargetDeletePacket) []byte {
+	payload := make([]byte, serverTargetDeletePayloadSize)
+	binary.LittleEndian.PutUint32(payload, uint32(packet.ID))
+	return frame.Encode(HeaderServerTargetDelete, payload)
+}
+
+func DecodeServerTargetDelete(f frame.Frame) (ServerTargetDeletePacket, error) {
+	if f.Header != HeaderServerTargetDelete {
+		return ServerTargetDeletePacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != serverTargetDeletePayloadSize {
+		return ServerTargetDeletePacket{}, ErrInvalidPayload
+	}
+	return ServerTargetDeletePacket{ID: int32(binary.LittleEndian.Uint32(f.Payload))}, nil
+}
+
 func encodeServerFlyTargeting(header uint16, packet ServerFlyTargetingPacket) []byte {
 	payload := make([]byte, serverFlyTargetingPayloadSize)
 	binary.LittleEndian.PutUint32(payload[0:4], packet.ShooterVID)
@@ -393,6 +487,21 @@ func encodeServerFlyTargeting(header uint16, packet ServerFlyTargetingPacket) []
 	binary.LittleEndian.PutUint32(payload[8:12], uint32(packet.X))
 	binary.LittleEndian.PutUint32(payload[12:16], uint32(packet.Y))
 	return frame.Encode(header, payload)
+}
+
+func putFixedString(dst []byte, value string) error {
+	if len(value) >= len(dst) {
+		return ErrStringTooLong
+	}
+	copy(dst, value)
+	return nil
+}
+
+func parseFixedString(src []byte) string {
+	if idx := bytes.IndexByte(src, 0); idx >= 0 {
+		return string(src[:idx])
+	}
+	return string(src)
 }
 
 func decodeServerFlyTargeting(f frame.Frame, header uint16) (ServerFlyTargetingPacket, error) {

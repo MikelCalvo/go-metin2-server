@@ -2,6 +2,7 @@ package combat
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"testing"
 
@@ -240,6 +241,77 @@ func TestEncodeServerPVPUsesLegacyPayloadLayout(t *testing.T) {
 	}
 	if decoded.SourceVID != 0x01020304 || decoded.DestinationVID != 0x05060708 || decoded.Mode != ServerPVPModeFight {
 		t.Fatalf("unexpected server pvp packet: %+v", decoded)
+	}
+}
+
+func TestEncodeServerTargetCreateNewUsesLegacyPayloadLayout(t *testing.T) {
+	raw, err := EncodeServerTargetCreateNew(ServerTargetCreateNewPacket{ID: -7, TargetName: "Practice Target", VID: 0x02040107, Type: ServerTargetMarkerTypeCharacter})
+	if err != nil {
+		t.Fatalf("encode server target create new: %v", err)
+	}
+	payload := make([]byte, serverTargetCreateNewPayloadSize)
+	binary.LittleEndian.PutUint32(payload[0:4], uint32(0xfffffff9))
+	copy(payload[4:37], "Practice Target")
+	binary.LittleEndian.PutUint32(payload[37:41], 0x02040107)
+	payload[41] = ServerTargetMarkerTypeCharacter
+	expected := frame.Encode(HeaderServerTargetCreateNew, payload)
+	if !bytes.Equal(raw, expected) {
+		t.Fatalf("unexpected server target-create-new encoding: got %x want %x", raw, expected)
+	}
+
+	decoded, err := DecodeServerTargetCreateNew(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode server target-create-new: %v", err)
+	}
+	if decoded.ID != -7 || decoded.TargetName != "Practice Target" || decoded.VID != 0x02040107 || decoded.Type != ServerTargetMarkerTypeCharacter {
+		t.Fatalf("unexpected server target-create-new packet: %+v", decoded)
+	}
+}
+
+func TestEncodeServerTargetCreateNewAcceptsThirtyTwoByteName(t *testing.T) {
+	name := "12345678901234567890123456789012"
+	raw, err := EncodeServerTargetCreateNew(ServerTargetCreateNewPacket{ID: 3, TargetName: name, Type: ServerTargetMarkerTypeLocation})
+	if err != nil {
+		t.Fatalf("encode 32-byte server target-create-new name: %v", err)
+	}
+	decoded, err := DecodeServerTargetCreateNew(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode 32-byte server target-create-new name: %v", err)
+	}
+	if decoded.TargetName != name {
+		t.Fatalf("unexpected 32-byte target name: got %q want %q", decoded.TargetName, name)
+	}
+}
+
+func TestEncodeServerTargetUpdateUsesLegacyPayloadLayout(t *testing.T) {
+	raw := EncodeServerTargetUpdate(ServerTargetUpdatePacket{ID: -7, X: 123456, Y: -234567})
+	expected := frame.Encode(HeaderServerTargetUpdate, []byte{0xf9, 0xff, 0xff, 0xff, 0x40, 0xe2, 0x01, 0x00, 0xb9, 0x6b, 0xfc, 0xff})
+	if !bytes.Equal(raw, expected) {
+		t.Fatalf("unexpected server target-update encoding: got %x want %x", raw, expected)
+	}
+
+	decoded, err := DecodeServerTargetUpdate(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode server target-update: %v", err)
+	}
+	if decoded.ID != -7 || decoded.X != 123456 || decoded.Y != -234567 {
+		t.Fatalf("unexpected server target-update packet: %+v", decoded)
+	}
+}
+
+func TestEncodeServerTargetDeleteUsesLegacyPayloadLayout(t *testing.T) {
+	raw := EncodeServerTargetDelete(ServerTargetDeletePacket{ID: -7})
+	expected := frame.Encode(HeaderServerTargetDelete, []byte{0xf9, 0xff, 0xff, 0xff})
+	if !bytes.Equal(raw, expected) {
+		t.Fatalf("unexpected server target-delete encoding: got %x want %x", raw, expected)
+	}
+
+	decoded, err := DecodeServerTargetDelete(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode server target-delete: %v", err)
+	}
+	if decoded.ID != -7 {
+		t.Fatalf("unexpected server target-delete packet: %+v", decoded)
 	}
 }
 
@@ -496,6 +568,56 @@ func TestDecodeServerDuelStartRejectsUnexpectedHeader(t *testing.T) {
 
 func TestDecodeServerDuelStartRejectsMalformedPayload(t *testing.T) {
 	_, err := DecodeServerDuelStart(frame.Frame{Header: HeaderServerDuelStart, Length: 7, Payload: []byte{0x04, 0x03, 0x02}})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestEncodeServerTargetCreateNewRejectsTooLongName(t *testing.T) {
+	name := "123456789012345678901234567890123"
+	_, err := EncodeServerTargetCreateNew(ServerTargetCreateNewPacket{TargetName: name})
+	if !errors.Is(err, ErrStringTooLong) {
+		t.Fatalf("expected ErrStringTooLong, got %v", err)
+	}
+}
+
+func TestDecodeServerTargetCreateNewRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeServerTargetCreateNew(frame.Frame{Header: HeaderServerTargetUpdate, Length: 46, Payload: make([]byte, serverTargetCreateNewPayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeServerTargetCreateNewRejectsMalformedPayload(t *testing.T) {
+	_, err := DecodeServerTargetCreateNew(frame.Frame{Header: HeaderServerTargetCreateNew, Length: 45, Payload: make([]byte, serverTargetCreateNewPayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestDecodeServerTargetUpdateRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeServerTargetUpdate(frame.Frame{Header: HeaderServerTargetDelete, Length: 16, Payload: make([]byte, serverTargetUpdatePayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeServerTargetUpdateRejectsMalformedPayload(t *testing.T) {
+	_, err := DecodeServerTargetUpdate(frame.Frame{Header: HeaderServerTargetUpdate, Length: 15, Payload: make([]byte, serverTargetUpdatePayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestDecodeServerTargetDeleteRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeServerTargetDelete(frame.Frame{Header: HeaderServerTargetUpdate, Length: 8, Payload: make([]byte, serverTargetDeletePayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeServerTargetDeleteRejectsMalformedPayload(t *testing.T) {
+	_, err := DecodeServerTargetDelete(frame.Frame{Header: HeaderServerTargetDelete, Length: 7, Payload: make([]byte, serverTargetDeletePayloadSize-1)})
 	if !errors.Is(err, ErrInvalidPayload) {
 		t.Fatalf("expected ErrInvalidPayload, got %v", err)
 	}
