@@ -128,6 +128,27 @@ func TestFileStoreLoadRejectsSymlinkedCommittedItemTemplateSnapshot(t *testing.T
 	}
 }
 
+func TestFileStoreValidateRejectsSymlinkedItemTemplateCrashTempFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save item template snapshot: %v", err)
+	}
+	target := filepath.Join(t.TempDir(), "outside-item-template-temp.json")
+	if err := os.WriteFile(target, []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write outside item-template temp target: %v", err)
+	}
+	link := filepath.Join(filepath.Dir(path), ".item-templates-crashed.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for symlinked item-template crash temp file, got %v", err)
+	}
+}
+
 func TestFileStoreValidateRejectsSymlinkedCommittedItemTemplateSnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)
@@ -497,6 +518,30 @@ func TestFileStoreBackupToRejectsDanglingActiveBackupManifestSymlinkBeforeCreati
 	err := store.BackupTo(backupDir)
 	if !errors.Is(err, ErrInvalidBackupManifest) {
 		t.Fatalf("expected ErrInvalidBackupManifest before backup, got %v", err)
+	}
+	if _, statErr := os.Stat(backupDir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected rejected backup not to create destination, stat err=%v", statErr)
+	}
+}
+
+func TestFileStoreBackupToRejectsSymlinkedCrashTempBeforeCreatingDestination(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save item template snapshot: %v", err)
+	}
+	target := filepath.Join(t.TempDir(), "outside-item-template-temp.json")
+	if err := os.WriteFile(target, []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write outside item-template temp target: %v", err)
+	}
+	if err := os.Symlink(target, filepath.Join(filepath.Dir(path), ".item-templates-crashed.json")); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "backup")
+
+	err := store.BackupTo(backupDir)
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for symlinked item-template crash temp before backup, got %v", err)
 	}
 	if _, statErr := os.Stat(backupDir); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("expected rejected backup not to create destination, stat err=%v", statErr)

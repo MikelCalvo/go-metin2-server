@@ -138,6 +138,26 @@ func TestFileStoreLoadRejectsSymlinkedCommittedTicketSnapshot(t *testing.T) {
 	}
 }
 
+func TestFileStoreValidateRejectsSymlinkedTicketCrashTempFile(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	if err := store.Issue(Ticket{Login: "mkmk", LoginKey: 0x01020304, IssuedAt: time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC)}); err != nil {
+		t.Fatalf("issue ticket: %v", err)
+	}
+	target := filepath.Join(t.TempDir(), "outside-ticket-temp.json")
+	if err := os.WriteFile(target, []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write outside ticket temp target: %v", err)
+	}
+	link := filepath.Join(store.dir, ".ticket-crashed.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for symlinked ticket crash temp file, got %v", err)
+	}
+}
+
 func TestFileStoreValidateRejectsSymlinkedCommittedTicketSnapshot(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	target := filepath.Join(t.TempDir(), "outside-ticket.json")

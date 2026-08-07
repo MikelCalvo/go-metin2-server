@@ -378,11 +378,14 @@ func (s *FileStore) crashTempFiles() ([]string, error) {
 	}
 	files := make([]string, 0)
 	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
 		name := entry.Name()
 		if strings.HasPrefix(name, ".ticket-") && strings.HasSuffix(name, ".json") {
+			if entry.Type()&os.ModeSymlink != 0 {
+				return nil, fmt.Errorf("%w: login ticket crash temp file %q is a symlink", ErrInvalidTicket, name)
+			}
+			if entry.IsDir() {
+				continue
+			}
 			files = append(files, name)
 		}
 	}

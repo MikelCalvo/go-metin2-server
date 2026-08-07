@@ -114,6 +114,27 @@ func TestFileStoreLoadRejectsSymlinkedCommittedStaticActorSnapshot(t *testing.T)
 	}
 }
 
+func TestFileStoreValidateRejectsSymlinkedStaticActorCrashTempFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{StaticActors: []StaticActor{{EntityID: 7, Name: "TrainingDummy", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20350, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy}}}); err != nil {
+		t.Fatalf("save static actor snapshot: %v", err)
+	}
+	target := filepath.Join(t.TempDir(), "outside-static-actor-temp.json")
+	if err := os.WriteFile(target, []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write outside static actor temp target: %v", err)
+	}
+	link := filepath.Join(filepath.Dir(path), ".static-actors-crashed.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for symlinked static actor crash temp file, got %v", err)
+	}
+}
+
 func TestFileStoreValidateRejectsSymlinkedCommittedStaticActorSnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
 	store := NewFileStore(path)

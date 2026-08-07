@@ -217,11 +217,14 @@ func (s *FileStore) crashTempFiles() ([]string, error) {
 	}
 	files := make([]string, 0)
 	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
 		name := entry.Name()
 		if isAccountCrashTempFilename(name) {
+			if entry.Type()&os.ModeSymlink != 0 {
+				return nil, fmt.Errorf("%w: account crash temp file %q is a symlink", ErrInvalidAccount, name)
+			}
+			if entry.IsDir() {
+				continue
+			}
 			files = append(files, name)
 		}
 	}
@@ -363,6 +366,9 @@ func (s *FileStore) BackupTo(dstDir string) error {
 		return err
 	}
 	if err := s.validateActiveBackupManifestForAccounts(accounts); err != nil {
+		return err
+	}
+	if _, err := s.crashTempFiles(); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(dstDir, 0o755); err != nil {

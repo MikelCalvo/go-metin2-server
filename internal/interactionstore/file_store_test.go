@@ -155,6 +155,27 @@ func TestFileStoreLoadRejectsSymlinkedCommittedInteractionSnapshot(t *testing.T)
 	}
 }
 
+func TestFileStoreValidateRejectsSymlinkedInteractionCrashTempFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Definitions: []Definition{{Kind: KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."}}}); err != nil {
+		t.Fatalf("save interaction snapshot: %v", err)
+	}
+	target := filepath.Join(t.TempDir(), "outside-interaction-temp.json")
+	if err := os.WriteFile(target, []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write outside interaction temp target: %v", err)
+	}
+	link := filepath.Join(filepath.Dir(path), ".interaction-definitions-crashed.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for symlinked interaction crash temp file, got %v", err)
+	}
+}
+
 func TestFileStoreValidateRejectsSymlinkedCommittedInteractionSnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
 	store := NewFileStore(path)

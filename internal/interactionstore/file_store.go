@@ -151,14 +151,17 @@ func (s *FileStore) crashTempFiles() ([]string, error) {
 	}
 	files := make([]string, 0)
 	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
 		name := entry.Name()
 		if name == filepath.Base(s.path) {
 			continue
 		}
 		if strings.HasPrefix(name, ".interaction-definitions-") && strings.HasSuffix(name, ".json") {
+			if entry.Type()&os.ModeSymlink != 0 {
+				return nil, fmt.Errorf("%w: interaction crash temp file %q is a symlink", ErrInvalidSnapshot, name)
+			}
+			if entry.IsDir() {
+				continue
+			}
 			files = append(files, name)
 		}
 	}

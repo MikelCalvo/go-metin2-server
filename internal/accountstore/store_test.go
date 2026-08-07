@@ -63,6 +63,26 @@ func TestFileStoreLoadRejectsSymlinkedCommittedAccountSnapshot(t *testing.T) {
 	}
 }
 
+func TestFileStoreValidateRejectsSymlinkedAccountCrashTempFile(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	if err := store.Save(Account{Login: "mkmk", Empire: 2}); err != nil {
+		t.Fatalf("save account snapshot: %v", err)
+	}
+	target := filepath.Join(t.TempDir(), "outside-account-temp.json")
+	if err := os.WriteFile(target, []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write outside account temp target: %v", err)
+	}
+	link := filepath.Join(store.dir, ".account-crashed.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for symlinked account crash temp file, got %v", err)
+	}
+}
+
 func TestFileStoreValidateRejectsSymlinkedCommittedAccountSnapshot(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	target := filepath.Join(t.TempDir(), "outside-account.json")
@@ -1705,6 +1725,29 @@ func TestFileStoreBackupToRejectsCorruptSourceSnapshot(t *testing.T) {
 	err := store.BackupTo(filepath.Join(t.TempDir(), "backup"))
 	if !errors.Is(err, ErrInvalidAccount) {
 		t.Fatalf("expected ErrInvalidAccount for corrupt source snapshot, got %v", err)
+	}
+}
+
+func TestFileStoreBackupToRejectsSymlinkedCrashTempBeforeCreatingDestination(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	if err := store.Save(Account{Login: "mkmk", Empire: 2}); err != nil {
+		t.Fatalf("save account snapshot: %v", err)
+	}
+	target := filepath.Join(t.TempDir(), "outside-account-temp.json")
+	if err := os.WriteFile(target, []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write outside account temp target: %v", err)
+	}
+	if err := os.Symlink(target, filepath.Join(store.dir, ".account-crashed.json")); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "backup")
+
+	err := store.BackupTo(backupDir)
+	if !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for symlinked account crash temp before backup, got %v", err)
+	}
+	if _, statErr := os.Stat(backupDir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected rejected backup not to create destination, stat err=%v", statErr)
 	}
 }
 

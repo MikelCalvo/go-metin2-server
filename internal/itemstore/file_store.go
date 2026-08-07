@@ -164,14 +164,17 @@ func crashTempFilesInDir(dir string, committedFilename string) ([]string, error)
 	}
 	files := make([]string, 0)
 	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
 		name := entry.Name()
 		if name == committedFilename {
 			continue
 		}
 		if strings.HasPrefix(name, ".item-templates-") && strings.HasSuffix(name, ".json") {
+			if entry.Type()&os.ModeSymlink != 0 {
+				return nil, fmt.Errorf("%w: item template crash temp file %q is a symlink", ErrInvalidSnapshot, name)
+			}
+			if entry.IsDir() {
+				continue
+			}
 			files = append(files, name)
 		}
 	}
@@ -252,6 +255,9 @@ func (s *FileStore) BackupTo(dstDir string) error {
 		return err
 	}
 	if err := s.validateActiveBackupManifest(); err != nil {
+		return err
+	}
+	if _, err := s.crashTempFiles(); err != nil {
 		return err
 	}
 
