@@ -273,6 +273,49 @@ func TestValidateHandoffPersistenceConfigRejectsDirectoryStorePathThatIsExisting
 	}
 }
 
+func TestValidatePersistenceConfigRejectsDirectoryStoreSymlinkRoot(t *testing.T) {
+	root := t.TempDir()
+	realTickets := filepath.Join(root, "real-tickets")
+	if err := os.MkdirAll(realTickets, 0o755); err != nil {
+		t.Fatalf("create real ticket store dir: %v", err)
+	}
+	linkedTickets := filepath.Join(root, "tickets-link")
+	if err := os.Symlink(realTickets, linkedTickets); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	cfg := Service{
+		Name:                  "gamed",
+		LoginTicketStoreDir:   " " + linkedTickets + " ",
+		AccountStoreDir:       filepath.Join(root, "accounts"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+	}
+
+	err := ValidatePersistenceConfig(cfg)
+	if !errors.Is(err, ErrPersistencePathSymlink) {
+		t.Fatalf("expected ErrPersistencePathSymlink for symlinked directory store root, got %v", err)
+	}
+}
+
+func TestValidateHandoffPersistenceConfigRejectsDanglingDirectoryStoreSymlinkRoot(t *testing.T) {
+	root := t.TempDir()
+	linkedAccounts := filepath.Join(root, "accounts-link")
+	if err := os.Symlink(filepath.Join(root, "missing-accounts"), linkedAccounts); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	cfg := Service{
+		Name:                "authd",
+		LoginTicketStoreDir: filepath.Join(root, "tickets"),
+		AccountStoreDir:     linkedAccounts,
+	}
+
+	err := ValidateHandoffPersistenceConfig(cfg)
+	if !errors.Is(err, ErrPersistencePathSymlink) {
+		t.Fatalf("expected ErrPersistencePathSymlink for dangling symlinked account store root, got %v", err)
+	}
+}
+
 func TestValidatePersistenceConfigRejectsFileStoreInsideDirectoryStore(t *testing.T) {
 	root := t.TempDir()
 	cfg := Service{

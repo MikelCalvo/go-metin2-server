@@ -1631,6 +1631,33 @@ func TestNewGameRuntimeRejectsOverlappingPersistencePaths(t *testing.T) {
 	}
 }
 
+func TestNewGameRuntimeRejectsSymlinkedDirectoryPersistenceRoot(t *testing.T) {
+	root := t.TempDir()
+	realTickets := filepath.Join(root, "real-tickets")
+	if err := os.MkdirAll(realTickets, 0o755); err != nil {
+		t.Fatalf("create real ticket store dir: %v", err)
+	}
+	linkedTickets := filepath.Join(root, "tickets-link")
+	if err := os.Symlink(realTickets, linkedTickets); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	cfg := config.Service{
+		PprofAddr:             "127.0.0.1:6060",
+		LegacyAddr:            ":13000",
+		PublicAddr:            "127.0.0.1",
+		LoginTicketStoreDir:   linkedTickets,
+		AccountStoreDir:       filepath.Join(root, "accounts"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+	}
+
+	_, err := NewGameRuntime(cfg)
+	if !errors.Is(err, config.ErrPersistencePathSymlink) {
+		t.Fatalf("expected ErrPersistencePathSymlink, got %v", err)
+	}
+}
+
 func TestNewAuthSessionFactoryWithValidatedConfigRejectsWildcardOpsBind(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Service{
@@ -1659,6 +1686,28 @@ func TestNewAuthSessionFactoryWithValidatedConfigRejectsOverlappingPersistencePa
 	_, err := NewAuthSessionFactoryWithValidatedConfig(cfg)
 	if !errors.Is(err, config.ErrPersistencePathOverlap) {
 		t.Fatalf("expected ErrPersistencePathOverlap, got %v", err)
+	}
+}
+
+func TestNewAuthSessionFactoryWithValidatedConfigRejectsSymlinkedDirectoryPersistenceRoot(t *testing.T) {
+	root := t.TempDir()
+	realAccounts := filepath.Join(root, "real-accounts")
+	if err := os.MkdirAll(realAccounts, 0o755); err != nil {
+		t.Fatalf("create real account store dir: %v", err)
+	}
+	linkedAccounts := filepath.Join(root, "accounts-link")
+	if err := os.Symlink(realAccounts, linkedAccounts); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	cfg := config.Service{
+		PprofAddr:           "127.0.0.1:6061",
+		LoginTicketStoreDir: filepath.Join(root, "tickets"),
+		AccountStoreDir:     linkedAccounts,
+	}
+
+	_, err := NewAuthSessionFactoryWithValidatedConfig(cfg)
+	if !errors.Is(err, config.ErrPersistencePathSymlink) {
+		t.Fatalf("expected ErrPersistencePathSymlink, got %v", err)
 	}
 }
 

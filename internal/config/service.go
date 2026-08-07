@@ -29,6 +29,7 @@ var (
 	ErrPersistencePathRequired     = errors.New("persistence path is required")
 	ErrPersistencePathOverlap      = errors.New("persistence paths overlap")
 	ErrPersistencePathRoleConflict = errors.New("persistence path conflicts with expected store type")
+	ErrPersistencePathSymlink      = errors.New("persistence directory store path must not be a symlink")
 	ErrOpsAddrRequired             = errors.New("ops bind address is required")
 	ErrOpsAddrInvalid              = errors.New("ops bind address is invalid")
 	ErrOpsAddrNotLoopback          = errors.New("ops bind address must be loopback")
@@ -76,11 +77,12 @@ func ValidateOpsConfig(cfg Service) error {
 }
 
 // ValidatePersistenceConfig fails closed when bootstrap JSON stores are missing,
-// configured with the wrong filesystem entry type, or configured to share the
-// same filesystem boundary. Directory-backed stores own their full subtree,
-// while file-backed stores own only their exact file path; any lexical or
-// symlink-resolved overlap is rejected before runtime code can validate, back
-// up, restore, or mutate the wrong store.
+// configured with the wrong filesystem entry type, configured to share the same
+// filesystem boundary, or routed through a symlinked directory-store root.
+// Directory-backed stores own their full subtree, while file-backed stores own
+// only their exact file path; any lexical or symlink-resolved overlap is
+// rejected before runtime code can validate, back up, restore, or mutate the
+// wrong store.
 func ValidatePersistenceConfig(cfg Service) error {
 	return validatePersistencePathSelections([]persistencePathSelection{
 		{Name: "login_ticket_store_dir", Role: persistencePathRoleDir, Path: cfg.LoginTicketStoreDir},
@@ -139,6 +141,11 @@ func canonicalPersistencePath(selection persistencePathSelection) (string, strin
 }
 
 func validatePersistencePathRole(selection persistencePathSelection, resolved string) error {
+	if selection.Role == persistencePathRoleDir {
+		if err := rejectPersistenceDirectoryStoreSymlinkRoot(selection); err != nil {
+			return err
+		}
+	}
 	info, err := os.Stat(resolved)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -155,6 +162,25 @@ func validatePersistencePathRole(selection persistencePathSelection, resolved st
 		if info.IsDir() {
 			return fmt.Errorf("%w: %s %q is a directory", ErrPersistencePathRoleConflict, selection.Name, resolved)
 		}
+	}
+	return nil
+}
+
+func rejectPersistenceDirectoryStoreSymlinkRoot(selection persistencePathSelection) error {
+	trimmed := strings.TrimSpace(selection.Path)
+	abs, err := filepath.Abs(filepath.Clean(trimmed))
+	if err != nil {
+		return fmt.Errorf("resolve %s: %w", selection.Name, err)
+	}
+	info, err := os.Lstat(abs)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("stat %s symlink root: %w", selection.Name, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: %s %q", ErrPersistencePathSymlink, selection.Name, abs)
 	}
 	return nil
 }
