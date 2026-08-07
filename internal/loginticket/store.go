@@ -339,6 +339,9 @@ func (s *FileStore) CleanupIssuedBefore(issuedBefore time.Time) (IssuedBeforeCle
 	if err != nil {
 		return IssuedBeforeCleanupSummary{}, err
 	}
+	if _, err := s.crashTempFiles(); err != nil {
+		return IssuedBeforeCleanupSummary{}, err
+	}
 	summary := IssuedBeforeCleanupSummary{
 		IssuedBefore:     issuedBefore,
 		RemovedLogins:    []string{},

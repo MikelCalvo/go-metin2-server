@@ -561,6 +561,29 @@ func TestFileStoreCleanupIssuedBeforeFailsClosedOnCorruptCommittedTicket(t *test
 	}
 }
 
+func TestFileStoreCleanupIssuedBeforeFailsClosedOnSymlinkedCrashTempBeforeDeleting(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	oldIssuedAt := time.Date(2026, 4, 17, 10, 0, 0, 0, time.UTC)
+	if err := store.Issue(Ticket{Login: "old", LoginKey: 0x01000000, IssuedAt: oldIssuedAt}); err != nil {
+		t.Fatalf("issue old ticket: %v", err)
+	}
+	target := filepath.Join(t.TempDir(), "outside-ticket-temp.json")
+	if err := os.WriteFile(target, []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write outside ticket temp target: %v", err)
+	}
+	if err := os.Symlink(target, filepath.Join(store.dir, ".ticket-crashed.json")); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	_, err := store.CleanupIssuedBefore(time.Date(2026, 4, 17, 11, 0, 0, 0, time.UTC))
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket before stale cleanup, got %v", err)
+	}
+	if _, err := store.Load("old", 0x01000000); err != nil {
+		t.Fatalf("expected old ticket to remain when crash-temp validation fails closed: %v", err)
+	}
+}
+
 func TestFileStoreCleanupIssuedBeforeSyncsStoreDirectoryAfterDelete(t *testing.T) {
 	dir := t.TempDir()
 	store := NewFileStore(dir)
