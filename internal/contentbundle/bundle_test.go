@@ -524,6 +524,93 @@ func TestSummarizeExposesItemTransferGuardsInTemplateBackedContentSummaries(t *t
 	}
 }
 
+func TestSummarizeExposesSelectedCharacterGuardsInTemplateBackedContentSummaries(t *testing.T) {
+	const (
+		buyRejectMessage  = "The merchant will not sell this restricted potion to you."
+		sellRejectMessage = "The merchant refuses this restricted potion."
+	)
+	bundle := Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:             "practice.restricted_reward",
+			Name:            "Restricted Reward",
+			MapIndex:        42,
+			X:               1800,
+			Y:               2900,
+			RaceNum:         101,
+			CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropVnums: []uint32{27001},
+		}},
+		ItemTemplates: []itemcatalog.Template{{
+			Vnum:           27001,
+			Name:           "Restricted Potion",
+			Stackable:      true,
+			MaxCount:       200,
+			ShopBuyPrice:   5,
+			ShopSellPrice:  2,
+			AntiMale:       true,
+			AntiFemale:     true,
+			AntiWarrior:    true,
+			AntiAssassin:   true,
+			AntiSura:       true,
+			AntiShaman:     true,
+			AntiEmpireA:    true,
+			AntiEmpireB:    true,
+			AntiEmpireC:    true,
+			MinLevel:       25,
+			BuyRejectText:  buyRejectMessage,
+			SellRejectText: sellRejectMessage,
+		}},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:  interactionstore.KindShopPreview,
+			Ref:   "npc:restricted_merchant",
+			Title: "Restricted Merchant",
+			Catalog: []interactionstore.MerchantCatalogEntry{
+				{Slot: 0, ItemVnum: 27001, Price: 50, Count: 2},
+			},
+		}},
+	}
+
+	summary, err := Summarize(bundle)
+	if err != nil {
+		t.Fatalf("summarize selected-character guard bundle: %v", err)
+	}
+
+	wantTemplates := []ItemTemplateReferenceSummary{{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, AntiMale: true, AntiFemale: true, AntiWarrior: true, AntiAssassin: true, AntiSura: true, AntiShaman: true, AntiEmpireA: true, AntiEmpireB: true, AntiEmpireC: true, MinLevel: 25, BuyRejectMessage: buyRejectMessage, SellRejectMessage: sellRejectMessage}}
+	if !reflect.DeepEqual(summary.ItemTemplates, wantTemplates) {
+		t.Fatalf("unexpected item-template selected-character guard summary:\n got: %#v\nwant: %#v", summary.ItemTemplates, wantTemplates)
+	}
+	wantCatalogs := []ShopCatalogSummary{{
+		Kind:       interactionstore.KindShopPreview,
+		Ref:        "npc:restricted_merchant",
+		Title:      "Restricted Merchant",
+		EntryCount: 1,
+		Entries: []ShopCatalogEntrySummary{
+			{Slot: 0, ItemVnum: 27001, ItemName: "Restricted Potion", Count: 2, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, AntiMale: true, AntiFemale: true, AntiWarrior: true, AntiAssassin: true, AntiSura: true, AntiShaman: true, AntiEmpireA: true, AntiEmpireB: true, AntiEmpireC: true, MinLevel: 25, BuyRejectMessage: buyRejectMessage, SellRejectMessage: sellRejectMessage},
+		},
+	}}
+	if !reflect.DeepEqual(summary.ShopCatalogs, wantCatalogs) {
+		t.Fatalf("unexpected shop-catalog selected-character guard summary:\n got: %#v\nwant: %#v", summary.ShopCatalogs, wantCatalogs)
+	}
+	wantSpawnGroups := []SpawnGroupReferenceSummary{{
+		Ref:             "practice.restricted_reward",
+		Name:            "Restricted Reward",
+		MapIndex:        42,
+		X:               1800,
+		Y:               2900,
+		RaceNum:         101,
+		CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+		RewardDropVnums: []uint32{27001},
+		RewardDropItems: []RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Restricted Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, AntiMale: true, AntiFemale: true, AntiWarrior: true, AntiAssassin: true, AntiSura: true, AntiShaman: true, AntiEmpireA: true, AntiEmpireB: true, AntiEmpireC: true, MinLevel: 25, BuyRejectMessage: buyRejectMessage, SellRejectMessage: sellRejectMessage}},
+	}}
+	if !reflect.DeepEqual(summary.SpawnGroups, wantSpawnGroups) {
+		t.Fatalf("unexpected spawn-group selected-character guard summary:\n got: %#v\nwant: %#v", summary.SpawnGroups, wantSpawnGroups)
+	}
+	wantRewardDrops := []RewardDropAggregateSummary{{ItemVnum: 27001, ItemName: "Restricted Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, AntiMale: true, AntiFemale: true, AntiWarrior: true, AntiAssassin: true, AntiSura: true, AntiShaman: true, AntiEmpireA: true, AntiEmpireB: true, AntiEmpireC: true, MinLevel: 25, BuyRejectMessage: buyRejectMessage, SellRejectMessage: sellRejectMessage}}
+	if !reflect.DeepEqual(summary.RewardDrops, wantRewardDrops) {
+		t.Fatalf("unexpected reward-drop selected-character guard summary:\n got: %#v\nwant: %#v", summary.RewardDrops, wantRewardDrops)
+	}
+}
+
 func TestBuildImportPreviewReturnsDeterministicSummaryDeltas(t *testing.T) {
 	preview, err := BuildImportPreview(
 		Bundle{

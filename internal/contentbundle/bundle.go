@@ -362,6 +362,16 @@ type RewardDropItemSummary struct {
 	AntiGive            bool   `json:"anti_give,omitempty"`
 	AntiSell            bool   `json:"anti_sell,omitempty"`
 	AntiStack           bool   `json:"anti_stack,omitempty"`
+	AntiMale            bool   `json:"anti_male,omitempty"`
+	AntiFemale          bool   `json:"anti_female,omitempty"`
+	AntiWarrior         bool   `json:"anti_warrior,omitempty"`
+	AntiAssassin        bool   `json:"anti_assassin,omitempty"`
+	AntiSura            bool   `json:"anti_sura,omitempty"`
+	AntiShaman          bool   `json:"anti_shaman,omitempty"`
+	AntiEmpireA         bool   `json:"anti_empire_a,omitempty"`
+	AntiEmpireB         bool   `json:"anti_empire_b,omitempty"`
+	AntiEmpireC         bool   `json:"anti_empire_c,omitempty"`
+	MinLevel            uint8  `json:"min_level,omitempty"`
 	BuyRejectMessage    string `json:"buy_reject_message,omitempty"`
 	DropRejectMessage   string `json:"drop_reject_message,omitempty"`
 	GiveRejectMessage   string `json:"give_reject_message,omitempty"`
@@ -383,6 +393,16 @@ type RewardDropAggregateSummary struct {
 	AntiGive            bool   `json:"anti_give,omitempty"`
 	AntiSell            bool   `json:"anti_sell,omitempty"`
 	AntiStack           bool   `json:"anti_stack,omitempty"`
+	AntiMale            bool   `json:"anti_male,omitempty"`
+	AntiFemale          bool   `json:"anti_female,omitempty"`
+	AntiWarrior         bool   `json:"anti_warrior,omitempty"`
+	AntiAssassin        bool   `json:"anti_assassin,omitempty"`
+	AntiSura            bool   `json:"anti_sura,omitempty"`
+	AntiShaman          bool   `json:"anti_shaman,omitempty"`
+	AntiEmpireA         bool   `json:"anti_empire_a,omitempty"`
+	AntiEmpireB         bool   `json:"anti_empire_b,omitempty"`
+	AntiEmpireC         bool   `json:"anti_empire_c,omitempty"`
+	MinLevel            uint8  `json:"min_level,omitempty"`
 	BuyRejectMessage    string `json:"buy_reject_message,omitempty"`
 	DropRejectMessage   string `json:"drop_reject_message,omitempty"`
 	GiveRejectMessage   string `json:"give_reject_message,omitempty"`
@@ -403,6 +423,16 @@ type ItemTemplateReferenceSummary struct {
 	AntiGive            bool   `json:"anti_give,omitempty"`
 	AntiSell            bool   `json:"anti_sell,omitempty"`
 	AntiStack           bool   `json:"anti_stack,omitempty"`
+	AntiMale            bool   `json:"anti_male,omitempty"`
+	AntiFemale          bool   `json:"anti_female,omitempty"`
+	AntiWarrior         bool   `json:"anti_warrior,omitempty"`
+	AntiAssassin        bool   `json:"anti_assassin,omitempty"`
+	AntiSura            bool   `json:"anti_sura,omitempty"`
+	AntiShaman          bool   `json:"anti_shaman,omitempty"`
+	AntiEmpireA         bool   `json:"anti_empire_a,omitempty"`
+	AntiEmpireB         bool   `json:"anti_empire_b,omitempty"`
+	AntiEmpireC         bool   `json:"anti_empire_c,omitempty"`
+	MinLevel            uint8  `json:"min_level,omitempty"`
 	BuyRejectMessage    string `json:"buy_reject_message,omitempty"`
 	DropRejectMessage   string `json:"drop_reject_message,omitempty"`
 	GiveRejectMessage   string `json:"give_reject_message,omitempty"`
@@ -434,6 +464,16 @@ type ShopCatalogEntrySummary struct {
 	AntiGive            bool   `json:"anti_give,omitempty"`
 	AntiSell            bool   `json:"anti_sell,omitempty"`
 	AntiStack           bool   `json:"anti_stack,omitempty"`
+	AntiMale            bool   `json:"anti_male,omitempty"`
+	AntiFemale          bool   `json:"anti_female,omitempty"`
+	AntiWarrior         bool   `json:"anti_warrior,omitempty"`
+	AntiAssassin        bool   `json:"anti_assassin,omitempty"`
+	AntiSura            bool   `json:"anti_sura,omitempty"`
+	AntiShaman          bool   `json:"anti_shaman,omitempty"`
+	AntiEmpireA         bool   `json:"anti_empire_a,omitempty"`
+	AntiEmpireB         bool   `json:"anti_empire_b,omitempty"`
+	AntiEmpireC         bool   `json:"anti_empire_c,omitempty"`
+	MinLevel            uint8  `json:"min_level,omitempty"`
 	BuyRejectMessage    string `json:"buy_reject_message,omitempty"`
 	DropRejectMessage   string `json:"drop_reject_message,omitempty"`
 	GiveRejectMessage   string `json:"give_reject_message,omitempty"`
@@ -1755,6 +1795,16 @@ func shopCatalogSummary(definition interactionstore.Definition, itemTemplatesByV
 			AntiGive:            template.AntiGive,
 			AntiSell:            template.AntiSell,
 			AntiStack:           template.AntiStack,
+			AntiMale:            template.AntiMale,
+			AntiFemale:          template.AntiFemale,
+			AntiWarrior:         template.AntiWarrior,
+			AntiAssassin:        template.AntiAssassin,
+			AntiSura:            template.AntiSura,
+			AntiShaman:          template.AntiShaman,
+			AntiEmpireA:         template.AntiEmpireA,
+			AntiEmpireB:         template.AntiEmpireB,
+			AntiEmpireC:         template.AntiEmpireC,
+			MinLevel:            template.MinLevel,
 			BuyRejectMessage:    template.BuyRejectText,
 			DropRejectMessage:   template.DropRejectText,
 			GiveRejectMessage:   template.GiveRejectText,
@@ -1827,6 +1877,16 @@ func itemTemplateReferenceSummaries(templates []itemcatalog.Template) []ItemTemp
 			AntiGive:            template.AntiGive,
 			AntiSell:            template.AntiSell,
 			AntiStack:           template.AntiStack,
+			AntiMale:            template.AntiMale,
+			AntiFemale:          template.AntiFemale,
+			AntiWarrior:         template.AntiWarrior,
+			AntiAssassin:        template.AntiAssassin,
+			AntiSura:            template.AntiSura,
+			AntiShaman:          template.AntiShaman,
+			AntiEmpireA:         template.AntiEmpireA,
+			AntiEmpireB:         template.AntiEmpireB,
+			AntiEmpireC:         template.AntiEmpireC,
+			MinLevel:            template.MinLevel,
 			BuyRejectMessage:    template.BuyRejectText,
 			DropRejectMessage:   template.DropRejectText,
 			GiveRejectMessage:   template.GiveRejectText,
@@ -1864,6 +1924,16 @@ func rewardDropItemSummaries(dropVnums []uint32, itemTemplatesByVnum map[uint32]
 			AntiGive:            template.AntiGive,
 			AntiSell:            template.AntiSell,
 			AntiStack:           template.AntiStack,
+			AntiMale:            template.AntiMale,
+			AntiFemale:          template.AntiFemale,
+			AntiWarrior:         template.AntiWarrior,
+			AntiAssassin:        template.AntiAssassin,
+			AntiSura:            template.AntiSura,
+			AntiShaman:          template.AntiShaman,
+			AntiEmpireA:         template.AntiEmpireA,
+			AntiEmpireB:         template.AntiEmpireB,
+			AntiEmpireC:         template.AntiEmpireC,
+			MinLevel:            template.MinLevel,
 			BuyRejectMessage:    template.BuyRejectText,
 			DropRejectMessage:   template.DropRejectText,
 			GiveRejectMessage:   template.GiveRejectText,
@@ -1921,6 +1991,16 @@ func rewardDropAggregateSummaries(countsByVnum map[uint32]int, itemTemplatesByVn
 			AntiGive:            template.AntiGive,
 			AntiSell:            template.AntiSell,
 			AntiStack:           template.AntiStack,
+			AntiMale:            template.AntiMale,
+			AntiFemale:          template.AntiFemale,
+			AntiWarrior:         template.AntiWarrior,
+			AntiAssassin:        template.AntiAssassin,
+			AntiSura:            template.AntiSura,
+			AntiShaman:          template.AntiShaman,
+			AntiEmpireA:         template.AntiEmpireA,
+			AntiEmpireB:         template.AntiEmpireB,
+			AntiEmpireC:         template.AntiEmpireC,
+			MinLevel:            template.MinLevel,
 			BuyRejectMessage:    template.BuyRejectText,
 			DropRejectMessage:   template.DropRejectText,
 			GiveRejectMessage:   template.GiveRejectText,

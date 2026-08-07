@@ -772,6 +772,40 @@ func TestLocalContentBundleSummaryEndpointReturnsDryRunSummaryForLoopbackPost(t 
 	}
 }
 
+func TestLocalContentBundleSummaryEndpointExposesSelectedCharacterGuardMetadataForLoopbackPost(t *testing.T) {
+	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), func() (any, int) {
+		t.Fatal("dry-run summary should not call live exporter")
+		return nil, http.StatusInternalServerError
+	})
+
+	body := `{"spawn_groups":[{"ref":"practice.restricted_reward","name":"Restricted Reward","map_index":42,"x":1800,"y":2900,"race_num":101,"combat_profile":"practice_mob","reward_drop_vnums":[27001]}],"item_templates":[{"vnum":27001,"name":"Restricted Potion","stackable":true,"max_count":200,"shop_buy_price":5,"shop_sell_price":2,"anti_warrior":true,"anti_empire_a":true,"min_level":25,"buy_reject_message":"The merchant will not sell this restricted potion to you.","sell_reject_message":"The merchant refuses this restricted potion."}],"interaction_definitions":[{"kind":"shop_preview","ref":"npc:restricted_merchant","title":"Restricted Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":2}]}]}`
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/summary", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	var got contentbundle.Summary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode selected-character guard summary response: %v", err)
+	}
+	if len(got.ItemTemplates) != 1 || !got.ItemTemplates[0].AntiWarrior || !got.ItemTemplates[0].AntiEmpireA || got.ItemTemplates[0].MinLevel != 25 {
+		t.Fatalf("expected selected-character guards on item template summary, got %+v", got.ItemTemplates)
+	}
+	if len(got.ShopCatalogs) != 1 || len(got.ShopCatalogs[0].Entries) != 1 || !got.ShopCatalogs[0].Entries[0].AntiWarrior || !got.ShopCatalogs[0].Entries[0].AntiEmpireA || got.ShopCatalogs[0].Entries[0].MinLevel != 25 {
+		t.Fatalf("expected selected-character guards on shop catalog summary, got %+v", got.ShopCatalogs)
+	}
+	if len(got.SpawnGroups) != 1 || len(got.SpawnGroups[0].RewardDropItems) != 1 || !got.SpawnGroups[0].RewardDropItems[0].AntiWarrior || !got.SpawnGroups[0].RewardDropItems[0].AntiEmpireA || got.SpawnGroups[0].RewardDropItems[0].MinLevel != 25 {
+		t.Fatalf("expected selected-character guards on reward item summary, got %+v", got.SpawnGroups)
+	}
+	if len(got.RewardDrops) != 1 || !got.RewardDrops[0].AntiWarrior || !got.RewardDrops[0].AntiEmpireA || got.RewardDrops[0].MinLevel != 25 {
+		t.Fatalf("expected selected-character guards on aggregate reward drop summary, got %+v", got.RewardDrops)
+	}
+}
+
 func TestLocalContentBundleImportPreviewEndpointReturnsDeltaJSONForLoopbackPost(t *testing.T) {
 	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
 		StaticActors: []contentbundle.StaticActor{{Name: "VillageGuide", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}},
