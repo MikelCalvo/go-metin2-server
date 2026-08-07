@@ -375,6 +375,7 @@ Expected result:
 - `irremovable` removal metadata fails closed with one self-only `CHAT_TYPE_INFO` rejection; when the template authors `unequip_reject_message`, that text is shown, otherwise the deterministic fallback is `You cannot remove this item.`; no carried/equipment, point, appearance, quickslot, or persisted-state mutation is committed
 - mismatched or malformed removal metadata fails closed with no point change and no committed inventory/equipment/persistence mutation
 - corrupt/disposable equipped-source fixtures whose live count exceeds the authored template `max_count` fail closed the same way: no item refresh, no point change, no appearance update, and no committed inventory/equipment/persistence mutation
+- corrupt/disposable duplicate equipped-slot fixtures also fail closed for both fallback and template-backed unequip: no ambiguous first-match item is moved, no item refresh is emitted, and no carried/equipment or persisted-state mutation is committed
 
 ### 4.5.10 Merchant buy/sell template restrictions (`SHOP BUY` / `SHOP SELL2`)
 

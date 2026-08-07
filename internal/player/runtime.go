@@ -841,7 +841,7 @@ func (r *Runtime) equipItem(from inventory.SlotIndex, equipSlot inventory.Equipm
 }
 
 func (r *Runtime) UnequipItem(equipSlot inventory.EquipmentSlot, to inventory.SlotIndex) (inventory.ItemInstance, bool) {
-	if r == nil || !equipSlot.Valid() || inventorySlotOccupied(r.liveInventory, to) {
+	if r == nil || !equipSlot.Valid() || inventorySlotOccupied(r.liveInventory, to) || countEquipmentSlotOccupancy(r.liveEquipment, equipSlot) != 1 {
 		return inventory.ItemInstance{}, false
 	}
 	equipIndex := findEquipmentSlot(r.liveEquipment, equipSlot)
@@ -860,7 +860,7 @@ func (r *Runtime) UnequipItem(equipSlot inventory.EquipmentSlot, to inventory.Sl
 }
 
 func (r *Runtime) UnequipItemWithTemplate(equipSlot inventory.EquipmentSlot, to inventory.SlotIndex, template itemcatalog.Template) (inventory.ItemInstance, bool) {
-	if !templateAuthoredForEquipSlot(template, equipSlot) || !r.CanUseTemplate(template) || template.Irremovable {
+	if !templateAuthoredForEquipSlot(template, equipSlot) || !r.CanUseTemplate(template) || template.Irremovable || countEquipmentSlotOccupancy(r.liveEquipment, equipSlot) != 1 {
 		return inventory.ItemInstance{}, false
 	}
 	equipIndex := findEquipmentSlot(r.liveEquipment, equipSlot)
@@ -1550,6 +1550,16 @@ func findEquipmentSlot(items []inventory.ItemInstance, slot inventory.EquipmentS
 		}
 	}
 	return -1
+}
+
+func countEquipmentSlotOccupancy(items []inventory.ItemInstance, slot inventory.EquipmentSlot) int {
+	count := 0
+	for _, item := range items {
+		if item.Equipped && item.EquipSlot == slot {
+			count++
+		}
+	}
+	return count
 }
 
 func inventorySlotOccupied(items []inventory.ItemInstance, slot inventory.SlotIndex) bool {

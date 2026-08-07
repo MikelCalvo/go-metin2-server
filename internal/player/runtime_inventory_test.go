@@ -2594,6 +2594,45 @@ func TestRuntimeUnequipItemWithTemplateRejectsIrremovableWithoutMutatingState(t 
 	}
 }
 
+func TestRuntimeUnequipItemRejectsDuplicateEquippedSlotWithoutMutatingState(t *testing.T) {
+	character := loginticket.Character{
+		ID:        1,
+		Name:      "DuplicateEquipmentGuard",
+		Inventory: []inventory.ItemInstance{},
+		Equipment: []inventory.ItemInstance{
+			{ID: 1001, Vnum: 0x11223344, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody},
+			{ID: 1002, Vnum: 0x55667788, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody},
+		},
+	}
+
+	t.Run("plain", func(t *testing.T) {
+		runtime := NewRuntime(character, SessionLink{Login: "duplicate-equipment-guard", CharacterIndex: 0})
+		if item, ok := runtime.UnequipItem(inventory.EquipmentSlotBody, 8); ok {
+			t.Fatalf("expected duplicate equipped slot to reject plain unequip, got %#v", item)
+		}
+		if got := runtime.LiveEquipment(); !reflect.DeepEqual(got, character.Equipment) {
+			t.Fatalf("plain duplicate-slot unequip mutated equipment: got %#v want %#v", got, character.Equipment)
+		}
+		if got := runtime.LiveInventory(); len(got) != 0 {
+			t.Fatalf("plain duplicate-slot unequip mutated inventory: got %#v", got)
+		}
+	})
+
+	t.Run("template backed", func(t *testing.T) {
+		runtime := NewRuntime(character, SessionLink{Login: "duplicate-equipment-guard", CharacterIndex: 0})
+		template := itemcatalog.Template{Vnum: 0x11223344, Name: "Template Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()}
+		if item, ok := runtime.UnequipItemWithTemplate(inventory.EquipmentSlotBody, 8, template); ok {
+			t.Fatalf("expected duplicate equipped slot to reject template-backed unequip, got %#v", item)
+		}
+		if got := runtime.LiveEquipment(); !reflect.DeepEqual(got, character.Equipment) {
+			t.Fatalf("template duplicate-slot unequip mutated equipment: got %#v want %#v", got, character.Equipment)
+		}
+		if got := runtime.LiveInventory(); len(got) != 0 {
+			t.Fatalf("template duplicate-slot unequip mutated inventory: got %#v", got)
+		}
+	})
+}
+
 func TestRuntimeUnequipItemWithTemplateRejectsOverTemplateMaxCountWithoutMutatingState(t *testing.T) {
 	character := loginticket.Character{
 		ID:        1,
