@@ -14,6 +14,9 @@ const (
 	HeaderClientFlyTargeting      uint16 = 0x0404
 	HeaderClientAddFlyTargeting   uint16 = 0x0405
 	HeaderServerDamageInfo        uint16 = 0x0410
+	HeaderServerFlyTargeting      uint16 = 0x0411
+	HeaderServerAddFlyTargeting   uint16 = 0x0412
+	HeaderServerCreateFly         uint16 = 0x0413
 	HeaderClientTarget            uint16 = 0x0A01
 	HeaderClientOnClick           uint16 = 0x0A02
 	HeaderClientCharacterPosition uint16 = 0x0A60
@@ -29,6 +32,8 @@ const (
 	clientCharacterPositionPayloadSize = 1
 	clientTargetPayloadSize            = 4
 	serverDamageInfoPayloadSize        = 9
+	serverFlyTargetingPayloadSize      = 16
+	serverCreateFlyPayloadSize         = 9
 	serverTargetPayloadSize            = 5
 )
 
@@ -80,6 +85,19 @@ type ServerDamageInfoPacket struct {
 	VID    uint32
 	Flag   uint8
 	Damage int32
+}
+
+type ServerFlyTargetingPacket struct {
+	ShooterVID uint32
+	TargetVID  uint32
+	X          int32
+	Y          int32
+}
+
+type ServerCreateFlyPacket struct {
+	Type     uint8
+	StartVID uint32
+	EndVID   uint32
 }
 
 func EncodeClientAttack(packet ClientAttackPacket) []byte {
@@ -265,5 +283,67 @@ func DecodeServerDamageInfo(f frame.Frame) (ServerDamageInfoPacket, error) {
 		VID:    binary.LittleEndian.Uint32(f.Payload[0:4]),
 		Flag:   f.Payload[4],
 		Damage: int32(binary.LittleEndian.Uint32(f.Payload[5:9])),
+	}, nil
+}
+
+func EncodeServerFlyTargeting(packet ServerFlyTargetingPacket) []byte {
+	return encodeServerFlyTargeting(HeaderServerFlyTargeting, packet)
+}
+
+func DecodeServerFlyTargeting(f frame.Frame) (ServerFlyTargetingPacket, error) {
+	return decodeServerFlyTargeting(f, HeaderServerFlyTargeting)
+}
+
+func EncodeServerAddFlyTargeting(packet ServerFlyTargetingPacket) []byte {
+	return encodeServerFlyTargeting(HeaderServerAddFlyTargeting, packet)
+}
+
+func DecodeServerAddFlyTargeting(f frame.Frame) (ServerFlyTargetingPacket, error) {
+	return decodeServerFlyTargeting(f, HeaderServerAddFlyTargeting)
+}
+
+func EncodeServerCreateFly(packet ServerCreateFlyPacket) []byte {
+	payload := make([]byte, serverCreateFlyPayloadSize)
+	payload[0] = packet.Type
+	binary.LittleEndian.PutUint32(payload[1:5], packet.StartVID)
+	binary.LittleEndian.PutUint32(payload[5:9], packet.EndVID)
+	return frame.Encode(HeaderServerCreateFly, payload)
+}
+
+func DecodeServerCreateFly(f frame.Frame) (ServerCreateFlyPacket, error) {
+	if f.Header != HeaderServerCreateFly {
+		return ServerCreateFlyPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != serverCreateFlyPayloadSize {
+		return ServerCreateFlyPacket{}, ErrInvalidPayload
+	}
+	return ServerCreateFlyPacket{
+		Type:     f.Payload[0],
+		StartVID: binary.LittleEndian.Uint32(f.Payload[1:5]),
+		EndVID:   binary.LittleEndian.Uint32(f.Payload[5:9]),
+	}, nil
+}
+
+func encodeServerFlyTargeting(header uint16, packet ServerFlyTargetingPacket) []byte {
+	payload := make([]byte, serverFlyTargetingPayloadSize)
+	binary.LittleEndian.PutUint32(payload[0:4], packet.ShooterVID)
+	binary.LittleEndian.PutUint32(payload[4:8], packet.TargetVID)
+	binary.LittleEndian.PutUint32(payload[8:12], uint32(packet.X))
+	binary.LittleEndian.PutUint32(payload[12:16], uint32(packet.Y))
+	return frame.Encode(header, payload)
+}
+
+func decodeServerFlyTargeting(f frame.Frame, header uint16) (ServerFlyTargetingPacket, error) {
+	if f.Header != header {
+		return ServerFlyTargetingPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != serverFlyTargetingPayloadSize {
+		return ServerFlyTargetingPacket{}, ErrInvalidPayload
+	}
+	return ServerFlyTargetingPacket{
+		ShooterVID: binary.LittleEndian.Uint32(f.Payload[0:4]),
+		TargetVID:  binary.LittleEndian.Uint32(f.Payload[4:8]),
+		X:          int32(binary.LittleEndian.Uint32(f.Payload[8:12])),
+		Y:          int32(binary.LittleEndian.Uint32(f.Payload[12:16])),
 	}, nil
 }

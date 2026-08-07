@@ -179,6 +179,54 @@ func TestEncodeServerDamageInfoUsesLegacyPayloadLayout(t *testing.T) {
 	}
 }
 
+func TestEncodeServerFlyTargetingUsesLegacyPayloadLayout(t *testing.T) {
+	raw := EncodeServerFlyTargeting(ServerFlyTargetingPacket{ShooterVID: 0x01020304, TargetVID: 0x05060708, X: 123456, Y: -234567})
+	expected := frame.Encode(HeaderServerFlyTargeting, []byte{0x04, 0x03, 0x02, 0x01, 0x08, 0x07, 0x06, 0x05, 0x40, 0xe2, 0x01, 0x00, 0xb9, 0x6b, 0xfc, 0xff})
+	if !bytes.Equal(raw, expected) {
+		t.Fatalf("unexpected server fly-targeting encoding: got %x want %x", raw, expected)
+	}
+
+	decoded, err := DecodeServerFlyTargeting(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode server fly-targeting: %v", err)
+	}
+	if decoded.ShooterVID != 0x01020304 || decoded.TargetVID != 0x05060708 || decoded.X != 123456 || decoded.Y != -234567 {
+		t.Fatalf("unexpected server fly-targeting packet: %+v", decoded)
+	}
+}
+
+func TestEncodeServerAddFlyTargetingUsesLegacyPayloadLayout(t *testing.T) {
+	raw := EncodeServerAddFlyTargeting(ServerFlyTargetingPacket{ShooterVID: 0x01020304, TargetVID: 0, X: 1700, Y: -2800})
+	expected := frame.Encode(HeaderServerAddFlyTargeting, []byte{0x04, 0x03, 0x02, 0x01, 0x00, 0x00, 0x00, 0x00, 0xa4, 0x06, 0x00, 0x00, 0x10, 0xf5, 0xff, 0xff})
+	if !bytes.Equal(raw, expected) {
+		t.Fatalf("unexpected server add-fly-targeting encoding: got %x want %x", raw, expected)
+	}
+
+	decoded, err := DecodeServerAddFlyTargeting(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode server add-fly-targeting: %v", err)
+	}
+	if decoded.ShooterVID != 0x01020304 || decoded.TargetVID != 0 || decoded.X != 1700 || decoded.Y != -2800 {
+		t.Fatalf("unexpected server add-fly-targeting packet: %+v", decoded)
+	}
+}
+
+func TestEncodeServerCreateFlyUsesLegacyPayloadLayout(t *testing.T) {
+	raw := EncodeServerCreateFly(ServerCreateFlyPacket{Type: 0x09, StartVID: 0x01020304, EndVID: 0x05060708})
+	expected := frame.Encode(HeaderServerCreateFly, []byte{0x09, 0x04, 0x03, 0x02, 0x01, 0x08, 0x07, 0x06, 0x05})
+	if !bytes.Equal(raw, expected) {
+		t.Fatalf("unexpected server create-fly encoding: got %x want %x", raw, expected)
+	}
+
+	decoded, err := DecodeServerCreateFly(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode server create-fly: %v", err)
+	}
+	if decoded.Type != 0x09 || decoded.StartVID != 0x01020304 || decoded.EndVID != 0x05060708 {
+		t.Fatalf("unexpected server create-fly packet: %+v", decoded)
+	}
+}
+
 func TestEncodeServerDamageInfoPreservesSignedDamage(t *testing.T) {
 	raw := EncodeServerDamageInfo(ServerDamageInfoPacket{VID: 0x02040107, Damage: -1})
 	expected := frame.Encode(HeaderServerDamageInfo, []byte{0x07, 0x01, 0x04, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff})
@@ -330,6 +378,48 @@ func TestDecodeServerDamageInfoRejectsUnexpectedHeader(t *testing.T) {
 
 func TestDecodeServerDamageInfoRejectsMalformedPayload(t *testing.T) {
 	_, err := DecodeServerDamageInfo(frame.Frame{Header: HeaderServerDamageInfo, Length: 12, Payload: []byte{0x07, 0x01, 0x04, 0x02, 0x00, 0x01, 0x00, 0x00}})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestDecodeServerFlyTargetingRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeServerFlyTargeting(frame.Frame{Header: HeaderServerDamageInfo, Length: 20, Payload: make([]byte, serverFlyTargetingPayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeServerFlyTargetingRejectsMalformedPayload(t *testing.T) {
+	_, err := DecodeServerFlyTargeting(frame.Frame{Header: HeaderServerFlyTargeting, Length: 19, Payload: make([]byte, serverFlyTargetingPayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestDecodeServerAddFlyTargetingRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeServerAddFlyTargeting(frame.Frame{Header: HeaderServerFlyTargeting, Length: 20, Payload: make([]byte, serverFlyTargetingPayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeServerAddFlyTargetingRejectsMalformedPayload(t *testing.T) {
+	_, err := DecodeServerAddFlyTargeting(frame.Frame{Header: HeaderServerAddFlyTargeting, Length: 19, Payload: make([]byte, serverFlyTargetingPayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestDecodeServerCreateFlyRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeServerCreateFly(frame.Frame{Header: HeaderServerFlyTargeting, Length: 13, Payload: make([]byte, serverCreateFlyPayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeServerCreateFlyRejectsMalformedPayload(t *testing.T) {
+	_, err := DecodeServerCreateFly(frame.Frame{Header: HeaderServerCreateFly, Length: 12, Payload: make([]byte, serverCreateFlyPayloadSize-1)})
 	if !errors.Is(err, ErrInvalidPayload) {
 		t.Fatalf("expected ErrInvalidPayload, got %v", err)
 	}

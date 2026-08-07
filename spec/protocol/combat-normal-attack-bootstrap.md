@@ -440,7 +440,7 @@ This slice does **not** yet freeze:
 - broader player-death / respawn semantics or broader non-combat gameplay gating for zero-HP owners after that floor is reached beyond the self-only `GC DEAD(owner_vid)` signal frozen in `player-death-bootstrap.md`
 - player-vs-player attack semantics
 - skills, buffs, debuffs, or status effects
-- projectile targeting or server fly-effect gameplay beyond the current decode-and-fail-closed `FLY_TARGETING` / `ADD_FLY_TARGETING` guards
+- projectile targeting or server fly-effect gameplay beyond the current decode-and-fail-closed client `FLY_TARGETING` / `ADD_FLY_TARGETING` guards and the codec-only server `FLY_TARGETING` / `ADD_FLY_TARGETING` / `CREATE_FLY` packet shapes frozen in `combat-fly-effect-bootstrap.md`
 - broader reward systems beyond the narrow non-player death descriptor seam
 - corpse gameplay, aggro movement, or independent mob AI
 

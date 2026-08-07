@@ -235,6 +235,7 @@ Already present:
 - no-op content-bundle reimports and failed replacement rollbacks that preserve live practice-mob HP, selected-target ownership, combat snapshot/respawn state, and visibility state when authored content has not committed,
 - HP mutation and HP percent refreshes,
 - self and visible-peer `DAMAGE_INFO` hit-effect emission for standalone bootstrap combat-profile and spawn-backed practice-mob non-lethal hits, while broader hit-result policy remains narrow,
+- codec-owned server fly-effect packet shapes (`FLY_TARGETING`, `ADD_FLY_TARGETING`, and `CREATE_FLY`) kept deliberately non-emitted until a later projectile/skill slice owns runtime choreography,
 - dead-state rejection and target clear,
 - delayed respawn rebuild path with combat-profile respawn delays validated before they are converted into runtime timers,
 - engagement ownership to prevent noisy multi-owner combat loops,
@@ -248,7 +249,7 @@ Still missing:
 
 - real damage formulas,
 - attack animations/types beyond the first normal path,
-- ranged/projectile `SHOOT` / fly-targeting gameplay beyond the current safe no-op guards,
+- ranged/projectile `SHOOT` / fly-targeting gameplay beyond the current safe no-op guards and codec-only server fly-effect packet shapes,
 - accepted `USE_SKILL` / skill combat beyond the current safe no-op guard,
 - PvP and duel policy,
 - mob AI: aggro radius, chase, leash, return, patrol, target switching,
