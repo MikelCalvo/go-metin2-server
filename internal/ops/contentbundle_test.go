@@ -1432,6 +1432,153 @@ func TestLocalContentBundleMapSummaryEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalContentBundleSpawnGroupEndpointReturnsExactSpawnGroupForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{SpawnGroups: []contentbundle.SpawnGroupReferenceSummary{
+			{Ref: "practice.alpha_mob", Name: "AlphaMob", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 101, CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob)},
+			{Ref: "practice.reward_mob", Name: "RewardMob", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 102, CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy), RewardExperience: 75, RewardGold: 60, RewardDropVnums: []uint32{27001}, RewardDropItems: []contentbundle.RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}}},
+		}},
+	}
+	mux := RegisterLocalContentBundleSpawnGroupEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/spawn-groups/practice.reward_mob", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got contentbundle.SpawnGroupReferenceSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode spawn-group response body: %v", err)
+	}
+	want := contentbundle.SpawnGroupReferenceSummary{Ref: "practice.reward_mob", Name: "RewardMob", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 102, CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy), RewardExperience: 75, RewardGold: 60, RewardDropVnums: []uint32{27001}, RewardDropItems: []contentbundle.RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle spawn-group summary:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleSpawnGroupEndpointCoexistsWithContentBundleCollectionRoutes(t *testing.T) {
+	exporter := &stubContentBundleExporter{status: http.StatusOK, bundle: contentbundle.Bundle{}}
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{SpawnGroups: []contentbundle.SpawnGroupReferenceSummary{{Ref: "practice.reward_mob", Name: "RewardMob", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 102, CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob)}}}}
+	mux := RegisterLocalContentBundleEndpoint(NewPprofMux("gamed"), exporter.ExportContentBundle, nil)
+	mux = RegisterLocalContentBundleSpawnGroupEndpoint(mux, summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/spawn-groups/practice.reward_mob", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d for spawn-group summary alongside content-bundle routes, got %d", http.StatusOK, rec.Code)
+	}
+	if exporter.calls != 0 {
+		t.Fatalf("expected collection exporter not to handle spawn-group summary route, got %d calls", exporter.calls)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleSpawnGroupEndpointReturnsNotFoundForMissingRef(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{SpawnGroups: []contentbundle.SpawnGroupReferenceSummary{{Ref: "practice.reward_mob", Name: "RewardMob", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 102, CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob)}}}}
+	mux := RegisterLocalContentBundleSpawnGroupEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/spawn-groups/practice.missing_mob", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for missing spawn group, got %d", http.StatusNotFound, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleSpawnGroupEndpointRejectsInvalidRef(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{SpawnGroups: []contentbundle.SpawnGroupReferenceSummary{{Ref: "practice.reward_mob", Name: "RewardMob"}}}}
+	mux := RegisterLocalContentBundleSpawnGroupEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	for _, path := range []string{"/local/content-bundle/spawn-groups/", "/local/content-bundle/spawn-groups/bad%20ref", "/local/content-bundle/spawn-groups/practice%2Freward_mob", "/local/content-bundle/spawn-groups/practice.reward_mob%20", "/local/content-bundle/spawn-groups/practice.reward_mob/extra"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for invalid spawn-group ref path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called for invalid spawn-group refs, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleSpawnGroupEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{SpawnGroups: []contentbundle.SpawnGroupReferenceSummary{{Ref: "practice.reward_mob", Name: "RewardMob"}}}}
+	mux := RegisterLocalContentBundleSpawnGroupEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/spawn-groups/practice.reward_mob", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback caller, got %d", http.StatusForbidden, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleSpawnGroupEndpointRejectsWrongMethod(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{SpawnGroups: []contentbundle.SpawnGroupReferenceSummary{{Ref: "practice.reward_mob", Name: "RewardMob"}}}}
+	mux := RegisterLocalContentBundleSpawnGroupEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/spawn-groups/practice.reward_mob", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleSpawnGroupEndpointForwardsSummaryExporterErrors(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusConflict, result: map[string]string{"error": "content summary unavailable"}}
+	mux := RegisterLocalContentBundleSpawnGroupEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/spawn-groups/practice.reward_mob", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d for exporter failure, got %d", http.StatusConflict, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
 func TestLocalContentBundleInteractableStaticActorEndpointReturnsMatchingActorsForLoopbackGet(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{
 		status: http.StatusOK,

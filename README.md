@@ -13,7 +13,7 @@ This repository is a public rewrite built around owned protocol documentation, s
 - a shared in-process world runtime,
 - protocol codecs and fixtures for the owned packet families,
 - real-client-oriented integration tests around movement, visibility, chat, items, shops, combat, death, restart, and respawn slices,
-- local operator/debug endpoints for runtime inspection, controlled bootstrap actions, static-actor respawn timer plus combat-target engagement/retaliation snapshot inspection, exact connected-player lookup, flat/entity-ID/ref/map-local spawn-group snapshot/map-occupancy/transfer/interaction visibility inspection, and strict manifest-backed item-template/account-store backup/restore preflights.
+- local operator/debug endpoints for runtime inspection, controlled bootstrap actions, static-actor respawn timer plus combat-target engagement/retaliation snapshot inspection, exact connected-player lookup, flat/entity-ID/ref/map-local spawn-group snapshot/map-occupancy/transfer/interaction visibility inspection, exact authored spawn-group content-summary lookup, and strict manifest-backed item-template/account-store backup/restore preflights.
 
 Current repository shape from the latest scan:
 
@@ -209,7 +209,7 @@ Already present:
 - fail-closed static-actor visibility identity validation: `entity_id` must fit the current `uint32` client-visible `VID` carrier and `race_num` must fit the current `uint16` `CHARACTER_ADD` projection,
 - structured merchant catalogs,
 - content bundle import/export with commit-only live visibility replay for static-actor replacement, fail-closed rejection of unsupported future interaction kinds in static-actor metadata, and import-preview deltas that include top-level counts, per-map static actor/spawn-group rows, portable combat-profile rows, grouped reward-drop rows, NPC service route rows, and authored warp destination rows,
-- loopback-only local endpoints for static actors, interactions, visibility, and content bundles, including Unicode-safe compact summaries with interaction-definition previews, shop catalog details, warp destination details, item-template equipment guard metadata (`equip_slot`, `appearance_vnum`, `irremovable`, `equip_reject_message`, and `unequip_reject_message`) repeated into template-backed summary rows, and import-preview deltas for portable combat-profile snapshots plus grouped reward-drop and warp-destination changes,
+- loopback-only local endpoints for static actors, interactions, visibility, and content bundles, including Unicode-safe compact summaries with interaction-definition previews, exact authored spawn-group summary lookup, shop catalog details, warp destination details, item-template equipment guard metadata (`equip_slot`, `appearance_vnum`, `irremovable`, `equip_reject_message`, and `unequip_reject_message`) repeated into template-backed summary rows, and import-preview deltas for portable combat-profile snapshots plus grouped reward-drop and warp-destination changes,
 - example bootstrap NPC service bundle.
 
 Still missing:

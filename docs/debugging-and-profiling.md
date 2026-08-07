@@ -333,6 +333,12 @@ Returns one exact per-map row from the live content-bundle summary. This is a lo
 
 Use it when local QA needs a compact authored-content view for one map without fetching the full bundle summary or inferring counts from live runtime occupancy. It is not a gameplay protocol endpoint and does not mutate authored content.
 
+### `GET /local/content-bundle/spawn-groups/{ref}`
+
+Returns one exact spawn-group row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; `ref` must satisfy the same path-safe authored spawn-group ref rule used by `/local/spawn-groups/by-ref/{ref}`. It returns the matching `spawn_groups[]` row including resolved reward-drop item metadata when present, returns `404` when the live authored bundle has no matching spawn group, rejects malformed identities with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
+
+Use it when local QA needs to inspect one practice-mob/spawn definition without fetching the full bundle summary or querying live runtime entity state. It is not a gameplay protocol endpoint and does not mutate authored content.
+
 ### `GET /local/content-bundle/shop-catalogs/{kind}/{ref}`
 
 Returns one exact structured shop-catalog summary row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; the only accepted `kind` for this path is `shop_preview`, and `ref` must satisfy the same path-safe interaction reference rule used by `/local/interactions/{kind}/{ref}`. It returns `404` when the live authored bundle has no matching catalog, rejects malformed identities with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
@@ -872,10 +878,13 @@ Inspect compact authored-content summaries without fetching the full bundle payl
 ```bash
 curl http://127.0.0.1:6060/local/content-bundle/summary
 curl http://127.0.0.1:6060/local/content-bundle/maps/1
+curl http://127.0.0.1:6060/local/content-bundle/spawn-groups/practice.qa_reward_mob
 curl http://127.0.0.1:6060/local/content-bundle/interactable-static-actors/Village%20Guide
 curl http://127.0.0.1:6060/local/content-bundle/shop-catalogs/shop_preview/npc:qa_merchant
 curl http://127.0.0.1:6060/local/content-bundle/warp-destinations/warp/npc:qa_teleporter
 ```
+
+`/local/content-bundle/spawn-groups/{ref}` is a loopback-only exact-ref reader over the exported bundle summary. It returns one authored spawn-group row including resolved reward-drop item metadata, or `404` when that authored ref is absent, so local QA can inspect one practice-mob definition without fetching the full summary.
 
 `/local/content-bundle/interactable-static-actors/{name}` is a loopback-only exact-name reader over the exported bundle summary. It returns every matching authored interactable actor row so duplicate placements with the same name remain inspectable, and it is read-only QA/debug tooling rather than gameplay protocol or content mutation.
 
