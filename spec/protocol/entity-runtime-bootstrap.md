@@ -66,6 +66,7 @@ The current owned responsibilities are:
 - index connected player entities by runtime entity ID
 - index connected player entities by client-visible `VID`
 - index connected player entities by exact character name
+- compose exact-name connected-character debug snapshots for `/local/players/{name}` through the same player-directory lookup boundary as visibility, interaction-visibility, inventory, equipment, quickslot, currency, and combat-target operator views
 - reject malformed live player names before they enter the runtime directory or map index: names must be non-empty, have no leading/trailing whitespace, be valid UTF-8, contain no embedded NUL, and match the selected character snapshot name used for the entity
 - reject live player entries whose entity `VID` does not match the selected character snapshot `VID`, so map occupancy, exact `VID` lookup, visibility, and packet fanout cannot diverge on two different client-visible identities for the same runtime player
 - keep deterministic player snapshot output for higher-level scope helpers

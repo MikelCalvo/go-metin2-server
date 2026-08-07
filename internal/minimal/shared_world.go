@@ -1817,6 +1817,16 @@ func (r *sharedWorldRegistry) ConnectedCharacters() []ConnectedCharacterSnapshot
 	return r.scopesLocked().ConnectedCharacterSnapshots()
 }
 
+func (r *sharedWorldRegistry) ConnectedCharacterSnapshot(name string) (ConnectedCharacterSnapshot, bool) {
+	if r == nil || name == "" {
+		return ConnectedCharacterSnapshot{}, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.scopesLocked().ConnectedCharacterSnapshotByExactName(name)
+}
+
 func (r *sharedWorldRegistry) CharacterVisibility() []CharacterVisibilitySnapshot {
 	if r == nil {
 		return nil

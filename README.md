@@ -13,7 +13,7 @@ This repository is a public rewrite built around owned protocol documentation, s
 - a shared in-process world runtime,
 - protocol codecs and fixtures for the owned packet families,
 - real-client-oriented integration tests around movement, visibility, chat, items, shops, combat, death, restart, and respawn slices,
-- local operator/debug endpoints for runtime inspection, controlled bootstrap actions, static-actor respawn timer plus combat-target engagement/retaliation snapshot inspection, flat/exact spawn-group snapshot/map-occupancy/transfer/interaction visibility inspection, and strict manifest-backed item-template/account-store backup/restore preflights.
+- local operator/debug endpoints for runtime inspection, controlled bootstrap actions, static-actor respawn timer plus combat-target engagement/retaliation snapshot inspection, exact connected-player lookup, flat/exact spawn-group snapshot/map-occupancy/transfer/interaction visibility inspection, and strict manifest-backed item-template/account-store backup/restore preflights.
 
 Current repository shape from the latest scan:
 

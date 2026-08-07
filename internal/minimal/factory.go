@@ -774,6 +774,13 @@ func (r *gameRuntime) ConnectedCharacters() []ConnectedCharacterSnapshot {
 	return r.sharedWorld.ConnectedCharacters()
 }
 
+func (r *gameRuntime) ConnectedCharacterSnapshot(name string) (ConnectedCharacterSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil {
+		return ConnectedCharacterSnapshot{}, false
+	}
+	return r.sharedWorld.ConnectedCharacterSnapshot(name)
+}
+
 func (r *gameRuntime) CharacterVisibility() []CharacterVisibilitySnapshot {
 	if r == nil || r.sharedWorld == nil {
 		return nil

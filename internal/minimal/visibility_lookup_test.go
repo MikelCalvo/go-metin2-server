@@ -46,3 +46,33 @@ func TestGameRuntimeCharacterVisibilitySnapshotReturnsExactConnectedCharacter(t 
 		t.Fatalf("expected missing exact visibility snapshot to fail closed, got snapshot=%+v ok=%v", missing, ok)
 	}
 }
+
+func TestGameRuntimeConnectedCharacterSnapshotReturnsExactConnectedCharacter(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	alpha := peerVisibilityCharacter("Alpha", 0x01030111, 0x02040111, 1100, 2100, 0, 101, 201)
+	beta := peerVisibilityCharacter("Beta", 0x01030112, 0x02040112, 1200, 2200, 0, 102, 202)
+	issuePeerTicket(t, store, "alpha", 0x33333333, alpha)
+	issuePeerTicket(t, store, "beta", 0x44444444, beta)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+	alphaFlow, _ := enterGameWithLoginTicket(t, factory, "alpha", 0x33333333)
+	defer closeSessionFlow(t, alphaFlow)
+	betaFlow, _ := enterGameWithLoginTicket(t, factory, "beta", 0x44444444)
+	defer closeSessionFlow(t, betaFlow)
+
+	snapshot, ok := runtime.ConnectedCharacterSnapshot("Alpha")
+	if !ok {
+		t.Fatal("expected exact Alpha connected-character snapshot to resolve")
+	}
+	if snapshot.Name != "Alpha" || snapshot.VID != alpha.VID || snapshot.MapIndex != bootstrapMapIndex || snapshot.X != alpha.X || snapshot.Y != alpha.Y {
+		t.Fatalf("unexpected exact Alpha connected-character snapshot: %+v", snapshot)
+	}
+
+	if missing, ok := runtime.ConnectedCharacterSnapshot("Missing"); ok || missing.Name != "" {
+		t.Fatalf("expected missing exact connected-character snapshot to fail closed, got snapshot=%+v ok=%v", missing, ok)
+	}
+}

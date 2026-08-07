@@ -2985,6 +2985,132 @@ func TestLocalPlayersEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalPlayerEndpointReturnsExactSnapshotForLoopbackGet(t *testing.T) {
+	snapshotter := &stubNamedSnapshotter{snapshots: map[string]any{"Mkmk Sura": map[string]any{"name": "Mkmk Sura", "map_index": uint32(42), "x": int32(1700), "y": int32(2800)}}}
+	mux := RegisterLocalConnectedCharacterEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/players/Mkmk%20Sura", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if snapshotter.calls != 1 || snapshotter.lastName != "Mkmk Sura" {
+		t.Fatalf("expected decoded player snapshot name Mkmk Sura, got calls=%d name=%q", snapshotter.calls, snapshotter.lastName)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"name":"Mkmk Sura"`) || !strings.Contains(string(body), `"map_index":42`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalPlayersCollectionAndExactEndpointsCoexist(t *testing.T) {
+	collection := &stubConnectedCharactersSnapshotter{characters: []map[string]any{{"name": "Alpha"}}}
+	exact := &stubNamedSnapshotter{snapshots: map[string]any{"Alpha": map[string]any{"name": "Alpha", "map_index": uint32(1)}}}
+	mux := NewPprofMuxWithLocalRuntimeSnapshot("gamed", nil, nil, collection.ConnectedCharacters)
+	mux = RegisterLocalConnectedCharacterEndpoint(mux, exact.Snapshot)
+
+	collectionReq := httptest.NewRequest(http.MethodGet, "/local/players", nil)
+	collectionReq.RemoteAddr = "127.0.0.1:12345"
+	collectionRec := httptest.NewRecorder()
+	mux.ServeHTTP(collectionRec, collectionReq)
+	if collectionRec.Code != http.StatusOK {
+		t.Fatalf("expected collection status %d, got %d", http.StatusOK, collectionRec.Code)
+	}
+	if collection.calls != 1 || exact.calls != 0 {
+		t.Fatalf("expected collection handler only, got collection=%d exact=%d", collection.calls, exact.calls)
+	}
+
+	exactReq := httptest.NewRequest(http.MethodGet, "/local/players/Alpha", nil)
+	exactReq.RemoteAddr = "127.0.0.1:12345"
+	exactRec := httptest.NewRecorder()
+	mux.ServeHTTP(exactRec, exactReq)
+	if exactRec.Code != http.StatusOK {
+		t.Fatalf("expected exact status %d, got %d", http.StatusOK, exactRec.Code)
+	}
+	if collection.calls != 1 || exact.calls != 1 || exact.lastName != "Alpha" {
+		t.Fatalf("expected exact handler after collection, got collection=%d exact=%d name=%q", collection.calls, exact.calls, exact.lastName)
+	}
+}
+
+func TestLocalPlayerEndpointRejectsInvalidCharacterName(t *testing.T) {
+	snapshotter := &stubNamedSnapshotter{}
+	mux := RegisterLocalConnectedCharacterEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/players/Mkmk%2FSura", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected player snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
+func TestLocalPlayerEndpointReturnsNotFoundForMissingCharacter(t *testing.T) {
+	snapshotter := &stubNamedSnapshotter{snapshots: map[string]any{}}
+	mux := RegisterLocalConnectedCharacterEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/players/Missing", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+	if snapshotter.calls != 1 || snapshotter.lastName != "Missing" {
+		t.Fatalf("expected player snapshotter to be called for Missing, got calls=%d name=%q", snapshotter.calls, snapshotter.lastName)
+	}
+}
+
+func TestLocalPlayerEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	snapshotter := &stubNamedSnapshotter{}
+	mux := RegisterLocalConnectedCharacterEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/players/MkmkSura", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected player snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
+func TestLocalPlayerEndpointRejectsWrongMethod(t *testing.T) {
+	snapshotter := &stubNamedSnapshotter{}
+	mux := RegisterLocalConnectedCharacterEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/players/MkmkSura", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected player snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
 func TestLocalVisibilityEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
 	snapshotter := &stubCharacterVisibilitySnapshotter{snapshots: []map[string]any{{"name": "Alpha", "map_index": 42, "visible_peers": []map[string]any{{"name": "PeerTwo", "map_index": 42}}}, {"name": "Zulu", "map_index": uint32(1), "visible_peers": []map[string]any{}}}}
 	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, nil, nil, snapshotter.CharacterVisibility, nil)

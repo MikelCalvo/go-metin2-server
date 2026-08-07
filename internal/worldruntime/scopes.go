@@ -210,6 +210,14 @@ func (s Scopes) ConnectedCharacterSnapshots() []ConnectedCharacterSnapshot {
 	return snapshots
 }
 
+func (s Scopes) ConnectedCharacterSnapshotByExactName(name string) (ConnectedCharacterSnapshot, bool) {
+	player, ok := s.PlayerByExactName(name)
+	if !ok {
+		return ConnectedCharacterSnapshot{}, false
+	}
+	return ConnectedCharacterSnapshotFor(s.Topology, player.Character), true
+}
+
 func (s Scopes) VisibilitySnapshots() []VisibilitySnapshot {
 	if s.Entities == nil {
 		return nil

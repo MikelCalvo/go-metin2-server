@@ -911,6 +911,10 @@ func RegisterLocalQuickslotsEndpoint(mux *http.ServeMux, quickslotsSnapshot func
 	return registerLocalNamedSnapshotEndpoint(mux, "GET /local/quickslots/", "/local/quickslots/", quickslotsSnapshot)
 }
 
+func RegisterLocalConnectedCharacterEndpoint(mux *http.ServeMux, connectedCharacterSnapshot func(string) (any, bool)) *http.ServeMux {
+	return registerLocalNamedSnapshotEndpoint(mux, "GET /local/players/", "/local/players/", connectedCharacterSnapshot)
+}
+
 func RegisterLocalCombatTargetEndpoint(mux *http.ServeMux, combatTargetSnapshot func(string) (any, bool)) *http.ServeMux {
 	return registerLocalNamedSnapshotEndpoint(mux, "GET /local/combat-target/", "/local/combat-target/", combatTargetSnapshot)
 }

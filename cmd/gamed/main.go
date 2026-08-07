@@ -197,6 +197,16 @@ func main() {
 			return snapshot, true
 		},
 	)
+	opsHandler = ops.RegisterLocalConnectedCharacterEndpoint(
+		opsHandler,
+		func(name string) (any, bool) {
+			snapshot, ok := gameRuntime.ConnectedCharacterSnapshot(name)
+			if !ok {
+				return nil, false
+			}
+			return snapshot, true
+		},
+	)
 	opsHandler = ops.RegisterLocalInventoryEndpoint(
 		opsHandler,
 		func(name string) (any, bool) {

@@ -447,6 +447,11 @@ Current fields:
 
 The `map_index` field reflects the effective runtime map boundary currently used by the shared-world bootstrap.
 
+### `GET /local/players/{name}`
+
+Returns one exact-name connected-character snapshot using the same JSON shape as a single row from `/local/players`.
+This endpoint is loopback-only and read-only. Percent-encoded spaces in character names are accepted, but empty names or names containing `/` after decoding return `400`; well-formed names without a currently connected selected-session snapshot return `404`.
+
 ### `GET /local/visibility`
 
 Returns a JSON snapshot of the current shared-world visibility graph, sorted by character name.

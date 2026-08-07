@@ -177,6 +177,27 @@ func TestScopesConnectedTargetsReturnAllPlayersInDeterministicOrder(t *testing.T
 	}
 }
 
+func TestScopesConnectedCharacterSnapshotByExactNameUsesPlayerDirectory(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	registry := NewEntityRegistryWithTopology(topology)
+	alphaCharacter := entityRegistryCharacter("Alpha", 0x02040101, 0, 1100, 2100)
+	alphaCharacter.Empire = 2
+	alphaCharacter.GuildID = 17
+	alpha := registry.RegisterPlayer(alphaCharacter)
+	registry.RegisterPlayer(entityRegistryCharacter("Bravo", 0x02040102, 42, 1300, 2300))
+
+	snapshot, ok := NewScopes(topology, registry).ConnectedCharacterSnapshotByExactName("Alpha")
+	if !ok {
+		t.Fatal("expected Alpha exact connected-character snapshot to resolve")
+	}
+	if snapshot.Name != "Alpha" || snapshot.VID != alpha.Entity.VID || snapshot.MapIndex != 1 || snapshot.X != 1100 || snapshot.Y != 2100 || snapshot.Empire != 2 || snapshot.GuildID != 17 {
+		t.Fatalf("unexpected exact connected-character snapshot: %+v", snapshot)
+	}
+	if _, ok := NewScopes(topology, registry).ConnectedCharacterSnapshotByExactName("Missing"); ok {
+		t.Fatal("expected missing connected-character snapshot to fail closed")
+	}
+}
+
 func TestScopesVisibilitySnapshotsFollowConfiguredPolicyAndOrder(t *testing.T) {
 	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := NewEntityRegistryWithTopology(topology)
