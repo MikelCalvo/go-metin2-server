@@ -816,27 +816,42 @@ func (r *gameRuntime) InteractionVisibility() []CharacterInteractionVisibilitySn
 	base := r.sharedWorld.InteractionVisibility()
 	out := make([]CharacterInteractionVisibilitySnapshot, 0, len(base))
 	for _, entry := range base {
-		resolved := make([]InteractableStaticActorVisibilitySnapshot, 0, len(entry.VisibleInteractableStaticActors))
-		for _, actor := range entry.VisibleInteractableStaticActors {
-			resolvedActor := InteractableStaticActorVisibilitySnapshot{StaticActorSnapshot: actor}
-			definition, ok := r.ResolveInteractionDefinition(actor.InteractionKind, actor.InteractionRef)
-			if !ok {
-				resolvedActor.ResolutionFailure = staticActorInteractionFailureDefinitionNotFound
-				resolved = append(resolved, resolvedActor)
-				continue
-			}
-			preview, ok := r.interactionDefinitionPreview(actor.Name, definition)
-			if !ok {
-				resolvedActor.ResolutionFailure = staticActorInteractionFailureUnsupportedKind
-				resolved = append(resolved, resolvedActor)
-				continue
-			}
-			resolvedActor.Preview = compactInteractionPreview(preview)
-			resolved = append(resolved, resolvedActor)
-		}
-		out = append(out, CharacterInteractionVisibilitySnapshot{ConnectedCharacterSnapshot: entry.ConnectedCharacterSnapshot, VisibleInteractableStaticActors: resolved})
+		out = append(out, r.resolveInteractionVisibilitySnapshot(entry))
 	}
 	return out
+}
+
+func (r *gameRuntime) InteractionVisibilitySnapshot(name string) (CharacterInteractionVisibilitySnapshot, bool) {
+	if r == nil || r.sharedWorld == nil {
+		return CharacterInteractionVisibilitySnapshot{}, false
+	}
+	entry, ok := r.sharedWorld.InteractionVisibilitySnapshot(name)
+	if !ok {
+		return CharacterInteractionVisibilitySnapshot{}, false
+	}
+	return r.resolveInteractionVisibilitySnapshot(entry), true
+}
+
+func (r *gameRuntime) resolveInteractionVisibilitySnapshot(entry worldruntime.CharacterInteractionVisibilitySnapshot) CharacterInteractionVisibilitySnapshot {
+	resolved := make([]InteractableStaticActorVisibilitySnapshot, 0, len(entry.VisibleInteractableStaticActors))
+	for _, actor := range entry.VisibleInteractableStaticActors {
+		resolvedActor := InteractableStaticActorVisibilitySnapshot{StaticActorSnapshot: actor}
+		definition, ok := r.ResolveInteractionDefinition(actor.InteractionKind, actor.InteractionRef)
+		if !ok {
+			resolvedActor.ResolutionFailure = staticActorInteractionFailureDefinitionNotFound
+			resolved = append(resolved, resolvedActor)
+			continue
+		}
+		preview, ok := r.interactionDefinitionPreview(actor.Name, definition)
+		if !ok {
+			resolvedActor.ResolutionFailure = staticActorInteractionFailureUnsupportedKind
+			resolved = append(resolved, resolvedActor)
+			continue
+		}
+		resolvedActor.Preview = compactInteractionPreview(preview)
+		resolved = append(resolved, resolvedActor)
+	}
+	return CharacterInteractionVisibilitySnapshot{ConnectedCharacterSnapshot: entry.ConnectedCharacterSnapshot, VisibleInteractableStaticActors: resolved}
 }
 
 func (r *gameRuntime) MapOccupancy() []MapOccupancySnapshot {

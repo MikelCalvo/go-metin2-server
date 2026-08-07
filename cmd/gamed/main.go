@@ -265,6 +265,16 @@ func main() {
 		opsHandler,
 		func() any { return gameRuntime.InteractionVisibility() },
 	)
+	opsHandler = ops.RegisterLocalCharacterInteractionVisibilityEndpoint(
+		opsHandler,
+		func(name string) (any, bool) {
+			snapshot, ok := gameRuntime.InteractionVisibilitySnapshot(name)
+			if !ok {
+				return nil, false
+			}
+			return snapshot, true
+		},
+	)
 	opsHandler = ops.RegisterLocalStaticActorEndpoints(
 		opsHandler,
 		func() any { return gameRuntime.StaticActors() },

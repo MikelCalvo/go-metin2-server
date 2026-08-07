@@ -49,8 +49,9 @@ Current rules:
 
 The first owned QA/debugging surface is:
 - `GET /local/interaction-visibility`
+- `GET /local/interaction-visibility/{name}`
 
-It returns, per connected bootstrap player:
+The collection endpoint returns, per connected bootstrap player:
 - the player snapshot
 - the currently visible interactable static actors only
 - each actor's `interaction_kind`
@@ -58,6 +59,9 @@ It returns, per connected bootstrap player:
 - each actor's current runtime `dead` flag when the target actor is at the bootstrap combat `0`-HP floor
 - a compact resolved preview when the referenced definition currently resolves to a currently previewable kind (`info`, `talk`, `shop_preview`, `warp`); compact previews trim surrounding whitespace and cap by Unicode rune boundaries so operator JSON never receives truncated invalid UTF-8
 - a fail-closed `resolution_failure` marker when it does not
+
+The exact-name endpoint returns the same snapshot shape for one connected bootstrap player and fails closed without leaking actor details when the subject does not resolve.
+It mirrors `/local/visibility/{name}` for interaction QA: URL-escaped names are accepted, blank or slash-containing path values are rejected, and missing/disconnected characters return `404`.
 
 This is intended for live QA/debugging without packet captures. It now preserves both sides of the runtime state needed for interaction triage: the connected-player `dead` flag and the visible interactable actor `dead` flag.
 

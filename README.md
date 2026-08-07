@@ -13,7 +13,7 @@ This repository is a public rewrite built around owned protocol documentation, s
 - a shared in-process world runtime,
 - protocol codecs and fixtures for the owned packet families,
 - real-client-oriented integration tests around movement, visibility, chat, items, shops, combat, death, restart, and respawn slices,
-- local operator/debug endpoints for runtime inspection, controlled bootstrap actions, static-actor respawn timer plus combat-target engagement/retaliation snapshot inspection, flat/exact spawn-group snapshot/map-occupancy/transfer visibility inspection, and strict manifest-backed item-template/account-store backup/restore preflights.
+- local operator/debug endpoints for runtime inspection, controlled bootstrap actions, static-actor respawn timer plus combat-target engagement/retaliation snapshot inspection, flat/exact spawn-group snapshot/map-occupancy/transfer/interaction visibility inspection, and strict manifest-backed item-template/account-store backup/restore preflights.
 
 Current repository shape from the latest scan:
 
@@ -52,7 +52,7 @@ Legend used below:
   - Target selection, normal attack ingress, cadence gates, runtime HP, dead-state rejection, delayed respawn, aggro-lite engagement ownership, retaliation, player death floor, restart-here/restart-town bootstrap recovery, deterministic EXP/gold rewards, and fixed drop-vnum reward seams exist for practice mobs. Real combat formulas, skills, PvP, mob AI, chase/leash/return, loot tables, and full revive choreography are not compatibility-grade yet.
 
 - `[~]` **M6 — Operations and developer workflow**
-  - The project has a Makefile, Dockerfile, CI, pprof/debug mux, health endpoint, local-only runtime-config/player/visibility/map/content endpoints, exact per-map occupancy lookup, exact per-character visibility lookup, static-actor respawn timer inspection, combat-target engagement/retaliation snapshot inspection, global and per-player spawn-group snapshot inspection, strict manifest-backed account-store and item-template backup validation, and development/testing/debugging docs. The runtime-config endpoint exposes the active bootstrap visibility/AOI policy (`whole_map` vs `radius`) so local QA can inspect daemon state without reading environment variables. It still needs release/versioning policy, production deployment docs, migrations, broader admin tooling, and multi-channel ops maturity.
+  - The project has a Makefile, Dockerfile, CI, pprof/debug mux, health endpoint, local-only runtime-config/player/visibility/map/content endpoints, exact per-map occupancy lookup, exact per-character visibility and interaction-visibility lookup, static-actor respawn timer inspection, combat-target engagement/retaliation snapshot inspection, global and per-player spawn-group snapshot inspection, strict manifest-backed account-store and item-template backup validation, and development/testing/debugging docs. The runtime-config endpoint exposes the active bootstrap visibility/AOI policy (`whole_map` vs `radius`) so local QA can inspect daemon state without reading environment variables. It still needs release/versioning policy, production deployment docs, migrations, broader admin tooling, and multi-channel ops maturity.
 
 - `[ ]` **M7 — Legacy parity / production server**
   - Not started as a claim. The current goal is to keep landing small verified compatibility slices until the server can support a narrow playable vertical, then broaden toward legacy-grade systems.

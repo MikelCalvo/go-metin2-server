@@ -536,6 +536,10 @@ Each visible interactable entry reuses the static-actor snapshot shape from `/lo
 Current previews cover self-only `info` / `talk`, structured merchant `shop_preview` catalog summaries, and compact `warp` destination summaries.
 The per-character subject snapshot in this endpoint also reuses the same player `dead: true` flag exposed by `/local/players` while a still-connected owner remains at the retaliation-owned `0`-HP floor.
 
+`GET /local/interaction-visibility/{name}` returns the same interaction-visibility snapshot for one connected bootstrap character by exact character name.
+It is loopback-only, read-only, accepts URL-escaped names, rejects blank or slash-containing path values with `400`, and returns `404` when the character is not connected.
+This exact-name view mirrors `/local/visibility/{name}` but narrows the payload to interactable static actors plus their compact resolved previews or fail-closed resolution markers.
+
 ### `GET /local/inventory/{name}`, `GET /local/equipment/{name}`, `GET /local/quickslots/{name}`, `GET /local/currency/{name}`
 
 Returns the exact-name live M3 runtime state for the selected character.
@@ -773,6 +777,7 @@ Inspect visible interactable actors:
 
 ```bash
 curl http://127.0.0.1:6060/local/interaction-visibility
+curl http://127.0.0.1:6060/local/interaction-visibility/MkmkWar
 ```
 
 Inspect live inventory, equipment, and currency for a character:

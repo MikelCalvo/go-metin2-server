@@ -919,6 +919,10 @@ func RegisterLocalCharacterVisibilityEndpoint(mux *http.ServeMux, characterVisib
 	return registerLocalNamedSnapshotEndpoint(mux, "GET /local/visibility/", "/local/visibility/", characterVisibilitySnapshot)
 }
 
+func RegisterLocalCharacterInteractionVisibilityEndpoint(mux *http.ServeMux, characterInteractionVisibilitySnapshot func(string) (any, bool)) *http.ServeMux {
+	return registerLocalNamedSnapshotEndpoint(mux, "GET /local/interaction-visibility/", "/local/interaction-visibility/", characterInteractionVisibilitySnapshot)
+}
+
 func RegisterLocalCombatTargetsEndpoint(mux *http.ServeMux, combatTargetSnapshots func() any) *http.ServeMux {
 	if mux == nil || combatTargetSnapshots == nil {
 		return mux

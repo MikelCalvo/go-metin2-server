@@ -1852,6 +1852,21 @@ func (r *sharedWorldRegistry) InteractionVisibility() []worldruntime.CharacterIn
 	return r.markCharacterInteractionVisibilityStaticActorStateLocked(r.scopesLocked().CharacterInteractionVisibilitySnapshots())
 }
 
+func (r *sharedWorldRegistry) InteractionVisibilitySnapshot(name string) (worldruntime.CharacterInteractionVisibilitySnapshot, bool) {
+	if r == nil || name == "" {
+		return worldruntime.CharacterInteractionVisibilitySnapshot{}, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, snapshot := range r.markCharacterInteractionVisibilityStaticActorStateLocked(r.scopesLocked().CharacterInteractionVisibilitySnapshots()) {
+		if snapshot.Name == name {
+			return snapshot, true
+		}
+	}
+	return worldruntime.CharacterInteractionVisibilitySnapshot{}, false
+}
+
 func (r *sharedWorldRegistry) MapOccupancy() []MapOccupancySnapshot {
 	if r == nil {
 		return nil
