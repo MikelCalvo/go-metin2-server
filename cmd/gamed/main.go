@@ -401,15 +401,20 @@ func main() {
 			}
 		},
 	)
+	exportContentBundleSummary := func() (any, int) {
+		summary, err := gameRuntime.ExportContentBundleSummary()
+		if err != nil {
+			return nil, http.StatusInternalServerError
+		}
+		return summary, http.StatusOK
+	}
 	opsHandler = ops.RegisterLocalContentBundleSummaryEndpoint(
 		opsHandler,
-		func() (any, int) {
-			summary, err := gameRuntime.ExportContentBundleSummary()
-			if err != nil {
-				return nil, http.StatusInternalServerError
-			}
-			return summary, http.StatusOK
-		},
+		exportContentBundleSummary,
+	)
+	opsHandler = ops.RegisterLocalContentBundleMapSummaryEndpoint(
+		opsHandler,
+		exportContentBundleSummary,
 	)
 	opsHandler = ops.RegisterLocalContentBundleImportPreviewEndpoint(
 		opsHandler,

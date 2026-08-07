@@ -1381,6 +1381,41 @@ func RegisterLocalContentBundleSummaryEndpoint(mux *http.ServeMux, exportContent
 	return mux
 }
 
+func RegisterLocalContentBundleMapSummaryEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/content-bundle/maps/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		mapIndex, ok := decodeLocalContentBundleMapIndex(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		for _, mapSummary := range summary.Maps {
+			if mapSummary.MapIndex == mapIndex {
+				writeLocalJSONMutationResponse(w, mapSummary, http.StatusOK)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	return mux
+}
+
 func RegisterLocalContentBundleImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
 	if mux == nil || previewContentBundleImport == nil {
 		return mux
@@ -1972,7 +2007,15 @@ func decodeLocalGroundItemVID(r *http.Request) (uint32, bool) {
 }
 
 func decodeLocalMapIndex(r *http.Request) (uint32, bool) {
-	mapIndexRaw := strings.TrimPrefix(r.URL.Path, "/local/maps/")
+	return decodeLocalMapIndexWithPrefix(r, "/local/maps/")
+}
+
+func decodeLocalContentBundleMapIndex(r *http.Request) (uint32, bool) {
+	return decodeLocalMapIndexWithPrefix(r, "/local/content-bundle/maps/")
+}
+
+func decodeLocalMapIndexWithPrefix(r *http.Request, prefix string) (uint32, bool) {
+	mapIndexRaw := strings.TrimPrefix(r.URL.Path, prefix)
 	mapIndexRaw = strings.TrimSpace(mapIndexRaw)
 	if mapIndexRaw == "" || strings.Contains(mapIndexRaw, "/") {
 		return 0, false

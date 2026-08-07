@@ -1301,6 +1301,136 @@ func TestLocalContentBundleSummaryEndpointReturnsPerMapInfoTalkActorCountsForLoo
 	}
 }
 
+func TestLocalContentBundleMapSummaryEndpointReturnsExactMapForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{Maps: []contentbundle.MapContentSummary{
+			{MapIndex: 7, StaticActorCount: 1, InteractableStaticActorCount: 1, InfoActorCount: 1},
+			{MapIndex: 42, StaticActorCount: 2, InteractableStaticActorCount: 1, ShopPreviewActorCount: 1, ShopCatalogEntryCount: 3, SpawnGroupCount: 1, RewardDropItemCount: 2},
+		}},
+	}
+	mux := RegisterLocalContentBundleMapSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/maps/42", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got contentbundle.MapContentSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode map summary response body: %v", err)
+	}
+	want := contentbundle.MapContentSummary{MapIndex: 42, StaticActorCount: 2, InteractableStaticActorCount: 1, ShopPreviewActorCount: 1, ShopCatalogEntryCount: 3, SpawnGroupCount: 1, RewardDropItemCount: 2}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle map summary:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleMapSummaryEndpointCoexistsWithContentBundleCollectionRoutes(t *testing.T) {
+	exporter := &stubContentBundleExporter{status: http.StatusOK, bundle: contentbundle.Bundle{}}
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{Maps: []contentbundle.MapContentSummary{{MapIndex: 42, StaticActorCount: 1}}}}
+	mux := RegisterLocalContentBundleEndpoint(NewPprofMux("gamed"), exporter.ExportContentBundle, nil)
+	mux = RegisterLocalContentBundleSummaryEndpoint(mux, summaryer.ExportContentBundleSummary)
+	mux = RegisterLocalContentBundleMapSummaryEndpoint(mux, summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/maps/42", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d for map summary alongside content-bundle routes, got %d", http.StatusOK, rec.Code)
+	}
+	if exporter.calls != 0 {
+		t.Fatalf("expected collection exporter not to handle map summary route, got %d calls", exporter.calls)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleMapSummaryEndpointReturnsNotFoundForMissingMap(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{Maps: []contentbundle.MapContentSummary{{MapIndex: 7, StaticActorCount: 1}}}}
+	mux := RegisterLocalContentBundleMapSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/maps/42", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for missing map summary, got %d", http.StatusNotFound, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleMapSummaryEndpointRejectsInvalidMapIndex(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{Maps: []contentbundle.MapContentSummary{{MapIndex: 42, StaticActorCount: 1}}}}
+	mux := RegisterLocalContentBundleMapSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	for _, path := range []string{"/local/content-bundle/maps/0", "/local/content-bundle/maps/not-a-map", "/local/content-bundle/maps/42/extra"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for invalid map summary path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called for invalid map index, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleMapSummaryEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{Maps: []contentbundle.MapContentSummary{{MapIndex: 42, StaticActorCount: 1}}}}
+	mux := RegisterLocalContentBundleMapSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/maps/42", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback caller, got %d", http.StatusForbidden, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleMapSummaryEndpointRejectsWrongMethod(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{Maps: []contentbundle.MapContentSummary{{MapIndex: 42, StaticActorCount: 1}}}}
+	mux := RegisterLocalContentBundleMapSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/maps/42", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
 func TestLocalContentBundleSummaryEndpointReturnsPickupRangeMetadataForLoopbackPost(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
 	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
