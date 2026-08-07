@@ -110,6 +110,78 @@ func TestGameRuntimeRestoreAccountStoreRejectsLiveSessionsWithoutMutation(t *tes
 	}
 }
 
+func TestGameRuntimePersistenceStatusReportsNoRestoreBlockWithoutLiveSessions(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	status := runtime.PersistenceStatus()
+	if status.LiveSelectedCharacterCount != 0 {
+		t.Fatalf("expected no live selected characters, got %d", status.LiveSelectedCharacterCount)
+	}
+	if status.AccountStore.RestoreBlockedByLiveSessions {
+		t.Fatal("expected account restore not to be marked live-session-blocked")
+	}
+	if status.ItemTemplateStore.RestoreBlockedByLiveSessions {
+		t.Fatal("expected item-template restore not to be marked live-session-blocked")
+	}
+}
+
+func TestGameRuntimePersistenceStatusReportsRestoreBlockedWhileLiveCharacterSelected(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		ticketStore,
+		accounts,
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	owner := peerVisibilityCharacter("StatusRestoreGuard", 0x01030704, 0x02040704, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, ticketStore, "status-restore-guard", 0x70707004, owner)
+	if err := accounts.Save(accountstore.Account{Login: "status-restore-guard", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed status restore guard account: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "status-restore-guard", 0x70707004)
+
+	status := runtime.PersistenceStatus()
+	if status.LiveSelectedCharacterCount != 1 {
+		t.Fatalf("expected one live selected character, got %d", status.LiveSelectedCharacterCount)
+	}
+	if !status.AccountStore.RestoreBlockedByLiveSessions {
+		t.Fatal("expected account restore to report live-session block")
+	}
+	if !status.ItemTemplateStore.RestoreBlockedByLiveSessions {
+		t.Fatal("expected item-template restore to report live-session block")
+	}
+
+	closeSessionFlow(t, flow)
+	status = runtime.PersistenceStatus()
+	if status.LiveSelectedCharacterCount != 0 {
+		t.Fatalf("expected live selected character count to drop after close, got %d", status.LiveSelectedCharacterCount)
+	}
+	if status.AccountStore.RestoreBlockedByLiveSessions {
+		t.Fatal("expected account restore block to clear after close")
+	}
+	if status.ItemTemplateStore.RestoreBlockedByLiveSessions {
+		t.Fatal("expected item-template restore block to clear after close")
+	}
+}
+
 func TestGameRuntimeRestoreAccountStoreFailsClosedForInvalidBackup(t *testing.T) {
 	backupDir := t.TempDir()
 	path := filepath.Join(backupDir, "6d6b6d6b.json")

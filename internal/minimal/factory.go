@@ -245,20 +245,22 @@ type PersistenceConfigSnapshot struct {
 }
 
 type PersistenceStatusSnapshot struct {
-	OK                bool                    `json:"ok"`
-	AccountStore      AccountStoreStatus      `json:"account_store"`
-	LoginTicketStore  LoginTicketStoreStatus  `json:"login_ticket_store"`
-	ItemTemplateStore ItemTemplateStoreStatus `json:"item_template_store"`
-	StaticActorStore  StaticActorStoreStatus  `json:"static_actor_store"`
-	InteractionStore  InteractionStoreStatus  `json:"interaction_store"`
+	OK                         bool                    `json:"ok"`
+	LiveSelectedCharacterCount int                     `json:"live_selected_character_count"`
+	AccountStore               AccountStoreStatus      `json:"account_store"`
+	LoginTicketStore           LoginTicketStoreStatus  `json:"login_ticket_store"`
+	ItemTemplateStore          ItemTemplateStoreStatus `json:"item_template_store"`
+	StaticActorStore           StaticActorStoreStatus  `json:"static_actor_store"`
+	InteractionStore           InteractionStoreStatus  `json:"interaction_store"`
 }
 
 type AccountStoreStatus struct {
-	Path           string                       `json:"path"`
-	Valid          bool                         `json:"valid"`
-	Summary        accountstore.SnapshotSummary `json:"summary"`
-	BackupManifest BackupManifestStatus         `json:"backup_manifest"`
-	Error          string                       `json:"error,omitempty"`
+	Path                         string                       `json:"path"`
+	Valid                        bool                         `json:"valid"`
+	Summary                      accountstore.SnapshotSummary `json:"summary"`
+	BackupManifest               BackupManifestStatus         `json:"backup_manifest"`
+	RestoreBlockedByLiveSessions bool                         `json:"restore_blocked_by_live_sessions"`
+	Error                        string                       `json:"error,omitempty"`
 }
 
 type LoginTicketStoreStatus struct {
@@ -269,11 +271,12 @@ type LoginTicketStoreStatus struct {
 }
 
 type ItemTemplateStoreStatus struct {
-	Path           string                      `json:"path"`
-	Valid          bool                        `json:"valid"`
-	Summary        itemcatalog.SnapshotSummary `json:"summary"`
-	BackupManifest BackupManifestStatus        `json:"backup_manifest"`
-	Error          string                      `json:"error,omitempty"`
+	Path                         string                      `json:"path"`
+	Valid                        bool                        `json:"valid"`
+	Summary                      itemcatalog.SnapshotSummary `json:"summary"`
+	BackupManifest               BackupManifestStatus        `json:"backup_manifest"`
+	RestoreBlockedByLiveSessions bool                        `json:"restore_blocked_by_live_sessions"`
+	Error                        string                      `json:"error,omitempty"`
 }
 
 type BackupManifestStatus struct {
@@ -373,27 +376,30 @@ func (r *gameRuntime) PersistenceStatus() PersistenceStatusSnapshot {
 	if r == nil {
 		return PersistenceStatusSnapshot{}
 	}
-	accountStatus := r.accountStoreStatus()
+	liveSelectedCharacterCount := r.liveSelectedCharacterCount()
+	accountStatus := r.accountStoreStatus(liveSelectedCharacterCount)
 	loginTicketStatus := r.loginTicketStoreStatus()
-	itemTemplateStatus := r.itemTemplateStoreStatus()
+	itemTemplateStatus := r.itemTemplateStoreStatus(liveSelectedCharacterCount)
 	staticActorStatus := r.staticActorStoreStatus()
 	interactionStatus := r.interactionStoreStatus()
 	return PersistenceStatusSnapshot{
-		OK:                accountStatus.Valid && loginTicketStatus.Valid && itemTemplateStatus.Valid && staticActorStatus.Valid && interactionStatus.Valid,
-		AccountStore:      accountStatus,
-		LoginTicketStore:  loginTicketStatus,
-		ItemTemplateStore: itemTemplateStatus,
-		StaticActorStore:  staticActorStatus,
-		InteractionStore:  interactionStatus,
+		OK:                         accountStatus.Valid && loginTicketStatus.Valid && itemTemplateStatus.Valid && staticActorStatus.Valid && interactionStatus.Valid,
+		LiveSelectedCharacterCount: liveSelectedCharacterCount,
+		AccountStore:               accountStatus,
+		LoginTicketStore:           loginTicketStatus,
+		ItemTemplateStore:          itemTemplateStatus,
+		StaticActorStore:           staticActorStatus,
+		InteractionStore:           interactionStatus,
 	}
 }
 
-func (r *gameRuntime) accountStoreStatus() AccountStoreStatus {
+func (r *gameRuntime) accountStoreStatus(liveSelectedCharacterCount int) AccountStoreStatus {
 	status := AccountStoreStatus{Path: accountStoreDir(nil)}
 	if r != nil {
 		status.Path = accountStoreDir(r.accountStore)
 	}
 	status.BackupManifest = accountBackupManifestStatus(status.Path)
+	status.RestoreBlockedByLiveSessions = liveSelectedCharacterCount != 0
 	summary, err := r.ValidateAccountStore()
 	if err != nil {
 		status.Error = err.Error()
@@ -419,12 +425,13 @@ func (r *gameRuntime) loginTicketStoreStatus() LoginTicketStoreStatus {
 	return status
 }
 
-func (r *gameRuntime) itemTemplateStoreStatus() ItemTemplateStoreStatus {
+func (r *gameRuntime) itemTemplateStoreStatus(liveSelectedCharacterCount int) ItemTemplateStoreStatus {
 	status := ItemTemplateStoreStatus{Path: itemTemplateStorePath(nil)}
 	if r != nil {
 		status.Path = itemTemplateStorePath(r.itemStore)
 	}
 	status.BackupManifest = itemTemplateBackupManifestStatus(status.Path)
+	status.RestoreBlockedByLiveSessions = liveSelectedCharacterCount != 0
 	summary, err := r.ValidateItemTemplateStore()
 	if err != nil {
 		status.Error = err.Error()
@@ -1136,6 +1143,15 @@ func (r *gameRuntime) unregisterLiveCharacterSnapshotter(name string, registrati
 	if len(r.liveCharactersByName) == 0 {
 		r.liveCharactersByName = nil
 	}
+}
+
+func (r *gameRuntime) liveSelectedCharacterCount() int {
+	if r == nil {
+		return 0
+	}
+	r.liveCharacterMu.RLock()
+	defer r.liveCharacterMu.RUnlock()
+	return len(r.liveCharactersByName)
 }
 
 func (r *gameRuntime) liveCharacterState(name string) (liveCharacterStateSnapshot, bool) {

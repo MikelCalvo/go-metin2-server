@@ -3478,11 +3478,13 @@ func TestLocalRuntimeConfigEndpointRejectsWrongMethod(t *testing.T) {
 
 func TestLocalPersistenceStatusEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
 	snapshotter := &stubPersistenceStatusSnapshotter{snapshot: map[string]any{
-		"ok": true,
+		"ok":                            true,
+		"live_selected_character_count": 1,
 		"account_store": map[string]any{
-			"path":    "/state/accounts",
-			"valid":   true,
-			"summary": map[string]any{"account_count": 1, "character_count": 2, "empty_character_slot_count": 1, "logins": []string{"mkmk"}},
+			"path":                             "/state/accounts",
+			"valid":                            true,
+			"summary":                          map[string]any{"account_count": 1, "character_count": 2, "empty_character_slot_count": 1, "logins": []string{"mkmk"}},
+			"restore_blocked_by_live_sessions": true,
 			"backup_manifest": map[string]any{
 				"present":             true,
 				"path":                "/state/accounts/account-backup-manifest.json",
@@ -3499,9 +3501,10 @@ func TestLocalPersistenceStatusEndpointReturnsJSONSnapshotForLoopbackGet(t *test
 			"summary": map[string]any{"ticket_count": 1, "logins": []string{"mkmk"}, "login_keys": []uint32{0x01020304}},
 		},
 		"item_template_store": map[string]any{
-			"path":    "/state/item-templates.json",
-			"valid":   true,
-			"summary": map[string]any{"template_count": 1, "vnums": []uint32{27001}},
+			"path":                             "/state/item-templates.json",
+			"valid":                            true,
+			"summary":                          map[string]any{"template_count": 1, "vnums": []uint32{27001}},
+			"restore_blocked_by_live_sessions": true,
 			"backup_manifest": map[string]any{
 				"present":             true,
 				"path":                "/state/item-template-backup-manifest.json",
@@ -3541,7 +3544,7 @@ func TestLocalPersistenceStatusEndpointReturnsJSONSnapshotForLoopbackGet(t *test
 		t.Fatalf("expected application/json content type, got %q", contentType)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`"ok":true`, `"account_store"`, `"path":"/state/accounts"`, `"valid":true`, `"account_count":1`, `"character_count":2`, `"empty_character_slot_count":1`, `"backup_manifest":{"file_count":1,"format":"go-metin2-account-backup-v1","manifest_sha256":"abc123","manifest_size_bytes":256,"path":"/state/accounts/account-backup-manifest.json","present":true,"snapshot_size_bytes":128}`, `"login_ticket_store"`, `"ticket_count":1`, `"login_keys":[16909060]`, `"item_template_store"`, `"template_count":1`, `"vnums":[27001]`, `"backup_manifest":{"file_count":1,"format":"go-metin2-item-template-backup-v1","manifest_sha256":"def456","manifest_size_bytes":192,"path":"/state/item-template-backup-manifest.json","present":true,"snapshot_size_bytes":64}`, `"static_actor_store"`, `"actor_count":1`, `"actor_ids":[7]`, `"interaction_store"`, `"definition_count":1`, `"definition_keys":["info:lore:alchemist"]`} {
+	for _, want := range []string{`"ok":true`, `"live_selected_character_count":1`, `"account_store"`, `"path":"/state/accounts"`, `"valid":true`, `"account_count":1`, `"character_count":2`, `"empty_character_slot_count":1`, `"restore_blocked_by_live_sessions":true`, `"backup_manifest":{"file_count":1,"format":"go-metin2-account-backup-v1","manifest_sha256":"abc123","manifest_size_bytes":256,"path":"/state/accounts/account-backup-manifest.json","present":true,"snapshot_size_bytes":128}`, `"login_ticket_store"`, `"ticket_count":1`, `"login_keys":[16909060]`, `"item_template_store"`, `"template_count":1`, `"vnums":[27001]`, `"backup_manifest":{"file_count":1,"format":"go-metin2-item-template-backup-v1","manifest_sha256":"def456","manifest_size_bytes":192,"path":"/state/item-template-backup-manifest.json","present":true,"snapshot_size_bytes":64}`, `"static_actor_store"`, `"actor_count":1`, `"actor_ids":[7]`, `"interaction_store"`, `"definition_count":1`, `"definition_keys":["info:lore:alchemist"]`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected response body to contain %s, got %s", want, body)
 		}
