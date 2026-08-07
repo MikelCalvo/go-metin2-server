@@ -867,6 +867,18 @@ Export the current authored content bundle:
 curl http://127.0.0.1:6060/local/content-bundle
 ```
 
+Inspect compact authored-content summaries without fetching the full bundle payload:
+
+```bash
+curl http://127.0.0.1:6060/local/content-bundle/summary
+curl http://127.0.0.1:6060/local/content-bundle/maps/1
+curl http://127.0.0.1:6060/local/content-bundle/interactable-static-actors/Village%20Guide
+curl http://127.0.0.1:6060/local/content-bundle/shop-catalogs/shop_preview/npc:qa_merchant
+curl http://127.0.0.1:6060/local/content-bundle/warp-destinations/warp/npc:qa_teleporter
+```
+
+`/local/content-bundle/interactable-static-actors/{name}` is a loopback-only exact-name reader over the exported bundle summary. It returns every matching authored interactable actor row so duplicate placements with the same name remain inspectable, and it is read-only QA/debug tooling rather than gameplay protocol or content mutation.
+
 ## Docker note
 
 The runtime image keeps debug information because builds are not stripped with `-ldflags="-s -w"`.

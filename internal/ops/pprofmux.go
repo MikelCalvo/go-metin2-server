@@ -1487,6 +1487,45 @@ func RegisterLocalContentBundleMapSummaryEndpoint(mux *http.ServeMux, exportCont
 	return mux
 }
 
+func RegisterLocalContentBundleInteractableStaticActorEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/content-bundle/interactable-static-actors/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		name, ok := decodeLocalContentBundleInteractableStaticActorName(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		matches := make([]contentbundle.InteractableStaticActorSummary, 0)
+		for _, actor := range summary.InteractableStaticActors {
+			if actor.Name == name {
+				matches = append(matches, actor)
+			}
+		}
+		if len(matches) == 0 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, matches, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalContentBundleShopCatalogEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
 	if mux == nil || exportContentBundleSummary == nil {
 		return mux
@@ -2184,6 +2223,10 @@ func decodeLocalMapIndexRaw(raw string) (uint32, bool) {
 
 func decodeLocalContentBundleMapIndex(r *http.Request) (uint32, bool) {
 	return decodeLocalMapIndexWithPrefix(r, "/local/content-bundle/maps/")
+}
+
+func decodeLocalContentBundleInteractableStaticActorName(r *http.Request) (string, bool) {
+	return decodeLocalCharacterName(r, "/local/content-bundle/interactable-static-actors/")
 }
 
 func decodeLocalContentBundleShopCatalogIdentity(r *http.Request) (string, string, bool) {
