@@ -281,6 +281,38 @@ func TestDecodeCharacterDeleteNoticeReturnsExpectedVID(t *testing.T) {
 	}
 }
 
+func TestEncodeStunBuildsAServerFrame(t *testing.T) {
+	want := frame.Encode(HeaderStun, []byte{0x04, 0x03, 0x02, 0x01})
+	got := EncodeStun(StunPacket{VID: 0x01020304})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected stun frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeStunReturnsExpectedVID(t *testing.T) {
+	packet, err := DecodeStun(decodeSingleFrame(t, frame.Encode(HeaderStun, []byte{0x04, 0x03, 0x02, 0x01})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet.VID != 0x01020304 {
+		t.Fatalf("unexpected stun vid: got %#08x want %#08x", packet.VID, uint32(0x01020304))
+	}
+}
+
+func TestDecodeStunRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeStun(frame.Frame{Header: HeaderDead, Length: 8, Payload: []byte{0x04, 0x03, 0x02, 0x01}})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeStunRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeStun(frame.Frame{Header: HeaderStun, Length: 7, Payload: []byte{0x04, 0x03, 0x02}})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
 func TestEncodeDeadBuildsAServerFrame(t *testing.T) {
 	want := frame.Encode(HeaderDead, []byte{0x04, 0x03, 0x02, 0x01})
 	got := EncodeDead(DeadPacket{VID: 0x01020304})

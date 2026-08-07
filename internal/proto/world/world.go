@@ -26,6 +26,7 @@ const (
 	HeaderMainCharacter           uint16 = 0x0210
 	HeaderPlayerPoints            uint16 = 0x0214
 	HeaderPlayerPointChange       uint16 = 0x0215
+	HeaderStun                    uint16 = 0x0216
 	HeaderDead                    uint16 = 0x0217
 
 	CharacterNameFieldSize      = 65
@@ -48,6 +49,7 @@ const (
 	mainCharacterPayloadSize           = 114
 	playerPointsPayloadSize            = PointCount * 4
 	playerPointChangePayloadSize       = 13
+	stunPayloadSize                    = 4
 	deadPayloadSize                    = 4
 	simplePlayerPayloadSize            = 103
 )
@@ -92,6 +94,10 @@ type PlayerDeleteSuccessPacket struct {
 }
 
 type CharacterDeleteNoticePacket struct {
+	VID uint32
+}
+
+type StunPacket struct {
 	VID uint32
 }
 
@@ -335,6 +341,22 @@ func DecodeCharacterDeleteNotice(f frame.Frame) (CharacterDeleteNoticePacket, er
 		return CharacterDeleteNoticePacket{}, ErrInvalidPayload
 	}
 	return CharacterDeleteNoticePacket{VID: binary.LittleEndian.Uint32(f.Payload)}, nil
+}
+
+func EncodeStun(packet StunPacket) []byte {
+	payload := make([]byte, stunPayloadSize)
+	binary.LittleEndian.PutUint32(payload, packet.VID)
+	return frame.Encode(HeaderStun, payload)
+}
+
+func DecodeStun(f frame.Frame) (StunPacket, error) {
+	if f.Header != HeaderStun {
+		return StunPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != stunPayloadSize {
+		return StunPacket{}, ErrInvalidPayload
+	}
+	return StunPacket{VID: binary.LittleEndian.Uint32(f.Payload)}, nil
 }
 
 func EncodeDead(packet DeadPacket) []byte {
