@@ -78,6 +78,17 @@ Each template must pass the current `internal/itemstore` validation before the r
 
 - The store normalizes and persists deterministic JSON: the top-level `templates` collection is always written as an array, including `[]` for intentionally empty snapshots; template names, effect messages, optional consumable `info_message` text, optional `use_reject_message`, `drop_reject_message`, `pickup_reject_message`, `buy_reject_message`, `sell_reject_message`, `equip_reject_message`, and `unequip_reject_message` text are trimmed, equipment slot names are normalized, merchant pricing metadata such as `shop_buy_price` / `shop_sell_price`, visible appearance override metadata such as `appearance_vnum`, owned boolean flag metadata such as `refineable` / `save` / `slow_query` / `rare` / `unique` / `make_count` / `irremovable` / `confirm_when_use` / `quest_use` / `quest_use_multiple` / `log` / `applicable`, and owned anti-flag metadata such as `anti_save` / `anti_pk_drop` / `anti_myshop` / `anti_safebox` is written in a stable order, `use_effect.consume_count` is omitted only when it uses the default one-count behavior, `use_effect.info_message` is omitted when empty, `use_reject_message`, `drop_reject_message`, `pickup_reject_message`, `buy_reject_message`, `sell_reject_message`, `equip_reject_message`, and `unequip_reject_message` are omitted when empty, fixed socket/attribute arrays are written in owned packet order, and templates are sorted by `vnum`.
 
+## Content-bundle summary projection
+
+The loopback-only content-bundle summary read model now repeats the owned direct-use guard metadata from resolved item templates into every template-backed summary row:
+
+- top-level `item_templates`
+- merchant `shop_catalogs[].entries`
+- spawn-group `reward_drop_items`
+- aggregate `reward_drops`
+
+The projected fields are `confirm_when_use`, `quest_use`, `quest_use_multiple`, `applicable`, and `use_reject_message`. This is operator/QA visibility only: it helps identify confirmation-, quest-, and applicable-gated consumables before import, but it does not add quest/applicable item execution or confirmation choreography.
+
 ## Strict JSON hardening
 
 The file-backed loader now rejects unknown JSON fields and trailing JSON values instead of silently accepting them. Template snapshots and item-template backup manifests must also be valid UTF-8 before JSON decoding; malformed bytes fail closed instead of being accepted through JSON replacement semantics.

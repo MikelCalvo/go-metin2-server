@@ -357,6 +357,10 @@ type RewardDropItemSummary struct {
 	MaxCount            uint16 `json:"max_count"`
 	ShopBuyPrice        uint64 `json:"shop_buy_price,omitempty"`
 	ShopSellPrice       uint64 `json:"shop_sell_price,omitempty"`
+	ConfirmWhenUse      bool   `json:"confirm_when_use,omitempty"`
+	QuestUse            bool   `json:"quest_use,omitempty"`
+	QuestUseMultiple    bool   `json:"quest_use_multiple,omitempty"`
+	Applicable          bool   `json:"applicable,omitempty"`
 	AntiGet             bool   `json:"anti_get,omitempty"`
 	AntiDrop            bool   `json:"anti_drop,omitempty"`
 	AntiGive            bool   `json:"anti_give,omitempty"`
@@ -372,6 +376,7 @@ type RewardDropItemSummary struct {
 	AntiEmpireB         bool   `json:"anti_empire_b,omitempty"`
 	AntiEmpireC         bool   `json:"anti_empire_c,omitempty"`
 	MinLevel            uint8  `json:"min_level,omitempty"`
+	UseRejectMessage    string `json:"use_reject_message,omitempty"`
 	BuyRejectMessage    string `json:"buy_reject_message,omitempty"`
 	DropRejectMessage   string `json:"drop_reject_message,omitempty"`
 	GiveRejectMessage   string `json:"give_reject_message,omitempty"`
@@ -388,6 +393,10 @@ type RewardDropAggregateSummary struct {
 	MaxCount            uint16 `json:"max_count"`
 	ShopBuyPrice        uint64 `json:"shop_buy_price,omitempty"`
 	ShopSellPrice       uint64 `json:"shop_sell_price,omitempty"`
+	ConfirmWhenUse      bool   `json:"confirm_when_use,omitempty"`
+	QuestUse            bool   `json:"quest_use,omitempty"`
+	QuestUseMultiple    bool   `json:"quest_use_multiple,omitempty"`
+	Applicable          bool   `json:"applicable,omitempty"`
 	AntiGet             bool   `json:"anti_get,omitempty"`
 	AntiDrop            bool   `json:"anti_drop,omitempty"`
 	AntiGive            bool   `json:"anti_give,omitempty"`
@@ -403,6 +412,7 @@ type RewardDropAggregateSummary struct {
 	AntiEmpireB         bool   `json:"anti_empire_b,omitempty"`
 	AntiEmpireC         bool   `json:"anti_empire_c,omitempty"`
 	MinLevel            uint8  `json:"min_level,omitempty"`
+	UseRejectMessage    string `json:"use_reject_message,omitempty"`
 	BuyRejectMessage    string `json:"buy_reject_message,omitempty"`
 	DropRejectMessage   string `json:"drop_reject_message,omitempty"`
 	GiveRejectMessage   string `json:"give_reject_message,omitempty"`
@@ -418,6 +428,10 @@ type ItemTemplateReferenceSummary struct {
 	MaxCount            uint16 `json:"max_count"`
 	ShopBuyPrice        uint64 `json:"shop_buy_price,omitempty"`
 	ShopSellPrice       uint64 `json:"shop_sell_price,omitempty"`
+	ConfirmWhenUse      bool   `json:"confirm_when_use,omitempty"`
+	QuestUse            bool   `json:"quest_use,omitempty"`
+	QuestUseMultiple    bool   `json:"quest_use_multiple,omitempty"`
+	Applicable          bool   `json:"applicable,omitempty"`
 	AntiGet             bool   `json:"anti_get,omitempty"`
 	AntiDrop            bool   `json:"anti_drop,omitempty"`
 	AntiGive            bool   `json:"anti_give,omitempty"`
@@ -433,6 +447,7 @@ type ItemTemplateReferenceSummary struct {
 	AntiEmpireB         bool   `json:"anti_empire_b,omitempty"`
 	AntiEmpireC         bool   `json:"anti_empire_c,omitempty"`
 	MinLevel            uint8  `json:"min_level,omitempty"`
+	UseRejectMessage    string `json:"use_reject_message,omitempty"`
 	BuyRejectMessage    string `json:"buy_reject_message,omitempty"`
 	DropRejectMessage   string `json:"drop_reject_message,omitempty"`
 	GiveRejectMessage   string `json:"give_reject_message,omitempty"`
@@ -459,6 +474,10 @@ type ShopCatalogEntrySummary struct {
 	MaxCount            uint16 `json:"max_count"`
 	ShopBuyPrice        uint64 `json:"shop_buy_price,omitempty"`
 	ShopSellPrice       uint64 `json:"shop_sell_price,omitempty"`
+	ConfirmWhenUse      bool   `json:"confirm_when_use,omitempty"`
+	QuestUse            bool   `json:"quest_use,omitempty"`
+	QuestUseMultiple    bool   `json:"quest_use_multiple,omitempty"`
+	Applicable          bool   `json:"applicable,omitempty"`
 	AntiGet             bool   `json:"anti_get,omitempty"`
 	AntiDrop            bool   `json:"anti_drop,omitempty"`
 	AntiGive            bool   `json:"anti_give,omitempty"`
@@ -474,6 +493,7 @@ type ShopCatalogEntrySummary struct {
 	AntiEmpireB         bool   `json:"anti_empire_b,omitempty"`
 	AntiEmpireC         bool   `json:"anti_empire_c,omitempty"`
 	MinLevel            uint8  `json:"min_level,omitempty"`
+	UseRejectMessage    string `json:"use_reject_message,omitempty"`
 	BuyRejectMessage    string `json:"buy_reject_message,omitempty"`
 	DropRejectMessage   string `json:"drop_reject_message,omitempty"`
 	GiveRejectMessage   string `json:"give_reject_message,omitempty"`
@@ -1790,6 +1810,10 @@ func shopCatalogSummary(definition interactionstore.Definition, itemTemplatesByV
 			MaxCount:            template.MaxCount,
 			ShopBuyPrice:        template.ShopBuyPrice,
 			ShopSellPrice:       template.ShopSellPrice,
+			ConfirmWhenUse:      template.ConfirmWhenUse,
+			QuestUse:            template.QuestUse,
+			QuestUseMultiple:    template.QuestUseMultiple,
+			Applicable:          template.Applicable,
 			AntiGet:             template.AntiGet,
 			AntiDrop:            template.AntiDrop,
 			AntiGive:            template.AntiGive,
@@ -1805,6 +1829,7 @@ func shopCatalogSummary(definition interactionstore.Definition, itemTemplatesByV
 			AntiEmpireB:         template.AntiEmpireB,
 			AntiEmpireC:         template.AntiEmpireC,
 			MinLevel:            template.MinLevel,
+			UseRejectMessage:    template.UseRejectText,
 			BuyRejectMessage:    template.BuyRejectText,
 			DropRejectMessage:   template.DropRejectText,
 			GiveRejectMessage:   template.GiveRejectText,
@@ -1872,6 +1897,10 @@ func itemTemplateReferenceSummaries(templates []itemcatalog.Template) []ItemTemp
 			MaxCount:            template.MaxCount,
 			ShopBuyPrice:        template.ShopBuyPrice,
 			ShopSellPrice:       template.ShopSellPrice,
+			ConfirmWhenUse:      template.ConfirmWhenUse,
+			QuestUse:            template.QuestUse,
+			QuestUseMultiple:    template.QuestUseMultiple,
+			Applicable:          template.Applicable,
 			AntiGet:             template.AntiGet,
 			AntiDrop:            template.AntiDrop,
 			AntiGive:            template.AntiGive,
@@ -1887,6 +1916,7 @@ func itemTemplateReferenceSummaries(templates []itemcatalog.Template) []ItemTemp
 			AntiEmpireB:         template.AntiEmpireB,
 			AntiEmpireC:         template.AntiEmpireC,
 			MinLevel:            template.MinLevel,
+			UseRejectMessage:    template.UseRejectText,
 			BuyRejectMessage:    template.BuyRejectText,
 			DropRejectMessage:   template.DropRejectText,
 			GiveRejectMessage:   template.GiveRejectText,
@@ -1919,6 +1949,10 @@ func rewardDropItemSummaries(dropVnums []uint32, itemTemplatesByVnum map[uint32]
 			MaxCount:            template.MaxCount,
 			ShopBuyPrice:        template.ShopBuyPrice,
 			ShopSellPrice:       template.ShopSellPrice,
+			ConfirmWhenUse:      template.ConfirmWhenUse,
+			QuestUse:            template.QuestUse,
+			QuestUseMultiple:    template.QuestUseMultiple,
+			Applicable:          template.Applicable,
 			AntiGet:             template.AntiGet,
 			AntiDrop:            template.AntiDrop,
 			AntiGive:            template.AntiGive,
@@ -1934,6 +1968,7 @@ func rewardDropItemSummaries(dropVnums []uint32, itemTemplatesByVnum map[uint32]
 			AntiEmpireB:         template.AntiEmpireB,
 			AntiEmpireC:         template.AntiEmpireC,
 			MinLevel:            template.MinLevel,
+			UseRejectMessage:    template.UseRejectText,
 			BuyRejectMessage:    template.BuyRejectText,
 			DropRejectMessage:   template.DropRejectText,
 			GiveRejectMessage:   template.GiveRejectText,
@@ -1986,6 +2021,10 @@ func rewardDropAggregateSummaries(countsByVnum map[uint32]int, itemTemplatesByVn
 			MaxCount:            template.MaxCount,
 			ShopBuyPrice:        template.ShopBuyPrice,
 			ShopSellPrice:       template.ShopSellPrice,
+			ConfirmWhenUse:      template.ConfirmWhenUse,
+			QuestUse:            template.QuestUse,
+			QuestUseMultiple:    template.QuestUseMultiple,
+			Applicable:          template.Applicable,
 			AntiGet:             template.AntiGet,
 			AntiDrop:            template.AntiDrop,
 			AntiGive:            template.AntiGive,
@@ -2001,6 +2040,7 @@ func rewardDropAggregateSummaries(countsByVnum map[uint32]int, itemTemplatesByVn
 			AntiEmpireB:         template.AntiEmpireB,
 			AntiEmpireC:         template.AntiEmpireC,
 			MinLevel:            template.MinLevel,
+			UseRejectMessage:    template.UseRejectText,
 			BuyRejectMessage:    template.BuyRejectText,
 			DropRejectMessage:   template.DropRejectText,
 			GiveRejectMessage:   template.GiveRejectText,

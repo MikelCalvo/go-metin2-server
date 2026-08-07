@@ -216,6 +216,7 @@ Current authored-content summary support:
 - `GET` / dry-run `POST /local/content-bundle/summary` surface non-zero template-authored `shop_sell_price` values in the top-level `item_templates` rows
 - the same sell-price metadata is repeated in template-backed `shop_catalogs[].entries`, `spawn_groups[].reward_drop_items`, and grouped `reward_drops` rows when those rows resolve through a bundled item template
 - the same summary rows now surface template-authored transfer/merchant guard flags plus selected-character guard metadata (`anti_male`, `anti_female`, job/empire guards, and `min_level`) so operators can see merchant buy/sell deny reasons next to the existing reject-message text before applying a bundle
+- the same summary rows now also surface direct-use guard metadata (`confirm_when_use`, `quest_use`, `quest_use_multiple`, `applicable`, and `use_reject_message`) so quest-/confirmation-/applicable-gated consumables are visible in dry-run content audits even when they appear only as merchant catalog entries or reward drops
 - this is an operator/QA read model only; it does not change the already-owned merchant sell validation or packet choreography
 
 Failure behavior in this bootstrap contract:

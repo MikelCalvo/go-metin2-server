@@ -727,6 +727,70 @@ func TestGameRuntimeExportContentBundleSummaryIncludesMerchantAntiFlagMetadata(t
 	}
 }
 
+func TestGameRuntimeExportContentBundleSummaryIncludesDirectUseGuardMetadata(t *testing.T) {
+	const useRejectMessage = "This quest-sealed potion cannot be used yet."
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	itemStore := itemcatalog.NewFileStore(t.TempDir() + "/item-templates.json")
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:             "practice.quest_sealed_reward",
+			Name:            "Quest Sealed Reward",
+			MapIndex:        42,
+			X:               1800,
+			Y:               2900,
+			RaceNum:         101,
+			CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropVnums: []uint32{27001},
+		}},
+		ItemTemplates: []itemcatalog.Template{{
+			Vnum:             27001,
+			Name:             "Quest-Sealed Potion",
+			Stackable:        true,
+			MaxCount:         200,
+			ShopBuyPrice:     5,
+			ConfirmWhenUse:   true,
+			QuestUse:         true,
+			QuestUseMultiple: true,
+			Applicable:       true,
+			UseEffect:        &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "quest-sealed-use"},
+			UseRejectText:    useRejectMessage,
+		}},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:  interactionstore.KindShopPreview,
+			Ref:   "npc:quest_sealed_merchant",
+			Title: "Quest Sealed Merchant",
+			Catalog: []interactionstore.MerchantCatalogEntry{
+				{Slot: 0, ItemVnum: 27001, Price: 50, Count: 2},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("import direct-use guard content bundle: %v", err)
+	}
+
+	summary, err := runtime.ExportContentBundleSummary()
+	if err != nil {
+		t.Fatalf("export content bundle summary with direct-use guards: %v", err)
+	}
+	if !summary.ItemTemplates[0].ConfirmWhenUse || !summary.ItemTemplates[0].QuestUse || !summary.ItemTemplates[0].QuestUseMultiple || !summary.ItemTemplates[0].Applicable || summary.ItemTemplates[0].UseRejectMessage != useRejectMessage {
+		t.Fatalf("expected runtime item-template direct-use guard metadata, got %+v", summary.ItemTemplates)
+	}
+	if !summary.ShopCatalogs[0].Entries[0].ConfirmWhenUse || !summary.ShopCatalogs[0].Entries[0].QuestUse || !summary.ShopCatalogs[0].Entries[0].QuestUseMultiple || !summary.ShopCatalogs[0].Entries[0].Applicable || summary.ShopCatalogs[0].Entries[0].UseRejectMessage != useRejectMessage {
+		t.Fatalf("expected runtime shop-catalog direct-use guard metadata, got %+v", summary.ShopCatalogs)
+	}
+	if !summary.SpawnGroups[0].RewardDropItems[0].ConfirmWhenUse || !summary.SpawnGroups[0].RewardDropItems[0].QuestUse || !summary.SpawnGroups[0].RewardDropItems[0].QuestUseMultiple || !summary.SpawnGroups[0].RewardDropItems[0].Applicable || summary.SpawnGroups[0].RewardDropItems[0].UseRejectMessage != useRejectMessage {
+		t.Fatalf("expected runtime spawn reward-drop direct-use guard metadata, got %+v", summary.SpawnGroups)
+	}
+	if !summary.RewardDrops[0].ConfirmWhenUse || !summary.RewardDrops[0].QuestUse || !summary.RewardDrops[0].QuestUseMultiple || !summary.RewardDrops[0].Applicable || summary.RewardDrops[0].UseRejectMessage != useRejectMessage {
+		t.Fatalf("expected runtime aggregate reward-drop direct-use guard metadata, got %+v", summary.RewardDrops)
+	}
+}
+
 func TestGameRuntimeExportContentBundleSummaryIncludesWarpDestinationDetails(t *testing.T) {
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")

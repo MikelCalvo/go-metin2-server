@@ -611,6 +611,83 @@ func TestSummarizeExposesSelectedCharacterGuardsInTemplateBackedContentSummaries
 	}
 }
 
+func TestSummarizeExposesDirectUseGuardMetadataInTemplateBackedContentSummaries(t *testing.T) {
+	const useRejectMessage = "This quest-sealed potion cannot be used yet."
+	bundle := Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:             "practice.quest_sealed_reward",
+			Name:            "Quest Sealed Reward",
+			MapIndex:        42,
+			X:               1800,
+			Y:               2900,
+			RaceNum:         101,
+			CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropVnums: []uint32{27001},
+		}},
+		ItemTemplates: []itemcatalog.Template{{
+			Vnum:             27001,
+			Name:             "Quest-Sealed Potion",
+			Stackable:        true,
+			MaxCount:         200,
+			ShopBuyPrice:     5,
+			ConfirmWhenUse:   true,
+			QuestUse:         true,
+			QuestUseMultiple: true,
+			Applicable:       true,
+			UseEffect:        &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "quest-sealed-use"},
+			UseRejectText:    useRejectMessage,
+		}},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:  interactionstore.KindShopPreview,
+			Ref:   "npc:quest_sealed_merchant",
+			Title: "Quest Sealed Merchant",
+			Catalog: []interactionstore.MerchantCatalogEntry{
+				{Slot: 0, ItemVnum: 27001, Price: 50, Count: 2},
+			},
+		}},
+	}
+
+	summary, err := Summarize(bundle)
+	if err != nil {
+		t.Fatalf("summarize direct-use guard bundle: %v", err)
+	}
+
+	wantTemplates := []ItemTemplateReferenceSummary{{Vnum: 27001, Name: "Quest-Sealed Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ConfirmWhenUse: true, QuestUse: true, QuestUseMultiple: true, Applicable: true, UseRejectMessage: useRejectMessage}}
+	if !reflect.DeepEqual(summary.ItemTemplates, wantTemplates) {
+		t.Fatalf("unexpected item-template direct-use guard summary:\n got: %#v\nwant: %#v", summary.ItemTemplates, wantTemplates)
+	}
+	wantCatalogs := []ShopCatalogSummary{{
+		Kind:       interactionstore.KindShopPreview,
+		Ref:        "npc:quest_sealed_merchant",
+		Title:      "Quest Sealed Merchant",
+		EntryCount: 1,
+		Entries: []ShopCatalogEntrySummary{
+			{Slot: 0, ItemVnum: 27001, ItemName: "Quest-Sealed Potion", Count: 2, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ConfirmWhenUse: true, QuestUse: true, QuestUseMultiple: true, Applicable: true, UseRejectMessage: useRejectMessage},
+		},
+	}}
+	if !reflect.DeepEqual(summary.ShopCatalogs, wantCatalogs) {
+		t.Fatalf("unexpected shop-catalog direct-use guard summary:\n got: %#v\nwant: %#v", summary.ShopCatalogs, wantCatalogs)
+	}
+	wantSpawnGroups := []SpawnGroupReferenceSummary{{
+		Ref:             "practice.quest_sealed_reward",
+		Name:            "Quest Sealed Reward",
+		MapIndex:        42,
+		X:               1800,
+		Y:               2900,
+		RaceNum:         101,
+		CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+		RewardDropVnums: []uint32{27001},
+		RewardDropItems: []RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Quest-Sealed Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ConfirmWhenUse: true, QuestUse: true, QuestUseMultiple: true, Applicable: true, UseRejectMessage: useRejectMessage}},
+	}}
+	if !reflect.DeepEqual(summary.SpawnGroups, wantSpawnGroups) {
+		t.Fatalf("unexpected spawn-group direct-use guard summary:\n got: %#v\nwant: %#v", summary.SpawnGroups, wantSpawnGroups)
+	}
+	wantRewardDrops := []RewardDropAggregateSummary{{ItemVnum: 27001, ItemName: "Quest-Sealed Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ConfirmWhenUse: true, QuestUse: true, QuestUseMultiple: true, Applicable: true, UseRejectMessage: useRejectMessage}}
+	if !reflect.DeepEqual(summary.RewardDrops, wantRewardDrops) {
+		t.Fatalf("unexpected reward-drop direct-use guard summary:\n got: %#v\nwant: %#v", summary.RewardDrops, wantRewardDrops)
+	}
+}
+
 func TestBuildImportPreviewReturnsDeterministicSummaryDeltas(t *testing.T) {
 	preview, err := BuildImportPreview(
 		Bundle{

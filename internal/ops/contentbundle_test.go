@@ -1478,6 +1478,73 @@ func TestLocalContentBundleSummaryEndpointReturnsTransferGuardMetadataForLoopbac
 	}
 }
 
+func TestLocalContentBundleSummaryEndpointReturnsDirectUseGuardMetadataForLoopbackPost(t *testing.T) {
+	const useRejectMessage = "This quest-sealed potion cannot be used yet."
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	body := `{"spawn_groups":[{"ref":"practice.quest_sealed_reward","name":"Quest Sealed Reward","map_index":42,"x":1800,"y":2900,"race_num":101,"combat_profile":"practice_mob","reward_drop_vnums":[27001]}],"item_templates":[{"vnum":27001,"name":"Quest-Sealed Potion","stackable":true,"max_count":200,"shop_buy_price":5,"confirm_when_use":true,"quest_use":true,"quest_use_multiple":true,"applicable":true,"use_effect":{"point_type":1,"point_index":1,"point_delta":50,"message":"quest-sealed-use"},"use_reject_message":"This quest-sealed potion cannot be used yet."}],"interaction_definitions":[{"kind":"shop_preview","ref":"npc:quest_sealed_merchant","title":"Quest Sealed Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":2}]}]}`
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/summary", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected dry-run summary not to call live exporter, got %d calls", summaryer.calls)
+	}
+	var got contentbundle.Summary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode direct-use guard summary response body: %v", err)
+	}
+	for label, template := range map[string]struct {
+		ConfirmWhenUse   bool
+		QuestUse         bool
+		QuestUseMultiple bool
+		Applicable       bool
+		UseRejectMessage string
+	}{
+		"item template": {
+			ConfirmWhenUse:   got.ItemTemplates[0].ConfirmWhenUse,
+			QuestUse:         got.ItemTemplates[0].QuestUse,
+			QuestUseMultiple: got.ItemTemplates[0].QuestUseMultiple,
+			Applicable:       got.ItemTemplates[0].Applicable,
+			UseRejectMessage: got.ItemTemplates[0].UseRejectMessage,
+		},
+		"shop catalog": {
+			ConfirmWhenUse:   got.ShopCatalogs[0].Entries[0].ConfirmWhenUse,
+			QuestUse:         got.ShopCatalogs[0].Entries[0].QuestUse,
+			QuestUseMultiple: got.ShopCatalogs[0].Entries[0].QuestUseMultiple,
+			Applicable:       got.ShopCatalogs[0].Entries[0].Applicable,
+			UseRejectMessage: got.ShopCatalogs[0].Entries[0].UseRejectMessage,
+		},
+		"spawn reward drop": {
+			ConfirmWhenUse:   got.SpawnGroups[0].RewardDropItems[0].ConfirmWhenUse,
+			QuestUse:         got.SpawnGroups[0].RewardDropItems[0].QuestUse,
+			QuestUseMultiple: got.SpawnGroups[0].RewardDropItems[0].QuestUseMultiple,
+			Applicable:       got.SpawnGroups[0].RewardDropItems[0].Applicable,
+			UseRejectMessage: got.SpawnGroups[0].RewardDropItems[0].UseRejectMessage,
+		},
+		"aggregate reward drop": {
+			ConfirmWhenUse:   got.RewardDrops[0].ConfirmWhenUse,
+			QuestUse:         got.RewardDrops[0].QuestUse,
+			QuestUseMultiple: got.RewardDrops[0].QuestUseMultiple,
+			Applicable:       got.RewardDrops[0].Applicable,
+			UseRejectMessage: got.RewardDrops[0].UseRejectMessage,
+		},
+	} {
+		if !template.ConfirmWhenUse || !template.QuestUse || !template.QuestUseMultiple || !template.Applicable {
+			t.Fatalf("expected %s direct-use guard flags, got %+v", label, template)
+		}
+		if template.UseRejectMessage != useRejectMessage {
+			t.Fatalf("unexpected %s direct-use guard message: %+v", label, template)
+		}
+	}
+}
+
 func TestLocalContentBundleSummaryEndpointRejectsInvalidDryRunBundle(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
 	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
