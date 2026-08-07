@@ -351,109 +351,124 @@ type SpawnGroupReferenceSummary struct {
 }
 
 type RewardDropItemSummary struct {
-	ItemVnum            uint32 `json:"item_vnum"`
-	ItemName            string `json:"item_name"`
-	Stackable           bool   `json:"stackable"`
-	MaxCount            uint16 `json:"max_count"`
-	ShopBuyPrice        uint64 `json:"shop_buy_price,omitempty"`
-	ShopSellPrice       uint64 `json:"shop_sell_price,omitempty"`
-	ConfirmWhenUse      bool   `json:"confirm_when_use,omitempty"`
-	QuestUse            bool   `json:"quest_use,omitempty"`
-	QuestUseMultiple    bool   `json:"quest_use_multiple,omitempty"`
-	Applicable          bool   `json:"applicable,omitempty"`
-	AntiGet             bool   `json:"anti_get,omitempty"`
-	AntiDrop            bool   `json:"anti_drop,omitempty"`
-	AntiGive            bool   `json:"anti_give,omitempty"`
-	AntiSell            bool   `json:"anti_sell,omitempty"`
-	AntiStack           bool   `json:"anti_stack,omitempty"`
-	AntiMale            bool   `json:"anti_male,omitempty"`
-	AntiFemale          bool   `json:"anti_female,omitempty"`
-	AntiWarrior         bool   `json:"anti_warrior,omitempty"`
-	AntiAssassin        bool   `json:"anti_assassin,omitempty"`
-	AntiSura            bool   `json:"anti_sura,omitempty"`
-	AntiShaman          bool   `json:"anti_shaman,omitempty"`
-	AntiEmpireA         bool   `json:"anti_empire_a,omitempty"`
-	AntiEmpireB         bool   `json:"anti_empire_b,omitempty"`
-	AntiEmpireC         bool   `json:"anti_empire_c,omitempty"`
-	MinLevel            uint8  `json:"min_level,omitempty"`
-	UseRejectMessage    string `json:"use_reject_message,omitempty"`
-	BuyRejectMessage    string `json:"buy_reject_message,omitempty"`
-	DropRejectMessage   string `json:"drop_reject_message,omitempty"`
-	GiveRejectMessage   string `json:"give_reject_message,omitempty"`
-	PickupRejectMessage string `json:"pickup_reject_message,omitempty"`
-	SellRejectMessage   string `json:"sell_reject_message,omitempty"`
-	PickupRange         uint16 `json:"pickup_range,omitempty"`
+	ItemVnum             uint32 `json:"item_vnum"`
+	ItemName             string `json:"item_name"`
+	Stackable            bool   `json:"stackable"`
+	MaxCount             uint16 `json:"max_count"`
+	ShopBuyPrice         uint64 `json:"shop_buy_price,omitempty"`
+	ShopSellPrice        uint64 `json:"shop_sell_price,omitempty"`
+	ConfirmWhenUse       bool   `json:"confirm_when_use,omitempty"`
+	QuestUse             bool   `json:"quest_use,omitempty"`
+	QuestUseMultiple     bool   `json:"quest_use_multiple,omitempty"`
+	Applicable           bool   `json:"applicable,omitempty"`
+	EquipSlot            string `json:"equip_slot,omitempty"`
+	AppearanceVnum       uint32 `json:"appearance_vnum,omitempty"`
+	Irremovable          bool   `json:"irremovable,omitempty"`
+	AntiGet              bool   `json:"anti_get,omitempty"`
+	AntiDrop             bool   `json:"anti_drop,omitempty"`
+	AntiGive             bool   `json:"anti_give,omitempty"`
+	AntiSell             bool   `json:"anti_sell,omitempty"`
+	AntiStack            bool   `json:"anti_stack,omitempty"`
+	AntiMale             bool   `json:"anti_male,omitempty"`
+	AntiFemale           bool   `json:"anti_female,omitempty"`
+	AntiWarrior          bool   `json:"anti_warrior,omitempty"`
+	AntiAssassin         bool   `json:"anti_assassin,omitempty"`
+	AntiSura             bool   `json:"anti_sura,omitempty"`
+	AntiShaman           bool   `json:"anti_shaman,omitempty"`
+	AntiEmpireA          bool   `json:"anti_empire_a,omitempty"`
+	AntiEmpireB          bool   `json:"anti_empire_b,omitempty"`
+	AntiEmpireC          bool   `json:"anti_empire_c,omitempty"`
+	MinLevel             uint8  `json:"min_level,omitempty"`
+	UseRejectMessage     string `json:"use_reject_message,omitempty"`
+	BuyRejectMessage     string `json:"buy_reject_message,omitempty"`
+	DropRejectMessage    string `json:"drop_reject_message,omitempty"`
+	GiveRejectMessage    string `json:"give_reject_message,omitempty"`
+	PickupRejectMessage  string `json:"pickup_reject_message,omitempty"`
+	SellRejectMessage    string `json:"sell_reject_message,omitempty"`
+	EquipRejectMessage   string `json:"equip_reject_message,omitempty"`
+	UnequipRejectMessage string `json:"unequip_reject_message,omitempty"`
+	PickupRange          uint16 `json:"pickup_range,omitempty"`
 }
 
 type RewardDropAggregateSummary struct {
-	ItemVnum            uint32 `json:"item_vnum"`
-	ItemName            string `json:"item_name"`
-	SourceCount         int    `json:"source_count"`
-	Stackable           bool   `json:"stackable"`
-	MaxCount            uint16 `json:"max_count"`
-	ShopBuyPrice        uint64 `json:"shop_buy_price,omitempty"`
-	ShopSellPrice       uint64 `json:"shop_sell_price,omitempty"`
-	ConfirmWhenUse      bool   `json:"confirm_when_use,omitempty"`
-	QuestUse            bool   `json:"quest_use,omitempty"`
-	QuestUseMultiple    bool   `json:"quest_use_multiple,omitempty"`
-	Applicable          bool   `json:"applicable,omitempty"`
-	AntiGet             bool   `json:"anti_get,omitempty"`
-	AntiDrop            bool   `json:"anti_drop,omitempty"`
-	AntiGive            bool   `json:"anti_give,omitempty"`
-	AntiSell            bool   `json:"anti_sell,omitempty"`
-	AntiStack           bool   `json:"anti_stack,omitempty"`
-	AntiMale            bool   `json:"anti_male,omitempty"`
-	AntiFemale          bool   `json:"anti_female,omitempty"`
-	AntiWarrior         bool   `json:"anti_warrior,omitempty"`
-	AntiAssassin        bool   `json:"anti_assassin,omitempty"`
-	AntiSura            bool   `json:"anti_sura,omitempty"`
-	AntiShaman          bool   `json:"anti_shaman,omitempty"`
-	AntiEmpireA         bool   `json:"anti_empire_a,omitempty"`
-	AntiEmpireB         bool   `json:"anti_empire_b,omitempty"`
-	AntiEmpireC         bool   `json:"anti_empire_c,omitempty"`
-	MinLevel            uint8  `json:"min_level,omitempty"`
-	UseRejectMessage    string `json:"use_reject_message,omitempty"`
-	BuyRejectMessage    string `json:"buy_reject_message,omitempty"`
-	DropRejectMessage   string `json:"drop_reject_message,omitempty"`
-	GiveRejectMessage   string `json:"give_reject_message,omitempty"`
-	PickupRejectMessage string `json:"pickup_reject_message,omitempty"`
-	SellRejectMessage   string `json:"sell_reject_message,omitempty"`
-	PickupRange         uint16 `json:"pickup_range,omitempty"`
+	ItemVnum             uint32 `json:"item_vnum"`
+	ItemName             string `json:"item_name"`
+	SourceCount          int    `json:"source_count"`
+	Stackable            bool   `json:"stackable"`
+	MaxCount             uint16 `json:"max_count"`
+	ShopBuyPrice         uint64 `json:"shop_buy_price,omitempty"`
+	ShopSellPrice        uint64 `json:"shop_sell_price,omitempty"`
+	ConfirmWhenUse       bool   `json:"confirm_when_use,omitempty"`
+	QuestUse             bool   `json:"quest_use,omitempty"`
+	QuestUseMultiple     bool   `json:"quest_use_multiple,omitempty"`
+	Applicable           bool   `json:"applicable,omitempty"`
+	EquipSlot            string `json:"equip_slot,omitempty"`
+	AppearanceVnum       uint32 `json:"appearance_vnum,omitempty"`
+	Irremovable          bool   `json:"irremovable,omitempty"`
+	AntiGet              bool   `json:"anti_get,omitempty"`
+	AntiDrop             bool   `json:"anti_drop,omitempty"`
+	AntiGive             bool   `json:"anti_give,omitempty"`
+	AntiSell             bool   `json:"anti_sell,omitempty"`
+	AntiStack            bool   `json:"anti_stack,omitempty"`
+	AntiMale             bool   `json:"anti_male,omitempty"`
+	AntiFemale           bool   `json:"anti_female,omitempty"`
+	AntiWarrior          bool   `json:"anti_warrior,omitempty"`
+	AntiAssassin         bool   `json:"anti_assassin,omitempty"`
+	AntiSura             bool   `json:"anti_sura,omitempty"`
+	AntiShaman           bool   `json:"anti_shaman,omitempty"`
+	AntiEmpireA          bool   `json:"anti_empire_a,omitempty"`
+	AntiEmpireB          bool   `json:"anti_empire_b,omitempty"`
+	AntiEmpireC          bool   `json:"anti_empire_c,omitempty"`
+	MinLevel             uint8  `json:"min_level,omitempty"`
+	UseRejectMessage     string `json:"use_reject_message,omitempty"`
+	BuyRejectMessage     string `json:"buy_reject_message,omitempty"`
+	DropRejectMessage    string `json:"drop_reject_message,omitempty"`
+	GiveRejectMessage    string `json:"give_reject_message,omitempty"`
+	PickupRejectMessage  string `json:"pickup_reject_message,omitempty"`
+	SellRejectMessage    string `json:"sell_reject_message,omitempty"`
+	EquipRejectMessage   string `json:"equip_reject_message,omitempty"`
+	UnequipRejectMessage string `json:"unequip_reject_message,omitempty"`
+	PickupRange          uint16 `json:"pickup_range,omitempty"`
 }
 
 type ItemTemplateReferenceSummary struct {
-	Vnum                uint32 `json:"vnum"`
-	Name                string `json:"name"`
-	Stackable           bool   `json:"stackable"`
-	MaxCount            uint16 `json:"max_count"`
-	ShopBuyPrice        uint64 `json:"shop_buy_price,omitempty"`
-	ShopSellPrice       uint64 `json:"shop_sell_price,omitempty"`
-	ConfirmWhenUse      bool   `json:"confirm_when_use,omitempty"`
-	QuestUse            bool   `json:"quest_use,omitempty"`
-	QuestUseMultiple    bool   `json:"quest_use_multiple,omitempty"`
-	Applicable          bool   `json:"applicable,omitempty"`
-	AntiGet             bool   `json:"anti_get,omitempty"`
-	AntiDrop            bool   `json:"anti_drop,omitempty"`
-	AntiGive            bool   `json:"anti_give,omitempty"`
-	AntiSell            bool   `json:"anti_sell,omitempty"`
-	AntiStack           bool   `json:"anti_stack,omitempty"`
-	AntiMale            bool   `json:"anti_male,omitempty"`
-	AntiFemale          bool   `json:"anti_female,omitempty"`
-	AntiWarrior         bool   `json:"anti_warrior,omitempty"`
-	AntiAssassin        bool   `json:"anti_assassin,omitempty"`
-	AntiSura            bool   `json:"anti_sura,omitempty"`
-	AntiShaman          bool   `json:"anti_shaman,omitempty"`
-	AntiEmpireA         bool   `json:"anti_empire_a,omitempty"`
-	AntiEmpireB         bool   `json:"anti_empire_b,omitempty"`
-	AntiEmpireC         bool   `json:"anti_empire_c,omitempty"`
-	MinLevel            uint8  `json:"min_level,omitempty"`
-	UseRejectMessage    string `json:"use_reject_message,omitempty"`
-	BuyRejectMessage    string `json:"buy_reject_message,omitempty"`
-	DropRejectMessage   string `json:"drop_reject_message,omitempty"`
-	GiveRejectMessage   string `json:"give_reject_message,omitempty"`
-	PickupRejectMessage string `json:"pickup_reject_message,omitempty"`
-	SellRejectMessage   string `json:"sell_reject_message,omitempty"`
-	PickupRange         uint16 `json:"pickup_range,omitempty"`
+	Vnum                 uint32 `json:"vnum"`
+	Name                 string `json:"name"`
+	Stackable            bool   `json:"stackable"`
+	MaxCount             uint16 `json:"max_count"`
+	ShopBuyPrice         uint64 `json:"shop_buy_price,omitempty"`
+	ShopSellPrice        uint64 `json:"shop_sell_price,omitempty"`
+	ConfirmWhenUse       bool   `json:"confirm_when_use,omitempty"`
+	QuestUse             bool   `json:"quest_use,omitempty"`
+	QuestUseMultiple     bool   `json:"quest_use_multiple,omitempty"`
+	Applicable           bool   `json:"applicable,omitempty"`
+	EquipSlot            string `json:"equip_slot,omitempty"`
+	AppearanceVnum       uint32 `json:"appearance_vnum,omitempty"`
+	Irremovable          bool   `json:"irremovable,omitempty"`
+	AntiGet              bool   `json:"anti_get,omitempty"`
+	AntiDrop             bool   `json:"anti_drop,omitempty"`
+	AntiGive             bool   `json:"anti_give,omitempty"`
+	AntiSell             bool   `json:"anti_sell,omitempty"`
+	AntiStack            bool   `json:"anti_stack,omitempty"`
+	AntiMale             bool   `json:"anti_male,omitempty"`
+	AntiFemale           bool   `json:"anti_female,omitempty"`
+	AntiWarrior          bool   `json:"anti_warrior,omitempty"`
+	AntiAssassin         bool   `json:"anti_assassin,omitempty"`
+	AntiSura             bool   `json:"anti_sura,omitempty"`
+	AntiShaman           bool   `json:"anti_shaman,omitempty"`
+	AntiEmpireA          bool   `json:"anti_empire_a,omitempty"`
+	AntiEmpireB          bool   `json:"anti_empire_b,omitempty"`
+	AntiEmpireC          bool   `json:"anti_empire_c,omitempty"`
+	MinLevel             uint8  `json:"min_level,omitempty"`
+	UseRejectMessage     string `json:"use_reject_message,omitempty"`
+	BuyRejectMessage     string `json:"buy_reject_message,omitempty"`
+	DropRejectMessage    string `json:"drop_reject_message,omitempty"`
+	GiveRejectMessage    string `json:"give_reject_message,omitempty"`
+	PickupRejectMessage  string `json:"pickup_reject_message,omitempty"`
+	SellRejectMessage    string `json:"sell_reject_message,omitempty"`
+	EquipRejectMessage   string `json:"equip_reject_message,omitempty"`
+	UnequipRejectMessage string `json:"unequip_reject_message,omitempty"`
+	PickupRange          uint16 `json:"pickup_range,omitempty"`
 }
 
 type ShopCatalogSummary struct {
@@ -465,41 +480,46 @@ type ShopCatalogSummary struct {
 }
 
 type ShopCatalogEntrySummary struct {
-	Slot                uint16 `json:"slot"`
-	ItemVnum            uint32 `json:"item_vnum"`
-	ItemName            string `json:"item_name"`
-	Count               uint16 `json:"count"`
-	Price               uint64 `json:"price"`
-	Stackable           bool   `json:"stackable"`
-	MaxCount            uint16 `json:"max_count"`
-	ShopBuyPrice        uint64 `json:"shop_buy_price,omitempty"`
-	ShopSellPrice       uint64 `json:"shop_sell_price,omitempty"`
-	ConfirmWhenUse      bool   `json:"confirm_when_use,omitempty"`
-	QuestUse            bool   `json:"quest_use,omitempty"`
-	QuestUseMultiple    bool   `json:"quest_use_multiple,omitempty"`
-	Applicable          bool   `json:"applicable,omitempty"`
-	AntiGet             bool   `json:"anti_get,omitempty"`
-	AntiDrop            bool   `json:"anti_drop,omitempty"`
-	AntiGive            bool   `json:"anti_give,omitempty"`
-	AntiSell            bool   `json:"anti_sell,omitempty"`
-	AntiStack           bool   `json:"anti_stack,omitempty"`
-	AntiMale            bool   `json:"anti_male,omitempty"`
-	AntiFemale          bool   `json:"anti_female,omitempty"`
-	AntiWarrior         bool   `json:"anti_warrior,omitempty"`
-	AntiAssassin        bool   `json:"anti_assassin,omitempty"`
-	AntiSura            bool   `json:"anti_sura,omitempty"`
-	AntiShaman          bool   `json:"anti_shaman,omitempty"`
-	AntiEmpireA         bool   `json:"anti_empire_a,omitempty"`
-	AntiEmpireB         bool   `json:"anti_empire_b,omitempty"`
-	AntiEmpireC         bool   `json:"anti_empire_c,omitempty"`
-	MinLevel            uint8  `json:"min_level,omitempty"`
-	UseRejectMessage    string `json:"use_reject_message,omitempty"`
-	BuyRejectMessage    string `json:"buy_reject_message,omitempty"`
-	DropRejectMessage   string `json:"drop_reject_message,omitempty"`
-	GiveRejectMessage   string `json:"give_reject_message,omitempty"`
-	PickupRejectMessage string `json:"pickup_reject_message,omitempty"`
-	SellRejectMessage   string `json:"sell_reject_message,omitempty"`
-	PickupRange         uint16 `json:"pickup_range,omitempty"`
+	Slot                 uint16 `json:"slot"`
+	ItemVnum             uint32 `json:"item_vnum"`
+	ItemName             string `json:"item_name"`
+	Count                uint16 `json:"count"`
+	Price                uint64 `json:"price"`
+	Stackable            bool   `json:"stackable"`
+	MaxCount             uint16 `json:"max_count"`
+	ShopBuyPrice         uint64 `json:"shop_buy_price,omitempty"`
+	ShopSellPrice        uint64 `json:"shop_sell_price,omitempty"`
+	ConfirmWhenUse       bool   `json:"confirm_when_use,omitempty"`
+	QuestUse             bool   `json:"quest_use,omitempty"`
+	QuestUseMultiple     bool   `json:"quest_use_multiple,omitempty"`
+	Applicable           bool   `json:"applicable,omitempty"`
+	EquipSlot            string `json:"equip_slot,omitempty"`
+	AppearanceVnum       uint32 `json:"appearance_vnum,omitempty"`
+	Irremovable          bool   `json:"irremovable,omitempty"`
+	AntiGet              bool   `json:"anti_get,omitempty"`
+	AntiDrop             bool   `json:"anti_drop,omitempty"`
+	AntiGive             bool   `json:"anti_give,omitempty"`
+	AntiSell             bool   `json:"anti_sell,omitempty"`
+	AntiStack            bool   `json:"anti_stack,omitempty"`
+	AntiMale             bool   `json:"anti_male,omitempty"`
+	AntiFemale           bool   `json:"anti_female,omitempty"`
+	AntiWarrior          bool   `json:"anti_warrior,omitempty"`
+	AntiAssassin         bool   `json:"anti_assassin,omitempty"`
+	AntiSura             bool   `json:"anti_sura,omitempty"`
+	AntiShaman           bool   `json:"anti_shaman,omitempty"`
+	AntiEmpireA          bool   `json:"anti_empire_a,omitempty"`
+	AntiEmpireB          bool   `json:"anti_empire_b,omitempty"`
+	AntiEmpireC          bool   `json:"anti_empire_c,omitempty"`
+	MinLevel             uint8  `json:"min_level,omitempty"`
+	UseRejectMessage     string `json:"use_reject_message,omitempty"`
+	BuyRejectMessage     string `json:"buy_reject_message,omitempty"`
+	DropRejectMessage    string `json:"drop_reject_message,omitempty"`
+	GiveRejectMessage    string `json:"give_reject_message,omitempty"`
+	PickupRejectMessage  string `json:"pickup_reject_message,omitempty"`
+	SellRejectMessage    string `json:"sell_reject_message,omitempty"`
+	EquipRejectMessage   string `json:"equip_reject_message,omitempty"`
+	UnequipRejectMessage string `json:"unequip_reject_message,omitempty"`
+	PickupRange          uint16 `json:"pickup_range,omitempty"`
 }
 
 type ShopRouteSummary struct {
@@ -1801,41 +1821,46 @@ func shopCatalogSummary(definition interactionstore.Definition, itemTemplatesByV
 	for _, entry := range definition.Catalog {
 		template := itemcatalog.NormalizeTemplate(itemTemplatesByVnum[entry.ItemVnum])
 		summary.Entries = append(summary.Entries, ShopCatalogEntrySummary{
-			Slot:                entry.Slot,
-			ItemVnum:            entry.ItemVnum,
-			ItemName:            template.Name,
-			Count:               entry.Count,
-			Price:               entry.Price,
-			Stackable:           template.Stackable,
-			MaxCount:            template.MaxCount,
-			ShopBuyPrice:        template.ShopBuyPrice,
-			ShopSellPrice:       template.ShopSellPrice,
-			ConfirmWhenUse:      template.ConfirmWhenUse,
-			QuestUse:            template.QuestUse,
-			QuestUseMultiple:    template.QuestUseMultiple,
-			Applicable:          template.Applicable,
-			AntiGet:             template.AntiGet,
-			AntiDrop:            template.AntiDrop,
-			AntiGive:            template.AntiGive,
-			AntiSell:            template.AntiSell,
-			AntiStack:           template.AntiStack,
-			AntiMale:            template.AntiMale,
-			AntiFemale:          template.AntiFemale,
-			AntiWarrior:         template.AntiWarrior,
-			AntiAssassin:        template.AntiAssassin,
-			AntiSura:            template.AntiSura,
-			AntiShaman:          template.AntiShaman,
-			AntiEmpireA:         template.AntiEmpireA,
-			AntiEmpireB:         template.AntiEmpireB,
-			AntiEmpireC:         template.AntiEmpireC,
-			MinLevel:            template.MinLevel,
-			UseRejectMessage:    template.UseRejectText,
-			BuyRejectMessage:    template.BuyRejectText,
-			DropRejectMessage:   template.DropRejectText,
-			GiveRejectMessage:   template.GiveRejectText,
-			PickupRejectMessage: template.PickupRejectText,
-			SellRejectMessage:   template.SellRejectText,
-			PickupRange:         template.PickupRange,
+			Slot:                 entry.Slot,
+			ItemVnum:             entry.ItemVnum,
+			ItemName:             template.Name,
+			Count:                entry.Count,
+			Price:                entry.Price,
+			Stackable:            template.Stackable,
+			MaxCount:             template.MaxCount,
+			ShopBuyPrice:         template.ShopBuyPrice,
+			ShopSellPrice:        template.ShopSellPrice,
+			ConfirmWhenUse:       template.ConfirmWhenUse,
+			QuestUse:             template.QuestUse,
+			QuestUseMultiple:     template.QuestUseMultiple,
+			Applicable:           template.Applicable,
+			EquipSlot:            template.EquipSlot,
+			AppearanceVnum:       template.AppearanceVnum,
+			Irremovable:          template.Irremovable,
+			AntiGet:              template.AntiGet,
+			AntiDrop:             template.AntiDrop,
+			AntiGive:             template.AntiGive,
+			AntiSell:             template.AntiSell,
+			AntiStack:            template.AntiStack,
+			AntiMale:             template.AntiMale,
+			AntiFemale:           template.AntiFemale,
+			AntiWarrior:          template.AntiWarrior,
+			AntiAssassin:         template.AntiAssassin,
+			AntiSura:             template.AntiSura,
+			AntiShaman:           template.AntiShaman,
+			AntiEmpireA:          template.AntiEmpireA,
+			AntiEmpireB:          template.AntiEmpireB,
+			AntiEmpireC:          template.AntiEmpireC,
+			MinLevel:             template.MinLevel,
+			UseRejectMessage:     template.UseRejectText,
+			BuyRejectMessage:     template.BuyRejectText,
+			DropRejectMessage:    template.DropRejectText,
+			GiveRejectMessage:    template.GiveRejectText,
+			PickupRejectMessage:  template.PickupRejectText,
+			SellRejectMessage:    template.SellRejectText,
+			EquipRejectMessage:   template.EquipRejectText,
+			UnequipRejectMessage: template.UnequipRejectText,
+			PickupRange:          template.PickupRange,
 		})
 	}
 	return summary
@@ -1891,38 +1916,43 @@ func itemTemplateReferenceSummaries(templates []itemcatalog.Template) []ItemTemp
 	for _, template := range templates {
 		template = itemcatalog.NormalizeTemplate(template)
 		summaries = append(summaries, ItemTemplateReferenceSummary{
-			Vnum:                template.Vnum,
-			Name:                template.Name,
-			Stackable:           template.Stackable,
-			MaxCount:            template.MaxCount,
-			ShopBuyPrice:        template.ShopBuyPrice,
-			ShopSellPrice:       template.ShopSellPrice,
-			ConfirmWhenUse:      template.ConfirmWhenUse,
-			QuestUse:            template.QuestUse,
-			QuestUseMultiple:    template.QuestUseMultiple,
-			Applicable:          template.Applicable,
-			AntiGet:             template.AntiGet,
-			AntiDrop:            template.AntiDrop,
-			AntiGive:            template.AntiGive,
-			AntiSell:            template.AntiSell,
-			AntiStack:           template.AntiStack,
-			AntiMale:            template.AntiMale,
-			AntiFemale:          template.AntiFemale,
-			AntiWarrior:         template.AntiWarrior,
-			AntiAssassin:        template.AntiAssassin,
-			AntiSura:            template.AntiSura,
-			AntiShaman:          template.AntiShaman,
-			AntiEmpireA:         template.AntiEmpireA,
-			AntiEmpireB:         template.AntiEmpireB,
-			AntiEmpireC:         template.AntiEmpireC,
-			MinLevel:            template.MinLevel,
-			UseRejectMessage:    template.UseRejectText,
-			BuyRejectMessage:    template.BuyRejectText,
-			DropRejectMessage:   template.DropRejectText,
-			GiveRejectMessage:   template.GiveRejectText,
-			PickupRejectMessage: template.PickupRejectText,
-			SellRejectMessage:   template.SellRejectText,
-			PickupRange:         template.PickupRange,
+			Vnum:                 template.Vnum,
+			Name:                 template.Name,
+			Stackable:            template.Stackable,
+			MaxCount:             template.MaxCount,
+			ShopBuyPrice:         template.ShopBuyPrice,
+			ShopSellPrice:        template.ShopSellPrice,
+			ConfirmWhenUse:       template.ConfirmWhenUse,
+			QuestUse:             template.QuestUse,
+			QuestUseMultiple:     template.QuestUseMultiple,
+			Applicable:           template.Applicable,
+			EquipSlot:            template.EquipSlot,
+			AppearanceVnum:       template.AppearanceVnum,
+			Irremovable:          template.Irremovable,
+			AntiGet:              template.AntiGet,
+			AntiDrop:             template.AntiDrop,
+			AntiGive:             template.AntiGive,
+			AntiSell:             template.AntiSell,
+			AntiStack:            template.AntiStack,
+			AntiMale:             template.AntiMale,
+			AntiFemale:           template.AntiFemale,
+			AntiWarrior:          template.AntiWarrior,
+			AntiAssassin:         template.AntiAssassin,
+			AntiSura:             template.AntiSura,
+			AntiShaman:           template.AntiShaman,
+			AntiEmpireA:          template.AntiEmpireA,
+			AntiEmpireB:          template.AntiEmpireB,
+			AntiEmpireC:          template.AntiEmpireC,
+			MinLevel:             template.MinLevel,
+			UseRejectMessage:     template.UseRejectText,
+			BuyRejectMessage:     template.BuyRejectText,
+			DropRejectMessage:    template.DropRejectText,
+			GiveRejectMessage:    template.GiveRejectText,
+			PickupRejectMessage:  template.PickupRejectText,
+			SellRejectMessage:    template.SellRejectText,
+			EquipRejectMessage:   template.EquipRejectText,
+			UnequipRejectMessage: template.UnequipRejectText,
+			PickupRange:          template.PickupRange,
 		})
 	}
 	sort.Slice(summaries, func(i int, j int) bool {
@@ -1943,38 +1973,43 @@ func rewardDropItemSummaries(dropVnums []uint32, itemTemplatesByVnum map[uint32]
 			continue
 		}
 		summaries = append(summaries, RewardDropItemSummary{
-			ItemVnum:            template.Vnum,
-			ItemName:            template.Name,
-			Stackable:           template.Stackable,
-			MaxCount:            template.MaxCount,
-			ShopBuyPrice:        template.ShopBuyPrice,
-			ShopSellPrice:       template.ShopSellPrice,
-			ConfirmWhenUse:      template.ConfirmWhenUse,
-			QuestUse:            template.QuestUse,
-			QuestUseMultiple:    template.QuestUseMultiple,
-			Applicable:          template.Applicable,
-			AntiGet:             template.AntiGet,
-			AntiDrop:            template.AntiDrop,
-			AntiGive:            template.AntiGive,
-			AntiSell:            template.AntiSell,
-			AntiStack:           template.AntiStack,
-			AntiMale:            template.AntiMale,
-			AntiFemale:          template.AntiFemale,
-			AntiWarrior:         template.AntiWarrior,
-			AntiAssassin:        template.AntiAssassin,
-			AntiSura:            template.AntiSura,
-			AntiShaman:          template.AntiShaman,
-			AntiEmpireA:         template.AntiEmpireA,
-			AntiEmpireB:         template.AntiEmpireB,
-			AntiEmpireC:         template.AntiEmpireC,
-			MinLevel:            template.MinLevel,
-			UseRejectMessage:    template.UseRejectText,
-			BuyRejectMessage:    template.BuyRejectText,
-			DropRejectMessage:   template.DropRejectText,
-			GiveRejectMessage:   template.GiveRejectText,
-			PickupRejectMessage: template.PickupRejectText,
-			SellRejectMessage:   template.SellRejectText,
-			PickupRange:         template.PickupRange,
+			ItemVnum:             template.Vnum,
+			ItemName:             template.Name,
+			Stackable:            template.Stackable,
+			MaxCount:             template.MaxCount,
+			ShopBuyPrice:         template.ShopBuyPrice,
+			ShopSellPrice:        template.ShopSellPrice,
+			ConfirmWhenUse:       template.ConfirmWhenUse,
+			QuestUse:             template.QuestUse,
+			QuestUseMultiple:     template.QuestUseMultiple,
+			Applicable:           template.Applicable,
+			EquipSlot:            template.EquipSlot,
+			AppearanceVnum:       template.AppearanceVnum,
+			Irremovable:          template.Irremovable,
+			AntiGet:              template.AntiGet,
+			AntiDrop:             template.AntiDrop,
+			AntiGive:             template.AntiGive,
+			AntiSell:             template.AntiSell,
+			AntiStack:            template.AntiStack,
+			AntiMale:             template.AntiMale,
+			AntiFemale:           template.AntiFemale,
+			AntiWarrior:          template.AntiWarrior,
+			AntiAssassin:         template.AntiAssassin,
+			AntiSura:             template.AntiSura,
+			AntiShaman:           template.AntiShaman,
+			AntiEmpireA:          template.AntiEmpireA,
+			AntiEmpireB:          template.AntiEmpireB,
+			AntiEmpireC:          template.AntiEmpireC,
+			MinLevel:             template.MinLevel,
+			UseRejectMessage:     template.UseRejectText,
+			BuyRejectMessage:     template.BuyRejectText,
+			DropRejectMessage:    template.DropRejectText,
+			GiveRejectMessage:    template.GiveRejectText,
+			PickupRejectMessage:  template.PickupRejectText,
+			SellRejectMessage:    template.SellRejectText,
+			EquipRejectMessage:   template.EquipRejectText,
+			UnequipRejectMessage: template.UnequipRejectText,
+			PickupRange:          template.PickupRange,
 		})
 	}
 	if len(summaries) == 0 {
@@ -2014,39 +2049,44 @@ func rewardDropAggregateSummaries(countsByVnum map[uint32]int, itemTemplatesByVn
 			continue
 		}
 		summaries = append(summaries, RewardDropAggregateSummary{
-			ItemVnum:            template.Vnum,
-			ItemName:            template.Name,
-			SourceCount:         countsByVnum[vnum],
-			Stackable:           template.Stackable,
-			MaxCount:            template.MaxCount,
-			ShopBuyPrice:        template.ShopBuyPrice,
-			ShopSellPrice:       template.ShopSellPrice,
-			ConfirmWhenUse:      template.ConfirmWhenUse,
-			QuestUse:            template.QuestUse,
-			QuestUseMultiple:    template.QuestUseMultiple,
-			Applicable:          template.Applicable,
-			AntiGet:             template.AntiGet,
-			AntiDrop:            template.AntiDrop,
-			AntiGive:            template.AntiGive,
-			AntiSell:            template.AntiSell,
-			AntiStack:           template.AntiStack,
-			AntiMale:            template.AntiMale,
-			AntiFemale:          template.AntiFemale,
-			AntiWarrior:         template.AntiWarrior,
-			AntiAssassin:        template.AntiAssassin,
-			AntiSura:            template.AntiSura,
-			AntiShaman:          template.AntiShaman,
-			AntiEmpireA:         template.AntiEmpireA,
-			AntiEmpireB:         template.AntiEmpireB,
-			AntiEmpireC:         template.AntiEmpireC,
-			MinLevel:            template.MinLevel,
-			UseRejectMessage:    template.UseRejectText,
-			BuyRejectMessage:    template.BuyRejectText,
-			DropRejectMessage:   template.DropRejectText,
-			GiveRejectMessage:   template.GiveRejectText,
-			PickupRejectMessage: template.PickupRejectText,
-			SellRejectMessage:   template.SellRejectText,
-			PickupRange:         template.PickupRange,
+			ItemVnum:             template.Vnum,
+			ItemName:             template.Name,
+			SourceCount:          countsByVnum[vnum],
+			Stackable:            template.Stackable,
+			MaxCount:             template.MaxCount,
+			ShopBuyPrice:         template.ShopBuyPrice,
+			ShopSellPrice:        template.ShopSellPrice,
+			ConfirmWhenUse:       template.ConfirmWhenUse,
+			QuestUse:             template.QuestUse,
+			QuestUseMultiple:     template.QuestUseMultiple,
+			Applicable:           template.Applicable,
+			EquipSlot:            template.EquipSlot,
+			AppearanceVnum:       template.AppearanceVnum,
+			Irremovable:          template.Irremovable,
+			AntiGet:              template.AntiGet,
+			AntiDrop:             template.AntiDrop,
+			AntiGive:             template.AntiGive,
+			AntiSell:             template.AntiSell,
+			AntiStack:            template.AntiStack,
+			AntiMale:             template.AntiMale,
+			AntiFemale:           template.AntiFemale,
+			AntiWarrior:          template.AntiWarrior,
+			AntiAssassin:         template.AntiAssassin,
+			AntiSura:             template.AntiSura,
+			AntiShaman:           template.AntiShaman,
+			AntiEmpireA:          template.AntiEmpireA,
+			AntiEmpireB:          template.AntiEmpireB,
+			AntiEmpireC:          template.AntiEmpireC,
+			MinLevel:             template.MinLevel,
+			UseRejectMessage:     template.UseRejectText,
+			BuyRejectMessage:     template.BuyRejectText,
+			DropRejectMessage:    template.DropRejectText,
+			GiveRejectMessage:    template.GiveRejectText,
+			PickupRejectMessage:  template.PickupRejectText,
+			SellRejectMessage:    template.SellRejectText,
+			EquipRejectMessage:   template.EquipRejectText,
+			UnequipRejectMessage: template.UnequipRejectText,
+			PickupRange:          template.PickupRange,
 		})
 	}
 	if len(summaries) == 0 {

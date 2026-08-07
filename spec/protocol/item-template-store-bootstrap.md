@@ -80,14 +80,16 @@ Each template must pass the current `internal/itemstore` validation before the r
 
 ## Content-bundle summary projection
 
-The loopback-only content-bundle summary read model now repeats the owned direct-use guard metadata from resolved item templates into every template-backed summary row:
+The loopback-only content-bundle summary read model repeats owned item-template guard metadata from resolved item templates into every template-backed summary row:
 
 - top-level `item_templates`
 - merchant `shop_catalogs[].entries`
 - spawn-group `reward_drop_items`
 - aggregate `reward_drops`
 
-The projected fields are `confirm_when_use`, `quest_use`, `quest_use_multiple`, `applicable`, and `use_reject_message`. This is operator/QA visibility only: it helps identify confirmation-, quest-, and applicable-gated consumables before import, but it does not add quest/applicable item execution or confirmation choreography.
+The direct-use projected fields are `confirm_when_use`, `quest_use`, `quest_use_multiple`, `applicable`, and `use_reject_message`. This is operator/QA visibility only: it helps identify confirmation-, quest-, and applicable-gated consumables before import, but it does not add quest/applicable item execution or confirmation choreography.
+
+The equipment projected fields are `equip_slot`, `appearance_vnum`, `irremovable`, `equip_reject_message`, and `unequip_reject_message`. These summary fields expose already-owned equipment routing, appearance projection, and equip/unequip rejection metadata before import; they do not add new equipment slots, new appearance packet shapes, or broader equipment effects beyond the current template-backed equip/unequip runtime contract.
 
 ## Strict JSON hardening
 

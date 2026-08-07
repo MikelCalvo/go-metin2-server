@@ -17,6 +17,7 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -1604,6 +1605,81 @@ func TestLocalContentBundleSummaryEndpointReturnsTransferGuardMetadataForLoopbac
 		}
 		if template.DropRejectMessage != "You cannot drop this bound potion." || template.GiveRejectMessage != "You cannot give this bound potion." || template.PickupRejectMessage != "You cannot pick up this bound potion." {
 			t.Fatalf("unexpected %s transfer guard messages: %+v", label, template)
+		}
+	}
+}
+
+func TestLocalContentBundleSummaryEndpointReturnsEquipmentGuardMetadataForLoopbackPost(t *testing.T) {
+	const (
+		equipRejectMessage   = "This armor rejects your path."
+		unequipRejectMessage = "This armor cannot be removed here."
+	)
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	body := `{"spawn_groups":[{"ref":"practice.equipment_reward","name":"Equipment Reward","map_index":42,"x":1800,"y":2900,"race_num":101,"combat_profile":"practice_mob","reward_drop_vnums":[11200]}],"item_templates":[{"vnum":11200,"name":"Guarded Practice Armor","stackable":false,"max_count":1,"equip_slot":"body","appearance_vnum":11299,"irremovable":true,"anti_warrior":true,"equip_reject_message":"This armor rejects your path.","unequip_reject_message":"This armor cannot be removed here."}],"interaction_definitions":[{"kind":"shop_preview","ref":"npc:equipment_merchant","title":"Equipment Merchant","catalog":[{"slot":0,"item_vnum":11200,"price":50,"count":1}]}]}`
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/summary", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected dry-run summary not to call live exporter, got %d calls", summaryer.calls)
+	}
+	var got contentbundle.Summary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode equipment guard summary response body: %v", err)
+	}
+	for label, template := range map[string]struct {
+		EquipSlot            string
+		AppearanceVnum       uint32
+		Irremovable          bool
+		AntiWarrior          bool
+		EquipRejectMessage   string
+		UnequipRejectMessage string
+	}{
+		"item template": {
+			EquipSlot:            got.ItemTemplates[0].EquipSlot,
+			AppearanceVnum:       got.ItemTemplates[0].AppearanceVnum,
+			Irremovable:          got.ItemTemplates[0].Irremovable,
+			AntiWarrior:          got.ItemTemplates[0].AntiWarrior,
+			EquipRejectMessage:   got.ItemTemplates[0].EquipRejectMessage,
+			UnequipRejectMessage: got.ItemTemplates[0].UnequipRejectMessage,
+		},
+		"shop catalog": {
+			EquipSlot:            got.ShopCatalogs[0].Entries[0].EquipSlot,
+			AppearanceVnum:       got.ShopCatalogs[0].Entries[0].AppearanceVnum,
+			Irremovable:          got.ShopCatalogs[0].Entries[0].Irremovable,
+			AntiWarrior:          got.ShopCatalogs[0].Entries[0].AntiWarrior,
+			EquipRejectMessage:   got.ShopCatalogs[0].Entries[0].EquipRejectMessage,
+			UnequipRejectMessage: got.ShopCatalogs[0].Entries[0].UnequipRejectMessage,
+		},
+		"spawn reward drop": {
+			EquipSlot:            got.SpawnGroups[0].RewardDropItems[0].EquipSlot,
+			AppearanceVnum:       got.SpawnGroups[0].RewardDropItems[0].AppearanceVnum,
+			Irremovable:          got.SpawnGroups[0].RewardDropItems[0].Irremovable,
+			AntiWarrior:          got.SpawnGroups[0].RewardDropItems[0].AntiWarrior,
+			EquipRejectMessage:   got.SpawnGroups[0].RewardDropItems[0].EquipRejectMessage,
+			UnequipRejectMessage: got.SpawnGroups[0].RewardDropItems[0].UnequipRejectMessage,
+		},
+		"aggregate reward drop": {
+			EquipSlot:            got.RewardDrops[0].EquipSlot,
+			AppearanceVnum:       got.RewardDrops[0].AppearanceVnum,
+			Irremovable:          got.RewardDrops[0].Irremovable,
+			AntiWarrior:          got.RewardDrops[0].AntiWarrior,
+			EquipRejectMessage:   got.RewardDrops[0].EquipRejectMessage,
+			UnequipRejectMessage: got.RewardDrops[0].UnequipRejectMessage,
+		},
+	} {
+		if template.EquipSlot != inventory.EquipmentSlotBody.String() || template.AppearanceVnum != 11299 || !template.Irremovable || !template.AntiWarrior {
+			t.Fatalf("expected %s equipment guard metadata, got %+v", label, template)
+		}
+		if template.EquipRejectMessage != equipRejectMessage || template.UnequipRejectMessage != unequipRejectMessage {
+			t.Fatalf("unexpected %s equipment guard messages: %+v", label, template)
 		}
 	}
 }

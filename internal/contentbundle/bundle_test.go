@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
@@ -608,6 +609,85 @@ func TestSummarizeExposesSelectedCharacterGuardsInTemplateBackedContentSummaries
 	wantRewardDrops := []RewardDropAggregateSummary{{ItemVnum: 27001, ItemName: "Restricted Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, AntiMale: true, AntiFemale: true, AntiWarrior: true, AntiAssassin: true, AntiSura: true, AntiShaman: true, AntiEmpireA: true, AntiEmpireB: true, AntiEmpireC: true, MinLevel: 25, BuyRejectMessage: buyRejectMessage, SellRejectMessage: sellRejectMessage}}
 	if !reflect.DeepEqual(summary.RewardDrops, wantRewardDrops) {
 		t.Fatalf("unexpected reward-drop selected-character guard summary:\n got: %#v\nwant: %#v", summary.RewardDrops, wantRewardDrops)
+	}
+}
+
+func TestSummarizeExposesEquipmentGuardMetadataInTemplateBackedContentSummaries(t *testing.T) {
+	const (
+		equipRejectMessage   = "This armor rejects your path."
+		unequipRejectMessage = "This armor cannot be removed here."
+	)
+	bundle := Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:             "practice.equipment_reward",
+			Name:            "Equipment Reward",
+			MapIndex:        42,
+			X:               1800,
+			Y:               2900,
+			RaceNum:         101,
+			CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropVnums: []uint32{11200},
+		}},
+		ItemTemplates: []itemcatalog.Template{{
+			Vnum:              11200,
+			Name:              "Guarded Practice Armor",
+			Stackable:         false,
+			MaxCount:          1,
+			EquipSlot:         inventory.EquipmentSlotBody.String(),
+			AppearanceVnum:    11299,
+			Irremovable:       true,
+			AntiWarrior:       true,
+			EquipRejectText:   equipRejectMessage,
+			UnequipRejectText: unequipRejectMessage,
+		}},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:  interactionstore.KindShopPreview,
+			Ref:   "npc:equipment_merchant",
+			Title: "Equipment Merchant",
+			Catalog: []interactionstore.MerchantCatalogEntry{
+				{Slot: 0, ItemVnum: 11200, Price: 50, Count: 1},
+			},
+		}},
+	}
+
+	summary, err := Summarize(bundle)
+	if err != nil {
+		t.Fatalf("summarize equipment guard bundle: %v", err)
+	}
+
+	wantTemplates := []ItemTemplateReferenceSummary{{Vnum: 11200, Name: "Guarded Practice Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), AppearanceVnum: 11299, Irremovable: true, AntiWarrior: true, EquipRejectMessage: equipRejectMessage, UnequipRejectMessage: unequipRejectMessage}}
+	if !reflect.DeepEqual(summary.ItemTemplates, wantTemplates) {
+		t.Fatalf("unexpected item-template equipment guard summary:\n got: %#v\nwant: %#v", summary.ItemTemplates, wantTemplates)
+	}
+	wantCatalogs := []ShopCatalogSummary{{
+		Kind:       interactionstore.KindShopPreview,
+		Ref:        "npc:equipment_merchant",
+		Title:      "Equipment Merchant",
+		EntryCount: 1,
+		Entries: []ShopCatalogEntrySummary{
+			{Slot: 0, ItemVnum: 11200, ItemName: "Guarded Practice Armor", Count: 1, Price: 50, Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), AppearanceVnum: 11299, Irremovable: true, AntiWarrior: true, EquipRejectMessage: equipRejectMessage, UnequipRejectMessage: unequipRejectMessage},
+		},
+	}}
+	if !reflect.DeepEqual(summary.ShopCatalogs, wantCatalogs) {
+		t.Fatalf("unexpected shop-catalog equipment guard summary:\n got: %#v\nwant: %#v", summary.ShopCatalogs, wantCatalogs)
+	}
+	wantSpawnGroups := []SpawnGroupReferenceSummary{{
+		Ref:             "practice.equipment_reward",
+		Name:            "Equipment Reward",
+		MapIndex:        42,
+		X:               1800,
+		Y:               2900,
+		RaceNum:         101,
+		CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+		RewardDropVnums: []uint32{11200},
+		RewardDropItems: []RewardDropItemSummary{{ItemVnum: 11200, ItemName: "Guarded Practice Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), AppearanceVnum: 11299, Irremovable: true, AntiWarrior: true, EquipRejectMessage: equipRejectMessage, UnequipRejectMessage: unequipRejectMessage}},
+	}}
+	if !reflect.DeepEqual(summary.SpawnGroups, wantSpawnGroups) {
+		t.Fatalf("unexpected spawn-group equipment guard summary:\n got: %#v\nwant: %#v", summary.SpawnGroups, wantSpawnGroups)
+	}
+	wantRewardDrops := []RewardDropAggregateSummary{{ItemVnum: 11200, ItemName: "Guarded Practice Armor", SourceCount: 1, Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), AppearanceVnum: 11299, Irremovable: true, AntiWarrior: true, EquipRejectMessage: equipRejectMessage, UnequipRejectMessage: unequipRejectMessage}}
+	if !reflect.DeepEqual(summary.RewardDrops, wantRewardDrops) {
+		t.Fatalf("unexpected reward-drop equipment guard summary:\n got: %#v\nwant: %#v", summary.RewardDrops, wantRewardDrops)
 	}
 }
 
