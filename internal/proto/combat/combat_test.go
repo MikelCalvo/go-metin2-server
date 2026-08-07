@@ -131,6 +131,22 @@ func TestEncodeClientCharacterPositionUsesLegacyPayloadLayout(t *testing.T) {
 	}
 }
 
+func TestEncodeClientOnClickUsesLegacyPayloadLayout(t *testing.T) {
+	raw := EncodeClientOnClick(ClientOnClickPacket{VID: 0x02040107})
+	expected := frame.Encode(HeaderClientOnClick, []byte{0x07, 0x01, 0x04, 0x02})
+	if !bytes.Equal(raw, expected) {
+		t.Fatalf("unexpected client on-click encoding: got %x want %x", raw, expected)
+	}
+
+	decoded, err := DecodeClientOnClick(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode client on-click: %v", err)
+	}
+	if decoded.VID != 0x02040107 {
+		t.Fatalf("unexpected client on-click packet: %+v", decoded)
+	}
+}
+
 func TestEncodeServerClearTargetUsesZeroTargetAndZeroHP(t *testing.T) {
 	raw := EncodeServerClearTarget()
 	expected := frame.Encode(HeaderServerTarget, []byte{0x00, 0x00, 0x00, 0x00, 0x00})
@@ -286,6 +302,20 @@ func TestDecodeClientCharacterPositionRejectsUnexpectedHeader(t *testing.T) {
 
 func TestDecodeClientCharacterPositionRejectsMalformedPayload(t *testing.T) {
 	_, err := DecodeClientCharacterPosition(frame.Frame{Header: HeaderClientCharacterPosition, Length: 6, Payload: []byte{0x01, 0x02}})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestDecodeClientOnClickRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeClientOnClick(frame.Frame{Header: HeaderClientTarget, Length: 8, Payload: []byte{0x07, 0x01, 0x04, 0x02}})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeClientOnClickRejectsMalformedPayload(t *testing.T) {
+	_, err := DecodeClientOnClick(frame.Frame{Header: HeaderClientOnClick, Length: 7, Payload: []byte{0x07, 0x01, 0x04}})
 	if !errors.Is(err, ErrInvalidPayload) {
 		t.Fatalf("expected ErrInvalidPayload, got %v", err)
 	}

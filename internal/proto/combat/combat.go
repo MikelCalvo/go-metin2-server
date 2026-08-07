@@ -15,6 +15,7 @@ const (
 	HeaderClientAddFlyTargeting   uint16 = 0x0405
 	HeaderServerDamageInfo        uint16 = 0x0410
 	HeaderClientTarget            uint16 = 0x0A01
+	HeaderClientOnClick           uint16 = 0x0A02
 	HeaderClientCharacterPosition uint16 = 0x0A60
 	HeaderServerTarget            uint16 = 0x0A10
 
@@ -24,6 +25,7 @@ const (
 	clientUseSkillPayloadSize          = 8
 	clientShootPayloadSize             = 1
 	clientFlyTargetingPayloadSize      = 12
+	clientOnClickPayloadSize           = 4
 	clientCharacterPositionPayloadSize = 1
 	clientTargetPayloadSize            = 4
 	serverDamageInfoPayloadSize        = 9
@@ -55,6 +57,10 @@ type ClientFlyTargetingPacket struct {
 	TargetVID uint32
 	X         int32
 	Y         int32
+}
+
+type ClientOnClickPacket struct {
+	VID uint32
 }
 
 type ClientCharacterPositionPacket struct {
@@ -163,6 +169,22 @@ func DecodeClientCharacterPosition(f frame.Frame) (ClientCharacterPositionPacket
 		return ClientCharacterPositionPacket{}, ErrInvalidPayload
 	}
 	return ClientCharacterPositionPacket{Position: f.Payload[0]}, nil
+}
+
+func EncodeClientOnClick(packet ClientOnClickPacket) []byte {
+	payload := make([]byte, clientOnClickPayloadSize)
+	binary.LittleEndian.PutUint32(payload, packet.VID)
+	return frame.Encode(HeaderClientOnClick, payload)
+}
+
+func DecodeClientOnClick(f frame.Frame) (ClientOnClickPacket, error) {
+	if f.Header != HeaderClientOnClick {
+		return ClientOnClickPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientOnClickPayloadSize {
+		return ClientOnClickPacket{}, ErrInvalidPayload
+	}
+	return ClientOnClickPacket{VID: binary.LittleEndian.Uint32(f.Payload)}, nil
 }
 
 func encodeClientFlyTargeting(header uint16, packet ClientFlyTargetingPacket) []byte {

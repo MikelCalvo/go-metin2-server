@@ -42,6 +42,8 @@ type HandleFlyTargetingFunc func(combatproto.ClientFlyTargetingPacket) FlyTarget
 
 type HandleAddFlyTargetingFunc func(combatproto.ClientFlyTargetingPacket) FlyTargetingResult
 
+type HandleOnClickFunc func(combatproto.ClientOnClickPacket) OnClickResult
+
 type HandleCharacterPositionFunc func(combatproto.ClientCharacterPositionPacket) CharacterPositionResult
 
 type HandleItemUseFunc func(itemproto.ClientUsePacket) ItemUseResult
@@ -84,6 +86,7 @@ type Config struct {
 	HandleShoot             HandleShootFunc
 	HandleFlyTargeting      HandleFlyTargetingFunc
 	HandleAddFlyTargeting   HandleAddFlyTargetingFunc
+	HandleOnClick           HandleOnClickFunc
 	HandleCharacterPosition HandleCharacterPositionFunc
 	HandleItemUse           HandleItemUseFunc
 	HandleItemUseToItem     HandleItemUseToItemFunc
@@ -155,6 +158,11 @@ type FlyTargetingResult struct {
 	Frames   [][]byte
 }
 
+type OnClickResult struct {
+	Accepted bool
+	Frames   [][]byte
+}
+
 type CharacterPositionResult struct {
 	Accepted bool
 	Frames   [][]byte
@@ -218,6 +226,7 @@ type Flow struct {
 	handleShoot             HandleShootFunc
 	handleFlyTargeting      HandleFlyTargetingFunc
 	handleAddFlyTargeting   HandleAddFlyTargetingFunc
+	handleOnClick           HandleOnClickFunc
 	handleCharacterPosition HandleCharacterPositionFunc
 	handleItemUse           HandleItemUseFunc
 	handleItemUseToItem     HandleItemUseToItemFunc
@@ -282,6 +291,12 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 	if addFlyTargetingHandler == nil {
 		addFlyTargetingHandler = func(combatproto.ClientFlyTargetingPacket) FlyTargetingResult {
 			return FlyTargetingResult{Accepted: false}
+		}
+	}
+	onClickHandler := cfg.HandleOnClick
+	if onClickHandler == nil {
+		onClickHandler = func(combatproto.ClientOnClickPacket) OnClickResult {
+			return OnClickResult{Accepted: false}
 		}
 	}
 	characterPositionHandler := cfg.HandleCharacterPosition
@@ -359,6 +374,7 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 		handleShoot:             shootHandler,
 		handleFlyTargeting:      flyTargetingHandler,
 		handleAddFlyTargeting:   addFlyTargetingHandler,
+		handleOnClick:           onClickHandler,
 		handleCharacterPosition: characterPositionHandler,
 		handleItemUse:           itemUseHandler,
 		handleItemUseToItem:     itemUseToItemHandler,
@@ -510,6 +526,16 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			return nil, err
 		}
 		result := f.handleAddFlyTargeting(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return result.Frames, nil
+	case combatproto.HeaderClientOnClick:
+		packet, err := combatproto.DecodeClientOnClick(in)
+		if err != nil {
+			return nil, err
+		}
+		result := f.handleOnClick(packet)
 		if !result.Accepted {
 			return nil, nil
 		}
