@@ -333,6 +333,18 @@ Returns one exact per-map row from the live content-bundle summary. This is a lo
 
 Use it when local QA needs a compact authored-content view for one map without fetching the full bundle summary or inferring counts from live runtime occupancy. It is not a gameplay protocol endpoint and does not mutate authored content.
 
+### `GET /local/content-bundle/shop-catalogs/{kind}/{ref}`
+
+Returns one exact structured shop-catalog summary row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; the only accepted `kind` for this path is `shop_preview`, and `ref` must satisfy the same path-safe interaction reference rule used by `/local/interactions/{kind}/{ref}`. It returns `404` when the live authored bundle has no matching catalog, rejects malformed identities with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
+
+Use it when local QA needs to inspect one merchant catalog, including resolved item-template metadata and guard/rejection fields, without fetching the full bundle summary or opening the merchant in-game. It is not a gameplay protocol endpoint and does not mutate authored content.
+
+### `GET /local/content-bundle/warp-destinations/{kind}/{ref}`
+
+Returns one exact authored warp-destination summary row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; the only accepted `kind` for this path is `warp`, and `ref` must satisfy the canonical path-safe interaction reference rule. It returns `404` when the live authored bundle has no matching warp destination, rejects malformed identities with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
+
+Use it when local QA needs to inspect one teleporter destination (`text`, `map_index`, `x`, `y`) without fetching the full bundle summary or triggering an in-game transfer. It is not a gameplay protocol endpoint and does not mutate authored content.
+
 ### `POST /local/content-bundle/import-preview`
 
 Previews the impact of importing a candidate authored bootstrap content bundle without mutating runtime state. This loopback-only endpoint uses the same 1 MiB request bound, strict JSON decoding, invalid UTF-8 rejection, JSON `null` root rejection, and `contentbundle.Canonicalize(...)` rules as `POST /local/content-bundle` / `POST /local/content-bundle/validate`, then compares the candidate against the currently exported canonical live bundle.

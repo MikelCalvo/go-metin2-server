@@ -1432,6 +1432,218 @@ func TestLocalContentBundleMapSummaryEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalContentBundleShopCatalogEndpointReturnsExactCatalogForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{ShopCatalogs: []contentbundle.ShopCatalogSummary{
+			{Kind: interactionstore.KindShopPreview, Ref: "npc:alchemist", Title: "Alchemist", EntryCount: 1, Entries: []contentbundle.ShopCatalogEntrySummary{{Slot: 0, ItemVnum: 27002, ItemName: "Small Blue Potion", Count: 1, Price: 75, Stackable: true, MaxCount: 200}}},
+			{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Title: "Village Merchant", EntryCount: 2, Entries: []contentbundle.ShopCatalogEntrySummary{{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 50, Stackable: true, MaxCount: 200}, {Slot: 1, ItemVnum: 11200, ItemName: "Wooden Sword", Count: 1, Price: 500, Stackable: false, MaxCount: 1}}},
+		}},
+	}
+	mux := RegisterLocalContentBundleShopCatalogEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/shop-catalogs/shop_preview/npc:merchant", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got contentbundle.ShopCatalogSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode shop catalog response body: %v", err)
+	}
+	want := contentbundle.ShopCatalogSummary{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Title: "Village Merchant", EntryCount: 2, Entries: []contentbundle.ShopCatalogEntrySummary{{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 50, Stackable: true, MaxCount: 200}, {Slot: 1, ItemVnum: 11200, ItemName: "Wooden Sword", Count: 1, Price: 500, Stackable: false, MaxCount: 1}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle shop catalog:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleShopCatalogEndpointReturnsNotFoundForMissingCatalog(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{ShopCatalogs: []contentbundle.ShopCatalogSummary{{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Title: "Village Merchant", EntryCount: 1}}}}
+	mux := RegisterLocalContentBundleShopCatalogEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/shop-catalogs/shop_preview/npc:missing", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for missing shop catalog, got %d", http.StatusNotFound, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleShopCatalogEndpointRejectsInvalidIdentity(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{ShopCatalogs: []contentbundle.ShopCatalogSummary{{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Title: "Village Merchant", EntryCount: 1}}}}
+	mux := RegisterLocalContentBundleShopCatalogEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	for _, path := range []string{"/local/content-bundle/shop-catalogs/shop_preview", "/local/content-bundle/shop-catalogs/quest/npc:first_steps", "/local/content-bundle/shop-catalogs/shop_preview/npc%2Fmerchant", "/local/content-bundle/shop-catalogs/shop_preview/npc:merchant/extra"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for invalid shop catalog path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called for invalid shop catalog identity, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleShopCatalogEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{ShopCatalogs: []contentbundle.ShopCatalogSummary{{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Title: "Village Merchant", EntryCount: 1}}}}
+	mux := RegisterLocalContentBundleShopCatalogEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/shop-catalogs/shop_preview/npc:merchant", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback caller, got %d", http.StatusForbidden, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleShopCatalogEndpointRejectsWrongMethod(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{ShopCatalogs: []contentbundle.ShopCatalogSummary{{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Title: "Village Merchant", EntryCount: 1}}}}
+	mux := RegisterLocalContentBundleShopCatalogEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/shop-catalogs/shop_preview/npc:merchant", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleWarpDestinationEndpointReturnsExactDestinationForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{WarpDestinations: []contentbundle.WarpDestinationSummary{
+			{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "Old gate.", MapIndex: 2, X: 2000, Y: 3000},
+			{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", Text: "Step through the gate.", MapIndex: 42, X: 1700, Y: 2800},
+		}},
+	}
+	mux := RegisterLocalContentBundleWarpDestinationEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/warp-destinations/warp/npc:teleporter", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got contentbundle.WarpDestinationSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode warp destination response body: %v", err)
+	}
+	want := contentbundle.WarpDestinationSummary{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", Text: "Step through the gate.", MapIndex: 42, X: 1700, Y: 2800}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle warp destination:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleWarpDestinationEndpointReturnsNotFoundForMissingDestination(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{WarpDestinations: []contentbundle.WarpDestinationSummary{{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800}}}}
+	mux := RegisterLocalContentBundleWarpDestinationEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/warp-destinations/warp/npc:missing", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for missing warp destination, got %d", http.StatusNotFound, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleWarpDestinationEndpointRejectsInvalidIdentity(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{WarpDestinations: []contentbundle.WarpDestinationSummary{{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800}}}}
+	mux := RegisterLocalContentBundleWarpDestinationEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	for _, path := range []string{"/local/content-bundle/warp-destinations/warp", "/local/content-bundle/warp-destinations/quest/npc:first_steps", "/local/content-bundle/warp-destinations/warp/npc%2Fteleporter", "/local/content-bundle/warp-destinations/warp/npc:teleporter/extra"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for invalid warp destination path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called for invalid warp destination identity, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleWarpDestinationEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{WarpDestinations: []contentbundle.WarpDestinationSummary{{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800}}}}
+	mux := RegisterLocalContentBundleWarpDestinationEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/warp-destinations/warp/npc:teleporter", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback caller, got %d", http.StatusForbidden, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleWarpDestinationEndpointRejectsWrongMethod(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{WarpDestinations: []contentbundle.WarpDestinationSummary{{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800}}}}
+	mux := RegisterLocalContentBundleWarpDestinationEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/warp-destinations/warp/npc:teleporter", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
 func TestLocalContentBundleSummaryEndpointReturnsPickupRangeMetadataForLoopbackPost(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
 	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)

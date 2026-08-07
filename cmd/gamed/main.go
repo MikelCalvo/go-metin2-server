@@ -436,6 +436,14 @@ func main() {
 		opsHandler,
 		exportContentBundleSummary,
 	)
+	opsHandler = ops.RegisterLocalContentBundleShopCatalogEndpoint(
+		opsHandler,
+		exportContentBundleSummary,
+	)
+	opsHandler = ops.RegisterLocalContentBundleWarpDestinationEndpoint(
+		opsHandler,
+		exportContentBundleSummary,
+	)
 	opsHandler = ops.RegisterLocalContentBundleImportPreviewEndpoint(
 		opsHandler,
 		func(bundle contentbundle.Bundle) (any, int) {

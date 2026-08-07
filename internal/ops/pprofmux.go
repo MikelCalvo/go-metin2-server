@@ -1461,6 +1461,76 @@ func RegisterLocalContentBundleMapSummaryEndpoint(mux *http.ServeMux, exportCont
 	return mux
 }
 
+func RegisterLocalContentBundleShopCatalogEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/content-bundle/shop-catalogs/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		kind, ref, ok := decodeLocalContentBundleShopCatalogIdentity(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		for _, catalog := range summary.ShopCatalogs {
+			if catalog.Kind == kind && catalog.Ref == ref {
+				writeLocalJSONMutationResponse(w, catalog, http.StatusOK)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	return mux
+}
+
+func RegisterLocalContentBundleWarpDestinationEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/content-bundle/warp-destinations/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		kind, ref, ok := decodeLocalContentBundleWarpDestinationIdentity(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		for _, destination := range summary.WarpDestinations {
+			if destination.Kind == kind && destination.Ref == ref {
+				writeLocalJSONMutationResponse(w, destination, http.StatusOK)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	return mux
+}
+
 func RegisterLocalContentBundleImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
 	if mux == nil || previewContentBundleImport == nil {
 		return mux
@@ -2068,6 +2138,45 @@ func decodeLocalMapIndex(r *http.Request) (uint32, bool) {
 
 func decodeLocalContentBundleMapIndex(r *http.Request) (uint32, bool) {
 	return decodeLocalMapIndexWithPrefix(r, "/local/content-bundle/maps/")
+}
+
+func decodeLocalContentBundleShopCatalogIdentity(r *http.Request) (string, string, bool) {
+	kind, ref, ok := decodeLocalKindRefIdentityWithPrefix(r, "/local/content-bundle/shop-catalogs/")
+	if !ok || kind != interactionstore.KindShopPreview {
+		return "", "", false
+	}
+	return kind, ref, true
+}
+
+func decodeLocalContentBundleWarpDestinationIdentity(r *http.Request) (string, string, bool) {
+	kind, ref, ok := decodeLocalKindRefIdentityWithPrefix(r, "/local/content-bundle/warp-destinations/")
+	if !ok || kind != interactionstore.KindWarp {
+		return "", "", false
+	}
+	return kind, ref, true
+}
+
+func decodeLocalKindRefIdentityWithPrefix(r *http.Request, prefix string) (string, string, bool) {
+	raw := strings.TrimPrefix(r.URL.Path, prefix)
+	raw = strings.TrimSpace(raw)
+	parts := strings.Split(raw, "/")
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	kind, err := url.PathUnescape(parts[0])
+	if err != nil {
+		return "", "", false
+	}
+	ref, err := url.PathUnescape(parts[1])
+	if err != nil {
+		return "", "", false
+	}
+	kind = strings.TrimSpace(kind)
+	ref = strings.TrimSpace(ref)
+	if kind == "" || ref == "" || strings.Contains(kind, "/") || strings.Contains(ref, "/") || !interactionstore.ValidKind(kind) || !interactionstore.ValidRef(ref) {
+		return "", "", false
+	}
+	return kind, ref, true
 }
 
 func decodeLocalMapIndexWithPrefix(r *http.Request, prefix string) (uint32, bool) {
