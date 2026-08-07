@@ -921,6 +921,30 @@ func RegisterLocalMapOccupancyEndpoint(mux *http.ServeMux, mapOccupancy func(uin
 	return mux
 }
 
+func RegisterLocalMapStaticActorsEndpoint(mux *http.ServeMux, staticActorsForMap func(uint32) (any, bool)) *http.ServeMux {
+	if mux == nil || staticActorsForMap == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/maps/{map_index}/static-actors", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		mapIndex, ok := decodeLocalMapScopedListIndex(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		value, ok := staticActorsForMap(mapIndex)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalMapSpawnGroupsEndpoint(mux *http.ServeMux, spawnGroupsForMap func(uint32) (any, bool)) *http.ServeMux {
 	if mux == nil || spawnGroupsForMap == nil {
 		return mux
@@ -930,7 +954,7 @@ func RegisterLocalMapSpawnGroupsEndpoint(mux *http.ServeMux, spawnGroupsForMap f
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
-		mapIndex, ok := decodeLocalMapSpawnGroupsIndex(r)
+		mapIndex, ok := decodeLocalMapScopedListIndex(r)
 		if !ok {
 			w.WriteHeader(http.StatusBadRequest)
 			return
@@ -2240,7 +2264,7 @@ func decodeLocalMapIndex(r *http.Request) (uint32, bool) {
 	return decodeLocalMapIndexWithPrefix(r, "/local/maps/")
 }
 
-func decodeLocalMapSpawnGroupsIndex(r *http.Request) (uint32, bool) {
+func decodeLocalMapScopedListIndex(r *http.Request) (uint32, bool) {
 	return decodeLocalMapIndexRaw(r.PathValue("map_index"))
 }
 

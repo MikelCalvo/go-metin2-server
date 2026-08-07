@@ -312,6 +312,64 @@ func TestScopesSpawnGroupSnapshotsForMapReturnsOnlySpawnBackedActorsOnEffectiveM
 	}
 }
 
+func TestScopesMapScopedStaticActorAndSpawnGroupLookupsUseMapOccupancyRows(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	registry := NewEntityRegistryWithTopology(topology)
+	mapOnlyPlayer := registry.RegisterPlayer(entityRegistryCharacter("MapOnlyPlayer", 0x02040101, 99, 1100, 2100))
+	if mapOnlyPlayer.Entity.ID == 0 {
+		t.Fatal("expected player registration to create a map-only occupancy row")
+	}
+	plain, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuide"}, Position: NewPosition(42, 1100, 2100), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected plain static actor registration to succeed")
+	}
+	spawn, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "AlphaMob"}, Position: NewPosition(42, 1200, 2200), RaceNum: 20351, CombatProfile: StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.alpha"})
+	if !ok {
+		t.Fatal("expected spawn actor registration to succeed")
+	}
+	bootstrapSpawn, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "BootstrapMob"}, Position: NewPosition(1, 1300, 2300), RaceNum: 20352, CombatProfile: StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.bootstrap"})
+	if !ok {
+		t.Fatal("expected bootstrap-map spawn actor registration to succeed")
+	}
+
+	scopes := NewScopes(topology, registry)
+	actors, ok := scopes.StaticActorsForMap(42)
+	if !ok {
+		t.Fatal("expected map 42 static-actor lookup to resolve")
+	}
+	if len(actors) != 2 || actors[0].EntityID != spawn.Entity.ID || actors[1].EntityID != plain.Entity.ID {
+		t.Fatalf("expected deterministic map 42 static actors [AlphaMob VillageGuide], got %+v", actors)
+	}
+	spawnGroups, ok := scopes.SpawnGroupsForMap(42)
+	if !ok {
+		t.Fatal("expected map 42 spawn-group lookup to resolve")
+	}
+	if len(spawnGroups) != 1 || spawnGroups[0].EntityID != spawn.Entity.ID || spawnGroups[0].SpawnGroupRef != "practice.alpha" {
+		t.Fatalf("expected only AlphaMob spawn group on map 42, got %+v", spawnGroups)
+	}
+	bootstrapActors, ok := scopes.StaticActorsForMap(1)
+	if !ok {
+		t.Fatal("expected effective bootstrap-map static-actor lookup to resolve")
+	}
+	if len(bootstrapActors) != 1 || bootstrapActors[0].EntityID != bootstrapSpawn.Entity.ID || bootstrapActors[0].MapIndex != 1 {
+		t.Fatalf("expected BootstrapMob on effective bootstrap map, got %+v", bootstrapActors)
+	}
+	emptyStaticActors, ok := scopes.StaticActorsForMap(99)
+	if !ok || len(emptyStaticActors) != 0 {
+		t.Fatalf("expected player-only occupied map 99 to resolve with empty static actor slice, got ok=%v actors=%+v", ok, emptyStaticActors)
+	}
+	emptySpawnGroups, ok := scopes.SpawnGroupsForMap(99)
+	if !ok || len(emptySpawnGroups) != 0 {
+		t.Fatalf("expected player-only occupied map 99 to resolve with empty spawn group slice, got ok=%v groups=%+v", ok, emptySpawnGroups)
+	}
+	if actors, ok := scopes.StaticActorsForMap(0); ok || len(actors) != 0 {
+		t.Fatalf("expected map 0 scoped static-actor lookup to fail closed, got ok=%v actors=%+v", ok, actors)
+	}
+	if groups, ok := scopes.SpawnGroupsForMap(0); ok || len(groups) != 0 {
+		t.Fatalf("expected map 0 scoped spawn-group lookup to fail closed, got ok=%v groups=%+v", ok, groups)
+	}
+}
+
 func TestScopesSpawnGroupSnapshotByRefReturnsExactAuthoredSpawnGroup(t *testing.T) {
 	topology := NewBootstrapTopology(1)
 	registry := NewEntityRegistryWithTopology(topology)

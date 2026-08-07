@@ -207,6 +207,16 @@ func main() {
 			return snapshot, true
 		},
 	)
+	opsHandler = ops.RegisterLocalMapStaticActorsEndpoint(
+		opsHandler,
+		func(mapIndex uint32) (any, bool) {
+			actors, ok := gameRuntime.StaticActorsForMap(mapIndex)
+			if !ok {
+				return nil, false
+			}
+			return actors, true
+		},
+	)
 	opsHandler = ops.RegisterLocalMapSpawnGroupsEndpoint(
 		opsHandler,
 		func(mapIndex uint32) (any, bool) {

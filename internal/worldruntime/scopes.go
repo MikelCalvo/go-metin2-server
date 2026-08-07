@@ -347,6 +347,30 @@ func (s Scopes) VisibleSpawnGroups(subject loginticket.Character) []StaticEntity
 	return spawnActors
 }
 
+func (s Scopes) StaticActorsForMap(mapIndex uint32) ([]StaticActorSnapshot, bool) {
+	if s.Entities == nil || mapIndex == 0 {
+		return nil, false
+	}
+	for _, snapshot := range s.MapOccupancySnapshots() {
+		if snapshot.MapIndex == mapIndex {
+			return snapshot.StaticActors, true
+		}
+	}
+	return nil, false
+}
+
+func (s Scopes) SpawnGroupsForMap(mapIndex uint32) ([]StaticActorSnapshot, bool) {
+	if s.Entities == nil || mapIndex == 0 {
+		return nil, false
+	}
+	for _, snapshot := range s.MapOccupancySnapshots() {
+		if snapshot.MapIndex == mapIndex {
+			return snapshot.SpawnGroups, true
+		}
+	}
+	return nil, false
+}
+
 func (s Scopes) VisibleInteractableStaticActors(subject loginticket.Character) []StaticEntity {
 	visible := s.VisibleStaticActors(subject)
 	interactable := make([]StaticEntity, 0, len(visible))

@@ -631,6 +631,10 @@ The exact-entity endpoint returns the same row shape for one pending respawn; in
 Returns the deterministic list of currently materialized spawn-backed runtime actors: static-actor snapshots whose `spawn_group_ref` is non-empty.
 This endpoint is loopback-only, read-only, rejects non-`GET` methods with `405`, and is intended for QA/debugging of the authored `spawn_groups` contract frozen in `spec/protocol/content-spawn-groups-bootstrap.md`.
 
+`GET /local/maps/{map_index}/static-actors` returns the full static-actor snapshot subset for one effective map.
+It uses the same snapshot shape as `/local/static-actors`, rejects malformed or zero map-index path values with `400`, returns `404` when the runtime cannot resolve that map-scoped snapshot, and returns an empty JSON array when the map is known but has no static actors.
+Use it when local QA needs all service actors plus spawn-backed actors on one map without fetching the broader `/local/maps/{map_index}` occupancy row.
+
 `GET /local/spawn-groups/{entity_id}` returns one exact spawn-backed actor row by runtime entity ID / client-visible static-actor `VID`.
 Invalid path IDs return `400`; missing entities or ordinary non-spawn static actors return `404`.
 `GET /local/maps/{map_index}/spawn-groups` returns the same snapshot shape for one effective map's materialized spawn-backed actors, rejects malformed or zero map-index path values with `400`, and returns `404` when the runtime cannot resolve that map-scoped snapshot.
@@ -841,12 +845,13 @@ List currently materialized authored spawn-group actors:
 ```bash
 curl http://127.0.0.1:6060/local/spawn-groups
 curl http://127.0.0.1:6060/local/spawn-groups/by-ref/practice.reward_mob
+curl http://127.0.0.1:6060/local/maps/42/static-actors
 curl http://127.0.0.1:6060/local/maps/42/spawn-groups
 ```
 
-This snapshot filters to attackable content materialized from `spawn_groups`; use `/local/static-actors` when you need the full visible static-actor set.
+The spawn-group snapshots filter to attackable content materialized from `spawn_groups`; use `/local/static-actors` for the global full static-actor set, or `/local/maps/{map_index}/static-actors` for the full map-local set.
 The by-ref endpoint is loopback-only like the rest of the spawn-group inspection surface and looks up the materialized actor by authored `spawn_group_ref`, returning `400` for malformed refs and `404` when a well-formed ref is not currently live.
-`/local/maps` also embeds the same spawn-backed subset per occupied map as `spawn_group_count` and `spawn_groups`; the exact `/local/maps/{map_index}/spawn-groups` endpoint returns only that map-local spawn subset when QA does not need the full occupancy row.
+`/local/maps` also embeds the full static-actor list and same spawn-backed subset per occupied map as `static_actors`, `spawn_group_count`, and `spawn_groups`; the exact `/local/maps/{map_index}/static-actors` and `/local/maps/{map_index}/spawn-groups` endpoints return only those map-local subsets when QA does not need the full occupancy row.
 
 List the authored interaction catalog:
 
