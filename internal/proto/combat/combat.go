@@ -17,12 +17,19 @@ const (
 	HeaderServerFlyTargeting      uint16 = 0x0411
 	HeaderServerAddFlyTargeting   uint16 = 0x0412
 	HeaderServerCreateFly         uint16 = 0x0413
+	HeaderServerPVP               uint16 = 0x0414
+	HeaderServerDuelStart         uint16 = 0x0415
 	HeaderClientTarget            uint16 = 0x0A01
 	HeaderClientOnClick           uint16 = 0x0A02
 	HeaderClientCharacterPosition uint16 = 0x0A60
 	HeaderServerTarget            uint16 = 0x0A10
 
 	ClientAttackTypeNormal uint8 = 0
+
+	ServerPVPModeNone    uint8 = 0
+	ServerPVPModeAgree   uint8 = 1
+	ServerPVPModeFight   uint8 = 2
+	ServerPVPModeRevenge uint8 = 3
 
 	clientAttackPayloadSize            = 7
 	clientUseSkillPayloadSize          = 8
@@ -34,6 +41,7 @@ const (
 	serverDamageInfoPayloadSize        = 9
 	serverFlyTargetingPayloadSize      = 16
 	serverCreateFlyPayloadSize         = 9
+	serverPVPPayloadSize               = 9
 	serverTargetPayloadSize            = 5
 )
 
@@ -98,6 +106,16 @@ type ServerCreateFlyPacket struct {
 	Type     uint8
 	StartVID uint32
 	EndVID   uint32
+}
+
+type ServerPVPPacket struct {
+	SourceVID      uint32
+	DestinationVID uint32
+	Mode           uint8
+}
+
+type ServerDuelStartPacket struct {
+	OpponentVIDs []uint32
 }
 
 func EncodeClientAttack(packet ClientAttackPacket) []byte {
@@ -322,6 +340,50 @@ func DecodeServerCreateFly(f frame.Frame) (ServerCreateFlyPacket, error) {
 		StartVID: binary.LittleEndian.Uint32(f.Payload[1:5]),
 		EndVID:   binary.LittleEndian.Uint32(f.Payload[5:9]),
 	}, nil
+}
+
+func EncodeServerPVP(packet ServerPVPPacket) []byte {
+	payload := make([]byte, serverPVPPayloadSize)
+	binary.LittleEndian.PutUint32(payload[0:4], packet.SourceVID)
+	binary.LittleEndian.PutUint32(payload[4:8], packet.DestinationVID)
+	payload[8] = packet.Mode
+	return frame.Encode(HeaderServerPVP, payload)
+}
+
+func DecodeServerPVP(f frame.Frame) (ServerPVPPacket, error) {
+	if f.Header != HeaderServerPVP {
+		return ServerPVPPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != serverPVPPayloadSize {
+		return ServerPVPPacket{}, ErrInvalidPayload
+	}
+	return ServerPVPPacket{
+		SourceVID:      binary.LittleEndian.Uint32(f.Payload[0:4]),
+		DestinationVID: binary.LittleEndian.Uint32(f.Payload[4:8]),
+		Mode:           f.Payload[8],
+	}, nil
+}
+
+func EncodeServerDuelStart(packet ServerDuelStartPacket) []byte {
+	payload := make([]byte, len(packet.OpponentVIDs)*4)
+	for i, vid := range packet.OpponentVIDs {
+		binary.LittleEndian.PutUint32(payload[i*4:(i+1)*4], vid)
+	}
+	return frame.Encode(HeaderServerDuelStart, payload)
+}
+
+func DecodeServerDuelStart(f frame.Frame) (ServerDuelStartPacket, error) {
+	if f.Header != HeaderServerDuelStart {
+		return ServerDuelStartPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload)%4 != 0 {
+		return ServerDuelStartPacket{}, ErrInvalidPayload
+	}
+	vids := make([]uint32, len(f.Payload)/4)
+	for i := range vids {
+		vids[i] = binary.LittleEndian.Uint32(f.Payload[i*4 : (i+1)*4])
+	}
+	return ServerDuelStartPacket{OpponentVIDs: vids}, nil
 }
 
 func encodeServerFlyTargeting(header uint16, packet ServerFlyTargetingPacket) []byte {

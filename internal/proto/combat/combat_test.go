@@ -227,6 +227,54 @@ func TestEncodeServerCreateFlyUsesLegacyPayloadLayout(t *testing.T) {
 	}
 }
 
+func TestEncodeServerPVPUsesLegacyPayloadLayout(t *testing.T) {
+	raw := EncodeServerPVP(ServerPVPPacket{SourceVID: 0x01020304, DestinationVID: 0x05060708, Mode: ServerPVPModeFight})
+	expected := frame.Encode(HeaderServerPVP, []byte{0x04, 0x03, 0x02, 0x01, 0x08, 0x07, 0x06, 0x05, 0x02})
+	if !bytes.Equal(raw, expected) {
+		t.Fatalf("unexpected server pvp encoding: got %x want %x", raw, expected)
+	}
+
+	decoded, err := DecodeServerPVP(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode server pvp: %v", err)
+	}
+	if decoded.SourceVID != 0x01020304 || decoded.DestinationVID != 0x05060708 || decoded.Mode != ServerPVPModeFight {
+		t.Fatalf("unexpected server pvp packet: %+v", decoded)
+	}
+}
+
+func TestEncodeServerDuelStartUsesLegacyVariablePayloadLayout(t *testing.T) {
+	raw := EncodeServerDuelStart(ServerDuelStartPacket{OpponentVIDs: []uint32{0x01020304, 0x05060708}})
+	expected := frame.Encode(HeaderServerDuelStart, []byte{0x04, 0x03, 0x02, 0x01, 0x08, 0x07, 0x06, 0x05})
+	if !bytes.Equal(raw, expected) {
+		t.Fatalf("unexpected server duel-start encoding: got %x want %x", raw, expected)
+	}
+
+	decoded, err := DecodeServerDuelStart(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode server duel-start: %v", err)
+	}
+	if len(decoded.OpponentVIDs) != 2 || decoded.OpponentVIDs[0] != 0x01020304 || decoded.OpponentVIDs[1] != 0x05060708 {
+		t.Fatalf("unexpected server duel-start packet: %+v", decoded)
+	}
+}
+
+func TestEncodeServerDuelStartAllowsEmptyOpponentList(t *testing.T) {
+	raw := EncodeServerDuelStart(ServerDuelStartPacket{})
+	expected := frame.Encode(HeaderServerDuelStart, nil)
+	if !bytes.Equal(raw, expected) {
+		t.Fatalf("unexpected empty server duel-start encoding: got %x want %x", raw, expected)
+	}
+
+	decoded, err := DecodeServerDuelStart(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode empty server duel-start: %v", err)
+	}
+	if len(decoded.OpponentVIDs) != 0 {
+		t.Fatalf("unexpected empty server duel-start packet: %+v", decoded)
+	}
+}
+
 func TestEncodeServerDamageInfoPreservesSignedDamage(t *testing.T) {
 	raw := EncodeServerDamageInfo(ServerDamageInfoPacket{VID: 0x02040107, Damage: -1})
 	expected := frame.Encode(HeaderServerDamageInfo, []byte{0x07, 0x01, 0x04, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff})
@@ -420,6 +468,34 @@ func TestDecodeServerCreateFlyRejectsUnexpectedHeader(t *testing.T) {
 
 func TestDecodeServerCreateFlyRejectsMalformedPayload(t *testing.T) {
 	_, err := DecodeServerCreateFly(frame.Frame{Header: HeaderServerCreateFly, Length: 12, Payload: make([]byte, serverCreateFlyPayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestDecodeServerPVPRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeServerPVP(frame.Frame{Header: HeaderServerCreateFly, Length: 13, Payload: make([]byte, serverPVPPayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeServerPVPRejectsMalformedPayload(t *testing.T) {
+	_, err := DecodeServerPVP(frame.Frame{Header: HeaderServerPVP, Length: 12, Payload: make([]byte, serverPVPPayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestDecodeServerDuelStartRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeServerDuelStart(frame.Frame{Header: HeaderServerPVP, Length: 8, Payload: []byte{0x04, 0x03, 0x02, 0x01}})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeServerDuelStartRejectsMalformedPayload(t *testing.T) {
+	_, err := DecodeServerDuelStart(frame.Frame{Header: HeaderServerDuelStart, Length: 7, Payload: []byte{0x04, 0x03, 0x02}})
 	if !errors.Is(err, ErrInvalidPayload) {
 		t.Fatalf("expected ErrInvalidPayload, got %v", err)
 	}

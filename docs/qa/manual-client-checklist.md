@@ -721,6 +721,7 @@ Run this only when the target build has a visible authored `training_dummy` near
 - [ ] If a packet harness or bow/ranged client path can emit `SHOOT(0x0403)`, send one unsupported shot while the dummy is still selected
 - [ ] Confirm that unsupported shot does not disconnect the session, emits no visible combat frames, queues no peer frames, and does not change the selected dummy's HP; the next ordinary accepted normal `ATTACK` should still move the dummy from its previous HP to the next expected value
 - [ ] If packet tooling can emit client `FLY_TARGETING(0x0404)` / `ADD_FLY_TARGETING(0x0405)`, send one request while the dummy is still selected and confirm it stays silent/no-frame, queues no peer frames, does not disconnect, does not change HP/cadence, and does not trigger server `FLY_TARGETING(0x0411)`, `ADD_FLY_TARGETING(0x0412)`, or `CREATE_FLY(0x0413)` frames; those server fly-effect families are codec-owned only until a later projectile/skill slice emits them
+- [ ] If packet logging is available during this PvE-only dummy smoke, confirm the server does not emit `PVP(0x0414)` or `DUEL_START(0x0415)` frames; those PVP/duel presentation families are codec-owned only until a later PvP/duel runtime slice emits them
 - [ ] If packet tooling or a client click path can emit `ON_CLICK(0x0A02)` while the dummy is still selected, send one request and confirm it stays silent/no-frame, queues no peer frames, does not disconnect, and does not change the selected dummy's HP or interaction/shop state
 - [ ] If packet tooling or a client UI path can emit `CHARACTER_POSITION(0x0A60)` / battle-position traffic while the dummy is still selected, send one request and confirm it stays silent/no-frame, queues no peer frames, does not disconnect, and does not change the selected dummy's HP or the next normal-attack cadence
 - [ ] If loopback ops access is available, query the same combat-target endpoint again and confirm `hp_percent` reflects the damaged runtime-owned dummy instead of resetting to `100`
@@ -735,6 +736,7 @@ Expected result:
 - the known client `SHOOT` combat-family packet is only a safe decode-and-fail-closed guard in this slice; ranged/projectile hit resolution remains out of scope
 - the known client `ON_CLICK` target/UI packet is only a safe decode-and-fail-closed guard in this slice; NPC/shop/quest click gameplay remains on later evidence-backed slices and the currently owned authored-service path stays separate
 - the known client `CHARACTER_POSITION` target/UI packet is only a safe decode-and-fail-closed guard in this slice; sit/stand/battle-mode gameplay and server position-update rendering remain out of scope
+- `PVP` and `DUEL_START` are currently server-presentation codecs only; no bootstrap PvE combat, death, restart, or reward smoke should produce those packets
 - dummy hits do not spend items, grant items, mutate equipment, or alter saved player progression/state by themselves
 - optional loopback combat-target snapshots are read-only debugging aids; they must reflect the same selected-target runtime state that the client sees, not introduce another authoritative combat path
 
