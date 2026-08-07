@@ -38,6 +38,10 @@ type HandleUseSkillFunc func(combatproto.ClientUseSkillPacket) UseSkillResult
 
 type HandleShootFunc func(combatproto.ClientShootPacket) ShootResult
 
+type HandleFlyTargetingFunc func(combatproto.ClientFlyTargetingPacket) FlyTargetingResult
+
+type HandleAddFlyTargetingFunc func(combatproto.ClientFlyTargetingPacket) FlyTargetingResult
+
 type HandleItemUseFunc func(itemproto.ClientUsePacket) ItemUseResult
 
 type HandleItemUseToItemFunc func(itemproto.ClientUseToItemPacket) ItemUseToItemResult
@@ -67,29 +71,31 @@ type HandleShopSellFunc func(shopproto.ClientSellPacket) ShopResult
 type HandleShopSell2Func func(shopproto.ClientSell2Packet) ShopResult
 
 type Config struct {
-	HandleMove          HandleMoveFunc
-	HandleSyncPosition  HandleSyncPositionFunc
-	HandleChat          HandleChatFunc
-	HandleWhisper       HandleWhisperFunc
-	HandleInteraction   HandleInteractionFunc
-	HandleTarget        HandleTargetFunc
-	HandleAttack        HandleAttackFunc
-	HandleUseSkill      HandleUseSkillFunc
-	HandleShoot         HandleShootFunc
-	HandleItemUse       HandleItemUseFunc
-	HandleItemUseToItem HandleItemUseToItemFunc
-	HandleItemDrop      HandleItemDropFunc
-	HandleItemDrop2     HandleItemDrop2Func
-	HandleItemMove      HandleItemMoveFunc
-	HandleItemPickup    HandleItemPickupFunc
-	HandleItemGive      HandleItemGiveFunc
-	HandleQuickslotAdd  HandleQuickslotAddFunc
-	HandleQuickslotDel  HandleQuickslotDelFunc
-	HandleQuickslotSwap HandleQuickslotSwapFunc
-	HandleShopBuy       HandleShopBuyFunc
-	HandleShopClose     HandleShopCloseFunc
-	HandleShopSell      HandleShopSellFunc
-	HandleShopSell2     HandleShopSell2Func
+	HandleMove            HandleMoveFunc
+	HandleSyncPosition    HandleSyncPositionFunc
+	HandleChat            HandleChatFunc
+	HandleWhisper         HandleWhisperFunc
+	HandleInteraction     HandleInteractionFunc
+	HandleTarget          HandleTargetFunc
+	HandleAttack          HandleAttackFunc
+	HandleUseSkill        HandleUseSkillFunc
+	HandleShoot           HandleShootFunc
+	HandleFlyTargeting    HandleFlyTargetingFunc
+	HandleAddFlyTargeting HandleAddFlyTargetingFunc
+	HandleItemUse         HandleItemUseFunc
+	HandleItemUseToItem   HandleItemUseToItemFunc
+	HandleItemDrop        HandleItemDropFunc
+	HandleItemDrop2       HandleItemDrop2Func
+	HandleItemMove        HandleItemMoveFunc
+	HandleItemPickup      HandleItemPickupFunc
+	HandleItemGive        HandleItemGiveFunc
+	HandleQuickslotAdd    HandleQuickslotAddFunc
+	HandleQuickslotDel    HandleQuickslotDelFunc
+	HandleQuickslotSwap   HandleQuickslotSwapFunc
+	HandleShopBuy         HandleShopBuyFunc
+	HandleShopClose       HandleShopCloseFunc
+	HandleShopSell        HandleShopSellFunc
+	HandleShopSell2       HandleShopSell2Func
 }
 
 type Result struct {
@@ -141,6 +147,11 @@ type ShootResult struct {
 	Frames   [][]byte
 }
 
+type FlyTargetingResult struct {
+	Accepted bool
+	Frames   [][]byte
+}
+
 type ItemUseResult struct {
 	Accepted bool
 	Frames   [][]byte
@@ -187,30 +198,32 @@ type ShopResult struct {
 }
 
 type Flow struct {
-	machine             *session.StateMachine
-	handleMove          HandleMoveFunc
-	handleSyncPosition  HandleSyncPositionFunc
-	handleChat          HandleChatFunc
-	handleWhisper       HandleWhisperFunc
-	handleInteraction   HandleInteractionFunc
-	handleTarget        HandleTargetFunc
-	handleAttack        HandleAttackFunc
-	handleUseSkill      HandleUseSkillFunc
-	handleShoot         HandleShootFunc
-	handleItemUse       HandleItemUseFunc
-	handleItemUseToItem HandleItemUseToItemFunc
-	handleItemDrop      HandleItemDropFunc
-	handleItemDrop2     HandleItemDrop2Func
-	handleItemMove      HandleItemMoveFunc
-	handleItemPickup    HandleItemPickupFunc
-	handleItemGive      HandleItemGiveFunc
-	handleQuickslotAdd  HandleQuickslotAddFunc
-	handleQuickslotDel  HandleQuickslotDelFunc
-	handleQuickslotSwap HandleQuickslotSwapFunc
-	handleShopBuy       HandleShopBuyFunc
-	handleShopClose     HandleShopCloseFunc
-	handleShopSell      HandleShopSellFunc
-	handleShopSell2     HandleShopSell2Func
+	machine               *session.StateMachine
+	handleMove            HandleMoveFunc
+	handleSyncPosition    HandleSyncPositionFunc
+	handleChat            HandleChatFunc
+	handleWhisper         HandleWhisperFunc
+	handleInteraction     HandleInteractionFunc
+	handleTarget          HandleTargetFunc
+	handleAttack          HandleAttackFunc
+	handleUseSkill        HandleUseSkillFunc
+	handleShoot           HandleShootFunc
+	handleFlyTargeting    HandleFlyTargetingFunc
+	handleAddFlyTargeting HandleAddFlyTargetingFunc
+	handleItemUse         HandleItemUseFunc
+	handleItemUseToItem   HandleItemUseToItemFunc
+	handleItemDrop        HandleItemDropFunc
+	handleItemDrop2       HandleItemDrop2Func
+	handleItemMove        HandleItemMoveFunc
+	handleItemPickup      HandleItemPickupFunc
+	handleItemGive        HandleItemGiveFunc
+	handleQuickslotAdd    HandleQuickslotAddFunc
+	handleQuickslotDel    HandleQuickslotDelFunc
+	handleQuickslotSwap   HandleQuickslotSwapFunc
+	handleShopBuy         HandleShopBuyFunc
+	handleShopClose       HandleShopCloseFunc
+	handleShopSell        HandleShopSellFunc
+	handleShopSell2       HandleShopSell2Func
 }
 
 func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
@@ -249,6 +262,18 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 	shootHandler := cfg.HandleShoot
 	if shootHandler == nil {
 		shootHandler = func(combatproto.ClientShootPacket) ShootResult { return ShootResult{Accepted: false} }
+	}
+	flyTargetingHandler := cfg.HandleFlyTargeting
+	if flyTargetingHandler == nil {
+		flyTargetingHandler = func(combatproto.ClientFlyTargetingPacket) FlyTargetingResult {
+			return FlyTargetingResult{Accepted: false}
+		}
+	}
+	addFlyTargetingHandler := cfg.HandleAddFlyTargeting
+	if addFlyTargetingHandler == nil {
+		addFlyTargetingHandler = func(combatproto.ClientFlyTargetingPacket) FlyTargetingResult {
+			return FlyTargetingResult{Accepted: false}
+		}
 	}
 	itemUseHandler := cfg.HandleItemUse
 	if itemUseHandler == nil {
@@ -307,30 +332,32 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 		shopSell2Handler = func(shopproto.ClientSell2Packet) ShopResult { return ShopResult{Accepted: false} }
 	}
 	return &Flow{
-		machine:             machine,
-		handleMove:          handler,
-		handleSyncPosition:  syncHandler,
-		handleChat:          chatHandler,
-		handleWhisper:       whisperHandler,
-		handleInteraction:   interactionHandler,
-		handleTarget:        targetHandler,
-		handleAttack:        attackHandler,
-		handleUseSkill:      useSkillHandler,
-		handleShoot:         shootHandler,
-		handleItemUse:       itemUseHandler,
-		handleItemUseToItem: itemUseToItemHandler,
-		handleItemDrop:      itemDropHandler,
-		handleItemDrop2:     itemDrop2Handler,
-		handleItemMove:      itemMoveHandler,
-		handleItemPickup:    itemPickupHandler,
-		handleItemGive:      itemGiveHandler,
-		handleQuickslotAdd:  quickslotAddHandler,
-		handleQuickslotDel:  quickslotDelHandler,
-		handleQuickslotSwap: quickslotSwapHandler,
-		handleShopBuy:       shopBuyHandler,
-		handleShopClose:     shopCloseHandler,
-		handleShopSell:      shopSellHandler,
-		handleShopSell2:     shopSell2Handler,
+		machine:               machine,
+		handleMove:            handler,
+		handleSyncPosition:    syncHandler,
+		handleChat:            chatHandler,
+		handleWhisper:         whisperHandler,
+		handleInteraction:     interactionHandler,
+		handleTarget:          targetHandler,
+		handleAttack:          attackHandler,
+		handleUseSkill:        useSkillHandler,
+		handleShoot:           shootHandler,
+		handleFlyTargeting:    flyTargetingHandler,
+		handleAddFlyTargeting: addFlyTargetingHandler,
+		handleItemUse:         itemUseHandler,
+		handleItemUseToItem:   itemUseToItemHandler,
+		handleItemDrop:        itemDropHandler,
+		handleItemDrop2:       itemDrop2Handler,
+		handleItemMove:        itemMoveHandler,
+		handleItemPickup:      itemPickupHandler,
+		handleItemGive:        itemGiveHandler,
+		handleQuickslotAdd:    quickslotAddHandler,
+		handleQuickslotDel:    quickslotDelHandler,
+		handleQuickslotSwap:   quickslotSwapHandler,
+		handleShopBuy:         shopBuyHandler,
+		handleShopClose:       shopCloseHandler,
+		handleShopSell:        shopSellHandler,
+		handleShopSell2:       shopSell2Handler,
 	}
 }
 
@@ -447,6 +474,26 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			return nil, err
 		}
 		result := f.handleShoot(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return result.Frames, nil
+	case combatproto.HeaderClientFlyTargeting:
+		packet, err := combatproto.DecodeClientFlyTargeting(in)
+		if err != nil {
+			return nil, err
+		}
+		result := f.handleFlyTargeting(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return result.Frames, nil
+	case combatproto.HeaderClientAddFlyTargeting:
+		packet, err := combatproto.DecodeClientAddFlyTargeting(in)
+		if err != nil {
+			return nil, err
+		}
+		result := f.handleAddFlyTargeting(packet)
 		if !result.Accepted {
 			return nil, nil
 		}

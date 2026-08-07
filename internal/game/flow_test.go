@@ -1190,6 +1190,84 @@ func TestHandleClientFrameShootWithoutHandlerIsNoOp(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameAcceptsFlyTargetingInGameAndReturnsHandlerFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	wantFrame := control.EncodePing(control.PingPacket{ServerTime: 0x01020304})
+	flow := NewFlow(machine, Config{
+		HandleFlyTargeting: func(packet combatproto.ClientFlyTargetingPacket) FlyTargetingResult {
+			if packet.TargetVID != 0x02040107 || packet.X != 123456 || packet.Y != -234567 {
+				t.Fatalf("unexpected fly-targeting packet: %+v", packet)
+			}
+			return FlyTargetingResult{Accepted: true, Frames: [][]byte{wantFrame}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientFlyTargeting(combatproto.ClientFlyTargetingPacket{TargetVID: 0x02040107, X: 123456, Y: -234567})))
+	if err != nil {
+		t.Fatalf("unexpected fly-targeting error: %v", err)
+	}
+	if len(out) != 1 || !bytes.Equal(out[0], wantFrame) {
+		t.Fatalf("expected handler fly-targeting frame, got %#v", out)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameFlyTargetingWithoutHandlerIsNoOp(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{})
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientFlyTargeting(combatproto.ClientFlyTargetingPacket{TargetVID: 0x02040107, X: 123456, Y: -234567})))
+	if err != nil {
+		t.Fatalf("unexpected fly-targeting error without handler: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected no outgoing fly-targeting frames without handler, got %d", len(out))
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameAcceptsAddFlyTargetingInGameAndReturnsHandlerFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	wantFrame := control.EncodePing(control.PingPacket{ServerTime: 0x01020304})
+	flow := NewFlow(machine, Config{
+		HandleAddFlyTargeting: func(packet combatproto.ClientFlyTargetingPacket) FlyTargetingResult {
+			if packet.TargetVID != 0 || packet.X != 1700 || packet.Y != -2800 {
+				t.Fatalf("unexpected add-fly-targeting packet: %+v", packet)
+			}
+			return FlyTargetingResult{Accepted: true, Frames: [][]byte{wantFrame}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAddFlyTargeting(combatproto.ClientFlyTargetingPacket{TargetVID: 0, X: 1700, Y: -2800})))
+	if err != nil {
+		t.Fatalf("unexpected add-fly-targeting error: %v", err)
+	}
+	if len(out) != 1 || !bytes.Equal(out[0], wantFrame) {
+		t.Fatalf("expected handler add-fly-targeting frame, got %#v", out)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameAddFlyTargetingWithoutHandlerIsNoOp(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{})
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAddFlyTargeting(combatproto.ClientFlyTargetingPacket{TargetVID: 0, X: 1700, Y: -2800})))
+	if err != nil {
+		t.Fatalf("unexpected add-fly-targeting error without handler: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected no outgoing add-fly-targeting frames without handler, got %d", len(out))
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameRejectsMalformedInteractionInGame(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	flow := NewFlow(machine, Config{})
@@ -1242,6 +1320,30 @@ func TestHandleClientFrameRejectsMalformedShootInGame(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	flow := NewFlow(machine, Config{})
 	_, err := flow.HandleClientFrame(frame.Frame{Header: combatproto.HeaderClientShoot, Length: 6, Payload: []byte{0x01, 0x02}})
+	if !errors.Is(err, combatproto.ErrInvalidPayload) {
+		t.Fatalf("expected combatproto.ErrInvalidPayload, got %v", err)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameRejectsMalformedFlyTargetingInGame(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{})
+	_, err := flow.HandleClientFrame(frame.Frame{Header: combatproto.HeaderClientFlyTargeting, Length: 15, Payload: make([]byte, 11)})
+	if !errors.Is(err, combatproto.ErrInvalidPayload) {
+		t.Fatalf("expected combatproto.ErrInvalidPayload, got %v", err)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameRejectsMalformedAddFlyTargetingInGame(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{})
+	_, err := flow.HandleClientFrame(frame.Frame{Header: combatproto.HeaderClientAddFlyTargeting, Length: 15, Payload: make([]byte, 11)})
 	if !errors.Is(err, combatproto.ErrInvalidPayload) {
 		t.Fatalf("expected combatproto.ErrInvalidPayload, got %v", err)
 	}
