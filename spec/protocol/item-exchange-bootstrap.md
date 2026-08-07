@@ -7,6 +7,7 @@ The goal is deliberately conservative:
 - own the client packet layout before broader player-to-player trade is implemented
 - route the packet through the `GAME` phase without treating it as an unknown-header disconnect edge
 - keep the shipped runtime fail-closed with no inventory, equipment, quickslot, gold, ground-item, peer, or persistence mutation until a later exchange/trade slice owns two-party state and acceptance semantics
+- allow one template-authored guard response for already-owned `anti_give` metadata on `ITEM_ADD` without implementing two-party trade
 
 This is not a completed exchange, trade, safebox, or player-shop system.
 
@@ -50,7 +51,7 @@ The repository owns only this byte layout and the current fail-closed runtime po
 
 `internal/game` decodes `EXCHANGE` while the session is already in `GAME` and routes it to a dedicated handler hook. The default handler denies the request with no response.
 
-The shipped minimal runtime intentionally leaves exchange gameplay unsupported for now. Every `EXCHANGE` request currently fails closed:
+The shipped minimal runtime intentionally leaves exchange gameplay unsupported for now. Ordinary `EXCHANGE` requests still fail closed:
 
 - no server frames are emitted
 - no carried inventory or equipment state is mutated
@@ -59,6 +60,26 @@ The shipped minimal runtime intentionally leaves exchange gameplay unsupported f
 - no temporary ground item handle is registered
 - no peer-facing frames are queued
 - no selected-character account snapshot is persisted
+
+There is one owned guard-feedback exception for `ITEM_ADD`. When all of these are true:
+
+- the selected character is already in `GAME` and above the bootstrap zero-HP floor
+- the exchange subheader is `ITEM_ADD`
+- the source position is a carried inventory cell (`window = INVENTORY`, `cell < 90`)
+- the carried item resolves through the loaded item-template snapshot
+- the template `vnum` matches the carried item and validates normally
+- the live carried item is unlocked, well-formed, unique in that carried cell, and its live count does not exceed `template.max_count`
+- the template authors `anti_give = true`
+- the template authors non-empty `give_reject_message`
+
+then the minimal runtime accepts only the guard response and returns one self-only `CHAT_TYPE_INFO` frame:
+
+- `vid = 0`
+- `message = template.give_reject_message`
+
+That response is deliberately not an exchange-window or transfer attempt. It still performs no inventory, equipment, quickslot, gold, ground-handle, peer, or persistence mutation.
+
+Templates that author `give_reject_message` without `anti_give` are invalid at the item-template store boundary, and embedded NUL bytes in the message fail closed before runtime boot.
 
 Malformed `EXCHANGE` payload sizes fail at the codec/dispatcher boundary rather than reaching runtime mutation code.
 
@@ -71,11 +92,12 @@ Later slices must write a new contract before broadening this packet into real g
 - trade item placement, removal, or gold placement semantics
 - accept/cancel state machines
 - two-party inventory/gold mutation ordering
-- anti-flag/template guard behavior inside an active exchange
+- accepted anti-flag/template guard behavior inside an active exchange beyond the self-only `anti_give` / `give_reject_message` `ITEM_ADD` rejection described above
 - rollback, audit, or durable economic policy for exchange finalization
 
 ## Current coverage
 
 - `internal/proto/item` freezes `CG::EXCHANGE` encode/decode behavior plus unexpected-header and invalid-payload rejection.
 - `internal/game` freezes `GAME`-phase dispatch to a handler hook, with denied results returning no frames.
-- `internal/minimal` freezes the shipped no-frame fail-closed behavior with persisted inventory, quickslots, and gold unchanged after an `EXCHANGE` item-add packet.
+- `internal/player` freezes the metadata-driven, no-mutation exchange item-add `anti_give` rejection lookup.
+- `internal/minimal` freezes the shipped no-frame fail-closed behavior with persisted inventory, quickslots, and gold unchanged after an ordinary `EXCHANGE` item-add packet, plus the self-only `CHAT_TYPE_INFO` rejection frame when the carried item's template authors `anti_give` and `give_reject_message`.

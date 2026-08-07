@@ -1061,24 +1061,42 @@ func (r *Runtime) UseItemRejectText(slot inventory.SlotIndex, template itemcatal
 }
 
 func (r *Runtime) GiveRejectText(slot inventory.SlotIndex, count uint16, template itemcatalog.Template) (string, bool) {
-	if r == nil || template.GiveRejectText == "" || !template.AntiGive || slot >= inventory.CarriedInventorySlotCount || count == 0 || !itemcatalog.ValidTemplate(template) {
+	if count == 0 {
 		return "", false
 	}
-	if countInventorySlotOccupancy(r.liveInventory, slot) != 1 {
-		return "", false
-	}
-	index := findInventorySlot(r.liveInventory, slot)
-	if index < 0 {
-		return "", false
-	}
-	item := r.liveInventory[index]
-	if item.Equipped || item.Locked || item.Vnum != template.Vnum || item.Count == 0 || item.Count > template.MaxCount || count > item.Count {
-		return "", false
-	}
-	if err := item.Validate(); err != nil {
+	item, ok := r.templateBackedAntiGiveInventoryItem(slot, template)
+	if !ok || count > item.Count {
 		return "", false
 	}
 	return template.GiveRejectText, true
+}
+
+func (r *Runtime) ExchangeItemAddRejectText(slot inventory.SlotIndex, template itemcatalog.Template) (string, bool) {
+	if _, ok := r.templateBackedAntiGiveInventoryItem(slot, template); !ok {
+		return "", false
+	}
+	return template.GiveRejectText, true
+}
+
+func (r *Runtime) templateBackedAntiGiveInventoryItem(slot inventory.SlotIndex, template itemcatalog.Template) (inventory.ItemInstance, bool) {
+	if r == nil || template.GiveRejectText == "" || !template.AntiGive || slot >= inventory.CarriedInventorySlotCount || !itemcatalog.ValidTemplate(template) {
+		return inventory.ItemInstance{}, false
+	}
+	if countInventorySlotOccupancy(r.liveInventory, slot) != 1 {
+		return inventory.ItemInstance{}, false
+	}
+	index := findInventorySlot(r.liveInventory, slot)
+	if index < 0 {
+		return inventory.ItemInstance{}, false
+	}
+	item := r.liveInventory[index]
+	if item.Equipped || item.Locked || item.Vnum != template.Vnum || item.Count == 0 || item.Count > template.MaxCount {
+		return inventory.ItemInstance{}, false
+	}
+	if err := item.Validate(); err != nil {
+		return inventory.ItemInstance{}, false
+	}
+	return item, true
 }
 
 func (r *Runtime) RefineRejectText(slot inventory.SlotIndex, template itemcatalog.Template) (string, bool) {

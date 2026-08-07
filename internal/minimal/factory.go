@@ -3571,6 +3571,26 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					return gameflow.ItemGiveResult{Accepted: false}
 				},
+				HandleItemExchange: func(packet itemproto.ClientExchangePacket) gameflow.ItemExchangeResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					if packet.Subheader != itemproto.ExchangeSubheaderItemAdd || packet.Position.WindowType != itemproto.WindowInventory || packet.Position.Cell >= itemproto.InventoryMaxCell {
+						return gameflow.ItemExchangeResult{Accepted: false}
+					}
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+						return gameflow.ItemExchangeResult{Accepted: false}
+					}
+					template, ok := runtime.resolveRuntimeItemTemplate(selectedPlayer, inventory.SlotIndex(packet.Position.Cell))
+					if !ok {
+						return gameflow.ItemExchangeResult{Accepted: false}
+					}
+					if message, ok := selectedPlayer.ExchangeItemAddRejectText(inventory.SlotIndex(packet.Position.Cell), template); ok {
+						return gameflow.ItemExchangeResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}}
+					}
+					return gameflow.ItemExchangeResult{Accepted: false}
+				},
 				HandleQuickslotAdd: func(packet quickslotproto.ClientAddPacket) gameflow.QuickslotResult {
 					stateMu.Lock()
 					defer stateMu.Unlock()

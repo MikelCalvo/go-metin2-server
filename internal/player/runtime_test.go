@@ -3003,6 +3003,86 @@ func TestRuntimeGiveRejectTextRejectsInvalidRequestedCountWithoutMutation(t *tes
 	}
 }
 
+func TestRuntimeExchangeItemAddRejectTextComesFromTemplateAntiGiveGuardWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:    0x01030104,
+		VID:   0x02040104,
+		Name:  "PeerFour",
+		Level: 1,
+		Inventory: []inventory.ItemInstance{
+			{ID: 103, Vnum: 27043, Count: 3, Slot: 8},
+		},
+		Quickslots: []loginticket.Quickslot{{Position: 4, Type: quickslotproto.TypeItem, Slot: 8}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-four", CharacterIndex: 1})
+	template := itemcatalog.Template{
+		Vnum:           27043,
+		Name:           "Bound Exchange Potion",
+		Stackable:      true,
+		MaxCount:       200,
+		AntiGive:       true,
+		GiveRejectText: "You cannot trade this item.",
+	}
+
+	text, ok := runtime.ExchangeItemAddRejectText(8, template)
+	if !ok {
+		t.Fatal("expected anti-give template to provide item-exchange rejection text")
+	}
+	if text != template.GiveRejectText {
+		t.Fatalf("expected template-authored exchange reject text %q, got %q", template.GiveRejectText, text)
+	}
+	live := runtime.LiveCharacter()
+	if !reflect.DeepEqual(live.Inventory, persisted.Inventory) {
+		t.Fatalf("exchange reject text mutated live inventory: got %#v want %#v", live.Inventory, persisted.Inventory)
+	}
+	if !reflect.DeepEqual(live.Quickslots, persisted.Quickslots) {
+		t.Fatalf("exchange reject text mutated live quickslots: got %#v want %#v", live.Quickslots, persisted.Quickslots)
+	}
+	if live.Gold != persisted.Gold || live.Points != persisted.Points {
+		t.Fatalf("exchange reject text mutated live scalars: gold=%d points[1]=%d", live.Gold, live.Points[1])
+	}
+	persistedAfter := runtime.PersistedSnapshot()
+	if !reflect.DeepEqual(persistedAfter.Inventory, persisted.Inventory) {
+		t.Fatalf("exchange reject text mutated persisted inventory: got %#v want %#v", persistedAfter.Inventory, persisted.Inventory)
+	}
+	if !reflect.DeepEqual(persistedAfter.Quickslots, persisted.Quickslots) {
+		t.Fatalf("exchange reject text mutated persisted quickslots: got %#v want %#v", persistedAfter.Quickslots, persisted.Quickslots)
+	}
+	if persistedAfter.Gold != persisted.Gold || persistedAfter.Points != persisted.Points {
+		t.Fatalf("exchange reject text mutated persisted scalars: gold=%d points[1]=%d", persistedAfter.Gold, persistedAfter.Points[1])
+	}
+}
+
+func TestRuntimeExchangeItemAddRejectTextRejectsMismatchedTemplateWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030105,
+		VID:       0x02040105,
+		Name:      "PeerFive",
+		Level:     1,
+		Inventory: []inventory.ItemInstance{{ID: 104, Vnum: 27043, Count: 3, Slot: 8}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-five", CharacterIndex: 1})
+	template := itemcatalog.Template{
+		Vnum:           27044,
+		Name:           "Other Bound Exchange Potion",
+		Stackable:      true,
+		MaxCount:       200,
+		AntiGive:       true,
+		GiveRejectText: "You cannot trade this item.",
+	}
+
+	text, ok := runtime.ExchangeItemAddRejectText(8, template)
+	if ok || text != "" {
+		t.Fatalf("expected mismatched template to suppress exchange rejection text, got %q ok=%v", text, ok)
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) {
+		t.Fatalf("mismatched exchange reject text mutated live inventory: got %#v want %#v", got.Inventory, persisted.Inventory)
+	}
+	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) {
+		t.Fatalf("mismatched exchange reject text mutated persisted inventory: got %#v want %#v", got.Inventory, persisted.Inventory)
+	}
+}
+
 func TestRuntimeRefineRejectTextComesFromTemplateWithoutMutation(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:    0x01030104,
