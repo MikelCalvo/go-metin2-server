@@ -1522,6 +1522,86 @@ func TestGameRuntimeConfigSnapshotReportsPersistenceStoreLocations(t *testing.T)
 	}
 }
 
+func TestGameRuntimePersistenceStatusDoesNotFollowSymlinkedAccountBackupManifest(t *testing.T) {
+	root := t.TempDir()
+	activeAccounts := accountstore.NewFileStore(filepath.Join(root, "active-accounts"))
+	if err := activeAccounts.Save(accountstore.Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save active account store: %v", err)
+	}
+	externalManifest := filepath.Join(root, "external-account-backup-manifest.json")
+	if err := os.WriteFile(externalManifest, []byte(`{"format":"external-leak","summary":{"account_count":0,"character_count":0,"logins":[]},"files":[]}`), 0o644); err != nil {
+		t.Fatalf("write external account backup manifest target: %v", err)
+	}
+	manifestPath := filepath.Join(activeAccounts.Dir(), accountstore.BackupManifestFilename)
+	if err := os.Symlink(externalManifest, manifestPath); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(filepath.Join(root, "tickets")),
+		activeAccounts,
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(root, "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	status := runtime.PersistenceStatus()
+	if status.OK || status.AccountStore.Valid || !strings.Contains(status.AccountStore.Error, accountstore.ErrInvalidBackupManifest.Error()) {
+		t.Fatalf("expected symlinked account manifest to fail persistence status, got %+v", status.AccountStore)
+	}
+	if !status.AccountStore.BackupManifest.Present || status.AccountStore.BackupManifest.Path != manifestPath {
+		t.Fatalf("expected symlinked account manifest presence/path without following target, got %+v", status.AccountStore.BackupManifest)
+	}
+	if status.AccountStore.BackupManifest.Format != "" || status.AccountStore.BackupManifest.FileCount != 0 || status.AccountStore.BackupManifest.SnapshotSizeBytes != 0 || status.AccountStore.BackupManifest.ManifestSizeBytes != 0 || status.AccountStore.BackupManifest.ManifestSHA256 != "" {
+		t.Fatalf("expected symlinked account manifest status not to expose target metadata, got %+v", status.AccountStore.BackupManifest)
+	}
+}
+
+func TestGameRuntimePersistenceStatusDoesNotFollowSymlinkedItemTemplateBackupManifest(t *testing.T) {
+	root := t.TempDir()
+	activeItems := itemcatalog.NewFileStore(filepath.Join(root, "active-items", "item-templates.json"))
+	if err := activeItems.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save active item-template store: %v", err)
+	}
+	externalManifest := filepath.Join(root, "external-item-template-backup-manifest.json")
+	if err := os.WriteFile(externalManifest, []byte(`{"format":"external-leak","summary":{"vnums":[]},"files":[]}`), 0o644); err != nil {
+		t.Fatalf("write external item-template backup manifest target: %v", err)
+	}
+	manifestPath := filepath.Join(filepath.Dir(activeItems.Path()), itemcatalog.BackupManifestFilename)
+	if err := os.Symlink(externalManifest, manifestPath); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(filepath.Join(root, "tickets")),
+		accountstore.NewFileStore(filepath.Join(root, "accounts")),
+		nil,
+		nil,
+		activeItems,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	status := runtime.PersistenceStatus()
+	if status.OK || status.ItemTemplateStore.Valid || !strings.Contains(status.ItemTemplateStore.Error, itemcatalog.ErrInvalidBackupManifest.Error()) {
+		t.Fatalf("expected symlinked item-template manifest to fail persistence status, got %+v", status.ItemTemplateStore)
+	}
+	if !status.ItemTemplateStore.BackupManifest.Present || status.ItemTemplateStore.BackupManifest.Path != manifestPath {
+		t.Fatalf("expected symlinked item-template manifest presence/path without following target, got %+v", status.ItemTemplateStore.BackupManifest)
+	}
+	if status.ItemTemplateStore.BackupManifest.Format != "" || status.ItemTemplateStore.BackupManifest.FileCount != 0 || status.ItemTemplateStore.BackupManifest.SnapshotSizeBytes != 0 || status.ItemTemplateStore.BackupManifest.ManifestSizeBytes != 0 || status.ItemTemplateStore.BackupManifest.ManifestSHA256 != "" {
+		t.Fatalf("expected symlinked item-template manifest status not to expose target metadata, got %+v", status.ItemTemplateStore.BackupManifest)
+	}
+}
+
 func TestGameRuntimePersistenceStatusReportsActiveBackupManifestPresence(t *testing.T) {
 	root := t.TempDir()
 	sourceAccounts := accountstore.NewFileStore(filepath.Join(root, "source-accounts"))

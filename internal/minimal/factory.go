@@ -980,11 +980,10 @@ func accountBackupManifestStatus(accountStoreDir string) BackupManifestStatus {
 		return BackupManifestStatus{}
 	}
 	path := filepath.Join(accountStoreDir, accountstore.BackupManifestFilename)
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return BackupManifestStatus{}
+	raw, status, ok := readBackupManifestStatusRaw(path)
+	if !ok {
+		return status
 	}
-	status := backupManifestStatusFromRaw(path, raw)
 	var manifest accountstore.BackupManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		return status
@@ -1002,11 +1001,10 @@ func itemTemplateBackupManifestStatus(itemTemplatePath string) BackupManifestSta
 		return BackupManifestStatus{}
 	}
 	path := filepath.Join(filepath.Dir(itemTemplatePath), itemcatalog.BackupManifestFilename)
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return BackupManifestStatus{}
+	raw, status, ok := readBackupManifestStatusRaw(path)
+	if !ok {
+		return status
 	}
-	status := backupManifestStatusFromRaw(path, raw)
 	var manifest itemcatalog.BackupManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		return status
@@ -1017,6 +1015,22 @@ func itemTemplateBackupManifestStatus(itemTemplatePath string) BackupManifestSta
 		status.SnapshotSizeBytes += file.SizeBytes
 	}
 	return status
+}
+
+func readBackupManifestStatusRaw(path string) ([]byte, BackupManifestStatus, bool) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, BackupManifestStatus{}, false
+	}
+	status := BackupManifestStatus{Present: true, Path: path}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, status, false
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, status, false
+	}
+	return raw, backupManifestStatusFromRaw(path, raw), true
 }
 
 func backupManifestStatusFromRaw(path string, raw []byte) BackupManifestStatus {
