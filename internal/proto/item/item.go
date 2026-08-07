@@ -15,6 +15,7 @@ const (
 	HeaderClientPickup    uint16 = 0x0505
 	HeaderClientUseToItem uint16 = 0x0506
 	HeaderClientGive      uint16 = 0x0507
+	HeaderClientRefine    uint16 = 0x050C
 	HeaderDel             uint16 = 0x0510
 	HeaderSet             uint16 = 0x0511
 	HeaderUse             uint16 = 0x0512
@@ -47,6 +48,7 @@ const (
 	clientPickupPayloadSize    = 4
 	clientUseToItemPayloadSize = positionSize + positionSize
 	clientGivePayloadSize      = 4 + positionSize + 1
+	clientRefinePayloadSize    = 2
 	delPayloadSize             = positionSize
 	setPayloadSize             = positionSize + 4 + 1 + 4 + 4 + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
 	usePayloadSize             = positionSize + 4 + 4 + 4
@@ -182,6 +184,11 @@ type ClientGivePacket struct {
 	TargetVID uint32
 	Position  Position
 	Count     uint8
+}
+
+type ClientRefinePacket struct {
+	Position uint8
+	Type     uint8
 }
 
 type GroundAddPacket struct {
@@ -362,6 +369,21 @@ func DecodeClientGive(f frame.Frame) (ClientGivePacket, error) {
 		Position:  decodePosition(f.Payload[4 : 4+positionSize]),
 		Count:     f.Payload[4+positionSize],
 	}, nil
+}
+
+func EncodeClientRefine(packet ClientRefinePacket) []byte {
+	payload := []byte{packet.Position, packet.Type}
+	return frame.Encode(HeaderClientRefine, payload)
+}
+
+func DecodeClientRefine(f frame.Frame) (ClientRefinePacket, error) {
+	if f.Header != HeaderClientRefine {
+		return ClientRefinePacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientRefinePayloadSize {
+		return ClientRefinePacket{}, ErrInvalidPayload
+	}
+	return ClientRefinePacket{Position: f.Payload[0], Type: f.Payload[1]}, nil
 }
 
 func EncodeSet(packet SetPacket) []byte {

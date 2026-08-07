@@ -340,6 +340,38 @@ func TestDecodeClientGiveRejectsInvalidPayload(t *testing.T) {
 	}
 }
 
+func TestEncodeClientRefineBuildsAFrame(t *testing.T) {
+	want := frame.Encode(HeaderClientRefine, []byte{5, 2})
+	got := EncodeClientRefine(ClientRefinePacket{Position: 5, Type: 2})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected item refine frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeClientRefineReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeClientRefine(decodeSingleFrame(t, frame.Encode(HeaderClientRefine, []byte{5, 2})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != (ClientRefinePacket{Position: 5, Type: 2}) {
+		t.Fatalf("unexpected item-refine packet: %+v", packet)
+	}
+}
+
+func TestDecodeClientRefineRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeClientRefine(frame.Frame{Header: HeaderClientRefine + 1, Length: 6, Payload: make([]byte, clientRefinePayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeClientRefineRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeClientRefine(frame.Frame{Header: HeaderClientRefine, Length: 5, Payload: make([]byte, clientRefinePayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
 func TestEncodeGroundAddBuildsAFrame(t *testing.T) {
 	want := frame.Encode(HeaderGroundAdd, []byte{0x10, 0x27, 0, 0, 0x30, 0xf8, 0xff, 0xff, 0x40, 0x1f, 0, 0, 0x78, 0x56, 0x34, 0x12, 0x44, 0x33, 0x22, 0x11})
 	got := EncodeGroundAdd(GroundAddPacket{VID: 0x12345678, Vnum: 0x11223344, X: 10000, Y: -2000, Z: 8000})

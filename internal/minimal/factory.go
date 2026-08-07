@@ -3274,6 +3274,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 
 					return executeSelectedItemUseToItem(packet.Source, packet.Target)
 				},
+				HandleItemRefine: func(packet itemproto.ClientRefinePacket) gameflow.ItemRefineResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					return gameflow.ItemRefineResult{Accepted: false}
+				},
 				HandleItemDrop: func(packet itemproto.ClientDropPacket) gameflow.ItemDropResult {
 					stateMu.Lock()
 					defer stateMu.Unlock()

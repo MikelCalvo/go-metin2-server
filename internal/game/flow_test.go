@@ -228,6 +228,55 @@ func TestHandleClientFrameRejectsDeniedItemGiveInGame(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameAcceptsItemRefineInGameAndReturnsHandlerFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	wantFrame := []byte("item-refine")
+	flow := NewFlow(machine, Config{
+		HandleItemRefine: func(packet itemproto.ClientRefinePacket) ItemRefineResult {
+			if packet.Position != 5 || packet.Type != 2 {
+				t.Fatalf("unexpected item refine packet: %+v", packet)
+			}
+			return ItemRefineResult{Accepted: true, Frames: [][]byte{wantFrame}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 2})))
+	if err != nil {
+		t.Fatalf("unexpected item refine error: %v", err)
+	}
+	if len(out) != 1 || !bytes.Equal(out[0], wantFrame) {
+		t.Fatalf("expected handler item-refine frame, got %#v", out)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameRejectsDeniedItemRefineInGame(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	called := false
+	flow := NewFlow(machine, Config{
+		HandleItemRefine: func(packet itemproto.ClientRefinePacket) ItemRefineResult {
+			called = true
+			return ItemRefineResult{Accepted: false, Frames: [][]byte{[]byte("must-not-send")}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 2})))
+	if err != nil {
+		t.Fatalf("unexpected denied item refine error: %v", err)
+	}
+	if !called {
+		t.Fatal("expected item refine handler to be called")
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected denied item refine to emit no frames, got %d", len(out))
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameAcceptsItemUseToItemInGameAndReturnsHandlerFrames(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	wantFrame := []byte("item-use-to-item")

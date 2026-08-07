@@ -410,6 +410,17 @@ Expected result:
 - item-template validation rejects `give_reject_message` if it contains embedded NUL bytes or is authored without `anti_give`, so malformed give-rejection text should fail before gameplay testing starts
 - this is a fail-closed guard, not a completed transfer/exchange feature
 
+### 4.5.12 Unsupported refine guard (`REFINE`)
+
+Run this only if packet tooling or the client build can emit a refine attempt.
+
+- [ ] Attempt one `REFINE` request for a disposable carried item slot / refine type
+- [ ] If packet tooling allows it, repeat with a different raw refine `type` value
+
+Expected result:
+- `REFINE` attempts are parsed by the game socket but remain unsupported in the shipped bootstrap runtime: no response frames are visible, no carried inventory/equipment/quickslot/point state changes, no ground actor appears, no peer receives item-result frames, and reconnect/operator inspection shows the selected-character snapshot unchanged
+- this is a fail-closed guard, not a completed refine or upgrade feature
+
 ---
 
 ## 5. Single-client movement
