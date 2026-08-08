@@ -127,6 +127,7 @@ The structured merchant catalog now already drives:
 - content-bundle import previews that expose exact `deltas.shop_catalogs` rows for added, removed, or changed structured merchant catalogs, keyed by interaction `kind` + `ref` and carrying the same resolved per-entry template metadata as the summary rows
 - content-bundle summaries that expose deterministic `shop_routes` entries for every interactable static actor that resolves to a `shop_preview` definition, carrying the actor name, source `map_index`/`x`/`y`, interaction `ref`, merchant `title`, and catalog `entry_count`
 - the exact loopback `GET /local/content-bundle/shop-catalogs/{kind}/{ref}` reader for a single `shop_preview` catalog row, so local QA can inspect one resolved merchant catalog without fetching the full bundle summary or opening an in-game merchant window
+- the exact loopback `GET /local/content-bundle/shop-routes/{actor_name}` reader for all merchant route rows that share one authored actor name, so local QA can inspect duplicated actor-to-catalog placement without fetching the full bundle summary or opening an in-game merchant window
 - content-bundle `maps[]` summaries that expose `shop_preview_actor_count` and `shop_catalog_entry_count` for each authored map, where catalog entries are counted per placed merchant actor so duplicated actors remain visible as duplicated local service capacity
 - interaction-visibility previews
 - the merchant-window `GC::SHOP START` open response, including template-authored display socket/attribute metadata for rendered catalog entries

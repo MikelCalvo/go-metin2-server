@@ -348,11 +348,23 @@ Returns one exact structured shop-catalog summary row from the live content-bund
 
 Use it when local QA needs to inspect one merchant catalog, including resolved item-template metadata and guard/rejection fields, without fetching the full bundle summary or opening the merchant in-game. It is not a gameplay protocol endpoint and does not mutate authored content.
 
+### `GET /local/content-bundle/shop-routes/{actor_name}`
+
+Returns every exact shop-route summary row for one authored merchant actor name from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; `actor_name` is URL-decoded with the same path-safe name rules used by `/local/content-bundle/interactable-static-actors/{name}`. It returns every matching `shop_routes[]` row so duplicated merchant placements with the same actor name remain inspectable, returns `404` when no route uses that name, rejects blank or slash-containing names with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
+
+Use it when local QA needs to inspect exact actor-to-catalog placement for one merchant name without fetching the full content-bundle summary or opening the merchant in-game. It is not a gameplay protocol endpoint and does not mutate authored content.
+
 ### `GET /local/content-bundle/warp-destinations/{kind}/{ref}`
 
 Returns one exact authored warp-destination summary row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; the only accepted `kind` for this path is `warp`, and `ref` must satisfy the canonical path-safe interaction reference rule. It returns `404` when the live authored bundle has no matching warp destination, rejects malformed identities with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
 
 Use it when local QA needs to inspect one teleporter destination (`text`, `map_index`, `x`, `y`) without fetching the full bundle summary or triggering an in-game transfer. It is not a gameplay protocol endpoint and does not mutate authored content.
+
+### `GET /local/content-bundle/warp-routes/{actor_name}`
+
+Returns every exact warp-route summary row for one authored teleporter actor name from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; `actor_name` is URL-decoded with the same path-safe name rules used by `/local/content-bundle/interactable-static-actors/{name}`. It returns every matching `warp_routes[]` row so duplicated teleporter placements with the same actor name remain inspectable, returns `404` when no route uses that name, rejects blank or slash-containing names with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
+
+Use it when local QA needs to inspect exact actor-to-destination placement for one teleporter name without fetching the full content-bundle summary or triggering an in-game transfer. It is not a gameplay protocol endpoint and does not mutate authored content.
 
 ### `POST /local/content-bundle/import-preview`
 
@@ -730,7 +742,7 @@ Exports or imports one deterministic authored-content artifact spanning both boo
 - `GET` exports the current bundle
 - `POST` imports a full replacement bundle
 - imports reject dangling interaction references before mutating runtime state
-- `GET /local/content-bundle/summary` and dry-run `POST /local/content-bundle/summary` include compact `shop_routes` entries for each placed merchant actor, so local QA can inspect exact actor-to-catalog placement without fetching or applying the full bundle
+- `GET /local/content-bundle/summary` and dry-run `POST /local/content-bundle/summary` include compact `shop_routes` and `warp_routes` entries for placed service actors, and exact-name route readers (`/local/content-bundle/shop-routes/{actor_name}` / `/local/content-bundle/warp-routes/{actor_name}`) let local QA inspect one actor name's service placement without fetching or applying the full bundle
 - `POST /local/content-bundle/import-preview` compares a candidate replacement against the live exported bundle and returns no-mutation `current` / `candidate` summaries plus count/amount `deltas`, including per-interaction-kind reference deltas, per-definition `added` / `removed` / `changed` deltas with compact current/candidate previews, per-map before/after/signed deltas for changed authored map counts, and spawn reward EXP/gold totals
 
 A small reference artifact lives at `docs/examples/bootstrap-npc-service-bundle.json`.
