@@ -431,12 +431,14 @@ Run this only if packet tooling or the client build can emit an exchange/trade a
 - [ ] Attempt one `EXCHANGE START` request against a visible actor or player
 - [ ] Attempt one `EXCHANGE ITEM_ADD` request for a disposable carried item slot
 - [ ] Repeat `EXCHANGE ITEM_ADD` with a carried item whose loaded template authors `anti_give = true` and non-empty `give_reject_message`
+- [ ] If packet tooling allows it, repeat that guarded `EXCHANGE ITEM_ADD` with display slot `12` or higher
 - [ ] If packet tooling allows it, repeat with `ITEM_DEL`, `ELK_ADD`, `ACCEPT`, and `CANCEL` subheaders
 - [ ] If packet tooling allows it, repeat with a malformed payload size
 
 Expected result:
 - ordinary `EXCHANGE` attempts are parsed by the game socket but remain unsupported in the shipped bootstrap runtime: no response frames are visible, no carried inventory/equipment/quickslot/gold state changes, no ground actor appears, no peer receives trade/window/finalization frames, and reconnect/operator inspection shows the selected-character snapshot unchanged
-- an `anti_give` carried item with `give_reject_message` returns exactly one self-only `CHAT_TYPE_INFO` message for `EXCHANGE ITEM_ADD` using that authored text, while still leaving inventory, equipment, quickslots, gold, peers, ground handles, and persistence unchanged
+- an `anti_give` carried item with `give_reject_message` returns exactly one self-only `CHAT_TYPE_INFO` message for `EXCHANGE ITEM_ADD` using that authored text only when the requested display slot is in the current `0..11` exchange item range, while still leaving inventory, equipment, quickslots, gold, peers, ground handles, and persistence unchanged
+- out-of-range `EXCHANGE ITEM_ADD` display slots stay no-frame/no-mutation even for guarded `anti_give` templates
 - malformed `EXCHANGE` payload sizes fail at the codec/dispatcher boundary rather than mutating runtime state
 - this is a fail-closed guard, not a completed exchange, trade, safebox, or player-shop feature
 

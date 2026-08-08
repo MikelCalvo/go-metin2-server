@@ -29,6 +29,12 @@ func loadHexFixture(t *testing.T, name string) []byte {
 	return decoded
 }
 
+func TestExchangeItemMaxNumMatchesCurrentExchangeWindow(t *testing.T) {
+	if ExchangeItemMaxNum != 12 {
+		t.Fatalf("unexpected exchange item slot count: got %d", ExchangeItemMaxNum)
+	}
+}
+
 func TestAntiFlagConstantsMatchLegacyBitPositions(t *testing.T) {
 	if AntiFlagFemale != 1<<0 || AntiFlagMale != 1<<1 || AntiFlagWarrior != 1<<2 || AntiFlagAssassin != 1<<3 || AntiFlagSura != 1<<4 || AntiFlagShaman != 1<<5 {
 		t.Fatalf("unexpected job/sex anti-flag bit positions")

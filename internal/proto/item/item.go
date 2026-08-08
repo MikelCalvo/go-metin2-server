@@ -67,6 +67,8 @@ const (
 	GetArgDeliveredToPartyMember uint8 = 2
 )
 
+const ExchangeItemMaxNum uint8 = 12
+
 const (
 	ExchangeSubheaderStart uint8 = iota
 	ExchangeSubheaderItemAdd

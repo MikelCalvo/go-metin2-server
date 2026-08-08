@@ -3575,7 +3575,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					stateMu.Lock()
 					defer stateMu.Unlock()
 
-					if packet.Subheader != itemproto.ExchangeSubheaderItemAdd || packet.Position.WindowType != itemproto.WindowInventory || packet.Position.Cell >= itemproto.InventoryMaxCell {
+					if packet.Subheader != itemproto.ExchangeSubheaderItemAdd || packet.Arg2 >= itemproto.ExchangeItemMaxNum || packet.Position.WindowType != itemproto.WindowInventory || packet.Position.Cell >= itemproto.InventoryMaxCell {
 						return gameflow.ItemExchangeResult{Accepted: false}
 					}
 					selectedPlayer, ok := currentSelectedPlayer()

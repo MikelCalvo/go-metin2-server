@@ -29,8 +29,10 @@ Payload size is 9 bytes:
 | --- | --- | --- | --- |
 | 0 | `subheader` | `uint8` | exchange action selector |
 | 1 | `arg1` | `uint32 LE` | target `vid`, gold amount, display/delete slot, or zero depending on subheader |
-| 5 | `arg2` | `uint8` | item display slot for item-add requests, otherwise zero/ignored |
+| 5 | `arg2` | `uint8` | item display slot for item-add requests (`0..11` for the current TMP4 exchange UI), otherwise zero/ignored |
 | 6 | `pos` | packed `TItemPos` | `window_type uint8`, `cell uint16 LE`; meaningful for item-add requests |
+
+The current owned exchange item-display surface has 12 slots. Runtime guard feedback for `ITEM_ADD` therefore treats `arg2 >= 12` as malformed for the current bootstrap exchange boundary and falls back to the ordinary no-frame/no-mutation rejection.
 
 Total frame length is 13 bytes including the common `header` and `length` fields.
 
@@ -66,6 +68,7 @@ There is one owned guard-feedback exception for `ITEM_ADD`. When all of these ar
 - the selected character is already in `GAME` and above the bootstrap zero-HP floor
 - the exchange subheader is `ITEM_ADD`
 - the source position is a carried inventory cell (`window = INVENTORY`, `cell < 90`)
+- the requested exchange item display slot is in the current owned `0..11` range
 - the carried item resolves through the loaded item-template snapshot
 - the template `vnum` matches the carried item and validates normally
 - the live carried item is unlocked, well-formed, unique in that carried cell, and its live count does not exceed `template.max_count`
