@@ -226,7 +226,7 @@ Likely areas:
 
 Next slices:
 
-1. Define a first migration contract without pretending the whole server is DB-backed.
+1. Extend the new `db/migrations` catalog beyond the initial `schema_migrations` ledger only when a narrow repository/backfill contract is ready.
 2. Extract narrow repository seams only where tests prove reduced coupling.
 3. Write backup/restore runbooks backed by local validation or preflight tests.
 4. Harden crash/restart recovery for item/gold/character state used by the PvE loop.

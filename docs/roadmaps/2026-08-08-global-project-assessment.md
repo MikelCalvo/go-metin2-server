@@ -214,8 +214,8 @@ Already useful:
 
 Still missing:
 
-- DB schema,
-- migrations,
+- DB schema beyond the initial `schema_migrations` ledger,
+- runtime migration application/backfill tooling,
 - domain repositories,
 - production backup/restore policy,
 - metrics/logging policy,

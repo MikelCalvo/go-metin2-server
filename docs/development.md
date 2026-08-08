@@ -145,6 +145,12 @@ Authored item-template snapshots now follow the same validation posture. `itemst
 
 This is still bootstrap file persistence, not a migration-ready database layer. Future migration/backfill tooling should either emit the exact current schema or introduce an explicit versioned import/quarantine path instead of relying on silent field coercion.
 
+### Database migration catalog
+
+`db/migrations` now owns the first validated migration catalog skeleton for future DB-backed stores. The embedded catalog is intentionally small: `0001_bootstrap_schema_migrations` creates only the schema migration ledger and does not imply that accounts, characters, items, content, or runtime state are DB-backed yet.
+
+The `db/migrations` package validates migration file naming, up/down pairing, contiguous versions from `0001`, non-empty UTF-8 SQL bodies, deterministic ordering, and project-owned header comments. Run `go test ./db/migrations` before adding or changing migration files.
+
 ### Bootstrap QA reference
 
 For the default stub credentials and the current real-client smoke flow, see the [manual client QA checklist](qa/manual-client-checklist.md).

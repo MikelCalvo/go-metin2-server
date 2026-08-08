@@ -237,7 +237,7 @@ Still missing:
 - `internal/accountstore`, `internal/loginticket` — bootstrap persistence stores.
 - `internal/staticstore`, `internal/interactionstore`, `internal/contentbundle` — authored content, static actors, interactions, merchant previews, and bundle import/export.
 - `internal/ops` — local debug/pprof/operator HTTP mux.
-- `db/migrations` — placeholder for future database migration work.
+- `db/migrations` — validated project-owned SQL migration catalog skeleton and first schema ledger migration.
 - `docs/` — engineering notes, QA, roadmaps, workflow, development, and clean-room docs.
 - `spec/protocol/` — owned protocol contracts and packet inventory.
 
