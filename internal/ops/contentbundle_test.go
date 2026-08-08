@@ -1813,6 +1813,116 @@ func TestLocalContentBundleShopCatalogEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalContentBundleShopRouteEndpointReturnsMatchingRoutesForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{ShopRoutes: []contentbundle.ShopRouteSummary{
+			{ActorName: "Remote Merchant", SourceMapIndex: 7, SourceX: 1300, SourceY: 2300, Ref: "npc:remote_merchant", Title: "Remote Merchant", EntryCount: 1},
+			{ActorName: "Village Merchant", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:village_merchant", Title: "Village Merchant", EntryCount: 2},
+			{ActorName: "Village Merchant", SourceMapIndex: 2, SourceX: 1100, SourceY: 2100, Ref: "npc:village_merchant_branch", Title: "Branch Merchant", EntryCount: 3},
+		}},
+	}
+	mux := RegisterLocalContentBundleShopRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/shop-routes/Village%20Merchant", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got []contentbundle.ShopRouteSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode shop route response body: %v", err)
+	}
+	want := []contentbundle.ShopRouteSummary{
+		{ActorName: "Village Merchant", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:village_merchant", Title: "Village Merchant", EntryCount: 2},
+		{ActorName: "Village Merchant", SourceMapIndex: 2, SourceX: 1100, SourceY: 2100, Ref: "npc:village_merchant_branch", Title: "Branch Merchant", EntryCount: 3},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle shop route rows:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleShopRouteEndpointReturnsNotFoundForMissingRoute(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{ShopRoutes: []contentbundle.ShopRouteSummary{{ActorName: "Village Merchant", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:village_merchant", Title: "Village Merchant", EntryCount: 2}}}}
+	mux := RegisterLocalContentBundleShopRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/shop-routes/Missing%20Merchant", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for missing shop route, got %d", http.StatusNotFound, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleShopRouteEndpointRejectsInvalidActorName(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{ShopRoutes: []contentbundle.ShopRouteSummary{{ActorName: "Village Merchant"}}}}
+	mux := RegisterLocalContentBundleShopRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	for _, path := range []string{"/local/content-bundle/shop-routes/", "/local/content-bundle/shop-routes/Village%2FMerchant", "/local/content-bundle/shop-routes/Village%20Merchant/extra"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for invalid shop route path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called for invalid shop route actor names, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleShopRouteEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{ShopRoutes: []contentbundle.ShopRouteSummary{{ActorName: "Village Merchant"}}}}
+	mux := RegisterLocalContentBundleShopRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/shop-routes/Village%20Merchant", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback caller, got %d", http.StatusForbidden, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleShopRouteEndpointRejectsWrongMethod(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{ShopRoutes: []contentbundle.ShopRouteSummary{{ActorName: "Village Merchant"}}}}
+	mux := RegisterLocalContentBundleShopRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/shop-routes/Village%20Merchant", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
 func TestLocalContentBundleWarpDestinationEndpointReturnsExactDestinationForLoopbackGet(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{
 		status: http.StatusOK,
@@ -1906,6 +2016,116 @@ func TestLocalContentBundleWarpDestinationEndpointRejectsWrongMethod(t *testing.
 	mux := RegisterLocalContentBundleWarpDestinationEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
 
 	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/warp-destinations/warp/npc:teleporter", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleWarpRouteEndpointReturnsMatchingRoutesForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{WarpRoutes: []contentbundle.WarpRouteSummary{
+			{ActorName: "Remote Gate", SourceMapIndex: 7, SourceX: 1300, SourceY: 2300, Ref: "npc:remote_gate", Text: "Remote gate.", TargetMapIndex: 8, TargetX: 1400, TargetY: 2400},
+			{ActorName: "Village Gate", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:village_gate", Text: "Step through the gate.", TargetMapIndex: 42, TargetX: 1700, TargetY: 2800},
+			{ActorName: "Village Gate", SourceMapIndex: 2, SourceX: 1100, SourceY: 2100, Ref: "npc:village_gate_branch", TargetMapIndex: 43, TargetX: 1800, TargetY: 2900},
+		}},
+	}
+	mux := RegisterLocalContentBundleWarpRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/warp-routes/Village%20Gate", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got []contentbundle.WarpRouteSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode warp route response body: %v", err)
+	}
+	want := []contentbundle.WarpRouteSummary{
+		{ActorName: "Village Gate", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:village_gate", Text: "Step through the gate.", TargetMapIndex: 42, TargetX: 1700, TargetY: 2800},
+		{ActorName: "Village Gate", SourceMapIndex: 2, SourceX: 1100, SourceY: 2100, Ref: "npc:village_gate_branch", TargetMapIndex: 43, TargetX: 1800, TargetY: 2900},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle warp route rows:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleWarpRouteEndpointReturnsNotFoundForMissingRoute(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{WarpRoutes: []contentbundle.WarpRouteSummary{{ActorName: "Village Gate", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:village_gate", TargetMapIndex: 42, TargetX: 1700, TargetY: 2800}}}}
+	mux := RegisterLocalContentBundleWarpRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/warp-routes/Missing%20Gate", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for missing warp route, got %d", http.StatusNotFound, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleWarpRouteEndpointRejectsInvalidActorName(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{WarpRoutes: []contentbundle.WarpRouteSummary{{ActorName: "Village Gate"}}}}
+	mux := RegisterLocalContentBundleWarpRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	for _, path := range []string{"/local/content-bundle/warp-routes/", "/local/content-bundle/warp-routes/Village%2FGate", "/local/content-bundle/warp-routes/Village%20Gate/extra"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for invalid warp route path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called for invalid warp route actor names, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleWarpRouteEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{WarpRoutes: []contentbundle.WarpRouteSummary{{ActorName: "Village Gate"}}}}
+	mux := RegisterLocalContentBundleWarpRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/warp-routes/Village%20Gate", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback caller, got %d", http.StatusForbidden, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleWarpRouteEndpointRejectsWrongMethod(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{WarpRoutes: []contentbundle.WarpRouteSummary{{ActorName: "Village Gate"}}}}
+	mux := RegisterLocalContentBundleWarpRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/warp-routes/Village%20Gate", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 

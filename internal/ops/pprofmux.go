@@ -1668,6 +1668,45 @@ func RegisterLocalContentBundleShopCatalogEndpoint(mux *http.ServeMux, exportCon
 	return mux
 }
 
+func RegisterLocalContentBundleShopRouteEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/content-bundle/shop-routes/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		name, ok := decodeLocalContentBundleShopRouteActorName(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		matches := make([]contentbundle.ShopRouteSummary, 0)
+		for _, route := range summary.ShopRoutes {
+			if route.ActorName == name {
+				matches = append(matches, route)
+			}
+		}
+		if len(matches) == 0 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, matches, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalContentBundleWarpDestinationEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
 	if mux == nil || exportContentBundleSummary == nil {
 		return mux
@@ -1699,6 +1738,45 @@ func RegisterLocalContentBundleWarpDestinationEndpoint(mux *http.ServeMux, expor
 			}
 		}
 		w.WriteHeader(http.StatusNotFound)
+	})
+	return mux
+}
+
+func RegisterLocalContentBundleWarpRouteEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/content-bundle/warp-routes/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		name, ok := decodeLocalContentBundleWarpRouteActorName(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		matches := make([]contentbundle.WarpRouteSummary, 0)
+		for _, route := range summary.WarpRoutes {
+			if route.ActorName == name {
+				matches = append(matches, route)
+			}
+		}
+		if len(matches) == 0 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, matches, http.StatusOK)
 	})
 	return mux
 }
@@ -2355,12 +2433,20 @@ func decodeLocalContentBundleShopCatalogIdentity(r *http.Request) (string, strin
 	return kind, ref, true
 }
 
+func decodeLocalContentBundleShopRouteActorName(r *http.Request) (string, bool) {
+	return decodeLocalCharacterName(r, "/local/content-bundle/shop-routes/")
+}
+
 func decodeLocalContentBundleWarpDestinationIdentity(r *http.Request) (string, string, bool) {
 	kind, ref, ok := decodeLocalKindRefIdentityWithPrefix(r, "/local/content-bundle/warp-destinations/")
 	if !ok || kind != interactionstore.KindWarp {
 		return "", "", false
 	}
 	return kind, ref, true
+}
+
+func decodeLocalContentBundleWarpRouteActorName(r *http.Request) (string, bool) {
+	return decodeLocalCharacterName(r, "/local/content-bundle/warp-routes/")
 }
 
 func decodeLocalKindRefIdentityWithPrefix(r *http.Request, prefix string) (string, string, bool) {

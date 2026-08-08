@@ -488,7 +488,15 @@ func main() {
 		opsHandler,
 		exportContentBundleSummary,
 	)
+	opsHandler = ops.RegisterLocalContentBundleShopRouteEndpoint(
+		opsHandler,
+		exportContentBundleSummary,
+	)
 	opsHandler = ops.RegisterLocalContentBundleWarpDestinationEndpoint(
+		opsHandler,
+		exportContentBundleSummary,
+	)
+	opsHandler = ops.RegisterLocalContentBundleWarpRouteEndpoint(
 		opsHandler,
 		exportContentBundleSummary,
 	)
