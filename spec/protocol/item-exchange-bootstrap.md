@@ -5,6 +5,7 @@ This note freezes the first clean-room `EXCHANGE` boundary for the bootstrap ite
 The goal is deliberately conservative:
 
 - own the client packet layout before broader player-to-player trade is implemented
+- own the shared server response packet layout before any runtime exchange-window emission is introduced
 - route the packet through the `GAME` phase without treating it as an unknown-header disconnect edge
 - keep the shipped runtime fail-closed with no inventory, equipment, quickslot, gold, ground-item, peer, or persistence mutation until a later exchange/trade slice owns two-party state and acceptance semantics
 - allow one template-authored guard response for already-owned `anti_give` metadata on `ITEM_ADD` without implementing two-party trade
@@ -47,7 +48,42 @@ Current owned client subheaders:
 | `ACCEPT` | `4` | decoded and fail-closed |
 | `CANCEL` | `5` | decoded and fail-closed |
 
-The repository owns only this byte layout and the current fail-closed runtime policy. It does not yet interpret item ownership, target eligibility, trade windows, accept state, or trade finalization.
+The repository owns only this client byte layout and the current fail-closed runtime policy. It does not yet interpret item ownership, target eligibility, trade windows, accept state, or trade finalization.
+
+## Server packet
+
+### `GC::EXCHANGE` (`0x051C`)
+
+Direction: server -> client.
+
+The shared server exchange response frame uses one fixed payload shape for all currently documented server subheaders:
+
+| Offset | Field | Type | Notes |
+| --- | --- | --- | --- |
+| 0 | `subheader` | `uint8` | server exchange action/status selector |
+| 1 | `is_me` | `uint8` | non-zero when the response describes the receiver's own exchange side |
+| 2 | `arg1` | `uint32 LE` | `vnum`, `gold`, accept flag, peer `vid`, display slot, or status-specific scalar |
+| 6 | `arg2` | packed `TItemPos` | `window_type uint8`, `cell uint16 LE`; exchange item display positions currently use `RESERVED_WINDOW` |
+| 9 | `arg3` | `uint32 LE` | count or status-specific scalar |
+| 13 | `sockets` | `[3]int32 LE` | copied from item display metadata for `ITEM_ADD`, zero otherwise |
+| 25 | `attributes` | `[7]{type uint8, value int16 LE}` | copied from item display metadata for `ITEM_ADD`, zero otherwise |
+
+Total frame length is 50 bytes including the common `header` and `length` fields.
+
+Current owned server subheaders:
+
+| Name | Value | Current runtime policy |
+| --- | ---: | --- |
+| `START` | `0` | codec/documentation only |
+| `ITEM_ADD` | `1` | codec/documentation only |
+| `ITEM_DEL` | `2` | codec/documentation only |
+| `GOLD_ADD` | `3` | codec/documentation only |
+| `ACCEPT` | `4` | codec/documentation only |
+| `END` | `5` | codec/documentation only |
+| `ALREADY` | `6` | codec/documentation only |
+| `LESS_GOLD` | `7` | codec/documentation only |
+
+This codec slice is deliberately presentation-only. The shipped runtime still does not emit `GC::EXCHANGE`; the only current exchange guard feedback remains the self-only `CHAT_TYPE_INFO` packet described below.
 
 ## Current runtime contract
 
@@ -100,7 +136,7 @@ Later slices must write a new contract before broadening this packet into real g
 
 ## Current coverage
 
-- `internal/proto/item` freezes `CG::EXCHANGE` encode/decode behavior plus unexpected-header and invalid-payload rejection.
+- `internal/proto/item` freezes `CG::EXCHANGE` encode/decode behavior and the first shared `GC::EXCHANGE` response codec, plus unexpected-header and invalid-payload rejection for both directions.
 - `internal/game` freezes `GAME`-phase dispatch to a handler hook, with denied results returning no frames.
 - `internal/player` freezes the metadata-driven, no-mutation exchange item-add `anti_give` rejection lookup.
 - `internal/minimal` freezes the shipped no-frame fail-closed behavior with persisted inventory, quickslots, and gold unchanged after an ordinary `EXCHANGE` item-add packet, plus the self-only `CHAT_TYPE_INFO` rejection frame when the carried item's template authors `anti_give` and `give_reject_message`.

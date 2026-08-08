@@ -35,6 +35,34 @@ func TestExchangeItemMaxNumMatchesCurrentExchangeWindow(t *testing.T) {
 	}
 }
 
+func TestExchangeServerSubheadersMatchCurrentExchangeFamily(t *testing.T) {
+	want := map[string]uint8{
+		"start":     0,
+		"item_add":  1,
+		"item_del":  2,
+		"gold_add":  3,
+		"accept":    4,
+		"end":       5,
+		"already":   6,
+		"less_gold": 7,
+	}
+	got := map[string]uint8{
+		"start":     ExchangeServerSubheaderStart,
+		"item_add":  ExchangeServerSubheaderItemAdd,
+		"item_del":  ExchangeServerSubheaderItemDel,
+		"gold_add":  ExchangeServerSubheaderGoldAdd,
+		"accept":    ExchangeServerSubheaderAccept,
+		"end":       ExchangeServerSubheaderEnd,
+		"already":   ExchangeServerSubheaderAlready,
+		"less_gold": ExchangeServerSubheaderLessGold,
+	}
+	for name, wantValue := range want {
+		if gotValue := got[name]; gotValue != wantValue {
+			t.Fatalf("unexpected exchange server subheader %s: got %d want %d", name, gotValue, wantValue)
+		}
+	}
+}
+
 func TestAntiFlagConstantsMatchLegacyBitPositions(t *testing.T) {
 	if AntiFlagFemale != 1<<0 || AntiFlagMale != 1<<1 || AntiFlagWarrior != 1<<2 || AntiFlagAssassin != 1<<3 || AntiFlagSura != 1<<4 || AntiFlagShaman != 1<<5 {
 		t.Fatalf("unexpected job/sex anti-flag bit positions")
@@ -280,6 +308,86 @@ func TestDecodeClientExchangeRejectsUnexpectedHeader(t *testing.T) {
 
 func TestDecodeClientExchangeRejectsInvalidPayload(t *testing.T) {
 	_, err := DecodeClientExchange(frame.Frame{Header: HeaderClientExchange, Length: 12, Payload: make([]byte, clientExchangePayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestEncodeServerExchangeBuildsAFrame(t *testing.T) {
+	packet := ServerExchangePacket{
+		Subheader:  ExchangeServerSubheaderItemAdd,
+		IsMe:       1,
+		Arg1:       0x11223344,
+		Position:   Position{WindowType: WindowReserved, Cell: 7},
+		Arg3:       0x55667788,
+		Sockets:    [ItemSocketCount]int32{0x01020304, -2, 0},
+		Attributes: [ItemAttributeCount]Attribute{{Type: 3, Value: 300}, {Type: 4, Value: -20}},
+	}
+	want := frame.Encode(HeaderServerExchange, []byte{
+		ExchangeServerSubheaderItemAdd, 1,
+		0x44, 0x33, 0x22, 0x11,
+		WindowReserved, 7, 0,
+		0x88, 0x77, 0x66, 0x55,
+		0x04, 0x03, 0x02, 0x01,
+		0xfe, 0xff, 0xff, 0xff,
+		0x00, 0x00, 0x00, 0x00,
+		3, 0x2c, 0x01,
+		4, 0xec, 0xff,
+		0, 0, 0,
+		0, 0, 0,
+		0, 0, 0,
+		0, 0, 0,
+		0, 0, 0,
+	})
+	got := EncodeServerExchange(packet)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected server exchange frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeServerExchangeReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeServerExchange(decodeSingleFrame(t, frame.Encode(HeaderServerExchange, []byte{
+		ExchangeServerSubheaderItemAdd, 1,
+		0x44, 0x33, 0x22, 0x11,
+		WindowReserved, 7, 0,
+		0x88, 0x77, 0x66, 0x55,
+		0x04, 0x03, 0x02, 0x01,
+		0xfe, 0xff, 0xff, 0xff,
+		0x00, 0x00, 0x00, 0x00,
+		3, 0x2c, 0x01,
+		4, 0xec, 0xff,
+		0, 0, 0,
+		0, 0, 0,
+		0, 0, 0,
+		0, 0, 0,
+		0, 0, 0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	want := ServerExchangePacket{
+		Subheader:  ExchangeServerSubheaderItemAdd,
+		IsMe:       1,
+		Arg1:       0x11223344,
+		Position:   Position{WindowType: WindowReserved, Cell: 7},
+		Arg3:       0x55667788,
+		Sockets:    [ItemSocketCount]int32{0x01020304, -2, 0},
+		Attributes: [ItemAttributeCount]Attribute{{Type: 3, Value: 300}, {Type: 4, Value: -20}},
+	}
+	if packet != want {
+		t.Fatalf("unexpected server exchange packet: got %+v want %+v", packet, want)
+	}
+}
+
+func TestDecodeServerExchangeRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeServerExchange(frame.Frame{Header: HeaderServerExchange + 1, Length: 50, Payload: make([]byte, serverExchangePayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeServerExchangeRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeServerExchange(frame.Frame{Header: HeaderServerExchange, Length: 49, Payload: make([]byte, serverExchangePayloadSize-1)})
 	if !errors.Is(err, ErrInvalidPayload) {
 		t.Fatalf("expected ErrInvalidPayload, got %v", err)
 	}

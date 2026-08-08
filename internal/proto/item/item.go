@@ -25,6 +25,7 @@ const (
 	HeaderGroundDel       uint16 = 0x0516
 	HeaderOwnership       uint16 = 0x0517
 	HeaderGet             uint16 = 0x0518
+	HeaderServerExchange  uint16 = 0x051C
 
 	WindowReserved            uint8  = 0
 	WindowInventory           uint8  = 1
@@ -51,6 +52,7 @@ const (
 	clientGivePayloadSize      = 4 + positionSize + 1
 	clientExchangePayloadSize  = 1 + 4 + 1 + positionSize
 	clientRefinePayloadSize    = 2
+	serverExchangePayloadSize  = 1 + 1 + 4 + positionSize + 4 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
 	delPayloadSize             = positionSize
 	setPayloadSize             = positionSize + 4 + 1 + 4 + 4 + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
 	usePayloadSize             = positionSize + 4 + 4 + 4
@@ -76,6 +78,17 @@ const (
 	ExchangeSubheaderGoldAdd
 	ExchangeSubheaderAccept
 	ExchangeSubheaderCancel
+)
+
+const (
+	ExchangeServerSubheaderStart uint8 = iota
+	ExchangeServerSubheaderItemAdd
+	ExchangeServerSubheaderItemDel
+	ExchangeServerSubheaderGoldAdd
+	ExchangeServerSubheaderAccept
+	ExchangeServerSubheaderEnd
+	ExchangeServerSubheaderAlready
+	ExchangeServerSubheaderLessGold
 )
 
 const (
@@ -209,6 +222,16 @@ type ClientExchangePacket struct {
 type ClientRefinePacket struct {
 	Position uint8
 	Type     uint8
+}
+
+type ServerExchangePacket struct {
+	Subheader  uint8
+	IsMe       uint8
+	Arg1       uint32
+	Position   Position
+	Arg3       uint32
+	Sockets    [ItemSocketCount]int32
+	Attributes [ItemAttributeCount]Attribute
 }
 
 type GroundAddPacket struct {
@@ -428,6 +451,57 @@ func DecodeClientRefine(f frame.Frame) (ClientRefinePacket, error) {
 		return ClientRefinePacket{}, ErrInvalidPayload
 	}
 	return ClientRefinePacket{Position: f.Payload[0], Type: f.Payload[1]}, nil
+}
+
+func EncodeServerExchange(packet ServerExchangePacket) []byte {
+	payload := make([]byte, serverExchangePayloadSize)
+	payload[0] = packet.Subheader
+	payload[1] = packet.IsMe
+	binary.LittleEndian.PutUint32(payload[2:], packet.Arg1)
+	encodePosition(payload[6:6+positionSize], packet.Position)
+	offset := 6 + positionSize
+	binary.LittleEndian.PutUint32(payload[offset:], packet.Arg3)
+	offset += 4
+	for _, socket := range packet.Sockets {
+		binary.LittleEndian.PutUint32(payload[offset:], uint32(socket))
+		offset += 4
+	}
+	for _, attribute := range packet.Attributes {
+		payload[offset] = attribute.Type
+		offset++
+		binary.LittleEndian.PutUint16(payload[offset:], uint16(attribute.Value))
+		offset += 2
+	}
+	return frame.Encode(HeaderServerExchange, payload)
+}
+
+func DecodeServerExchange(f frame.Frame) (ServerExchangePacket, error) {
+	if f.Header != HeaderServerExchange {
+		return ServerExchangePacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != serverExchangePayloadSize {
+		return ServerExchangePacket{}, ErrInvalidPayload
+	}
+	packet := ServerExchangePacket{
+		Subheader: f.Payload[0],
+		IsMe:      f.Payload[1],
+		Arg1:      binary.LittleEndian.Uint32(f.Payload[2:]),
+		Position:  decodePosition(f.Payload[6 : 6+positionSize]),
+	}
+	offset := 6 + positionSize
+	packet.Arg3 = binary.LittleEndian.Uint32(f.Payload[offset:])
+	offset += 4
+	for i := range packet.Sockets {
+		packet.Sockets[i] = int32(binary.LittleEndian.Uint32(f.Payload[offset:]))
+		offset += 4
+	}
+	for i := range packet.Attributes {
+		packet.Attributes[i].Type = f.Payload[offset]
+		offset++
+		packet.Attributes[i].Value = int16(binary.LittleEndian.Uint16(f.Payload[offset:]))
+		offset += 2
+	}
+	return packet, nil
 }
 
 func EncodeSet(packet SetPacket) []byte {
