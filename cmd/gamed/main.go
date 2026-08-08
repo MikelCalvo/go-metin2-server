@@ -484,6 +484,10 @@ func main() {
 		opsHandler,
 		exportContentBundleSummary,
 	)
+	opsHandler = ops.RegisterLocalContentBundleInteractionDefinitionEndpoint(
+		opsHandler,
+		exportContentBundleSummary,
+	)
 	opsHandler = ops.RegisterLocalContentBundleShopCatalogEndpoint(
 		opsHandler,
 		exportContentBundleSummary,

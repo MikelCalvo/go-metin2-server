@@ -1707,6 +1707,162 @@ func TestLocalContentBundleInteractableStaticActorEndpointForwardsSummaryExporte
 	}
 }
 
+func TestLocalContentBundleInteractionDefinitionEndpointReturnsExactReferencedDefinitionForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{
+			InteractionDefinitionPreviews: []contentbundle.InteractionDefinitionPreviewSummary{
+				{Kind: interactionstore.KindInfo, Ref: "lore:village", Preview: "The village is quiet."},
+				{Kind: interactionstore.KindTalk, Ref: "npc:guide", Preview: "Welcome."},
+			},
+			ReferencedInteractionDefinitions: []contentbundle.InteractionDefinitionReferenceSummary{{Kind: interactionstore.KindTalk, Ref: "npc:guide"}},
+		},
+	}
+	mux := RegisterLocalContentBundleInteractionDefinitionEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/interaction-definitions/talk/npc:guide", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got localContentBundleInteractionDefinitionSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode interaction definition response body: %v", err)
+	}
+	want := localContentBundleInteractionDefinitionSummary{Kind: interactionstore.KindTalk, Ref: "npc:guide", Preview: "Welcome.", Referenced: true}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle interaction definition summary:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleInteractionDefinitionEndpointReturnsUnreferencedDefinitionForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{
+			InteractionDefinitionPreviews:      []contentbundle.InteractionDefinitionPreviewSummary{{Kind: interactionstore.KindInfo, Ref: "lore:village", Preview: "The village is quiet."}},
+			UnreferencedInteractionDefinitions: []contentbundle.InteractionDefinitionReferenceSummary{{Kind: interactionstore.KindInfo, Ref: "lore:village"}},
+		},
+	}
+	mux := RegisterLocalContentBundleInteractionDefinitionEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/interaction-definitions/info/lore:village", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	var got localContentBundleInteractionDefinitionSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode unreferenced interaction definition response body: %v", err)
+	}
+	want := localContentBundleInteractionDefinitionSummary{Kind: interactionstore.KindInfo, Ref: "lore:village", Preview: "The village is quiet.", Referenced: false}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected unreferenced content-bundle interaction definition summary:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleInteractionDefinitionEndpointReturnsNotFoundForMissingDefinition(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{InteractionDefinitionPreviews: []contentbundle.InteractionDefinitionPreviewSummary{{Kind: interactionstore.KindTalk, Ref: "npc:guide", Preview: "Welcome."}}}}
+	mux := RegisterLocalContentBundleInteractionDefinitionEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/interaction-definitions/talk/npc:missing", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for missing interaction definition, got %d", http.StatusNotFound, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleInteractionDefinitionEndpointRejectsInvalidIdentity(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{InteractionDefinitionPreviews: []contentbundle.InteractionDefinitionPreviewSummary{{Kind: interactionstore.KindTalk, Ref: "npc:guide", Preview: "Welcome."}}}}
+	mux := RegisterLocalContentBundleInteractionDefinitionEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	for _, path := range []string{"/local/content-bundle/interaction-definitions/talk", "/local/content-bundle/interaction-definitions/quest/npc:first_steps", "/local/content-bundle/interaction-definitions/talk/npc%2Fguide", "/local/content-bundle/interaction-definitions/talk/npc:guide/extra"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for invalid interaction definition path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called for invalid interaction definition identities, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleInteractionDefinitionEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{InteractionDefinitionPreviews: []contentbundle.InteractionDefinitionPreviewSummary{{Kind: interactionstore.KindTalk, Ref: "npc:guide", Preview: "Welcome."}}}}
+	mux := RegisterLocalContentBundleInteractionDefinitionEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/interaction-definitions/talk/npc:guide", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback caller, got %d", http.StatusForbidden, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleInteractionDefinitionEndpointRejectsWrongMethod(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{InteractionDefinitionPreviews: []contentbundle.InteractionDefinitionPreviewSummary{{Kind: interactionstore.KindTalk, Ref: "npc:guide", Preview: "Welcome."}}}}
+	mux := RegisterLocalContentBundleInteractionDefinitionEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/interaction-definitions/talk/npc:guide", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleInteractionDefinitionEndpointForwardsSummaryExporterErrors(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusConflict, result: map[string]string{"error": "content summary unavailable"}}
+	mux := RegisterLocalContentBundleInteractionDefinitionEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/interaction-definitions/talk/npc:guide", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d for exporter failure, got %d", http.StatusConflict, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
 func TestLocalContentBundleShopCatalogEndpointReturnsExactCatalogForLoopbackGet(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{
 		status: http.StatusOK,

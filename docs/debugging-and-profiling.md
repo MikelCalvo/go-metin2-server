@@ -342,6 +342,12 @@ Returns one exact spawn-group row from the live content-bundle summary. This loo
 
 Use it when local QA needs to inspect one practice-mob/spawn definition without fetching the full bundle summary or querying live runtime entity state. It is not a gameplay protocol endpoint and does not mutate authored content.
 
+### `GET /local/content-bundle/interaction-definitions/{kind}/{ref}`
+
+Returns one compact authored interaction-definition preview row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; `kind` must be one of the currently owned interaction kinds and `ref` must satisfy the canonical path-safe interaction reference rule used by `/local/interactions/{kind}/{ref}`. It returns JSON with `kind`, `ref`, `preview`, and `referenced`, returns `404` when the live authored bundle has no matching definition preview, rejects malformed identities with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
+
+Use it when local QA needs to inspect one authored definition preview and whether it is referenced by any static actor without fetching the full content-bundle summary or full bundle payload. It is not a gameplay protocol endpoint and does not mutate authored content.
+
 ### `GET /local/content-bundle/shop-catalogs/{kind}/{ref}`
 
 Returns one exact structured shop-catalog summary row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; the only accepted `kind` for this path is `shop_preview`, and `ref` must satisfy the same path-safe interaction reference rule used by `/local/interactions/{kind}/{ref}`. It returns `404` when the live authored bundle has no matching catalog, rejects malformed identities with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
