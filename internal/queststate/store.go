@@ -35,6 +35,15 @@ type Snapshot struct {
 	Flags []Flag `json:"flags"`
 }
 
+type SnapshotSummary struct {
+	FlagCount      int      `json:"flag_count"`
+	Characters     []string `json:"characters"`
+	QuestRefs      []string `json:"quest_refs"`
+	FlagKeys       []string `json:"flag_keys"`
+	CrashTempCount int      `json:"crash_temp_count,omitempty"`
+	CrashTempFiles []string `json:"crash_temp_files,omitempty"`
+}
+
 type Transition struct {
 	Character string `json:"character"`
 	QuestRef  string `json:"quest_ref"`
@@ -159,6 +168,110 @@ func (s *FileStore) Load() (Snapshot, error) {
 		return Snapshot{}, fmt.Errorf("%w: validate quest state snapshot", err)
 	}
 	return normalized, nil
+}
+
+func (s *FileStore) Validate() (SnapshotSummary, error) {
+	if s == nil || s.path == "" {
+		return SnapshotSummary{}, ErrStorePathRequired
+	}
+	summary := SnapshotSummary{Characters: []string{}, QuestRefs: []string{}, FlagKeys: []string{}}
+	snapshot, err := s.Load()
+	if err != nil {
+		if !errors.Is(err, ErrSnapshotNotFound) {
+			return SnapshotSummary{}, err
+		}
+	} else {
+		summary = summarizeSnapshot(snapshot)
+	}
+	crashTempFiles, err := s.crashTempFiles()
+	if err != nil {
+		return SnapshotSummary{}, err
+	}
+	summary.CrashTempCount = len(crashTempFiles)
+	summary.CrashTempFiles = crashTempFiles
+	return summary, nil
+}
+
+func (s *FileStore) CleanupCrashTempFiles() (SnapshotSummary, error) {
+	if s == nil || s.path == "" {
+		return SnapshotSummary{}, ErrStorePathRequired
+	}
+	if _, err := s.Validate(); err != nil {
+		return SnapshotSummary{}, err
+	}
+	crashTempFiles, err := s.crashTempFiles()
+	if err != nil {
+		return SnapshotSummary{}, err
+	}
+	if len(crashTempFiles) == 0 {
+		return s.Validate()
+	}
+	storeDir := filepath.Dir(s.path)
+	for _, filename := range crashTempFiles {
+		if err := os.Remove(filepath.Join(storeDir, filename)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return SnapshotSummary{}, fmt.Errorf("remove quest state crash temp file %q: %w", filename, err)
+		}
+	}
+	if err := syncDir(storeDir); err != nil {
+		return SnapshotSummary{}, fmt.Errorf("sync quest state store dir after crash temp cleanup: %w", err)
+	}
+	return s.Validate()
+}
+
+func summarizeSnapshot(snapshot Snapshot) SnapshotSummary {
+	charactersSeen := make(map[string]struct{})
+	questRefsSeen := make(map[string]struct{})
+	summary := SnapshotSummary{
+		FlagCount:  len(snapshot.Flags),
+		Characters: []string{},
+		QuestRefs:  []string{},
+		FlagKeys:   make([]string, 0, len(snapshot.Flags)),
+	}
+	for _, flag := range normalizeSnapshot(snapshot).Flags {
+		summary.FlagKeys = append(summary.FlagKeys, flag.Character+":"+flag.QuestRef+":"+flag.Name)
+		charactersSeen[flag.Character] = struct{}{}
+		questRefsSeen[flag.QuestRef] = struct{}{}
+	}
+	for character := range charactersSeen {
+		summary.Characters = append(summary.Characters, character)
+	}
+	sort.Strings(summary.Characters)
+	for questRef := range questRefsSeen {
+		summary.QuestRefs = append(summary.QuestRefs, questRef)
+	}
+	sort.Strings(summary.QuestRefs)
+	return summary
+}
+
+func (s *FileStore) crashTempFiles() ([]string, error) {
+	entries, err := os.ReadDir(filepath.Dir(s.path))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read quest state store crash temp files: %w", err)
+	}
+	files := make([]string, 0)
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == filepath.Base(s.path) {
+			continue
+		}
+		if strings.HasPrefix(name, ".quest-state-") && strings.HasSuffix(name, ".json") {
+			if entry.Type()&os.ModeSymlink != 0 {
+				return nil, fmt.Errorf("%w: quest state crash temp file %q is a symlink", ErrInvalidSnapshot, name)
+			}
+			if entry.IsDir() {
+				continue
+			}
+			files = append(files, name)
+		}
+	}
+	sort.Strings(files)
+	if len(files) == 0 {
+		return nil, nil
+	}
+	return files, nil
 }
 
 func (s *FileStore) Save(snapshot Snapshot) error {

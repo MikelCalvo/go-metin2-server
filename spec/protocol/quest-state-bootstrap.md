@@ -11,9 +11,10 @@ The current owned surface is limited to `internal/queststate`:
 - a file-backed quest-flag snapshot,
 - deterministic snapshot canonicalization,
 - strict validation of quest identities and flag names,
-- one compare-and-set transition primitive for a single character flag.
+- one compare-and-set transition primitive for a single character flag,
+- a read-only store validation summary plus crash-temp cleanup for the same snapshot format.
 
-This seam is meant to support future content/NPC work such as “talk to an actor once and advance a flag”, but no static actor, packet, reward, or dialog runtime calls it yet.
+This seam is meant to support future content/NPC work such as “talk to an actor once and advance a flag”, but no static actor, packet, reward, dialog runtime, or loopback operator endpoint calls it yet.
 
 ## Snapshot shape
 
@@ -94,6 +95,29 @@ Known failure reasons:
 
 Failed transitions return no mutated snapshot.
 
+## Store validation and crash-temp cleanup
+
+`FileStore.Validate()` is now the first read-only operator-grade primitive around this store. It does not mutate the committed snapshot. It returns a deterministic summary:
+
+- `flag_count`,
+- sorted distinct `characters`,
+- sorted distinct `quest_refs`,
+- sorted `flag_keys` using `character:quest_ref:name`,
+- `crash_temp_count`,
+- sorted `crash_temp_files`.
+
+Validation treats a missing committed snapshot as an empty valid summary, matching the store-level “not found is not an implicit runtime” rule. Malformed committed snapshots, symlinked committed snapshots, malformed crash-temp directory reads, and symlinked crash-temp candidates fail closed.
+
+`FileStore.CleanupCrashTempFiles()` removes only crash remnants that match the owned quest-state temp-file pattern:
+
+```text
+.quest-state-*.json
+```
+
+It validates the store before removal, leaves the committed `quest-state.json` and unrelated files alone, syncs the store directory after cleanup, and returns the post-cleanup validation summary.
+
+No HTTP endpoint is frozen by this slice. Future loopback ops wiring should reuse these primitives rather than duplicating snapshot parsing or temp-file matching rules.
+
 ## Current non-goals
 
 This seam does **not** yet freeze:
@@ -107,7 +131,7 @@ This seam does **not** yet freeze:
 - timers or daily reset policy,
 - script VM compatibility,
 - content-bundle quest definitions,
-- loopback operator endpoints for quest mutation.
+- loopback operator endpoints for quest mutation or cleanup/validation wiring.
 
 ## Success definition
 
@@ -115,5 +139,6 @@ The current repository can now say:
 
 - there is a tested, deterministic file-backed quest-flag primitive,
 - one single-flag transition can initialize, advance, or clear a flag only when the caller-provided current value matches,
-- bad identities, duplicate rows, malformed JSON, symlinked committed snapshots, and mismatched current values fail closed,
+- the same store can be validated and cleaned of owned crash-temp files without mutating committed quest flags,
+- bad identities, duplicate rows, malformed JSON, symlinked committed snapshots, symlinked crash-temp candidates, and mismatched current values fail closed,
 - broader client-visible quest runtime remains future work.

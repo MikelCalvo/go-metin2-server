@@ -167,3 +167,112 @@ func TestFileStoreRejectsSymlinkedCommittedQuestSnapshot(t *testing.T) {
 		t.Fatalf("expected ErrInvalidSnapshot for symlinked quest snapshot, got %v", err)
 	}
 }
+
+func TestFileStoreValidateSummarizesQuestFlagsAndCrashTemps(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "quest-state.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Flags: []Flag{
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},
+		{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "met_guard", Value: 1},
+		{Character: "QuestHero", QuestRef: "quest:daily_check", Name: "talked_to_guide", Value: 1},
+	}}); err != nil {
+		t.Fatalf("save quest state: %v", err)
+	}
+	for _, name := range []string{".quest-state-b.json", ".quest-state-a.json", ".not-quest-state.json"} {
+		if err := os.WriteFile(filepath.Join(filepath.Dir(path), name), []byte(`{"flags":[]}`), 0o644); err != nil {
+			t.Fatalf("write crash temp %s: %v", name, err)
+		}
+	}
+
+	summary, err := store.Validate()
+	if err != nil {
+		t.Fatalf("validate quest state store: %v", err)
+	}
+	want := SnapshotSummary{
+		FlagCount: 3,
+		Characters: []string{
+			"AnotherHero",
+			"QuestHero",
+		},
+		QuestRefs: []string{
+			"quest:daily_check",
+			"quest:first_steps",
+		},
+		FlagKeys: []string{
+			"AnotherHero:quest:first_steps:met_guard",
+			"QuestHero:quest:daily_check:talked_to_guide",
+			"QuestHero:quest:first_steps:step",
+		},
+		CrashTempCount: 2,
+		CrashTempFiles: []string{
+			".quest-state-a.json",
+			".quest-state-b.json",
+		},
+	}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected quest state summary:\n got: %#v\nwant: %#v", summary, want)
+	}
+}
+
+func TestFileStoreValidateTreatsMissingSnapshotAsEmptySummary(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "missing", "quest-state.json"))
+	summary, err := store.Validate()
+	if err != nil {
+		t.Fatalf("validate missing quest state snapshot: %v", err)
+	}
+	want := SnapshotSummary{Characters: []string{}, QuestRefs: []string{}, FlagKeys: []string{}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected missing-snapshot summary:\n got: %#v\nwant: %#v", summary, want)
+	}
+}
+
+func TestFileStoreCleanupCrashTempFilesRemovesOnlyQuestStateTemps(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "quest-state.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Flags: []Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1}}}); err != nil {
+		t.Fatalf("save quest state: %v", err)
+	}
+	for _, name := range []string{".quest-state-a.json", ".quest-state-b.json", ".quest-state-ignore.tmp"} {
+		if err := os.WriteFile(filepath.Join(filepath.Dir(path), name), []byte(`{"flags":[]}`), 0o644); err != nil {
+			t.Fatalf("write temp %s: %v", name, err)
+		}
+	}
+
+	summary, err := store.CleanupCrashTempFiles()
+	if err != nil {
+		t.Fatalf("cleanup quest state crash temps: %v", err)
+	}
+	if summary.CrashTempCount != 0 || len(summary.CrashTempFiles) != 0 {
+		t.Fatalf("expected no crash temps after cleanup, got %+v", summary)
+	}
+	for _, name := range []string{".quest-state-a.json", ".quest-state-b.json"} {
+		if _, err := os.Stat(filepath.Join(filepath.Dir(path), name)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("expected %s to be removed, stat err=%v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(path), ".quest-state-ignore.tmp")); err != nil {
+		t.Fatalf("expected non-crash temp to remain, stat err=%v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected committed quest state snapshot to remain, stat err=%v", err)
+	}
+}
+
+func TestFileStoreValidateRejectsSymlinkedQuestStateCrashTemp(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "quest-state.json")
+	store := NewFileStore(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	target := filepath.Join(t.TempDir(), "outside-quest-state-temp.json")
+	if err := os.WriteFile(target, []byte(`{"flags":[]}`), 0o644); err != nil {
+		t.Fatalf("write outside quest temp: %v", err)
+	}
+	if err := os.Symlink(target, filepath.Join(filepath.Dir(path), ".quest-state-symlink.json")); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for symlinked quest crash temp, got %v", err)
+	}
+}
