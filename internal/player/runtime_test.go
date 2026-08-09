@@ -525,6 +525,33 @@ func bootstrapEquipmentPointTemplate(vnum uint32, equipSlot inventory.EquipmentS
 	}
 }
 
+func TestRuntimeItemUseCarriesTemplateAuthoredSpecialEffectType(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030102,
+		VID:       0x02040102,
+		Name:      "PeerTwo",
+		Points:    [255]int32{1: 700},
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50")
+	template.UseEffect.SpecialEffectType = 1
+
+	result, ok := runtime.UseItem(5, template)
+	if !ok {
+		t.Fatal("expected template-authored special-effect consumable use to succeed")
+	}
+	if result.SpecialEffectType != 1 {
+		t.Fatalf("expected item-use result to carry template-authored special effect type 1, got %d", result.SpecialEffectType)
+	}
+	if result.PointAmount != 50 || result.PointValue != 750 || result.EffectMessage != "consume:27001:+50" {
+		t.Fatalf("unexpected special-effect item-use result: %+v", result)
+	}
+	if got := runtime.PersistedSnapshot().Points[1]; got != 700 {
+		t.Fatalf("expected persisted points to remain unchanged, got %d", got)
+	}
+}
+
 func TestRuntimeItemUseConsumesBootstrapConsumableWithoutMutatingPersistedPoints(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030102,

@@ -10,6 +10,7 @@ import (
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
+	effectproto "github.com/MikelCalvo/go-metin2-server/internal/proto/effect"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
@@ -1463,6 +1464,60 @@ func TestGameSessionFlowItemUseConsumesTemplateAuthoredCount(t *testing.T) {
 	}
 	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 100 {
 		t.Fatalf("consume-count item-use persisted point value: got %d want 100", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
+func TestGameSessionFlowItemUseEmitsTemplateAuthoredSpecialEffectBeforeInfoChat(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseSpecialFX", 0x01030586, 0x02040586, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 460, Vnum: 27010, Count: 2, Slot: 5}}
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	issuePeerTicket(t, ticketStore, "item-use-special-effect", 0x50505086, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-special-effect", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed special-effect item-use account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27010,
+		Name:      "Visual Template Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 25, Message: "effect:27010", InfoMessage: "You feel warmer.", SpecialEffectType: effectproto.SpecialEffectHPUpRed},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected special-effect item-use runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-special-effect", 0x50505086)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected special-effect item-use packet error: %v", err)
+	}
+	if len(out) != 5 {
+		t.Fatalf("expected special-effect item-use to emit use echo, point, item update, special effect, and info chat; got %d", len(out))
+	}
+	special, err := effectproto.DecodeSpecial(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode item-use special effect: %v", err)
+	}
+	if special.Type != effectproto.SpecialEffectHPUpRed || special.VID != owner.VID {
+		t.Fatalf("unexpected item-use special effect: %+v", special)
+	}
+	info, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[4]))
+	if err != nil {
+		t.Fatalf("decode special-effect item-use info chat: %v", err)
+	}
+	if info.Type != chatproto.ChatTypeInfo || info.VID != 0 || info.Message != "You feel warmer." {
+		t.Fatalf("unexpected special-effect item-use info chat: %+v", info)
+	}
+	persisted, err := accounts.Load("item-use-special-effect")
+	if err != nil {
+		t.Fatalf("load persisted special-effect item-use account: %v", err)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 50 {
+		t.Fatalf("special-effect item-use persisted point value: got %d want 50", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 }
 

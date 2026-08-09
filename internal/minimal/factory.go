@@ -40,6 +40,7 @@ import (
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
+	effectproto "github.com/MikelCalvo/go-metin2-server/internal/proto/effect"
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
@@ -4910,6 +4911,9 @@ func itemUseResultFrames(character loginticket.Character, result player.ItemUseR
 			return nil, err
 		}
 		frames = append(frames, updateFrame)
+	}
+	if result.SpecialEffectType != 0 {
+		frames = append(frames, effectproto.EncodeSpecial(effectproto.SpecialPacket{Type: result.SpecialEffectType, VID: character.VID}))
 	}
 	frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: result.EffectMessage}))
 	return frames, nil

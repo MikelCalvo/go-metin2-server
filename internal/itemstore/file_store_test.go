@@ -1637,11 +1637,12 @@ func TestFileStoreSaveThenLoadRoundTripPreservesUseEffectInfoMessage(t *testing.
 		Stackable: true,
 		MaxCount:  200,
 		UseEffect: &UseEffect{
-			PointType:   7,
-			PointIndex:  1,
-			PointDelta:  25,
-			Message:     "effect:27008",
-			InfoMessage: "You feel steadier.",
+			PointType:         7,
+			PointIndex:        1,
+			PointDelta:        25,
+			Message:           "effect:27008",
+			InfoMessage:       "You feel steadier.",
+			SpecialEffectType: 1,
 		},
 	}}}
 
@@ -1660,9 +1661,34 @@ func TestFileStoreSaveThenLoadRoundTripPreservesUseEffectInfoMessage(t *testing.
 	if err != nil {
 		t.Fatalf("read persisted snapshot with use-effect info message: %v", err)
 	}
-	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27008,\n      \"name\": \"Template Message Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"use_effect\": {\n        \"point_type\": 7,\n        \"point_index\": 1,\n        \"point_delta\": 25,\n        \"message\": \"effect:27008\",\n        \"info_message\": \"You feel steadier.\"\n      }\n    }\n  ]\n}\n"
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27008,\n      \"name\": \"Template Message Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"use_effect\": {\n        \"point_type\": 7,\n        \"point_index\": 1,\n        \"point_delta\": 25,\n        \"message\": \"effect:27008\",\n        \"info_message\": \"You feel steadier.\",\n        \"special_effect_type\": 1\n      }\n    }\n  ]\n}\n"
 	if string(raw) != wantJSON {
 		t.Fatalf("unexpected deterministic snapshot with use-effect info message:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
+func TestFileStoreSaveRejectsInvalidUseEffectSpecialEffectType(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	snapshot := Snapshot{Templates: []Template{{
+		Vnum:      27008,
+		Name:      "Invalid Effect Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &UseEffect{PointType: 7, PointIndex: 1, PointDelta: 25, Message: "effect:27008", SpecialEffectType: MaxSpecialEffectType + 1},
+	}}}
+
+	if err := store.Save(snapshot); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for out-of-range use-effect special effect type, got %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create item template test dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"templates":[{"vnum":27008,"name":"Invalid Effect Potion","stackable":true,"max_count":200,"use_effect":{"point_type":7,"point_index":1,"point_delta":25,"message":"effect:27008","special_effect_type":26}}]}`), 0o644); err != nil {
+		t.Fatalf("write invalid special-effect item template snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot when loading out-of-range use-effect special effect type, got %v", err)
 	}
 }
 

@@ -97,6 +97,7 @@ Exactly one consumable shape is frozen here:
   - the point-change packet `type` (`point_type`)
   - the per-consume signed delta (`point_delta`)
   - the stack units consumed per accepted use (`consume_count`, default `1` when omitted)
+  - the optional self-only visual effect (`special_effect_type`) emitted through the `SPECIAL_EFFECT` packet when authored
   - the temporary self-only placeholder text (`info_message` when authored, otherwise the older `message` fallback)
 - the current seeded bootstrap consumable template still uses `vnum = 27001`, `point_index = 1`, `point_type = 1`, default `consume_count = 1`, `point_delta = 50`, and `message = consume:27001:+50`; it omits `info_message`, so the runtime preserves the older fallback placeholder text for the built-in snapshot
 
@@ -119,7 +120,8 @@ When `/use_item <slot>` or `ITEM_USE(TItemPos{window = INVENTORY, cell = slot})`
    1. `PLAYER_POINT_CHANGE`
    2. item refresh for that same carried slot
    3. zero or more `QUICKSLOT_DEL` frames for item quickslots that referenced the removed carried slot, only when the stack reaches zero
-   4. one self-only `CHAT_TYPE_INFO` delivery acting as the temporary effect placeholder
+   4. one self-only `SPECIAL_EFFECT` delivery when `use_effect.special_effect_type` is non-zero
+   5. one self-only `CHAT_TYPE_INFO` delivery acting as the temporary text placeholder
 
 ## Frozen self-only refresh semantics
 
@@ -144,7 +146,9 @@ The minimal session/runtime packet path now freezes last-stack `ITEM_USE` with t
 
 If the consumed stack reaches zero, any selected-character item quickslots referencing that carried inventory cell are removed and refreshed with self-only `QUICKSLOT_DEL` frames immediately after `ITEM_DEL` and before the placeholder info chat. Skill and command quickslots that carry the same byte value are not affected. This ordering is frozen for both the older `/use_item <slot>` chat seam and the owned `ITEM_USE` packet ingress; the packet ingress simply prepends its `ITEM_USE` echo before `PLAYER_POINT_CHANGE`.
 
-The temporary self-facing effect placeholder is intentionally text-backed in this slice:
+When authored, `use_effect.special_effect_type` emits one self-only `SPECIAL_EFFECT` packet after the item refresh / quickslot cleanup portion of the successful-use burst and before the text placeholder. The packet is documented in `item-use-special-effect-bootstrap.md`; it targets the selected character `VID` and does not add timed buff state, peer-visible area effects, or general effect scripting.
+
+The temporary self-facing text placeholder remains intentionally chat-backed in this slice:
 - one self-only `CHAT_TYPE_INFO`
 - `vid = 0`
 - deterministic message text from `template.use_effect.info_message` when it is non-empty
@@ -152,7 +156,7 @@ The temporary self-facing effect placeholder is intentionally text-backed in thi
 
 For the current seeded bootstrap consumable template this still means `consume:27001:+50` because the built-in fallback snapshot does not author `info_message`. Authored template snapshots can now keep the internal effect/debug token in `message` while exposing a different player-facing placeholder through `info_message`. Both `message` and `info_message` are rejected at the item-template store/runtime-load boundary when they contain embedded NUL bytes so the self-only chat placeholder cannot be silently truncated.
 
-This effect placeholder exists only because there is not yet an owned visual-effect packet family wired through the runtime.
+This text placeholder remains even when a template-authored `SPECIAL_EFFECT` is emitted so the bootstrap path still gives deterministic QA/debug feedback for the exact authored consumable metadata that executed.
 
 ## Failure rules
 

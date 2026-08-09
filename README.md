@@ -126,7 +126,7 @@ Status: `[~]` broad bootstrap coverage with many legacy details pending.
 Already present:
 
 - inventory/equipment bootstrap replay and self-only item refreshes,
-- item move/swap/split/merge, consumable use, drag-to-item stack merge, drop/pickup, merchant buy/sell, gold mutation, and quickslot persistence,
+- item move/swap/split/merge, consumable use with optional template-authored self-only `SPECIAL_EFFECT`, drag-to-item stack merge, drop/pickup, merchant buy/sell, gold mutation, and quickslot persistence,
 - authored item-template metadata for selected display/guard behavior,
 - fail-closed validation for malformed templates, snapshots, quickslots, item windows, duplicate instances, and persistence edge cases,
 - client packet ownership for `ITEM_GIVE`, `EXCHANGE`, and `REFINE`, including the first visible-peer exchange open/cancel/busy-target shell plus display-only exchange item-add/item-del/gold-add frames with duplicate display-slot/source-item suppression while accepted trade, accept/finalize, and refine-result semantics remain intentionally narrow or fail-closed.

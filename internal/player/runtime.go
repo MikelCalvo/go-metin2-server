@@ -33,14 +33,15 @@ type Runtime struct {
 }
 
 type ItemUseResult struct {
-	Slot          inventory.SlotIndex
-	ItemRemoved   bool
-	Item          inventory.ItemInstance
-	Vnum          uint32
-	PointType     uint8
-	PointAmount   int32
-	PointValue    int32
-	EffectMessage string
+	Slot              inventory.SlotIndex
+	ItemRemoved       bool
+	Item              inventory.ItemInstance
+	Vnum              uint32
+	PointType         uint8
+	PointAmount       int32
+	PointValue        int32
+	EffectMessage     string
+	SpecialEffectType uint8
 }
 
 type PointChangeResult struct {
@@ -1009,12 +1010,13 @@ func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Templat
 	}
 	updatedPointValue := int32(nextPointValue)
 	result := ItemUseResult{
-		Slot:          slot,
-		Vnum:          item.Vnum,
-		PointType:     effect.PointType,
-		PointAmount:   effect.PointDelta,
-		PointValue:    updatedPointValue,
-		EffectMessage: useEffectInfoMessage(&effect),
+		Slot:              slot,
+		Vnum:              item.Vnum,
+		PointType:         effect.PointType,
+		PointAmount:       effect.PointDelta,
+		PointValue:        updatedPointValue,
+		EffectMessage:     useEffectInfoMessage(&effect),
+		SpecialEffectType: effect.SpecialEffectType,
 	}
 	r.livePoints[effect.PointIndex] = updatedPointValue
 	if item.Count == consumeCount {

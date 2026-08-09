@@ -32,6 +32,7 @@ const (
 	BackupManifestFilename = "item-template-backup-manifest.json"
 	BackupManifestFormat   = "go-metin2-item-template-backup-v1"
 	MaxPickupRange         = 10000
+	MaxSpecialEffectType   = 25
 )
 
 type Template struct {
@@ -302,12 +303,13 @@ type PointEffect struct {
 }
 
 type UseEffect struct {
-	PointType    uint8  `json:"point_type"`
-	PointIndex   uint8  `json:"point_index"`
-	PointDelta   int32  `json:"point_delta"`
-	ConsumeCount uint16 `json:"consume_count,omitempty"`
-	Message      string `json:"message"`
-	InfoMessage  string `json:"info_message,omitempty"`
+	PointType         uint8  `json:"point_type"`
+	PointIndex        uint8  `json:"point_index"`
+	PointDelta        int32  `json:"point_delta"`
+	ConsumeCount      uint16 `json:"consume_count,omitempty"`
+	Message           string `json:"message"`
+	InfoMessage       string `json:"info_message,omitempty"`
+	SpecialEffectType uint8  `json:"special_effect_type,omitempty"`
 }
 
 type Snapshot struct {
@@ -599,6 +601,9 @@ func validUseEffect(effect *UseEffect, template Template) bool {
 		consumeCount = 1
 	}
 	if consumeCount > template.MaxCount {
+		return false
+	}
+	if effect.SpecialEffectType > MaxSpecialEffectType {
 		return false
 	}
 	if !validTemplateMessage(effect.Message) || !validTemplateMessage(effect.InfoMessage) {
