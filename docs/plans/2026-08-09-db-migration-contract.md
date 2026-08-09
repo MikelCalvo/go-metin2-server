@@ -29,6 +29,7 @@ Rules frozen by tests:
 - the dry-run planner accepts unordered ledger rows but rejects duplicates, gaps, future versions, name drift, checksum drift, zero/negative versions, and any mutated catalog SQL whose body no longer hashes to the manifest-pinned checksum,
 - plan steps expose only metadata (`version`, `name`, `direction`, `path`, `sha256`) and intentionally do not expose executable SQL as the plan payload.
 - `gamed` exposes a loopback-only read-only `GET /local/db/migrations/status` endpoint that returns the same metadata-only dry-run plan against an empty ledger for now, making the embedded catalog visible to operators without opening a database or executing SQL.
+- `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger` add the first database/sql-compatible ledger reader seam for future preflight tooling: callers supply a `QueryContext` boundary, the package reads only `version`, `name`, and `up_sha256` from `schema_migrations` in version order, closes rows, and fails closed on query, scan, iteration, close, catalog, or ledger drift errors.
 
 The first migration is `0001_bootstrap_schema_migrations` and creates only a minimal `schema_migrations` ledger:
 
@@ -50,13 +51,13 @@ This is not a database runtime implementation. It deliberately does not add:
 - JSON snapshot backfill tooling,
 - production deployment scripts.
 
-The dry-run planner added on top of the catalog is likewise read-only: callers must supply already-read ledger rows, and the package only returns the current/latest version plus pending metadata. The first loopback ops endpoint deliberately uses an empty ledger because no DB connection or ledger reader exists yet. It is a safe boundary for future CLI, real-ledger preflight tooling, or status pages, not an execution engine.
+The dry-run planner added on top of the catalog is likewise read-only: callers can supply already-read ledger rows directly or provide a `database/sql`-compatible query boundary for the same metadata through `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger`. The first loopback ops endpoint deliberately still uses an empty ledger because runtime DB connection configuration is not frozen yet. The SQL ledger seam is a safe boundary for future CLI, real-ledger preflight tooling, or status pages, not an execution engine.
 
 Those require separate slices because each one changes operator and data-safety semantics.
 
 ## Likely next slices
 
-1. Extend the local-only migration status preflight to read real `schema_migrations` rows and feed them into the current dry-run planner without mutating a database.
+1. Add explicit DB connection configuration and wire the local-only migration status preflight to a configured `schema_migrations` reader without mutating a database.
 2. Define a narrow account/character repository interface backed by current tests before adding a DB implementation.
 3. Add explicit schema migrations for account identity and character roster only after the repository seam is frozen.
 4. Add JSON-file-store export/import or quarantine tooling for migration from bootstrap snapshots.
@@ -65,6 +66,6 @@ Those require separate slices because each one changes operator and data-safety 
 
 ## Exit criteria for this slice
 
-- `go test ./db/migrations` validates the catalog and dry-run ledger planning rules.
+- `go test ./db/migrations` validates the catalog, direct-ledger dry-run planning rules, and database/sql-compatible ledger-reader seam.
 - `go test ./...` and `go vet ./...` remain green.
 - README/development docs describe `db/migrations` as the validated migration catalog and read-only planning skeleton, not a finished DB layer.

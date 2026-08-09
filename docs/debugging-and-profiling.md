@@ -296,7 +296,7 @@ Use this endpoint as the first read-only persistence triage check before choosin
 
 ### `GET /local/db/migrations/status`
 
-Returns a loopback-only dry-run migration plan for the embedded project-owned SQL migration catalog. This endpoint is read-only, is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the embedded catalog or supplied planning boundary fails validation. The current runtime has no database connection or migration ledger reader yet, so the endpoint intentionally plans against an empty applied ledger and reports every catalog migration as pending.
+Returns a loopback-only dry-run migration plan for the embedded project-owned SQL migration catalog. This endpoint is read-only, is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the embedded catalog or supplied planning boundary fails validation. The migration package now has a `database/sql`-compatible `schema_migrations` ledger reader seam for future preflight tooling, but the shipped runtime has no explicit DB connection configuration yet; this endpoint intentionally still plans against an empty applied ledger and reports every catalog migration as pending.
 
 Successful responses use the `db/migrations.Plan` JSON shape:
 
@@ -310,7 +310,7 @@ Successful responses use the `db/migrations.Plan` JSON shape:
   - `path`
   - `sha256`
 
-The response deliberately exposes metadata only: it does not include executable SQL text, open a database, create tables, or mutate `schema_migrations`. Use this as the first on-box visibility surface for the migration catalog before future slices add a real ledger reader or apply/rollback command. It is production-ops preflight scaffolding, not proof that account, character, item, content, or world runtime stores are DB-backed.
+The response deliberately exposes metadata only: it does not include executable SQL text, open a database, create tables, or mutate `schema_migrations`. Use this as the first on-box visibility surface for the migration catalog before future slices add DB connection configuration, wire the SQL ledger reader into runtime status, or add an apply/rollback command. It is production-ops preflight scaffolding, not proof that account, character, item, content, or world runtime stores are DB-backed.
 
 ### `GET` / `POST /local/static-actor-combat-profiles`
 
