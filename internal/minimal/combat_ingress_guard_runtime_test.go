@@ -28,9 +28,12 @@ func TestGameRuntimeCombatIngressGuardsAreNoOp(t *testing.T) {
 		name string
 		raw  []byte
 	}{
+		{name: "use-skill", raw: combatproto.EncodeClientUseSkill(combatproto.ClientUseSkillPacket{SkillVnum: 0x23, TargetVID: 0x02040107})},
+		{name: "shoot", raw: combatproto.EncodeClientShoot(combatproto.ClientShootPacket{ShootType: 0x83})},
 		{name: "fly-targeting", raw: combatproto.EncodeClientFlyTargeting(combatproto.ClientFlyTargetingPacket{TargetVID: 0x02040107, X: 123456, Y: -234567})},
 		{name: "add-fly-targeting", raw: combatproto.EncodeClientAddFlyTargeting(combatproto.ClientFlyTargetingPacket{TargetVID: 0, X: 1700, Y: -2800})},
 		{name: "on-click", raw: combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: 0x02040107})},
+		{name: "character-position", raw: combatproto.EncodeClientCharacterPosition(combatproto.ClientCharacterPositionPacket{Position: 1})},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			out, err := flow.HandleClientFrame(decodeSingleFrame(t, tc.raw))
