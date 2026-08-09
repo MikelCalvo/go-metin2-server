@@ -19,6 +19,7 @@ const (
 	HeaderCharacterAdditionalInfo uint16 = 0x0207
 	HeaderCharacterDeleteNotice   uint16 = 0x0208
 	HeaderCharacterUpdate         uint16 = 0x0209
+	HeaderCharacterPosition       uint16 = 0x020B
 	HeaderPlayerCreateSuccess     uint16 = 0x020C
 	HeaderPlayerCreateFailure     uint16 = 0x020D
 	HeaderPlayerDeleteSuccess     uint16 = 0x020E
@@ -28,6 +29,7 @@ const (
 	HeaderPlayerPointChange       uint16 = 0x0215
 	HeaderStun                    uint16 = 0x0216
 	HeaderDead                    uint16 = 0x0217
+	HeaderChangeSpeed             uint16 = 0x0218
 
 	CharacterNameFieldSize      = 65
 	BGMNameFieldSize            = 25
@@ -43,6 +45,7 @@ const (
 	characterAdditionalInfoPayloadSize = 93
 	characterDeleteNoticePayloadSize   = 4
 	characterUpdatePayloadSize         = 34
+	characterPositionPayloadSize       = 5
 	playerCreateSuccessPayloadSize     = 1 + simplePlayerPayloadSize
 	playerCreateFailurePayloadSize     = 1
 	playerDeleteSuccessPayloadSize     = 1
@@ -51,6 +54,7 @@ const (
 	playerPointChangePayloadSize       = 13
 	stunPayloadSize                    = 4
 	deadPayloadSize                    = 4
+	changeSpeedPayloadSize             = 6
 	simplePlayerPayloadSize            = 103
 )
 
@@ -97,12 +101,22 @@ type CharacterDeleteNoticePacket struct {
 	VID uint32
 }
 
+type CharacterPositionPacket struct {
+	VID      uint32
+	Position uint8
+}
+
 type StunPacket struct {
 	VID uint32
 }
 
 type DeadPacket struct {
 	VID uint32
+}
+
+type ChangeSpeedPacket struct {
+	VID         uint32
+	MovingSpeed uint16
 }
 
 type CharacterAddPacket struct {
@@ -343,6 +357,23 @@ func DecodeCharacterDeleteNotice(f frame.Frame) (CharacterDeleteNoticePacket, er
 	return CharacterDeleteNoticePacket{VID: binary.LittleEndian.Uint32(f.Payload)}, nil
 }
 
+func EncodeCharacterPosition(packet CharacterPositionPacket) []byte {
+	payload := make([]byte, characterPositionPayloadSize)
+	binary.LittleEndian.PutUint32(payload[0:4], packet.VID)
+	payload[4] = packet.Position
+	return frame.Encode(HeaderCharacterPosition, payload)
+}
+
+func DecodeCharacterPosition(f frame.Frame) (CharacterPositionPacket, error) {
+	if f.Header != HeaderCharacterPosition {
+		return CharacterPositionPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != characterPositionPayloadSize {
+		return CharacterPositionPacket{}, ErrInvalidPayload
+	}
+	return CharacterPositionPacket{VID: binary.LittleEndian.Uint32(f.Payload[0:4]), Position: f.Payload[4]}, nil
+}
+
 func EncodeStun(packet StunPacket) []byte {
 	payload := make([]byte, stunPayloadSize)
 	binary.LittleEndian.PutUint32(payload, packet.VID)
@@ -373,6 +404,26 @@ func DecodeDead(f frame.Frame) (DeadPacket, error) {
 		return DeadPacket{}, ErrInvalidPayload
 	}
 	return DeadPacket{VID: binary.LittleEndian.Uint32(f.Payload)}, nil
+}
+
+func EncodeChangeSpeed(packet ChangeSpeedPacket) []byte {
+	payload := make([]byte, changeSpeedPayloadSize)
+	binary.LittleEndian.PutUint32(payload[0:4], packet.VID)
+	binary.LittleEndian.PutUint16(payload[4:6], packet.MovingSpeed)
+	return frame.Encode(HeaderChangeSpeed, payload)
+}
+
+func DecodeChangeSpeed(f frame.Frame) (ChangeSpeedPacket, error) {
+	if f.Header != HeaderChangeSpeed {
+		return ChangeSpeedPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != changeSpeedPayloadSize {
+		return ChangeSpeedPacket{}, ErrInvalidPayload
+	}
+	return ChangeSpeedPacket{
+		VID:         binary.LittleEndian.Uint32(f.Payload[0:4]),
+		MovingSpeed: binary.LittleEndian.Uint16(f.Payload[4:6]),
+	}, nil
 }
 
 func EncodeCharacterAdd(packet CharacterAddPacket) []byte {

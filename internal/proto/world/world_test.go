@@ -281,6 +281,70 @@ func TestDecodeCharacterDeleteNoticeReturnsExpectedVID(t *testing.T) {
 	}
 }
 
+func TestEncodeCharacterPositionBuildsAServerFrame(t *testing.T) {
+	want := frame.Encode(HeaderCharacterPosition, []byte{0x04, 0x03, 0x02, 0x01, 0x02})
+	got := EncodeCharacterPosition(CharacterPositionPacket{VID: 0x01020304, Position: 2})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected character position frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeCharacterPositionReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeCharacterPosition(decodeSingleFrame(t, frame.Encode(HeaderCharacterPosition, []byte{0x04, 0x03, 0x02, 0x01, 0x02})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet.VID != 0x01020304 || packet.Position != 2 {
+		t.Fatalf("unexpected character position packet: %+v", packet)
+	}
+}
+
+func TestDecodeCharacterPositionRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeCharacterPosition(frame.Frame{Header: HeaderStun, Length: 9, Payload: []byte{0x04, 0x03, 0x02, 0x01, 0x02}})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeCharacterPositionRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeCharacterPosition(frame.Frame{Header: HeaderCharacterPosition, Length: 8, Payload: []byte{0x04, 0x03, 0x02, 0x01}})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestEncodeChangeSpeedBuildsAServerFrame(t *testing.T) {
+	want := frame.Encode(HeaderChangeSpeed, []byte{0x04, 0x03, 0x02, 0x01, 0x34, 0x12})
+	got := EncodeChangeSpeed(ChangeSpeedPacket{VID: 0x01020304, MovingSpeed: 0x1234})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected change-speed frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeChangeSpeedReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeChangeSpeed(decodeSingleFrame(t, frame.Encode(HeaderChangeSpeed, []byte{0x04, 0x03, 0x02, 0x01, 0x34, 0x12})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet.VID != 0x01020304 || packet.MovingSpeed != 0x1234 {
+		t.Fatalf("unexpected change-speed packet: %+v", packet)
+	}
+}
+
+func TestDecodeChangeSpeedRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeChangeSpeed(frame.Frame{Header: HeaderCharacterPosition, Length: 10, Payload: []byte{0x04, 0x03, 0x02, 0x01, 0x34, 0x12}})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeChangeSpeedRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeChangeSpeed(frame.Frame{Header: HeaderChangeSpeed, Length: 9, Payload: []byte{0x04, 0x03, 0x02, 0x01, 0x34}})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
 func TestEncodeStunBuildsAServerFrame(t *testing.T) {
 	want := frame.Encode(HeaderStun, []byte{0x04, 0x03, 0x02, 0x01})
 	got := EncodeStun(StunPacket{VID: 0x01020304})
