@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
 	contentbundle "github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
@@ -735,6 +736,31 @@ func RegisterLocalPersistenceStatusEndpoint(mux *http.ServeMux, persistenceStatu
 		if err := json.NewEncoder(w).Encode(persistenceStatus()); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 		}
+	})
+	return mux
+}
+
+func RegisterLocalMigrationStatusEndpoint(mux *http.ServeMux, planMigrationStatus func() (dbmigrations.Plan, error)) *http.ServeMux {
+	if mux == nil || planMigrationStatus == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/db/migrations/status", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		plan, err := planMigrationStatus()
+		if err != nil {
+			slog.Warn("local migration status preflight failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, plan, http.StatusOK)
 	})
 	return mux
 }

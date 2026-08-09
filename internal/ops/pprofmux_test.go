@@ -10,8 +10,11 @@ import (
 	"testing"
 	"time"
 
+	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
+
+const expectedBootstrapMigrationStatusSHA256 = "76ab086217590515cb9b1eb72d78f49abf766da977998c4c60b41825c8e92f78"
 
 func TestHealthzEndpointIncludesServiceName(t *testing.T) {
 	mux := NewPprofMux("gamed")
@@ -5629,6 +5632,111 @@ func TestLocalStaticActorDeleteEndpointRemovesActorForLoopbackDelete(t *testing.
 	}
 }
 
+func TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet(t *testing.T) {
+	planner := &stubMigrationStatusPlanner{plan: dbmigrations.Plan{
+		CurrentVersion: 0,
+		LatestVersion:  1,
+		UpToDate:       false,
+		Pending: []dbmigrations.PlanStep{
+			{Version: 1, Name: "bootstrap_schema_migrations", Direction: dbmigrations.DirectionUp, Path: "0001_bootstrap_schema_migrations.up.sql", SHA256: expectedBootstrapMigrationStatusSHA256},
+		},
+	}}
+	mux := RegisterLocalMigrationStatusEndpoint(NewPprofMux("gamed"), planner.Plan)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/db/migrations/status", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if planner.calls != 1 {
+		t.Fatalf("expected planner to be called once, got %d", planner.calls)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"current_version":0`, `"latest_version":1`, `"up_to_date":false`, `"direction":"up"`, `"path":"0001_bootstrap_schema_migrations.up.sql"`, `"sha256":"` + expectedBootstrapMigrationStatusSHA256 + `"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected migration status body to contain %s, got %s", want, body)
+		}
+	}
+	if strings.Contains(body, "CREATE TABLE") || strings.Contains(body, "UpSQL") {
+		t.Fatalf("migration status endpoint must not expose executable SQL, got %s", body)
+	}
+}
+
+func TestLocalMigrationStatusEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	planner := &stubMigrationStatusPlanner{plan: dbmigrations.Plan{LatestVersion: 1}}
+	mux := RegisterLocalMigrationStatusEndpoint(NewPprofMux("gamed"), planner.Plan)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/db/migrations/status", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if planner.calls != 0 {
+		t.Fatalf("expected planner not to be called, got %d", planner.calls)
+	}
+}
+
+func TestLocalMigrationStatusEndpointRejectsWrongMethod(t *testing.T) {
+	planner := &stubMigrationStatusPlanner{plan: dbmigrations.Plan{LatestVersion: 1}}
+	mux := RegisterLocalMigrationStatusEndpoint(NewPprofMux("gamed"), planner.Plan)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/db/migrations/status", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if planner.calls != 0 {
+		t.Fatalf("expected planner not to be called, got %d", planner.calls)
+	}
+}
+
+func TestLocalMigrationStatusEndpointReportsPlannerFailure(t *testing.T) {
+	planner := &stubMigrationStatusPlanner{err: errStubMigrationStatusInvalid}
+	mux := RegisterLocalMigrationStatusEndpoint(NewPprofMux("gamed"), planner.Plan)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/db/migrations/status", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if planner.calls != 1 {
+		t.Fatalf("expected planner to be called once, got %d", planner.calls)
+	}
+}
+
+func TestNewPprofMuxDoesNotExposeLocalMigrationStatusByDefault(t *testing.T) {
+	mux := NewPprofMux("authd")
+
+	req := httptest.NewRequest(http.MethodGet, "/local/db/migrations/status", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
 func TestLocalStaticActorDeleteEndpointRejectsInvalidEntityID(t *testing.T) {
 	remover := &stubStaticActorRemover{removed: true}
 	mux := RegisterLocalStaticActorDeleteEndpoint(NewPprofMux("gamed"), remover.RemoveStaticActor)
@@ -5645,6 +5753,19 @@ func TestLocalStaticActorDeleteEndpointRejectsInvalidEntityID(t *testing.T) {
 	if remover.calls != 0 {
 		t.Fatalf("expected static actor remover not to be called, got %d calls", remover.calls)
 	}
+}
+
+type stubMigrationStatusPlanner struct {
+	plan  dbmigrations.Plan
+	err   error
+	calls int
+}
+
+var errStubMigrationStatusInvalid = errors.New("invalid migration status")
+
+func (p *stubMigrationStatusPlanner) Plan() (dbmigrations.Plan, error) {
+	p.calls++
+	return p.plan, p.err
 }
 
 type stubNoticeBroadcaster struct {

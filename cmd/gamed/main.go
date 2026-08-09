@@ -145,6 +145,10 @@ func main() {
 		opsHandler,
 		func() any { return gameRuntime.PersistenceStatus() },
 	)
+	opsHandler = ops.RegisterLocalMigrationStatusEndpoint(
+		opsHandler,
+		gameRuntime.MigrationStatus,
+	)
 	opsHandler = ops.RegisterLocalStaticActorRespawnsEndpoint(
 		opsHandler,
 		func() any { return gameRuntime.StaticActorRespawns() },

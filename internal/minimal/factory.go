@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	authflow "github.com/MikelCalvo/go-metin2-server/internal/auth"
 	"github.com/MikelCalvo/go-metin2-server/internal/authboot"
@@ -371,6 +372,10 @@ func (r *gameRuntime) BroadcastNotice(message string) int {
 		return 0
 	}
 	return r.sharedWorld.EnqueueSystemNotice(message)
+}
+
+func (r *gameRuntime) MigrationStatus() (dbmigrations.Plan, error) {
+	return dbmigrations.PlanUpToLatest(nil)
 }
 
 func (r *gameRuntime) PersistenceStatus() PersistenceStatusSnapshot {

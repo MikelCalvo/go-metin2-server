@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
@@ -107,6 +108,39 @@ func TestGameRuntimeRestoreAccountStoreRejectsLiveSessionsWithoutMutation(t *tes
 	}
 	if _, err := active.Load("restored"); !errors.Is(err, accountstore.ErrAccountNotFound) {
 		t.Fatalf("expected backup account not to be restored over active live state, got %v", err)
+	}
+}
+
+func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	plan, err := runtime.MigrationStatus()
+	if err != nil {
+		t.Fatalf("migration status: %v", err)
+	}
+	if plan.CurrentVersion != 0 || plan.LatestVersion < 1 || plan.UpToDate {
+		t.Fatalf("unexpected migration plan versions: %#v", plan)
+	}
+	if len(plan.Pending) == 0 {
+		t.Fatalf("expected at least one pending migration for empty ledger: %#v", plan)
+	}
+	first := plan.Pending[0]
+	if first.Version != 1 || first.Name != "bootstrap_schema_migrations" || first.Direction != dbmigrations.DirectionUp || first.Path != "0001_bootstrap_schema_migrations.up.sql" {
+		t.Fatalf("unexpected first pending migration step: %#v", first)
+	}
+	if first.SHA256 == "" || strings.Contains(first.Path, "CREATE TABLE") {
+		t.Fatalf("expected metadata-only pending step with checksum, got %#v", first)
 	}
 }
 
