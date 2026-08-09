@@ -23,11 +23,36 @@ func NewFileStore(path string) *FileStore {
 	return &FileStore{path: path}
 }
 
+var durableSyncDisabledForTest bool
+
+// DisableDurableSyncForTest skips fsync calls in this package until the
+// returned restore function is called. It is intended for high-volume tests
+// that assert runtime behavior, not crash durability.
+func DisableDurableSyncForTest() func() {
+	previous := durableSyncDisabledForTest
+	durableSyncDisabledForTest = true
+	return func() { durableSyncDisabledForTest = previous }
+}
+
 func (s *FileStore) Path() string {
 	if s == nil {
 		return ""
 	}
 	return s.path
+}
+
+func (s *FileStore) syncStoreDir(dir string) error {
+	if s == nil || durableSyncDisabledForTest {
+		return nil
+	}
+	return syncStoreDir(dir)
+}
+
+func (s *FileStore) syncFile(file *os.File) error {
+	if s == nil || durableSyncDisabledForTest {
+		return nil
+	}
+	return file.Sync()
 }
 
 func (s *FileStore) Load() (Snapshot, error) {
@@ -130,7 +155,7 @@ func (s *FileStore) CleanupCrashTempFiles() (SnapshotSummary, error) {
 			return SnapshotSummary{}, fmt.Errorf("remove item template crash temp file %q: %w", filename, err)
 		}
 	}
-	if err := syncStoreDir(storeDir); err != nil {
+	if err := s.syncStoreDir(storeDir); err != nil {
 		return SnapshotSummary{}, fmt.Errorf("sync item template store dir after crash temp cleanup: %w", err)
 	}
 	return s.Validate()
@@ -215,7 +240,7 @@ func (s *FileStore) Save(snapshot Snapshot) error {
 	if _, err := temp.Write(raw); err != nil {
 		return fmt.Errorf("write item template snapshot: %w", err)
 	}
-	if err := temp.Sync(); err != nil {
+	if err := s.syncFile(temp); err != nil {
 		return fmt.Errorf("sync item template temp file: %w", err)
 	}
 	if err := temp.Close(); err != nil {
@@ -228,7 +253,7 @@ func (s *FileStore) Save(snapshot Snapshot) error {
 	if err := removeBackupManifest(storeDir); err != nil {
 		return fmt.Errorf("remove stale item template backup manifest: %w", err)
 	}
-	if err := syncStoreDir(storeDir); err != nil {
+	if err := s.syncStoreDir(storeDir); err != nil {
 		return fmt.Errorf("sync item template store dir: %w", err)
 	}
 	return nil
@@ -280,7 +305,7 @@ func (s *FileStore) BackupTo(dstDir string) error {
 	if err := writeBackupManifest(dstDir, filepath.Base(s.path), summary, hasSnapshot); err != nil {
 		return s.rollbackBackupFailure(dstDir, committedSnapshot, err)
 	}
-	if err := syncStoreDir(dstDir); err != nil {
+	if err := s.syncStoreDir(dstDir); err != nil {
 		return s.rollbackBackupFailure(dstDir, committedSnapshot, fmt.Errorf("sync item template backup dir: %w", err))
 	}
 	return nil
@@ -313,7 +338,7 @@ func (s *FileStore) rollbackBackupFailure(dstDir string, snapshotCommitted bool,
 	if err := os.Remove(filepath.Join(dstDir, BackupManifestFilename)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		rollbackErrs = append(rollbackErrs, fmt.Errorf("remove item template backup manifest: %w", err))
 	}
-	if err := syncStoreDir(dstDir); err != nil {
+	if err := s.syncStoreDir(dstDir); err != nil {
 		rollbackErrs = append(rollbackErrs, fmt.Errorf("sync item template backup rollback dir: %w", err))
 	}
 	if len(rollbackErrs) == 0 {
@@ -392,7 +417,7 @@ func (s *FileStore) RestoreFrom(srcDir string) error {
 	if err := writeBackupManifest(storeDir, filepath.Base(s.path), summary, hasSnapshot); err != nil {
 		return s.rollbackRestoreFailure(committedSnapshot, err)
 	}
-	if err := syncStoreDir(storeDir); err != nil {
+	if err := s.syncStoreDir(storeDir); err != nil {
 		return s.rollbackRestoreFailure(committedSnapshot, fmt.Errorf("sync item template restore dir: %w", err))
 	}
 	return nil
@@ -409,7 +434,7 @@ func (s *FileStore) rollbackRestoreFailure(snapshotCommitted bool, restoreErr er
 	if err := os.Remove(filepath.Join(storeDir, BackupManifestFilename)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		rollbackErrs = append(rollbackErrs, fmt.Errorf("remove restored item template backup manifest: %w", err))
 	}
-	if err := syncStoreDir(storeDir); err != nil {
+	if err := s.syncStoreDir(storeDir); err != nil {
 		rollbackErrs = append(rollbackErrs, fmt.Errorf("sync item template restore rollback dir: %w", err))
 	}
 	if len(rollbackErrs) == 0 {

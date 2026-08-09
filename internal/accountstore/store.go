@@ -201,7 +201,7 @@ func (s *FileStore) CleanupCrashTempFiles() (SnapshotSummary, error) {
 			return SnapshotSummary{}, fmt.Errorf("remove account crash temp file %q: %w", filename, err)
 		}
 	}
-	if err := syncStoreDir(s.dir); err != nil {
+	if err := s.syncStoreDir(); err != nil {
 		return SnapshotSummary{}, fmt.Errorf("sync account store dir after crash temp cleanup: %w", err)
 	}
 	return s.Validate()
@@ -243,11 +243,36 @@ func NewFileStore(dir string) *FileStore {
 	return &FileStore{dir: dir}
 }
 
+var durableSyncDisabledForTest bool
+
+// DisableDurableSyncForTest skips fsync calls in this package until the
+// returned restore function is called. It is intended for high-volume tests
+// that assert runtime behavior, not crash durability.
+func DisableDurableSyncForTest() func() {
+	previous := durableSyncDisabledForTest
+	durableSyncDisabledForTest = true
+	return func() { durableSyncDisabledForTest = previous }
+}
+
 func (s *FileStore) Dir() string {
 	if s == nil {
 		return ""
 	}
 	return s.dir
+}
+
+func (s *FileStore) syncStoreDir() error {
+	if s == nil || durableSyncDisabledForTest {
+		return nil
+	}
+	return syncStoreDir(s.dir)
+}
+
+func (s *FileStore) syncFile(file *os.File) error {
+	if s == nil || durableSyncDisabledForTest {
+		return nil
+	}
+	return file.Sync()
 }
 
 func (s *FileStore) Load(login string) (Account, error) {
@@ -323,7 +348,7 @@ func (s *FileStore) Save(account Account) error {
 	if err := json.NewEncoder(temp).Encode(account); err != nil {
 		return fmt.Errorf("encode account: %w", err)
 	}
-	if err := temp.Sync(); err != nil {
+	if err := s.syncFile(temp); err != nil {
 		return fmt.Errorf("sync account temp file: %w", err)
 	}
 	if err := temp.Close(); err != nil {
@@ -335,7 +360,7 @@ func (s *FileStore) Save(account Account) error {
 	if err := removeBackupManifest(s.dir); err != nil {
 		return fmt.Errorf("remove stale account backup manifest: %w", err)
 	}
-	if err := syncStoreDir(s.dir); err != nil {
+	if err := s.syncStoreDir(); err != nil {
 		return fmt.Errorf("sync account store dir: %w", err)
 	}
 	return nil
@@ -385,7 +410,7 @@ func (s *FileStore) BackupTo(dstDir string) error {
 	if err := backup.writeBackupManifest(accounts); err != nil {
 		return backup.rollbackBackupFailure(committed, err)
 	}
-	if err := syncStoreDir(dstDir); err != nil {
+	if err := backup.syncStoreDir(); err != nil {
 		return backup.rollbackBackupFailure(committed, fmt.Errorf("sync account backup dir: %w", err))
 	}
 	return nil
@@ -401,7 +426,7 @@ func (s *FileStore) rollbackBackupFailure(accounts []Account, backupErr error) e
 	if err := os.Remove(filepath.Join(s.dir, BackupManifestFilename)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		rollbackErrs = append(rollbackErrs, fmt.Errorf("remove backup manifest: %w", err))
 	}
-	if err := syncStoreDir(s.dir); err != nil {
+	if err := s.syncStoreDir(); err != nil {
 		rollbackErrs = append(rollbackErrs, fmt.Errorf("sync account backup rollback dir: %w", err))
 	}
 	if len(rollbackErrs) == 0 {
@@ -463,7 +488,7 @@ func (s *FileStore) RestoreFrom(srcDir string) error {
 	if err := s.writeBackupManifest(accounts); err != nil {
 		return s.rollbackRestoreFailure(committed, err)
 	}
-	if err := syncStoreDir(s.dir); err != nil {
+	if err := s.syncStoreDir(); err != nil {
 		return s.rollbackRestoreFailure(committed, fmt.Errorf("sync account restore dir: %w", err))
 	}
 	return nil
@@ -479,7 +504,7 @@ func (s *FileStore) rollbackRestoreFailure(accounts []Account, restoreErr error)
 	if err := os.Remove(filepath.Join(s.dir, BackupManifestFilename)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		rollbackErrs = append(rollbackErrs, fmt.Errorf("remove restored backup manifest: %w", err))
 	}
-	if err := syncStoreDir(s.dir); err != nil {
+	if err := s.syncStoreDir(); err != nil {
 		rollbackErrs = append(rollbackErrs, fmt.Errorf("sync account restore rollback dir: %w", err))
 	}
 	if len(rollbackErrs) == 0 {

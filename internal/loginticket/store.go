@@ -175,11 +175,36 @@ func NewFileStore(dir string) *FileStore {
 	return &FileStore{dir: dir}
 }
 
+var durableSyncDisabledForTest bool
+
+// DisableDurableSyncForTest skips fsync calls in this package until the
+// returned restore function is called. It is intended for high-volume tests
+// that assert runtime behavior, not crash durability.
+func DisableDurableSyncForTest() func() {
+	previous := durableSyncDisabledForTest
+	durableSyncDisabledForTest = true
+	return func() { durableSyncDisabledForTest = previous }
+}
+
 func (s *FileStore) Dir() string {
 	if s == nil {
 		return ""
 	}
 	return s.dir
+}
+
+func (s *FileStore) syncStoreDir() error {
+	if s == nil || durableSyncDisabledForTest {
+		return nil
+	}
+	return syncStoreDir(s.dir)
+}
+
+func (s *FileStore) syncFile(file *os.File) error {
+	if s == nil || durableSyncDisabledForTest {
+		return nil
+	}
+	return file.Sync()
 }
 
 func (s *FileStore) List() ([]Ticket, error) {
@@ -359,7 +384,7 @@ func (s *FileStore) CleanupIssuedBefore(issuedBefore time.Time) (IssuedBeforeCle
 	}
 	summary.RemovedCount = len(summary.RemovedLoginKeys)
 	if summary.RemovedCount != 0 {
-		if err := syncStoreDir(s.dir); err != nil {
+		if err := s.syncStoreDir(); err != nil {
 			return IssuedBeforeCleanupSummary{}, fmt.Errorf("sync login ticket store dir after issued-before cleanup: %w", err)
 		}
 	}
@@ -434,7 +459,7 @@ func (s *FileStore) Issue(ticket Ticket) error {
 	if err := json.NewEncoder(temp).Encode(ticket); err != nil {
 		return fmt.Errorf("encode login ticket: %w", err)
 	}
-	if err := temp.Sync(); err != nil {
+	if err := s.syncFile(temp); err != nil {
 		return fmt.Errorf("sync login ticket temp file: %w", err)
 	}
 	if err := temp.Close(); err != nil {
@@ -447,7 +472,7 @@ func (s *FileStore) Issue(ticket Ticket) error {
 		return fmt.Errorf("commit login ticket file: %w", err)
 	}
 	_ = os.Remove(temp.Name())
-	if err := syncStoreDir(s.dir); err != nil {
+	if err := s.syncStoreDir(); err != nil {
 		return fmt.Errorf("sync login ticket store dir: %w", err)
 	}
 
@@ -496,7 +521,7 @@ func (s *FileStore) read(login string, loginKey uint32, consume bool) (Ticket, e
 		}
 		return Ticket{}, fmt.Errorf("delete consumed login ticket: %w", err)
 	}
-	if err := syncStoreDir(s.dir); err != nil {
+	if err := s.syncStoreDir(); err != nil {
 		return Ticket{}, fmt.Errorf("sync consumed login ticket store dir: %w", err)
 	}
 

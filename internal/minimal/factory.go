@@ -348,12 +348,13 @@ func NewGameRuntime(cfg config.Service) (*gameRuntime, error) {
 	if err := config.ValidateOpsConfig(cfg); err != nil {
 		return nil, err
 	}
-	return newGameRuntimeWithStoresAndTransferTriggers(
+	return newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
 		cfg,
 		loginticket.NewFileStore(serviceLoginTicketStoreDir(cfg)),
 		accountstore.NewFileStore(serviceAccountStoreDir(cfg)),
 		staticstore.NewFileStore(serviceStaticActorStorePath(cfg)),
 		interactionstore.NewFileStore(serviceInteractionStorePath(cfg)),
+		itemcatalog.NewFileStore(serviceItemTemplateStorePath(cfg)),
 		nil,
 	)
 }
@@ -1496,10 +1497,14 @@ func newAuthSessionFactoryWithAccountStore(store loginticket.Store, accounts acc
 }
 
 func NewGameSessionFactory(cfg config.Service) (service.SessionFactory, error) {
-	runtime, err := newGameRuntimeWithAccountStore(
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
 		cfg,
 		loginticket.NewFileStore(serviceLoginTicketStoreDir(cfg)),
 		accountstore.NewFileStore(serviceAccountStoreDir(cfg)),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(serviceItemTemplateStorePath(cfg)),
+		nil,
 	)
 	if err != nil {
 		return nil, err

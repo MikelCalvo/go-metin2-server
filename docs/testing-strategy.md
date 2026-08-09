@@ -44,6 +44,15 @@ Persistence unit tests should prove both accepted round trips and fail-closed re
 
 Unit tests should be fast and deterministic.
 
+Durable JSON stores keep their real `fsync` coverage in their own package tests
+(`internal/accountstore`, `internal/loginticket`, `internal/itemstore`,
+`internal/staticstore`, and `internal/interactionstore`). The high-volume
+`internal/minimal` runtime harnesses intentionally disable those package-level
+durable sync calls in `TestMain`; those tests assert protocol/runtime behavior,
+not crash-survival of hundreds of temporary snapshots. This keeps the required
+bounded suite stable on FreeBSD/ZFS while preserving explicit durability tests at
+the store boundary.
+
 ## 3. End-to-end socket tests
 
 Use E2E tests for behaviors that only make sense across the wire:
@@ -109,7 +118,7 @@ No production code should be added without a failing test first.
 Base suite:
 
 ```bash
-go test ./...
+go test ./... -count=1 -timeout=120s
 ```
 
 Target a single package or pattern:
