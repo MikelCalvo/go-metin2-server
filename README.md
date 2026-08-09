@@ -212,12 +212,12 @@ Already present:
 
 - file-backed account snapshots and login tickets,
 - persisted selected character, position, inventory, equipment, quickslots, gold, item-template, static actor, and interaction slices needed by current behavior,
-- strict snapshot/template validation, crash-temp reporting/cleanup, and manifest-backed backup/restore preflights for several stores,
+- strict snapshot/template validation, crash-temp reporting/cleanup, manifest-backed backup/restore preflights for several stores, and a first migration catalog with read-only ledger dry-run planning,
 - loopback-only local endpoints for validation, backup/restore, runtime inspection, and controlled debug actions.
 
 Still missing:
 
-- real DB schema and migrations,
+- DB-backed account/character/item stores and migration execution tooling,
 - domain repository boundaries for gameplay systems,
 - production backup/restore policy,
 - crash recovery beyond current file-store primitives,
@@ -237,7 +237,7 @@ Still missing:
 - `internal/accountstore`, `internal/loginticket` — bootstrap persistence stores.
 - `internal/staticstore`, `internal/interactionstore`, `internal/contentbundle` — authored content, static actors, interactions, merchant previews, and bundle import/export.
 - `internal/ops` — local debug/pprof/operator HTTP mux.
-- `db/migrations` — validated project-owned SQL migration catalog skeleton and first schema ledger migration.
+- `db/migrations` — validated project-owned SQL migration catalog skeleton, first schema ledger migration, and read-only dry-run planner.
 - `docs/` — engineering notes, QA, roadmaps, workflow, development, and clean-room docs.
 - `spec/protocol/` — owned protocol contracts and packet inventory.
 

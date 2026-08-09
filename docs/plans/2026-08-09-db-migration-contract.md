@@ -24,7 +24,10 @@ Rules frozen by tests:
 - the manifest records each migration's version, name, up/down paths, and SHA-256 checksums,
 - the loader rejects unknown manifest fields, trailing JSON, duplicate manifest versions, path drift, checksum drift, missing manifest entries, and SQL files that do not match their manifest entry,
 - the catalog is returned in deterministic version order and exposes the validated `UpSHA256` / `DownSHA256` values next to the SQL text,
-- malformed names, missing pairs, version gaps, mismatched pairs, empty SQL, missing headers, and stale manifest data fail closed with `ErrInvalidCatalog`.
+- malformed names, missing pairs, version gaps, mismatched pairs, empty SQL, missing headers, and stale manifest data fail closed with `ErrInvalidCatalog`,
+- `PlanUpToLatest` / `PlanCatalogUpToLatest` provide a read-only dry-run boundary that compares a validated catalog against applied `schema_migrations` ledger entries without opening a database or executing SQL,
+- the dry-run planner accepts unordered ledger rows but rejects duplicates, gaps, future versions, name drift, checksum drift, zero/negative versions, and any mutated catalog SQL whose body no longer hashes to the manifest-pinned checksum,
+- plan steps expose only metadata (`version`, `name`, `direction`, `path`, `sha256`) and intentionally do not expose executable SQL as the plan payload.
 
 The first migration is `0001_bootstrap_schema_migrations` and creates only a minimal `schema_migrations` ledger:
 
@@ -46,18 +49,21 @@ This is not a database runtime implementation. It deliberately does not add:
 - JSON snapshot backfill tooling,
 - production deployment scripts.
 
+The dry-run planner added on top of the catalog is likewise read-only: callers must supply already-read ledger rows, and the package only returns the current/latest version plus pending metadata. It is a safe boundary for future CLI or loopback preflight tooling, not an execution engine.
+
 Those require separate slices because each one changes operator and data-safety semantics.
 
 ## Likely next slices
 
-1. Add a migration status/apply dry-run CLI or local-only preflight that reads this catalog without mutating a database.
+1. Add a migration status CLI or local-only preflight that reads real `schema_migrations` rows and feeds them into the current dry-run planner without mutating a database.
 2. Define a narrow account/character repository interface backed by current tests before adding a DB implementation.
 3. Add explicit schema migrations for account identity and character roster only after the repository seam is frozen.
 4. Add JSON-file-store export/import or quarantine tooling for migration from bootstrap snapshots.
-5. Document production DB configuration, backups, and rollback policy once there is an actual DB-backed store.
+5. Add an apply/rollback command only after the dry-run status boundary and ledger validation behavior are exercised against an actual driver-backed test database.
+6. Document production DB configuration, backups, and rollback policy once there is an actual DB-backed store.
 
 ## Exit criteria for this slice
 
-- `go test ./db/migrations` validates the catalog rules.
+- `go test ./db/migrations` validates the catalog and dry-run ledger planning rules.
 - `go test ./...` and `go vet ./...` remain green.
-- README/development docs describe `db/migrations` as the validated migration catalog skeleton, not a finished DB layer.
+- README/development docs describe `db/migrations` as the validated migration catalog and read-only planning skeleton, not a finished DB layer.
