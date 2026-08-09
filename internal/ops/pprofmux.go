@@ -969,6 +969,30 @@ func RegisterLocalMapSpawnGroupsEndpoint(mux *http.ServeMux, spawnGroupsForMap f
 	return mux
 }
 
+func RegisterLocalMapStaticActorRespawnsEndpoint(mux *http.ServeMux, staticActorRespawnsForMap func(uint32) (any, bool)) *http.ServeMux {
+	if mux == nil || staticActorRespawnsForMap == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/maps/{map_index}/static-actor-respawns", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		mapIndex, ok := decodeLocalMapScopedListIndex(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		value, ok := staticActorRespawnsForMap(mapIndex)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalInventoryEndpoint(mux *http.ServeMux, inventorySnapshot func(string) (any, bool)) *http.ServeMux {
 	return registerLocalNamedSnapshotEndpoint(mux, "GET /local/inventory/", "/local/inventory/", inventorySnapshot)
 }

@@ -19576,6 +19576,89 @@ func TestSharedWorldRegistryStaticActorRespawnReportsExactPendingDeadActor(t *te
 	}
 }
 
+func TestSharedWorldRegistryStaticActorRespawnsForMapReturnsMapLocalPendingDeadActors(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	currentTime := time.Unix(1700000921, 0)
+	registry.now = func() time.Time { return currentTime }
+
+	mapOneOwner := peerVisibilityCharacter("MapOneRespawnOwner", 0x01030141, 0x02040141, 1100, 2100, 0, 101, 201)
+	mapOneOwnerID, _ := registry.Join(mapOneOwner, newPendingServerFrames(), nil)
+	if mapOneOwnerID == 0 {
+		t.Fatal("expected map-one owner join to return a live shared-world entity ID")
+	}
+	mapFortyTwoOwner := peerVisibilityCharacter("MapFortyTwoRespawnOwner", 0x01030142, 0x02040142, 4100, 5100, 0, 102, 202)
+	mapFortyTwoOwner.MapIndex = 42
+	mapFortyTwoOwnerID, _ := registry.Join(mapFortyTwoOwner, newPendingServerFrames(), nil)
+	if mapFortyTwoOwnerID == 0 {
+		t.Fatal("expected map-42 owner join to return a live shared-world entity ID")
+	}
+	mapOneActor, ok := registry.registerStaticActor(0, "MapOneRespawnMob", bootstrapMapIndex, 1200, 2200, 20350, "", "", worldruntime.StaticActorCombatKindTrainingDummy, "practice.respawn_map_one", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected map-one respawn mob registration to succeed")
+	}
+	mapFortyTwoActor, ok := registry.registerStaticActor(0, "MapFortyTwoRespawnMob", 42, 4200, 5200, 20351, "", "", worldruntime.StaticActorCombatKindTrainingDummy, "practice.respawn_map_forty_two", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected map-42 respawn mob registration to succeed")
+	}
+	if _, ok := registry.RegisterStaticActor("MapNinetyNineGuide", 99, 1400, 2400, 20300); !ok {
+		t.Fatal("expected map-99 live static actor registration to create an occupied map with no pending respawns")
+	}
+
+	killActor := func(subjectID uint64, actor StaticActorSnapshot) {
+		t.Helper()
+		targetVID := uint32(actor.EntityID)
+		targetAttempt := registry.AttemptStaticActorCombatTarget(subjectID, targetVID)
+		if !targetAttempt.Accepted || !registry.SetSessionCombatTarget(subjectID, targetAttempt.TargetVID) {
+			t.Fatalf("expected target selection to be recorded for actor %d, got %+v", actor.EntityID, targetAttempt)
+		}
+		for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+			attack := registry.AttemptSelectedStaticActorAttack(subjectID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, targetVID)
+			if !attack.Accepted {
+				t.Fatalf("expected hit %d against actor %d to be accepted, got %+v", hit, actor.EntityID, attack)
+			}
+			if hit == int(worldruntime.TrainingDummyBootstrapMaxHP) && !attack.Died {
+				t.Fatalf("expected final hit against actor %d to schedule respawn, got %+v", actor.EntityID, attack)
+			}
+		}
+	}
+	killActor(mapOneOwnerID, mapOneActor)
+	killActor(mapFortyTwoOwnerID, mapFortyTwoActor)
+
+	mapFortyTwoRespawns, ok := registry.StaticActorRespawnsForMap(42)
+	if !ok {
+		t.Fatal("expected map-42 pending respawn lookup to resolve")
+	}
+	if len(mapFortyTwoRespawns) != 1 || mapFortyTwoRespawns[0].EntityID != mapFortyTwoActor.EntityID || mapFortyTwoRespawns[0].Actor.MapIndex != 42 || !mapFortyTwoRespawns[0].Actor.Dead {
+		t.Fatalf("expected one dead map-42 respawn row, got %+v", mapFortyTwoRespawns)
+	}
+	mapOneRespawns, ok := registry.StaticActorRespawnsForMap(bootstrapMapIndex)
+	if !ok {
+		t.Fatal("expected bootstrap-map pending respawn lookup to resolve")
+	}
+	if len(mapOneRespawns) != 1 || mapOneRespawns[0].EntityID != mapOneActor.EntityID || mapOneRespawns[0].Actor.MapIndex != bootstrapMapIndex || !mapOneRespawns[0].Actor.Dead {
+		t.Fatalf("expected one dead bootstrap-map respawn row, got %+v", mapOneRespawns)
+	}
+	mapNinetyNineRespawns, ok := registry.StaticActorRespawnsForMap(99)
+	if !ok {
+		t.Fatal("expected occupied map-99 pending respawn lookup to resolve")
+	}
+	if len(mapNinetyNineRespawns) != 0 {
+		t.Fatalf("expected occupied map-99 with no pending respawns to return an empty slice, got %+v", mapNinetyNineRespawns)
+	}
+	if respawns, ok := registry.StaticActorRespawnsForMap(0); ok || len(respawns) != 0 {
+		t.Fatalf("expected map 0 pending respawn lookup to fail closed, got ok=%v respawns=%+v", ok, respawns)
+	}
+	if respawns, ok := registry.StaticActorRespawnsForMap(777); ok || len(respawns) != 0 {
+		t.Fatalf("expected unknown map pending respawn lookup to fail closed, got ok=%v respawns=%+v", ok, respawns)
+	}
+
+	currentTime = currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay)
+	registry.FlushReadyStaticActorRespawns()
+	if respawns, ok := registry.StaticActorRespawnsForMap(42); !ok || len(respawns) != 0 {
+		t.Fatalf("expected flushed map-42 respawn lookup to resolve empty, got ok=%v respawns=%+v", ok, respawns)
+	}
+}
+
 func TestGameRuntimePracticeMobRespawnPreservesAuthoredSpawnRewardSnapshot(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	nearPlayer := peerVisibilityCharacter("RewardRespawnNear", 0x01030111, 0x02040111, 1100, 2100, 0, 101, 201)

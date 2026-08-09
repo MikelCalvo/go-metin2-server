@@ -823,6 +823,13 @@ func (r *gameRuntime) StaticActorRespawn(entityID uint64) (StaticActorRespawnSna
 	return r.sharedWorld.StaticActorRespawn(entityID)
 }
 
+func (r *gameRuntime) StaticActorRespawnsForMap(mapIndex uint32) ([]StaticActorRespawnSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil {
+		return nil, false
+	}
+	return r.sharedWorld.StaticActorRespawnsForMap(mapIndex)
+}
+
 func (r *gameRuntime) InteractionVisibility() []CharacterInteractionVisibilitySnapshot {
 	if r == nil || r.sharedWorld == nil {
 		return nil

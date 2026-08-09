@@ -971,6 +971,36 @@ func (r *sharedWorldRegistry) StaticActorRespawn(entityID uint64) (StaticActorRe
 	return r.staticActorRespawnLocked(entityID)
 }
 
+func (r *sharedWorldRegistry) StaticActorRespawnsForMap(mapIndex uint32) ([]StaticActorRespawnSnapshot, bool) {
+	if r == nil || r.entities == nil || mapIndex == 0 {
+		return nil, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.scopesLocked().StaticActorsForMap(mapIndex); !ok {
+		return nil, false
+	}
+	if len(r.staticActorCombatRespawnAt) == 0 {
+		return nil, true
+	}
+	entityIDs := make([]uint64, 0, len(r.staticActorCombatRespawnAt))
+	for entityID := range r.staticActorCombatRespawnAt {
+		entityIDs = append(entityIDs, entityID)
+	}
+	sort.Slice(entityIDs, func(i, j int) bool { return entityIDs[i] < entityIDs[j] })
+
+	respawns := make([]StaticActorRespawnSnapshot, 0)
+	for _, entityID := range entityIDs {
+		respawn, ok := r.staticActorRespawnLocked(entityID)
+		if !ok || respawn.Actor.MapIndex != mapIndex {
+			continue
+		}
+		respawns = append(respawns, respawn)
+	}
+	return respawns, true
+}
+
 func (r *sharedWorldRegistry) staticActorRespawnLocked(entityID uint64) (StaticActorRespawnSnapshot, bool) {
 	if r == nil || r.entities == nil || entityID == 0 {
 		return StaticActorRespawnSnapshot{}, false

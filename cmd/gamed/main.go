@@ -227,6 +227,16 @@ func main() {
 			return groups, true
 		},
 	)
+	opsHandler = ops.RegisterLocalMapStaticActorRespawnsEndpoint(
+		opsHandler,
+		func(mapIndex uint32) (any, bool) {
+			respawns, ok := gameRuntime.StaticActorRespawnsForMap(mapIndex)
+			if !ok {
+				return nil, false
+			}
+			return respawns, true
+		},
+	)
 	opsHandler = ops.RegisterLocalConnectedCharacterEndpoint(
 		opsHandler,
 		func(name string) (any, bool) {
