@@ -593,7 +593,8 @@ This lets operator QA compare visible quickslot edits, automatic item quickslot 
 
 `GET /local/combat-target/{name}` returns the exact-name selected combat-target snapshot for a connected bootstrap character when that session currently owns a visible runtime combat target.
 `GET /local/combat-targets` returns the deterministic list of all currently resolved active combat-target snapshots, sorted by runtime subject entity ID, so loopback QA can inspect target ownership without already knowing the selected character name.
-Both responses reuse the runtime debug snapshot shape documented in `spec/protocol/combat-normal-attack-bootstrap.md`:
+`GET /local/maps/{map_index}/combat-targets` returns the same snapshot shape filtered to active target selections whose selected subject is currently on one effective map.
+These responses reuse the runtime debug snapshot shape documented in `spec/protocol/combat-normal-attack-bootstrap.md`:
 
 - `subject_entity_id`
 - `subject`
@@ -608,7 +609,7 @@ Both responses reuse the runtime debug snapshot shape documented in `spec/protoc
 
 The embedded `subject` field uses the same effective connected-character snapshot shape exposed by `/local/players`, so combat-target debugging can verify the current selected subject location/dead-state without a second lookup.
 After a spawn-backed practice mob has accepted an owner-side hit, the optional engagement fields expose the current aggro-lite owner and the optional retaliation fields expose the runtime-owned owner-side point-loss cadence without introducing a new gameplay packet or mutation endpoint.
-Both endpoints are loopback-only and read-only. The exact-name endpoint returns `404` when the character is not connected, no longer has a live session hook, has no active target, or the target no longer resolves through the current visibility/runtime combat rules; the list endpoint omits unresolved/stale selections instead of leaking hidden or invalid target data.
+All combat-target endpoints are loopback-only and read-only. The exact-name endpoint returns `404` when the character is not connected, no longer has a live session hook, has no active target, or the target no longer resolves through the current visibility/runtime combat rules; the global and map-local list endpoints omit unresolved/stale selections instead of leaking hidden or invalid target data. The map-local endpoint rejects malformed or zero map-index path values with `400`, returns `404` when the runtime cannot resolve that map-scoped snapshot, and returns an empty JSON array for a known map that currently has no active target selections.
 
 ### `GET /local/static-actor-respawns` and `GET /local/static-actor-respawns/{entity_id}`
 
@@ -639,6 +640,8 @@ Use it when local QA needs all service actors plus spawn-backed actors on one ma
 Invalid path IDs return `400`; missing entities or ordinary non-spawn static actors return `404`.
 `GET /local/maps/{map_index}/spawn-groups` returns the same snapshot shape for one effective map's materialized spawn-backed actors, rejects malformed or zero map-index path values with `400`, and returns `404` when the runtime cannot resolve that map-scoped snapshot.
 Use it when local QA already knows the map under investigation and needs the authored spawn subset without fetching the broader `/local/maps/{map_index}` occupancy row.
+`GET /local/maps/{map_index}/static-actor-respawns` returns pending static-actor respawn rows for one effective map, using the same row shape as `/local/static-actor-respawns` and returning an empty JSON array when the map is known but currently has no pending respawn timers.
+`GET /local/maps/{map_index}/combat-targets` returns active selected combat-target rows for one effective map, using the same row shape as `/local/combat-targets` and returning an empty JSON array when the map is known but currently has no active selections.
 
 Each row reuses the same static-actor snapshot shape exposed by `/local/static-actors`, including:
 
@@ -836,9 +839,10 @@ List all currently resolved combat-target selections:
 
 ```bash
 curl http://127.0.0.1:6060/local/combat-targets
+curl http://127.0.0.1:6060/local/maps/42/combat-targets
 ```
 
-Both combat-target endpoints are read-only local runtime snapshots. They do not introduce new client packets and still fail closed when a selected target is stale, invisible, or no longer combat-targetable.
+These combat-target endpoints are read-only local runtime snapshots. They do not introduce new client packets and still fail closed when a selected target is stale, invisible, or no longer combat-targetable.
 
 List currently materialized authored spawn-group actors:
 
@@ -847,11 +851,12 @@ curl http://127.0.0.1:6060/local/spawn-groups
 curl http://127.0.0.1:6060/local/spawn-groups/by-ref/practice.reward_mob
 curl http://127.0.0.1:6060/local/maps/42/static-actors
 curl http://127.0.0.1:6060/local/maps/42/spawn-groups
+curl http://127.0.0.1:6060/local/maps/42/static-actor-respawns
 ```
 
 The spawn-group snapshots filter to attackable content materialized from `spawn_groups`; use `/local/static-actors` for the global full static-actor set, or `/local/maps/{map_index}/static-actors` for the full map-local set.
 The by-ref endpoint is loopback-only like the rest of the spawn-group inspection surface and looks up the materialized actor by authored `spawn_group_ref`, returning `400` for malformed refs and `404` when a well-formed ref is not currently live.
-`/local/maps` also embeds the full static-actor list and same spawn-backed subset per occupied map as `static_actors`, `spawn_group_count`, and `spawn_groups`; the exact `/local/maps/{map_index}/static-actors` and `/local/maps/{map_index}/spawn-groups` endpoints return only those map-local subsets when QA does not need the full occupancy row.
+`/local/maps` also embeds the full static-actor list and same spawn-backed subset per occupied map as `static_actors`, `spawn_group_count`, and `spawn_groups`; the exact `/local/maps/{map_index}/static-actors`, `/local/maps/{map_index}/spawn-groups`, `/local/maps/{map_index}/static-actor-respawns`, and `/local/maps/{map_index}/combat-targets` endpoints return only those map-local subsets when QA does not need the full occupancy row.
 
 List the authored interaction catalog:
 

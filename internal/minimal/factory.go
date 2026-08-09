@@ -809,6 +809,13 @@ func (r *gameRuntime) CombatTargetSnapshots() []CombatTargetSnapshot {
 	return r.sharedWorld.CombatTargetSnapshots()
 }
 
+func (r *gameRuntime) CombatTargetSnapshotsForMap(mapIndex uint32) ([]CombatTargetSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil {
+		return nil, false
+	}
+	return r.sharedWorld.CombatTargetSnapshotsForMap(mapIndex)
+}
+
 func (r *gameRuntime) StaticActorRespawns() []StaticActorRespawnSnapshot {
 	if r == nil || r.sharedWorld == nil {
 		return nil

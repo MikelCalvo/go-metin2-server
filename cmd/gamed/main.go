@@ -237,6 +237,16 @@ func main() {
 			return respawns, true
 		},
 	)
+	opsHandler = ops.RegisterLocalMapCombatTargetsEndpoint(
+		opsHandler,
+		func(mapIndex uint32) (any, bool) {
+			targets, ok := gameRuntime.CombatTargetSnapshotsForMap(mapIndex)
+			if !ok {
+				return nil, false
+			}
+			return targets, true
+		},
+	)
 	opsHandler = ops.RegisterLocalConnectedCharacterEndpoint(
 		opsHandler,
 		func(name string) (any, bool) {

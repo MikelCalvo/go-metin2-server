@@ -21133,6 +21133,70 @@ func TestSharedWorldRegistryCombatTargetSnapshotsReportsDeterministicActiveSelec
 	}
 }
 
+func TestSharedWorldRegistryCombatTargetSnapshotsForMapReturnsMapLocalActiveSelections(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	mapOneSubject := peerVisibilityCharacter("MapOneSubject", 0x01030151, 0x02040151, 1100, 2100, 0, 101, 201)
+	mapOneSubjectID, _ := registry.Join(mapOneSubject, newPendingServerFrames(), nil)
+	if mapOneSubjectID == 0 {
+		t.Fatal("expected map-one subject join to return a live shared-world entity ID")
+	}
+	mapFortyTwoSubject := peerVisibilityCharacter("MapFortyTwoSubject", 0x01030152, 0x02040152, 4100, 5100, 1, 101, 201)
+	mapFortyTwoSubject.MapIndex = 42
+	mapFortyTwoSubjectID, _ := registry.Join(mapFortyTwoSubject, newPendingServerFrames(), nil)
+	if mapFortyTwoSubjectID == 0 {
+		t.Fatal("expected map-42 subject join to return a live shared-world entity ID")
+	}
+	mapOneActor, ok := registry.RegisterStaticActorWithCombatKind(0, "MapOnePracticeMob", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatProfilePracticeMob)
+	if !ok {
+		t.Fatal("expected map-one practice-mob registration to succeed")
+	}
+	mapFortyTwoActor, ok := registry.RegisterStaticActorWithCombatKind(0, "MapFortyTwoPracticeMob", 42, 4200, 5200, 20351, worldruntime.StaticActorCombatProfilePracticeMob)
+	if !ok {
+		t.Fatal("expected map-42 practice-mob registration to succeed")
+	}
+	if _, ok := registry.RegisterStaticActor("MapNinetyNineGuide", 99, 1400, 2400, 20300); !ok {
+		t.Fatal("expected map-99 static actor registration to create an occupied map with no combat targets")
+	}
+
+	mapOneAttempt := registry.AttemptStaticActorCombatTarget(mapOneSubjectID, uint32(mapOneActor.EntityID))
+	if !mapOneAttempt.Accepted || !registry.SetSessionCombatTarget(mapOneSubjectID, mapOneAttempt.TargetVID) {
+		t.Fatalf("expected map-one target selection to be recorded, got %+v", mapOneAttempt)
+	}
+	mapFortyTwoAttempt := registry.AttemptStaticActorCombatTarget(mapFortyTwoSubjectID, uint32(mapFortyTwoActor.EntityID))
+	if !mapFortyTwoAttempt.Accepted || !registry.SetSessionCombatTarget(mapFortyTwoSubjectID, mapFortyTwoAttempt.TargetVID) {
+		t.Fatalf("expected map-42 target selection to be recorded, got %+v", mapFortyTwoAttempt)
+	}
+
+	mapFortyTwoTargets, ok := registry.CombatTargetSnapshotsForMap(42)
+	if !ok {
+		t.Fatal("expected map-42 combat-target lookup to resolve")
+	}
+	if len(mapFortyTwoTargets) != 1 || mapFortyTwoTargets[0].Subject.Name != mapFortyTwoSubject.Name || mapFortyTwoTargets[0].TargetVID != uint32(mapFortyTwoActor.EntityID) || mapFortyTwoTargets[0].Actor.MapIndex != 42 {
+		t.Fatalf("expected one map-42 combat target row, got %+v", mapFortyTwoTargets)
+	}
+	mapOneTargets, ok := registry.CombatTargetSnapshotsForMap(bootstrapMapIndex)
+	if !ok {
+		t.Fatal("expected bootstrap-map combat-target lookup to resolve")
+	}
+	if len(mapOneTargets) != 1 || mapOneTargets[0].Subject.Name != mapOneSubject.Name || mapOneTargets[0].TargetVID != uint32(mapOneActor.EntityID) || mapOneTargets[0].Actor.MapIndex != bootstrapMapIndex {
+		t.Fatalf("expected one bootstrap-map combat target row, got %+v", mapOneTargets)
+	}
+	mapNinetyNineTargets, ok := registry.CombatTargetSnapshotsForMap(99)
+	if !ok {
+		t.Fatal("expected occupied map-99 combat-target lookup to resolve")
+	}
+	if mapNinetyNineTargets == nil || len(mapNinetyNineTargets) != 0 {
+		t.Fatalf("expected occupied map-99 with no combat targets to return an empty non-nil slice, got %+v", mapNinetyNineTargets)
+	}
+	if targets, ok := registry.CombatTargetSnapshotsForMap(0); ok || len(targets) != 0 {
+		t.Fatalf("expected map 0 combat-target lookup to fail closed, got ok=%v targets=%+v", ok, targets)
+	}
+	if targets, ok := registry.CombatTargetSnapshotsForMap(777); ok || len(targets) != 0 {
+		t.Fatalf("expected unknown map combat-target lookup to fail closed, got ok=%v targets=%+v", ok, targets)
+	}
+}
+
 func TestGameRuntimeCombatTargetSnapshotsReportsActiveSelections(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	attacker := peerVisibilityCharacter("SnapshotAttacker", 0x01030103, 0x02040103, 1100, 2100, 0, 101, 201)
@@ -21158,6 +21222,44 @@ func TestGameRuntimeCombatTargetSnapshotsReportsActiveSelections(t *testing.T) {
 	}
 	if snapshots[0].TargetVID != targetVID || snapshots[0].HPPercent != 100 || snapshots[0].Actor.Name != "SnapshotPracticeMob" {
 		t.Fatalf("unexpected runtime combat target snapshot: %+v", snapshots[0])
+	}
+}
+
+func TestGameRuntimeCombatTargetSnapshotsForMapReportsActiveSelections(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	attacker := peerVisibilityCharacter("MapSnapshotAttacker", 0x01030153, 0x02040153, 4100, 5100, 0, 101, 201)
+	attacker.MapIndex = 42
+	issuePeerTicket(t, store, "map-snapshot-attacker", 0x35353535, attacker)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "MapSnapshotPracticeMob", 42, 4200, 5200, 20350, worldruntime.StaticActorCombatProfilePracticeMob)
+	if !ok {
+		t.Fatal("expected map-local practice-mob registration to succeed")
+	}
+	if _, ok := runtime.sharedWorld.RegisterStaticActor("MapOnlyGuide", 99, 1400, 2400, 20300); !ok {
+		t.Fatal("expected map-only guide registration to create occupied map with no target")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "map-snapshot-attacker", 0x35353535)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.EntityID)
+	if selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(selectOut) != 1 {
+		t.Fatalf("expected target selection before map-local runtime snapshot to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
+	}
+
+	snapshots, ok := runtime.CombatTargetSnapshotsForMap(42)
+	if !ok {
+		t.Fatal("expected map-42 runtime combat-target lookup to resolve")
+	}
+	if len(snapshots) != 1 || snapshots[0].TargetVID != targetVID || snapshots[0].Subject.Name != attacker.Name || snapshots[0].Subject.MapIndex != 42 || snapshots[0].Actor.Name != "MapSnapshotPracticeMob" {
+		t.Fatalf("unexpected map-42 runtime combat target snapshot: %+v", snapshots)
+	}
+	if snapshots, ok := runtime.CombatTargetSnapshotsForMap(99); !ok || snapshots == nil || len(snapshots) != 0 {
+		t.Fatalf("expected occupied map 99 with no combat targets to resolve empty non-nil, got ok=%v snapshots=%+v", ok, snapshots)
+	}
+	if snapshots, ok := runtime.CombatTargetSnapshotsForMap(777); ok || len(snapshots) != 0 {
+		t.Fatalf("expected unknown map combat-target lookup to fail closed, got ok=%v snapshots=%+v", ok, snapshots)
 	}
 }
 

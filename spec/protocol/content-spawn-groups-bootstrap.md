@@ -270,6 +270,8 @@ The shipped `gamed` runtime also exposes a loopback-only read model for the curr
 - `GET /local/spawn-groups/by-ref/{spawn_group_ref}`
 - `GET /local/maps/{map_index}/static-actors`
 - `GET /local/maps/{map_index}/spawn-groups`
+- `GET /local/maps/{map_index}/static-actor-respawns`
+- `GET /local/maps/{map_index}/combat-targets`
 - `GET /local/visibility`
 - `POST /local/relocate-preview`
 - `POST /local/transfer`
@@ -286,7 +288,9 @@ If runtime state ever contains more than one materialized actor with the same au
 This gives local QA a stable authored-content lookup without first discovering the current runtime entity ID, while preserving entity-ID lookup for client-visible `VID` debugging.
 `GET /local/maps/{map_index}/static-actors` returns the deterministic full static-actor subset for one effective map, including both ordinary service actors and spawn-backed actors, without requiring callers to fetch the full `/local/maps` occupancy row or filter the global `/local/static-actors` list.
 `GET /local/maps/{map_index}/spawn-groups` returns the deterministic spawn-backed subset for one effective map without requiring callers to fetch the full `/local/maps` occupancy row or filter the global `/local/spawn-groups` list.
-Both map-scoped endpoints are loopback-only like the adjacent map/spawn-group inspection endpoints, reject malformed or zero map-index path values with `400`, return `404` when the runtime cannot resolve that map-scoped snapshot, and return an empty JSON array when the map is known but has no actors in the requested subset.
+`GET /local/maps/{map_index}/static-actor-respawns` returns the pending server-driven respawn timers whose dead actor currently belongs to one effective map, using the same `entity_id`, `ready_at`, `remaining_ms`, and dead static-actor row shape as `/local/static-actor-respawns`.
+`GET /local/maps/{map_index}/combat-targets` returns the active selected combat-target snapshots whose selected subject currently belongs to one effective map, using the same subject/target/HP/engagement row shape as `/local/combat-targets`.
+These map-scoped endpoints are loopback-only like the adjacent map/spawn-group inspection endpoints, reject malformed or zero map-index path values with `400`, return `404` when the runtime cannot resolve that map-scoped snapshot, and return an empty JSON array when the map is known but has no actors, respawns, or active target selections in the requested subset.
 Rows use the same static-actor snapshot shape and ordering as the flat static-actor and spawn-group lists.
 `GET /local/visibility` now carries the same subset per connected character as `visible_spawn_groups` beside the full `visible_static_actors` list.
 That per-player subset obeys the same topology/AOI visibility policy as `visible_static_actors`; actors outside the subject's visible world are omitted, and runtime-owned dead practice mobs keep `dead: true` in both arrays while they are waiting for server-driven respawn.

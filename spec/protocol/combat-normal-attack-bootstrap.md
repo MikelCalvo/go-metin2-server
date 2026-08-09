@@ -251,6 +251,8 @@ After accepted non-lethal hits, snapshots report the runtime-owned damaged `hp_p
 The embedded `subject` and `engaged_by` fields let local operator/debug consumers verify the selected subject and current engagement owner's effective map, position, empire/guild, and dead-state without joining the combat-target result to a separate `/local/players` response.
 The loopback `/local/combat-target/{name}` operator/debug endpoint exposes that per-subject snapshot by exact character name.
 The aggregate runtime snapshot skips invalid/stale entries, including selected targets whose owning session hook has already disappeared, and returns active selections in deterministic `subject_entity_id` order; the loopback `/local/combat-targets` endpoint exposes that list for local debugging.
+The loopback `/local/maps/{map_index}/combat-targets` endpoint exposes the same aggregate snapshot shape filtered by the selected subject's effective map, so map-local spawn QA can inspect active selections beside the adjacent map-scoped spawn-group and respawn views.
+It rejects malformed or zero map-index path values with `400`, returns `404` when the map is not currently represented in runtime occupancy, and returns an empty JSON array for a known map with no active selected combat targets.
 This gives local operator surfaces a stable read-only seam without granting stale sockets or global actor lookups a new authoritative combat path.
 
 ## First damage-info hit-effect codec

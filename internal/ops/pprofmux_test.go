@@ -3580,6 +3580,160 @@ func TestLocalMapOccupancyMapStaticActorRespawnsAndSpawnGroupsEndpointsCoexist(t
 	}
 }
 
+func TestLocalMapOccupancyCombatTargetsEndpointReturnsMapLocalTargetsForLoopbackGet(t *testing.T) {
+	lookup := &stubMapCombatTargetsLookup{snapshots: map[uint32]any{
+		42: []map[string]any{{"subject_entity_id": uint64(17), "subject": map[string]any{"name": "MkmkSura", "map_index": uint32(42)}, "target_vid": uint32(99), "hp_percent": uint8(80), "actor": map[string]any{"entity_id": uint64(99), "name": "PracticeMob", "map_index": uint32(42)}}},
+	}}
+	mux := RegisterLocalMapCombatTargetsEndpoint(NewPprofMux("gamed"), lookup.MapCombatTargets)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/42/combat-targets", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if lookup.calls != 1 || lookup.lastMapIndex != 42 {
+		t.Fatalf("expected map combat-target lookup for map 42 once, got calls=%d map_index=%d", lookup.calls, lookup.lastMapIndex)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"target_vid":99`) || !strings.Contains(body, `"hp_percent":80`) || !strings.Contains(body, `"name":"MkmkSura"`) || !strings.Contains(body, `"name":"PracticeMob"`) {
+		t.Fatalf("unexpected JSON response body %q", body)
+	}
+}
+
+func TestLocalMapOccupancyCombatTargetsEndpointRejectsInvalidMapIndex(t *testing.T) {
+	lookup := &stubMapCombatTargetsLookup{}
+	mux := RegisterLocalMapCombatTargetsEndpoint(NewPprofMux("gamed"), lookup.MapCombatTargets)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/not-a-map/combat-targets", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected map combat-target lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalMapOccupancyCombatTargetsEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	lookup := &stubMapCombatTargetsLookup{}
+	mux := RegisterLocalMapCombatTargetsEndpoint(NewPprofMux("gamed"), lookup.MapCombatTargets)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/42/combat-targets", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected map combat-target lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalMapOccupancyCombatTargetsEndpointRejectsWrongMethod(t *testing.T) {
+	lookup := &stubMapCombatTargetsLookup{}
+	mux := RegisterLocalMapCombatTargetsEndpoint(NewPprofMux("gamed"), lookup.MapCombatTargets)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/maps/42/combat-targets", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected map combat-target lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalMapOccupancyCombatTargetsEndpointReturnsNotFoundForMissingMap(t *testing.T) {
+	lookup := &stubMapCombatTargetsLookup{snapshots: map[uint32]any{}}
+	mux := RegisterLocalMapCombatTargetsEndpoint(NewPprofMux("gamed"), lookup.MapCombatTargets)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/42/combat-targets", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+	if lookup.calls != 1 || lookup.lastMapIndex != 42 {
+		t.Fatalf("expected map combat-target lookup for map 42 once, got calls=%d map_index=%d", lookup.calls, lookup.lastMapIndex)
+	}
+}
+
+func TestLocalMapOccupancyMapCombatTargetsAndSpawnLifecycleEndpointsCoexist(t *testing.T) {
+	occupancy := &stubMapOccupancyLookup{snapshots: map[uint32]any{42: map[string]any{"map_index": uint32(42), "character_count": 1}}}
+	spawnGroups := &stubMapSpawnGroupsLookup{snapshots: map[uint32]any{42: []map[string]any{{"entity_id": uint64(88), "spawn_group_ref": "practice.map_mob"}}}}
+	respawns := &stubMapStaticActorRespawnsLookup{snapshots: map[uint32]any{42: []map[string]any{{"entity_id": uint64(99), "remaining_ms": int64(1200)}}}}
+	combatTargets := &stubMapCombatTargetsLookup{snapshots: map[uint32]any{42: []map[string]any{{"target_vid": uint32(99), "hp_percent": uint8(80)}}}}
+	mux := RegisterLocalMapOccupancyEndpoint(NewPprofMux("gamed"), occupancy.MapOccupancy)
+	mux = RegisterLocalMapSpawnGroupsEndpoint(mux, spawnGroups.MapSpawnGroups)
+	mux = RegisterLocalMapStaticActorRespawnsEndpoint(mux, respawns.MapStaticActorRespawns)
+	mux = RegisterLocalMapCombatTargetsEndpoint(mux, combatTargets.MapCombatTargets)
+
+	occupancyReq := httptest.NewRequest(http.MethodGet, "/local/maps/42", nil)
+	occupancyReq.RemoteAddr = "127.0.0.1:12345"
+	occupancyRec := httptest.NewRecorder()
+	mux.ServeHTTP(occupancyRec, occupancyReq)
+	if occupancyRec.Code != http.StatusOK {
+		t.Fatalf("expected occupancy endpoint status %d, got %d", http.StatusOK, occupancyRec.Code)
+	}
+	if occupancy.calls != 1 || spawnGroups.calls != 0 || respawns.calls != 0 || combatTargets.calls != 0 {
+		t.Fatalf("expected only occupancy lookup for /local/maps/42, got occupancy=%d spawn=%d respawn=%d combat=%d", occupancy.calls, spawnGroups.calls, respawns.calls, combatTargets.calls)
+	}
+
+	combatReq := httptest.NewRequest(http.MethodGet, "/local/maps/42/combat-targets", nil)
+	combatReq.RemoteAddr = "127.0.0.1:12345"
+	combatRec := httptest.NewRecorder()
+	mux.ServeHTTP(combatRec, combatReq)
+	if combatRec.Code != http.StatusOK {
+		t.Fatalf("expected map combat-targets endpoint status %d, got %d", http.StatusOK, combatRec.Code)
+	}
+	if occupancy.calls != 1 || spawnGroups.calls != 0 || respawns.calls != 0 || combatTargets.calls != 1 || combatTargets.lastMapIndex != 42 {
+		t.Fatalf("expected combat-target lookup after occupancy, got occupancy=%d spawn=%d respawn=%d combat=%d combat_map=%d", occupancy.calls, spawnGroups.calls, respawns.calls, combatTargets.calls, combatTargets.lastMapIndex)
+	}
+
+	respawnReq := httptest.NewRequest(http.MethodGet, "/local/maps/42/static-actor-respawns", nil)
+	respawnReq.RemoteAddr = "127.0.0.1:12345"
+	respawnRec := httptest.NewRecorder()
+	mux.ServeHTTP(respawnRec, respawnReq)
+	if respawnRec.Code != http.StatusOK {
+		t.Fatalf("expected map static-actor-respawns endpoint status %d, got %d", http.StatusOK, respawnRec.Code)
+	}
+	if occupancy.calls != 1 || spawnGroups.calls != 0 || respawns.calls != 1 || respawns.lastMapIndex != 42 || combatTargets.calls != 1 {
+		t.Fatalf("expected respawn lookup after combat-target, got occupancy=%d spawn=%d respawn=%d respawn_map=%d combat=%d", occupancy.calls, spawnGroups.calls, respawns.calls, respawns.lastMapIndex, combatTargets.calls)
+	}
+
+	spawnReq := httptest.NewRequest(http.MethodGet, "/local/maps/42/spawn-groups", nil)
+	spawnReq.RemoteAddr = "127.0.0.1:12345"
+	spawnRec := httptest.NewRecorder()
+	mux.ServeHTTP(spawnRec, spawnReq)
+	if spawnRec.Code != http.StatusOK {
+		t.Fatalf("expected map spawn-groups endpoint status %d, got %d", http.StatusOK, spawnRec.Code)
+	}
+	if occupancy.calls != 1 || spawnGroups.calls != 1 || spawnGroups.lastMapIndex != 42 || respawns.calls != 1 || combatTargets.calls != 1 {
+		t.Fatalf("expected spawn lookup after respawn, got occupancy=%d spawn=%d spawn_map=%d respawn=%d combat=%d", occupancy.calls, spawnGroups.calls, spawnGroups.lastMapIndex, respawns.calls, combatTargets.calls)
+	}
+}
+
 func TestLocalMapOccupancyEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
 	lookup := &stubMapOccupancyLookup{}
 	mux := RegisterLocalMapOccupancyEndpoint(NewPprofMux("gamed"), lookup.MapOccupancy)
@@ -5599,6 +5753,19 @@ type stubMapStaticActorRespawnsLookup struct {
 }
 
 func (s *stubMapStaticActorRespawnsLookup) MapStaticActorRespawns(mapIndex uint32) (any, bool) {
+	s.calls++
+	s.lastMapIndex = mapIndex
+	value, ok := s.snapshots[mapIndex]
+	return value, ok
+}
+
+type stubMapCombatTargetsLookup struct {
+	snapshots    map[uint32]any
+	calls        int
+	lastMapIndex uint32
+}
+
+func (s *stubMapCombatTargetsLookup) MapCombatTargets(mapIndex uint32) (any, bool) {
 	s.calls++
 	s.lastMapIndex = mapIndex
 	value, ok := s.snapshots[mapIndex]

@@ -933,6 +933,45 @@ func (r *sharedWorldRegistry) CombatTargetSnapshots() []CombatTargetSnapshot {
 	return snapshots
 }
 
+func (r *sharedWorldRegistry) CombatTargetSnapshotsForMap(mapIndex uint32) ([]CombatTargetSnapshot, bool) {
+	if r == nil || mapIndex == 0 {
+		return nil, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	knownMap := false
+	for _, snapshot := range r.mapOccupancySnapshotsLocked() {
+		if snapshot.MapIndex == mapIndex {
+			knownMap = true
+			break
+		}
+	}
+	if !knownMap {
+		return nil, false
+	}
+	if len(r.sessionCombatTargets) == 0 {
+		return []CombatTargetSnapshot{}, true
+	}
+
+	entityIDs := make([]uint64, 0, len(r.sessionCombatTargets))
+	for entityID := range r.sessionCombatTargets {
+		entityIDs = append(entityIDs, entityID)
+	}
+	sort.Slice(entityIDs, func(i, j int) bool { return entityIDs[i] < entityIDs[j] })
+
+	snapshots := make([]CombatTargetSnapshot, 0)
+	for _, entityID := range entityIDs {
+		snapshot, ok := r.combatTargetSnapshotLocked(entityID)
+		if !ok || snapshot.Subject.MapIndex != mapIndex {
+			continue
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	return snapshots, true
+}
+
 func (r *sharedWorldRegistry) StaticActorRespawns() []StaticActorRespawnSnapshot {
 	if r == nil || r.entities == nil {
 		return nil
