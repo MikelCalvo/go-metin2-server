@@ -488,6 +488,10 @@ func main() {
 		opsHandler,
 		exportContentBundleSummary,
 	)
+	opsHandler = ops.RegisterLocalContentBundleItemTemplateEndpoint(
+		opsHandler,
+		exportContentBundleSummary,
+	)
 	opsHandler = ops.RegisterLocalContentBundleShopCatalogEndpoint(
 		opsHandler,
 		exportContentBundleSummary,

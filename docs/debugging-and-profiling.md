@@ -348,6 +348,12 @@ Returns one compact authored interaction-definition preview row from the live co
 
 Use it when local QA needs to inspect one authored definition preview and whether it is referenced by any static actor without fetching the full content-bundle summary or full bundle payload. It is not a gameplay protocol endpoint and does not mutate authored content.
 
+### `GET /local/content-bundle/item-templates/{vnum}`
+
+Returns one exact item-template summary row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; `vnum` must be a non-zero unsigned item template ID. It returns the matching `item_templates[]` row with the currently summarized item metadata, returns `404` when the live authored bundle has no matching item template, rejects malformed or zero vnums with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
+
+Use it when local QA needs to inspect one merchant/reward item template and its guard/rejection metadata without fetching the full content-bundle summary or opening an in-game merchant window. It is not a gameplay protocol endpoint and does not mutate authored content.
+
 ### `GET /local/content-bundle/shop-catalogs/{kind}/{ref}`
 
 Returns one exact structured shop-catalog summary row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; the only accepted `kind` for this path is `shop_preview`, and `ref` must satisfy the same path-safe interaction reference rule used by `/local/interactions/{kind}/{ref}`. It returns `404` when the live authored bundle has no matching catalog, rejects malformed identities with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.

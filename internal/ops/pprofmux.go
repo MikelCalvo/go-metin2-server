@@ -1681,6 +1681,41 @@ func RegisterLocalContentBundleInteractionDefinitionEndpoint(mux *http.ServeMux,
 	return mux
 }
 
+func RegisterLocalContentBundleItemTemplateEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/content-bundle/item-templates/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		vnum, ok := decodeLocalContentBundleItemTemplateVnum(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		for _, template := range summary.ItemTemplates {
+			if template.Vnum == vnum {
+				writeLocalJSONMutationResponse(w, template, http.StatusOK)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	return mux
+}
+
 func interactionDefinitionReferenceListContains(references []contentbundle.InteractionDefinitionReferenceSummary, kind string, ref string) bool {
 	for _, reference := range references {
 		if reference.Kind == kind && reference.Ref == ref {
@@ -2484,6 +2519,19 @@ func decodeLocalContentBundleInteractableStaticActorName(r *http.Request) (strin
 
 func decodeLocalContentBundleInteractionDefinitionIdentity(r *http.Request) (string, string, bool) {
 	return decodeLocalKindRefIdentityWithPrefix(r, "/local/content-bundle/interaction-definitions/")
+}
+
+func decodeLocalContentBundleItemTemplateVnum(r *http.Request) (uint32, bool) {
+	vnumRaw := strings.TrimPrefix(r.URL.Path, "/local/content-bundle/item-templates/")
+	vnumRaw = strings.TrimSpace(vnumRaw)
+	if vnumRaw == "" || strings.Contains(vnumRaw, "/") {
+		return 0, false
+	}
+	vnum, err := strconv.ParseUint(vnumRaw, 0, 32)
+	if err != nil || vnum == 0 {
+		return 0, false
+	}
+	return uint32(vnum), true
 }
 
 func decodeLocalContentBundleShopCatalogIdentity(r *http.Request) (string, string, bool) {

@@ -109,6 +109,7 @@ Current owned self-only interaction operator-summary semantics:
 - per-map `maps[]` entries now also include `info_actor_count` and `talk_actor_count`
 - these counts audit authored `info` / `talk` static actors separately from service-style `shop_preview` and `warp` actors without requiring operators to expand the full `interactable_static_actors` array
 - `GET /local/content-bundle/interaction-definitions/{kind}/{ref}` now returns one compact authored definition preview row with `kind`, `ref`, `preview`, and `referenced`, so operators can inspect a single `info` / `talk` / service definition summary without fetching the full bundle summary or full bundle payload
+- `GET /local/content-bundle/item-templates/{vnum}` now returns one exact summarized item-template row for local QA, including the guard/rejection metadata already exposed in content-bundle summaries, without fetching the full bundle summary or opening a merchant in-game
 
 This remains intentionally narrow even now that the first buy-only merchant path exists: sell-back, stock depletion, and richer merchant-window choreography still remain separate later work.
 
