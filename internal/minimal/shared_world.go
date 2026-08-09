@@ -48,7 +48,7 @@ type sharedWorldRegistry struct {
 	staticActorDeathReward          map[uint64]worldruntime.StaticActorDeathReward
 	sessionCombatTargets            map[uint64]uint32
 	exchangePartners                map[uint64]uint64
-	exchangeItems                   map[uint64]map[uint8]struct{}
+	exchangeItems                   map[uint64]map[uint8]uint64
 	nextStaticActorCombatSnapshotID uint64
 	lastKnownCharacters             map[uint64]loginticket.Character
 	groundItemsByVID                map[uint32]sharedGroundItem
@@ -440,18 +440,26 @@ func (r *sharedWorldRegistry) AddExchangeItem(originID uint64, displaySlot uint8
 	if !ok || characterAtBootstrapHPFloor(partner) {
 		return nil, false
 	}
+	if display.Item.ID == 0 {
+		return nil, false
+	}
 	if r.exchangeItems == nil {
-		r.exchangeItems = make(map[uint64]map[uint8]struct{})
+		r.exchangeItems = make(map[uint64]map[uint8]uint64)
 	}
 	originItems := r.exchangeItems[originID]
 	if originItems == nil {
-		originItems = make(map[uint8]struct{})
+		originItems = make(map[uint8]uint64)
 		r.exchangeItems[originID] = originItems
 	}
 	if _, occupied := originItems[displaySlot]; occupied {
 		return nil, false
 	}
-	originItems[displaySlot] = struct{}{}
+	for _, displayedItemID := range originItems {
+		if displayedItemID == display.Item.ID {
+			return nil, false
+		}
+	}
+	originItems[displaySlot] = display.Item.ID
 
 	selfFrame := encodeExchangeItemAddFrame(1, displaySlot, display)
 	peerFrame := encodeExchangeItemAddFrame(0, displaySlot, display)
@@ -527,7 +535,8 @@ func (r *sharedWorldRegistry) RemoveExchangeItem(originID uint64, displaySlot ui
 		return nil, false
 	}
 	originItems := r.exchangeItems[originID]
-	if _, occupied := originItems[displaySlot]; !occupied {
+	clearedItemID, occupied := originItems[displaySlot]
+	if !occupied {
 		return nil, false
 	}
 	delete(originItems, displaySlot)
@@ -539,14 +548,14 @@ func (r *sharedWorldRegistry) RemoveExchangeItem(originID uint64, displaySlot ui
 	peerFrame := encodeExchangeItemDelFrame(0, displaySlot)
 	if !r.enqueueToEntityLocked(partnerID, [][]byte{peerFrame}) {
 		if r.exchangeItems == nil {
-			r.exchangeItems = make(map[uint64]map[uint8]struct{})
+			r.exchangeItems = make(map[uint64]map[uint8]uint64)
 		}
 		originItems = r.exchangeItems[originID]
 		if originItems == nil {
-			originItems = make(map[uint8]struct{})
+			originItems = make(map[uint8]uint64)
 			r.exchangeItems[originID] = originItems
 		}
-		originItems[displaySlot] = struct{}{}
+		originItems[displaySlot] = clearedItemID
 		return nil, false
 	}
 	return [][]byte{selfFrame}, true
