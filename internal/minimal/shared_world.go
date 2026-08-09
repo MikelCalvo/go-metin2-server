@@ -385,7 +385,7 @@ func (r *sharedWorldRegistry) StartExchange(originID uint64, targetVID uint32) (
 		return nil, false
 	}
 	if _, busy := r.exchangePartners[target.Entity.ID]; busy {
-		return nil, false
+		return [][]byte{encodeExchangeAlreadyFrame()}, true
 	}
 
 	originFrames := [][]byte{encodeExchangeStartFrame(target.Character.VID)}
@@ -3033,6 +3033,10 @@ func encodeCharacterDeleteFrame(character loginticket.Character) []byte {
 
 func encodeExchangeStartFrame(peerVID uint32) []byte {
 	return itemproto.EncodeServerExchange(itemproto.ServerExchangePacket{Subheader: itemproto.ExchangeServerSubheaderStart, Arg1: peerVID})
+}
+
+func encodeExchangeAlreadyFrame() []byte {
+	return itemproto.EncodeServerExchange(itemproto.ServerExchangePacket{Subheader: itemproto.ExchangeServerSubheaderAlready})
 }
 
 func encodeExchangeEndFrame() []byte {

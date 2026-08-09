@@ -429,6 +429,7 @@ Expected result:
 Run this only if packet tooling or the client build can emit an exchange/trade attempt.
 
 - [ ] Attempt one `EXCHANGE START` request against a visible connected player, then close it with `EXCHANGE CANCEL`
+- [ ] Attempt one `EXCHANGE START` request against a visible connected player that is already paired in an exchange shell
 - [ ] Attempt one `EXCHANGE START` request against a player that is not visible or not connected
 - [ ] Attempt one `EXCHANGE ITEM_ADD` request for a disposable carried item slot
 - [ ] Repeat `EXCHANGE ITEM_ADD` with a carried item whose loaded template authors `anti_give = true` and non-empty `give_reject_message`
@@ -438,8 +439,9 @@ Run this only if packet tooling or the client build can emit an exchange/trade a
 
 Expected result:
 - visible connected-player `EXCHANGE START` emits one self `GC::EXCHANGE START` naming the peer `VID` and queues one peer `GC::EXCHANGE START` naming the requester `VID`; `EXCHANGE CANCEL` emits one self `GC::EXCHANGE END` and queues one peer `GC::EXCHANGE END`
-- non-visible, disconnected, already-paired, or zero-HP exchange starts fail closed with no exchange frames
-- the current exchange shell is only a window/open-close proof: no carried inventory/equipment/quickslot/gold state changes, no ground actor appears, and reconnect/operator inspection shows selected-character snapshots unchanged
+- `EXCHANGE START` against a visible connected peer that is already paired returns one self-only `GC::EXCHANGE ALREADY` to the requester, queues no frames to the existing pair, and leaves the existing exchange shell intact
+- non-visible, disconnected, requester-already-paired, or zero-HP exchange starts fail closed with no exchange frames
+- the current exchange shell is only a window/open-close/busy-target proof: no carried inventory/equipment/quickslot/gold state changes, no ground actor appears, and reconnect/operator inspection shows selected-character snapshots unchanged
 - item placement, item removal, gold placement, and accept/finalize subheaders remain unsupported in the shipped bootstrap runtime; apart from the current guard feedback exception, they emit no exchange result frames and do not mutate state
 - an `anti_give` carried item with `give_reject_message` returns exactly one self-only `CHAT_TYPE_INFO` message for `EXCHANGE ITEM_ADD` using that authored text only when the requested display slot is in the current `0..11` exchange item range, while still leaving inventory, equipment, quickslots, gold, peers, ground handles, and persistence unchanged
 - out-of-range `EXCHANGE ITEM_ADD` display slots stay no-frame/no-mutation even for guarded `anti_give` templates

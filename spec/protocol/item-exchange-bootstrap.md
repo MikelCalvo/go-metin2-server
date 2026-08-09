@@ -81,10 +81,10 @@ Current owned server subheaders:
 | `GOLD_ADD` | `3` | codec/documentation only |
 | `ACCEPT` | `4` | codec/documentation only |
 | `END` | `5` | emitted for the current cancel/close shell |
-| `ALREADY` | `6` | codec/documentation only |
+| `ALREADY` | `6` | emitted self-only when `START` targets a visible connected peer that is already paired in the bootstrap exchange shell |
 | `LESS_GOLD` | `7` | codec/documentation only |
 
-The shipped runtime now emits only `START` and `END` for the narrow visible-peer open/cancel shell described below. `ITEM_ADD`, `ITEM_DEL`, `GOLD_ADD`, `ACCEPT`, `ALREADY`, and `LESS_GOLD` remain codec/documentation-only until a later trade-state slice owns item, gold, acceptance, and result semantics.
+The shipped runtime now emits only `START`, `END`, and the narrow busy-target `ALREADY` response for the visible-peer exchange-window shell described below. `ITEM_ADD`, `ITEM_DEL`, `GOLD_ADD`, `ACCEPT`, and `LESS_GOLD` remain codec/documentation-only until a later trade-state slice owns item, gold, acceptance, and result semantics.
 
 ## Current runtime contract
 
@@ -94,6 +94,7 @@ The shipped minimal runtime owns only a small in-memory exchange-window shell:
 
 - `START` succeeds only when the requester owns a live `GAME` shared-world session above the bootstrap zero-HP floor, `arg1` identifies another connected visible player `VID`, and neither player is already paired in this bootstrap exchange shell.
 - A successful `START` returns one self-only `GC::EXCHANGE START` to the requester with `arg1 = target_vid` and queues one `GC::EXCHANGE START` to the visible target with `arg1 = requester_vid`.
+- If `START` targets a visible connected player that is already paired, the requester receives one self-only `GC::EXCHANGE ALREADY`; the existing pair receives no frames and no exchange state changes.
 - `CANCEL` succeeds only while the requester is currently paired in that shell.
 - A successful `CANCEL` returns one self-only `GC::EXCHANGE END` to the cancelling player and queues one `GC::EXCHANGE END` to the paired player.
 
@@ -149,4 +150,4 @@ Later slices must write a new contract before broadening this packet into real g
 - `internal/proto/item` freezes `CG::EXCHANGE` encode/decode behavior and the first shared `GC::EXCHANGE` response codec, plus unexpected-header and invalid-payload rejection for both directions.
 - `internal/game` freezes `GAME`-phase dispatch to a handler hook, with denied results returning no frames.
 - `internal/player` freezes the metadata-driven, no-mutation exchange item-add `anti_give` rejection lookup.
-- `internal/minimal` freezes the visible-peer `START` / `CANCEL` shell with paired `GC::EXCHANGE START` / `END` frames and no persisted inventory, quickslot, equipment, or gold mutation; it also preserves the no-frame fail-closed behavior for unsupported item/gold/accept requests, plus the self-only `CHAT_TYPE_INFO` rejection frame when the carried item's template authors `anti_give` and `give_reject_message`.
+- `internal/minimal` freezes the visible-peer `START` / `CANCEL` shell with paired `GC::EXCHANGE START` / `END` frames and no persisted inventory, quickslot, equipment, or gold mutation; it also freezes the self-only `GC::EXCHANGE ALREADY` response when a third visible requester targets an already-paired peer, preserves the no-frame fail-closed behavior for unsupported item/gold/accept requests, and preserves the self-only `CHAT_TYPE_INFO` rejection frame when the carried item's template authors `anti_give` and `give_reject_message`.

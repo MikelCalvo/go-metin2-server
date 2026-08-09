@@ -112,6 +112,101 @@ func TestGameRuntimeItemExchangeStartRequiresVisiblePeerWithoutMutation(t *testi
 	assertExchangeAccountUnchanged(t, accounts, "item-exchange-far-target", peer, "far target exchange start")
 }
 
+func TestGameRuntimeItemExchangeStartReportsAlreadyBusyPeerWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeBusyOwner", 0x0103076b, 0x0204076b, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 712, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	busyPeer := peerVisibilityCharacter("ExchangeBusyPeer", 0x0103076c, 0x0204076c, 1120, 2120, 0, 101, 201)
+	busyPeer.Gold = 22222
+	busyPeer.Inventory = []inventory.ItemInstance{{ID: 713, Vnum: 27002, Count: 2, Slot: 6}}
+	busyPeer.Quickslots = []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeItem, Slot: 6}}
+	challenger := peerVisibilityCharacter("ExchangeBusyChallenger", 0x0103076d, 0x0204076d, 1140, 2140, 0, 101, 201)
+	challenger.Gold = 33333
+	challenger.Inventory = []inventory.ItemInstance{{ID: 714, Vnum: 27003, Count: 4, Slot: 7}}
+	challenger.Quickslots = []loginticket.Quickslot{{Position: 4, Type: quickslotproto.TypeItem, Slot: 7}}
+	issuePeerTicket(t, ticketStore, "item-exchange-busy-owner", 0x7070706b, owner)
+	issuePeerTicket(t, ticketStore, "item-exchange-busy-peer", 0x7070706c, busyPeer)
+	issuePeerTicket(t, ticketStore, "item-exchange-busy-challenger", 0x7070706d, challenger)
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-busy-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed busy exchange owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-busy-peer", Empire: busyPeer.Empire, Characters: cloneCharacters([]loginticket.Character{busyPeer})}); err != nil {
+		t.Fatalf("seed busy exchange peer account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-busy-challenger", Empire: challenger.Empire, Characters: cloneCharacters([]loginticket.Character{challenger})}); err != nil {
+		t.Fatalf("seed busy exchange challenger account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected busy exchange runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-busy-owner", 0x7070706b)
+	defer closeSessionFlow(t, ownerFlow)
+	busyPeerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-busy-peer", 0x7070706c)
+	defer closeSessionFlow(t, busyPeerFlow)
+	challengerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-busy-challenger", 0x7070706d)
+	defer closeSessionFlow(t, challengerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, busyPeerFlow)
+	_ = flushServerFrames(t, challengerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      busyPeer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected initial exchange-start packet error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected initial exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], busyPeer.VID, "owner initial response")
+	queuedStart := flushServerFrames(t, busyPeerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected busy peer to receive one initial queued start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "busy peer initial queued response")
+
+	busyOut, err := challengerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      busyPeer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected busy exchange-start packet error: %v", err)
+	}
+	if len(busyOut) != 1 {
+		t.Fatalf("expected busy exchange start to emit one already frame, got %d", len(busyOut))
+	}
+	assertExchangeAlreadyFrame(t, busyOut[0], "challenger busy response")
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected busy exchange start to queue no owner frames, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, busyPeerFlow); len(queued) != 0 {
+		t.Fatalf("expected busy exchange start to queue no busy-peer frames, got %d", len(queued))
+	}
+
+	cancelOut, err := busyPeerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected cancel after busy exchange-start packet error: %v", err)
+	}
+	if len(cancelOut) != 1 {
+		t.Fatalf("expected busy peer cancel after already response to emit one end frame, got %d", len(cancelOut))
+	}
+	assertExchangeEndFrame(t, cancelOut[0], "busy peer cancel after already response")
+	queuedEnd := flushServerFrames(t, ownerFlow)
+	if len(queuedEnd) != 1 {
+		t.Fatalf("expected owner to receive queued end after busy peer cancel, got %d", len(queuedEnd))
+	}
+	assertExchangeEndFrame(t, queuedEnd[0], "owner queued cancel after already response")
+
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-busy-owner", owner, "busy owner exchange start")
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-busy-peer", busyPeer, "busy peer exchange start")
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-busy-challenger", challenger, "busy challenger exchange start")
+}
+
 func TestGameRuntimeItemExchangeCancelClosesBothPeerWindowsWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -424,6 +519,17 @@ func assertExchangeEndFrame(t *testing.T, raw []byte, context string) {
 	}
 	if packet != (itemproto.ServerExchangePacket{Subheader: itemproto.ExchangeServerSubheaderEnd}) {
 		t.Fatalf("unexpected exchange end frame %s: %+v", context, packet)
+	}
+}
+
+func assertExchangeAlreadyFrame(t *testing.T, raw []byte, context string) {
+	t.Helper()
+	packet, err := itemproto.DecodeServerExchange(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode exchange already frame %s: %v", context, err)
+	}
+	if packet != (itemproto.ServerExchangePacket{Subheader: itemproto.ExchangeServerSubheaderAlready}) {
+		t.Fatalf("unexpected exchange already frame %s: %+v", context, packet)
 	}
 }
 
