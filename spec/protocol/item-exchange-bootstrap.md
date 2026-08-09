@@ -5,10 +5,11 @@ This note freezes the first clean-room `EXCHANGE` boundary for the bootstrap ite
 The goal is deliberately conservative:
 
 - own the client packet layout before broader player-to-player trade is implemented
-- own the shared server response packet layout before any runtime exchange-window emission is introduced
+- reuse the owned shared server response packet layout for the first runtime exchange-window shell
 - route the packet through the `GAME` phase without treating it as an unknown-header disconnect edge
-- keep the shipped runtime fail-closed with no inventory, equipment, quickslot, gold, ground-item, peer, or persistence mutation until a later exchange/trade slice owns two-party state and acceptance semantics
-- allow one template-authored guard response for already-owned `anti_give` metadata on `ITEM_ADD` without implementing two-party trade
+- own the first two-party exchange-window shell (`START` / `END`) without mutating inventory, equipment, quickslots, gold, ground items, or persisted account state
+- keep item placement, gold placement, accept/finalize, and trade mutation fail-closed until a later exchange/trade slice owns those semantics
+- allow one template-authored guard response for already-owned `anti_give` metadata on `ITEM_ADD` without implementing item transfer
 
 This is not a completed exchange, trade, safebox, or player-shop system.
 
@@ -41,14 +42,14 @@ Current owned client subheaders:
 
 | Name | Value | Current runtime policy |
 | --- | ---: | --- |
-| `START` | `0` | decoded and fail-closed |
+| `START` | `0` | starts the current visible-peer exchange-window shell when the peer is connected and visible |
 | `ITEM_ADD` | `1` | decoded and fail-closed |
 | `ITEM_DEL` | `2` | decoded and fail-closed |
 | `ELK_ADD` | `3` | decoded and fail-closed |
 | `ACCEPT` | `4` | decoded and fail-closed |
-| `CANCEL` | `5` | decoded and fail-closed |
+| `CANCEL` | `5` | closes the current paired exchange-window shell |
 
-The repository owns only this client byte layout and the current fail-closed runtime policy. It does not yet interpret item ownership, target eligibility, trade windows, accept state, or trade finalization.
+The repository owns only this client byte layout, the current visible-peer open/close shell, and the current fail-closed policy for item/gold/accept actions. It does not yet interpret item ownership, item placement/removal, gold placement, accept state, or trade finalization.
 
 ## Server packet
 
@@ -74,29 +75,38 @@ Current owned server subheaders:
 
 | Name | Value | Current runtime policy |
 | --- | ---: | --- |
-| `START` | `0` | codec/documentation only |
+| `START` | `0` | emitted for the current visible-peer open shell |
 | `ITEM_ADD` | `1` | codec/documentation only |
 | `ITEM_DEL` | `2` | codec/documentation only |
 | `GOLD_ADD` | `3` | codec/documentation only |
 | `ACCEPT` | `4` | codec/documentation only |
-| `END` | `5` | codec/documentation only |
+| `END` | `5` | emitted for the current cancel/close shell |
 | `ALREADY` | `6` | codec/documentation only |
 | `LESS_GOLD` | `7` | codec/documentation only |
 
-This codec slice is deliberately presentation-only. The shipped runtime still does not emit `GC::EXCHANGE`; the only current exchange guard feedback remains the self-only `CHAT_TYPE_INFO` packet described below.
+The shipped runtime now emits only `START` and `END` for the narrow visible-peer open/cancel shell described below. `ITEM_ADD`, `ITEM_DEL`, `GOLD_ADD`, `ACCEPT`, `ALREADY`, and `LESS_GOLD` remain codec/documentation-only until a later trade-state slice owns item, gold, acceptance, and result semantics.
 
 ## Current runtime contract
 
 `internal/game` decodes `EXCHANGE` while the session is already in `GAME` and routes it to a dedicated handler hook. The default handler denies the request with no response.
 
-The shipped minimal runtime intentionally leaves exchange gameplay unsupported for now. Ordinary `EXCHANGE` requests still fail closed:
+The shipped minimal runtime owns only a small in-memory exchange-window shell:
 
-- no server frames are emitted
+- `START` succeeds only when the requester owns a live `GAME` shared-world session above the bootstrap zero-HP floor, `arg1` identifies another connected visible player `VID`, and neither player is already paired in this bootstrap exchange shell.
+- A successful `START` returns one self-only `GC::EXCHANGE START` to the requester with `arg1 = target_vid` and queues one `GC::EXCHANGE START` to the visible target with `arg1 = requester_vid`.
+- `CANCEL` succeeds only while the requester is currently paired in that shell.
+- A successful `CANCEL` returns one self-only `GC::EXCHANGE END` to the cancelling player and queues one `GC::EXCHANGE END` to the paired player.
+
+The shell is deliberately not an item/gold transfer system. It performs no inventory, equipment, quickslot, gold, ground-item, or persisted-account mutation, and it does not yet emit exchange `ITEM_ADD`, `ITEM_DEL`, `GOLD_ADD`, or `ACCEPT` responses.
+
+Unsupported or malformed `EXCHANGE` contexts still fail closed:
+
+- no item/gold/accept/result server frames are emitted
 - no carried inventory or equipment state is mutated
 - no quickslots are added, deleted, or retargeted
 - no points or gold are changed
 - no temporary ground item handle is registered
-- no peer-facing frames are queued
+- no peer-facing item/gold/accept/result frames are queued
 - no selected-character account snapshot is persisted
 
 There is one owned guard-feedback exception for `ITEM_ADD`. When all of these are true:
@@ -126,8 +136,8 @@ Malformed `EXCHANGE` payload sizes fail at the codec/dispatcher boundary rather 
 
 Later slices must write a new contract before broadening this packet into real gameplay. In particular, this slice does not freeze:
 
-- trade target/range eligibility
-- exchange-window open/close server packets
+- richer trade target/range eligibility beyond the current visible-player check
+- exchange-window item/gold/accept updates beyond the current `START` / `END` shell
 - trade item placement, removal, or gold placement semantics
 - accept/cancel state machines
 - two-party inventory/gold mutation ordering
@@ -139,4 +149,4 @@ Later slices must write a new contract before broadening this packet into real g
 - `internal/proto/item` freezes `CG::EXCHANGE` encode/decode behavior and the first shared `GC::EXCHANGE` response codec, plus unexpected-header and invalid-payload rejection for both directions.
 - `internal/game` freezes `GAME`-phase dispatch to a handler hook, with denied results returning no frames.
 - `internal/player` freezes the metadata-driven, no-mutation exchange item-add `anti_give` rejection lookup.
-- `internal/minimal` freezes the shipped no-frame fail-closed behavior with persisted inventory, quickslots, and gold unchanged after an ordinary `EXCHANGE` item-add packet, plus the self-only `CHAT_TYPE_INFO` rejection frame when the carried item's template authors `anti_give` and `give_reject_message`.
+- `internal/minimal` freezes the visible-peer `START` / `CANCEL` shell with paired `GC::EXCHANGE START` / `END` frames and no persisted inventory, quickslot, equipment, or gold mutation; it also preserves the no-frame fail-closed behavior for unsupported item/gold/accept requests, plus the self-only `CHAT_TYPE_INFO` rejection frame when the carried item's template authors `anti_give` and `give_reject_message`.

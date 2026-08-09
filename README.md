@@ -44,7 +44,7 @@ Legend used below:
   - Multiple connected sessions can exist in the same in-process world, see each other, move, chat, transfer through bootstrap seams, reconnect, and rebuild visibility. This is still a single-process bootstrap runtime, not a production channel/shard architecture.
 
 - `[~]` **M2 — Character, inventory, equipment, and economy bootstrap**
-  - Inventory/equipment replay, item move/split/merge/use/drop/pickup, quickslots, merchant buy/sell, gold mutation, first exchange/refine fail-closed paths, authored item-template guards, and persistence validation exist. Trade, storage, item sockets/bonuses, full restrictions, refine success, ownership timers, and DB-backed item persistence remain future work.
+  - Inventory/equipment replay, item move/split/merge/use/drop/pickup, quickslots, merchant buy/sell, gold mutation, a first exchange open/cancel shell, refine fail-closed path, authored item-template guards, and persistence validation exist. Accepted trade finalization, storage, item sockets/bonuses, full restrictions, refine success, ownership timers, and DB-backed item persistence remain future work.
 
 - `[~]` **M3 — Content and NPC authoring seam**
   - Static actors, interaction definitions, `info`/`talk`/`warp`/`shop_preview`, merchant catalogs, content bundle import/export, portable combat profiles, reward descriptors, and spawn groups can drive current bootstrap content. This is useful content infrastructure, not a quest scripting system yet.
@@ -129,7 +129,7 @@ Already present:
 - item move/swap/split/merge, consumable use, drag-to-item stack merge, drop/pickup, merchant buy/sell, gold mutation, and quickslot persistence,
 - authored item-template metadata for selected display/guard behavior,
 - fail-closed validation for malformed templates, snapshots, quickslots, item windows, duplicate instances, and persistence edge cases,
-- client packet ownership for `ITEM_GIVE`, `EXCHANGE`, and `REFINE` with intentionally narrow fail-closed runtime behavior where semantics are not frozen yet.
+- client packet ownership for `ITEM_GIVE`, `EXCHANGE`, and `REFINE`, including the first visible-peer exchange open/cancel shell while item/gold/accept/refine-result semantics remain intentionally narrow or fail-closed.
 
 Still missing:
 

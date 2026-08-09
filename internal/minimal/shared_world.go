@@ -46,6 +46,7 @@ type sharedWorldRegistry struct {
 	staticActorCombatEngagedBy      map[uint64]uint64
 	staticActorDeathReward          map[uint64]worldruntime.StaticActorDeathReward
 	sessionCombatTargets            map[uint64]uint32
+	exchangePartners                map[uint64]uint64
 	nextStaticActorCombatSnapshotID uint64
 	lastKnownCharacters             map[uint64]loginticket.Character
 	groundItemsByVID                map[uint32]sharedGroundItem
@@ -276,6 +277,7 @@ func newSharedWorldRegistryWithTopology(topology worldruntime.BootstrapTopology)
 		staticActorCombatSnapshot:  make(map[uint64]uint64),
 		staticActorCombatEngagedBy: make(map[uint64]uint64),
 		staticActorDeathReward:     make(map[uint64]worldruntime.StaticActorDeathReward),
+		exchangePartners:           make(map[uint64]uint64),
 		lastKnownCharacters:        make(map[uint64]loginticket.Character),
 		groundItemsByVID:           make(map[uint32]sharedGroundItem),
 		now:                        time.Now,
@@ -342,6 +344,88 @@ func (r *sharedWorldRegistry) HasLiveSession(entityID uint64) bool {
 	}
 	_, ok := r.playerCharacter(entityID)
 	return ok
+}
+
+func (r *sharedWorldRegistry) StartExchange(originID uint64, targetVID uint32) ([][]byte, bool) {
+	if r == nil || originID == 0 || targetVID == 0 {
+		return nil, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.sessionEntryLocked(originID); !ok {
+		return nil, false
+	}
+	origin, ok := r.playerCharacter(originID)
+	if !ok || characterAtBootstrapHPFloor(origin) {
+		return nil, false
+	}
+	if r.exchangePartners == nil {
+		r.exchangePartners = make(map[uint64]uint64)
+	}
+	if _, busy := r.exchangePartners[originID]; busy {
+		return nil, false
+	}
+
+	var target worldruntime.PlayerEntity
+	found := false
+	for _, candidate := range r.scopesLocked().VisibleTargets(originID, origin) {
+		if candidate.Character.VID != targetVID {
+			continue
+		}
+		target = candidate
+		found = true
+		break
+	}
+	if !found || target.Entity.ID == 0 || target.Entity.ID == originID || characterAtBootstrapHPFloor(target.Character) {
+		return nil, false
+	}
+	if _, ok := r.sessionEntryLocked(target.Entity.ID); !ok {
+		return nil, false
+	}
+	if _, busy := r.exchangePartners[target.Entity.ID]; busy {
+		return nil, false
+	}
+
+	originFrames := [][]byte{encodeExchangeStartFrame(target.Character.VID)}
+	targetFrames := [][]byte{encodeExchangeStartFrame(origin.VID)}
+	if !r.enqueueToEntityLocked(target.Entity.ID, targetFrames) {
+		return nil, false
+	}
+	r.exchangePartners[originID] = target.Entity.ID
+	r.exchangePartners[target.Entity.ID] = originID
+	return originFrames, true
+}
+
+func (r *sharedWorldRegistry) CancelExchange(originID uint64) ([][]byte, bool) {
+	if r == nil || originID == 0 {
+		return nil, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if !r.clearExchangeLocked(originID, true) {
+		return nil, false
+	}
+	return [][]byte{encodeExchangeEndFrame()}, true
+}
+
+func (r *sharedWorldRegistry) clearExchangeLocked(originID uint64, notifyPartner bool) bool {
+	if r == nil || originID == 0 || len(r.exchangePartners) == 0 {
+		return false
+	}
+	partnerID, ok := r.exchangePartners[originID]
+	if !ok || partnerID == 0 {
+		return false
+	}
+	delete(r.exchangePartners, originID)
+	delete(r.exchangePartners, partnerID)
+	if notifyPartner {
+		r.enqueueToEntityLocked(partnerID, [][]byte{encodeExchangeEndFrame()})
+	}
+	return true
 }
 
 func (r *sharedWorldRegistry) playerEntityForCharacterLocked(character loginticket.Character) (worldruntime.PlayerEntity, bool) {
@@ -1098,6 +1182,7 @@ func (r *sharedWorldRegistry) removeStaleOwnershipLocked(entityIDs []uint64) {
 		}
 		r.clearSessionCombatTargetLocked(entityID)
 		r.clearStaticActorCombatEngagementsBySubjectLocked(entityID)
+		r.clearExchangeLocked(entityID, true)
 		_, _ = r.entities.Remove(entityID)
 		delete(r.lastKnownCharacters, entityID)
 		if !ok {
@@ -1169,6 +1254,7 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 	}
 	r.clearSessionCombatTargetLocked(id)
 	r.clearStaticActorCombatEngagementsBySubjectLocked(id)
+	r.clearExchangeLocked(id, true)
 	_, _ = r.entities.Remove(id)
 	delete(r.lastKnownCharacters, id)
 	if !ok {
@@ -2943,6 +3029,14 @@ func sortGroundItemSnapshots(snapshots []GroundItemSnapshot) {
 
 func encodeCharacterDeleteFrame(character loginticket.Character) []byte {
 	return worldproto.EncodeCharacterDeleteNotice(worldproto.CharacterDeleteNoticePacket{VID: character.VID})
+}
+
+func encodeExchangeStartFrame(peerVID uint32) []byte {
+	return itemproto.EncodeServerExchange(itemproto.ServerExchangePacket{Subheader: itemproto.ExchangeServerSubheaderStart, Arg1: peerVID})
+}
+
+func encodeExchangeEndFrame() []byte {
+	return itemproto.EncodeServerExchange(itemproto.ServerExchangePacket{Subheader: itemproto.ExchangeServerSubheaderEnd})
 }
 
 func encodeStaticActorVisibilityFrames(actor worldruntime.StaticEntity) [][]byte {

@@ -3575,6 +3575,27 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					stateMu.Lock()
 					defer stateMu.Unlock()
 
+					switch packet.Subheader {
+					case itemproto.ExchangeSubheaderStart:
+						if !ownsLiveSharedWorldSession() {
+							return gameflow.ItemExchangeResult{Accepted: false}
+						}
+						frames, ok := sharedWorld.StartExchange(sharedWorldID, packet.Arg1)
+						if !ok {
+							return gameflow.ItemExchangeResult{Accepted: false}
+						}
+						return gameflow.ItemExchangeResult{Accepted: true, Frames: frames}
+					case itemproto.ExchangeSubheaderCancel:
+						if !ownsLiveSharedWorldSession() {
+							return gameflow.ItemExchangeResult{Accepted: false}
+						}
+						frames, ok := sharedWorld.CancelExchange(sharedWorldID)
+						if !ok {
+							return gameflow.ItemExchangeResult{Accepted: false}
+						}
+						return gameflow.ItemExchangeResult{Accepted: true, Frames: frames}
+					}
+
 					if packet.Subheader != itemproto.ExchangeSubheaderItemAdd || packet.Arg2 >= itemproto.ExchangeItemMaxNum || packet.Position.WindowType != itemproto.WindowInventory || packet.Position.Cell >= itemproto.InventoryMaxCell {
 						return gameflow.ItemExchangeResult{Accepted: false}
 					}
