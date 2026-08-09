@@ -150,12 +150,13 @@ Already present:
 - static actor store and interaction definition store,
 - `info`, `talk`, `warp`, and `shop_preview` interaction kinds,
 - merchant catalogs and first shop open/buy/sell behavior,
+- a first standalone deterministic quest-flag store/transition primitive,
 - content bundle import/export with preview deltas for static actors, spawn groups, combat profiles, reward drops, NPC routes, and warp destinations,
 - loopback-only authoring/inspection endpoints and a deterministic bootstrap NPC service bundle.
 
 Still missing:
 
-- quest runtime and quest flags,
+- client-visible quest runtime,
 - scripted triggers/results,
 - richer NPC service kinds,
 - live reload/update policy,

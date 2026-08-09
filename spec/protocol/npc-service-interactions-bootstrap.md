@@ -45,6 +45,8 @@ At the same time, several larger systems are still intentionally missing:
 - quest flags / script runtime
 - broader client-owned dialog-window or option-selection contracts beyond the current merchant window family
 
+The first standalone quest-state primitive is now documented in `quest-state-bootstrap.md`, but it is deliberately not part of this service-style NPC execution path yet. `info`, `talk`, `warp`, and `shop_preview` continue to run without mutating quest flags.
+
 Because of those constraints, the next honest NPC gameplay vertical is **service-style interaction**, not branching dialogs, quest trees, or broader merchant/dialog semantics first.
 
 ## First owned service-style families

@@ -1,0 +1,119 @@
+# Quest State Bootstrap
+
+This document freezes the first clean-room quest-state seam for `go-metin2-server`.
+
+It is intentionally **not** a client-visible quest protocol yet. The current slice only owns a small deterministic state primitive that later NPC/service/quest slices can use without inventing a full script runtime first.
+
+## Scope
+
+The current owned surface is limited to `internal/queststate`:
+
+- a file-backed quest-flag snapshot,
+- deterministic snapshot canonicalization,
+- strict validation of quest identities and flag names,
+- one compare-and-set transition primitive for a single character flag.
+
+This seam is meant to support future content/NPC work such as “talk to an actor once and advance a flag”, but no static actor, packet, reward, or dialog runtime calls it yet.
+
+## Snapshot shape
+
+The file-backed snapshot shape is:
+
+```json
+{
+  "flags": [
+    {
+      "character": "QuestHero",
+      "quest_ref": "quest:first_steps",
+      "name": "step",
+      "value": 1
+    }
+  ]
+}
+```
+
+Owned rules:
+
+- missing snapshot file = store-level `not found`, not an implicit live quest runtime,
+- missing `flags` collection in an existing JSON object = empty snapshot,
+- JSON `null` root or `null` `flags` collection is invalid,
+- unknown JSON fields are invalid,
+- trailing JSON values are invalid,
+- invalid UTF-8 or embedded NUL bytes in authored identifiers are invalid,
+- snapshots are saved deterministically sorted by `character`, then `quest_ref`, then `name`,
+- duplicate `(character, quest_ref, name)` rows are invalid after trimming.
+
+## Identity rules
+
+This first seam deliberately uses narrow bootstrap identities:
+
+- `character`: non-empty ASCII bootstrap character name (`[A-Za-z0-9_]`), matching the conservative early character-name posture already used elsewhere in the repo,
+- `quest_ref`: `quest:<name>` where `<name>` is lower-snake-ish (`[a-z][a-z0-9_]*`),
+- `name`: lower-snake-ish quest flag name (`[a-z][a-z0-9_]*`).
+
+The project does not yet own broader quest namespaces, localized quest labels, or legacy quest file names. Those can be added later only with their own tests/docs.
+
+## Flag value rule
+
+A persisted flag row must have `value != 0`.
+
+For transitions, value `0` means “absent / not set”. A transition whose `to` value is `0` deletes the flag row when it is currently present.
+
+This keeps the first snapshot compact and avoids two different representations for the same false/initial state.
+
+## Transition contract
+
+A transition request is:
+
+```json
+{
+  "character": "QuestHero",
+  "quest_ref": "quest:first_steps",
+  "flag": "step",
+  "from": 0,
+  "to": 1
+}
+```
+
+The owned operation is compare-and-set:
+
+1. normalize and validate the transition identity,
+2. normalize and validate the current snapshot,
+3. read the current flag value, treating a missing row as `0`,
+4. apply the update only when `current == from`,
+5. return the canonical next snapshot plus a transition result.
+
+A successful transition returns `applied = true` and preserves `current_value` as the value that matched `from`.
+
+Known failure reasons:
+
+| Reason | Meaning | Mutation |
+| --- | --- | --- |
+| `invalid_transition` | transition identity or current snapshot is invalid | none |
+| `current_value_mismatch` | current flag value did not match `from` | none |
+
+Failed transitions return no mutated snapshot.
+
+## Current non-goals
+
+This seam does **not** yet freeze:
+
+- client quest packets,
+- NPC dialog windows or option selection,
+- quest acceptance/completion UI,
+- quest rewards,
+- quest item hooks,
+- party/guild/account-wide quest state,
+- timers or daily reset policy,
+- script VM compatibility,
+- content-bundle quest definitions,
+- loopback operator endpoints for quest mutation.
+
+## Success definition
+
+The current repository can now say:
+
+- there is a tested, deterministic file-backed quest-flag primitive,
+- one single-flag transition can initialize, advance, or clear a flag only when the caller-provided current value matches,
+- bad identities, duplicate rows, malformed JSON, symlinked committed snapshots, and mismatched current values fail closed,
+- broader client-visible quest runtime remains future work.

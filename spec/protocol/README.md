@@ -59,6 +59,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `npc-shop-catalog-bootstrap.md` — structured merchant catalog contract behind `shop_preview`, with stable catalog slots and template-backed entries
 - `npc-shop-open-close-bootstrap.md` — first client-visible merchant window contract, keeping merchant open anchored to `INTERACT` while freezing the current bootstrap `SHOP START` / `BUY` / `END` behavior
 - `npc-shop-transaction-bootstrap.md` — first buy-only merchant transaction gate built on structured `shop_preview` catalogs while keeping full shop-window choreography capture-gated
+- `quest-state-bootstrap.md` — first deterministic quest-flag persistence and compare-and-set transition seam, not yet wired to client packets, NPC dialogs, or rewards
 - `static-actor-interaction-authoring.md` — first loopback-only authoring, QA visibility, and deterministic bundle surface for bootstrap static actors plus interaction definitions
 - `exact-position-bootstrap-transfer-trigger.md` — first gameplay-side exact-position trigger that can invoke the bootstrap transfer commit path from `MOVE` / `SYNC_POSITION`
 - `character-update-bootstrap.md` — first self-only state refresh after entering `GAME`

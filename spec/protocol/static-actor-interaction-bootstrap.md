@@ -92,7 +92,7 @@ The currently implemented bootstrap interaction families remain conservative:
 - `info` and `talk` remain self-facing chat-backed responses
 - `warp` reuses the existing self-session transfer / rebootstrap path instead of inventing a separate dialog or warp packet family
 - `shop_preview` reuses the structured merchant catalog plus the current bootstrap merchant window open / buy / close contract instead of inventing a second merchant-definition seam
-- no quest progression, barter, or combat side effects are required
+- no quest progression, barter, or combat side effects are required; the first standalone quest-state primitive exists separately in `quest-state-bootstrap.md` but is not yet wired to static-actor interaction execution
 
 The current out-of-range failure is intentionally bootstrap-scoped. It is owned only as a fail-closed guard around already-visible static actors, not as the final NPC interaction distance policy.
 
@@ -112,7 +112,7 @@ This slice does not yet freeze:
 - click packet handling
 - NPC dialog trees
 - sell-back, stock depletion, or richer merchant-window choreography beyond the current bootstrap open / buy / close seam
-- quests, mission flags, or script runtimes
+- static-actor-driven quests, mission UI, or script runtimes
 - actor targeting/combat semantics
 - animation/emote/state-machine behavior
 - persistent merchant stock state
