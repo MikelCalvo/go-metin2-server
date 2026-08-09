@@ -23,6 +23,7 @@ type Service struct {
 	StaticActorStorePath  string
 	InteractionStorePath  string
 	ItemTemplateStorePath string
+	QuestStateStorePath   string
 	DatabaseDriver        string
 	DatabaseDSN           string
 }
@@ -118,6 +119,7 @@ func ValidatePersistenceConfig(cfg Service) error {
 		{Name: "static_actor_store_path", Role: persistencePathRoleFile, Path: cfg.StaticActorStorePath},
 		{Name: "interaction_store_path", Role: persistencePathRoleFile, Path: cfg.InteractionStorePath},
 		{Name: "item_template_store_path", Role: persistencePathRoleFile, Path: cfg.ItemTemplateStorePath},
+		{Name: "quest_state_store_path", Role: persistencePathRoleFile, Path: questStateStorePathOrDefault(cfg.QuestStateStorePath)},
 	})
 }
 
@@ -310,6 +312,7 @@ func LoadService(name string, defaultPprofAddr string, defaultLegacyAddr string,
 		StaticActorStorePath:  loadPathOverride(upperName, "STATIC_ACTOR_STORE_PATH", defaultStaticActorStorePath()),
 		InteractionStorePath:  loadPathOverride(upperName, "INTERACTION_STORE_PATH", defaultInteractionStorePath()),
 		ItemTemplateStorePath: loadPathOverride(upperName, "ITEM_TEMPLATE_STORE_PATH", defaultItemTemplateStorePath()),
+		QuestStateStorePath:   loadPathOverride(upperName, "QUEST_STATE_STORE_PATH", defaultQuestStateStorePath()),
 		DatabaseDriver:        loadPathOverride(upperName, "DB_DRIVER", ""),
 		DatabaseDSN:           loadPathOverride(upperName, "DB_DSN", ""),
 	}
@@ -353,6 +356,21 @@ func defaultItemTemplateStorePath() string {
 
 func DefaultItemTemplateStorePath() string {
 	return defaultItemTemplateStorePath()
+}
+
+func defaultQuestStateStorePath() string {
+	return filepath.Join(os.TempDir(), "go-metin2-server-quest-state.json")
+}
+
+func questStateStorePathOrDefault(path string) string {
+	if trimmed := strings.TrimSpace(path); trimmed != "" {
+		return trimmed
+	}
+	return defaultQuestStateStorePath()
+}
+
+func DefaultQuestStateStorePath() string {
+	return defaultQuestStateStorePath()
 }
 
 func loadOverride(upperName string, suffix string, fallback string) string {

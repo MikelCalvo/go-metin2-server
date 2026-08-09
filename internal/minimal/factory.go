@@ -48,6 +48,7 @@ import (
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
+	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 	"github.com/MikelCalvo/go-metin2-server/internal/securecipher"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
@@ -247,6 +248,7 @@ type PersistenceConfigSnapshot struct {
 	StaticActorStorePath  string `json:"static_actor_store_path"`
 	InteractionStorePath  string `json:"interaction_store_path"`
 	ItemTemplateStorePath string `json:"item_template_store_path"`
+	QuestStateStorePath   string `json:"quest_state_store_path"`
 }
 
 type DatabaseConfigSnapshot struct {
@@ -263,6 +265,7 @@ type PersistenceStatusSnapshot struct {
 	ItemTemplateStore          ItemTemplateStoreStatus `json:"item_template_store"`
 	StaticActorStore           StaticActorStoreStatus  `json:"static_actor_store"`
 	InteractionStore           InteractionStoreStatus  `json:"interaction_store"`
+	QuestStateStore            QuestStateStoreStatus   `json:"quest_state_store"`
 }
 
 type AccountStoreStatus struct {
@@ -314,6 +317,13 @@ type InteractionStoreStatus struct {
 	Error   string                           `json:"error,omitempty"`
 }
 
+type QuestStateStoreStatus struct {
+	Path    string                     `json:"path"`
+	Valid   bool                       `json:"valid"`
+	Summary queststate.SnapshotSummary `json:"summary"`
+	Error   string                     `json:"error,omitempty"`
+}
+
 type MapOccupancyChange = worldruntime.MapOccupancyChange
 
 type RelocationPreview = worldruntime.RelocationPreview
@@ -327,6 +337,7 @@ type gameRuntime struct {
 	accountStore            accountstore.Store
 	itemStore               itemcatalog.Store
 	interactionStore        interactionstore.Store
+	questStateStore         queststate.Store
 	itemTemplates           map[uint32]itemcatalog.Template
 	itemTemplatesAuthored   bool
 	liveCharacterMu         sync.RWMutex
@@ -407,14 +418,16 @@ func (r *gameRuntime) PersistenceStatus() PersistenceStatusSnapshot {
 	itemTemplateStatus := r.itemTemplateStoreStatus(liveSelectedCharacterCount)
 	staticActorStatus := r.staticActorStoreStatus()
 	interactionStatus := r.interactionStoreStatus()
+	questStateStatus := r.questStateStoreStatus()
 	return PersistenceStatusSnapshot{
-		OK:                         accountStatus.Valid && loginTicketStatus.Valid && itemTemplateStatus.Valid && staticActorStatus.Valid && interactionStatus.Valid,
+		OK:                         accountStatus.Valid && loginTicketStatus.Valid && itemTemplateStatus.Valid && staticActorStatus.Valid && interactionStatus.Valid && questStateStatus.Valid,
 		LiveSelectedCharacterCount: liveSelectedCharacterCount,
 		AccountStore:               accountStatus,
 		LoginTicketStore:           loginTicketStatus,
 		ItemTemplateStore:          itemTemplateStatus,
 		StaticActorStore:           staticActorStatus,
 		InteractionStore:           interactionStatus,
+		QuestStateStore:            questStateStatus,
 	}
 }
 
@@ -488,6 +501,21 @@ func (r *gameRuntime) interactionStoreStatus() InteractionStoreStatus {
 		status.Path = interactionStorePath(r.interactionStore)
 	}
 	summary, err := r.ValidateInteractionStore()
+	if err != nil {
+		status.Error = err.Error()
+		return status
+	}
+	status.Valid = true
+	status.Summary = summary
+	return status
+}
+
+func (r *gameRuntime) questStateStoreStatus() QuestStateStoreStatus {
+	status := QuestStateStoreStatus{Path: questStateStorePath(nil)}
+	if r != nil {
+		status.Path = questStateStorePath(r.questStateStore)
+	}
+	summary, err := r.ValidateQuestStateStore()
 	if err != nil {
 		status.Error = err.Error()
 		return status
@@ -641,6 +669,19 @@ func (r *gameRuntime) CleanupInteractionStoreCrashTempFiles() (interactionstore.
 	return cleaner.CleanupCrashTempFiles()
 }
 
+func (r *gameRuntime) CleanupQuestStateStoreCrashTempFiles() (queststate.SnapshotSummary, error) {
+	if r == nil || r.questStateStore == nil {
+		return queststate.SnapshotSummary{Characters: []string{}, QuestRefs: []string{}, FlagKeys: []string{}}, nil
+	}
+	cleaner, ok := r.questStateStore.(interface {
+		CleanupCrashTempFiles() (queststate.SnapshotSummary, error)
+	})
+	if !ok {
+		return queststate.SnapshotSummary{}, fmt.Errorf("quest state store crash temp cleanup is not supported")
+	}
+	return cleaner.CleanupCrashTempFiles()
+}
+
 func (r *gameRuntime) ValidateStaticActorStore() (staticstore.SnapshotSummary, error) {
 	if r == nil || r.staticStore == nil {
 		return staticstore.SnapshotSummary{ActorIDs: []uint64{}, ActorNames: []string{}}, nil
@@ -663,6 +704,19 @@ func (r *gameRuntime) ValidateInteractionStore() (interactionstore.SnapshotSumma
 	})
 	if !ok {
 		return interactionstore.SnapshotSummary{}, fmt.Errorf("interaction store validation is not supported")
+	}
+	return validator.Validate()
+}
+
+func (r *gameRuntime) ValidateQuestStateStore() (queststate.SnapshotSummary, error) {
+	if r == nil || r.questStateStore == nil {
+		return queststate.SnapshotSummary{Characters: []string{}, QuestRefs: []string{}, FlagKeys: []string{}}, nil
+	}
+	validator, ok := r.questStateStore.(interface {
+		Validate() (queststate.SnapshotSummary, error)
+	})
+	if !ok {
+		return queststate.SnapshotSummary{}, fmt.Errorf("quest state store validation is not supported")
 	}
 	return validator.Validate()
 }
@@ -982,6 +1036,7 @@ func runtimePersistenceConfigSnapshot(r *gameRuntime) PersistenceConfigSnapshot 
 		StaticActorStorePath:  staticActorStorePath(r.staticStore),
 		InteractionStorePath:  interactionStorePath(r.interactionStore),
 		ItemTemplateStorePath: itemTemplateStorePath(r.itemStore),
+		QuestStateStorePath:   questStateStorePath(r.questStateStore),
 	}
 }
 
@@ -1026,6 +1081,16 @@ func interactionStorePath(store interactionstore.Store) string {
 }
 
 func itemTemplateStorePath(store itemcatalog.Store) string {
+	if store == nil {
+		return ""
+	}
+	if locator, ok := store.(interface{ Path() string }); ok {
+		return locator.Path()
+	}
+	return ""
+}
+
+func questStateStorePath(store queststate.Store) string {
 	if store == nil {
 		return ""
 	}
@@ -1656,6 +1721,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		accountStore:         accounts,
 		itemStore:            items,
 		interactionStore:     interactions,
+		questStateStore:      queststate.NewFileStore(serviceQuestStateStorePath(cfg)),
 		liveCharactersByName: make(map[string]liveCharacterRegistration),
 		now:                  time.Now,
 	}
@@ -7128,6 +7194,7 @@ func servicePersistenceConfigWithDefaults(cfg config.Service) config.Service {
 	cfg.StaticActorStorePath = serviceStaticActorStorePath(cfg)
 	cfg.InteractionStorePath = serviceInteractionStorePath(cfg)
 	cfg.ItemTemplateStorePath = serviceItemTemplateStorePath(cfg)
+	cfg.QuestStateStorePath = serviceQuestStateStorePath(cfg)
 	return cfg
 }
 
@@ -7177,6 +7244,17 @@ func serviceItemTemplateStorePath(cfg config.Service) string {
 		return path
 	}
 	return defaultItemTemplateStorePath()
+}
+
+func defaultQuestStateStorePath() string {
+	return config.DefaultQuestStateStorePath()
+}
+
+func serviceQuestStateStorePath(cfg config.Service) string {
+	if path := strings.TrimSpace(cfg.QuestStateStorePath); path != "" {
+		return path
+	}
+	return defaultQuestStateStorePath()
 }
 
 func sequentialBytes32(start byte) [32]byte {

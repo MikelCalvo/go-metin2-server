@@ -117,6 +117,9 @@ func TestLoadServiceUsesBootstrapPersistenceDefaultsWhenEnvIsMissing(t *testing.
 	if cfg.ItemTemplateStorePath != defaultItemTemplateStorePath() {
 		t.Fatalf("expected default item template store path, got %q", cfg.ItemTemplateStorePath)
 	}
+	if cfg.QuestStateStorePath != defaultQuestStateStorePath() {
+		t.Fatalf("expected default quest state store path, got %q", cfg.QuestStateStorePath)
+	}
 }
 
 func TestLoadServiceUsesGlobalBootstrapPersistenceOverrides(t *testing.T) {
@@ -126,6 +129,7 @@ func TestLoadServiceUsesGlobalBootstrapPersistenceOverrides(t *testing.T) {
 	t.Setenv("METIN2_STATIC_ACTOR_STORE_PATH", "/global/static-actors.json")
 	t.Setenv("METIN2_INTERACTION_STORE_PATH", "/global/interactions.json")
 	t.Setenv("METIN2_ITEM_TEMPLATE_STORE_PATH", "/global/item-templates.json")
+	t.Setenv("METIN2_QUEST_STATE_STORE_PATH", "/global/quest-state.json")
 
 	cfg := LoadService("gamed", ":6060", ":13000", "127.0.0.1")
 	if cfg.LoginTicketStoreDir != "/global/tickets" {
@@ -142,6 +146,9 @@ func TestLoadServiceUsesGlobalBootstrapPersistenceOverrides(t *testing.T) {
 	}
 	if cfg.ItemTemplateStorePath != "/global/item-templates.json" {
 		t.Fatalf("expected global item template store path, got %q", cfg.ItemTemplateStorePath)
+	}
+	if cfg.QuestStateStorePath != "/global/quest-state.json" {
+		t.Fatalf("expected global quest state store path, got %q", cfg.QuestStateStorePath)
 	}
 }
 
@@ -167,11 +174,13 @@ func TestLoadServicePrefersServiceSpecificBootstrapPersistenceOverrides(t *testi
 	t.Setenv("METIN2_STATIC_ACTOR_STORE_PATH", "/global/static-actors.json")
 	t.Setenv("METIN2_INTERACTION_STORE_PATH", "/global/interactions.json")
 	t.Setenv("METIN2_ITEM_TEMPLATE_STORE_PATH", "/global/item-templates.json")
+	t.Setenv("METIN2_QUEST_STATE_STORE_PATH", "/global/quest-state.json")
 	t.Setenv("METIN2_GAMED_LOGIN_TICKET_STORE_DIR", "/service/tickets")
 	t.Setenv("METIN2_GAMED_ACCOUNT_STORE_DIR", "/service/accounts")
 	t.Setenv("METIN2_GAMED_STATIC_ACTOR_STORE_PATH", "/service/static-actors.json")
 	t.Setenv("METIN2_GAMED_INTERACTION_STORE_PATH", "/service/interactions.json")
 	t.Setenv("METIN2_GAMED_ITEM_TEMPLATE_STORE_PATH", "/service/item-templates.json")
+	t.Setenv("METIN2_GAMED_QUEST_STATE_STORE_PATH", "/service/quest-state.json")
 
 	cfg := LoadService("gamed", ":6060", ":13000", "127.0.0.1")
 	if cfg.LoginTicketStoreDir != "/service/tickets" {
@@ -188,6 +197,9 @@ func TestLoadServicePrefersServiceSpecificBootstrapPersistenceOverrides(t *testi
 	}
 	if cfg.ItemTemplateStorePath != "/service/item-templates.json" {
 		t.Fatalf("expected service-specific item template store path, got %q", cfg.ItemTemplateStorePath)
+	}
+	if cfg.QuestStateStorePath != "/service/quest-state.json" {
+		t.Fatalf("expected service-specific quest state store path, got %q", cfg.QuestStateStorePath)
 	}
 }
 
@@ -351,6 +363,25 @@ func TestValidatePersistenceConfigRejectsFileStoresThatSharePath(t *testing.T) {
 	}
 }
 
+func TestValidatePersistenceConfigRejectsQuestStateFileStoreOverlap(t *testing.T) {
+	root := t.TempDir()
+	sharedPath := filepath.Join(root, "quest-and-content.json")
+	cfg := Service{
+		Name:                  "gamed",
+		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
+		AccountStoreDir:       filepath.Join(root, "accounts"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions.json"),
+		ItemTemplateStorePath: sharedPath,
+		QuestStateStorePath:   sharedPath,
+	}
+
+	err := ValidatePersistenceConfig(cfg)
+	if !errors.Is(err, ErrPersistencePathOverlap) {
+		t.Fatalf("expected ErrPersistencePathOverlap for shared quest-state file path, got %v", err)
+	}
+}
+
 func TestValidatePersistenceConfigRejectsFileStorePathAtDirectoryStore(t *testing.T) {
 	root := t.TempDir()
 	dirPath := filepath.Join(root, "accounts")
@@ -473,6 +504,7 @@ func clearPersistenceEnv(t *testing.T) {
 		"STATIC_ACTOR_STORE_PATH",
 		"INTERACTION_STORE_PATH",
 		"ITEM_TEMPLATE_STORE_PATH",
+		"QUEST_STATE_STORE_PATH",
 	} {
 		t.Setenv("METIN2_"+suffix, "")
 		t.Setenv("METIN2_GAMED_"+suffix, "")

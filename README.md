@@ -16,7 +16,7 @@ The current `main` branch owns:
 - broad bootstrap inventory, equipment, quickslot, item-use, ground-item, shop, exchange/refine fail-closed, and reward slices,
 - authored static actors, interactions, merchant catalogs, content bundles, spawn groups, and stationary practice-mob profiles,
 - first combat/death/respawn/restart/reward behavior around practice mobs,
-- loopback-only debug/operator endpoints for runtime inspection, content/state validation, backup/restore preflights, and local QA,
+- loopback-only debug/operator endpoints for runtime inspection, content/state validation, quest-state validation, backup/restore preflights, and local QA,
 - GitHub Actions CI for formatting, tests, vet, daemon builds, and Docker image builds.
 
 Latest repository scan for this refresh:
@@ -150,7 +150,7 @@ Already present:
 - static actor store and interaction definition store,
 - `info`, `talk`, `warp`, and `shop_preview` interaction kinds,
 - merchant catalogs and first shop open/buy/sell behavior,
-- a first standalone deterministic quest-flag store/transition primitive,
+- first standalone deterministic quest-flag store/transition primitive with loopback validation and crash-temp cleanup preflights,
 - content bundle import/export with preview deltas for static actors, spawn groups, combat profiles, reward drops, NPC routes, and warp destinations,
 - loopback-only authoring/inspection endpoints and a deterministic bootstrap NPC service bundle.
 

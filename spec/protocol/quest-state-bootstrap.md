@@ -95,9 +95,26 @@ Known failure reasons:
 
 Failed transitions return no mutated snapshot.
 
+## Runtime configuration and local ops
+
+`gamed` now owns the quest-state store path as a normal bootstrap persistence selection:
+
+- default path: `${TMPDIR}/go-metin2-server-quest-state.json` (using Go's `os.TempDir()`),
+- global override: `METIN2_QUEST_STATE_STORE_PATH`,
+- service-specific override: `METIN2_GAMED_QUEST_STATE_STORE_PATH`.
+
+The quest-state file is included in the same persistence overlap preflight as the authored content stores. It must not share a path with account, login-ticket, static-actor, interaction, or item-template stores, must not resolve inside either directory-backed store, and must not be an existing directory.
+
+The first local-only operator surfaces are also frozen on `gamed`:
+
+- `POST /local/quest-state/validate`
+- `POST /local/quest-state/crash-temps/cleanup`
+
+Both endpoints are loopback-only, reject non-`POST` methods with `405`, reject non-empty bodies with `400`, reject oversized bodies with `413` through the existing local mutation body guard, and return `409` on validation/cleanup errors. They are persistence preflights for the server-side quest-state primitive, not a client-visible quest protocol or a quest mutation API.
+
 ## Store validation and crash-temp cleanup
 
-`FileStore.Validate()` is now the first read-only operator-grade primitive around this store. It does not mutate the committed snapshot. It returns a deterministic summary:
+`FileStore.Validate()` is the read-only primitive behind `/local/quest-state/validate` and `/local/persistence/status`. It does not mutate the committed snapshot. It returns a deterministic summary:
 
 - `flag_count`,
 - sorted distinct `characters`,
@@ -116,7 +133,7 @@ Validation treats a missing committed snapshot as an empty valid summary, matchi
 
 It validates the store before removal, leaves the committed `quest-state.json` and unrelated files alone, syncs the store directory after cleanup, and returns the post-cleanup validation summary.
 
-No HTTP endpoint is frozen by this slice. Future loopback ops wiring should reuse these primitives rather than duplicating snapshot parsing or temp-file matching rules.
+These endpoints reuse the store primitives directly rather than duplicating snapshot parsing or temp-file matching rules.
 
 ## Current non-goals
 
@@ -131,7 +148,7 @@ This seam does **not** yet freeze:
 - timers or daily reset policy,
 - script VM compatibility,
 - content-bundle quest definitions,
-- loopback operator endpoints for quest mutation or cleanup/validation wiring.
+- loopback operator endpoints for quest mutation beyond validation and crash-temp cleanup.
 
 ## Success definition
 

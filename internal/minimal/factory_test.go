@@ -31,6 +31,7 @@ import (
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
+	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
@@ -220,6 +221,72 @@ func TestGameRuntimePersistenceStatusReportsNoRestoreBlockWithoutLiveSessions(t 
 	}
 	if status.ItemTemplateStore.RestoreBlockedByLiveSessions {
 		t.Fatal("expected item-template restore not to be marked live-session-blocked")
+	}
+}
+
+func TestGameRuntimePersistenceStatusReportsQuestStateStore(t *testing.T) {
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	questStore := queststate.NewFileStore(questStatePath)
+	if err := questStore.Save(queststate.Snapshot{Flags: []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2}}}); err != nil {
+		t.Fatalf("save quest state snapshot: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	status := runtime.PersistenceStatus()
+	if !status.QuestStateStore.Valid {
+		t.Fatalf("expected quest state store status to be valid: %+v", status.QuestStateStore)
+	}
+	if status.QuestStateStore.Path != questStatePath {
+		t.Fatalf("expected quest state store path %q, got %q", questStatePath, status.QuestStateStore.Path)
+	}
+	wantSummary := queststate.SnapshotSummary{FlagCount: 1, Characters: []string{"QuestHero"}, QuestRefs: []string{"quest:first_steps"}, FlagKeys: []string{"QuestHero:quest:first_steps:step"}}
+	if !reflect.DeepEqual(status.QuestStateStore.Summary, wantSummary) {
+		t.Fatalf("unexpected quest state store status summary:\n got: %#v\nwant: %#v", status.QuestStateStore.Summary, wantSummary)
+	}
+}
+
+func TestGameRuntimeCleanupQuestStateStoreCrashTemps(t *testing.T) {
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	questStore := queststate.NewFileStore(questStatePath)
+	if err := questStore.Save(queststate.Snapshot{Flags: []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1}}}); err != nil {
+		t.Fatalf("save quest state snapshot: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(questStatePath), ".quest-state-leftover.json"), []byte(`{"flags":[]}`), 0o644); err != nil {
+		t.Fatalf("write quest state crash temp: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.CleanupQuestStateStoreCrashTempFiles()
+	if err != nil {
+		t.Fatalf("cleanup quest state crash temps: %v", err)
+	}
+	if summary.CrashTempCount != 0 || len(summary.CrashTempFiles) != 0 {
+		t.Fatalf("expected quest state crash temps to be removed, got %+v", summary)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(questStatePath), ".quest-state-leftover.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected quest state crash temp to be removed, stat err=%v", err)
 	}
 }
 
@@ -1656,6 +1723,7 @@ func TestGameRuntimeConfigSnapshotReportsPersistenceStoreLocations(t *testing.T)
 		StaticActorStorePath:  filepath.Join(root, "content", "static-actors.json"),
 		InteractionStorePath:  filepath.Join(root, "content", "interactions.json"),
 		ItemTemplateStorePath: filepath.Join(root, "content", "item-templates.json"),
+		QuestStateStorePath:   filepath.Join(root, "content", "quest-state.json"),
 	}
 
 	runtime, err := NewGameRuntime(cfg)
@@ -1678,6 +1746,9 @@ func TestGameRuntimeConfigSnapshotReportsPersistenceStoreLocations(t *testing.T)
 	}
 	if snapshot.Persistence.ItemTemplateStorePath != cfg.ItemTemplateStorePath {
 		t.Fatalf("expected item template store path %q, got %q", cfg.ItemTemplateStorePath, snapshot.Persistence.ItemTemplateStorePath)
+	}
+	if snapshot.Persistence.QuestStateStorePath != cfg.QuestStateStorePath {
+		t.Fatalf("expected quest state store path %q, got %q", cfg.QuestStateStorePath, snapshot.Persistence.QuestStateStorePath)
 	}
 }
 
