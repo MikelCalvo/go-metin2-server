@@ -69,6 +69,7 @@ type StaticActorSnapshot struct {
 	RaceNum               uint32   `json:"race_num"`
 	Dead                  bool     `json:"dead,omitempty"`
 	CombatProfile         string   `json:"combat_profile,omitempty"`
+	CombatHPPercent       uint8    `json:"combat_hp_percent,omitempty"`
 	CombatLevel           uint16   `json:"combat_level,omitempty"`
 	CombatRank            uint8    `json:"combat_rank,omitempty"`
 	RetaliationPointDelta int32    `json:"retaliation_point_delta,omitempty"`

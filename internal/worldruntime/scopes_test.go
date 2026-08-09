@@ -258,6 +258,16 @@ func TestScopesVisibleStaticActorsFollowConfiguredVisibilityPolicyAndOrder(t *te
 	}
 }
 
+func TestStaticActorSnapshotOmitsRuntimeCombatHPPercentWithoutRuntimeState(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	actor := StaticEntity{Entity: Entity{ID: 7, Name: "PracticeMob"}, Position: NewPosition(42, 1200, 2200), RaceNum: 20350, CombatProfile: StaticActorCombatProfilePracticeMob, CombatKind: StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.no_runtime_hp"}
+
+	snapshot := staticActorSnapshot(topology, actor)
+	if snapshot.CombatHPPercent != 0 || snapshot.Dead {
+		t.Fatalf("expected worldruntime-only static-actor snapshots to omit runtime combat HP/dead state, got %+v", snapshot)
+	}
+}
+
 func TestScopesSpawnGroupSnapshotsReturnOnlySpawnBackedActorsInDeterministicOrder(t *testing.T) {
 	topology := NewBootstrapTopology(1)
 	registry := NewEntityRegistryWithTopology(topology)

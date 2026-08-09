@@ -3113,7 +3113,22 @@ func (r *sharedWorldRegistry) staticActorDeadLocked(entityID uint64) bool {
 }
 
 func (r *sharedWorldRegistry) markStaticActorSnapshotStateLocked(snapshot StaticActorSnapshot) StaticActorSnapshot {
-	snapshot.Dead = r.staticActorDeadLocked(snapshot.EntityID)
+	if snapshot.EntityID == 0 {
+		return snapshot
+	}
+	if r == nil || r.staticActorCombatHP == nil {
+		return snapshot
+	}
+	currentHP, ok := r.staticActorCombatHP[snapshot.EntityID]
+	if !ok {
+		return snapshot
+	}
+	snapshot.Dead = currentHP == 0
+	if snapshot.CombatProfile != "" {
+		if hpPercent, ok := worldruntime.BootstrapStaticActorHPPercent(snapshot.CombatProfile, currentHP); ok {
+			snapshot.CombatHPPercent = hpPercent
+		}
+	}
 	return snapshot
 }
 

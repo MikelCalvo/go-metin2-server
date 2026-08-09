@@ -116,6 +116,58 @@ func TestGameRuntimeSpawnGroupsReportsOnlySpawnBackedActors(t *testing.T) {
 	}
 }
 
+func TestSharedWorldRegistrySpawnGroupSnapshotsExposeRuntimeCombatHPPercent(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	plain, ok := registry.RegisterStaticActor("VillageGuide", bootstrapMapIndex, 1120, 2120, 20300)
+	if !ok {
+		t.Fatal("expected plain static actor registration to succeed")
+	}
+	actor, ok := registry.registerStaticActor(0, "PracticeMobHP", bootstrapMapIndex, 1200, 2200, 20350, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "practice.hp_snapshot", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected spawn-backed practice mob registration to succeed")
+	}
+	targetAttempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if !targetAttempt.Accepted {
+		t.Fatalf("expected practice mob target selection before HP snapshot probe, got %+v", targetAttempt)
+	}
+	if !registry.SetSessionCombatTarget(subjectID, targetAttempt.TargetVID) {
+		t.Fatal("expected accepted target selection to be recorded")
+	}
+	attack := registry.AttemptSelectedStaticActorAttack(subjectID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, uint32(actor.EntityID))
+	if !attack.Accepted || attack.HPPercent != 90 {
+		t.Fatalf("expected one accepted hit to damage practice mob to 90%%, got %+v", attack)
+	}
+
+	groups := registry.SpawnGroups()
+	if len(groups) != 1 || groups[0].EntityID != actor.EntityID {
+		t.Fatalf("expected one spawn-group snapshot for damaged practice mob, got %+v", groups)
+	}
+	if groups[0].CombatHPPercent != 90 || groups[0].Dead {
+		t.Fatalf("expected spawn-group snapshot to expose live runtime HP percent 90, got %+v", groups[0])
+	}
+	mapSnapshot, ok := registry.MapOccupancySnapshot(bootstrapMapIndex)
+	if !ok || len(mapSnapshot.SpawnGroups) != 1 {
+		t.Fatalf("expected map occupancy to include spawn-group subset, got ok=%v snapshot=%+v", ok, mapSnapshot)
+	}
+	if mapSnapshot.SpawnGroups[0].CombatHPPercent != 90 || mapSnapshot.SpawnGroups[0].Dead {
+		t.Fatalf("expected map-local spawn-group snapshot to expose live runtime HP percent 90, got %+v", mapSnapshot.SpawnGroups[0])
+	}
+	if len(mapSnapshot.StaticActors) != 2 {
+		t.Fatalf("expected map occupancy to include plain actor plus spawn-backed actor, got %+v", mapSnapshot.StaticActors)
+	}
+	for _, snapshot := range mapSnapshot.StaticActors {
+		if snapshot.EntityID == plain.EntityID && snapshot.CombatHPPercent != 0 {
+			t.Fatalf("expected non-combat static actor to omit runtime combat HP percent, got %+v", snapshot)
+		}
+	}
+}
+
 func TestGameRuntimeSpawnGroupReturnsExactSpawnBackedActorOnly(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
