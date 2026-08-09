@@ -25917,6 +25917,280 @@ func TestGameSessionFlowLogoutClosesMerchantWindowContext(t *testing.T) {
 	}
 }
 
+func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenExchangeShell(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeDeathOwner", 0x01030980, 0x02040980, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	partner := peerVisibilityCharacter("ExchangeDeathPartner", 0x01030981, 0x02040981, 1120, 2120, 0, 101, 201)
+	issuePeerTicket(t, store, "exchange-death-owner", 0x19191980, owner)
+	issuePeerTicket(t, store, "exchange-death-partner", 0x19191981, partner)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected exchange death runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000521, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_exchange_floor_close",
+		Name:          "PracticeMobExchangeFloorClose",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import exchange death content bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one exchange death practice mob, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "exchange-death-owner", 0x19191980)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 owner bootstrap frames with visible practice mob, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	partnerFlow, partnerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "exchange-death-partner", 0x19191981)
+	if len(partnerEnter) != 11 {
+		t.Fatalf("expected 11 partner bootstrap frames with visible owner and mob, got %d", len(partnerEnter))
+	}
+	defer closeSessionFlow(t, partnerFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected owner to receive partner peer-entry frames before exchange death test, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, partnerFlow); len(queued) != 0 {
+		t.Fatalf("expected no initial partner queued frames before exchange death test, got %d", len(queued))
+	}
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: partner.VID})))
+	if err != nil {
+		t.Fatalf("unexpected exchange start before owner death: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected one owner exchange start frame before death, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], partner.VID, "owner exchange start before death")
+	partnerStart := flushServerFrames(t, partnerFlow)
+	if len(partnerStart) != 1 {
+		t.Fatalf("expected partner exchange start before owner death, got %d", len(partnerStart))
+	}
+	assertExchangeStartFrame(t, partnerStart[0], owner.VID, "partner exchange start before owner death")
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection before exchange death: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected one target selection frame before exchange death, got %d", len(selectOut))
+	}
+
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected exchange death attack: %v", err)
+	}
+	if len(attackOut) != 5 {
+		t.Fatalf("expected target refresh, point-change, self dead, clear-target, and exchange END on owner death, got %d frames", len(attackOut))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode exchange death point-change: %v", err)
+	}
+	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != -1 || pointChange.Value != 0 {
+		t.Fatalf("unexpected exchange death point-change: %+v", pointChange)
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, attackOut[2]))
+	if err != nil {
+		t.Fatalf("decode exchange death self dead: %v", err)
+	}
+	if dead.VID != owner.VID {
+		t.Fatalf("expected exchange death self dead for owner %#08x, got %#08x", owner.VID, dead.VID)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[3]))
+	if err != nil {
+		t.Fatalf("decode exchange death target clear: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected exchange death to clear active combat target, got %+v", clearTarget)
+	}
+	assertExchangeEndFrame(t, attackOut[4], "owner exchange END after death")
+
+	partnerQueued := flushServerFrames(t, partnerFlow)
+	if len(partnerQueued) != 2 {
+		t.Fatalf("expected partner visible DEAD plus exchange END after owner death, got %d frames", len(partnerQueued))
+	}
+	peerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, partnerQueued[0]))
+	if err != nil {
+		t.Fatalf("decode partner queued owner dead before exchange END: %v", err)
+	}
+	if peerDead.VID != owner.VID {
+		t.Fatalf("expected partner queued owner dead for %#08x, got %#08x", owner.VID, peerDead.VID)
+	}
+	assertExchangeEndFrame(t, partnerQueued[1], "partner exchange END after owner death")
+
+	postFloorCancel, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor exchange cancel dispatch: %v", err)
+	}
+	if len(postFloorCancel) != 0 {
+		t.Fatalf("expected post-floor exchange cancel to fail closed after death close, got %d frames", len(postFloorCancel))
+	}
+	if queued := flushServerFrames(t, partnerFlow); len(queued) != 0 {
+		t.Fatalf("expected no stale partner exchange frames after post-floor cancel, got %d", len(queued))
+	}
+}
+
+func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenExchangeShell(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeDelayOwner", 0x01030982, 0x02040982, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 2
+	partner := peerVisibilityCharacter("ExchangeDelayPartner", 0x01030983, 0x02040983, 1120, 2120, 0, 101, 201)
+	issuePeerTicket(t, store, "exchange-delay-owner", 0x19191982, owner)
+	issuePeerTicket(t, store, "exchange-delay-partner", 0x19191983, partner)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected delayed exchange death runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000522, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_exchange_delayed_floor_close",
+		Name:          "PracticeMobExchangeDelayedFloorClose",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import delayed exchange death content bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one delayed exchange death practice mob, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "exchange-delay-owner", 0x19191982)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 delayed owner bootstrap frames with visible practice mob, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	partnerFlow, partnerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "exchange-delay-partner", 0x19191983)
+	if len(partnerEnter) != 11 {
+		t.Fatalf("expected 11 delayed partner bootstrap frames with visible owner and mob, got %d", len(partnerEnter))
+	}
+	defer closeSessionFlow(t, partnerFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected delayed owner to receive partner peer-entry frames before exchange death test, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, partnerFlow); len(queued) != 0 {
+		t.Fatalf("expected no initial delayed partner queued frames before exchange death test, got %d", len(queued))
+	}
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: partner.VID})))
+	if err != nil {
+		t.Fatalf("unexpected delayed exchange start before owner death: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected one delayed owner exchange start frame before death, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], partner.VID, "delayed owner exchange start before death")
+	partnerStart := flushServerFrames(t, partnerFlow)
+	if len(partnerStart) != 1 {
+		t.Fatalf("expected delayed partner exchange start before owner death, got %d", len(partnerStart))
+	}
+	assertExchangeStartFrame(t, partnerStart[0], owner.VID, "delayed partner exchange start before owner death")
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection before delayed exchange death: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected one target selection frame before delayed exchange death, got %d", len(selectOut))
+	}
+
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected delayed exchange first attack: %v", err)
+	}
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target refresh, point-change, and self damage-info before delayed exchange death, got %d frames", len(attackOut))
+	}
+	firstPoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode delayed exchange first point-change: %v", err)
+	}
+	if firstPoint.VID != owner.VID || firstPoint.Type != bootstrapPlayerPointType || firstPoint.Amount != -1 || firstPoint.Value != 1 {
+		t.Fatalf("unexpected delayed exchange first point-change: %+v", firstPoint)
+	}
+	firstPeerQueued := flushServerFrames(t, partnerFlow)
+	if len(firstPeerQueued) != 1 {
+		t.Fatalf("expected delayed exchange partner damage-info after first hit, got %d", len(firstPeerQueued))
+	}
+	assertDamageInfoFrame(t, firstPeerQueued[0], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "delayed exchange partner first hit")
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	floorQueued := flushServerFrames(t, ownerFlow)
+	if len(floorQueued) != 4 {
+		t.Fatalf("expected delayed point-change, self dead, clear-target, and exchange END on owner death, got %d frames", len(floorQueued))
+	}
+	floorPoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, floorQueued[0]))
+	if err != nil {
+		t.Fatalf("decode delayed exchange floor point-change: %v", err)
+	}
+	if floorPoint.VID != owner.VID || floorPoint.Type != bootstrapPlayerPointType || floorPoint.Amount != -1 || floorPoint.Value != 0 {
+		t.Fatalf("unexpected delayed exchange floor point-change: %+v", floorPoint)
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, floorQueued[1]))
+	if err != nil {
+		t.Fatalf("decode delayed exchange self dead: %v", err)
+	}
+	if dead.VID != owner.VID {
+		t.Fatalf("expected delayed exchange self dead for owner %#08x, got %#08x", owner.VID, dead.VID)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, floorQueued[2]))
+	if err != nil {
+		t.Fatalf("decode delayed exchange target clear: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected delayed exchange death to clear active combat target, got %+v", clearTarget)
+	}
+	assertExchangeEndFrame(t, floorQueued[3], "owner exchange END after delayed death")
+
+	partnerQueued := flushServerFrames(t, partnerFlow)
+	if len(partnerQueued) != 2 {
+		t.Fatalf("expected partner visible DEAD plus exchange END after delayed owner death, got %d frames", len(partnerQueued))
+	}
+	peerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, partnerQueued[0]))
+	if err != nil {
+		t.Fatalf("decode partner queued owner dead before delayed exchange END: %v", err)
+	}
+	if peerDead.VID != owner.VID {
+		t.Fatalf("expected partner queued delayed owner dead for %#08x, got %#08x", owner.VID, peerDead.VID)
+	}
+	assertExchangeEndFrame(t, partnerQueued[1], "partner exchange END after delayed owner death")
+
+	postFloorCancel, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected delayed post-floor exchange cancel dispatch: %v", err)
+	}
+	if len(postFloorCancel) != 0 {
+		t.Fatalf("expected delayed post-floor exchange cancel to fail closed after death close, got %d frames", len(postFloorCancel))
+	}
+	if queued := flushServerFrames(t, partnerFlow); len(queued) != 0 {
+		t.Fatalf("expected no stale delayed partner exchange frames after post-floor cancel, got %d", len(queued))
+	}
+}
+
 func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMerchantWindow(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerImmediateFloorClose", 0x01040128, 0x02050128, 125, nil)
 	buyer.Points[bootstrapPlayerPointValueIndex] = 1

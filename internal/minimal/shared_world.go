@@ -414,6 +414,20 @@ func (r *sharedWorldRegistry) CancelExchange(originID uint64) ([][]byte, bool) {
 	return [][]byte{encodeExchangeEndFrame()}, true
 }
 
+func (r *sharedWorldRegistry) CloseExchange(originID uint64) ([][]byte, bool) {
+	if r == nil || originID == 0 {
+		return nil, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if !r.clearExchangeLocked(originID, true) {
+		return nil, false
+	}
+	return [][]byte{encodeExchangeEndFrame()}, true
+}
+
 func (r *sharedWorldRegistry) AddExchangeItem(originID uint64, displaySlot uint8, display player.ExchangeItemAddDisplay) ([][]byte, bool) {
 	if r == nil || originID == 0 || displaySlot >= itemproto.ExchangeItemMaxNum {
 		return nil, false

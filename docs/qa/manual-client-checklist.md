@@ -823,6 +823,7 @@ If that custom profile authors a negative `retaliation_point_delta`, expect both
 - [ ] Confirm the owner receives the final `PLAYER_POINT_CHANGE` to `0`, then `DEAD(owner_vid)`, then `TARGET(0, 0)`
 - [ ] If loopback ops access is available, query `GET /local/combat-target/{character_name}` or `GET /local/combat-targets` after the floor and confirm the dead owner's stale selected target is absent from the read-only snapshot output
 - [ ] If a merchant window is open when the immediate or delayed retaliation beat reaches `0` HP, confirm one self-only `GC::SHOP END` follows the death/clear sequence and later `SHOP END` / `SHOP BUY` attempts fail closed until a fresh merchant interaction opens a new window
+- [ ] If a bootstrap exchange window is open with a living visible peer when the immediate or delayed retaliation beat reaches `0` HP, confirm the dead owner receives one self-only `GC::EXCHANGE END` after the death/clear sequence, the paired peer receives one queued `GC::EXCHANGE END`, and later stale `EXCHANGE CANCEL` / display requests fail closed
 - [ ] Try a fresh target or attack while still at `0` HP
 - [ ] Confirm the attempt fails closed with no new combat-visible frames
 - [ ] Try one carried-inventory `ITEM_MOVE` drag while still at `0` HP
@@ -856,6 +857,7 @@ Expected result:
 - player HP is rebuilt from persisted state, while a still-live practice mob keeps its runtime-owned HP and requires fresh target acquisition; a zero-HP owner does not keep that mob orphan-locked against fresh targeting from another living visible client
 - if persisted player HP is already `0`, `/restart_here` is not treated as a revival source and emits no recovery frames
 - post-floor `ITEM_MOVE` is silent and non-mutating until a restart/recovery seam is used
+- open bootstrap exchange windows are closed with `GC::EXCHANGE END` on the player-death edge and do not remain usable after the owner reaches the zero-HP floor
 - mob death cancels pending delayed retaliation and respawn does not resurrect stale retaliation work without fresh target acquisition
 
 ### 5.13 Practice-mob retaliation restart-town smoke

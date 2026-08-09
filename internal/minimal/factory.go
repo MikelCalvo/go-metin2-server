@@ -1693,6 +1693,21 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			clearActiveMerchantBuy()
 			return append(frames, shopproto.EncodeServerEnd())
 		}
+		appendPostFloorExchangeCloseFrame := func(frames [][]byte, clearTarget bool) [][]byte {
+			if !clearTarget || sharedWorld == nil || !joinedSharedWorld || sharedWorldID == 0 || !sharedWorld.HasLiveSession(sharedWorldID) {
+				return frames
+			}
+			closeFrames, ok := sharedWorld.CloseExchange(sharedWorldID)
+			if !ok || len(closeFrames) == 0 {
+				return frames
+			}
+			return append(frames, closeFrames...)
+		}
+		appendPostFloorContextCloseFrames := func(frames [][]byte, clearTarget bool) [][]byte {
+			frames = appendPostFloorMerchantCloseFrame(frames, clearTarget)
+			frames = appendPostFloorExchangeCloseFrame(frames, clearTarget)
+			return frames
+		}
 		prependMerchantCloseFrame := func(frames [][]byte) [][]byte {
 			if !hasActiveMerchantBuy || activeMerchantBuy.TargetVID == 0 {
 				return frames
@@ -2153,7 +2168,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
 				return
 			}
-			frames = appendPostFloorMerchantCloseFrame(frames, clearTarget)
+			frames = appendPostFloorContextCloseFrames(frames, clearTarget)
 			if pending == nil {
 				issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
 				return
@@ -4015,7 +4030,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							sharedWorld.EnqueueStaticActorFramesToVisiblePeers(resolution.Actor.EntityID, sharedWorldID, resolution.PeerPostMutationFrames)
 						}
 					}
-					persistedFrames = appendPostFloorMerchantCloseFrame(persistedFrames, clearTarget)
+					persistedFrames = appendPostFloorContextCloseFrames(persistedFrames, clearTarget)
 					if !resolution.ClearActiveTarget && !clearTarget {
 						scheduleFirstPracticeMobServerOriginRetaliation(resolution.ActiveTargetVID, resolution.ActiveTargetSnapshotVersion)
 					}
