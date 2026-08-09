@@ -346,6 +346,115 @@ func TestGameRuntimeItemExchangeItemDelClearsDisplaySlotWithoutMutation(t *testi
 	assertExchangeAccountUnchanged(t, accounts, "item-exchange-remove-peer", peer, "peer exchange item-del display")
 }
 
+func TestGameRuntimeItemExchangeGoldAddDisplaysWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeGoldOwner", 0x01030775, 0x02040775, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 724, Vnum: 27045, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeGoldPeer", 0x01030776, 0x02040776, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 725, Vnum: 27002, Count: 2, Slot: 8}}
+	peer.Quickslots = []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeItem, Slot: 8}}
+	issuePeerTicket(t, ticketStore, "item-exchange-gold-owner", 0x70707075, owner)
+	issuePeerTicket(t, ticketStore, "item-exchange-gold-peer", 0x70707076, peer)
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-gold-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange gold owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-gold-peer", Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange gold peer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange gold runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-gold-owner", 0x70707075)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-gold-peer", 0x70707076)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected gold exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected gold exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	goldOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderGoldAdd, Arg1: 321})))
+	if err != nil {
+		t.Fatalf("unexpected exchange gold-add error: %v", err)
+	}
+	if len(goldOut) != 1 {
+		t.Fatalf("expected exchange gold-add to emit one self frame, got %d", len(goldOut))
+	}
+	assertExchangeGoldAddFrame(t, goldOut[0], 1, 321, "gold-add self response")
+	queuedGold := flushServerFrames(t, peerFlow)
+	if len(queuedGold) != 1 {
+		t.Fatalf("expected exchange gold-add to queue one peer frame, got %d", len(queuedGold))
+	}
+	assertExchangeGoldAddFrame(t, queuedGold[0], 0, 321, "gold-add peer response")
+
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-gold-owner", owner, "owner exchange gold display")
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-gold-peer", peer, "peer exchange gold display")
+}
+
+func TestGameRuntimeItemExchangeGoldAddAboveLiveGoldReportsLessGoldWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeGoldPoor", 0x01030777, 0x02040777, 1100, 2100, 0, 101, 201)
+	owner.Gold = 50
+	owner.Inventory = []inventory.ItemInstance{{ID: 726, Vnum: 27045, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeGoldRichPeer", 0x01030778, 0x02040778, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	issuePeerTicket(t, ticketStore, "item-exchange-gold-poor", 0x70707077, owner)
+	issuePeerTicket(t, ticketStore, "item-exchange-gold-rich-peer", 0x70707078, peer)
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-gold-poor", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange gold poor account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-gold-rich-peer", Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange gold rich peer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange less-gold runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-gold-poor", 0x70707077)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-gold-rich-peer", 0x70707078)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected less-gold exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected less-gold exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	goldOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderGoldAdd, Arg1: 51})))
+	if err != nil {
+		t.Fatalf("unexpected exchange less-gold packet error: %v", err)
+	}
+	if len(goldOut) != 1 {
+		t.Fatalf("expected exchange less-gold to emit one self frame, got %d", len(goldOut))
+	}
+	assertExchangeLessGoldFrame(t, goldOut[0], "less-gold self response")
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected exchange less-gold to queue no peer frames, got %d", len(queued))
+	}
+
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-gold-poor", owner, "owner exchange less-gold")
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-gold-rich-peer", peer, "peer exchange less-gold")
+}
+
 func TestGameRuntimeItemExchangeStartRequiresVisiblePeerWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -822,6 +931,28 @@ func assertExchangeItemDelFrame(t *testing.T, raw []byte, isMe uint8, displaySlo
 	}
 	if packet != (itemproto.ServerExchangePacket{Subheader: itemproto.ExchangeServerSubheaderItemDel, IsMe: isMe, Arg1: uint32(displaySlot)}) {
 		t.Fatalf("unexpected exchange item-del frame %s: %+v", context, packet)
+	}
+}
+
+func assertExchangeGoldAddFrame(t *testing.T, raw []byte, isMe uint8, gold uint32, context string) {
+	t.Helper()
+	packet, err := itemproto.DecodeServerExchange(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode exchange gold-add frame %s: %v", context, err)
+	}
+	if packet != (itemproto.ServerExchangePacket{Subheader: itemproto.ExchangeServerSubheaderGoldAdd, IsMe: isMe, Arg1: gold}) {
+		t.Fatalf("unexpected exchange gold-add frame %s: %+v", context, packet)
+	}
+}
+
+func assertExchangeLessGoldFrame(t *testing.T, raw []byte, context string) {
+	t.Helper()
+	packet, err := itemproto.DecodeServerExchange(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode exchange less-gold frame %s: %v", context, err)
+	}
+	if packet != (itemproto.ServerExchangePacket{Subheader: itemproto.ExchangeServerSubheaderLessGold}) {
+		t.Fatalf("unexpected exchange less-gold frame %s: %+v", context, packet)
 	}
 }
 

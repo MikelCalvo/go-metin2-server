@@ -7,15 +7,15 @@ The goal is deliberately conservative:
 - own the client packet layout before broader player-to-player trade is implemented
 - reuse the owned shared server response packet layout for the first runtime exchange-window shell
 - route the packet through the `GAME` phase without treating it as an unknown-header disconnect edge
-- own the first two-party exchange-window shell (`START` / display-only `ITEM_ADD` / display-only `ITEM_DEL` / `END`) without mutating inventory, equipment, quickslots, gold, ground items, or persisted account state
-- keep item ownership transfer/locking, gold placement, accept/finalize, and trade mutation fail-closed until a later exchange/trade slice owns those semantics
+- own the first two-party exchange-window shell (`START` / display-only `ITEM_ADD` / display-only `ITEM_DEL` / display-only `GOLD_ADD` / `END`) without mutating inventory, equipment, quickslots, gold, ground items, or persisted account state
+- keep item ownership transfer/locking, accepted gold mutation, accept/finalize, and trade mutation fail-closed until a later exchange/trade slice owns those semantics
 - allow one template-authored guard response for already-owned `anti_give` metadata on `ITEM_ADD` without implementing item transfer
 
 This is not a completed exchange, trade, safebox, or player-shop system.
 
 ## Evidence
 
-The TMP4-compatible client exposes `CG::EXCHANGE = 0x0508` on the main game socket. The client send helpers use one fixed client packet shape for exchange start, item add, item delete, gold add, accept, and cancel requests. The subheader selects the requested exchange action. Its `GC::EXCHANGE ITEM_DEL` receive path clears one exchange display slot from the receiver's self/peer exchange-side model, so this bootstrap slice treats `ITEM_DEL.arg1` as the currently owned display slot to clear.
+The TMP4-compatible client exposes `CG::EXCHANGE = 0x0508` on the main game socket. The client send helpers use one fixed client packet shape for exchange start, item add, item delete, gold add, accept, and cancel requests. The subheader selects the requested exchange action. Its `GC::EXCHANGE ITEM_DEL` receive path clears one exchange display slot from the receiver's self/peer exchange-side model, so this bootstrap slice treats `ITEM_DEL.arg1` as the currently owned display slot to clear. Its gold-add path uses the same `GC::EXCHANGE` family with `arg1` carrying the displayed gold amount, which this slice owns only as display state.
 
 ## Client packet
 
@@ -45,11 +45,11 @@ Current owned client subheaders:
 | `START` | `0` | starts the current visible-peer exchange-window shell when the peer is connected and visible |
 | `ITEM_ADD` | `1` | display-only item placement inside the current bootstrap exchange shell |
 | `ITEM_DEL` | `2` | display-only removal inside the current bootstrap exchange shell |
-| `ELK_ADD` | `3` | decoded and fail-closed |
+| `ELK_ADD` | `3` | display-only gold placement inside the active shell when the requested amount is non-zero and not above the requester's live gold; otherwise `LESS_GOLD` or fail-closed |
 | `ACCEPT` | `4` | decoded and fail-closed |
 | `CANCEL` | `5` | closes the current paired exchange-window shell |
 
-The repository owns only this client byte layout, the current visible-peer open/close shell, the first display-only `ITEM_ADD` / `ITEM_DEL` companions, and the current fail-closed policy for gold/accept actions. It does not yet interpret exchange item ownership transfer, gold placement, accept state, or trade finalization.
+The repository owns only this client byte layout, the current visible-peer open/close shell, the first display-only `ITEM_ADD` / `ITEM_DEL` companions, the first display-only `ELK_ADD` companion, and the current fail-closed policy for accept/finalize actions. It does not yet interpret exchange item ownership transfer, accepted gold removal, accept state, or trade finalization.
 
 ## Server packet
 
@@ -78,13 +78,13 @@ Current owned server subheaders:
 | `START` | `0` | emitted for the current visible-peer open shell |
 | `ITEM_ADD` | `1` | emitted for the current display-only item-add shell while no item ownership transfer is performed |
 | `ITEM_DEL` | `2` | emitted for the current display-only item-removal shell while no item ownership transfer is performed |
-| `GOLD_ADD` | `3` | codec/documentation only |
+| `GOLD_ADD` | `3` | emitted for the current display-only gold placement shell while no gold ownership transfer is performed |
 | `ACCEPT` | `4` | codec/documentation only |
 | `END` | `5` | emitted for the current cancel/close shell |
 | `ALREADY` | `6` | emitted self-only when `START` targets a visible connected peer that is already paired in the bootstrap exchange shell |
-| `LESS_GOLD` | `7` | codec/documentation only |
+| `LESS_GOLD` | `7` | emitted self-only when an active-shell gold placement requests more than the requester's live gold |
 
-The shipped runtime now emits `START`, display-only `ITEM_ADD`, display-only `ITEM_DEL`, `END`, and the narrow busy-target `ALREADY` response for the visible-peer exchange-window shell described below. `GOLD_ADD`, `ACCEPT`, and `LESS_GOLD` remain codec/documentation-only until a later trade-state slice owns gold, acceptance, and result semantics.
+The shipped runtime now emits `START`, display-only `ITEM_ADD`, display-only `ITEM_DEL`, display-only `GOLD_ADD`, self-only `LESS_GOLD`, `END`, and the narrow busy-target `ALREADY` response for the visible-peer exchange-window shell described below. `ACCEPT` remains codec/documentation-only until a later trade-state slice owns acceptance and result semantics.
 
 ## Current runtime contract
 
@@ -98,20 +98,22 @@ The shipped minimal runtime owns only a small in-memory exchange-window shell:
 - `CANCEL` succeeds only while the requester is currently paired in that shell.
 - A successful `CANCEL` returns one self-only `GC::EXCHANGE END` to the cancelling player and queues one `GC::EXCHANGE END` to the paired player.
 
-The shell is deliberately not an item/gold transfer system. It performs no inventory, equipment, quickslot, gold, ground-item, or persisted-account mutation. It now emits display-only exchange `ITEM_ADD` responses for valid carried items in the active shell and display-only `ITEM_DEL` responses for occupied display slots in that shell, but it does not yet emit exchange `GOLD_ADD` or `ACCEPT` responses.
+The shell is deliberately not an item/gold transfer system. It performs no inventory, equipment, quickslot, gold, ground-item, or persisted-account mutation. It now emits display-only exchange `ITEM_ADD` responses for valid carried items in the active shell, display-only `ITEM_DEL` responses for occupied display slots in that shell, and display-only `GOLD_ADD` responses for non-zero active-shell gold placement requests that do not exceed the requester's live gold. It does not yet emit exchange `ACCEPT` responses.
 
 The display-only `ITEM_ADD` path is accepted only when the requester is already paired in the bootstrap exchange shell and the requested display slot is in the current owned `0..11` range. The source must be a carried inventory cell, resolve through the loaded item-template snapshot, and contain exactly one unlocked, unequipped, well-formed item whose `vnum` and count fit the resolved template. The resolved template must also be usable by the selected character and must not author the current transfer guards (`anti_stack`, `anti_get`, `anti_drop`, `anti_give`, `anti_sell`). On success, the requester receives one direct `GC::EXCHANGE ITEM_ADD` with `is_me = 1`, and the paired peer receives one queued `GC::EXCHANGE ITEM_ADD` with `is_me = 0`. Both packets carry `arg1 = item.vnum`, `arg2 = RESERVED_WINDOW + display_slot`, `arg3 = item.count`, and the template-authored `sockets` / `attributes` display arrays. The selected carried item is not removed or locked, no quickslot changes are made, no gold changes, and no account snapshot is persisted.
 
 Each side owns its own display-slot namespace in this bootstrap shell. Reusing the same display slot for a second `ITEM_ADD` from the same side fails closed with no frames and no mutation. `ITEM_DEL` succeeds only when the requester is currently paired and `arg1` identifies one occupied display slot in the requester's own namespace. A successful `ITEM_DEL` returns one direct `GC::EXCHANGE ITEM_DEL` with `is_me = 1`, queues one peer `GC::EXCHANGE ITEM_DEL` with `is_me = 0`, carries the cleared display slot in `arg1`, and frees only that in-memory display slot so a later display-only `ITEM_ADD` can reuse it. Cancelling or closing the exchange clears the in-memory display-slot occupancy together with the paired shell.
 
+The display-only `GOLD_ADD` path is accepted only when the requester is currently paired in the bootstrap exchange shell and `arg1` is non-zero. When `arg1` is less than or equal to the requester's current live gold, the requester receives one direct `GC::EXCHANGE GOLD_ADD` with `is_me = 1` and the paired peer receives one queued `GC::EXCHANGE GOLD_ADD` with `is_me = 0`; both packets carry the displayed gold amount in `arg1`. When `arg1` is greater than the requester's current live gold, the requester receives one direct `GC::EXCHANGE LESS_GOLD` and the peer receives no frame. Both outcomes leave live gold and persisted account snapshots unchanged.
+
 Unsupported or malformed `EXCHANGE` contexts still fail closed:
 
-- no gold/accept/result server frames are emitted
+- no accept/result server frames are emitted
 - no carried inventory or equipment state is mutated
 - no quickslots are added, deleted, or retargeted
 - no points or gold are changed
 - no temporary ground item handle is registered
-- no peer-facing item/gold/accept/result frames are queued
+- no peer-facing accept/result frames are queued
 - no selected-character account snapshot is persisted
 
 There is one owned guard-feedback exception for `ITEM_ADD`. When all of these are true:
@@ -142,8 +144,8 @@ Malformed `EXCHANGE` payload sizes fail at the codec/dispatcher boundary rather 
 Later slices must write a new contract before broadening this packet into real gameplay. In particular, this slice does not freeze:
 
 - richer trade target/range eligibility beyond the current visible-player check
-- exchange-window item/gold/accept updates beyond the current `START` / display-only `ITEM_ADD` / display-only `ITEM_DEL` / `END` shell
-- trade item removal, carried-item locking/removal, or gold placement semantics beyond the current display-slot clear
+- exchange-window item/gold/accept updates beyond the current `START` / display-only `ITEM_ADD` / display-only `ITEM_DEL` / display-only `GOLD_ADD` / `LESS_GOLD` / `END` shell
+- trade item removal, carried-item locking/removal, or accepted gold mutation semantics beyond the current display-only item/gold shell
 - accept/cancel state machines
 - two-party inventory/gold mutation ordering
 - accepted anti-flag/template guard behavior inside an active exchange beyond the self-only `anti_give` / `give_reject_message` `ITEM_ADD` rejection and the silent display suppression guards described above
@@ -154,4 +156,4 @@ Later slices must write a new contract before broadening this packet into real g
 - `internal/proto/item` freezes `CG::EXCHANGE` encode/decode behavior and the first shared `GC::EXCHANGE` response codec, plus unexpected-header and invalid-payload rejection for both directions.
 - `internal/game` freezes `GAME`-phase dispatch to a handler hook, with denied results returning no frames.
 - `internal/player` freezes both the metadata-driven, no-mutation exchange item-add `anti_give` rejection lookup and the valid carried-item display descriptor that copies template-authored sockets/attributes without mutating live or persisted state.
-- `internal/minimal` freezes the visible-peer `START` / `CANCEL` shell with paired `GC::EXCHANGE START` / `END` frames and no persisted inventory, quickslot, equipment, or gold mutation; it also freezes the self-only `GC::EXCHANGE ALREADY` response when a third visible requester targets an already-paired peer, the active-shell `GC::EXCHANGE ITEM_ADD` display echo/peer queue with template-authored sockets/attributes, duplicate display-slot suppression, the active-shell `GC::EXCHANGE ITEM_DEL` display clear/peer queue plus display-slot reuse, the no-frame fail-closed behavior for unsupported gold/accept requests, and the self-only `CHAT_TYPE_INFO` rejection frame when the carried item's template authors `anti_give` and `give_reject_message`.
+- `internal/minimal` freezes the visible-peer `START` / `CANCEL` shell with paired `GC::EXCHANGE START` / `END` frames and no persisted inventory, quickslot, equipment, or gold mutation; it also freezes the self-only `GC::EXCHANGE ALREADY` response when a third visible requester targets an already-paired peer, the active-shell `GC::EXCHANGE ITEM_ADD` display echo/peer queue with template-authored sockets/attributes, duplicate display-slot suppression, the active-shell `GC::EXCHANGE ITEM_DEL` display clear/peer queue plus display-slot reuse, the active-shell `GC::EXCHANGE GOLD_ADD` display echo/peer queue, the self-only `GC::EXCHANGE LESS_GOLD` response when displayed gold exceeds live gold, the no-frame fail-closed behavior for unsupported accept/finalize requests, and the self-only `CHAT_TYPE_INFO` rejection frame when the carried item's template authors `anti_give` and `give_reject_message`.

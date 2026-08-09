@@ -462,6 +462,44 @@ func (r *sharedWorldRegistry) AddExchangeItem(originID uint64, displaySlot uint8
 	return [][]byte{selfFrame}, true
 }
 
+func (r *sharedWorldRegistry) AddExchangeGold(originID uint64, amount uint32, availableGold uint64) ([][]byte, bool) {
+	if r == nil || originID == 0 || amount == 0 {
+		return nil, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	partnerID, ok := r.exchangePartners[originID]
+	if !ok || partnerID == 0 {
+		return nil, false
+	}
+	if _, ok := r.sessionEntryLocked(originID); !ok {
+		return nil, false
+	}
+	if _, ok := r.sessionEntryLocked(partnerID); !ok {
+		return nil, false
+	}
+	origin, ok := r.playerCharacter(originID)
+	if !ok || characterAtBootstrapHPFloor(origin) {
+		return nil, false
+	}
+	partner, ok := r.playerCharacter(partnerID)
+	if !ok || characterAtBootstrapHPFloor(partner) {
+		return nil, false
+	}
+	if uint64(amount) > availableGold {
+		return [][]byte{encodeExchangeLessGoldFrame()}, true
+	}
+
+	selfFrame := encodeExchangeGoldAddFrame(1, amount)
+	peerFrame := encodeExchangeGoldAddFrame(0, amount)
+	if !r.enqueueToEntityLocked(partnerID, [][]byte{peerFrame}) {
+		return nil, false
+	}
+	return [][]byte{selfFrame}, true
+}
+
 func (r *sharedWorldRegistry) RemoveExchangeItem(originID uint64, displaySlot uint8) ([][]byte, bool) {
 	if r == nil || originID == 0 || displaySlot >= itemproto.ExchangeItemMaxNum {
 		return nil, false
@@ -3252,6 +3290,18 @@ func encodeExchangeItemDelFrame(isMe uint8, displaySlot uint8) []byte {
 		IsMe:      isMe,
 		Arg1:      uint32(displaySlot),
 	})
+}
+
+func encodeExchangeGoldAddFrame(isMe uint8, gold uint32) []byte {
+	return itemproto.EncodeServerExchange(itemproto.ServerExchangePacket{
+		Subheader: itemproto.ExchangeServerSubheaderGoldAdd,
+		IsMe:      isMe,
+		Arg1:      gold,
+	})
+}
+
+func encodeExchangeLessGoldFrame() []byte {
+	return itemproto.EncodeServerExchange(itemproto.ServerExchangePacket{Subheader: itemproto.ExchangeServerSubheaderLessGold})
 }
 
 func encodeExchangeItemAddFrame(isMe uint8, displaySlot uint8, display player.ExchangeItemAddDisplay) []byte {
