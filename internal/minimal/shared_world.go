@@ -462,6 +462,58 @@ func (r *sharedWorldRegistry) AddExchangeItem(originID uint64, displaySlot uint8
 	return [][]byte{selfFrame}, true
 }
 
+func (r *sharedWorldRegistry) RemoveExchangeItem(originID uint64, displaySlot uint8) ([][]byte, bool) {
+	if r == nil || originID == 0 || displaySlot >= itemproto.ExchangeItemMaxNum {
+		return nil, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	partnerID, ok := r.exchangePartners[originID]
+	if !ok || partnerID == 0 {
+		return nil, false
+	}
+	if _, ok := r.sessionEntryLocked(originID); !ok {
+		return nil, false
+	}
+	if _, ok := r.sessionEntryLocked(partnerID); !ok {
+		return nil, false
+	}
+	origin, ok := r.playerCharacter(originID)
+	if !ok || characterAtBootstrapHPFloor(origin) {
+		return nil, false
+	}
+	partner, ok := r.playerCharacter(partnerID)
+	if !ok || characterAtBootstrapHPFloor(partner) {
+		return nil, false
+	}
+	originItems := r.exchangeItems[originID]
+	if _, occupied := originItems[displaySlot]; !occupied {
+		return nil, false
+	}
+	delete(originItems, displaySlot)
+	if len(originItems) == 0 {
+		delete(r.exchangeItems, originID)
+	}
+
+	selfFrame := encodeExchangeItemDelFrame(1, displaySlot)
+	peerFrame := encodeExchangeItemDelFrame(0, displaySlot)
+	if !r.enqueueToEntityLocked(partnerID, [][]byte{peerFrame}) {
+		if r.exchangeItems == nil {
+			r.exchangeItems = make(map[uint64]map[uint8]struct{})
+		}
+		originItems = r.exchangeItems[originID]
+		if originItems == nil {
+			originItems = make(map[uint8]struct{})
+			r.exchangeItems[originID] = originItems
+		}
+		originItems[displaySlot] = struct{}{}
+		return nil, false
+	}
+	return [][]byte{selfFrame}, true
+}
+
 func (r *sharedWorldRegistry) clearExchangeLocked(originID uint64, notifyPartner bool) bool {
 	if r == nil || originID == 0 || len(r.exchangePartners) == 0 {
 		return false
@@ -3177,6 +3229,14 @@ func encodeExchangeAlreadyFrame() []byte {
 
 func encodeExchangeEndFrame() []byte {
 	return itemproto.EncodeServerExchange(itemproto.ServerExchangePacket{Subheader: itemproto.ExchangeServerSubheaderEnd})
+}
+
+func encodeExchangeItemDelFrame(isMe uint8, displaySlot uint8) []byte {
+	return itemproto.EncodeServerExchange(itemproto.ServerExchangePacket{
+		Subheader: itemproto.ExchangeServerSubheaderItemDel,
+		IsMe:      isMe,
+		Arg1:      uint32(displaySlot),
+	})
 }
 
 func encodeExchangeItemAddFrame(isMe uint8, displaySlot uint8, display player.ExchangeItemAddDisplay) []byte {
