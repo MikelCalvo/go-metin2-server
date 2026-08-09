@@ -20,14 +20,20 @@ Rules frozen by tests:
 - every file starts with a project-owned header:
   - `-- go-metin2 migration: NNNN name up`,
   - `-- go-metin2 migration: NNNN name down`,
-- the catalog is returned in deterministic version order,
-- malformed names, missing pairs, version gaps, mismatched pairs, empty SQL, and missing headers fail closed with `ErrInvalidCatalog`.
+- `migrations.manifest.json` is mandatory and uses format `go-metin2-migration-manifest-v1`,
+- the manifest records each migration's version, name, up/down paths, and SHA-256 checksums,
+- the loader rejects unknown manifest fields, trailing JSON, duplicate manifest versions, path drift, checksum drift, missing manifest entries, and SQL files that do not match their manifest entry,
+- the catalog is returned in deterministic version order and exposes the validated `UpSHA256` / `DownSHA256` values next to the SQL text,
+- malformed names, missing pairs, version gaps, mismatched pairs, empty SQL, missing headers, and stale manifest data fail closed with `ErrInvalidCatalog`.
 
 The first migration is `0001_bootstrap_schema_migrations` and creates only a minimal `schema_migrations` ledger:
 
 - `version INTEGER PRIMARY KEY`,
 - `name TEXT NOT NULL`,
+- `up_sha256 TEXT NOT NULL`,
 - `applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP`.
+
+The `up_sha256` column intentionally pins the exact SQL body that was applied, so a future migrator can refuse to treat a mutated historical migration as already applied.
 
 ## What this is not yet
 

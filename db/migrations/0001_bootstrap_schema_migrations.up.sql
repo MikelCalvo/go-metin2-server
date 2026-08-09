@@ -2,5 +2,6 @@
 CREATE TABLE schema_migrations (
     version INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
+    up_sha256 TEXT NOT NULL,
     applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

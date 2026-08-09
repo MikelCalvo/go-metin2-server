@@ -1,0 +1,13 @@
+{
+  "format": "go-metin2-migration-manifest-v1",
+  "migrations": [
+    {
+      "version": 1,
+      "name": "bootstrap_schema_migrations",
+      "up_path": "0001_bootstrap_schema_migrations.up.sql",
+      "down_path": "0001_bootstrap_schema_migrations.down.sql",
+      "up_sha256": "76ab086217590515cb9b1eb72d78f49abf766da977998c4c60b41825c8e92f78",
+      "down_sha256": "140e8ba3c7a1c89cd942c13ef40160c74df5619093fe8c287c69cb978dba822d"
+    }
+  ]
+}

@@ -149,7 +149,7 @@ This is still bootstrap file persistence, not a migration-ready database layer. 
 
 `db/migrations` now owns the first validated migration catalog skeleton for future DB-backed stores. The embedded catalog is intentionally small: `0001_bootstrap_schema_migrations` creates only the schema migration ledger and does not imply that accounts, characters, items, content, or runtime state are DB-backed yet.
 
-The `db/migrations` package validates migration file naming, up/down pairing, contiguous versions from `0001`, non-empty UTF-8 SQL bodies, deterministic ordering, and project-owned header comments. Run `go test ./db/migrations` before adding or changing migration files.
+The `schema_migrations` ledger stores `version`, `name`, `up_sha256`, and `applied_at` so a future migrator can verify that an applied historical migration still matches the project-owned SQL body. The `db/migrations` package validates migration file naming, up/down pairing, contiguous versions from `0001`, non-empty UTF-8 SQL bodies, deterministic ordering, project-owned header comments, and the mandatory `migrations.manifest.json` checksum/path manifest. Run `go test ./db/migrations` before adding or changing migration files, and update the manifest whenever SQL content changes.
 
 ### Bootstrap QA reference
 
