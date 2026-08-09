@@ -1,8 +1,10 @@
 package minimal
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -235,6 +237,7 @@ type RuntimeConfigSnapshot struct {
 	VisibilityRadius     int32                     `json:"visibility_radius"`
 	VisibilitySectorSize int32                     `json:"visibility_sector_size"`
 	Persistence          PersistenceConfigSnapshot `json:"persistence"`
+	Database             DatabaseConfigSnapshot    `json:"database"`
 }
 
 type PersistenceConfigSnapshot struct {
@@ -243,6 +246,12 @@ type PersistenceConfigSnapshot struct {
 	StaticActorStorePath  string `json:"static_actor_store_path"`
 	InteractionStorePath  string `json:"interaction_store_path"`
 	ItemTemplateStorePath string `json:"item_template_store_path"`
+}
+
+type DatabaseConfigSnapshot struct {
+	Configured    bool   `json:"configured"`
+	Driver        string `json:"driver,omitempty"`
+	DSNConfigured bool   `json:"dsn_configured"`
 }
 
 type PersistenceStatusSnapshot struct {
@@ -311,6 +320,7 @@ type RelocationPreview = worldruntime.RelocationPreview
 type gameRuntime struct {
 	sessionFactory          service.SessionFactory
 	sharedWorld             *sharedWorldRegistry
+	config                  config.Service
 	staticStore             staticstore.Store
 	loginTicketStore        loginticket.Store
 	accountStore            accountstore.Store
@@ -375,6 +385,14 @@ func (r *gameRuntime) BroadcastNotice(message string) int {
 }
 
 func (r *gameRuntime) MigrationStatus() (dbmigrations.Plan, error) {
+	if r != nil && strings.TrimSpace(r.config.DatabaseDriver) != "" {
+		db, err := sql.Open(strings.TrimSpace(r.config.DatabaseDriver), strings.TrimSpace(r.config.DatabaseDSN))
+		if err != nil {
+			return dbmigrations.Plan{}, fmt.Errorf("%w: %v", config.ErrDatabaseDriverUnavailable, err)
+		}
+		defer db.Close()
+		return dbmigrations.PlanUpToLatestFromSQLLedger(context.Background(), db)
+	}
 	return dbmigrations.PlanUpToLatest(nil)
 }
 
@@ -936,7 +954,21 @@ func (r *gameRuntime) RuntimeConfigSnapshot() RuntimeConfigSnapshot {
 		snapshot.VisibilityMode = "custom"
 	}
 	snapshot.Persistence = runtimePersistenceConfigSnapshot(r)
+	snapshot.Database = runtimeDatabaseConfigSnapshot(r)
 	return snapshot
+}
+
+func runtimeDatabaseConfigSnapshot(r *gameRuntime) DatabaseConfigSnapshot {
+	if r == nil {
+		return DatabaseConfigSnapshot{}
+	}
+	driver := strings.TrimSpace(r.config.DatabaseDriver)
+	dsn := strings.TrimSpace(r.config.DatabaseDSN)
+	return DatabaseConfigSnapshot{
+		Configured:    driver != "" && dsn != "",
+		Driver:        driver,
+		DSNConfigured: dsn != "",
+	}
 }
 
 func runtimePersistenceConfigSnapshot(r *gameRuntime) PersistenceConfigSnapshot {
@@ -1589,6 +1621,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 	if err := validateRuntimePersistenceConfig(cfg); err != nil {
 		return nil, err
 	}
+	if err := config.ValidateDatabaseConfig(cfg); err != nil {
+		return nil, err
+	}
 
 	advertisedPort, err := parsePort(cfg.LegacyAddr)
 	if err != nil {
@@ -1614,6 +1649,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 	sharedWorld := newSharedWorldRegistryWithTopology(topology)
 	runtime := &gameRuntime{
 		sharedWorld:          sharedWorld,
+		config:               cfg,
 		staticStore:          staticActors,
 		loginTicketStore:     store,
 		accountStore:         accounts,

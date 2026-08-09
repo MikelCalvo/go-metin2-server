@@ -23,6 +23,8 @@ type Service struct {
 	StaticActorStorePath  string
 	InteractionStorePath  string
 	ItemTemplateStorePath string
+	DatabaseDriver        string
+	DatabaseDSN           string
 }
 
 var (
@@ -33,6 +35,9 @@ var (
 	ErrOpsAddrRequired             = errors.New("ops bind address is required")
 	ErrOpsAddrInvalid              = errors.New("ops bind address is invalid")
 	ErrOpsAddrNotLoopback          = errors.New("ops bind address must be loopback")
+	ErrDatabaseConfigIncomplete    = errors.New("database config requires both driver and dsn")
+	ErrDatabaseConfigInvalid       = errors.New("database config is invalid")
+	ErrDatabaseDriverUnavailable   = errors.New("database driver is unavailable")
 )
 
 type persistencePathRole string
@@ -72,6 +77,29 @@ func ValidateOpsConfig(cfg Service) error {
 	ip := net.ParseIP(host)
 	if ip == nil || !ip.IsLoopback() {
 		return fmt.Errorf("%w: %q", ErrOpsAddrNotLoopback, cfg.PprofAddr)
+	}
+	return nil
+}
+
+// ValidateDatabaseConfig fails closed for partial or malformed database
+// configuration. An empty driver and empty DSN explicitly means the DB-backed
+// runtime path is disabled; any non-empty value must be paired with the other
+// value so migration-status preflights never silently fall back to the embedded
+// empty-ledger path after an operator attempted to configure a database.
+func ValidateDatabaseConfig(cfg Service) error {
+	driver := strings.TrimSpace(cfg.DatabaseDriver)
+	dsn := strings.TrimSpace(cfg.DatabaseDSN)
+	if driver == "" && dsn == "" {
+		return nil
+	}
+	if driver == "" || dsn == "" {
+		return ErrDatabaseConfigIncomplete
+	}
+	if strings.ContainsRune(driver, '\x00') || strings.ContainsAny(driver, " 	\r\n") {
+		return fmt.Errorf("%w: database driver %q", ErrDatabaseConfigInvalid, cfg.DatabaseDriver)
+	}
+	if strings.ContainsRune(dsn, '\x00') {
+		return fmt.Errorf("%w: database dsn contains NUL", ErrDatabaseConfigInvalid)
 	}
 	return nil
 }
@@ -282,6 +310,8 @@ func LoadService(name string, defaultPprofAddr string, defaultLegacyAddr string,
 		StaticActorStorePath:  loadPathOverride(upperName, "STATIC_ACTOR_STORE_PATH", defaultStaticActorStorePath()),
 		InteractionStorePath:  loadPathOverride(upperName, "INTERACTION_STORE_PATH", defaultInteractionStorePath()),
 		ItemTemplateStorePath: loadPathOverride(upperName, "ITEM_TEMPLATE_STORE_PATH", defaultItemTemplateStorePath()),
+		DatabaseDriver:        loadPathOverride(upperName, "DB_DRIVER", ""),
+		DatabaseDSN:           loadPathOverride(upperName, "DB_DSN", ""),
 	}
 }
 

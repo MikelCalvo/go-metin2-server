@@ -249,10 +249,15 @@ Returns JSON describing the active bootstrap runtime selection. This endpoint is
 - `persistence.static_actor_store_path`
 - `persistence.interaction_store_path`
 - `persistence.item_template_store_path`
+- `database.configured`
+- `database.driver` when configured
+- `database.dsn_configured`
 
 The default bootstrap runtime reports local channel `1` and whole-map visibility. When `gamed` is configured for radius AOI, this snapshot reports the active radius and sector-size values selected from the `METIN2_VISIBILITY_*` / `METIN2_GAMED_VISIBILITY_*` environment overrides.
 
 The `persistence` block reports the active bootstrap JSON store locations selected from `METIN2_*_STORE_*` / service-specific environment overrides. Use it before running local backup, restore, validation, or stale-ticket cleanup endpoints so the operator confirms the daemon is pointing at the intended account, login-ticket, static-actor, interaction, and item-template stores. A running `gamed` has already rejected empty or overlapping persistence paths at startup: account and login-ticket stores must be separate directory trees that are not existing regular files and not symlink roots, file-backed content stores must be separate files that are not existing directories, and no file-backed store may resolve into or be lexically placed inside either persistence directory.
+
+The `database` block is intentionally redacted. It reports whether both DB driver and DSN are configured and shows the driver name, but it never returns the DSN string. Partial DB config fails startup before the ops listener or legacy TCP listener starts, so a running process either has DB migration preflight disabled or has a complete `database/sql` preflight target for `/local/db/migrations/status`.
 
 ### `GET /local/persistence/status`
 
@@ -296,7 +301,7 @@ Use this endpoint as the first read-only persistence triage check before choosin
 
 ### `GET /local/db/migrations/status`
 
-Returns a loopback-only dry-run migration plan for the embedded project-owned SQL migration catalog. This endpoint is read-only, is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the embedded catalog or supplied planning boundary fails validation. The migration package now has a `database/sql`-compatible `schema_migrations` ledger reader seam for future preflight tooling, but the shipped runtime has no explicit DB connection configuration yet; this endpoint intentionally still plans against an empty applied ledger and reports every catalog migration as pending.
+Returns a loopback-only dry-run migration plan for the embedded project-owned SQL migration catalog. This endpoint is read-only, is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the embedded catalog, configured database driver, ledger query, or supplied planning boundary fails validation. With no DB config it plans against an empty applied ledger and reports every catalog migration as pending. With both DB driver and DSN configured, it opens that `database/sql` target only for this read-only status request, queries `schema_migrations` metadata (`version`, `name`, `up_sha256`), closes the connection, and then returns the same metadata-only plan.
 
 Successful responses use the `db/migrations.Plan` JSON shape:
 
@@ -310,7 +315,7 @@ Successful responses use the `db/migrations.Plan` JSON shape:
   - `path`
   - `sha256`
 
-The response deliberately exposes metadata only: it does not include executable SQL text, open a database, create tables, or mutate `schema_migrations`. Use this as the first on-box visibility surface for the migration catalog before future slices add DB connection configuration, wire the SQL ledger reader into runtime status, or add an apply/rollback command. It is production-ops preflight scaffolding, not proof that account, character, item, content, or world runtime stores are DB-backed.
+The response deliberately exposes metadata only: it does not include executable SQL text, create tables, apply migrations, roll migrations back, or mutate `schema_migrations`. The project still does not ship a DB driver dependency or production DB engine selection; an unknown/unregistered driver fails closed with `409` instead of silently falling back to the empty-ledger plan. Use this as the first on-box visibility surface for the migration catalog before future slices add driver-backed integration tests, apply/rollback commands, or DB-backed repositories. It is production-ops preflight scaffolding, not proof that account, character, item, content, or world runtime stores are DB-backed.
 
 ### `GET` / `POST /local/static-actor-combat-profiles`
 

@@ -599,3 +599,80 @@ func TestLoadServicePrefersServiceSpecificVisibilityOverrides(t *testing.T) {
 		t.Fatalf("expected service-specific visibility sector size 225, got %d", cfg.VisibilitySectorSize)
 	}
 }
+
+func TestLoadServiceUsesDatabaseDefaultsWhenEnvIsMissing(t *testing.T) {
+	t.Setenv("METIN2_DB_DRIVER", "")
+	t.Setenv("METIN2_GAMED_DB_DRIVER", "")
+	t.Setenv("METIN2_DB_DSN", "")
+	t.Setenv("METIN2_GAMED_DB_DSN", "")
+
+	cfg := LoadService("gamed", ":6060", ":13000", "127.0.0.1")
+	if cfg.DatabaseDriver != "" {
+		t.Fatalf("expected empty default database driver, got %q", cfg.DatabaseDriver)
+	}
+	if cfg.DatabaseDSN != "" {
+		t.Fatalf("expected empty default database DSN, got %q", cfg.DatabaseDSN)
+	}
+}
+
+func TestLoadServiceUsesGlobalDatabaseOverrides(t *testing.T) {
+	t.Setenv("METIN2_DB_DRIVER", " postgres ")
+	t.Setenv("METIN2_GAMED_DB_DRIVER", "")
+	t.Setenv("METIN2_DB_DSN", " postgres://metin2@db/metin2?sslmode=require ")
+	t.Setenv("METIN2_GAMED_DB_DSN", "")
+
+	cfg := LoadService("gamed", ":6060", ":13000", "127.0.0.1")
+	if cfg.DatabaseDriver != "postgres" {
+		t.Fatalf("expected global database driver postgres, got %q", cfg.DatabaseDriver)
+	}
+	if cfg.DatabaseDSN != "postgres://metin2@db/metin2?sslmode=require" {
+		t.Fatalf("expected trimmed global database DSN, got %q", cfg.DatabaseDSN)
+	}
+}
+
+func TestLoadServicePrefersServiceSpecificDatabaseOverrides(t *testing.T) {
+	t.Setenv("METIN2_DB_DRIVER", "postgres")
+	t.Setenv("METIN2_GAMED_DB_DRIVER", "sqlite3")
+	t.Setenv("METIN2_DB_DSN", "postgres://metin2@db/metin2")
+	t.Setenv("METIN2_GAMED_DB_DSN", "file:gamed.db")
+
+	cfg := LoadService("gamed", ":6060", ":13000", "127.0.0.1")
+	if cfg.DatabaseDriver != "sqlite3" {
+		t.Fatalf("expected service-specific database driver sqlite3, got %q", cfg.DatabaseDriver)
+	}
+	if cfg.DatabaseDSN != "file:gamed.db" {
+		t.Fatalf("expected service-specific database DSN, got %q", cfg.DatabaseDSN)
+	}
+}
+
+func TestValidateDatabaseConfigAcceptsDisabledOrCompleteConfig(t *testing.T) {
+	for _, cfg := range []Service{
+		{},
+		{DatabaseDriver: "sqlite3", DatabaseDSN: "file:metin2.db"},
+	} {
+		if err := ValidateDatabaseConfig(cfg); err != nil {
+			t.Fatalf("expected database config %+v to validate, got %v", cfg, err)
+		}
+	}
+}
+
+func TestValidateDatabaseConfigRejectsPartialOrMalformedConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		cfg     Service
+		wantErr error
+	}{
+		{name: "driver without dsn", cfg: Service{DatabaseDriver: "sqlite3"}, wantErr: ErrDatabaseConfigIncomplete},
+		{name: "dsn without driver", cfg: Service{DatabaseDSN: "file:metin2.db"}, wantErr: ErrDatabaseConfigIncomplete},
+		{name: "driver with space", cfg: Service{DatabaseDriver: "sqlite 3", DatabaseDSN: "file:metin2.db"}, wantErr: ErrDatabaseConfigInvalid},
+		{name: "driver with nul", cfg: Service{DatabaseDriver: "sqlite3\x00", DatabaseDSN: "file:metin2.db"}, wantErr: ErrDatabaseConfigInvalid},
+		{name: "dsn with nul", cfg: Service{DatabaseDriver: "sqlite3", DatabaseDSN: "file:metin2.db\x00"}, wantErr: ErrDatabaseConfigInvalid},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateDatabaseConfig(tc.cfg)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("expected %v, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}

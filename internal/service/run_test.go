@@ -248,6 +248,27 @@ func TestRunRejectsWildcardOpsBindBeforeStartingLegacyServer(t *testing.T) {
 	_ = listener.Close()
 }
 
+func TestRunRejectsPartialDatabaseConfigBeforeStartingLegacyServer(t *testing.T) {
+	legacyAddr := reserveLocalAddr(t)
+
+	err := Run(context.Background(), config.Service{
+		Name:           "gamed",
+		PprofAddr:      reserveLocalAddr(t),
+		LegacyAddr:     legacyAddr,
+		PublicAddr:     "127.0.0.1",
+		DatabaseDriver: "sqlite3",
+	}, testLogger(), newTestSessionFlow)
+	if !errors.Is(err, config.ErrDatabaseConfigIncomplete) {
+		t.Fatalf("expected ErrDatabaseConfigIncomplete, got %v", err)
+	}
+
+	listener, listenErr := net.Listen("tcp", legacyAddr)
+	if listenErr != nil {
+		t.Fatalf("expected legacy listener %s not to start after rejected database config: %v", legacyAddr, listenErr)
+	}
+	_ = listener.Close()
+}
+
 func TestRunWithOpsHandlerServesCustomOpsEndpoint(t *testing.T) {
 	pprofAddr := reserveLocalAddr(t)
 	legacyAddr := reserveLocalAddr(t)

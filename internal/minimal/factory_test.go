@@ -144,6 +144,59 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	}
 }
 
+func TestGameRuntimeMigrationStatusRejectsConfiguredDatabaseWithoutRegisteredDriver(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", DatabaseDriver: "sqlite3", DatabaseDSN: "file:missing-driver.db"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	_, err = runtime.MigrationStatus()
+	if !errors.Is(err, config.ErrDatabaseDriverUnavailable) {
+		t.Fatalf("expected ErrDatabaseDriverUnavailable, got %v", err)
+	}
+}
+
+func TestGameRuntimeConfigSnapshotReportsDatabaseStatusWithoutDSN(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", DatabaseDriver: "sqlite3", DatabaseDSN: "file:metin2.db"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	snapshot := runtime.RuntimeConfigSnapshot()
+	if !snapshot.Database.Configured {
+		t.Fatalf("expected database config to report configured: %+v", snapshot.Database)
+	}
+	if snapshot.Database.Driver != "sqlite3" {
+		t.Fatalf("expected database driver sqlite3, got %q", snapshot.Database.Driver)
+	}
+	if snapshot.Database.DSNConfigured != true {
+		t.Fatalf("expected database DSN to be reported as configured: %+v", snapshot.Database)
+	}
+	raw, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatalf("marshal runtime config snapshot: %v", err)
+	}
+	if strings.Contains(string(raw), "file:metin2.db") || strings.Contains(string(raw), "database_dsn") {
+		t.Fatalf("runtime config snapshot must not expose database DSN, got %s", string(raw))
+	}
+}
+
 func TestGameRuntimePersistenceStatusReportsNoRestoreBlockWithoutLiveSessions(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
@@ -1795,6 +1848,26 @@ func TestNewGameRuntimeRejectsWildcardOpsBind(t *testing.T) {
 	_, err := NewGameRuntime(cfg)
 	if !errors.Is(err, config.ErrOpsAddrNotLoopback) {
 		t.Fatalf("expected ErrOpsAddrNotLoopback, got %v", err)
+	}
+}
+
+func TestNewGameRuntimeRejectsPartialDatabaseConfig(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Service{
+		PprofAddr:             "127.0.0.1:6060",
+		LegacyAddr:            ":13000",
+		PublicAddr:            "127.0.0.1",
+		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
+		AccountStoreDir:       filepath.Join(root, "accounts"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+		DatabaseDriver:        "sqlite3",
+	}
+
+	_, err := NewGameRuntime(cfg)
+	if !errors.Is(err, config.ErrDatabaseConfigIncomplete) {
+		t.Fatalf("expected ErrDatabaseConfigIncomplete, got %v", err)
 	}
 }
 

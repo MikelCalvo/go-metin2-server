@@ -123,6 +123,17 @@ Startup now validates the effective bootstrap persistence layout before daemon r
 
 `GET /local/runtime-config` includes the active persistence paths under `persistence`, so local operators can verify which JSON stores a running `gamed` instance will validate, back up, restore, or mutate before invoking the local-only persistence endpoints.
 
+### Database migration preflight config
+
+The database-backed runtime is still future work, but `gamed` can now point the read-only migration-status preflight at an explicitly configured `schema_migrations` ledger through `database/sql`:
+
+- `METIN2_DB_DRIVER`
+- `METIN2_GAMED_DB_DRIVER`
+- `METIN2_DB_DSN`
+- `METIN2_GAMED_DB_DSN`
+
+Both driver and DSN must be empty to keep DB preflight disabled, or both must be set. Partial values fail daemon startup instead of silently returning the embedded empty-ledger migration plan. The project does not yet ship a DB driver dependency or select a production database engine, so operators must not treat this as a finished DB-backed runtime. `/local/runtime-config` reports only whether a DSN is configured plus the driver name; it intentionally never exposes the DSN value.
+
 ### Bootstrap file-backed persistence
 
 The current bootstrap runtime uses several small JSON-backed stores before a compatibility-grade database exists:
@@ -149,7 +160,7 @@ This is still bootstrap file persistence, not a migration-ready database layer. 
 
 `db/migrations` now owns the first validated migration catalog skeleton for future DB-backed stores. The embedded catalog is intentionally small: `0001_bootstrap_schema_migrations` creates only the schema migration ledger and does not imply that accounts, characters, items, content, or runtime state are DB-backed yet.
 
-The `schema_migrations` ledger stores `version`, `name`, `up_sha256`, and `applied_at` so a future migrator can verify that an applied historical migration still matches the project-owned SQL body. The `db/migrations` package validates migration file naming, up/down pairing, contiguous versions from `0001`, non-empty UTF-8 SQL bodies, deterministic ordering, project-owned header comments, and the mandatory `migrations.manifest.json` checksum/path manifest. It also exposes read-only dry-run planners: `PlanUpToLatest` / `PlanCatalogUpToLatest` compare already-read ledger rows with the catalog, while `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger` add a narrow `database/sql`-compatible reader seam that queries only `version`, `name`, and `up_sha256` from `schema_migrations`, closes rows, and fails closed on query/scan/iteration/close errors. These planners return pending migration metadata without applying SQL or exposing SQL as the plan payload. `gamed` wires the metadata planner through loopback-only `GET /local/db/migrations/status` using an empty applied ledger until a future slice adds explicit DB connection configuration; the endpoint is metadata-only and does not imply that runtime stores are DB-backed. Run `go test ./db/migrations` before adding or changing migration files, and update the manifest whenever SQL content changes.
+The `schema_migrations` ledger stores `version`, `name`, `up_sha256`, and `applied_at` so a future migrator can verify that an applied historical migration still matches the project-owned SQL body. The `db/migrations` package validates migration file naming, up/down pairing, contiguous versions from `0001`, non-empty UTF-8 SQL bodies, deterministic ordering, project-owned header comments, and the mandatory `migrations.manifest.json` checksum/path manifest. It also exposes read-only dry-run planners: `PlanUpToLatest` / `PlanCatalogUpToLatest` compare already-read ledger rows with the catalog, while `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger` add a narrow `database/sql`-compatible reader seam that queries only `version`, `name`, and `up_sha256` from `schema_migrations`, closes rows, and fails closed on query/scan/iteration/close errors. These planners return pending migration metadata without applying SQL or exposing SQL as the plan payload. `gamed` wires the metadata planner through loopback-only `GET /local/db/migrations/status`: without DB config it uses an empty applied ledger, and with both DB driver and DSN configured it reads only the ledger rows through `database/sql`. The endpoint is metadata-only and does not imply that runtime stores are DB-backed. Run `go test ./db/migrations` before adding or changing migration files, and update the manifest whenever SQL content changes.
 
 ### Bootstrap QA reference
 

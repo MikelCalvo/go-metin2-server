@@ -28,8 +28,15 @@ Rules frozen by tests:
 - `PlanUpToLatest` / `PlanCatalogUpToLatest` provide a read-only dry-run boundary that compares a validated catalog against applied `schema_migrations` ledger entries without opening a database or executing SQL,
 - the dry-run planner accepts unordered ledger rows but rejects duplicates, gaps, future versions, name drift, checksum drift, zero/negative versions, and any mutated catalog SQL whose body no longer hashes to the manifest-pinned checksum,
 - plan steps expose only metadata (`version`, `name`, `direction`, `path`, `sha256`) and intentionally do not expose executable SQL as the plan payload.
-- `gamed` exposes a loopback-only read-only `GET /local/db/migrations/status` endpoint that returns the same metadata-only dry-run plan against an empty ledger for now, making the embedded catalog visible to operators without opening a database or executing SQL.
+- `gamed` exposes a loopback-only read-only `GET /local/db/migrations/status` endpoint that returns the same metadata-only dry-run plan; with no DB config it plans against an empty ledger, and with explicit DB config it reads only the `schema_migrations` ledger before planning.
 - `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger` add the first database/sql-compatible ledger reader seam for future preflight tooling: callers supply a `QueryContext` boundary, the package reads only `version`, `name`, and `up_sha256` from `schema_migrations` in version order, closes rows, and fails closed on query, scan, iteration, close, catalog, or ledger drift errors.
+- runtime configuration now carries an optional DB preflight boundary:
+  - `METIN2_DB_DRIVER` / `METIN2_GAMED_DB_DRIVER`,
+  - `METIN2_DB_DSN` / `METIN2_GAMED_DB_DSN`,
+  - both empty means DB-backed migration preflight is disabled,
+  - partial or malformed values fail startup validation,
+  - configured status reads through `database/sql` but does not bundle or select a real driver dependency yet,
+  - `/local/runtime-config` reports only `database.configured`, `database.driver`, and `database.dsn_configured`; it never exposes the DSN value.
 
 The first migration is `0001_bootstrap_schema_migrations` and creates only a minimal `schema_migrations` ledger:
 
@@ -44,22 +51,22 @@ The `up_sha256` column intentionally pins the exact SQL body that was applied, s
 
 This is not a database runtime implementation. It deliberately does not add:
 
-- a DB driver dependency,
-- connection configuration,
+- a DB driver dependency or default production DB engine,
+- DB connection pool ownership beyond the read-only migration-status preflight,
 - automatic migration apply/rollback commands,
 - account/character/item repository implementations,
 - JSON snapshot backfill tooling,
 - production deployment scripts.
 
-The dry-run planner added on top of the catalog is likewise read-only: callers can supply already-read ledger rows directly or provide a `database/sql`-compatible query boundary for the same metadata through `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger`. The first loopback ops endpoint deliberately still uses an empty ledger because runtime DB connection configuration is not frozen yet. The SQL ledger seam is a safe boundary for future CLI, real-ledger preflight tooling, or status pages, not an execution engine.
+The dry-run planner added on top of the catalog is likewise read-only: callers can supply already-read ledger rows directly or provide a `database/sql`-compatible query boundary for the same metadata through `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger`. The first loopback ops endpoint uses an empty ledger when DB config is disabled and a configured `database/sql` ledger reader when both driver and DSN are set. The SQL ledger seam and runtime config are safe boundaries for future CLI, real-ledger preflight tooling, or status pages, not an execution engine.
 
 Those require separate slices because each one changes operator and data-safety semantics.
 
 ## Likely next slices
 
-1. Add explicit DB connection configuration and wire the local-only migration status preflight to a configured `schema_migrations` reader without mutating a database.
-2. Define a narrow account/character repository interface backed by current tests before adding a DB implementation.
-3. Add explicit schema migrations for account identity and character roster only after the repository seam is frozen.
+1. Define a narrow account/character repository interface backed by current tests before adding a DB implementation.
+2. Add explicit schema migrations for account identity and character roster only after the repository seam is frozen.
+3. Add a driver-backed test harness or build-tagged integration test for `schema_migrations` status before adding apply/rollback tooling.
 4. Add JSON-file-store export/import or quarantine tooling for migration from bootstrap snapshots.
 5. Add an apply/rollback command only after the dry-run status boundary and ledger validation behavior are exercised against an actual driver-backed test database.
 6. Document production DB configuration, backups, and rollback policy once there is an actual DB-backed store.
@@ -67,5 +74,6 @@ Those require separate slices because each one changes operator and data-safety 
 ## Exit criteria for this slice
 
 - `go test ./db/migrations` validates the catalog, direct-ledger dry-run planning rules, and database/sql-compatible ledger-reader seam.
+- `go test ./internal/config ./internal/minimal ./internal/service` validates optional DB config loading, startup fail-closed behavior for partial config, no-DSN runtime-config exposure, and the configured-driver migration-status boundary.
 - `go test ./...` and `go vet ./...` remain green.
 - README/development docs describe `db/migrations` as the validated migration catalog and read-only planning skeleton, not a finished DB layer.
