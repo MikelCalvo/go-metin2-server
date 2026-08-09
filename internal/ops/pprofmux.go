@@ -1716,6 +1716,41 @@ func RegisterLocalContentBundleItemTemplateEndpoint(mux *http.ServeMux, exportCo
 	return mux
 }
 
+func RegisterLocalContentBundleRewardDropEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/content-bundle/reward-drops/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		vnum, ok := decodeLocalContentBundleRewardDropVnum(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		for _, rewardDrop := range summary.RewardDrops {
+			if rewardDrop.ItemVnum == vnum {
+				writeLocalJSONMutationResponse(w, rewardDrop, http.StatusOK)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	return mux
+}
+
 func interactionDefinitionReferenceListContains(references []contentbundle.InteractionDefinitionReferenceSummary, kind string, ref string) bool {
 	for _, reference := range references {
 		if reference.Kind == kind && reference.Ref == ref {
@@ -2522,7 +2557,15 @@ func decodeLocalContentBundleInteractionDefinitionIdentity(r *http.Request) (str
 }
 
 func decodeLocalContentBundleItemTemplateVnum(r *http.Request) (uint32, bool) {
-	vnumRaw := strings.TrimPrefix(r.URL.Path, "/local/content-bundle/item-templates/")
+	return decodeLocalContentBundleVnumWithPrefix(r, "/local/content-bundle/item-templates/")
+}
+
+func decodeLocalContentBundleRewardDropVnum(r *http.Request) (uint32, bool) {
+	return decodeLocalContentBundleVnumWithPrefix(r, "/local/content-bundle/reward-drops/")
+}
+
+func decodeLocalContentBundleVnumWithPrefix(r *http.Request, prefix string) (uint32, bool) {
+	vnumRaw := strings.TrimPrefix(r.URL.Path, prefix)
 	vnumRaw = strings.TrimSpace(vnumRaw)
 	if vnumRaw == "" || strings.Contains(vnumRaw, "/") {
 		return 0, false

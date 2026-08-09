@@ -354,6 +354,12 @@ Returns one exact item-template summary row from the live content-bundle summary
 
 Use it when local QA needs to inspect one merchant/reward item template and its guard/rejection metadata without fetching the full content-bundle summary or opening an in-game merchant window. It is not a gameplay protocol endpoint and does not mutate authored content.
 
+### `GET /local/content-bundle/reward-drops/{item_vnum}`
+
+Returns one exact aggregate reward-drop summary row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; `item_vnum` must be a non-zero unsigned item template ID. It returns the matching `reward_drops[]` row with `source_count` and resolved item-template metadata, returns `404` when the live authored bundle has no matching reward-drop aggregate, rejects malformed or zero vnums with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
+
+Use it when local QA needs to inspect one authored reward item's aggregate source count and guard/rejection metadata without fetching the full content-bundle summary or expanding every spawn group. It is not a gameplay protocol endpoint and does not mutate authored content.
+
 ### `GET /local/content-bundle/shop-catalogs/{kind}/{ref}`
 
 Returns one exact structured shop-catalog summary row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; the only accepted `kind` for this path is `shop_preview`, and `ref` must satisfy the same path-safe interaction reference rule used by `/local/interactions/{kind}/{ref}`. It returns `404` when the live authored bundle has no matching catalog, rejects malformed identities with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
@@ -761,8 +767,8 @@ Exports or imports one deterministic authored-content artifact spanning both boo
 - `GET` exports the current bundle
 - `POST` imports a full replacement bundle
 - imports reject dangling interaction references before mutating runtime state
-- `GET /local/content-bundle/summary` and dry-run `POST /local/content-bundle/summary` include compact `shop_routes` and `warp_routes` entries for placed service actors, and exact-name route readers (`/local/content-bundle/shop-routes/{actor_name}` / `/local/content-bundle/warp-routes/{actor_name}`) let local QA inspect one actor name's service placement without fetching or applying the full bundle
-- `POST /local/content-bundle/import-preview` compares a candidate replacement against the live exported bundle and returns no-mutation `current` / `candidate` summaries plus count/amount `deltas`, including per-interaction-kind reference deltas, per-definition `added` / `removed` / `changed` deltas with compact current/candidate previews, per-map before/after/signed deltas for changed authored map counts, and spawn reward EXP/gold totals
+- `GET /local/content-bundle/summary` and dry-run `POST /local/content-bundle/summary` include compact `shop_routes` and `warp_routes` entries for placed service actors, aggregate `reward_drops` entries for authored reward items, and focused readers (`/local/content-bundle/shop-routes/{actor_name}` / `/local/content-bundle/warp-routes/{actor_name}` / `/local/content-bundle/reward-drops/{item_vnum}`) let local QA inspect one service placement or reward-drop aggregate without fetching or applying the full bundle
+- `POST /local/content-bundle/import-preview` compares a candidate replacement against the live exported bundle and returns no-mutation `current` / `candidate` summaries plus count/amount `deltas`, including per-interaction-kind reference deltas, per-definition `added` / `removed` / `changed` deltas with compact current/candidate previews, per-map before/after/signed deltas for changed authored map counts, grouped reward-drop deltas, and spawn reward EXP/gold totals
 
 A small reference artifact lives at `docs/examples/bootstrap-npc-service-bundle.json`.
 
@@ -917,6 +923,8 @@ curl http://127.0.0.1:6060/local/content-bundle/summary
 curl http://127.0.0.1:6060/local/content-bundle/maps/1
 curl http://127.0.0.1:6060/local/content-bundle/spawn-groups/practice.qa_reward_mob
 curl http://127.0.0.1:6060/local/content-bundle/interactable-static-actors/Village%20Guide
+curl http://127.0.0.1:6060/local/content-bundle/item-templates/27001
+curl http://127.0.0.1:6060/local/content-bundle/reward-drops/27001
 curl http://127.0.0.1:6060/local/content-bundle/shop-catalogs/shop_preview/npc:qa_merchant
 curl http://127.0.0.1:6060/local/content-bundle/warp-destinations/warp/npc:qa_teleporter
 ```
@@ -924,6 +932,8 @@ curl http://127.0.0.1:6060/local/content-bundle/warp-destinations/warp/npc:qa_te
 `/local/content-bundle/spawn-groups/{ref}` is a loopback-only exact-ref reader over the exported bundle summary. It returns one authored spawn-group row including resolved reward-drop item metadata, or `404` when that authored ref is absent, so local QA can inspect one practice-mob definition without fetching the full summary.
 
 `/local/content-bundle/interactable-static-actors/{name}` is a loopback-only exact-name reader over the exported bundle summary. It returns every matching authored interactable actor row so duplicate placements with the same name remain inspectable, and it is read-only QA/debug tooling rather than gameplay protocol or content mutation.
+
+`/local/content-bundle/reward-drops/{item_vnum}` is a loopback-only exact-vnum reader over the exported bundle summary. It returns one aggregate reward-drop row with `source_count` and resolved item metadata, or `404` when that item is not currently authored as a reward drop, so local QA can inspect one reward item without fetching the full summary or opening every spawn-group row.
 
 ## Docker note
 

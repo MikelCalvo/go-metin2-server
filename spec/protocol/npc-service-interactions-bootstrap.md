@@ -96,8 +96,9 @@ Frozen target behavior:
 - the same catalog still owns a deterministic compact preview render for QA/debug and lower-level resolution surfaces
 
 Current owned shop operator-summary semantics:
-- `GET /local/content-bundle/summary` and dry-run `POST /local/content-bundle/summary` report deterministic `shop_catalogs` entries for every authored `shop_preview` definition
+- `GET /local/content-bundle/summary` and dry-run `POST /local/content-bundle/summary` now report deterministic `shop_catalogs` entries for every authored `shop_preview` definition
 - template-backed shop/item/reward summary rows include the currently owned transfer/merchant guard flags (`anti_get`, `anti_drop`, `anti_give`, `anti_sell`, `anti_stack`) and selected-character guard metadata (`anti_male`, `anti_female`, `anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_empire_a`, `anti_empire_b`, `anti_empire_c`, `min_level`) beside the owned buy/drop/give/pickup/sell rejection messages so deny metadata is inspectable without opening the full bundle
+- `GET /local/content-bundle/reward-drops/{item_vnum}` returns one exact aggregate reward-drop row with `source_count` and resolved item-template metadata, so local QA can inspect one authored reward item without fetching the full bundle summary or expanding every spawn group
 - the same summary now reports deterministic `shop_routes` entries for every interactable static actor that resolves to a `shop_preview` definition
 - each route summary entry carries `actor_name`, source `map_index`/`x`/`y`, `ref`, merchant `title`, and catalog `entry_count`
 - `GET /local/content-bundle/shop-routes/{actor_name}` now returns every exact route row for one authored merchant actor name, so duplicated placements remain inspectable without fetching the full bundle summary or opening the merchant in-game

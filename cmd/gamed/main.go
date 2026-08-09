@@ -492,6 +492,10 @@ func main() {
 		opsHandler,
 		exportContentBundleSummary,
 	)
+	opsHandler = ops.RegisterLocalContentBundleRewardDropEndpoint(
+		opsHandler,
+		exportContentBundleSummary,
+	)
 	opsHandler = ops.RegisterLocalContentBundleShopCatalogEndpoint(
 		opsHandler,
 		exportContentBundleSummary,
