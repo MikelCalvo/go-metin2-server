@@ -79,6 +79,12 @@ type MerchantSellResult struct {
 	Gold        uint64
 }
 
+type ExchangeItemAddDisplay struct {
+	Item       inventory.ItemInstance
+	Sockets    itemcatalog.SocketValues
+	Attributes itemcatalog.AttributeValues
+}
+
 type GroundItemPickupResult struct {
 	Item         inventory.ItemInstance
 	Merged       bool
@@ -1078,8 +1084,40 @@ func (r *Runtime) ExchangeItemAddRejectText(slot inventory.SlotIndex, template i
 	return template.GiveRejectText, true
 }
 
+func (r *Runtime) ExchangeItemAddDisplay(slot inventory.SlotIndex, template itemcatalog.Template) (ExchangeItemAddDisplay, bool) {
+	item, ok := r.templateBackedExchangeDisplayInventoryItem(slot, template)
+	if !ok {
+		return ExchangeItemAddDisplay{}, false
+	}
+	return ExchangeItemAddDisplay{Item: item, Sockets: template.Sockets, Attributes: template.Attributes}, true
+}
+
 func (r *Runtime) templateBackedAntiGiveInventoryItem(slot inventory.SlotIndex, template itemcatalog.Template) (inventory.ItemInstance, bool) {
 	if r == nil || template.GiveRejectText == "" || !template.AntiGive || slot >= inventory.CarriedInventorySlotCount || !itemcatalog.ValidTemplate(template) {
+		return inventory.ItemInstance{}, false
+	}
+	if countInventorySlotOccupancy(r.liveInventory, slot) != 1 {
+		return inventory.ItemInstance{}, false
+	}
+	index := findInventorySlot(r.liveInventory, slot)
+	if index < 0 {
+		return inventory.ItemInstance{}, false
+	}
+	item := r.liveInventory[index]
+	if item.Equipped || item.Locked || item.Vnum != template.Vnum || item.Count == 0 || item.Count > template.MaxCount {
+		return inventory.ItemInstance{}, false
+	}
+	if err := item.Validate(); err != nil {
+		return inventory.ItemInstance{}, false
+	}
+	return item, true
+}
+
+func (r *Runtime) templateBackedExchangeDisplayInventoryItem(slot inventory.SlotIndex, template itemcatalog.Template) (inventory.ItemInstance, bool) {
+	if r == nil || slot >= inventory.CarriedInventorySlotCount || !itemcatalog.ValidTemplate(template) {
+		return inventory.ItemInstance{}, false
+	}
+	if template.AntiStack || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || !r.CanUseTemplate(template) {
 		return inventory.ItemInstance{}, false
 	}
 	if countInventorySlotOccupancy(r.liveInventory, slot) != 1 {

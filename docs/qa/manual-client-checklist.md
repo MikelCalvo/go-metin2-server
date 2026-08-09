@@ -432,8 +432,10 @@ Run this only if packet tooling or the client build can emit an exchange/trade a
 - [ ] Attempt one `EXCHANGE START` request against a visible connected player that is already paired in an exchange shell
 - [ ] Attempt one `EXCHANGE START` request against a player that is not visible or not connected
 - [ ] Attempt one `EXCHANGE ITEM_ADD` request for a disposable carried item slot
+- [ ] When the carried item is allowed by its template, inspect both exchange windows and packet logs for the display-only `GC::EXCHANGE ITEM_ADD` frames
 - [ ] Repeat `EXCHANGE ITEM_ADD` with a carried item whose loaded template authors `anti_give = true` and non-empty `give_reject_message`
 - [ ] If packet tooling allows it, repeat that guarded `EXCHANGE ITEM_ADD` with display slot `12` or higher
+- [ ] If packet tooling allows it, add one valid item to display slot `7` and then try to add a second item to the same display slot
 - [ ] If packet tooling allows it, repeat with `ITEM_DEL`, `ELK_ADD`, and `ACCEPT` subheaders
 - [ ] If packet tooling allows it, repeat with a malformed payload size
 
@@ -441,9 +443,11 @@ Expected result:
 - visible connected-player `EXCHANGE START` emits one self `GC::EXCHANGE START` naming the peer `VID` and queues one peer `GC::EXCHANGE START` naming the requester `VID`; `EXCHANGE CANCEL` emits one self `GC::EXCHANGE END` and queues one peer `GC::EXCHANGE END`
 - `EXCHANGE START` against a visible connected peer that is already paired returns one self-only `GC::EXCHANGE ALREADY` to the requester, queues no frames to the existing pair, and leaves the existing exchange shell intact
 - non-visible, disconnected, requester-already-paired, or zero-HP exchange starts fail closed with no exchange frames
-- the current exchange shell is only a window/open-close/busy-target proof: no carried inventory/equipment/quickslot/gold state changes, no ground actor appears, and reconnect/operator inspection shows selected-character snapshots unchanged
-- item placement, item removal, gold placement, and accept/finalize subheaders remain unsupported in the shipped bootstrap runtime; apart from the current guard feedback exception, they emit no exchange result frames and do not mutate state
-- an `anti_give` carried item with `give_reject_message` returns exactly one self-only `CHAT_TYPE_INFO` message for `EXCHANGE ITEM_ADD` using that authored text only when the requested display slot is in the current `0..11` exchange item range, while still leaving inventory, equipment, quickslots, gold, peers, ground handles, and persistence unchanged
+- the current exchange shell is only a window/open-close/display proof: no carried inventory/equipment/quickslot/gold state changes, no ground actor appears, and reconnect/operator inspection shows selected-character snapshots unchanged
+- allowed active-shell `EXCHANGE ITEM_ADD` emits one self `GC::EXCHANGE ITEM_ADD` with `is_me = 1` and one queued peer `GC::EXCHANGE ITEM_ADD` with `is_me = 0`; both frames carry the carried item `vnum`, exchange display slot, count, and loaded template-authored `sockets` / `attributes`, but the item remains in carried inventory and is not locked, removed, or persisted as traded
+- duplicate display-slot `EXCHANGE ITEM_ADD` attempts from the same side fail closed with no additional frames and no mutation
+- item removal, gold placement, and accept/finalize subheaders remain unsupported in the shipped bootstrap runtime; apart from the current guard feedback and display-only item-add paths, they emit no exchange result frames and do not mutate state
+- an `anti_give` carried item with `give_reject_message` returns exactly one self-only `CHAT_TYPE_INFO` message for `EXCHANGE ITEM_ADD` using that authored text only when the requested display slot is in the current `0..11` exchange item range, while still leaving inventory, equipment, quickslots, gold, peers, ground handles, and persistence unchanged; it does not emit `GC::EXCHANGE ITEM_ADD`
 - out-of-range `EXCHANGE ITEM_ADD` display slots stay no-frame/no-mutation even for guarded `anti_give` templates
 - malformed `EXCHANGE` payload sizes fail at the codec/dispatcher boundary rather than mutating runtime state
 - this is an exchange-window shell, not a completed exchange, trade, safebox, or player-shop feature

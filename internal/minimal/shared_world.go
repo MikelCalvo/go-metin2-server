@@ -11,6 +11,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	"github.com/MikelCalvo/go-metin2-server/internal/player"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
@@ -47,6 +48,7 @@ type sharedWorldRegistry struct {
 	staticActorDeathReward          map[uint64]worldruntime.StaticActorDeathReward
 	sessionCombatTargets            map[uint64]uint32
 	exchangePartners                map[uint64]uint64
+	exchangeItems                   map[uint64]map[uint8]struct{}
 	nextStaticActorCombatSnapshotID uint64
 	lastKnownCharacters             map[uint64]loginticket.Character
 	groundItemsByVID                map[uint32]sharedGroundItem
@@ -412,6 +414,54 @@ func (r *sharedWorldRegistry) CancelExchange(originID uint64) ([][]byte, bool) {
 	return [][]byte{encodeExchangeEndFrame()}, true
 }
 
+func (r *sharedWorldRegistry) AddExchangeItem(originID uint64, displaySlot uint8, display player.ExchangeItemAddDisplay) ([][]byte, bool) {
+	if r == nil || originID == 0 || displaySlot >= itemproto.ExchangeItemMaxNum {
+		return nil, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	partnerID, ok := r.exchangePartners[originID]
+	if !ok || partnerID == 0 {
+		return nil, false
+	}
+	if _, ok := r.sessionEntryLocked(originID); !ok {
+		return nil, false
+	}
+	if _, ok := r.sessionEntryLocked(partnerID); !ok {
+		return nil, false
+	}
+	origin, ok := r.playerCharacter(originID)
+	if !ok || characterAtBootstrapHPFloor(origin) {
+		return nil, false
+	}
+	partner, ok := r.playerCharacter(partnerID)
+	if !ok || characterAtBootstrapHPFloor(partner) {
+		return nil, false
+	}
+	if r.exchangeItems == nil {
+		r.exchangeItems = make(map[uint64]map[uint8]struct{})
+	}
+	originItems := r.exchangeItems[originID]
+	if originItems == nil {
+		originItems = make(map[uint8]struct{})
+		r.exchangeItems[originID] = originItems
+	}
+	if _, occupied := originItems[displaySlot]; occupied {
+		return nil, false
+	}
+	originItems[displaySlot] = struct{}{}
+
+	selfFrame := encodeExchangeItemAddFrame(1, displaySlot, display)
+	peerFrame := encodeExchangeItemAddFrame(0, displaySlot, display)
+	if !r.enqueueToEntityLocked(partnerID, [][]byte{peerFrame}) {
+		delete(originItems, displaySlot)
+		return nil, false
+	}
+	return [][]byte{selfFrame}, true
+}
+
 func (r *sharedWorldRegistry) clearExchangeLocked(originID uint64, notifyPartner bool) bool {
 	if r == nil || originID == 0 || len(r.exchangePartners) == 0 {
 		return false
@@ -422,6 +472,10 @@ func (r *sharedWorldRegistry) clearExchangeLocked(originID uint64, notifyPartner
 	}
 	delete(r.exchangePartners, originID)
 	delete(r.exchangePartners, partnerID)
+	if r.exchangeItems != nil {
+		delete(r.exchangeItems, originID)
+		delete(r.exchangeItems, partnerID)
+	}
 	if notifyPartner {
 		r.enqueueToEntityLocked(partnerID, [][]byte{encodeExchangeEndFrame()})
 	}
@@ -3123,6 +3177,26 @@ func encodeExchangeAlreadyFrame() []byte {
 
 func encodeExchangeEndFrame() []byte {
 	return itemproto.EncodeServerExchange(itemproto.ServerExchangePacket{Subheader: itemproto.ExchangeServerSubheaderEnd})
+}
+
+func encodeExchangeItemAddFrame(isMe uint8, displaySlot uint8, display player.ExchangeItemAddDisplay) []byte {
+	return itemproto.EncodeServerExchange(itemproto.ServerExchangePacket{
+		Subheader:  itemproto.ExchangeServerSubheaderItemAdd,
+		IsMe:       isMe,
+		Arg1:       display.Item.Vnum,
+		Position:   itemproto.Position{WindowType: itemproto.WindowReserved, Cell: uint16(displaySlot)},
+		Arg3:       uint32(display.Item.Count),
+		Sockets:    [itemproto.ItemSocketCount]int32(display.Sockets),
+		Attributes: exchangeItemDisplayAttributes(display.Attributes),
+	})
+}
+
+func exchangeItemDisplayAttributes(attributes itemcatalog.AttributeValues) [itemproto.ItemAttributeCount]itemproto.Attribute {
+	var out [itemproto.ItemAttributeCount]itemproto.Attribute
+	for i, attribute := range attributes {
+		out[i] = itemproto.Attribute{Type: attribute.Type, Value: attribute.Value}
+	}
+	return out
 }
 
 func encodeStaticActorVisibilityFrames(actor worldruntime.StaticEntity) [][]byte {

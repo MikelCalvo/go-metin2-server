@@ -3636,7 +3636,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if message, ok := selectedPlayer.ExchangeItemAddRejectText(inventory.SlotIndex(packet.Position.Cell), template); ok {
 						return gameflow.ItemExchangeResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}}
 					}
-					return gameflow.ItemExchangeResult{Accepted: false}
+					display, ok := selectedPlayer.ExchangeItemAddDisplay(inventory.SlotIndex(packet.Position.Cell), template)
+					if !ok {
+						return gameflow.ItemExchangeResult{Accepted: false}
+					}
+					frames, ok := sharedWorld.AddExchangeItem(sharedWorldID, packet.Arg2, display)
+					if !ok {
+						return gameflow.ItemExchangeResult{Accepted: false}
+					}
+					return gameflow.ItemExchangeResult{Accepted: true, Frames: frames}
 				},
 				HandleQuickslotAdd: func(packet quickslotproto.ClientAddPacket) gameflow.QuickslotResult {
 					stateMu.Lock()

@@ -65,6 +65,194 @@ func TestGameRuntimeItemExchangeStartOpensVisiblePeerWindowsWithoutMutation(t *t
 	assertExchangeAccountUnchanged(t, accounts, "item-exchange-target", peer, "target exchange start")
 }
 
+func TestGameRuntimeItemExchangeItemAddShowsTemplateBackedDisplayWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeDisplayOwner", 0x0103076e, 0x0204076e, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 715, Vnum: 27045, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeDisplayPeer", 0x0103076f, 0x0204076f, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 716, Vnum: 27002, Count: 2, Slot: 6}}
+	peer.Quickslots = []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeItem, Slot: 6}}
+	issuePeerTicket(t, ticketStore, "item-exchange-display-owner", 0x7070706e, owner)
+	issuePeerTicket(t, ticketStore, "item-exchange-display-peer", 0x7070706f, peer)
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-display-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange display owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-display-peer", Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange display peer account: %v", err)
+	}
+	template := itemcatalog.Template{
+		Vnum:       27045,
+		Name:       "Displayed Exchange Potion",
+		Stackable:  true,
+		MaxCount:   200,
+		Sockets:    itemcatalog.SocketValues{11, 22, 33},
+		Attributes: itemcatalog.AttributeValues{{Type: 3, Value: 30}, {Type: 4, Value: -5}},
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange display runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-display-owner", 0x7070706e)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-display-peer", 0x7070706f)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected exchange-display start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected exchange-display start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "display owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected exchange-display peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "display peer start")
+
+	itemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderItemAdd,
+		Arg2:      7,
+		Position:  itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected exchange item-add display error: %v", err)
+	}
+	if len(itemAddOut) != 1 {
+		t.Fatalf("expected exchange item-add to emit one self display frame, got %d", len(itemAddOut))
+	}
+	assertExchangeItemAddFrame(t, itemAddOut[0], 1, 7, owner.Inventory[0], template, "owner item-add display")
+	queuedDisplay := flushServerFrames(t, peerFlow)
+	if len(queuedDisplay) != 1 {
+		t.Fatalf("expected exchange peer to receive one queued item-add display frame, got %d", len(queuedDisplay))
+	}
+	assertExchangeItemAddFrame(t, queuedDisplay[0], 0, 7, owner.Inventory[0], template, "peer item-add display")
+
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-display-owner", owner, "owner exchange item-add display")
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-display-peer", peer, "peer exchange item-add display")
+}
+
+func TestGameRuntimeItemExchangeItemAddRequiresActiveExchangeShellWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeNoShellOwner", 0x01030770, 0x02040770, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 717, Vnum: 27045, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "item-exchange-no-shell-owner", 0x70707070, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-no-shell-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange no-shell owner account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27045, Name: "Displayed Exchange Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange no-shell runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-no-shell-owner", 0x70707070)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderItemAdd,
+		Arg2:      7,
+		Position:  itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected exchange item-add no-shell error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected exchange item-add without active shell to emit no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after exchange item-add without active shell, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-no-shell-owner", owner, "exchange item-add without active shell")
+}
+
+func TestGameRuntimeItemExchangeItemAddRejectsDuplicateDisplaySlotWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeDuplicateOwner", 0x01030771, 0x02040771, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 718, Vnum: 27045, Count: 3, Slot: 5},
+		{ID: 719, Vnum: 27046, Count: 2, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeDuplicatePeer", 0x01030772, 0x02040772, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 720, Vnum: 27002, Count: 2, Slot: 8}}
+	peer.Quickslots = []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeItem, Slot: 8}}
+	issuePeerTicket(t, ticketStore, "item-exchange-duplicate-owner", 0x70707071, owner)
+	issuePeerTicket(t, ticketStore, "item-exchange-duplicate-peer", 0x70707072, peer)
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-duplicate-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange duplicate owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-duplicate-peer", Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange duplicate peer account: %v", err)
+	}
+	templates := []itemcatalog.Template{
+		{Vnum: 27045, Name: "Displayed Exchange Potion", Stackable: true, MaxCount: 200},
+		{Vnum: 27046, Name: "Second Displayed Exchange Potion", Stackable: true, MaxCount: 200},
+	}
+	itemStore := newItemTemplateStore(t, templates)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange duplicate runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-duplicate-owner", 0x70707071)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-duplicate-peer", 0x70707072)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected duplicate-display exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected duplicate-display exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	firstOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 7, Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected first duplicate-display item-add error: %v", err)
+	}
+	if len(firstOut) != 1 {
+		t.Fatalf("expected first duplicate-display item-add to emit one frame, got %d", len(firstOut))
+	}
+	assertExchangeItemAddFrame(t, firstOut[0], 1, 7, owner.Inventory[0], templates[0], "first duplicate-display owner item-add")
+	queuedFirst := flushServerFrames(t, peerFlow)
+	if len(queuedFirst) != 1 {
+		t.Fatalf("expected peer to receive first duplicate-display item-add frame, got %d", len(queuedFirst))
+	}
+	assertExchangeItemAddFrame(t, queuedFirst[0], 0, 7, owner.Inventory[0], templates[0], "first duplicate-display peer item-add")
+
+	secondOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 7, Position: itemproto.InventoryPosition(6)})))
+	if err != nil {
+		t.Fatalf("unexpected second duplicate-display item-add error: %v", err)
+	}
+	if len(secondOut) != 0 {
+		t.Fatalf("expected duplicate exchange display slot to emit no frames, got %d", len(secondOut))
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected duplicate exchange display slot to queue no frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-duplicate-owner", owner, "owner duplicate exchange item-add display")
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-duplicate-peer", peer, "peer duplicate exchange item-add display")
+}
+
 func TestGameRuntimeItemExchangeStartRequiresVisiblePeerWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -530,6 +718,23 @@ func assertExchangeAlreadyFrame(t *testing.T, raw []byte, context string) {
 	}
 	if packet != (itemproto.ServerExchangePacket{Subheader: itemproto.ExchangeServerSubheaderAlready}) {
 		t.Fatalf("unexpected exchange already frame %s: %+v", context, packet)
+	}
+}
+
+func assertExchangeItemAddFrame(t *testing.T, raw []byte, isMe uint8, displaySlot uint8, item inventory.ItemInstance, template itemcatalog.Template, context string) {
+	t.Helper()
+	packet, err := itemproto.DecodeServerExchange(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode exchange item-add frame %s: %v", context, err)
+	}
+	if packet.Subheader != itemproto.ExchangeServerSubheaderItemAdd || packet.IsMe != isMe || packet.Arg1 != item.Vnum || packet.Position != (itemproto.Position{WindowType: itemproto.WindowReserved, Cell: uint16(displaySlot)}) || packet.Arg3 != uint32(item.Count) {
+		t.Fatalf("unexpected exchange item-add frame %s: %+v", context, packet)
+	}
+	if packet.Sockets != ([itemproto.ItemSocketCount]int32(template.Sockets)) {
+		t.Fatalf("expected exchange item-add frame %s sockets %+v, got %+v", context, template.Sockets, packet.Sockets)
+	}
+	if packet.Attributes != bootstrapItemAttributes(template) {
+		t.Fatalf("expected exchange item-add frame %s attributes %+v, got %+v", context, bootstrapItemAttributes(template), packet.Attributes)
 	}
 }
 

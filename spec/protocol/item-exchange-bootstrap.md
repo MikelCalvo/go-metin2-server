@@ -43,13 +43,13 @@ Current owned client subheaders:
 | Name | Value | Current runtime policy |
 | --- | ---: | --- |
 | `START` | `0` | starts the current visible-peer exchange-window shell when the peer is connected and visible |
-| `ITEM_ADD` | `1` | decoded and fail-closed |
+| `ITEM_ADD` | `1` | display-only item placement inside the current bootstrap exchange shell |
 | `ITEM_DEL` | `2` | decoded and fail-closed |
 | `ELK_ADD` | `3` | decoded and fail-closed |
 | `ACCEPT` | `4` | decoded and fail-closed |
 | `CANCEL` | `5` | closes the current paired exchange-window shell |
 
-The repository owns only this client byte layout, the current visible-peer open/close shell, and the current fail-closed policy for item/gold/accept actions. It does not yet interpret item ownership, item placement/removal, gold placement, accept state, or trade finalization.
+The repository owns only this client byte layout, the current visible-peer open/close shell, the first display-only `ITEM_ADD` companion, and the current fail-closed policy for item removal/gold/accept actions. It does not yet interpret exchange item removal, gold placement, accept state, or trade finalization.
 
 ## Server packet
 
@@ -76,7 +76,7 @@ Current owned server subheaders:
 | Name | Value | Current runtime policy |
 | --- | ---: | --- |
 | `START` | `0` | emitted for the current visible-peer open shell |
-| `ITEM_ADD` | `1` | codec/documentation only |
+| `ITEM_ADD` | `1` | emitted for the current display-only item-add shell while no item ownership transfer is performed |
 | `ITEM_DEL` | `2` | codec/documentation only |
 | `GOLD_ADD` | `3` | codec/documentation only |
 | `ACCEPT` | `4` | codec/documentation only |
@@ -84,7 +84,7 @@ Current owned server subheaders:
 | `ALREADY` | `6` | emitted self-only when `START` targets a visible connected peer that is already paired in the bootstrap exchange shell |
 | `LESS_GOLD` | `7` | codec/documentation only |
 
-The shipped runtime now emits only `START`, `END`, and the narrow busy-target `ALREADY` response for the visible-peer exchange-window shell described below. `ITEM_ADD`, `ITEM_DEL`, `GOLD_ADD`, `ACCEPT`, and `LESS_GOLD` remain codec/documentation-only until a later trade-state slice owns item, gold, acceptance, and result semantics.
+The shipped runtime now emits `START`, display-only `ITEM_ADD`, `END`, and the narrow busy-target `ALREADY` response for the visible-peer exchange-window shell described below. `ITEM_DEL`, `GOLD_ADD`, `ACCEPT`, and `LESS_GOLD` remain codec/documentation-only until a later trade-state slice owns item removal, gold, acceptance, and result semantics.
 
 ## Current runtime contract
 
@@ -98,7 +98,11 @@ The shipped minimal runtime owns only a small in-memory exchange-window shell:
 - `CANCEL` succeeds only while the requester is currently paired in that shell.
 - A successful `CANCEL` returns one self-only `GC::EXCHANGE END` to the cancelling player and queues one `GC::EXCHANGE END` to the paired player.
 
-The shell is deliberately not an item/gold transfer system. It performs no inventory, equipment, quickslot, gold, ground-item, or persisted-account mutation, and it does not yet emit exchange `ITEM_ADD`, `ITEM_DEL`, `GOLD_ADD`, or `ACCEPT` responses.
+The shell is deliberately not an item/gold transfer system. It performs no inventory, equipment, quickslot, gold, ground-item, or persisted-account mutation. It now emits display-only exchange `ITEM_ADD` responses for valid carried items in the active shell, but it does not yet emit exchange `ITEM_DEL`, `GOLD_ADD`, or `ACCEPT` responses.
+
+The display-only `ITEM_ADD` path is accepted only when the requester is already paired in the bootstrap exchange shell and the requested display slot is in the current owned `0..11` range. The source must be a carried inventory cell, resolve through the loaded item-template snapshot, and contain exactly one unlocked, unequipped, well-formed item whose `vnum` and count fit the resolved template. The resolved template must also be usable by the selected character and must not author the current transfer guards (`anti_stack`, `anti_get`, `anti_drop`, `anti_give`, `anti_sell`). On success, the requester receives one direct `GC::EXCHANGE ITEM_ADD` with `is_me = 1`, and the paired peer receives one queued `GC::EXCHANGE ITEM_ADD` with `is_me = 0`. Both packets carry `arg1 = item.vnum`, `arg2 = RESERVED_WINDOW + display_slot`, `arg3 = item.count`, and the template-authored `sockets` / `attributes` display arrays. The selected carried item is not removed or locked, no quickslot changes are made, no gold changes, and no account snapshot is persisted.
+
+Each side owns its own display-slot namespace in this bootstrap shell. Reusing the same display slot for a second `ITEM_ADD` from the same side fails closed with no frames and no mutation. Cancelling or closing the exchange clears the in-memory display-slot occupancy together with the paired shell.
 
 Unsupported or malformed `EXCHANGE` contexts still fail closed:
 
@@ -122,12 +126,12 @@ There is one owned guard-feedback exception for `ITEM_ADD`. When all of these ar
 - the template authors `anti_give = true`
 - the template authors non-empty `give_reject_message`
 
-then the minimal runtime accepts only the guard response and returns one self-only `CHAT_TYPE_INFO` frame:
+then the minimal runtime keeps the existing guard response instead of emitting `GC::EXCHANGE ITEM_ADD`, and returns one self-only `CHAT_TYPE_INFO` frame:
 
 - `vid = 0`
 - `message = template.give_reject_message`
 
-That response is deliberately not an exchange-window or transfer attempt. It still performs no inventory, equipment, quickslot, gold, ground-handle, peer, or persistence mutation.
+That response is deliberately not an exchange-window item placement or transfer attempt. It still performs no inventory, equipment, quickslot, gold, ground-handle, peer, or persistence mutation.
 
 Templates that author `give_reject_message` without `anti_give` are invalid at the item-template store boundary, and embedded NUL bytes in the message fail closed before runtime boot.
 
@@ -138,16 +142,16 @@ Malformed `EXCHANGE` payload sizes fail at the codec/dispatcher boundary rather 
 Later slices must write a new contract before broadening this packet into real gameplay. In particular, this slice does not freeze:
 
 - richer trade target/range eligibility beyond the current visible-player check
-- exchange-window item/gold/accept updates beyond the current `START` / `END` shell
-- trade item placement, removal, or gold placement semantics
+- exchange-window item/gold/accept updates beyond the current `START` / display-only `ITEM_ADD` / `END` shell
+- trade item removal, carried-item locking/removal, or gold placement semantics
 - accept/cancel state machines
 - two-party inventory/gold mutation ordering
-- accepted anti-flag/template guard behavior inside an active exchange beyond the self-only `anti_give` / `give_reject_message` `ITEM_ADD` rejection described above
+- accepted anti-flag/template guard behavior inside an active exchange beyond the self-only `anti_give` / `give_reject_message` `ITEM_ADD` rejection and the silent display suppression guards described above
 - rollback, audit, or durable economic policy for exchange finalization
 
 ## Current coverage
 
 - `internal/proto/item` freezes `CG::EXCHANGE` encode/decode behavior and the first shared `GC::EXCHANGE` response codec, plus unexpected-header and invalid-payload rejection for both directions.
 - `internal/game` freezes `GAME`-phase dispatch to a handler hook, with denied results returning no frames.
-- `internal/player` freezes the metadata-driven, no-mutation exchange item-add `anti_give` rejection lookup.
-- `internal/minimal` freezes the visible-peer `START` / `CANCEL` shell with paired `GC::EXCHANGE START` / `END` frames and no persisted inventory, quickslot, equipment, or gold mutation; it also freezes the self-only `GC::EXCHANGE ALREADY` response when a third visible requester targets an already-paired peer, preserves the no-frame fail-closed behavior for unsupported item/gold/accept requests, and preserves the self-only `CHAT_TYPE_INFO` rejection frame when the carried item's template authors `anti_give` and `give_reject_message`.
+- `internal/player` freezes both the metadata-driven, no-mutation exchange item-add `anti_give` rejection lookup and the valid carried-item display descriptor that copies template-authored sockets/attributes without mutating live or persisted state.
+- `internal/minimal` freezes the visible-peer `START` / `CANCEL` shell with paired `GC::EXCHANGE START` / `END` frames and no persisted inventory, quickslot, equipment, or gold mutation; it also freezes the self-only `GC::EXCHANGE ALREADY` response when a third visible requester targets an already-paired peer, the active-shell `GC::EXCHANGE ITEM_ADD` display echo/peer queue with template-authored sockets/attributes, duplicate display-slot suppression, the no-frame fail-closed behavior for unsupported item removal/gold/accept requests, and the self-only `CHAT_TYPE_INFO` rejection frame when the carried item's template authors `anti_give` and `give_reject_message`.

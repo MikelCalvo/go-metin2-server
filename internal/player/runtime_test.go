@@ -3053,6 +3053,88 @@ func TestRuntimeExchangeItemAddRejectTextComesFromTemplateAntiGiveGuardWithoutMu
 	}
 }
 
+func TestRuntimeExchangeItemAddDisplayUsesTemplateMetadataWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:    0x01030106,
+		VID:   0x02040106,
+		Name:  "PeerSix",
+		Level: 1,
+		Inventory: []inventory.ItemInstance{
+			{ID: 105, Vnum: 27045, Count: 3, Slot: 8},
+		},
+		Quickslots: []loginticket.Quickslot{{Position: 4, Type: quickslotproto.TypeItem, Slot: 8}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-six", CharacterIndex: 1})
+	template := itemcatalog.Template{
+		Vnum:       27045,
+		Name:       "Displayed Exchange Potion",
+		Stackable:  true,
+		MaxCount:   200,
+		Sockets:    itemcatalog.SocketValues{11, 22, 33},
+		Attributes: itemcatalog.AttributeValues{{Type: 3, Value: 30}, {Type: 4, Value: -5}},
+	}
+
+	display, ok := runtime.ExchangeItemAddDisplay(8, template)
+	if !ok {
+		t.Fatal("expected valid carried item and template to produce exchange item display")
+	}
+	if display.Item != persisted.Inventory[0] {
+		t.Fatalf("unexpected exchange item display item: got %#v want %#v", display.Item, persisted.Inventory[0])
+	}
+	if display.Sockets != template.Sockets {
+		t.Fatalf("expected template-authored exchange sockets %+v, got %+v", template.Sockets, display.Sockets)
+	}
+	if display.Attributes != template.Attributes {
+		t.Fatalf("expected template-authored exchange attributes %+v, got %+v", template.Attributes, display.Attributes)
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) || got.Gold != persisted.Gold || got.Points != persisted.Points {
+		t.Fatalf("exchange item display mutated live character: got %#v want %#v", got, persisted)
+	}
+	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) || got.Gold != persisted.Gold || got.Points != persisted.Points {
+		t.Fatalf("exchange item display mutated persisted character: got %#v want %#v", got, persisted)
+	}
+}
+
+func TestRuntimeExchangeItemAddDisplayRejectsGuardedOrMalformedTemplateWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name     string
+		template itemcatalog.Template
+	}{
+		{name: "anti give", template: itemcatalog.Template{Vnum: 27045, Name: "Anti-Give Exchange Potion", Stackable: true, MaxCount: 200, AntiGive: true, GiveRejectText: "You cannot trade this item."}},
+		{name: "job restricted", template: itemcatalog.Template{Vnum: 27045, Name: "Warrior-Restricted Exchange Potion", Stackable: true, MaxCount: 200, AntiWarrior: true}},
+		{name: "mismatched vnum", template: itemcatalog.Template{Vnum: 27046, Name: "Other Exchange Potion", Stackable: true, MaxCount: 200}},
+		{name: "over max count", template: itemcatalog.Template{Vnum: 27045, Name: "Tiny Exchange Potion", Stackable: true, MaxCount: 2}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:    0x01030107,
+				VID:   0x02040107,
+				Name:  "PeerSeven",
+				Job:   0,
+				Level: 1,
+				Inventory: []inventory.ItemInstance{
+					{ID: 106, Vnum: 27045, Count: 3, Slot: 8},
+				},
+				Quickslots: []loginticket.Quickslot{{Position: 4, Type: quickslotproto.TypeItem, Slot: 8}},
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-seven", CharacterIndex: 1})
+
+			display, ok := runtime.ExchangeItemAddDisplay(8, tc.template)
+			if ok || display != (ExchangeItemAddDisplay{}) {
+				t.Fatalf("expected %s template to suppress exchange item display, got %+v ok=%v", tc.name, display, ok)
+			}
+			if got := runtime.LiveCharacter(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) || got.Gold != persisted.Gold || got.Points != persisted.Points {
+				t.Fatalf("%s exchange item display guard mutated live character: got %#v want %#v", tc.name, got, persisted)
+			}
+			if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) || got.Gold != persisted.Gold || got.Points != persisted.Points {
+				t.Fatalf("%s exchange item display guard mutated persisted character: got %#v want %#v", tc.name, got, persisted)
+			}
+		})
+	}
+}
+
 func TestRuntimeExchangeItemAddRejectTextRejectsMismatchedTemplateWithoutMutation(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:        0x01030105,
