@@ -12,9 +12,11 @@ import (
 )
 
 const (
-	testManifestFilename        = "migrations.manifest.json"
-	expectedBootstrapUpSHA256   = "76ab086217590515cb9b1eb72d78f49abf766da977998c4c60b41825c8e92f78"
-	expectedBootstrapDownSHA256 = "140e8ba3c7a1c89cd942c13ef40160c74df5619093fe8c287c69cb978dba822d"
+	testManifestFilename                     = "migrations.manifest.json"
+	expectedBootstrapUpSHA256                = "76ab086217590515cb9b1eb72d78f49abf766da977998c4c60b41825c8e92f78"
+	expectedBootstrapDownSHA256              = "140e8ba3c7a1c89cd942c13ef40160c74df5619093fe8c287c69cb978dba822d"
+	expectedAccountCharacterRosterUpSHA256   = "5385c65b2f00b6c64567d604176f99f84b39afae62d840939e49ab2994b053af"
+	expectedAccountCharacterRosterDownSHA256 = "cd8877ab1e88c4fe9a55d350bd5a89e1961ac88bd01423c5c1a1b0b8af37dc94"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -47,6 +49,47 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 	}
 	if !strings.Contains(first.UpSQL, "up_sha256") {
 		t.Fatalf("expected schema_migrations ledger to pin applied up checksums, got:\n%s", first.UpSQL)
+	}
+
+	if len(catalog) < 2 {
+		t.Fatalf("expected account/character roster migration after bootstrap ledger, got %d migrations", len(catalog))
+	}
+	second := catalog[1]
+	if second.Version != 2 || second.Name != "account_character_roster" {
+		t.Fatalf("unexpected second migration: %#v", second)
+	}
+	if second.UpPath != "0002_account_character_roster.up.sql" {
+		t.Fatalf("unexpected second up path: %q", second.UpPath)
+	}
+	if second.DownPath != "0002_account_character_roster.down.sql" {
+		t.Fatalf("unexpected second down path: %q", second.DownPath)
+	}
+	if second.UpSHA256 != expectedAccountCharacterRosterUpSHA256 {
+		t.Fatalf("unexpected account/character roster up checksum: got %q want %q", second.UpSHA256, expectedAccountCharacterRosterUpSHA256)
+	}
+	if second.DownSHA256 != expectedAccountCharacterRosterDownSHA256 {
+		t.Fatalf("unexpected account/character roster down checksum: got %q want %q", second.DownSHA256, expectedAccountCharacterRosterDownSHA256)
+	}
+	for _, want := range []string{
+		"CREATE TABLE accounts",
+		"CREATE TABLE characters",
+		"CREATE UNIQUE INDEX accounts_login_normalized_unique",
+		"CREATE UNIQUE INDEX characters_account_slot_unique",
+		"CREATE UNIQUE INDEX characters_name_normalized_unique",
+		"FOREIGN KEY (account_id) REFERENCES accounts(id)",
+		"CHECK (slot >= 0 AND slot < 4)",
+	} {
+		if !strings.Contains(second.UpSQL, want) {
+			t.Fatalf("expected account/character roster migration to contain %q, got:\n%s", want, second.UpSQL)
+		}
+	}
+	for _, want := range []string{
+		"DROP TABLE characters",
+		"DROP TABLE accounts",
+	} {
+		if !strings.Contains(second.DownSQL, want) {
+			t.Fatalf("expected account/character roster down migration to contain %q, got:\n%s", want, second.DownSQL)
+		}
 	}
 
 	for i, migration := range catalog {

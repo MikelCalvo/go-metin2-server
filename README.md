@@ -213,7 +213,7 @@ Already present:
 
 - file-backed account snapshots and login tickets,
 - persisted selected character, position, inventory, equipment, quickslots, gold, item-template, static actor, and interaction slices needed by current behavior,
-- strict snapshot/template validation, crash-temp reporting/cleanup, manifest-backed backup/restore preflights for several stores, and a first migration catalog with read-only ledger dry-run planning,
+- strict snapshot/template validation, crash-temp reporting/cleanup, manifest-backed backup/restore preflights for several stores, and a first migration catalog with schema ledger plus account/character roster migrations and read-only ledger dry-run planning,
 - loopback-only local endpoints for validation, backup/restore, runtime inspection, and controlled debug actions.
 
 Still missing:

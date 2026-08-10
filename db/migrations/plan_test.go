@@ -185,10 +185,16 @@ func TestPlanUpToLatestUsesBuiltInCatalog(t *testing.T) {
 		t.Fatalf("unexpected built-in plan versions: %#v", plan)
 	}
 	if len(plan.Pending) == 0 {
-		t.Fatal("expected at least the bootstrap schema migration to be pending for an empty ledger")
+		t.Fatal("expected built-in catalog migrations to be pending for an empty ledger")
 	}
 	if plan.Pending[0].Version != 1 || plan.Pending[0].Name != "bootstrap_schema_migrations" || plan.Pending[0].Direction != DirectionUp {
 		t.Fatalf("unexpected first built-in pending step: %#v", plan.Pending[0])
+	}
+	if len(plan.Pending) < 2 {
+		t.Fatalf("expected account/character roster migration in built-in pending plan, got %#v", plan.Pending)
+	}
+	if plan.Pending[1].Version != 2 || plan.Pending[1].Name != "account_character_roster" || plan.Pending[1].Direction != DirectionUp || plan.Pending[1].Path != "0002_account_character_roster.up.sql" {
+		t.Fatalf("unexpected second built-in pending step: %#v", plan.Pending[1])
 	}
 }
 

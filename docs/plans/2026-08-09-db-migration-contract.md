@@ -4,7 +4,7 @@
 
 Introduce the first project-owned database migration boundary without claiming that the runtime is DB-backed yet.
 
-The current server still uses bootstrap JSON/file stores for accounts, login tickets, item templates, authored content, and runtime-adjacent QA state. This slice only creates a validated migration catalog and the first schema ledger migration so future repository/backfill work has an explicit durable contract to target.
+The current server still uses bootstrap JSON/file stores for accounts, login tickets, item templates, authored content, and runtime-adjacent QA state. This migration track creates a validated catalog, the schema ledger migration, and the first account/character roster schema contract so future repository/backfill work has an explicit durable boundary to target.
 
 ## Current contract
 
@@ -27,7 +27,12 @@ Rules frozen by tests:
 - malformed names, missing pairs, version gaps, mismatched pairs, empty SQL, missing headers, and stale manifest data fail closed with `ErrInvalidCatalog`,
 - `PlanUpToLatest` / `PlanCatalogUpToLatest` provide a read-only dry-run boundary that compares a validated catalog against applied `schema_migrations` ledger entries without opening a database or executing SQL,
 - the dry-run planner accepts unordered ledger rows but rejects duplicates, gaps, future versions, name drift, checksum drift, zero/negative versions, and any mutated catalog SQL whose body no longer hashes to the manifest-pinned checksum,
-- plan steps expose only metadata (`version`, `name`, `direction`, `path`, `sha256`) and intentionally do not expose executable SQL as the plan payload.
+- plan steps expose only metadata (`version`, `name`, `direction`, `path`, `sha256`) and intentionally do not expose executable SQL as the plan payload,
+- the embedded catalog now includes `0002_account_character_roster`, a schema-only contract for the durable account identity and four-slot character roster boundary:
+  - `accounts` stores a project-owned account id, original login, normalized login, empire, and timestamps,
+  - `characters` stores a project-owned character id, account id, select-screen slot, original/normalized name, bootstrap appearance/stat/location/guild/gold fields, and timestamps,
+  - normalized account logins, `(account_id, slot)`, and normalized character names are unique,
+  - the migration deliberately does not add inventory, equipment, quickslots, item instances, quest state, login tickets, static actors, interactions, content bundles, or world runtime tables yet.
 - `gamed` exposes a loopback-only read-only `GET /local/db/migrations/status` endpoint that returns the same metadata-only dry-run plan; with no DB config it plans against an empty ledger, and with explicit DB config it reads only the `schema_migrations` ledger before planning.
 - `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger` add the first database/sql-compatible ledger reader seam for future preflight tooling: callers supply a `QueryContext` boundary, the package reads only `version`, `name`, and `up_sha256` from `schema_migrations` in version order, closes rows, and fails closed on query, scan, iteration, close, catalog, or ledger drift errors.
 - `PlanToVersion` / `PlanCatalogToVersion` and the matching SQL-ledger variants now provide an explicit target-version dry-run contract:
@@ -53,6 +58,8 @@ The first migration is `0001_bootstrap_schema_migrations` and creates only a min
 
 The `up_sha256` column intentionally pins the exact SQL body that was applied, so a future migrator can refuse to treat a mutated historical migration as already applied.
 
+The second migration is `0002_account_character_roster`. It is the first domain schema contract, but it is still a schema-only boundary: the shipped daemons continue to load and save accounts/characters through the bootstrap file store until a future repository/backfill slice replaces that coupling deliberately.
+
 ## What this is not yet
 
 This is not a database runtime implementation. It deliberately does not add:
@@ -60,7 +67,7 @@ This is not a database runtime implementation. It deliberately does not add:
 - a DB driver dependency or default production DB engine,
 - DB connection pool ownership beyond the read-only migration-status preflight,
 - automatic migration apply/rollback commands,
-- account/character/item repository implementations,
+- account/character/item repository implementations or DB-backed runtime writes,
 - JSON snapshot backfill tooling,
 - production deployment scripts.
 
@@ -71,15 +78,15 @@ Those require separate slices because each one changes operator and data-safety 
 ## Likely next slices
 
 1. Define a narrow account/character repository interface backed by current tests before adding a DB implementation.
-2. Add explicit schema migrations for account identity and character roster only after the repository seam is frozen.
+2. Add JSON-file-store export/import or quarantine tooling that can map bootstrap account snapshots into the `0002_account_character_roster` shape without silently coercing bad snapshots.
 3. Add a driver-backed test harness or build-tagged integration test for `schema_migrations` status before adding apply/rollback tooling.
-4. Add JSON-file-store export/import or quarantine tooling for migration from bootstrap snapshots.
+4. Add explicit migrations for inventory/equipment/quickslots only after the account/character repository seam is stable.
 5. Add an apply/rollback command only after the dry-run status boundary and ledger validation behavior are exercised against an actual driver-backed test database.
 6. Document production DB configuration, backups, and rollback policy once there is an actual DB-backed store.
 
 ## Exit criteria for this slice
 
-- `go test ./db/migrations` validates the catalog, direct-ledger dry-run planning rules, explicit up/down target planning, and database/sql-compatible ledger-reader seam.
+- `go test ./db/migrations` validates the catalog, schema ledger migration, account/character roster migration, direct-ledger dry-run planning rules, explicit up/down target planning, and database/sql-compatible ledger-reader seam.
 - `go test ./internal/config ./internal/minimal ./internal/service ./internal/ops` validates optional DB config loading, startup fail-closed behavior for partial config, no-DSN runtime-config exposure, the configured-driver migration-status boundary, and loopback-only explicit migration-plan previews.
 - `go test ./...` and `go vet ./...` remain green.
 - README/development docs describe `db/migrations` as the validated migration catalog and read-only planning skeleton, not a finished DB layer.

@@ -8,6 +8,14 @@
       "down_path": "0001_bootstrap_schema_migrations.down.sql",
       "up_sha256": "76ab086217590515cb9b1eb72d78f49abf766da977998c4c60b41825c8e92f78",
       "down_sha256": "140e8ba3c7a1c89cd942c13ef40160c74df5619093fe8c287c69cb978dba822d"
+    },
+    {
+      "version": 2,
+      "name": "account_character_roster",
+      "up_path": "0002_account_character_roster.up.sql",
+      "down_path": "0002_account_character_roster.down.sql",
+      "up_sha256": "5385c65b2f00b6c64567d604176f99f84b39afae62d840939e49ab2994b053af",
+      "down_sha256": "cd8877ab1e88c4fe9a55d350bd5a89e1961ac88bd01423c5c1a1b0b8af37dc94"
     }
   ]
 }

@@ -133,15 +133,19 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	if plan.CurrentVersion != 0 || plan.LatestVersion < 1 || plan.UpToDate {
 		t.Fatalf("unexpected migration plan versions: %#v", plan)
 	}
-	if len(plan.Pending) == 0 {
-		t.Fatalf("expected at least one pending migration for empty ledger: %#v", plan)
+	if len(plan.Pending) < 2 {
+		t.Fatalf("expected schema and account/character migrations for empty ledger: %#v", plan)
 	}
 	first := plan.Pending[0]
 	if first.Version != 1 || first.Name != "bootstrap_schema_migrations" || first.Direction != dbmigrations.DirectionUp || first.Path != "0001_bootstrap_schema_migrations.up.sql" {
 		t.Fatalf("unexpected first pending migration step: %#v", first)
 	}
-	if first.SHA256 == "" || strings.Contains(first.Path, "CREATE TABLE") {
-		t.Fatalf("expected metadata-only pending step with checksum, got %#v", first)
+	second := plan.Pending[1]
+	if second.Version != 2 || second.Name != "account_character_roster" || second.Direction != dbmigrations.DirectionUp || second.Path != "0002_account_character_roster.up.sql" {
+		t.Fatalf("unexpected second pending migration step: %#v", second)
+	}
+	if first.SHA256 == "" || second.SHA256 == "" || strings.Contains(first.Path, "CREATE TABLE") || strings.Contains(second.Path, "CREATE TABLE") {
+		t.Fatalf("expected metadata-only pending steps with checksums, got %#v", plan.Pending)
 	}
 }
 
