@@ -522,6 +522,41 @@ func (r *sharedWorldRegistry) AddExchangeGold(originID uint64, amount uint32, av
 	return [][]byte{selfFrame}, true
 }
 
+func (r *sharedWorldRegistry) AcceptExchange(originID uint64) ([][]byte, bool) {
+	if r == nil || originID == 0 {
+		return nil, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	partnerID, ok := r.exchangePartners[originID]
+	if !ok || partnerID == 0 {
+		return nil, false
+	}
+	if _, ok := r.sessionEntryLocked(originID); !ok {
+		return nil, false
+	}
+	if _, ok := r.sessionEntryLocked(partnerID); !ok {
+		return nil, false
+	}
+	origin, ok := r.playerCharacter(originID)
+	if !ok || characterAtBootstrapHPFloor(origin) {
+		return nil, false
+	}
+	partner, ok := r.playerCharacter(partnerID)
+	if !ok || characterAtBootstrapHPFloor(partner) {
+		return nil, false
+	}
+
+	selfFrame := encodeExchangeAcceptFrame(1)
+	peerFrame := encodeExchangeAcceptFrame(0)
+	if !r.enqueueToEntityLocked(partnerID, [][]byte{peerFrame}) {
+		return nil, false
+	}
+	return [][]byte{selfFrame}, true
+}
+
 func (r *sharedWorldRegistry) RemoveExchangeItem(originID uint64, displaySlot uint8) ([][]byte, bool) {
 	if r == nil || originID == 0 || displaySlot >= itemproto.ExchangeItemMaxNum {
 		return nil, false
@@ -3320,6 +3355,14 @@ func encodeExchangeGoldAddFrame(isMe uint8, gold uint32) []byte {
 		Subheader: itemproto.ExchangeServerSubheaderGoldAdd,
 		IsMe:      isMe,
 		Arg1:      gold,
+	})
+}
+
+func encodeExchangeAcceptFrame(isMe uint8) []byte {
+	return itemproto.EncodeServerExchange(itemproto.ServerExchangePacket{
+		Subheader: itemproto.ExchangeServerSubheaderAccept,
+		IsMe:      isMe,
+		Arg1:      1,
 	})
 }
 

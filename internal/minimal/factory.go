@@ -3774,6 +3774,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ItemExchangeResult{Accepted: false}
 						}
 						return gameflow.ItemExchangeResult{Accepted: true, Frames: frames}
+					case itemproto.ExchangeSubheaderAccept:
+						if !ownsLiveSharedWorldSession() {
+							return gameflow.ItemExchangeResult{Accepted: false}
+						}
+						frames, ok := sharedWorld.AcceptExchange(sharedWorldID)
+						if !ok {
+							return gameflow.ItemExchangeResult{Accepted: false}
+						}
+						return gameflow.ItemExchangeResult{Accepted: true, Frames: frames}
 					}
 
 					if packet.Subheader != itemproto.ExchangeSubheaderItemAdd || packet.Arg2 >= itemproto.ExchangeItemMaxNum || packet.Position.WindowType != itemproto.WindowInventory || packet.Position.Cell >= itemproto.InventoryMaxCell {

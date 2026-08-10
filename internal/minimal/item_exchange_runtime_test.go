@@ -555,6 +555,123 @@ func TestGameRuntimeItemExchangeGoldAddAboveLiveGoldReportsLessGoldWithoutMutati
 	assertExchangeAccountUnchanged(t, accounts, "item-exchange-gold-rich-peer", peer, "peer exchange less-gold")
 }
 
+func TestGameRuntimeItemExchangeAcceptDisplaysWithoutFinalizingTrade(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeAcceptOwner", 0x01030782, 0x02040782, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 740, Vnum: 27045, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeAcceptPeer", 0x01030783, 0x02040783, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 741, Vnum: 27002, Count: 2, Slot: 6}}
+	peer.Quickslots = []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeItem, Slot: 6}}
+	issuePeerTicket(t, ticketStore, "item-exchange-accept-owner", 0x70707082, owner)
+	issuePeerTicket(t, ticketStore, "item-exchange-accept-peer", 0x70707083, peer)
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-accept-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange accept owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-accept-peer", Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange accept peer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange accept runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-accept-owner", 0x70707082)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-accept-peer", 0x70707083)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected accept exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected accept exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	ownerAcceptOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected owner exchange accept error: %v", err)
+	}
+	if len(ownerAcceptOut) != 1 {
+		t.Fatalf("expected owner exchange accept to emit one self frame, got %d", len(ownerAcceptOut))
+	}
+	assertExchangeAcceptFrame(t, ownerAcceptOut[0], 1, "owner accept self response")
+	queuedOwnerAccept := flushServerFrames(t, peerFlow)
+	if len(queuedOwnerAccept) != 1 {
+		t.Fatalf("expected owner exchange accept to queue one peer frame, got %d", len(queuedOwnerAccept))
+	}
+	assertExchangeAcceptFrame(t, queuedOwnerAccept[0], 0, "owner accept peer response")
+
+	peerAcceptOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected peer exchange accept error: %v", err)
+	}
+	if len(peerAcceptOut) != 1 {
+		t.Fatalf("expected peer exchange accept to emit one self frame, got %d", len(peerAcceptOut))
+	}
+	assertExchangeAcceptFrame(t, peerAcceptOut[0], 1, "peer accept self response")
+	queuedPeerAccept := flushServerFrames(t, ownerFlow)
+	if len(queuedPeerAccept) != 1 {
+		t.Fatalf("expected peer exchange accept to queue one owner frame, got %d", len(queuedPeerAccept))
+	}
+	assertExchangeAcceptFrame(t, queuedPeerAccept[0], 0, "peer accept owner response")
+
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected exchange cancel after accept error: %v", err)
+	}
+	if len(cancelOut) != 1 {
+		t.Fatalf("expected accepted display shell to remain cancellable, got %d cancel frames", len(cancelOut))
+	}
+	assertExchangeEndFrame(t, cancelOut[0], "owner cancel after accept")
+	queuedCancel := flushServerFrames(t, peerFlow)
+	if len(queuedCancel) != 1 {
+		t.Fatalf("expected owner cancel after accept to queue one peer end frame, got %d", len(queuedCancel))
+	}
+	assertExchangeEndFrame(t, queuedCancel[0], "peer queued cancel after accept")
+
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-accept-owner", owner, "owner exchange accept")
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-accept-peer", peer, "peer exchange accept")
+}
+
+func TestGameRuntimeItemExchangeAcceptRequiresActiveShellWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeAcceptNoShell", 0x01030784, 0x02040784, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 742, Vnum: 27045, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "item-exchange-accept-no-shell", 0x70707084, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-accept-no-shell", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange accept no-shell account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange accept no-shell runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-accept-no-shell", 0x70707084)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected exchange accept no-shell error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected exchange accept without active shell to emit no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after exchange accept without active shell, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-accept-no-shell", owner, "exchange accept without active shell")
+}
+
 func TestGameRuntimeItemExchangeStartRequiresVisiblePeerWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -1042,6 +1159,17 @@ func assertExchangeGoldAddFrame(t *testing.T, raw []byte, isMe uint8, gold uint3
 	}
 	if packet != (itemproto.ServerExchangePacket{Subheader: itemproto.ExchangeServerSubheaderGoldAdd, IsMe: isMe, Arg1: gold}) {
 		t.Fatalf("unexpected exchange gold-add frame %s: %+v", context, packet)
+	}
+}
+
+func assertExchangeAcceptFrame(t *testing.T, raw []byte, isMe uint8, context string) {
+	t.Helper()
+	packet, err := itemproto.DecodeServerExchange(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode exchange accept frame %s: %v", context, err)
+	}
+	if packet != (itemproto.ServerExchangePacket{Subheader: itemproto.ExchangeServerSubheaderAccept, IsMe: isMe, Arg1: 1}) {
+		t.Fatalf("unexpected exchange accept frame %s: %+v", context, packet)
 	}
 }
 
