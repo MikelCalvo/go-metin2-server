@@ -17,6 +17,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/minimal"
 	"github.com/MikelCalvo/go-metin2-server/internal/ops"
+	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 )
 
@@ -120,6 +121,12 @@ func main() {
 	opsHandler = ops.RegisterLocalQuestStateStoreCrashTempCleanupEndpoint(
 		opsHandler,
 		func() (any, error) { return gameRuntime.CleanupQuestStateStoreCrashTempFiles() },
+	)
+	opsHandler = ops.RegisterLocalQuestStateTransitionEndpoint(
+		opsHandler,
+		func(transition queststate.Transition) (any, error) {
+			return gameRuntime.ApplyQuestStateTransition(transition)
+		},
 	)
 	opsHandler = ops.RegisterLocalItemTemplateStoreBackupEndpoint(
 		opsHandler,

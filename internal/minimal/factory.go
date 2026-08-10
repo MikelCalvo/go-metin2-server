@@ -345,6 +345,7 @@ type gameRuntime struct {
 	liveCharactersByName    map[string]liveCharacterRegistration
 	interactionDefinitionMu sync.RWMutex
 	interactionDefinitions  map[string]interactionstore.Definition
+	questStateMu            sync.Mutex
 	staticActorMu           sync.Mutex
 	now                     func() time.Time
 }
@@ -691,7 +692,24 @@ func (r *gameRuntime) CleanupQuestStateStoreCrashTempFiles() (queststate.Snapsho
 	if !ok {
 		return queststate.SnapshotSummary{}, fmt.Errorf("quest state store crash temp cleanup is not supported")
 	}
+	r.questStateMu.Lock()
+	defer r.questStateMu.Unlock()
 	return cleaner.CleanupCrashTempFiles()
+}
+
+func (r *gameRuntime) ApplyQuestStateTransition(transition queststate.Transition) (queststate.TransitionApplyResult, error) {
+	if r == nil || r.questStateStore == nil {
+		return queststate.TransitionApplyResult{}, fmt.Errorf("quest state transition is not supported")
+	}
+	applier, ok := r.questStateStore.(interface {
+		ApplyTransition(queststate.Transition) (queststate.TransitionApplyResult, error)
+	})
+	if !ok {
+		return queststate.TransitionApplyResult{}, fmt.Errorf("quest state transition is not supported")
+	}
+	r.questStateMu.Lock()
+	defer r.questStateMu.Unlock()
+	return applier.ApplyTransition(transition)
 }
 
 func (r *gameRuntime) ValidateStaticActorStore() (staticstore.SnapshotSummary, error) {
@@ -730,6 +748,8 @@ func (r *gameRuntime) ValidateQuestStateStore() (queststate.SnapshotSummary, err
 	if !ok {
 		return queststate.SnapshotSummary{}, fmt.Errorf("quest state store validation is not supported")
 	}
+	r.questStateMu.Lock()
+	defer r.questStateMu.Unlock()
 	return validator.Validate()
 }
 

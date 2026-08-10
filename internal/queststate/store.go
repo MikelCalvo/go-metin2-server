@@ -58,6 +58,12 @@ type TransitionResult struct {
 	CurrentValue uint32 `json:"current_value"`
 }
 
+type TransitionApplyResult struct {
+	Transition Transition       `json:"transition"`
+	Result     TransitionResult `json:"result"`
+	Summary    SnapshotSummary  `json:"summary"`
+}
+
 type Store interface {
 	Load() (Snapshot, error)
 	Save(Snapshot) error
@@ -216,6 +222,34 @@ func (s *FileStore) CleanupCrashTempFiles() (SnapshotSummary, error) {
 		return SnapshotSummary{}, fmt.Errorf("sync quest state store dir after crash temp cleanup: %w", err)
 	}
 	return s.Validate()
+}
+
+func (s *FileStore) ApplyTransition(transition Transition) (TransitionApplyResult, error) {
+	if s == nil || s.path == "" {
+		return TransitionApplyResult{}, ErrStorePathRequired
+	}
+	current, err := s.Load()
+	if err != nil {
+		if !errors.Is(err, ErrSnapshotNotFound) {
+			return TransitionApplyResult{}, err
+		}
+		current = Snapshot{Flags: []Flag{}}
+	}
+	normalizedTransition := normalizeTransition(transition)
+	next, result := ApplyTransition(current, normalizedTransition)
+	applyResult := TransitionApplyResult{
+		Transition: normalizedTransition,
+		Result:     result,
+	}
+	if !result.Applied {
+		applyResult.Summary = summarizeSnapshot(current)
+		return applyResult, nil
+	}
+	if err := s.Save(next); err != nil {
+		return TransitionApplyResult{}, err
+	}
+	applyResult.Summary = summarizeSnapshot(next)
+	return applyResult, nil
 }
 
 func summarizeSnapshot(snapshot Snapshot) SnapshotSummary {

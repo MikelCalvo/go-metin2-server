@@ -190,6 +190,18 @@ Successful responses are JSON summaries with:
 
 A missing committed `quest-state.json` is reported as an empty valid store. Hidden regular crash leftovers are reported for operator visibility but are not treated as committed quest flags. Crash-temp-shaped symlinks fail closed instead of being reported or followed. This is a local persistence preflight for the quest-state primitive, not a client-visible quest runtime or remote admin API.
 
+### `POST /local/quest-state/transition`
+
+Applies one standalone bootstrap quest-state compare-and-set transition through the configured `gamed` quest-state store. This endpoint is loopback-only, rejects non-`POST` methods with `405`, rejects invalid JSON, unknown fields, trailing JSON, invalid UTF-8, JSON `null`, or oversized bodies before mutating state, and returns `409` for store/runtime failures that prevent transition evaluation or persistence.
+
+Request body:
+
+```json
+{"character":"QuestHero","quest_ref":"quest:first_steps","flag":"step","from":0,"to":1}
+```
+
+Successful HTTP responses are JSON transition-attempt results with `transition`, `result`, and post-attempt `summary`. Compare-and-set misses such as `current_value_mismatch` still return `200 OK` with `applied = false`; they are authored quest-state outcomes rather than transport errors. The endpoint is a local bootstrap/operator harness for validating quest-state progression and recovery. It is not a client quest packet, NPC dialog hook, reward hook, or remote admin API.
+
 ### `POST /local/quest-state/crash-temps/cleanup`
 
 Removes same-directory `.quest-state-*.json` crash-temp residue from the bootstrap quest-state snapshot store after first validating the committed `quest-state.json` snapshot through the same strict loader used by `/local/quest-state/validate` and `/local/persistence/status`. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if committed quest-state data is corrupt, if a temp file cannot be removed, or if the final directory sync fails.

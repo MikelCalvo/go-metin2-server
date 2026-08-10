@@ -95,6 +95,8 @@ Known failure reasons:
 
 Failed transitions return no mutated snapshot.
 
+The file-backed store now exposes that operation as `ApplyTransition(...)`. It treats a missing committed snapshot as an empty current quest-state snapshot only for the purpose of evaluating the transition, then persists a canonical snapshot only when `applied = true`. Invalid transitions and `current_value_mismatch` results return the current summary without rewriting the snapshot.
+
 ## Runtime configuration and local ops
 
 `gamed` now owns the quest-state store path as a normal bootstrap persistence selection:
@@ -109,8 +111,17 @@ The first local-only operator surfaces are also frozen on `gamed`:
 
 - `POST /local/quest-state/validate`
 - `POST /local/quest-state/crash-temps/cleanup`
+- `POST /local/quest-state/transition`
 
-Both endpoints are loopback-only, reject non-`POST` methods with `405`, reject non-empty bodies with `400`, reject oversized bodies with `413` through the existing local mutation body guard, and return `409` on validation/cleanup errors. They are persistence preflights for the server-side quest-state primitive, not a client-visible quest protocol or a quest mutation API.
+The validation and cleanup endpoints are loopback-only, reject non-`POST` methods with `405`, reject non-empty bodies with `400`, reject oversized bodies with `413` through the existing local mutation body guard, and return `409` on validation/cleanup errors. They are persistence preflights for the server-side quest-state primitive, not a client-visible quest protocol.
+
+`/local/quest-state/transition` is the first local-only mutation harness for this primitive. It accepts the transition JSON shape above, rejects invalid JSON, unknown fields, trailing JSON, invalid UTF-8, JSON `null`, oversized bodies, wrong methods, and non-loopback callers before invoking the runtime. It returns the store result as JSON with:
+
+- the canonical `transition`,
+- the compare-and-set `result`,
+- the post-attempt `summary`.
+
+Compare-and-set failures such as `current_value_mismatch` return `200 OK` with `applied = false` and the failure `reason`; they are expected authored-state outcomes, not transport errors. Runtime/store failures that prevent evaluating or persisting the transition return `409`. This endpoint is an operator/bootstrap harness for testing authored quest-state progression and recovery. It is still not a client-visible quest packet, NPC dialog path, reward path, or remote admin API.
 
 ## Store validation and crash-temp cleanup
 
@@ -148,7 +159,7 @@ This seam does **not** yet freeze:
 - timers or daily reset policy,
 - script VM compatibility,
 - content-bundle quest definitions,
-- loopback operator endpoints for quest mutation beyond validation and crash-temp cleanup.
+- static-actor/NPC interaction hooks that call `/local/quest-state/transition` or the store transition primitive automatically.
 
 ## Success definition
 
@@ -156,6 +167,7 @@ The current repository can now say:
 
 - there is a tested, deterministic file-backed quest-flag primitive,
 - one single-flag transition can initialize, advance, or clear a flag only when the caller-provided current value matches,
+- `gamed` exposes a loopback-only `POST /local/quest-state/transition` harness for applying that primitive without inventing client quest packets or NPC dialog semantics,
 - the same store can be validated and cleaned of owned crash-temp files without mutating committed quest flags,
 - bad identities, duplicate rows, malformed JSON, symlinked committed snapshots, symlinked crash-temp candidates, and mismatched current values fail closed,
 - broader client-visible quest runtime remains future work.

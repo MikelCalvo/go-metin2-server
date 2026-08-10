@@ -336,6 +336,48 @@ func TestGameRuntimeCleanupQuestStateStoreCrashTemps(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeApplyQuestStateTransitionPersistsSnapshot(t *testing.T) {
+	questStatePath := filepath.Join(t.TempDir(), "state", "quest-state.json")
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	result, err := runtime.ApplyQuestStateTransition(queststate.Transition{
+		Character: "QuestHero",
+		QuestRef:  "quest:first_steps",
+		Flag:      "step",
+		From:      0,
+		To:        1,
+	})
+	if err != nil {
+		t.Fatalf("apply quest state transition: %v", err)
+	}
+	if !result.Result.Applied || result.Result.Reason != "" || result.Result.CurrentValue != 0 {
+		t.Fatalf("unexpected runtime quest transition result: %+v", result.Result)
+	}
+	wantSummary := queststate.SnapshotSummary{FlagCount: 1, Characters: []string{"QuestHero"}, QuestRefs: []string{"quest:first_steps"}, FlagKeys: []string{"QuestHero:quest:first_steps:step"}}
+	if !reflect.DeepEqual(result.Summary, wantSummary) {
+		t.Fatalf("unexpected runtime quest transition summary:\n got: %#v\nwant: %#v", result.Summary, wantSummary)
+	}
+	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	if err != nil {
+		t.Fatalf("load quest state after runtime transition: %v", err)
+	}
+	wantSnapshot := queststate.Snapshot{Flags: []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1}}}
+	if !reflect.DeepEqual(loaded, wantSnapshot) {
+		t.Fatalf("unexpected persisted quest state after runtime transition:\n got: %#v\nwant: %#v", loaded, wantSnapshot)
+	}
+}
+
 func TestGameRuntimePersistenceStatusReportsRestoreBlockedWhileLiveCharacterSelected(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

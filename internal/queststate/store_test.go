@@ -258,6 +258,93 @@ func TestFileStoreCleanupCrashTempFilesRemovesOnlyQuestStateTemps(t *testing.T) 
 	}
 }
 
+func TestFileStoreApplyTransitionInitializesMissingSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "quest-state.json")
+	store := NewFileStore(path)
+
+	result, err := store.ApplyTransition(Transition{
+		Character: "QuestHero",
+		QuestRef:  "quest:first_steps",
+		Flag:      "step",
+		From:      0,
+		To:        1,
+	})
+	if err != nil {
+		t.Fatalf("apply quest state transition: %v", err)
+	}
+	if !result.Result.Applied || result.Result.Reason != "" || result.Result.CurrentValue != 0 {
+		t.Fatalf("unexpected transition result: %+v", result.Result)
+	}
+	wantSummary := SnapshotSummary{FlagCount: 1, Characters: []string{"QuestHero"}, QuestRefs: []string{"quest:first_steps"}, FlagKeys: []string{"QuestHero:quest:first_steps:step"}}
+	if !reflect.DeepEqual(result.Summary, wantSummary) {
+		t.Fatalf("unexpected post-transition summary:\n got: %#v\nwant: %#v", result.Summary, wantSummary)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("load applied quest state snapshot: %v", err)
+	}
+	wantSnapshot := Snapshot{Flags: []Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1}}}
+	if !reflect.DeepEqual(loaded, wantSnapshot) {
+		t.Fatalf("unexpected applied quest state snapshot:\n got: %#v\nwant: %#v", loaded, wantSnapshot)
+	}
+}
+
+func TestFileStoreApplyTransitionMismatchDoesNotRewriteSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "quest-state.json")
+	store := NewFileStore(path)
+	before := Snapshot{Flags: []Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1}}}
+	if err := store.Save(before); err != nil {
+		t.Fatalf("save initial quest state snapshot: %v", err)
+	}
+	rawBefore, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read initial quest state snapshot: %v", err)
+	}
+
+	result, err := store.ApplyTransition(Transition{
+		Character: "QuestHero",
+		QuestRef:  "quest:first_steps",
+		Flag:      "step",
+		From:      0,
+		To:        2,
+	})
+	if err != nil {
+		t.Fatalf("apply mismatched quest state transition: %v", err)
+	}
+	if result.Result.Applied || result.Result.Reason != TransitionReasonCurrentValueMismatch || result.Result.CurrentValue != 1 {
+		t.Fatalf("unexpected mismatch transition result: %+v", result.Result)
+	}
+	rawAfter, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read post-mismatch quest state snapshot: %v", err)
+	}
+	if string(rawAfter) != string(rawBefore) {
+		t.Fatalf("expected mismatched transition not to rewrite snapshot:\n before: %s\n after: %s", string(rawBefore), string(rawAfter))
+	}
+}
+
+func TestFileStoreApplyTransitionInvalidIdentityDoesNotCreateSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "quest-state.json")
+	store := NewFileStore(path)
+
+	result, err := store.ApplyTransition(Transition{
+		Character: "QuestHero",
+		QuestRef:  "first_steps",
+		Flag:      "step",
+		From:      0,
+		To:        1,
+	})
+	if err != nil {
+		t.Fatalf("apply invalid quest state transition: %v", err)
+	}
+	if result.Result.Applied || result.Result.Reason != TransitionReasonInvalidTransition {
+		t.Fatalf("unexpected invalid transition result: %+v", result.Result)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected invalid transition not to create snapshot, stat err=%v", err)
+	}
+}
+
 func TestFileStoreValidateRejectsSymlinkedQuestStateCrashTemp(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "quest-state.json")
 	store := NewFileStore(path)

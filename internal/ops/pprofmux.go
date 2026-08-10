@@ -18,6 +18,7 @@ import (
 	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
 	contentbundle "github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
@@ -111,6 +112,14 @@ type localContentBundleInteractionDefinitionSummary struct {
 	Ref        string `json:"ref"`
 	Preview    string `json:"preview"`
 	Referenced bool   `json:"referenced"`
+}
+
+type localQuestStateTransitionRequest struct {
+	Character string `json:"character"`
+	QuestRef  string `json:"quest_ref"`
+	Flag      string `json:"flag"`
+	From      uint32 `json:"from"`
+	To        uint32 `json:"to"`
 }
 
 func (request localContentBundleRequest) bundle() (contentbundle.Bundle, bool) {
@@ -572,6 +581,36 @@ func RegisterLocalQuestStateStoreCrashTempCleanupEndpoint(mux *http.ServeMux, cl
 			return
 		}
 		writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalQuestStateTransitionEndpoint(mux *http.ServeMux, apply func(queststate.Transition) (any, error)) *http.ServeMux {
+	if mux == nil || apply == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/quest-state/transition", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		transition, status, ok := decodeLocalQuestStateTransitionRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		result, err := apply(transition)
+		if err != nil {
+			slog.Warn("local quest state transition failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, result, http.StatusOK)
 	})
 	return mux
 }
@@ -2556,6 +2595,37 @@ func decodeLocalContentBundleRequest(r *http.Request) (contentbundle.Bundle, int
 		return contentbundle.Bundle{}, http.StatusBadRequest, false
 	}
 	return bundle, http.StatusOK, true
+}
+
+func decodeLocalQuestStateTransitionRequest(r *http.Request) (queststate.Transition, int, bool) {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxLocalAccountStoreMutationBodyBytes+1))
+	if err != nil {
+		return queststate.Transition{}, http.StatusBadRequest, false
+	}
+	if len(raw) > maxLocalAccountStoreMutationBodyBytes {
+		return queststate.Transition{}, http.StatusRequestEntityTooLarge, false
+	}
+	if !utf8.Valid(raw) || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return queststate.Transition{}, http.StatusBadRequest, false
+	}
+	var request localQuestStateTransitionRequest
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		return queststate.Transition{}, http.StatusBadRequest, false
+	}
+	var trailing struct{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return queststate.Transition{}, http.StatusBadRequest, false
+	}
+	transition := queststate.Transition{
+		Character: strings.TrimSpace(request.Character),
+		QuestRef:  strings.TrimSpace(request.QuestRef),
+		Flag:      strings.TrimSpace(request.Flag),
+		From:      request.From,
+		To:        request.To,
+	}
+	return transition, http.StatusOK, true
 }
 
 func decodeLocalContentBundleCollection[T any](raw json.RawMessage, dst *[]T) bool {

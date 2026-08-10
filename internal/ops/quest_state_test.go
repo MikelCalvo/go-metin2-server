@@ -130,6 +130,152 @@ func TestLocalQuestStateStoreCrashTempCleanupEndpointRejectsWrongMethod(t *testi
 	}
 }
 
+func TestLocalQuestStateTransitionEndpointReturnsResultForLoopbackPost(t *testing.T) {
+	applier := &stubQuestStateTransitionApplier{result: queststate.TransitionApplyResult{
+		Transition: queststate.Transition{Character: "QuestHero", QuestRef: "quest:first_steps", Flag: "step", From: 0, To: 1},
+		Result:     queststate.TransitionResult{Applied: true, CurrentValue: 0},
+		Summary:    queststate.SnapshotSummary{FlagCount: 1, Characters: []string{"QuestHero"}, QuestRefs: []string{"quest:first_steps"}, FlagKeys: []string{"QuestHero:quest:first_steps:step"}},
+	}}
+	mux := RegisterLocalQuestStateTransitionEndpoint(NewPprofMux("gamed"), applier.Apply)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/quest-state/transition", strings.NewReader(`{"character":"QuestHero","quest_ref":"quest:first_steps","flag":"step","from":0,"to":1}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if applier.calls != 1 {
+		t.Fatalf("expected applier to be called once, got %d", applier.calls)
+	}
+	wantTransition := queststate.Transition{Character: "QuestHero", QuestRef: "quest:first_steps", Flag: "step", From: 0, To: 1}
+	if applier.lastTransition != wantTransition {
+		t.Fatalf("unexpected transition passed to applier:\n got: %#v\nwant: %#v", applier.lastTransition, wantTransition)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"applied":true`) || !strings.Contains(body, `"flag_count":1`) || !strings.Contains(body, `"QuestHero"`) {
+		t.Fatalf("unexpected quest transition response body %q", body)
+	}
+}
+
+func TestLocalQuestStateTransitionEndpointReturnsCompareAndSetFailureAsOK(t *testing.T) {
+	applier := &stubQuestStateTransitionApplier{result: queststate.TransitionApplyResult{
+		Transition: queststate.Transition{Character: "QuestHero", QuestRef: "quest:first_steps", Flag: "step", From: 0, To: 2},
+		Result:     queststate.TransitionResult{Reason: queststate.TransitionReasonCurrentValueMismatch, CurrentValue: 1},
+		Summary:    queststate.SnapshotSummary{FlagCount: 1, Characters: []string{"QuestHero"}, QuestRefs: []string{"quest:first_steps"}, FlagKeys: []string{"QuestHero:quest:first_steps:step"}},
+	}}
+	mux := RegisterLocalQuestStateTransitionEndpoint(NewPprofMux("gamed"), applier.Apply)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/quest-state/transition", strings.NewReader(`{"character":"QuestHero","quest_ref":"quest:first_steps","flag":"step","from":0,"to":2}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d for compare-and-set failure result, got %d", http.StatusOK, rec.Code)
+	}
+	if applier.calls != 1 {
+		t.Fatalf("expected applier to be called once, got %d", applier.calls)
+	}
+	if !strings.Contains(rec.Body.String(), `"reason":"current_value_mismatch"`) || !strings.Contains(rec.Body.String(), `"current_value":1`) {
+		t.Fatalf("unexpected quest transition mismatch response body %q", rec.Body.String())
+	}
+}
+
+func TestLocalQuestStateTransitionEndpointRejectsInvalidBodyBeforeCallback(t *testing.T) {
+	applier := &stubQuestStateTransitionApplier{}
+	mux := RegisterLocalQuestStateTransitionEndpoint(NewPprofMux("gamed"), applier.Apply)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/quest-state/transition", strings.NewReader(`{"character":"QuestHero","quest_ref":"quest:first_steps","flag":"step","from":0,"to":1} {}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if applier.calls != 0 {
+		t.Fatalf("expected invalid body not to call applier, got %d", applier.calls)
+	}
+}
+
+func TestLocalQuestStateTransitionEndpointRejectsOversizedBodyBeforeCallback(t *testing.T) {
+	applier := &stubQuestStateTransitionApplier{}
+	mux := RegisterLocalQuestStateTransitionEndpoint(NewPprofMux("gamed"), applier.Apply)
+
+	body := `{"character":"QuestHero","quest_ref":"quest:first_steps","flag":"step","from":0,"to":1}` + strings.Repeat(" ", 4096)
+	req := httptest.NewRequest(http.MethodPost, "/local/quest-state/transition", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d, got %d", http.StatusRequestEntityTooLarge, rec.Code)
+	}
+	if applier.calls != 0 {
+		t.Fatalf("expected oversized body not to call applier, got %d", applier.calls)
+	}
+}
+
+func TestLocalQuestStateTransitionEndpointReturnsConflictOnApplyError(t *testing.T) {
+	applier := &stubQuestStateTransitionApplier{err: errors.New("quest state unavailable")}
+	mux := RegisterLocalQuestStateTransitionEndpoint(NewPprofMux("gamed"), applier.Apply)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/quest-state/transition", strings.NewReader(`{"character":"QuestHero","quest_ref":"quest:first_steps","flag":"step","from":0,"to":1}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if applier.calls != 1 {
+		t.Fatalf("expected applier to be called once, got %d", applier.calls)
+	}
+}
+
+func TestLocalQuestStateTransitionEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	applier := &stubQuestStateTransitionApplier{}
+	mux := RegisterLocalQuestStateTransitionEndpoint(NewPprofMux("gamed"), applier.Apply)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/quest-state/transition", strings.NewReader(`{"character":"QuestHero","quest_ref":"quest:first_steps","flag":"step","from":0,"to":1}`))
+	req.RemoteAddr = "192.0.2.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if applier.calls != 0 {
+		t.Fatalf("expected non-loopback request not to call applier, got %d", applier.calls)
+	}
+}
+
+func TestLocalQuestStateTransitionEndpointRejectsWrongMethod(t *testing.T) {
+	applier := &stubQuestStateTransitionApplier{}
+	mux := RegisterLocalQuestStateTransitionEndpoint(NewPprofMux("gamed"), applier.Apply)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/quest-state/transition", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if applier.calls != 0 {
+		t.Fatalf("expected wrong method not to call applier, got %d", applier.calls)
+	}
+}
+
 type stubQuestStateStoreValidator struct {
 	calls   int
 	summary queststate.SnapshotSummary
@@ -139,4 +285,17 @@ type stubQuestStateStoreValidator struct {
 func (s *stubQuestStateStoreValidator) Validate() (any, error) {
 	s.calls++
 	return s.summary, s.err
+}
+
+type stubQuestStateTransitionApplier struct {
+	calls          int
+	lastTransition queststate.Transition
+	result         queststate.TransitionApplyResult
+	err            error
+}
+
+func (s *stubQuestStateTransitionApplier) Apply(transition queststate.Transition) (any, error) {
+	s.calls++
+	s.lastTransition = transition
+	return s.result, s.err
 }
