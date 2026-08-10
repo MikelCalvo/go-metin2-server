@@ -5723,17 +5723,139 @@ func TestLocalMigrationStatusEndpointReportsPlannerFailure(t *testing.T) {
 	}
 }
 
-func TestNewPprofMuxDoesNotExposeLocalMigrationStatusByDefault(t *testing.T) {
-	mux := NewPprofMux("authd")
+func TestLocalMigrationPlanEndpointReturnsTargetPlanForLoopbackGet(t *testing.T) {
+	planner := &stubMigrationTargetPlanner{plan: dbmigrations.Plan{
+		CurrentVersion: 1,
+		LatestVersion:  1,
+		UpToDate:       false,
+		Pending: []dbmigrations.PlanStep{
+			{Version: 1, Name: "bootstrap_schema_migrations", Direction: dbmigrations.DirectionDown, Path: "0001_bootstrap_schema_migrations.down.sql", SHA256: "140e8ba3c7a1c89cd942c13ef40160c74df5619093fe8c287c69cb978dba822d"},
+		},
+	}}
+	mux := RegisterLocalMigrationPlanEndpoint(NewPprofMux("gamed"), planner.PlanTarget)
 
-	req := httptest.NewRequest(http.MethodGet, "/local/db/migrations/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/local/db/migrations/plan?target_version=0", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 
 	mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if planner.calls != 1 || planner.lastTarget != 0 {
+		t.Fatalf("expected planner target 0 once, calls=%d target=%d", planner.calls, planner.lastTarget)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"current_version":1`, `"latest_version":1`, `"direction":"down"`, `"path":"0001_bootstrap_schema_migrations.down.sql"`, `"sha256":"140e8ba3c7a1c89cd942c13ef40160c74df5619093fe8c287c69cb978dba822d"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected migration plan body to contain %s, got %s", want, body)
+		}
+	}
+	if strings.Contains(body, "DROP TABLE") || strings.Contains(body, "DownSQL") {
+		t.Fatalf("migration plan endpoint must not expose executable SQL, got %s", body)
+	}
+}
+
+func TestLocalMigrationPlanEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	planner := &stubMigrationTargetPlanner{plan: dbmigrations.Plan{LatestVersion: 1}}
+	mux := RegisterLocalMigrationPlanEndpoint(NewPprofMux("gamed"), planner.PlanTarget)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/db/migrations/plan?target_version=0", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if planner.calls != 0 {
+		t.Fatalf("expected planner not to be called, got %d", planner.calls)
+	}
+}
+
+func TestLocalMigrationPlanEndpointRejectsWrongMethod(t *testing.T) {
+	planner := &stubMigrationTargetPlanner{plan: dbmigrations.Plan{LatestVersion: 1}}
+	mux := RegisterLocalMigrationPlanEndpoint(NewPprofMux("gamed"), planner.PlanTarget)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/db/migrations/plan?target_version=0", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if planner.calls != 0 {
+		t.Fatalf("expected planner not to be called, got %d", planner.calls)
+	}
+}
+
+func TestLocalMigrationPlanEndpointRejectsInvalidTargetQuery(t *testing.T) {
+	for _, path := range []string{
+		"/local/db/migrations/plan",
+		"/local/db/migrations/plan?target_version=",
+		"/local/db/migrations/plan?target_version=abc",
+		"/local/db/migrations/plan?target_version=1&target_version=0",
+	} {
+		t.Run(path, func(t *testing.T) {
+			planner := &stubMigrationTargetPlanner{plan: dbmigrations.Plan{LatestVersion: 1}}
+			mux := RegisterLocalMigrationPlanEndpoint(NewPprofMux("gamed"), planner.PlanTarget)
+
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.RemoteAddr = "127.0.0.1:12345"
+			rec := httptest.NewRecorder()
+
+			mux.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected status %d for %s, got %d", http.StatusBadRequest, path, rec.Code)
+			}
+			if planner.calls != 0 {
+				t.Fatalf("expected planner not to be called, got %d", planner.calls)
+			}
+		})
+	}
+}
+
+func TestLocalMigrationPlanEndpointReportsPlannerFailure(t *testing.T) {
+	planner := &stubMigrationTargetPlanner{err: errStubMigrationStatusInvalid}
+	mux := RegisterLocalMigrationPlanEndpoint(NewPprofMux("gamed"), planner.PlanTarget)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/db/migrations/plan?target_version=99", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if planner.calls != 1 || planner.lastTarget != 99 {
+		t.Fatalf("expected planner target 99 once, calls=%d target=%d", planner.calls, planner.lastTarget)
+	}
+}
+
+func TestNewPprofMuxDoesNotExposeLocalMigrationStatusByDefault(t *testing.T) {
+	mux := NewPprofMux("authd")
+
+	for _, path := range []string{"/local/db/migrations/status", "/local/db/migrations/plan?target_version=0"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.RemoteAddr = "127.0.0.1:12345"
+			rec := httptest.NewRecorder()
+
+			mux.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+			}
+		})
 	}
 }
 
@@ -5761,10 +5883,23 @@ type stubMigrationStatusPlanner struct {
 	calls int
 }
 
+type stubMigrationTargetPlanner struct {
+	plan       dbmigrations.Plan
+	err        error
+	calls      int
+	lastTarget int
+}
+
 var errStubMigrationStatusInvalid = errors.New("invalid migration status")
 
 func (p *stubMigrationStatusPlanner) Plan() (dbmigrations.Plan, error) {
 	p.calls++
+	return p.plan, p.err
+}
+
+func (p *stubMigrationTargetPlanner) PlanTarget(targetVersion int) (dbmigrations.Plan, error) {
+	p.calls++
+	p.lastTarget = targetVersion
 	return p.plan, p.err
 }
 

@@ -3,6 +3,7 @@ package migrations
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -48,6 +49,99 @@ func TestPlanCatalogUpToLatestReturnsPendingStepsFromValidatedLedger(t *testing.
 	}
 	if first.SHA256 != catalog[1].UpSHA256 {
 		t.Fatalf("unexpected first pending checksum: got %q want %q", first.SHA256, catalog[1].UpSHA256)
+	}
+}
+
+func TestPlanCatalogToVersionReturnsRollbackStepsInReverseOrder(t *testing.T) {
+	catalog := testCatalog(t,
+		bootstrapSchemaMigration(),
+		testMigration{
+			version:  2,
+			name:     "accounts",
+			upPath:   "0002_accounts.up.sql",
+			downPath: "0002_accounts.down.sql",
+			upSQL:    "-- go-metin2 migration: 0002 accounts up\nCREATE TABLE accounts (login TEXT PRIMARY KEY);\n",
+			downSQL:  "-- go-metin2 migration: 0002 accounts down\nDROP TABLE accounts;\n",
+		},
+		testMigration{
+			version:  3,
+			name:     "characters",
+			upPath:   "0003_characters.up.sql",
+			downPath: "0003_characters.down.sql",
+			upSQL:    "-- go-metin2 migration: 0003 characters up\nCREATE TABLE characters (id INTEGER PRIMARY KEY);\n",
+			downSQL:  "-- go-metin2 migration: 0003 characters down\nDROP TABLE characters;\n",
+		},
+	)
+
+	plan, err := PlanCatalogToVersion(catalog, []LedgerEntry{
+		ledgerEntryFor(t, catalog, 1),
+		ledgerEntryFor(t, catalog, 2),
+		ledgerEntryFor(t, catalog, 3),
+	}, 1)
+	if err != nil {
+		t.Fatalf("expected rollback dry-run plan to validate: %v", err)
+	}
+
+	if plan.CurrentVersion != 3 || plan.LatestVersion != 3 || plan.UpToDate {
+		t.Fatalf("unexpected rollback plan versions: %#v", plan)
+	}
+	if len(plan.Pending) != 2 {
+		t.Fatalf("expected two rollback steps, got %#v", plan.Pending)
+	}
+	first := plan.Pending[0]
+	if first.Version != 3 || first.Name != "characters" || first.Direction != DirectionDown || first.Path != "0003_characters.down.sql" || first.SHA256 != catalog[2].DownSHA256 {
+		t.Fatalf("unexpected first rollback step: %#v", first)
+	}
+	second := plan.Pending[1]
+	if second.Version != 2 || second.Name != "accounts" || second.Direction != DirectionDown || second.Path != "0002_accounts.down.sql" || second.SHA256 != catalog[1].DownSHA256 {
+		t.Fatalf("unexpected second rollback step: %#v", second)
+	}
+}
+
+func TestPlanCatalogToVersionSupportsZeroTargetRollback(t *testing.T) {
+	catalog := testCatalog(t, bootstrapSchemaMigration())
+
+	plan, err := PlanCatalogToVersion(catalog, []LedgerEntry{ledgerEntryFor(t, catalog, 1)}, 0)
+	if err != nil {
+		t.Fatalf("expected rollback-to-zero dry-run plan to validate: %v", err)
+	}
+	if plan.CurrentVersion != 1 || plan.LatestVersion != 1 || plan.UpToDate {
+		t.Fatalf("unexpected rollback-to-zero plan: %#v", plan)
+	}
+	if len(plan.Pending) != 1 {
+		t.Fatalf("expected one rollback-to-zero step, got %#v", plan.Pending)
+	}
+	step := plan.Pending[0]
+	if step.Version != 1 || step.Name != "bootstrap_schema_migrations" || step.Direction != DirectionDown || step.Path != "0001_bootstrap_schema_migrations.down.sql" || step.SHA256 != catalog[0].DownSHA256 {
+		t.Fatalf("unexpected rollback-to-zero step: %#v", step)
+	}
+}
+
+func TestPlanCatalogToVersionDetectsTargetAlreadyApplied(t *testing.T) {
+	catalog := testCatalog(t, bootstrapSchemaMigration())
+
+	plan, err := PlanCatalogToVersion(catalog, []LedgerEntry{ledgerEntryFor(t, catalog, 1)}, 1)
+	if err != nil {
+		t.Fatalf("expected target-equal-current plan to validate: %v", err)
+	}
+	if plan.CurrentVersion != 1 || plan.LatestVersion != 1 || !plan.UpToDate {
+		t.Fatalf("unexpected up-to-date target plan: %#v", plan)
+	}
+	if len(plan.Pending) != 0 {
+		t.Fatalf("expected no pending steps at target, got %#v", plan.Pending)
+	}
+}
+
+func TestPlanCatalogToVersionRejectsTargetsOutsideCatalog(t *testing.T) {
+	catalog := testCatalog(t, bootstrapSchemaMigration())
+
+	for _, target := range []int{-1, 2} {
+		t.Run(fmt.Sprintf("target_%d", target), func(t *testing.T) {
+			_, err := PlanCatalogToVersion(catalog, nil, target)
+			if !errors.Is(err, ErrInvalidMigrationTarget) {
+				t.Fatalf("expected ErrInvalidMigrationTarget for target %d, got %v", target, err)
+			}
+		})
 	}
 }
 

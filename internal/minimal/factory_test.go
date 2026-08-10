@@ -145,6 +145,52 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	}
 }
 
+func TestGameRuntimeMigrationPlanToVersionReturnsRollbackPreviewWithoutExecutingSQL(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	plan, err := runtime.MigrationPlanToVersion(0)
+	if err != nil {
+		t.Fatalf("migration rollback plan: %v", err)
+	}
+	if plan.CurrentVersion != 0 || plan.LatestVersion < 1 || !plan.UpToDate {
+		t.Fatalf("unexpected rollback plan from empty ledger: %#v", plan)
+	}
+	if len(plan.Pending) != 0 {
+		t.Fatalf("expected no down steps when empty ledger is already at target zero, got %#v", plan.Pending)
+	}
+}
+
+func TestGameRuntimeMigrationPlanToVersionRejectsTargetOutsideCatalog(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	_, err = runtime.MigrationPlanToVersion(9999)
+	if !errors.Is(err, dbmigrations.ErrInvalidMigrationTarget) {
+		t.Fatalf("expected ErrInvalidMigrationTarget, got %v", err)
+	}
+}
+
 func TestGameRuntimeMigrationStatusRejectsConfiguredDatabaseWithoutRegisteredDriver(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", DatabaseDriver: "sqlite3", DatabaseDSN: "file:missing-driver.db"},

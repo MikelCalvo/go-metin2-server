@@ -7,9 +7,15 @@ import (
 	"strings"
 )
 
-const DirectionUp = "up"
+const (
+	DirectionUp   = "up"
+	DirectionDown = "down"
+)
 
-var ErrInvalidLedger = errors.New("invalid migration ledger")
+var (
+	ErrInvalidLedger          = errors.New("invalid migration ledger")
+	ErrInvalidMigrationTarget = errors.New("invalid migration target")
+)
 
 // LedgerEntry is the durable schema_migrations state a future migrator or
 // database preflight reads from storage. The dry-run planner validates it
@@ -55,6 +61,26 @@ func PlanUpToLatest(ledger []LedgerEntry) (Plan, error) {
 // read-only planning boundary for future operator preflights and CLI tooling;
 // it intentionally does not execute SQL.
 func PlanCatalogUpToLatest(catalog []Migration, ledger []LedgerEntry) (Plan, error) {
+	return PlanCatalogToVersion(catalog, ledger, len(catalog))
+}
+
+// PlanToVersion validates the embedded catalog and the supplied ledger entries,
+// then returns a metadata-only dry-run plan toward targetVersion. A target equal
+// to the current ledger version is up to date, a higher target yields up steps,
+// and a lower target yields down steps in reverse version order.
+func PlanToVersion(ledger []LedgerEntry, targetVersion int) (Plan, error) {
+	catalog, err := Catalog()
+	if err != nil {
+		return Plan{}, err
+	}
+	return PlanCatalogToVersion(catalog, ledger, targetVersion)
+}
+
+// PlanCatalogToVersion validates a catalog/ledger pair and returns the pending
+// metadata-only steps needed to reach targetVersion without executing SQL. The
+// target must stay inside the embedded catalog boundary, including zero for a
+// complete rollback preview.
+func PlanCatalogToVersion(catalog []Migration, ledger []LedgerEntry, targetVersion int) (Plan, error) {
 	if err := validatePlanCatalog(catalog); err != nil {
 		return Plan{}, err
 	}
@@ -62,23 +88,50 @@ func PlanCatalogUpToLatest(catalog []Migration, ledger []LedgerEntry) (Plan, err
 	if err != nil {
 		return Plan{}, err
 	}
+	latestVersion := catalog[len(catalog)-1].Version
+	if targetVersion < 0 || targetVersion > latestVersion {
+		return Plan{}, fmt.Errorf("%w: target version %d outside catalog range 0..%d", ErrInvalidMigrationTarget, targetVersion, latestVersion)
+	}
 
 	plan := Plan{
 		CurrentVersion: currentVersion,
-		LatestVersion:  catalog[len(catalog)-1].Version,
-		UpToDate:       currentVersion == catalog[len(catalog)-1].Version,
-		Pending:        make([]PlanStep, 0, len(catalog)-currentVersion),
-	}
-	for _, migration := range catalog[currentVersion:] {
-		plan.Pending = append(plan.Pending, PlanStep{
-			Version:   migration.Version,
-			Name:      migration.Name,
-			Direction: DirectionUp,
-			Path:      migration.UpPath,
-			SHA256:    migration.UpSHA256,
-		})
+		LatestVersion:  latestVersion,
+		UpToDate:       currentVersion == targetVersion,
+		Pending:        planStepsToVersion(catalog, currentVersion, targetVersion),
 	}
 	return plan, nil
+}
+
+func planStepsToVersion(catalog []Migration, currentVersion int, targetVersion int) []PlanStep {
+	if currentVersion == targetVersion {
+		return []PlanStep{}
+	}
+	if targetVersion > currentVersion {
+		steps := make([]PlanStep, 0, targetVersion-currentVersion)
+		for _, migration := range catalog[currentVersion:targetVersion] {
+			steps = append(steps, PlanStep{
+				Version:   migration.Version,
+				Name:      migration.Name,
+				Direction: DirectionUp,
+				Path:      migration.UpPath,
+				SHA256:    migration.UpSHA256,
+			})
+		}
+		return steps
+	}
+
+	steps := make([]PlanStep, 0, currentVersion-targetVersion)
+	for version := currentVersion; version > targetVersion; version-- {
+		migration := catalog[version-1]
+		steps = append(steps, PlanStep{
+			Version:   migration.Version,
+			Name:      migration.Name,
+			Direction: DirectionDown,
+			Path:      migration.DownPath,
+			SHA256:    migration.DownSHA256,
+		})
+	}
+	return steps
 }
 
 func validatePlanCatalog(catalog []Migration) error {

@@ -825,6 +825,48 @@ func RegisterLocalMigrationStatusEndpoint(mux *http.ServeMux, planMigrationStatu
 	return mux
 }
 
+func RegisterLocalMigrationPlanEndpoint(mux *http.ServeMux, planMigrationTarget func(int) (dbmigrations.Plan, error)) *http.ServeMux {
+	if mux == nil || planMigrationTarget == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/db/migrations/plan", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		target, ok := decodeLocalMigrationPlanTarget(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		plan, err := planMigrationTarget(target)
+		if err != nil {
+			slog.Warn("local migration target preflight failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, plan, http.StatusOK)
+	})
+	return mux
+}
+
+func decodeLocalMigrationPlanTarget(r *http.Request) (int, bool) {
+	rawTargets := r.URL.Query()["target_version"]
+	if len(rawTargets) != 1 {
+		return 0, false
+	}
+	target, err := strconv.Atoi(strings.TrimSpace(rawTargets[0]))
+	if err != nil {
+		return 0, false
+	}
+	return target, true
+}
+
 func RegisterLocalStaticActorRespawnsEndpoint(mux *http.ServeMux, staticActorRespawns func() any) *http.ServeMux {
 	if mux == nil || staticActorRespawns == nil {
 		return mux

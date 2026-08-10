@@ -94,9 +94,27 @@ func PlanUpToLatestFromSQLLedger(ctx context.Context, querier SQLLedgerQuerier) 
 // PlanCatalogUpToLatestFromSQLLedger validates a supplied catalog against a
 // queried schema_migrations ledger and returns pending up-migration metadata.
 func PlanCatalogUpToLatestFromSQLLedger(ctx context.Context, catalog []Migration, querier SQLLedgerQuerier) (Plan, error) {
+	return PlanCatalogToVersionFromSQLLedger(ctx, catalog, querier, len(catalog))
+}
+
+// PlanToVersionFromSQLLedger validates the built-in catalog against the
+// database-read schema_migrations ledger and returns a metadata-only plan toward
+// targetVersion. It reads ledger metadata only and applies nothing.
+func PlanToVersionFromSQLLedger(ctx context.Context, querier SQLLedgerQuerier, targetVersion int) (Plan, error) {
+	catalog, err := Catalog()
+	if err != nil {
+		return Plan{}, err
+	}
+	return PlanCatalogToVersionFromSQLLedger(ctx, catalog, querier, targetVersion)
+}
+
+// PlanCatalogToVersionFromSQLLedger validates a supplied catalog against a
+// queried schema_migrations ledger and returns pending up/down metadata for the
+// requested target version.
+func PlanCatalogToVersionFromSQLLedger(ctx context.Context, catalog []Migration, querier SQLLedgerQuerier, targetVersion int) (Plan, error) {
 	ledger, err := ReadSQLLedgerEntries(ctx, querier)
 	if err != nil {
 		return Plan{}, err
 	}
-	return PlanCatalogUpToLatest(catalog, ledger)
+	return PlanCatalogToVersion(catalog, ledger, targetVersion)
 }

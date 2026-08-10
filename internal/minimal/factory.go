@@ -408,6 +408,18 @@ func (r *gameRuntime) MigrationStatus() (dbmigrations.Plan, error) {
 	return dbmigrations.PlanUpToLatest(nil)
 }
 
+func (r *gameRuntime) MigrationPlanToVersion(targetVersion int) (dbmigrations.Plan, error) {
+	if r != nil && strings.TrimSpace(r.config.DatabaseDriver) != "" {
+		db, err := sql.Open(strings.TrimSpace(r.config.DatabaseDriver), strings.TrimSpace(r.config.DatabaseDSN))
+		if err != nil {
+			return dbmigrations.Plan{}, fmt.Errorf("%w: %v", config.ErrDatabaseDriverUnavailable, err)
+		}
+		defer db.Close()
+		return dbmigrations.PlanToVersionFromSQLLedger(context.Background(), db, targetVersion)
+	}
+	return dbmigrations.PlanToVersion(nil, targetVersion)
+}
+
 func (r *gameRuntime) PersistenceStatus() PersistenceStatusSnapshot {
 	if r == nil {
 		return PersistenceStatusSnapshot{}

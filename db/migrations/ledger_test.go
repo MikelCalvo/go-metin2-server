@@ -158,6 +158,52 @@ func TestPlanUpToLatestFromSQLLedgerUsesBuiltInCatalog(t *testing.T) {
 	}
 }
 
+func TestPlanCatalogToVersionFromSQLLedgerReadsRowsAndReturnsRollbackPlan(t *testing.T) {
+	catalog := testCatalog(t,
+		bootstrapSchemaMigration(),
+		testMigration{
+			version:  2,
+			name:     "accounts",
+			upPath:   "0002_accounts.up.sql",
+			downPath: "0002_accounts.down.sql",
+			upSQL:    "-- go-metin2 migration: 0002 accounts up\nCREATE TABLE accounts (login TEXT PRIMARY KEY);\n",
+			downSQL:  "-- go-metin2 migration: 0002 accounts down\nDROP TABLE accounts;\n",
+		},
+	)
+	scenario := &testLedgerSQLScenario{rows: [][]driver.Value{
+		{int64(catalog[0].Version), catalog[0].Name, catalog[0].UpSHA256},
+		{int64(catalog[1].Version), catalog[1].Name, catalog[1].UpSHA256},
+	}}
+
+	plan, err := PlanCatalogToVersionFromSQLLedger(context.Background(), catalog, openTestLedgerDB(t, scenario), 0)
+	if err != nil {
+		t.Fatalf("expected queried rollback plan to validate: %v", err)
+	}
+
+	query, args, closeCalls := scenario.snapshot()
+	if query != SchemaMigrationsLedgerQuery {
+		t.Fatalf("unexpected ledger query:\n%s", query)
+	}
+	if len(args) != 0 {
+		t.Fatalf("expected ledger query to be argument-free, got %#v", args)
+	}
+	if closeCalls != 1 {
+		t.Fatalf("expected SQL ledger rows to be closed once, got %d", closeCalls)
+	}
+	if plan.CurrentVersion != 2 || plan.LatestVersion != 2 || plan.UpToDate {
+		t.Fatalf("unexpected queried rollback plan: %#v", plan)
+	}
+	if len(plan.Pending) != 2 {
+		t.Fatalf("expected two down steps, got %#v", plan.Pending)
+	}
+	if plan.Pending[0].Version != 2 || plan.Pending[0].Direction != DirectionDown || plan.Pending[0].Path != "0002_accounts.down.sql" || plan.Pending[0].SHA256 != catalog[1].DownSHA256 {
+		t.Fatalf("unexpected first queried rollback step: %#v", plan.Pending[0])
+	}
+	if plan.Pending[1].Version != 1 || plan.Pending[1].Direction != DirectionDown || plan.Pending[1].Path != "0001_bootstrap_schema_migrations.down.sql" || plan.Pending[1].SHA256 != catalog[0].DownSHA256 {
+		t.Fatalf("unexpected second queried rollback step: %#v", plan.Pending[1])
+	}
+}
+
 type stubSQLLedgerQuerier struct {
 	err error
 }

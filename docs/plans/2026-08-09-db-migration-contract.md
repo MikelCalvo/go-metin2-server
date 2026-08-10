@@ -30,6 +30,12 @@ Rules frozen by tests:
 - plan steps expose only metadata (`version`, `name`, `direction`, `path`, `sha256`) and intentionally do not expose executable SQL as the plan payload.
 - `gamed` exposes a loopback-only read-only `GET /local/db/migrations/status` endpoint that returns the same metadata-only dry-run plan; with no DB config it plans against an empty ledger, and with explicit DB config it reads only the `schema_migrations` ledger before planning.
 - `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger` add the first database/sql-compatible ledger reader seam for future preflight tooling: callers supply a `QueryContext` boundary, the package reads only `version`, `name`, and `up_sha256` from `schema_migrations` in version order, closes rows, and fails closed on query, scan, iteration, close, catalog, or ledger drift errors.
+- `PlanToVersion` / `PlanCatalogToVersion` and the matching SQL-ledger variants now provide an explicit target-version dry-run contract:
+  - target `latest` is exposed by the existing latest-status path,
+  - target `0` previews a complete rollback using down migrations in reverse applied-version order,
+  - intermediate targets emit only the up/down steps needed to move from the current ledger version to that target,
+  - out-of-range targets fail closed with `ErrInvalidMigrationTarget`,
+  - target plans still expose metadata only and never include executable SQL.
 - runtime configuration now carries an optional DB preflight boundary:
   - `METIN2_DB_DRIVER` / `METIN2_GAMED_DB_DRIVER`,
   - `METIN2_DB_DSN` / `METIN2_GAMED_DB_DSN`,
@@ -58,7 +64,7 @@ This is not a database runtime implementation. It deliberately does not add:
 - JSON snapshot backfill tooling,
 - production deployment scripts.
 
-The dry-run planner added on top of the catalog is likewise read-only: callers can supply already-read ledger rows directly or provide a `database/sql`-compatible query boundary for the same metadata through `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger`. The first loopback ops endpoint uses an empty ledger when DB config is disabled and a configured `database/sql` ledger reader when both driver and DSN are set. The SQL ledger seam and runtime config are safe boundaries for future CLI, real-ledger preflight tooling, or status pages, not an execution engine.
+The dry-run planner added on top of the catalog is likewise read-only: callers can supply already-read ledger rows directly or provide a `database/sql`-compatible query boundary for the same metadata through `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger` / `PlanToVersionFromSQLLedger`. The first loopback ops endpoints use an empty ledger when DB config is disabled and a configured `database/sql` ledger reader when both driver and DSN are set. `/local/db/migrations/status` reports the latest-version target; `/local/db/migrations/plan?target_version=N` previews an explicit target such as rollback-to-zero. The SQL ledger seam and runtime config are safe boundaries for future CLI, real-ledger preflight tooling, or status pages, not an execution engine.
 
 Those require separate slices because each one changes operator and data-safety semantics.
 
@@ -73,7 +79,7 @@ Those require separate slices because each one changes operator and data-safety 
 
 ## Exit criteria for this slice
 
-- `go test ./db/migrations` validates the catalog, direct-ledger dry-run planning rules, and database/sql-compatible ledger-reader seam.
-- `go test ./internal/config ./internal/minimal ./internal/service` validates optional DB config loading, startup fail-closed behavior for partial config, no-DSN runtime-config exposure, and the configured-driver migration-status boundary.
+- `go test ./db/migrations` validates the catalog, direct-ledger dry-run planning rules, explicit up/down target planning, and database/sql-compatible ledger-reader seam.
+- `go test ./internal/config ./internal/minimal ./internal/service ./internal/ops` validates optional DB config loading, startup fail-closed behavior for partial config, no-DSN runtime-config exposure, the configured-driver migration-status boundary, and loopback-only explicit migration-plan previews.
 - `go test ./...` and `go vet ./...` remain green.
 - README/development docs describe `db/migrations` as the validated migration catalog and read-only planning skeleton, not a finished DB layer.
