@@ -16,10 +16,12 @@ Those documents already freeze:
 - fail-closed owner-side static-actor `INTERACT` rejection at that same retaliation floor before talk/info, merchant preview, or warp-side effects can run
 - fail-closed owner-side merchant-buy attempts at that same retaliation floor before inventory / gold mutation can run through packet `SHOP BUY` or the local `/shop_buy` harness path
 - fail-closed owner-side merchant-sell attempts at that same retaliation floor before inventory / gold / quickslot mutation can run through packet `SHOP SELL` / `SHOP SELL2`
-- fail-closed owner-side client/slash item-use attempts at that same retaliation floor before inventory consumption, carried-item stacking, or point restoration can run through the local `/use_item` harness path, carried-slot `ITEM_USE`, or `ITEM_USE_TO_ITEM`
+- fail-closed owner-side client/slash item-use attempts at that same floor before inventory consumption, carried-item stacking, or point restoration can run through the local `/use_item` harness path, carried-slot `ITEM_USE`, or `ITEM_USE_TO_ITEM`
 - fail-closed owner-side item/gold drop attempts at that same floor before ground-item registration, currency debit, or inventory persistence can run through `ITEM_DROP` / `ITEM_DROP2`
 - fail-closed owner-side ground-item pickup attempts at that same floor before ground-handle removal, inventory/gold mutation, pickup feedback, or owner-delivery side effects can run through `ITEM_PICKUP`
 - fail-closed owner-side carried-inventory move attempts at that same floor before runtime or persisted slot mutation can run through packet `ITEM_MOVE` or the local `/inventory_move` harness path
+- fail-closed owner-side item-give attempts at that same floor before anti-give feedback, peer delivery, inventory, quickslot, ground-handle, or persistence side effects can run through `ITEM_GIVE`
+- fail-closed owner-side item-refine attempts at that same floor before template-authored reject feedback, inventory, quickslot, point, ground-item, or persistence side effects can run through `REFINE`
 - fail-closed owner-side slash equipment mutation attempts at that same retaliation floor before carried/equipped item movement, appearance refresh, or template-backed point mutation can run through the local `/equip_item` and `/unequip_item` harness paths
 - fail-closed owner-side quickslot add/delete/swap attempts at that same retaliation floor before quickslot mutation can run through packet `QUICKSLOT_ADD` / `QUICKSLOT_DEL` / `QUICKSLOT_SWAP`
 
@@ -250,9 +252,9 @@ Why this is the current owned boundary:
 - once post-floor merchant buys already failed closed, an already-open merchant window became the next smallest stale UI/runtime context still surviving the same retaliation-owned death edge
 - reusing the existing `GC::SHOP END` close companion keeps the teardown honest without inventing a second death-specific merchant packet family
 
-## First owned post-floor client/slash item-use, item-drop, and item-move denial
+## First owned post-floor item-family denial
 
-The current bootstrap player-death contract now also owns narrow post-floor item-use, item-drop, and item-move rules for that same selected live owner session:
+The current bootstrap player-death contract now also owns narrow post-floor item-family rules for that same selected live owner session:
 - once immediate or delayed practice-mob retaliation has already driven the owner's live bootstrap HP to `0`, later slash `/use_item <slot>` attempts fail closed
 - once that same floor has been reached, later carried-slot `ITEM_USE` and `ITEM_USE_TO_ITEM` attempts also fail closed
 - the item-use denial happens before inventory consumption, carried-item stacking, point restoration, or persistence mutation can run
@@ -260,10 +262,12 @@ The current bootstrap player-death contract now also owns narrow post-floor item
 - the item-drop denial happens before inventory mutation, gold debit, ground-item registration, ownership delivery, quickslot sync, or persistence mutation can run
 - once that same floor has been reached, later `ITEM_PICKUP` attempts also fail closed before removing the ground item handle, mutating inventory or gold, emitting pickup feedback, or running fallback owner-delivery side effects
 - once that same floor has been reached, later packet `ITEM_MOVE` attempts also fail closed for carried-inventory moves before runtime slot mutation, persistence, item-set frames, or quickslot sync can run
-- the denial stays intentionally quiet in this slice: no synthetic failure info chat, no fallback revive packet, and no broader consumable/drop/move UI contract change are claimed yet
+- once that same floor has been reached, later packet `ITEM_GIVE` attempts also fail closed before the template-authored `anti_give` feedback path, peer delivery, inventory, quickslot, ground-handle, or persistence side effects can run
+- once that same floor has been reached, later packet `REFINE` attempts also fail closed before template-authored refine reject feedback, inventory, quickslot, point, ground-item, or persistence side effects can run
+- the denial stays intentionally quiet in this slice: no synthetic failure info chat, no fallback revive packet, and no broader consumable/drop/move/give/refine UI contract change are claimed yet
 
 This keeps the next post-floor expansion small and honest too:
-- after merchant-buy denial, client/slash item use, item drop, item pickup, and packet item move were the next dangerous already-open gameplay contexts because they could still mutate runtime and persisted inventory/gold, restore points, stack or move carried items, remove visible ground handles, or register visible ground items even if the owner had already died in the current bootstrap retaliation loop
+- after merchant-buy denial, client/slash item use, item drop, item pickup, packet item move, packet item give, and packet refine were the next dangerous already-open gameplay contexts because they could still mutate runtime and persisted inventory/gold, restore points, stack or move carried items, remove visible ground handles, register visible ground items, emit item-template rejection feedback, or later grow into two-party/economic mutations even if the owner had already died in the current bootstrap retaliation loop
 - the repo still does **not** yet claim revive policy or a broader general post-death action-lock contract at `0` HP
 
 ## First owned post-floor peer-facing chat / whisper denial
@@ -355,7 +359,7 @@ Why this is the current owned boundary:
 This slice does **not** yet freeze:
 - a player respawn timer or revive request packet
 - broader self-bootstrap or transfer choreography after death beyond the currently owned persisted `/phase_select` re-entry / reconnect rebuild semantics plus dead-owner destination peer/static-actor burst suppression on the current loopback/operator transfer path
-- broader self-only chat/command surfaces or full action-lock semantics at `0` HP beyond the now-owned combat, relocation, static-actor interaction, merchant-buy, client/slash item-use, packet item-move, packet exchange-shell close/rejection, slash inventory/equipment mutation, peer-facing chat / whisper, and self-only `CHAT_TYPE_INFO` rejection seams above
+- broader self-only chat/command surfaces or full action-lock semantics at `0` HP beyond the now-owned combat, relocation, static-actor interaction, merchant-buy, client/slash item-use, packet item-move, packet item-give, packet refine, packet exchange-shell close/rejection, slash inventory/equipment mutation, peer-facing chat / whisper, and self-only `CHAT_TYPE_INFO` rejection seams above
 - broader recipient-side communication or world-visibility policy beyond the now-owned exact-name whisper denial, queued `CHAT_TYPE_TALKING` / `PARTY` / `GUILD` / `SHOUT` recipient skips, queued peer-entry visibility recipient skips on join plus movement/sync/transfer visibility rebuilds, queued peer-teardown `CHARACTER_DEL` recipient skips on leave plus relocate-away transfer plus AOI move/sync out-of-range teardown, queued static-actor visibility recipient skips on register/update/remove, queued practice-mob death/respawn lifecycle recipient skips, queued destination ground-item visibility skips on transfer/rebootstrap, and server-origin `CHAT_TYPE_NOTICE` recipient skip for connected zero-HP owners
 - death penalties, EXP loss, inventory drops, or corpse recovery
 
@@ -374,6 +378,8 @@ After this document lands, the repository should be able to say:
 - if that same floor is reached while the owner already had a bootstrap exchange shell open, the same floor transition now also appends one self-only `GC::EXCHANGE END` after self `GC DEAD(owner_vid)` plus self `GC TARGET(0, 0)`, queues one `GC::EXCHANGE END` to the paired live peer, and clears the exchange state so later exchange-display or cancel requests fail closed too
 - once that same floor is reached, later owner-side slash `/use_item` and carried-slot `ITEM_USE` attempts also fail closed before runtime/persisted inventory consumption or point restoration can run
 - once that same floor is reached, later owner-side packet `ITEM_MOVE` attempts also fail closed before runtime/persisted carried-inventory slot mutation or item-set success frames can run
+- once that same floor is reached, later owner-side packet `ITEM_GIVE` attempts also fail closed before anti-give feedback, peer delivery, inventory, quickslot, ground-handle, or persistence side effects can run
+- once that same floor is reached, later owner-side packet `REFINE` attempts also fail closed before template-authored reject feedback, inventory, quickslot, point, ground-item, or persistence side effects can run
 - once that same floor is reached, later owner-side peer-facing `CHAT` requests with types `TALKING`, `PARTY`, `GUILD`, and `SHOUT` plus later owner-side `WHISPER` requests also fail closed before sender echo, peer delivery, or exact-name lookup can run
 - once that same floor is reached, later peer-originated `WHISPER` requests aimed at that same exact connected owner name also fail closed before queued target delivery or a synthetic `WHISPER_TYPE_NOT_EXIST` fallback can run
 - once retaliation has already driven the owning character to `0` HP, later peer-originated `CHAT` requests with types `TALKING`, `PARTY`, `GUILD`, and `SHOUT` continue to return the live sender's ordinary self echo, but queued peer delivery skips that same zero-HP owner recipient under the current bootstrap routing rules

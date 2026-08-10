@@ -37,6 +37,7 @@ The shipped minimal runtime intentionally leaves accepted `REFINE` gameplay unsu
 
 The only authored feedback exception is a non-refineable carried item template that provides `refine_reject_message`:
 
+- the selected character must be above the retaliation-owned bootstrap zero-HP floor
 - `pos` must identify exactly one carried inventory slot owned by the selected character
 - the carried item must be well-formed, unlocked, and match the resolved template `vnum`
 - the template must be valid, must not be `refineable`, and must carry non-empty `refine_reject_message`
@@ -54,6 +55,8 @@ All other `REFINE` packets currently fail closed:
 - no selected-character account snapshot is persisted
 
 The template store rejects contradictory `refineable = true` plus `refine_reject_message` metadata before runtime boot, so this feedback path cannot be confused with accepted refine semantics.
+
+Once the selected owner has reached the retaliation-owned bootstrap zero-HP floor frozen in `player-death-bootstrap.md`, `REFINE` fails closed before this template-authored feedback path. The dead-owner attempt emits no self chat, queues no peer frames, and still performs no inventory, equipment, quickslot, point, ground-item, or persistence mutation.
 
 ## Deferred behavior
 
@@ -73,4 +76,4 @@ Later slices must write a new contract before broadening this packet into real g
 - `internal/game` freezes `GAME`-phase dispatch to a handler hook, with denied results returning no frames.
 - `internal/itemstore` freezes deterministic `refine_reject_message` persistence and rejects contradictory `refineable` templates that also author that message.
 - `internal/player` freezes the no-mutation helper boundary that extracts template-authored refine rejection text from the currently carried item.
-- `internal/minimal` freezes both the shipped no-frame fail-closed behavior and the template-authored self-only info-chat rejection path with persisted inventory, quickslots, and points unchanged after a `REFINE` packet.
+- `internal/minimal` freezes the shipped no-frame fail-closed behavior, the template-authored self-only info-chat rejection path with persisted inventory, quickslots, and points unchanged after a `REFINE` packet, and the post-floor dead-owner guard that denies `REFINE` before that feedback path can run.

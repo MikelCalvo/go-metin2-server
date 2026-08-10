@@ -64,6 +64,8 @@ Templates that author `give_reject_message` without `anti_give` are invalid at t
 
 Zero-count or oversized-count give attempts remain ordinary no-frame/no-mutation rejections even when the item template authors `anti_give` plus `give_reject_message`. This keeps accidental client attempts fail-closed instead of falling into incomplete item-transfer behavior while allowing valid-count authored `anti_give` items to explain the rejection.
 
+Once the selected owner has reached the retaliation-owned bootstrap zero-HP floor frozen in `player-death-bootstrap.md`, `ITEM_GIVE` fails closed before this `anti_give` feedback path. The dead-owner attempt emits no self chat, queues no peer frames, and still performs no inventory, equipment, quickslot, ground-handle, or persistence mutation.
+
 ## Deferred behavior
 
 Later slices must write a new contract before broadening this packet into real gameplay. In particular, this slice does not freeze:
@@ -83,4 +85,4 @@ Later slices must write a new contract before broadening this packet into real g
 - `internal/game` freezes `GAME`-phase dispatch to a handler hook, with denied results returning no frames.
 - `internal/itemstore` freezes `give_reject_message` round-trip and fail-closed validation: it is valid only with `anti_give` and rejects embedded NUL bytes.
 - `internal/player` freezes the metadata-driven, no-mutation `anti_give` rejection lookup, including the non-zero / not-over-stack requested-count guard.
-- `internal/minimal` freezes the shipped runtime fail-closed behavior with persisted inventory and quickslots unchanged after an `ITEM_GIVE` packet, plus the self-only `CHAT_TYPE_INFO` rejection frame when the carried item's template authors `anti_give` and `give_reject_message` and the requested count is valid for the live stack.
+- `internal/minimal` freezes the shipped runtime fail-closed behavior with persisted inventory and quickslots unchanged after an `ITEM_GIVE` packet, the self-only `CHAT_TYPE_INFO` rejection frame when the carried item's template authors `anti_give` and `give_reject_message` and the requested count is valid for the live stack, and the post-floor dead-owner guard that denies `ITEM_GIVE` before that feedback path can run.
