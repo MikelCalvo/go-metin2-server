@@ -183,7 +183,7 @@ The `GAME` dispatcher decodes the fixed-width packet and can route it through a 
 - no queued peer frame
 - no point, inventory, or account-persistence side effect
 
-The server -> client `CHARACTER_POSITION` update family remains unowned for now; this slice only prevents known client position/battle-position traffic from becoming an unexpected-packet disconnect/error while leaving final sit/stand/battle-mode rendering policy to a later dedicated slice.
+The server -> client `CHARACTER_POSITION` update family is now codec-owned separately in `character-position-change-speed-bootstrap.md`, but the shipped bootstrap runtime still does not emit it. This ingress guard only prevents known client position/battle-position traffic from becoming an unexpected-packet disconnect/error while leaving final sit/stand/battle-mode rendering policy to a later dedicated slice.
 
 ## Active-target prerequisite
 

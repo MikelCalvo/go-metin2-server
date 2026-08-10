@@ -174,7 +174,7 @@ Already present:
 - aggro-lite engagement ownership and retaliation ticks,
 - player death floor and restart-here/restart-town bootstrap recovery seams,
 - deterministic EXP/gold/fixed-drop reward descriptors for accepted non-player deaths,
-- codec-only presentation families for fly effects, PvP/duel, stun, and target markers,
+- codec-only presentation families for fly effects, PvP/duel, stun, character position / change-speed, and target markers,
 - tests around watcher/owner respawn, retarget, cleanup, and reward cases.
 
 Still missing:
