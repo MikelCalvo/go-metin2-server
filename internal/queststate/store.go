@@ -44,6 +44,17 @@ type SnapshotSummary struct {
 	CrashTempFiles []string `json:"crash_temp_files,omitempty"`
 }
 
+type FlagSnapshot struct {
+	QuestRef string `json:"quest_ref"`
+	Name     string `json:"name"`
+	Value    uint32 `json:"value"`
+}
+
+type CharacterSnapshot struct {
+	Character string         `json:"character"`
+	Flags     []FlagSnapshot `json:"flags"`
+}
+
 type Transition struct {
 	Character string `json:"character"`
 	QuestRef  string `json:"quest_ref"`

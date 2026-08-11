@@ -202,6 +202,23 @@ Request body:
 
 Successful HTTP responses are JSON transition-attempt results with `transition`, `result`, and post-attempt `summary`. Compare-and-set misses such as `current_value_mismatch` still return `200 OK` with `applied = false`; they are authored quest-state outcomes rather than transport errors. The endpoint is a local bootstrap/operator harness for validating quest-state progression and recovery. It is not a client quest packet, NPC dialog hook, reward hook, or remote admin API.
 
+### `GET /local/quest-state/characters/{character}`
+
+Returns one read-only exact-character quest-state snapshot from the configured `gamed` quest-state store. The endpoint is loopback-only, rejects non-`GET` methods with `405`, rejects blank or slash-containing character path values with `400`, returns `404` when no persisted non-zero flags exist for that character, and returns `409` if the committed quest-state snapshot cannot be loaded or validated.
+
+Successful responses use:
+
+```json
+{
+  "character": "QuestHero",
+  "flags": [
+    {"quest_ref": "quest:first_steps", "name": "step", "value": 2}
+  ]
+}
+```
+
+The flag list follows the store's deterministic order and the endpoint does not mutate quest state, infer account rosters, or expose a client-visible quest runtime.
+
 ### `POST /local/quest-state/crash-temps/cleanup`
 
 Removes same-directory `.quest-state-*.json` crash-temp residue from the bootstrap quest-state snapshot store after first validating the committed `quest-state.json` snapshot through the same strict loader used by `/local/quest-state/validate` and `/local/persistence/status`. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if committed quest-state data is corrupt, if a temp file cannot be removed, or if the final directory sync fails.

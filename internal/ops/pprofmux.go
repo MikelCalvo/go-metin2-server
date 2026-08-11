@@ -615,6 +615,35 @@ func RegisterLocalQuestStateTransitionEndpoint(mux *http.ServeMux, apply func(qu
 	return mux
 }
 
+func RegisterLocalQuestStateCharacterEndpoint(mux *http.ServeMux, questState func(string) (any, bool, error)) *http.ServeMux {
+	if mux == nil || questState == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/quest-state/characters/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		name, ok := decodeLocalCharacterName(r, "/local/quest-state/characters/")
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		value, ok, err := questState(name)
+		if err != nil {
+			slog.Warn("local quest state character lookup failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalItemTemplateStoreBackupEndpoint(mux *http.ServeMux, backup func(string) (any, error)) *http.ServeMux {
 	if mux == nil || backup == nil {
 		return mux

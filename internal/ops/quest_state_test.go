@@ -276,6 +276,123 @@ func TestLocalQuestStateTransitionEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalQuestStateCharacterEndpointReturnsSnapshotForLoopbackGet(t *testing.T) {
+	reader := &stubQuestStateCharacterReader{snapshot: queststate.CharacterSnapshot{
+		Character: "QuestHero",
+		Flags: []queststate.FlagSnapshot{
+			{QuestRef: "quest:first_steps", Name: "step", Value: 2},
+		},
+	}, ok: true}
+	mux := RegisterLocalQuestStateCharacterEndpoint(NewPprofMux("gamed"), reader.Read)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/quest-state/characters/QuestHero", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if reader.calls != 1 || reader.lastCharacter != "QuestHero" {
+		t.Fatalf("unexpected reader call state: calls=%d last_character=%q", reader.calls, reader.lastCharacter)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"character":"QuestHero"`) || !strings.Contains(body, `"quest_ref":"quest:first_steps"`) || !strings.Contains(body, `"name":"step"`) || !strings.Contains(body, `"value":2`) {
+		t.Fatalf("unexpected quest-state character response body %q", body)
+	}
+}
+
+func TestLocalQuestStateCharacterEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	reader := &stubQuestStateCharacterReader{ok: true}
+	mux := RegisterLocalQuestStateCharacterEndpoint(NewPprofMux("gamed"), reader.Read)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/quest-state/characters/QuestHero", nil)
+	req.RemoteAddr = "192.0.2.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if reader.calls != 0 {
+		t.Fatalf("expected non-loopback request not to call reader, got %d", reader.calls)
+	}
+}
+
+func TestLocalQuestStateCharacterEndpointRejectsAmbiguousCharacterName(t *testing.T) {
+	reader := &stubQuestStateCharacterReader{ok: true}
+	mux := RegisterLocalQuestStateCharacterEndpoint(NewPprofMux("gamed"), reader.Read)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/quest-state/characters/Bad%2FName", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if reader.calls != 0 {
+		t.Fatalf("expected ambiguous character name not to call reader, got %d", reader.calls)
+	}
+}
+
+func TestLocalQuestStateCharacterEndpointReturnsNotFoundForMissingSnapshot(t *testing.T) {
+	reader := &stubQuestStateCharacterReader{}
+	mux := RegisterLocalQuestStateCharacterEndpoint(NewPprofMux("gamed"), reader.Read)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/quest-state/characters/MissingHero", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+	if reader.calls != 1 || reader.lastCharacter != "MissingHero" {
+		t.Fatalf("unexpected reader call state for missing snapshot: calls=%d last_character=%q", reader.calls, reader.lastCharacter)
+	}
+}
+
+func TestLocalQuestStateCharacterEndpointReturnsConflictOnReadError(t *testing.T) {
+	reader := &stubQuestStateCharacterReader{err: errors.New("invalid quest state")}
+	mux := RegisterLocalQuestStateCharacterEndpoint(NewPprofMux("gamed"), reader.Read)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/quest-state/characters/QuestHero", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if reader.calls != 1 || reader.lastCharacter != "QuestHero" {
+		t.Fatalf("unexpected reader call state for read error: calls=%d last_character=%q", reader.calls, reader.lastCharacter)
+	}
+}
+
+func TestLocalQuestStateCharacterEndpointRejectsWrongMethod(t *testing.T) {
+	reader := &stubQuestStateCharacterReader{ok: true}
+	mux := RegisterLocalQuestStateCharacterEndpoint(NewPprofMux("gamed"), reader.Read)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/quest-state/characters/QuestHero", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if reader.calls != 0 {
+		t.Fatalf("expected wrong method not to call reader, got %d", reader.calls)
+	}
+}
+
 type stubQuestStateStoreValidator struct {
 	calls   int
 	summary queststate.SnapshotSummary
@@ -298,4 +415,18 @@ func (s *stubQuestStateTransitionApplier) Apply(transition queststate.Transition
 	s.calls++
 	s.lastTransition = transition
 	return s.result, s.err
+}
+
+type stubQuestStateCharacterReader struct {
+	calls         int
+	lastCharacter string
+	snapshot      queststate.CharacterSnapshot
+	ok            bool
+	err           error
+}
+
+func (s *stubQuestStateCharacterReader) Read(character string) (any, bool, error) {
+	s.calls++
+	s.lastCharacter = character
+	return s.snapshot, s.ok, s.err
 }

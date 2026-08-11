@@ -121,6 +121,10 @@ type StaticActorSnapshot = worldruntime.StaticActorSnapshot
 
 type InteractionDefinition = interactionstore.Definition
 
+type QuestFlagSnapshot = queststate.FlagSnapshot
+
+type CharacterQuestStateSnapshot = queststate.CharacterSnapshot
+
 type InteractableStaticActorVisibilitySnapshot struct {
 	StaticActorSnapshot
 	Preview           string `json:"preview,omitempty"`
@@ -710,6 +714,33 @@ func (r *gameRuntime) ApplyQuestStateTransition(transition queststate.Transition
 	r.questStateMu.Lock()
 	defer r.questStateMu.Unlock()
 	return applier.ApplyTransition(transition)
+}
+
+func (r *gameRuntime) QuestState(character string) (CharacterQuestStateSnapshot, bool, error) {
+	character = strings.TrimSpace(character)
+	if r == nil || r.questStateStore == nil || character == "" {
+		return CharacterQuestStateSnapshot{}, false, nil
+	}
+	r.questStateMu.Lock()
+	defer r.questStateMu.Unlock()
+	snapshot, err := r.questStateStore.Load()
+	if err != nil {
+		if errors.Is(err, queststate.ErrSnapshotNotFound) {
+			return CharacterQuestStateSnapshot{}, false, nil
+		}
+		return CharacterQuestStateSnapshot{}, false, err
+	}
+	flags := make([]QuestFlagSnapshot, 0)
+	for _, flag := range snapshot.Flags {
+		if flag.Character != character {
+			continue
+		}
+		flags = append(flags, QuestFlagSnapshot{QuestRef: flag.QuestRef, Name: flag.Name, Value: flag.Value})
+	}
+	if len(flags) == 0 {
+		return CharacterQuestStateSnapshot{}, false, nil
+	}
+	return CharacterQuestStateSnapshot{Character: character, Flags: flags}, true, nil
 }
 
 func (r *gameRuntime) ValidateStaticActorStore() (staticstore.SnapshotSummary, error) {

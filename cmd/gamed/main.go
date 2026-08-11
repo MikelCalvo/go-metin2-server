@@ -128,6 +128,16 @@ func main() {
 			return gameRuntime.ApplyQuestStateTransition(transition)
 		},
 	)
+	opsHandler = ops.RegisterLocalQuestStateCharacterEndpoint(
+		opsHandler,
+		func(character string) (any, bool, error) {
+			snapshot, ok, err := gameRuntime.QuestState(character)
+			if err != nil || !ok {
+				return nil, ok, err
+			}
+			return snapshot, true, nil
+		},
+	)
 	opsHandler = ops.RegisterLocalItemTemplateStoreBackupEndpoint(
 		opsHandler,
 		func(dstDir string) (any, error) { return gameRuntime.BackupItemTemplateStore(dstDir) },

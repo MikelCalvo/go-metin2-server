@@ -382,6 +382,103 @@ func TestGameRuntimeApplyQuestStateTransitionPersistsSnapshot(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeQuestStateReturnsSortedCharacterSnapshot(t *testing.T) {
+	questStatePath := filepath.Join(t.TempDir(), "state", "quest-state.json")
+	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},
+		{Character: "QuestHero", QuestRef: "quest:daily_check", Name: "talked_to_guide", Value: 1},
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "met_guard", Value: 1},
+		{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "step", Value: 1},
+	}}); err != nil {
+		t.Fatalf("save quest state snapshot: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	snapshot, ok, err := runtime.QuestState("QuestHero")
+	if err != nil {
+		t.Fatalf("read QuestHero quest state: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected QuestHero quest state snapshot")
+	}
+	want := CharacterQuestStateSnapshot{
+		Character: "QuestHero",
+		Flags: []QuestFlagSnapshot{
+			{QuestRef: "quest:daily_check", Name: "talked_to_guide", Value: 1},
+			{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1},
+			{QuestRef: "quest:first_steps", Name: "step", Value: 2},
+		},
+	}
+	if !reflect.DeepEqual(snapshot, want) {
+		t.Fatalf("unexpected QuestHero quest state snapshot:\n got: %#v\nwant: %#v", snapshot, want)
+	}
+	if _, ok, err := runtime.QuestState("MissingHero"); err != nil || ok {
+		if err != nil {
+			t.Fatalf("unexpected error for missing character quest state lookup: %v", err)
+		}
+		t.Fatal("expected missing character quest state lookup to fail closed")
+	}
+}
+
+func TestGameRuntimeQuestStateTreatsMissingStoreAsEmptySnapshot(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "missing", "quest-state.json")},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	if _, ok, err := runtime.QuestState("QuestHero"); err != nil || ok {
+		if err != nil {
+			t.Fatalf("unexpected error for missing quest-state store: %v", err)
+		}
+		t.Fatal("expected missing quest-state store to report no character snapshot")
+	}
+}
+
+func TestGameRuntimeQuestStateReturnsErrorForInvalidCommittedSnapshot(t *testing.T) {
+	questStatePath := filepath.Join(t.TempDir(), "state", "quest-state.json")
+	if err := os.MkdirAll(filepath.Dir(questStatePath), 0o755); err != nil {
+		t.Fatalf("mkdir quest state dir: %v", err)
+	}
+	if err := os.WriteFile(questStatePath, []byte(`{"flags":[{"character":"QuestHero","quest_ref":"quest:first_steps","name":"step","value":0}]}`), 0o644); err != nil {
+		t.Fatalf("write invalid quest state snapshot: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	if _, ok, err := runtime.QuestState("QuestHero"); err == nil || ok {
+		t.Fatalf("expected invalid committed quest-state snapshot to fail closed, ok=%v err=%v", ok, err)
+	}
+}
+
 func TestGameRuntimePersistenceStatusReportsRestoreBlockedWhileLiveCharacterSelected(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
