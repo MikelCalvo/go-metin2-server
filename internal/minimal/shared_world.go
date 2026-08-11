@@ -2632,6 +2632,27 @@ func (r *sharedWorldRegistry) SpawnGroupByRef(ref string) (StaticActorSnapshot, 
 	return r.markStaticActorSnapshotStateLocked(snapshot), true
 }
 
+func (r *sharedWorldRegistry) SpawnGroupLeash(entityID uint64, radius int32) (SpawnGroupLeashSnapshot, bool) {
+	if r == nil || r.entities == nil || entityID == 0 {
+		return SpawnGroupLeashSnapshot{}, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	actor, ok := r.entities.StaticActor(entityID)
+	if !ok || actor.SpawnGroupRef == "" {
+		return SpawnGroupLeashSnapshot{}, false
+	}
+	evaluation, ok := worldruntime.EvaluateStaticActorSpawnLeash(actor, actor.Position, radius)
+	if !ok {
+		return SpawnGroupLeashSnapshot{}, false
+	}
+	return SpawnGroupLeashSnapshot{
+		Actor:              r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor)),
+		SpawnLeashSnapshot: worldruntime.SpawnLeashSnapshotFromEvaluation(evaluation),
+	}, true
+}
+
 func (r *sharedWorldRegistry) StaticActor(entityID uint64) (StaticActorSnapshot, bool) {
 	if r == nil || r.entities == nil || entityID == 0 {
 		return StaticActorSnapshot{}, false

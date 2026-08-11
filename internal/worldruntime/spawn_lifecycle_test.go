@@ -73,3 +73,39 @@ func TestEvaluateStaticActorSpawnLeashFailsClosedForNonSpawnActorsAndInvalidInpu
 		t.Fatalf("expected invalid current position to fail closed, got ok=%v evaluation=%+v", ok, evaluation)
 	}
 }
+
+func TestSpawnLeashSnapshotFromEvaluationExposesJSONFriendlyShape(t *testing.T) {
+	evaluation, ok := EvaluateSpawnLeash(NewPosition(42, 1700, 2800), NewPosition(42, 2301, 2800), 400)
+	if !ok {
+		t.Fatal("expected return-required leash evaluation to resolve")
+	}
+
+	snapshot := SpawnLeashSnapshotFromEvaluation(evaluation)
+	if snapshot.Status != SpawnLeashStatusReturnRequired || !snapshot.ReturnRequired || snapshot.Radius != 400 {
+		t.Fatalf("unexpected leash snapshot status/radius: %+v", snapshot)
+	}
+	if snapshot.Home.MapIndex != 42 || snapshot.Home.X != 1700 || snapshot.Home.Y != 2800 {
+		t.Fatalf("unexpected leash home snapshot: %+v", snapshot.Home)
+	}
+	if snapshot.Current.MapIndex != 42 || snapshot.Current.X != 2301 || snapshot.Current.Y != 2800 {
+		t.Fatalf("unexpected leash current snapshot: %+v", snapshot.Current)
+	}
+	if snapshot.ReturnTarget.MapIndex != 42 || snapshot.ReturnTarget.X != 1700 || snapshot.ReturnTarget.Y != 2800 {
+		t.Fatalf("unexpected leash return target snapshot: %+v", snapshot.ReturnTarget)
+	}
+}
+
+func TestSpawnLeashSnapshotFromEvaluationOmitsReturnTargetWhenReturnIsNotRequired(t *testing.T) {
+	evaluation, ok := EvaluateSpawnLeash(NewPosition(42, 1700, 2800), NewPosition(42, 1800, 2800), 400)
+	if !ok {
+		t.Fatal("expected within-radius leash evaluation to resolve")
+	}
+
+	snapshot := SpawnLeashSnapshotFromEvaluation(evaluation)
+	if snapshot.Status != SpawnLeashStatusWithinRadius || snapshot.ReturnRequired {
+		t.Fatalf("expected within-radius leash snapshot, got %+v", snapshot)
+	}
+	if snapshot.ReturnTarget != nil {
+		t.Fatalf("expected within-radius leash snapshot to omit return target, got %+v", snapshot.ReturnTarget)
+	}
+}

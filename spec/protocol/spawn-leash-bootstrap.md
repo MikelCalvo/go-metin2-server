@@ -15,14 +15,14 @@ What this document adds is deliberately narrower:
 
 ## Current owned contract
 
-The first bootstrap leash seam is a pure runtime classification helper in `internal/worldruntime`.
+The first bootstrap leash seam is a pure runtime classification helper in `internal/worldruntime`, exposed through the bootstrap runtime for read-only operator inspection.
 
 Inputs:
 - authored/home `Position { map_index, x, y }`
 - current `Position { map_index, x, y }`
 - positive leash `radius`
 
-For spawn-backed static actors, the authored/home position is the actor's `spawn_group_ref` placement.
+For spawn-backed static actors, the authored/home position is the actor's `spawn_group_ref` placement. In the current stationary practice-mob runtime, the current position is still the materialized actor position, so imported mobs normally classify as `at_home` until a later slice owns live mob movement.
 
 The result classifies the current position as one of:
 - `at_home`

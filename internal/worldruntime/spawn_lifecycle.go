@@ -21,6 +21,21 @@ type SpawnLeashEvaluation struct {
 	ReturnTarget   Position
 }
 
+type PositionSnapshot struct {
+	MapIndex uint32 `json:"map_index"`
+	X        int32  `json:"x"`
+	Y        int32  `json:"y"`
+}
+
+type SpawnLeashSnapshot struct {
+	Home           PositionSnapshot  `json:"home"`
+	Current        PositionSnapshot  `json:"current"`
+	Radius         int32             `json:"radius"`
+	Status         SpawnLeashStatus  `json:"status"`
+	ReturnRequired bool              `json:"return_required"`
+	ReturnTarget   *PositionSnapshot `json:"return_target,omitempty"`
+}
+
 // EvaluateStaticActorSpawnLeash classifies a spawn-backed static actor's current
 // position against its authored spawn position.
 func EvaluateStaticActorSpawnLeash(actor StaticEntity, current Position, radius int32) (SpawnLeashEvaluation, bool) {
@@ -56,6 +71,25 @@ func EvaluateSpawnLeash(home Position, current Position, radius int32) (SpawnLea
 	}
 	evaluation.Status = SpawnLeashStatusWithinRadius
 	return evaluation, true
+}
+
+func SpawnLeashSnapshotFromEvaluation(evaluation SpawnLeashEvaluation) SpawnLeashSnapshot {
+	snapshot := SpawnLeashSnapshot{
+		Home:           PositionSnapshotFromPosition(evaluation.Home),
+		Current:        PositionSnapshotFromPosition(evaluation.Current),
+		Radius:         evaluation.Radius,
+		Status:         evaluation.Status,
+		ReturnRequired: evaluation.ReturnRequired,
+	}
+	if evaluation.ReturnRequired {
+		returnTarget := PositionSnapshotFromPosition(evaluation.ReturnTarget)
+		snapshot.ReturnTarget = &returnTarget
+	}
+	return snapshot
+}
+
+func PositionSnapshotFromPosition(position Position) PositionSnapshot {
+	return PositionSnapshot{MapIndex: position.MapIndex, X: position.X, Y: position.Y}
 }
 
 func positionWithinRadius(left Position, right Position, radius int32) bool {

@@ -4409,6 +4409,112 @@ func TestLocalSpawnGroupByRefEndpointReturnsNotFoundForMissingRef(t *testing.T) 
 	}
 }
 
+func TestLocalSpawnGroupLeashEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
+	snapshot := map[string]any{
+		"actor":           map[string]any{"entity_id": uint64(44), "name": "Practice Wolf", "spawn_group_ref": "practice.wolf_1"},
+		"home":            map[string]any{"map_index": uint32(42), "x": int32(1700), "y": int32(2800)},
+		"current":         map[string]any{"map_index": uint32(42), "x": int32(2301), "y": int32(2800)},
+		"radius":          int32(400),
+		"status":          "return_required",
+		"return_required": true,
+		"return_target":   map[string]any{"map_index": uint32(42), "x": int32(1700), "y": int32(2800)},
+	}
+	mux := RegisterLocalSpawnGroupLeashEndpoint(NewPprofMux("gamed"), func(entityID uint64, radius int32) (any, bool) {
+		if entityID != 44 || radius != 400 {
+			return nil, false
+		}
+		return snapshot, true
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/spawn-groups/44/leash?radius=400", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body %q", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"entity_id":44`, `"spawn_group_ref":"practice.wolf_1"`, `"status":"return_required"`, `"return_required":true`, `"return_target"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %q", want, body)
+		}
+	}
+}
+
+func TestLocalSpawnGroupLeashEndpointRejectsInvalidRequestBeforeCallback(t *testing.T) {
+	mux := RegisterLocalSpawnGroupLeashEndpoint(NewPprofMux("gamed"), func(uint64, int32) (any, bool) {
+		t.Fatal("spawn-group leash lookup should not be called for invalid requests")
+		return nil, false
+	})
+
+	for _, path := range []string{"/local/spawn-groups/not-an-id/leash?radius=400", "/local/spawn-groups/44/leash", "/local/spawn-groups/44/leash?radius=0", "/local/spawn-groups/44/leash?radius=-1"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for %s, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+}
+
+func TestLocalSpawnGroupLeashEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	mux := RegisterLocalSpawnGroupLeashEndpoint(NewPprofMux("gamed"), func(uint64, int32) (any, bool) {
+		t.Fatal("spawn-group leash lookup should not be called for non-loopback callers")
+		return nil, false
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/spawn-groups/44/leash?radius=400", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+}
+
+func TestLocalSpawnGroupLeashEndpointRejectsWrongMethod(t *testing.T) {
+	mux := RegisterLocalSpawnGroupLeashEndpoint(NewPprofMux("gamed"), func(uint64, int32) (any, bool) {
+		t.Fatal("spawn-group leash lookup should not be called for wrong methods")
+		return nil, false
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/local/spawn-groups/44/leash?radius=400", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+}
+
+func TestLocalSpawnGroupLeashEndpointReturnsNotFoundForMissingEntityID(t *testing.T) {
+	mux := RegisterLocalSpawnGroupLeashEndpoint(NewPprofMux("gamed"), func(uint64, int32) (any, bool) {
+		return nil, false
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/spawn-groups/44/leash?radius=400", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
 func TestLocalStaticActorCombatProfileEndpointRegistersProfileForLoopbackPost(t *testing.T) {
 	const profile = "ops_profile_wolf"
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)

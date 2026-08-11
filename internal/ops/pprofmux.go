@@ -1078,6 +1078,30 @@ func RegisterLocalSpawnGroupByRefEndpoint(mux *http.ServeMux, spawnGroupByRef fu
 	return mux
 }
 
+func RegisterLocalSpawnGroupLeashEndpoint(mux *http.ServeMux, spawnGroupLeash func(uint64, int32) (any, bool)) *http.ServeMux {
+	if mux == nil || spawnGroupLeash == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/spawn-groups/{entity_id}/leash", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		entityID, radius, ok := decodeLocalSpawnGroupLeashRequest(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		value, ok := spawnGroupLeash(entityID, radius)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalGroundItemsEndpoint(mux *http.ServeMux, groundItems func() any) *http.ServeMux {
 	if mux == nil || groundItems == nil {
 		return mux
@@ -2736,6 +2760,30 @@ func decodeLocalSpawnGroupEntityID(r *http.Request) (uint64, bool) {
 		return 0, false
 	}
 	return entityID, true
+}
+
+func decodeLocalSpawnGroupLeashRequest(r *http.Request) (uint64, int32, bool) {
+	entityIDRaw := strings.TrimSpace(r.PathValue("entity_id"))
+	if entityIDRaw == "" || strings.Contains(entityIDRaw, "/") {
+		return 0, 0, false
+	}
+	entityID, err := strconv.ParseUint(entityIDRaw, 10, 64)
+	if err != nil || entityID == 0 {
+		return 0, 0, false
+	}
+	radiusValues := r.URL.Query()["radius"]
+	if len(radiusValues) != 1 {
+		return 0, 0, false
+	}
+	radiusRaw := strings.TrimSpace(radiusValues[0])
+	if radiusRaw == "" || strings.Contains(radiusRaw, "/") {
+		return 0, 0, false
+	}
+	radius, err := strconv.ParseInt(radiusRaw, 10, 32)
+	if err != nil || radius <= 0 {
+		return 0, 0, false
+	}
+	return entityID, int32(radius), true
 }
 
 func decodeLocalSpawnGroupRef(r *http.Request) (string, bool) {

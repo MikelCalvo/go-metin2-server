@@ -281,6 +281,50 @@ func TestGameRuntimeSpawnGroupByRefReturnsExactSpawnBackedActorOnly(t *testing.T
 	}
 }
 
+func TestGameRuntimeSpawnGroupLeashReturnsAuthoredHomeEvaluation(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.leash_runtime",
+		Name:          "LeashRuntimeMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import leash runtime spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.leash_runtime")
+	if !ok {
+		t.Fatal("expected leash runtime spawn group to resolve by ref")
+	}
+
+	leash, ok := runtime.SpawnGroupLeash(group.EntityID, 400)
+	if !ok {
+		t.Fatalf("expected spawn-group leash evaluation for entity %d", group.EntityID)
+	}
+	if leash.Actor.EntityID != group.EntityID || leash.Actor.SpawnGroupRef != "practice.leash_runtime" {
+		t.Fatalf("unexpected leash actor snapshot: %+v", leash.Actor)
+	}
+	if leash.Status != worldruntime.SpawnLeashStatusAtHome || leash.ReturnRequired || leash.ReturnTarget != nil || leash.Radius != 400 {
+		t.Fatalf("expected imported spawn group to evaluate at authored home, got %+v", leash)
+	}
+	if leash.Home.MapIndex != 42 || leash.Home.X != 1700 || leash.Home.Y != 2800 || leash.Current != leash.Home {
+		t.Fatalf("unexpected leash position snapshots: %+v", leash)
+	}
+}
+
 func TestGameRuntimeSpawnGroupsForMapReturnsMapLocalSpawnBackedActors(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},

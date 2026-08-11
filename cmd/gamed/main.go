@@ -220,6 +220,16 @@ func main() {
 			return snapshot, true
 		},
 	)
+	opsHandler = ops.RegisterLocalSpawnGroupLeashEndpoint(
+		opsHandler,
+		func(entityID uint64, radius int32) (any, bool) {
+			snapshot, ok := gameRuntime.SpawnGroupLeash(entityID, radius)
+			if !ok {
+				return nil, false
+			}
+			return snapshot, true
+		},
+	)
 	opsHandler = ops.RegisterLocalGroundItemsEndpoint(
 		opsHandler,
 		func() any { return gameRuntime.GroundItems() },

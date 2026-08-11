@@ -119,6 +119,15 @@ type GroundItemSnapshot = worldruntime.GroundItemSnapshot
 
 type StaticActorSnapshot = worldruntime.StaticActorSnapshot
 
+type PositionSnapshot = worldruntime.PositionSnapshot
+
+type SpawnLeashSnapshot = worldruntime.SpawnLeashSnapshot
+
+type SpawnGroupLeashSnapshot struct {
+	Actor StaticActorSnapshot `json:"actor"`
+	SpawnLeashSnapshot
+}
+
 type InteractionDefinition = interactionstore.Definition
 
 type QuestFlagSnapshot = queststate.FlagSnapshot
@@ -1571,6 +1580,13 @@ func (r *gameRuntime) SpawnGroupByRef(ref string) (StaticActorSnapshot, bool) {
 		return StaticActorSnapshot{}, false
 	}
 	return r.sharedWorld.SpawnGroupByRef(ref)
+}
+
+func (r *gameRuntime) SpawnGroupLeash(entityID uint64, radius int32) (SpawnGroupLeashSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil {
+		return SpawnGroupLeashSnapshot{}, false
+	}
+	return r.sharedWorld.SpawnGroupLeash(entityID, radius)
 }
 
 func (r *gameRuntime) StaticActor(entityID uint64) (StaticActorSnapshot, bool) {
