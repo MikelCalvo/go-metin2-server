@@ -632,11 +632,9 @@ func (r *sharedWorldRegistry) RemoveExchangeItem(originID uint64, displaySlot ui
 	}
 	selfFrame := encodeExchangeItemDelFrame(1, displaySlot)
 	peerFrame := encodeExchangeItemDelFrame(0, displaySlot)
-	selfFrames := [][]byte{selfFrame}
-	peerFrames := [][]byte{peerFrame}
 	resetSelfFrames, resetPeerFrames := r.exchangeAcceptResetFramesLocked(originID, partnerID)
-	selfFrames = append(selfFrames, resetSelfFrames...)
-	peerFrames = append(peerFrames, resetPeerFrames...)
+	selfFrames := append(resetSelfFrames, selfFrame)
+	peerFrames := append(resetPeerFrames, peerFrame)
 	if !r.enqueueToEntityLocked(partnerID, peerFrames) {
 		return nil, false
 	}

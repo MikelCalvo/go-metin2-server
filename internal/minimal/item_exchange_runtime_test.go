@@ -767,6 +767,117 @@ func TestGameRuntimeItemExchangeDisplayChangeResetsAcceptedMarkersWithoutFinaliz
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "peer exchange accept reset")
 }
 
+func TestGameRuntimeItemExchangeItemDelResetsAcceptedMarkersBeforeDisplayClear(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeDelResetOwner", 0x01030787, 0x02040787, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 745, Vnum: 27045, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeDelResetPeer", 0x01030788, 0x02040788, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 746, Vnum: 27002, Count: 2, Slot: 6}}
+	peer.Quickslots = []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeItem, Slot: 6}}
+	ownerLogin := "ex-del-reset-a"
+	peerLogin := "ex-del-reset-b"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707087, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x70707088, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange item-del reset owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange item-del reset peer account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27045, Name: "Accepted Del Reset Potion", Stackable: true, MaxCount: 200, Sockets: itemcatalog.SocketValues{4, 5, 6}}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange item-del reset runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707087)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707088)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected item-del reset exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected item-del reset exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	itemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderItemAdd,
+		Arg2:      7,
+		Position:  itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected item-del reset item-add error: %v", err)
+	}
+	if len(itemAddOut) != 1 {
+		t.Fatalf("expected item-del reset item-add to emit one frame, got %d", len(itemAddOut))
+	}
+	assertExchangeItemAddFrame(t, itemAddOut[0], 1, 7, owner.Inventory[0], template, "item-del reset owner add")
+	queuedItemAdd := flushServerFrames(t, peerFlow)
+	if len(queuedItemAdd) != 1 {
+		t.Fatalf("expected item-del reset peer item-add frame, got %d", len(queuedItemAdd))
+	}
+	assertExchangeItemAddFrame(t, queuedItemAdd[0], 0, 7, owner.Inventory[0], template, "item-del reset peer add")
+
+	ownerAcceptOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected owner accept before item-del reset error: %v", err)
+	}
+	if len(ownerAcceptOut) != 1 {
+		t.Fatalf("expected owner accept before item-del reset to emit one frame, got %d", len(ownerAcceptOut))
+	}
+	assertExchangeAcceptFrame(t, ownerAcceptOut[0], 1, "owner accept before item-del reset")
+	queuedOwnerAccept := flushServerFrames(t, peerFlow)
+	if len(queuedOwnerAccept) != 1 {
+		t.Fatalf("expected owner accept before item-del reset to queue one peer frame, got %d", len(queuedOwnerAccept))
+	}
+	assertExchangeAcceptFrame(t, queuedOwnerAccept[0], 0, "owner accept before item-del reset peer")
+
+	peerAcceptOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected peer accept before item-del reset error: %v", err)
+	}
+	if len(peerAcceptOut) != 1 {
+		t.Fatalf("expected peer accept before item-del reset to emit one frame, got %d", len(peerAcceptOut))
+	}
+	assertExchangeAcceptFrame(t, peerAcceptOut[0], 1, "peer accept before item-del reset")
+	queuedPeerAccept := flushServerFrames(t, ownerFlow)
+	if len(queuedPeerAccept) != 1 {
+		t.Fatalf("expected peer accept before item-del reset to queue one owner frame, got %d", len(queuedPeerAccept))
+	}
+	assertExchangeAcceptFrame(t, queuedPeerAccept[0], 0, "peer accept before item-del reset owner")
+
+	itemDelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemDel, Arg1: 7})))
+	if err != nil {
+		t.Fatalf("unexpected accepted exchange item-del reset error: %v", err)
+	}
+	if len(itemDelOut) != 3 {
+		t.Fatalf("expected accepted exchange item-del to emit item-del plus two accept resets, got %d frames", len(itemDelOut))
+	}
+	assertExchangeAcceptFrameWithValue(t, itemDelOut[0], 1, 0, "item-del reset owner-side self marker")
+	assertExchangeAcceptFrameWithValue(t, itemDelOut[1], 0, 0, "item-del reset peer-side self marker")
+	assertExchangeItemDelFrame(t, itemDelOut[2], 1, 7, "item-del reset self response")
+	queuedItemDel := flushServerFrames(t, peerFlow)
+	if len(queuedItemDel) != 3 {
+		t.Fatalf("expected accepted exchange item-del to queue item-del plus two accept resets, got %d frames", len(queuedItemDel))
+	}
+	assertExchangeAcceptFrameWithValue(t, queuedItemDel[0], 0, 0, "item-del reset owner-side peer marker")
+	assertExchangeAcceptFrameWithValue(t, queuedItemDel[1], 1, 0, "item-del reset peer-side peer marker")
+	assertExchangeItemDelFrame(t, queuedItemDel[2], 0, 7, "item-del reset peer response")
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "owner exchange item-del reset")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "peer exchange item-del reset")
+}
+
 func TestGameRuntimeItemExchangeAcceptRequiresActiveShellWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
