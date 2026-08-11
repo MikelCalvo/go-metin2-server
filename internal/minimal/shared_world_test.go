@@ -325,6 +325,61 @@ func TestGameRuntimeSpawnGroupLeashReturnsAuthoredHomeEvaluation(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeSpawnGroupLeashUsesPreservedHomeAfterCurrentPositionUpdate(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.leash_runtime_moved",
+		Name:          "LeashRuntimeMovedMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import moved leash runtime spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.leash_runtime_moved")
+	if !ok {
+		t.Fatal("expected moved leash runtime spawn group to resolve by ref")
+	}
+
+	updated, ok := runtime.UpdateStaticActor(group.EntityID, "LeashRuntimeMovedMob", 42, 2301, 2800, 20350)
+	if !ok {
+		t.Fatalf("expected spawn-backed actor current-position update to succeed")
+	}
+	if updated.SpawnGroupRef != "practice.leash_runtime_moved" || updated.CombatProfile != string(worldruntime.StaticActorCombatProfilePracticeMob) {
+		t.Fatalf("expected update to preserve spawn-group combat identity, got %+v", updated)
+	}
+
+	leash, ok := runtime.SpawnGroupLeash(group.EntityID, 400)
+	if !ok {
+		t.Fatalf("expected moved spawn-group leash evaluation for entity %d", group.EntityID)
+	}
+	if leash.Home.MapIndex != 42 || leash.Home.X != 1700 || leash.Home.Y != 2800 {
+		t.Fatalf("expected moved spawn-group leash to preserve authored home, got %+v", leash.Home)
+	}
+	if leash.Current.MapIndex != 42 || leash.Current.X != 2301 || leash.Current.Y != 2800 {
+		t.Fatalf("expected moved spawn-group leash to report current runtime position, got %+v", leash.Current)
+	}
+	if leash.Status != worldruntime.SpawnLeashStatusReturnRequired || !leash.ReturnRequired || leash.ReturnTarget == nil {
+		t.Fatalf("expected moved spawn group outside radius to require return home, got %+v", leash)
+	}
+	if *leash.ReturnTarget != leash.Home {
+		t.Fatalf("expected return target to be preserved authored home, got target=%+v home=%+v", leash.ReturnTarget, leash.Home)
+	}
+}
+
 func TestGameRuntimeSpawnGroupsForMapReturnsMapLocalSpawnBackedActors(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},

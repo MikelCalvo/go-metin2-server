@@ -2445,6 +2445,7 @@ func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, ma
 	targetActor := worldruntime.StaticEntity{
 		Entity:          worldruntime.Entity{ID: entityID, Name: name},
 		Position:        position,
+		SpawnHome:       previous.SpawnHome,
 		RaceNum:         raceNum,
 		InteractionKind: interactionKind,
 		InteractionRef:  interactionRef,
@@ -2643,7 +2644,7 @@ func (r *sharedWorldRegistry) SpawnGroupLeash(entityID uint64, radius int32) (Sp
 	if !ok || actor.SpawnGroupRef == "" {
 		return SpawnGroupLeashSnapshot{}, false
 	}
-	evaluation, ok := worldruntime.EvaluateStaticActorSpawnLeash(actor, actor.Position, radius)
+	evaluation, ok := worldruntime.EvaluateStaticActorCurrentSpawnLeash(actor, radius)
 	if !ok {
 		return SpawnGroupLeashSnapshot{}, false
 	}

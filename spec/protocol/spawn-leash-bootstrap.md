@@ -22,7 +22,9 @@ Inputs:
 - current `Position { map_index, x, y }`
 - positive leash `radius`
 
-For spawn-backed static actors, the authored/home position is the actor's `spawn_group_ref` placement. In the current stationary practice-mob runtime, the current position is still the materialized actor position, so imported mobs normally classify as `at_home` until a later slice owns live mob movement.
+For spawn-backed static actors, the authored/home position is the actor's `spawn_group_ref` placement. The runtime preserves that home position separately from the materialized actor's current position. Older snapshots that lack a preserved home position fall back to the current position and classify as `at_home` until moved by a later owned seam.
+
+In the current stationary practice-mob runtime, freshly imported mobs normally classify as `at_home`. If an owned runtime/operator update changes only the materialized actor position, the same read-only leash inspection must continue to compare that current position against the preserved authored home and can report `within_radius` or `return_required` without mutating the actor.
 
 The result classifies the current position as one of:
 - `at_home`
@@ -47,7 +49,7 @@ The runtime-facing JSON snapshot for a materialized spawn group contains:
 - `return_required`
 - optional `return_target` only when `return_required = true`
 
-For this slice, the concrete loopback endpoint is `GET /local/spawn-groups/{entity_id}/leash?radius=<positive-int>`. It is operator/debug tooling only; it is not a gameplay packet and it does not mutate actor position, target ownership, HP, death state, respawn timers, or visible-world membership.
+For this slice, the concrete loopback endpoint is `GET /local/spawn-groups/{entity_id}/leash?radius=<positive-int>`. It is operator/debug tooling only; it is not a gameplay packet and it does not mutate actor position, target ownership, HP, death state, respawn timers, or visible-world membership. Its result is still meaningful after a runtime actor-position update: `home` remains the authored spawn position while `current` reflects the materialized actor position at lookup time.
 
 ## Fail-closed cases
 
