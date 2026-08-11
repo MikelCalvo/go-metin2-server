@@ -3809,7 +3809,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.ItemExchangeResult{Accepted: false}
 					}
 					selectedPlayer, ok := currentSelectedPlayer()
-					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !ownsLiveSharedWorldSession() || !sharedWorld.hasActiveExchange(sharedWorldID) {
 						return gameflow.ItemExchangeResult{Accepted: false}
 					}
 					template, ok := runtime.resolveRuntimeItemTemplate(selectedPlayer, inventory.SlotIndex(packet.Position.Cell))

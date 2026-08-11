@@ -432,6 +432,35 @@ func (r *sharedWorldRegistry) CloseExchange(originID uint64) ([][]byte, bool) {
 	return [][]byte{encodeExchangeEndFrame()}, true
 }
 
+func (r *sharedWorldRegistry) hasActiveExchange(originID uint64) bool {
+	if r == nil || originID == 0 {
+		return false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	partnerID, ok := r.exchangePartners[originID]
+	if !ok || partnerID == 0 {
+		return false
+	}
+	if _, ok := r.sessionEntryLocked(originID); !ok {
+		return false
+	}
+	if _, ok := r.sessionEntryLocked(partnerID); !ok {
+		return false
+	}
+	origin, ok := r.playerCharacter(originID)
+	if !ok || characterAtBootstrapHPFloor(origin) {
+		return false
+	}
+	partner, ok := r.playerCharacter(partnerID)
+	if !ok || characterAtBootstrapHPFloor(partner) {
+		return false
+	}
+	return true
+}
+
 func (r *sharedWorldRegistry) AddExchangeItem(originID uint64, displaySlot uint8, display player.ExchangeItemAddDisplay) ([][]byte, bool) {
 	if r == nil || originID == 0 || displaySlot >= itemproto.ExchangeItemMaxNum {
 		return nil, false

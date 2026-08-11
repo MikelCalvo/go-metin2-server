@@ -437,7 +437,8 @@ Run this only if packet tooling or the client build can emit an exchange/trade a
 - [ ] When the carried item is allowed by its template, inspect both exchange windows and packet logs for the display-only `GC::EXCHANGE ITEM_ADD` frames
 - [ ] Attempt one active-shell `EXCHANGE ELK_ADD` / gold-add request for an amount the requester currently has
 - [ ] Attempt one active-shell `EXCHANGE ELK_ADD` / gold-add request above the requester's current live gold
-- [ ] Repeat `EXCHANGE ITEM_ADD` with a carried item whose loaded template authors `anti_give = true` and non-empty `give_reject_message`
+- [ ] Repeat active-shell `EXCHANGE ITEM_ADD` with a carried item whose loaded template authors `anti_give = true` and non-empty `give_reject_message`
+- [ ] Repeat the same guarded `EXCHANGE ITEM_ADD` before any exchange shell is open
 - [ ] If packet tooling allows it, repeat that guarded `EXCHANGE ITEM_ADD` with display slot `12` or higher
 - [ ] If packet tooling allows it, add one valid item to display slot `7` and then try to add a second item to the same display slot
 - [ ] If packet tooling allows it, add one valid item to display slot `7` and then try to add that same carried item cell to a different display slot
@@ -459,7 +460,7 @@ Expected result:
 - active-shell gold-add above the requester's current live gold emits one self `GC::EXCHANGE LESS_GOLD`, queues no peer frame, and does not mutate live/persisted gold
 - active-shell `EXCHANGE ACCEPT` emits one self `GC::EXCHANGE ACCEPT` with `is_me = 1` and one queued peer `GC::EXCHANGE ACCEPT` with `is_me = 0`; both carry `arg1 = 1`, leave item/gold display state unchanged, leave the shell cancellable, and do not transfer items/gold or persist trade state; a later accepted display-changing `ITEM_ADD`, `ITEM_DEL`, or in-budget `ELK_ADD` clears previously shown accept markers with `GC::EXCHANGE ACCEPT(arg1 = 0)` before showing the new display state, again without inventory/gold/persistence mutation
 - finalization/result semantics remain unsupported in the shipped bootstrap runtime; apart from the current guard feedback and display-only item-add/item-del/gold-add/accept paths, unsupported exchange requests emit no exchange result frames and do not mutate state
-- an `anti_give` carried item with `give_reject_message` returns exactly one self-only `CHAT_TYPE_INFO` message for `EXCHANGE ITEM_ADD` using that authored text only when the requested display slot is in the current `0..11` exchange item range, while still leaving inventory, equipment, quickslots, gold, peers, ground handles, and persistence unchanged; it does not emit `GC::EXCHANGE ITEM_ADD`
+- an `anti_give` carried item with `give_reject_message` returns exactly one self-only `CHAT_TYPE_INFO` message for active-shell `EXCHANGE ITEM_ADD` using that authored text only when the requested display slot is in the current `0..11` exchange item range, while still leaving inventory, equipment, quickslots, gold, peers, ground handles, and persistence unchanged; it does not emit `GC::EXCHANGE ITEM_ADD`; the same guarded item-add attempted before an exchange shell is open remains a silent no-frame/no-mutation rejection
 - out-of-range `EXCHANGE ITEM_ADD` display slots stay no-frame/no-mutation even for guarded `anti_give` templates
 - malformed `EXCHANGE` payload sizes fail at the codec/dispatcher boundary rather than mutating runtime state
 - this is an exchange-window shell, not a completed exchange, trade, safebox, or player-shop feature

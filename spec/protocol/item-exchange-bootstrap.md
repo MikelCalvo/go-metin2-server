@@ -9,7 +9,7 @@ The goal is deliberately conservative:
 - route the packet through the `GAME` phase without treating it as an unknown-header disconnect edge
 - own the first two-party exchange-window shell (`START` / display-only `ITEM_ADD` / display-only `ITEM_DEL` / display-only `GOLD_ADD` / display-only `ACCEPT` / accept reset / `END`) without mutating inventory, equipment, quickslots, gold, ground items, or persisted account state
 - keep item ownership transfer/locking, accepted gold mutation, full finalize/result semantics, and trade mutation fail-closed until a later exchange/trade slice owns those semantics
-- allow one template-authored guard response for already-owned `anti_give` metadata on `ITEM_ADD` without implementing item transfer
+- allow one active-shell template-authored guard response for already-owned `anti_give` metadata on `ITEM_ADD` without implementing item transfer
 
 This is not a completed exchange, trade, safebox, or player-shop system.
 
@@ -126,6 +126,7 @@ Once a selected character is already at the bootstrap zero-HP floor, new `START`
 There is one owned guard-feedback exception for `ITEM_ADD`. When all of these are true:
 
 - the selected character is already in `GAME` and above the bootstrap zero-HP floor
+- the requester owns a live shared-world session that is already paired in the bootstrap exchange shell
 - the exchange subheader is `ITEM_ADD`
 - the source position is a carried inventory cell (`window = INVENTORY`, `cell < 90`)
 - the requested exchange item display slot is in the current owned `0..11` range
@@ -140,7 +141,7 @@ then the minimal runtime keeps the existing guard response instead of emitting `
 - `vid = 0`
 - `message = template.give_reject_message`
 
-That response is deliberately not an exchange-window item placement or transfer attempt. It still performs no inventory, equipment, quickslot, gold, ground-handle, peer, or persistence mutation.
+That response is deliberately not an exchange-window item placement or transfer attempt and is available only inside an active paired shell. No-shell `ITEM_ADD` attempts remain ordinary no-frame/no-mutation rejections even when the carried template authors `anti_give` plus `give_reject_message`. The guard response still performs no inventory, equipment, quickslot, gold, ground-handle, peer, or persistence mutation.
 
 Templates that author `give_reject_message` without `anti_give` are invalid at the item-template store boundary, and embedded NUL bytes in the message fail closed before runtime boot.
 
@@ -155,7 +156,7 @@ Later slices must write a new contract before broadening this packet into real g
 - trade item removal, carried-item locking/removal, or accepted gold mutation semantics beyond the current display-only item/gold shell
 - real finalize/result state machines beyond the current accept-marker presentation/reset shell
 - two-party inventory/gold mutation ordering
-- accepted anti-flag/template guard behavior inside an active exchange beyond the self-only `anti_give` / `give_reject_message` `ITEM_ADD` rejection and the silent display suppression guards described above
+- accepted anti-flag/template guard behavior inside an active exchange beyond the active-shell self-only `anti_give` / `give_reject_message` `ITEM_ADD` rejection and the silent display suppression guards described above
 - rollback, audit, or durable economic policy for exchange finalization
 
 ## Current coverage
@@ -163,4 +164,4 @@ Later slices must write a new contract before broadening this packet into real g
 - `internal/proto/item` freezes `CG::EXCHANGE` encode/decode behavior and the first shared `GC::EXCHANGE` response codec, plus unexpected-header and invalid-payload rejection for both directions.
 - `internal/game` freezes `GAME`-phase dispatch to a handler hook, with denied results returning no frames.
 - `internal/player` freezes both the metadata-driven, no-mutation exchange item-add `anti_give` rejection lookup and the valid carried-item display descriptor that copies template-authored sockets/attributes without mutating live or persisted state.
-- `internal/minimal` freezes the visible-peer `START` / `CANCEL` shell with paired `GC::EXCHANGE START` / `END` frames and no persisted inventory, quickslot, equipment, or gold mutation; it also freezes the self-only `GC::EXCHANGE ALREADY` response when a third visible requester targets an already-paired peer, the active-shell `GC::EXCHANGE ITEM_ADD` display echo/peer queue with template-authored sockets/attributes, duplicate display-slot and duplicate source-item suppression, the active-shell `GC::EXCHANGE ITEM_DEL` display clear/peer queue plus display-slot/source-item reuse, the active-shell `GC::EXCHANGE GOLD_ADD` display echo/peer queue, the active-shell `GC::EXCHANGE ACCEPT` display echo/peer queue without finalization, accept-marker reset frames before accepted item/gold display changes, the self-only `GC::EXCHANGE LESS_GOLD` response when displayed gold exceeds live gold, the no-frame fail-closed behavior for unsupported final result requests, the self-only `CHAT_TYPE_INFO` rejection frame when the carried item's template authors `anti_give` and `give_reject_message`, and the post-floor death-edge `GC::EXCHANGE END` close for open exchange shells.
+- `internal/minimal` freezes the visible-peer `START` / `CANCEL` shell with paired `GC::EXCHANGE START` / `END` frames and no persisted inventory, quickslot, equipment, or gold mutation; it also freezes the self-only `GC::EXCHANGE ALREADY` response when a third visible requester targets an already-paired peer, the active-shell `GC::EXCHANGE ITEM_ADD` display echo/peer queue with template-authored sockets/attributes, duplicate display-slot and duplicate source-item suppression, the active-shell `GC::EXCHANGE ITEM_DEL` display clear/peer queue plus display-slot/source-item reuse, the active-shell `GC::EXCHANGE GOLD_ADD` display echo/peer queue, the active-shell `GC::EXCHANGE ACCEPT` display echo/peer queue without finalization, accept-marker reset frames before accepted item/gold display changes, the self-only `GC::EXCHANGE LESS_GOLD` response when displayed gold exceeds live gold, the no-frame fail-closed behavior for unsupported final result requests, the active-shell self-only `CHAT_TYPE_INFO` rejection frame when the carried item's template authors `anti_give` and `give_reject_message` while no-shell guarded item-add attempts stay silent, and the post-floor death-edge `GC::EXCHANGE END` close for open exchange shells.

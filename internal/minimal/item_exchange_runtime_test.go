@@ -1065,16 +1065,22 @@ func TestGameRuntimeItemExchangeCloseQueuesPeerEndWithoutMutation(t *testing.T) 
 	assertExchangeAccountUnchanged(t, accounts, "item-exchange-close-target", peer, "target exchange close")
 }
 
-func TestGameRuntimeItemExchangeAntiGiveItemAddReturnsAuthoredRejectTextWithoutMutation(t *testing.T) {
+func TestGameRuntimeItemExchangeAntiGiveItemAddReturnsAuthoredRejectTextInsideActiveShellWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("ExchangeBound", 0x01030761, 0x02040761, 1100, 2100, 0, 101, 201)
 	owner.Gold = 12345
 	owner.Inventory = []inventory.ItemInstance{{ID: 702, Vnum: 27043, Count: 3, Slot: 5}}
 	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeBoundPeer", 0x01030791, 0x02040791, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
 	issuePeerTicket(t, ticketStore, "item-exchange-bound", 0x70707061, owner)
+	issuePeerTicket(t, ticketStore, "item-exchange-bound-peer", 0x70707091, peer)
 	if err := accounts.Save(accountstore.Account{Login: "item-exchange-bound", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed bound item-exchange account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-bound-peer", Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed bound item-exchange peer account: %v", err)
 	}
 	template := itemcatalog.Template{
 		Vnum:           27043,
@@ -1089,10 +1095,28 @@ func TestGameRuntimeItemExchangeAntiGiveItemAddReturnsAuthoredRejectTextWithoutM
 	if err != nil {
 		t.Fatalf("unexpected bound item-exchange runtime error: %v", err)
 	}
-	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-bound", 0x70707061)
-	defer closeSessionFlow(t, flow)
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-bound", 0x70707061)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-bound-peer", 0x70707091)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
 
-	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected anti-give exchange-start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected anti-give exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "anti-give owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected anti-give peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "anti-give peer start")
+
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
 		Subheader: itemproto.ExchangeSubheaderItemAdd,
 		Arg2:      7,
 		Position:  itemproto.InventoryPosition(5),
@@ -1110,22 +1134,55 @@ func TestGameRuntimeItemExchangeAntiGiveItemAddReturnsAuthoredRejectTextWithoutM
 	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != template.GiveRejectText {
 		t.Fatalf("unexpected anti-give item-exchange rejection chat: %+v", delivery)
 	}
-	if queued := flushServerFrames(t, flow); len(queued) != 0 {
-		t.Fatalf("expected no queued frames after anti-give EXCHANGE rejection, got %d", len(queued))
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames after anti-give EXCHANGE rejection, got %d", len(queued))
 	}
-	persisted, err := accounts.Load("item-exchange-bound")
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-bound", owner, "anti-give EXCHANGE owner")
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-bound-peer", peer, "anti-give EXCHANGE peer")
+}
+
+func TestGameRuntimeItemExchangeAntiGiveRejectTextRequiresActiveShellWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeNoShellBound", 0x01030792, 0x02040792, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 750, Vnum: 27043, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "item-exchange-noshell-bound", 0x70707092, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-noshell-bound", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed no-shell bound item-exchange account: %v", err)
+	}
+	template := itemcatalog.Template{
+		Vnum:           27043,
+		Name:           "Bound Exchange Potion",
+		Stackable:      true,
+		MaxCount:       200,
+		AntiGive:       true,
+		GiveRejectText: "You cannot trade this item.",
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
-		t.Fatalf("load persisted bound item-exchange account: %v", err)
+		t.Fatalf("unexpected no-shell bound item-exchange runtime error: %v", err)
 	}
-	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
-		t.Fatalf("anti-give EXCHANGE mutated inventory: got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-noshell-bound", 0x70707092)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderItemAdd,
+		Arg2:      7,
+		Position:  itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected no-shell anti-give item-exchange packet error: %v", err)
 	}
-	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
-		t.Fatalf("anti-give EXCHANGE mutated quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	if len(out) != 0 {
+		t.Fatalf("expected no-shell anti-give EXCHANGE item-add to emit no frames, got %d", len(out))
 	}
-	if persisted.Characters[0].Gold != owner.Gold {
-		t.Fatalf("anti-give EXCHANGE mutated gold: got %d want %d", persisted.Characters[0].Gold, owner.Gold)
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after no-shell anti-give EXCHANGE rejection, got %d", len(queued))
 	}
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-noshell-bound", owner, "no-shell anti-give EXCHANGE")
 }
 
 func TestGameRuntimeItemExchangeAntiGiveRejectTextRequiresValidDisplaySlotWithoutMutation(t *testing.T) {
@@ -1135,9 +1192,15 @@ func TestGameRuntimeItemExchangeAntiGiveRejectTextRequiresValidDisplaySlotWithou
 	owner.Gold = 12345
 	owner.Inventory = []inventory.ItemInstance{{ID: 703, Vnum: 27043, Count: 3, Slot: 5}}
 	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeSlotGuardPeer", 0x01030793, 0x02040793, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
 	issuePeerTicket(t, ticketStore, "item-exchange-slot-guard", 0x70707062, owner)
+	issuePeerTicket(t, ticketStore, "item-exchange-slot-guard-peer", 0x70707093, peer)
 	if err := accounts.Save(accountstore.Account{Login: "item-exchange-slot-guard", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed display-slot guarded item-exchange account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-slot-guard-peer", Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed display-slot guarded item-exchange peer account: %v", err)
 	}
 	template := itemcatalog.Template{
 		Vnum:           27043,
@@ -1152,10 +1215,28 @@ func TestGameRuntimeItemExchangeAntiGiveRejectTextRequiresValidDisplaySlotWithou
 	if err != nil {
 		t.Fatalf("unexpected display-slot guarded item-exchange runtime error: %v", err)
 	}
-	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-slot-guard", 0x70707062)
-	defer closeSessionFlow(t, flow)
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-slot-guard", 0x70707062)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-slot-guard-peer", 0x70707093)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
 
-	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected display-slot guarded exchange-start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected display-slot guarded exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "display-slot guarded owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected display-slot guarded peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "display-slot guarded peer start")
+
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
 		Subheader: itemproto.ExchangeSubheaderItemAdd,
 		Arg2:      12,
 		Position:  itemproto.InventoryPosition(5),
@@ -1166,22 +1247,11 @@ func TestGameRuntimeItemExchangeAntiGiveRejectTextRequiresValidDisplaySlotWithou
 	if len(out) != 0 {
 		t.Fatalf("expected out-of-range EXCHANGE display slot to suppress anti-give feedback, got %d frames", len(out))
 	}
-	if queued := flushServerFrames(t, flow); len(queued) != 0 {
-		t.Fatalf("expected no queued frames after out-of-range EXCHANGE display slot, got %d", len(queued))
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames after out-of-range EXCHANGE display slot, got %d", len(queued))
 	}
-	persisted, err := accounts.Load("item-exchange-slot-guard")
-	if err != nil {
-		t.Fatalf("load display-slot guarded item-exchange account: %v", err)
-	}
-	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
-		t.Fatalf("out-of-range EXCHANGE display slot mutated inventory: got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
-	}
-	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
-		t.Fatalf("out-of-range EXCHANGE display slot mutated quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
-	}
-	if persisted.Characters[0].Gold != owner.Gold {
-		t.Fatalf("out-of-range EXCHANGE display slot mutated gold: got %d want %d", persisted.Characters[0].Gold, owner.Gold)
-	}
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-slot-guard", owner, "out-of-range anti-give EXCHANGE owner")
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-slot-guard-peer", peer, "out-of-range anti-give EXCHANGE peer")
 }
 
 func TestGameRuntimeItemExchangeFailsClosedWithoutMutation(t *testing.T) {
