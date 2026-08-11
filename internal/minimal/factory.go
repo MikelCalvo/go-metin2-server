@@ -6597,7 +6597,41 @@ func (r *gameRuntime) ExportContentBundle() (contentbundle.Bundle, error) {
 	if r == nil || r.staticStore == nil || r.interactionStore == nil {
 		return contentbundle.Bundle{}, ErrContentBundleUnavailable
 	}
-	return contentbundle.FromSnapshotsWithItems(buildStaticActorStoreSnapshot(r.StaticActors()), buildInteractionDefinitionSnapshot(r.interactionDefinitions), r.buildItemTemplateSnapshot())
+	bundle, err := contentbundle.FromSnapshotsWithItems(buildStaticActorStoreSnapshot(r.StaticActors()), buildInteractionDefinitionSnapshot(r.interactionDefinitions), r.buildItemTemplateSnapshot())
+	if err != nil {
+		return contentbundle.Bundle{}, err
+	}
+	questState, err := r.loadQuestStateForContentBundle()
+	if err != nil {
+		return contentbundle.Bundle{}, err
+	}
+	bundle.QuestState = questState.Flags
+	return contentbundle.Canonicalize(bundle)
+}
+
+func (r *gameRuntime) loadQuestStateForContentBundle() (queststate.Snapshot, error) {
+	if r == nil || r.questStateStore == nil {
+		return queststate.Snapshot{Flags: []queststate.Flag{}}, nil
+	}
+	r.questStateMu.Lock()
+	defer r.questStateMu.Unlock()
+	snapshot, err := r.questStateStore.Load()
+	if err != nil {
+		if errors.Is(err, queststate.ErrSnapshotNotFound) {
+			return queststate.Snapshot{Flags: []queststate.Flag{}}, nil
+		}
+		return queststate.Snapshot{}, err
+	}
+	return snapshot, nil
+}
+
+func (r *gameRuntime) replaceQuestStateFromBundle(snapshot queststate.Snapshot) error {
+	if r == nil || r.questStateStore == nil {
+		return nil
+	}
+	r.questStateMu.Lock()
+	defer r.questStateMu.Unlock()
+	return r.questStateStore.Save(snapshot)
 }
 
 func (r *gameRuntime) ExportContentBundleSummary() (contentbundle.Summary, error) {
@@ -6661,6 +6695,9 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 	if r.sharedWorld != nil {
 		r.sharedWorld.suppressStaticActorFanout = false
 	}
+	if replaceErr == nil {
+		replaceErr = r.replaceQuestStateFromBundle(queststate.Snapshot{Flags: normalized.QuestState})
+	}
 	if replaceErr != nil {
 		if r.sharedWorld != nil {
 			r.sharedWorld.suppressStaticActorFanout = true
@@ -6668,6 +6705,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		}
 		rollbackErr := r.replaceItemTemplates(itemcatalog.Snapshot{Templates: previousBundle.ItemTemplates})
 		rollbackErr = errors.Join(rollbackErr, r.replaceInteractionDefinitions(interactionstore.Snapshot{Definitions: previousBundle.InteractionDefinitions}))
+		rollbackErr = errors.Join(rollbackErr, r.replaceQuestStateFromBundle(queststate.Snapshot{Flags: previousBundle.QuestState}))
 		if r.sharedWorld != nil {
 			for _, actor := range previousActors {
 				_, ok := r.sharedWorld.registerStaticActor(actor.EntityID, actor.Name, actor.MapIndex, actor.X, actor.Y, actor.RaceNum, actor.InteractionKind, actor.InteractionRef, actor.CombatProfile, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{Experience: actor.RewardExperience, Gold: actor.RewardGold, DropVnums: append([]uint32(nil), actor.RewardDropVnums...)})

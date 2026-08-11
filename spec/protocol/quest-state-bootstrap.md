@@ -13,9 +13,10 @@ The current owned surface is limited to `internal/queststate`:
 - strict validation of quest identities and flag names,
 - one compare-and-set transition primitive for a single character flag,
 - a read-only store validation summary plus crash-temp cleanup for the same snapshot format,
-- one read-only exact-character quest-state snapshot for local operator QA.
+- one read-only exact-character quest-state snapshot for local operator QA,
+- content-bundle import/export/summary inclusion for the same standalone quest-state snapshot.
 
-This seam is meant to support future content/NPC work such as “talk to an actor once and advance a flag”. The current local operator endpoints can validate, mutate through one compare-and-set transition, and read back one character's quest flags, but no static actor, client packet, reward, dialog runtime, or quest script calls it automatically yet.
+This seam is meant to support future content/NPC work such as “talk to an actor once and advance a flag”. The current local operator endpoints can validate, mutate through one compare-and-set transition, read back one character's quest flags, and inspect/import/export quest-state rows through authored content bundles, but no static actor, client packet, reward, dialog runtime, or quest script calls it automatically yet.
 
 ## Snapshot shape
 
@@ -162,6 +163,22 @@ It validates the store before removal, leaves the committed `quest-state.json` a
 
 These endpoints reuse the store primitives directly rather than duplicating snapshot parsing or temp-file matching rules.
 
+## Content-bundle boundary
+
+The content-bundle layer accepts an optional `quest_state` collection with the same row shape as the standalone file store:
+
+```json
+"quest_state": [
+  {"character":"QuestHero","quest_ref":"quest:first_steps","name":"step","value":1}
+]
+```
+
+Bundle canonicalization normalizes and sorts this collection with the same `queststate.NormalizeSnapshot(...)` ordering as the file store. Bundle validation rejects invalid or duplicate quest-state rows through `queststate.ValidSnapshot(...)`. Runtime `GET /local/content-bundle` exports the configured quest-state store into this collection, and runtime `POST /local/content-bundle` replaces the configured quest-state snapshot with the canonical bundle rows. Omitting `quest_state` imports an empty quest-state snapshot for this bootstrap content-bundle path.
+
+Import-preview and summary responses include `quest_state_flag_count`, `quest_state_character_count`, deterministic `quest_state_quest_refs`, and per-character `quest_state_characters` rows so operators can inspect candidate quest-state content without fetching the full bundle. `gamed` also exposes `GET /local/content-bundle/quest-state/characters/{character}` as a loopback-only read-only focused reader for one exact `quest_state_characters[]` summary row from the live exported bundle.
+
+The content-bundle boundary is still authored-content plumbing only: it does not define quest objectives, transition triggers, NPC dialogs, rewards, or client quest packets.
+
 ## Current non-goals
 
 This seam does **not** yet freeze:
@@ -174,7 +191,7 @@ This seam does **not** yet freeze:
 - party/guild/account-wide quest state,
 - timers or daily reset policy,
 - script VM compatibility,
-- content-bundle quest definitions,
+- content-bundle quest definitions beyond portable flag rows,
 - static-actor/NPC interaction hooks that call `/local/quest-state/transition` or the store transition primitive automatically.
 
 ## Success definition
@@ -185,6 +202,7 @@ The current repository can now say:
 - one single-flag transition can initialize, advance, or clear a flag only when the caller-provided current value matches,
 - `gamed` exposes a loopback-only `POST /local/quest-state/transition` harness for applying that primitive without inventing client quest packets or NPC dialog semantics,
 - `gamed` exposes a loopback-only `GET /local/quest-state/characters/{character}` readback harness for inspecting one persisted character flag set without mutating quest state,
+- content-bundle import/export now includes the configured quest-state snapshot and exposes a focused `GET /local/content-bundle/quest-state/characters/{character}` reader for bundle-summary rows,
 - the same store can be validated and cleaned of owned crash-temp files without mutating committed quest flags,
 - bad identities, duplicate rows, malformed JSON, symlinked committed snapshots, symlinked crash-temp candidates, and mismatched current values fail closed,
 - broader client-visible quest runtime remains future work.

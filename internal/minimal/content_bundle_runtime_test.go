@@ -13,6 +13,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
+	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -24,7 +25,11 @@ func TestGameRuntimeExportContentBundleBuildsDeterministicPortableBundle(t *test
 		{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
 		{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800, Text: "Step through the gate."},
 	})
-	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	questStatePath := t.TempDir() + "/quest-state.json"
+	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2}}}); err != nil {
+		t.Fatalf("seed quest state store: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -44,6 +49,7 @@ func TestGameRuntimeExportContentBundleBuildsDeterministicPortableBundle(t *test
 			{Name: "Blacksmith", MapIndex: 42, X: 1750, Y: 2850, RaceNum: 20301},
 			{Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"},
 		},
+		QuestState: []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2}},
 		InteractionDefinitions: []interactionstore.Definition{
 			{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
 			{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."},
@@ -61,7 +67,14 @@ func TestGameRuntimeExportContentBundleSummaryReturnsDeterministicCounts(t *test
 		{Kind: interactionstore.KindInfo, Ref: "lore:unused", Text: "Unused lore kept for later QA."},
 		{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."},
 	})
-	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	questStatePath := t.TempDir() + "/quest-state.json"
+	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},
+		{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "met_guard", Value: 1},
+	}}); err != nil {
+		t.Fatalf("seed quest state store: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -77,8 +90,15 @@ func TestGameRuntimeExportContentBundleSummaryReturnsDeterministicCounts(t *test
 		t.Fatalf("export content bundle summary: %v", err)
 	}
 	want := contentbundle.Summary{
-		StaticActorCount:                       2,
-		InteractableStaticActorCount:           1,
+		StaticActorCount:             2,
+		InteractableStaticActorCount: 1,
+		QuestStateFlagCount:          2,
+		QuestStateCharacterCount:     2,
+		QuestStateQuestRefs:          []string{"quest:first_steps"},
+		QuestStateCharacters: []contentbundle.QuestStateCharacterSummary{
+			{Character: "AnotherHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}}},
+			{Character: "QuestHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "step", Value: 2}}},
+		},
 		InteractionDefinitionCount:             2,
 		ReferencedInteractionDefinitionCount:   1,
 		UnreferencedInteractionDefinitionCount: 1,
@@ -416,10 +436,15 @@ func TestGameRuntimeImportContentBundleReplacesRuntimeStateAndPersistsStores(t *
 	staticActorStore := staticstore.NewFileStore(staticPath)
 	interactionPath := t.TempDir() + "/interaction-definitions.json"
 	interactionStore := interactionstore.NewFileStore(interactionPath)
+	questStatePath := t.TempDir() + "/quest-state.json"
+	questStateStore := queststate.NewFileStore(questStatePath)
 	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "old:lore", Text: "Old lore."}}}); err != nil {
 		t.Fatalf("save old interaction definitions: %v", err)
 	}
-	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	if err := questStateStore.Save(queststate.Snapshot{Flags: []queststate.Flag{{Character: "OldHero", QuestRef: "quest:first_steps", Name: "step", Value: 1}}}); err != nil {
+		t.Fatalf("save old quest state: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -429,6 +454,7 @@ func TestGameRuntimeImportContentBundleReplacesRuntimeStateAndPersistsStores(t *
 
 	imported, err := runtime.ImportContentBundle(contentbundle.Bundle{
 		StaticActors:           []contentbundle.StaticActor{{Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"}},
+		QuestState:             []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2}},
 		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."}},
 	})
 	if err != nil {
@@ -436,6 +462,7 @@ func TestGameRuntimeImportContentBundleReplacesRuntimeStateAndPersistsStores(t *
 	}
 	wantBundle := contentbundle.Bundle{
 		StaticActors:           []contentbundle.StaticActor{{Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"}},
+		QuestState:             []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2}},
 		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."}},
 	}
 	if !reflect.DeepEqual(imported, wantBundle) {
@@ -459,6 +486,14 @@ func TestGameRuntimeImportContentBundleReplacesRuntimeStateAndPersistsStores(t *
 	}
 	if len(persistedActors.StaticActors) != 1 || persistedActors.StaticActors[0].Name != "VillageGuard" || persistedActors.StaticActors[0].EntityID == 0 || persistedActors.StaticActors[0].InteractionRef != "npc:village_guard" {
 		t.Fatalf("unexpected persisted static actors after import: %#v", persistedActors)
+	}
+	persistedQuestState, err := questStateStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted quest state: %v", err)
+	}
+	wantQuestState := queststate.Snapshot{Flags: []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2}}}
+	if !reflect.DeepEqual(persistedQuestState, wantQuestState) {
+		t.Fatalf("unexpected persisted quest state after import:\n got: %#v\nwant: %#v", persistedQuestState, wantQuestState)
 	}
 }
 

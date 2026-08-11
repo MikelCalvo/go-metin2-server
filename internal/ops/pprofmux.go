@@ -2026,6 +2026,41 @@ func RegisterLocalContentBundleRewardDropEndpoint(mux *http.ServeMux, exportCont
 	return mux
 }
 
+func RegisterLocalContentBundleQuestStateCharacterEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/content-bundle/quest-state/characters/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		character, ok := decodeLocalContentBundleQuestStateCharacterName(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		for _, questState := range summary.QuestStateCharacters {
+			if questState.Character == character {
+				writeLocalJSONMutationResponse(w, questState, http.StatusOK)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	return mux
+}
+
 func interactionDefinitionReferenceListContains(references []contentbundle.InteractionDefinitionReferenceSummary, kind string, ref string) bool {
 	for _, reference := range references {
 		if reference.Kind == kind && reference.Ref == ref {
@@ -2892,6 +2927,10 @@ func decodeLocalContentBundleItemTemplateVnum(r *http.Request) (uint32, bool) {
 
 func decodeLocalContentBundleRewardDropVnum(r *http.Request) (uint32, bool) {
 	return decodeLocalContentBundleVnumWithPrefix(r, "/local/content-bundle/reward-drops/")
+}
+
+func decodeLocalContentBundleQuestStateCharacterName(r *http.Request) (string, bool) {
+	return decodeLocalCharacterName(r, "/local/content-bundle/quest-state/characters/")
 }
 
 func decodeLocalContentBundleVnumWithPrefix(r *http.Request, prefix string) (uint32, bool) {

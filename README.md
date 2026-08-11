@@ -150,8 +150,8 @@ Already present:
 - static actor store and interaction definition store,
 - `info`, `talk`, `warp`, and `shop_preview` interaction kinds,
 - merchant catalogs and first shop open/buy/sell behavior,
-- first standalone deterministic quest-flag store/transition primitive with loopback validation and crash-temp cleanup preflights,
-- content bundle import/export with preview deltas for static actors, spawn groups, combat profiles, reward drops, NPC routes, and warp destinations,
+- first standalone deterministic quest-flag store/transition primitive with loopback validation, focused readback, and crash-temp cleanup preflights,
+- content bundle import/export with preview deltas for static actors, spawn groups, combat profiles, reward drops, NPC routes, warp destinations, and portable quest-state flags,
 - loopback-only authoring/inspection endpoints and a deterministic bootstrap NPC service bundle.
 
 Still missing:
