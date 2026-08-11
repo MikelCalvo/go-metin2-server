@@ -640,6 +640,133 @@ func TestGameRuntimeItemExchangeAcceptDisplaysWithoutFinalizingTrade(t *testing.
 	assertExchangeAccountUnchanged(t, accounts, "item-exchange-accept-peer", peer, "peer exchange accept")
 }
 
+func TestGameRuntimeItemExchangeDisplayChangeResetsAcceptedMarkersWithoutFinalizingTrade(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeAcceptResetOwner", 0x01030785, 0x02040785, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 743, Vnum: 27045, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeAcceptResetPeer", 0x01030786, 0x02040786, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 744, Vnum: 27002, Count: 2, Slot: 6}}
+	peer.Quickslots = []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeItem, Slot: 6}}
+	ownerLogin := "ex-acc-reset-a"
+	peerLogin := "ex-acc-reset-b"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707085, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x70707086, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange accept-reset owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange accept-reset peer account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27045, Name: "Accepted Reset Potion", Stackable: true, MaxCount: 200, Sockets: itemcatalog.SocketValues{7, 8, 9}}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange accept-reset runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707085)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707086)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected accept-reset exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected accept-reset exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	ownerAcceptOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected owner accept before reset error: %v", err)
+	}
+	if len(ownerAcceptOut) != 1 {
+		t.Fatalf("expected owner accept before reset to emit one frame, got %d", len(ownerAcceptOut))
+	}
+	assertExchangeAcceptFrame(t, ownerAcceptOut[0], 1, "owner accept before reset")
+	queuedOwnerAccept := flushServerFrames(t, peerFlow)
+	if len(queuedOwnerAccept) != 1 {
+		t.Fatalf("expected owner accept before reset to queue one peer frame, got %d", len(queuedOwnerAccept))
+	}
+	assertExchangeAcceptFrame(t, queuedOwnerAccept[0], 0, "owner accept before reset peer")
+
+	peerAcceptOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected peer accept before reset error: %v", err)
+	}
+	if len(peerAcceptOut) != 1 {
+		t.Fatalf("expected peer accept before reset to emit one frame, got %d", len(peerAcceptOut))
+	}
+	assertExchangeAcceptFrame(t, peerAcceptOut[0], 1, "peer accept before reset")
+	queuedPeerAccept := flushServerFrames(t, ownerFlow)
+	if len(queuedPeerAccept) != 1 {
+		t.Fatalf("expected peer accept before reset to queue one owner frame, got %d", len(queuedPeerAccept))
+	}
+	assertExchangeAcceptFrame(t, queuedPeerAccept[0], 0, "peer accept before reset owner")
+
+	itemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderItemAdd,
+		Arg2:      7,
+		Position:  itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted exchange item-add reset error: %v", err)
+	}
+	if len(itemAddOut) != 3 {
+		t.Fatalf("expected accepted exchange item-add to emit item display plus two accept resets, got %d frames", len(itemAddOut))
+	}
+	assertExchangeAcceptFrameWithValue(t, itemAddOut[0], 1, 0, "accepted-reset owner-side self marker")
+	assertExchangeAcceptFrameWithValue(t, itemAddOut[1], 0, 0, "accepted-reset peer-side self marker")
+	assertExchangeItemAddFrame(t, itemAddOut[2], 1, 7, owner.Inventory[0], template, "accepted-reset item-add self response")
+	queuedItemAdd := flushServerFrames(t, peerFlow)
+	if len(queuedItemAdd) != 3 {
+		t.Fatalf("expected accepted exchange item-add to queue display plus two accept resets, got %d frames", len(queuedItemAdd))
+	}
+	assertExchangeAcceptFrameWithValue(t, queuedItemAdd[0], 0, 0, "accepted-reset owner-side peer marker")
+	assertExchangeAcceptFrameWithValue(t, queuedItemAdd[1], 1, 0, "accepted-reset peer-side peer marker")
+	assertExchangeItemAddFrame(t, queuedItemAdd[2], 0, 7, owner.Inventory[0], template, "accepted-reset item-add peer response")
+
+	reAcceptOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected owner accept after reset error: %v", err)
+	}
+	if len(reAcceptOut) != 1 {
+		t.Fatalf("expected owner accept after reset to emit one frame, got %d", len(reAcceptOut))
+	}
+	assertExchangeAcceptFrame(t, reAcceptOut[0], 1, "owner accept after reset")
+	queuedReAccept := flushServerFrames(t, peerFlow)
+	if len(queuedReAccept) != 1 {
+		t.Fatalf("expected owner accept after reset to queue one peer frame, got %d", len(queuedReAccept))
+	}
+	assertExchangeAcceptFrame(t, queuedReAccept[0], 0, "owner accept after reset peer")
+
+	reacceptedGoldOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderGoldAdd, Arg1: 321})))
+	if err != nil {
+		t.Fatalf("unexpected reaccepted exchange gold-add reset error: %v", err)
+	}
+	if len(reacceptedGoldOut) != 2 {
+		t.Fatalf("expected reaccepted exchange gold-add to emit display plus one owner accept reset, got %d frames", len(reacceptedGoldOut))
+	}
+	assertExchangeAcceptFrameWithValue(t, reacceptedGoldOut[0], 1, 0, "reaccepted gold-add self accept reset")
+	assertExchangeGoldAddFrame(t, reacceptedGoldOut[1], 1, 321, "reaccepted gold-add self response")
+	queuedReacceptedGold := flushServerFrames(t, peerFlow)
+	if len(queuedReacceptedGold) != 2 {
+		t.Fatalf("expected reaccepted exchange gold-add to queue display plus one owner accept reset, got %d frames", len(queuedReacceptedGold))
+	}
+	assertExchangeAcceptFrameWithValue(t, queuedReacceptedGold[0], 0, 0, "reaccepted gold-add peer accept reset")
+	assertExchangeGoldAddFrame(t, queuedReacceptedGold[1], 0, 321, "reaccepted gold-add peer response")
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "owner exchange accept reset")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "peer exchange accept reset")
+}
+
 func TestGameRuntimeItemExchangeAcceptRequiresActiveShellWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -1164,11 +1291,16 @@ func assertExchangeGoldAddFrame(t *testing.T, raw []byte, isMe uint8, gold uint3
 
 func assertExchangeAcceptFrame(t *testing.T, raw []byte, isMe uint8, context string) {
 	t.Helper()
+	assertExchangeAcceptFrameWithValue(t, raw, isMe, 1, context)
+}
+
+func assertExchangeAcceptFrameWithValue(t *testing.T, raw []byte, isMe uint8, value uint32, context string) {
+	t.Helper()
 	packet, err := itemproto.DecodeServerExchange(decodeSingleFrame(t, raw))
 	if err != nil {
 		t.Fatalf("decode exchange accept frame %s: %v", context, err)
 	}
-	if packet != (itemproto.ServerExchangePacket{Subheader: itemproto.ExchangeServerSubheaderAccept, IsMe: isMe, Arg1: 1}) {
+	if packet != (itemproto.ServerExchangePacket{Subheader: itemproto.ExchangeServerSubheaderAccept, IsMe: isMe, Arg1: value}) {
 		t.Fatalf("unexpected exchange accept frame %s: %+v", context, packet)
 	}
 }

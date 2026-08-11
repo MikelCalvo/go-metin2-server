@@ -49,6 +49,7 @@ type sharedWorldRegistry struct {
 	sessionCombatTargets            map[uint64]uint32
 	exchangePartners                map[uint64]uint64
 	exchangeItems                   map[uint64]map[uint8]uint64
+	exchangeAccepted                map[uint64]bool
 	nextStaticActorCombatSnapshotID uint64
 	lastKnownCharacters             map[uint64]loginticket.Character
 	groundItemsByVID                map[uint32]sharedGroundItem
@@ -280,6 +281,7 @@ func newSharedWorldRegistryWithTopology(topology worldruntime.BootstrapTopology)
 		staticActorCombatEngagedBy: make(map[uint64]uint64),
 		staticActorDeathReward:     make(map[uint64]worldruntime.StaticActorDeathReward),
 		exchangePartners:           make(map[uint64]uint64),
+		exchangeAccepted:           make(map[uint64]bool),
 		lastKnownCharacters:        make(map[uint64]loginticket.Character),
 		groundItemsByVID:           make(map[uint32]sharedGroundItem),
 		now:                        time.Now,
@@ -397,6 +399,8 @@ func (r *sharedWorldRegistry) StartExchange(originID uint64, targetVID uint32) (
 	}
 	r.exchangePartners[originID] = target.Entity.ID
 	r.exchangePartners[target.Entity.ID] = originID
+	r.setExchangeAcceptedLocked(originID, false)
+	r.setExchangeAcceptedLocked(target.Entity.ID, false)
 	return originFrames, true
 }
 
@@ -473,15 +477,18 @@ func (r *sharedWorldRegistry) AddExchangeItem(originID uint64, displaySlot uint8
 			return nil, false
 		}
 	}
-	originItems[displaySlot] = display.Item.ID
-
 	selfFrame := encodeExchangeItemAddFrame(1, displaySlot, display)
 	peerFrame := encodeExchangeItemAddFrame(0, displaySlot, display)
-	if !r.enqueueToEntityLocked(partnerID, [][]byte{peerFrame}) {
-		delete(originItems, displaySlot)
+	selfFrames, peerFrames := r.exchangeAcceptResetFramesLocked(originID, partnerID)
+	selfFrames = append(selfFrames, selfFrame)
+	peerFrames = append(peerFrames, peerFrame)
+	if !r.enqueueToEntityLocked(partnerID, peerFrames) {
 		return nil, false
 	}
-	return [][]byte{selfFrame}, true
+	originItems[displaySlot] = display.Item.ID
+	r.setExchangeAcceptedLocked(originID, false)
+	r.setExchangeAcceptedLocked(partnerID, false)
+	return selfFrames, true
 }
 
 func (r *sharedWorldRegistry) AddExchangeGold(originID uint64, amount uint32, availableGold uint64) ([][]byte, bool) {
@@ -516,10 +523,15 @@ func (r *sharedWorldRegistry) AddExchangeGold(originID uint64, amount uint32, av
 
 	selfFrame := encodeExchangeGoldAddFrame(1, amount)
 	peerFrame := encodeExchangeGoldAddFrame(0, amount)
-	if !r.enqueueToEntityLocked(partnerID, [][]byte{peerFrame}) {
+	selfFrames, peerFrames := r.exchangeAcceptResetFramesLocked(originID, partnerID)
+	selfFrames = append(selfFrames, selfFrame)
+	peerFrames = append(peerFrames, peerFrame)
+	if !r.enqueueToEntityLocked(partnerID, peerFrames) {
 		return nil, false
 	}
-	return [][]byte{selfFrame}, true
+	r.setExchangeAcceptedLocked(originID, false)
+	r.setExchangeAcceptedLocked(partnerID, false)
+	return selfFrames, true
 }
 
 func (r *sharedWorldRegistry) AcceptExchange(originID uint64) ([][]byte, bool) {
@@ -554,6 +566,7 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64) ([][]byte, bool) {
 	if !r.enqueueToEntityLocked(partnerID, [][]byte{peerFrame}) {
 		return nil, false
 	}
+	r.setExchangeAcceptedLocked(originID, true)
 	return [][]byte{selfFrame}, true
 }
 
@@ -584,30 +597,59 @@ func (r *sharedWorldRegistry) RemoveExchangeItem(originID uint64, displaySlot ui
 		return nil, false
 	}
 	originItems := r.exchangeItems[originID]
-	clearedItemID, occupied := originItems[displaySlot]
+	_, occupied := originItems[displaySlot]
 	if !occupied {
+		return nil, false
+	}
+	selfFrame := encodeExchangeItemDelFrame(1, displaySlot)
+	peerFrame := encodeExchangeItemDelFrame(0, displaySlot)
+	selfFrames := [][]byte{selfFrame}
+	peerFrames := [][]byte{peerFrame}
+	resetSelfFrames, resetPeerFrames := r.exchangeAcceptResetFramesLocked(originID, partnerID)
+	selfFrames = append(selfFrames, resetSelfFrames...)
+	peerFrames = append(peerFrames, resetPeerFrames...)
+	if !r.enqueueToEntityLocked(partnerID, peerFrames) {
 		return nil, false
 	}
 	delete(originItems, displaySlot)
 	if len(originItems) == 0 {
 		delete(r.exchangeItems, originID)
 	}
+	r.setExchangeAcceptedLocked(originID, false)
+	r.setExchangeAcceptedLocked(partnerID, false)
+	return selfFrames, true
+}
 
-	selfFrame := encodeExchangeItemDelFrame(1, displaySlot)
-	peerFrame := encodeExchangeItemDelFrame(0, displaySlot)
-	if !r.enqueueToEntityLocked(partnerID, [][]byte{peerFrame}) {
-		if r.exchangeItems == nil {
-			r.exchangeItems = make(map[uint64]map[uint8]uint64)
-		}
-		originItems = r.exchangeItems[originID]
-		if originItems == nil {
-			originItems = make(map[uint8]uint64)
-			r.exchangeItems[originID] = originItems
-		}
-		originItems[displaySlot] = clearedItemID
-		return nil, false
+func (r *sharedWorldRegistry) exchangeAcceptResetFramesLocked(originID uint64, partnerID uint64) ([][]byte, [][]byte) {
+	if r == nil || originID == 0 || partnerID == 0 || len(r.exchangeAccepted) == 0 {
+		return nil, nil
 	}
-	return [][]byte{selfFrame}, true
+
+	var selfFrames [][]byte
+	var peerFrames [][]byte
+	if r.exchangeAccepted[originID] {
+		selfFrames = append(selfFrames, encodeExchangeAcceptFrameWithValue(1, 0))
+		peerFrames = append(peerFrames, encodeExchangeAcceptFrameWithValue(0, 0))
+	}
+	if r.exchangeAccepted[partnerID] {
+		peerFrames = append(peerFrames, encodeExchangeAcceptFrameWithValue(1, 0))
+		selfFrames = append(selfFrames, encodeExchangeAcceptFrameWithValue(0, 0))
+	}
+	return selfFrames, peerFrames
+}
+
+func (r *sharedWorldRegistry) setExchangeAcceptedLocked(entityID uint64, accepted bool) {
+	if r == nil || entityID == 0 {
+		return
+	}
+	if r.exchangeAccepted == nil {
+		r.exchangeAccepted = make(map[uint64]bool)
+	}
+	if accepted {
+		r.exchangeAccepted[entityID] = true
+		return
+	}
+	delete(r.exchangeAccepted, entityID)
 }
 
 func (r *sharedWorldRegistry) clearExchangeLocked(originID uint64, notifyPartner bool) bool {
@@ -623,6 +665,10 @@ func (r *sharedWorldRegistry) clearExchangeLocked(originID uint64, notifyPartner
 	if r.exchangeItems != nil {
 		delete(r.exchangeItems, originID)
 		delete(r.exchangeItems, partnerID)
+	}
+	if r.exchangeAccepted != nil {
+		delete(r.exchangeAccepted, originID)
+		delete(r.exchangeAccepted, partnerID)
 	}
 	if notifyPartner {
 		r.enqueueToEntityLocked(partnerID, [][]byte{encodeExchangeEndFrame()})
@@ -3359,10 +3405,14 @@ func encodeExchangeGoldAddFrame(isMe uint8, gold uint32) []byte {
 }
 
 func encodeExchangeAcceptFrame(isMe uint8) []byte {
+	return encodeExchangeAcceptFrameWithValue(isMe, 1)
+}
+
+func encodeExchangeAcceptFrameWithValue(isMe uint8, value uint32) []byte {
 	return itemproto.EncodeServerExchange(itemproto.ServerExchangePacket{
 		Subheader: itemproto.ExchangeServerSubheaderAccept,
 		IsMe:      isMe,
-		Arg1:      1,
+		Arg1:      value,
 	})
 }
 
