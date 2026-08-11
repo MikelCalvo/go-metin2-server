@@ -95,6 +95,22 @@ func (s *FileStore) Path() string {
 	return s.path
 }
 
+func NormalizeSnapshot(snapshot Snapshot) Snapshot {
+	return normalizeSnapshot(snapshot)
+}
+
+func ValidSnapshot(snapshot Snapshot) bool {
+	return validateSnapshot(normalizeSnapshot(snapshot)) == nil
+}
+
+func SummarizeSnapshot(snapshot Snapshot) (SnapshotSummary, error) {
+	normalized := normalizeSnapshot(snapshot)
+	if err := validateSnapshot(normalized); err != nil {
+		return SnapshotSummary{}, err
+	}
+	return summarizeSnapshot(normalized), nil
+}
+
 func ApplyTransition(snapshot Snapshot, transition Transition) (Snapshot, TransitionResult) {
 	transition = normalizeTransition(transition)
 	if !validTransition(transition) {

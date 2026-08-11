@@ -136,7 +136,7 @@ func TestLocalContentBundleEndpointImportsBundleForLoopbackPost(t *testing.T) {
 	}}
 	mux := RegisterLocalContentBundleEndpoint(NewPprofMux("gamed"), nil, importer.ImportContentBundle)
 
-	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle", strings.NewReader(`{"static_actors":[{"name":"VillageGuard","map_index":42,"x":1700,"y":2800,"race_num":20300,"interaction_kind":"talk","interaction_ref":"npc:village_guard"}],"interaction_definitions":[{"kind":"talk","ref":"npc:village_guard","text":"Keep your blade sharp."}]}`))
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle", strings.NewReader(`{"static_actors":[{"name":"VillageGuard","map_index":42,"x":1700,"y":2800,"race_num":20300,"interaction_kind":"talk","interaction_ref":"npc:village_guard"}],"quest_state":[{"character":"QuestHero","quest_ref":"quest:first_steps","name":"step","value":1}],"interaction_definitions":[{"kind":"talk","ref":"npc:village_guard","text":"Keep your blade sharp."}]}`))
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 
@@ -145,7 +145,7 @@ func TestLocalContentBundleEndpointImportsBundleForLoopbackPost(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
-	if importer.calls != 1 || len(importer.lastBundle.StaticActors) != 1 || importer.lastBundle.StaticActors[0].Name != "VillageGuard" || len(importer.lastBundle.InteractionDefinitions) != 1 {
+	if importer.calls != 1 || len(importer.lastBundle.StaticActors) != 1 || importer.lastBundle.StaticActors[0].Name != "VillageGuard" || len(importer.lastBundle.QuestState) != 1 || importer.lastBundle.QuestState[0].Character != "QuestHero" || len(importer.lastBundle.InteractionDefinitions) != 1 {
 		t.Fatalf("unexpected content bundle importer call state: %+v", importer)
 	}
 	wantRaw, err := contentbundle.CanonicalJSON(importer.bundle)
@@ -287,7 +287,7 @@ func TestLocalContentBundleEndpointsRejectNullRootBeforeCallbacks(t *testing.T) 
 }
 
 func TestLocalContentBundleEndpointRejectsNullCollectionFieldsBeforeImport(t *testing.T) {
-	for _, field := range []string{"static_actors", "spawn_groups", "combat_profiles", "item_templates", "interaction_definitions"} {
+	for _, field := range []string{"static_actors", "spawn_groups", "combat_profiles", "item_templates", "quest_state", "interaction_definitions"} {
 		t.Run(field, func(t *testing.T) {
 			importer := &stubContentBundleImporter{status: http.StatusOK}
 			mux := RegisterLocalContentBundleEndpoint(NewPprofMux("gamed"), nil, importer.ImportContentBundle)

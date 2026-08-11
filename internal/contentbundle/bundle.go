@@ -13,6 +13,7 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -48,6 +49,7 @@ type Bundle struct {
 	SpawnGroups            []SpawnGroup                                    `json:"spawn_groups,omitempty"`
 	CombatProfiles         []worldruntime.StaticActorCombatProfileSnapshot `json:"combat_profiles,omitempty"`
 	ItemTemplates          []itemcatalog.Template                          `json:"item_templates,omitempty"`
+	QuestState             []queststate.Flag                               `json:"quest_state,omitempty"`
 	InteractionDefinitions []interactionstore.Definition                   `json:"interaction_definitions"`
 }
 
@@ -66,6 +68,7 @@ func (bundle *Bundle) UnmarshalJSON(raw []byte) error {
 		SpawnGroups            json.RawMessage `json:"spawn_groups"`
 		CombatProfiles         json.RawMessage `json:"combat_profiles"`
 		ItemTemplates          json.RawMessage `json:"item_templates"`
+		QuestState             json.RawMessage `json:"quest_state"`
 		InteractionDefinitions json.RawMessage `json:"interaction_definitions"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
@@ -92,6 +95,12 @@ func (bundle *Bundle) UnmarshalJSON(raw []byte) error {
 	}
 	if err := decodeBundleCollection(jsonBundle.ItemTemplates, &decoded.ItemTemplates); err != nil {
 		return err
+	}
+	if err := decodeBundleCollection(jsonBundle.QuestState, &decoded.QuestState); err != nil {
+		return err
+	}
+	if len(decoded.QuestState) > 0 {
+		decoded.QuestState = queststate.NormalizeSnapshot(queststate.Snapshot{Flags: decoded.QuestState}).Flags
 	}
 	if err := decodeBundleCollection(jsonBundle.InteractionDefinitions, &decoded.InteractionDefinitions); err != nil {
 		return err
@@ -128,6 +137,10 @@ type Summary struct {
 	SpawnGroupCount                        int                                             `json:"spawn_group_count"`
 	CombatProfileCount                     int                                             `json:"combat_profile_count"`
 	ItemTemplateCount                      int                                             `json:"item_template_count"`
+	QuestStateFlagCount                    int                                             `json:"quest_state_flag_count,omitempty"`
+	QuestStateCharacterCount               int                                             `json:"quest_state_character_count,omitempty"`
+	QuestStateQuestRefs                    []string                                        `json:"quest_state_quest_refs,omitempty"`
+	QuestStateCharacters                   []QuestStateCharacterSummary                    `json:"quest_state_characters,omitempty"`
 	StaticActors                           []StaticActor                                   `json:"static_actors,omitempty"`
 	ShopCatalogEntryCount                  int                                             `json:"shop_catalog_entry_count"`
 	ShopCatalogs                           []ShopCatalogSummary                            `json:"shop_catalogs,omitempty"`
@@ -155,6 +168,12 @@ type Summary struct {
 	Maps                                   []MapContentSummary                             `json:"maps,omitempty"`
 }
 
+type QuestStateCharacterSummary struct {
+	Character string                    `json:"character"`
+	FlagCount int                       `json:"flag_count"`
+	Flags     []queststate.FlagSnapshot `json:"flags,omitempty"`
+}
+
 type ImportPreview struct {
 	Current   Summary       `json:"current"`
 	Candidate Summary       `json:"candidate"`
@@ -167,6 +186,9 @@ type SummaryDeltas struct {
 	SpawnGroupCount                        SummaryCountDelta            `json:"spawn_group_count"`
 	CombatProfileCount                     SummaryCountDelta            `json:"combat_profile_count"`
 	ItemTemplateCount                      SummaryCountDelta            `json:"item_template_count"`
+	QuestStateFlagCount                    SummaryCountDelta            `json:"quest_state_flag_count,omitempty"`
+	QuestStateCharacterCount               SummaryCountDelta            `json:"quest_state_character_count,omitempty"`
+	QuestStateFlags                        []QuestStateDelta            `json:"quest_state_flags,omitempty"`
 	ShopCatalogEntryCount                  SummaryCountDelta            `json:"shop_catalog_entry_count"`
 	ShopCatalogs                           []ShopCatalogDelta           `json:"shop_catalogs,omitempty"`
 	ShopRouteCount                         SummaryCountDelta            `json:"shop_route_count"`
@@ -208,6 +230,15 @@ type InteractionKindDelta struct {
 	Count             SummaryCountDelta `json:"count"`
 	ReferencedCount   SummaryCountDelta `json:"referenced_count"`
 	UnreferencedCount SummaryCountDelta `json:"unreferenced_count"`
+}
+
+type QuestStateDelta struct {
+	Character string                   `json:"character"`
+	QuestRef  string                   `json:"quest_ref"`
+	Name      string                   `json:"name"`
+	Change    string                   `json:"change"`
+	Current   *queststate.FlagSnapshot `json:"current,omitempty"`
+	Candidate *queststate.FlagSnapshot `json:"candidate,omitempty"`
 }
 
 type InteractionDefinitionDelta struct {
@@ -647,6 +678,7 @@ func Canonicalize(bundle Bundle) (Bundle, error) {
 		SpawnGroups:            normalizedSpawnGroups,
 		CombatProfiles:         combatProfilesForAuthoredActors(normalizedStaticActors, normalizedSpawnGroups, normalizedCombatProfiles),
 		ItemTemplates:          normalizeItemTemplates(bundle.ItemTemplates),
+		QuestState:             normalizeQuestStateFlags(bundle.QuestState),
 		InteractionDefinitions: cloneDefinitions(bundle.InteractionDefinitions),
 	}
 	sort.Slice(normalized.StaticActors, func(i int, j int) bool {
@@ -712,6 +744,9 @@ func Canonicalize(bundle Bundle) (Bundle, error) {
 	sort.Slice(normalized.ItemTemplates, func(i int, j int) bool {
 		return normalized.ItemTemplates[i].Vnum < normalized.ItemTemplates[j].Vnum
 	})
+	if len(normalized.QuestState) > 0 {
+		normalized.QuestState = queststate.NormalizeSnapshot(queststate.Snapshot{Flags: normalized.QuestState}).Flags
+	}
 	if err := validateBundle(normalized); err != nil {
 		return Bundle{}, err
 	}
@@ -749,6 +784,9 @@ func buildSummaryDeltas(current Summary, candidate Summary, currentBundle Bundle
 		SpawnGroupCount:                        summaryCountDelta(current.SpawnGroupCount, candidate.SpawnGroupCount),
 		CombatProfileCount:                     summaryCountDelta(current.CombatProfileCount, candidate.CombatProfileCount),
 		ItemTemplateCount:                      summaryCountDelta(current.ItemTemplateCount, candidate.ItemTemplateCount),
+		QuestStateFlagCount:                    summaryCountDelta(current.QuestStateFlagCount, candidate.QuestStateFlagCount),
+		QuestStateCharacterCount:               summaryCountDelta(current.QuestStateCharacterCount, candidate.QuestStateCharacterCount),
+		QuestStateFlags:                        buildQuestStateFlagDeltas(currentBundle.QuestState, candidateBundle.QuestState),
 		ShopCatalogEntryCount:                  summaryCountDelta(current.ShopCatalogEntryCount, candidate.ShopCatalogEntryCount),
 		ShopCatalogs:                           buildShopCatalogDeltas(current.ShopCatalogs, candidate.ShopCatalogs),
 		ShopRouteCount:                         summaryCountDelta(current.ShopRouteCount, candidate.ShopRouteCount),
@@ -832,6 +870,67 @@ func interactionKindDeltaIsZero(delta InteractionKindDelta) bool {
 	return delta.Count.Delta == 0 &&
 		delta.ReferencedCount.Delta == 0 &&
 		delta.UnreferencedCount.Delta == 0
+}
+
+func buildQuestStateFlagDeltas(currentFlags []queststate.Flag, candidateFlags []queststate.Flag) []QuestStateDelta {
+	if len(currentFlags) == 0 && len(candidateFlags) == 0 {
+		return nil
+	}
+	currentByKey := questStateFlagMapByKey(currentFlags)
+	candidateByKey := questStateFlagMapByKey(candidateFlags)
+	keysSeen := make(map[string]struct{}, len(currentByKey)+len(candidateByKey))
+	for key := range currentByKey {
+		keysSeen[key] = struct{}{}
+	}
+	for key := range candidateByKey {
+		keysSeen[key] = struct{}{}
+	}
+	keys := make([]string, 0, len(keysSeen))
+	for key := range keysSeen {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	deltas := make([]QuestStateDelta, 0, len(keys))
+	for _, key := range keys {
+		current, currentOK := currentByKey[key]
+		candidate, candidateOK := candidateByKey[key]
+		identity := current
+		if !currentOK {
+			identity = candidate
+		}
+		delta := QuestStateDelta{Character: identity.Character, QuestRef: identity.QuestRef, Name: identity.Name}
+		switch {
+		case !currentOK:
+			candidateSnapshot := queststate.FlagSnapshot{QuestRef: candidate.QuestRef, Name: candidate.Name, Value: candidate.Value}
+			delta.Change = "added"
+			delta.Candidate = &candidateSnapshot
+		case !candidateOK:
+			currentSnapshot := queststate.FlagSnapshot{QuestRef: current.QuestRef, Name: current.Name, Value: current.Value}
+			delta.Change = "removed"
+			delta.Current = &currentSnapshot
+		case current.Value != candidate.Value:
+			currentSnapshot := queststate.FlagSnapshot{QuestRef: current.QuestRef, Name: current.Name, Value: current.Value}
+			candidateSnapshot := queststate.FlagSnapshot{QuestRef: candidate.QuestRef, Name: candidate.Name, Value: candidate.Value}
+			delta.Change = "changed"
+			delta.Current = &currentSnapshot
+			delta.Candidate = &candidateSnapshot
+		default:
+			continue
+		}
+		deltas = append(deltas, delta)
+	}
+	if len(deltas) == 0 {
+		return nil
+	}
+	return deltas
+}
+
+func questStateFlagMapByKey(flags []queststate.Flag) map[string]queststate.Flag {
+	byKey := make(map[string]queststate.Flag, len(flags))
+	for _, flag := range normalizeQuestStateFlags(flags) {
+		byKey[questStateFlagKey(flag)] = flag
+	}
+	return byKey
 }
 
 func buildStaticActorDeltas(currentActors []StaticActor, candidateActors []StaticActor) []StaticActorDelta {
@@ -1586,6 +1685,16 @@ func Summarize(bundle Bundle) (Summary, error) {
 		StaticActors:               cloneStaticActors(normalized.StaticActors),
 		InteractionDefinitionCount: len(normalized.InteractionDefinitions),
 	}
+	questStateSummary, err := queststate.SummarizeSnapshot(queststate.Snapshot{Flags: normalized.QuestState})
+	if err != nil {
+		return Summary{}, ErrInvalidBundle
+	}
+	summary.QuestStateFlagCount = questStateSummary.FlagCount
+	summary.QuestStateCharacterCount = len(questStateSummary.Characters)
+	if summary.QuestStateFlagCount > 0 {
+		summary.QuestStateQuestRefs = questStateSummary.QuestRefs
+	}
+	summary.QuestStateCharacters = questStateCharacterSummaries(normalized.QuestState)
 	itemTemplatesByVnum := itemTemplateMapByVnum(normalized.ItemTemplates)
 	definitionsByKey := interactionDefinitionMapByKey(normalized.InteractionDefinitions)
 
@@ -1718,6 +1827,32 @@ func interactionDefinitionMapByKey(definitions []interactionstore.Definition) ma
 		byKey[interactionDefinitionKey(definition.Kind, definition.Ref)] = definition
 	}
 	return byKey
+}
+
+func questStateCharacterSummaries(flags []queststate.Flag) []QuestStateCharacterSummary {
+	flags = normalizeQuestStateFlags(flags)
+	if len(flags) == 0 {
+		return nil
+	}
+	byCharacter := make(map[string][]queststate.FlagSnapshot)
+	for _, flag := range flags {
+		byCharacter[flag.Character] = append(byCharacter[flag.Character], queststate.FlagSnapshot{QuestRef: flag.QuestRef, Name: flag.Name, Value: flag.Value})
+	}
+	characters := make([]string, 0, len(byCharacter))
+	for character := range byCharacter {
+		characters = append(characters, character)
+	}
+	sort.Strings(characters)
+	summaries := make([]QuestStateCharacterSummary, 0, len(characters))
+	for _, character := range characters {
+		characterFlags := byCharacter[character]
+		summaries = append(summaries, QuestStateCharacterSummary{
+			Character: character,
+			FlagCount: len(characterFlags),
+			Flags:     characterFlags,
+		})
+	}
+	return summaries
 }
 
 func interactableStaticActorSummary(actor StaticActor, definition interactionstore.Definition, itemTemplatesByVnum map[uint32]itemcatalog.Template) InteractableStaticActorSummary {
@@ -2121,6 +2256,9 @@ func addMapServiceInteractionSummary(entry *MapContentSummary, definition intera
 }
 
 func validateBundle(bundle Bundle) error {
+	if !queststate.ValidSnapshot(queststate.Snapshot{Flags: bundle.QuestState}) {
+		return ErrInvalidBundle
+	}
 	itemTemplatesByVnum := make(map[uint32]itemcatalog.Template, len(bundle.ItemTemplates))
 	for _, template := range bundle.ItemTemplates {
 		normalizedTemplate := itemcatalog.NormalizeTemplate(template)
@@ -2676,6 +2814,17 @@ func filterReferencedItemTemplates(templates []itemcatalog.Template, referenced 
 		}
 	}
 	return filtered
+}
+
+func normalizeQuestStateFlags(flags []queststate.Flag) []queststate.Flag {
+	if len(flags) == 0 {
+		return nil
+	}
+	return queststate.NormalizeSnapshot(queststate.Snapshot{Flags: flags}).Flags
+}
+
+func questStateFlagKey(flag queststate.Flag) string {
+	return strings.TrimSpace(flag.Character) + "\x00" + strings.TrimSpace(flag.QuestRef) + "\x00" + strings.TrimSpace(flag.Name)
 }
 
 func referencedItemTemplateVnums(definitions []interactionstore.Definition, spawnGroups []SpawnGroup, combatProfiles []worldruntime.StaticActorCombatProfileSnapshot) map[uint32]struct{} {

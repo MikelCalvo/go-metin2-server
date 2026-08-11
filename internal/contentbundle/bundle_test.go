@@ -18,6 +18,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -89,9 +90,85 @@ func TestCanonicalJSONEmitsEmptyArraysForContractCollections(t *testing.T) {
 	}
 }
 
+func TestCanonicalJSONIncludesDeterministicQuestState(t *testing.T) {
+	got, err := CanonicalJSON(Bundle{
+		QuestState: []queststate.Flag{
+			{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},
+			{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "met_guard", Value: 1},
+		},
+	})
+	if err != nil {
+		t.Fatalf("canonical JSON with quest state: %v", err)
+	}
+	want := "{\n  \"static_actors\": [],\n  \"quest_state\": [\n    {\n      \"character\": \"AnotherHero\",\n      \"quest_ref\": \"quest:first_steps\",\n      \"name\": \"met_guard\",\n      \"value\": 1\n    },\n    {\n      \"character\": \"QuestHero\",\n      \"quest_ref\": \"quest:first_steps\",\n      \"name\": \"step\",\n      \"value\": 2\n    }\n  ],\n  \"interaction_definitions\": []\n}\n"
+	if string(got) != want {
+		t.Fatalf("unexpected quest-state canonical JSON:\n got: %s\nwant: %s", string(got), want)
+	}
+}
+
+func TestSummarizeIncludesQuestStateCountsAndCharacterFlags(t *testing.T) {
+	summary, err := Summarize(Bundle{QuestState: []queststate.Flag{
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},
+		{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "met_guard", Value: 1},
+		{Character: "QuestHero", QuestRef: "quest:daily_check", Name: "talked_to_guide", Value: 1},
+	}})
+	if err != nil {
+		t.Fatalf("summarize quest-state bundle: %v", err)
+	}
+	if summary.QuestStateFlagCount != 3 || summary.QuestStateCharacterCount != 2 {
+		t.Fatalf("unexpected quest-state counts: %+v", summary)
+	}
+	wantQuestRefs := []string{"quest:daily_check", "quest:first_steps"}
+	if !reflect.DeepEqual(summary.QuestStateQuestRefs, wantQuestRefs) {
+		t.Fatalf("unexpected quest-state quest refs:\n got: %#v\nwant: %#v", summary.QuestStateQuestRefs, wantQuestRefs)
+	}
+	wantCharacters := []QuestStateCharacterSummary{
+		{Character: "AnotherHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}}},
+		{Character: "QuestHero", FlagCount: 2, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:daily_check", Name: "talked_to_guide", Value: 1}, {QuestRef: "quest:first_steps", Name: "step", Value: 2}}},
+	}
+	if !reflect.DeepEqual(summary.QuestStateCharacters, wantCharacters) {
+		t.Fatalf("unexpected quest-state character summaries:\n got: %#v\nwant: %#v", summary.QuestStateCharacters, wantCharacters)
+	}
+}
+
+func TestBuildImportPreviewReturnsQuestStateDeltas(t *testing.T) {
+	currentStep := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "step", Value: 1}
+	candidateStep := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "step", Value: 2}
+	currentOldFlag := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "old_flag", Value: 1}
+	candidateMetGuard := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}
+	preview, err := BuildImportPreview(
+		Bundle{QuestState: []queststate.Flag{
+			{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1},
+			{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "old_flag", Value: 1},
+		}},
+		Bundle{QuestState: []queststate.Flag{
+			{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},
+			{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "met_guard", Value: 1},
+		}},
+	)
+	if err != nil {
+		t.Fatalf("build quest-state import preview: %v", err)
+	}
+	if preview.Deltas.QuestStateFlagCount != (SummaryCountDelta{Current: 2, Candidate: 2}) || preview.Deltas.QuestStateCharacterCount != (SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1}) {
+		t.Fatalf("unexpected quest-state count deltas: %+v", preview.Deltas)
+	}
+	want := []QuestStateDelta{
+		{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "met_guard", Change: "added", Candidate: &candidateMetGuard},
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "old_flag", Change: "removed", Current: &currentOldFlag},
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Change: "changed", Current: &currentStep, Candidate: &candidateStep},
+	}
+	if !reflect.DeepEqual(preview.Deltas.QuestStateFlags, want) {
+		t.Fatalf("unexpected quest-state deltas:\n got: %#v\nwant: %#v", preview.Deltas.QuestStateFlags, want)
+	}
+}
+
 func TestBundleJSONRejectsUnknownTopLevelFields(t *testing.T) {
 	var bundle Bundle
 	err := json.Unmarshal([]byte(`{"static_actors":[],"interaction_definitions":[],"quest_state":[]}`), &bundle)
+	if err != nil {
+		t.Fatalf("expected quest_state top-level field to decode now that quest-state bundles are owned, got %v", err)
+	}
+	err = json.Unmarshal([]byte(`{"static_actors":[],"interaction_definitions":[],"quest_state":[],"unknown":[]}`), &bundle)
 	if err == nil {
 		t.Fatal("expected content bundle JSON decoder to reject unknown top-level fields")
 	}
@@ -110,7 +187,7 @@ func TestBundleJSONRejectsInvalidUTF8BeforeLossyDecode(t *testing.T) {
 }
 
 func TestBundleJSONRejectsNullCollectionFields(t *testing.T) {
-	for _, field := range []string{"static_actors", "spawn_groups", "combat_profiles", "item_templates", "interaction_definitions"} {
+	for _, field := range []string{"static_actors", "spawn_groups", "combat_profiles", "item_templates", "quest_state", "interaction_definitions"} {
 		t.Run(field, func(t *testing.T) {
 			var bundle Bundle
 			err := json.Unmarshal([]byte(fmt.Sprintf(`{"%s":null}`, field)), &bundle)

@@ -105,6 +105,7 @@ type localContentBundleRequest struct {
 	SpawnGroups            json.RawMessage `json:"spawn_groups"`
 	CombatProfiles         json.RawMessage `json:"combat_profiles"`
 	ItemTemplates          json.RawMessage `json:"item_templates"`
+	QuestState             json.RawMessage `json:"quest_state"`
 	InteractionDefinitions json.RawMessage `json:"interaction_definitions"`
 }
 
@@ -135,6 +136,9 @@ func (request localContentBundleRequest) bundle() (contentbundle.Bundle, bool) {
 		return contentbundle.Bundle{}, false
 	}
 	if !decodeLocalContentBundleCollection(request.ItemTemplates, &bundle.ItemTemplates) {
+		return contentbundle.Bundle{}, false
+	}
+	if !decodeLocalContentBundleCollection(request.QuestState, &bundle.QuestState) {
 		return contentbundle.Bundle{}, false
 	}
 	if !decodeLocalContentBundleCollection(request.InteractionDefinitions, &bundle.InteractionDefinitions) {
