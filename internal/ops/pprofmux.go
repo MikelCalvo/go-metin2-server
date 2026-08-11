@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
+	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	contentbundle "github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
@@ -919,6 +920,31 @@ func RegisterLocalMigrationPlanEndpoint(mux *http.ServeMux, planMigrationTarget 
 			return
 		}
 		writeLocalJSONMutationResponse(w, plan, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalAccountCharacterRosterExportEndpoint(mux *http.ServeMux, exportRoster func() (accountstore.AccountCharacterRosterExport, error)) *http.ServeMux {
+	if mux == nil || exportRoster == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/account-store/exports/account-character-roster", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		export, err := exportRoster()
+		if err != nil {
+			slog.Warn("local account/character roster export failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, export, http.StatusOK)
 	})
 	return mux
 }

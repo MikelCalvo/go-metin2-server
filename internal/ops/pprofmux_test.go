@@ -11,6 +11,7 @@ import (
 	"time"
 
 	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
+	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
@@ -5845,10 +5846,103 @@ func TestLocalMigrationPlanEndpointReportsPlannerFailure(t *testing.T) {
 	}
 }
 
+func TestLocalAccountCharacterRosterExportEndpointReturnsLoopbackJSON(t *testing.T) {
+	exporter := &stubAccountCharacterRosterExporter{export: accountstore.AccountCharacterRosterExport{
+		MigrationVersion: accountstore.AccountCharacterRosterMigrationVersion,
+		MigrationName:    accountstore.AccountCharacterRosterMigrationName,
+		Accounts: []accountstore.AccountCharacterRosterAccountRow{
+			{ID: 101, Login: "Alpha", LoginNormalized: "alpha", Empire: 1},
+		},
+		Characters: []accountstore.AccountCharacterRosterCharacterRow{
+			{ID: 7, AccountID: 101, Slot: 0, Name: "AlphaWar", NameNormalized: "alphawar", Level: 1, MapIndex: 1},
+		},
+	}}
+	mux := RegisterLocalAccountCharacterRosterExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/account-store/exports/account-character-roster", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if exporter.calls != 1 {
+		t.Fatalf("expected exporter to be called once, got %d", exporter.calls)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"migration_version":2`, `"migration_name":"account_character_roster"`, `"login":"Alpha"`, `"login_normalized":"alpha"`, `"name":"AlphaWar"`, `"name_normalized":"alphawar"`, `"slot":0`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected roster export body to contain %s, got %s", want, body)
+		}
+	}
+	if strings.Contains(body, "inventory") || strings.Contains(body, "equipment") || strings.Contains(body, "quickslots") {
+		t.Fatalf("roster export endpoint must not expose later persistence domains, got %s", body)
+	}
+}
+
+func TestLocalAccountCharacterRosterExportEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	exporter := &stubAccountCharacterRosterExporter{export: accountstore.AccountCharacterRosterExport{MigrationVersion: 2}}
+	mux := RegisterLocalAccountCharacterRosterExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/account-store/exports/account-character-roster", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if exporter.calls != 0 {
+		t.Fatalf("expected exporter not to be called, got %d", exporter.calls)
+	}
+}
+
+func TestLocalAccountCharacterRosterExportEndpointRejectsWrongMethod(t *testing.T) {
+	exporter := &stubAccountCharacterRosterExporter{export: accountstore.AccountCharacterRosterExport{MigrationVersion: 2}}
+	mux := RegisterLocalAccountCharacterRosterExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/exports/account-character-roster", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if exporter.calls != 0 {
+		t.Fatalf("expected exporter not to be called, got %d", exporter.calls)
+	}
+}
+
+func TestLocalAccountCharacterRosterExportEndpointReportsExporterFailure(t *testing.T) {
+	exporter := &stubAccountCharacterRosterExporter{err: errStubMigrationStatusInvalid}
+	mux := RegisterLocalAccountCharacterRosterExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/account-store/exports/account-character-roster", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if exporter.calls != 1 {
+		t.Fatalf("expected exporter to be called once, got %d", exporter.calls)
+	}
+}
+
 func TestNewPprofMuxDoesNotExposeLocalMigrationStatusByDefault(t *testing.T) {
 	mux := NewPprofMux("authd")
 
-	for _, path := range []string{"/local/db/migrations/status", "/local/db/migrations/plan?target_version=0"} {
+	for _, path := range []string{"/local/db/migrations/status", "/local/db/migrations/plan?target_version=0", "/local/account-store/exports/account-character-roster"} {
 		t.Run(path, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, path, nil)
 			req.RemoteAddr = "127.0.0.1:12345"
@@ -5894,6 +5988,12 @@ type stubMigrationTargetPlanner struct {
 	lastTarget int
 }
 
+type stubAccountCharacterRosterExporter struct {
+	export accountstore.AccountCharacterRosterExport
+	err    error
+	calls  int
+}
+
 var errStubMigrationStatusInvalid = errors.New("invalid migration status")
 
 func (p *stubMigrationStatusPlanner) Plan() (dbmigrations.Plan, error) {
@@ -5905,6 +6005,11 @@ func (p *stubMigrationTargetPlanner) PlanTarget(targetVersion int) (dbmigrations
 	p.calls++
 	p.lastTarget = targetVersion
 	return p.plan, p.err
+}
+
+func (e *stubAccountCharacterRosterExporter) Export() (accountstore.AccountCharacterRosterExport, error) {
+	e.calls++
+	return e.export, e.err
 }
 
 type stubNoticeBroadcaster struct {

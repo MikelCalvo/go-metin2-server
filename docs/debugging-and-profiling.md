@@ -293,6 +293,12 @@ Returns a loopback-only, read-only migration dry-run plan from the validated `db
 
 Returns the same metadata-only migration dry-run shape for an explicit target version. Target `0` previews a complete rollback using down migrations in reverse applied-version order; intermediate targets preview only the up/down steps required to move from the current ledger version to `N`; targets outside the embedded catalog range fail closed with `409`. The endpoint rejects missing, repeated, or non-integer `target_version` values with `400`, rejects non-`GET` methods with `405`, and is registered only on `gamed`. This is an operator preflight surface, not an apply/rollback command and not proof that runtime stores are DB-backed.
 
+### `GET /local/account-store/exports/account-character-roster`
+
+Returns a loopback-only, read-only JSON projection of the committed bootstrap account snapshots onto the `0002_account_character_roster` migration boundary. This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the account store cannot be listed or any committed snapshot would violate the roster schema shape.
+
+Successful responses include `migration_version`, `migration_name`, deterministic `accounts`, and deterministic `characters`. Account rows expose stable project-owned ids, original login, normalized login, and empire. Character rows expose only non-empty select-screen slots and the account/slot/name/appearance/stat/location/guild/gold fields frozen by the roster migration. The response deliberately omits inventory, equipment, quickslots, quest state, login tickets, authored content, and runtime world state, and it does not open a database, emit SQL, apply migrations, or mutate the account store. Use it as an operator/backfill preflight before future import or repository work; it is not a DB-backed runtime path.
+
 ### `GET /local/runtime-config`
 
 Returns JSON describing the active bootstrap runtime selection. This endpoint is read-only, rejects non-`GET` methods with `405`, and exposes only the local runtime facts needed for AOI/debugging:

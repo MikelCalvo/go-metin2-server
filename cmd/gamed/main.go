@@ -178,6 +178,10 @@ func main() {
 		opsHandler,
 		gameRuntime.MigrationPlanToVersion,
 	)
+	opsHandler = ops.RegisterLocalAccountCharacterRosterExportEndpoint(
+		opsHandler,
+		gameRuntime.ExportAccountCharacterRoster,
+	)
 	opsHandler = ops.RegisterLocalStaticActorRespawnsEndpoint(
 		opsHandler,
 		func() any { return gameRuntime.StaticActorRespawns() },

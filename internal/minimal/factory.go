@@ -890,6 +890,19 @@ func (r *gameRuntime) RestoreAccountStore(srcDir string) (accountstore.SnapshotS
 	return r.ValidateAccountStore()
 }
 
+func (r *gameRuntime) ExportAccountCharacterRoster() (accountstore.AccountCharacterRosterExport, error) {
+	if r == nil || r.accountStore == nil {
+		return accountstore.ExportAccountCharacterRoster(nil)
+	}
+	exporter, ok := r.accountStore.(interface {
+		ExportAccountCharacterRoster() (accountstore.AccountCharacterRosterExport, error)
+	})
+	if !ok {
+		return accountstore.AccountCharacterRosterExport{}, fmt.Errorf("account/character roster export is not supported")
+	}
+	return exporter.ExportAccountCharacterRoster()
+}
+
 func (r *gameRuntime) flushReadyStaticActorRespawns() {
 	if r == nil || r.sharedWorld == nil {
 		return

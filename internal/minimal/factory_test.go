@@ -112,6 +112,39 @@ func TestGameRuntimeRestoreAccountStoreRejectsLiveSessionsWithoutMutation(t *tes
 	}
 }
 
+func TestGameRuntimeAccountCharacterRosterExportProjectsCommittedSnapshots(t *testing.T) {
+	accountStore := accountstore.NewFileStore(t.TempDir())
+	if err := accountStore.Save(accountstore.Account{Login: "Alpha", Empire: 1, Characters: []loginticket.Character{{ID: 7, Name: "AlphaWar", Level: 1, MapIndex: 1}}}); err != nil {
+		t.Fatalf("save account snapshot: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountStore,
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	export, err := runtime.ExportAccountCharacterRoster()
+	if err != nil {
+		t.Fatalf("runtime account/character roster export: %v", err)
+	}
+	if export.MigrationVersion != accountstore.AccountCharacterRosterMigrationVersion || export.MigrationName != accountstore.AccountCharacterRosterMigrationName {
+		t.Fatalf("unexpected migration boundary: %#v", export)
+	}
+	if len(export.Accounts) != 1 || export.Accounts[0].Login != "Alpha" || export.Accounts[0].LoginNormalized != "alpha" {
+		t.Fatalf("unexpected account export rows: %#v", export.Accounts)
+	}
+	if len(export.Characters) != 1 || export.Characters[0].Name != "AlphaWar" || export.Characters[0].AccountID != export.Accounts[0].ID || export.Characters[0].Slot != 0 {
+		t.Fatalf("unexpected character export rows: %#v", export.Characters)
+	}
+}
+
 func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
