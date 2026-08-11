@@ -6,6 +6,7 @@ It sits on top of:
 - `combat-training-dummy-bootstrap.md`
 - `combat-normal-attack-bootstrap.md`
 - `non-player-death-respawn-bootstrap.md`
+- `spawn-leash-bootstrap.md`
 - `static-actor-interaction-authoring.md`
 - `non-player-entity-bootstrap.md`
 
@@ -28,12 +29,13 @@ This contract currently applies only to:
 - one authored `combat_profile` per spawn group
 - one authored spawn position on one map per spawn group
 - one server-owned respawn lifecycle that recreates the combatant from authored content after death
+- one pure runtime leash classification seam that compares current position with the authored spawn position and reports `at_home`, `within_radius`, or `return_required`
 - deterministic content import/export and validation before runtime mutation
 - idempotent no-op content imports: importing the same canonical bundle already live in the runtime must not tear down/recreate attackable actors, replay replacement fanout, clear selected combat targets, reset runtime-owned HP, or discard pending combat timers
 - atomic bootstrap visibility for content-bundle replacement: live sessions receive static-actor replacement visibility only after the full replacement succeeds; successful replacements replay deletes for removed actors before newly imported actor bootstrap bursts, and failed replacement/rollback paths discard all staged delete/add visibility frames instead of leaking partial content to online sessions
 
 This contract does **not** yet claim:
-- roaming/wandering/pathing AI
+- roaming/wandering/pathing AI beyond the pure spawn-position leash classifier
 - pack behaviors or multi-wave encounters
 - random loot tables, quest rewards, or corpse interactions
 - spawn conditions, timers authored per player, or scripting hooks

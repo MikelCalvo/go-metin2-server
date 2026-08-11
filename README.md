@@ -50,7 +50,7 @@ Legend used below:
   - Static actors, interaction definitions, `info`/`talk`/`warp`/`shop_preview`, merchant catalogs, content bundle import/export, portable combat profiles, reward descriptors, and spawn groups can drive current bootstrap content. This is useful content infrastructure, not a quest scripting system yet.
 
 - `[~]` **M4 — PvE practice loop**
-  - Practice mobs can be targeted, attacked, killed, respawned, and can grant deterministic EXP/gold/fixed-drop descriptors through narrow owned contracts. Retaliation/player-death/restart seams exist. Real mob AI, chase/leash/return, attack formulas, skills, projectile/ranged combat, loot tables, PvP/duels, and full revive/corpse choreography are still missing.
+  - Practice mobs can be targeted, attacked, killed, respawned, and can grant deterministic EXP/gold/fixed-drop descriptors through narrow owned contracts. Retaliation/player-death/restart seams and the first pure spawn-position leash classifier exist. Real mob AI movement, chase/return packet choreography, attack formulas, skills, projectile/ranged combat, loot tables, PvP/duels, and full revive/corpse choreography are still missing.
 
 - `[~]` **M5 — Operations and developer workflow**
   - The repo has a Makefile, Dockerfile, CI, pprof/debug mux, health endpoint, local-only runtime/config/player/map/visibility/content/persistence endpoints, backup/restore preflights, crash-temp cleanup primitives, QA docs, and clean-room workflow docs. Release/versioning policy, migrations, production deployment, metrics/logging policy, and production-safe admin tooling are still pending.
@@ -180,7 +180,7 @@ Already present:
 Still missing:
 
 - real damage formulas and attack types,
-- independent mob AI: aggro radius, chase, leash, return, patrol, and target switching,
+- independent mob AI: aggro radius, chase, return packet choreography, patrol, target switching, and live use of the current leash classifier,
 - accepted `USE_SKILL`, ranged/projectile, PvP, and duel runtime policy,
 - broad loot/drop tables,
 - full death/revive/corpse/menu choreography.
