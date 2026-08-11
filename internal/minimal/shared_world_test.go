@@ -380,6 +380,44 @@ func TestGameRuntimeSpawnGroupLeashUsesPreservedHomeAfterCurrentPositionUpdate(t
 	}
 }
 
+func TestSharedWorldRegistrySpawnGroupLeashUsesPreservedAuthoredHomeWhenCurrentPositionDiffers(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	registered, ok := registry.registerStaticActor(0, "LeashMovedMob", 42, 1700, 2800, 20350, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "practice.leash_moved", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected spawn-backed actor registration to succeed")
+	}
+	actor, ok := registry.entities.StaticActor(registered.EntityID)
+	if !ok {
+		t.Fatalf("expected static actor %d to resolve", registered.EntityID)
+	}
+	home := actor.SpawnHome
+	moved := actor
+	moved.Position = worldruntime.NewPosition(42, 2301, 2800)
+	if _, ok := registry.entities.UpdateStaticActor(moved); !ok {
+		t.Fatal("expected runtime current-position update with preserved spawn home to succeed")
+	}
+
+	leash, ok := registry.SpawnGroupLeash(registered.EntityID, 400)
+	if !ok {
+		t.Fatalf("expected spawn-group leash evaluation for entity %d", registered.EntityID)
+	}
+	if leash.Actor.EntityID != registered.EntityID || leash.Actor.X != 2301 {
+		t.Fatalf("unexpected leash actor snapshot after runtime position update: %+v", leash.Actor)
+	}
+	if leash.Status != worldruntime.SpawnLeashStatusReturnRequired || !leash.ReturnRequired || leash.ReturnTarget == nil {
+		t.Fatalf("expected moved spawn group to require return to authored home, got %+v", leash)
+	}
+	if leash.Home.MapIndex != home.MapIndex || leash.Home.X != home.X || leash.Home.Y != home.Y {
+		t.Fatalf("expected leash home to stay at authored spawn point %+v, got %+v", home, leash.Home)
+	}
+	if leash.Current.MapIndex != 42 || leash.Current.X != 2301 || leash.Current.Y != 2800 {
+		t.Fatalf("expected leash current position to reflect moved actor, got %+v", leash.Current)
+	}
+	if *leash.ReturnTarget != leash.Home {
+		t.Fatalf("expected return target to be authored home, got return=%+v home=%+v", leash.ReturnTarget, leash.Home)
+	}
+}
+
 func TestGameRuntimeSpawnGroupsForMapReturnsMapLocalSpawnBackedActors(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},

@@ -86,6 +86,40 @@ func TestEntityRegistryPreservesSpawnHomeAcrossStaticActorPositionUpdate(t *test
 	}
 }
 
+func TestEntityRegistryPreservesSpawnHomeWhenUpdateOmitsSpawnHome(t *testing.T) {
+	registry := NewEntityRegistry()
+	home := NewPosition(42, 1700, 2800)
+	actor, ok := registry.RegisterStaticActor(StaticEntity{
+		Entity:        Entity{Name: "PracticeMob"},
+		Position:      home,
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.leash_registry_omitted_home",
+	})
+	if !ok {
+		t.Fatal("expected spawn actor registration to succeed")
+	}
+
+	updated := StaticEntity{
+		Entity:        Entity{ID: actor.Entity.ID, Name: "PracticeMobMoved"},
+		Position:      NewPosition(42, 2301, 2800),
+		RaceNum:       actor.RaceNum,
+		CombatProfile: actor.CombatProfile,
+		SpawnGroupRef: actor.SpawnGroupRef,
+	}
+	result, ok := registry.UpdateStaticActor(updated)
+	if !ok {
+		t.Fatal("expected spawn actor update that omits spawn home to succeed")
+	}
+	if result.SpawnHome != home || result.Position != updated.Position {
+		t.Fatalf("expected omitted-home update to preserve authored home and change current position, got %+v", result)
+	}
+	evaluation, ok := EvaluateStaticActorCurrentSpawnLeash(result, 400)
+	if !ok || !evaluation.ReturnRequired || evaluation.ReturnTarget != home {
+		t.Fatalf("expected moved omitted-home update to require return home, ok=%v evaluation=%+v", ok, evaluation)
+	}
+}
+
 func TestEvaluateSpawnLeashClassifiesInsideAndOutsideRadius(t *testing.T) {
 	home := NewPosition(42, 1700, 2800)
 

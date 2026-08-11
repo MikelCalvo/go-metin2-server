@@ -22,7 +22,7 @@ Inputs:
 - current `Position { map_index, x, y }`
 - positive leash `radius`
 
-For spawn-backed static actors, the authored/home position is the actor's `spawn_group_ref` placement. The runtime preserves that home position separately from the materialized actor's current position. Older snapshots that lack a preserved home position fall back to the current position and classify as `at_home` until moved by a later owned seam.
+For spawn-backed static actors, the authored/home position is the actor's `spawn_group_ref` placement. The runtime preserves that authored home separately from the materialized actor's current `Position`, including generic runtime/operator position edits that keep the same `spawn_group_ref`. Older snapshots that lack a preserved home position fall back to the current position and classify as `at_home` until moved by a later owned seam.
 
 In the current stationary practice-mob runtime, freshly imported mobs normally classify as `at_home`. If an owned runtime/operator update changes only the materialized actor position, the same read-only leash inspection must continue to compare that current position against the preserved authored home and can report `within_radius` or `return_required` without mutating the actor.
 

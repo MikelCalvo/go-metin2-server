@@ -264,6 +264,9 @@ func (r *EntityRegistry) UpdateStaticActor(actor StaticEntity) (StaticEntity, bo
 	if actor.DeathReward.Empty() && !previous.DeathReward.Empty() {
 		actor.DeathReward = previous.DeathReward.Clone()
 	}
+	if actor.SpawnGroupRef != "" && actor.SpawnGroupRef == previous.SpawnGroupRef && !actor.SpawnHome.Valid() && previous.SpawnHome.Valid() {
+		actor.SpawnHome = previous.SpawnHome
+	}
 	updated := newStaticEntity(actor.Entity.ID, actor)
 	if r.entityIDOwnedByPlayerLocked(updated.Entity.ID) || r.staticActorVisibilityVIDConflictsWithPlayerLocked(updated) {
 		return StaticEntity{}, false
