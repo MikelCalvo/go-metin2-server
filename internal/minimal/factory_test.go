@@ -196,6 +196,68 @@ func TestGameRuntimeCharacterItemStateExportProjectsCommittedSnapshots(t *testin
 	}
 }
 
+func TestGameRuntimeCharacterQuestStateExportProjectsCommittedSnapshots(t *testing.T) {
+	accountStore := accountstore.NewFileStore(t.TempDir())
+	if err := accountStore.Save(accountstore.Account{Login: "Alpha", Empire: 1, Characters: []loginticket.Character{{ID: 7, Name: "QuestHero", Level: 1, MapIndex: 1}}}); err != nil {
+		t.Fatalf("save account snapshot: %v", err)
+	}
+	questStatePath := filepath.Join(t.TempDir(), "state", "quest-state.json")
+	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2}}}); err != nil {
+		t.Fatalf("save quest state snapshot: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		loginticket.NewFileStore(t.TempDir()),
+		accountStore,
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	export, err := runtime.ExportCharacterQuestState()
+	if err != nil {
+		t.Fatalf("runtime character quest-state export: %v", err)
+	}
+	if export.MigrationVersion != queststate.CharacterQuestStateMigrationVersion || export.MigrationName != queststate.CharacterQuestStateMigrationName {
+		t.Fatalf("unexpected migration boundary: %#v", export)
+	}
+	if len(export.Flags) != 1 || export.Flags[0].CharacterID != 7 || export.Flags[0].Character != "QuestHero" || export.Flags[0].QuestRef != "quest:first_steps" || export.Flags[0].Flag != "step" || export.Flags[0].Value != 2 {
+		t.Fatalf("unexpected quest-state export rows: %#v", export.Flags)
+	}
+}
+
+func TestGameRuntimeCharacterQuestStateExportRejectsUnknownCharacter(t *testing.T) {
+	accountStore := accountstore.NewFileStore(t.TempDir())
+	if err := accountStore.Save(accountstore.Account{Login: "Alpha", Empire: 1, Characters: []loginticket.Character{{ID: 7, Name: "KnownHero", Level: 1, MapIndex: 1}}}); err != nil {
+		t.Fatalf("save account snapshot: %v", err)
+	}
+	questStatePath := filepath.Join(t.TempDir(), "state", "quest-state.json")
+	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{Character: "MissingHero", QuestRef: "quest:first_steps", Name: "step", Value: 1}}}); err != nil {
+		t.Fatalf("save quest state snapshot: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		loginticket.NewFileStore(t.TempDir()),
+		accountStore,
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	_, err = runtime.ExportCharacterQuestState()
+	if !errors.Is(err, queststate.ErrInvalidSnapshot) {
+		t.Fatalf("expected unknown quest-state character to fail closed, got %v", err)
+	}
+}
+
 func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
@@ -217,8 +279,8 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	if plan.CurrentVersion != 0 || plan.LatestVersion < 1 || plan.UpToDate {
 		t.Fatalf("unexpected migration plan versions: %#v", plan)
 	}
-	if len(plan.Pending) < 3 {
-		t.Fatalf("expected schema, account/character, and character item-state migrations for empty ledger: %#v", plan)
+	if len(plan.Pending) < 4 {
+		t.Fatalf("expected schema, account/character, item-state, and quest-state migrations for empty ledger: %#v", plan)
 	}
 	first := plan.Pending[0]
 	if first.Version != 1 || first.Name != "bootstrap_schema_migrations" || first.Direction != dbmigrations.DirectionUp || first.Path != "0001_bootstrap_schema_migrations.up.sql" {
@@ -232,7 +294,11 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	if third.Version != 3 || third.Name != "character_item_state" || third.Direction != dbmigrations.DirectionUp || third.Path != "0003_character_item_state.up.sql" {
 		t.Fatalf("unexpected third pending migration step: %#v", third)
 	}
-	if first.SHA256 == "" || second.SHA256 == "" || third.SHA256 == "" || strings.Contains(first.Path, "CREATE TABLE") || strings.Contains(second.Path, "CREATE TABLE") || strings.Contains(third.Path, "CREATE TABLE") {
+	fourth := plan.Pending[3]
+	if fourth.Version != 4 || fourth.Name != "character_quest_state" || fourth.Direction != dbmigrations.DirectionUp || fourth.Path != "0004_character_quest_state.up.sql" {
+		t.Fatalf("unexpected fourth pending migration step: %#v", fourth)
+	}
+	if first.SHA256 == "" || second.SHA256 == "" || third.SHA256 == "" || fourth.SHA256 == "" || strings.Contains(first.Path, "CREATE TABLE") || strings.Contains(second.Path, "CREATE TABLE") || strings.Contains(third.Path, "CREATE TABLE") || strings.Contains(fourth.Path, "CREATE TABLE") {
 		t.Fatalf("expected metadata-only pending steps with checksums, got %#v", plan.Pending)
 	}
 }

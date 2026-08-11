@@ -24,6 +24,14 @@
       "down_path": "0003_character_item_state.down.sql",
       "up_sha256": "122e94f3d39975a6d1cf7e2d9321177a408e195be484e5ea2ffd5a8fa61c9a24",
       "down_sha256": "1a4dbc6d32c52a85eab837e00a9a63cc6c811b153a6054e5b568bdc3027592ee"
+    },
+    {
+      "version": 4,
+      "name": "character_quest_state",
+      "up_path": "0004_character_quest_state.up.sql",
+      "down_path": "0004_character_quest_state.down.sql",
+      "up_sha256": "d67b53bc4f6aeaf74e9721f760ab05279037293f4de9e7b0079813984de56862",
+      "down_sha256": "70d2a9c4db6a47acd6574975c96449efd4eb6d3076db53c3eb6e21221936282f"
     }
   ]
 }

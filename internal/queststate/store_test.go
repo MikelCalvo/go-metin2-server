@@ -345,6 +345,102 @@ func TestFileStoreApplyTransitionInvalidIdentityDoesNotCreateSnapshot(t *testing
 	}
 }
 
+func TestExportCharacterQuestStateBuildsDeterministicRowsMatchingMigrationShape(t *testing.T) {
+	snapshot := Snapshot{Flags: []Flag{
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},
+		{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "met_guard", Value: 1},
+	}}
+
+	export, err := ExportCharacterQuestState(snapshot, map[string]uint32{
+		"questhero":   101,
+		"AnotherHero": 202,
+	})
+	if err != nil {
+		t.Fatalf("export character quest state: %v", err)
+	}
+	if export.MigrationVersion != CharacterQuestStateMigrationVersion || export.MigrationName != CharacterQuestStateMigrationName {
+		t.Fatalf("unexpected migration boundary: version=%d name=%q", export.MigrationVersion, export.MigrationName)
+	}
+	want := []CharacterQuestFlagRow{
+		{CharacterID: 202, Character: "AnotherHero", QuestRef: "quest:first_steps", Flag: "met_guard", Value: 1},
+		{CharacterID: 101, Character: "QuestHero", QuestRef: "quest:first_steps", Flag: "step", Value: 2},
+	}
+	if !reflect.DeepEqual(export.Flags, want) {
+		t.Fatalf("unexpected character quest-state rows:\n got: %#v\nwant: %#v", export.Flags, want)
+	}
+
+	exportAgain, err := ExportCharacterQuestState(snapshot, map[string]uint32{"AnotherHero": 202, "QuestHero": 101})
+	if err != nil {
+		t.Fatalf("export character quest state again: %v", err)
+	}
+	if !reflect.DeepEqual(export, exportAgain) {
+		t.Fatalf("expected deterministic quest-state export:\n first: %#v\nsecond: %#v", export, exportAgain)
+	}
+}
+
+func TestExportCharacterQuestStateRejectsRowsThatCannotTargetMigrationSchema(t *testing.T) {
+	validSnapshot := Snapshot{Flags: []Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1}}}
+
+	cases := []struct {
+		name               string
+		snapshot           Snapshot
+		characterIDsByName map[string]uint32
+	}{
+		{
+			name:               "unknown character",
+			snapshot:           validSnapshot,
+			characterIDsByName: map[string]uint32{"AnotherHero": 202},
+		},
+		{
+			name:               "zero character id",
+			snapshot:           validSnapshot,
+			characterIDsByName: map[string]uint32{"QuestHero": 0},
+		},
+		{
+			name:               "invalid snapshot",
+			snapshot:           Snapshot{Flags: []Flag{{Character: "QuestHero", QuestRef: "bad_ref", Name: "step", Value: 1}}},
+			characterIDsByName: map[string]uint32{"QuestHero": 101},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ExportCharacterQuestState(tc.snapshot, tc.characterIDsByName)
+			if !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot, got %v", err)
+			}
+		})
+	}
+}
+
+func TestFileStoreExportCharacterQuestStateReadsCommittedSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "quest-state.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Flags: []Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1}}}); err != nil {
+		t.Fatalf("save quest state snapshot: %v", err)
+	}
+
+	export, err := store.ExportCharacterQuestState(map[string]uint32{"QuestHero": 101})
+	if err != nil {
+		t.Fatalf("file-store character quest-state export: %v", err)
+	}
+	if len(export.Flags) != 1 || export.Flags[0].CharacterID != 101 || export.Flags[0].Character != "QuestHero" || export.Flags[0].Flag != "step" {
+		t.Fatalf("unexpected file-store quest-state export rows: %#v", export.Flags)
+	}
+}
+
+func TestFileStoreExportCharacterQuestStateTreatsMissingSnapshotAsEmptyExport(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "missing", "quest-state.json"))
+
+	export, err := store.ExportCharacterQuestState(nil)
+	if err != nil {
+		t.Fatalf("export missing quest state snapshot: %v", err)
+	}
+	if export.MigrationVersion != CharacterQuestStateMigrationVersion || len(export.Flags) != 0 {
+		t.Fatalf("expected empty quest-state export for missing snapshot, got %#v", export)
+	}
+}
+
 func TestFileStoreValidateRejectsSymlinkedQuestStateCrashTemp(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "quest-state.json")
 	store := NewFileStore(path)

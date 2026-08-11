@@ -305,6 +305,12 @@ Returns a loopback-only, read-only JSON projection of committed bootstrap accoun
 
 Successful responses include `migration_version`, `migration_name`, deterministic `inventory_items`, deterministic `equipment_items`, and deterministic `quickslots`. Inventory rows are ordered by account/character/slot and expose item id, character id, carried slot, vnum, count, and lock flag. Equipment rows expose item id, character id, named equipment slot, vnum, count, and lock flag. Quickslot rows expose character id, quickslot position, type, and slot. The response deliberately omits roster account rows, executable SQL, item-template definitions, quest state, login tickets, authored content, and runtime world state, and it does not apply migrations or mutate the account store. Use it as a second-stage operator/backfill preflight after the account/character roster export.
 
+### `GET /local/quest-state/exports/character-quest-state`
+
+Returns a loopback-only, read-only JSON projection of the standalone bootstrap quest-state snapshot onto the `0004_character_quest_state` migration boundary. This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the account roster cannot be exported, the quest-state snapshot is invalid, or any quest flag references a character name that is not present in the committed roster projection.
+
+Successful responses include `migration_version`, `migration_name`, and deterministic `flags` rows. Each row exposes the resolved `character_id`, source `character` name, `quest_ref`, `flag`, and non-zero `value`. A missing quest-state snapshot returns an empty migration-shaped export, matching `/local/quest-state/validate`. The response deliberately omits executable SQL, quest scripts, account roster rows, item state, login tickets, authored content, and runtime world state, and it does not apply migrations or mutate the account or quest-state stores. Use it as a third-stage operator/backfill preflight after the roster export, because the quest-state projection depends on committed character ids from that roster boundary.
+
 ### `GET /local/runtime-config`
 
 Returns JSON describing the active bootstrap runtime selection. This endpoint is read-only, rejects non-`GET` methods with `405`, and exposes only the local runtime facts needed for AOI/debugging:

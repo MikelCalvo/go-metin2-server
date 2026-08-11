@@ -19,6 +19,8 @@ const (
 	expectedAccountCharacterRosterDownSHA256 = "cd8877ab1e88c4fe9a55d350bd5a89e1961ac88bd01423c5c1a1b0b8af37dc94"
 	expectedCharacterItemStateUpSHA256       = "122e94f3d39975a6d1cf7e2d9321177a408e195be484e5ea2ffd5a8fa61c9a24"
 	expectedCharacterItemStateDownSHA256     = "1a4dbc6d32c52a85eab837e00a9a63cc6c811b153a6054e5b568bdc3027592ee"
+	expectedCharacterQuestStateUpSHA256      = "d67b53bc4f6aeaf74e9721f760ab05279037293f4de9e7b0079813984de56862"
+	expectedCharacterQuestStateDownSHA256    = "70d2a9c4db6a47acd6574975c96449efd4eb6d3076db53c3eb6e21221936282f"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -136,6 +138,41 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 		if !strings.Contains(third.DownSQL, want) {
 			t.Fatalf("expected character item-state down migration to contain %q, got:\n%s", want, third.DownSQL)
 		}
+	}
+
+	if len(catalog) < 4 {
+		t.Fatalf("expected character quest-state migration after item-state, got %d migrations", len(catalog))
+	}
+	fourth := catalog[3]
+	if fourth.Version != 4 || fourth.Name != "character_quest_state" {
+		t.Fatalf("unexpected fourth migration: %#v", fourth)
+	}
+	if fourth.UpPath != "0004_character_quest_state.up.sql" {
+		t.Fatalf("unexpected fourth up path: %q", fourth.UpPath)
+	}
+	if fourth.DownPath != "0004_character_quest_state.down.sql" {
+		t.Fatalf("unexpected fourth down path: %q", fourth.DownPath)
+	}
+	if fourth.UpSHA256 != expectedCharacterQuestStateUpSHA256 {
+		t.Fatalf("unexpected character quest-state up checksum: got %q want %q", fourth.UpSHA256, expectedCharacterQuestStateUpSHA256)
+	}
+	if fourth.DownSHA256 != expectedCharacterQuestStateDownSHA256 {
+		t.Fatalf("unexpected character quest-state down checksum: got %q want %q", fourth.DownSHA256, expectedCharacterQuestStateDownSHA256)
+	}
+	for _, want := range []string{
+		"CREATE TABLE character_quest_flags",
+		"FOREIGN KEY (character_id) REFERENCES characters(id)",
+		"PRIMARY KEY (character_id, quest_ref, flag_name)",
+		"CREATE INDEX character_quest_flags_quest_ref_index",
+		"CHECK (character_id > 0)",
+		"CHECK (value > 0)",
+	} {
+		if !strings.Contains(fourth.UpSQL, want) {
+			t.Fatalf("expected character quest-state migration to contain %q, got:\n%s", want, fourth.UpSQL)
+		}
+	}
+	if !strings.Contains(fourth.DownSQL, "DROP TABLE character_quest_flags") {
+		t.Fatalf("expected character quest-state down migration to drop quest flags, got:\n%s", fourth.DownSQL)
 	}
 
 	for i, migration := range catalog {

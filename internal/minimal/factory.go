@@ -925,6 +925,32 @@ func (r *gameRuntime) ExportCharacterItemState() (accountstore.CharacterItemStat
 	return exporter.ExportCharacterItemState()
 }
 
+func (r *gameRuntime) ExportCharacterQuestState() (queststate.CharacterQuestStateExport, error) {
+	if r == nil || r.questStateStore == nil {
+		return queststate.ExportCharacterQuestState(queststate.Snapshot{}, nil)
+	}
+
+	roster, err := r.ExportAccountCharacterRoster()
+	if err != nil {
+		return queststate.CharacterQuestStateExport{}, err
+	}
+	characterIDsByName := make(map[string]uint32, len(roster.Characters)*2)
+	for _, character := range roster.Characters {
+		characterIDsByName[character.Name] = character.ID
+		characterIDsByName[character.NameNormalized] = character.ID
+	}
+
+	exporter, ok := r.questStateStore.(interface {
+		ExportCharacterQuestState(map[string]uint32) (queststate.CharacterQuestStateExport, error)
+	})
+	if !ok {
+		return queststate.CharacterQuestStateExport{}, fmt.Errorf("character quest-state export is not supported")
+	}
+	r.questStateMu.Lock()
+	defer r.questStateMu.Unlock()
+	return exporter.ExportCharacterQuestState(characterIDsByName)
+}
+
 func (r *gameRuntime) flushReadyStaticActorRespawns() {
 	if r == nil || r.sharedWorld == nil {
 		return

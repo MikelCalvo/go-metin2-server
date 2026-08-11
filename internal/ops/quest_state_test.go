@@ -393,6 +393,90 @@ func TestLocalQuestStateCharacterEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalCharacterQuestStateExportEndpointReturnsLoopbackJSON(t *testing.T) {
+	exporter := &stubCharacterQuestStateExporter{export: queststate.CharacterQuestStateExport{
+		MigrationVersion: queststate.CharacterQuestStateMigrationVersion,
+		MigrationName:    queststate.CharacterQuestStateMigrationName,
+		Flags: []queststate.CharacterQuestFlagRow{
+			{CharacterID: 7, Character: "QuestHero", QuestRef: "quest:first_steps", Flag: "step", Value: 2},
+		},
+	}}
+	mux := RegisterLocalCharacterQuestStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/quest-state/exports/character-quest-state", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if exporter.calls != 1 {
+		t.Fatalf("expected exporter to be called once, got %d", exporter.calls)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"migration_version":4`, `"migration_name":"character_quest_state"`, `"character_id":7`, `"character":"QuestHero"`, `"quest_ref":"quest:first_steps"`, `"flag":"step"`, `"value":2`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected character quest-state export body to contain %s, got %s", want, body)
+		}
+	}
+}
+
+func TestLocalCharacterQuestStateExportEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	exporter := &stubCharacterQuestStateExporter{export: queststate.CharacterQuestStateExport{MigrationVersion: 4}}
+	mux := RegisterLocalCharacterQuestStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/quest-state/exports/character-quest-state", nil)
+	req.RemoteAddr = "192.0.2.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if exporter.calls != 0 {
+		t.Fatalf("expected exporter not to be called, got %d", exporter.calls)
+	}
+}
+
+func TestLocalCharacterQuestStateExportEndpointRejectsWrongMethod(t *testing.T) {
+	exporter := &stubCharacterQuestStateExporter{export: queststate.CharacterQuestStateExport{MigrationVersion: 4}}
+	mux := RegisterLocalCharacterQuestStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/quest-state/exports/character-quest-state", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if exporter.calls != 0 {
+		t.Fatalf("expected exporter not to be called, got %d", exporter.calls)
+	}
+}
+
+func TestLocalCharacterQuestStateExportEndpointReportsExporterFailure(t *testing.T) {
+	exporter := &stubCharacterQuestStateExporter{err: errors.New("invalid quest export")}
+	mux := RegisterLocalCharacterQuestStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/quest-state/exports/character-quest-state", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if exporter.calls != 1 {
+		t.Fatalf("expected exporter to be called once, got %d", exporter.calls)
+	}
+}
+
 type stubQuestStateStoreValidator struct {
 	calls   int
 	summary queststate.SnapshotSummary
@@ -429,4 +513,15 @@ func (s *stubQuestStateCharacterReader) Read(character string) (any, bool, error
 	s.calls++
 	s.lastCharacter = character
 	return s.snapshot, s.ok, s.err
+}
+
+type stubCharacterQuestStateExporter struct {
+	calls  int
+	export queststate.CharacterQuestStateExport
+	err    error
+}
+
+func (s *stubCharacterQuestStateExporter) Export() (queststate.CharacterQuestStateExport, error) {
+	s.calls++
+	return s.export, s.err
 }

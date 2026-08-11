@@ -19,6 +19,7 @@ const (
 	expectedBootstrapMigrationStatusSHA256     = "76ab086217590515cb9b1eb72d78f49abf766da977998c4c60b41825c8e92f78"
 	expectedAccountCharacterRosterStatusSHA256 = "5385c65b2f00b6c64567d604176f99f84b39afae62d840939e49ab2994b053af"
 	expectedCharacterItemStateStatusSHA256     = "122e94f3d39975a6d1cf7e2d9321177a408e195be484e5ea2ffd5a8fa61c9a24"
+	expectedCharacterQuestStateStatusSHA256    = "d67b53bc4f6aeaf74e9721f760ab05279037293f4de9e7b0079813984de56862"
 )
 
 func TestHealthzEndpointIncludesServiceName(t *testing.T) {
@@ -5746,12 +5747,13 @@ func TestLocalStaticActorDeleteEndpointRemovesActorForLoopbackDelete(t *testing.
 func TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet(t *testing.T) {
 	planner := &stubMigrationStatusPlanner{plan: dbmigrations.Plan{
 		CurrentVersion: 0,
-		LatestVersion:  3,
+		LatestVersion:  4,
 		UpToDate:       false,
 		Pending: []dbmigrations.PlanStep{
 			{Version: 1, Name: "bootstrap_schema_migrations", Direction: dbmigrations.DirectionUp, Path: "0001_bootstrap_schema_migrations.up.sql", SHA256: expectedBootstrapMigrationStatusSHA256},
 			{Version: 2, Name: "account_character_roster", Direction: dbmigrations.DirectionUp, Path: "0002_account_character_roster.up.sql", SHA256: expectedAccountCharacterRosterStatusSHA256},
 			{Version: 3, Name: "character_item_state", Direction: dbmigrations.DirectionUp, Path: "0003_character_item_state.up.sql", SHA256: expectedCharacterItemStateStatusSHA256},
+			{Version: 4, Name: "character_quest_state", Direction: dbmigrations.DirectionUp, Path: "0004_character_quest_state.up.sql", SHA256: expectedCharacterQuestStateStatusSHA256},
 		},
 	}}
 	mux := RegisterLocalMigrationStatusEndpoint(NewPprofMux("gamed"), planner.Plan)
@@ -5772,7 +5774,7 @@ func TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet(t *testing.
 		t.Fatalf("expected application/json content type, got %q", contentType)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`"current_version":0`, `"latest_version":3`, `"up_to_date":false`, `"direction":"up"`, `"path":"0001_bootstrap_schema_migrations.up.sql"`, `"sha256":"` + expectedBootstrapMigrationStatusSHA256 + `"`, `"path":"0002_account_character_roster.up.sql"`, `"sha256":"` + expectedAccountCharacterRosterStatusSHA256 + `"`, `"path":"0003_character_item_state.up.sql"`, `"sha256":"` + expectedCharacterItemStateStatusSHA256 + `"`} {
+	for _, want := range []string{`"current_version":0`, `"latest_version":4`, `"up_to_date":false`, `"direction":"up"`, `"path":"0001_bootstrap_schema_migrations.up.sql"`, `"sha256":"` + expectedBootstrapMigrationStatusSHA256 + `"`, `"path":"0002_account_character_roster.up.sql"`, `"sha256":"` + expectedAccountCharacterRosterStatusSHA256 + `"`, `"path":"0003_character_item_state.up.sql"`, `"sha256":"` + expectedCharacterItemStateStatusSHA256 + `"`, `"path":"0004_character_quest_state.up.sql"`, `"sha256":"` + expectedCharacterQuestStateStatusSHA256 + `"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected migration status body to contain %s, got %s", want, body)
 		}
@@ -6146,7 +6148,7 @@ func TestLocalCharacterItemStateExportEndpointReportsExporterFailure(t *testing.
 func TestNewPprofMuxDoesNotExposeLocalMigrationStatusByDefault(t *testing.T) {
 	mux := NewPprofMux("authd")
 
-	for _, path := range []string{"/local/db/migrations/status", "/local/db/migrations/plan?target_version=0", "/local/account-store/exports/account-character-roster", "/local/account-store/exports/character-item-state"} {
+	for _, path := range []string{"/local/db/migrations/status", "/local/db/migrations/plan?target_version=0", "/local/account-store/exports/account-character-roster", "/local/account-store/exports/character-item-state", "/local/quest-state/exports/character-quest-state"} {
 		t.Run(path, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, path, nil)
 			req.RemoteAddr = "127.0.0.1:12345"

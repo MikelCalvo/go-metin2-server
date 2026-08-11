@@ -978,6 +978,31 @@ func RegisterLocalCharacterItemStateExportEndpoint(mux *http.ServeMux, exportIte
 	return mux
 }
 
+func RegisterLocalCharacterQuestStateExportEndpoint(mux *http.ServeMux, exportQuestState func() (queststate.CharacterQuestStateExport, error)) *http.ServeMux {
+	if mux == nil || exportQuestState == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/quest-state/exports/character-quest-state", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		export, err := exportQuestState()
+		if err != nil {
+			slog.Warn("local character quest-state export failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, export, http.StatusOK)
+	})
+	return mux
+}
+
 func decodeLocalMigrationPlanTarget(r *http.Request) (int, bool) {
 	rawTargets := r.URL.Query()["target_version"]
 	if len(rawTargets) != 1 {
