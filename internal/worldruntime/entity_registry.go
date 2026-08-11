@@ -629,6 +629,7 @@ func newStaticEntity(id uint64, actor StaticEntity) StaticEntity {
 			Name: actor.Entity.Name,
 		},
 		Position:        actor.Position,
+		SpawnHome:       actor.SpawnHome,
 		RaceNum:         actor.RaceNum,
 		CombatProfile:   actor.CombatProfile,
 		InteractionKind: actor.InteractionKind,

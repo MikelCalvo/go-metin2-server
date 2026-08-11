@@ -8,6 +8,8 @@ const (
 	SpawnLeashStatusAtHome         SpawnLeashStatus = "at_home"
 	SpawnLeashStatusWithinRadius   SpawnLeashStatus = "within_radius"
 	SpawnLeashStatusReturnRequired SpawnLeashStatus = "return_required"
+
+	DefaultSpawnLeashRadius int32 = 400
 )
 
 // SpawnLeashEvaluation is a pure planning result for the first mob lifecycle
@@ -44,6 +46,20 @@ func EvaluateStaticActorSpawnLeash(actor StaticEntity, current Position, radius 
 		return SpawnLeashEvaluation{}, false
 	}
 	return EvaluateSpawnLeash(actor.Position, current, radius)
+}
+
+// EvaluateStaticActorCurrentSpawnLeash classifies a spawn-backed static actor's
+// current position against its preserved authored home position.
+func EvaluateStaticActorCurrentSpawnLeash(actor StaticEntity, radius int32) (SpawnLeashEvaluation, bool) {
+	profile := staticActorCombatProfile(actor.CombatProfile, actor.CombatKind)
+	if actor.SpawnGroupRef == "" || !ValidStaticActorSpawnGroupRef(actor.SpawnGroupRef) || profile == "" || !ValidStaticActorCombatKind(profile) {
+		return SpawnLeashEvaluation{}, false
+	}
+	home := actor.SpawnHome
+	if !home.Valid() {
+		home = actor.Position
+	}
+	return EvaluateSpawnLeash(home, actor.Position, radius)
 }
 
 // EvaluateSpawnLeash classifies the current position against one authored home

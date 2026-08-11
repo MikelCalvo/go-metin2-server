@@ -57,6 +57,7 @@ func (p PlayerEntity) Position() Position {
 type StaticEntity struct {
 	Entity          Entity
 	Position        Position
+	SpawnHome       Position
 	RaceNum         uint32
 	CombatProfile   string
 	InteractionKind string
@@ -309,6 +310,13 @@ func normalizeStaticEntityCombat(actor StaticEntity) StaticEntity {
 	actor.CombatProfile = profile
 	actor.CombatKind = profile
 	actor.SpawnGroupRef = strings.TrimSpace(actor.SpawnGroupRef)
+	if actor.SpawnGroupRef != "" {
+		if !actor.SpawnHome.Valid() {
+			actor.SpawnHome = actor.Position
+		}
+	} else {
+		actor.SpawnHome = Position{}
+	}
 	return actor
 }
 

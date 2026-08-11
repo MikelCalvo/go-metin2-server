@@ -24,6 +24,68 @@ func TestEvaluateStaticActorSpawnLeashTreatsAuthoredPositionAsHome(t *testing.T)
 	}
 }
 
+func TestEvaluateStaticActorCurrentSpawnLeashUsesAuthoredHomeSeparateFromCurrentPosition(t *testing.T) {
+	home := NewPosition(42, 1700, 2800)
+	current := NewPosition(42, 2301, 2800)
+	actor := StaticEntity{
+		Entity:        Entity{ID: 8, Kind: EntityKindStaticActor, Name: "PracticeMob"},
+		Position:      current,
+		SpawnHome:     home,
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.leash_current",
+	}
+
+	evaluation, ok := EvaluateStaticActorCurrentSpawnLeash(actor, 400)
+	if !ok {
+		t.Fatal("expected spawn-backed practice mob current leash evaluation to resolve")
+	}
+	if evaluation.Home != home || evaluation.Current != current || evaluation.Status != SpawnLeashStatusReturnRequired || !evaluation.ReturnRequired || evaluation.ReturnTarget != home {
+		t.Fatalf("expected current position outside authored home radius to require return home, got %+v", evaluation)
+	}
+
+	snapshot := staticActorSnapshot(NewBootstrapTopology(1), actor)
+	if snapshot.SpawnLeash == nil {
+		t.Fatalf("expected spawn-group snapshot to expose leash classification")
+	}
+	if snapshot.SpawnLeash.Home.MapIndex != 42 || snapshot.SpawnLeash.Home.X != 1700 || snapshot.SpawnLeash.Current.X != 2301 || snapshot.SpawnLeash.Status != SpawnLeashStatusReturnRequired || !snapshot.SpawnLeash.ReturnRequired {
+		t.Fatalf("unexpected spawn leash snapshot: %+v", snapshot.SpawnLeash)
+	}
+}
+
+func TestEntityRegistryPreservesSpawnHomeAcrossStaticActorPositionUpdate(t *testing.T) {
+	registry := NewEntityRegistry()
+	home := NewPosition(42, 1700, 2800)
+	actor, ok := registry.RegisterStaticActor(StaticEntity{
+		Entity:        Entity{Name: "PracticeMob"},
+		Position:      home,
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.leash_registry",
+	})
+	if !ok {
+		t.Fatal("expected spawn actor registration to succeed")
+	}
+	if actor.SpawnHome != home {
+		t.Fatalf("expected registration to default spawn home to authored position, got %+v", actor.SpawnHome)
+	}
+
+	updated := actor
+	updated.Position = NewPosition(42, 2301, 2800)
+	result, ok := registry.UpdateStaticActor(updated)
+	if !ok {
+		t.Fatal("expected live static actor position update to succeed")
+	}
+	if result.SpawnHome != home || result.Position != updated.Position {
+		t.Fatalf("expected update to preserve spawn home while changing current position, got %+v", result)
+	}
+	evaluation, ok := EvaluateStaticActorCurrentSpawnLeash(result, 400)
+	if !ok || !evaluation.ReturnRequired || evaluation.ReturnTarget != home {
+		t.Fatalf("expected moved registry actor to require return home, ok=%v evaluation=%+v", ok, evaluation)
+	}
+}
+
 func TestEvaluateSpawnLeashClassifiesInsideAndOutsideRadius(t *testing.T) {
 	home := NewPosition(42, 1700, 2800)
 
