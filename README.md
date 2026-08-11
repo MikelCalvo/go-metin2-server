@@ -174,8 +174,9 @@ Already present:
 - aggro-lite engagement ownership and retaliation ticks,
 - player death floor and restart-here/restart-town bootstrap recovery seams,
 - deterministic EXP/gold/fixed-drop reward descriptors for accepted non-player deaths,
+- a read-only loopback spawn-leash inspection endpoint for materialized spawn groups (`/local/spawn-groups/{entity_id}/leash?radius=...`),
 - codec-only presentation families for fly effects, PvP/duel, stun, character position / change-speed, and target markers,
-- tests around watcher/owner respawn, retarget, cleanup, and reward cases.
+- tests around watcher/owner respawn, retarget, cleanup, reward, and leash-classification cases.
 
 Still missing:
 

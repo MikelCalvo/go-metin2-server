@@ -38,6 +38,17 @@ The result classifies the current position as one of:
 
 The first distance rule is Euclidean squared-distance on the current bootstrap `x` / `y` coordinates. Cross-map positions always require return to the authored spawn position.
 
+The runtime-facing JSON snapshot for a materialized spawn group contains:
+- `actor` — the same spawn-backed static actor row exposed by `/local/spawn-groups/{entity_id}`
+- `home` — `{map_index,x,y}` from the authored spawn placement
+- `current` — `{map_index,x,y}` for the current runtime actor position
+- `radius`
+- `status`
+- `return_required`
+- optional `return_target` only when `return_required = true`
+
+For this slice, the concrete loopback endpoint is `GET /local/spawn-groups/{entity_id}/leash?radius=<positive-int>`. It is operator/debug tooling only; it is not a gameplay packet and it does not mutate actor position, target ownership, HP, death state, respawn timers, or visible-world membership.
+
 ## Fail-closed cases
 
 The helper refuses to classify:
@@ -62,4 +73,4 @@ This slice does **not** yet implement:
 - aggro radius acquisition or target switching
 - persistence of live mob position distinct from authored spawn position
 
-Until a later slice wires this helper into live mob behavior, the existing content-loaded practice mobs remain stationary and use the already-owned target -> attack -> death -> respawn lifecycle.
+Until a later slice wires this classifier into live mob movement behavior, the existing content-loaded practice mobs remain stationary and use the already-owned target -> attack -> death -> respawn lifecycle. The loopback endpoint is only a read-only inspection bridge over that classifier so QA can verify authored home/current/radius semantics before chase/return work begins.

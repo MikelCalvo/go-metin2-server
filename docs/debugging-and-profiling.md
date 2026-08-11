@@ -760,6 +760,7 @@ Use it when local QA needs all service actors plus spawn-backed actors on one ma
 
 `GET /local/spawn-groups/{entity_id}` returns one exact spawn-backed actor row by runtime entity ID / client-visible static-actor `VID`.
 Invalid path IDs return `400`; missing entities or ordinary non-spawn static actors return `404`.
+`GET /local/spawn-groups/{entity_id}/leash?radius=<positive-int>` returns a read-only spawn-leash classification for one materialized spawn-backed actor. The response embeds the same `actor` row plus `home`, `current`, `radius`, `status`, `return_required`, and optional `return_target`. It rejects malformed entity IDs or missing/non-positive `radius` values with `400`, returns `404` for missing/non-spawn actors, and does not mutate actor position, HP, death state, respawn timers, target ownership, or visibility.
 `GET /local/maps/{map_index}/spawn-groups` returns the same snapshot shape for one effective map's materialized spawn-backed actors, rejects malformed or zero map-index path values with `400`, and returns `404` when the runtime cannot resolve that map-scoped snapshot.
 Use it when local QA already knows the map under investigation and needs the authored spawn subset without fetching the broader `/local/maps/{map_index}` occupancy row.
 `GET /local/maps/{map_index}/static-actor-respawns` returns pending static-actor respawn rows for one effective map, using the same row shape as `/local/static-actor-respawns` and returning an empty JSON array when the map is known but currently has no pending respawn timers.
@@ -971,13 +972,14 @@ List currently materialized authored spawn-group actors:
 ```bash
 curl http://127.0.0.1:6060/local/spawn-groups
 curl http://127.0.0.1:6060/local/spawn-groups/by-ref/practice.reward_mob
+curl 'http://127.0.0.1:6060/local/spawn-groups/117440769/leash?radius=400'
 curl http://127.0.0.1:6060/local/maps/42/static-actors
 curl http://127.0.0.1:6060/local/maps/42/spawn-groups
 curl http://127.0.0.1:6060/local/maps/42/static-actor-respawns
 ```
 
 The spawn-group snapshots filter to attackable content materialized from `spawn_groups`; use `/local/static-actors` for the global full static-actor set, or `/local/maps/{map_index}/static-actors` for the full map-local set.
-The by-ref endpoint is loopback-only like the rest of the spawn-group inspection surface and looks up the materialized actor by authored `spawn_group_ref`, returning `400` for malformed refs and `404` when a well-formed ref is not currently live.
+The by-ref endpoint is loopback-only like the rest of the spawn-group inspection surface and looks up the materialized actor by authored `spawn_group_ref`, returning `400` for malformed refs and `404` when a well-formed ref is not currently live. The leash endpoint is also loopback-only and computes the current pure classifier (`home`, `current`, `radius`, `status`, `return_required`, optional `return_target`) for one materialized spawn group without moving the actor or changing combat/runtime state.
 `/local/maps` also embeds the full static-actor list and same spawn-backed subset per occupied map as `static_actors`, `spawn_group_count`, and `spawn_groups`; the exact `/local/maps/{map_index}/static-actors`, `/local/maps/{map_index}/spawn-groups`, `/local/maps/{map_index}/static-actor-respawns`, and `/local/maps/{map_index}/combat-targets` endpoints return only those map-local subsets when QA does not need the full occupancy row.
 
 List the authored interaction catalog:
