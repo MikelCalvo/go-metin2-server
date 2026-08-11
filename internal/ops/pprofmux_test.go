@@ -18,6 +18,7 @@ import (
 const (
 	expectedBootstrapMigrationStatusSHA256     = "76ab086217590515cb9b1eb72d78f49abf766da977998c4c60b41825c8e92f78"
 	expectedAccountCharacterRosterStatusSHA256 = "5385c65b2f00b6c64567d604176f99f84b39afae62d840939e49ab2994b053af"
+	expectedCharacterItemStateStatusSHA256     = "122e94f3d39975a6d1cf7e2d9321177a408e195be484e5ea2ffd5a8fa61c9a24"
 )
 
 func TestHealthzEndpointIncludesServiceName(t *testing.T) {
@@ -5745,11 +5746,12 @@ func TestLocalStaticActorDeleteEndpointRemovesActorForLoopbackDelete(t *testing.
 func TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet(t *testing.T) {
 	planner := &stubMigrationStatusPlanner{plan: dbmigrations.Plan{
 		CurrentVersion: 0,
-		LatestVersion:  2,
+		LatestVersion:  3,
 		UpToDate:       false,
 		Pending: []dbmigrations.PlanStep{
 			{Version: 1, Name: "bootstrap_schema_migrations", Direction: dbmigrations.DirectionUp, Path: "0001_bootstrap_schema_migrations.up.sql", SHA256: expectedBootstrapMigrationStatusSHA256},
 			{Version: 2, Name: "account_character_roster", Direction: dbmigrations.DirectionUp, Path: "0002_account_character_roster.up.sql", SHA256: expectedAccountCharacterRosterStatusSHA256},
+			{Version: 3, Name: "character_item_state", Direction: dbmigrations.DirectionUp, Path: "0003_character_item_state.up.sql", SHA256: expectedCharacterItemStateStatusSHA256},
 		},
 	}}
 	mux := RegisterLocalMigrationStatusEndpoint(NewPprofMux("gamed"), planner.Plan)
@@ -5770,7 +5772,7 @@ func TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet(t *testing.
 		t.Fatalf("expected application/json content type, got %q", contentType)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`"current_version":0`, `"latest_version":2`, `"up_to_date":false`, `"direction":"up"`, `"path":"0001_bootstrap_schema_migrations.up.sql"`, `"sha256":"` + expectedBootstrapMigrationStatusSHA256 + `"`, `"path":"0002_account_character_roster.up.sql"`, `"sha256":"` + expectedAccountCharacterRosterStatusSHA256 + `"`} {
+	for _, want := range []string{`"current_version":0`, `"latest_version":3`, `"up_to_date":false`, `"direction":"up"`, `"path":"0001_bootstrap_schema_migrations.up.sql"`, `"sha256":"` + expectedBootstrapMigrationStatusSHA256 + `"`, `"path":"0002_account_character_roster.up.sql"`, `"sha256":"` + expectedAccountCharacterRosterStatusSHA256 + `"`, `"path":"0003_character_item_state.up.sql"`, `"sha256":"` + expectedCharacterItemStateStatusSHA256 + `"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected migration status body to contain %s, got %s", want, body)
 		}
@@ -6045,10 +6047,106 @@ func TestLocalAccountCharacterRosterExportEndpointReportsExporterFailure(t *test
 	}
 }
 
+func TestLocalCharacterItemStateExportEndpointReturnsLoopbackJSON(t *testing.T) {
+	exporter := &stubCharacterItemStateExporter{export: accountstore.CharacterItemStateExport{
+		MigrationVersion: accountstore.CharacterItemStateMigrationVersion,
+		MigrationName:    accountstore.CharacterItemStateMigrationName,
+		InventoryItems: []accountstore.CharacterInventoryItemRow{
+			{ID: 1001, CharacterID: 7, Slot: 8, Vnum: 27001, Count: 2},
+		},
+		EquipmentItems: []accountstore.CharacterEquipmentItemRow{
+			{ID: 2001, CharacterID: 7, EquipSlot: "weapon", Vnum: 19, Count: 1},
+		},
+		Quickslots: []accountstore.CharacterQuickslotRow{
+			{CharacterID: 7, Position: 2, Type: 1, Slot: 8},
+		},
+	}}
+	mux := RegisterLocalCharacterItemStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/account-store/exports/character-item-state", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if exporter.calls != 1 {
+		t.Fatalf("expected exporter to be called once, got %d", exporter.calls)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"migration_version":3`, `"migration_name":"character_item_state"`, `"inventory_items":[`, `"equipment_items":[`, `"quickslots":[`, `"character_id":7`, `"equip_slot":"weapon"`, `"position":2`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected character item-state export body to contain %s, got %s", want, body)
+		}
+	}
+	if strings.Contains(body, "accounts") || strings.Contains(body, "characters") || strings.Contains(body, "CREATE TABLE") {
+		t.Fatalf("item-state export endpoint must not expose roster rows or SQL, got %s", body)
+	}
+}
+
+func TestLocalCharacterItemStateExportEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	exporter := &stubCharacterItemStateExporter{export: accountstore.CharacterItemStateExport{MigrationVersion: 3}}
+	mux := RegisterLocalCharacterItemStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/account-store/exports/character-item-state", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if exporter.calls != 0 {
+		t.Fatalf("expected exporter not to be called, got %d", exporter.calls)
+	}
+}
+
+func TestLocalCharacterItemStateExportEndpointRejectsWrongMethod(t *testing.T) {
+	exporter := &stubCharacterItemStateExporter{export: accountstore.CharacterItemStateExport{MigrationVersion: 3}}
+	mux := RegisterLocalCharacterItemStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/exports/character-item-state", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if exporter.calls != 0 {
+		t.Fatalf("expected exporter not to be called, got %d", exporter.calls)
+	}
+}
+
+func TestLocalCharacterItemStateExportEndpointReportsExporterFailure(t *testing.T) {
+	exporter := &stubCharacterItemStateExporter{err: errStubMigrationStatusInvalid}
+	mux := RegisterLocalCharacterItemStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/account-store/exports/character-item-state", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if exporter.calls != 1 {
+		t.Fatalf("expected exporter to be called once, got %d", exporter.calls)
+	}
+}
+
 func TestNewPprofMuxDoesNotExposeLocalMigrationStatusByDefault(t *testing.T) {
 	mux := NewPprofMux("authd")
 
-	for _, path := range []string{"/local/db/migrations/status", "/local/db/migrations/plan?target_version=0", "/local/account-store/exports/account-character-roster"} {
+	for _, path := range []string{"/local/db/migrations/status", "/local/db/migrations/plan?target_version=0", "/local/account-store/exports/account-character-roster", "/local/account-store/exports/character-item-state"} {
 		t.Run(path, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, path, nil)
 			req.RemoteAddr = "127.0.0.1:12345"
@@ -6100,6 +6198,12 @@ type stubAccountCharacterRosterExporter struct {
 	calls  int
 }
 
+type stubCharacterItemStateExporter struct {
+	export accountstore.CharacterItemStateExport
+	err    error
+	calls  int
+}
+
 var errStubMigrationStatusInvalid = errors.New("invalid migration status")
 
 func (p *stubMigrationStatusPlanner) Plan() (dbmigrations.Plan, error) {
@@ -6114,6 +6218,11 @@ func (p *stubMigrationTargetPlanner) PlanTarget(targetVersion int) (dbmigrations
 }
 
 func (e *stubAccountCharacterRosterExporter) Export() (accountstore.AccountCharacterRosterExport, error) {
+	e.calls++
+	return e.export, e.err
+}
+
+func (e *stubCharacterItemStateExporter) Export() (accountstore.CharacterItemStateExport, error) {
 	e.calls++
 	return e.export, e.err
 }

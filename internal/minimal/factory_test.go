@@ -145,6 +145,57 @@ func TestGameRuntimeAccountCharacterRosterExportProjectsCommittedSnapshots(t *te
 	}
 }
 
+func TestGameRuntimeCharacterItemStateExportProjectsCommittedSnapshots(t *testing.T) {
+	accountStore := accountstore.NewFileStore(t.TempDir())
+	character := loginticket.Character{
+		ID:       7,
+		Name:     "AlphaWar",
+		Level:    1,
+		MapIndex: 1,
+		Inventory: []inventory.ItemInstance{
+			{ID: 1001, Vnum: 27001, Count: 2, Slot: 8},
+		},
+		Equipment: []inventory.ItemInstance{
+			{ID: 2001, Vnum: 19, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+		},
+		Quickslots: []loginticket.Quickslot{
+			{Position: 2, Type: quickslotproto.TypeItem, Slot: 8},
+		},
+	}
+	if err := accountStore.Save(accountstore.Account{Login: "Alpha", Empire: 1, Characters: []loginticket.Character{character}}); err != nil {
+		t.Fatalf("save account snapshot: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountStore,
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	export, err := runtime.ExportCharacterItemState()
+	if err != nil {
+		t.Fatalf("runtime character item-state export: %v", err)
+	}
+	if export.MigrationVersion != accountstore.CharacterItemStateMigrationVersion || export.MigrationName != accountstore.CharacterItemStateMigrationName {
+		t.Fatalf("unexpected migration boundary: %#v", export)
+	}
+	if len(export.InventoryItems) != 1 || export.InventoryItems[0].ID != 1001 || export.InventoryItems[0].CharacterID != 7 {
+		t.Fatalf("unexpected inventory export rows: %#v", export.InventoryItems)
+	}
+	if len(export.EquipmentItems) != 1 || export.EquipmentItems[0].EquipSlot != "weapon" || export.EquipmentItems[0].CharacterID != 7 {
+		t.Fatalf("unexpected equipment export rows: %#v", export.EquipmentItems)
+	}
+	if len(export.Quickslots) != 1 || export.Quickslots[0].Position != 2 || export.Quickslots[0].CharacterID != 7 {
+		t.Fatalf("unexpected quickslot export rows: %#v", export.Quickslots)
+	}
+}
+
 func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
@@ -166,8 +217,8 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	if plan.CurrentVersion != 0 || plan.LatestVersion < 1 || plan.UpToDate {
 		t.Fatalf("unexpected migration plan versions: %#v", plan)
 	}
-	if len(plan.Pending) < 2 {
-		t.Fatalf("expected schema and account/character migrations for empty ledger: %#v", plan)
+	if len(plan.Pending) < 3 {
+		t.Fatalf("expected schema, account/character, and character item-state migrations for empty ledger: %#v", plan)
 	}
 	first := plan.Pending[0]
 	if first.Version != 1 || first.Name != "bootstrap_schema_migrations" || first.Direction != dbmigrations.DirectionUp || first.Path != "0001_bootstrap_schema_migrations.up.sql" {
@@ -177,7 +228,11 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	if second.Version != 2 || second.Name != "account_character_roster" || second.Direction != dbmigrations.DirectionUp || second.Path != "0002_account_character_roster.up.sql" {
 		t.Fatalf("unexpected second pending migration step: %#v", second)
 	}
-	if first.SHA256 == "" || second.SHA256 == "" || strings.Contains(first.Path, "CREATE TABLE") || strings.Contains(second.Path, "CREATE TABLE") {
+	third := plan.Pending[2]
+	if third.Version != 3 || third.Name != "character_item_state" || third.Direction != dbmigrations.DirectionUp || third.Path != "0003_character_item_state.up.sql" {
+		t.Fatalf("unexpected third pending migration step: %#v", third)
+	}
+	if first.SHA256 == "" || second.SHA256 == "" || third.SHA256 == "" || strings.Contains(first.Path, "CREATE TABLE") || strings.Contains(second.Path, "CREATE TABLE") || strings.Contains(third.Path, "CREATE TABLE") {
 		t.Fatalf("expected metadata-only pending steps with checksums, got %#v", plan.Pending)
 	}
 }

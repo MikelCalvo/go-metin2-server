@@ -182,6 +182,10 @@ func main() {
 		opsHandler,
 		gameRuntime.ExportAccountCharacterRoster,
 	)
+	opsHandler = ops.RegisterLocalCharacterItemStateExportEndpoint(
+		opsHandler,
+		gameRuntime.ExportCharacterItemState,
+	)
 	opsHandler = ops.RegisterLocalStaticActorRespawnsEndpoint(
 		opsHandler,
 		func() any { return gameRuntime.StaticActorRespawns() },

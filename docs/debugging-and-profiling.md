@@ -299,6 +299,12 @@ Returns a loopback-only, read-only JSON projection of the committed bootstrap ac
 
 Successful responses include `migration_version`, `migration_name`, deterministic `accounts`, and deterministic `characters`. Account rows expose stable project-owned ids, original login, normalized login, and empire. Character rows expose only non-empty select-screen slots and the account/slot/name/appearance/stat/location/guild/gold fields frozen by the roster migration. The response deliberately omits inventory, equipment, quickslots, quest state, login tickets, authored content, and runtime world state, and it does not open a database, emit SQL, apply migrations, or mutate the account store. Use it as an operator/backfill preflight before future import or repository work; it is not a DB-backed runtime path.
 
+### `GET /local/account-store/exports/character-item-state`
+
+Returns a loopback-only, read-only JSON projection of committed bootstrap account snapshots onto the `0003_character_item_state` migration boundary. This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the account store cannot be listed or any committed snapshot would violate the roster or item-state schema shape.
+
+Successful responses include `migration_version`, `migration_name`, deterministic `inventory_items`, deterministic `equipment_items`, and deterministic `quickslots`. Inventory rows are ordered by account/character/slot and expose item id, character id, carried slot, vnum, count, and lock flag. Equipment rows expose item id, character id, named equipment slot, vnum, count, and lock flag. Quickslot rows expose character id, quickslot position, type, and slot. The response deliberately omits roster account rows, executable SQL, item-template definitions, quest state, login tickets, authored content, and runtime world state, and it does not apply migrations or mutate the account store. Use it as a second-stage operator/backfill preflight after the account/character roster export.
+
 ### `GET /local/runtime-config`
 
 Returns JSON describing the active bootstrap runtime selection. This endpoint is read-only, rejects non-`GET` methods with `405`, and exposes only the local runtime facts needed for AOI/debugging:

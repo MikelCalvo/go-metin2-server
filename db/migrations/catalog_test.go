@@ -17,6 +17,8 @@ const (
 	expectedBootstrapDownSHA256              = "140e8ba3c7a1c89cd942c13ef40160c74df5619093fe8c287c69cb978dba822d"
 	expectedAccountCharacterRosterUpSHA256   = "5385c65b2f00b6c64567d604176f99f84b39afae62d840939e49ab2994b053af"
 	expectedAccountCharacterRosterDownSHA256 = "cd8877ab1e88c4fe9a55d350bd5a89e1961ac88bd01423c5c1a1b0b8af37dc94"
+	expectedCharacterItemStateUpSHA256       = "122e94f3d39975a6d1cf7e2d9321177a408e195be484e5ea2ffd5a8fa61c9a24"
+	expectedCharacterItemStateDownSHA256     = "1a4dbc6d32c52a85eab837e00a9a63cc6c811b153a6054e5b568bdc3027592ee"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -89,6 +91,50 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 	} {
 		if !strings.Contains(second.DownSQL, want) {
 			t.Fatalf("expected account/character roster down migration to contain %q, got:\n%s", want, second.DownSQL)
+		}
+	}
+
+	if len(catalog) < 3 {
+		t.Fatalf("expected character item-state migration after account/character roster, got %d migrations", len(catalog))
+	}
+	third := catalog[2]
+	if third.Version != 3 || third.Name != "character_item_state" {
+		t.Fatalf("unexpected third migration: %#v", third)
+	}
+	if third.UpPath != "0003_character_item_state.up.sql" {
+		t.Fatalf("unexpected third up path: %q", third.UpPath)
+	}
+	if third.DownPath != "0003_character_item_state.down.sql" {
+		t.Fatalf("unexpected third down path: %q", third.DownPath)
+	}
+	if third.UpSHA256 != expectedCharacterItemStateUpSHA256 {
+		t.Fatalf("unexpected character item-state up checksum: got %q want %q", third.UpSHA256, expectedCharacterItemStateUpSHA256)
+	}
+	if third.DownSHA256 != expectedCharacterItemStateDownSHA256 {
+		t.Fatalf("unexpected character item-state down checksum: got %q want %q", third.DownSHA256, expectedCharacterItemStateDownSHA256)
+	}
+	for _, want := range []string{
+		"CREATE TABLE character_inventory_items",
+		"CREATE TABLE character_equipment_items",
+		"CREATE TABLE character_quickslots",
+		"FOREIGN KEY (character_id) REFERENCES characters(id)",
+		"CREATE UNIQUE INDEX character_inventory_items_character_slot_unique",
+		"CREATE UNIQUE INDEX character_equipment_items_character_slot_unique",
+		"CREATE UNIQUE INDEX character_quickslots_character_position_unique",
+		"CHECK (slot >= 0 AND slot < 90)",
+		"CHECK (position >= 0 AND position < 36)",
+	} {
+		if !strings.Contains(third.UpSQL, want) {
+			t.Fatalf("expected character item-state migration to contain %q, got:\n%s", want, third.UpSQL)
+		}
+	}
+	for _, want := range []string{
+		"DROP TABLE character_quickslots",
+		"DROP TABLE character_equipment_items",
+		"DROP TABLE character_inventory_items",
+	} {
+		if !strings.Contains(third.DownSQL, want) {
+			t.Fatalf("expected character item-state down migration to contain %q, got:\n%s", want, third.DownSQL)
 		}
 	}
 

@@ -33,6 +33,12 @@ Rules frozen by tests:
   - `characters` stores a project-owned character id, account id, select-screen slot, original/normalized name, bootstrap appearance/stat/location/guild/gold fields, and timestamps,
   - normalized account logins, `(account_id, slot)`, and normalized character names are unique,
   - the migration deliberately does not add inventory, equipment, quickslots, item instances, quest state, login tickets, static actors, interactions, content bundles, or world runtime tables yet.
+- the embedded catalog now also includes `0003_character_item_state`, a schema-only contract for selected-character item surfaces that are already persisted in the bootstrap account snapshot:
+  - `character_inventory_items` stores carried item instance id, owning character id, carried slot, vnum, count, lock flag, and timestamps,
+  - `character_equipment_items` stores equipped item instance id, owning character id, named equipment slot, vnum, count, lock flag, and timestamps,
+  - `character_quickslots` stores owning character id plus quickslot position/type/slot tuples,
+  - item ids are globally unique across carried and equipped item rows by table primary keys and exporter validation, while `(character_id, slot)`, `(character_id, equip_slot)`, and `(character_id, position)` are unique within their surfaces,
+  - quest state, item templates, login tickets, authored content, world runtime state, exchange/trade state, ground-item handles, and migration execution remain out of scope.
 - `gamed` exposes a loopback-only read-only `GET /local/db/migrations/status` endpoint that returns the same metadata-only dry-run plan; with no DB config it plans against an empty ledger, and with explicit DB config it reads only the `schema_migrations` ledger before planning.
 - `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger` add the first database/sql-compatible ledger reader seam for future preflight tooling: callers supply a `QueryContext` boundary, the package reads only `version`, `name`, and `up_sha256` from `schema_migrations` in version order, closes rows, and fails closed on query, scan, iteration, close, catalog, or ledger drift errors.
 - `PlanToVersion` / `PlanCatalogToVersion` and the matching SQL-ledger variants now provide an explicit target-version dry-run contract:
@@ -55,6 +61,12 @@ Rules frozen by tests:
   - inventory, equipment, quickslots, quest state, login tickets, authored content, and world runtime state are deliberately omitted,
   - invalid snapshots that would violate the schema shape fail closed instead of being silently coerced.
 - `gamed` exposes the projection through loopback-only read-only `GET /local/account-store/exports/account-character-roster`; it reads the committed bootstrap account snapshots, returns JSON, and performs no SQL or store mutation.
+- `internal/accountstore` now exposes a second read-only character item-state projection for the `0003_character_item_state` migration boundary:
+  - inventory rows are deterministic by account/character/slot and include item id, character id, slot, vnum, count, and lock flag,
+  - equipment rows are deterministic by account/character/equipment-slot order and include item id, character id, named equipment slot, vnum, count, and lock flag,
+  - quickslot rows are deterministic by account/character/position and include character id, position, type, and slot,
+  - malformed items, duplicate item ids across carried/equipped state, invalid quickslots, or invalid roster prerequisites fail closed.
+- `gamed` exposes this projection through loopback-only read-only `GET /local/account-store/exports/character-item-state`; it reads committed bootstrap account snapshots, returns JSON, and performs no SQL or store mutation.
 
 The first migration is `0001_bootstrap_schema_migrations` and creates only a minimal `schema_migrations` ledger:
 
@@ -67,6 +79,8 @@ The `up_sha256` column intentionally pins the exact SQL body that was applied, s
 
 The second migration is `0002_account_character_roster`. It is the first domain schema contract. The shipped daemons still load and save accounts/characters through the bootstrap file store, but the file store can now produce a deterministic schema-shaped roster export for operator inspection and future backfill tooling.
 
+The third migration is `0003_character_item_state`. It is the first schema contract for item-bearing selected-character state already present in durable account snapshots: carried inventory, equipped items, and quickslots. Like the roster migration, this is still a projection/backfill boundary rather than a runtime DB implementation.
+
 ## What this is not yet
 
 This is not a database runtime implementation. It deliberately does not add:
@@ -78,23 +92,23 @@ This is not a database runtime implementation. It deliberately does not add:
 - JSON snapshot import/backfill execution tooling,
 - production deployment scripts.
 
-The dry-run planner added on top of the catalog is likewise read-only: callers can supply already-read ledger rows directly or provide a `database/sql`-compatible query boundary for the same metadata through `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger` / `PlanToVersionFromSQLLedger`. The first loopback ops endpoints use an empty ledger when DB config is disabled and a configured `database/sql` ledger reader when both driver and DSN are set. `/local/db/migrations/status` reports the latest-version target; `/local/db/migrations/plan?target_version=N` previews an explicit target such as rollback-to-zero. The account/character roster export is also read-only: it maps committed JSON snapshots to the existing schema shape but does not insert rows, allocate a real production identity sequence, apply SQL, or quarantine/import data. The SQL ledger seam, runtime config, and roster export are safe boundaries for future CLI, real-ledger preflight tooling, or status pages, not an execution engine.
+The dry-run planner added on top of the catalog is likewise read-only: callers can supply already-read ledger rows directly or provide a `database/sql`-compatible query boundary for the same metadata through `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger` / `PlanToVersionFromSQLLedger`. The first loopback ops endpoints use an empty ledger when DB config is disabled and a configured `database/sql` ledger reader when both driver and DSN are set. `/local/db/migrations/status` reports the latest-version target; `/local/db/migrations/plan?target_version=N` previews an explicit target such as rollback-to-zero. The account/character roster export and character item-state export are also read-only: they map committed JSON snapshots to the existing schema shapes but do not insert rows, allocate a real production identity sequence, apply SQL, or quarantine/import data. The SQL ledger seam, runtime config, and exports are safe boundaries for future CLI, real-ledger preflight tooling, or status pages, not an execution engine.
 
 Those require separate slices because each one changes operator and data-safety semantics.
 
 ## Likely next slices
 
-1. Define a narrow account/character repository interface backed by current tests before adding a DB implementation.
-2. Add JSON-file-store import/quarantine tooling that consumes the exported `0002_account_character_roster` shape without silently coercing bad snapshots.
+1. Define a narrow account/character/item-state repository interface backed by current tests before adding a DB implementation.
+2. Add JSON-file-store import/quarantine tooling that consumes the exported `0002_account_character_roster` and `0003_character_item_state` shapes without silently coercing bad snapshots.
 3. Add a driver-backed test harness or build-tagged integration test for `schema_migrations` status before adding apply/rollback tooling.
-4. Add explicit migrations for inventory/equipment/quickslots only after the account/character repository seam is stable.
+4. Add explicit migrations for item templates and richer item/economy domains only after the account/character/item-state repository seam is stable.
 5. Add an apply/rollback command only after the dry-run status boundary and ledger validation behavior are exercised against an actual driver-backed test database.
 6. Document production DB configuration, backups, and rollback policy once there is an actual DB-backed store.
 
 ## Exit criteria for this slice
 
-- `go test ./db/migrations` validates the catalog, schema ledger migration, account/character roster migration, direct-ledger dry-run planning rules, explicit up/down target planning, and database/sql-compatible ledger-reader seam.
-- `go test ./internal/config ./internal/minimal ./internal/service ./internal/ops` validates optional DB config loading, startup fail-closed behavior for partial config, no-DSN runtime-config exposure, the configured-driver migration-status boundary, loopback-only explicit migration-plan previews, and the local account/character roster export endpoint.
-- `go test ./internal/accountstore` validates deterministic `0002_account_character_roster` export rows and fail-closed schema-shape checks for bootstrap account snapshots.
+- `go test ./db/migrations` validates the catalog, schema ledger migration, account/character roster migration, character item-state migration, direct-ledger dry-run planning rules, explicit up/down target planning, and database/sql-compatible ledger-reader seam.
+- `go test ./internal/config ./internal/minimal ./internal/service ./internal/ops` validates optional DB config loading, startup fail-closed behavior for partial config, no-DSN runtime-config exposure, the configured-driver migration-status boundary, loopback-only explicit migration-plan previews, and the local account/character roster plus character item-state export endpoints.
+- `go test ./internal/accountstore` validates deterministic `0002_account_character_roster` and `0003_character_item_state` export rows plus fail-closed schema-shape checks for bootstrap account snapshots.
 - `go test ./...` and `go vet ./...` remain green.
 - README/development docs describe `db/migrations` as the validated migration catalog and read-only planning skeleton, not a finished DB layer.

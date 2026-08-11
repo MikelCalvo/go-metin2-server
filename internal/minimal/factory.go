@@ -912,6 +912,19 @@ func (r *gameRuntime) ExportAccountCharacterRoster() (accountstore.AccountCharac
 	return exporter.ExportAccountCharacterRoster()
 }
 
+func (r *gameRuntime) ExportCharacterItemState() (accountstore.CharacterItemStateExport, error) {
+	if r == nil || r.accountStore == nil {
+		return accountstore.ExportCharacterItemState(nil)
+	}
+	exporter, ok := r.accountStore.(interface {
+		ExportCharacterItemState() (accountstore.CharacterItemStateExport, error)
+	})
+	if !ok {
+		return accountstore.CharacterItemStateExport{}, fmt.Errorf("character item-state export is not supported")
+	}
+	return exporter.ExportCharacterItemState()
+}
+
 func (r *gameRuntime) flushReadyStaticActorRespawns() {
 	if r == nil || r.sharedWorld == nil {
 		return

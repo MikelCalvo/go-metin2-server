@@ -16,6 +16,14 @@
       "down_path": "0002_account_character_roster.down.sql",
       "up_sha256": "5385c65b2f00b6c64567d604176f99f84b39afae62d840939e49ab2994b053af",
       "down_sha256": "cd8877ab1e88c4fe9a55d350bd5a89e1961ac88bd01423c5c1a1b0b8af37dc94"
+    },
+    {
+      "version": 3,
+      "name": "character_item_state",
+      "up_path": "0003_character_item_state.up.sql",
+      "down_path": "0003_character_item_state.down.sql",
+      "up_sha256": "122e94f3d39975a6d1cf7e2d9321177a408e195be484e5ea2ffd5a8fa61c9a24",
+      "down_sha256": "1a4dbc6d32c52a85eab837e00a9a63cc6c811b153a6054e5b568bdc3027592ee"
     }
   ]
 }

@@ -949,6 +949,31 @@ func RegisterLocalAccountCharacterRosterExportEndpoint(mux *http.ServeMux, expor
 	return mux
 }
 
+func RegisterLocalCharacterItemStateExportEndpoint(mux *http.ServeMux, exportItemState func() (accountstore.CharacterItemStateExport, error)) *http.ServeMux {
+	if mux == nil || exportItemState == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/account-store/exports/character-item-state", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		export, err := exportItemState()
+		if err != nil {
+			slog.Warn("local character item-state export failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, export, http.StatusOK)
+	})
+	return mux
+}
+
 func decodeLocalMigrationPlanTarget(r *http.Request) (int, bool) {
 	rawTargets := r.URL.Query()["target_version"]
 	if len(rawTargets) != 1 {
