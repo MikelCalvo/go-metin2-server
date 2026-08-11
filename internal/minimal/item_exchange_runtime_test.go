@@ -555,6 +555,51 @@ func TestGameRuntimeItemExchangeGoldAddAboveLiveGoldReportsLessGoldWithoutMutati
 	assertExchangeAccountUnchanged(t, accounts, "item-exchange-gold-rich-peer", peer, "peer exchange less-gold")
 }
 
+func TestGameRuntimeStoragePacketsFailClosedWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("StorageGuardOwner", 0x010307c0, 0x020407c0, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 760, Vnum: 27045, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "storage-guard-owner", 0x707070c0, owner)
+	if err := accounts.Save(accountstore.Account{Login: "storage-guard-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed storage guard account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected storage guard runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "storage-guard-owner", 0x707070c0)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	requests := []struct {
+		name string
+		raw  []byte
+	}{
+		{name: "safebox checkin", raw: itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{SafeSlot: 7, Position: itemproto.InventoryPosition(5)})},
+		{name: "safebox checkout", raw: itemproto.EncodeClientSafeboxCheckout(itemproto.ClientSafeboxCheckoutPacket{SafeSlot: 8, Position: itemproto.InventoryPosition(6)})},
+		{name: "safebox item move", raw: itemproto.EncodeClientSafeboxItemMove(itemproto.ClientSafeboxItemMovePacket{Source: itemproto.InventoryPosition(7), Destination: itemproto.InventoryPosition(8), Count: 3})},
+		{name: "mall checkout", raw: itemproto.EncodeClientMallCheckout(itemproto.ClientMallCheckoutPacket{MallSlot: 4, Position: itemproto.InventoryPosition(9)})},
+	}
+	for _, request := range requests {
+		t.Run(request.name, func(t *testing.T) {
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, request.raw))
+			if err != nil {
+				t.Fatalf("unexpected storage packet error: %v", err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected storage packet to emit no frames, got %d", len(out))
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected storage packet to queue no frames, got %d", len(queued))
+			}
+			assertExchangeAccountUnchanged(t, accounts, "storage-guard-owner", owner, request.name)
+		})
+	}
+}
+
 func TestGameRuntimeItemExchangeAcceptDisplaysWithoutFinalizingTrade(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

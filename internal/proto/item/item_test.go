@@ -276,6 +276,134 @@ func TestDecodeClientMoveReturnsExpectedFields(t *testing.T) {
 	}
 }
 
+func TestEncodeClientSafeboxCheckinBuildsAFrame(t *testing.T) {
+	position, err := CarriedInventoryPosition(5)
+	if err != nil {
+		t.Fatalf("unexpected carried inventory position error: %v", err)
+	}
+	want := frame.Encode(HeaderClientSafeboxCheckin, []byte{7, WindowInventory, 5, 0})
+	got := EncodeClientSafeboxCheckin(ClientSafeboxCheckinPacket{SafeSlot: 7, Position: position})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected safebox checkin frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeClientSafeboxCheckinReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeClientSafeboxCheckin(decodeSingleFrame(t, frame.Encode(HeaderClientSafeboxCheckin, []byte{7, WindowInventory, 5, 0})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != (ClientSafeboxCheckinPacket{SafeSlot: 7, Position: InventoryPosition(5)}) {
+		t.Fatalf("unexpected safebox checkin packet: %+v", packet)
+	}
+}
+
+func TestEncodeClientSafeboxCheckoutBuildsAFrame(t *testing.T) {
+	position, err := CarriedInventoryPosition(6)
+	if err != nil {
+		t.Fatalf("unexpected carried inventory position error: %v", err)
+	}
+	want := frame.Encode(HeaderClientSafeboxCheckout, []byte{8, WindowInventory, 6, 0})
+	got := EncodeClientSafeboxCheckout(ClientSafeboxCheckoutPacket{SafeSlot: 8, Position: position})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected safebox checkout frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeClientSafeboxCheckoutReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeClientSafeboxCheckout(decodeSingleFrame(t, frame.Encode(HeaderClientSafeboxCheckout, []byte{8, WindowInventory, 6, 0})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != (ClientSafeboxCheckoutPacket{SafeSlot: 8, Position: InventoryPosition(6)}) {
+		t.Fatalf("unexpected safebox checkout packet: %+v", packet)
+	}
+}
+
+func TestEncodeClientSafeboxItemMoveBuildsAFrame(t *testing.T) {
+	want := frame.Encode(HeaderClientSafeboxItemMove, []byte{WindowInventory, 7, 0, WindowInventory, 8, 0, 3})
+	got := EncodeClientSafeboxItemMove(ClientSafeboxItemMovePacket{Source: InventoryPosition(7), Destination: InventoryPosition(8), Count: 3})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected safebox item-move frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeClientSafeboxItemMoveReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeClientSafeboxItemMove(decodeSingleFrame(t, frame.Encode(HeaderClientSafeboxItemMove, []byte{WindowInventory, 7, 0, WindowInventory, 8, 0, 3})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != (ClientSafeboxItemMovePacket{Source: InventoryPosition(7), Destination: InventoryPosition(8), Count: 3}) {
+		t.Fatalf("unexpected safebox item-move packet: %+v", packet)
+	}
+}
+
+func TestEncodeClientMallCheckoutBuildsAFrame(t *testing.T) {
+	position, err := CarriedInventoryPosition(9)
+	if err != nil {
+		t.Fatalf("unexpected carried inventory position error: %v", err)
+	}
+	want := frame.Encode(HeaderClientMallCheckout, []byte{4, WindowInventory, 9, 0})
+	got := EncodeClientMallCheckout(ClientMallCheckoutPacket{MallSlot: 4, Position: position})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected mall checkout frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeClientMallCheckoutReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeClientMallCheckout(decodeSingleFrame(t, frame.Encode(HeaderClientMallCheckout, []byte{4, WindowInventory, 9, 0})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != (ClientMallCheckoutPacket{MallSlot: 4, Position: InventoryPosition(9)}) {
+		t.Fatalf("unexpected mall checkout packet: %+v", packet)
+	}
+}
+
+func TestDecodeClientStoragePacketsRejectUnexpectedHeader(t *testing.T) {
+	cases := []struct {
+		name   string
+		decode func(frame.Frame) error
+		header uint16
+		size   int
+	}{
+		{name: "safebox checkin", decode: func(f frame.Frame) error { _, err := DecodeClientSafeboxCheckin(f); return err }, header: HeaderClientSafeboxCheckin, size: clientSafeboxTransferPayloadSize},
+		{name: "safebox checkout", decode: func(f frame.Frame) error { _, err := DecodeClientSafeboxCheckout(f); return err }, header: HeaderClientSafeboxCheckout, size: clientSafeboxTransferPayloadSize},
+		{name: "safebox item move", decode: func(f frame.Frame) error { _, err := DecodeClientSafeboxItemMove(f); return err }, header: HeaderClientSafeboxItemMove, size: clientSafeboxItemMovePayloadSize},
+		{name: "mall checkout", decode: func(f frame.Frame) error { _, err := DecodeClientMallCheckout(f); return err }, header: HeaderClientMallCheckout, size: clientMallCheckoutPayloadSize},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.decode(frame.Frame{Header: tc.header + 1, Length: uint16(tc.size + 4), Payload: make([]byte, tc.size)})
+			if !errors.Is(err, ErrUnexpectedHeader) {
+				t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+			}
+		})
+	}
+}
+
+func TestDecodeClientStoragePacketsRejectInvalidPayload(t *testing.T) {
+	cases := []struct {
+		name   string
+		decode func(frame.Frame) error
+		header uint16
+		size   int
+	}{
+		{name: "safebox checkin", decode: func(f frame.Frame) error { _, err := DecodeClientSafeboxCheckin(f); return err }, header: HeaderClientSafeboxCheckin, size: clientSafeboxTransferPayloadSize},
+		{name: "safebox checkout", decode: func(f frame.Frame) error { _, err := DecodeClientSafeboxCheckout(f); return err }, header: HeaderClientSafeboxCheckout, size: clientSafeboxTransferPayloadSize},
+		{name: "safebox item move", decode: func(f frame.Frame) error { _, err := DecodeClientSafeboxItemMove(f); return err }, header: HeaderClientSafeboxItemMove, size: clientSafeboxItemMovePayloadSize},
+		{name: "mall checkout", decode: func(f frame.Frame) error { _, err := DecodeClientMallCheckout(f); return err }, header: HeaderClientMallCheckout, size: clientMallCheckoutPayloadSize},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.decode(frame.Frame{Header: tc.header, Length: uint16(tc.size + 3), Payload: make([]byte, tc.size-1)})
+			if !errors.Is(err, ErrInvalidPayload) {
+				t.Fatalf("expected ErrInvalidPayload, got %v", err)
+			}
+		})
+	}
+}
+
 func TestEncodeClientExchangeBuildsAFrame(t *testing.T) {
 	position, err := CarriedInventoryPosition(5)
 	if err != nil {

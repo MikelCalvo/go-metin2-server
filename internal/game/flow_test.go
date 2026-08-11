@@ -331,6 +331,30 @@ func TestHandleClientFrameRejectsDeniedItemRefineInGame(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameAcceptsStoragePacketsAsFailClosedInGame(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{})
+	frames := []frame.Frame{
+		decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{SafeSlot: 7, Position: itemproto.InventoryPosition(5)})),
+		decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckout(itemproto.ClientSafeboxCheckoutPacket{SafeSlot: 8, Position: itemproto.InventoryPosition(6)})),
+		decodeSingleFrame(t, itemproto.EncodeClientSafeboxItemMove(itemproto.ClientSafeboxItemMovePacket{Source: itemproto.InventoryPosition(7), Destination: itemproto.InventoryPosition(8), Count: 3})),
+		decodeSingleFrame(t, itemproto.EncodeClientMallCheckout(itemproto.ClientMallCheckoutPacket{MallSlot: 4, Position: itemproto.InventoryPosition(9)})),
+	}
+
+	for _, in := range frames {
+		out, err := flow.HandleClientFrame(in)
+		if err != nil {
+			t.Fatalf("unexpected storage fail-closed dispatch error for header %#04x: %v", in.Header, err)
+		}
+		if len(out) != 0 {
+			t.Fatalf("expected storage header %#04x to emit no frames, got %d", in.Header, len(out))
+		}
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameAcceptsItemUseToItemInGameAndReturnsHandlerFrames(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	wantFrame := []byte("item-use-to-item")

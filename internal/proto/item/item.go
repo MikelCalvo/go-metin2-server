@@ -8,24 +8,28 @@ import (
 )
 
 const (
-	HeaderClientUse       uint16 = 0x0501
-	HeaderClientDrop      uint16 = 0x0502
-	HeaderClientDrop2     uint16 = 0x0503
-	HeaderClientMove      uint16 = 0x0504
-	HeaderClientPickup    uint16 = 0x0505
-	HeaderClientUseToItem uint16 = 0x0506
-	HeaderClientGive      uint16 = 0x0507
-	HeaderClientExchange  uint16 = 0x0508
-	HeaderClientRefine    uint16 = 0x050C
-	HeaderDel             uint16 = 0x0510
-	HeaderSet             uint16 = 0x0511
-	HeaderUse             uint16 = 0x0512
-	HeaderUpdate          uint16 = 0x0514
-	HeaderGroundAdd       uint16 = 0x0515
-	HeaderGroundDel       uint16 = 0x0516
-	HeaderOwnership       uint16 = 0x0517
-	HeaderGet             uint16 = 0x0518
-	HeaderServerExchange  uint16 = 0x051C
+	HeaderClientUse             uint16 = 0x0501
+	HeaderClientDrop            uint16 = 0x0502
+	HeaderClientDrop2           uint16 = 0x0503
+	HeaderClientMove            uint16 = 0x0504
+	HeaderClientPickup          uint16 = 0x0505
+	HeaderClientUseToItem       uint16 = 0x0506
+	HeaderClientGive            uint16 = 0x0507
+	HeaderClientExchange        uint16 = 0x0508
+	HeaderClientRefine          uint16 = 0x050C
+	HeaderClientSafeboxCheckin  uint16 = 0x0820
+	HeaderClientSafeboxCheckout uint16 = 0x0821
+	HeaderClientSafeboxItemMove uint16 = 0x0822
+	HeaderClientMallCheckout    uint16 = 0x0840
+	HeaderDel                   uint16 = 0x0510
+	HeaderSet                   uint16 = 0x0511
+	HeaderUse                   uint16 = 0x0512
+	HeaderUpdate                uint16 = 0x0514
+	HeaderGroundAdd             uint16 = 0x0515
+	HeaderGroundDel             uint16 = 0x0516
+	HeaderOwnership             uint16 = 0x0517
+	HeaderGet                   uint16 = 0x0518
+	HeaderServerExchange        uint16 = 0x051C
 
 	WindowReserved            uint8  = 0
 	WindowInventory           uint8  = 1
@@ -41,26 +45,29 @@ const (
 	ItemAttributeCount               = 7
 	CharacterNameMaxLength           = 24
 
-	positionSize               = 3
-	attributeSize              = 3
-	clientUsePayloadSize       = positionSize
-	clientDropPayloadSize      = positionSize + 4
-	clientDrop2PayloadSize     = positionSize + 4 + 1
-	clientMovePayloadSize      = positionSize + positionSize + 1
-	clientPickupPayloadSize    = 4
-	clientUseToItemPayloadSize = positionSize + positionSize
-	clientGivePayloadSize      = 4 + positionSize + 1
-	clientExchangePayloadSize  = 1 + 4 + 1 + positionSize
-	clientRefinePayloadSize    = 2
-	serverExchangePayloadSize  = 1 + 1 + 4 + positionSize + 4 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
-	delPayloadSize             = positionSize
-	setPayloadSize             = positionSize + 4 + 1 + 4 + 4 + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
-	usePayloadSize             = positionSize + 4 + 4 + 4
-	updatePayloadSize          = positionSize + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
-	groundAddPayloadSize       = 4 + 4 + 4 + 4 + 4
-	groundDelPayloadSize       = 4
-	ownershipPayloadSize       = 4 + (CharacterNameMaxLength + 1)
-	getPayloadSize             = 4 + 1 + 1 + (CharacterNameMaxLength + 1)
+	positionSize                     = 3
+	attributeSize                    = 3
+	clientUsePayloadSize             = positionSize
+	clientDropPayloadSize            = positionSize + 4
+	clientDrop2PayloadSize           = positionSize + 4 + 1
+	clientMovePayloadSize            = positionSize + positionSize + 1
+	clientPickupPayloadSize          = 4
+	clientUseToItemPayloadSize       = positionSize + positionSize
+	clientGivePayloadSize            = 4 + positionSize + 1
+	clientExchangePayloadSize        = 1 + 4 + 1 + positionSize
+	clientRefinePayloadSize          = 2
+	clientSafeboxTransferPayloadSize = 1 + positionSize
+	clientSafeboxItemMovePayloadSize = positionSize + positionSize + 1
+	clientMallCheckoutPayloadSize    = 1 + positionSize
+	serverExchangePayloadSize        = 1 + 1 + 4 + positionSize + 4 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
+	delPayloadSize                   = positionSize
+	setPayloadSize                   = positionSize + 4 + 1 + 4 + 4 + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
+	usePayloadSize                   = positionSize + 4 + 4 + 4
+	updatePayloadSize                = positionSize + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
+	groundAddPayloadSize             = 4 + 4 + 4 + 4 + 4
+	groundDelPayloadSize             = 4
+	ownershipPayloadSize             = 4 + (CharacterNameMaxLength + 1)
+	getPayloadSize                   = 4 + 1 + 1 + (CharacterNameMaxLength + 1)
 )
 
 const (
@@ -222,6 +229,27 @@ type ClientExchangePacket struct {
 type ClientRefinePacket struct {
 	Position uint8
 	Type     uint8
+}
+
+type ClientSafeboxCheckinPacket struct {
+	SafeSlot uint8
+	Position Position
+}
+
+type ClientSafeboxCheckoutPacket struct {
+	SafeSlot uint8
+	Position Position
+}
+
+type ClientSafeboxItemMovePacket struct {
+	Source      Position
+	Destination Position
+	Count       uint8
+}
+
+type ClientMallCheckoutPacket struct {
+	MallSlot uint8
+	Position Position
 }
 
 type ServerExchangePacket struct {
@@ -451,6 +479,79 @@ func DecodeClientRefine(f frame.Frame) (ClientRefinePacket, error) {
 		return ClientRefinePacket{}, ErrInvalidPayload
 	}
 	return ClientRefinePacket{Position: f.Payload[0], Type: f.Payload[1]}, nil
+}
+
+func EncodeClientSafeboxCheckin(packet ClientSafeboxCheckinPacket) []byte {
+	payload := make([]byte, clientSafeboxTransferPayloadSize)
+	payload[0] = packet.SafeSlot
+	encodePosition(payload[1:], packet.Position)
+	return frame.Encode(HeaderClientSafeboxCheckin, payload)
+}
+
+func DecodeClientSafeboxCheckin(f frame.Frame) (ClientSafeboxCheckinPacket, error) {
+	if f.Header != HeaderClientSafeboxCheckin {
+		return ClientSafeboxCheckinPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientSafeboxTransferPayloadSize {
+		return ClientSafeboxCheckinPacket{}, ErrInvalidPayload
+	}
+	return ClientSafeboxCheckinPacket{SafeSlot: f.Payload[0], Position: decodePosition(f.Payload[1:])}, nil
+}
+
+func EncodeClientSafeboxCheckout(packet ClientSafeboxCheckoutPacket) []byte {
+	payload := make([]byte, clientSafeboxTransferPayloadSize)
+	payload[0] = packet.SafeSlot
+	encodePosition(payload[1:], packet.Position)
+	return frame.Encode(HeaderClientSafeboxCheckout, payload)
+}
+
+func DecodeClientSafeboxCheckout(f frame.Frame) (ClientSafeboxCheckoutPacket, error) {
+	if f.Header != HeaderClientSafeboxCheckout {
+		return ClientSafeboxCheckoutPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientSafeboxTransferPayloadSize {
+		return ClientSafeboxCheckoutPacket{}, ErrInvalidPayload
+	}
+	return ClientSafeboxCheckoutPacket{SafeSlot: f.Payload[0], Position: decodePosition(f.Payload[1:])}, nil
+}
+
+func EncodeClientSafeboxItemMove(packet ClientSafeboxItemMovePacket) []byte {
+	payload := make([]byte, clientSafeboxItemMovePayloadSize)
+	encodePosition(payload[:positionSize], packet.Source)
+	encodePosition(payload[positionSize:positionSize+positionSize], packet.Destination)
+	payload[positionSize+positionSize] = packet.Count
+	return frame.Encode(HeaderClientSafeboxItemMove, payload)
+}
+
+func DecodeClientSafeboxItemMove(f frame.Frame) (ClientSafeboxItemMovePacket, error) {
+	if f.Header != HeaderClientSafeboxItemMove {
+		return ClientSafeboxItemMovePacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientSafeboxItemMovePayloadSize {
+		return ClientSafeboxItemMovePacket{}, ErrInvalidPayload
+	}
+	return ClientSafeboxItemMovePacket{
+		Source:      decodePosition(f.Payload[:positionSize]),
+		Destination: decodePosition(f.Payload[positionSize : positionSize+positionSize]),
+		Count:       f.Payload[positionSize+positionSize],
+	}, nil
+}
+
+func EncodeClientMallCheckout(packet ClientMallCheckoutPacket) []byte {
+	payload := make([]byte, clientMallCheckoutPayloadSize)
+	payload[0] = packet.MallSlot
+	encodePosition(payload[1:], packet.Position)
+	return frame.Encode(HeaderClientMallCheckout, payload)
+}
+
+func DecodeClientMallCheckout(f frame.Frame) (ClientMallCheckoutPacket, error) {
+	if f.Header != HeaderClientMallCheckout {
+		return ClientMallCheckoutPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientMallCheckoutPayloadSize {
+		return ClientMallCheckoutPacket{}, ErrInvalidPayload
+	}
+	return ClientMallCheckoutPacket{MallSlot: f.Payload[0], Position: decodePosition(f.Payload[1:])}, nil
 }
 
 func EncodeServerExchange(packet ServerExchangePacket) []byte {

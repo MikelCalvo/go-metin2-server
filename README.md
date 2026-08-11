@@ -13,7 +13,7 @@ The current `main` branch owns:
 - real `authd` and `gamed` daemon entrypoints,
 - secure legacy handshake, auth/login, character selection, loading, and game-entry flows,
 - a shared in-process world runtime with player visibility, movement, chat, transfer, reconnect, and static/non-player actor seams,
-- broad bootstrap inventory, equipment, quickslot, item-use, ground-item, shop, exchange/refine fail-closed, and reward slices,
+- broad bootstrap inventory, equipment, quickslot, item-use, ground-item, shop, exchange/refine/storage fail-closed, and reward slices,
 - authored static actors, interactions, merchant catalogs, content bundles, spawn groups, and stationary practice-mob profiles,
 - first combat/death/respawn/restart/reward behavior around practice mobs,
 - loopback-only debug/operator endpoints for runtime inspection, content/state validation, quest-state validation, backup/restore preflights, and local QA,
@@ -129,7 +129,7 @@ Already present:
 - item move/swap/split/merge, consumable use with optional template-authored self-only `SPECIAL_EFFECT`, drag-to-item stack merge, drop/pickup, merchant buy/sell, gold mutation, and quickslot persistence,
 - authored item-template metadata for selected display/guard behavior,
 - fail-closed validation for malformed templates, snapshots, quickslots, item windows, duplicate instances, and persistence edge cases,
-- client packet ownership for `ITEM_GIVE`, `EXCHANGE`, and `REFINE`, including the first visible-peer exchange open/cancel/busy-target shell plus active-shell display-only exchange item-add/item-del/gold-add/accept frames with duplicate display-slot/source-item suppression, active-shell anti-give reject text, and accept-marker reset on later display changes while accepted trade finalization and refine-result semantics remain intentionally narrow or fail-closed.
+- client packet ownership for `ITEM_GIVE`, `EXCHANGE`, `REFINE`, and first safebox/mall storage requests, including the first visible-peer exchange open/cancel/busy-target shell plus active-shell display-only exchange item-add/item-del/gold-add/accept frames with duplicate display-slot/source-item suppression, active-shell anti-give reject text, and accept-marker reset on later display changes while accepted trade finalization, refine-result semantics, and storage mutations remain intentionally narrow or fail-closed.
 
 Still missing:
 

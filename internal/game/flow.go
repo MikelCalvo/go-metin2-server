@@ -683,6 +683,26 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			return nil, nil
 		}
 		return result.Frames, nil
+	case itemproto.HeaderClientSafeboxCheckin:
+		if _, err := itemproto.DecodeClientSafeboxCheckin(in); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	case itemproto.HeaderClientSafeboxCheckout:
+		if _, err := itemproto.DecodeClientSafeboxCheckout(in); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	case itemproto.HeaderClientSafeboxItemMove:
+		if _, err := itemproto.DecodeClientSafeboxItemMove(in); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	case itemproto.HeaderClientMallCheckout:
+		if _, err := itemproto.DecodeClientMallCheckout(in); err != nil {
+			return nil, err
+		}
+		return nil, nil
 	case quickslotproto.HeaderClientAdd:
 		packet, err := quickslotproto.DecodeClientAdd(in)
 		if err != nil {

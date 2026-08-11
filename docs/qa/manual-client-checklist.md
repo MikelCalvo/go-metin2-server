@@ -426,6 +426,21 @@ Expected result:
 - item-template validation rejects `refine_reject_message` if it contains embedded NUL bytes or is authored on a template that also sets `refineable = true`, so contradictory refine feedback should fail before gameplay testing starts
 - this is a fail-closed guard, not a completed refine or upgrade feature
 
+### 4.5.12b Unsupported storage/safebox/mall guard
+
+Run this only if packet tooling or the client build can emit safebox/mall item-transfer attempts.
+
+- [ ] Attempt one `SAFEBOX_CHECKIN` request for a disposable carried item slot
+- [ ] Attempt one `SAFEBOX_CHECKOUT` request into a disposable carried destination slot
+- [ ] Attempt one `SAFEBOX_ITEM_MOVE` request between two safebox slot positions
+- [ ] Attempt one `MALL_CHECKOUT` request into a disposable carried destination slot
+- [ ] If packet tooling allows it, repeat one malformed payload-size case
+
+Expected result:
+- these storage-facing packets are parsed by the game socket but remain unsupported in the shipped bootstrap runtime: no response frames are visible, no carried inventory/equipment/quickslot/point/gold state changes, no ground actor appears, no exchange/merchant peer frames are queued, and reconnect/operator inspection shows the selected-character snapshot unchanged
+- malformed storage payload sizes fail at the codec/dispatcher boundary rather than mutating runtime state
+- this is a fail-closed guard, not a completed safebox, mall, or storage feature
+
 ### 4.5.13 Unsupported item exchange guard (`EXCHANGE`)
 
 Run this only if packet tooling or the client build can emit an exchange/trade attempt.
