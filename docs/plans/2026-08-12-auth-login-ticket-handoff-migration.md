@@ -38,16 +38,29 @@ This slice does not:
 
 The table is intentionally a contract/backfill target first. A later repository slice can decide whether `Consume` becomes a `consumed_at` update, a delete, or a stricter transaction boundary once a real DB-backed handoff store exists.
 
+## Follow-up export slice — 2026-08-12
+
+The committed JSON ticket store can now project pending tickets onto this migration boundary without changing runtime persistence semantics:
+
+- `internal/loginticket.ExportAuthLoginTicketHandoff(...)` and `FileStore.ExportAuthLoginTicketHandoff()` validate the same pending-ticket snapshots accepted by issue/load/consume,
+- rows are deterministic by normalized login, original login, then login key,
+- rows carry `migration_version = 7` / `migration_name = auth_login_ticket_handoff`, non-zero `login_key`, UTC `issued_at`, original and normalized login, empire, nil `consumed_at`, and `characters_snapshot_json`,
+- `characters_snapshot_json` contains only the normalized select-screen character snapshot payload carried by the ticket, not the ticket envelope, not credentials, and not executable SQL,
+- the export reads the committed pending ticket set and does not consume tickets, create SQL rows, apply migrations, or mutate the file store.
+
+`gamed` exposes this read-only projection through loopback-only `GET /local/login-tickets/exports/auth-login-ticket-handoff` for operator/backfill preflight. The endpoint rejects non-loopback callers with `403`, non-`GET` methods with `405`, and invalid committed ticket state with `409`.
+
 ## TDD and validation
 
 This slice is proven by:
 
 - `go test ./db/migrations -count=1` for catalog/manifest/checksum validation and dry-run plan coverage,
-- `go test ./internal/minimal ./internal/ops -count=1` for runtime migration-plan and ops response shape coverage,
+- `go test ./internal/loginticket -count=1` for the migration-shaped login-ticket handoff export contract,
+- `go test ./internal/minimal ./internal/ops -count=1` for runtime migration-plan/export wiring and ops response shape coverage,
 - the full repository test/vet/format checks before commit.
 
 ## Next likely slices
 
-1. Add a read-only migration-shaped export of committed JSON login tickets to the `0007_auth_login_ticket_handoff` shape if a future backfill tool needs it.
-2. Extract a narrow login-ticket repository seam only when tests prove it reduces file-store coupling.
-3. Add a driver-backed migration preflight harness before introducing apply/rollback tooling.
+1. Extract a narrow login-ticket repository seam only when tests prove it reduces file-store coupling.
+2. Add a driver-backed migration preflight harness before introducing apply/rollback tooling.
+3. Add import/quarantine tooling for the existing migration-shaped exports only after the repository seam is explicit.

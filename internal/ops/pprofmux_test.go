@@ -13,6 +13,7 @@ import (
 	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/itemstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
@@ -6385,6 +6386,97 @@ func TestLocalCharacterItemStateExportEndpointReportsExporterFailure(t *testing.
 	}
 }
 
+func TestLocalAuthLoginTicketHandoffExportEndpointReturnsLoopbackJSON(t *testing.T) {
+	issuedAt := time.Date(2026, 8, 12, 9, 30, 0, 0, time.UTC)
+	exporter := &stubAuthLoginTicketHandoffExporter{export: loginticket.AuthLoginTicketHandoffExport{
+		MigrationVersion: loginticket.AuthLoginTicketHandoffMigrationVersion,
+		MigrationName:    loginticket.AuthLoginTicketHandoffMigrationName,
+		Tickets: []loginticket.AuthLoginTicketHandoffRow{
+			{LoginKey: 0x01020304, IssuedAt: issuedAt, Login: "Alpha", LoginNormalized: "alpha", Empire: 1, CharactersSnapshotJSON: `[{"id":7,"name":"AlphaWar"}]`},
+		},
+	}}
+	mux := RegisterLocalAuthLoginTicketHandoffExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/login-tickets/exports/auth-login-ticket-handoff", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if exporter.calls != 1 {
+		t.Fatalf("expected exporter to be called once, got %d", exporter.calls)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"migration_version":7`, `"migration_name":"auth_login_ticket_handoff"`, `"tickets":[`, `"login_key":16909060`, `"login":"Alpha"`, `"login_normalized":"alpha"`, `"empire":1`, `"characters_snapshot_json":"[{\"id\":7,\"name\":\"AlphaWar\"}]"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected auth login-ticket handoff export body to contain %s, got %s", want, body)
+		}
+	}
+	if strings.Contains(body, "CREATE TABLE") || strings.Contains(body, `"password"`) {
+		t.Fatalf("auth login-ticket handoff export endpoint must not expose SQL or secrets, got %s", body)
+	}
+}
+
+func TestLocalAuthLoginTicketHandoffExportEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	exporter := &stubAuthLoginTicketHandoffExporter{export: loginticket.AuthLoginTicketHandoffExport{MigrationVersion: 7}}
+	mux := RegisterLocalAuthLoginTicketHandoffExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/login-tickets/exports/auth-login-ticket-handoff", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if exporter.calls != 0 {
+		t.Fatalf("expected exporter not to be called, got %d", exporter.calls)
+	}
+}
+
+func TestLocalAuthLoginTicketHandoffExportEndpointRejectsWrongMethod(t *testing.T) {
+	exporter := &stubAuthLoginTicketHandoffExporter{export: loginticket.AuthLoginTicketHandoffExport{MigrationVersion: 7}}
+	mux := RegisterLocalAuthLoginTicketHandoffExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/exports/auth-login-ticket-handoff", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if exporter.calls != 0 {
+		t.Fatalf("expected exporter not to be called, got %d", exporter.calls)
+	}
+}
+
+func TestLocalAuthLoginTicketHandoffExportEndpointReportsExporterFailure(t *testing.T) {
+	exporter := &stubAuthLoginTicketHandoffExporter{err: errStubMigrationStatusInvalid}
+	mux := RegisterLocalAuthLoginTicketHandoffExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/login-tickets/exports/auth-login-ticket-handoff", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if exporter.calls != 1 {
+		t.Fatalf("expected exporter to be called once, got %d", exporter.calls)
+	}
+}
+
 func TestLocalItemTemplateStateExportEndpointReturnsLoopbackJSON(t *testing.T) {
 	exporter := &stubItemTemplateStateExporter{export: itemstore.ItemTemplateStateExport{
 		MigrationVersion: itemstore.ItemTemplateStateMigrationVersion,
@@ -6496,6 +6588,7 @@ func TestNewPprofMuxDoesNotExposeLocalMigrationStatusByDefault(t *testing.T) {
 		{method: http.MethodPost, path: "/local/db/migrations/plan-from-ledger-snapshot?target_version=0"},
 		{method: http.MethodGet, path: "/local/account-store/exports/account-character-roster"},
 		{method: http.MethodGet, path: "/local/account-store/exports/character-item-state"},
+		{method: http.MethodGet, path: "/local/login-tickets/exports/auth-login-ticket-handoff"},
 		{method: http.MethodGet, path: "/local/quest-state/exports/character-quest-state"},
 		{method: http.MethodGet, path: "/local/item-templates/exports/item-template-state"},
 	} {
@@ -6564,6 +6657,12 @@ type stubCharacterItemStateExporter struct {
 	calls  int
 }
 
+type stubAuthLoginTicketHandoffExporter struct {
+	export loginticket.AuthLoginTicketHandoffExport
+	err    error
+	calls  int
+}
+
 type stubItemTemplateStateExporter struct {
 	export itemstore.ItemTemplateStateExport
 	err    error
@@ -6596,6 +6695,11 @@ func (e *stubAccountCharacterRosterExporter) Export() (accountstore.AccountChara
 }
 
 func (e *stubCharacterItemStateExporter) Export() (accountstore.CharacterItemStateExport, error) {
+	e.calls++
+	return e.export, e.err
+}
+
+func (e *stubAuthLoginTicketHandoffExporter) Export() (loginticket.AuthLoginTicketHandoffExport, error) {
 	e.calls++
 	return e.export, e.err
 }

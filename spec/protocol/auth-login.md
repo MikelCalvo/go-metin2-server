@@ -51,7 +51,7 @@ When `authd` issues a one-shot login ticket for `gamed`, the durable JSON ticket
 
 The project-owned migration catalog now includes `0007_auth_login_ticket_handoff` for the authd-to-gamed handoff state. It is a schema/backfill contract only; the shipped runtime still uses the JSON `internal/loginticket` store.
 
-The schema records active non-zero login keys, issued timestamps, login/original-normalized login, empire context, optional consumed timestamp, and a transitional character snapshot JSON payload. A partial unique index keeps active `login_key` rows unique while allowing future historical/consumed rows. This does not add a DB-backed ticket repository, apply/rollback command, or SQL consume implementation yet.
+The schema records active non-zero login keys, issued timestamps, login/original-normalized login, empire context, optional consumed timestamp, and a transitional character snapshot JSON payload. A partial unique index keeps active `login_key` rows unique while allowing future historical/consumed rows. The current file-backed ticket store can project committed pending tickets onto this shape through the loopback-only `GET /local/login-tickets/exports/auth-login-ticket-handoff` operator endpoint; that export does not consume tickets, emit SQL, or mutate the store. This does not add a DB-backed ticket repository, apply/rollback command, or SQL consume implementation yet.
 
 ## Packet layouts
 

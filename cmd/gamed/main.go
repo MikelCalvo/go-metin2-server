@@ -216,6 +216,10 @@ func main() {
 		opsHandler,
 		gameRuntime.ExportCharacterItemState,
 	)
+	opsHandler = ops.RegisterLocalAuthLoginTicketHandoffExportEndpoint(
+		opsHandler,
+		gameRuntime.ExportAuthLoginTicketHandoff,
+	)
 	opsHandler = ops.RegisterLocalCharacterQuestStateExportEndpoint(
 		opsHandler,
 		gameRuntime.ExportCharacterQuestState,

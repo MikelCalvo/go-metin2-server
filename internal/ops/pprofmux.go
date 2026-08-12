@@ -20,6 +20,7 @@ import (
 	contentbundle "github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/itemstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -1105,6 +1106,31 @@ func RegisterLocalCharacterItemStateExportEndpoint(mux *http.ServeMux, exportIte
 		export, err := exportItemState()
 		if err != nil {
 			slog.Warn("local character item-state export failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, export, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalAuthLoginTicketHandoffExportEndpoint(mux *http.ServeMux, exportTickets func() (loginticket.AuthLoginTicketHandoffExport, error)) *http.ServeMux {
+	if mux == nil || exportTickets == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/login-tickets/exports/auth-login-ticket-handoff", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		export, err := exportTickets()
+		if err != nil {
+			slog.Warn("local auth login-ticket handoff export failed", "err", err)
 			w.WriteHeader(http.StatusConflict)
 			return
 		}

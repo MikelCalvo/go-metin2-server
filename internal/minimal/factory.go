@@ -970,6 +970,19 @@ func (r *gameRuntime) ExportCharacterItemState() (accountstore.CharacterItemStat
 	return exporter.ExportCharacterItemState()
 }
 
+func (r *gameRuntime) ExportAuthLoginTicketHandoff() (loginticket.AuthLoginTicketHandoffExport, error) {
+	if r == nil || r.loginTicketStore == nil {
+		return loginticket.ExportAuthLoginTicketHandoff(nil)
+	}
+	exporter, ok := r.loginTicketStore.(interface {
+		ExportAuthLoginTicketHandoff() (loginticket.AuthLoginTicketHandoffExport, error)
+	})
+	if !ok {
+		return loginticket.AuthLoginTicketHandoffExport{}, fmt.Errorf("auth login-ticket handoff export is not supported")
+	}
+	return exporter.ExportAuthLoginTicketHandoff()
+}
+
 func (r *gameRuntime) ExportCharacterQuestState() (queststate.CharacterQuestStateExport, error) {
 	if r == nil || r.questStateStore == nil {
 		return queststate.ExportCharacterQuestState(queststate.Snapshot{}, nil)
