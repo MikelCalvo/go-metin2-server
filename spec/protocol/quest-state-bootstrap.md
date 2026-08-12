@@ -12,11 +12,11 @@ The current owned surface is limited to `internal/queststate`:
 - deterministic snapshot canonicalization,
 - strict validation of quest identities and flag names,
 - one compare-and-set transition primitive for a single character flag,
-- a read-only store validation summary plus crash-temp cleanup for the same snapshot format,
+- one read-only transition preview plus store validation summary and crash-temp cleanup for the same snapshot format,
 - one read-only exact-character quest-state snapshot for local operator QA,
 - content-bundle import/export/summary inclusion for the same standalone quest-state snapshot.
 
-This seam is meant to support future content/NPC work such as “talk to an actor once and advance a flag”. The current local operator endpoints can validate, mutate through one compare-and-set transition, read back one character's quest flags, and inspect/import/export quest-state rows through authored content bundles, but no static actor, client packet, reward, dialog runtime, or quest script calls it automatically yet.
+This seam is meant to support future content/NPC work such as “talk to an actor once and advance a flag”. The current local operator endpoints can validate, dry-run or mutate through one compare-and-set transition, read back one character's quest flags, and inspect/import/export quest-state rows through authored content bundles, but no static actor, client packet, reward, dialog runtime, or quest script calls it automatically yet.
 
 ## Snapshot shape
 
@@ -99,6 +99,8 @@ Failed transitions return no mutated snapshot.
 
 The file-backed store now exposes that operation as `ApplyTransition(...)`. It treats a missing committed snapshot as an empty current quest-state snapshot only for the purpose of evaluating the transition, then persists a canonical snapshot only when `applied = true`. Invalid transitions and `current_value_mismatch` results return the current summary without rewriting the snapshot.
 
+`PreviewTransition(...)` uses the same compare-and-set evaluator and response shape without writing the committed snapshot. If the transition would apply, its response summary describes the hypothetical post-transition snapshot. If the transition would fail, its response summary describes the current committed snapshot. A missing committed snapshot is previewed as an empty snapshot, but no store file is created.
+
 ## Runtime configuration and local ops
 
 `gamed` now owns the quest-state store path as a normal bootstrap persistence selection:
@@ -113,12 +115,15 @@ The first local-only operator surfaces are also frozen on `gamed`:
 
 - `POST /local/quest-state/validate`
 - `POST /local/quest-state/crash-temps/cleanup`
+- `POST /local/quest-state/transition-preview`
 - `POST /local/quest-state/transition`
 - `GET /local/quest-state/characters/{character}`
 
 The validation and cleanup endpoints are loopback-only, reject non-`POST` methods with `405`, reject non-empty bodies with `400`, reject oversized bodies with `413` through the existing local mutation body guard, and return `409` on validation/cleanup errors. They are persistence preflights for the server-side quest-state primitive, not a client-visible quest protocol.
 
-`/local/quest-state/transition` is the first local-only mutation harness for this primitive. It accepts the transition JSON shape above, rejects invalid JSON, unknown fields, trailing JSON, invalid UTF-8, JSON `null`, oversized bodies, wrong methods, and non-loopback callers before invoking the runtime. It returns the store result as JSON with:
+`/local/quest-state/transition-preview` is the read-only dry-run harness for the same primitive. It accepts the transition JSON shape above, rejects invalid JSON, unknown fields, trailing JSON, invalid UTF-8, JSON `null`, oversized bodies, wrong methods, and non-loopback callers before invoking the runtime. It returns the same result JSON shape as the mutating endpoint, but the summary is hypothetical on `applied = true` and committed-current on `applied = false`; it never persists the hypothetical snapshot.
+
+`/local/quest-state/transition` is the local-only mutation harness for this primitive. It accepts the transition JSON shape above, rejects invalid JSON, unknown fields, trailing JSON, invalid UTF-8, JSON `null`, oversized bodies, wrong methods, and non-loopback callers before invoking the runtime. It returns the store result as JSON with:
 
 - the canonical `transition`,
 - the compare-and-set `result`,
@@ -206,6 +211,7 @@ The current repository can now say:
 
 - there is a tested, deterministic file-backed quest-flag primitive,
 - one single-flag transition can initialize, advance, or clear a flag only when the caller-provided current value matches,
+- `gamed` exposes a loopback-only `POST /local/quest-state/transition-preview` harness for dry-running the exact same primitive without writing the committed snapshot,
 - `gamed` exposes a loopback-only `POST /local/quest-state/transition` harness for applying that primitive without inventing client quest packets or NPC dialog semantics,
 - `gamed` exposes a loopback-only `GET /local/quest-state/characters/{character}` readback harness for inspecting one persisted character flag set without mutating quest state,
 - content-bundle import/export now includes the configured quest-state snapshot and exposes focused `GET /local/content-bundle/quest-state/characters/{character}`, `GET /local/content-bundle/quest-state/quests/{quest_ref}`, and `GET /local/content-bundle/quest-state/flags/{character}/{quest_ref}/{flag}` readers for bundle-summary rows,

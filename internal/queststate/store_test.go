@@ -345,6 +345,69 @@ func TestFileStoreApplyTransitionInvalidIdentityDoesNotCreateSnapshot(t *testing
 	}
 }
 
+func TestFileStorePreviewTransitionTreatsMissingSnapshotAsEmptyWithoutCreatingSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "quest-state.json")
+	store := NewFileStore(path)
+
+	result, err := store.PreviewTransition(Transition{
+		Character: "QuestHero",
+		QuestRef:  "quest:first_steps",
+		Flag:      "step",
+		From:      0,
+		To:        1,
+	})
+	if err != nil {
+		t.Fatalf("preview quest state transition: %v", err)
+	}
+	if !result.Result.Applied || result.Result.Reason != "" || result.Result.CurrentValue != 0 {
+		t.Fatalf("unexpected preview transition result: %+v", result.Result)
+	}
+	wantSummary := SnapshotSummary{FlagCount: 1, Characters: []string{"QuestHero"}, QuestRefs: []string{"quest:first_steps"}, FlagKeys: []string{"QuestHero:quest:first_steps:step"}}
+	if !reflect.DeepEqual(result.Summary, wantSummary) {
+		t.Fatalf("unexpected preview transition summary:\n got: %#v\nwant: %#v", result.Summary, wantSummary)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected preview transition not to create snapshot, stat err=%v", err)
+	}
+}
+
+func TestFileStorePreviewTransitionDoesNotRewriteExistingSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "quest-state.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Flags: []Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1}}}); err != nil {
+		t.Fatalf("save initial quest state snapshot: %v", err)
+	}
+	rawBefore, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read initial quest state snapshot: %v", err)
+	}
+
+	result, err := store.PreviewTransition(Transition{
+		Character: "AnotherHero",
+		QuestRef:  "quest:first_steps",
+		Flag:      "met_guard",
+		From:      0,
+		To:        1,
+	})
+	if err != nil {
+		t.Fatalf("preview quest state transition: %v", err)
+	}
+	if !result.Result.Applied || result.Result.CurrentValue != 0 {
+		t.Fatalf("unexpected preview transition result: %+v", result.Result)
+	}
+	wantSummary := SnapshotSummary{FlagCount: 2, Characters: []string{"AnotherHero", "QuestHero"}, QuestRefs: []string{"quest:first_steps"}, FlagKeys: []string{"AnotherHero:quest:first_steps:met_guard", "QuestHero:quest:first_steps:step"}}
+	if !reflect.DeepEqual(result.Summary, wantSummary) {
+		t.Fatalf("unexpected preview transition summary:\n got: %#v\nwant: %#v", result.Summary, wantSummary)
+	}
+	rawAfter, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read post-preview quest state snapshot: %v", err)
+	}
+	if string(rawAfter) != string(rawBefore) {
+		t.Fatalf("expected preview transition not to rewrite snapshot:\n before: %s\n after: %s", string(rawBefore), string(rawAfter))
+	}
+}
+
 func TestExportCharacterQuestStateBuildsDeterministicRowsMatchingMigrationShape(t *testing.T) {
 	snapshot := Snapshot{Flags: []Flag{
 		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},

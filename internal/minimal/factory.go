@@ -729,6 +729,21 @@ func (r *gameRuntime) ApplyQuestStateTransition(transition queststate.Transition
 	return applier.ApplyTransition(transition)
 }
 
+func (r *gameRuntime) PreviewQuestStateTransition(transition queststate.Transition) (queststate.TransitionApplyResult, error) {
+	if r == nil || r.questStateStore == nil {
+		return queststate.TransitionApplyResult{}, fmt.Errorf("quest state transition preview is not supported")
+	}
+	previewer, ok := r.questStateStore.(interface {
+		PreviewTransition(queststate.Transition) (queststate.TransitionApplyResult, error)
+	})
+	if !ok {
+		return queststate.TransitionApplyResult{}, fmt.Errorf("quest state transition preview is not supported")
+	}
+	r.questStateMu.Lock()
+	defer r.questStateMu.Unlock()
+	return previewer.PreviewTransition(transition)
+}
+
 func (r *gameRuntime) QuestState(character string) (CharacterQuestStateSnapshot, bool, error) {
 	character = strings.TrimSpace(character)
 	if r == nil || r.questStateStore == nil || character == "" {

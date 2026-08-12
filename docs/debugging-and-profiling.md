@@ -190,6 +190,18 @@ Successful responses are JSON summaries with:
 
 A missing committed `quest-state.json` is reported as an empty valid store. Hidden regular crash leftovers are reported for operator visibility but are not treated as committed quest flags. Crash-temp-shaped symlinks fail closed instead of being reported or followed. This is a local persistence preflight for the quest-state primitive, not a client-visible quest runtime or remote admin API.
 
+### `POST /local/quest-state/transition-preview`
+
+Dry-runs one standalone bootstrap quest-state compare-and-set transition against the configured `gamed` quest-state store without writing the committed snapshot. This endpoint is loopback-only, rejects non-`POST` methods with `405`, rejects invalid JSON, unknown fields, trailing JSON, invalid UTF-8, JSON `null`, or oversized bodies before evaluating the transition, and returns `409` for store/runtime failures that prevent preview evaluation.
+
+Request body:
+
+```json
+{"character":"QuestHero","quest_ref":"quest:first_steps","flag":"step","from":0,"to":1}
+```
+
+Successful HTTP responses use the same JSON transition-attempt shape as the mutating endpoint: `transition`, `result`, and the hypothetical post-attempt `summary`. Compare-and-set misses such as `current_value_mismatch` still return `200 OK` with `applied = false` and the current committed summary. A missing committed `quest-state.json` is previewed as an empty snapshot, but the preview endpoint does not create the store file. Use this before `/local/quest-state/transition` when local QA wants to inspect the exact flag-count/key impact of an authored transition without mutating quest state.
+
 ### `POST /local/quest-state/transition`
 
 Applies one standalone bootstrap quest-state compare-and-set transition through the configured `gamed` quest-state store. This endpoint is loopback-only, rejects non-`POST` methods with `405`, rejects invalid JSON, unknown fields, trailing JSON, invalid UTF-8, JSON `null`, or oversized bodies before mutating state, and returns `409` for store/runtime failures that prevent transition evaluation or persistence.
@@ -1066,6 +1078,14 @@ curl http://127.0.0.1:6060/local/content-bundle/reward-drops/27001
 curl http://127.0.0.1:6060/local/content-bundle/quest-state/flags/QuestHero/quest:first_steps/step
 curl http://127.0.0.1:6060/local/content-bundle/shop-catalogs/shop_preview/npc:qa_merchant
 curl http://127.0.0.1:6060/local/content-bundle/warp-destinations/warp/npc:qa_teleporter
+```
+
+Dry-run one quest-state transition before applying it:
+
+```bash
+curl -X POST http://127.0.0.1:6060/local/quest-state/transition-preview \
+  -H 'Content-Type: application/json' \
+  --data '{"character":"QuestHero","quest_ref":"quest:first_steps","flag":"step","from":0,"to":1}'
 ```
 
 `/local/content-bundle/spawn-groups/{ref}` is a loopback-only exact-ref reader over the exported bundle summary. It returns one authored spawn-group row including resolved reward-drop item metadata, or `404` when that authored ref is absent, so local QA can inspect one practice-mob definition without fetching the full summary.

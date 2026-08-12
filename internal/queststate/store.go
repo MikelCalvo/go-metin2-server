@@ -279,6 +279,31 @@ func (s *FileStore) ApplyTransition(transition Transition) (TransitionApplyResul
 	return applyResult, nil
 }
 
+func (s *FileStore) PreviewTransition(transition Transition) (TransitionApplyResult, error) {
+	if s == nil || s.path == "" {
+		return TransitionApplyResult{}, ErrStorePathRequired
+	}
+	current, err := s.Load()
+	if err != nil {
+		if !errors.Is(err, ErrSnapshotNotFound) {
+			return TransitionApplyResult{}, err
+		}
+		current = Snapshot{Flags: []Flag{}}
+	}
+	normalizedTransition := normalizeTransition(transition)
+	next, result := ApplyTransition(current, normalizedTransition)
+	applyResult := TransitionApplyResult{
+		Transition: normalizedTransition,
+		Result:     result,
+	}
+	if !result.Applied {
+		applyResult.Summary = summarizeSnapshot(current)
+		return applyResult, nil
+	}
+	applyResult.Summary = summarizeSnapshot(next)
+	return applyResult, nil
+}
+
 func summarizeSnapshot(snapshot Snapshot) SnapshotSummary {
 	charactersSeen := make(map[string]struct{})
 	questRefsSeen := make(map[string]struct{})

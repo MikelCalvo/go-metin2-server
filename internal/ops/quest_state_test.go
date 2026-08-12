@@ -185,6 +185,72 @@ func TestLocalQuestStateTransitionEndpointReturnsCompareAndSetFailureAsOK(t *tes
 	}
 }
 
+func TestLocalQuestStateTransitionPreviewEndpointReturnsDryRunResultForLoopbackPost(t *testing.T) {
+	previewer := &stubQuestStateTransitionApplier{result: queststate.TransitionApplyResult{
+		Transition: queststate.Transition{Character: "QuestHero", QuestRef: "quest:first_steps", Flag: "step", From: 0, To: 1},
+		Result:     queststate.TransitionResult{Applied: true, CurrentValue: 0},
+		Summary:    queststate.SnapshotSummary{FlagCount: 1, Characters: []string{"QuestHero"}, QuestRefs: []string{"quest:first_steps"}, FlagKeys: []string{"QuestHero:quest:first_steps:step"}},
+	}}
+	mux := RegisterLocalQuestStateTransitionPreviewEndpoint(NewPprofMux("gamed"), previewer.Apply)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/quest-state/transition-preview", strings.NewReader(`{"character":"QuestHero","quest_ref":"quest:first_steps","flag":"step","from":0,"to":1}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected previewer to be called once, got %d", previewer.calls)
+	}
+	wantTransition := queststate.Transition{Character: "QuestHero", QuestRef: "quest:first_steps", Flag: "step", From: 0, To: 1}
+	if previewer.lastTransition != wantTransition {
+		t.Fatalf("unexpected transition passed to previewer:\n got: %#v\nwant: %#v", previewer.lastTransition, wantTransition)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"applied":true`) || !strings.Contains(body, `"flag_count":1`) || !strings.Contains(body, `"QuestHero"`) {
+		t.Fatalf("unexpected quest transition preview response body %q", body)
+	}
+}
+
+func TestLocalQuestStateTransitionPreviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	previewer := &stubQuestStateTransitionApplier{}
+	mux := RegisterLocalQuestStateTransitionPreviewEndpoint(NewPprofMux("gamed"), previewer.Apply)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/quest-state/transition-preview", strings.NewReader(`{"character":"QuestHero","quest_ref":"quest:first_steps","flag":"step","from":0,"to":1}`))
+	req.RemoteAddr = "192.0.2.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected non-loopback request not to call previewer, got %d", previewer.calls)
+	}
+}
+
+func TestLocalQuestStateTransitionPreviewEndpointRejectsWrongMethod(t *testing.T) {
+	previewer := &stubQuestStateTransitionApplier{}
+	mux := RegisterLocalQuestStateTransitionPreviewEndpoint(NewPprofMux("gamed"), previewer.Apply)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/quest-state/transition-preview", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected wrong method not to call previewer, got %d", previewer.calls)
+	}
+}
+
 func TestLocalQuestStateTransitionEndpointRejectsInvalidBodyBeforeCallback(t *testing.T) {
 	applier := &stubQuestStateTransitionApplier{}
 	mux := RegisterLocalQuestStateTransitionEndpoint(NewPprofMux("gamed"), applier.Apply)
