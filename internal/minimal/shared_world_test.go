@@ -406,8 +406,8 @@ func TestSharedWorldRegistrySpawnGroupReturnRequiredActorFailsCombatTarget(t *te
 	}
 
 	attempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(registered.EntityID))
-	if attempt.Accepted || attempt.Failure != StaticActorCombatTargetFailureTargetNotTargetable {
-		t.Fatalf("expected return-required spawn group to fail combat target as %q, got %+v", StaticActorCombatTargetFailureTargetNotTargetable, attempt)
+	if attempt.Accepted || attempt.Failure != StaticActorCombatTargetFailureTargetReturnRequired {
+		t.Fatalf("expected return-required spawn group to fail combat target as %q, got %+v", StaticActorCombatTargetFailureTargetReturnRequired, attempt)
 	}
 }
 
@@ -440,8 +440,8 @@ func TestSharedWorldRegistrySpawnGroupReturnRequiredActorFailsSelectedAttack(t *
 	}
 
 	attempt := registry.AttemptSelectedStaticActorAttack(subjectID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, targetAttempt.TargetVID)
-	if attempt.Accepted || attempt.Failure != StaticActorCombatAttackFailureTargetNotTargetable {
-		t.Fatalf("expected return-required spawn group to fail selected attack as %q, got %+v", StaticActorCombatAttackFailureTargetNotTargetable, attempt)
+	if attempt.Accepted || attempt.Failure != StaticActorCombatAttackFailureTargetReturnRequired {
+		t.Fatalf("expected return-required spawn group to fail selected attack as %q, got %+v", StaticActorCombatAttackFailureTargetReturnRequired, attempt)
 	}
 }
 

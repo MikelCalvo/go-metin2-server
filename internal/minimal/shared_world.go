@@ -107,12 +107,13 @@ const (
 	StaticActorInteractionFailureTargetDead             = "target_dead"
 	StaticActorInteractionFailureTargetHasNoInteraction = "target_has_no_interaction"
 
-	StaticActorCombatTargetFailureSubjectNotFound     = "subject_not_found"
-	StaticActorCombatTargetFailureSubjectDead         = "subject_dead"
-	StaticActorCombatTargetFailureTargetNotVisible    = "target_not_visible"
-	StaticActorCombatTargetFailureTargetOutOfRange    = "target_out_of_range"
-	StaticActorCombatTargetFailureTargetNotTargetable = "target_not_targetable"
-	StaticActorCombatTargetFailureTargetDead          = "target_dead"
+	StaticActorCombatTargetFailureSubjectNotFound      = "subject_not_found"
+	StaticActorCombatTargetFailureSubjectDead          = "subject_dead"
+	StaticActorCombatTargetFailureTargetNotVisible     = "target_not_visible"
+	StaticActorCombatTargetFailureTargetOutOfRange     = "target_out_of_range"
+	StaticActorCombatTargetFailureTargetNotTargetable  = "target_not_targetable"
+	StaticActorCombatTargetFailureTargetReturnRequired = "target_return_required"
+	StaticActorCombatTargetFailureTargetDead           = "target_dead"
 
 	StaticActorCombatAttackFailureSubjectNotFound        = "subject_not_found"
 	StaticActorCombatAttackFailureSubjectDead            = "subject_dead"
@@ -121,6 +122,7 @@ const (
 	StaticActorCombatAttackFailureTargetNotVisible       = "target_not_visible"
 	StaticActorCombatAttackFailureTargetOutOfRange       = "target_out_of_range"
 	StaticActorCombatAttackFailureTargetNotTargetable    = "target_not_targetable"
+	StaticActorCombatAttackFailureTargetReturnRequired   = "target_return_required"
 	StaticActorCombatAttackFailureTargetDead             = "target_dead"
 	StaticActorCombatAttackFailureTargetSnapshotMismatch = "target_snapshot_mismatch"
 
@@ -2850,6 +2852,8 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 			attempt.Failure = StaticActorCombatAttackFailureTargetOutOfRange
 		case StaticActorCombatTargetFailureTargetNotTargetable:
 			attempt.Failure = StaticActorCombatAttackFailureTargetNotTargetable
+		case StaticActorCombatTargetFailureTargetReturnRequired:
+			attempt.Failure = StaticActorCombatAttackFailureTargetReturnRequired
 		case StaticActorCombatTargetFailureTargetDead:
 			attempt.Failure = StaticActorCombatAttackFailureTargetDead
 		default:
@@ -2962,8 +2966,12 @@ func (r *sharedWorldRegistry) attemptStaticActorCombatTargetLocked(subjectID uin
 	}
 	if actor.SpawnGroupRef != "" {
 		leash, ok := worldruntime.EvaluateStaticActorCurrentSpawnLeash(actor, worldruntime.DefaultSpawnLeashRadius)
-		if !ok || leash.ReturnRequired {
+		if !ok {
 			attempt.Failure = StaticActorCombatTargetFailureTargetNotTargetable
+			return attempt
+		}
+		if leash.ReturnRequired {
+			attempt.Failure = StaticActorCombatTargetFailureTargetReturnRequired
 			return attempt
 		}
 	}
