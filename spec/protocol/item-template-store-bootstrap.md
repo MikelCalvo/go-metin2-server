@@ -122,6 +122,18 @@ The file-backed item-template store now exposes a narrow crash-temp cleanup prim
 
 `gamed` exposes this as loopback-only operator tooling at `POST /local/item-templates/crash-temps/cleanup`. The endpoint accepts only an empty or whitespace-only body, rejects unexpected bodies and non-loopback callers, and is not a gameplay API.
 
+## Migration-shaped export boundary
+
+The authored item-template store now has a read-only projection for the `0005_item_template_state` database migration boundary:
+
+- the migration schema captures committed authored template metadata in `item_templates` plus child rows for display `sockets`, display `attributes`, optional `use_effects`, and optional `equip_effects`
+- the projection validates through the same item-template snapshot contract used by runtime boot and store validation before emitting rows
+- rows are deterministic by `vnum` and fixed display/effect positions so future backfill tooling can compare/export without relying on map iteration order
+- a missing committed `item-templates.json` exports as an empty migration-shaped dataset instead of treating built-in bootstrap fallback templates as durable authored content
+- `gamed` exposes this projection as loopback-only operator tooling at `GET /local/item-templates/exports/item-template-state`
+
+This is still a schema/export contract only. It does not make item templates DB-backed, does not import or apply SQL, and does not replace the file-backed runtime loader.
+
 ## Manifested backup, dry-run validation, and replacement restore
 
 The file-backed item-template store now exposes a read/copy backup primitive for authored template snapshots:

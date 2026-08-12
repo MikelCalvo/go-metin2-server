@@ -190,8 +190,8 @@ func TestPlanUpToLatestUsesBuiltInCatalog(t *testing.T) {
 	if plan.Pending[0].Version != 1 || plan.Pending[0].Name != "bootstrap_schema_migrations" || plan.Pending[0].Direction != DirectionUp {
 		t.Fatalf("unexpected first built-in pending step: %#v", plan.Pending[0])
 	}
-	if len(plan.Pending) < 4 {
-		t.Fatalf("expected account/character roster, character item-state, and character quest-state migrations in built-in pending plan, got %#v", plan.Pending)
+	if len(plan.Pending) < 5 {
+		t.Fatalf("expected account/character roster, character item-state, character quest-state, and item-template-state migrations in built-in pending plan, got %#v", plan.Pending)
 	}
 	if plan.Pending[1].Version != 2 || plan.Pending[1].Name != "account_character_roster" || plan.Pending[1].Direction != DirectionUp || plan.Pending[1].Path != "0002_account_character_roster.up.sql" {
 		t.Fatalf("unexpected second built-in pending step: %#v", plan.Pending[1])
@@ -199,11 +199,11 @@ func TestPlanUpToLatestUsesBuiltInCatalog(t *testing.T) {
 	if plan.Pending[2].Version != 3 || plan.Pending[2].Name != "character_item_state" || plan.Pending[2].Direction != DirectionUp || plan.Pending[2].Path != "0003_character_item_state.up.sql" {
 		t.Fatalf("unexpected third built-in pending step: %#v", plan.Pending[2])
 	}
-	if len(plan.Pending) < 4 {
-		t.Fatalf("expected character quest-state migration in built-in pending plan, got %#v", plan.Pending)
-	}
 	if plan.Pending[3].Version != 4 || plan.Pending[3].Name != "character_quest_state" || plan.Pending[3].Direction != DirectionUp || plan.Pending[3].Path != "0004_character_quest_state.up.sql" {
 		t.Fatalf("unexpected fourth built-in pending step: %#v", plan.Pending[3])
+	}
+	if plan.Pending[4].Version != 5 || plan.Pending[4].Name != "item_template_state" || plan.Pending[4].Direction != DirectionUp || plan.Pending[4].Path != "0005_item_template_state.up.sql" {
+		t.Fatalf("unexpected fifth built-in pending step: %#v", plan.Pending[4])
 	}
 }
 

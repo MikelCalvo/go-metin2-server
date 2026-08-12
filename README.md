@@ -214,7 +214,7 @@ Already present:
 
 - file-backed account snapshots and login tickets,
 - persisted selected character, position, inventory, equipment, quickslots, gold, item-template, quest-state, static actor, and interaction slices needed by current behavior,
-- strict snapshot/template validation, crash-temp reporting/cleanup, manifest-backed backup/restore preflights for several stores, and a first migration catalog with schema ledger, account/character roster, character item-state, and character quest-state migrations plus read-only ledger dry-run planning,
+- strict snapshot/template validation, crash-temp reporting/cleanup, manifest-backed backup/restore preflights for several stores, and a first migration catalog with schema ledger, account/character roster, character item-state, character quest-state, and item-template-state migrations plus read-only ledger dry-run planning,
 - loopback-only local endpoints for validation, backup/restore, runtime inspection, and controlled debug actions.
 
 Still missing:
@@ -239,7 +239,7 @@ Still missing:
 - `internal/accountstore`, `internal/loginticket` — bootstrap persistence stores.
 - `internal/staticstore`, `internal/interactionstore`, `internal/contentbundle` — authored content, static actors, interactions, merchant previews, and bundle import/export.
 - `internal/ops` — local debug/pprof/operator HTTP mux.
-- `db/migrations` — validated project-owned SQL migration catalog skeleton, first schema ledger/domain migrations, and read-only dry-run planner.
+- `db/migrations` — validated project-owned SQL migration catalog skeleton, first schema ledger/domain migrations including item templates, and read-only dry-run planner.
 - `docs/` — engineering notes, QA, roadmaps, workflow, development, and clean-room docs.
 - `spec/protocol/` — owned protocol contracts and packet inventory.
 

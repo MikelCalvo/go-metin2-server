@@ -951,6 +951,19 @@ func (r *gameRuntime) ExportCharacterQuestState() (queststate.CharacterQuestStat
 	return exporter.ExportCharacterQuestState(characterIDsByName)
 }
 
+func (r *gameRuntime) ExportItemTemplateState() (itemcatalog.ItemTemplateStateExport, error) {
+	if r == nil || r.itemStore == nil {
+		return itemcatalog.ExportItemTemplateState(itemcatalog.Snapshot{})
+	}
+	exporter, ok := r.itemStore.(interface {
+		ExportItemTemplateState() (itemcatalog.ItemTemplateStateExport, error)
+	})
+	if !ok {
+		return itemcatalog.ItemTemplateStateExport{}, fmt.Errorf("item-template-state export is not supported")
+	}
+	return exporter.ExportItemTemplateState()
+}
+
 func (r *gameRuntime) flushReadyStaticActorRespawns() {
 	if r == nil || r.sharedWorld == nil {
 		return

@@ -21,6 +21,8 @@ const (
 	expectedCharacterItemStateDownSHA256     = "1a4dbc6d32c52a85eab837e00a9a63cc6c811b153a6054e5b568bdc3027592ee"
 	expectedCharacterQuestStateUpSHA256      = "d67b53bc4f6aeaf74e9721f760ab05279037293f4de9e7b0079813984de56862"
 	expectedCharacterQuestStateDownSHA256    = "70d2a9c4db6a47acd6574975c96449efd4eb6d3076db53c3eb6e21221936282f"
+	expectedItemTemplateStateUpSHA256        = "6b615d308f7a0b3a0c8a67ebd16661a3fe7d7c5e608ee397127398f4e6fa2e4c"
+	expectedItemTemplateStateDownSHA256      = "28d0adc265466bcfccaa683b7a777a3fbfb5aff146c962709532b0bb40bf3fce"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -173,6 +175,53 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 	}
 	if !strings.Contains(fourth.DownSQL, "DROP TABLE character_quest_flags") {
 		t.Fatalf("expected character quest-state down migration to drop quest flags, got:\n%s", fourth.DownSQL)
+	}
+
+	if len(catalog) < 5 {
+		t.Fatalf("expected item-template-state migration after quest-state, got %d migrations", len(catalog))
+	}
+	fifth := catalog[4]
+	if fifth.Version != 5 || fifth.Name != "item_template_state" {
+		t.Fatalf("unexpected fifth migration: %#v", fifth)
+	}
+	if fifth.UpPath != "0005_item_template_state.up.sql" {
+		t.Fatalf("unexpected fifth up path: %q", fifth.UpPath)
+	}
+	if fifth.DownPath != "0005_item_template_state.down.sql" {
+		t.Fatalf("unexpected fifth down path: %q", fifth.DownPath)
+	}
+	if fifth.UpSHA256 != expectedItemTemplateStateUpSHA256 {
+		t.Fatalf("unexpected item-template-state up checksum: got %q want %q", fifth.UpSHA256, expectedItemTemplateStateUpSHA256)
+	}
+	if fifth.DownSHA256 != expectedItemTemplateStateDownSHA256 {
+		t.Fatalf("unexpected item-template-state down checksum: got %q want %q", fifth.DownSHA256, expectedItemTemplateStateDownSHA256)
+	}
+	for _, want := range []string{
+		"CREATE TABLE item_templates",
+		"CREATE TABLE item_template_sockets",
+		"CREATE TABLE item_template_attributes",
+		"CREATE TABLE item_template_use_effects",
+		"CREATE TABLE item_template_equip_effects",
+		"PRIMARY KEY (vnum, position)",
+		"FOREIGN KEY (vnum) REFERENCES item_templates(vnum)",
+		"CHECK (max_count > 0 AND max_count <= 255)",
+		"CHECK (shop_buy_price >= 0 AND shop_buy_price <= 4294967295)",
+		"CHECK (equip_slot IN ('', 'body', 'weapon', 'head', 'hair', 'shield', 'wrist', 'shoes', 'neck', 'ear', 'unique1', 'unique2', 'arrow'))",
+	} {
+		if !strings.Contains(fifth.UpSQL, want) {
+			t.Fatalf("expected item-template-state migration to contain %q, got:\n%s", want, fifth.UpSQL)
+		}
+	}
+	for _, want := range []string{
+		"DROP TABLE item_template_equip_effects",
+		"DROP TABLE item_template_use_effects",
+		"DROP TABLE item_template_attributes",
+		"DROP TABLE item_template_sockets",
+		"DROP TABLE item_templates",
+	} {
+		if !strings.Contains(fifth.DownSQL, want) {
+			t.Fatalf("expected item-template-state down migration to contain %q, got:\n%s", want, fifth.DownSQL)
+		}
 	}
 
 	for i, migration := range catalog {

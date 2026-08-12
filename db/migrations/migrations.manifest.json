@@ -32,6 +32,14 @@
       "down_path": "0004_character_quest_state.down.sql",
       "up_sha256": "d67b53bc4f6aeaf74e9721f760ab05279037293f4de9e7b0079813984de56862",
       "down_sha256": "70d2a9c4db6a47acd6574975c96449efd4eb6d3076db53c3eb6e21221936282f"
+    },
+    {
+      "version": 5,
+      "name": "item_template_state",
+      "up_path": "0005_item_template_state.up.sql",
+      "down_path": "0005_item_template_state.down.sql",
+      "up_sha256": "6b615d308f7a0b3a0c8a67ebd16661a3fe7d7c5e608ee397127398f4e6fa2e4c",
+      "down_sha256": "28d0adc265466bcfccaa683b7a777a3fbfb5aff146c962709532b0bb40bf3fce"
     }
   ]
 }

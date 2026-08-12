@@ -19,6 +19,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	contentbundle "github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -995,6 +996,31 @@ func RegisterLocalCharacterQuestStateExportEndpoint(mux *http.ServeMux, exportQu
 		export, err := exportQuestState()
 		if err != nil {
 			slog.Warn("local character quest-state export failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, export, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalItemTemplateStateExportEndpoint(mux *http.ServeMux, exportItemTemplates func() (itemstore.ItemTemplateStateExport, error)) *http.ServeMux {
+	if mux == nil || exportItemTemplates == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/item-templates/exports/item-template-state", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		export, err := exportItemTemplates()
+		if err != nil {
+			slog.Warn("local item-template-state export failed", "err", err)
 			w.WriteHeader(http.StatusConflict)
 			return
 		}

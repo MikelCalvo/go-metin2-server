@@ -311,6 +311,12 @@ Returns a loopback-only, read-only JSON projection of the standalone bootstrap q
 
 Successful responses include `migration_version`, `migration_name`, and deterministic `flags` rows. Each row exposes the resolved `character_id`, source `character` name, `quest_ref`, `flag`, and non-zero `value`. A missing quest-state snapshot returns an empty migration-shaped export, matching `/local/quest-state/validate`. The response deliberately omits executable SQL, quest scripts, account roster rows, item state, login tickets, authored content, and runtime world state, and it does not apply migrations or mutate the account or quest-state stores. Use it as a third-stage operator/backfill preflight after the roster export, because the quest-state projection depends on committed character ids from that roster boundary.
 
+### `GET /local/item-templates/exports/item-template-state`
+
+Returns a loopback-only, read-only JSON projection of the committed authored item-template snapshot onto the `0005_item_template_state` migration boundary. This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the committed item-template snapshot is invalid or cannot be projected onto the schema shape.
+
+Successful responses include `migration_version`, `migration_name`, deterministic `templates`, and deterministic child rows for non-zero `sockets`, non-zero `attributes`, `use_effects`, and `equip_effects`. A missing committed `item-templates.json` returns an empty migration-shaped export instead of exporting built-in fallback bootstrap templates. The response deliberately omits executable SQL, content bundles, account/item-instance rows, login tickets, authored actor state, and runtime world state, and it does not apply migrations or mutate the item-template store. Use it as an operator/backfill preflight for authored item metadata before future import or repository work.
+
 ### `GET /local/runtime-config`
 
 Returns JSON describing the active bootstrap runtime selection. This endpoint is read-only, rejects non-`GET` methods with `405`, and exposes only the local runtime facts needed for AOI/debugging:

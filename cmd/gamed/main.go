@@ -190,6 +190,10 @@ func main() {
 		opsHandler,
 		gameRuntime.ExportCharacterQuestState,
 	)
+	opsHandler = ops.RegisterLocalItemTemplateStateExportEndpoint(
+		opsHandler,
+		gameRuntime.ExportItemTemplateState,
+	)
 	opsHandler = ops.RegisterLocalStaticActorRespawnsEndpoint(
 		opsHandler,
 		func() any { return gameRuntime.StaticActorRespawns() },

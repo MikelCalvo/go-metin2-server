@@ -258,6 +258,39 @@ func TestGameRuntimeCharacterQuestStateExportRejectsUnknownCharacter(t *testing.
 	}
 }
 
+func TestGameRuntimeItemTemplateStateExportProjectsCommittedSnapshot(t *testing.T) {
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "state", "item-templates.json"))
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 50},
+		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, EquipSlot: "weapon"},
+	}}); err != nil {
+		t.Fatalf("save item-template snapshot: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemStore,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	export, err := runtime.ExportItemTemplateState()
+	if err != nil {
+		t.Fatalf("runtime item-template-state export: %v", err)
+	}
+	if export.MigrationVersion != itemcatalog.ItemTemplateStateMigrationVersion || export.MigrationName != itemcatalog.ItemTemplateStateMigrationName {
+		t.Fatalf("unexpected migration boundary: %#v", export)
+	}
+	if len(export.Templates) != 2 || export.Templates[0].Vnum != 11200 || export.Templates[1].Vnum != 27001 {
+		t.Fatalf("unexpected runtime item-template export rows: %#v", export.Templates)
+	}
+}
+
 func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
@@ -279,8 +312,8 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	if plan.CurrentVersion != 0 || plan.LatestVersion < 1 || plan.UpToDate {
 		t.Fatalf("unexpected migration plan versions: %#v", plan)
 	}
-	if len(plan.Pending) < 4 {
-		t.Fatalf("expected schema, account/character, item-state, and quest-state migrations for empty ledger: %#v", plan)
+	if len(plan.Pending) < 5 {
+		t.Fatalf("expected schema, account/character, item-state, quest-state, and item-template-state migrations for empty ledger: %#v", plan)
 	}
 	first := plan.Pending[0]
 	if first.Version != 1 || first.Name != "bootstrap_schema_migrations" || first.Direction != dbmigrations.DirectionUp || first.Path != "0001_bootstrap_schema_migrations.up.sql" {
@@ -298,7 +331,11 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	if fourth.Version != 4 || fourth.Name != "character_quest_state" || fourth.Direction != dbmigrations.DirectionUp || fourth.Path != "0004_character_quest_state.up.sql" {
 		t.Fatalf("unexpected fourth pending migration step: %#v", fourth)
 	}
-	if first.SHA256 == "" || second.SHA256 == "" || third.SHA256 == "" || fourth.SHA256 == "" || strings.Contains(first.Path, "CREATE TABLE") || strings.Contains(second.Path, "CREATE TABLE") || strings.Contains(third.Path, "CREATE TABLE") || strings.Contains(fourth.Path, "CREATE TABLE") {
+	fifth := plan.Pending[4]
+	if fifth.Version != 5 || fifth.Name != "item_template_state" || fifth.Direction != dbmigrations.DirectionUp || fifth.Path != "0005_item_template_state.up.sql" {
+		t.Fatalf("unexpected fifth pending migration step: %#v", fifth)
+	}
+	if first.SHA256 == "" || second.SHA256 == "" || third.SHA256 == "" || fourth.SHA256 == "" || fifth.SHA256 == "" || strings.Contains(first.Path, "CREATE TABLE") || strings.Contains(second.Path, "CREATE TABLE") || strings.Contains(third.Path, "CREATE TABLE") || strings.Contains(fourth.Path, "CREATE TABLE") || strings.Contains(fifth.Path, "CREATE TABLE") {
 		t.Fatalf("expected metadata-only pending steps with checksums, got %#v", plan.Pending)
 	}
 }
