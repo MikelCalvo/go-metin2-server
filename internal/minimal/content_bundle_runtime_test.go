@@ -99,6 +99,12 @@ func TestGameRuntimeExportContentBundleSummaryReturnsDeterministicCounts(t *test
 			{Character: "AnotherHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}}},
 			{Character: "QuestHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "step", Value: 2}}},
 		},
+		QuestStateQuests: []contentbundle.QuestStateQuestSummary{
+			{QuestRef: "quest:first_steps", FlagCount: 2, Characters: []contentbundle.QuestStateCharacterSummary{
+				{Character: "AnotherHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}}},
+				{Character: "QuestHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "step", Value: 2}}},
+			}},
+		},
 		InteractionDefinitionCount:             2,
 		ReferencedInteractionDefinitionCount:   1,
 		UnreferencedInteractionDefinitionCount: 1,

@@ -141,6 +141,7 @@ type Summary struct {
 	QuestStateCharacterCount               int                                             `json:"quest_state_character_count,omitempty"`
 	QuestStateQuestRefs                    []string                                        `json:"quest_state_quest_refs,omitempty"`
 	QuestStateCharacters                   []QuestStateCharacterSummary                    `json:"quest_state_characters,omitempty"`
+	QuestStateQuests                       []QuestStateQuestSummary                        `json:"quest_state_quests,omitempty"`
 	StaticActors                           []StaticActor                                   `json:"static_actors,omitempty"`
 	ShopCatalogEntryCount                  int                                             `json:"shop_catalog_entry_count"`
 	ShopCatalogs                           []ShopCatalogSummary                            `json:"shop_catalogs,omitempty"`
@@ -172,6 +173,12 @@ type QuestStateCharacterSummary struct {
 	Character string                    `json:"character"`
 	FlagCount int                       `json:"flag_count"`
 	Flags     []queststate.FlagSnapshot `json:"flags,omitempty"`
+}
+
+type QuestStateQuestSummary struct {
+	QuestRef   string                       `json:"quest_ref"`
+	FlagCount  int                          `json:"flag_count"`
+	Characters []QuestStateCharacterSummary `json:"characters,omitempty"`
 }
 
 type ImportPreview struct {
@@ -1695,6 +1702,7 @@ func Summarize(bundle Bundle) (Summary, error) {
 		summary.QuestStateQuestRefs = questStateSummary.QuestRefs
 	}
 	summary.QuestStateCharacters = questStateCharacterSummaries(normalized.QuestState)
+	summary.QuestStateQuests = questStateQuestSummaries(normalized.QuestState)
 	itemTemplatesByVnum := itemTemplateMapByVnum(normalized.ItemTemplates)
 	definitionsByKey := interactionDefinitionMapByKey(normalized.InteractionDefinitions)
 
@@ -1851,6 +1859,47 @@ func questStateCharacterSummaries(flags []queststate.Flag) []QuestStateCharacter
 			FlagCount: len(characterFlags),
 			Flags:     characterFlags,
 		})
+	}
+	return summaries
+}
+
+func questStateQuestSummaries(flags []queststate.Flag) []QuestStateQuestSummary {
+	flags = normalizeQuestStateFlags(flags)
+	if len(flags) == 0 {
+		return nil
+	}
+	type questCharacterFlags map[string][]queststate.FlagSnapshot
+	byQuest := make(map[string]questCharacterFlags)
+	for _, flag := range flags {
+		if _, ok := byQuest[flag.QuestRef]; !ok {
+			byQuest[flag.QuestRef] = make(questCharacterFlags)
+		}
+		byQuest[flag.QuestRef][flag.Character] = append(byQuest[flag.QuestRef][flag.Character], queststate.FlagSnapshot{QuestRef: flag.QuestRef, Name: flag.Name, Value: flag.Value})
+	}
+	questRefs := make([]string, 0, len(byQuest))
+	for questRef := range byQuest {
+		questRefs = append(questRefs, questRef)
+	}
+	sort.Strings(questRefs)
+	summaries := make([]QuestStateQuestSummary, 0, len(questRefs))
+	for _, questRef := range questRefs {
+		charactersByName := byQuest[questRef]
+		characters := make([]string, 0, len(charactersByName))
+		for character := range charactersByName {
+			characters = append(characters, character)
+		}
+		sort.Strings(characters)
+		questSummary := QuestStateQuestSummary{QuestRef: questRef}
+		for _, character := range characters {
+			characterFlags := charactersByName[character]
+			questSummary.FlagCount += len(characterFlags)
+			questSummary.Characters = append(questSummary.Characters, QuestStateCharacterSummary{
+				Character: character,
+				FlagCount: len(characterFlags),
+				Flags:     characterFlags,
+			})
+		}
+		summaries = append(summaries, questSummary)
 	}
 	return summaries
 }

@@ -129,6 +129,16 @@ func TestSummarizeIncludesQuestStateCountsAndCharacterFlags(t *testing.T) {
 	if !reflect.DeepEqual(summary.QuestStateCharacters, wantCharacters) {
 		t.Fatalf("unexpected quest-state character summaries:\n got: %#v\nwant: %#v", summary.QuestStateCharacters, wantCharacters)
 	}
+	wantQuests := []QuestStateQuestSummary{
+		{QuestRef: "quest:daily_check", FlagCount: 1, Characters: []QuestStateCharacterSummary{{Character: "QuestHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:daily_check", Name: "talked_to_guide", Value: 1}}}}},
+		{QuestRef: "quest:first_steps", FlagCount: 2, Characters: []QuestStateCharacterSummary{
+			{Character: "AnotherHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}}},
+			{Character: "QuestHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "step", Value: 2}}},
+		}},
+	}
+	if !reflect.DeepEqual(summary.QuestStateQuests, wantQuests) {
+		t.Fatalf("unexpected quest-state quest summaries:\n got: %#v\nwant: %#v", summary.QuestStateQuests, wantQuests)
+	}
 }
 
 func TestBuildImportPreviewReturnsQuestStateDeltas(t *testing.T) {

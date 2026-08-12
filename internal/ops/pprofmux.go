@@ -2086,6 +2086,41 @@ func RegisterLocalContentBundleQuestStateCharacterEndpoint(mux *http.ServeMux, e
 	return mux
 }
 
+func RegisterLocalContentBundleQuestStateQuestEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/content-bundle/quest-state/quests/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		questRef, ok := decodeLocalContentBundleQuestStateQuestRef(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		for _, questState := range summary.QuestStateQuests {
+			if questState.QuestRef == questRef {
+				writeLocalJSONMutationResponse(w, questState, http.StatusOK)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	return mux
+}
+
 func interactionDefinitionReferenceListContains(references []contentbundle.InteractionDefinitionReferenceSummary, kind string, ref string) bool {
 	for _, reference := range references {
 		if reference.Kind == kind && reference.Ref == ref {
@@ -2956,6 +2991,18 @@ func decodeLocalContentBundleRewardDropVnum(r *http.Request) (uint32, bool) {
 
 func decodeLocalContentBundleQuestStateCharacterName(r *http.Request) (string, bool) {
 	return decodeLocalCharacterName(r, "/local/content-bundle/quest-state/characters/")
+}
+
+func decodeLocalContentBundleQuestStateQuestRef(r *http.Request) (string, bool) {
+	ref, err := url.PathUnescape(strings.TrimPrefix(r.URL.Path, "/local/content-bundle/quest-state/quests/"))
+	if err != nil {
+		return "", false
+	}
+	ref = strings.TrimSpace(ref)
+	if ref == "" || strings.Contains(ref, "/") || !queststate.ValidQuestRef(ref) {
+		return "", false
+	}
+	return ref, true
 }
 
 func decodeLocalContentBundleVnumWithPrefix(r *http.Request, prefix string) (uint32, bool) {

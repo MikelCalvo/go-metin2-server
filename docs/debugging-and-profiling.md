@@ -470,6 +470,12 @@ Returns one exact quest-state character summary row from the live content-bundle
 
 Use it when local QA needs to inspect authored/bundled quest-state flags for one character without fetching the full content-bundle summary or calling the mutable `/local/quest-state/transition` harness. It is not a client quest protocol endpoint and does not mutate quest state.
 
+### `GET /local/content-bundle/quest-state/quests/{quest_ref}`
+
+Returns one exact quest-state quest summary row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; `quest_ref` is URL-decoded and must satisfy the currently owned `quest:<name>` lower-snake reference rule. It returns the matching `quest_state_quests[]` row grouped by quest ref with deterministic character and flag summaries, returns `404` when the live exported bundle has no persisted non-zero flags for that quest, rejects blank, slash-containing, or otherwise invalid quest refs with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
+
+Use it when local QA needs to inspect all authored/bundled quest-state flags for one quest across characters without fetching the full content-bundle summary or calling the mutable `/local/quest-state/transition` harness. It is not a client quest protocol endpoint and does not mutate quest state.
+
 ### `GET /local/content-bundle/shop-catalogs/{kind}/{ref}`
 
 Returns one exact structured shop-catalog summary row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; the only accepted `kind` for this path is `shop_preview`, and `ref` must satisfy the same path-safe interaction reference rule used by `/local/interactions/{kind}/{ref}`. It returns `404` when the live authored bundle has no matching catalog, rejects malformed identities with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.

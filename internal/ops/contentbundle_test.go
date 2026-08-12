@@ -2715,6 +2715,143 @@ func TestLocalContentBundleQuestStateCharacterEndpointForwardsSummaryExporterErr
 	}
 }
 
+func TestLocalContentBundleQuestStateQuestEndpointReturnsMatchingQuestForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{QuestStateQuests: []contentbundle.QuestStateQuestSummary{
+			{QuestRef: "quest:daily_check", FlagCount: 1, Characters: []contentbundle.QuestStateCharacterSummary{{Character: "QuestHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:daily_check", Name: "talked_to_guide", Value: 1}}}}},
+			{QuestRef: "quest:first_steps", FlagCount: 2, Characters: []contentbundle.QuestStateCharacterSummary{
+				{Character: "AnotherHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}}},
+				{Character: "QuestHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "step", Value: 2}}},
+			}},
+		}},
+	}
+	mux := RegisterLocalContentBundleQuestStateQuestEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/quest-state/quests/quest:first_steps", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got contentbundle.QuestStateQuestSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode quest-state quest summary response body: %v", err)
+	}
+	want := contentbundle.QuestStateQuestSummary{
+		QuestRef:  "quest:first_steps",
+		FlagCount: 2,
+		Characters: []contentbundle.QuestStateCharacterSummary{
+			{Character: "AnotherHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}}},
+			{Character: "QuestHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "step", Value: 2}}},
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle quest-state quest summary:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleQuestStateQuestEndpointReturnsNotFoundForMissingQuest(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status:  http.StatusOK,
+		summary: contentbundle.Summary{QuestStateQuests: []contentbundle.QuestStateQuestSummary{{QuestRef: "quest:first_steps", FlagCount: 1, Characters: []contentbundle.QuestStateCharacterSummary{{Character: "QuestHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "step", Value: 2}}}}}}},
+	}
+	mux := RegisterLocalContentBundleQuestStateQuestEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/quest-state/quests/quest:missing_steps", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for missing quest-state quest, got %d", http.StatusNotFound, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleQuestStateQuestEndpointRejectsInvalidQuestRef(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleQuestStateQuestEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	for _, path := range []string{"/local/content-bundle/quest-state/quests/", "/local/content-bundle/quest-state/quests/first_steps", "/local/content-bundle/quest-state/quests/quest%2Ffirst_steps", "/local/content-bundle/quest-state/quests/quest:first_steps/extra"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for invalid quest ref path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected malformed quest refs not to call content bundle summary exporter, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleQuestStateQuestEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleQuestStateQuestEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/quest-state/quests/quest:first_steps", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback caller, got %d", http.StatusForbidden, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected non-loopback request not to call content bundle summary exporter, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleQuestStateQuestEndpointRejectsWrongMethod(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleQuestStateQuestEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/quest-state/quests/quest:first_steps", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected wrong method not to call content bundle summary exporter, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleQuestStateQuestEndpointForwardsSummaryExporterErrors(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusConflict, result: map[string]string{"error": "content summary unavailable"}}
+	mux := RegisterLocalContentBundleQuestStateQuestEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/quest-state/quests/quest:first_steps", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d for exporter failure, got %d", http.StatusConflict, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
 func TestLocalContentBundleSummaryEndpointReturnsPickupRangeMetadataForLoopbackPost(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
 	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)

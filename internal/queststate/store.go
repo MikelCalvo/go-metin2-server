@@ -459,6 +459,10 @@ func validQuestRef(ref string) bool {
 	return validLowerSnakeSegment(parts[1])
 }
 
+func ValidQuestRef(ref string) bool {
+	return validQuestRef(ref)
+}
+
 func validFlagName(name string) bool {
 	return validLowerSnakeSegment(strings.TrimSpace(name))
 }
