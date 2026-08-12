@@ -13,6 +13,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
+	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
 
@@ -1360,6 +1361,209 @@ func TestGameRuntimeItemExchangeSlashLifecycleCommandsCloseSelfAndPeerWindowsWit
 			assertExchangeAccountUnchanged(t, accounts, tc.peerLogin, peer, tc.name+" exchange slash close peer")
 		})
 	}
+}
+
+func TestGameRuntimeItemUseClosesActiveExchangeShellBeforeUseFrames(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeUseOwner", 0x01030794, 0x02040794, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	owner.Inventory = []inventory.ItemInstance{{ID: 761, Vnum: 27044, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeUsePeer", 0x01030795, 0x02040795, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerLogin := "item-exchange-use-owner"
+	peerLogin := "item-exchange-use-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707094, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x70707095, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange item-use owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange item-use peer account: %v", err)
+	}
+	template := itemcatalog.Template{
+		Vnum:      27044,
+		Name:      "Exchange Use Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "exchange use consumed"},
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange item-use runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707094)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707095)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected exchange item-use start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected exchange item-use start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "exchange item-use owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected exchange item-use peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "exchange item-use peer start")
+
+	itemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 7, Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected exchange item-use item-add error: %v", err)
+	}
+	if len(itemAddOut) != 1 {
+		t.Fatalf("expected exchange item-use item-add to emit one owner frame, got %d", len(itemAddOut))
+	}
+	assertExchangeItemAddFrame(t, itemAddOut[0], 1, 7, owner.Inventory[0], template, "exchange item-use owner item-add")
+	queuedItemAdd := flushServerFrames(t, peerFlow)
+	if len(queuedItemAdd) != 1 {
+		t.Fatalf("expected exchange item-use peer item-add frame, got %d", len(queuedItemAdd))
+	}
+	assertExchangeItemAddFrame(t, queuedItemAdd[0], 0, 7, owner.Inventory[0], template, "exchange item-use peer item-add")
+
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected active-exchange item-use packet error: %v", err)
+	}
+	if len(out) != 5 {
+		t.Fatalf("expected active-exchange ITEM_USE to emit exchange end plus use echo, point, item update, and info chat, got %d", len(out))
+	}
+	assertExchangeEndFrame(t, out[0], "active-exchange item-use self close")
+	useEcho, err := itemproto.DecodeUse(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode active-exchange item-use echo: %v", err)
+	}
+	if useEcho.Position != itemproto.InventoryPosition(5) || useEcho.CharacterVID != owner.VID || useEcho.VictimVID != owner.VID || useEcho.Vnum != template.Vnum {
+		t.Fatalf("unexpected active-exchange item-use echo: %+v", useEcho)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode active-exchange item-use point-change: %v", err)
+	}
+	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != 50 || pointChange.Value != 75 {
+		t.Fatalf("unexpected active-exchange item-use point-change: %+v", pointChange)
+	}
+	itemUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode active-exchange item-use item update: %v", err)
+	}
+	if itemUpdate.Position != itemproto.InventoryPosition(5) || itemUpdate.Count != 2 {
+		t.Fatalf("unexpected active-exchange item-use update: %+v", itemUpdate)
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[4]))
+	if err != nil {
+		t.Fatalf("decode active-exchange item-use info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != template.UseEffect.Message {
+		t.Fatalf("unexpected active-exchange item-use info chat: %+v", infoChat)
+	}
+	queuedClose := flushServerFrames(t, peerFlow)
+	if len(queuedClose) != 1 {
+		t.Fatalf("expected active-exchange ITEM_USE to queue one peer close frame, got %d", len(queuedClose))
+	}
+	assertExchangeEndFrame(t, queuedClose[0], "active-exchange item-use peer close")
+
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected post-item-use exchange cancel error: %v", err)
+	}
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected post-item-use exchange cancel to emit no frames after the shell was closed, got %d", len(cancelOut))
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after post-item-use exchange cancel, got %d", len(queued))
+	}
+
+	slashStartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected exchange slash-use start error: %v", err)
+	}
+	if len(slashStartOut) != 1 {
+		t.Fatalf("expected exchange slash-use start to emit one owner frame, got %d", len(slashStartOut))
+	}
+	assertExchangeStartFrame(t, slashStartOut[0], peer.VID, "exchange slash-use owner start")
+	slashQueuedStart := flushServerFrames(t, peerFlow)
+	if len(slashQueuedStart) != 1 {
+		t.Fatalf("expected exchange slash-use peer start frame, got %d", len(slashQueuedStart))
+	}
+	assertExchangeStartFrame(t, slashQueuedStart[0], owner.VID, "exchange slash-use peer start")
+
+	currentItem := inventory.ItemInstance{ID: 761, Vnum: 27044, Count: 2, Slot: 5}
+	slashItemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 8, Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected exchange slash-use item-add error: %v", err)
+	}
+	if len(slashItemAddOut) != 1 {
+		t.Fatalf("expected exchange slash-use item-add to emit one owner frame, got %d", len(slashItemAddOut))
+	}
+	assertExchangeItemAddFrame(t, slashItemAddOut[0], 1, 8, currentItem, template, "exchange slash-use owner item-add")
+	slashQueuedItemAdd := flushServerFrames(t, peerFlow)
+	if len(slashQueuedItemAdd) != 1 {
+		t.Fatalf("expected exchange slash-use peer item-add frame, got %d", len(slashQueuedItemAdd))
+	}
+	assertExchangeItemAddFrame(t, slashQueuedItemAdd[0], 0, 8, currentItem, template, "exchange slash-use peer item-add")
+
+	slashOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/use_item 5"})))
+	if err != nil {
+		t.Fatalf("unexpected active-exchange slash item-use error: %v", err)
+	}
+	if len(slashOut) != 4 {
+		t.Fatalf("expected active-exchange slash /use_item to emit exchange end plus point, item update, and info chat, got %d", len(slashOut))
+	}
+	assertExchangeEndFrame(t, slashOut[0], "active-exchange slash item-use self close")
+	slashPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, slashOut[1]))
+	if err != nil {
+		t.Fatalf("decode active-exchange slash item-use point-change: %v", err)
+	}
+	if slashPointChange.VID != owner.VID || slashPointChange.Type != bootstrapPlayerPointType || slashPointChange.Amount != 50 || slashPointChange.Value != 125 {
+		t.Fatalf("unexpected active-exchange slash item-use point-change: %+v", slashPointChange)
+	}
+	slashItemUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, slashOut[2]))
+	if err != nil {
+		t.Fatalf("decode active-exchange slash item-use item update: %v", err)
+	}
+	if slashItemUpdate.Position != itemproto.InventoryPosition(5) || slashItemUpdate.Count != 1 {
+		t.Fatalf("unexpected active-exchange slash item-use update: %+v", slashItemUpdate)
+	}
+	slashInfoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, slashOut[3]))
+	if err != nil {
+		t.Fatalf("decode active-exchange slash item-use info chat: %v", err)
+	}
+	if slashInfoChat.Type != chatproto.ChatTypeInfo || slashInfoChat.VID != 0 || slashInfoChat.Message != template.UseEffect.Message {
+		t.Fatalf("unexpected active-exchange slash item-use info chat: %+v", slashInfoChat)
+	}
+	slashQueuedClose := flushServerFrames(t, peerFlow)
+	if len(slashQueuedClose) != 1 {
+		t.Fatalf("expected active-exchange slash /use_item to queue one peer close frame, got %d", len(slashQueuedClose))
+	}
+	assertExchangeEndFrame(t, slashQueuedClose[0], "active-exchange slash item-use peer close")
+
+	persistedOwner, err := accounts.Load(ownerLogin)
+	if err != nil {
+		t.Fatalf("load persisted active-exchange item-use owner account: %v", err)
+	}
+	wantOwner := owner
+	wantOwner.Points[bootstrapPlayerPointValueIndex] = 125
+	wantOwner.Inventory = []inventory.ItemInstance{{ID: 761, Vnum: 27044, Count: 1, Slot: 5}}
+	if !reflect.DeepEqual(persistedOwner.Characters[0].Inventory, wantOwner.Inventory) {
+		t.Fatalf("active-exchange item-use persisted inventory got %+v want %+v", persistedOwner.Characters[0].Inventory, wantOwner.Inventory)
+	}
+	if !reflect.DeepEqual(persistedOwner.Characters[0].Quickslots, wantOwner.Quickslots) {
+		t.Fatalf("active-exchange item-use persisted quickslots got %+v want %+v", persistedOwner.Characters[0].Quickslots, wantOwner.Quickslots)
+	}
+	if persistedOwner.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantOwner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("active-exchange item-use persisted point got %d want %d", persistedOwner.Characters[0].Points[bootstrapPlayerPointValueIndex], wantOwner.Points[bootstrapPlayerPointValueIndex])
+	}
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "peer active-exchange item-use")
 }
 
 func TestGameRuntimeItemExchangeAntiGiveItemAddReturnsAuthoredRejectTextInsideActiveShellWithoutMutation(t *testing.T) {

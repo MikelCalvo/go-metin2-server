@@ -2753,6 +2753,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !ok {
 				return gameflow.ItemUseResult{Accepted: false}
 			}
+			frames = prependExchangeCloseFrame(frames)
 			return gameflow.ItemUseResult{Accepted: true, Frames: frames}
 		}
 		executeSelectedItemUseToItem := func(source itemproto.Position, target itemproto.Position) gameflow.ItemUseToItemResult {

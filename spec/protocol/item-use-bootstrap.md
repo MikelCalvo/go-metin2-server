@@ -115,8 +115,9 @@ When `/use_item <slot>` or `ITEM_USE(TItemPos{window = INVENTORY, cell = slot})`
 1. the runtime decrements the stack by exactly `template.use_effect.consume_count` when it is authored, or by `1` when it is omitted, while preserving the carried-stack bounds frozen in `item-stack-bootstrap.md`
 2. the selected character's live `Points[point_index]` changes by exactly the signed `point_delta`
 3. the updated selected-character snapshot must be persisted before the new live state is committed
-4. the server emits a deterministic self-only response burst. For the packet ingress, the burst starts with `ITEM_USE` echo (`0x0512`) whose `cell` is the consumed inventory cell, whose `character_vid` and `victim_vid` are both the selected character `VID`, and whose `vnum` is the consumed item template `vnum`; the older slash harness omits this packet-only echo.
-5. after the optional packet-ingress echo, both ingress seams emit the remaining frames in this order:
+4. if an active bootstrap exchange-window shell is currently open on the same socket, the server first closes that display shell with `GC::EXCHANGE END` to the requester and queues the paired peer's `GC::EXCHANGE END` before delivering the item-use frames. This clears exchange presentation state only; it does not add exchange transfer or finalization semantics.
+5. the server emits a deterministic self-only item-use response burst. For the packet ingress, the burst starts with `ITEM_USE` echo (`0x0512`) whose `cell` is the consumed inventory cell, whose `character_vid` and `victim_vid` are both the selected character `VID`, and whose `vnum` is the consumed item template `vnum`; the older slash harness omits this packet-only echo.
+6. after the optional exchange close and packet-ingress echo, both ingress seams emit the remaining frames in this order:
    1. `PLAYER_POINT_CHANGE`
    2. item refresh for that same carried slot
    3. zero or more `QUICKSLOT_DEL` frames for item quickslots that referenced the removed carried slot, only when the stack reaches zero
