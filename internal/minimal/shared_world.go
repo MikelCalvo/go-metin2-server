@@ -352,6 +352,33 @@ func (r *sharedWorldRegistry) HasLiveSession(entityID uint64) bool {
 	return ok
 }
 
+func (r *sharedWorldRegistry) HasVisiblePlayerTarget(originID uint64, targetVID uint32) bool {
+	if r == nil || originID == 0 || targetVID == 0 {
+		return false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.sessionEntryLocked(originID); !ok {
+		return false
+	}
+	origin, ok := r.playerCharacter(originID)
+	if !ok || characterAtBootstrapHPFloor(origin) {
+		return false
+	}
+	for _, candidate := range r.scopesLocked().VisibleTargets(originID, origin) {
+		if candidate.Character.VID != targetVID || characterAtBootstrapHPFloor(candidate.Character) {
+			continue
+		}
+		if _, ok := r.sessionEntryLocked(candidate.Entity.ID); !ok {
+			return false
+		}
+		return true
+	}
+	return false
+}
+
 func (r *sharedWorldRegistry) StartExchange(originID uint64, targetVID uint32) ([][]byte, bool) {
 	if r == nil || originID == 0 || targetVID == 0 {
 		return nil, false

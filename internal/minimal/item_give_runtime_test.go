@@ -59,9 +59,14 @@ func TestGameRuntimeItemGiveAntiGiveTemplateReturnsAuthoredRejectTextWithoutMuta
 	owner := peerVisibilityCharacter("GiveBound", 0x01030741, 0x02040741, 1100, 2100, 0, 101, 201)
 	owner.Inventory = []inventory.ItemInstance{{ID: 502, Vnum: 27042, Count: 3, Slot: 5}}
 	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	target := peerVisibilityCharacter("GiveBoundTarget", 0x01030744, 0x02040744, 1120, 2120, 0, 101, 201)
 	issuePeerTicket(t, ticketStore, "item-give-bound", 0x70707041, owner)
+	issuePeerTicket(t, ticketStore, "item-give-bound-target", 0x70707044, target)
 	if err := accounts.Save(accountstore.Account{Login: "item-give-bound", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed bound item-give account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "item-give-bound-target", Empire: target.Empire, Characters: cloneCharacters([]loginticket.Character{target})}); err != nil {
+		t.Fatalf("seed bound item-give target account: %v", err)
 	}
 	template := itemcatalog.Template{
 		Vnum:           27042,
@@ -78,8 +83,12 @@ func TestGameRuntimeItemGiveAntiGiveTemplateReturnsAuthoredRejectTextWithoutMuta
 	}
 	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-give-bound", 0x70707041)
 	defer closeSessionFlow(t, flow)
+	targetFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-give-bound-target", 0x70707044)
+	defer closeSessionFlow(t, targetFlow)
+	_ = flushServerFrames(t, flow)
+	_ = flushServerFrames(t, targetFlow)
 
-	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientGive(itemproto.ClientGivePacket{TargetVID: 0x02040742, Position: itemproto.InventoryPosition(5), Count: 1})))
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientGive(itemproto.ClientGivePacket{TargetVID: target.VID, Position: itemproto.InventoryPosition(5), Count: 1})))
 	if err != nil {
 		t.Fatalf("unexpected anti-give item-give packet error: %v", err)
 	}
@@ -96,6 +105,9 @@ func TestGameRuntimeItemGiveAntiGiveTemplateReturnsAuthoredRejectTextWithoutMuta
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued frames after anti-give ITEM_GIVE rejection, got %d", len(queued))
 	}
+	if queued := flushServerFrames(t, targetFlow); len(queued) != 0 {
+		t.Fatalf("expected visible target to receive no queued frames after anti-give ITEM_GIVE rejection, got %d", len(queued))
+	}
 	persisted, err := accounts.Load("item-give-bound")
 	if err != nil {
 		t.Fatalf("load persisted bound item-give account: %v", err)
@@ -105,6 +117,69 @@ func TestGameRuntimeItemGiveAntiGiveTemplateReturnsAuthoredRejectTextWithoutMuta
 	}
 	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
 		t.Fatalf("anti-give ITEM_GIVE mutated quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+	assertExchangeAccountUnchanged(t, accounts, "item-give-bound-target", target, "anti-give ITEM_GIVE visible target")
+}
+
+func TestGameRuntimeItemGiveAntiGiveRejectTextRequiresVisibleTargetWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name      string
+		login     string
+		key       uint32
+		targetVID uint32
+	}{
+		{name: "zero target", login: "item-give-zero-target", key: 0x70707045, targetVID: 0},
+		{name: "invisible target", login: "item-give-invisible-target", key: 0x70707046, targetVID: 0x02049999},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("GiveTargetGuard", 0x01030745, 0x02040745, 1100, 2100, 0, 101, 201)
+			owner.Inventory = []inventory.ItemInstance{{ID: 504, Vnum: 27042, Count: 3, Slot: 5}}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			issuePeerTicket(t, ticketStore, tc.login, tc.key, owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed %s item-give account: %v", tc.name, err)
+			}
+			template := itemcatalog.Template{
+				Vnum:           27042,
+				Name:           "Bound Gift Potion",
+				Stackable:      true,
+				MaxCount:       200,
+				AntiGive:       true,
+				GiveRejectText: "You cannot give this item.",
+			}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected %s item-give runtime error: %v", tc.name, err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, tc.key)
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientGive(itemproto.ClientGivePacket{TargetVID: tc.targetVID, Position: itemproto.InventoryPosition(5), Count: 1})))
+			if err != nil {
+				t.Fatalf("unexpected %s anti-give item-give packet error: %v", tc.name, err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s anti-give ITEM_GIVE to emit no frames, got %d", tc.name, len(out))
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected no queued frames after %s anti-give ITEM_GIVE rejection, got %d", tc.name, len(queued))
+			}
+			persisted, err := accounts.Load(tc.login)
+			if err != nil {
+				t.Fatalf("load persisted %s item-give account: %v", tc.name, err)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("%s anti-give ITEM_GIVE mutated inventory: got %+v want %+v", tc.name, persisted.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("%s anti-give ITEM_GIVE mutated quickslots: got %+v want %+v", tc.name, persisted.Characters[0].Quickslots, owner.Quickslots)
+			}
+		})
 	}
 }
 

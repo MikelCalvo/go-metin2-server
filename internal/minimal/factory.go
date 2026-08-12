@@ -3997,6 +3997,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || packet.Position.WindowType != itemproto.WindowInventory || packet.Position.Cell >= itemproto.InventoryMaxCell {
 						return gameflow.ItemGiveResult{Accepted: false}
 					}
+					if !ownsLiveSharedWorldSession() || !sharedWorld.HasVisiblePlayerTarget(sharedWorldID, packet.TargetVID) {
+						return gameflow.ItemGiveResult{Accepted: false}
+					}
 					template, ok := runtime.resolveRuntimeItemTemplate(selectedPlayer, inventory.SlotIndex(packet.Position.Cell))
 					if !ok {
 						return gameflow.ItemGiveResult{Accepted: false}
