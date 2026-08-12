@@ -482,6 +482,12 @@ Returns one exact quest-state quest summary row from the live content-bundle sum
 
 Use it when local QA needs to inspect all authored/bundled quest-state flags for one quest across characters without fetching the full content-bundle summary or calling the mutable `/local/quest-state/transition` harness. It is not a client quest protocol endpoint and does not mutate quest state.
 
+### `GET /local/content-bundle/quest-state/flags/{character}/{quest_ref}/{flag}`
+
+Returns one exact quest-state flag row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; `character` is URL-decoded and must satisfy the bootstrap quest-state character-name rule, `quest_ref` must satisfy the owned `quest:<name>` lower-snake reference rule, and `flag` must be a lower-snake quest flag name. It returns the canonical row shape with `character`, `quest_ref`, `name`, and `value`, returns `404` when that exact persisted non-zero flag is absent, rejects malformed identities with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
+
+Use it when local QA needs to inspect one authored/bundled flag without fetching the full content-bundle summary or scanning a whole character/quest grouping. It is not a client quest protocol endpoint and does not mutate quest state.
+
 ### `GET /local/content-bundle/shop-catalogs/{kind}/{ref}`
 
 Returns one exact structured shop-catalog summary row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; the only accepted `kind` for this path is `shop_preview`, and `ref` must satisfy the same path-safe interaction reference rule used by `/local/interactions/{kind}/{ref}`. It returns `404` when the live authored bundle has no matching catalog, rejects malformed identities with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
@@ -1049,6 +1055,7 @@ curl http://127.0.0.1:6060/local/content-bundle/spawn-groups/practice.qa_reward_
 curl http://127.0.0.1:6060/local/content-bundle/interactable-static-actors/Village%20Guide
 curl http://127.0.0.1:6060/local/content-bundle/item-templates/27001
 curl http://127.0.0.1:6060/local/content-bundle/reward-drops/27001
+curl http://127.0.0.1:6060/local/content-bundle/quest-state/flags/QuestHero/quest:first_steps/step
 curl http://127.0.0.1:6060/local/content-bundle/shop-catalogs/shop_preview/npc:qa_merchant
 curl http://127.0.0.1:6060/local/content-bundle/warp-destinations/warp/npc:qa_teleporter
 ```

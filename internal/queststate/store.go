@@ -463,8 +463,16 @@ func ValidQuestRef(ref string) bool {
 	return validQuestRef(ref)
 }
 
+func ValidCharacterName(name string) bool {
+	return validCharacterName(name)
+}
+
 func validFlagName(name string) bool {
 	return validLowerSnakeSegment(strings.TrimSpace(name))
+}
+
+func ValidFlagName(name string) bool {
+	return validFlagName(name)
 }
 
 func validLowerSnakeSegment(segment string) bool {

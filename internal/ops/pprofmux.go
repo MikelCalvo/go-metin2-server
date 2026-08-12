@@ -2147,6 +2147,52 @@ func RegisterLocalContentBundleQuestStateQuestEndpoint(mux *http.ServeMux, expor
 	return mux
 }
 
+func RegisterLocalContentBundleQuestStateFlagEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/content-bundle/quest-state/flags/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		character, questRef, flagName, ok := decodeLocalContentBundleQuestStateFlagIdentity(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		for _, questState := range summary.QuestStateCharacters {
+			if questState.Character != character {
+				continue
+			}
+			for _, flag := range questState.Flags {
+				if flag.QuestRef != questRef || flag.Name != flagName {
+					continue
+				}
+				writeLocalJSONMutationResponse(w, queststate.Flag{
+					Character: character,
+					QuestRef:  flag.QuestRef,
+					Name:      flag.Name,
+					Value:     flag.Value,
+				}, http.StatusOK)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	return mux
+}
+
 func interactionDefinitionReferenceListContains(references []contentbundle.InteractionDefinitionReferenceSummary, kind string, ref string) bool {
 	for _, reference := range references {
 		if reference.Kind == kind && reference.Ref == ref {
@@ -3029,6 +3075,37 @@ func decodeLocalContentBundleQuestStateQuestRef(r *http.Request) (string, bool) 
 		return "", false
 	}
 	return ref, true
+}
+
+func decodeLocalContentBundleQuestStateFlagIdentity(r *http.Request) (string, string, string, bool) {
+	raw := strings.TrimPrefix(r.URL.Path, "/local/content-bundle/quest-state/flags/")
+	raw = strings.TrimSpace(raw)
+	parts := strings.Split(raw, "/")
+	if len(parts) != 3 {
+		return "", "", "", false
+	}
+	character, err := url.PathUnescape(parts[0])
+	if err != nil {
+		return "", "", "", false
+	}
+	questRef, err := url.PathUnescape(parts[1])
+	if err != nil {
+		return "", "", "", false
+	}
+	flagName, err := url.PathUnescape(parts[2])
+	if err != nil {
+		return "", "", "", false
+	}
+	character = strings.TrimSpace(character)
+	questRef = strings.TrimSpace(questRef)
+	flagName = strings.TrimSpace(flagName)
+	if character == "" || questRef == "" || flagName == "" || strings.Contains(character, "/") || strings.Contains(questRef, "/") || strings.Contains(flagName, "/") {
+		return "", "", "", false
+	}
+	if !queststate.ValidCharacterName(character) || !queststate.ValidQuestRef(questRef) || !queststate.ValidFlagName(flagName) {
+		return "", "", "", false
+	}
+	return character, questRef, flagName, true
 }
 
 func decodeLocalContentBundleVnumWithPrefix(r *http.Request, prefix string) (uint32, bool) {

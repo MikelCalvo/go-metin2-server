@@ -179,8 +179,9 @@ Import-preview and summary responses include `quest_state_flag_count`, `quest_st
 
 - `GET /local/content-bundle/quest-state/characters/{character}` returns one exact `quest_state_characters[]` summary row.
 - `GET /local/content-bundle/quest-state/quests/{quest_ref}` returns one exact `quest_state_quests[]` summary row keyed by a valid `quest:<name>` ref.
+- `GET /local/content-bundle/quest-state/flags/{character}/{quest_ref}/{flag}` returns one exact persisted non-zero quest flag row from the exported bundle summary.
 
-The per-quest summary groups the already-canonical quest-state rows by `quest_ref`, preserves deterministic character ordering within each quest, and includes each matching character's deterministic flag summaries. It is an operator inspection shape only; it does not define quest objectives or make quest refs executable.
+The per-flag reader validates the same path-safe `character`, `quest_ref`, and lower-snake flag-name identities as the store primitive, then returns the canonical row shape (`character`, `quest_ref`, `name`, `value`) or `404` when that exact flag is absent. The per-quest summary groups the already-canonical quest-state rows by `quest_ref`, preserves deterministic character ordering within each quest, and includes each matching character's deterministic flag summaries. These are operator inspection shapes only; they do not define quest objectives or make quest refs executable.
 
 The content-bundle boundary is still authored-content plumbing only: it does not define quest objectives, transition triggers, NPC dialogs, rewards, or client quest packets.
 
@@ -207,7 +208,7 @@ The current repository can now say:
 - one single-flag transition can initialize, advance, or clear a flag only when the caller-provided current value matches,
 - `gamed` exposes a loopback-only `POST /local/quest-state/transition` harness for applying that primitive without inventing client quest packets or NPC dialog semantics,
 - `gamed` exposes a loopback-only `GET /local/quest-state/characters/{character}` readback harness for inspecting one persisted character flag set without mutating quest state,
-- content-bundle import/export now includes the configured quest-state snapshot and exposes focused `GET /local/content-bundle/quest-state/characters/{character}` and `GET /local/content-bundle/quest-state/quests/{quest_ref}` readers for bundle-summary rows,
+- content-bundle import/export now includes the configured quest-state snapshot and exposes focused `GET /local/content-bundle/quest-state/characters/{character}`, `GET /local/content-bundle/quest-state/quests/{quest_ref}`, and `GET /local/content-bundle/quest-state/flags/{character}/{quest_ref}/{flag}` readers for bundle-summary rows,
 - the same store can be validated and cleaned of owned crash-temp files without mutating committed quest flags,
 - bad identities, duplicate rows, malformed JSON, symlinked committed snapshots, symlinked crash-temp candidates, and mismatched current values fail closed,
 - broader client-visible quest runtime remains future work.
