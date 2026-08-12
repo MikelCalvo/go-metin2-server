@@ -1276,6 +1276,36 @@ func testOpsMerchantItemTemplates() []itemcatalog.Template {
 	}
 }
 
+func TestLocalContentBundleSummaryEndpointReturnsQuestStateQuestCountForLoopbackPost(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	body := `{"quest_state":[{"character":"QuestHero","quest_ref":"quest:first_steps","name":"step","value":1},{"character":"QuestHero","quest_ref":"quest:daily_check","name":"talked_to_guide","value":1}]}`
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/summary", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected dry-run quest-state summary not to call live exporter, got %d calls", summaryer.calls)
+	}
+	var got contentbundle.Summary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode dry-run quest-state summary response body: %v", err)
+	}
+	if got.QuestStateFlagCount != 2 || got.QuestStateCharacterCount != 1 || got.QuestStateQuestCount != 2 {
+		t.Fatalf("unexpected quest-state summary counts: %+v", got)
+	}
+	wantQuestRefs := []string{"quest:daily_check", "quest:first_steps"}
+	if !reflect.DeepEqual(got.QuestStateQuestRefs, wantQuestRefs) {
+		t.Fatalf("unexpected quest-state quest refs:\n got: %#v\nwant: %#v", got.QuestStateQuestRefs, wantQuestRefs)
+	}
+}
+
 func TestLocalContentBundleSummaryEndpointReturnsPerMapInfoTalkActorCountsForLoopbackPost(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
 	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)

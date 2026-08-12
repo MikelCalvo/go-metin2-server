@@ -94,6 +94,7 @@ func TestGameRuntimeExportContentBundleSummaryReturnsDeterministicCounts(t *test
 		InteractableStaticActorCount: 1,
 		QuestStateFlagCount:          2,
 		QuestStateCharacterCount:     2,
+		QuestStateQuestCount:         1,
 		QuestStateQuestRefs:          []string{"quest:first_steps"},
 		QuestStateCharacters: []contentbundle.QuestStateCharacterSummary{
 			{Character: "AnotherHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}}},

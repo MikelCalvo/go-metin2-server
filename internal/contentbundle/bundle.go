@@ -139,6 +139,7 @@ type Summary struct {
 	ItemTemplateCount                      int                                             `json:"item_template_count"`
 	QuestStateFlagCount                    int                                             `json:"quest_state_flag_count,omitempty"`
 	QuestStateCharacterCount               int                                             `json:"quest_state_character_count,omitempty"`
+	QuestStateQuestCount                   int                                             `json:"quest_state_quest_count,omitempty"`
 	QuestStateQuestRefs                    []string                                        `json:"quest_state_quest_refs,omitempty"`
 	QuestStateCharacters                   []QuestStateCharacterSummary                    `json:"quest_state_characters,omitempty"`
 	QuestStateQuests                       []QuestStateQuestSummary                        `json:"quest_state_quests,omitempty"`
@@ -195,6 +196,7 @@ type SummaryDeltas struct {
 	ItemTemplateCount                      SummaryCountDelta            `json:"item_template_count"`
 	QuestStateFlagCount                    SummaryCountDelta            `json:"quest_state_flag_count,omitempty"`
 	QuestStateCharacterCount               SummaryCountDelta            `json:"quest_state_character_count,omitempty"`
+	QuestStateQuestCount                   SummaryCountDelta            `json:"quest_state_quest_count,omitempty"`
 	QuestStateFlags                        []QuestStateDelta            `json:"quest_state_flags,omitempty"`
 	ShopCatalogEntryCount                  SummaryCountDelta            `json:"shop_catalog_entry_count"`
 	ShopCatalogs                           []ShopCatalogDelta           `json:"shop_catalogs,omitempty"`
@@ -801,6 +803,7 @@ func buildSummaryDeltas(current Summary, candidate Summary, currentBundle Bundle
 		ItemTemplateCount:                      summaryCountDelta(current.ItemTemplateCount, candidate.ItemTemplateCount),
 		QuestStateFlagCount:                    summaryCountDelta(current.QuestStateFlagCount, candidate.QuestStateFlagCount),
 		QuestStateCharacterCount:               summaryCountDelta(current.QuestStateCharacterCount, candidate.QuestStateCharacterCount),
+		QuestStateQuestCount:                   summaryCountDelta(current.QuestStateQuestCount, candidate.QuestStateQuestCount),
 		QuestStateFlags:                        buildQuestStateFlagDeltas(currentBundle.QuestState, candidateBundle.QuestState),
 		ShopCatalogEntryCount:                  summaryCountDelta(current.ShopCatalogEntryCount, candidate.ShopCatalogEntryCount),
 		ShopCatalogs:                           buildShopCatalogDeltas(current.ShopCatalogs, candidate.ShopCatalogs),
@@ -1706,6 +1709,7 @@ func Summarize(bundle Bundle) (Summary, error) {
 	}
 	summary.QuestStateFlagCount = questStateSummary.FlagCount
 	summary.QuestStateCharacterCount = len(questStateSummary.Characters)
+	summary.QuestStateQuestCount = len(questStateSummary.QuestRefs)
 	if summary.QuestStateFlagCount > 0 {
 		summary.QuestStateQuestRefs = questStateSummary.QuestRefs
 	}

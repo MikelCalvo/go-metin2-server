@@ -115,7 +115,7 @@ func TestSummarizeIncludesQuestStateCountsAndCharacterFlags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("summarize quest-state bundle: %v", err)
 	}
-	if summary.QuestStateFlagCount != 3 || summary.QuestStateCharacterCount != 2 {
+	if summary.QuestStateFlagCount != 3 || summary.QuestStateCharacterCount != 2 || summary.QuestStateQuestCount != 2 {
 		t.Fatalf("unexpected quest-state counts: %+v", summary)
 	}
 	wantQuestRefs := []string{"quest:daily_check", "quest:first_steps"}
@@ -169,6 +169,23 @@ func TestBuildImportPreviewReturnsQuestStateDeltas(t *testing.T) {
 	}
 	if !reflect.DeepEqual(preview.Deltas.QuestStateFlags, want) {
 		t.Fatalf("unexpected quest-state deltas:\n got: %#v\nwant: %#v", preview.Deltas.QuestStateFlags, want)
+	}
+}
+
+func TestBuildImportPreviewReturnsQuestStateQuestCountDelta(t *testing.T) {
+	preview, err := BuildImportPreview(
+		Bundle{QuestState: []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1}}},
+		Bundle{QuestState: []queststate.Flag{
+			{Character: "QuestHero", QuestRef: "quest:daily_check", Name: "talked_to_guide", Value: 1},
+			{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1},
+		}},
+	)
+	if err != nil {
+		t.Fatalf("build quest-state quest-count import preview: %v", err)
+	}
+	want := SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1}
+	if preview.Deltas.QuestStateQuestCount != want {
+		t.Fatalf("unexpected quest-state quest-count delta:\n got: %#v\nwant: %#v", preview.Deltas.QuestStateQuestCount, want)
 	}
 }
 
