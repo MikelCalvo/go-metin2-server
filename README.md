@@ -129,7 +129,7 @@ Already present:
 - item move/swap/split/merge, consumable use with optional template-authored self-only `SPECIAL_EFFECT`, drag-to-item stack merge, drop/pickup, merchant buy/sell, gold mutation, and quickslot persistence,
 - authored item-template metadata for selected display/guard behavior,
 - fail-closed validation for malformed templates, snapshots, quickslots, item windows, duplicate instances, and persistence edge cases,
-- client packet ownership for `ITEM_GIVE`, `EXCHANGE`, `REFINE`, and first safebox/mall storage requests, including the first visible-peer exchange open/cancel/busy-target shell plus active-shell display-only exchange item-add/item-del/gold-add/accept frames with duplicate display-slot/source-item suppression, active-shell anti-give reject text, and accept-marker reset on later display changes while accepted trade finalization, refine-result semantics, and storage mutations remain intentionally narrow or fail-closed.
+- client packet ownership for `ITEM_GIVE`, `EXCHANGE`, `REFINE`, and first safebox/mall storage requests, including the first visible-peer exchange open/cancel/busy-target shell plus active-shell display-only exchange item-add/item-del/gold-add/accept frames with duplicate display-slot/source-item suppression, active-shell anti-give reject text, accept-marker reset on later display changes, and `/quit` / `/logout` / `/phase_select` exchange-window teardown while accepted trade finalization, refine-result semantics, and storage mutations remain intentionally narrow or fail-closed.
 
 Still missing:
 

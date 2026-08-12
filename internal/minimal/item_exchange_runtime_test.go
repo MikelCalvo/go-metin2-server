@@ -10,8 +10,10 @@ import (
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
+	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
+	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
 
 func TestGameRuntimeItemExchangeStartOpensVisiblePeerWindowsWithoutMutation(t *testing.T) {
@@ -1219,6 +1221,145 @@ func TestGameRuntimeItemExchangeCloseQueuesPeerEndWithoutMutation(t *testing.T) 
 
 	assertExchangeAccountUnchanged(t, accounts, "item-exchange-close-starter", owner, "starter exchange close")
 	assertExchangeAccountUnchanged(t, accounts, "item-exchange-close-target", peer, "target exchange close")
+}
+
+func TestGameRuntimeItemExchangeSlashLifecycleCommandsCloseSelfAndPeerWindowsWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name        string
+		command     string
+		wantCommand string
+		wantPhase   session.Phase
+		ownerLogin  string
+		peerLogin   string
+		ownerName   string
+		peerName    string
+		ownerID     uint32
+		ownerVID    uint32
+		peerID      uint32
+		peerVID     uint32
+	}{
+		{
+			name:        "quit",
+			command:     "/quit",
+			wantCommand: "quit",
+			ownerLogin:  "ex-slash-quit-owner",
+			peerLogin:   "ex-slash-quit-peer",
+			ownerName:   "ExchangeQuitOwner",
+			peerName:    "ExchangeQuitPeer",
+			ownerID:     0x010307b1,
+			ownerVID:    0x020407b1,
+			peerID:      0x010307b2,
+			peerVID:     0x020407b2,
+		},
+		{
+			name:       "logout",
+			command:    "/logout",
+			wantPhase:  session.PhaseClose,
+			ownerLogin: "ex-slash-logout-owner",
+			peerLogin:  "ex-slash-logout-peer",
+			ownerName:  "ExchangeLogoutOwner",
+			peerName:   "ExchangeLogoutPeer",
+			ownerID:    0x010307b3,
+			ownerVID:   0x020407b3,
+			peerID:     0x010307b4,
+			peerVID:    0x020407b4,
+		},
+		{
+			name:       "phase_select",
+			command:    "/phase_select",
+			wantPhase:  session.PhaseSelect,
+			ownerLogin: "ex-slash-select-owner",
+			peerLogin:  "ex-slash-select-peer",
+			ownerName:  "ExchangeSelectOwner",
+			peerName:   "ExchangeSelectPeer",
+			ownerID:    0x010307b5,
+			ownerVID:   0x020407b5,
+			peerID:     0x010307b6,
+			peerVID:    0x020407b6,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter(tc.ownerName, tc.ownerID, tc.ownerVID, 1100, 2100, 0, 101, 201)
+			owner.Gold = 12345
+			owner.Inventory = []inventory.ItemInstance{{ID: uint64(tc.ownerID), Vnum: 27001, Count: 3, Slot: 5}}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			peer := peerVisibilityCharacter(tc.peerName, tc.peerID, tc.peerVID, 1120, 2120, 0, 101, 201)
+			peer.Gold = 22222
+			peer.Inventory = []inventory.ItemInstance{{ID: uint64(tc.peerID), Vnum: 27002, Count: 2, Slot: 6}}
+			peer.Quickslots = []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeItem, Slot: 6}}
+			issuePeerTicket(t, ticketStore, tc.ownerLogin, 0x707070b1, owner)
+			issuePeerTicket(t, ticketStore, tc.peerLogin, 0x707070b2, peer)
+			if err := accounts.Save(accountstore.Account{Login: tc.ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed %s exchange slash owner account: %v", tc.name, err)
+			}
+			if err := accounts.Save(accountstore.Account{Login: tc.peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+				t.Fatalf("seed %s exchange slash peer account: %v", tc.name, err)
+			}
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+			if err != nil {
+				t.Fatalf("unexpected %s exchange slash runtime error: %v", tc.name, err)
+			}
+			ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.ownerLogin, 0x707070b1)
+			defer closeSessionFlow(t, ownerFlow)
+			peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.peerLogin, 0x707070b2)
+			defer closeSessionFlow(t, peerFlow)
+			_ = flushServerFrames(t, ownerFlow)
+			_ = flushServerFrames(t, peerFlow)
+
+			startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+			if err != nil {
+				t.Fatalf("unexpected %s exchange start error: %v", tc.name, err)
+			}
+			if len(startOut) != 1 {
+				t.Fatalf("expected %s exchange start to emit one owner frame, got %d", tc.name, len(startOut))
+			}
+			assertExchangeStartFrame(t, startOut[0], peer.VID, tc.name+" owner start")
+			queuedStart := flushServerFrames(t, peerFlow)
+			if len(queuedStart) != 1 {
+				t.Fatalf("expected %s exchange peer start frame, got %d", tc.name, len(queuedStart))
+			}
+			assertExchangeStartFrame(t, queuedStart[0], owner.VID, tc.name+" peer start")
+
+			out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: tc.command})))
+			if err != nil {
+				t.Fatalf("unexpected %s exchange slash command error: %v", tc.name, err)
+			}
+			if len(out) != 2 {
+				t.Fatalf("expected %s exchange slash command to emit exchange END plus lifecycle frame, got %d", tc.name, len(out))
+			}
+			assertExchangeEndFrame(t, out[0], tc.name+" self slash close")
+			if tc.wantCommand != "" {
+				delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[1]))
+				if err != nil {
+					t.Fatalf("decode %s slash command delivery after exchange close: %v", tc.name, err)
+				}
+				if delivery.Type != chatproto.ChatTypeCommand || delivery.Message != tc.wantCommand {
+					t.Fatalf("unexpected %s slash command delivery after exchange close: %+v", tc.name, delivery)
+				}
+			} else {
+				phase, err := control.DecodePhase(decodeSingleFrame(t, out[1]))
+				if err != nil {
+					t.Fatalf("decode %s phase after exchange close: %v", tc.name, err)
+				}
+				if phase.Phase != tc.wantPhase {
+					t.Fatalf("expected %s to transition to phase %q after exchange close, got %q", tc.name, tc.wantPhase, phase.Phase)
+				}
+			}
+
+			queuedEnd := flushServerFrames(t, peerFlow)
+			if len(queuedEnd) < 1 {
+				t.Fatalf("expected %s exchange peer to receive queued close frames, got %d", tc.name, len(queuedEnd))
+			}
+			assertExchangeEndFrame(t, queuedEnd[0], tc.name+" peer queued slash close")
+
+			assertExchangeAccountUnchanged(t, accounts, tc.ownerLogin, owner, tc.name+" exchange slash close owner")
+			assertExchangeAccountUnchanged(t, accounts, tc.peerLogin, peer, tc.name+" exchange slash close peer")
+		})
+	}
 }
 
 func TestGameRuntimeItemExchangeAntiGiveItemAddReturnsAuthoredRejectTextInsideActiveShellWithoutMutation(t *testing.T) {

@@ -37,8 +37,9 @@ The current parser is deliberately exact for the owned command family:
 
 ### `/quit`
 - accepted only while the session is in `GAME`
-- the session first leaves the current bootstrap shared-world registration
-- the selected runtime pointer plus active merchant/combat/live-registration state are cleared immediately, so the socket stops owning live world gameplay state before the client disconnects
+- if a bootstrap exchange shell is open, the selected owner receives one self-only `GC::EXCHANGE END` before the command delivery or phase-transition frame, and the paired peer receives one queued `GC::EXCHANGE END`; the exchange pairing/display/accept state is cleared before the socket leaves world ownership
+- the session then leaves the current bootstrap shared-world registration
+- the selected runtime pointer plus active merchant/exchange/combat/live-registration state are cleared immediately, so the socket stops owning live world gameplay state before the client disconnects
 - returns one self-facing `CHAT_TYPE_COMMAND` delivery with message:
   - `quit`
 - the server remains in `GAME`
@@ -46,7 +47,8 @@ The current parser is deliberately exact for the owned command family:
 
 ### `/logout`
 - accepted only while the session is in `GAME`
-- the session first leaves the current bootstrap shared-world registration
+- if a bootstrap exchange shell is open, the selected owner receives one self-only `GC::EXCHANGE END` before the command delivery or phase-transition frame, and the paired peer receives one queued `GC::EXCHANGE END`; the exchange pairing/display/accept state is cleared before the socket leaves world ownership
+- the session then leaves the current bootstrap shared-world registration
 - the server then transitions the socket phase to `CLOSE`
 - the server emits:
   - `PHASE(CLOSE)`
@@ -54,7 +56,8 @@ The current parser is deliberately exact for the owned command family:
 
 ### `/phase_select`
 - accepted only while the session is in `GAME`
-- the session first leaves the current bootstrap shared-world registration
+- if a bootstrap exchange shell is open, the selected owner receives one self-only `GC::EXCHANGE END` before the command delivery or phase-transition frame, and the paired peer receives one queued `GC::EXCHANGE END`; the exchange pairing/display/accept state is cleared before the socket leaves world ownership
+- the session then leaves the current bootstrap shared-world registration
 - the selected runtime pointer is cleared so the same socket can select another character again
 - the server then transitions the socket phase back to `SELECT`
 - the server emits:

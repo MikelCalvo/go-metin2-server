@@ -1979,6 +1979,16 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			clearActiveMerchantBuy()
 			return append([][]byte{shopproto.EncodeServerEnd()}, frames...)
 		}
+		prependExchangeCloseFrame := func(frames [][]byte) [][]byte {
+			if sharedWorld == nil || !joinedSharedWorld || sharedWorldID == 0 || !sharedWorld.HasLiveSession(sharedWorldID) {
+				return frames
+			}
+			closeFrames, ok := sharedWorld.CloseExchange(sharedWorldID)
+			if !ok || len(closeFrames) == 0 {
+				return frames
+			}
+			return append(closeFrames, frames...)
+		}
 		prependTransferMerchantCloseFrame := func(frames [][]byte, rebootstrap bool) [][]byte {
 			if !rebootstrap {
 				return frames
@@ -3456,27 +3466,27 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						}
 						switch command {
 						case "quit":
+							quitFrames := prependMerchantCloseFrame(prependExchangeCloseFrame(nil))
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
-							quitFrames := prependMerchantCloseFrame(nil)
 							clearActiveCombatTarget()
 							clearLiveCharacterRegistration()
 							delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeCommand, Message: "quit"}
 							return gameflow.ChatResult{Accepted: true, Frames: quitFrames, Delivery: &delivery}
 						case "logout":
+							logoutFrames := prependMerchantCloseFrame(prependExchangeCloseFrame(nil))
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
-							logoutFrames := prependMerchantCloseFrame(nil)
 							clearActiveCombatTarget()
 							clearLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: true, Frames: logoutFrames, NextPhase: session.PhaseClose}
 						case "phase_select":
+							phaseSelectFrames := prependMerchantCloseFrame(prependExchangeCloseFrame(nil))
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
-							phaseSelectFrames := prependMerchantCloseFrame(nil)
 							clearActiveCombatTarget()
 							clearLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: true, Frames: phaseSelectFrames, NextPhase: session.PhaseSelect}
