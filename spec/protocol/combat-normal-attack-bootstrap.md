@@ -199,6 +199,7 @@ An `ATTACK` request is only eligible when all of the following are true:
 - the request uses `attack_type = 0` for the first normal-attack bootstrap path
 - the request `target_vid` exactly matches the session's currently selected combat target
 - that selected target still resolves to a visible same-map bootstrap practice target (`training_dummy` or `practice_mob` today)
+- if the selected target is a spawn-backed actor, its authored-home/current-position leash classification is not `return_required`
 - that selected target still passes the current bootstrap combat band
 
 This keeps the first attack slice aligned with the already-owned `TARGET` path instead of creating a second competing target-identity model.
@@ -363,6 +364,7 @@ An `ATTACK` request must fail closed when any of these are true:
 - the selected target is no longer within the current bootstrap combat band
 - the selected target no longer matches the current runtime snapshot bound to the session's accepted target selection
 - the selected target is now at `0` HP / dead under runtime-owned dummy state
+- the selected spawn-backed target has drifted far enough from authored home to classify `return_required` under the current bootstrap leash seam
 - the engaged owner's current bootstrap HP is already `0` after the current practice-mob retaliation slice reached the floor
 - the session already lost authoritative live ownership because another session reclaimed the same character
 

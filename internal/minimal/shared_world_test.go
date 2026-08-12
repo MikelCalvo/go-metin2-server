@@ -335,7 +335,7 @@ func TestGameRuntimeSpawnGroupLeashUsesPreservedHomeAfterCurrentPositionUpdate(t
 		nil,
 	)
 	if err != nil {
-		t.Fatalf("unexpected game runtime error: %v", err)
+		t.Fatalf("new game runtime for moved leash evaluation: %v", err)
 	}
 	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
 		Ref:           "practice.leash_runtime_moved",
@@ -377,6 +377,136 @@ func TestGameRuntimeSpawnGroupLeashUsesPreservedHomeAfterCurrentPositionUpdate(t
 	}
 	if *leash.ReturnTarget != leash.Home {
 		t.Fatalf("expected return target to be preserved authored home, got target=%+v home=%+v", leash.ReturnTarget, leash.Home)
+	}
+}
+
+func TestSharedWorldRegistrySpawnGroupReturnRequiredActorFailsCombatTarget(t *testing.T) {
+	registry := newSharedWorldRegistryWithTopology(worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200))
+	subject := peerVisibilityCharacter("LeashTargetSubject", 0x01030111, 0x02040111, 2301, 2800, 0, 101, 201)
+	subject.MapIndex = 42
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	registered, ok := registry.registerStaticActor(0, "LeashReturnMob", 42, 1700, 2800, 20350, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "practice.leash_return_target", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected spawn-backed practice mob registration to succeed")
+	}
+	actor, ok := registry.entities.StaticActor(registered.EntityID)
+	if !ok {
+		t.Fatalf("expected registered spawn-backed actor %d to resolve", registered.EntityID)
+	}
+	actor.Position = worldruntime.NewPosition(42, 2301, 2800)
+	if _, ok := registry.entities.UpdateStaticActor(actor); !ok {
+		t.Fatal("expected runtime current-position update with preserved spawn home to succeed")
+	}
+	leash, ok := registry.SpawnGroupLeash(registered.EntityID, worldruntime.DefaultSpawnLeashRadius)
+	if !ok || leash.Status != worldruntime.SpawnLeashStatusReturnRequired || !leash.ReturnRequired {
+		t.Fatalf("expected moved spawn group to require return before target attempt, got leash=%+v ok=%v", leash, ok)
+	}
+
+	attempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(registered.EntityID))
+	if attempt.Accepted || attempt.Failure != StaticActorCombatTargetFailureTargetNotTargetable {
+		t.Fatalf("expected return-required spawn group to fail combat target as %q, got %+v", StaticActorCombatTargetFailureTargetNotTargetable, attempt)
+	}
+}
+
+func TestSharedWorldRegistrySpawnGroupReturnRequiredActorFailsSelectedAttack(t *testing.T) {
+	registry := newSharedWorldRegistryWithTopology(worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200))
+	subject := peerVisibilityCharacter("LeashAttackSubject", 0x01030113, 0x02040113, 2000, 2800, 0, 101, 201)
+	subject.MapIndex = 42
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	registered, ok := registry.registerStaticActor(0, "LeashAttackMob", 42, 1700, 2800, 20350, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "practice.leash_return_attack", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected spawn-backed practice mob registration to succeed")
+	}
+	targetAttempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(registered.EntityID))
+	if !targetAttempt.Accepted {
+		t.Fatalf("expected at-home spawn group target to succeed before return-required movement, got %+v", targetAttempt)
+	}
+	if !registry.SetSessionCombatTarget(subjectID, targetAttempt.TargetVID) {
+		t.Fatal("expected accepted target to become the selected combat target")
+	}
+	actor, ok := registry.entities.StaticActor(registered.EntityID)
+	if !ok {
+		t.Fatalf("expected registered spawn-backed actor %d to resolve", registered.EntityID)
+	}
+	actor.Position = worldruntime.NewPosition(42, 2101, 2800)
+	if _, ok := registry.entities.UpdateStaticActor(actor); !ok {
+		t.Fatal("expected runtime current-position update with preserved spawn home to succeed")
+	}
+
+	attempt := registry.AttemptSelectedStaticActorAttack(subjectID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, targetAttempt.TargetVID)
+	if attempt.Accepted || attempt.Failure != StaticActorCombatAttackFailureTargetNotTargetable {
+		t.Fatalf("expected return-required spawn group to fail selected attack as %q, got %+v", StaticActorCombatAttackFailureTargetNotTargetable, attempt)
+	}
+}
+
+func TestGameSessionFlowSpawnGroupReturnRequiredMobTargetFailsClosed(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("LeashReturnOwner", 0x01030112, 0x02040112, 2301, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	issuePeerTicket(t, store, "leash-return-owner", 0x12121212, owner)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for return-required target gate: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.leash_return_session",
+		Name:          "LeashReturnSessionMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import return-required session spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.leash_return_session")
+	if !ok {
+		t.Fatal("expected return-required spawn group to resolve by ref")
+	}
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "LeashReturnSessionMob", 42, 2301, 2800, 20350); !ok {
+		t.Fatal("expected spawn-backed actor current-position update to succeed")
+	}
+	leash, ok := runtime.SpawnGroupLeash(group.EntityID, worldruntime.DefaultSpawnLeashRadius)
+	if !ok || leash.Status != worldruntime.SpawnLeashStatusReturnRequired || !leash.ReturnRequired {
+		t.Fatalf("expected moved session spawn group to require return before target attempt, got leash=%+v ok=%v", leash, ok)
+	}
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "leash-return-owner", 0x12121212)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected ordinary visible spawn-backed actor bootstrap before return-required target gate, got %d frames", len(enterOut))
+	}
+	targetVID := uint32(group.EntityID)
+	targetOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected return-required target dispatch error: %v", err)
+	}
+	if len(targetOut) != 0 {
+		t.Fatalf("expected return-required spawn group target to fail closed with no frames, got %d", len(targetOut))
+	}
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected return-required stale attack dispatch error: %v", err)
+	}
+	if len(attackOut) != 0 {
+		t.Fatalf("expected return-required spawn group attack without accepted target to fail closed with no frames, got %d", len(attackOut))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected return-required target denial to queue no frames, got %d", len(queued))
 	}
 }
 

@@ -2960,6 +2960,13 @@ func (r *sharedWorldRegistry) attemptStaticActorCombatTargetLocked(subjectID uin
 		attempt.Failure = StaticActorCombatTargetFailureTargetNotTargetable
 		return attempt
 	}
+	if actor.SpawnGroupRef != "" {
+		leash, ok := worldruntime.EvaluateStaticActorCurrentSpawnLeash(actor, worldruntime.DefaultSpawnLeashRadius)
+		if !ok || leash.ReturnRequired {
+			attempt.Failure = StaticActorCombatTargetFailureTargetNotTargetable
+			return attempt
+		}
+	}
 	currentHP, ok := r.ensureStaticActorCombatCurrentHPLocked(actor)
 	if !ok {
 		attempt.Failure = StaticActorCombatTargetFailureTargetNotTargetable
