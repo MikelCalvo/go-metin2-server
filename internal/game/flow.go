@@ -66,6 +66,12 @@ type HandleItemRefineFunc func(itemproto.ClientRefinePacket) ItemRefineResult
 
 type HandleSafeboxCheckinFunc func(itemproto.ClientSafeboxCheckinPacket) SafeboxCheckinResult
 
+type HandleSafeboxCheckoutFunc func(itemproto.ClientSafeboxCheckoutPacket) SafeboxCheckoutResult
+
+type HandleSafeboxItemMoveFunc func(itemproto.ClientSafeboxItemMovePacket) SafeboxItemMoveResult
+
+type HandleMallCheckoutFunc func(itemproto.ClientMallCheckoutPacket) MallCheckoutResult
+
 type HandleQuickslotAddFunc func(quickslotproto.ClientAddPacket) QuickslotResult
 
 type HandleQuickslotDelFunc func(quickslotproto.ClientDelPacket) QuickslotResult
@@ -104,6 +110,9 @@ type Config struct {
 	HandleItemExchange      HandleItemExchangeFunc
 	HandleItemRefine        HandleItemRefineFunc
 	HandleSafeboxCheckin    HandleSafeboxCheckinFunc
+	HandleSafeboxCheckout   HandleSafeboxCheckoutFunc
+	HandleSafeboxItemMove   HandleSafeboxItemMoveFunc
+	HandleMallCheckout      HandleMallCheckoutFunc
 	HandleQuickslotAdd      HandleQuickslotAddFunc
 	HandleQuickslotDel      HandleQuickslotDelFunc
 	HandleQuickslotSwap     HandleQuickslotSwapFunc
@@ -227,6 +236,21 @@ type SafeboxCheckinResult struct {
 	Frames   [][]byte
 }
 
+type SafeboxCheckoutResult struct {
+	Accepted bool
+	Frames   [][]byte
+}
+
+type SafeboxItemMoveResult struct {
+	Accepted bool
+	Frames   [][]byte
+}
+
+type MallCheckoutResult struct {
+	Accepted bool
+	Frames   [][]byte
+}
+
 type QuickslotResult struct {
 	Accepted bool
 	Frames   [][]byte
@@ -262,6 +286,9 @@ type Flow struct {
 	handleItemExchange      HandleItemExchangeFunc
 	handleItemRefine        HandleItemRefineFunc
 	handleSafeboxCheckin    HandleSafeboxCheckinFunc
+	handleSafeboxCheckout   HandleSafeboxCheckoutFunc
+	handleSafeboxItemMove   HandleSafeboxItemMoveFunc
+	handleMallCheckout      HandleMallCheckoutFunc
 	handleQuickslotAdd      HandleQuickslotAddFunc
 	handleQuickslotDel      HandleQuickslotDelFunc
 	handleQuickslotSwap     HandleQuickslotSwapFunc
@@ -374,6 +401,24 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 			return SafeboxCheckinResult{Accepted: false}
 		}
 	}
+	safeboxCheckoutHandler := cfg.HandleSafeboxCheckout
+	if safeboxCheckoutHandler == nil {
+		safeboxCheckoutHandler = func(itemproto.ClientSafeboxCheckoutPacket) SafeboxCheckoutResult {
+			return SafeboxCheckoutResult{Accepted: false}
+		}
+	}
+	safeboxItemMoveHandler := cfg.HandleSafeboxItemMove
+	if safeboxItemMoveHandler == nil {
+		safeboxItemMoveHandler = func(itemproto.ClientSafeboxItemMovePacket) SafeboxItemMoveResult {
+			return SafeboxItemMoveResult{Accepted: false}
+		}
+	}
+	mallCheckoutHandler := cfg.HandleMallCheckout
+	if mallCheckoutHandler == nil {
+		mallCheckoutHandler = func(itemproto.ClientMallCheckoutPacket) MallCheckoutResult {
+			return MallCheckoutResult{Accepted: false}
+		}
+	}
 	quickslotAddHandler := cfg.HandleQuickslotAdd
 	if quickslotAddHandler == nil {
 		quickslotAddHandler = func(quickslotproto.ClientAddPacket) QuickslotResult { return QuickslotResult{Accepted: false} }
@@ -427,6 +472,9 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 		handleItemExchange:      itemExchangeHandler,
 		handleItemRefine:        itemRefineHandler,
 		handleSafeboxCheckin:    safeboxCheckinHandler,
+		handleSafeboxCheckout:   safeboxCheckoutHandler,
+		handleSafeboxItemMove:   safeboxItemMoveHandler,
+		handleMallCheckout:      mallCheckoutHandler,
 		handleQuickslotAdd:      quickslotAddHandler,
 		handleQuickslotDel:      quickslotDelHandler,
 		handleQuickslotSwap:     quickslotSwapHandler,
@@ -710,20 +758,35 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 		}
 		return result.Frames, nil
 	case itemproto.HeaderClientSafeboxCheckout:
-		if _, err := itemproto.DecodeClientSafeboxCheckout(in); err != nil {
+		packet, err := itemproto.DecodeClientSafeboxCheckout(in)
+		if err != nil {
 			return nil, err
 		}
-		return nil, nil
+		result := f.handleSafeboxCheckout(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return result.Frames, nil
 	case itemproto.HeaderClientSafeboxItemMove:
-		if _, err := itemproto.DecodeClientSafeboxItemMove(in); err != nil {
+		packet, err := itemproto.DecodeClientSafeboxItemMove(in)
+		if err != nil {
 			return nil, err
 		}
-		return nil, nil
+		result := f.handleSafeboxItemMove(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return result.Frames, nil
 	case itemproto.HeaderClientMallCheckout:
-		if _, err := itemproto.DecodeClientMallCheckout(in); err != nil {
+		packet, err := itemproto.DecodeClientMallCheckout(in)
+		if err != nil {
 			return nil, err
 		}
-		return nil, nil
+		result := f.handleMallCheckout(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return result.Frames, nil
 	case quickslotproto.HeaderClientAdd:
 		packet, err := quickslotproto.DecodeClientAdd(in)
 		if err != nil {

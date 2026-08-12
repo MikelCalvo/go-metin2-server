@@ -87,7 +87,7 @@ Total frame length is 8 bytes including the common frame envelope.
 
 ## Current runtime contract
 
-`internal/game` decodes these four packet layouts only while the session is already in `GAME`.
+`internal/game` decodes these four packet layouts only while the session is already in `GAME` and routes each one through an explicit storage-facing handler seam. The default handlers remain fail-closed with no output, so adding the seam does not imply accepted safebox or mall mutation semantics.
 
 The shipped minimal runtime intentionally rejects ordinary storage requests without output:
 
@@ -123,5 +123,5 @@ Later slices must write a new contract before broadening storage behavior. In pa
 ## Current coverage
 
 - `internal/proto/item` freezes encode/decode behavior, exact wire bytes, unexpected-header rejection, and invalid-payload rejection for the four client storage request packets.
-- `internal/game` freezes `GAME`-phase decode dispatch for those packets and the optional handler-frame path for `SAFEBOX_CHECKIN` while preserving no-frame fail-closed defaults.
+- `internal/game` freezes `GAME`-phase decode dispatch and optional handler-frame paths for all four storage-facing packets while preserving no-frame fail-closed defaults.
 - `internal/minimal` freezes both ordinary no-frame/no-mutation/no-persistence storage guards and the authored `anti_safebox` / `safebox_reject_message` info-chat feedback path through the normal session harness.
