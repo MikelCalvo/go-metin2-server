@@ -431,13 +431,16 @@ Expected result:
 Run this only if packet tooling or the client build can emit safebox/mall item-transfer attempts.
 
 - [ ] Attempt one `SAFEBOX_CHECKIN` request for a disposable carried item slot
+- [ ] Repeat `SAFEBOX_CHECKIN` with a carried item whose loaded template authors `anti_safebox` and non-empty `safebox_reject_message`
 - [ ] Attempt one `SAFEBOX_CHECKOUT` request into a disposable carried destination slot
 - [ ] Attempt one `SAFEBOX_ITEM_MOVE` request between two safebox slot positions
 - [ ] Attempt one `MALL_CHECKOUT` request into a disposable carried destination slot
 - [ ] If packet tooling allows it, repeat one malformed payload-size case
 
 Expected result:
-- these storage-facing packets are parsed by the game socket but remain unsupported in the shipped bootstrap runtime: no response frames are visible, no carried inventory/equipment/quickslot/point/gold state changes, no ground actor appears, no exchange/merchant peer frames are queued, and reconnect/operator inspection shows the selected-character snapshot unchanged
+- ordinary storage-facing packets are parsed by the game socket but remain unsupported in the shipped bootstrap runtime: no response frames are visible, no carried inventory/equipment/quickslot/point/gold state changes, no ground actor appears, no exchange/merchant peer frames are queued, and reconnect/operator inspection shows the selected-character snapshot unchanged
+- an `anti_safebox` carried item with template-authored `safebox_reject_message` returns exactly one self-only `CHAT_TYPE_INFO` message with that authored text on `SAFEBOX_CHECKIN`, while still leaving inventory, equipment, quickslots, points, gold, peers, ground handles, and persistence unchanged
+- item-template validation rejects `safebox_reject_message` if it contains embedded NUL bytes or is authored without `anti_safebox`, so contradictory storage feedback should fail before gameplay testing starts
 - malformed storage payload sizes fail at the codec/dispatcher boundary rather than mutating runtime state
 - this is a fail-closed guard, not a completed safebox, mall, or storage feature
 

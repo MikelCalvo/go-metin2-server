@@ -3030,6 +3030,92 @@ func TestRuntimeGiveRejectTextRejectsInvalidRequestedCountWithoutMutation(t *tes
 	}
 }
 
+func TestRuntimeSafeboxCheckinRejectTextComesFromTemplateAntiSafeboxGuardWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:    0x01030108,
+		VID:   0x02040108,
+		Name:  "PeerEight",
+		Level: 1,
+		Inventory: []inventory.ItemInstance{
+			{ID: 108, Vnum: 71124, Count: 1, Slot: 8},
+		},
+		Quickslots: []loginticket.Quickslot{{Position: 4, Type: quickslotproto.TypeItem, Slot: 8}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-eight", CharacterIndex: 1})
+	template := itemcatalog.Template{
+		Vnum:              71124,
+		Name:              "Protected Storage Charm",
+		Stackable:         false,
+		MaxCount:          1,
+		AntiSafebox:       true,
+		SafeboxRejectText: "This item cannot be placed in storage.",
+	}
+
+	text, ok := runtime.SafeboxCheckinRejectText(8, template)
+	if !ok {
+		t.Fatal("expected anti-safebox template to provide safebox check-in rejection text")
+	}
+	if text != template.SafeboxRejectText {
+		t.Fatalf("expected template-authored safebox reject text %q, got %q", template.SafeboxRejectText, text)
+	}
+	live := runtime.LiveCharacter()
+	if !reflect.DeepEqual(live.Inventory, persisted.Inventory) {
+		t.Fatalf("safebox reject text mutated live inventory: got %#v want %#v", live.Inventory, persisted.Inventory)
+	}
+	if !reflect.DeepEqual(live.Quickslots, persisted.Quickslots) {
+		t.Fatalf("safebox reject text mutated live quickslots: got %#v want %#v", live.Quickslots, persisted.Quickslots)
+	}
+	if live.Gold != persisted.Gold || live.Points != persisted.Points {
+		t.Fatalf("safebox reject text mutated live scalars: gold=%d points[1]=%d", live.Gold, live.Points[1])
+	}
+	persistedAfter := runtime.PersistedSnapshot()
+	if !reflect.DeepEqual(persistedAfter.Inventory, persisted.Inventory) {
+		t.Fatalf("safebox reject text mutated persisted inventory: got %#v want %#v", persistedAfter.Inventory, persisted.Inventory)
+	}
+	if !reflect.DeepEqual(persistedAfter.Quickslots, persisted.Quickslots) {
+		t.Fatalf("safebox reject text mutated persisted quickslots: got %#v want %#v", persistedAfter.Quickslots, persisted.Quickslots)
+	}
+	if persistedAfter.Gold != persisted.Gold || persistedAfter.Points != persisted.Points {
+		t.Fatalf("safebox reject text mutated persisted scalars: gold=%d points[1]=%d", persistedAfter.Gold, persistedAfter.Points[1])
+	}
+}
+
+func TestRuntimeSafeboxCheckinRejectTextRejectsMismatchedOrUnguardedTemplateWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name     string
+		template itemcatalog.Template
+	}{
+		{name: "mismatched vnum", template: itemcatalog.Template{Vnum: 71125, Name: "Other Storage Charm", Stackable: false, MaxCount: 1, AntiSafebox: true, SafeboxRejectText: "This item cannot be stored."}},
+		{name: "missing anti safebox", template: itemcatalog.Template{Vnum: 71124, Name: "Unguarded Storage Charm", Stackable: false, MaxCount: 1, SafeboxRejectText: "This item cannot be stored."}},
+		{name: "missing text", template: itemcatalog.Template{Vnum: 71124, Name: "Silent Storage Charm", Stackable: false, MaxCount: 1, AntiSafebox: true}},
+		{name: "over template max", template: itemcatalog.Template{Vnum: 71124, Name: "Tiny Storage Charm", Stackable: false, MaxCount: 1, AntiSafebox: true, SafeboxRejectText: "This item cannot be stored."}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:        0x01030109,
+				VID:       0x02040109,
+				Name:      "PeerNine",
+				Level:     1,
+				Inventory: []inventory.ItemInstance{{ID: 109, Vnum: 71124, Count: 2, Slot: 8}},
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-nine", CharacterIndex: 1})
+
+			text, ok := runtime.SafeboxCheckinRejectText(8, tc.template)
+			if ok || text != "" {
+				t.Fatalf("expected %s template to suppress safebox rejection text, got %q ok=%v", tc.name, text, ok)
+			}
+			if got := runtime.LiveCharacter(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || got.Gold != persisted.Gold || got.Points != persisted.Points {
+				t.Fatalf("%s safebox reject text guard mutated live character: got %#v want %#v", tc.name, got, persisted)
+			}
+			if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || got.Gold != persisted.Gold || got.Points != persisted.Points {
+				t.Fatalf("%s safebox reject text guard mutated persisted character: got %#v want %#v", tc.name, got, persisted)
+			}
+		})
+	}
+}
+
 func TestRuntimeExchangeItemAddRejectTextComesFromTemplateAntiGiveGuardWithoutMutation(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:    0x01030104,

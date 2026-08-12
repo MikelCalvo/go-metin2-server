@@ -407,6 +407,7 @@ type RewardDropItemSummary struct {
 	AntiGive             bool   `json:"anti_give,omitempty"`
 	AntiSell             bool   `json:"anti_sell,omitempty"`
 	AntiStack            bool   `json:"anti_stack,omitempty"`
+	AntiSafebox          bool   `json:"anti_safebox,omitempty"`
 	AntiMale             bool   `json:"anti_male,omitempty"`
 	AntiFemale           bool   `json:"anti_female,omitempty"`
 	AntiWarrior          bool   `json:"anti_warrior,omitempty"`
@@ -425,6 +426,7 @@ type RewardDropItemSummary struct {
 	SellRejectMessage    string `json:"sell_reject_message,omitempty"`
 	EquipRejectMessage   string `json:"equip_reject_message,omitempty"`
 	UnequipRejectMessage string `json:"unequip_reject_message,omitempty"`
+	SafeboxRejectMessage string `json:"safebox_reject_message,omitempty"`
 	PickupRange          uint16 `json:"pickup_range,omitempty"`
 }
 
@@ -448,6 +450,7 @@ type RewardDropAggregateSummary struct {
 	AntiGive             bool   `json:"anti_give,omitempty"`
 	AntiSell             bool   `json:"anti_sell,omitempty"`
 	AntiStack            bool   `json:"anti_stack,omitempty"`
+	AntiSafebox          bool   `json:"anti_safebox,omitempty"`
 	AntiMale             bool   `json:"anti_male,omitempty"`
 	AntiFemale           bool   `json:"anti_female,omitempty"`
 	AntiWarrior          bool   `json:"anti_warrior,omitempty"`
@@ -466,6 +469,7 @@ type RewardDropAggregateSummary struct {
 	SellRejectMessage    string `json:"sell_reject_message,omitempty"`
 	EquipRejectMessage   string `json:"equip_reject_message,omitempty"`
 	UnequipRejectMessage string `json:"unequip_reject_message,omitempty"`
+	SafeboxRejectMessage string `json:"safebox_reject_message,omitempty"`
 	PickupRange          uint16 `json:"pickup_range,omitempty"`
 }
 
@@ -488,6 +492,7 @@ type ItemTemplateReferenceSummary struct {
 	AntiGive             bool   `json:"anti_give,omitempty"`
 	AntiSell             bool   `json:"anti_sell,omitempty"`
 	AntiStack            bool   `json:"anti_stack,omitempty"`
+	AntiSafebox          bool   `json:"anti_safebox,omitempty"`
 	AntiMale             bool   `json:"anti_male,omitempty"`
 	AntiFemale           bool   `json:"anti_female,omitempty"`
 	AntiWarrior          bool   `json:"anti_warrior,omitempty"`
@@ -506,6 +511,7 @@ type ItemTemplateReferenceSummary struct {
 	SellRejectMessage    string `json:"sell_reject_message,omitempty"`
 	EquipRejectMessage   string `json:"equip_reject_message,omitempty"`
 	UnequipRejectMessage string `json:"unequip_reject_message,omitempty"`
+	SafeboxRejectMessage string `json:"safebox_reject_message,omitempty"`
 	PickupRange          uint16 `json:"pickup_range,omitempty"`
 }
 
@@ -539,6 +545,7 @@ type ShopCatalogEntrySummary struct {
 	AntiGive             bool   `json:"anti_give,omitempty"`
 	AntiSell             bool   `json:"anti_sell,omitempty"`
 	AntiStack            bool   `json:"anti_stack,omitempty"`
+	AntiSafebox          bool   `json:"anti_safebox,omitempty"`
 	AntiMale             bool   `json:"anti_male,omitempty"`
 	AntiFemale           bool   `json:"anti_female,omitempty"`
 	AntiWarrior          bool   `json:"anti_warrior,omitempty"`
@@ -557,6 +564,7 @@ type ShopCatalogEntrySummary struct {
 	SellRejectMessage    string `json:"sell_reject_message,omitempty"`
 	EquipRejectMessage   string `json:"equip_reject_message,omitempty"`
 	UnequipRejectMessage string `json:"unequip_reject_message,omitempty"`
+	SafeboxRejectMessage string `json:"safebox_reject_message,omitempty"`
 	PickupRange          uint16 `json:"pickup_range,omitempty"`
 }
 
@@ -2026,6 +2034,7 @@ func shopCatalogSummary(definition interactionstore.Definition, itemTemplatesByV
 			AntiGive:             template.AntiGive,
 			AntiSell:             template.AntiSell,
 			AntiStack:            template.AntiStack,
+			AntiSafebox:          template.AntiSafebox,
 			AntiMale:             template.AntiMale,
 			AntiFemale:           template.AntiFemale,
 			AntiWarrior:          template.AntiWarrior,
@@ -2044,6 +2053,7 @@ func shopCatalogSummary(definition interactionstore.Definition, itemTemplatesByV
 			SellRejectMessage:    template.SellRejectText,
 			EquipRejectMessage:   template.EquipRejectText,
 			UnequipRejectMessage: template.UnequipRejectText,
+			SafeboxRejectMessage: template.SafeboxRejectText,
 			PickupRange:          template.PickupRange,
 		})
 	}
@@ -2118,6 +2128,7 @@ func itemTemplateReferenceSummaries(templates []itemcatalog.Template) []ItemTemp
 			AntiGive:             template.AntiGive,
 			AntiSell:             template.AntiSell,
 			AntiStack:            template.AntiStack,
+			AntiSafebox:          template.AntiSafebox,
 			AntiMale:             template.AntiMale,
 			AntiFemale:           template.AntiFemale,
 			AntiWarrior:          template.AntiWarrior,
@@ -2136,6 +2147,7 @@ func itemTemplateReferenceSummaries(templates []itemcatalog.Template) []ItemTemp
 			SellRejectMessage:    template.SellRejectText,
 			EquipRejectMessage:   template.EquipRejectText,
 			UnequipRejectMessage: template.UnequipRejectText,
+			SafeboxRejectMessage: template.SafeboxRejectText,
 			PickupRange:          template.PickupRange,
 		})
 	}
@@ -2175,6 +2187,7 @@ func rewardDropItemSummaries(dropVnums []uint32, itemTemplatesByVnum map[uint32]
 			AntiGive:             template.AntiGive,
 			AntiSell:             template.AntiSell,
 			AntiStack:            template.AntiStack,
+			AntiSafebox:          template.AntiSafebox,
 			AntiMale:             template.AntiMale,
 			AntiFemale:           template.AntiFemale,
 			AntiWarrior:          template.AntiWarrior,
@@ -2193,6 +2206,7 @@ func rewardDropItemSummaries(dropVnums []uint32, itemTemplatesByVnum map[uint32]
 			SellRejectMessage:    template.SellRejectText,
 			EquipRejectMessage:   template.EquipRejectText,
 			UnequipRejectMessage: template.UnequipRejectText,
+			SafeboxRejectMessage: template.SafeboxRejectText,
 			PickupRange:          template.PickupRange,
 		})
 	}
@@ -2252,6 +2266,7 @@ func rewardDropAggregateSummaries(countsByVnum map[uint32]int, itemTemplatesByVn
 			AntiGive:             template.AntiGive,
 			AntiSell:             template.AntiSell,
 			AntiStack:            template.AntiStack,
+			AntiSafebox:          template.AntiSafebox,
 			AntiMale:             template.AntiMale,
 			AntiFemale:           template.AntiFemale,
 			AntiWarrior:          template.AntiWarrior,
@@ -2270,6 +2285,7 @@ func rewardDropAggregateSummaries(countsByVnum map[uint32]int, itemTemplatesByVn
 			SellRejectMessage:    template.SellRejectText,
 			EquipRejectMessage:   template.EquipRejectText,
 			UnequipRejectMessage: template.UnequipRejectText,
+			SafeboxRejectMessage: template.SafeboxRejectText,
 			PickupRange:          template.PickupRange,
 		})
 	}
@@ -2432,7 +2448,8 @@ func validItemTemplateStrings(template itemcatalog.Template) bool {
 		!validAuthoredContentString(template.PickupRejectText) ||
 		!validAuthoredContentString(template.SellRejectText) ||
 		!validAuthoredContentString(template.EquipRejectText) ||
-		!validAuthoredContentString(template.UnequipRejectText) {
+		!validAuthoredContentString(template.UnequipRejectText) ||
+		!validAuthoredContentString(template.SafeboxRejectText) {
 		return false
 	}
 	if template.UseEffect != nil && (!validAuthoredContentString(template.UseEffect.Message) || !validAuthoredContentString(template.UseEffect.InfoMessage)) {

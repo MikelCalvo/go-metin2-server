@@ -537,6 +537,7 @@ func TestSummarizeExposesItemTransferGuardsInTemplateBackedContentSummaries(t *t
 	const dropRejectMessage = "You cannot drop this bound potion."
 	const giveRejectMessage = "You cannot give this bound potion."
 	const pickupRejectMessage = "You cannot pick up this bound potion."
+	const safeboxRejectMessage = "You cannot store this bound potion."
 	bundle := Bundle{
 		SpawnGroups: []SpawnGroup{{
 			Ref:             "practice.bound_reward",
@@ -549,17 +550,19 @@ func TestSummarizeExposesItemTransferGuardsInTemplateBackedContentSummaries(t *t
 			RewardDropVnums: []uint32{27001},
 		}},
 		ItemTemplates: []itemcatalog.Template{{
-			Vnum:             27001,
-			Name:             "Bound Potion",
-			Stackable:        true,
-			MaxCount:         200,
-			ShopBuyPrice:     5,
-			AntiDrop:         true,
-			AntiGive:         true,
-			AntiStack:        true,
-			DropRejectText:   dropRejectMessage,
-			GiveRejectText:   giveRejectMessage,
-			PickupRejectText: pickupRejectMessage,
+			Vnum:              27001,
+			Name:              "Bound Potion",
+			Stackable:         true,
+			MaxCount:          200,
+			ShopBuyPrice:      5,
+			AntiDrop:          true,
+			AntiGive:          true,
+			AntiStack:         true,
+			AntiSafebox:       true,
+			DropRejectText:    dropRejectMessage,
+			GiveRejectText:    giveRejectMessage,
+			PickupRejectText:  pickupRejectMessage,
+			SafeboxRejectText: safeboxRejectMessage,
 		}},
 		InteractionDefinitions: []interactionstore.Definition{{
 			Kind:  interactionstore.KindShopPreview,
@@ -576,7 +579,7 @@ func TestSummarizeExposesItemTransferGuardsInTemplateBackedContentSummaries(t *t
 		t.Fatalf("summarize item-transfer-guard bundle: %v", err)
 	}
 
-	wantTemplates := []ItemTemplateReferenceSummary{{Vnum: 27001, Name: "Bound Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiDrop: true, AntiGive: true, AntiStack: true, DropRejectMessage: dropRejectMessage, GiveRejectMessage: giveRejectMessage, PickupRejectMessage: pickupRejectMessage}}
+	wantTemplates := []ItemTemplateReferenceSummary{{Vnum: 27001, Name: "Bound Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiDrop: true, AntiGive: true, AntiStack: true, AntiSafebox: true, DropRejectMessage: dropRejectMessage, GiveRejectMessage: giveRejectMessage, PickupRejectMessage: pickupRejectMessage, SafeboxRejectMessage: safeboxRejectMessage}}
 	if !reflect.DeepEqual(summary.ItemTemplates, wantTemplates) {
 		t.Fatalf("unexpected item-template transfer-guard summary:\n got: %#v\nwant: %#v", summary.ItemTemplates, wantTemplates)
 	}
@@ -586,7 +589,7 @@ func TestSummarizeExposesItemTransferGuardsInTemplateBackedContentSummaries(t *t
 		Title:      "Bound Merchant",
 		EntryCount: 1,
 		Entries: []ShopCatalogEntrySummary{
-			{Slot: 0, ItemVnum: 27001, ItemName: "Bound Potion", Count: 2, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiDrop: true, AntiGive: true, AntiStack: true, DropRejectMessage: dropRejectMessage, GiveRejectMessage: giveRejectMessage, PickupRejectMessage: pickupRejectMessage},
+			{Slot: 0, ItemVnum: 27001, ItemName: "Bound Potion", Count: 2, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiDrop: true, AntiGive: true, AntiStack: true, AntiSafebox: true, DropRejectMessage: dropRejectMessage, GiveRejectMessage: giveRejectMessage, PickupRejectMessage: pickupRejectMessage, SafeboxRejectMessage: safeboxRejectMessage},
 		},
 	}}
 	if !reflect.DeepEqual(summary.ShopCatalogs, wantCatalogs) {
@@ -601,12 +604,12 @@ func TestSummarizeExposesItemTransferGuardsInTemplateBackedContentSummaries(t *t
 		RaceNum:         101,
 		CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
 		RewardDropVnums: []uint32{27001},
-		RewardDropItems: []RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Bound Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiDrop: true, AntiGive: true, AntiStack: true, DropRejectMessage: dropRejectMessage, GiveRejectMessage: giveRejectMessage, PickupRejectMessage: pickupRejectMessage}},
+		RewardDropItems: []RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Bound Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiDrop: true, AntiGive: true, AntiStack: true, AntiSafebox: true, DropRejectMessage: dropRejectMessage, GiveRejectMessage: giveRejectMessage, PickupRejectMessage: pickupRejectMessage, SafeboxRejectMessage: safeboxRejectMessage}},
 	}}
 	if !reflect.DeepEqual(summary.SpawnGroups, wantSpawnGroups) {
 		t.Fatalf("unexpected spawn-group transfer-guard summary:\n got: %#v\nwant: %#v", summary.SpawnGroups, wantSpawnGroups)
 	}
-	wantRewardDrops := []RewardDropAggregateSummary{{ItemVnum: 27001, ItemName: "Bound Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiDrop: true, AntiGive: true, AntiStack: true, DropRejectMessage: dropRejectMessage, GiveRejectMessage: giveRejectMessage, PickupRejectMessage: pickupRejectMessage}}
+	wantRewardDrops := []RewardDropAggregateSummary{{ItemVnum: 27001, ItemName: "Bound Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiDrop: true, AntiGive: true, AntiStack: true, AntiSafebox: true, DropRejectMessage: dropRejectMessage, GiveRejectMessage: giveRejectMessage, PickupRejectMessage: pickupRejectMessage, SafeboxRejectMessage: safeboxRejectMessage}}
 	if !reflect.DeepEqual(summary.RewardDrops, wantRewardDrops) {
 		t.Fatalf("unexpected reward-drop transfer-guard summary:\n got: %#v\nwant: %#v", summary.RewardDrops, wantRewardDrops)
 	}

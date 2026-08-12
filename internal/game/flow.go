@@ -64,6 +64,8 @@ type HandleItemExchangeFunc func(itemproto.ClientExchangePacket) ItemExchangeRes
 
 type HandleItemRefineFunc func(itemproto.ClientRefinePacket) ItemRefineResult
 
+type HandleSafeboxCheckinFunc func(itemproto.ClientSafeboxCheckinPacket) SafeboxCheckinResult
+
 type HandleQuickslotAddFunc func(quickslotproto.ClientAddPacket) QuickslotResult
 
 type HandleQuickslotDelFunc func(quickslotproto.ClientDelPacket) QuickslotResult
@@ -101,6 +103,7 @@ type Config struct {
 	HandleItemGive          HandleItemGiveFunc
 	HandleItemExchange      HandleItemExchangeFunc
 	HandleItemRefine        HandleItemRefineFunc
+	HandleSafeboxCheckin    HandleSafeboxCheckinFunc
 	HandleQuickslotAdd      HandleQuickslotAddFunc
 	HandleQuickslotDel      HandleQuickslotDelFunc
 	HandleQuickslotSwap     HandleQuickslotSwapFunc
@@ -219,6 +222,11 @@ type ItemRefineResult struct {
 	Frames   [][]byte
 }
 
+type SafeboxCheckinResult struct {
+	Accepted bool
+	Frames   [][]byte
+}
+
 type QuickslotResult struct {
 	Accepted bool
 	Frames   [][]byte
@@ -253,6 +261,7 @@ type Flow struct {
 	handleItemGive          HandleItemGiveFunc
 	handleItemExchange      HandleItemExchangeFunc
 	handleItemRefine        HandleItemRefineFunc
+	handleSafeboxCheckin    HandleSafeboxCheckinFunc
 	handleQuickslotAdd      HandleQuickslotAddFunc
 	handleQuickslotDel      HandleQuickslotDelFunc
 	handleQuickslotSwap     HandleQuickslotSwapFunc
@@ -359,6 +368,12 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 	if itemRefineHandler == nil {
 		itemRefineHandler = func(itemproto.ClientRefinePacket) ItemRefineResult { return ItemRefineResult{Accepted: false} }
 	}
+	safeboxCheckinHandler := cfg.HandleSafeboxCheckin
+	if safeboxCheckinHandler == nil {
+		safeboxCheckinHandler = func(itemproto.ClientSafeboxCheckinPacket) SafeboxCheckinResult {
+			return SafeboxCheckinResult{Accepted: false}
+		}
+	}
 	quickslotAddHandler := cfg.HandleQuickslotAdd
 	if quickslotAddHandler == nil {
 		quickslotAddHandler = func(quickslotproto.ClientAddPacket) QuickslotResult { return QuickslotResult{Accepted: false} }
@@ -411,6 +426,7 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 		handleItemGive:          itemGiveHandler,
 		handleItemExchange:      itemExchangeHandler,
 		handleItemRefine:        itemRefineHandler,
+		handleSafeboxCheckin:    safeboxCheckinHandler,
 		handleQuickslotAdd:      quickslotAddHandler,
 		handleQuickslotDel:      quickslotDelHandler,
 		handleQuickslotSwap:     quickslotSwapHandler,
@@ -684,10 +700,15 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 		}
 		return result.Frames, nil
 	case itemproto.HeaderClientSafeboxCheckin:
-		if _, err := itemproto.DecodeClientSafeboxCheckin(in); err != nil {
+		packet, err := itemproto.DecodeClientSafeboxCheckin(in)
+		if err != nil {
 			return nil, err
 		}
-		return nil, nil
+		result := f.handleSafeboxCheckin(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return result.Frames, nil
 	case itemproto.HeaderClientSafeboxCheckout:
 		if _, err := itemproto.DecodeClientSafeboxCheckout(in); err != nil {
 			return nil, err

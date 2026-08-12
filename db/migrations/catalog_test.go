@@ -12,17 +12,19 @@ import (
 )
 
 const (
-	testManifestFilename                     = "migrations.manifest.json"
-	expectedBootstrapUpSHA256                = "76ab086217590515cb9b1eb72d78f49abf766da977998c4c60b41825c8e92f78"
-	expectedBootstrapDownSHA256              = "140e8ba3c7a1c89cd942c13ef40160c74df5619093fe8c287c69cb978dba822d"
-	expectedAccountCharacterRosterUpSHA256   = "5385c65b2f00b6c64567d604176f99f84b39afae62d840939e49ab2994b053af"
-	expectedAccountCharacterRosterDownSHA256 = "cd8877ab1e88c4fe9a55d350bd5a89e1961ac88bd01423c5c1a1b0b8af37dc94"
-	expectedCharacterItemStateUpSHA256       = "122e94f3d39975a6d1cf7e2d9321177a408e195be484e5ea2ffd5a8fa61c9a24"
-	expectedCharacterItemStateDownSHA256     = "1a4dbc6d32c52a85eab837e00a9a63cc6c811b153a6054e5b568bdc3027592ee"
-	expectedCharacterQuestStateUpSHA256      = "d67b53bc4f6aeaf74e9721f760ab05279037293f4de9e7b0079813984de56862"
-	expectedCharacterQuestStateDownSHA256    = "70d2a9c4db6a47acd6574975c96449efd4eb6d3076db53c3eb6e21221936282f"
-	expectedItemTemplateStateUpSHA256        = "6b615d308f7a0b3a0c8a67ebd16661a3fe7d7c5e608ee397127398f4e6fa2e4c"
-	expectedItemTemplateStateDownSHA256      = "28d0adc265466bcfccaa683b7a777a3fbfb5aff146c962709532b0bb40bf3fce"
+	testManifestFilename                        = "migrations.manifest.json"
+	expectedBootstrapUpSHA256                   = "76ab086217590515cb9b1eb72d78f49abf766da977998c4c60b41825c8e92f78"
+	expectedBootstrapDownSHA256                 = "140e8ba3c7a1c89cd942c13ef40160c74df5619093fe8c287c69cb978dba822d"
+	expectedAccountCharacterRosterUpSHA256      = "5385c65b2f00b6c64567d604176f99f84b39afae62d840939e49ab2994b053af"
+	expectedAccountCharacterRosterDownSHA256    = "cd8877ab1e88c4fe9a55d350bd5a89e1961ac88bd01423c5c1a1b0b8af37dc94"
+	expectedCharacterItemStateUpSHA256          = "122e94f3d39975a6d1cf7e2d9321177a408e195be484e5ea2ffd5a8fa61c9a24"
+	expectedCharacterItemStateDownSHA256        = "1a4dbc6d32c52a85eab837e00a9a63cc6c811b153a6054e5b568bdc3027592ee"
+	expectedCharacterQuestStateUpSHA256         = "d67b53bc4f6aeaf74e9721f760ab05279037293f4de9e7b0079813984de56862"
+	expectedCharacterQuestStateDownSHA256       = "70d2a9c4db6a47acd6574975c96449efd4eb6d3076db53c3eb6e21221936282f"
+	expectedItemTemplateStateUpSHA256           = "6b615d308f7a0b3a0c8a67ebd16661a3fe7d7c5e608ee397127398f4e6fa2e4c"
+	expectedItemTemplateStateDownSHA256         = "28d0adc265466bcfccaa683b7a777a3fbfb5aff146c962709532b0bb40bf3fce"
+	expectedItemTemplateSafeboxRejectUpSHA256   = "83b5af7214706ffe8884d1ec841a190c2f6bf220b3899f11aa3850340643c280"
+	expectedItemTemplateSafeboxRejectDownSHA256 = "7f04a66fc85f5e5b70be54c7ad8afae47d1b4e63004716e8814fdf141d3f1d81"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -177,8 +179,8 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 		t.Fatalf("expected character quest-state down migration to drop quest flags, got:\n%s", fourth.DownSQL)
 	}
 
-	if len(catalog) < 5 {
-		t.Fatalf("expected item-template-state migration after quest-state, got %d migrations", len(catalog))
+	if len(catalog) < 6 {
+		t.Fatalf("expected item-template-state and safebox-reject migrations after quest-state, got %d migrations", len(catalog))
 	}
 	fifth := catalog[4]
 	if fifth.Version != 5 || fifth.Name != "item_template_state" {
@@ -222,6 +224,34 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 		if !strings.Contains(fifth.DownSQL, want) {
 			t.Fatalf("expected item-template-state down migration to contain %q, got:\n%s", want, fifth.DownSQL)
 		}
+	}
+
+	sixth := catalog[5]
+	if sixth.Version != 6 || sixth.Name != "item_template_safebox_reject_message" {
+		t.Fatalf("unexpected sixth migration: %#v", sixth)
+	}
+	if sixth.UpPath != "0006_item_template_safebox_reject_message.up.sql" {
+		t.Fatalf("unexpected sixth up path: %q", sixth.UpPath)
+	}
+	if sixth.DownPath != "0006_item_template_safebox_reject_message.down.sql" {
+		t.Fatalf("unexpected sixth down path: %q", sixth.DownPath)
+	}
+	if sixth.UpSHA256 != expectedItemTemplateSafeboxRejectUpSHA256 {
+		t.Fatalf("unexpected item-template-safebox-reject up checksum: got %q want %q", sixth.UpSHA256, expectedItemTemplateSafeboxRejectUpSHA256)
+	}
+	if sixth.DownSHA256 != expectedItemTemplateSafeboxRejectDownSHA256 {
+		t.Fatalf("unexpected item-template-safebox-reject down checksum: got %q want %q", sixth.DownSHA256, expectedItemTemplateSafeboxRejectDownSHA256)
+	}
+	for _, want := range []string{
+		"ALTER TABLE item_templates ADD COLUMN safebox_reject_message",
+		"CHECK (safebox_reject_message = '' OR anti_safebox = 1)",
+	} {
+		if !strings.Contains(sixth.UpSQL, want) {
+			t.Fatalf("expected item-template-safebox-reject migration to contain %q, got:\n%s", want, sixth.UpSQL)
+		}
+	}
+	if !strings.Contains(sixth.DownSQL, "ALTER TABLE item_templates DROP COLUMN safebox_reject_message") {
+		t.Fatalf("expected item-template-safebox-reject down migration to drop column, got:\n%s", sixth.DownSQL)
 	}
 
 	for i, migration := range catalog {

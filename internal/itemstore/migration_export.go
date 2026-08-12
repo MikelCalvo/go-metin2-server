@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	ItemTemplateStateMigrationVersion = 5
-	ItemTemplateStateMigrationName    = "item_template_state"
+	ItemTemplateStateMigrationVersion = 6
+	ItemTemplateStateMigrationName    = "item_template_safebox_reject_message"
 )
 
 type ItemTemplateStateExport struct {
@@ -61,6 +61,7 @@ type ItemTemplateRow struct {
 	AntiPKDrop        bool   `json:"anti_pk_drop,omitempty"`
 	AntiMyShop        bool   `json:"anti_myshop,omitempty"`
 	AntiSafebox       bool   `json:"anti_safebox,omitempty"`
+	SafeboxRejectText string `json:"safebox_reject_message,omitempty"`
 	MinLevel          uint8  `json:"min_level,omitempty"`
 	EquipSlot         string `json:"equip_slot,omitempty"`
 	UseRejectText     string `json:"use_reject_message,omitempty"`
@@ -211,6 +212,7 @@ func itemTemplateRowForExport(template Template) ItemTemplateRow {
 		AntiPKDrop:        template.AntiPKDrop,
 		AntiMyShop:        template.AntiMyShop,
 		AntiSafebox:       template.AntiSafebox,
+		SafeboxRejectText: template.SafeboxRejectText,
 		MinLevel:          template.MinLevel,
 		EquipSlot:         template.EquipSlot,
 		UseRejectText:     template.UseRejectText,

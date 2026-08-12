@@ -14,25 +14,27 @@ import (
 func TestExportItemTemplateStateBuildsDeterministicRowsMatchingMigrationShape(t *testing.T) {
 	snapshot := Snapshot{Templates: []Template{
 		{
-			Vnum:             27001,
-			Name:             "Small Red Potion",
-			Stackable:        true,
-			MaxCount:         200,
-			ShopBuyPrice:     50,
-			ShopSellPrice:    13,
-			Highlight:        true,
-			Unique:           true,
-			AntiSell:         true,
-			AntiGet:          true,
-			PickupRange:      750,
-			Sockets:          SocketValues{1, 2, 3},
-			Attributes:       AttributeValues{{Type: 1, Value: 10}},
-			UseEffect:        &UseEffect{PointType: 7, PointIndex: 1, PointDelta: 25, ConsumeCount: 2, Message: "Recovered HP", InfoMessage: "You feel better.", SpecialEffectType: 3},
-			UseRejectText:    "You cannot use this yet.",
-			BuyRejectText:    "The merchant will not sell this.",
-			DropRejectText:   "You cannot drop this.",
-			PickupRejectText: "You cannot pick this up.",
-			SellRejectText:   "The merchant refuses this.",
+			Vnum:              27001,
+			Name:              "Small Red Potion",
+			Stackable:         true,
+			MaxCount:          200,
+			ShopBuyPrice:      50,
+			ShopSellPrice:     13,
+			Highlight:         true,
+			Unique:            true,
+			AntiSell:          true,
+			AntiGet:           true,
+			AntiSafebox:       true,
+			PickupRange:       750,
+			Sockets:           SocketValues{1, 2, 3},
+			Attributes:        AttributeValues{{Type: 1, Value: 10}},
+			UseEffect:         &UseEffect{PointType: 7, PointIndex: 1, PointDelta: 25, ConsumeCount: 2, Message: "Recovered HP", InfoMessage: "You feel better.", SpecialEffectType: 3},
+			UseRejectText:     "You cannot use this yet.",
+			BuyRejectText:     "The merchant will not sell this.",
+			DropRejectText:    "You cannot drop this.",
+			PickupRejectText:  "You cannot pick this up.",
+			SellRejectText:    "The merchant refuses this.",
+			SafeboxRejectText: "You cannot store this.",
 		},
 		{
 			Vnum:              11200,
@@ -58,9 +60,12 @@ func TestExportItemTemplateStateBuildsDeterministicRowsMatchingMigrationShape(t 
 	if export.MigrationVersion != ItemTemplateStateMigrationVersion || export.MigrationName != ItemTemplateStateMigrationName {
 		t.Fatalf("unexpected migration boundary: version=%d name=%q", export.MigrationVersion, export.MigrationName)
 	}
+	if export.MigrationVersion != 6 || export.MigrationName != "item_template_safebox_reject_message" {
+		t.Fatalf("expected safebox-reject export boundary, got version=%d name=%q", export.MigrationVersion, export.MigrationName)
+	}
 	wantTemplates := []ItemTemplateRow{
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, Save: true, Irremovable: true, AppearanceVnum: 11201, AntiMale: true, EquipSlot: "weapon", EquipRejectText: "You cannot wield this.", UnequipRejectText: "You cannot remove this."},
-		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 50, ShopSellPrice: 13, Highlight: true, Unique: true, AntiSell: true, AntiGet: true, PickupRange: 750, UseRejectText: "You cannot use this yet.", BuyRejectText: "The merchant will not sell this.", DropRejectText: "You cannot drop this.", PickupRejectText: "You cannot pick this up.", SellRejectText: "The merchant refuses this."},
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 50, ShopSellPrice: 13, Highlight: true, Unique: true, AntiSell: true, AntiGet: true, AntiSafebox: true, PickupRange: 750, UseRejectText: "You cannot use this yet.", BuyRejectText: "The merchant will not sell this.", DropRejectText: "You cannot drop this.", PickupRejectText: "You cannot pick this up.", SellRejectText: "The merchant refuses this.", SafeboxRejectText: "You cannot store this."},
 	}
 	if !reflect.DeepEqual(export.Templates, wantTemplates) {
 		t.Fatalf("unexpected item-template rows:\n got: %#v\nwant: %#v", export.Templates, wantTemplates)

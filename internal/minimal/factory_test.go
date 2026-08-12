@@ -312,8 +312,8 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	if plan.CurrentVersion != 0 || plan.LatestVersion < 1 || plan.UpToDate {
 		t.Fatalf("unexpected migration plan versions: %#v", plan)
 	}
-	if len(plan.Pending) < 5 {
-		t.Fatalf("expected schema, account/character, item-state, quest-state, and item-template-state migrations for empty ledger: %#v", plan)
+	if len(plan.Pending) < 6 {
+		t.Fatalf("expected schema, account/character, item-state, quest-state, item-template-state, and safebox-reject migrations for empty ledger: %#v", plan)
 	}
 	first := plan.Pending[0]
 	if first.Version != 1 || first.Name != "bootstrap_schema_migrations" || first.Direction != dbmigrations.DirectionUp || first.Path != "0001_bootstrap_schema_migrations.up.sql" {
@@ -335,7 +335,11 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	if fifth.Version != 5 || fifth.Name != "item_template_state" || fifth.Direction != dbmigrations.DirectionUp || fifth.Path != "0005_item_template_state.up.sql" {
 		t.Fatalf("unexpected fifth pending migration step: %#v", fifth)
 	}
-	if first.SHA256 == "" || second.SHA256 == "" || third.SHA256 == "" || fourth.SHA256 == "" || fifth.SHA256 == "" || strings.Contains(first.Path, "CREATE TABLE") || strings.Contains(second.Path, "CREATE TABLE") || strings.Contains(third.Path, "CREATE TABLE") || strings.Contains(fourth.Path, "CREATE TABLE") || strings.Contains(fifth.Path, "CREATE TABLE") {
+	sixth := plan.Pending[5]
+	if sixth.Version != 6 || sixth.Name != "item_template_safebox_reject_message" || sixth.Direction != dbmigrations.DirectionUp || sixth.Path != "0006_item_template_safebox_reject_message.up.sql" {
+		t.Fatalf("unexpected sixth pending migration step: %#v", sixth)
+	}
+	if first.SHA256 == "" || second.SHA256 == "" || third.SHA256 == "" || fourth.SHA256 == "" || fifth.SHA256 == "" || sixth.SHA256 == "" || strings.Contains(first.Path, "CREATE TABLE") || strings.Contains(second.Path, "CREATE TABLE") || strings.Contains(third.Path, "CREATE TABLE") || strings.Contains(fourth.Path, "CREATE TABLE") || strings.Contains(fifth.Path, "CREATE TABLE") || strings.Contains(sixth.Path, "CREATE TABLE") {
 		t.Fatalf("expected metadata-only pending steps with checksums, got %#v", plan.Pending)
 	}
 }

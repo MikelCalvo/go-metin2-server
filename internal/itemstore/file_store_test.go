@@ -1345,15 +1345,17 @@ func TestFileStoreSaveThenLoadRoundTripPreservesConfirmWhenUseConsumableMetadata
 func TestFileStoreSaveThenLoadRoundTripPreservesStorageAndShopAntiFlagMetadata(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)
+	const safeboxRejectText = "This item cannot be placed in storage."
 	want := Snapshot{Templates: []Template{{
-		Vnum:        71124,
-		Name:        "Protected Storage Charm",
-		Stackable:   false,
-		MaxCount:    1,
-		AntiSave:    true,
-		AntiPKDrop:  true,
-		AntiMyShop:  true,
-		AntiSafebox: true,
+		Vnum:              71124,
+		Name:              "Protected Storage Charm",
+		Stackable:         false,
+		MaxCount:          1,
+		AntiSave:          true,
+		AntiPKDrop:        true,
+		AntiMyShop:        true,
+		AntiSafebox:       true,
+		SafeboxRejectText: safeboxRejectText,
 	}}}
 
 	if err := store.Save(want); err != nil {
@@ -1371,9 +1373,60 @@ func TestFileStoreSaveThenLoadRoundTripPreservesStorageAndShopAntiFlagMetadata(t
 	if err != nil {
 		t.Fatalf("read persisted snapshot with storage/shop anti-flag metadata: %v", err)
 	}
-	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 71124,\n      \"name\": \"Protected Storage Charm\",\n      \"stackable\": false,\n      \"max_count\": 1,\n      \"anti_save\": true,\n      \"anti_pk_drop\": true,\n      \"anti_myshop\": true,\n      \"anti_safebox\": true\n    }\n  ]\n}\n"
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 71124,\n      \"name\": \"Protected Storage Charm\",\n      \"stackable\": false,\n      \"max_count\": 1,\n      \"anti_save\": true,\n      \"anti_pk_drop\": true,\n      \"anti_myshop\": true,\n      \"anti_safebox\": true,\n      \"safebox_reject_message\": \"This item cannot be placed in storage.\"\n    }\n  ]\n}\n"
 	if string(raw) != wantJSON {
 		t.Fatalf("unexpected deterministic snapshot with storage/shop anti-flag metadata:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
+func TestFileStoreRejectsInvalidSafeboxRejectTextMetadata(t *testing.T) {
+	cases := []struct {
+		name     string
+		snapshot Snapshot
+		rawJSON  string
+	}{
+		{
+			name: "embedded NUL",
+			snapshot: Snapshot{Templates: []Template{{
+				Vnum:              71124,
+				Name:              "Broken Storage Charm",
+				Stackable:         false,
+				MaxCount:          1,
+				AntiSafebox:       true,
+				SafeboxRejectText: "storage\x00blocked",
+			}}},
+			rawJSON: `{"templates":[{"vnum":71124,"name":"Broken Storage Charm","stackable":false,"max_count":1,"anti_safebox":true,"safebox_reject_message":"storage\u0000blocked"}]}`,
+		},
+		{
+			name: "missing anti-safebox guard",
+			snapshot: Snapshot{Templates: []Template{{
+				Vnum:              71125,
+				Name:              "Unguarded Storage Charm",
+				Stackable:         false,
+				MaxCount:          1,
+				SafeboxRejectText: "This item has no safebox guard.",
+			}}},
+			rawJSON: `{"templates":[{"vnum":71125,"name":"Unguarded Storage Charm","stackable":false,"max_count":1,"safebox_reject_message":"This item has no safebox guard."}]}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+			store := NewFileStore(path)
+			if err := store.Save(tc.snapshot); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot when saving invalid safebox_reject_message metadata, got %v", err)
+			}
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatalf("mkdir state dir: %v", err)
+			}
+			if err := os.WriteFile(path, []byte(tc.rawJSON), 0o644); err != nil {
+				t.Fatalf("write invalid safebox rejection snapshot: %v", err)
+			}
+			if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot when loading invalid safebox_reject_message metadata, got %v", err)
+			}
+		})
 	}
 }
 

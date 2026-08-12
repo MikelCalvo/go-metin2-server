@@ -331,6 +331,30 @@ func TestHandleClientFrameRejectsDeniedItemRefineInGame(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameAcceptsSafeboxCheckinInGameAndReturnsHandlerFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	wantFrame := []byte("safebox-checkin")
+	flow := NewFlow(machine, Config{
+		HandleSafeboxCheckin: func(packet itemproto.ClientSafeboxCheckinPacket) SafeboxCheckinResult {
+			if packet.SafeSlot != 7 || packet.Position != itemproto.InventoryPosition(5) {
+				t.Fatalf("unexpected safebox checkin packet: %+v", packet)
+			}
+			return SafeboxCheckinResult{Accepted: true, Frames: [][]byte{wantFrame}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{SafeSlot: 7, Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected safebox checkin error: %v", err)
+	}
+	if len(out) != 1 || !bytes.Equal(out[0], wantFrame) {
+		t.Fatalf("expected handler safebox-checkin frame, got %#v", out)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameAcceptsStoragePacketsAsFailClosedInGame(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	flow := NewFlow(machine, Config{})

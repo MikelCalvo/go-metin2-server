@@ -3634,6 +3634,23 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					return gameflow.ItemRefineResult{Accepted: false}
 				},
+				HandleSafeboxCheckin: func(packet itemproto.ClientSafeboxCheckinPacket) gameflow.SafeboxCheckinResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || packet.Position.WindowType != itemproto.WindowInventory || packet.Position.Cell >= itemproto.InventoryMaxCell {
+						return gameflow.SafeboxCheckinResult{Accepted: false}
+					}
+					template, ok := runtime.resolveRuntimeItemTemplate(selectedPlayer, inventory.SlotIndex(packet.Position.Cell))
+					if !ok {
+						return gameflow.SafeboxCheckinResult{Accepted: false}
+					}
+					if message, ok := selectedPlayer.SafeboxCheckinRejectText(inventory.SlotIndex(packet.Position.Cell), template); ok {
+						return gameflow.SafeboxCheckinResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}}
+					}
+					return gameflow.SafeboxCheckinResult{Accepted: false}
+				},
 				HandleItemDrop: func(packet itemproto.ClientDropPacket) gameflow.ItemDropResult {
 					stateMu.Lock()
 					defer stateMu.Unlock()

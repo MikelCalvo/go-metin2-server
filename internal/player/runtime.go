@@ -1086,6 +1086,27 @@ func (r *Runtime) ExchangeItemAddRejectText(slot inventory.SlotIndex, template i
 	return template.GiveRejectText, true
 }
 
+func (r *Runtime) SafeboxCheckinRejectText(slot inventory.SlotIndex, template itemcatalog.Template) (string, bool) {
+	if r == nil || template.SafeboxRejectText == "" || !template.AntiSafebox || slot >= inventory.CarriedInventorySlotCount || !itemcatalog.ValidTemplate(template) {
+		return "", false
+	}
+	if countInventorySlotOccupancy(r.liveInventory, slot) != 1 {
+		return "", false
+	}
+	index := findInventorySlot(r.liveInventory, slot)
+	if index < 0 {
+		return "", false
+	}
+	item := r.liveInventory[index]
+	if item.Equipped || item.Locked || item.Vnum != template.Vnum || item.Count == 0 || item.Count > template.MaxCount {
+		return "", false
+	}
+	if err := item.Validate(); err != nil {
+		return "", false
+	}
+	return template.SafeboxRejectText, true
+}
+
 func (r *Runtime) ExchangeItemAddDisplay(slot inventory.SlotIndex, template itemcatalog.Template) (ExchangeItemAddDisplay, bool) {
 	item, ok := r.templateBackedExchangeDisplayInventoryItem(slot, template)
 	if !ok {
