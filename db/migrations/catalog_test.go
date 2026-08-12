@@ -25,6 +25,8 @@ const (
 	expectedItemTemplateStateDownSHA256         = "28d0adc265466bcfccaa683b7a777a3fbfb5aff146c962709532b0bb40bf3fce"
 	expectedItemTemplateSafeboxRejectUpSHA256   = "83b5af7214706ffe8884d1ec841a190c2f6bf220b3899f11aa3850340643c280"
 	expectedItemTemplateSafeboxRejectDownSHA256 = "7f04a66fc85f5e5b70be54c7ad8afae47d1b4e63004716e8814fdf141d3f1d81"
+	expectedAuthLoginTicketHandoffUpSHA256      = "e42ae108f6b12938f4f622cc6c71f1d091ad5fc51c9892df78c6f05f3207eae9"
+	expectedAuthLoginTicketHandoffDownSHA256    = "eec9767c316afeefe6319861e0a193df7b77c8e9eac6b42a2d6cf8f396127268"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -252,6 +254,45 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 	}
 	if !strings.Contains(sixth.DownSQL, "ALTER TABLE item_templates DROP COLUMN safebox_reject_message") {
 		t.Fatalf("expected item-template-safebox-reject down migration to drop column, got:\n%s", sixth.DownSQL)
+	}
+
+	if len(catalog) < 7 {
+		t.Fatalf("expected auth login-ticket handoff migration after item-template safebox reject, got %d", len(catalog))
+	}
+	seventh := catalog[6]
+	if seventh.Version != 7 || seventh.Name != "auth_login_ticket_handoff" {
+		t.Fatalf("unexpected seventh migration: %#v", seventh)
+	}
+	if seventh.UpPath != "0007_auth_login_ticket_handoff.up.sql" {
+		t.Fatalf("unexpected seventh up path: %q", seventh.UpPath)
+	}
+	if seventh.DownPath != "0007_auth_login_ticket_handoff.down.sql" {
+		t.Fatalf("unexpected seventh down path: %q", seventh.DownPath)
+	}
+	if seventh.UpSHA256 != expectedAuthLoginTicketHandoffUpSHA256 {
+		t.Fatalf("unexpected auth-login-ticket-handoff up checksum: got %q want %q", seventh.UpSHA256, expectedAuthLoginTicketHandoffUpSHA256)
+	}
+	if seventh.DownSHA256 != expectedAuthLoginTicketHandoffDownSHA256 {
+		t.Fatalf("unexpected auth-login-ticket-handoff down checksum: got %q want %q", seventh.DownSHA256, expectedAuthLoginTicketHandoffDownSHA256)
+	}
+	for _, want := range []string{
+		"CREATE TABLE auth_login_tickets",
+		"login_key BIGINT NOT NULL",
+		"issued_at TEXT NOT NULL",
+		"consumed_at TEXT",
+		"characters_snapshot_json TEXT NOT NULL",
+		"CHECK (login_key > 0 AND login_key <= 4294967295)",
+		"CHECK (consumed_at IS NULL OR consumed_at >= issued_at)",
+		"CHECK (characters_snapshot_json <> '')",
+		"CREATE UNIQUE INDEX auth_login_tickets_active_login_key_unique",
+		"WHERE consumed_at IS NULL",
+	} {
+		if !strings.Contains(seventh.UpSQL, want) {
+			t.Fatalf("expected auth-login-ticket-handoff migration to contain %q, got:\n%s", want, seventh.UpSQL)
+		}
+	}
+	if !strings.Contains(seventh.DownSQL, "DROP TABLE auth_login_tickets") {
+		t.Fatalf("expected auth-login-ticket-handoff down migration to drop ticket table, got:\n%s", seventh.DownSQL)
 	}
 
 	for i, migration := range catalog {

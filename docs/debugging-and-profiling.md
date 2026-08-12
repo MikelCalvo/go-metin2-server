@@ -331,7 +331,7 @@ Successful responses include `migration_version`, `migration_name`, and determin
 
 ### `GET /local/item-templates/exports/item-template-state`
 
-Returns a loopback-only, read-only JSON projection of the committed authored item-template snapshot onto the `0005_item_template_state` migration boundary. This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the committed item-template snapshot is invalid or cannot be projected onto the schema shape.
+Returns a loopback-only, read-only JSON projection of the committed authored item-template snapshot onto the current item-template migration boundary (`0006_item_template_safebox_reject_message`, after the base `0005_item_template_state` schema). This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the committed item-template snapshot is invalid or cannot be projected onto the schema shape.
 
 Successful responses include `migration_version`, `migration_name`, deterministic `templates`, and deterministic child rows for non-zero `sockets`, non-zero `attributes`, `use_effects`, and `equip_effects`. A missing committed `item-templates.json` returns an empty migration-shaped export instead of exporting built-in fallback bootstrap templates. The response deliberately omits executable SQL, content bundles, account/item-instance rows, login tickets, authored actor state, and runtime world state, and it does not apply migrations or mutate the item-template store. Use it as an operator/backfill preflight for authored item metadata before future import or repository work.
 

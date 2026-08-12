@@ -49,6 +49,14 @@ Rules frozen by tests:
   - `item_template_sockets`, `item_template_attributes`, `item_template_use_effects`, and `item_template_equip_effects` split fixed display arrays and optional point-effect payloads into child tables keyed by `vnum`,
   - validation preserves current bootstrap bounds such as `max_count <= 255`, buy price within `uint32`, sell price within the signed point-change carrier, owned equipment-slot names only, socket positions `0..2`, attribute positions `0..6`, and effect point-index bounds,
   - runtime item-template loading still comes from the file-backed store or built-in fallback; migration execution, item-template DB repositories, content-bundle DB storage, and runtime DB writes remain out of scope.
+- the embedded catalog now also includes `0006_item_template_safebox_reject_message`, an additive schema-only contract for authored safebox rejection text on item templates:
+  - it adds `safebox_reject_message` to `item_templates`,
+  - the column is constrained so non-empty text requires `anti_safebox = 1`, matching the current fail-closed storage feedback rule,
+  - the item-template export reports this latest item-template boundary while runtime item-template loading remains file-backed.
+- the embedded catalog now also includes `0007_auth_login_ticket_handoff`, a schema-only contract for the authd-to-gamed login-ticket handoff:
+  - `auth_login_tickets` stores the non-zero `login_key`, non-empty `issued_at`, login/original-normalized login, empire, nullable `consumed_at`, and a transitional `characters_snapshot_json` payload,
+  - active tickets have a partial unique index on `login_key` where `consumed_at IS NULL`, so future SQL-backed stores can preserve the one-shot active-key boundary without overwriting live handoffs,
+  - the migration deliberately does not change the current JSON ticket issue/load/consume runtime and does not add a DB repository or migration executor.
 - `gamed` exposes a loopback-only read-only `GET /local/db/migrations/status` endpoint that returns the same metadata-only dry-run plan; with no DB config it plans against an empty ledger, and with explicit DB config it reads only the `schema_migrations` ledger before planning.
 - `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger` add the first database/sql-compatible ledger reader seam for future preflight tooling: callers supply a `QueryContext` boundary, the package reads only `version`, `name`, and `up_sha256` from `schema_migrations` in version order, closes rows, and fails closed on query, scan, iteration, close, catalog, or ledger drift errors.
 - `PlanToVersion` / `PlanCatalogToVersion` and the matching SQL-ledger variants now provide an explicit target-version dry-run contract:
@@ -92,12 +100,13 @@ Rules frozen by tests:
   - the projection resolves quest-state character names through the committed account/character roster export, so flags for missing characters fail closed instead of becoming orphan rows,
   - missing quest-state snapshots produce an empty migration-shaped export, matching the existing validation semantics for an absent standalone quest-state file.
 - `gamed` exposes this projection through loopback-only read-only `GET /local/quest-state/exports/character-quest-state`; it reads committed bootstrap account and quest-state snapshots, returns JSON, and performs no SQL or store mutation.
-- `internal/itemstore` now exposes a read-only item-template-state projection for the `0005_item_template_state` migration boundary:
+- `internal/itemstore` now exposes a read-only item-template-state projection for the current item-template migration boundary (`0006_item_template_safebox_reject_message`, after the base `0005_item_template_state` schema):
   - template rows are deterministic by `vnum` and include the owned item-template metadata already validated by the file-backed store,
   - socket and attribute rows include only non-zero authored display entries with fixed positions,
   - use-effect and equip-effect rows include the optional point-effect payloads when present, with default use-effect `consume_count` resolved to `1`,
   - missing item-template snapshots produce an empty migration-shaped export rather than forcing built-in bootstrap fallback rows into a future DB import.
 - `gamed` exposes this projection through loopback-only read-only `GET /local/item-templates/exports/item-template-state`; it reads the committed authored item-template snapshot, returns JSON, and performs no SQL or store mutation.
+- `0007_auth_login_ticket_handoff` is currently schema-only and has no JSON-ticket export/import endpoint yet; the current runtime continues to validate, issue, and consume auth tickets through `internal/loginticket`.
 
 The first migration is `0001_bootstrap_schema_migrations` and creates only a minimal `schema_migrations` ledger:
 
@@ -116,6 +125,10 @@ The fourth migration is `0004_character_quest_state`. It is the first schema con
 
 The fifth migration is `0005_item_template_state`. It freezes the first schema contract for authored bootstrap item templates, including the main template metadata row plus display socket/attribute child rows and optional use/equip effect child rows. The export deliberately reads only the committed authored item-template snapshot: missing snapshots produce an empty export instead of importing built-in fallback templates as if they were durable authored data.
 
+The sixth migration is `0006_item_template_safebox_reject_message`. It adds the current authored safebox rejection text column to the item-template schema boundary while preserving the file-backed runtime and export-only posture.
+
+The seventh migration is `0007_auth_login_ticket_handoff`. It freezes the first schema contract for the authd-to-gamed login-key handoff: active non-zero login keys, issued timestamps, login identity, empire context, optional consumed timestamp, and a transitional character snapshot JSON payload for the current select-surface handoff. It is still schema-only; the shipped runtime continues to use the JSON `internal/loginticket` store.
+
 ## What this is not yet
 
 This is not a database runtime implementation. It deliberately does not add:
@@ -127,23 +140,24 @@ This is not a database runtime implementation. It deliberately does not add:
 - JSON snapshot import/backfill execution tooling,
 - production deployment scripts.
 
-The dry-run planner added on top of the catalog is likewise read-only: callers can supply already-read ledger rows directly, provide a `database/sql`-compatible query boundary for the same metadata through `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger` / `PlanToVersionFromSQLLedger`, or provide a strict offline JSON `LedgerSnapshot` through `ReadJSONLedgerSnapshot` / `PlanToVersionFromLedgerSnapshot` when planning from copied ledger metadata. The first loopback ops endpoints use an empty ledger when DB config is disabled and a configured `database/sql` ledger reader when both driver and DSN are set. `/local/db/migrations/status` reports the latest-version target; `/local/db/migrations/plan?target_version=N` previews an explicit target such as rollback-to-zero; `/local/db/migrations/plan-from-ledger-snapshot?target_version=N` accepts a bounded metadata-only snapshot body and produces the same plan shape without opening a configured DB. The account/character roster, character item-state, character quest-state, and item-template-state exports are also read-only: they map committed JSON snapshots to the existing schema shapes but do not insert rows, allocate a real production identity sequence, apply SQL, or quarantine/import data. The SQL ledger seam, offline ledger snapshot seam, runtime config, and exports are safe boundaries for future CLI, real-ledger preflight tooling, or status pages, not an execution engine.
+The dry-run planner added on top of the catalog is likewise read-only: callers can supply already-read ledger rows directly, provide a `database/sql`-compatible query boundary for the same metadata through `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger` / `PlanToVersionFromSQLLedger`, or provide a strict offline JSON `LedgerSnapshot` through `ReadJSONLedgerSnapshot` / `PlanToVersionFromLedgerSnapshot` when planning from copied ledger metadata. The first loopback ops endpoints use an empty ledger when DB config is disabled and a configured `database/sql` ledger reader when both driver and DSN are set. `/local/db/migrations/status` reports the latest-version target; `/local/db/migrations/plan?target_version=N` previews an explicit target such as rollback-to-zero; `/local/db/migrations/plan-from-ledger-snapshot?target_version=N` accepts a bounded metadata-only snapshot body and produces the same plan shape without opening a configured DB. The account/character roster, character item-state, character quest-state, and item-template-state exports are also read-only: they map committed JSON snapshots to the existing schema shapes but do not insert rows, allocate a real production identity sequence, apply SQL, or quarantine/import data. The new auth login-ticket handoff migration is currently a schema contract only and has no export/import path yet. The SQL ledger seam, offline ledger snapshot seam, runtime config, and exports are safe boundaries for future CLI, real-ledger preflight tooling, or status pages, not an execution engine.
 
 Those require separate slices because each one changes operator and data-safety semantics.
 
 ## Likely next slices
 
-1. Define a narrow account/character/item/quest-state repository interface backed by current tests before adding a DB implementation.
-2. Add JSON-file-store import/quarantine tooling that consumes the exported `0002_account_character_roster`, `0003_character_item_state`, `0004_character_quest_state`, and `0005_item_template_state` shapes plus optional offline ledger snapshots without silently coercing bad snapshots.
-3. Add a driver-backed test harness or build-tagged integration test for `schema_migrations` status and ledger-snapshot generation before adding apply/rollback tooling.
-4. Add explicit migrations for richer item/economy domains, item ownership timers, or authored content tables only after the account/character/item/item-template repository seams are stable.
-5. Add an apply/rollback command only after the dry-run status boundary and ledger validation behavior are exercised against an actual driver-backed test database.
-6. Document production DB configuration, backups, and rollback policy once there is an actual DB-backed store.
+1. Define a narrow account/character/item/quest-state/login-ticket repository interface backed by current tests before adding a DB implementation.
+2. Add JSON-file-store import/quarantine tooling that consumes the exported `0002_account_character_roster`, `0003_character_item_state`, `0004_character_quest_state`, and current item-template-state shapes plus optional offline ledger snapshots without silently coercing bad snapshots.
+3. Add a read-only JSON login-ticket export for `0007_auth_login_ticket_handoff` only if a future backfill/import tool needs it.
+4. Add a driver-backed test harness or build-tagged integration test for `schema_migrations` status and ledger-snapshot generation before adding apply/rollback tooling.
+5. Add explicit migrations for richer item/economy domains, item ownership timers, or authored content tables only after the account/character/item/item-template/login-ticket repository seams are stable.
+6. Add an apply/rollback command only after the dry-run status boundary and ledger validation behavior are exercised against an actual driver-backed test database.
+7. Document production DB configuration, backups, and rollback policy once there is an actual DB-backed store.
 
 ## Exit criteria for this slice
 
-- `go test ./db/migrations` validates the catalog, schema ledger migration, account/character roster migration, character item-state migration, character quest-state migration, item-template-state migration, direct-ledger dry-run planning rules, explicit up/down target planning, the database/sql-compatible ledger-reader seam, and the strict offline JSON ledger-snapshot plan boundary.
+- `go test ./db/migrations` validates the catalog, schema ledger migration, account/character roster migration, character item-state migration, character quest-state migration, item-template-state and safebox-reject migrations, auth login-ticket handoff migration, direct-ledger dry-run planning rules, explicit up/down target planning, the database/sql-compatible ledger-reader seam, and the strict offline JSON ledger-snapshot plan boundary.
 - `go test ./internal/config ./internal/minimal ./internal/service ./internal/ops` validates optional DB config loading, startup fail-closed behavior for partial config, no-DSN runtime-config exposure, the configured-driver migration-status boundary, loopback-only explicit migration-plan previews including the ledger-snapshot POST preflight, and the local account/character roster, character item-state, character quest-state, and item-template-state export endpoints.
 - `go test ./internal/accountstore ./internal/queststate ./internal/itemstore` validates deterministic `0002_account_character_roster`, `0003_character_item_state`, `0004_character_quest_state`, and `0005_item_template_state` export rows plus fail-closed schema-shape checks for bootstrap account, quest-state, and item-template snapshots.
 - `go test ./...` and `go vet ./...` remain green.
-- README/development docs describe `db/migrations` as the validated migration catalog and read-only planning skeleton, not a finished DB layer.
+- README/development docs describe `db/migrations` as the validated migration catalog and read-only planning skeleton, including the schema-only login-ticket handoff boundary, not a finished DB layer.

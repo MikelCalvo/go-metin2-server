@@ -47,6 +47,12 @@ This slice intentionally keeps the auth key contract simple:
 
 When `authd` issues a one-shot login ticket for `gamed`, the durable JSON ticket must contain a non-zero `issued_at` timestamp. The store fills that field at issue time if the caller omits it, but already-committed ticket files with a missing or zero `issued_at` are invalid and fail closed during load, validation, stale-ticket preview, stale-ticket cleanup, and consume paths. That makes `/local/login-tickets/issued-before/preview` and `/local/login-tickets/issued-before/cleanup` safe to use as age-based recovery primitives: manually assembled or partially migrated ticket snapshots cannot avoid stale-ticket policy by silently decoding to Go's zero time.
 
+## Schema-only migration boundary
+
+The project-owned migration catalog now includes `0007_auth_login_ticket_handoff` for the authd-to-gamed handoff state. It is a schema/backfill contract only; the shipped runtime still uses the JSON `internal/loginticket` store.
+
+The schema records active non-zero login keys, issued timestamps, login/original-normalized login, empire context, optional consumed timestamp, and a transitional character snapshot JSON payload. A partial unique index keeps active `login_key` rows unique while allowing future historical/consumed rows. This does not add a DB-backed ticket repository, apply/rollback command, or SQL consume implementation yet.
+
 ## Packet layouts
 
 ### `LOGIN3`

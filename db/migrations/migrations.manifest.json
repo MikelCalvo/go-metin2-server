@@ -48,6 +48,14 @@
       "down_path": "0006_item_template_safebox_reject_message.down.sql",
       "up_sha256": "83b5af7214706ffe8884d1ec841a190c2f6bf220b3899f11aa3850340643c280",
       "down_sha256": "7f04a66fc85f5e5b70be54c7ad8afae47d1b4e63004716e8814fdf141d3f1d81"
+    },
+    {
+      "version": 7,
+      "name": "auth_login_ticket_handoff",
+      "up_path": "0007_auth_login_ticket_handoff.up.sql",
+      "down_path": "0007_auth_login_ticket_handoff.down.sql",
+      "up_sha256": "e42ae108f6b12938f4f622cc6c71f1d091ad5fc51c9892df78c6f05f3207eae9",
+      "down_sha256": "eec9767c316afeefe6319861e0a193df7b77c8e9eac6b42a2d6cf8f396127268"
     }
   ]
 }
