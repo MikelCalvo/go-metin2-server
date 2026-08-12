@@ -762,6 +762,115 @@ func TestGameRuntimeReturnSpawnGroupHomeMovesReturnRequiredMobBackToAuthoredHome
 	}
 }
 
+func TestGameRuntimeReturnSpawnGroupHomeMovesWithinRadiusMobBackToAuthoredHome(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	viewer := peerVisibilityCharacter("ReturnHomeWithinViewer", 0x01030169, 0x02040169, 1700, 2800, 0, 101, 201)
+	viewer.MapIndex = 42
+	issuePeerTicket(t, store, "return-home-within-viewer", 0x19191919, viewer)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for within-radius spawn-group return-home: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_home_within_radius",
+		Name:          "ReturnHomeWithinMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import within-radius return-home spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_home_within_radius")
+	if !ok {
+		t.Fatal("expected within-radius return-home spawn group to resolve by ref")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "return-home-within-viewer", 0x19191919)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "ReturnHomeWithinMob", 42, 1900, 2900, 20350); !ok {
+		t.Fatal("expected spawn-backed actor current-position update inside leash radius to succeed")
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 4 {
+		t.Fatalf("expected retained viewer to receive actor refresh after within-radius drift, got %d frames", len(queued))
+	}
+	leash, ok := runtime.SpawnGroupLeash(group.EntityID, worldruntime.DefaultSpawnLeashRadius)
+	if !ok || leash.Status != worldruntime.SpawnLeashStatusWithinRadius || leash.ReturnRequired || leash.Current.X != 1900 || leash.Current.Y != 2900 {
+		t.Fatalf("expected moved spawn group to remain within leash before return-home trigger, ok=%v leash=%+v", ok, leash)
+	}
+
+	targetOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(group.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected target error before within-radius return-home: %v", err)
+	}
+	if len(targetOut) != 1 {
+		t.Fatalf("expected within-radius spawn group to remain targetable before return-home, got %d frames", len(targetOut))
+	}
+
+	returned, ok := runtime.ReturnSpawnGroupHome(group.EntityID)
+	if !ok {
+		t.Fatalf("expected return-home trigger to accept within-radius entity %d", group.EntityID)
+	}
+	if returned.Status != worldruntime.SpawnLeashStatusAtHome || returned.ReturnRequired || returned.ReturnTarget != nil {
+		t.Fatalf("expected within-radius return-home trigger to restore at-home leash state, got %+v", returned)
+	}
+	if returned.Actor.X != 1700 || returned.Actor.Y != 2800 || returned.Actor.SpawnGroupRef != "practice.return_home_within_radius" {
+		t.Fatalf("expected within-radius returned actor at authored spawn group home, got %+v", returned.Actor)
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after within-radius return-home: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != 1700 || persisted.StaticActors[0].Y != 2800 || persisted.StaticActors[0].SpawnHome == nil || persisted.StaticActors[0].SpawnHome.X != 1700 {
+		t.Fatalf("expected persisted within-radius spawn group to return to authored home, got %+v", persisted.StaticActors)
+	}
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 5 {
+		t.Fatalf("expected retained viewer to receive refresh plus target clear on within-radius return-home, got %d frames", len(queued))
+	}
+	if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0])); err != nil || deleted.VID != uint32(group.EntityID) {
+		t.Fatalf("decode within-radius return-home delete: packet=%+v err=%v", deleted, err)
+	}
+	add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	if err != nil {
+		t.Fatalf("decode within-radius return-home add: %v", err)
+	}
+	if add.VID != uint32(group.EntityID) || add.X != 1700 || add.Y != 2800 {
+		t.Fatalf("expected within-radius return-home add at authored home, got %+v", add)
+	}
+	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, queued[2])); err != nil {
+		t.Fatalf("decode within-radius return-home additional info: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, queued[3])); err != nil {
+		t.Fatalf("decode within-radius return-home update: %v", err)
+	}
+	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queued[4]))
+	if err != nil {
+		t.Fatalf("decode within-radius return-home target clear: %v", err)
+	}
+	if clear.TargetVID != 0 || clear.HPPercent != 0 {
+		t.Fatalf("expected within-radius return-home to clear selected target, got %+v", clear)
+	}
+}
+
 func TestGameRuntimeReturnSpawnGroupHomeRejectsDeadMobUntilRespawn(t *testing.T) {
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(

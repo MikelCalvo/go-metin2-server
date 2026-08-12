@@ -2742,7 +2742,7 @@ func (r *sharedWorldRegistry) ReturnSpawnGroupHome(entityID uint64) (SpawnGroupL
 	if !ok || currentHP == 0 {
 		return SpawnGroupLeashSnapshot{}, false
 	}
-	if !evaluation.ReturnRequired {
+	if !evaluation.ReturnRequired && evaluation.Status == worldruntime.SpawnLeashStatusAtHome {
 		r.syncStaticActorCombatStateLocked(actor)
 		delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
 		if targetVID, ok := worldruntime.StaticActorVisibilityVID(actor); ok {
