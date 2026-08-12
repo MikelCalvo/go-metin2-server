@@ -6069,6 +6069,96 @@ func TestLocalMigrationPlanEndpointReportsPlannerFailure(t *testing.T) {
 	}
 }
 
+func TestLocalMigrationLedgerSnapshotEndpointReturnsMetadataOnlySnapshotForLoopbackGet(t *testing.T) {
+	snapshotter := &stubMigrationLedgerSnapshotter{snapshot: dbmigrations.LedgerSnapshot{
+		Format: dbmigrations.LedgerSnapshotFormat,
+		Entries: []dbmigrations.LedgerEntry{
+			{Version: 1, Name: "bootstrap_schema_migrations", UpSHA256: strings.Repeat("a", 64)},
+			{Version: 2, Name: "accounts", UpSHA256: strings.Repeat("b", 64)},
+		},
+	}}
+	mux := RegisterLocalMigrationLedgerSnapshotEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/db/migrations/ledger-snapshot", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if snapshotter.calls != 1 {
+		t.Fatalf("expected snapshotter to be called once, got %d", snapshotter.calls)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"format":"go-metin2-schema-migrations-ledger-v1"`, `"version":1`, `"name":"bootstrap_schema_migrations"`, `"up_sha256":"` + strings.Repeat("a", 64) + `"`, `"version":2`, `"name":"accounts"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected ledger snapshot body to contain %s, got %s", want, body)
+		}
+	}
+	if strings.Contains(body, "CREATE TABLE") || strings.Contains(body, "UpSQL") || strings.Contains(body, "DownSQL") {
+		t.Fatalf("ledger snapshot endpoint must not expose executable SQL, got %s", body)
+	}
+}
+
+func TestLocalMigrationLedgerSnapshotEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	snapshotter := &stubMigrationLedgerSnapshotter{snapshot: dbmigrations.LedgerSnapshot{Format: dbmigrations.LedgerSnapshotFormat, Entries: []dbmigrations.LedgerEntry{}}}
+	mux := RegisterLocalMigrationLedgerSnapshotEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/db/migrations/ledger-snapshot", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected snapshotter not to be called, got %d", snapshotter.calls)
+	}
+}
+
+func TestLocalMigrationLedgerSnapshotEndpointRejectsWrongMethod(t *testing.T) {
+	snapshotter := &stubMigrationLedgerSnapshotter{snapshot: dbmigrations.LedgerSnapshot{Format: dbmigrations.LedgerSnapshotFormat, Entries: []dbmigrations.LedgerEntry{}}}
+	mux := RegisterLocalMigrationLedgerSnapshotEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/db/migrations/ledger-snapshot", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected snapshotter not to be called, got %d", snapshotter.calls)
+	}
+}
+
+func TestLocalMigrationLedgerSnapshotEndpointReportsSnapshotFailure(t *testing.T) {
+	snapshotter := &stubMigrationLedgerSnapshotter{err: errStubMigrationStatusInvalid}
+	mux := RegisterLocalMigrationLedgerSnapshotEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/db/migrations/ledger-snapshot", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if snapshotter.calls != 1 {
+		t.Fatalf("expected snapshotter to be called once, got %d", snapshotter.calls)
+	}
+}
+
 func TestLocalMigrationLedgerSnapshotPlanEndpointReturnsLoopbackPostPlan(t *testing.T) {
 	planner := &stubMigrationSnapshotPlanner{plan: dbmigrations.Plan{
 		CurrentVersion: 1,
@@ -6585,6 +6675,7 @@ func TestNewPprofMuxDoesNotExposeLocalMigrationStatusByDefault(t *testing.T) {
 	}{
 		{method: http.MethodGet, path: "/local/db/migrations/status"},
 		{method: http.MethodGet, path: "/local/db/migrations/plan?target_version=0"},
+		{method: http.MethodGet, path: "/local/db/migrations/ledger-snapshot"},
 		{method: http.MethodPost, path: "/local/db/migrations/plan-from-ledger-snapshot?target_version=0"},
 		{method: http.MethodGet, path: "/local/account-store/exports/account-character-roster"},
 		{method: http.MethodGet, path: "/local/account-store/exports/character-item-state"},
@@ -6645,6 +6736,12 @@ type stubMigrationSnapshotPlanner struct {
 	lastSnapshot dbmigrations.LedgerSnapshot
 }
 
+type stubMigrationLedgerSnapshotter struct {
+	snapshot dbmigrations.LedgerSnapshot
+	err      error
+	calls    int
+}
+
 type stubAccountCharacterRosterExporter struct {
 	export accountstore.AccountCharacterRosterExport
 	err    error
@@ -6687,6 +6784,11 @@ func (p *stubMigrationSnapshotPlanner) PlanSnapshot(snapshot dbmigrations.Ledger
 	p.lastTarget = targetVersion
 	p.lastSnapshot = snapshot
 	return p.plan, p.err
+}
+
+func (s *stubMigrationLedgerSnapshotter) Snapshot() (dbmigrations.LedgerSnapshot, error) {
+	s.calls++
+	return s.snapshot, s.err
 }
 
 func (e *stubAccountCharacterRosterExporter) Export() (accountstore.AccountCharacterRosterExport, error) {

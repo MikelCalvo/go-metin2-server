@@ -63,4 +63,5 @@ This slice is proven by:
 
 1. Extract a narrow login-ticket repository seam only when tests prove it reduces file-store coupling.
 2. Add a driver-backed migration preflight harness before introducing apply/rollback tooling.
-3. Add import/quarantine tooling for the existing migration-shaped exports only after the repository seam is explicit.
+3. Use `GET /local/db/migrations/ledger-snapshot` plus the existing offline planner to support operator runbooks that copy only ledger metadata into review/preflight workflows.
+4. Add import/quarantine tooling for the existing migration-shaped exports only after the repository seam is explicit.

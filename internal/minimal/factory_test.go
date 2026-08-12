@@ -492,6 +492,52 @@ func TestGameRuntimeMigrationPlanFromLedgerSnapshotRejectsDrift(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeMigrationLedgerSnapshotReturnsEmptyOfflineSnapshotWhenDatabaseDisabled(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	snapshot, err := runtime.MigrationLedgerSnapshot()
+	if err != nil {
+		t.Fatalf("migration ledger snapshot: %v", err)
+	}
+	if snapshot.Format != dbmigrations.LedgerSnapshotFormat {
+		t.Fatalf("unexpected ledger snapshot format: %#v", snapshot)
+	}
+	if snapshot.Entries == nil || len(snapshot.Entries) != 0 {
+		t.Fatalf("expected explicit empty ledger entries when DB preflight is disabled, got %#v", snapshot.Entries)
+	}
+}
+
+func TestGameRuntimeMigrationLedgerSnapshotRejectsConfiguredDatabaseWithoutRegisteredDriver(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", DatabaseDriver: "sqlite3", DatabaseDSN: "file:missing-driver.db"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	_, err = runtime.MigrationLedgerSnapshot()
+	if !errors.Is(err, config.ErrDatabaseDriverUnavailable) {
+		t.Fatalf("expected ErrDatabaseDriverUnavailable, got %v", err)
+	}
+}
+
 func TestGameRuntimeMigrationStatusRejectsConfiguredDatabaseWithoutRegisteredDriver(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", DatabaseDriver: "sqlite3", DatabaseDSN: "file:missing-driver.db"},

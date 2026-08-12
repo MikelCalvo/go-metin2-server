@@ -1019,6 +1019,31 @@ func RegisterLocalMigrationPlanEndpoint(mux *http.ServeMux, planMigrationTarget 
 	return mux
 }
 
+func RegisterLocalMigrationLedgerSnapshotEndpoint(mux *http.ServeMux, snapshotMigrationLedger func() (dbmigrations.LedgerSnapshot, error)) *http.ServeMux {
+	if mux == nil || snapshotMigrationLedger == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/db/migrations/ledger-snapshot", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		snapshot, err := snapshotMigrationLedger()
+		if err != nil {
+			slog.Warn("local migration ledger snapshot failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, snapshot, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalMigrationLedgerSnapshotPlanEndpoint(mux *http.ServeMux, planMigrationSnapshot func(dbmigrations.LedgerSnapshot, int) (dbmigrations.Plan, error)) *http.ServeMux {
 	if mux == nil || planMigrationSnapshot == nil {
 		return mux

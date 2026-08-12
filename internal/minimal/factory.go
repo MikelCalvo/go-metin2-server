@@ -438,6 +438,21 @@ func (r *gameRuntime) MigrationPlanFromLedgerSnapshot(snapshot dbmigrations.Ledg
 	return dbmigrations.PlanToVersionFromLedgerSnapshot(snapshot, targetVersion)
 }
 
+func (r *gameRuntime) MigrationLedgerSnapshot() (dbmigrations.LedgerSnapshot, error) {
+	if r != nil && strings.TrimSpace(r.config.DatabaseDriver) != "" {
+		db, err := sql.Open(strings.TrimSpace(r.config.DatabaseDriver), strings.TrimSpace(r.config.DatabaseDSN))
+		if err != nil {
+			return dbmigrations.LedgerSnapshot{}, fmt.Errorf("%w: %v", config.ErrDatabaseDriverUnavailable, err)
+		}
+		defer db.Close()
+		return dbmigrations.LedgerSnapshotFromSQLLedger(context.Background(), db)
+	}
+	return dbmigrations.LedgerSnapshot{
+		Format:  dbmigrations.LedgerSnapshotFormat,
+		Entries: []dbmigrations.LedgerEntry{},
+	}, nil
+}
+
 func (r *gameRuntime) PersistenceStatus() PersistenceStatusSnapshot {
 	if r == nil {
 		return PersistenceStatusSnapshot{}

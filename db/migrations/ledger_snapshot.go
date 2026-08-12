@@ -2,6 +2,7 @@ package migrations
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -73,6 +74,25 @@ func MarshalJSONLedgerSnapshot(entries []LedgerEntry) ([]byte, error) {
 		return nil, fmt.Errorf("%w: marshal ledger snapshot: %w", ErrInvalidLedgerSnapshot, err)
 	}
 	return append(raw, '\n'), nil
+}
+
+// LedgerSnapshotFromSQLLedger reads schema_migrations through the narrow SQL
+// ledger seam and returns the strict metadata-only offline snapshot shape. It is
+// intended for operator/export preflights and does not read or expose executable
+// migration SQL.
+func LedgerSnapshotFromSQLLedger(ctx context.Context, querier SQLLedgerQuerier) (LedgerSnapshot, error) {
+	entries, err := ReadSQLLedgerEntries(ctx, querier)
+	if err != nil {
+		return LedgerSnapshot{}, err
+	}
+	validated, err := validateLedgerSnapshotEntries(entries)
+	if err != nil {
+		return LedgerSnapshot{}, err
+	}
+	if validated == nil {
+		validated = []LedgerEntry{}
+	}
+	return LedgerSnapshot{Format: LedgerSnapshotFormat, Entries: validated}, nil
 }
 
 // PlanCatalogUpToLatestFromJSONLedgerSnapshot reads an offline ledger snapshot

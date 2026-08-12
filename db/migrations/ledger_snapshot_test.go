@@ -2,6 +2,8 @@ package migrations
 
 import (
 	"bytes"
+	"context"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -173,5 +175,50 @@ func TestJSONLedgerSnapshotOmitsExecutableSQL(t *testing.T) {
 	body := string(raw)
 	if strings.Contains(body, "CREATE TABLE") || strings.Contains(body, "UpSQL") || strings.Contains(body, "DownSQL") {
 		t.Fatalf("ledger snapshot must not expose executable SQL, got %s", body)
+	}
+}
+
+func TestLedgerSnapshotFromSQLLedgerReturnsMetadataOnlySnapshot(t *testing.T) {
+	catalog := testCatalog(t,
+		bootstrapSchemaMigration(),
+		testMigration{
+			version:  2,
+			name:     "accounts",
+			upPath:   "0002_accounts.up.sql",
+			downPath: "0002_accounts.down.sql",
+			upSQL:    "-- go-metin2 migration: 0002 accounts up\nCREATE TABLE accounts (login TEXT PRIMARY KEY);\n",
+			downSQL:  "-- go-metin2 migration: 0002 accounts down\nDROP TABLE accounts;\n",
+		},
+	)
+	scenario := &testLedgerSQLScenario{rows: [][]driver.Value{
+		{int64(catalog[1].Version), catalog[1].Name, catalog[1].UpSHA256},
+		{int64(catalog[0].Version), catalog[0].Name, catalog[0].UpSHA256},
+	}}
+
+	snapshot, err := LedgerSnapshotFromSQLLedger(context.Background(), openTestLedgerDB(t, scenario))
+	if err != nil {
+		t.Fatalf("ledger snapshot from SQL ledger: %v", err)
+	}
+	if snapshot.Format != LedgerSnapshotFormat {
+		t.Fatalf("unexpected snapshot format: %#v", snapshot)
+	}
+	if len(snapshot.Entries) != 2 || snapshot.Entries[0] != ledgerEntryFor(t, catalog, 1) || snapshot.Entries[1] != ledgerEntryFor(t, catalog, 2) {
+		t.Fatalf("expected deterministic sorted ledger entries, got %#v", snapshot.Entries)
+	}
+	raw, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatalf("marshal SQL ledger snapshot: %v", err)
+	}
+	if strings.Contains(string(raw), "CREATE TABLE") || strings.Contains(string(raw), "UpSQL") || strings.Contains(string(raw), "DownSQL") {
+		t.Fatalf("SQL ledger snapshot must not expose executable SQL, got %s", raw)
+	}
+}
+
+func TestLedgerSnapshotFromSQLLedgerRejectsInvalidRows(t *testing.T) {
+	scenario := &testLedgerSQLScenario{rows: [][]driver.Value{{int64(1), "Bootstrap", strings.Repeat("a", 64)}}}
+
+	_, err := LedgerSnapshotFromSQLLedger(context.Background(), openTestLedgerDB(t, scenario))
+	if !errors.Is(err, ErrInvalidLedgerSnapshot) {
+		t.Fatalf("expected ErrInvalidLedgerSnapshot, got %v", err)
 	}
 }

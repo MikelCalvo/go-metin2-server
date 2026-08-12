@@ -204,6 +204,10 @@ func main() {
 		opsHandler,
 		gameRuntime.MigrationPlanToVersion,
 	)
+	opsHandler = ops.RegisterLocalMigrationLedgerSnapshotEndpoint(
+		opsHandler,
+		gameRuntime.MigrationLedgerSnapshot,
+	)
 	opsHandler = ops.RegisterLocalMigrationLedgerSnapshotPlanEndpoint(
 		opsHandler,
 		gameRuntime.MigrationPlanFromLedgerSnapshot,
