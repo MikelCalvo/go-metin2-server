@@ -1463,6 +1463,157 @@ func TestLocalContentBundleMapSummaryEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalContentBundleStaticActorEndpointReturnsMatchingActorsForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{StaticActors: []contentbundle.StaticActor{
+			{Name: "Remote Guide", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:remote_guide"},
+			{Name: "Village Guide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guide"},
+			{Name: "Village Guide", MapIndex: 2, X: 1100, Y: 2100, RaceNum: 20303},
+		}},
+	}
+	mux := RegisterLocalContentBundleStaticActorEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/static-actors/Village%20Guide", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got []contentbundle.StaticActor
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode static actor response body: %v", err)
+	}
+	want := []contentbundle.StaticActor{
+		{Name: "Village Guide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guide"},
+		{Name: "Village Guide", MapIndex: 2, X: 1100, Y: 2100, RaceNum: 20303},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle static actor rows:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleStaticActorEndpointCoexistsWithContentBundleCollectionRoutes(t *testing.T) {
+	exporter := &stubContentBundleExporter{status: http.StatusOK, bundle: contentbundle.Bundle{}}
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{StaticActors: []contentbundle.StaticActor{{Name: "Village Guide", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20302}}}}
+	mux := RegisterLocalContentBundleEndpoint(NewPprofMux("gamed"), exporter.ExportContentBundle, nil)
+	mux = RegisterLocalContentBundleStaticActorEndpoint(mux, summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/static-actors/Village%20Guide", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d for static-actor summary alongside content-bundle routes, got %d", http.StatusOK, rec.Code)
+	}
+	if exporter.calls != 0 {
+		t.Fatalf("expected collection exporter not to handle static-actor summary route, got %d calls", exporter.calls)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleStaticActorEndpointReturnsNotFoundForMissingActor(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{StaticActors: []contentbundle.StaticActor{{Name: "Village Guide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302}}}}
+	mux := RegisterLocalContentBundleStaticActorEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/static-actors/Missing%20Guide", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for missing static actor, got %d", http.StatusNotFound, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleStaticActorEndpointRejectsInvalidName(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{StaticActors: []contentbundle.StaticActor{{Name: "Village Guide"}}}}
+	mux := RegisterLocalContentBundleStaticActorEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	for _, path := range []string{"/local/content-bundle/static-actors/", "/local/content-bundle/static-actors/Bad%2FGuide", "/local/content-bundle/static-actors/Village%20Guide/extra"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for invalid static-actor name path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called for invalid static-actor names, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleStaticActorEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{StaticActors: []contentbundle.StaticActor{{Name: "Village Guide"}}}}
+	mux := RegisterLocalContentBundleStaticActorEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/static-actors/Village%20Guide", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback caller, got %d", http.StatusForbidden, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleStaticActorEndpointRejectsWrongMethod(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{StaticActors: []contentbundle.StaticActor{{Name: "Village Guide"}}}}
+	mux := RegisterLocalContentBundleStaticActorEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/static-actors/Village%20Guide", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleStaticActorEndpointForwardsSummaryExporterErrors(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusConflict, result: map[string]string{"error": "content summary unavailable"}}
+	mux := RegisterLocalContentBundleStaticActorEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/static-actors/Village%20Guide", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d for exporter failure, got %d", http.StatusConflict, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
 func TestLocalContentBundleSpawnGroupEndpointReturnsExactSpawnGroupForLoopbackGet(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{
 		status: http.StatusOK,
