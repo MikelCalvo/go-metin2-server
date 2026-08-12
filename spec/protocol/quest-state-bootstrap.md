@@ -118,6 +118,8 @@ The first local-only operator surfaces are also frozen on `gamed`:
 - `POST /local/quest-state/transition-preview`
 - `POST /local/quest-state/transition`
 - `GET /local/quest-state/characters/{character}`
+- `GET /local/quest-state/quests/{quest_ref}`
+- `GET /local/quest-state/flags/{character}/{quest_ref}/{flag}`
 
 The validation and cleanup endpoints are loopback-only, reject non-`POST` methods with `405`, reject non-empty bodies with `400`, reject oversized bodies with `413` through the existing local mutation body guard, and return `409` on validation/cleanup errors. They are persistence preflights for the server-side quest-state primitive, not a client-visible quest protocol.
 
@@ -144,6 +146,29 @@ Compare-and-set failures such as `current_value_mismatch` return `200 OK` with `
 ```
 
 The `flags` array is already in store-canonical order (`quest_ref`, then `name`) because the file-backed store normalizes the underlying snapshot by `character`, then `quest_ref`, then `name`. This endpoint does not infer account rosters, connected sessions, quest availability, or zero-valued flags. A character with no persisted non-zero quest flags is therefore indistinguishable from an unknown character at this seam and returns `404`.
+
+`GET /local/quest-state/quests/{quest_ref}` and `GET /local/quest-state/flags/{character}/{quest_ref}/{flag}` are narrower read-only readers over the same committed snapshot. They are loopback-only, accept only `GET`, reject malformed path identities before loading the store, return `404` when the requested non-zero quest/flag row is absent, and return `409` when the committed snapshot cannot be loaded or validated.
+
+The exact-quest response groups canonical rows by character:
+
+```json
+{
+  "quest_ref": "quest:first_steps",
+  "flag_count": 2,
+  "characters": [
+    {"character":"AnotherHero","flags":[{"quest_ref":"quest:first_steps","name":"met_guard","value":1}]},
+    {"character":"QuestHero","flags":[{"quest_ref":"quest:first_steps","name":"step","value":2}]}
+  ]
+}
+```
+
+The exact-flag response uses the persisted row shape:
+
+```json
+{"character":"QuestHero","quest_ref":"quest:first_steps","name":"step","value":2}
+```
+
+Both shapes are local QA/operator inspection aids only; they do not define quest objectives, NPC dialog state, reward state, or client quest packets.
 
 ## Store validation and crash-temp cleanup
 
@@ -213,7 +238,7 @@ The current repository can now say:
 - one single-flag transition can initialize, advance, or clear a flag only when the caller-provided current value matches,
 - `gamed` exposes a loopback-only `POST /local/quest-state/transition-preview` harness for dry-running the exact same primitive without writing the committed snapshot,
 - `gamed` exposes a loopback-only `POST /local/quest-state/transition` harness for applying that primitive without inventing client quest packets or NPC dialog semantics,
-- `gamed` exposes a loopback-only `GET /local/quest-state/characters/{character}` readback harness for inspecting one persisted character flag set without mutating quest state,
+- `gamed` exposes loopback-only readback harnesses for inspecting one persisted character flag set, all persisted flags for one quest ref, or one exact flag row without mutating quest state,
 - content-bundle import/export now includes the configured quest-state snapshot and exposes focused `GET /local/content-bundle/quest-state/characters/{character}`, `GET /local/content-bundle/quest-state/quests/{quest_ref}`, and `GET /local/content-bundle/quest-state/flags/{character}/{quest_ref}/{flag}` readers for bundle-summary rows,
 - the same store can be validated and cleaned of owned crash-temp files without mutating committed quest flags,
 - bad identities, duplicate rows, malformed JSON, symlinked committed snapshots, symlinked crash-temp candidates, and mismatched current values fail closed,

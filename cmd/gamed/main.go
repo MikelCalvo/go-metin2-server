@@ -144,6 +144,26 @@ func main() {
 			return snapshot, true, nil
 		},
 	)
+	opsHandler = ops.RegisterLocalQuestStateQuestEndpoint(
+		opsHandler,
+		func(questRef string) (any, bool, error) {
+			snapshot, ok, err := gameRuntime.QuestStateByQuest(questRef)
+			if err != nil || !ok {
+				return nil, ok, err
+			}
+			return snapshot, true, nil
+		},
+	)
+	opsHandler = ops.RegisterLocalQuestStateFlagEndpoint(
+		opsHandler,
+		func(character string, questRef string, flagName string) (any, bool, error) {
+			flag, ok, err := gameRuntime.QuestStateFlag(character, questRef, flagName)
+			if err != nil || !ok {
+				return nil, ok, err
+			}
+			return flag, true, nil
+		},
+	)
 	opsHandler = ops.RegisterLocalItemTemplateStoreBackupEndpoint(
 		opsHandler,
 		func(dstDir string) (any, error) { return gameRuntime.BackupItemTemplateStore(dstDir) },

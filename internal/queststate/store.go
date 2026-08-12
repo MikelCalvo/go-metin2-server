@@ -55,6 +55,15 @@ type CharacterSnapshot struct {
 	Flags     []FlagSnapshot `json:"flags"`
 }
 
+// QuestSnapshot is a deterministic read-only projection of all persisted
+// non-zero flags for one quest ref. It is an operator/debug shape only and does
+// not define quest objectives, trigger rules, rewards, or client quest packets.
+type QuestSnapshot struct {
+	QuestRef   string              `json:"quest_ref"`
+	FlagCount  int                 `json:"flag_count"`
+	Characters []CharacterSnapshot `json:"characters"`
+}
+
 type Transition struct {
 	Character string `json:"character"`
 	QuestRef  string `json:"quest_ref"`
@@ -148,6 +157,94 @@ func ApplyTransition(snapshot Snapshot, transition Transition) (Snapshot, Transi
 		normalized.Flags = append(normalized.Flags, updated)
 	}
 	return normalizeSnapshot(normalized), TransitionResult{Applied: true, CurrentValue: currentValue}
+}
+
+// CharacterSnapshotFor validates the supplied snapshot and returns the
+// canonical non-zero flags for one exact character name.
+func CharacterSnapshotFor(snapshot Snapshot, character string) (CharacterSnapshot, bool, error) {
+	character = strings.TrimSpace(character)
+	if !validCharacterName(character) {
+		return CharacterSnapshot{}, false, ErrInvalidSnapshot
+	}
+	normalized := normalizeSnapshot(snapshot)
+	if err := validateSnapshot(normalized); err != nil {
+		return CharacterSnapshot{}, false, err
+	}
+	flags := make([]FlagSnapshot, 0)
+	for _, flag := range normalized.Flags {
+		if flag.Character != character {
+			continue
+		}
+		flags = append(flags, FlagSnapshot{QuestRef: flag.QuestRef, Name: flag.Name, Value: flag.Value})
+	}
+	if len(flags) == 0 {
+		return CharacterSnapshot{}, false, nil
+	}
+	return CharacterSnapshot{Character: character, Flags: flags}, true, nil
+}
+
+// QuestSnapshotFor validates the supplied snapshot and returns the canonical
+// non-zero flags for one exact quest ref, grouped by character in snapshot
+// order.
+func QuestSnapshotFor(snapshot Snapshot, questRef string) (QuestSnapshot, bool, error) {
+	questRef = strings.TrimSpace(questRef)
+	if !validQuestRef(questRef) {
+		return QuestSnapshot{}, false, ErrInvalidSnapshot
+	}
+	normalized := normalizeSnapshot(snapshot)
+	if err := validateSnapshot(normalized); err != nil {
+		return QuestSnapshot{}, false, err
+	}
+	characters := make([]CharacterSnapshot, 0)
+	currentCharacter := ""
+	var currentFlags []FlagSnapshot
+	flagCount := 0
+	flush := func() {
+		if currentCharacter == "" {
+			return
+		}
+		characters = append(characters, CharacterSnapshot{Character: currentCharacter, Flags: currentFlags})
+		currentCharacter = ""
+		currentFlags = nil
+	}
+	for _, flag := range normalized.Flags {
+		if flag.QuestRef != questRef {
+			continue
+		}
+		if flag.Character != currentCharacter {
+			flush()
+			currentCharacter = flag.Character
+			currentFlags = make([]FlagSnapshot, 0)
+		}
+		currentFlags = append(currentFlags, FlagSnapshot{QuestRef: flag.QuestRef, Name: flag.Name, Value: flag.Value})
+		flagCount++
+	}
+	flush()
+	if flagCount == 0 {
+		return QuestSnapshot{}, false, nil
+	}
+	return QuestSnapshot{QuestRef: questRef, FlagCount: flagCount, Characters: characters}, true, nil
+}
+
+// ExactFlag validates the supplied snapshot and returns one exact canonical
+// non-zero flag row.
+func ExactFlag(snapshot Snapshot, character string, questRef string, name string) (Flag, bool, error) {
+	character = strings.TrimSpace(character)
+	questRef = strings.TrimSpace(questRef)
+	name = strings.TrimSpace(name)
+	if !validCharacterName(character) || !validQuestRef(questRef) || !validFlagName(name) {
+		return Flag{}, false, ErrInvalidSnapshot
+	}
+	normalized := normalizeSnapshot(snapshot)
+	if err := validateSnapshot(normalized); err != nil {
+		return Flag{}, false, err
+	}
+	for _, flag := range normalized.Flags {
+		if flag.Character == character && flag.QuestRef == questRef && flag.Name == name {
+			return flag, true, nil
+		}
+	}
+	return Flag{}, false, nil
 }
 
 func (s *FileStore) Load() (Snapshot, error) {

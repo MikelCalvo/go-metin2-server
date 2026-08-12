@@ -231,6 +231,37 @@ Successful responses use:
 
 The flag list follows the store's deterministic order and the endpoint does not mutate quest state, infer account rosters, or expose a client-visible quest runtime.
 
+### `GET /local/quest-state/quests/{quest_ref}`
+
+Returns one read-only exact-quest quest-state snapshot from the configured `gamed` quest-state store. The endpoint is loopback-only, rejects non-`GET` methods with `405`, rejects blank, slash-containing, or non-`quest:<name>` lower-snake quest refs with `400`, returns `404` when no persisted non-zero flags exist for that quest, and returns `409` if the committed quest-state snapshot cannot be loaded or validated.
+
+Successful responses group deterministic flag rows by character:
+
+```json
+{
+  "quest_ref": "quest:first_steps",
+  "flag_count": 2,
+  "characters": [
+    {"character":"AnotherHero","flags":[{"quest_ref":"quest:first_steps","name":"met_guard","value":1}]},
+    {"character":"QuestHero","flags":[{"quest_ref":"quest:first_steps","name":"step","value":2}]}
+  ]
+}
+```
+
+The grouping is an operator inspection shape only. It does not define quest objectives, availability, NPC dialog state, rewards, or client quest packets.
+
+### `GET /local/quest-state/flags/{character}/{quest_ref}/{flag}`
+
+Returns one read-only exact quest-state flag row from the configured `gamed` quest-state store. The endpoint is loopback-only, rejects non-`GET` methods with `405`, rejects blank or slash-containing path values with `400`, validates the same bootstrap character, `quest:<name>`, and lower-snake flag-name identities as the store primitive, returns `404` when the exact non-zero flag is absent, and returns `409` if the committed quest-state snapshot cannot be loaded or validated.
+
+Successful responses use the canonical persisted row shape:
+
+```json
+{"character":"QuestHero","quest_ref":"quest:first_steps","name":"step","value":2}
+```
+
+This is a focused read-only QA aid for checking one flag after content-bundle import or local transition testing. It does not mutate quest state or make static actors execute quest transitions.
+
 ### `POST /local/quest-state/crash-temps/cleanup`
 
 Removes same-directory `.quest-state-*.json` crash-temp residue from the bootstrap quest-state snapshot store after first validating the committed `quest-state.json` snapshot through the same strict loader used by `/local/quest-state/validate` and `/local/persistence/status`. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if committed quest-state data is corrupt, if a temp file cannot be removed, or if the final directory sync fails.

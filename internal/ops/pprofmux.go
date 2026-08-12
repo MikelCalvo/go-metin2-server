@@ -681,6 +681,64 @@ func RegisterLocalQuestStateCharacterEndpoint(mux *http.ServeMux, questState fun
 	return mux
 }
 
+func RegisterLocalQuestStateQuestEndpoint(mux *http.ServeMux, questState func(string) (any, bool, error)) *http.ServeMux {
+	if mux == nil || questState == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/quest-state/quests/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		questRef, ok := decodeLocalQuestStateQuestRef(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		value, ok, err := questState(questRef)
+		if err != nil {
+			slog.Warn("local quest state quest lookup failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalQuestStateFlagEndpoint(mux *http.ServeMux, questState func(string, string, string) (any, bool, error)) *http.ServeMux {
+	if mux == nil || questState == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/quest-state/flags/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		character, questRef, flagName, ok := decodeLocalQuestStateFlagIdentity(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		value, ok, err := questState(character, questRef, flagName)
+		if err != nil {
+			slog.Warn("local quest state flag lookup failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalItemTemplateStoreBackupEndpoint(mux *http.ServeMux, backup func(string) (any, error)) *http.ServeMux {
 	if mux == nil || backup == nil {
 		return mux
@@ -3194,8 +3252,16 @@ func decodeLocalContentBundleQuestStateCharacterName(r *http.Request) (string, b
 	return decodeLocalCharacterName(r, "/local/content-bundle/quest-state/characters/")
 }
 
+func decodeLocalQuestStateQuestRef(r *http.Request) (string, bool) {
+	return decodeQuestRefWithPrefix(r, "/local/quest-state/quests/")
+}
+
 func decodeLocalContentBundleQuestStateQuestRef(r *http.Request) (string, bool) {
-	ref, err := url.PathUnescape(strings.TrimPrefix(r.URL.Path, "/local/content-bundle/quest-state/quests/"))
+	return decodeQuestRefWithPrefix(r, "/local/content-bundle/quest-state/quests/")
+}
+
+func decodeQuestRefWithPrefix(r *http.Request, prefix string) (string, bool) {
+	ref, err := url.PathUnescape(strings.TrimPrefix(r.URL.Path, prefix))
 	if err != nil {
 		return "", false
 	}
@@ -3206,8 +3272,16 @@ func decodeLocalContentBundleQuestStateQuestRef(r *http.Request) (string, bool) 
 	return ref, true
 }
 
+func decodeLocalQuestStateFlagIdentity(r *http.Request) (string, string, string, bool) {
+	return decodeQuestStateFlagIdentityWithPrefix(r, "/local/quest-state/flags/")
+}
+
 func decodeLocalContentBundleQuestStateFlagIdentity(r *http.Request) (string, string, string, bool) {
-	raw := strings.TrimPrefix(r.URL.Path, "/local/content-bundle/quest-state/flags/")
+	return decodeQuestStateFlagIdentityWithPrefix(r, "/local/content-bundle/quest-state/flags/")
+}
+
+func decodeQuestStateFlagIdentityWithPrefix(r *http.Request, prefix string) (string, string, string, bool) {
+	raw := strings.TrimPrefix(r.URL.Path, prefix)
 	raw = strings.TrimSpace(raw)
 	parts := strings.Split(raw, "/")
 	if len(parts) != 3 {

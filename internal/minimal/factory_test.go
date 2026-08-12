@@ -742,6 +742,94 @@ func TestGameRuntimeQuestStateReturnsSortedCharacterSnapshot(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeQuestStateByQuestReturnsGroupedSnapshot(t *testing.T) {
+	questStatePath := filepath.Join(t.TempDir(), "state", "quest-state.json")
+	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},
+		{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "met_guard", Value: 1},
+		{Character: "QuestHero", QuestRef: "quest:daily_check", Name: "talked_to_guide", Value: 1},
+	}}); err != nil {
+		t.Fatalf("save initial quest state snapshot: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	snapshot, ok, err := runtime.QuestStateByQuest(" quest:first_steps ")
+	if err != nil {
+		t.Fatalf("read quest:first_steps quest state: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected quest:first_steps quest state to exist")
+	}
+	want := queststate.QuestSnapshot{
+		QuestRef:  "quest:first_steps",
+		FlagCount: 2,
+		Characters: []queststate.CharacterSnapshot{
+			{Character: "AnotherHero", Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}}},
+			{Character: "QuestHero", Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "step", Value: 2}}},
+		},
+	}
+	if !reflect.DeepEqual(snapshot, want) {
+		t.Fatalf("unexpected quest:first_steps quest state snapshot:\n got: %#v\nwant: %#v", snapshot, want)
+	}
+	if _, ok, err := runtime.QuestStateByQuest("quest:missing_steps"); err != nil || ok {
+		if err != nil {
+			t.Fatalf("unexpected error for missing quest-state quest lookup: %v", err)
+		}
+		t.Fatal("expected missing quest-state quest lookup to return ok=false")
+	}
+}
+
+func TestGameRuntimeQuestStateFlagReturnsExactFlag(t *testing.T) {
+	questStatePath := filepath.Join(t.TempDir(), "state", "quest-state.json")
+	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "met_guard", Value: 1},
+	}}); err != nil {
+		t.Fatalf("save initial quest state snapshot: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	flag, ok, err := runtime.QuestStateFlag(" QuestHero ", " quest:first_steps ", " step ")
+	if err != nil {
+		t.Fatalf("read QuestHero quest flag: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected QuestHero step flag to exist")
+	}
+	want := queststate.Flag{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2}
+	if flag != want {
+		t.Fatalf("unexpected QuestHero step flag:\n got: %#v\nwant: %#v", flag, want)
+	}
+	if _, ok, err := runtime.QuestStateFlag("QuestHero", "quest:first_steps", "missing_flag"); err != nil || ok {
+		if err != nil {
+			t.Fatalf("unexpected error for missing quest-state flag lookup: %v", err)
+		}
+		t.Fatal("expected missing quest-state flag lookup to return ok=false")
+	}
+}
+
 func TestGameRuntimeQuestStateTreatsMissingStoreAsEmptySnapshot(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "missing", "quest-state.json")},

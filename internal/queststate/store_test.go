@@ -408,6 +408,67 @@ func TestFileStorePreviewTransitionDoesNotRewriteExistingSnapshot(t *testing.T) 
 	}
 }
 
+func TestQuestSnapshotForReturnsDeterministicQuestGrouping(t *testing.T) {
+	snapshot := Snapshot{Flags: []Flag{
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},
+		{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "met_guard", Value: 1},
+		{Character: "QuestHero", QuestRef: "quest:daily_check", Name: "talked_to_guide", Value: 1},
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "met_guard", Value: 1},
+	}}
+
+	quest, ok, err := QuestSnapshotFor(snapshot, " quest:first_steps ")
+	if err != nil {
+		t.Fatalf("build quest snapshot: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected quest:first_steps snapshot to exist")
+	}
+	want := QuestSnapshot{
+		QuestRef:  "quest:first_steps",
+		FlagCount: 3,
+		Characters: []CharacterSnapshot{
+			{Character: "AnotherHero", Flags: []FlagSnapshot{{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}}},
+			{Character: "QuestHero", Flags: []FlagSnapshot{{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}, {QuestRef: "quest:first_steps", Name: "step", Value: 2}}},
+		},
+	}
+	if !reflect.DeepEqual(quest, want) {
+		t.Fatalf("unexpected quest snapshot:\n got: %#v\nwant: %#v", quest, want)
+	}
+
+	if _, ok, err := QuestSnapshotFor(snapshot, "quest:missing_steps"); err != nil || ok {
+		if err != nil {
+			t.Fatalf("unexpected error for missing quest snapshot: %v", err)
+		}
+		t.Fatal("expected missing quest snapshot to return ok=false")
+	}
+}
+
+func TestExactFlagReturnsCanonicalQuestFlag(t *testing.T) {
+	snapshot := Snapshot{Flags: []Flag{
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},
+		{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "met_guard", Value: 1},
+	}}
+
+	flag, ok, err := ExactFlag(snapshot, " QuestHero ", " quest:first_steps ", " step ")
+	if err != nil {
+		t.Fatalf("read exact quest flag: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected exact quest flag to exist")
+	}
+	want := Flag{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2}
+	if flag != want {
+		t.Fatalf("unexpected exact quest flag:\n got: %#v\nwant: %#v", flag, want)
+	}
+
+	if _, ok, err := ExactFlag(snapshot, "QuestHero", "quest:first_steps", "missing_flag"); err != nil || ok {
+		if err != nil {
+			t.Fatalf("unexpected error for missing quest flag: %v", err)
+		}
+		t.Fatal("expected missing quest flag to return ok=false")
+	}
+}
+
 func TestExportCharacterQuestStateBuildsDeterministicRowsMatchingMigrationShape(t *testing.T) {
 	snapshot := Snapshot{Flags: []Flag{
 		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},

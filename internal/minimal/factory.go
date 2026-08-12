@@ -758,17 +758,43 @@ func (r *gameRuntime) QuestState(character string) (CharacterQuestStateSnapshot,
 		}
 		return CharacterQuestStateSnapshot{}, false, err
 	}
-	flags := make([]QuestFlagSnapshot, 0)
-	for _, flag := range snapshot.Flags {
-		if flag.Character != character {
-			continue
+	return queststate.CharacterSnapshotFor(snapshot, character)
+}
+
+func (r *gameRuntime) QuestStateByQuest(questRef string) (queststate.QuestSnapshot, bool, error) {
+	questRef = strings.TrimSpace(questRef)
+	if r == nil || r.questStateStore == nil || questRef == "" {
+		return queststate.QuestSnapshot{}, false, nil
+	}
+	r.questStateMu.Lock()
+	defer r.questStateMu.Unlock()
+	snapshot, err := r.questStateStore.Load()
+	if err != nil {
+		if errors.Is(err, queststate.ErrSnapshotNotFound) {
+			return queststate.QuestSnapshot{}, false, nil
 		}
-		flags = append(flags, QuestFlagSnapshot{QuestRef: flag.QuestRef, Name: flag.Name, Value: flag.Value})
+		return queststate.QuestSnapshot{}, false, err
 	}
-	if len(flags) == 0 {
-		return CharacterQuestStateSnapshot{}, false, nil
+	return queststate.QuestSnapshotFor(snapshot, questRef)
+}
+
+func (r *gameRuntime) QuestStateFlag(character string, questRef string, flagName string) (queststate.Flag, bool, error) {
+	character = strings.TrimSpace(character)
+	questRef = strings.TrimSpace(questRef)
+	flagName = strings.TrimSpace(flagName)
+	if r == nil || r.questStateStore == nil || character == "" || questRef == "" || flagName == "" {
+		return queststate.Flag{}, false, nil
 	}
-	return CharacterQuestStateSnapshot{Character: character, Flags: flags}, true, nil
+	r.questStateMu.Lock()
+	defer r.questStateMu.Unlock()
+	snapshot, err := r.questStateStore.Load()
+	if err != nil {
+		if errors.Is(err, queststate.ErrSnapshotNotFound) {
+			return queststate.Flag{}, false, nil
+		}
+		return queststate.Flag{}, false, err
+	}
+	return queststate.ExactFlag(snapshot, character, questRef, flagName)
 }
 
 func (r *gameRuntime) ValidateStaticActorStore() (staticstore.SnapshotSummary, error) {
