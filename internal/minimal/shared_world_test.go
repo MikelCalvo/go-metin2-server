@@ -491,6 +491,64 @@ func TestGameRuntimeReturnSpawnGroupHomeMovesReturnRequiredMobBackToAuthoredHome
 	}
 }
 
+func TestGameRuntimeReturnSpawnGroupHomeRejectsDeadMobUntilRespawn(t *testing.T) {
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for dead spawn-group return-home: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.dead_return_home",
+		Name:          "DeadReturnHomeMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import dead return-home spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.dead_return_home")
+	if !ok {
+		t.Fatal("expected dead return-home spawn group to resolve by ref")
+	}
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "DeadReturnHomeMob", 42, 2301, 2800, 20350); !ok {
+		t.Fatal("expected spawn-backed actor current-position update to succeed")
+	}
+
+	runtime.sharedWorld.mu.Lock()
+	actor, ok := runtime.sharedWorld.entities.StaticActor(group.EntityID)
+	if !ok {
+		runtime.sharedWorld.mu.Unlock()
+		t.Fatalf("expected static actor %d to resolve before dead return-home rejection", group.EntityID)
+	}
+	runtime.sharedWorld.staticActorCombatHP[group.EntityID] = 0
+	runtime.sharedWorld.scheduleStaticActorCombatRespawnLocked(actor)
+	runtime.sharedWorld.mu.Unlock()
+
+	if returned, ok := runtime.ReturnSpawnGroupHome(group.EntityID); ok {
+		t.Fatalf("expected dead spawn group return-home to fail closed until respawn, got %+v", returned)
+	}
+	current, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || current.X != 2301 || current.Y != 2800 || !current.Dead {
+		t.Fatalf("expected dead return-home rejection to leave actor displaced and dead, ok=%v snapshot=%+v", ok, current)
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after dead return-home rejection: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != 2301 || persisted.StaticActors[0].Y != 2800 {
+		t.Fatalf("expected failed dead return-home not to mutate persisted snapshot, got %+v", persisted.StaticActors)
+	}
+}
+
 func TestSharedWorldRegistrySpawnGroupReturnRequiredActorFailsCombatTarget(t *testing.T) {
 	registry := newSharedWorldRegistryWithTopology(worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200))
 	subject := peerVisibilityCharacter("LeashTargetSubject", 0x01030111, 0x02040111, 2301, 2800, 0, 101, 201)
