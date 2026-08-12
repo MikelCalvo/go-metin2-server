@@ -19,7 +19,9 @@ import (
 
 const (
 	expectedBootstrapMigrationStatusSHA256        = "76ab086217590515cb9b1eb72d78f49abf766da977998c4c60b41825c8e92f78"
+	expectedBootstrapMigrationDownSHA256          = "140e8ba3c7a1c89cd942c13ef40160c74df5619093fe8c287c69cb978dba822d"
 	expectedAccountCharacterRosterStatusSHA256    = "5385c65b2f00b6c64567d604176f99f84b39afae62d840939e49ab2994b053af"
+	expectedAccountCharacterRosterDownSHA256      = "cd8877ab1e88c4fe9a55d350bd5a89e1961ac88bd01423c5c1a1b0b8af37dc94"
 	expectedCharacterItemStateStatusSHA256        = "122e94f3d39975a6d1cf7e2d9321177a408e195be484e5ea2ffd5a8fa61c9a24"
 	expectedCharacterQuestStateStatusSHA256       = "d67b53bc4f6aeaf74e9721f760ab05279037293f4de9e7b0079813984de56862"
 	expectedItemTemplateStateStatusSHA256         = "6b615d308f7a0b3a0c8a67ebd16661a3fe7d7c5e608ee397127398f4e6fa2e4c"
@@ -5897,6 +5899,97 @@ func TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet(t *testing.
 	}
 }
 
+func TestLocalMigrationCatalogEndpointReturnsMetadataOnlyCatalogForLoopbackGet(t *testing.T) {
+	provider := &stubMigrationCatalogProvider{summary: dbmigrations.CatalogSummaryPayload{
+		Format:        dbmigrations.CatalogSummaryFormat,
+		LatestVersion: 2,
+		Migrations: []dbmigrations.CatalogSummaryEntry{
+			{Version: 1, Name: "bootstrap_schema_migrations", UpPath: "0001_bootstrap_schema_migrations.up.sql", DownPath: "0001_bootstrap_schema_migrations.down.sql", UpSHA256: expectedBootstrapMigrationStatusSHA256, DownSHA256: expectedBootstrapMigrationDownSHA256},
+			{Version: 2, Name: "account_character_roster", UpPath: "0002_account_character_roster.up.sql", DownPath: "0002_account_character_roster.down.sql", UpSHA256: expectedAccountCharacterRosterStatusSHA256, DownSHA256: expectedAccountCharacterRosterDownSHA256},
+		},
+	}}
+	mux := RegisterLocalMigrationCatalogEndpoint(NewPprofMux("gamed"), provider.Catalog)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/db/migrations/catalog", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("expected catalog provider to be called once, got %d", provider.calls)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"format":"go-metin2-migration-catalog-summary-v1"`, `"latest_version":2`, `"up_path":"0001_bootstrap_schema_migrations.up.sql"`, `"down_path":"0002_account_character_roster.down.sql"`, `"up_sha256":"` + expectedBootstrapMigrationStatusSHA256 + `"`, `"down_sha256":"` + expectedAccountCharacterRosterDownSHA256 + `"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected catalog body to contain %s, got %s", want, body)
+		}
+	}
+	if strings.Contains(body, "CREATE TABLE") || strings.Contains(body, "DROP TABLE") || strings.Contains(body, "UpSQL") || strings.Contains(body, "DownSQL") {
+		t.Fatalf("migration catalog endpoint must not expose executable SQL, got %s", body)
+	}
+}
+
+func TestLocalMigrationCatalogEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	provider := &stubMigrationCatalogProvider{summary: dbmigrations.CatalogSummaryPayload{LatestVersion: 1}}
+	mux := RegisterLocalMigrationCatalogEndpoint(NewPprofMux("gamed"), provider.Catalog)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/db/migrations/catalog", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if provider.calls != 0 {
+		t.Fatalf("expected catalog provider not to be called, got %d", provider.calls)
+	}
+}
+
+func TestLocalMigrationCatalogEndpointRejectsWrongMethod(t *testing.T) {
+	provider := &stubMigrationCatalogProvider{summary: dbmigrations.CatalogSummaryPayload{LatestVersion: 1}}
+	mux := RegisterLocalMigrationCatalogEndpoint(NewPprofMux("gamed"), provider.Catalog)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/db/migrations/catalog", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if provider.calls != 0 {
+		t.Fatalf("expected catalog provider not to be called, got %d", provider.calls)
+	}
+}
+
+func TestLocalMigrationCatalogEndpointReportsProviderFailure(t *testing.T) {
+	provider := &stubMigrationCatalogProvider{err: errStubMigrationStatusInvalid}
+	mux := RegisterLocalMigrationCatalogEndpoint(NewPprofMux("gamed"), provider.Catalog)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/db/migrations/catalog", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("expected catalog provider to be called once, got %d", provider.calls)
+	}
+}
+
 func TestLocalMigrationStatusEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
 	planner := &stubMigrationStatusPlanner{plan: dbmigrations.Plan{LatestVersion: 1}}
 	mux := RegisterLocalMigrationStatusEndpoint(NewPprofMux("gamed"), planner.Plan)
@@ -6721,6 +6814,12 @@ type stubMigrationStatusPlanner struct {
 	calls int
 }
 
+type stubMigrationCatalogProvider struct {
+	summary dbmigrations.CatalogSummaryPayload
+	err     error
+	calls   int
+}
+
 type stubMigrationTargetPlanner struct {
 	plan       dbmigrations.Plan
 	err        error
@@ -6771,6 +6870,11 @@ var errStubMigrationStatusInvalid = errors.New("invalid migration status")
 func (p *stubMigrationStatusPlanner) Plan() (dbmigrations.Plan, error) {
 	p.calls++
 	return p.plan, p.err
+}
+
+func (p *stubMigrationCatalogProvider) Catalog() (dbmigrations.CatalogSummaryPayload, error) {
+	p.calls++
+	return p.summary, p.err
 }
 
 func (p *stubMigrationTargetPlanner) PlanTarget(targetVersion int) (dbmigrations.Plan, error) {

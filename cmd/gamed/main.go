@@ -200,6 +200,10 @@ func main() {
 		opsHandler,
 		gameRuntime.MigrationStatus,
 	)
+	opsHandler = ops.RegisterLocalMigrationCatalogEndpoint(
+		opsHandler,
+		gameRuntime.MigrationCatalogSummary,
+	)
 	opsHandler = ops.RegisterLocalMigrationPlanEndpoint(
 		opsHandler,
 		gameRuntime.MigrationPlanToVersion,

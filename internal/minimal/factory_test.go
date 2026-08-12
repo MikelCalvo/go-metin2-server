@@ -384,6 +384,50 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	}
 }
 
+func TestGameRuntimeMigrationCatalogSummaryReturnsMetadataOnlyCatalog(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.MigrationCatalogSummary()
+	if err != nil {
+		t.Fatalf("migration catalog summary: %v", err)
+	}
+	if summary.Format != dbmigrations.CatalogSummaryFormat || summary.LatestVersion < 7 {
+		t.Fatalf("unexpected migration catalog summary: %#v", summary)
+	}
+	if len(summary.Migrations) != summary.LatestVersion {
+		t.Fatalf("expected one summary row per migration, got latest=%d rows=%d", summary.LatestVersion, len(summary.Migrations))
+	}
+	first := summary.Migrations[0]
+	if first.Version != 1 || first.Name != "bootstrap_schema_migrations" || first.UpPath != "0001_bootstrap_schema_migrations.up.sql" || first.UpSHA256 == "" {
+		t.Fatalf("unexpected first catalog summary row: %#v", first)
+	}
+	latest := summary.Migrations[len(summary.Migrations)-1]
+	if latest.Version != summary.LatestVersion || latest.Name != "auth_login_ticket_handoff" || latest.DownSHA256 == "" {
+		t.Fatalf("unexpected latest catalog summary row: %#v", latest)
+	}
+	raw, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatalf("marshal catalog summary: %v", err)
+	}
+	body := string(raw)
+	for _, forbidden := range []string{"CREATE TABLE", "DROP TABLE", "UpSQL", "DownSQL"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("migration catalog summary must not expose executable SQL marker %q, got %s", forbidden, body)
+		}
+	}
+}
+
 func TestGameRuntimeMigrationPlanToVersionReturnsRollbackPreviewWithoutExecutingSQL(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},

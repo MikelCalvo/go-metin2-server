@@ -312,6 +312,73 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 	}
 }
 
+func TestCatalogSummaryReturnsMetadataOnlyDeterministicRows(t *testing.T) {
+	catalog := testCatalog(t,
+		bootstrapSchemaMigration(),
+		testMigration{
+			version:  2,
+			name:     "accounts",
+			upPath:   "0002_accounts.up.sql",
+			downPath: "0002_accounts.down.sql",
+			upSQL:    "-- go-metin2 migration: 0002 accounts up\nCREATE TABLE accounts (login TEXT PRIMARY KEY);\n",
+			downSQL:  "-- go-metin2 migration: 0002 accounts down\nDROP TABLE accounts;\n",
+		},
+	)
+
+	summary, err := CatalogSummary(catalog)
+	if err != nil {
+		t.Fatalf("catalog summary: %v", err)
+	}
+	if summary.Format != CatalogSummaryFormat {
+		t.Fatalf("unexpected catalog summary format: %#v", summary)
+	}
+	if summary.LatestVersion != 2 {
+		t.Fatalf("expected latest version 2, got %#v", summary)
+	}
+	if len(summary.Migrations) != 2 {
+		t.Fatalf("expected two catalog summary rows, got %#v", summary.Migrations)
+	}
+	first := summary.Migrations[0]
+	if first.Version != 1 || first.Name != "bootstrap_schema_migrations" || first.UpPath != "0001_bootstrap_schema_migrations.up.sql" || first.DownPath != "0001_bootstrap_schema_migrations.down.sql" || first.UpSHA256 != catalog[0].UpSHA256 || first.DownSHA256 != catalog[0].DownSHA256 {
+		t.Fatalf("unexpected first catalog summary row: %#v", first)
+	}
+	second := summary.Migrations[1]
+	if second.Version != 2 || second.Name != "accounts" || second.UpPath != "0002_accounts.up.sql" || second.DownPath != "0002_accounts.down.sql" || second.UpSHA256 != catalog[1].UpSHA256 || second.DownSHA256 != catalog[1].DownSHA256 {
+		t.Fatalf("unexpected second catalog summary row: %#v", second)
+	}
+
+	raw, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatalf("marshal catalog summary: %v", err)
+	}
+	body := string(raw)
+	for _, forbidden := range []string{"CREATE TABLE", "DROP TABLE", "UpSQL", "DownSQL"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("catalog summary must not expose executable SQL marker %q, got %s", forbidden, body)
+		}
+	}
+}
+
+func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
+	summary, err := BuiltInCatalogSummary()
+	if err != nil {
+		t.Fatalf("built-in catalog summary: %v", err)
+	}
+	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 7 {
+		t.Fatalf("unexpected built-in catalog summary: %#v", summary)
+	}
+	if len(summary.Migrations) != summary.LatestVersion {
+		t.Fatalf("expected one row per built-in migration, got latest=%d rows=%d", summary.LatestVersion, len(summary.Migrations))
+	}
+	if summary.Migrations[0].Version != 1 || summary.Migrations[0].Name != "bootstrap_schema_migrations" {
+		t.Fatalf("unexpected first built-in catalog summary row: %#v", summary.Migrations[0])
+	}
+	latest := summary.Migrations[len(summary.Migrations)-1]
+	if latest.Version != summary.LatestVersion || latest.Name != "auth_login_ticket_handoff" {
+		t.Fatalf("unexpected latest built-in catalog summary row: %#v", latest)
+	}
+}
+
 func TestLoadCatalogRejectsInvalidStates(t *testing.T) {
 	base := bootstrapSchemaMigration()
 	future := testMigration{

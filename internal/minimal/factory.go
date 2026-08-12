@@ -422,6 +422,10 @@ func (r *gameRuntime) MigrationStatus() (dbmigrations.Plan, error) {
 	return dbmigrations.PlanUpToLatest(nil)
 }
 
+func (r *gameRuntime) MigrationCatalogSummary() (dbmigrations.CatalogSummaryPayload, error) {
+	return dbmigrations.BuiltInCatalogSummary()
+}
+
 func (r *gameRuntime) MigrationPlanToVersion(targetVersion int) (dbmigrations.Plan, error) {
 	if r != nil && strings.TrimSpace(r.config.DatabaseDriver) != "" {
 		db, err := sql.Open(strings.TrimSpace(r.config.DatabaseDriver), strings.TrimSpace(r.config.DatabaseDSN))

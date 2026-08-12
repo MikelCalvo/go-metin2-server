@@ -964,6 +964,31 @@ func RegisterLocalPersistenceStatusEndpoint(mux *http.ServeMux, persistenceStatu
 	return mux
 }
 
+func RegisterLocalMigrationCatalogEndpoint(mux *http.ServeMux, migrationCatalog func() (dbmigrations.CatalogSummaryPayload, error)) *http.ServeMux {
+	if mux == nil || migrationCatalog == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/db/migrations/catalog", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		catalog, err := migrationCatalog()
+		if err != nil {
+			slog.Warn("local migration catalog summary failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, catalog, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalMigrationStatusEndpoint(mux *http.ServeMux, planMigrationStatus func() (dbmigrations.Plan, error)) *http.ServeMux {
 	if mux == nil || planMigrationStatus == nil {
 		return mux

@@ -19,6 +19,8 @@ import (
 const (
 	manifestFilename = "migrations.manifest.json"
 	manifestFormat   = "go-metin2-migration-manifest-v1"
+
+	CatalogSummaryFormat = "go-metin2-migration-catalog-summary-v1"
 )
 
 //go:embed *.sql migrations.manifest.json
@@ -41,10 +43,64 @@ type Migration struct {
 	DownSHA256 string
 }
 
+// CatalogSummaryPayload is the metadata-only shape safe for operator preflight
+// endpoints and runbooks. It pins migration paths and checksums without exposing
+// executable SQL text.
+type CatalogSummaryPayload struct {
+	Format        string                `json:"format"`
+	LatestVersion int                   `json:"latest_version"`
+	Migrations    []CatalogSummaryEntry `json:"migrations"`
+}
+
+// CatalogSummaryEntry is one migration row in a metadata-only catalog summary.
+type CatalogSummaryEntry struct {
+	Version    int    `json:"version"`
+	Name       string `json:"name"`
+	UpPath     string `json:"up_path"`
+	DownPath   string `json:"down_path"`
+	UpSHA256   string `json:"up_sha256"`
+	DownSHA256 string `json:"down_sha256"`
+}
+
 // Catalog returns the embedded project-owned migration catalog after validating
 // naming, pairing, version ordering, per-file headers, and manifest checksums.
 func Catalog() ([]Migration, error) {
 	return LoadCatalog(embeddedMigrations)
+}
+
+// BuiltInCatalogSummary returns a metadata-only summary of the embedded
+// project-owned migration catalog. It validates the catalog first and never
+// includes executable SQL text.
+func BuiltInCatalogSummary() (CatalogSummaryPayload, error) {
+	catalog, err := Catalog()
+	if err != nil {
+		return CatalogSummaryPayload{}, err
+	}
+	return CatalogSummary(catalog)
+}
+
+// CatalogSummary validates a catalog and returns a deterministic metadata-only
+// summary suitable for local ops/status endpoints and offline runbooks.
+func CatalogSummary(catalog []Migration) (CatalogSummaryPayload, error) {
+	if err := validatePlanCatalog(catalog); err != nil {
+		return CatalogSummaryPayload{}, err
+	}
+	entries := make([]CatalogSummaryEntry, 0, len(catalog))
+	for _, migration := range catalog {
+		entries = append(entries, CatalogSummaryEntry{
+			Version:    migration.Version,
+			Name:       migration.Name,
+			UpPath:     migration.UpPath,
+			DownPath:   migration.DownPath,
+			UpSHA256:   migration.UpSHA256,
+			DownSHA256: migration.DownSHA256,
+		})
+	}
+	return CatalogSummaryPayload{
+		Format:        CatalogSummaryFormat,
+		LatestVersion: catalog[len(catalog)-1].Version,
+		Migrations:    entries,
+	}, nil
 }
 
 // LoadCatalog validates and returns a deterministic migration catalog from fsys.
