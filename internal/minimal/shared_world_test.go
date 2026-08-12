@@ -553,6 +553,104 @@ func TestGameRuntimeReturnSpawnGroupHomeAtHomeClearsCombatTargetAndReleasesEngag
 	}
 }
 
+func TestGameRuntimeReturnSpawnGroupHomeAtHomeResetsRetaliationCadenceBeforeFreshReengage(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ReturnHomeCadenceOwner", 0x01030168, 0x02040168, 1700, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 10
+	issuePeerTicket(t, store, "return-home-cadence-owner", 0x18181818, owner)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for return-home cadence reset: %v", err)
+	}
+	currentTime := time.Unix(1700000510, 0)
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_home_cadence",
+		Name:          "ReturnHomeCadenceMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import return-home cadence spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_home_cadence")
+	if !ok {
+		t.Fatal("expected return-home cadence spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "return-home-cadence-owner", 0x18181818)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for return-home cadence owner, got %d", len(enterOut))
+	}
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target error before return-home cadence reset: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected one target frame before return-home cadence reset, got %d", len(selectOut))
+	}
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected first attack before return-home cadence reset: %v", err)
+	}
+	if len(attackOut) != 3 {
+		t.Fatalf("expected first attack to emit target refresh, immediate retaliation, and self damage-info, got %d frames", len(attackOut))
+	}
+
+	if returned, ok := runtime.ReturnSpawnGroupHome(group.EntityID); !ok || returned.Status != worldruntime.SpawnLeashStatusAtHome {
+		t.Fatalf("expected at-home return-home cadence reset to succeed, ok=%v snapshot=%+v", ok, returned)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 1 {
+		t.Fatalf("expected return-home cadence reset to queue one target clear, got %d frames", len(queued))
+	}
+
+	currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+	reselectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target error after return-home cadence reset: %v", err)
+	}
+	if len(reselectOut) != 1 {
+		t.Fatalf("expected fresh target selection after return-home cadence reset, got %d frames", len(reselectOut))
+	}
+	reengageOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected reengage attack after return-home cadence reset: %v", err)
+	}
+	if len(reengageOut) != 3 {
+		t.Fatalf("expected reengage attack to emit target refresh, immediate retaliation, and self damage-info, got %d frames", len(reengageOut))
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay - bootstrapNormalAttackCadenceWindow)
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected old pre-return-home delayed retaliation cadence to be canceled, got %d queued frames", len(queued))
+	}
+	currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 1 {
+		t.Fatalf("expected fresh post-return-home delayed retaliation cadence to fire once, got %d frames", len(queued))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode fresh delayed retaliation after return-home cadence reset: %v", err)
+	}
+	if pointChange.VID != owner.VID || pointChange.Value != 7 {
+		t.Fatalf("expected fresh delayed retaliation to apply after reengage, got %+v", pointChange)
+	}
+}
+
 func TestGameRuntimeReturnSpawnGroupHomeMovesReturnRequiredMobBackToAuthoredHome(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	homeViewer := peerVisibilityCharacter("ReturnHomeViewer", 0x01030163, 0x02040163, 1700, 2800, 0, 101, 201)

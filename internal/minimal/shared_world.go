@@ -2716,6 +2716,7 @@ func (r *sharedWorldRegistry) ReturnSpawnGroupHome(entityID uint64) (SpawnGroupL
 		return SpawnGroupLeashSnapshot{}, false
 	}
 	if !evaluation.ReturnRequired {
+		r.syncStaticActorCombatStateLocked(actor)
 		delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
 		if targetVID, ok := worldruntime.StaticActorVisibilityVID(actor); ok {
 			r.clearSelectedCombatTargetsLocked(targetVID, 0)
