@@ -67,6 +67,7 @@ type StaticActorSnapshot struct {
 	X                     int32               `json:"x"`
 	Y                     int32               `json:"y"`
 	RaceNum               uint32              `json:"race_num"`
+	SpawnHome             *PositionSnapshot   `json:"spawn_home,omitempty"`
 	SpawnLeash            *SpawnLeashSnapshot `json:"spawn_leash,omitempty"`
 	Dead                  bool                `json:"dead,omitempty"`
 	CombatProfile         string              `json:"combat_profile,omitempty"`
@@ -574,6 +575,8 @@ func staticActorSnapshot(topology BootstrapTopology, actor StaticEntity) StaticA
 	}
 	if leash, ok := EvaluateStaticActorCurrentSpawnLeash(actor, DefaultSpawnLeashRadius); ok {
 		leashSnapshot := SpawnLeashSnapshotFromEvaluation(leash)
+		spawnHome := leashSnapshot.Home
+		snapshot.SpawnHome = &spawnHome
 		snapshot.SpawnLeash = &leashSnapshot
 	}
 	return snapshot
@@ -975,6 +978,18 @@ func cloneStaticActorSnapshots(snapshots []StaticActorSnapshot) []StaticActorSna
 	cloned := make([]StaticActorSnapshot, len(snapshots))
 	for i, snapshot := range snapshots {
 		snapshot.RewardDropVnums = append([]uint32(nil), snapshot.RewardDropVnums...)
+		if snapshot.SpawnHome != nil {
+			spawnHome := *snapshot.SpawnHome
+			snapshot.SpawnHome = &spawnHome
+		}
+		if snapshot.SpawnLeash != nil {
+			spawnLeash := *snapshot.SpawnLeash
+			if spawnLeash.ReturnTarget != nil {
+				returnTarget := *spawnLeash.ReturnTarget
+				spawnLeash.ReturnTarget = &returnTarget
+			}
+			snapshot.SpawnLeash = &spawnLeash
+		}
 		cloned[i] = snapshot
 	}
 	return cloned

@@ -16,19 +16,20 @@ var (
 )
 
 type StaticActor struct {
-	EntityID         uint64   `json:"entity_id"`
-	Name             string   `json:"name"`
-	MapIndex         uint32   `json:"map_index"`
-	X                int32    `json:"x"`
-	Y                int32    `json:"y"`
-	RaceNum          uint32   `json:"race_num"`
-	CombatProfile    string   `json:"combat_profile,omitempty"`
-	InteractionKind  string   `json:"interaction_kind,omitempty"`
-	InteractionRef   string   `json:"interaction_ref,omitempty"`
-	SpawnGroupRef    string   `json:"spawn_group_ref,omitempty"`
-	RewardExperience uint64   `json:"reward_experience,omitempty"`
-	RewardGold       uint64   `json:"reward_gold,omitempty"`
-	RewardDropVnums  []uint32 `json:"reward_drop_vnums,omitempty"`
+	EntityID         uint64                         `json:"entity_id"`
+	Name             string                         `json:"name"`
+	MapIndex         uint32                         `json:"map_index"`
+	X                int32                          `json:"x"`
+	Y                int32                          `json:"y"`
+	RaceNum          uint32                         `json:"race_num"`
+	SpawnHome        *worldruntime.PositionSnapshot `json:"spawn_home,omitempty"`
+	CombatProfile    string                         `json:"combat_profile,omitempty"`
+	InteractionKind  string                         `json:"interaction_kind,omitempty"`
+	InteractionRef   string                         `json:"interaction_ref,omitempty"`
+	SpawnGroupRef    string                         `json:"spawn_group_ref,omitempty"`
+	RewardExperience uint64                         `json:"reward_experience,omitempty"`
+	RewardGold       uint64                         `json:"reward_gold,omitempty"`
+	RewardDropVnums  []uint32                       `json:"reward_drop_vnums,omitempty"`
 }
 
 type Snapshot struct {
@@ -81,6 +82,9 @@ func validateSnapshot(snapshot Snapshot) error {
 			return ErrInvalidSnapshot
 		}
 		if actor.SpawnGroupRef == "" {
+			if actor.SpawnHome != nil {
+				return ErrInvalidSnapshot
+			}
 			if hasRewardDescriptor(actor) {
 				return ErrInvalidSnapshot
 			}
@@ -89,6 +93,9 @@ func validateSnapshot(snapshot Snapshot) error {
 				return ErrInvalidSnapshot
 			}
 			if !validRewardDescriptor(actor) {
+				return ErrInvalidSnapshot
+			}
+			if actor.SpawnHome != nil && actor.SpawnHome.MapIndex == 0 {
 				return ErrInvalidSnapshot
 			}
 			if _, ok := spawnGroupRefs[actor.SpawnGroupRef]; ok {
@@ -151,6 +158,10 @@ func cloneStaticActors(actors []StaticActor) []StaticActor {
 			sort.Slice(actor.RewardDropVnums, func(i int, j int) bool {
 				return actor.RewardDropVnums[i] < actor.RewardDropVnums[j]
 			})
+		}
+		if actor.SpawnHome != nil {
+			spawnHome := *actor.SpawnHome
+			actor.SpawnHome = &spawnHome
 		}
 		cloned[i] = actor
 	}

@@ -380,6 +380,73 @@ func TestGameRuntimeSpawnGroupLeashUsesPreservedHomeAfterCurrentPositionUpdate(t
 	}
 }
 
+func TestGameRuntimePersistsSpawnGroupAuthoredHomeAcrossReload(t *testing.T) {
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		staticActorStore,
+		interactionStore,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.leash_persisted_home",
+		Name:          "LeashPersistedHomeMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import persisted-home spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.leash_persisted_home")
+	if !ok {
+		t.Fatal("expected persisted-home spawn group to resolve by ref")
+	}
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "LeashPersistedHomeMob", 42, 2301, 2800, 20350); !ok {
+		t.Fatal("expected spawn-backed actor current-position update to succeed")
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted static actor snapshot after current-position update: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].SpawnHome == nil {
+		t.Fatalf("expected persisted spawn-backed actor to retain authored home, got %+v", persisted)
+	}
+	if persisted.StaticActors[0].X != 2301 || persisted.StaticActors[0].SpawnHome.MapIndex != 42 || persisted.StaticActors[0].SpawnHome.X != 1700 || persisted.StaticActors[0].SpawnHome.Y != 2800 {
+		t.Fatalf("expected persisted actor current position plus authored home, got %+v", persisted.StaticActors[0])
+	}
+
+	reloaded, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		staticActorStore,
+		interactionStore,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("reload runtime with persisted spawn home: %v", err)
+	}
+	leash, ok := reloaded.SpawnGroupLeash(group.EntityID, 400)
+	if !ok {
+		t.Fatalf("expected reloaded spawn-group leash evaluation for entity %d", group.EntityID)
+	}
+	if leash.Home.MapIndex != 42 || leash.Home.X != 1700 || leash.Home.Y != 2800 || leash.Current.X != 2301 {
+		t.Fatalf("expected reloaded leash to preserve authored home and current position, got %+v", leash)
+	}
+	if leash.Status != worldruntime.SpawnLeashStatusReturnRequired || !leash.ReturnRequired || leash.ReturnTarget == nil || *leash.ReturnTarget != leash.Home {
+		t.Fatalf("expected reloaded moved spawn group to require return home, got %+v", leash)
+	}
+}
+
 func TestSharedWorldRegistrySpawnGroupLeashUsesPreservedAuthoredHomeWhenCurrentPositionDiffers(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	registered, ok := registry.registerStaticActor(0, "LeashMovedMob", 42, 1700, 2800, 20350, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "practice.leash_moved", worldruntime.StaticActorDeathReward{})

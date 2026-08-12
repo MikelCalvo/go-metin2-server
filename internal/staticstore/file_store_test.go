@@ -86,6 +86,33 @@ func TestFileStoreSaveNormalizesRewardDropOrder(t *testing.T) {
 	}
 }
 
+func TestFileStoreRoundTripsSpawnGroupAuthoredHome(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
+	store := NewFileStore(path)
+	input := Snapshot{StaticActors: []StaticActor{{
+		EntityID:      22,
+		Name:          "LeashPersistMob",
+		MapIndex:      42,
+		X:             2301,
+		Y:             2800,
+		RaceNum:       101,
+		CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.leash_persist",
+		SpawnHome:     &worldruntime.PositionSnapshot{MapIndex: 42, X: 1700, Y: 2800},
+	}}}
+
+	if err := store.Save(input); err != nil {
+		t.Fatalf("save spawn-home snapshot: %v", err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("load spawn-home snapshot: %v", err)
+	}
+	if !reflect.DeepEqual(loaded, input) {
+		t.Fatalf("expected authored spawn home to round-trip:\n got: %#v\nwant: %#v", loaded, input)
+	}
+}
+
 func TestFileStoreLoadReturnsNotFoundForMissingSnapshot(t *testing.T) {
 	store := NewFileStore(filepath.Join(t.TempDir(), "state", "static-actors.json"))
 	_, err := store.Load()
@@ -435,6 +462,14 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 		if err := store.Save(Snapshot{StaticActors: []StaticActor{actor}}); !errors.Is(err, ErrInvalidSnapshot) {
 			t.Fatalf("expected ErrInvalidSnapshot for spawn-group reward descriptor with %s, got %v", name, err)
 		}
+	}
+	invalidNonSpawnActorWithSpawnHome := Snapshot{StaticActors: []StaticActor{{EntityID: 23, Name: "LeashedStandalone", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnHome: &worldruntime.PositionSnapshot{MapIndex: 42, X: 1700, Y: 2800}}}}
+	if err := store.Save(invalidNonSpawnActorWithSpawnHome); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for non-spawn actor carrying spawn_home, got %v", err)
+	}
+	invalidSpawnGroupWithZeroMapHome := Snapshot{StaticActors: []StaticActor{{EntityID: 24, Name: "BadHomeMob", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.bad_home", SpawnHome: &worldruntime.PositionSnapshot{MapIndex: 0, X: 1700, Y: 2800}}}}
+	if err := store.Save(invalidSpawnGroupWithZeroMapHome); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for spawn group carrying invalid spawn_home, got %v", err)
 	}
 	duplicateSpawnGroupRef := Snapshot{StaticActors: []StaticActor{
 		{EntityID: 15, Name: "PracticeMobAlpha", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.mob_alpha"},

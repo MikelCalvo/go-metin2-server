@@ -52,6 +52,9 @@ func TestEvaluateStaticActorCurrentSpawnLeashUsesAuthoredHomeSeparateFromCurrent
 	if snapshot.SpawnLeash.Home.MapIndex != 42 || snapshot.SpawnLeash.Home.X != 1700 || snapshot.SpawnLeash.Current.X != 2301 || snapshot.SpawnLeash.Status != SpawnLeashStatusReturnRequired || !snapshot.SpawnLeash.ReturnRequired {
 		t.Fatalf("unexpected spawn leash snapshot: %+v", snapshot.SpawnLeash)
 	}
+	if snapshot.SpawnHome == nil || snapshot.SpawnHome.MapIndex != 42 || snapshot.SpawnHome.X != 1700 || snapshot.SpawnHome.Y != 2800 {
+		t.Fatalf("expected spawn snapshot to expose authored home separately for persistence, got %+v", snapshot.SpawnHome)
+	}
 }
 
 func TestEntityRegistryPreservesSpawnHomeAcrossStaticActorPositionUpdate(t *testing.T) {

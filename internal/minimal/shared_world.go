@@ -2376,6 +2376,10 @@ func (r *sharedWorldRegistry) RegisterStaticActorWithCombatKind(entityID uint64,
 }
 
 func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatKind string, spawnGroupRef string, deathReward worldruntime.StaticActorDeathReward) (StaticActorSnapshot, bool) {
+	return r.registerStaticActorWithSpawnHome(entityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef, combatKind, spawnGroupRef, nil, deathReward)
+}
+
+func (r *sharedWorldRegistry) registerStaticActorWithSpawnHome(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatKind string, spawnGroupRef string, spawnHome *worldruntime.PositionSnapshot, deathReward worldruntime.StaticActorDeathReward) (StaticActorSnapshot, bool) {
 	spawnGroupRef = strings.TrimSpace(spawnGroupRef)
 	if r == nil || r.entities == nil || !validStaticActorRuntimeName(name) || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatKind(combatKind) || !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroupRef) || !worldruntime.ValidStaticActorDeathReward(deathReward) {
 		return StaticActorSnapshot{}, false
@@ -2386,6 +2390,13 @@ func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, 
 	position := worldruntime.NewPosition(mapIndex, x, y)
 	if !position.Valid() {
 		return StaticActorSnapshot{}, false
+	}
+	var authoredHome worldruntime.Position
+	if spawnHome != nil {
+		authoredHome = worldruntime.NewPosition(spawnHome.MapIndex, spawnHome.X, spawnHome.Y)
+		if !authoredHome.Valid() || spawnGroupRef == "" {
+			return StaticActorSnapshot{}, false
+		}
 	}
 
 	r.mu.Lock()
@@ -2398,6 +2409,7 @@ func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, 
 	candidate := worldruntime.StaticEntity{
 		Entity:          worldruntime.Entity{ID: entityID, Name: name},
 		Position:        position,
+		SpawnHome:       authoredHome,
 		RaceNum:         raceNum,
 		InteractionKind: interactionKind,
 		InteractionRef:  interactionRef,
@@ -3229,7 +3241,7 @@ func staticActorSnapshot(topology worldruntime.BootstrapTopology, actor worldrun
 			retaliationPointDelta = defaults.RetaliationPointDelta
 		}
 	}
-	return StaticActorSnapshot{
+	snapshot := StaticActorSnapshot{
 		EntityID:              actor.Entity.ID,
 		Name:                  actor.Entity.Name,
 		MapIndex:              topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex}),
@@ -3247,6 +3259,13 @@ func staticActorSnapshot(topology worldruntime.BootstrapTopology, actor worldrun
 		RewardGold:            actor.DeathReward.Gold,
 		RewardDropVnums:       actor.DeathReward.Clone().DropVnums,
 	}
+	if leash, ok := worldruntime.EvaluateStaticActorCurrentSpawnLeash(actor, worldruntime.DefaultSpawnLeashRadius); ok {
+		leashSnapshot := worldruntime.SpawnLeashSnapshotFromEvaluation(leash)
+		spawnHome := leashSnapshot.Home
+		snapshot.SpawnHome = &spawnHome
+		snapshot.SpawnLeash = &leashSnapshot
+	}
+	return snapshot
 }
 
 func connectedCharacterSnapshots(topology worldruntime.BootstrapTopology, characters []loginticket.Character) []ConnectedCharacterSnapshot {
