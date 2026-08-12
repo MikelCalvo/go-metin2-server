@@ -132,7 +132,7 @@ The database-backed runtime is still future work, but `gamed` can now point the 
 - `METIN2_DB_DSN`
 - `METIN2_GAMED_DB_DSN`
 
-Both driver and DSN must be empty to keep DB preflight disabled, or both must be set. Partial values fail daemon startup instead of silently returning the embedded empty-ledger migration plan. The project does not yet ship a DB driver dependency or select a production database engine, so operators must not treat this as a finished DB-backed runtime. `/local/runtime-config` reports only whether a DSN is configured plus the driver name; it intentionally never exposes the DSN value.
+Both driver and DSN must be empty to keep DB preflight disabled, or both must be set. Partial values fail daemon startup instead of silently returning the embedded empty-ledger migration plan. The project does not yet ship a DB driver dependency or select a production database engine, so operators must not treat this as a finished DB-backed runtime. `/local/runtime-config` reports only whether a DSN is configured plus the driver name; it intentionally never exposes the DSN value. For offline preflight, `POST /local/db/migrations/plan-from-ledger-snapshot?target_version=N` accepts a strict metadata-only `go-metin2-schema-migrations-ledger-v1` JSON snapshot of `version` / `name` / `up_sha256` ledger rows and returns the same dry-run plan without opening the configured DB or exposing executable SQL.
 
 ### Bootstrap file-backed persistence
 

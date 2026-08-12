@@ -57,6 +57,16 @@ Rules frozen by tests:
   - intermediate targets emit only the up/down steps needed to move from the current ledger version to that target,
   - out-of-range targets fail closed with `ErrInvalidMigrationTarget`,
   - target plans still expose metadata only and never include executable SQL.
+- `LedgerSnapshot` / `ReadJSONLedgerSnapshot` / `MarshalJSONLedgerSnapshot` freeze an offline JSON ledger-snapshot contract for operators and future CLI tooling that cannot or should not open the live DB directly:
+  - the format marker is `go-metin2-schema-migrations-ledger-v1`,
+  - entries contain only `version`, `name`, and `up_sha256`, mirroring the durable `schema_migrations` ledger without SQL text,
+  - decoding is strict and fails closed for invalid UTF-8, malformed JSON, unknown fields, trailing JSON, missing/null entries, invalid names, invalid checksums, zero/negative versions, or duplicate versions,
+  - marshaling sorts entries by version without mutating the input and emits an explicit empty `entries: []` array for an empty applied ledger,
+  - `PlanToVersionFromLedgerSnapshot` and JSON-reader variants reuse the same catalog/ledger validation and target-version planner used by direct and SQL-ledger paths.
+- `gamed` exposes the offline ledger-snapshot planner through loopback-only `POST /local/db/migrations/plan-from-ledger-snapshot?target_version=N`:
+  - the request body is the strict metadata-only ledger snapshot and is bounded to 64 KiB,
+  - invalid target queries or invalid snapshots fail with `400`, oversized bodies fail with `413`, planner/catalog/ledger drift fails with `409`, and non-loopback callers fail with `403`,
+  - the response is the same metadata-only `Plan` shape and the endpoint does not open a configured DB, execute SQL, apply migrations, roll back migrations, or mutate `schema_migrations`.
 - runtime configuration now carries an optional DB preflight boundary:
   - `METIN2_DB_DRIVER` / `METIN2_GAMED_DB_DRIVER`,
   - `METIN2_DB_DSN` / `METIN2_GAMED_DB_DSN`,
@@ -117,23 +127,23 @@ This is not a database runtime implementation. It deliberately does not add:
 - JSON snapshot import/backfill execution tooling,
 - production deployment scripts.
 
-The dry-run planner added on top of the catalog is likewise read-only: callers can supply already-read ledger rows directly or provide a `database/sql`-compatible query boundary for the same metadata through `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger` / `PlanToVersionFromSQLLedger`. The first loopback ops endpoints use an empty ledger when DB config is disabled and a configured `database/sql` ledger reader when both driver and DSN are set. `/local/db/migrations/status` reports the latest-version target; `/local/db/migrations/plan?target_version=N` previews an explicit target such as rollback-to-zero. The account/character roster, character item-state, character quest-state, and item-template-state exports are also read-only: they map committed JSON snapshots to the existing schema shapes but do not insert rows, allocate a real production identity sequence, apply SQL, or quarantine/import data. The SQL ledger seam, runtime config, and exports are safe boundaries for future CLI, real-ledger preflight tooling, or status pages, not an execution engine.
+The dry-run planner added on top of the catalog is likewise read-only: callers can supply already-read ledger rows directly, provide a `database/sql`-compatible query boundary for the same metadata through `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger` / `PlanToVersionFromSQLLedger`, or provide a strict offline JSON `LedgerSnapshot` through `ReadJSONLedgerSnapshot` / `PlanToVersionFromLedgerSnapshot` when planning from copied ledger metadata. The first loopback ops endpoints use an empty ledger when DB config is disabled and a configured `database/sql` ledger reader when both driver and DSN are set. `/local/db/migrations/status` reports the latest-version target; `/local/db/migrations/plan?target_version=N` previews an explicit target such as rollback-to-zero; `/local/db/migrations/plan-from-ledger-snapshot?target_version=N` accepts a bounded metadata-only snapshot body and produces the same plan shape without opening a configured DB. The account/character roster, character item-state, character quest-state, and item-template-state exports are also read-only: they map committed JSON snapshots to the existing schema shapes but do not insert rows, allocate a real production identity sequence, apply SQL, or quarantine/import data. The SQL ledger seam, offline ledger snapshot seam, runtime config, and exports are safe boundaries for future CLI, real-ledger preflight tooling, or status pages, not an execution engine.
 
 Those require separate slices because each one changes operator and data-safety semantics.
 
 ## Likely next slices
 
 1. Define a narrow account/character/item/quest-state repository interface backed by current tests before adding a DB implementation.
-2. Add JSON-file-store import/quarantine tooling that consumes the exported `0002_account_character_roster`, `0003_character_item_state`, `0004_character_quest_state`, and `0005_item_template_state` shapes without silently coercing bad snapshots.
-3. Add a driver-backed test harness or build-tagged integration test for `schema_migrations` status before adding apply/rollback tooling.
+2. Add JSON-file-store import/quarantine tooling that consumes the exported `0002_account_character_roster`, `0003_character_item_state`, `0004_character_quest_state`, and `0005_item_template_state` shapes plus optional offline ledger snapshots without silently coercing bad snapshots.
+3. Add a driver-backed test harness or build-tagged integration test for `schema_migrations` status and ledger-snapshot generation before adding apply/rollback tooling.
 4. Add explicit migrations for richer item/economy domains, item ownership timers, or authored content tables only after the account/character/item/item-template repository seams are stable.
 5. Add an apply/rollback command only after the dry-run status boundary and ledger validation behavior are exercised against an actual driver-backed test database.
 6. Document production DB configuration, backups, and rollback policy once there is an actual DB-backed store.
 
 ## Exit criteria for this slice
 
-- `go test ./db/migrations` validates the catalog, schema ledger migration, account/character roster migration, character item-state migration, character quest-state migration, item-template-state migration, direct-ledger dry-run planning rules, explicit up/down target planning, and database/sql-compatible ledger-reader seam.
-- `go test ./internal/config ./internal/minimal ./internal/service ./internal/ops` validates optional DB config loading, startup fail-closed behavior for partial config, no-DSN runtime-config exposure, the configured-driver migration-status boundary, loopback-only explicit migration-plan previews, and the local account/character roster, character item-state, character quest-state, and item-template-state export endpoints.
+- `go test ./db/migrations` validates the catalog, schema ledger migration, account/character roster migration, character item-state migration, character quest-state migration, item-template-state migration, direct-ledger dry-run planning rules, explicit up/down target planning, the database/sql-compatible ledger-reader seam, and the strict offline JSON ledger-snapshot plan boundary.
+- `go test ./internal/config ./internal/minimal ./internal/service ./internal/ops` validates optional DB config loading, startup fail-closed behavior for partial config, no-DSN runtime-config exposure, the configured-driver migration-status boundary, loopback-only explicit migration-plan previews including the ledger-snapshot POST preflight, and the local account/character roster, character item-state, character quest-state, and item-template-state export endpoints.
 - `go test ./internal/accountstore ./internal/queststate ./internal/itemstore` validates deterministic `0002_account_character_roster`, `0003_character_item_state`, `0004_character_quest_state`, and `0005_item_template_state` export rows plus fail-closed schema-shape checks for bootstrap account, quest-state, and item-template snapshots.
 - `go test ./...` and `go vet ./...` remain green.
 - README/development docs describe `db/migrations` as the validated migration catalog and read-only planning skeleton, not a finished DB layer.

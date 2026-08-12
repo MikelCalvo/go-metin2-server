@@ -153,6 +153,7 @@ const (
 	maxLocalAccountStoreMutationBodyBytes     = 4096
 	maxLocalInteractionDefinitionBodyBytes    = 4096
 	maxLocalStaticActorCombatProfileBodyBytes = 4096
+	maxLocalMigrationLedgerSnapshotBodyBytes  = 64 * 1024
 )
 
 func NewPprofMux(serviceName string) *http.ServeMux {
@@ -921,6 +922,51 @@ func RegisterLocalMigrationPlanEndpoint(mux *http.ServeMux, planMigrationTarget 
 		plan, err := planMigrationTarget(target)
 		if err != nil {
 			slog.Warn("local migration target preflight failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, plan, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalMigrationLedgerSnapshotPlanEndpoint(mux *http.ServeMux, planMigrationSnapshot func(dbmigrations.LedgerSnapshot, int) (dbmigrations.Plan, error)) *http.ServeMux {
+	if mux == nil || planMigrationSnapshot == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/db/migrations/plan-from-ledger-snapshot", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		target, ok := decodeLocalMigrationPlanTarget(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		raw, err := io.ReadAll(io.LimitReader(r.Body, maxLocalMigrationLedgerSnapshotBodyBytes+1))
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if len(raw) > maxLocalMigrationLedgerSnapshotBodyBytes {
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			return
+		}
+		entries, err := dbmigrations.ReadJSONLedgerSnapshot(bytes.NewReader(raw))
+		if err != nil {
+			slog.Warn("local migration ledger snapshot decode failed", "err", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		plan, err := planMigrationSnapshot(dbmigrations.LedgerSnapshot{Format: dbmigrations.LedgerSnapshotFormat, Entries: entries}, target)
+		if err != nil {
+			slog.Warn("local migration snapshot target preflight failed", "err", err)
 			w.WriteHeader(http.StatusConflict)
 			return
 		}

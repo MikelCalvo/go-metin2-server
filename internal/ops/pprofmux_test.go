@@ -5961,6 +5961,134 @@ func TestLocalMigrationPlanEndpointReportsPlannerFailure(t *testing.T) {
 	}
 }
 
+func TestLocalMigrationLedgerSnapshotPlanEndpointReturnsLoopbackPostPlan(t *testing.T) {
+	planner := &stubMigrationSnapshotPlanner{plan: dbmigrations.Plan{
+		CurrentVersion: 1,
+		LatestVersion:  2,
+		UpToDate:       false,
+		Pending: []dbmigrations.PlanStep{
+			{Version: 2, Name: "accounts", Direction: dbmigrations.DirectionUp, Path: "0002_accounts.up.sql", SHA256: strings.Repeat("b", 64)},
+		},
+	}}
+	mux := RegisterLocalMigrationLedgerSnapshotPlanEndpoint(NewPprofMux("gamed"), planner.PlanSnapshot)
+	body := `{"format":"go-metin2-schema-migrations-ledger-v1","entries":[{"version":1,"name":"bootstrap_schema_migrations","up_sha256":"` + strings.Repeat("a", 64) + `"}]}`
+
+	req := httptest.NewRequest(http.MethodPost, "/local/db/migrations/plan-from-ledger-snapshot?target_version=2", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if planner.calls != 1 || planner.lastTarget != 2 {
+		t.Fatalf("expected planner target 2 once, calls=%d target=%d", planner.calls, planner.lastTarget)
+	}
+	if planner.lastSnapshot.Format != dbmigrations.LedgerSnapshotFormat || len(planner.lastSnapshot.Entries) != 1 || planner.lastSnapshot.Entries[0].Version != 1 {
+		t.Fatalf("unexpected decoded ledger snapshot: %#v", planner.lastSnapshot)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	responseBody := rec.Body.String()
+	for _, want := range []string{`"current_version":1`, `"latest_version":2`, `"direction":"up"`, `"path":"0002_accounts.up.sql"`, `"sha256":"` + strings.Repeat("b", 64) + `"`} {
+		if !strings.Contains(responseBody, want) {
+			t.Fatalf("expected snapshot plan body to contain %s, got %s", want, responseBody)
+		}
+	}
+	if strings.Contains(responseBody, "CREATE TABLE") || strings.Contains(responseBody, "UpSQL") || strings.Contains(responseBody, "DownSQL") {
+		t.Fatalf("snapshot plan endpoint must not expose executable SQL, got %s", responseBody)
+	}
+}
+
+func TestLocalMigrationLedgerSnapshotPlanEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	planner := &stubMigrationSnapshotPlanner{}
+	mux := RegisterLocalMigrationLedgerSnapshotPlanEndpoint(NewPprofMux("gamed"), planner.PlanSnapshot)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/db/migrations/plan-from-ledger-snapshot?target_version=0", strings.NewReader(`{"format":"go-metin2-schema-migrations-ledger-v1","entries":[]}`))
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if planner.calls != 0 {
+		t.Fatalf("expected planner not to be called, got %d", planner.calls)
+	}
+}
+
+func TestLocalMigrationLedgerSnapshotPlanEndpointRejectsWrongMethod(t *testing.T) {
+	planner := &stubMigrationSnapshotPlanner{}
+	mux := RegisterLocalMigrationLedgerSnapshotPlanEndpoint(NewPprofMux("gamed"), planner.PlanSnapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/db/migrations/plan-from-ledger-snapshot?target_version=0", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if planner.calls != 0 {
+		t.Fatalf("expected planner not to be called, got %d", planner.calls)
+	}
+}
+
+func TestLocalMigrationLedgerSnapshotPlanEndpointRejectsInvalidRequest(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		path string
+		body string
+		want int
+	}{
+		{name: "missing target", path: "/local/db/migrations/plan-from-ledger-snapshot", body: `{"format":"go-metin2-schema-migrations-ledger-v1","entries":[]}`, want: http.StatusBadRequest},
+		{name: "repeated target", path: "/local/db/migrations/plan-from-ledger-snapshot?target_version=0&target_version=1", body: `{"format":"go-metin2-schema-migrations-ledger-v1","entries":[]}`, want: http.StatusBadRequest},
+		{name: "invalid target", path: "/local/db/migrations/plan-from-ledger-snapshot?target_version=abc", body: `{"format":"go-metin2-schema-migrations-ledger-v1","entries":[]}`, want: http.StatusBadRequest},
+		{name: "invalid snapshot", path: "/local/db/migrations/plan-from-ledger-snapshot?target_version=0", body: `{"format":"manual","entries":[]}`, want: http.StatusBadRequest},
+		{name: "oversized body", path: "/local/db/migrations/plan-from-ledger-snapshot?target_version=0", body: `{"format":"go-metin2-schema-migrations-ledger-v1","entries":[],"padding":"` + strings.Repeat("x", maxLocalMigrationLedgerSnapshotBodyBytes) + `"}`, want: http.StatusRequestEntityTooLarge},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			planner := &stubMigrationSnapshotPlanner{}
+			mux := RegisterLocalMigrationLedgerSnapshotPlanEndpoint(NewPprofMux("gamed"), planner.PlanSnapshot)
+
+			req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body))
+			req.RemoteAddr = "127.0.0.1:12345"
+			rec := httptest.NewRecorder()
+
+			mux.ServeHTTP(rec, req)
+
+			if rec.Code != tc.want {
+				t.Fatalf("expected status %d, got %d", tc.want, rec.Code)
+			}
+			if planner.calls != 0 {
+				t.Fatalf("expected planner not to be called, got %d", planner.calls)
+			}
+		})
+	}
+}
+
+func TestLocalMigrationLedgerSnapshotPlanEndpointReportsPlannerFailure(t *testing.T) {
+	planner := &stubMigrationSnapshotPlanner{err: errStubMigrationStatusInvalid}
+	mux := RegisterLocalMigrationLedgerSnapshotPlanEndpoint(NewPprofMux("gamed"), planner.PlanSnapshot)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/db/migrations/plan-from-ledger-snapshot?target_version=99", strings.NewReader(`{"format":"go-metin2-schema-migrations-ledger-v1","entries":[]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if planner.calls != 1 || planner.lastTarget != 99 {
+		t.Fatalf("expected planner target 99 once, calls=%d target=%d", planner.calls, planner.lastTarget)
+	}
+}
+
 func TestLocalAccountCharacterRosterExportEndpointReturnsLoopbackJSON(t *testing.T) {
 	exporter := &stubAccountCharacterRosterExporter{export: accountstore.AccountCharacterRosterExport{
 		MigrationVersion: accountstore.AccountCharacterRosterMigrationVersion,
@@ -6252,9 +6380,20 @@ func TestLocalItemTemplateStateExportEndpointReportsExporterFailure(t *testing.T
 func TestNewPprofMuxDoesNotExposeLocalMigrationStatusByDefault(t *testing.T) {
 	mux := NewPprofMux("authd")
 
-	for _, path := range []string{"/local/db/migrations/status", "/local/db/migrations/plan?target_version=0", "/local/account-store/exports/account-character-roster", "/local/account-store/exports/character-item-state", "/local/quest-state/exports/character-quest-state", "/local/item-templates/exports/item-template-state"} {
-		t.Run(path, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, path, nil)
+	for _, tc := range []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodGet, path: "/local/db/migrations/status"},
+		{method: http.MethodGet, path: "/local/db/migrations/plan?target_version=0"},
+		{method: http.MethodPost, path: "/local/db/migrations/plan-from-ledger-snapshot?target_version=0"},
+		{method: http.MethodGet, path: "/local/account-store/exports/account-character-roster"},
+		{method: http.MethodGet, path: "/local/account-store/exports/character-item-state"},
+		{method: http.MethodGet, path: "/local/quest-state/exports/character-quest-state"},
+		{method: http.MethodGet, path: "/local/item-templates/exports/item-template-state"},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.path, nil)
 			req.RemoteAddr = "127.0.0.1:12345"
 			rec := httptest.NewRecorder()
 
@@ -6298,6 +6437,14 @@ type stubMigrationTargetPlanner struct {
 	lastTarget int
 }
 
+type stubMigrationSnapshotPlanner struct {
+	plan         dbmigrations.Plan
+	err          error
+	calls        int
+	lastTarget   int
+	lastSnapshot dbmigrations.LedgerSnapshot
+}
+
 type stubAccountCharacterRosterExporter struct {
 	export accountstore.AccountCharacterRosterExport
 	err    error
@@ -6326,6 +6473,13 @@ func (p *stubMigrationStatusPlanner) Plan() (dbmigrations.Plan, error) {
 func (p *stubMigrationTargetPlanner) PlanTarget(targetVersion int) (dbmigrations.Plan, error) {
 	p.calls++
 	p.lastTarget = targetVersion
+	return p.plan, p.err
+}
+
+func (p *stubMigrationSnapshotPlanner) PlanSnapshot(snapshot dbmigrations.LedgerSnapshot, targetVersion int) (dbmigrations.Plan, error) {
+	p.calls++
+	p.lastTarget = targetVersion
+	p.lastSnapshot = snapshot
 	return p.plan, p.err
 }
 

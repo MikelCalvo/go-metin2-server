@@ -390,6 +390,68 @@ func TestGameRuntimeMigrationPlanToVersionRejectsTargetOutsideCatalog(t *testing
 	}
 }
 
+func TestGameRuntimeMigrationPlanFromLedgerSnapshotReturnsOfflineTargetPlan(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	catalog, err := dbmigrations.Catalog()
+	if err != nil {
+		t.Fatalf("load migration catalog: %v", err)
+	}
+	snapshot := dbmigrations.LedgerSnapshot{
+		Format: dbmigrations.LedgerSnapshotFormat,
+		Entries: []dbmigrations.LedgerEntry{
+			{Version: catalog[0].Version, Name: catalog[0].Name, UpSHA256: catalog[0].UpSHA256},
+		},
+	}
+
+	plan, err := runtime.MigrationPlanFromLedgerSnapshot(snapshot, 0)
+	if err != nil {
+		t.Fatalf("migration plan from ledger snapshot: %v", err)
+	}
+	if plan.CurrentVersion != 1 || plan.LatestVersion != len(catalog) || plan.UpToDate {
+		t.Fatalf("unexpected offline rollback plan: %#v", plan)
+	}
+	if len(plan.Pending) != 1 || plan.Pending[0].Version != 1 || plan.Pending[0].Direction != dbmigrations.DirectionDown || plan.Pending[0].SHA256 != catalog[0].DownSHA256 {
+		t.Fatalf("unexpected offline rollback step: %#v", plan.Pending)
+	}
+}
+
+func TestGameRuntimeMigrationPlanFromLedgerSnapshotRejectsDrift(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	snapshot := dbmigrations.LedgerSnapshot{
+		Format: dbmigrations.LedgerSnapshotFormat,
+		Entries: []dbmigrations.LedgerEntry{
+			{Version: 1, Name: "renamed", UpSHA256: strings.Repeat("a", 64)},
+		},
+	}
+
+	_, err = runtime.MigrationPlanFromLedgerSnapshot(snapshot, 0)
+	if !errors.Is(err, dbmigrations.ErrInvalidLedger) {
+		t.Fatalf("expected ErrInvalidLedger, got %v", err)
+	}
+}
+
 func TestGameRuntimeMigrationStatusRejectsConfiguredDatabaseWithoutRegisteredDriver(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", DatabaseDriver: "sqlite3", DatabaseDSN: "file:missing-driver.db"},

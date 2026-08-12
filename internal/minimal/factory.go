@@ -434,6 +434,10 @@ func (r *gameRuntime) MigrationPlanToVersion(targetVersion int) (dbmigrations.Pl
 	return dbmigrations.PlanToVersion(nil, targetVersion)
 }
 
+func (r *gameRuntime) MigrationPlanFromLedgerSnapshot(snapshot dbmigrations.LedgerSnapshot, targetVersion int) (dbmigrations.Plan, error) {
+	return dbmigrations.PlanToVersionFromLedgerSnapshot(snapshot, targetVersion)
+}
+
 func (r *gameRuntime) PersistenceStatus() PersistenceStatusSnapshot {
 	if r == nil {
 		return PersistenceStatusSnapshot{}

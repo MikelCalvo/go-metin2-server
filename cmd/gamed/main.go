@@ -178,6 +178,10 @@ func main() {
 		opsHandler,
 		gameRuntime.MigrationPlanToVersion,
 	)
+	opsHandler = ops.RegisterLocalMigrationLedgerSnapshotPlanEndpoint(
+		opsHandler,
+		gameRuntime.MigrationPlanFromLedgerSnapshot,
+	)
 	opsHandler = ops.RegisterLocalAccountCharacterRosterExportEndpoint(
 		opsHandler,
 		gameRuntime.ExportAccountCharacterRoster,
