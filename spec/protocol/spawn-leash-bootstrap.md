@@ -26,6 +26,8 @@ For spawn-backed static actors, the authored/home position is the actor's `spawn
 
 In the current stationary practice-mob runtime, freshly imported mobs normally classify as `at_home`. If an owned runtime/operator update changes only the materialized actor position, the same read-only leash inspection must continue to compare that current position against the preserved authored home and can report `within_radius` or `return_required` without mutating the actor.
 
+The first live consumer of that preserved home is now respawn, not chase AI. When a spawn-backed combatant respawns after its server-owned dead timer, the runtime restores the materialized actor position to the preserved authored home before rebuilding visibility. Viewers that only saw the old displaced runtime position receive the ordinary `CHARACTER_DEL`, viewers that only see the authored home receive the normal add/info/update burst, and viewers that can see both receive the usual delete-plus-readd refresh. The respawned actor reports `status = at_home`, full bootstrap HP, and no active target binding; the leash endpoint remains read-only and does not itself trigger that return.
+
 The result classifies the current position as one of:
 - `at_home`
   - current position equals authored/home position

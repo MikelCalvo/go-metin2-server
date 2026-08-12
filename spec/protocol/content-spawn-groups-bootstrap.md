@@ -214,9 +214,10 @@ This means respawn remains **server-driven runtime behavior**, but the runtime n
 The first spawn-group contract keeps respawn deliberately narrow:
 - death still follows `non-player-death-respawn-bootstrap.md`
 - respawn is still server-driven, not client-requested
-- the recreated actor returns at the authored spawn-group position
+- the recreated actor returns at the preserved authored spawn-group position, even if a prior runtime/operator update moved the materialized actor's current position away from that home
 - the recreated actor uses the authored `combat_profile`, or the default bootstrap `practice_mob` profile when the authored group omits that field
 - the live runtime actor after respawn is a fresh instance of the same authored spawn group, not persistence resurrecting an old runtime entity ID
+- respawn visibility fanout is calculated from the old dead runtime position to the authored-home position: old-only viewers receive `CHARACTER_DEL`, new-only viewers receive the normal add/info/update burst, and retained viewers receive the usual delete-plus-readd refresh
 
 What is **not** yet frozen here:
 - per-group custom respawn delays

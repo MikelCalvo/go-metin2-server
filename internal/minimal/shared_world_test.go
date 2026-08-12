@@ -418,6 +418,117 @@ func TestSharedWorldRegistrySpawnGroupLeashUsesPreservedAuthoredHomeWhenCurrentP
 	}
 }
 
+func TestSharedWorldRegistrySpawnGroupRespawnReturnsMovedActorToAuthoredHome(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	currentTime := time.Unix(1700000610, 0)
+	registry.now = func() time.Time { return currentTime }
+
+	homeViewer := peerVisibilityCharacter("HomeRespawnViewer", 0x01030161, 0x02040161, 1200, 2200, 0, 101, 201)
+	movedViewer := peerVisibilityCharacter("MovedRespawnViewer", 0x01030162, 0x02040162, 2301, 2200, 0, 102, 202)
+	homePending := newPendingServerFrames()
+	movedPending := newPendingServerFrames()
+	if entityID, _ := registry.Join(homeViewer, homePending, nil); entityID == 0 {
+		t.Fatal("expected home viewer to join shared world")
+	}
+	if entityID, _ := registry.Join(movedViewer, movedPending, nil); entityID == 0 {
+		t.Fatal("expected moved viewer to join shared world")
+	}
+	homePending.flush()
+	movedPending.flush()
+
+	registered, ok := registry.registerStaticActor(0, "LeashRespawnMob", bootstrapMapIndex, 1200, 2200, 20350, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "practice.leash_respawn", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected spawn-backed practice mob registration to succeed")
+	}
+	if initialHomeFrames := homePending.flush(); len(initialHomeFrames) != 3 {
+		t.Fatalf("expected home viewer to receive initial spawn add burst, got %d frames", len(initialHomeFrames))
+	}
+	if initialMovedFrames := movedPending.flush(); len(initialMovedFrames) != 0 {
+		t.Fatalf("expected moved viewer outside authored home AOI to receive no initial spawn frames, got %d", len(initialMovedFrames))
+	}
+
+	updated, ok := registry.UpdateStaticActor(registered.EntityID, "LeashRespawnMob", bootstrapMapIndex, 2301, 2200, 20350)
+	if !ok {
+		t.Fatal("expected spawn-backed actor current-position update to succeed")
+	}
+	if updated.X != 2301 || updated.SpawnGroupRef != "practice.leash_respawn" {
+		t.Fatalf("expected updated spawn group to move current position and preserve identity, got %+v", updated)
+	}
+	if deleteFromHome := homePending.flush(); len(deleteFromHome) != 1 {
+		t.Fatalf("expected home viewer to receive one delete when actor moves away, got %d frames", len(deleteFromHome))
+	}
+	movedAddFrames := movedPending.flush()
+	if len(movedAddFrames) != 3 {
+		t.Fatalf("expected moved viewer to receive add burst at moved position, got %d frames", len(movedAddFrames))
+	}
+	movedAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, movedAddFrames[0]))
+	if err != nil {
+		t.Fatalf("decode moved-position add before respawn: %v", err)
+	}
+	if movedAdd.VID != uint32(registered.EntityID) || movedAdd.X != 2301 || movedAdd.Y != 2200 {
+		t.Fatalf("expected moved-position add before respawn, got %+v", movedAdd)
+	}
+
+	registry.mu.Lock()
+	actor, ok := registry.entities.StaticActor(registered.EntityID)
+	if !ok {
+		registry.mu.Unlock()
+		t.Fatalf("expected moved actor %d to resolve before forced respawn", registered.EntityID)
+	}
+	registry.staticActorCombatHP[actor.Entity.ID] = 0
+	registry.scheduleStaticActorCombatRespawnLocked(actor)
+	registry.mu.Unlock()
+
+	currentTime = currentTime.Add(worldruntime.PracticeMobBootstrapRespawnDelay)
+	registry.FlushReadyStaticActorRespawns()
+
+	movedRespawnFrames := movedPending.flush()
+	if len(movedRespawnFrames) != 1 {
+		t.Fatalf("expected moved viewer to receive only delete when spawn respawns at authored home, got %d frames", len(movedRespawnFrames))
+	}
+	movedDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, movedRespawnFrames[0]))
+	if err != nil {
+		t.Fatalf("decode moved-viewer respawn delete: %v", err)
+	}
+	if movedDelete.VID != uint32(registered.EntityID) {
+		t.Fatalf("unexpected moved-viewer respawn delete: %+v", movedDelete)
+	}
+
+	homeRespawnFrames := homePending.flush()
+	if len(homeRespawnFrames) != 3 {
+		t.Fatalf("expected home viewer to receive authored-home respawn add burst, got %d frames", len(homeRespawnFrames))
+	}
+	homeAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, homeRespawnFrames[0]))
+	if err != nil {
+		t.Fatalf("decode authored-home respawn add: %v", err)
+	}
+	if homeAdd.VID != uint32(registered.EntityID) || homeAdd.X != 1200 || homeAdd.Y != 2200 {
+		t.Fatalf("expected respawn add at authored home, got %+v", homeAdd)
+	}
+	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, homeRespawnFrames[1])); err != nil {
+		t.Fatalf("decode authored-home respawn additional info: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, homeRespawnFrames[2])); err != nil {
+		t.Fatalf("decode authored-home respawn update: %v", err)
+	}
+
+	leash, ok := registry.SpawnGroupLeash(registered.EntityID, 400)
+	if !ok {
+		t.Fatalf("expected respawned spawn group %d to expose leash state", registered.EntityID)
+	}
+	if leash.Status != worldruntime.SpawnLeashStatusAtHome || leash.ReturnRequired || leash.ReturnTarget != nil {
+		t.Fatalf("expected respawned spawn group to be back at authored home, got %+v", leash)
+	}
+	if leash.Current.MapIndex != bootstrapMapIndex || leash.Current.X != 1200 || leash.Current.Y != 2200 || leash.Home != leash.Current {
+		t.Fatalf("expected respawn leash current/home to match authored spawn, got %+v", leash)
+	}
+	respawned, ok := registry.SpawnGroup(registered.EntityID)
+	if !ok || respawned.X != 1200 || respawned.Y != 2200 || respawned.Dead || respawned.CombatHPPercent != 100 {
+		t.Fatalf("expected respawned spawn-group snapshot at authored home with full HP, ok=%v snapshot=%+v", ok, respawned)
+	}
+}
+
 func TestGameRuntimeSpawnGroupsForMapReturnsMapLocalSpawnBackedActors(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},

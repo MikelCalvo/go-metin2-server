@@ -148,8 +148,9 @@ What is frozen now:
 - the built-in bootstrap delay constant is `2s`
 - registered bootstrap combat profiles use the `respawn_delay` accepted by `RegisterStaticActorCombatProfile(...)`; the pending respawn still uses the same runtime-owned shared-world state and `FlushServerFrames()` server-push seam between legacy-client reads
 - if an operator/static-actor update changes the actor's combat profile while the old runtime instance is already dead and has a pending respawn timer, the update cancels the stale pending respawn state and starts the updated actor as a fresh live snapshot using the new profile's full HP instead of letting the old profile's timer rebuild the new actor later
+- for spawn-backed combatants, respawn restores the materialized actor to the preserved authored spawn home before rebuilding visibility, so a displaced current runtime position does not become the new respawn point by accident
 
-For future content-loaded attackable actors, the authored identity that tells the runtime what to recreate and where to recreate it is now documented separately in `content-spawn-groups-bootstrap.md`.
+For content-loaded attackable actors, the authored identity that tells the runtime what to recreate and where to recreate it is documented separately in `content-spawn-groups-bootstrap.md`.
 
 ## First owned respawn client refresh path
 
@@ -176,7 +177,7 @@ The first death / respawn contract should respect the current visible-world rule
 - `GC DEAD(vid)` goes only to sessions that can currently see that dummy
 - `GC TARGET(0, 0)` goes only to sessions whose active combat target is that dummy
 - if a session is shown an already-dead dummy again before respawn through fresh bootstrap, later visibility re-entry, or a retained delete-plus-rebootstrap refresh, the ordinary actor add/info/update burst still goes only to sessions that should currently see that dummy and is immediately followed by one `GC DEAD(vid)` replay for that same audience
-- respawn `CHARACTER_DEL` / add-burst packets go only to sessions that should currently see the dummy after the respawn reset
+- respawn visibility rebuild packets are scoped by the visible-world diff from the old dead runtime position to the respawned position: retained viewers receive `CHARACTER_DEL` followed by the add/info/update burst, old-position-only viewers receive only `CHARACTER_DEL`, and new-position-only viewers receive only the add/info/update burst
 - the current bootstrap recipient-side player-death rule also applies: if a still-connected visible player already sits at the retaliation-owned `0`-HP floor, later dummy `GC DEAD(vid)` fanout and later respawn rebuild frames skip that zero-HP recipient silently until broader player-death recipient policy is owned
 
 This document does not open any global broadcast rule for combat lifecycle.

@@ -869,6 +869,7 @@ Run this when the target build has authored QA `spawn_groups` practice-mob conte
 - [ ] Confirm the killing hit shows only the mob `DEAD(target_vid)` plus `TARGET(0, 0)` clear from the combat lifecycle, not an extra owner-side retaliation point-change
 - [ ] Wait less than the owned respawn delay and confirm no stale delayed retaliation beat arrives after mob death
 - [ ] Wait until the owned respawn delay expires and confirm the ordinary mob rebuild burst (`CHARACTER_DEL` + add/info/update)
+- [ ] If the materialized spawn-backed mob had been moved away from its authored spawn position by a local/runtime update before death, confirm the respawn rebuild returns it to the authored home rather than to the displaced current position; old-position-only viewers should see only the delete while authored-home viewers see the add/info/update burst
 - [ ] Confirm no stale delayed retaliation beat arrives immediately after that respawn rebuild unless the mob is freshly reselected and hit again
 
 Expected result:

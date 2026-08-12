@@ -1030,6 +1030,22 @@ func (r *sharedWorldRegistry) flushReadyStaticActorRespawnLocked(entityID uint64
 	if !ok {
 		return
 	}
+	respawnActor := actor
+	if actor.SpawnGroupRef != "" {
+		if actor.SpawnHome.Valid() {
+			respawnActor.Position = actor.SpawnHome
+		} else {
+			respawnActor.SpawnHome = actor.Position
+		}
+	}
+	targetDiff := r.scopesLocked().RelocateStaticActorTargetDiff(actor, respawnActor)
+	if !respawnActor.Position.Equal(actor.Position) || !respawnActor.SpawnHome.Equal(actor.SpawnHome) {
+		updated, ok := r.entities.UpdateStaticActor(respawnActor)
+		if !ok {
+			return
+		}
+		respawnActor = updated
+	}
 	if r.staticActorCombatHP == nil {
 		r.staticActorCombatHP = make(map[uint64]uint8)
 	}
@@ -1039,18 +1055,30 @@ func (r *sharedWorldRegistry) flushReadyStaticActorRespawnLocked(entityID uint64
 	if !encodable {
 		return
 	}
-	addFrames := encodeStaticActorVisibilityFrames(actor)
+	addFrames := encodeStaticActorVisibilityFrames(respawnActor)
 	if len(addFrames) == 0 {
 		return
 	}
-	frames := make([][]byte, 0, 1+len(addFrames))
-	frames = append(frames, deleteRaw)
-	frames = append(frames, addFrames...)
-	for _, target := range r.scopesLocked().VisibleTargetsForStaticActor(actor) {
+	refreshFrames := make([][]byte, 0, 1+len(addFrames))
+	refreshFrames = append(refreshFrames, deleteRaw)
+	refreshFrames = append(refreshFrames, addFrames...)
+	for _, target := range targetDiff.RetainedVisibleTargets {
 		if characterAtBootstrapHPFloor(target.Character) {
 			continue
 		}
-		r.enqueueToEntityLocked(target.Entity.ID, frames)
+		r.enqueueToEntityLocked(target.Entity.ID, refreshFrames)
+	}
+	for _, target := range targetDiff.RemovedVisibleTargets {
+		if characterAtBootstrapHPFloor(target.Character) {
+			continue
+		}
+		r.enqueueToEntityLocked(target.Entity.ID, [][]byte{deleteRaw})
+	}
+	for _, target := range targetDiff.AddedVisibleTargets {
+		if characterAtBootstrapHPFloor(target.Character) {
+			continue
+		}
+		r.enqueueToEntityLocked(target.Entity.ID, addFrames)
 	}
 }
 
