@@ -380,6 +380,179 @@ func TestGameRuntimeSpawnGroupLeashUsesPreservedHomeAfterCurrentPositionUpdate(t
 	}
 }
 
+func TestGameRuntimeReturnSpawnGroupHomeFailsClosedWithoutPersistingOrClearingTargetsWhenSaveFails(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ReturnFailOwner", 0x01030165, 0x02040165, 1700, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	issuePeerTicket(t, store, "return-fail-owner", 0x15151515, owner)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for failed spawn-group return-home: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_home_fail",
+		Name:          "ReturnHomeFailMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import failed return-home spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_home_fail")
+	if !ok {
+		t.Fatal("expected failed return-home spawn group to resolve by ref")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "return-fail-owner", 0x15151515)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+	targetOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(group.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected target error before failed return-home: %v", err)
+	}
+	if len(targetOut) != 1 {
+		t.Fatalf("expected selected return-required fixture target to start accepted before forced move, got %d frames", len(targetOut))
+	}
+	selectedBeforeFailure, ok := runtime.CombatTargetSnapshot("ReturnFailOwner")
+	if !ok || selectedBeforeFailure.TargetVID != uint32(group.EntityID) {
+		t.Fatalf("expected selected combat target before failed return-home, ok=%v snapshot=%+v", ok, selectedBeforeFailure)
+	}
+	runtime.sharedWorld.mu.Lock()
+	actor, ok := runtime.sharedWorld.entities.StaticActor(group.EntityID)
+	if !ok {
+		runtime.sharedWorld.mu.Unlock()
+		t.Fatalf("expected spawn-backed actor %d to resolve before forced position drift", group.EntityID)
+	}
+	actor.Position = worldruntime.NewPosition(42, 2301, 2800)
+	if _, ok := runtime.sharedWorld.entities.UpdateStaticActor(actor); !ok {
+		runtime.sharedWorld.mu.Unlock()
+		t.Fatal("expected direct runtime position drift to preserve selected target for failure guard")
+	}
+	runtime.sharedWorld.mu.Unlock()
+
+	runtime.staticStore = &failingStaticActorStore{}
+	if returned, ok := runtime.ReturnSpawnGroupHome(group.EntityID); ok {
+		t.Fatalf("expected return-home trigger to fail closed when persistence fails, got %+v", returned)
+	}
+	leash, ok := runtime.SpawnGroupLeash(group.EntityID, worldruntime.DefaultSpawnLeashRadius)
+	if !ok || leash.Status != worldruntime.SpawnLeashStatusReturnRequired || leash.Current.X != 2301 || leash.Current.Y != 2800 {
+		t.Fatalf("expected failed return-home not to mutate runtime position, ok=%v leash=%+v", ok, leash)
+	}
+	selectedAfterFailure, ok := runtime.CombatTargetSnapshot("ReturnFailOwner")
+	if !ok || selectedAfterFailure.TargetVID != uint32(group.EntityID) || selectedAfterFailure.SnapshotVersion != selectedBeforeFailure.SnapshotVersion {
+		t.Fatalf("expected failed return-home to preserve selected combat target, ok=%v before=%+v after=%+v", ok, selectedBeforeFailure, selectedAfterFailure)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected failed return-home not to queue target clear or visibility frames, got %d", len(queued))
+	}
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: uint32(group.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected stale attack dispatch after failed return-home: %v", err)
+	}
+	if len(attackOut) != 0 {
+		t.Fatalf("expected still-return-required selected attack to fail closed after failed return-home, got %d frames", len(attackOut))
+	}
+}
+
+func TestGameRuntimeReturnSpawnGroupHomeAtHomeClearsCombatTargetAndReleasesEngagement(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ReturnHomeEngagedOwner", 0x01030166, 0x02040166, 1700, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	peer := peerVisibilityCharacter("ReturnHomeEngagedPeer", 0x01030167, 0x02040167, 1720, 2800, 0, 102, 202)
+	peer.MapIndex = 42
+	issuePeerTicket(t, store, "return-home-engaged-owner", 0x16161616, owner)
+	issuePeerTicket(t, store, "return-home-engaged-peer", 0x17171717, peer)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for at-home spawn-group return-home: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_home_engaged",
+		Name:          "ReturnHomeEngagedMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import at-home return-home spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_home_engaged")
+	if !ok {
+		t.Fatal("expected at-home return-home spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	factory := runtime.SessionFactory()
+	ownerFlow, _ := enterGameWithLoginTicket(t, factory, "return-home-engaged-owner", 0x16161616)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, factory, "return-home-engaged-peer", 0x17171717)
+	defer closeSessionFlow(t, peerFlow)
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, peerFlow)
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected owner target error before at-home return-home: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected owner to select at-home practice mob, got %d frames", len(selectOut))
+	}
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected owner attack error before at-home return-home: %v", err)
+	}
+	if len(attackOut) == 0 {
+		t.Fatal("expected owner attack to establish practice-mob engagement")
+	}
+	flushServerFrames(t, peerFlow)
+
+	returned, ok := runtime.ReturnSpawnGroupHome(group.EntityID)
+	if !ok {
+		t.Fatalf("expected at-home return-home trigger to accept entity %d", group.EntityID)
+	}
+	if returned.Status != worldruntime.SpawnLeashStatusAtHome || returned.ReturnRequired || returned.Actor.X != 1700 || returned.Actor.Y != 2800 {
+		t.Fatalf("expected at-home return-home result to stay at authored home, got %+v", returned)
+	}
+	ownerQueued := flushServerFrames(t, ownerFlow)
+	if len(ownerQueued) != 1 {
+		t.Fatalf("expected at-home return-home to queue one selected-target clear to owner, got %d frames", len(ownerQueued))
+	}
+	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, ownerQueued[0]))
+	if err != nil {
+		t.Fatalf("decode owner clear-target after at-home return-home: %v", err)
+	}
+	if clear.TargetVID != 0 || clear.HPPercent != 0 {
+		t.Fatalf("expected owner target clear after at-home return-home, got %+v", clear)
+	}
+
+	peerSelect, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected peer target error after at-home return-home: %v", err)
+	}
+	if len(peerSelect) != 1 {
+		t.Fatalf("expected at-home return-home to release engagement so peer can target, got %d frames", len(peerSelect))
+	}
+}
+
 func TestGameRuntimeReturnSpawnGroupHomeMovesReturnRequiredMobBackToAuthoredHome(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	homeViewer := peerVisibilityCharacter("ReturnHomeViewer", 0x01030163, 0x02040163, 1700, 2800, 0, 101, 201)
