@@ -380,6 +380,117 @@ func TestGameRuntimeSpawnGroupLeashUsesPreservedHomeAfterCurrentPositionUpdate(t
 	}
 }
 
+func TestGameRuntimeReturnSpawnGroupHomeMovesReturnRequiredMobBackToAuthoredHome(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	homeViewer := peerVisibilityCharacter("ReturnHomeViewer", 0x01030163, 0x02040163, 1700, 2800, 0, 101, 201)
+	homeViewer.MapIndex = 42
+	movedViewer := peerVisibilityCharacter("ReturnMovedViewer", 0x01030164, 0x02040164, 2301, 2800, 0, 102, 202)
+	movedViewer.MapIndex = 42
+	issuePeerTicket(t, store, "return-home-viewer", 0x13131313, homeViewer)
+	issuePeerTicket(t, store, "return-moved-viewer", 0x14141414, movedViewer)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for spawn-group return-home: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_home",
+		Name:          "ReturnHomeMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import return-home spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_home")
+	if !ok {
+		t.Fatal("expected return-home spawn group to resolve by ref")
+	}
+
+	factory := runtime.SessionFactory()
+	homeFlow, _ := enterGameWithLoginTicket(t, factory, "return-home-viewer", 0x13131313)
+	defer closeSessionFlow(t, homeFlow)
+	movedFlow, _ := enterGameWithLoginTicket(t, factory, "return-moved-viewer", 0x14141414)
+	defer closeSessionFlow(t, movedFlow)
+	flushServerFrames(t, homeFlow)
+	flushServerFrames(t, movedFlow)
+
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "ReturnHomeMob", 42, 2301, 2800, 20350); !ok {
+		t.Fatal("expected spawn-backed actor current-position update to succeed")
+	}
+	if homeDelete := flushServerFrames(t, homeFlow); len(homeDelete) != 1 {
+		t.Fatalf("expected home viewer to receive one delete when actor is moved out of leash, got %d", len(homeDelete))
+	}
+	movedAddFrames := flushServerFrames(t, movedFlow)
+	if len(movedAddFrames) != 3 {
+		t.Fatalf("expected moved viewer to receive add burst at displaced position, got %d", len(movedAddFrames))
+	}
+	leash, ok := runtime.SpawnGroupLeash(group.EntityID, worldruntime.DefaultSpawnLeashRadius)
+	if !ok || leash.Status != worldruntime.SpawnLeashStatusReturnRequired || !leash.ReturnRequired || leash.ReturnTarget == nil {
+		t.Fatalf("expected displaced spawn group to require return before return-home trigger, got leash=%+v ok=%v", leash, ok)
+	}
+
+	returned, ok := runtime.ReturnSpawnGroupHome(group.EntityID)
+	if !ok {
+		t.Fatalf("expected return-home trigger to accept entity %d", group.EntityID)
+	}
+	if returned.Status != worldruntime.SpawnLeashStatusAtHome || returned.ReturnRequired || returned.ReturnTarget != nil {
+		t.Fatalf("expected return-home trigger to restore at-home leash state, got %+v", returned)
+	}
+	if returned.Actor.X != 1700 || returned.Actor.Y != 2800 || returned.Actor.SpawnGroupRef != "practice.return_home" {
+		t.Fatalf("expected returned actor at authored spawn group home, got %+v", returned.Actor)
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after return-home: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != 1700 || persisted.StaticActors[0].Y != 2800 || persisted.StaticActors[0].SpawnHome == nil || persisted.StaticActors[0].SpawnHome.X != 1700 {
+		t.Fatalf("expected persisted spawn group to return to authored home, got %+v", persisted.StaticActors)
+	}
+	movedDelete := flushServerFrames(t, movedFlow)
+	if len(movedDelete) != 1 {
+		t.Fatalf("expected moved viewer to receive one delete on return home, got %d frames", len(movedDelete))
+	}
+	if _, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, movedDelete[0])); err != nil {
+		t.Fatalf("decode moved-viewer return-home delete: %v", err)
+	}
+	homeReturnFrames := flushServerFrames(t, homeFlow)
+	if len(homeReturnFrames) != 3 {
+		t.Fatalf("expected home viewer to receive return-home add burst, got %d frames", len(homeReturnFrames))
+	}
+	homeAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, homeReturnFrames[0]))
+	if err != nil {
+		t.Fatalf("decode return-home add: %v", err)
+	}
+	if homeAdd.VID != uint32(group.EntityID) || homeAdd.X != 1700 || homeAdd.Y != 2800 {
+		t.Fatalf("expected return-home add at authored home, got %+v", homeAdd)
+	}
+
+	targetOut, err := homeFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(group.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected target error after return-home: %v", err)
+	}
+	if len(targetOut) != 1 {
+		t.Fatalf("expected returned spawn group to be targetable after return-home, got %d frames", len(targetOut))
+	}
+}
+
 func TestSharedWorldRegistrySpawnGroupReturnRequiredActorFailsCombatTarget(t *testing.T) {
 	registry := newSharedWorldRegistryWithTopology(worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200))
 	subject := peerVisibilityCharacter("LeashTargetSubject", 0x01030111, 0x02040111, 2301, 2800, 0, 101, 201)

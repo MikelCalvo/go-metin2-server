@@ -1658,6 +1658,35 @@ func (r *gameRuntime) SpawnGroupLeash(entityID uint64, radius int32) (SpawnGroup
 	return r.sharedWorld.SpawnGroupLeash(entityID, radius)
 }
 
+func (r *gameRuntime) ReturnSpawnGroupHome(entityID uint64) (SpawnGroupLeashSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil || entityID == 0 {
+		return SpawnGroupLeashSnapshot{}, false
+	}
+
+	r.staticActorMu.Lock()
+	defer r.staticActorMu.Unlock()
+
+	current := r.sharedWorld.StaticActors()
+	idx := staticActorSnapshotIndex(current, entityID)
+	if idx == -1 || current[idx].SpawnGroupRef == "" || current[idx].SpawnHome == nil {
+		return SpawnGroupLeashSnapshot{}, false
+	}
+	target := cloneStaticActorSnapshots(current)
+	home := *current[idx].SpawnHome
+	target[idx].MapIndex = home.MapIndex
+	target[idx].X = home.X
+	target[idx].Y = home.Y
+	if !r.persistStaticActorSnapshot(target) {
+		return SpawnGroupLeashSnapshot{}, false
+	}
+	returned, ok := r.sharedWorld.ReturnSpawnGroupHome(entityID)
+	if !ok {
+		_ = r.persistStaticActorSnapshot(current)
+		return SpawnGroupLeashSnapshot{}, false
+	}
+	return returned, true
+}
+
 func (r *gameRuntime) StaticActor(entityID uint64) (StaticActorSnapshot, bool) {
 	if r == nil || r.sharedWorld == nil {
 		return StaticActorSnapshot{}, false

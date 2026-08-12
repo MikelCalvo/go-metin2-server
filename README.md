@@ -174,14 +174,14 @@ Already present:
 - aggro-lite engagement ownership and retaliation ticks,
 - player death floor and restart-here/restart-town bootstrap recovery seams,
 - deterministic EXP/gold/fixed-drop reward descriptors for accepted non-player deaths,
-- a read-only loopback spawn-leash inspection endpoint for materialized spawn groups (`/local/spawn-groups/{entity_id}/leash?radius=...`) that compares preserved authored home against the current runtime position, plus a first fail-closed combat gate with an explicit `target_return_required` runtime reason for spawn-backed actors that already classify `return_required`,
+- loopback spawn-leash tooling for materialized spawn groups: read-only inspection (`/local/spawn-groups/{entity_id}/leash?radius=...`), a controlled return-home trigger (`POST /local/spawn-groups/{entity_id}/return-home`) that moves a live spawn-backed actor back to preserved authored home through the existing visibility rebuild path, and a first fail-closed combat gate with an explicit `target_return_required` runtime reason for spawn-backed actors that still classify `return_required`,
 - codec-only presentation families for fly effects, PvP/duel, stun, character position / change-speed, and target markers,
 - tests around watcher/owner respawn, retarget, cleanup, reward, leash-classification, and authored-home respawn-return cases.
 
 Still missing:
 
 - real damage formulas and attack types,
-- independent mob AI: aggro radius, chase, return packet choreography, patrol, target switching, and live use of the current leash classifier,
+- independent mob AI: aggro radius, chase, autonomous return packet choreography, patrol, target switching, and broader live use of the current leash classifier,
 - accepted `USE_SKILL`, ranged/projectile, PvP, and duel runtime policy,
 - broad loot/drop tables,
 - full death/revive/corpse/menu choreography.

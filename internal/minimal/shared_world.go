@@ -2696,6 +2696,96 @@ func (r *sharedWorldRegistry) SpawnGroupLeash(entityID uint64, radius int32) (Sp
 	}, true
 }
 
+func (r *sharedWorldRegistry) ReturnSpawnGroupHome(entityID uint64) (SpawnGroupLeashSnapshot, bool) {
+	if r == nil || r.entities == nil || entityID == 0 {
+		return SpawnGroupLeashSnapshot{}, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	actor, ok := r.entities.StaticActor(entityID)
+	if !ok || actor.SpawnGroupRef == "" {
+		return SpawnGroupLeashSnapshot{}, false
+	}
+	evaluation, ok := worldruntime.EvaluateStaticActorCurrentSpawnLeash(actor, worldruntime.DefaultSpawnLeashRadius)
+	if !ok {
+		return SpawnGroupLeashSnapshot{}, false
+	}
+	currentHP, ok := r.ensureStaticActorCombatCurrentHPLocked(actor)
+	if !ok || currentHP == 0 {
+		return SpawnGroupLeashSnapshot{}, false
+	}
+	if !evaluation.ReturnRequired {
+		return SpawnGroupLeashSnapshot{
+			Actor:              r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor)),
+			SpawnLeashSnapshot: worldruntime.SpawnLeashSnapshotFromEvaluation(evaluation),
+		}, true
+	}
+
+	returnedActor := actor
+	returnedActor.Position = evaluation.Home
+	if returnedActor.Position.Equal(actor.Position) {
+		return SpawnGroupLeashSnapshot{
+			Actor:              r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor)),
+			SpawnLeashSnapshot: worldruntime.SpawnLeashSnapshotFromEvaluation(evaluation),
+		}, true
+	}
+
+	targetDiff := r.scopesLocked().RelocateStaticActorTargetDiff(actor, returnedActor)
+	updated, ok := r.entities.UpdateStaticActor(returnedActor)
+	if !ok {
+		return SpawnGroupLeashSnapshot{}, false
+	}
+	r.syncStaticActorCombatStateLocked(updated)
+
+	refreshFrames := r.buildStaticActorRefreshFramesLocked(actor, updated)
+	if len(refreshFrames) > 0 {
+		for _, target := range targetDiff.RetainedVisibleTargets {
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
+			r.enqueueToEntityLocked(target.Entity.ID, refreshFrames)
+		}
+	}
+	deleteRaw, deleteEncodable := encodeStaticActorDeleteFrame(actor)
+	if deleteEncodable {
+		for _, target := range targetDiff.RemovedVisibleTargets {
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
+			r.enqueueToEntityLocked(target.Entity.ID, [][]byte{deleteRaw})
+		}
+	}
+	addFrames := r.encodeStaticActorVisibilityStateFramesLocked(updated)
+	if len(addFrames) > 0 {
+		for _, target := range targetDiff.AddedVisibleTargets {
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
+			r.enqueueToEntityLocked(target.Entity.ID, addFrames)
+		}
+	}
+	delete(r.staticActorCombatEngagedBy, updated.Entity.ID)
+	if targetVID, ok := worldruntime.StaticActorVisibilityVID(actor); ok {
+		r.clearSelectedCombatTargetsLocked(targetVID, 0)
+	}
+	return r.spawnGroupLeashLocked(updated, worldruntime.DefaultSpawnLeashRadius)
+}
+
+func (r *sharedWorldRegistry) spawnGroupLeashLocked(actor worldruntime.StaticEntity, radius int32) (SpawnGroupLeashSnapshot, bool) {
+	if r == nil || actor.Entity.ID == 0 || actor.SpawnGroupRef == "" {
+		return SpawnGroupLeashSnapshot{}, false
+	}
+	evaluation, ok := worldruntime.EvaluateStaticActorCurrentSpawnLeash(actor, radius)
+	if !ok {
+		return SpawnGroupLeashSnapshot{}, false
+	}
+	return SpawnGroupLeashSnapshot{
+		Actor:              r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor)),
+		SpawnLeashSnapshot: worldruntime.SpawnLeashSnapshotFromEvaluation(evaluation),
+	}, true
+}
+
 func (r *sharedWorldRegistry) StaticActor(entityID uint64) (StaticActorSnapshot, bool) {
 	if r == nil || r.entities == nil || entityID == 0 {
 		return StaticActorSnapshot{}, false

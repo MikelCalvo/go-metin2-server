@@ -15,7 +15,7 @@ What this document adds is deliberately narrower:
 
 ## Current owned contract
 
-The first bootstrap leash seam is a pure runtime classification helper in `internal/worldruntime`, exposed through the bootstrap runtime for read-only operator inspection.
+The first bootstrap leash seam is a pure runtime classification helper in `internal/worldruntime`, exposed through the bootstrap runtime for read-only operator inspection and through one controlled operator return-home trigger.
 
 Inputs:
 - authored/home `Position { map_index, x, y }`
@@ -28,7 +28,15 @@ In the current stationary practice-mob runtime, freshly imported mobs normally c
 
 A spawn-backed actor whose default leash classification is already `return_required` is now deliberately outside the owned stationary combat loop until a later return/chase slice moves or rebuilds it back into leash. Fresh `TARGET` selection for that actor fails closed with no self frame and the shared-world attempt seam reports `target_return_required` instead of the generic non-targetable reason; a stale already-selected `ATTACK` against an actor that became return-required also fails closed with the same explicit reason before HP mutation, engagement, immediate retaliation, delayed retaliation, damage-info, reward, or respawn side effects. Actors that still classify `at_home` or `within_radius` keep using the existing target -> attack -> death -> respawn contract.
 
-The first live consumer of that preserved home is now respawn, not chase AI. When a spawn-backed combatant respawns after its server-owned dead timer, the runtime restores the materialized actor position to the preserved authored home before rebuilding visibility. Viewers that only saw the old displaced runtime position receive the ordinary `CHARACTER_DEL`, viewers that only see the authored home receive the normal add/info/update burst, and viewers that can see both receive the usual delete-plus-readd refresh. The respawned actor reports `status = at_home`, full bootstrap HP, and no active target binding; the leash endpoint remains read-only and does not itself trigger that return.
+The first live consumer of that preserved home was respawn, not chase AI. When a spawn-backed combatant respawns after its server-owned dead timer, the runtime restores the materialized actor position to the preserved authored home before rebuilding visibility. Viewers that only saw the old displaced runtime position receive the ordinary `CHARACTER_DEL`, viewers that only see the authored home receive the normal add/info/update burst, and viewers that can see both receive the usual delete-plus-readd refresh. The respawned actor reports `status = at_home`, full bootstrap HP, and no active target binding.
+
+The next controlled consumer is the loopback-only return-home trigger:
+- endpoint: `POST /local/spawn-groups/{entity_id}/return-home`
+- scope: `gamed` local/operator tooling only
+- request body: none
+- success response: the same spawn-group leash snapshot shape, now reporting the actor at authored `home` / `current` with `status = at_home`
+
+On success, the trigger moves one live spawn-backed actor's materialized position back to its preserved authored home and persists that static-actor snapshot update before mutating runtime state. It does not change HP, death timers, reward descriptors, or combat profile metadata. It releases any current practice-mob engagement and clears selected combat targets bound to that actor's visible `VID`, matching the existing explicit reset boundaries for actor update/removal. It then reuses the owned static-actor visibility transition path: old-position-only viewers receive `CHARACTER_DEL`, home-position viewers receive the normal add/info/update burst, and retained viewers receive the normal delete-plus-readd refresh.
 
 The result classifies the current position as one of:
 - `at_home`
@@ -53,7 +61,9 @@ The runtime-facing JSON snapshot for a materialized spawn group contains:
 - `return_required`
 - optional `return_target` only when `return_required = true`
 
-For this slice, the concrete loopback endpoint is `GET /local/spawn-groups/{entity_id}/leash?radius=<positive-int>`. It is operator/debug tooling only; it is not a gameplay packet and it does not mutate actor position, target ownership, HP, death state, respawn timers, or visible-world membership. Its result is still meaningful after a runtime actor-position update: `home` remains the authored spawn position while `current` reflects the materialized actor position at lookup time.
+The read-only loopback endpoint remains `GET /local/spawn-groups/{entity_id}/leash?radius=<positive-int>`. It is operator/debug tooling only; it is not a gameplay packet and it does not mutate actor position, target ownership, HP, death state, respawn timers, or visible-world membership. Its result is still meaningful after a runtime actor-position update: `home` remains the authored spawn position while `current` reflects the materialized actor position at lookup time.
+
+The mutating loopback return endpoint is deliberately separate: `POST /local/spawn-groups/{entity_id}/return-home` performs the controlled return described above and returns `404` for missing/non-spawn actors, dead actors waiting on respawn, or actors whose static snapshot cannot be returned safely.
 
 ## Fail-closed cases
 
@@ -74,9 +84,9 @@ Freezing the classification first lets later slices add movement or server-origi
 This slice does **not** yet implement:
 - autonomous mob movement
 - chase packets or server-driven `MOVE` fanout for mobs
-- return-home packet choreography
+- client-visible return-home packet choreography beyond the existing static-actor delete/readd visibility path
 - pathfinding, patrol routes, sectors, or navmesh logic
 - aggro radius acquisition or target switching
 - persistence of live mob position distinct from authored spawn position
 
-Until a later slice wires this classifier into live mob movement behavior, the existing content-loaded practice mobs remain stationary and use the already-owned target -> attack -> death -> respawn lifecycle only while they classify `at_home` or `within_radius`. A materialized spawn-backed actor that already classifies `return_required` is kept visible/debuggable but is not accepted as a combat target again until an owned respawn, update, or later return/chase slice places it back inside leash; runtime attempt callers can now distinguish this specific gate as `target_return_required`. The loopback endpoint is only a read-only inspection bridge over that classifier so QA can verify authored home/current/radius semantics before chase/return work begins.
+Until a later slice wires this classifier into autonomous live mob movement behavior, the existing content-loaded practice mobs remain stationary and use the already-owned target -> attack -> death -> respawn lifecycle only while they classify `at_home` or `within_radius`. A materialized spawn-backed actor that already classifies `return_required` is kept visible/debuggable but is not accepted as a combat target again until an owned respawn, operator return-home, update, or later return/chase slice places it back inside leash; runtime attempt callers can now distinguish this specific gate as `target_return_required`. The `GET` leash endpoint is only a read-only inspection bridge over that classifier, while the `POST` return-home endpoint is a controlled local trigger for QA and lifecycle recovery, not final mob AI.
