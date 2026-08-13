@@ -2853,7 +2853,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				frames = append(frames, quickslotFrames...)
 			}
 			frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
-			return gameflow.ItemUseToItemResult{Accepted: ok, Frames: frames}
+			if !ok {
+				return gameflow.ItemUseToItemResult{Accepted: false}
+			}
+			frames = prependExchangeCloseFrame(frames)
+			return gameflow.ItemUseToItemResult{Accepted: true, Frames: frames}
 		}
 		executeSelectedGoldDrop := func(amount uint32) ([][]byte, bool) {
 			if amount == 0 {

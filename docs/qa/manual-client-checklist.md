@@ -255,6 +255,7 @@ Expected result:
 
 - [ ] Put two compatible stackable carried items with the same `vnum` and different item instance IDs into separate inventory cells
 - [ ] Drag one stack onto the other stack
+- [ ] If an exchange shell is open with a visible peer, repeat the drag while one of those stacks is displayed in the exchange window
 
 Expected result:
 - compatible stacks consolidate up to the template-authored `max_count`
@@ -262,6 +263,7 @@ Expected result:
 - the consumed source cell disappears only on a full merge
 - if the target has only partial room, both source and target counts refresh, and item/non-item quickslots bound to either still-occupied cell remain unchanged
 - all item quickslots for a removed source cell are cleared in deterministic quickslot-position order on full merge, target item quickslots remain stable on full merge even when both source and target cells were quickslotted before the drag, and unrelated skill/command quickslots remain
+- if the stack consolidation succeeds while an exchange shell is open, the requester receives one self-only `GC::EXCHANGE END` before the item/quickslot merge refresh frames, the paired peer receives one queued `GC::EXCHANGE END`, and no exchange finalization/result frames appear
 - restricted or invalid states (`anti_stack`, transfer anti-flags, missing/non-stackable/malformed/mismatched templates, source/target `vnum` mismatches, locked source/target stacks, selected-character job/sex/empire/min-level restrictions, duplicate source/target item instance IDs, duplicate live occupancy of the source or target carried cell, already-full targets, source/target counts already above template `max_count`, or selected characters at the bootstrap zero-HP floor) fail closed with no visible mutation; for `anti_stack`, both carried stacks and item quickslots should remain unchanged
 - a `min_level` restriction above the selected character's level or a selected character at the bootstrap zero-HP floor leaves both carried stacks and any source-cell item quickslot unchanged even when the source and target are otherwise compatible
 
@@ -464,6 +466,7 @@ Run this only if packet tooling or the client build can emit an exchange/trade a
 - [ ] If packet tooling allows it, have both exchange sides send `ACCEPT`, then send a valid `ITEM_ADD` or in-budget `ELK_ADD` display change from one side
 - [ ] While an exchange shell is still open, send same-socket `/quit`, `/logout`, or `/phase_select` from one participant
 - [ ] While an exchange shell is still open and showing one carried item, use that carried item with `ITEM_USE` or the slash `/use_item <slot>` harness from the same participant
+- [ ] While an exchange shell is still open and showing one carried stack, drag that stack onto a compatible carried stack with `ITEM_USE_TO_ITEM` from the same participant
 - [ ] While an exchange shell is still open and showing one carried item, drop that carried item with the normal `ITEM_DROP` / carried-item drop path from the same participant
 - [ ] If packet tooling allows it, repeat with `ELK_ADD` and `ACCEPT` subheaders
 - [ ] If packet tooling allows it, repeat with a malformed payload size
@@ -482,6 +485,7 @@ Expected result:
 - active-shell `EXCHANGE ACCEPT` emits one self `GC::EXCHANGE ACCEPT` with `is_me = 1` and one queued peer `GC::EXCHANGE ACCEPT` with `is_me = 0`; both carry `arg1 = 1`, leave item/gold display state unchanged, leave the shell cancellable, and do not transfer items/gold or persist trade state; a later accepted display-changing `ITEM_ADD`, `ITEM_DEL`, or in-budget `ELK_ADD` clears previously shown accept markers with `GC::EXCHANGE ACCEPT(arg1 = 0)` before showing the new display state, again with no item/gold mutation
 - same-socket `/quit`, `/logout`, and `/phase_select` close an open bootstrap exchange shell before completing their lifecycle behavior: the command sender sees one self-only `GC::EXCHANGE END` before the command-delivery or phase-transition frame, the paired peer receives one queued `GC::EXCHANGE END`, and carried inventory/equipment/quickslots/gold/ground handles/persistence remain unchanged
 - same-socket successful carried-item use closes an open bootstrap exchange shell before the item-use response burst: the requester sees one self-only `GC::EXCHANGE END` before the packet `ITEM_USE` echo or slash item-use point/item/info frames, the paired peer receives one queued `GC::EXCHANGE END`, the exchange display/accept state is cleared, and the item-use mutation follows the normal template-backed item-use persistence contract without any exchange finalization/result frames
+- same-socket successful `ITEM_USE_TO_ITEM` stack consolidation closes an open bootstrap exchange shell before the stack-merge response burst: the requester sees one self-only `GC::EXCHANGE END` before the item/quickslot refresh frames, the paired peer receives one queued `GC::EXCHANGE END`, the exchange display/accept state is cleared, and the stack mutation follows the normal template-backed item-use persistence contract without any exchange finalization/result frames
 - same-socket successful carried-item drop closes an open bootstrap exchange shell before the drop response burst: the requester sees one self-only `GC::EXCHANGE END` before the item/quickslot/ground/ownership frames, the paired peer receives one queued `GC::EXCHANGE END` before the visible ground add/ownership frames, the exchange display/accept state is cleared, and the drop mutation follows the normal item-drop persistence contract without any exchange finalization/result frames
 - finalization/result semantics remain unsupported in the shipped bootstrap runtime; apart from the current guard feedback and display-only item-add/item-del/gold-add/accept paths, unsupported exchange requests emit no exchange result frames and do not mutate state
 - an `anti_give` carried item with `give_reject_message` returns exactly one self-only `CHAT_TYPE_INFO` message for active-shell `EXCHANGE ITEM_ADD` using that authored text only when the requested display slot is in the current `0..11` exchange item range, while still leaving inventory, equipment, quickslots, gold, peers, ground handles, and persistence unchanged; it does not emit `GC::EXCHANGE ITEM_ADD`; the same guarded item-add attempted before an exchange shell is open remains a silent no-frame/no-mutation rejection
