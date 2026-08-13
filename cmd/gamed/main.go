@@ -619,6 +619,10 @@ func main() {
 		opsHandler,
 		exportContentBundleSummary,
 	)
+	opsHandler = ops.RegisterLocalContentBundleMapSpawnGroupsEndpoint(
+		opsHandler,
+		exportContentBundleSummary,
+	)
 	opsHandler = ops.RegisterLocalContentBundleStaticActorEndpoint(
 		opsHandler,
 		exportContentBundleSummary,

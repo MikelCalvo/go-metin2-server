@@ -1467,6 +1467,48 @@ func TestLocalContentBundleMapSummaryEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalContentBundleMapSpawnGroupsEndpointReturnsMatchingSpawnGroupsForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{
+			Maps: []contentbundle.MapContentSummary{
+				{MapIndex: 1, SpawnGroupCount: 2},
+				{MapIndex: 7, SpawnGroupCount: 1},
+			},
+			SpawnGroups: []contentbundle.SpawnGroupReferenceSummary{
+				{Ref: "practice.remote_wolf", Name: "Remote Wolf", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 101, CombatProfile: "practice_mob", RewardExperience: 25, RewardGold: 10},
+				{Ref: "practice.village_dummy", Name: "Village Dummy", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 102, CombatProfile: "training_dummy"},
+				{Ref: "practice.village_wolf", Name: "Village Wolf", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 101, CombatProfile: "practice_mob", RewardExperience: 50, RewardGold: 20, RewardDropVnums: []uint32{27001}},
+			},
+		},
+	}
+	mux := RegisterLocalContentBundleMapSpawnGroupsEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/maps/1/spawn-groups", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got []contentbundle.SpawnGroupReferenceSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode map spawn-group response body: %v", err)
+	}
+	want := []contentbundle.SpawnGroupReferenceSummary{
+		{Ref: "practice.village_dummy", Name: "Village Dummy", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 102, CombatProfile: "training_dummy"},
+		{Ref: "practice.village_wolf", Name: "Village Wolf", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 101, CombatProfile: "practice_mob", RewardExperience: 50, RewardGold: 20, RewardDropVnums: []uint32{27001}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle map spawn groups:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
 func TestLocalContentBundleMapShopRoutesEndpointReturnsMatchingRoutesForLoopbackGet(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{
 		status: http.StatusOK,
@@ -1551,7 +1593,7 @@ func TestLocalContentBundleMapWarpRoutesEndpointReturnsMatchingRoutesForLoopback
 	}
 }
 
-func TestLocalContentBundleMapServiceRouteEndpointsReturnEmptyListForKnownMapWithoutRoutes(t *testing.T) {
+func TestLocalContentBundleMapFocusedContentEndpointsReturnEmptyListForKnownMapWithoutMatches(t *testing.T) {
 	tests := []struct {
 		name     string
 		register func(*http.ServeMux, func() (any, int)) *http.ServeMux
@@ -1559,6 +1601,7 @@ func TestLocalContentBundleMapServiceRouteEndpointsReturnEmptyListForKnownMapWit
 	}{
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
+		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1584,7 +1627,7 @@ func TestLocalContentBundleMapServiceRouteEndpointsReturnEmptyListForKnownMapWit
 	}
 }
 
-func TestLocalContentBundleMapServiceRouteEndpointsReturnNotFoundForMissingMap(t *testing.T) {
+func TestLocalContentBundleMapFocusedContentEndpointsReturnNotFoundForMissingMap(t *testing.T) {
 	tests := []struct {
 		name     string
 		register func(*http.ServeMux, func() (any, int)) *http.ServeMux
@@ -1592,6 +1635,7 @@ func TestLocalContentBundleMapServiceRouteEndpointsReturnNotFoundForMissingMap(t
 	}{
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
+		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1614,7 +1658,7 @@ func TestLocalContentBundleMapServiceRouteEndpointsReturnNotFoundForMissingMap(t
 	}
 }
 
-func TestLocalContentBundleMapServiceRouteEndpointsRejectInvalidMapIndex(t *testing.T) {
+func TestLocalContentBundleMapFocusedContentEndpointsRejectInvalidMapIndex(t *testing.T) {
 	tests := []struct {
 		name     string
 		register func(*http.ServeMux, func() (any, int)) *http.ServeMux
@@ -1622,6 +1666,7 @@ func TestLocalContentBundleMapServiceRouteEndpointsRejectInvalidMapIndex(t *test
 	}{
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, paths: []string{"/local/content-bundle/maps/0/shop-routes", "/local/content-bundle/maps/not-a-map/shop-routes", "/local/content-bundle/maps/42/shop-routes/extra"}},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, paths: []string{"/local/content-bundle/maps/0/warp-routes", "/local/content-bundle/maps/not-a-map/warp-routes", "/local/content-bundle/maps/42/warp-routes/extra"}},
+		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, paths: []string{"/local/content-bundle/maps/0/spawn-groups", "/local/content-bundle/maps/not-a-map/spawn-groups", "/local/content-bundle/maps/42/spawn-groups/extra"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1645,7 +1690,7 @@ func TestLocalContentBundleMapServiceRouteEndpointsRejectInvalidMapIndex(t *test
 	}
 }
 
-func TestLocalContentBundleMapServiceRouteEndpointsRejectNonLoopbackRemoteAddr(t *testing.T) {
+func TestLocalContentBundleMapFocusedContentEndpointsRejectNonLoopbackRemoteAddr(t *testing.T) {
 	tests := []struct {
 		name     string
 		register func(*http.ServeMux, func() (any, int)) *http.ServeMux
@@ -1653,6 +1698,7 @@ func TestLocalContentBundleMapServiceRouteEndpointsRejectNonLoopbackRemoteAddr(t
 	}{
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
+		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1675,7 +1721,7 @@ func TestLocalContentBundleMapServiceRouteEndpointsRejectNonLoopbackRemoteAddr(t
 	}
 }
 
-func TestLocalContentBundleMapServiceRouteEndpointsRejectWrongMethod(t *testing.T) {
+func TestLocalContentBundleMapFocusedContentEndpointsRejectWrongMethod(t *testing.T) {
 	tests := []struct {
 		name     string
 		register func(*http.ServeMux, func() (any, int)) *http.ServeMux
@@ -1683,6 +1729,7 @@ func TestLocalContentBundleMapServiceRouteEndpointsRejectWrongMethod(t *testing.
 	}{
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
+		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1705,17 +1752,19 @@ func TestLocalContentBundleMapServiceRouteEndpointsRejectWrongMethod(t *testing.
 	}
 }
 
-func TestLocalContentBundleMapServiceRouteEndpointsCoexistWithMapSummaryRoute(t *testing.T) {
+func TestLocalContentBundleMapFocusedContentEndpointsCoexistWithMapSummaryRoute(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{
 		status: http.StatusOK,
 		summary: contentbundle.Summary{
-			Maps:       []contentbundle.MapContentSummary{{MapIndex: 42, StaticActorCount: 1, ShopPreviewActorCount: 1}},
-			ShopRoutes: []contentbundle.ShopRouteSummary{{ActorName: "Village Merchant", SourceMapIndex: 42, SourceX: 1700, SourceY: 2800, Ref: "npc:village_merchant", Title: "Village Merchant", EntryCount: 1}},
+			Maps:        []contentbundle.MapContentSummary{{MapIndex: 42, StaticActorCount: 1, ShopPreviewActorCount: 1, SpawnGroupCount: 1}},
+			ShopRoutes:  []contentbundle.ShopRouteSummary{{ActorName: "Village Merchant", SourceMapIndex: 42, SourceX: 1700, SourceY: 2800, Ref: "npc:village_merchant", Title: "Village Merchant", EntryCount: 1}},
+			SpawnGroups: []contentbundle.SpawnGroupReferenceSummary{{Ref: "practice.village_wolf", Name: "Village Wolf", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: "practice_mob"}},
 		},
 	}
 	mux := RegisterLocalContentBundleMapSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
 	mux = RegisterLocalContentBundleMapShopRoutesEndpoint(mux, summaryer.ExportContentBundleSummary)
 	mux = RegisterLocalContentBundleMapWarpRoutesEndpoint(mux, summaryer.ExportContentBundleSummary)
+	mux = RegisterLocalContentBundleMapSpawnGroupsEndpoint(mux, summaryer.ExportContentBundleSummary)
 
 	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/maps/42/shop-routes", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -1728,6 +1777,19 @@ func TestLocalContentBundleMapServiceRouteEndpointsCoexistWithMapSummaryRoute(t 
 	}
 	if summaryer.calls != 1 {
 		t.Fatalf("expected map-scoped service route handler to call summary exporter once, got %d calls", summaryer.calls)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/local/content-bundle/maps/42/spawn-groups", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec = httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d for map-scoped spawn groups alongside map summary route, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 2 {
+		t.Fatalf("expected map-scoped spawn-group handler to call summary exporter once, got total calls %d", summaryer.calls)
 	}
 }
 

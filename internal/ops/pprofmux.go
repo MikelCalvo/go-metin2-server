@@ -2279,6 +2279,47 @@ func RegisterLocalContentBundleMapWarpRoutesEndpoint(mux *http.ServeMux, exportC
 	return mux
 }
 
+func RegisterLocalContentBundleMapSpawnGroupsEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		mapIndex, ok := decodeLocalContentBundleMapServiceRouteIndex(r, "spawn-groups")
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if !contentBundleSummaryHasMap(summary, mapIndex) {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		matches := make([]contentbundle.SpawnGroupReferenceSummary, 0)
+		for _, spawnGroup := range summary.SpawnGroups {
+			if spawnGroup.MapIndex == mapIndex {
+				matches = append(matches, spawnGroup)
+			}
+		}
+		writeLocalJSONMutationResponse(w, matches, http.StatusOK)
+	}
+	mux.HandleFunc("GET /local/content-bundle/maps/{map_index}/spawn-groups", handler)
+	mux.HandleFunc("GET /local/content-bundle/maps/{map_index}/spawn-groups/", handler)
+	return mux
+}
+
 func contentBundleSummaryHasMap(summary contentbundle.Summary, mapIndex uint32) bool {
 	for _, mapSummary := range summary.Maps {
 		if mapSummary.MapIndex == mapIndex {
