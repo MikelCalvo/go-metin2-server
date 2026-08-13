@@ -269,6 +269,28 @@ func TestRunRejectsPartialDatabaseConfigBeforeStartingLegacyServer(t *testing.T)
 	_ = listener.Close()
 }
 
+func TestRunRejectsUnavailableDatabaseDriverBeforeStartingLegacyServer(t *testing.T) {
+	legacyAddr := reserveLocalAddr(t)
+
+	err := Run(context.Background(), config.Service{
+		Name:           "gamed",
+		PprofAddr:      reserveLocalAddr(t),
+		LegacyAddr:     legacyAddr,
+		PublicAddr:     "127.0.0.1",
+		DatabaseDriver: "go_metin2_missing_driver",
+		DatabaseDSN:    "file:metin2.db",
+	}, testLogger(), newTestSessionFlow)
+	if !errors.Is(err, config.ErrDatabaseDriverUnavailable) {
+		t.Fatalf("expected ErrDatabaseDriverUnavailable, got %v", err)
+	}
+
+	listener, listenErr := net.Listen("tcp", legacyAddr)
+	if listenErr != nil {
+		t.Fatalf("expected legacy listener %s not to start after rejected database driver: %v", legacyAddr, listenErr)
+	}
+	_ = listener.Close()
+}
+
 func TestRunWithOpsHandlerServesCustomOpsEndpoint(t *testing.T) {
 	pprofAddr := reserveLocalAddr(t)
 	legacyAddr := reserveLocalAddr(t)

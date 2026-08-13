@@ -385,6 +385,9 @@ func NewGameRuntime(cfg config.Service) (*gameRuntime, error) {
 	if err := config.ValidateOpsConfig(cfg); err != nil {
 		return nil, err
 	}
+	if err := config.ValidateDatabaseDriverAvailability(cfg); err != nil {
+		return nil, err
+	}
 	return newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
 		cfg,
 		loginticket.NewFileStore(serviceLoginTicketStoreDir(cfg)),

@@ -688,6 +688,26 @@ func TestValidateDatabaseConfigAcceptsDisabledOrCompleteConfig(t *testing.T) {
 	}
 }
 
+func TestValidateDatabaseDriverAvailabilityRejectsUnknownConfiguredDriver(t *testing.T) {
+	if err := ValidateDatabaseDriverAvailability(Service{}); err != nil {
+		t.Fatalf("expected disabled database config not to require a driver, got %v", err)
+	}
+
+	err := ValidateDatabaseDriverAvailability(Service{DatabaseDriver: "go_metin2_missing_driver", DatabaseDSN: "file:metin2.db"})
+	if !errors.Is(err, ErrDatabaseDriverUnavailable) {
+		t.Fatalf("expected ErrDatabaseDriverUnavailable for unknown driver, got %v", err)
+	}
+}
+
+func TestValidateDatabaseDriverAvailabilityAcceptsRegisteredConfiguredDriver(t *testing.T) {
+	registerConfigTestSQLDriver()
+
+	err := ValidateDatabaseDriverAvailability(Service{DatabaseDriver: configTestSQLDriverName, DatabaseDSN: "file:metin2.db"})
+	if err != nil {
+		t.Fatalf("expected registered database driver to validate, got %v", err)
+	}
+}
+
 func TestValidateDatabaseConfigRejectsPartialOrMalformedConfig(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

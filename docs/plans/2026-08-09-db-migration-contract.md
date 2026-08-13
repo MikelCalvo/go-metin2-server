@@ -84,8 +84,8 @@ Rules frozen by tests:
   - `METIN2_DB_DRIVER` / `METIN2_GAMED_DB_DRIVER`,
   - `METIN2_DB_DSN` / `METIN2_GAMED_DB_DSN`,
   - both empty means DB-backed migration preflight is disabled,
-  - partial or malformed values fail startup validation,
-  - configured status reads through `database/sql` but does not bundle or select a real driver dependency yet,
+  - partial, malformed, or unavailable configured drivers fail startup validation,
+  - configured status reads through `database/sql` but does not bundle or select a real driver dependency yet, so stock builds without a linked driver must keep DB preflight disabled,
   - `/local/runtime-config` reports only `database.configured`, `database.driver`, and `database.dsn_configured`; it never exposes the DSN value.
 - `internal/accountstore` now exposes a read-only account/character roster projection for the `0002_account_character_roster` migration boundary:
   - export rows carry the migration version/name so operators know which schema contract they target,

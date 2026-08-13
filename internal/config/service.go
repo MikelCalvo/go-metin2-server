@@ -1,6 +1,7 @@
 package config
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"net"
@@ -103,6 +104,27 @@ func ValidateDatabaseConfig(cfg Service) error {
 		return fmt.Errorf("%w: database dsn contains NUL", ErrDatabaseConfigInvalid)
 	}
 	return nil
+}
+
+// ValidateDatabaseDriverAvailability fails closed when an operator configured a
+// DB preflight driver name that is not registered in database/sql. Runtime
+// migration status and ledger-snapshot endpoints are read-only, but startup
+// still validates the driver name so a misconfigured daemon cannot start and
+// then report only runtime 409s for every DB migration preflight request.
+func ValidateDatabaseDriverAvailability(cfg Service) error {
+	if err := ValidateDatabaseConfig(cfg); err != nil {
+		return err
+	}
+	driver := strings.TrimSpace(cfg.DatabaseDriver)
+	if driver == "" {
+		return nil
+	}
+	for _, registered := range sql.Drivers() {
+		if registered == driver {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: %q", ErrDatabaseDriverUnavailable, driver)
 }
 
 // ValidatePersistenceConfig fails closed when bootstrap JSON stores are missing,

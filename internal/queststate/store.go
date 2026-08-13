@@ -668,6 +668,9 @@ func rejectCommittedSnapshotSymlink(path string) error {
 }
 
 func syncDir(path string) error {
+	if durableSyncDisabledForTest {
+		return nil
+	}
 	dir, err := os.Open(path)
 	if err != nil {
 		return err

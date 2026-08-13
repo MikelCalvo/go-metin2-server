@@ -17,13 +17,13 @@ func TestMain(m *testing.M) {
 	restoreInteractionSync := interactionstore.DisableDurableSyncForTest()
 	restoreItemSync := itemcatalog.DisableDurableSyncForTest()
 	restoreLoginTicketSync := loginticket.DisableDurableSyncForTest()
-	restoreQuestSync := queststate.DisableDurableSyncForTest()
+	restoreQuestStateSync := queststate.DisableDurableSyncForTest()
 	restoreStaticSync := staticstore.DisableDurableSyncForTest()
 
 	code := m.Run()
 
 	restoreStaticSync()
-	restoreQuestSync()
+	restoreQuestStateSync()
 	restoreLoginTicketSync()
 	restoreItemSync()
 	restoreInteractionSync()

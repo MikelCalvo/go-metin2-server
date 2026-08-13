@@ -2654,6 +2654,27 @@ func TestNewGameRuntimeRejectsPartialDatabaseConfig(t *testing.T) {
 	}
 }
 
+func TestNewGameRuntimeRejectsUnavailableDatabaseDriver(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Service{
+		PprofAddr:             "127.0.0.1:6060",
+		LegacyAddr:            ":13000",
+		PublicAddr:            "127.0.0.1",
+		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
+		AccountStoreDir:       filepath.Join(root, "accounts"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+		DatabaseDriver:        "go_metin2_missing_driver",
+		DatabaseDSN:           "file:metin2.db",
+	}
+
+	_, err := NewGameRuntime(cfg)
+	if !errors.Is(err, config.ErrDatabaseDriverUnavailable) {
+		t.Fatalf("expected ErrDatabaseDriverUnavailable, got %v", err)
+	}
+}
+
 func TestNewGameRuntimeRejectsOverlappingPersistencePaths(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Service{
