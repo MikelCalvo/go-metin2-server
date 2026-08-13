@@ -1298,6 +1298,53 @@ func RegisterLocalStaticActorRespawnEndpoint(mux *http.ServeMux, staticActorResp
 	return mux
 }
 
+func RegisterLocalSpawnGroupReturnStepsEndpoint(mux *http.ServeMux, spawnGroupReturnSteps func() any) *http.ServeMux {
+	if mux == nil || spawnGroupReturnSteps == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/spawn-group-return-steps", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if err := json.NewEncoder(w).Encode(spawnGroupReturnSteps()); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	})
+	return mux
+}
+
+func RegisterLocalSpawnGroupReturnStepSnapshotEndpoint(mux *http.ServeMux, spawnGroupReturnStep func(uint64) (any, bool)) *http.ServeMux {
+	if mux == nil || spawnGroupReturnStep == nil {
+		return mux
+	}
+
+	mux.HandleFunc("GET /local/spawn-group-return-steps/{entity_id}", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		entityID, ok := decodeLocalSpawnGroupReturnStepSnapshotEntityID(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		value, ok := spawnGroupReturnStep(entityID)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalSpawnGroupsEndpoint(mux *http.ServeMux, spawnGroups func() any) *http.ServeMux {
 	if mux == nil || spawnGroups == nil {
 		return mux
@@ -3508,6 +3555,10 @@ func decodeLocalSpawnGroupReturnStepRequest(r *http.Request) (uint64, int32, boo
 		return 0, 0, false
 	}
 	return entityID, int32(maxStep), true
+}
+
+func decodeLocalSpawnGroupReturnStepSnapshotEntityID(r *http.Request) (uint64, bool) {
+	return decodeLocalPositiveUint64PathComponent(strings.TrimSpace(r.PathValue("entity_id")))
 }
 
 func decodeLocalPositiveUint64PathComponent(raw string) (uint64, bool) {

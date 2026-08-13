@@ -304,6 +304,20 @@ func main() {
 			return snapshot, true
 		},
 	)
+	opsHandler = ops.RegisterLocalSpawnGroupReturnStepsEndpoint(
+		opsHandler,
+		func() any { return gameRuntime.SpawnGroupReturnSteps() },
+	)
+	opsHandler = ops.RegisterLocalSpawnGroupReturnStepSnapshotEndpoint(
+		opsHandler,
+		func(entityID uint64) (any, bool) {
+			snapshot, ok := gameRuntime.SpawnGroupReturnStep(entityID)
+			if !ok {
+				return nil, false
+			}
+			return snapshot, true
+		},
+	)
 	opsHandler = ops.RegisterLocalGroundItemsEndpoint(
 		opsHandler,
 		func() any { return gameRuntime.GroundItems() },

@@ -1295,6 +1295,80 @@ func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupReturnStep(t *testing.T
 	}
 }
 
+func TestGameRuntimeSpawnGroupReturnStepSnapshotsReportPendingSchedules(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700000940, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for return-step schedule snapshots: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_step_snapshot",
+		Name:          "ReturnStepSnapshotMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import return-step snapshot spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_step_snapshot")
+	if !ok {
+		t.Fatal("expected return-step snapshot spawn group to resolve by ref")
+	}
+
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "ReturnStepSnapshotMob", 42, 2301, 2800, 20350); !ok {
+		t.Fatal("expected spawn-backed actor current-position update to schedule return step")
+	}
+
+	pending := runtime.SpawnGroupReturnSteps()
+	if len(pending) != 1 {
+		t.Fatalf("expected one pending return-step snapshot, got %d: %+v", len(pending), pending)
+	}
+	snapshot := pending[0]
+	wantReadyAt := currentTime.Add(bootstrapSpawnGroupReturnStepDelay)
+	if snapshot.EntityID != group.EntityID || !snapshot.ReadyAt.Equal(wantReadyAt) || snapshot.RemainingMs != bootstrapSpawnGroupReturnStepDelay.Milliseconds() {
+		t.Fatalf("unexpected pending return-step timing/id: got %+v want entity=%d ready_at=%s remaining_ms=%d", snapshot, group.EntityID, wantReadyAt, bootstrapSpawnGroupReturnStepDelay.Milliseconds())
+	}
+	if snapshot.Actor.EntityID != group.EntityID || snapshot.Actor.X != 2301 || snapshot.Actor.SpawnLeash == nil || !snapshot.Actor.SpawnLeash.ReturnRequired {
+		t.Fatalf("expected pending return-step actor to expose current return-required spawn group, got %+v", snapshot.Actor)
+	}
+	if snapshot.Step.Next.MapIndex != 42 || snapshot.Step.Next.X != 2201 || snapshot.Step.Next.Y != 2800 || snapshot.Step.Complete {
+		t.Fatalf("expected pending return-step snapshot to expose planned next step, got %+v", snapshot.Step)
+	}
+
+	exact, ok := runtime.SpawnGroupReturnStep(group.EntityID)
+	if !ok || exact.EntityID != group.EntityID || !exact.ReadyAt.Equal(wantReadyAt) {
+		t.Fatalf("expected exact pending return-step snapshot, ok=%v snapshot=%+v", ok, exact)
+	}
+	if missing, ok := runtime.SpawnGroupReturnStep(group.EntityID + 99); ok || missing.EntityID != 0 {
+		t.Fatalf("expected missing return-step lookup to fail closed, ok=%v snapshot=%+v", ok, missing)
+	}
+
+	currentTime = wantReadyAt.Add(50 * time.Millisecond)
+	exact, ok = runtime.SpawnGroupReturnStep(group.EntityID)
+	if !ok || exact.RemainingMs != 0 {
+		t.Fatalf("expected expired but unflushed return-step snapshot to remain visible with remaining_ms=0, ok=%v snapshot=%+v", ok, exact)
+	}
+}
+
 func TestGameRuntimeFlushServerFramesRetriesSpawnGroupReturnStepAfterPersistenceFailure(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	viewer := peerVisibilityCharacter("ReturnStepRetryViewer", 0x0103017e, 0x0204017e, 2301, 2800, 0, 101, 201)

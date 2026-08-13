@@ -892,6 +892,24 @@ Rows are sorted by `entity_id`.
 Once `FlushServerFrames()` runs after a due timer and the respawn rebuild is emitted, that actor disappears from this snapshot.
 The exact-entity endpoint returns the same row shape for one pending respawn; invalid or missing entity IDs return `400`, and well-formed but absent/already-flushed respawn IDs return `404`.
 
+### `GET /local/spawn-group-return-steps` and `GET /local/spawn-group-return-steps/{entity_id}`
+
+Returns the deterministic list of pending server-owned spawn-group return-step timers for live authored spawn groups that currently classify as `return_required`.
+These endpoints are loopback-only, read-only, reject non-`GET` methods with `405`, and are intended for QA/debugging of the capped return-step executor frozen in `spec/protocol/spawn-leash-bootstrap.md`.
+
+Each row exposes:
+
+- `entity_id` — runtime static-actor entity / client-visible static-actor `VID`
+- `ready_at` — the server-owned timestamp when the next flush can apply one capped return step
+- `remaining_ms` — milliseconds until `ready_at`, clamped to `0` when the timer is already due but has not yet been flushed through the pending server-frame path
+- `actor` — the current materialized spawn-group snapshot, including the leash state that is still `return_required`
+- `step` — the same planned capped step shape returned by the mutating one-step trigger, including `next` and `complete`
+
+Rows are sorted by `entity_id`.
+Actors that are missing, dead, no longer spawn-backed, no longer `return_required`, or no longer plan a safe capped step are omitted from the list and return `404` from the exact-entity endpoint.
+Once `FlushServerFrames()` runs after a due timer and the actor steps back inside leash radius, that actor disappears from this snapshot.
+If the step leaves the actor still `return_required`, the row remains visible with a refreshed `ready_at` after the next server-owned deadline is armed.
+
 ### `GET /local/spawn-groups`
 
 Returns the deterministic list of currently materialized spawn-backed runtime actors: static-actor snapshots whose `spawn_group_ref` is non-empty.
@@ -1119,6 +1137,8 @@ curl http://127.0.0.1:6060/local/spawn-groups
 curl http://127.0.0.1:6060/local/spawn-groups/by-ref/practice.reward_mob
 curl 'http://127.0.0.1:6060/local/spawn-groups/117440769/leash?radius=400'
 curl -X POST 'http://127.0.0.1:6060/local/spawn-groups/117440769/return-step?max_step=100'
+curl http://127.0.0.1:6060/local/spawn-group-return-steps
+curl http://127.0.0.1:6060/local/spawn-group-return-steps/117440769
 curl -X POST http://127.0.0.1:6060/local/spawn-groups/117440769/return-home
 curl http://127.0.0.1:6060/local/maps/42/static-actors
 curl http://127.0.0.1:6060/local/maps/42/spawn-groups
@@ -1126,7 +1146,7 @@ curl http://127.0.0.1:6060/local/maps/42/static-actor-respawns
 ```
 
 The spawn-group snapshots filter to attackable content materialized from `spawn_groups`; use `/local/static-actors` for the global full static-actor set, or `/local/maps/{map_index}/static-actors` for the full map-local set.
-The by-ref endpoint is loopback-only like the rest of the spawn-group inspection surface and looks up the materialized actor by authored `spawn_group_ref`, returning `400` for malformed refs and `404` when a well-formed ref is not currently live. The leash endpoint is also loopback-only and computes the current pure classifier (`home`, `current`, `radius`, `status`, `return_required`, optional `return_target`) for one materialized spawn group without moving the actor or changing combat/runtime state. The return-step and return-home endpoints are mutating local/operator tooling: return-step applies one capped planned step for a `return_required` actor, return-home moves one live spawn group back to authored home and clears stale selected-target ownership, and both persist the static-actor position before reusing ordinary visibility rebuild frames for already-online viewers. The server-owned return-step executor uses the same capped-step path from pending-frame flushes and stops re-arming as soon as the stepped actor is back inside leash radius, rather than scheduling an extra no-op correction to exact home.
+The by-ref endpoint is loopback-only like the rest of the spawn-group inspection surface and looks up the materialized actor by authored `spawn_group_ref`, returning `400` for malformed refs and `404` when a well-formed ref is not currently live. The leash endpoint is also loopback-only and computes the current pure classifier (`home`, `current`, `radius`, `status`, `return_required`, optional `return_target`) for one materialized spawn group without moving the actor or changing combat/runtime state. The return-step and return-home endpoints are mutating local/operator tooling: return-step applies one capped planned step for a `return_required` actor, return-home moves one live spawn group back to authored home and clears stale selected-target ownership, and both persist the static-actor position before reusing ordinary visibility rebuild frames for already-online viewers. The read-only `/local/spawn-group-return-steps` endpoints expose currently armed server-owned return-step deadlines plus their planned next capped step without mutating the actor. The server-owned return-step executor uses the same capped-step path from pending-frame flushes and stops re-arming as soon as the stepped actor is back inside leash radius, rather than scheduling an extra no-op correction to exact home.
 `/local/maps` also embeds the full static-actor list and same spawn-backed subset per occupied map as `static_actors`, `spawn_group_count`, and `spawn_groups`; the exact `/local/maps/{map_index}/static-actors`, `/local/maps/{map_index}/spawn-groups`, `/local/maps/{map_index}/static-actor-respawns`, and `/local/maps/{map_index}/combat-targets` endpoints return only those map-local subsets when QA does not need the full occupancy row.
 
 List the authored interaction catalog:

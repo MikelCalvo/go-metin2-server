@@ -135,6 +135,14 @@ type SpawnGroupReturnStepSnapshot struct {
 	Step  SpawnLeashReturnStepSnapshot `json:"step"`
 }
 
+type SpawnGroupPendingReturnStepSnapshot struct {
+	EntityID    uint64                       `json:"entity_id"`
+	ReadyAt     time.Time                    `json:"ready_at"`
+	RemainingMs int64                        `json:"remaining_ms"`
+	Actor       StaticActorSnapshot          `json:"actor"`
+	Step        SpawnLeashReturnStepSnapshot `json:"step"`
+}
+
 type SpawnLeashReturnStepSnapshot struct {
 	SpawnLeashSnapshot
 	Next     worldruntime.PositionSnapshot `json:"next"`
@@ -1124,6 +1132,98 @@ func (r *gameRuntime) dueSpawnGroupReturnStepIDs() []uint64 {
 	}
 	sort.Slice(dueIDs, func(i, j int) bool { return dueIDs[i] < dueIDs[j] })
 	return dueIDs
+}
+
+func (r *gameRuntime) SpawnGroupReturnSteps() []SpawnGroupPendingReturnStepSnapshot {
+	if r == nil {
+		return nil
+	}
+	dueAtByID := r.spawnGroupReturnStepDueAtSnapshot()
+	if len(dueAtByID) == 0 {
+		return nil
+	}
+	entityIDs := make([]uint64, 0, len(dueAtByID))
+	for entityID := range dueAtByID {
+		entityIDs = append(entityIDs, entityID)
+	}
+	sort.Slice(entityIDs, func(i, j int) bool { return entityIDs[i] < entityIDs[j] })
+
+	now := r.spawnGroupReturnStepNow()
+	snapshots := make([]SpawnGroupPendingReturnStepSnapshot, 0, len(entityIDs))
+	for _, entityID := range entityIDs {
+		snapshot, ok := r.spawnGroupReturnStepSnapshot(entityID, dueAtByID[entityID], now)
+		if !ok {
+			continue
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	return snapshots
+}
+
+func (r *gameRuntime) SpawnGroupReturnStep(entityID uint64) (SpawnGroupPendingReturnStepSnapshot, bool) {
+	if r == nil || entityID == 0 {
+		return SpawnGroupPendingReturnStepSnapshot{}, false
+	}
+	r.spawnReturnMu.Lock()
+	dueAt, ok := r.spawnReturnStepDueAt[entityID]
+	r.spawnReturnMu.Unlock()
+	if !ok {
+		return SpawnGroupPendingReturnStepSnapshot{}, false
+	}
+	return r.spawnGroupReturnStepSnapshot(entityID, dueAt, r.spawnGroupReturnStepNow())
+}
+
+func (r *gameRuntime) spawnGroupReturnStepDueAtSnapshot() map[uint64]time.Time {
+	if r == nil {
+		return nil
+	}
+	r.spawnReturnMu.Lock()
+	defer r.spawnReturnMu.Unlock()
+	if len(r.spawnReturnStepDueAt) == 0 {
+		return nil
+	}
+	snapshot := make(map[uint64]time.Time, len(r.spawnReturnStepDueAt))
+	for entityID, dueAt := range r.spawnReturnStepDueAt {
+		snapshot[entityID] = dueAt
+	}
+	return snapshot
+}
+
+func (r *gameRuntime) spawnGroupReturnStepNow() time.Time {
+	now := time.Now()
+	if r != nil && r.now != nil {
+		now = r.now()
+	}
+	return now
+}
+
+func (r *gameRuntime) spawnGroupReturnStepSnapshot(entityID uint64, dueAt time.Time, now time.Time) (SpawnGroupPendingReturnStepSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil || entityID == 0 || dueAt.IsZero() {
+		return SpawnGroupPendingReturnStepSnapshot{}, false
+	}
+	actor, ok := r.SpawnGroup(entityID)
+	if !ok || actor.SpawnLeash == nil || !actor.SpawnLeash.ReturnRequired {
+		return SpawnGroupPendingReturnStepSnapshot{}, false
+	}
+	plan, ok := r.sharedWorld.PlanSpawnGroupReturnHomeStep(entityID, bootstrapSpawnGroupReturnStepMaxStep)
+	if !ok || !plan.Evaluation.ReturnRequired {
+		return SpawnGroupPendingReturnStepSnapshot{}, false
+	}
+	remaining := dueAt.Sub(now).Milliseconds()
+	if remaining < 0 {
+		remaining = 0
+	}
+	return SpawnGroupPendingReturnStepSnapshot{
+		EntityID:    entityID,
+		ReadyAt:     dueAt,
+		RemainingMs: remaining,
+		Actor:       actor,
+		Step: SpawnLeashReturnStepSnapshot{
+			SpawnLeashSnapshot: worldruntime.SpawnLeashSnapshotFromEvaluation(plan.Evaluation),
+			Next:               worldruntime.PositionSnapshotFromPosition(plan.Next),
+			Complete:           plan.Complete,
+		},
+	}, true
 }
 
 func (r *gameRuntime) flushDueSpawnGroupReturnSteps() {
