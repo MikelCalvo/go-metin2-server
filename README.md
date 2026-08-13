@@ -53,7 +53,7 @@ Legend used below:
   - Practice mobs can be targeted, attacked, killed, respawned, and can grant deterministic EXP/gold/fixed-drop descriptors through narrow owned contracts. Retaliation/player-death/restart seams, the spawn-position leash classifier, a pure capped return-step planner, and a loopback-only one-step return trigger exist, with authored spawn home preserved separately from current placement for spawn-backed actors. Real autonomous mob AI movement, chase/return packet choreography, attack formulas, skills, projectile/ranged combat, loot tables, PvP/duels, and full revive/corpse choreography are still missing.
 
 - `[~]` **M5 — Operations and developer workflow**
-  - The repo has a Makefile, Dockerfile, CI, pprof/debug mux, health endpoint, local-only runtime/config/player/map/visibility/content/persistence endpoints, backup/restore preflights, crash-temp cleanup primitives, QA docs, and clean-room workflow docs. Release/versioning policy, migrations, production deployment, metrics/logging policy, and production-safe admin tooling are still pending.
+  - The repo has a Makefile, Dockerfile, CI, pprof/debug mux, health endpoint, local-only runtime/config/player/map/visibility/content/persistence endpoints, backup/restore preflights, crash-temp cleanup primitives, a validated migration catalog with dry-run planning plus a first programmatic up-apply primitive, QA docs, and clean-room workflow docs. Release/versioning policy, production migration execution, production deployment, metrics/logging policy, and production-safe admin tooling are still pending.
 
 - `[ ]` **M6 — Legacy parity / production server**
   - The project does not claim full legacy parity. The next target is a narrow playable vertical; broad parity and production operations come later.
@@ -214,12 +214,12 @@ Already present:
 
 - file-backed account snapshots and login tickets,
 - persisted selected character, position, inventory, equipment, quickslots, gold, item-template, quest-state, static actor, and interaction slices needed by current behavior,
-- strict snapshot/template validation, crash-temp reporting/cleanup, manifest-backed backup/restore preflights for several stores, and a first migration catalog with schema ledger, account/character roster, character item-state, character quest-state, item-template, and auth login-ticket handoff migrations plus read-only ledger dry-run planning,
+- strict snapshot/template validation, crash-temp reporting/cleanup, manifest-backed backup/restore preflights for several stores, and a first migration catalog with schema ledger, account/character roster, character item-state, character quest-state, item-template, and auth login-ticket handoff migrations plus read-only ledger dry-run planning and a programmatic up-migration apply primitive,
 - loopback-only local endpoints for validation, backup/restore, runtime inspection, and controlled debug actions.
 
 Still missing:
 
-- DB-backed account/character/item stores and migration execution tooling,
+- DB-backed account/character/item stores and production migration CLI/ops execution tooling,
 - domain repository boundaries for gameplay systems,
 - production backup/restore policy,
 - crash recovery beyond current file-store primitives,
@@ -239,7 +239,7 @@ Still missing:
 - `internal/accountstore`, `internal/loginticket` — bootstrap persistence stores.
 - `internal/staticstore`, `internal/interactionstore`, `internal/contentbundle` — authored content, static actors, interactions, merchant previews, and bundle import/export.
 - `internal/ops` — local debug/pprof/operator HTTP mux.
-- `db/migrations` — validated project-owned SQL migration catalog skeleton, first schema ledger/domain migrations including item templates, and read-only dry-run planner.
+- `db/migrations` — validated project-owned SQL migration catalog skeleton, first schema ledger/domain migrations including item templates, read-only dry-run planner, and programmatic up-apply primitive.
 - `docs/` — engineering notes, QA, roadmaps, workflow, development, and clean-room docs.
 - `spec/protocol/` — owned protocol contracts and packet inventory.
 

@@ -87,6 +87,14 @@ Rules frozen by tests:
   - partial, malformed, or unavailable configured drivers fail startup validation,
   - configured status reads through `database/sql` but does not bundle or select a real driver dependency yet, so stock builds without a linked driver must keep DB preflight disabled,
   - `/local/runtime-config` reports only `database.configured`, `database.driver`, and `database.dsn_configured`; it never exposes the DSN value.
+- `ApplyUpToLatest` / `ApplyToVersion` / `ApplyCatalogUpToVersion` add the first programmatic up-migration apply primitive:
+  - callers still supply the current applied ledger and a `database/sql` transaction boundary instead of letting the migration package own driver selection, DSNs, or connection pools,
+  - the same catalog/ledger/target validation used by dry-run planning runs before any transaction is opened,
+  - rollback/down targets fail closed with `ErrMigrationApplyUnsupportedDirection` before a transaction is opened,
+  - pending up migration SQL executes before its matching `schema_migrations` ledger insert,
+  - migration SQL failures, ledger insert failures, or commit failures return errors; migration/ledger failures attempt to roll back and report rollback errors with the original failure,
+  - the returned `ApplyResult` exposes only version metadata and applied plan steps, not executable SQL text, DSNs, or row data,
+  - this primitive is not exposed through `gamed`'s local ops mux and is not wired into daemon startup.
 - `internal/accountstore` now exposes a read-only account/character roster projection for the `0002_account_character_roster` migration boundary:
   - export rows carry the migration version/name so operators know which schema contract they target,
   - account rows are deterministic by normalized login and include stable project-owned ids, original login, normalized login, and empire,
@@ -144,12 +152,12 @@ This is not a database runtime implementation. It deliberately does not add:
 
 - a DB driver dependency or default production DB engine,
 - DB connection pool ownership beyond the read-only migration-status preflight,
-- automatic migration apply/rollback commands,
+- production migration CLI/ops apply or rollback commands,
 - account/character/item repository implementations or DB-backed runtime writes,
 - JSON snapshot import/backfill execution tooling,
 - production deployment scripts.
 
-The dry-run planner added on top of the catalog is likewise read-only: callers can supply already-read ledger rows directly, provide a `database/sql`-compatible query boundary for the same metadata through `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger` / `PlanToVersionFromSQLLedger`, export that configured metadata into a strict offline `LedgerSnapshot` through `LedgerSnapshotFromSQLLedger`, or provide a strict offline JSON `LedgerSnapshot` through `ReadJSONLedgerSnapshot` / `PlanToVersionFromLedgerSnapshot` when planning from copied ledger metadata. The first loopback ops endpoints use an empty ledger when DB config is disabled and a configured `database/sql` ledger reader when both driver and DSN are set. `/local/db/migrations/status` reports the latest-version target; `/local/db/migrations/plan?target_version=N` previews an explicit target such as rollback-to-zero; `/local/db/migrations/ledger-snapshot` exports only the current ledger metadata as strict offline JSON; `/local/db/migrations/plan-from-ledger-snapshot?target_version=N` accepts a bounded metadata-only snapshot body and produces the same plan shape without opening a configured DB. The account/character roster, character item-state, character quest-state, item-template-state, and auth login-ticket handoff exports are also read-only: they map committed JSON snapshots to the existing schema shapes but do not insert rows, allocate a real production identity sequence, apply SQL, consume tickets, or quarantine/import data. The SQL ledger seam, offline ledger snapshot seam, runtime config, and exports are safe boundaries for future CLI, real-ledger preflight tooling, or status pages, not an execution engine.
+The dry-run planner added on top of the catalog remains the only daemon-exposed migration behavior: callers can supply already-read ledger rows directly, provide a `database/sql`-compatible query boundary for the same metadata through `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger` / `PlanToVersionFromSQLLedger`, export that configured metadata into a strict offline `LedgerSnapshot` through `LedgerSnapshotFromSQLLedger`, or provide a strict offline JSON `LedgerSnapshot` through `ReadJSONLedgerSnapshot` / `PlanToVersionFromLedgerSnapshot` when planning from copied ledger metadata. The first loopback ops endpoints use an empty ledger when DB config is disabled and a configured `database/sql` ledger reader when both driver and DSN are set. `/local/db/migrations/status` reports the latest-version target; `/local/db/migrations/plan?target_version=N` previews an explicit target such as rollback-to-zero; `/local/db/migrations/ledger-snapshot` exports only the current ledger metadata as strict offline JSON; `/local/db/migrations/plan-from-ledger-snapshot?target_version=N` accepts a bounded metadata-only snapshot body and produces the same plan shape without opening a configured DB. The account/character roster, character item-state, character quest-state, item-template-state, and auth login-ticket handoff exports are also read-only: they map committed JSON snapshots to the existing schema shapes but do not insert rows, allocate a real production identity sequence, consume tickets, or quarantine/import data. The new apply primitive executes pending up SQL only when a caller explicitly supplies a transaction-capable executor and applied ledger, and it is not reachable from the shipped daemons. The SQL ledger seam, offline ledger snapshot seam, runtime config, exports, and programmatic apply primitive are safe boundaries for future CLI, real-ledger preflight tooling, or status pages, not a production execution surface yet.
 
 Those require separate slices because each one changes operator and data-safety semantics.
 
@@ -159,7 +167,7 @@ Those require separate slices because each one changes operator and data-safety 
 2. Add JSON-file-store import/quarantine tooling that consumes the exported `0002_account_character_roster`, `0003_character_item_state`, `0004_character_quest_state`, current item-template-state, and `0007_auth_login_ticket_handoff` shapes plus optional offline ledger snapshots without silently coercing bad snapshots.
 3. Add a driver-backed test harness or build-tagged integration test for `schema_migrations` status and ledger-snapshot generation before adding apply/rollback tooling.
 4. Add explicit migrations for richer item/economy domains, item ownership timers, or authored content tables only after the account/character/item/item-template/login-ticket repository seams are stable.
-5. Add an apply/rollback command only after the dry-run status boundary and ledger validation behavior are exercised against an actual driver-backed test database.
+5. Add a production apply command only after the dry-run status boundary, the programmatic apply primitive, and ledger validation behavior are exercised against an actual driver-backed test database; add rollback execution as a separate slice with backup/restore policy.
 6. Document production DB configuration, backups, and rollback policy once there is an actual DB-backed store.
 
 ## Exit criteria for this slice
