@@ -2,6 +2,7 @@ package item
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"os"
@@ -397,6 +398,167 @@ func TestDecodeClientStoragePacketsRejectInvalidPayload(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.decode(frame.Frame{Header: tc.header, Length: uint16(tc.size + 3), Payload: make([]byte, tc.size-1)})
+			if !errors.Is(err, ErrInvalidPayload) {
+				t.Fatalf("expected ErrInvalidPayload, got %v", err)
+			}
+		})
+	}
+}
+
+func TestEncodeSafeboxAndMallSetUseItemSetPayloadWithStorageHeaders(t *testing.T) {
+	packet := sampleInventorySetPacket()
+	setPayload := decodeSingleFrame(t, EncodeSet(packet)).Payload
+	cases := []struct {
+		name   string
+		header uint16
+		encode func(SetPacket) []byte
+		decode func(frame.Frame) (SetPacket, error)
+	}{
+		{name: "safebox set", header: HeaderSafeboxSet, encode: EncodeSafeboxSet, decode: DecodeSafeboxSet},
+		{name: "mall set", header: HeaderMallSet, encode: EncodeMallSet, decode: DecodeMallSet},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			want := frame.Encode(tc.header, setPayload)
+			got := tc.encode(packet)
+			if !bytes.Equal(got, want) {
+				t.Fatalf("unexpected %s bytes: got %x want %x", tc.name, got, want)
+			}
+			decoded, err := tc.decode(decodeSingleFrame(t, got))
+			if err != nil {
+				t.Fatalf("decode %s: %v", tc.name, err)
+			}
+			if decoded != packet {
+				t.Fatalf("unexpected %s packet: got %+v want %+v", tc.name, decoded, packet)
+			}
+		})
+	}
+}
+
+func TestEncodeSafeboxAndMallDelUseItemDelPayloadWithStorageHeaders(t *testing.T) {
+	packet := sampleDelPacket()
+	delPayload := decodeSingleFrame(t, EncodeDel(packet)).Payload
+	cases := []struct {
+		name   string
+		header uint16
+		encode func(DelPacket) []byte
+		decode func(frame.Frame) (DelPacket, error)
+	}{
+		{name: "safebox del", header: HeaderSafeboxDel, encode: EncodeSafeboxDel, decode: DecodeSafeboxDel},
+		{name: "mall del", header: HeaderMallDel, encode: EncodeMallDel, decode: DecodeMallDel},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			want := frame.Encode(tc.header, delPayload)
+			got := tc.encode(packet)
+			if !bytes.Equal(got, want) {
+				t.Fatalf("unexpected %s bytes: got %x want %x", tc.name, got, want)
+			}
+			decoded, err := tc.decode(decodeSingleFrame(t, got))
+			if err != nil {
+				t.Fatalf("decode %s: %v", tc.name, err)
+			}
+			if decoded != packet {
+				t.Fatalf("unexpected %s packet: got %+v want %+v", tc.name, decoded, packet)
+			}
+		})
+	}
+}
+
+func TestEncodeStorageStatusFramesBuildExpectedBytes(t *testing.T) {
+	moneyPayload := make([]byte, 4)
+	binary.LittleEndian.PutUint32(moneyPayload, uint32(^uint32(123455)))
+	cases := []struct {
+		name string
+		got  []byte
+		want []byte
+	}{
+		{name: "safebox wrong password", got: EncodeSafeboxWrongPassword(), want: frame.Encode(HeaderSafeboxWrongPassword, nil)},
+		{name: "safebox size", got: EncodeSafeboxSize(SafeboxSizePacket{Size: 3}), want: frame.Encode(HeaderSafeboxSize, []byte{3})},
+		{name: "safebox money change", got: EncodeSafeboxMoneyChange(SafeboxMoneyChangePacket{Money: -123456}), want: frame.Encode(HeaderSafeboxMoneyChange, moneyPayload)},
+		{name: "mall open", got: EncodeMallOpen(MallOpenPacket{Size: 4}), want: frame.Encode(HeaderMallOpen, []byte{4})},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if !bytes.Equal(tc.got, tc.want) {
+				t.Fatalf("unexpected %s bytes: got %x want %x", tc.name, tc.got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDecodeStorageStatusFramesReturnsExpectedFields(t *testing.T) {
+	if _, err := DecodeSafeboxWrongPassword(decodeSingleFrame(t, EncodeSafeboxWrongPassword())); err != nil {
+		t.Fatalf("decode safebox wrong-password: %v", err)
+	}
+	size, err := DecodeSafeboxSize(decodeSingleFrame(t, EncodeSafeboxSize(SafeboxSizePacket{Size: 3})))
+	if err != nil {
+		t.Fatalf("decode safebox size: %v", err)
+	}
+	if size != (SafeboxSizePacket{Size: 3}) {
+		t.Fatalf("unexpected safebox size packet: %+v", size)
+	}
+	money, err := DecodeSafeboxMoneyChange(decodeSingleFrame(t, EncodeSafeboxMoneyChange(SafeboxMoneyChangePacket{Money: -123456})))
+	if err != nil {
+		t.Fatalf("decode safebox money change: %v", err)
+	}
+	if money != (SafeboxMoneyChangePacket{Money: -123456}) {
+		t.Fatalf("unexpected safebox money packet: %+v", money)
+	}
+	mall, err := DecodeMallOpen(decodeSingleFrame(t, EncodeMallOpen(MallOpenPacket{Size: 4})))
+	if err != nil {
+		t.Fatalf("decode mall open: %v", err)
+	}
+	if mall != (MallOpenPacket{Size: 4}) {
+		t.Fatalf("unexpected mall open packet: %+v", mall)
+	}
+}
+
+func TestDecodeServerStoragePacketsRejectUnexpectedHeader(t *testing.T) {
+	cases := []struct {
+		name    string
+		decode  func(frame.Frame) error
+		header  uint16
+		payload []byte
+	}{
+		{name: "safebox set", decode: func(f frame.Frame) error { _, err := DecodeSafeboxSet(f); return err }, header: HeaderSafeboxSet, payload: make([]byte, setPayloadSize)},
+		{name: "safebox del", decode: func(f frame.Frame) error { _, err := DecodeSafeboxDel(f); return err }, header: HeaderSafeboxDel, payload: make([]byte, delPayloadSize)},
+		{name: "safebox wrong password", decode: func(f frame.Frame) error { _, err := DecodeSafeboxWrongPassword(f); return err }, header: HeaderSafeboxWrongPassword, payload: nil},
+		{name: "safebox size", decode: func(f frame.Frame) error { _, err := DecodeSafeboxSize(f); return err }, header: HeaderSafeboxSize, payload: make([]byte, safeboxSizePayloadSize)},
+		{name: "safebox money change", decode: func(f frame.Frame) error { _, err := DecodeSafeboxMoneyChange(f); return err }, header: HeaderSafeboxMoneyChange, payload: make([]byte, safeboxMoneyChangePayloadSize)},
+		{name: "mall open", decode: func(f frame.Frame) error { _, err := DecodeMallOpen(f); return err }, header: HeaderMallOpen, payload: make([]byte, mallOpenPayloadSize)},
+		{name: "mall set", decode: func(f frame.Frame) error { _, err := DecodeMallSet(f); return err }, header: HeaderMallSet, payload: make([]byte, setPayloadSize)},
+		{name: "mall del", decode: func(f frame.Frame) error { _, err := DecodeMallDel(f); return err }, header: HeaderMallDel, payload: make([]byte, delPayloadSize)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.decode(frame.Frame{Header: tc.header + 1, Length: uint16(len(tc.payload) + 4), Payload: tc.payload})
+			if !errors.Is(err, ErrUnexpectedHeader) {
+				t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+			}
+		})
+	}
+}
+
+func TestDecodeServerStoragePacketsRejectInvalidPayload(t *testing.T) {
+	cases := []struct {
+		name    string
+		decode  func(frame.Frame) error
+		header  uint16
+		payload []byte
+	}{
+		{name: "safebox set", decode: func(f frame.Frame) error { _, err := DecodeSafeboxSet(f); return err }, header: HeaderSafeboxSet, payload: make([]byte, setPayloadSize-1)},
+		{name: "safebox del", decode: func(f frame.Frame) error { _, err := DecodeSafeboxDel(f); return err }, header: HeaderSafeboxDel, payload: make([]byte, delPayloadSize-1)},
+		{name: "safebox wrong password", decode: func(f frame.Frame) error { _, err := DecodeSafeboxWrongPassword(f); return err }, header: HeaderSafeboxWrongPassword, payload: []byte{0}},
+		{name: "safebox size", decode: func(f frame.Frame) error { _, err := DecodeSafeboxSize(f); return err }, header: HeaderSafeboxSize, payload: nil},
+		{name: "safebox money change", decode: func(f frame.Frame) error { _, err := DecodeSafeboxMoneyChange(f); return err }, header: HeaderSafeboxMoneyChange, payload: make([]byte, safeboxMoneyChangePayloadSize-1)},
+		{name: "mall open", decode: func(f frame.Frame) error { _, err := DecodeMallOpen(f); return err }, header: HeaderMallOpen, payload: nil},
+		{name: "mall set", decode: func(f frame.Frame) error { _, err := DecodeMallSet(f); return err }, header: HeaderMallSet, payload: make([]byte, setPayloadSize-1)},
+		{name: "mall del", decode: func(f frame.Frame) error { _, err := DecodeMallDel(f); return err }, header: HeaderMallDel, payload: make([]byte, delPayloadSize-1)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.decode(frame.Frame{Header: tc.header, Length: uint16(len(tc.payload) + 4), Payload: tc.payload})
 			if !errors.Is(err, ErrInvalidPayload) {
 				t.Fatalf("expected ErrInvalidPayload, got %v", err)
 			}

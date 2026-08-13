@@ -30,6 +30,14 @@ const (
 	HeaderOwnership             uint16 = 0x0517
 	HeaderGet                   uint16 = 0x0518
 	HeaderServerExchange        uint16 = 0x051C
+	HeaderSafeboxSet            uint16 = 0x0830
+	HeaderSafeboxDel            uint16 = 0x0831
+	HeaderSafeboxWrongPassword  uint16 = 0x0832
+	HeaderSafeboxSize           uint16 = 0x0833
+	HeaderSafeboxMoneyChange    uint16 = 0x0834
+	HeaderMallOpen              uint16 = 0x0841
+	HeaderMallSet               uint16 = 0x0842
+	HeaderMallDel               uint16 = 0x0843
 
 	WindowReserved            uint8  = 0
 	WindowInventory           uint8  = 1
@@ -68,6 +76,9 @@ const (
 	groundDelPayloadSize             = 4
 	ownershipPayloadSize             = 4 + (CharacterNameMaxLength + 1)
 	getPayloadSize                   = 4 + 1 + 1 + (CharacterNameMaxLength + 1)
+	safeboxSizePayloadSize           = 1
+	safeboxMoneyChangePayloadSize    = 4
+	mallOpenPayloadSize              = 1
 )
 
 const (
@@ -250,6 +261,20 @@ type ClientSafeboxItemMovePacket struct {
 type ClientMallCheckoutPacket struct {
 	MallSlot uint8
 	Position Position
+}
+
+type SafeboxWrongPasswordPacket struct{}
+
+type SafeboxSizePacket struct {
+	Size uint8
+}
+
+type SafeboxMoneyChangePacket struct {
+	Money int32
+}
+
+type MallOpenPacket struct {
+	Size uint8
 }
 
 type ServerExchangePacket struct {
@@ -554,6 +579,100 @@ func DecodeClientMallCheckout(f frame.Frame) (ClientMallCheckoutPacket, error) {
 	return ClientMallCheckoutPacket{MallSlot: f.Payload[0], Position: decodePosition(f.Payload[1:])}, nil
 }
 
+func EncodeSafeboxSet(packet SetPacket) []byte {
+	payload := encodeSetPayload(packet)
+	return frame.Encode(HeaderSafeboxSet, payload)
+}
+
+func DecodeSafeboxSet(f frame.Frame) (SetPacket, error) {
+	return decodeSetWithHeader(f, HeaderSafeboxSet)
+}
+
+func EncodeSafeboxDel(packet DelPacket) []byte {
+	payload := encodeDelPayload(packet)
+	return frame.Encode(HeaderSafeboxDel, payload)
+}
+
+func DecodeSafeboxDel(f frame.Frame) (DelPacket, error) {
+	return decodeDelWithHeader(f, HeaderSafeboxDel)
+}
+
+func EncodeSafeboxWrongPassword() []byte {
+	return frame.Encode(HeaderSafeboxWrongPassword, nil)
+}
+
+func DecodeSafeboxWrongPassword(f frame.Frame) (SafeboxWrongPasswordPacket, error) {
+	if f.Header != HeaderSafeboxWrongPassword {
+		return SafeboxWrongPasswordPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != 0 {
+		return SafeboxWrongPasswordPacket{}, ErrInvalidPayload
+	}
+	return SafeboxWrongPasswordPacket{}, nil
+}
+
+func EncodeSafeboxSize(packet SafeboxSizePacket) []byte {
+	return frame.Encode(HeaderSafeboxSize, []byte{packet.Size})
+}
+
+func DecodeSafeboxSize(f frame.Frame) (SafeboxSizePacket, error) {
+	if f.Header != HeaderSafeboxSize {
+		return SafeboxSizePacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != safeboxSizePayloadSize {
+		return SafeboxSizePacket{}, ErrInvalidPayload
+	}
+	return SafeboxSizePacket{Size: f.Payload[0]}, nil
+}
+
+func EncodeSafeboxMoneyChange(packet SafeboxMoneyChangePacket) []byte {
+	payload := make([]byte, safeboxMoneyChangePayloadSize)
+	binary.LittleEndian.PutUint32(payload, uint32(packet.Money))
+	return frame.Encode(HeaderSafeboxMoneyChange, payload)
+}
+
+func DecodeSafeboxMoneyChange(f frame.Frame) (SafeboxMoneyChangePacket, error) {
+	if f.Header != HeaderSafeboxMoneyChange {
+		return SafeboxMoneyChangePacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != safeboxMoneyChangePayloadSize {
+		return SafeboxMoneyChangePacket{}, ErrInvalidPayload
+	}
+	return SafeboxMoneyChangePacket{Money: int32(binary.LittleEndian.Uint32(f.Payload))}, nil
+}
+
+func EncodeMallOpen(packet MallOpenPacket) []byte {
+	return frame.Encode(HeaderMallOpen, []byte{packet.Size})
+}
+
+func DecodeMallOpen(f frame.Frame) (MallOpenPacket, error) {
+	if f.Header != HeaderMallOpen {
+		return MallOpenPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != mallOpenPayloadSize {
+		return MallOpenPacket{}, ErrInvalidPayload
+	}
+	return MallOpenPacket{Size: f.Payload[0]}, nil
+}
+
+func EncodeMallSet(packet SetPacket) []byte {
+	payload := encodeSetPayload(packet)
+	return frame.Encode(HeaderMallSet, payload)
+}
+
+func DecodeMallSet(f frame.Frame) (SetPacket, error) {
+	return decodeSetWithHeader(f, HeaderMallSet)
+}
+
+func EncodeMallDel(packet DelPacket) []byte {
+	payload := encodeDelPayload(packet)
+	return frame.Encode(HeaderMallDel, payload)
+}
+
+func DecodeMallDel(f frame.Frame) (DelPacket, error) {
+	return decodeDelWithHeader(f, HeaderMallDel)
+}
+
 func EncodeServerExchange(packet ServerExchangePacket) []byte {
 	payload := make([]byte, serverExchangePayloadSize)
 	payload[0] = packet.Subheader
@@ -606,6 +725,10 @@ func DecodeServerExchange(f frame.Frame) (ServerExchangePacket, error) {
 }
 
 func EncodeSet(packet SetPacket) []byte {
+	return frame.Encode(HeaderSet, encodeSetPayload(packet))
+}
+
+func encodeSetPayload(packet SetPacket) []byte {
 	payload := make([]byte, setPayloadSize)
 	encodePosition(payload[:positionSize], packet.Position)
 	offset := positionSize
@@ -629,11 +752,15 @@ func EncodeSet(packet SetPacket) []byte {
 		binary.LittleEndian.PutUint16(payload[offset:], uint16(attribute.Value))
 		offset += 2
 	}
-	return frame.Encode(HeaderSet, payload)
+	return payload
 }
 
 func DecodeSet(f frame.Frame) (SetPacket, error) {
-	if f.Header != HeaderSet {
+	return decodeSetWithHeader(f, HeaderSet)
+}
+
+func decodeSetWithHeader(f frame.Frame, header uint16) (SetPacket, error) {
+	if f.Header != header {
 		return SetPacket{}, ErrUnexpectedHeader
 	}
 	if len(f.Payload) != setPayloadSize {
@@ -665,13 +792,21 @@ func DecodeSet(f frame.Frame) (SetPacket, error) {
 }
 
 func EncodeDel(packet DelPacket) []byte {
+	return frame.Encode(HeaderDel, encodeDelPayload(packet))
+}
+
+func encodeDelPayload(packet DelPacket) []byte {
 	payload := make([]byte, delPayloadSize)
 	encodePosition(payload, packet.Position)
-	return frame.Encode(HeaderDel, payload)
+	return payload
 }
 
 func DecodeDel(f frame.Frame) (DelPacket, error) {
-	if f.Header != HeaderDel {
+	return decodeDelWithHeader(f, HeaderDel)
+}
+
+func decodeDelWithHeader(f frame.Frame, header uint16) (DelPacket, error) {
+	if f.Header != header {
 		return DelPacket{}, ErrUnexpectedHeader
 	}
 	if len(f.Payload) != delPayloadSize {
