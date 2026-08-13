@@ -4,7 +4,7 @@
 
 Add the first test-backed migration apply boundary without exposing migration execution through the shipped daemons or claiming that runtime stores are DB-backed.
 
-The existing DB lane already had a validated catalog, dry-run target planner, SQL ledger reader, strict offline ledger snapshots, and local read-only ops endpoints. This slice adds the next narrow primitive for future CLI/repository work: applying pending **up** migrations inside a caller-supplied database transaction boundary.
+The existing DB lane already had a validated catalog, dry-run target planner, SQL ledger reader, strict offline ledger snapshots, and local read-only ops endpoints. This slice added the next narrow primitive for future CLI/repository work: applying pending **up** migrations inside a caller-supplied database transaction boundary. The same package primitive has since been extended with down-step execution in [Programmatic Migration Rollback Primitive](2026-08-13-programmatic-migration-rollback.md).
 
 ## Contract frozen by this slice
 
@@ -25,8 +25,7 @@ Behavior:
 
 - validates the catalog/ledger/target using the same planner boundary as dry-run status,
 - returns a no-op result without opening a transaction when the requested target is already applied,
-- supports only pending `up` steps,
-- rejects rollback/down targets with `ErrMigrationApplyUnsupportedDirection` before opening a transaction,
+- originally supported only pending `up` steps; down-step rollback execution is now frozen separately in [Programmatic Migration Rollback Primitive](2026-08-13-programmatic-migration-rollback.md),
 - rejects nil or typed-nil executors with `ErrMigrationApplyExecutorRequired`,
 - runs all pending up migrations and their ledger inserts in one transaction,
 - executes each migration SQL body before inserting the matching `schema_migrations` row,
@@ -43,7 +42,7 @@ This slice deliberately does not add:
 - an HTTP/local ops apply endpoint,
 - daemon startup auto-migration,
 - a CLI command,
-- rollback/down execution,
+- a production rollback command or backup/restore orchestration,
 - a production database driver dependency,
 - DB engine selection,
 - statement splitting or dialect-specific SQL execution policy,
@@ -62,7 +61,7 @@ Focused coverage added in `db/migrations/apply_test.go` proves:
 
 - pending migrations are executed and ledgered in one transaction,
 - no-op targets do not open a transaction,
-- rollback targets fail before transaction begin,
+- the original up-only slice failed rollback targets before transaction begin; the follow-up rollback slice replaces that negative boundary with tested down-step execution,
 - migration SQL failure rolls back before writing that migration's ledger row,
 - ledger insert failure rolls back,
 - rollback failure is reported with the original error,
@@ -82,5 +81,5 @@ Validation run for this slice:
 1. Add a driver-backed integration harness for the ledger reader and apply primitive before exposing any command.
 2. Choose a production DB driver/engine only when a repository or migrator slice needs it.
 3. Add a CLI-only migration apply command with explicit backup/restore preflight policy.
-4. Add rollback/down execution as a separate slice with tested recovery semantics.
+4. Rollback/down execution is now covered by [Programmatic Migration Rollback Primitive](2026-08-13-programmatic-migration-rollback.md); the remaining production gap is driver-backed validation plus backup/restore policy before any CLI or operator command.
 5. Keep daemon-local ops migration endpoints read-only unless a future production-admin design explicitly changes that boundary.

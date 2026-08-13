@@ -214,7 +214,7 @@ Already present:
 
 - file-backed account snapshots and login tickets,
 - persisted selected character, position, inventory, equipment, quickslots, gold, item-template, quest-state, static actor, and interaction slices needed by current behavior,
-- strict snapshot/template validation, crash-temp reporting/cleanup, manifest-backed backup/restore preflights for several stores, and a first migration catalog with schema ledger, account/character roster, character item-state, character quest-state, item-template, and auth login-ticket handoff migrations plus read-only ledger dry-run planning and a programmatic up-migration apply primitive,
+- strict snapshot/template validation, crash-temp reporting/cleanup, manifest-backed backup/restore preflights for several stores, and a first migration catalog with schema ledger, account/character roster, character item-state, character quest-state, item-template, and auth login-ticket handoff migrations plus read-only ledger dry-run planning and a programmatic up/down migration apply primitive,
 - loopback-only local endpoints for validation, backup/restore, runtime inspection, and controlled debug actions.
 
 Still missing:
