@@ -1858,7 +1858,7 @@ func (r *gameRuntime) ReturnSpawnGroupHome(entityID uint64) (SpawnGroupLeashSnap
 }
 
 func (r *gameRuntime) StepSpawnGroupReturnHome(entityID uint64, maxStep int32) (SpawnGroupReturnStepSnapshot, bool) {
-	return r.stepSpawnGroupReturnHome(entityID, maxStep, false)
+	return r.stepSpawnGroupReturnHome(entityID, maxStep, true)
 }
 
 func (r *gameRuntime) stepSpawnGroupReturnHome(entityID uint64, maxStep int32, reschedule bool) (SpawnGroupReturnStepSnapshot, bool) {

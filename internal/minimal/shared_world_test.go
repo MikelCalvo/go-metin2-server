@@ -961,6 +961,103 @@ func TestGameRuntimeStepSpawnGroupReturnHomeMovesOnePlannedStepAndQueuesRetained
 	}
 }
 
+func TestGameRuntimeManualReturnStepReschedulesAutomaticReturnStepFromManualStepTime(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	viewer := peerVisibilityCharacter("ReturnStepManual", 0x0103017e, 0x0204017e, 2401, 2800, 0, 101, 201)
+	viewer.MapIndex = 42
+	issuePeerTicket(t, store, "return-step-manual", 0x7e7e7e7e, viewer)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700000930, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for manual return-step reschedule: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_step_manual_reschedule",
+		Name:          "ReturnStepManualRescheduleMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import manual return-step reschedule spawn group: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_step_manual_reschedule")
+	if !ok {
+		t.Fatal("expected manual return-step reschedule spawn group to resolve by ref")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "return-step-manual", 0x7e7e7e7e)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "ReturnStepManualRescheduleMob", 42, 2401, 2800, 20350); !ok {
+		t.Fatal("expected spawn-backed actor current-position update to return-required position to succeed")
+	}
+	flushServerFrames(t, flow)
+
+	runtime.spawnReturnMu.Lock()
+	originalDueAt, scheduled := runtime.spawnReturnStepDueAt[group.EntityID]
+	runtime.spawnReturnMu.Unlock()
+	if !scheduled {
+		t.Fatalf("expected return-required update to schedule automatic return step for entity %d", group.EntityID)
+	}
+
+	currentTime = currentTime.Add(500 * time.Millisecond)
+	stepped, ok := runtime.StepSpawnGroupReturnHome(group.EntityID, 100)
+	if !ok {
+		t.Fatalf("expected manual return-step trigger to accept entity %d", group.EntityID)
+	}
+	if stepped.Actor.X != 2301 || stepped.Actor.SpawnLeash == nil || !stepped.Actor.SpawnLeash.ReturnRequired {
+		t.Fatalf("expected manual return step to move actor to 2301 and remain return-required, got %+v", stepped.Actor)
+	}
+	flushServerFrames(t, flow)
+
+	expectedRescheduledDueAt := currentTime.Add(bootstrapSpawnGroupReturnStepDelay)
+	runtime.spawnReturnMu.Lock()
+	rescheduledDueAt, scheduled := runtime.spawnReturnStepDueAt[group.EntityID]
+	runtime.spawnReturnMu.Unlock()
+	if !scheduled || !rescheduledDueAt.Equal(expectedRescheduledDueAt) {
+		t.Fatalf("expected manual return-step to reschedule due time from manual step time to %s, got scheduled=%v due=%s original_due=%s", expectedRescheduledDueAt, scheduled, rescheduledDueAt, originalDueAt)
+	}
+
+	currentTime = originalDueAt.Add(time.Nanosecond)
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected old pre-manual return-step deadline not to fire, got %d queued frames", len(queued))
+	}
+	if current, ok := runtime.SpawnGroup(group.EntityID); !ok || current.X != 2301 {
+		t.Fatalf("expected actor to remain at manual-step position before rescheduled deadline, ok=%v snapshot=%+v", ok, current)
+	}
+
+	currentTime = expectedRescheduledDueAt.Add(time.Nanosecond)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 4 {
+		t.Fatalf("expected rescheduled automatic return-step refresh after manual step, got %d frames", len(queued))
+	}
+	add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	if err != nil {
+		t.Fatalf("decode rescheduled automatic return-step add after manual step: %v", err)
+	}
+	if add.VID != uint32(group.EntityID) || add.X != 2201 || add.Y != 2800 {
+		t.Fatalf("expected rescheduled automatic return-step add at next planned position, got %+v", add)
+	}
+}
+
 func TestGameRuntimeStepSpawnGroupReturnHomeClearsStaleTargetAndEngagementWhenActorMoves(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("ReturnStepOwner", 0x0103016c, 0x0204016c, 1700, 2800, 0, 101, 201)
