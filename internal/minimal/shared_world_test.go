@@ -1295,6 +1295,101 @@ func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupReturnStep(t *testing.T
 	}
 }
 
+func TestGameRuntimeFlushServerFramesRetriesSpawnGroupReturnStepAfterPersistenceFailure(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	viewer := peerVisibilityCharacter("ReturnStepRetryViewer", 0x0103017e, 0x0204017e, 2301, 2800, 0, 101, 201)
+	viewer.MapIndex = 42
+	issuePeerTicket(t, store, "return-step-retry-viewer", 0x2e2e2e2e, viewer)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700000930, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for return-step persistence retry: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_step_retry",
+		Name:          "ReturnStepRetryMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import return-step retry spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_step_retry")
+	if !ok {
+		t.Fatal("expected return-step retry spawn group to resolve by ref")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "return-step-retry-viewer", 0x2e2e2e2e)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "ReturnStepRetryMob", 42, 2301, 2800, 20350); !ok {
+		t.Fatal("expected spawn-backed actor current-position update to succeed")
+	}
+	flushServerFrames(t, flow)
+
+	runtime.staticStore = &failOnSaveStaticActorStore{delegate: staticActorStore, failOnSave: 1, err: errors.New("temporary static actor save failure")}
+	currentTime = currentTime.Add(time.Second)
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected failed automatic return-step persistence not to queue visibility frames, got %d", len(queued))
+	}
+	stillReturnRequired, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || stillReturnRequired.X != 2301 || stillReturnRequired.SpawnLeash == nil || !stillReturnRequired.SpawnLeash.ReturnRequired {
+		t.Fatalf("expected failed automatic return-step not to mutate runtime actor, ok=%v snapshot=%+v", ok, stillReturnRequired)
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after failed automatic return-step: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != 2301 || persisted.StaticActors[0].Y != 2800 {
+		t.Fatalf("expected failed automatic return-step not to mutate persisted actor, got %+v", persisted.StaticActors)
+	}
+	runtime.spawnReturnMu.Lock()
+	_, retryScheduled := runtime.spawnReturnStepDueAt[group.EntityID]
+	runtime.spawnReturnMu.Unlock()
+	if !retryScheduled {
+		t.Fatalf("expected return-required actor to keep a retry deadline after persistence failure")
+	}
+
+	runtime.staticStore = staticActorStore
+	currentTime = currentTime.Add(time.Second)
+	retryQueued := flushServerFrames(t, flow)
+	if len(retryQueued) != 4 {
+		t.Fatalf("expected retried automatic return-step to queue retained viewer refresh, got %d frames", len(retryQueued))
+	}
+	retryAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, retryQueued[1]))
+	if err != nil {
+		t.Fatalf("decode retried return-step add: %v", err)
+	}
+	if retryAdd.VID != uint32(group.EntityID) || retryAdd.X != 2201 || retryAdd.Y != 2800 {
+		t.Fatalf("expected retried automatic return-step add at planned next position, got %+v", retryAdd)
+	}
+	persisted, err = staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after retried automatic return-step: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != 2201 || persisted.StaticActors[0].Y != 2800 {
+		t.Fatalf("expected retried automatic return-step to persist planned position, got %+v", persisted.StaticActors)
+	}
+}
+
 func TestGameRuntimeRestoreReturnRequiredSpawnGroupSchedulesReturnStep(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	viewer := peerVisibilityCharacter("ReturnStepRestoreViewer", 0x0103017d, 0x0204017d, 2301, 2800, 0, 101, 201)

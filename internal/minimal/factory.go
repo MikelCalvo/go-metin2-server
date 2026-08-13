@@ -1133,6 +1133,10 @@ func (r *gameRuntime) flushDueSpawnGroupReturnSteps() {
 	for _, entityID := range r.dueSpawnGroupReturnStepIDs() {
 		step, ok := r.stepSpawnGroupReturnHome(entityID, bootstrapSpawnGroupReturnStepMaxStep, true)
 		if !ok {
+			if r.spawnGroupReturnStepStillRequired(entityID) {
+				r.scheduleSpawnGroupReturnStep(entityID)
+				continue
+			}
 			r.clearSpawnGroupReturnStep(entityID)
 			continue
 		}
@@ -1141,6 +1145,14 @@ func (r *gameRuntime) flushDueSpawnGroupReturnSteps() {
 			continue
 		}
 	}
+}
+
+func (r *gameRuntime) spawnGroupReturnStepStillRequired(entityID uint64) bool {
+	if r == nil || entityID == 0 {
+		return false
+	}
+	snapshot, ok := r.SpawnGroup(entityID)
+	return ok && !snapshot.Dead && snapshot.SpawnLeash != nil && snapshot.SpawnLeash.ReturnRequired
 }
 
 func (r *gameRuntime) RelocateCharacter(name string, mapIndex uint32, x int32, y int32) bool {
