@@ -97,11 +97,36 @@ func NewFileStore(path string) *FileStore {
 	return &FileStore{path: path}
 }
 
+var durableSyncDisabledForTest bool
+
+// DisableDurableSyncForTest skips fsync calls in this package until the
+// returned restore function is called. It is intended for high-volume tests
+// that assert runtime behavior, not crash durability.
+func DisableDurableSyncForTest() func() {
+	previous := durableSyncDisabledForTest
+	durableSyncDisabledForTest = true
+	return func() { durableSyncDisabledForTest = previous }
+}
+
 func (s *FileStore) Path() string {
 	if s == nil {
 		return ""
 	}
 	return s.path
+}
+
+func (s *FileStore) syncStoreDir(dir string) error {
+	if s == nil || durableSyncDisabledForTest {
+		return nil
+	}
+	return syncDir(dir)
+}
+
+func (s *FileStore) syncFile(file *os.File) error {
+	if s == nil || durableSyncDisabledForTest {
+		return nil
+	}
+	return file.Sync()
 }
 
 func NormalizeSnapshot(snapshot Snapshot) Snapshot {
@@ -342,7 +367,7 @@ func (s *FileStore) CleanupCrashTempFiles() (SnapshotSummary, error) {
 			return SnapshotSummary{}, fmt.Errorf("remove quest state crash temp file %q: %w", filename, err)
 		}
 	}
-	if err := syncDir(storeDir); err != nil {
+	if err := s.syncStoreDir(storeDir); err != nil {
 		return SnapshotSummary{}, fmt.Errorf("sync quest state store dir after crash temp cleanup: %w", err)
 	}
 	return s.Validate()
@@ -485,7 +510,7 @@ func (s *FileStore) Save(snapshot Snapshot) error {
 	if _, err := temp.Write(raw); err != nil {
 		return fmt.Errorf("write quest state snapshot: %w", err)
 	}
-	if err := temp.Sync(); err != nil {
+	if err := s.syncFile(temp); err != nil {
 		return fmt.Errorf("sync quest state temp file: %w", err)
 	}
 	if err := temp.Close(); err != nil {
@@ -494,7 +519,7 @@ func (s *FileStore) Save(snapshot Snapshot) error {
 	if err := os.Rename(temp.Name(), s.path); err != nil {
 		return fmt.Errorf("commit quest state snapshot: %w", err)
 	}
-	if err := syncDir(filepath.Dir(s.path)); err != nil {
+	if err := s.syncStoreDir(filepath.Dir(s.path)); err != nil {
 		return fmt.Errorf("sync quest state store dir: %w", err)
 	}
 	return nil

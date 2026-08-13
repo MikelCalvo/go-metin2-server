@@ -8,6 +8,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 )
 
@@ -16,11 +17,13 @@ func TestMain(m *testing.M) {
 	restoreInteractionSync := interactionstore.DisableDurableSyncForTest()
 	restoreItemSync := itemcatalog.DisableDurableSyncForTest()
 	restoreLoginTicketSync := loginticket.DisableDurableSyncForTest()
+	restoreQuestSync := queststate.DisableDurableSyncForTest()
 	restoreStaticSync := staticstore.DisableDurableSyncForTest()
 
 	code := m.Run()
 
 	restoreStaticSync()
+	restoreQuestSync()
 	restoreLoginTicketSync()
 	restoreItemSync()
 	restoreInteractionSync()
