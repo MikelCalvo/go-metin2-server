@@ -40,10 +40,11 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
-      - name: Build daemons
+      - name: Build binaries
         run: |
           go build ./cmd/authd
           go build ./cmd/gamed
+          go build ./cmd/metin2-migrate
 
   docker-build:
     runs-on: ubuntu-latest
