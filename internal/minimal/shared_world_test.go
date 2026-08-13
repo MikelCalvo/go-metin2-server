@@ -1281,6 +1281,86 @@ func TestGameRuntimeRestoreReturnRequiredSpawnGroupSchedulesReturnStep(t *testin
 	}
 }
 
+func TestGameRuntimeFlushServerFramesStopsSpawnGroupReturnStepWhenActorReentersLeashRadius(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	viewer := peerVisibilityCharacter("ReturnStepAutoStopViewer", 0x0103017a, 0x0204017a, 2101, 2800, 0, 101, 201)
+	viewer.MapIndex = 42
+	issuePeerTicket(t, store, "return-step-auto-stop-viewer", 0x7a7a7a7a, viewer)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700000920, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for return-step radius stop: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_step_radius_stop",
+		Name:          "ReturnStepRadiusStopMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import return-step radius-stop spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_step_radius_stop")
+	if !ok {
+		t.Fatal("expected return-step radius-stop spawn group to resolve by ref")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "return-step-auto-stop-viewer", 0x7a7a7a7a)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "ReturnStepRadiusStopMob", 42, 2101, 2800, 20350); !ok {
+		t.Fatal("expected spawn-backed actor current-position update to just outside leash radius to succeed")
+	}
+	flushServerFrames(t, flow)
+
+	currentTime = currentTime.Add(time.Second)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 4 {
+		t.Fatalf("expected due automatic return-step into leash radius to queue retained viewer refresh, got %d frames", len(queued))
+	}
+	add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	if err != nil {
+		t.Fatalf("decode radius-stop return-step add: %v", err)
+	}
+	if add.VID != uint32(group.EntityID) || add.X != 2001 || add.Y != 2800 {
+		t.Fatalf("expected return-step add at first in-radius position, got %+v", add)
+	}
+	stepped, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || stepped.SpawnLeash == nil || stepped.SpawnLeash.Status != worldruntime.SpawnLeashStatusWithinRadius || stepped.SpawnLeash.ReturnRequired {
+		t.Fatalf("expected actor to re-enter leash radius after one automatic step, ok=%v snapshot=%+v", ok, stepped)
+	}
+
+	runtime.spawnReturnMu.Lock()
+	_, scheduled := runtime.spawnReturnStepDueAt[group.EntityID]
+	runtime.spawnReturnMu.Unlock()
+	if scheduled {
+		t.Fatalf("expected return-step executor not to re-arm once actor re-entered leash radius")
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no extra no-op return-step flush after radius stop, got %d frames", len(queued))
+	}
+}
+
 func TestGameRuntimeFlushServerFramesDoesNotMoveWithinRadiusSpawnGroup(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	viewer := peerVisibilityCharacter("ReturnStepAutoWithinViewer", 0x0103016d, 0x0204016d, 1700, 2800, 0, 101, 201)

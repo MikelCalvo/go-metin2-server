@@ -1904,7 +1904,7 @@ func (r *gameRuntime) stepSpawnGroupReturnHome(entityID uint64, maxStep int32, r
 		_ = r.persistStaticActorSnapshot(current)
 		return SpawnGroupReturnStepSnapshot{}, false
 	}
-	if stepped.Step.Complete {
+	if stepped.Step.Complete || stepped.Actor.SpawnLeash == nil || !stepped.Actor.SpawnLeash.ReturnRequired {
 		r.clearSpawnGroupReturnStep(entityID)
 	} else if reschedule {
 		r.scheduleSpawnGroupReturnStep(entityID)
