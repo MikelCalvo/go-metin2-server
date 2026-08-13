@@ -93,11 +93,12 @@ Current rules:
   - `combat_profiles` when a referenced non-default combat profile must travel with spawn content
   - `item_templates` when the runtime has an authored item-template snapshot loaded
   - `interaction_definitions`
+  - `quest_state` when portable server-side quest-state seed rows are present
 - exported interaction definitions preserve the current per-kind payload fields, including the structured `shop_preview` `title + catalog[]` merchant contract frozen in `npc-shop-catalog-bootstrap.md`
 - exported item templates preserve the owned item-template fields needed by merchant previews/buys, item bootstrap behavior, authored spawn rewards, and bundled combat-profile reward defaults, including `buy_reject_message`, `sell_reject_message`, and `pickup_range` when authored, sorted deterministically by `vnum`
 - when a bundle includes `item_templates`, every `shop_preview` catalog entry must reference one of those bundled templates; this keeps portable merchant bundles self-contained instead of relying on an implicit default item catalog
 - when a bundle carries fixed item-shaped reward drops through `spawn_groups` or bundled custom `combat_profiles`, every `reward_drop_vnums` entry must also reference one bundled `item_templates` entry; reward-drop bundles without matching item templates are rejected before import, and export keeps templates referenced only after registered combat-profile reward defaults are expanded so exported bundles remain self-contained and immediately re-importable
-- the deterministic example bundle at `docs/examples/bootstrap-npc-service-bundle.json` is intentionally self-contained for merchant QA: its `item_templates` section carries every item referenced by the `shop_preview` catalog
+- the deterministic example bundle at `docs/examples/bootstrap-npc-service-bundle.json` is intentionally self-contained for merchant QA and quest-state inspection: its `item_templates` section carries every item referenced by the `shop_preview` catalog, and its `quest_state` section carries one canonical `QuestHero / quest:first_steps / step = 1` seed row
 - exported static actors are **portable authored content**, not runtime entities, so the bundle omits runtime-only `entity_id`
 - authored static actor and spawn-group names are trimmed, must remain non-empty after trimming, and reject embedded NUL bytes or invalid UTF-8 before persistence, import, or loopback static-actor mutation callbacks
 - import is full-replace for the authored bootstrap content currently loaded by `gamed`

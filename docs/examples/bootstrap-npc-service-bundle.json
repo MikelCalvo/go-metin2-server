@@ -70,6 +70,14 @@
       "shop_sell_price": 2
     }
   ],
+  "quest_state": [
+    {
+      "character": "QuestHero",
+      "quest_ref": "quest:first_steps",
+      "name": "step",
+      "value": 1
+    }
+  ],
   "interaction_definitions": [
     {
       "kind": "info",

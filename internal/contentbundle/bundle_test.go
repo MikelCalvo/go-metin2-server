@@ -2260,6 +2260,24 @@ func TestBootstrapNPCServiceExampleBundleCoversOwnedServiceInteractionKinds(t *t
 	}
 }
 
+func TestBootstrapNPCServiceExampleBundleCarriesQuestStateSeed(t *testing.T) {
+	decoded := loadBootstrapNPCServiceExampleBundle(t)
+	want := []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1}}
+	if !reflect.DeepEqual(decoded.QuestState, want) {
+		t.Fatalf("unexpected bootstrap NPC service quest-state seed:\n got: %#v\nwant: %#v", decoded.QuestState, want)
+	}
+	summary, err := Summarize(decoded)
+	if err != nil {
+		t.Fatalf("summarize bootstrap NPC service example bundle: %v", err)
+	}
+	if summary.QuestStateFlagCount != 1 || summary.QuestStateCharacterCount != 1 || summary.QuestStateQuestCount != 1 {
+		t.Fatalf("unexpected bootstrap NPC service quest-state summary counts: %+v", summary)
+	}
+	if len(summary.QuestStateCharacters) != 1 || summary.QuestStateCharacters[0].Character != "QuestHero" || !reflect.DeepEqual(summary.QuestStateCharacters[0].Flags, []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "step", Value: 1}}) {
+		t.Fatalf("unexpected bootstrap NPC service quest-state character summary: %+v", summary.QuestStateCharacters)
+	}
+}
+
 func loadBootstrapNPCServiceExampleBundle(t *testing.T) Bundle {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
