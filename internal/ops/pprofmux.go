@@ -2239,6 +2239,41 @@ func RegisterLocalContentBundleInteractableStaticActorEndpoint(mux *http.ServeMu
 	return mux
 }
 
+func RegisterLocalContentBundleInteractionKindEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/content-bundle/interaction-kinds/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		kind, ok := decodeLocalContentBundleInteractionKind(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		for _, interactionKind := range summary.InteractionKinds {
+			if interactionKind.Kind == kind {
+				writeLocalJSONMutationResponse(w, interactionKind, http.StatusOK)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	return mux
+}
+
 func RegisterLocalContentBundleInteractionDefinitionEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
 	if mux == nil || exportContentBundleSummary == nil {
 		return mux
@@ -3353,6 +3388,23 @@ func decodeLocalContentBundleSpawnGroupRef(r *http.Request) (string, bool) {
 
 func decodeLocalContentBundleInteractableStaticActorName(r *http.Request) (string, bool) {
 	return decodeLocalCharacterName(r, "/local/content-bundle/interactable-static-actors/")
+}
+
+func decodeLocalContentBundleInteractionKind(r *http.Request) (string, bool) {
+	raw := strings.TrimPrefix(r.URL.Path, "/local/content-bundle/interaction-kinds/")
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.Contains(raw, "/") {
+		return "", false
+	}
+	kind, err := url.PathUnescape(raw)
+	if err != nil {
+		return "", false
+	}
+	kind = strings.TrimSpace(kind)
+	if kind == "" || strings.Contains(kind, "/") || !interactionstore.ValidKind(kind) {
+		return "", false
+	}
+	return kind, true
 }
 
 func decodeLocalContentBundleInteractionDefinitionIdentity(r *http.Request) (string, string, bool) {

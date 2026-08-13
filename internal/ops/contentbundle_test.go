@@ -1889,6 +1889,130 @@ func TestLocalContentBundleInteractableStaticActorEndpointForwardsSummaryExporte
 	}
 }
 
+func TestLocalContentBundleInteractionKindEndpointReturnsExactKindSummaryForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{InteractionKinds: []contentbundle.InteractionKindSummary{
+			{Kind: interactionstore.KindInfo, Count: 1, ReferencedCount: 0, UnreferencedCount: 1},
+			{Kind: interactionstore.KindTalk, Count: 2, ReferencedCount: 1, UnreferencedCount: 1},
+		}},
+	}
+	mux := RegisterLocalContentBundleInteractionKindEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/interaction-kinds/talk", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got contentbundle.InteractionKindSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode interaction kind response body: %v", err)
+	}
+	want := contentbundle.InteractionKindSummary{Kind: interactionstore.KindTalk, Count: 2, ReferencedCount: 1, UnreferencedCount: 1}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle interaction kind summary:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleInteractionKindEndpointReturnsNotFoundForMissingKind(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{InteractionKinds: []contentbundle.InteractionKindSummary{{Kind: interactionstore.KindTalk, Count: 1, ReferencedCount: 1}}}}
+	mux := RegisterLocalContentBundleInteractionKindEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/interaction-kinds/info", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for missing interaction kind, got %d", http.StatusNotFound, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleInteractionKindEndpointRejectsInvalidKind(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{InteractionKinds: []contentbundle.InteractionKindSummary{{Kind: interactionstore.KindTalk, Count: 1}}}}
+	mux := RegisterLocalContentBundleInteractionKindEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	for _, path := range []string{"/local/content-bundle/interaction-kinds/", "/local/content-bundle/interaction-kinds/quest", "/local/content-bundle/interaction-kinds/talk/extra", "/local/content-bundle/interaction-kinds/bad%2Fkind"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for invalid interaction kind path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called for invalid interaction kind identities, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleInteractionKindEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{InteractionKinds: []contentbundle.InteractionKindSummary{{Kind: interactionstore.KindTalk, Count: 1}}}}
+	mux := RegisterLocalContentBundleInteractionKindEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/interaction-kinds/talk", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback caller, got %d", http.StatusForbidden, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleInteractionKindEndpointRejectsWrongMethod(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{InteractionKinds: []contentbundle.InteractionKindSummary{{Kind: interactionstore.KindTalk, Count: 1}}}}
+	mux := RegisterLocalContentBundleInteractionKindEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/interaction-kinds/talk", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleInteractionKindEndpointForwardsSummaryExporterErrors(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusConflict, result: map[string]string{"error": "content summary unavailable"}}
+	mux := RegisterLocalContentBundleInteractionKindEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/interaction-kinds/talk", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d for exporter failure, got %d", http.StatusConflict, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
 func TestLocalContentBundleInteractionDefinitionEndpointReturnsExactReferencedDefinitionForLoopbackGet(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{
 		status: http.StatusOK,

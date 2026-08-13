@@ -599,6 +599,10 @@ func main() {
 		opsHandler,
 		exportContentBundleSummary,
 	)
+	opsHandler = ops.RegisterLocalContentBundleInteractionKindEndpoint(
+		opsHandler,
+		exportContentBundleSummary,
+	)
 	opsHandler = ops.RegisterLocalContentBundleInteractionDefinitionEndpoint(
 		opsHandler,
 		exportContentBundleSummary,

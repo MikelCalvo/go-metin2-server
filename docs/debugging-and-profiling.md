@@ -527,6 +527,12 @@ Returns one exact spawn-group row from the live content-bundle summary. This loo
 
 Use it when local QA needs to inspect one practice-mob/spawn definition without fetching the full bundle summary or querying live runtime entity state. It is not a gameplay protocol endpoint and does not mutate authored content.
 
+### `GET /local/content-bundle/interaction-kinds/{kind}`
+
+Returns one exact per-kind interaction summary row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; `kind` must be one of the currently owned interaction kinds. It returns JSON with `kind`, `count`, `referenced_count`, and `unreferenced_count`, returns `404` when the live authored bundle has no definitions for that kind, rejects malformed or unsupported identities with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
+
+Use it when local QA needs to inspect one authored interaction family without fetching the full content-bundle summary or enumerating every definition preview. It is not a gameplay protocol endpoint and does not mutate authored content.
+
 ### `GET /local/content-bundle/interaction-definitions/{kind}/{ref}`
 
 Returns one compact authored interaction-definition preview row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; `kind` must be one of the currently owned interaction kinds and `ref` must satisfy the canonical path-safe interaction reference rule used by `/local/interactions/{kind}/{ref}`. It returns JSON with `kind`, `ref`, `preview`, and `referenced`, returns `404` when the live authored bundle has no matching definition preview, rejects malformed identities with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
@@ -1131,6 +1137,7 @@ curl http://127.0.0.1:6060/local/content-bundle/maps/1
 curl http://127.0.0.1:6060/local/content-bundle/static-actors/Village%20Guide
 curl http://127.0.0.1:6060/local/content-bundle/spawn-groups/practice.qa_reward_mob
 curl http://127.0.0.1:6060/local/content-bundle/interactable-static-actors/Village%20Guide
+curl http://127.0.0.1:6060/local/content-bundle/interaction-kinds/shop_preview
 curl http://127.0.0.1:6060/local/content-bundle/item-templates/27001
 curl http://127.0.0.1:6060/local/content-bundle/reward-drops/27001
 curl http://127.0.0.1:6060/local/content-bundle/quest-state/flags/QuestHero/quest:first_steps/step
