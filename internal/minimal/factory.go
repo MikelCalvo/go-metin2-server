@@ -2921,6 +2921,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !ok {
 				return nil, false
 			}
+			frames = prependExchangeCloseFrame(frames)
 			if ownsLiveSharedWorldSession() {
 				sharedWorld.RegisterGroundItemWithPickupRange(sharedWorldID, sessionTicket.Login, previousSelected, groundVID, droppedItem, templatePickupRange(runtime, droppedItem.Vnum))
 			}

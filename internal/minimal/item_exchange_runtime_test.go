@@ -1566,6 +1566,149 @@ func TestGameRuntimeItemUseClosesActiveExchangeShellBeforeUseFrames(t *testing.T
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "peer active-exchange item-use")
 }
 
+func TestGameRuntimeItemDropClosesActiveExchangeShellBeforeDropFrames(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeDropOwner", 0x01030796, 0x02040796, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 762, Vnum: 27045, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeDropPeer", 0x01030797, 0x02040797, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerLogin := "item-exchange-drop-owner"
+	peerLogin := "item-exchange-drop-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707096, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x70707097, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange item-drop owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange item-drop peer account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27045, Name: "Exchange Drop Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange item-drop runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707096)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707097)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected exchange item-drop start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected exchange item-drop start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "exchange item-drop owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected exchange item-drop peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "exchange item-drop peer start")
+
+	itemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 7, Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected exchange item-drop item-add error: %v", err)
+	}
+	if len(itemAddOut) != 1 {
+		t.Fatalf("expected exchange item-drop item-add to emit one owner frame, got %d", len(itemAddOut))
+	}
+	assertExchangeItemAddFrame(t, itemAddOut[0], 1, 7, owner.Inventory[0], template, "exchange item-drop owner item-add")
+	queuedItemAdd := flushServerFrames(t, peerFlow)
+	if len(queuedItemAdd) != 1 {
+		t.Fatalf("expected exchange item-drop peer item-add frame, got %d", len(queuedItemAdd))
+	}
+	assertExchangeItemAddFrame(t, queuedItemAdd[0], 0, 7, owner.Inventory[0], template, "exchange item-drop peer item-add")
+
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected active-exchange item-drop packet error: %v", err)
+	}
+	if len(out) != 5 {
+		t.Fatalf("expected active-exchange ITEM_DROP to emit exchange end plus item, quickslot, ground, and ownership frames, got %d", len(out))
+	}
+	assertExchangeEndFrame(t, out[0], "active-exchange item-drop self close")
+	itemDel, err := itemproto.DecodeDel(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode active-exchange item-drop item del: %v", err)
+	}
+	if itemDel.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected active-exchange item-drop item del: %+v", itemDel)
+	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode active-exchange item-drop quickslot del: %v", err)
+	}
+	if quickslotDel.Position != 2 {
+		t.Fatalf("unexpected active-exchange item-drop quickslot del: %+v", quickslotDel)
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode active-exchange item-drop ground add: %v", err)
+	}
+	if ground.Vnum != owner.Inventory[0].Vnum || ground.X != owner.X || ground.Y != owner.Y || ground.Z != owner.Z {
+		t.Fatalf("unexpected active-exchange item-drop ground add: %+v", ground)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, out[4]))
+	if err != nil {
+		t.Fatalf("decode active-exchange item-drop ownership: %v", err)
+	}
+	if ownership.VID != ground.VID || ownership.OwnerName != owner.Name {
+		t.Fatalf("unexpected active-exchange item-drop ownership: %+v", ownership)
+	}
+	queuedClose := flushServerFrames(t, peerFlow)
+	if len(queuedClose) != 3 {
+		t.Fatalf("expected active-exchange ITEM_DROP to queue exchange close plus visible ground frames, got %d", len(queuedClose))
+	}
+	assertExchangeEndFrame(t, queuedClose[0], "active-exchange item-drop peer close")
+	queuedGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, queuedClose[1]))
+	if err != nil {
+		t.Fatalf("decode active-exchange item-drop peer ground add: %v", err)
+	}
+	if queuedGround.VID != ground.VID || queuedGround.Vnum != ground.Vnum {
+		t.Fatalf("unexpected active-exchange item-drop peer ground add: %+v", queuedGround)
+	}
+	queuedOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, queuedClose[2]))
+	if err != nil {
+		t.Fatalf("decode active-exchange item-drop peer ownership: %v", err)
+	}
+	if queuedOwnership.VID != ground.VID || queuedOwnership.OwnerName != owner.Name {
+		t.Fatalf("unexpected active-exchange item-drop peer ownership: %+v", queuedOwnership)
+	}
+
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected post-item-drop exchange cancel error: %v", err)
+	}
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected post-item-drop exchange cancel to emit no frames after the shell was closed, got %d", len(cancelOut))
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after post-item-drop exchange cancel, got %d", len(queued))
+	}
+
+	persistedOwner, err := accounts.Load(ownerLogin)
+	if err != nil {
+		t.Fatalf("load persisted active-exchange item-drop owner account: %v", err)
+	}
+	if len(persistedOwner.Characters[0].Inventory) != 0 {
+		t.Fatalf("active-exchange item-drop persisted inventory got %+v want empty", persistedOwner.Characters[0].Inventory)
+	}
+	if len(persistedOwner.Characters[0].Quickslots) != 0 {
+		t.Fatalf("active-exchange item-drop persisted quickslots got %+v want empty", persistedOwner.Characters[0].Quickslots)
+	}
+	if persistedOwner.Characters[0].Gold != owner.Gold {
+		t.Fatalf("active-exchange item-drop mutated persisted gold got %d want %d", persistedOwner.Characters[0].Gold, owner.Gold)
+	}
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "peer active-exchange item-drop")
+}
+
 func TestGameRuntimeItemExchangeAntiGiveItemAddReturnsAuthoredRejectTextInsideActiveShellWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
