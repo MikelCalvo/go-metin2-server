@@ -2800,6 +2800,10 @@ func (r *sharedWorldRegistry) StepSpawnGroupReturnHome(entityID uint64, maxStep 
 			r.enqueueToEntityLocked(target.Entity.ID, addFrames)
 		}
 	}
+	delete(r.staticActorCombatEngagedBy, updated.Entity.ID)
+	if targetVID, ok := worldruntime.StaticActorVisibilityVID(actor); ok {
+		r.clearSelectedCombatTargetsLocked(targetVID, 0)
+	}
 	return r.spawnGroupReturnStepSnapshotLocked(updated, plan), true
 }
 

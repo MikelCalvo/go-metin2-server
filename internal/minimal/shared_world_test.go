@@ -961,6 +961,136 @@ func TestGameRuntimeStepSpawnGroupReturnHomeMovesOnePlannedStepAndQueuesRetained
 	}
 }
 
+func TestGameRuntimeStepSpawnGroupReturnHomeClearsStaleTargetAndEngagementWhenActorMoves(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ReturnStepOwner", 0x0103016c, 0x0204016c, 1700, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 10
+	peer := peerVisibilityCharacter("ReturnStepPeer", 0x0103016d, 0x0204016d, 1720, 2800, 0, 102, 202)
+	peer.MapIndex = 42
+	issuePeerTicket(t, store, "return-step-owner", 0x1c1c1c1c, owner)
+	issuePeerTicket(t, store, "return-step-peer", 0x1d1d1d1d, peer)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for selected spawn-group return-step: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_step_selected",
+		Name:          "ReturnStepSelectedMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import selected return-step spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_step_selected")
+	if !ok {
+		t.Fatal("expected selected return-step spawn group to resolve by ref")
+	}
+
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "return-step-owner", 0x1c1c1c1c)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "return-step-peer", 0x1d1d1d1d)
+	defer closeSessionFlow(t, peerFlow)
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, peerFlow)
+
+	targetVID := uint32(group.EntityID)
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target error before selected return-step: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected selected return-step target selection to succeed, got %d frames", len(selectOut))
+	}
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected attack before selected return-step: %v", err)
+	}
+	if len(attackOut) != 3 {
+		t.Fatalf("expected selected return-step setup hit to emit target refresh, retaliation, and damage-info, got %d frames", len(attackOut))
+	}
+	flushSingleDamageInfoFrame(t, peerFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before selected return-step")
+
+	runtime.sharedWorld.mu.Lock()
+	actor, ok := runtime.sharedWorld.entities.StaticActor(group.EntityID)
+	if !ok {
+		runtime.sharedWorld.mu.Unlock()
+		t.Fatalf("expected selected return-step actor %d before direct drift", group.EntityID)
+	}
+	actor.Position = worldruntime.NewPosition(42, 2301, 2800)
+	if _, ok := runtime.sharedWorld.entities.UpdateStaticActor(actor); !ok {
+		runtime.sharedWorld.mu.Unlock()
+		t.Fatal("expected direct selected return-step drift to preserve stale target for reset guard")
+	}
+	runtime.sharedWorld.mu.Unlock()
+
+	stepped, ok := runtime.StepSpawnGroupReturnHome(group.EntityID, 1000)
+	if !ok {
+		t.Fatalf("expected selected return-step trigger to accept entity %d", group.EntityID)
+	}
+	if !stepped.Step.Complete || stepped.Step.Next.X != 1700 || stepped.Step.Next.Y != 2800 {
+		t.Fatalf("expected selected return-step to return actor to authored home, got %+v", stepped.Step)
+	}
+
+	ownerQueued := flushServerFrames(t, ownerFlow)
+	if len(ownerQueued) != 5 {
+		t.Fatalf("expected selected owner to receive return-step refresh plus target clear, got %d frames", len(ownerQueued))
+	}
+	if _, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, ownerQueued[0])); err != nil {
+		t.Fatalf("decode selected return-step owner delete: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, ownerQueued[1])); err != nil {
+		t.Fatalf("decode selected return-step owner add: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, ownerQueued[2])); err != nil {
+		t.Fatalf("decode selected return-step owner additional info: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, ownerQueued[3])); err != nil {
+		t.Fatalf("decode selected return-step owner update: %v", err)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, ownerQueued[4]))
+	if err != nil {
+		t.Fatalf("decode selected return-step target clear: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected selected return-step target clear, got %+v", clearTarget)
+	}
+	if snapshot, ok := runtime.CombatTargetSnapshot("ReturnStepOwner"); ok {
+		t.Fatalf("expected selected return-step to clear owner combat target snapshot, got %+v", snapshot)
+	}
+
+	peerRefresh := flushServerFrames(t, peerFlow)
+	if len(peerRefresh) != 4 {
+		t.Fatalf("expected peer to receive return-step refresh without target clear, got %d frames", len(peerRefresh))
+	}
+	peerSelect, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected peer target error after selected return-step: %v", err)
+	}
+	if len(peerSelect) != 1 {
+		t.Fatalf("expected return-step to release engagement so peer can reselect, got %d frames", len(peerSelect))
+	}
+	peerTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, peerSelect[0]))
+	if err != nil {
+		t.Fatalf("decode peer target after selected return-step: %v", err)
+	}
+	if peerTarget.TargetVID != targetVID || peerTarget.HPPercent != 90 {
+		t.Fatalf("expected peer to reselect damaged mob after return-step reset, got %+v", peerTarget)
+	}
+}
+
 func TestGameRuntimeStepSpawnGroupReturnHomeNoOpsWithinRadiusWithoutClearingTarget(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	viewer := peerVisibilityCharacter("ReturnStepWithinViewer", 0x0103016b, 0x0204016b, 1700, 2800, 0, 101, 201)
