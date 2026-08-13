@@ -559,6 +559,12 @@ Returns one exact aggregate reward-drop summary row from the live content-bundle
 
 Use it when local QA needs to inspect one authored reward item's aggregate source count and guard/rejection metadata without fetching the full content-bundle summary or expanding every spawn group. It is not a gameplay protocol endpoint and does not mutate authored content.
 
+### `GET /local/content-bundle/quest-state`
+
+Returns a compact quest-state overview from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; it returns the live exported bundle's quest-state counts, quest refs, per-character summaries, and per-quest summaries, rejects non-loopback callers with `403`, forwards live bundle-summary export failures, and accepts only `GET`.
+
+Use it when local QA needs the whole portable quest-state snapshot projection without fetching the broader content-bundle summary or scanning character/quest/flag-specific readers one at a time. It is not a client quest protocol endpoint and does not mutate quest state.
+
 ### `GET /local/content-bundle/quest-state/characters/{character}`
 
 Returns one exact quest-state character summary row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; `character` is URL-decoded with the same path-safe name rules used by other local character-name readers. It returns the matching `quest_state_characters[]` row with deterministic flag summaries, returns `404` when the live exported bundle has no persisted non-zero flags for that character, rejects blank or slash-containing names with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.

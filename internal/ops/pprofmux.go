@@ -2444,6 +2444,34 @@ func RegisterLocalContentBundleRewardDropEndpoint(mux *http.ServeMux, exportCont
 	return mux
 }
 
+func RegisterLocalContentBundleQuestStateEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	mux.HandleFunc("/local/content-bundle/quest-state", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		writeLocalJSONMutationResponse(w, contentbundle.QuestStateOverviewFromSummary(summary), http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalContentBundleQuestStateCharacterEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
 	if mux == nil || exportContentBundleSummary == nil {
 		return mux

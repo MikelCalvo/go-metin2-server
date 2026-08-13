@@ -182,6 +182,15 @@ type QuestStateQuestSummary struct {
 	Characters []QuestStateCharacterSummary `json:"characters,omitempty"`
 }
 
+type QuestStateOverview struct {
+	FlagCount      int                          `json:"flag_count"`
+	CharacterCount int                          `json:"character_count"`
+	QuestCount     int                          `json:"quest_count"`
+	QuestRefs      []string                     `json:"quest_refs,omitempty"`
+	Characters     []QuestStateCharacterSummary `json:"characters,omitempty"`
+	Quests         []QuestStateQuestSummary     `json:"quests,omitempty"`
+}
+
 type ImportPreview struct {
 	Current   Summary       `json:"current"`
 	Candidate Summary       `json:"candidate"`
@@ -1914,6 +1923,59 @@ func questStateQuestSummaries(flags []queststate.Flag) []QuestStateQuestSummary 
 		summaries = append(summaries, questSummary)
 	}
 	return summaries
+}
+
+func QuestStateOverviewFromSummary(summary Summary) QuestStateOverview {
+	return QuestStateOverview{
+		FlagCount:      summary.QuestStateFlagCount,
+		CharacterCount: summary.QuestStateCharacterCount,
+		QuestCount:     summary.QuestStateQuestCount,
+		QuestRefs:      cloneStrings(summary.QuestStateQuestRefs),
+		Characters:     cloneQuestStateCharacterSummaries(summary.QuestStateCharacters),
+		Quests:         cloneQuestStateQuestSummaries(summary.QuestStateQuests),
+	}
+}
+
+func cloneStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make([]string, len(values))
+	copy(cloned, values)
+	return cloned
+}
+
+func cloneQuestStateQuestSummaries(summaries []QuestStateQuestSummary) []QuestStateQuestSummary {
+	if len(summaries) == 0 {
+		return nil
+	}
+	cloned := make([]QuestStateQuestSummary, len(summaries))
+	copy(cloned, summaries)
+	for i := range cloned {
+		cloned[i].Characters = cloneQuestStateCharacterSummaries(summaries[i].Characters)
+	}
+	return cloned
+}
+
+func cloneQuestStateCharacterSummaries(summaries []QuestStateCharacterSummary) []QuestStateCharacterSummary {
+	if len(summaries) == 0 {
+		return nil
+	}
+	cloned := make([]QuestStateCharacterSummary, len(summaries))
+	copy(cloned, summaries)
+	for i := range cloned {
+		cloned[i].Flags = cloneQuestStateFlagSnapshots(summaries[i].Flags)
+	}
+	return cloned
+}
+
+func cloneQuestStateFlagSnapshots(flags []queststate.FlagSnapshot) []queststate.FlagSnapshot {
+	if len(flags) == 0 {
+		return nil
+	}
+	cloned := make([]queststate.FlagSnapshot, len(flags))
+	copy(cloned, flags)
+	return cloned
 }
 
 func interactableStaticActorSummary(actor StaticActor, definition interactionstore.Definition, itemTemplatesByVnum map[uint32]itemcatalog.Template) InteractableStaticActorSummary {

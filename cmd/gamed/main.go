@@ -629,6 +629,10 @@ func main() {
 		opsHandler,
 		exportContentBundleSummary,
 	)
+	opsHandler = ops.RegisterLocalContentBundleQuestStateEndpoint(
+		opsHandler,
+		exportContentBundleSummary,
+	)
 	opsHandler = ops.RegisterLocalContentBundleQuestStateCharacterEndpoint(
 		opsHandler,
 		exportContentBundleSummary,

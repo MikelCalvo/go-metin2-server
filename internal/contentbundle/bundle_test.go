@@ -141,6 +141,53 @@ func TestSummarizeIncludesQuestStateCountsAndCharacterFlags(t *testing.T) {
 	}
 }
 
+func TestQuestStateOverviewFromSummaryReturnsFocusedQuestStateRows(t *testing.T) {
+	summary := Summary{
+		QuestStateFlagCount:      2,
+		QuestStateCharacterCount: 2,
+		QuestStateQuestCount:     1,
+		QuestStateQuestRefs:      []string{"quest:first_steps"},
+		QuestStateCharacters: []QuestStateCharacterSummary{
+			{Character: "AnotherHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}}},
+			{Character: "QuestHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "step", Value: 2}}},
+		},
+		QuestStateQuests: []QuestStateQuestSummary{
+			{QuestRef: "quest:first_steps", FlagCount: 2, Characters: []QuestStateCharacterSummary{
+				{Character: "AnotherHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}}},
+				{Character: "QuestHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "step", Value: 2}}},
+			}},
+		},
+	}
+
+	got := QuestStateOverviewFromSummary(summary)
+	want := QuestStateOverview{
+		FlagCount:      2,
+		CharacterCount: 2,
+		QuestCount:     1,
+		QuestRefs:      []string{"quest:first_steps"},
+		Characters: []QuestStateCharacterSummary{
+			{Character: "AnotherHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}}},
+			{Character: "QuestHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "step", Value: 2}}},
+		},
+		Quests: []QuestStateQuestSummary{
+			{QuestRef: "quest:first_steps", FlagCount: 2, Characters: []QuestStateCharacterSummary{
+				{Character: "AnotherHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}}},
+				{Character: "QuestHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "step", Value: 2}}},
+			}},
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected focused quest-state overview:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	got.QuestRefs[0] = "quest:mutated"
+	got.Characters[0].Flags[0].Name = "mutated"
+	got.Quests[0].Characters[0].Flags[0].Name = "mutated"
+	if summary.QuestStateQuestRefs[0] != "quest:first_steps" || summary.QuestStateCharacters[0].Flags[0].Name != "met_guard" || summary.QuestStateQuests[0].Characters[0].Flags[0].Name != "met_guard" {
+		t.Fatalf("expected focused quest-state overview to clone summary rows, got summary %+v", summary)
+	}
+}
+
 func TestBuildImportPreviewReturnsQuestStateDeltas(t *testing.T) {
 	currentStep := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "step", Value: 1}
 	candidateStep := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "step", Value: 2}
