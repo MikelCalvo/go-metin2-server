@@ -6651,9 +6651,11 @@ func (r *gameRuntime) loadPersistedStaticActors() error {
 			return fmt.Errorf("%w: validate static actor interaction refs", staticstore.ErrInvalidSnapshot)
 		}
 		deathReward := worldruntime.StaticActorDeathReward{Experience: actor.RewardExperience, Gold: actor.RewardGold, DropVnums: append([]uint32(nil), actor.RewardDropVnums...)}
-		if _, ok := r.sharedWorld.registerStaticActorWithSpawnHome(actor.EntityID, actor.Name, actor.MapIndex, actor.X, actor.Y, actor.RaceNum, actor.InteractionKind, actor.InteractionRef, actor.CombatProfile, actor.SpawnGroupRef, actor.SpawnHome, deathReward); !ok {
+		registered, ok := r.sharedWorld.registerStaticActorWithSpawnHome(actor.EntityID, actor.Name, actor.MapIndex, actor.X, actor.Y, actor.RaceNum, actor.InteractionKind, actor.InteractionRef, actor.CombatProfile, actor.SpawnGroupRef, actor.SpawnHome, deathReward)
+		if !ok {
 			return fmt.Errorf("%w: apply static actor snapshot", staticstore.ErrInvalidSnapshot)
 		}
+		r.syncSpawnGroupReturnStepSchedule(registered)
 	}
 	return nil
 }

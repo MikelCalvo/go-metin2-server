@@ -1198,6 +1198,89 @@ func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupReturnStep(t *testing.T
 	}
 }
 
+func TestGameRuntimeRestoreReturnRequiredSpawnGroupSchedulesReturnStep(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	viewer := peerVisibilityCharacter("ReturnStepRestoreViewer", 0x0103017d, 0x0204017d, 2301, 2800, 0, 101, 201)
+	viewer.MapIndex = 42
+	issuePeerTicket(t, store, "return-step-restore-viewer", 0x2d2d2d2d, viewer)
+	staticActorStore := staticstore.NewFileStore(filepath.Join(t.TempDir(), "static-actors.json"))
+	if err := staticActorStore.Save(staticstore.Snapshot{StaticActors: []staticstore.StaticActor{{
+		EntityID:      0x351,
+		Name:          "ReturnStepRestoreMob",
+		MapIndex:      42,
+		X:             2301,
+		Y:             2800,
+		RaceNum:       20350,
+		SpawnHome:     &worldruntime.PositionSnapshot{MapIndex: 42, X: 1700, Y: 2800},
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+		SpawnGroupRef: "practice.return_step_restore",
+	}}}); err != nil {
+		t.Fatalf("seed persisted return-required spawn-group actor: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime with restored return-required spawn group: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_step_restore")
+	if !ok {
+		t.Fatal("expected restored spawn group to resolve by ref")
+	}
+	if group.X != 2301 || group.Y != 2800 || group.SpawnLeash == nil || !group.SpawnLeash.ReturnRequired {
+		t.Fatalf("expected restored spawn group to remain return-required before scheduled step, got %+v", group)
+	}
+
+	runtime.spawnReturnMu.Lock()
+	dueAt, scheduled := runtime.spawnReturnStepDueAt[group.EntityID]
+	runtime.spawnReturnMu.Unlock()
+	if !scheduled {
+		t.Fatalf("expected restored return-required spawn group %d to arm an automatic return-step deadline", group.EntityID)
+	}
+	runtime.now = func() time.Time { return dueAt.Add(time.Nanosecond) }
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "return-step-restore-viewer", 0x2d2d2d2d)
+	defer closeSessionFlow(t, flow)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 4 {
+		t.Fatalf("expected restored due return-step to queue retained viewer refresh, got %d frames", len(queued))
+	}
+	if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0])); err != nil || deleted.VID != uint32(group.EntityID) {
+		t.Fatalf("decode restored return-step retained delete: packet=%+v err=%v", deleted, err)
+	}
+	add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	if err != nil {
+		t.Fatalf("decode restored return-step add: %v", err)
+	}
+	if add.VID != uint32(group.EntityID) || add.X != 2201 || add.Y != 2800 {
+		t.Fatalf("expected restored return-step add at planned next position, got %+v", add)
+	}
+	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, queued[2])); err != nil {
+		t.Fatalf("decode restored return-step additional info: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, queued[3])); err != nil {
+		t.Fatalf("decode restored return-step update: %v", err)
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after restored return-step: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != 2201 || persisted.StaticActors[0].Y != 2800 || persisted.StaticActors[0].SpawnHome == nil || persisted.StaticActors[0].SpawnHome.X != 1700 {
+		t.Fatalf("expected restored return-step to persist planned position and preserve home, got %+v", persisted.StaticActors)
+	}
+}
+
 func TestGameRuntimeFlushServerFramesDoesNotMoveWithinRadiusSpawnGroup(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	viewer := peerVisibilityCharacter("ReturnStepAutoWithinViewer", 0x0103016d, 0x0204016d, 1700, 2800, 0, 101, 201)
