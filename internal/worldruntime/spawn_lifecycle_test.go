@@ -208,3 +208,126 @@ func TestSpawnLeashSnapshotFromEvaluationOmitsReturnTargetWhenReturnIsNotRequire
 		t.Fatalf("expected within-radius leash snapshot to omit return target, got %+v", snapshot.ReturnTarget)
 	}
 }
+
+func TestPlanStaticActorSpawnLeashReturnStepMovesReturnRequiredActorTowardHomeWithoutMutating(t *testing.T) {
+	home := NewPosition(42, 1700, 2800)
+	current := NewPosition(42, 2301, 2800)
+	actor := StaticEntity{
+		Entity:        Entity{ID: 30, Kind: EntityKindStaticActor, Name: "ReturnPlannerMob"},
+		Position:      current,
+		SpawnHome:     home,
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.return_planner",
+	}
+
+	plan, ok := PlanStaticActorSpawnLeashReturnStep(actor, DefaultSpawnLeashRadius, 100)
+	if !ok {
+		t.Fatal("expected return-required spawn actor to produce a return-step plan")
+	}
+	if plan.Evaluation.Status != SpawnLeashStatusReturnRequired || !plan.Evaluation.ReturnRequired {
+		t.Fatalf("expected return-required evaluation in return-step plan, got %+v", plan.Evaluation)
+	}
+	if plan.Next != NewPosition(42, 2201, 2800) || plan.Complete {
+		t.Fatalf("expected one 100-unit x-axis return step toward home, got %+v", plan)
+	}
+	if actor.Position != current || actor.SpawnHome != home {
+		t.Fatalf("expected return-step planning not to mutate actor, got actor=%+v", actor)
+	}
+}
+
+func TestPlanStaticActorSpawnLeashReturnStepCompletesAtHomeWhenWithinOneStep(t *testing.T) {
+	home := NewPosition(42, 1700, 2800)
+	actor := StaticEntity{
+		Entity:        Entity{ID: 31, Kind: EntityKindStaticActor, Name: "ReturnPlannerNearMob"},
+		Position:      NewPosition(42, 2101, 2800),
+		SpawnHome:     home,
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.return_planner_near",
+	}
+
+	plan, ok := PlanStaticActorSpawnLeashReturnStep(actor, DefaultSpawnLeashRadius, 500)
+	if !ok {
+		t.Fatal("expected near return-required spawn actor to produce a return-step plan")
+	}
+	if plan.Next != home || !plan.Complete {
+		t.Fatalf("expected one large return step to land exactly at authored home, got %+v", plan)
+	}
+}
+
+func TestPlanStaticActorSpawnLeashReturnStepUsesHomeForCrossMapReturn(t *testing.T) {
+	home := NewPosition(42, 1700, 2800)
+	actor := StaticEntity{
+		Entity:        Entity{ID: 32, Kind: EntityKindStaticActor, Name: "ReturnPlannerCrossMapMob"},
+		Position:      NewPosition(43, 1700, 2800),
+		SpawnHome:     home,
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.return_planner_cross_map",
+	}
+
+	plan, ok := PlanStaticActorSpawnLeashReturnStep(actor, DefaultSpawnLeashRadius, 100)
+	if !ok {
+		t.Fatal("expected cross-map return-required spawn actor to produce a return-step plan")
+	}
+	if plan.Next != home || !plan.Complete {
+		t.Fatalf("expected cross-map return step to target authored home directly, got %+v", plan)
+	}
+}
+
+func TestPlanStaticActorSpawnLeashReturnStepNoOpsWhenReturnNotRequired(t *testing.T) {
+	homeActor := StaticEntity{
+		Entity:        Entity{ID: 33, Kind: EntityKindStaticActor, Name: "ReturnPlannerHomeMob"},
+		Position:      NewPosition(42, 1700, 2800),
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.return_planner_home",
+	}
+
+	plan, ok := PlanStaticActorSpawnLeashReturnStep(homeActor, DefaultSpawnLeashRadius, 100)
+	if !ok {
+		t.Fatal("expected at-home spawn actor to produce a no-op return-step plan")
+	}
+	if plan.Evaluation.Status != SpawnLeashStatusAtHome || plan.Next != homeActor.Position || !plan.Complete {
+		t.Fatalf("expected at-home return-step plan to be complete no-op, got %+v", plan)
+	}
+
+	withinActor := StaticEntity{
+		Entity:        Entity{ID: 35, Kind: EntityKindStaticActor, Name: "ReturnPlannerWithinMob"},
+		Position:      NewPosition(42, 1900, 2900),
+		SpawnHome:     NewPosition(42, 1700, 2800),
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.return_planner_within",
+	}
+	plan, ok = PlanStaticActorSpawnLeashReturnStep(withinActor, DefaultSpawnLeashRadius, 100)
+	if !ok {
+		t.Fatal("expected within-radius spawn actor to produce a no-op return-step plan")
+	}
+	if plan.Evaluation.Status != SpawnLeashStatusWithinRadius || plan.Next != withinActor.Position || !plan.Complete {
+		t.Fatalf("expected within-radius return-step plan to be complete no-op, got %+v", plan)
+	}
+}
+
+func TestPlanStaticActorSpawnLeashReturnStepFailsClosedForInvalidInput(t *testing.T) {
+	actor := StaticEntity{Entity: Entity{ID: 34, Kind: EntityKindStaticActor, Name: "ReturnPlannerInvalidMob"}, Position: NewPosition(42, 2301, 2800), RaceNum: 20350}
+	if plan, ok := PlanStaticActorSpawnLeashReturnStep(actor, DefaultSpawnLeashRadius, 100); ok || plan.Next.Valid() {
+		t.Fatalf("expected non-spawn actor return-step plan to fail closed, got ok=%v plan=%+v", ok, plan)
+	}
+
+	actor.CombatProfile = StaticActorCombatProfilePracticeMob
+	actor.CombatKind = StaticActorCombatProfilePracticeMob
+	actor.SpawnGroupRef = "practice.return_planner_invalid"
+	if plan, ok := PlanStaticActorSpawnLeashReturnStep(actor, 0, 100); ok || plan.Next.Valid() {
+		t.Fatalf("expected non-positive leash radius return-step plan to fail closed, got ok=%v plan=%+v", ok, plan)
+	}
+	if plan, ok := PlanStaticActorSpawnLeashReturnStep(actor, DefaultSpawnLeashRadius, 0); ok || plan.Next.Valid() {
+		t.Fatalf("expected non-positive max step return-step plan to fail closed, got ok=%v plan=%+v", ok, plan)
+	}
+}

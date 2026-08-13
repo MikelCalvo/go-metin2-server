@@ -60,7 +60,7 @@ Next slices:
 2. Make one content-loaded practice mob lifecycle fully explicit: spawn → target → hit → death → respawn → fresh reselection.
 3. Add aggro-lite reset/cleanup boundaries for disconnect, transfer, death, and respawn.
 4. Add first independent mob reaction timing that is not only piggybacked on player hits.
-5. Add first chase/leash/return planning doc and one tiny tested runtime seam.
+5. Extend the first chase/leash/return planning seam beyond pure classification: a tested pure return-step planner now exists, while an autonomous executor and packet choreography still remain future work.
 6. Harden multi-map and reconnect behavior so mobs do not duplicate, leak, or resurrect incorrectly.
 
 Exit criteria:

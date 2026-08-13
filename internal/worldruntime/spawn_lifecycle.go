@@ -1,5 +1,7 @@
 package worldruntime
 
+import "math"
+
 // SpawnLeashStatus describes the first bootstrap-owned position-vs-authored-home
 // classification for stationary spawn-backed combatants.
 type SpawnLeashStatus string
@@ -21,6 +23,14 @@ type SpawnLeashEvaluation struct {
 	Status         SpawnLeashStatus
 	ReturnRequired bool
 	ReturnTarget   Position
+}
+
+// SpawnLeashReturnStepPlan is a pure planning result for the first future
+// chase/return-home seam. It does not mutate actor state or emit packets.
+type SpawnLeashReturnStepPlan struct {
+	Evaluation SpawnLeashEvaluation
+	Next       Position
+	Complete   bool
 }
 
 type PositionSnapshot struct {
@@ -89,6 +99,35 @@ func EvaluateSpawnLeash(home Position, current Position, radius int32) (SpawnLea
 	return evaluation, true
 }
 
+// PlanStaticActorSpawnLeashReturnStep computes one deterministic return-home
+// step for a spawn-backed actor using its preserved authored home. Same-map
+// actors move toward home by at most maxStep on the current bootstrap x/y plane;
+// cross-map returns target authored home directly because no client warp/chase
+// choreography is owned yet.
+func PlanStaticActorSpawnLeashReturnStep(actor StaticEntity, radius int32, maxStep int32) (SpawnLeashReturnStepPlan, bool) {
+	if maxStep <= 0 {
+		return SpawnLeashReturnStepPlan{}, false
+	}
+	evaluation, ok := EvaluateStaticActorCurrentSpawnLeash(actor, radius)
+	if !ok {
+		return SpawnLeashReturnStepPlan{}, false
+	}
+	plan := SpawnLeashReturnStepPlan{Evaluation: evaluation, Next: evaluation.Current}
+	if !evaluation.ReturnRequired {
+		plan.Complete = true
+		return plan, true
+	}
+	if !evaluation.Home.SameMap(evaluation.Current) {
+		plan.Next = evaluation.Home
+		plan.Complete = true
+		return plan, true
+	}
+	next, complete := returnStepTowardHome(evaluation.Current, evaluation.Home, maxStep)
+	plan.Next = next
+	plan.Complete = complete
+	return plan, true
+}
+
 func SpawnLeashSnapshotFromEvaluation(evaluation SpawnLeashEvaluation) SpawnLeashSnapshot {
 	snapshot := SpawnLeashSnapshot{
 		Home:           PositionSnapshotFromPosition(evaluation.Home),
@@ -119,6 +158,54 @@ func positionWithinRadius(left Position, right Position, radius int32) bool {
 		return false
 	}
 	return dx*dx+dy*dy <= limit*limit
+}
+
+func returnStepTowardHome(current Position, home Position, maxStep int32) (Position, bool) {
+	if !current.SameMap(home) {
+		return home, true
+	}
+	dx := int64(home.X) - int64(current.X)
+	dy := int64(home.Y) - int64(current.Y)
+	distance := math.Hypot(float64(dx), float64(dy))
+	if distance == 0 || distance <= float64(maxStep) {
+		return home, true
+	}
+	scale := float64(maxStep) / distance
+	xStep := int64(float64(dx) * scale)
+	yStep := int64(float64(dy) * scale)
+	if xStep == 0 && yStep == 0 {
+		if absInt64(dx) >= absInt64(dy) {
+			xStep = signInt64(dx)
+		} else {
+			yStep = signInt64(dy)
+		}
+	}
+	nextX := int64(current.X) + xStep
+	nextY := int64(current.Y) + yStep
+	nextX = clampStepCoordinate(nextX, int64(current.X), int64(home.X))
+	nextY = clampStepCoordinate(nextY, int64(current.Y), int64(home.Y))
+	next := NewPosition(current.MapIndex, int32(nextX), int32(nextY))
+	return next, next.Equal(home)
+}
+
+func clampStepCoordinate(value int64, current int64, home int64) int64 {
+	if current < home && value > home {
+		return home
+	}
+	if current > home && value < home {
+		return home
+	}
+	return value
+}
+
+func signInt64(value int64) int64 {
+	if value < 0 {
+		return -1
+	}
+	if value > 0 {
+		return 1
+	}
+	return 0
 }
 
 func absInt64(value int64) int64 {
