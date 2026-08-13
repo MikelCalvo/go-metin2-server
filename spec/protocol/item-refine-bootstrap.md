@@ -29,6 +29,29 @@ Total frame length is 6 bytes including the common `header` and `length` fields.
 
 The layout is frozen from the TMP4-compatible client packet struct shape in project-owned terms. The repository owns only the byte layout and current fail-closed runtime policy.
 
+## Server packets
+
+### `GC::REFINE_INFORMATION` (`0x051D`) and `GC::REFINE_INFORMATION_NEW` (`0x051E`)
+
+Direction: server -> client.
+
+Both server refine-information headers use the same currently owned fixed payload shape:
+
+| Offset | Field | Type | Notes |
+| --- | --- | --- | --- |
+| 0 | `type` | `uint8` | refine request/dialog type; the current client-facing `REFINE_INFORMATION_NEW` path forwards this to the UI, while the older `REFINE_INFORMATION` path ignores it |
+| 1 | `pos` | `uint8` | client inventory/refine slot byte |
+| 2 | `refine_table.src_vnum` | `uint32 LE` | source template `vnum` |
+| 6 | `refine_table.result_vnum` | `uint32 LE` | result template `vnum` |
+| 10 | `refine_table.material_count` | `uint8` | number of material rows to display; valid owned range is `0..5` |
+| 11 | `refine_table.cost` | `int32 LE` | displayed refine cost |
+| 15 | `refine_table.prob` | `int32 LE` | displayed refine probability |
+| 19 | `refine_table.materials[5]` | five `{vnum uint32 LE, count int32 LE}` rows | fixed material table; rows beyond `material_count` are still present on the wire and normally zero-filled |
+
+Total payload size is `59` bytes. Total frame length is `63` bytes including the common `header` and `length` fields.
+
+The repository now owns the codecs for both server headers, including exact byte layout, unexpected-header rejection, invalid-payload rejection, and fail-closed rejection of decoded/encoded `material_count > 5`. The shipped runtime still emits neither server refine-information packet; runtime refine-window open/close choreography remains deferred until a later refine-system slice owns the material/cost/result policy.
+
 ## Current runtime contract
 
 `internal/game` decodes `REFINE` while the session is already in `GAME` and routes it to a dedicated handler hook. The default handler denies the request with no response.
@@ -65,14 +88,15 @@ Later slices must write a new contract before broadening this packet into real g
 - refine material, cost, or catalyst semantics
 - success, failure, downgrade, destroy, or safe-refine outcomes
 - item socket, metin-stone, attribute, or bonus-changing behavior
-- refine window/open/close choreography
-- server `REFINE_INFORMATION`, `REFINE_INFORMATION_NEW`, or dragon-soul refine packets
+- runtime refine window/open/close choreography
+- server-originated runtime emission of `REFINE_INFORMATION` / `REFINE_INFORMATION_NEW`
+- dragon-soul refine packets
 - inventory/equipment refresh ordering for accepted refine results
 - audit, rollback, or durable economic policy for refine attempts
 
 ## Current coverage
 
-- `internal/proto/item` freezes `REFINE` encode/decode behavior plus unexpected-header and invalid-payload rejection.
+- `internal/proto/item` freezes `REFINE` encode/decode behavior plus unexpected-header and invalid-payload rejection; it also now freezes the codec-only `REFINE_INFORMATION` / `REFINE_INFORMATION_NEW` server packet layouts, including the fixed five-row material table and `material_count <= 5` validation.
 - `internal/game` freezes `GAME`-phase dispatch to a handler hook, with denied results returning no frames.
 - `internal/itemstore` freezes deterministic `refine_reject_message` persistence and rejects contradictory `refineable` templates that also author that message.
 - `internal/player` freezes the no-mutation helper boundary that extracts template-authored refine rejection text from the currently carried item.

@@ -30,6 +30,8 @@ const (
 	HeaderOwnership             uint16 = 0x0517
 	HeaderGet                   uint16 = 0x0518
 	HeaderServerExchange        uint16 = 0x051C
+	HeaderRefineInformation     uint16 = 0x051D
+	HeaderRefineInformationNew  uint16 = 0x051E
 	HeaderSafeboxSet            uint16 = 0x0830
 	HeaderSafeboxDel            uint16 = 0x0831
 	HeaderSafeboxWrongPassword  uint16 = 0x0832
@@ -52,6 +54,7 @@ const (
 	ItemSocketCount                  = 3
 	ItemAttributeCount               = 7
 	CharacterNameMaxLength           = 24
+	RefineMaterialMaxNum             = 5
 
 	positionSize                     = 3
 	attributeSize                    = 3
@@ -68,6 +71,9 @@ const (
 	clientSafeboxItemMovePayloadSize = positionSize + positionSize + 1
 	clientMallCheckoutPayloadSize    = 1 + positionSize
 	serverExchangePayloadSize        = 1 + 1 + 4 + positionSize + 4 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
+	refineMaterialPayloadSize        = 4 + 4
+	refineTablePayloadSize           = 4 + 4 + 1 + 4 + 4 + (RefineMaterialMaxNum * refineMaterialPayloadSize)
+	refineInformationPayloadSize     = 1 + 1 + refineTablePayloadSize
 	delPayloadSize                   = positionSize
 	setPayloadSize                   = positionSize + 4 + 1 + 4 + 4 + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
 	usePayloadSize                   = positionSize + 4 + 4 + 4
@@ -240,6 +246,26 @@ type ClientExchangePacket struct {
 type ClientRefinePacket struct {
 	Position uint8
 	Type     uint8
+}
+
+type RefineMaterial struct {
+	Vnum  uint32
+	Count int32
+}
+
+type RefineTable struct {
+	SourceVnum    uint32
+	ResultVnum    uint32
+	MaterialCount uint8
+	Cost          int32
+	Probability   int32
+	Materials     [RefineMaterialMaxNum]RefineMaterial
+}
+
+type RefineInformationPacket struct {
+	Type     uint8
+	Position uint8
+	Table    RefineTable
 }
 
 type ClientSafeboxCheckinPacket struct {
@@ -504,6 +530,77 @@ func DecodeClientRefine(f frame.Frame) (ClientRefinePacket, error) {
 		return ClientRefinePacket{}, ErrInvalidPayload
 	}
 	return ClientRefinePacket{Position: f.Payload[0], Type: f.Payload[1]}, nil
+}
+
+func EncodeRefineInformation(packet RefineInformationPacket) ([]byte, error) {
+	return encodeRefineInformation(HeaderRefineInformation, packet)
+}
+
+func DecodeRefineInformation(f frame.Frame) (RefineInformationPacket, error) {
+	return decodeRefineInformation(f, HeaderRefineInformation)
+}
+
+func EncodeRefineInformationNew(packet RefineInformationPacket) ([]byte, error) {
+	return encodeRefineInformation(HeaderRefineInformationNew, packet)
+}
+
+func DecodeRefineInformationNew(f frame.Frame) (RefineInformationPacket, error) {
+	return decodeRefineInformation(f, HeaderRefineInformationNew)
+}
+
+func encodeRefineInformation(header uint16, packet RefineInformationPacket) ([]byte, error) {
+	if packet.Table.MaterialCount > RefineMaterialMaxNum {
+		return nil, ErrInvalidPayload
+	}
+	payload := make([]byte, refineInformationPayloadSize)
+	payload[0] = packet.Type
+	payload[1] = packet.Position
+	encodeRefineTable(payload[2:], packet.Table)
+	return frame.Encode(header, payload), nil
+}
+
+func decodeRefineInformation(f frame.Frame, header uint16) (RefineInformationPacket, error) {
+	if f.Header != header {
+		return RefineInformationPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != refineInformationPayloadSize {
+		return RefineInformationPacket{}, ErrInvalidPayload
+	}
+	packet := RefineInformationPacket{Type: f.Payload[0], Position: f.Payload[1], Table: decodeRefineTable(f.Payload[2:])}
+	if packet.Table.MaterialCount > RefineMaterialMaxNum {
+		return RefineInformationPacket{}, ErrInvalidPayload
+	}
+	return packet, nil
+}
+
+func encodeRefineTable(payload []byte, table RefineTable) {
+	binary.LittleEndian.PutUint32(payload[0:4], table.SourceVnum)
+	binary.LittleEndian.PutUint32(payload[4:8], table.ResultVnum)
+	payload[8] = table.MaterialCount
+	binary.LittleEndian.PutUint32(payload[9:13], uint32(table.Cost))
+	binary.LittleEndian.PutUint32(payload[13:17], uint32(table.Probability))
+	offset := 17
+	for _, material := range table.Materials {
+		binary.LittleEndian.PutUint32(payload[offset:offset+4], material.Vnum)
+		binary.LittleEndian.PutUint32(payload[offset+4:offset+8], uint32(material.Count))
+		offset += refineMaterialPayloadSize
+	}
+}
+
+func decodeRefineTable(payload []byte) RefineTable {
+	table := RefineTable{
+		SourceVnum:    binary.LittleEndian.Uint32(payload[0:4]),
+		ResultVnum:    binary.LittleEndian.Uint32(payload[4:8]),
+		MaterialCount: payload[8],
+		Cost:          int32(binary.LittleEndian.Uint32(payload[9:13])),
+		Probability:   int32(binary.LittleEndian.Uint32(payload[13:17])),
+	}
+	offset := 17
+	for i := range table.Materials {
+		table.Materials[i] = RefineMaterial{Vnum: binary.LittleEndian.Uint32(payload[offset : offset+4]), Count: int32(binary.LittleEndian.Uint32(payload[offset+4 : offset+8]))}
+		offset += refineMaterialPayloadSize
+	}
+	return table
 }
 
 func EncodeClientSafeboxCheckin(packet ClientSafeboxCheckinPacket) []byte {

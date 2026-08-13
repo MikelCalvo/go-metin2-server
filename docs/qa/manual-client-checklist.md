@@ -426,7 +426,8 @@ Expected result:
 - ordinary `REFINE` attempts are parsed by the game socket but remain unsupported in the shipped bootstrap runtime: no response frames are visible, no carried inventory/equipment/quickslot/point state changes, no ground actor appears, no peer receives item-result frames, and reconnect/operator inspection shows the selected-character snapshot unchanged
 - a non-refineable carried item with template-authored `refine_reject_message` returns exactly one self-only `CHAT_TYPE_INFO` message with that authored text, while still leaving inventory, equipment, quickslots, points, peers, ground handles, and persistence unchanged
 - item-template validation rejects `refine_reject_message` if it contains embedded NUL bytes or is authored on a template that also sets `refineable = true`, so contradictory refine feedback should fail before gameplay testing starts
-- this is a fail-closed guard, not a completed refine or upgrade feature
+- if packet tooling injects server refine-dialog fixtures for client UI inspection, the owned `REFINE_INFORMATION` / `REFINE_INFORMATION_NEW` payload has `type`, `pos`, `src_vnum`, `result_vnum`, `material_count`, `cost`, `prob`, and exactly five fixed material rows; `material_count > 5` is malformed for the current codec boundary
+- this is a fail-closed guard plus codec-only refine-information ownership, not a completed refine or upgrade feature
 
 ### 4.5.12b Unsupported storage/safebox/mall guard
 

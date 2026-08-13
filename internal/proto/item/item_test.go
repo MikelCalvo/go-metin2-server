@@ -813,6 +813,103 @@ func TestDecodeClientRefineRejectsInvalidPayload(t *testing.T) {
 	}
 }
 
+func TestEncodeRefineInformationBuildsAFrame(t *testing.T) {
+	want := frame.Encode(HeaderRefineInformation, sampleRefineInformationPayload())
+	got, err := EncodeRefineInformation(sampleRefineInformationPacket())
+	if err != nil {
+		t.Fatalf("unexpected refine-information encode error: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected refine-information frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeRefineInformationReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeRefineInformation(decodeSingleFrame(t, frame.Encode(HeaderRefineInformation, sampleRefineInformationPayload())))
+	if err != nil {
+		t.Fatalf("unexpected refine-information decode error: %v", err)
+	}
+	if packet != sampleRefineInformationPacket() {
+		t.Fatalf("unexpected refine-information packet: %+v", packet)
+	}
+}
+
+func TestEncodeRefineInformationNewBuildsAFrame(t *testing.T) {
+	want := frame.Encode(HeaderRefineInformationNew, sampleRefineInformationPayload())
+	got, err := EncodeRefineInformationNew(sampleRefineInformationPacket())
+	if err != nil {
+		t.Fatalf("unexpected refine-information-new encode error: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected refine-information-new frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeRefineInformationNewReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeRefineInformationNew(decodeSingleFrame(t, frame.Encode(HeaderRefineInformationNew, sampleRefineInformationPayload())))
+	if err != nil {
+		t.Fatalf("unexpected refine-information-new decode error: %v", err)
+	}
+	if packet != sampleRefineInformationPacket() {
+		t.Fatalf("unexpected refine-information-new packet: %+v", packet)
+	}
+}
+
+func TestEncodeRefineInformationRejectsMaterialCountBeyondFixedTable(t *testing.T) {
+	packet := sampleRefineInformationPacket()
+	packet.Table.MaterialCount = RefineMaterialMaxNum + 1
+	got, err := EncodeRefineInformation(packet)
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got raw=%x err=%v", got, err)
+	}
+}
+
+func TestDecodeRefineInformationRejectsMaterialCountBeyondFixedTable(t *testing.T) {
+	payload := sampleRefineInformationPayload()
+	payload[10] = RefineMaterialMaxNum + 1
+	_, err := DecodeRefineInformation(frame.Frame{Header: HeaderRefineInformation, Length: uint16(4 + len(payload)), Payload: payload})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestDecodeRefineInformationNewRejectsMaterialCountBeyondFixedTable(t *testing.T) {
+	payload := sampleRefineInformationPayload()
+	payload[10] = RefineMaterialMaxNum + 1
+	_, err := DecodeRefineInformationNew(frame.Frame{Header: HeaderRefineInformationNew, Length: uint16(4 + len(payload)), Payload: payload})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestDecodeRefineInformationRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeRefineInformation(frame.Frame{Header: HeaderRefineInformation + 8, Length: 63, Payload: make([]byte, refineInformationPayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeRefineInformationRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeRefineInformation(frame.Frame{Header: HeaderRefineInformation, Length: 62, Payload: make([]byte, refineInformationPayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestDecodeRefineInformationNewRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeRefineInformationNew(frame.Frame{Header: HeaderRefineInformationNew + 8, Length: 63, Payload: make([]byte, refineInformationPayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeRefineInformationNewRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeRefineInformationNew(frame.Frame{Header: HeaderRefineInformationNew, Length: 62, Payload: make([]byte, refineInformationPayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
 func TestEncodeGroundAddBuildsAFrame(t *testing.T) {
 	want := frame.Encode(HeaderGroundAdd, []byte{0x10, 0x27, 0, 0, 0x30, 0xf8, 0xff, 0xff, 0x40, 0x1f, 0, 0, 0x78, 0x56, 0x34, 0x12, 0x44, 0x33, 0x22, 0x11})
 	got := EncodeGroundAdd(GroundAddPacket{VID: 0x12345678, Vnum: 0x11223344, X: 10000, Y: -2000, Z: 8000})
@@ -1156,6 +1253,43 @@ func sampleUpdatePacket() UpdatePacket {
 			{Type: 6, Value: 32767},
 			{Type: 7, Value: -1234},
 		},
+	}
+}
+
+func sampleRefineInformationPacket() RefineInformationPacket {
+	return RefineInformationPacket{
+		Type:     3,
+		Position: 5,
+		Table: RefineTable{
+			SourceVnum:    11200,
+			ResultVnum:    11201,
+			MaterialCount: 2,
+			Cost:          12345,
+			Probability:   87,
+			Materials:     [RefineMaterialMaxNum]RefineMaterial{{Vnum: 27001, Count: 2}, {Vnum: 27002, Count: 3}},
+		},
+	}
+}
+
+func sampleRefineInformationPayload() []byte {
+	return []byte{
+		3,
+		5,
+		0xc0, 0x2b, 0x00, 0x00,
+		0xc1, 0x2b, 0x00, 0x00,
+		2,
+		0x39, 0x30, 0x00, 0x00,
+		0x57, 0x00, 0x00, 0x00,
+		0x79, 0x69, 0x00, 0x00,
+		0x02, 0x00, 0x00, 0x00,
+		0x7a, 0x69, 0x00, 0x00,
+		0x03, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
 	}
 }
 
