@@ -871,6 +871,177 @@ func TestGameRuntimeReturnSpawnGroupHomeMovesWithinRadiusMobBackToAuthoredHome(t
 	}
 }
 
+func TestGameRuntimeStepSpawnGroupReturnHomeMovesOnePlannedStepAndQueuesRetainedRefresh(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	viewer := peerVisibilityCharacter("ReturnStepViewer", 0x0103016a, 0x0204016a, 2301, 2800, 0, 101, 201)
+	viewer.MapIndex = 42
+	issuePeerTicket(t, store, "return-step-viewer", 0x1a1a1a1a, viewer)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for spawn-group return-step: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_step",
+		Name:          "ReturnStepMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import return-step spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_step")
+	if !ok {
+		t.Fatal("expected return-step spawn group to resolve by ref")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "return-step-viewer", 0x1a1a1a1a)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "ReturnStepMob", 42, 2301, 2800, 20350); !ok {
+		t.Fatal("expected spawn-backed actor current-position update to succeed")
+	}
+	flushServerFrames(t, flow)
+
+	stepped, ok := runtime.StepSpawnGroupReturnHome(group.EntityID, 100)
+	if !ok {
+		t.Fatalf("expected return-step trigger to accept entity %d", group.EntityID)
+	}
+	if stepped.Step.Current.X != 2301 || stepped.Step.Next.X != 2201 || stepped.Step.Complete {
+		t.Fatalf("expected one 100-unit return step from 2301 to 2201 without completion, got %+v", stepped.Step)
+	}
+	if stepped.Actor.X != 2201 || stepped.Actor.Y != 2800 || stepped.Actor.SpawnGroupRef != "practice.return_step" {
+		t.Fatalf("expected stepped actor at planned next position, got %+v", stepped.Actor)
+	}
+	if stepped.Actor.SpawnLeash == nil || stepped.Actor.SpawnLeash.Status != worldruntime.SpawnLeashStatusReturnRequired {
+		t.Fatalf("expected one small return step to remain return-required, got %+v", stepped.Actor.SpawnLeash)
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after return-step: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != 2201 || persisted.StaticActors[0].Y != 2800 || persisted.StaticActors[0].SpawnHome == nil || persisted.StaticActors[0].SpawnHome.X != 1700 {
+		t.Fatalf("expected persisted spawn group to move one return step and preserve home, got %+v", persisted.StaticActors)
+	}
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 4 {
+		t.Fatalf("expected retained viewer to receive return-step refresh, got %d frames", len(queued))
+	}
+	if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0])); err != nil || deleted.VID != uint32(group.EntityID) {
+		t.Fatalf("decode return-step retained delete: packet=%+v err=%v", deleted, err)
+	}
+	add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	if err != nil {
+		t.Fatalf("decode return-step add: %v", err)
+	}
+	if add.VID != uint32(group.EntityID) || add.X != 2201 || add.Y != 2800 {
+		t.Fatalf("expected return-step add at planned next position, got %+v", add)
+	}
+	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, queued[2])); err != nil {
+		t.Fatalf("decode return-step additional info: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, queued[3])); err != nil {
+		t.Fatalf("decode return-step update: %v", err)
+	}
+}
+
+func TestGameRuntimeStepSpawnGroupReturnHomeNoOpsWithinRadiusWithoutClearingTarget(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	viewer := peerVisibilityCharacter("ReturnStepWithinViewer", 0x0103016b, 0x0204016b, 1700, 2800, 0, 101, 201)
+	viewer.MapIndex = 42
+	issuePeerTicket(t, store, "return-step-within-viewer", 0x1b1b1b1b, viewer)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for within-radius return-step: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_step_within",
+		Name:          "ReturnStepWithinMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import within-radius return-step spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_step_within")
+	if !ok {
+		t.Fatal("expected within-radius return-step spawn group to resolve by ref")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "return-step-within-viewer", 0x1b1b1b1b)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "ReturnStepWithinMob", 42, 1900, 2900, 20350); !ok {
+		t.Fatal("expected spawn-backed actor current-position update inside leash radius to succeed")
+	}
+	flushServerFrames(t, flow)
+	targetOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(group.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected target error before within-radius return-step: %v", err)
+	}
+	if len(targetOut) != 1 {
+		t.Fatalf("expected within-radius spawn group to be targetable before return-step no-op, got %d frames", len(targetOut))
+	}
+
+	stepped, ok := runtime.StepSpawnGroupReturnHome(group.EntityID, 100)
+	if !ok {
+		t.Fatalf("expected within-radius return-step trigger to return a no-op snapshot for entity %d", group.EntityID)
+	}
+	if stepped.Step.Current.X != 1900 || stepped.Step.Next.X != 1900 || !stepped.Step.Complete {
+		t.Fatalf("expected within-radius return-step to no-op at current position, got %+v", stepped.Step)
+	}
+	if stepped.Actor.X != 1900 || stepped.Actor.Y != 2900 || stepped.Actor.SpawnLeash == nil || stepped.Actor.SpawnLeash.Status != worldruntime.SpawnLeashStatusWithinRadius {
+		t.Fatalf("expected within-radius return-step no-op to preserve current actor position, got %+v", stepped.Actor)
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after within-radius return-step: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != 1900 || persisted.StaticActors[0].Y != 2900 {
+		t.Fatalf("expected within-radius return-step no-op not to persist exact home, got %+v", persisted.StaticActors)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected within-radius return-step no-op not to queue refresh or target clear, got %d frames", len(queued))
+	}
+	selected, ok := runtime.CombatTargetSnapshot("ReturnStepWithinViewer")
+	if !ok || selected.TargetVID != uint32(group.EntityID) {
+		t.Fatalf("expected within-radius return-step no-op to preserve selected target, ok=%v snapshot=%+v", ok, selected)
+	}
+}
+
 func TestGameRuntimeReturnSpawnGroupHomeRejectsDeadMobUntilRespawn(t *testing.T) {
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(

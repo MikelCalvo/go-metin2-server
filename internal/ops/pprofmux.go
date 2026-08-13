@@ -1416,6 +1416,30 @@ func RegisterLocalSpawnGroupReturnHomeEndpoint(mux *http.ServeMux, returnSpawnGr
 	return mux
 }
 
+func RegisterLocalSpawnGroupReturnStepEndpoint(mux *http.ServeMux, stepSpawnGroupReturnHome func(uint64, int32) (any, bool)) *http.ServeMux {
+	if mux == nil || stepSpawnGroupReturnHome == nil {
+		return mux
+	}
+	mux.HandleFunc("POST /local/spawn-groups/{entity_id}/return-step", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		entityID, maxStep, ok := decodeLocalSpawnGroupReturnStepRequest(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		value, ok := stepSpawnGroupReturnHome(entityID, maxStep)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalGroundItemsEndpoint(mux *http.ServeMux, groundItems func() any) *http.ServeMux {
 	if mux == nil || groundItems == nil {
 		return mux
@@ -3309,14 +3333,38 @@ func decodeLocalSpawnGroupReturnHomeEntityID(r *http.Request) (uint64, bool) {
 	}
 	entityIDRaw = strings.TrimSuffix(entityIDRaw, "/return-home")
 	entityIDRaw = strings.TrimSpace(entityIDRaw)
-	if entityIDRaw == "" || strings.Contains(entityIDRaw, "/") {
+	return decodeLocalPositiveUint64PathComponent(entityIDRaw)
+}
+
+func decodeLocalSpawnGroupReturnStepRequest(r *http.Request) (uint64, int32, bool) {
+	entityID, ok := decodeLocalSpawnGroupEntityIDPathValue(r)
+	if !ok {
+		return 0, 0, false
+	}
+	maxStepValues := r.URL.Query()["max_step"]
+	if len(maxStepValues) != 1 {
+		return 0, 0, false
+	}
+	maxStepRaw := strings.TrimSpace(maxStepValues[0])
+	if maxStepRaw == "" || strings.Contains(maxStepRaw, "/") {
+		return 0, 0, false
+	}
+	maxStep, err := strconv.ParseInt(maxStepRaw, 10, 32)
+	if err != nil || maxStep <= 0 {
+		return 0, 0, false
+	}
+	return entityID, int32(maxStep), true
+}
+
+func decodeLocalPositiveUint64PathComponent(raw string) (uint64, bool) {
+	if raw == "" || strings.Contains(raw, "/") {
 		return 0, false
 	}
-	entityID, err := strconv.ParseUint(entityIDRaw, 10, 64)
-	if err != nil || entityID == 0 {
+	value, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || value == 0 {
 		return 0, false
 	}
-	return entityID, true
+	return value, true
 }
 
 func decodeLocalSpawnGroupRef(r *http.Request) (string, bool) {

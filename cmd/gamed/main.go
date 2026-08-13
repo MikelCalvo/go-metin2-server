@@ -294,6 +294,16 @@ func main() {
 			return snapshot, true
 		},
 	)
+	opsHandler = ops.RegisterLocalSpawnGroupReturnStepEndpoint(
+		opsHandler,
+		func(entityID uint64, maxStep int32) (any, bool) {
+			snapshot, ok := gameRuntime.StepSpawnGroupReturnHome(entityID, maxStep)
+			if !ok {
+				return nil, false
+			}
+			return snapshot, true
+		},
+	)
 	opsHandler = ops.RegisterLocalGroundItemsEndpoint(
 		opsHandler,
 		func() any { return gameRuntime.GroundItems() },

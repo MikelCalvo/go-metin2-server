@@ -2723,6 +2723,97 @@ func (r *sharedWorldRegistry) SpawnGroupLeash(entityID uint64, radius int32) (Sp
 	}, true
 }
 
+func (r *sharedWorldRegistry) PlanSpawnGroupReturnHomeStep(entityID uint64, maxStep int32) (worldruntime.SpawnLeashReturnStepPlan, bool) {
+	if r == nil || r.entities == nil || entityID == 0 || maxStep <= 0 {
+		return worldruntime.SpawnLeashReturnStepPlan{}, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	actor, ok := r.entities.StaticActor(entityID)
+	if !ok || actor.SpawnGroupRef == "" {
+		return worldruntime.SpawnLeashReturnStepPlan{}, false
+	}
+	currentHP, ok := r.ensureStaticActorCombatCurrentHPLocked(actor)
+	if !ok || currentHP == 0 {
+		return worldruntime.SpawnLeashReturnStepPlan{}, false
+	}
+	return worldruntime.PlanStaticActorSpawnLeashReturnStep(actor, worldruntime.DefaultSpawnLeashRadius, maxStep)
+}
+
+func (r *sharedWorldRegistry) StepSpawnGroupReturnHome(entityID uint64, maxStep int32) (SpawnGroupReturnStepSnapshot, bool) {
+	if r == nil || r.entities == nil || entityID == 0 || maxStep <= 0 {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	actor, ok := r.entities.StaticActor(entityID)
+	if !ok || actor.SpawnGroupRef == "" {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	currentHP, ok := r.ensureStaticActorCombatCurrentHPLocked(actor)
+	if !ok || currentHP == 0 {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	plan, ok := worldruntime.PlanStaticActorSpawnLeashReturnStep(actor, worldruntime.DefaultSpawnLeashRadius, maxStep)
+	if !ok {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	if plan.Complete && !plan.Evaluation.ReturnRequired {
+		return r.spawnGroupReturnStepSnapshotLocked(actor, plan), true
+	}
+
+	steppedActor := actor
+	steppedActor.Position = plan.Next
+	targetDiff := r.scopesLocked().RelocateStaticActorTargetDiff(actor, steppedActor)
+	updated, ok := r.entities.UpdateStaticActor(steppedActor)
+	if !ok {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	r.syncStaticActorCombatStateLocked(updated)
+
+	refreshFrames := r.buildStaticActorRefreshFramesLocked(actor, updated)
+	if len(refreshFrames) > 0 {
+		for _, target := range targetDiff.RetainedVisibleTargets {
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
+			r.enqueueToEntityLocked(target.Entity.ID, refreshFrames)
+		}
+	}
+	deleteRaw, deleteEncodable := encodeStaticActorDeleteFrame(actor)
+	if deleteEncodable {
+		for _, target := range targetDiff.RemovedVisibleTargets {
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
+			r.enqueueToEntityLocked(target.Entity.ID, [][]byte{deleteRaw})
+		}
+	}
+	addFrames := r.encodeStaticActorVisibilityStateFramesLocked(updated)
+	if len(addFrames) > 0 {
+		for _, target := range targetDiff.AddedVisibleTargets {
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
+			r.enqueueToEntityLocked(target.Entity.ID, addFrames)
+		}
+	}
+	return r.spawnGroupReturnStepSnapshotLocked(updated, plan), true
+}
+
+func (r *sharedWorldRegistry) spawnGroupReturnStepSnapshotLocked(actor worldruntime.StaticEntity, plan worldruntime.SpawnLeashReturnStepPlan) SpawnGroupReturnStepSnapshot {
+	return SpawnGroupReturnStepSnapshot{
+		Actor: r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor)),
+		Step: SpawnLeashReturnStepSnapshot{
+			SpawnLeashSnapshot: worldruntime.SpawnLeashSnapshotFromEvaluation(plan.Evaluation),
+			Next:               worldruntime.PositionSnapshotFromPosition(plan.Next),
+			Complete:           plan.Complete,
+		},
+	}
+}
+
 func (r *sharedWorldRegistry) ReturnSpawnGroupHome(entityID uint64) (SpawnGroupLeashSnapshot, bool) {
 	if r == nil || r.entities == nil || entityID == 0 {
 		return SpawnGroupLeashSnapshot{}, false

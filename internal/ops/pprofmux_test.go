@@ -4629,6 +4629,116 @@ func TestLocalSpawnGroupReturnHomeEndpointReturnsNotFoundForMissingEntityID(t *t
 	}
 }
 
+func TestLocalSpawnGroupReturnStepEndpointReturnsJSONSnapshotForLoopbackPost(t *testing.T) {
+	snapshot := map[string]any{
+		"actor": map[string]any{"entity_id": uint64(44), "name": "Practice Wolf", "spawn_group_ref": "practice.wolf_1", "x": int32(2201), "y": int32(2800)},
+		"step": map[string]any{
+			"home":            map[string]any{"map_index": uint32(42), "x": int32(1700), "y": int32(2800)},
+			"current":         map[string]any{"map_index": uint32(42), "x": int32(2301), "y": int32(2800)},
+			"next":            map[string]any{"map_index": uint32(42), "x": int32(2201), "y": int32(2800)},
+			"radius":          int32(400),
+			"status":          "return_required",
+			"return_required": true,
+			"return_target":   map[string]any{"map_index": uint32(42), "x": int32(1700), "y": int32(2800)},
+			"complete":        false,
+		},
+	}
+	mux := RegisterLocalSpawnGroupReturnStepEndpoint(NewPprofMux("gamed"), func(entityID uint64, maxStep int32) (any, bool) {
+		if entityID != 44 || maxStep != 100 {
+			return nil, false
+		}
+		return snapshot, true
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/local/spawn-groups/44/return-step?max_step=100", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body %q", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"entity_id":44`, `"spawn_group_ref":"practice.wolf_1"`, `"next":{"map_index":42,"x":2201,"y":2800}`, `"status":"return_required"`, `"complete":false`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %q", want, body)
+		}
+	}
+}
+
+func TestLocalSpawnGroupReturnStepEndpointRejectsInvalidRequestBeforeCallback(t *testing.T) {
+	mux := RegisterLocalSpawnGroupReturnStepEndpoint(NewPprofMux("gamed"), func(uint64, int32) (any, bool) {
+		t.Fatal("spawn-group return-step callback should not be called for invalid requests")
+		return nil, false
+	})
+
+	for _, path := range []string{"/local/spawn-groups/not-an-id/return-step?max_step=100", "/local/spawn-groups/0/return-step?max_step=100", "/local/spawn-groups/44/return-step", "/local/spawn-groups/44/return-step?max_step=0", "/local/spawn-groups/44/return-step?max_step=-1", "/local/spawn-groups/44/return-step?max_step=abc"} {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for %s, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+}
+
+func TestLocalSpawnGroupReturnStepEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	mux := RegisterLocalSpawnGroupReturnStepEndpoint(NewPprofMux("gamed"), func(uint64, int32) (any, bool) {
+		t.Fatal("spawn-group return-step callback should not be called for non-loopback callers")
+		return nil, false
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/local/spawn-groups/44/return-step?max_step=100", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+}
+
+func TestLocalSpawnGroupReturnStepEndpointRejectsWrongMethod(t *testing.T) {
+	mux := RegisterLocalSpawnGroupReturnStepEndpoint(NewPprofMux("gamed"), func(uint64, int32) (any, bool) {
+		t.Fatal("spawn-group return-step callback should not be called for wrong methods")
+		return nil, false
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/spawn-groups/44/return-step?max_step=100", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+}
+
+func TestLocalSpawnGroupReturnStepEndpointReturnsNotFoundForMissingEntityID(t *testing.T) {
+	mux := RegisterLocalSpawnGroupReturnStepEndpoint(NewPprofMux("gamed"), func(uint64, int32) (any, bool) {
+		return nil, false
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/local/spawn-groups/44/return-step?max_step=100", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
 func TestLocalStaticActorCombatProfileEndpointRegistersProfileForLoopbackPost(t *testing.T) {
 	const profile = "ops_profile_wolf"
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)

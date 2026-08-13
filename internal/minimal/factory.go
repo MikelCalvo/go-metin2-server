@@ -128,6 +128,17 @@ type SpawnGroupLeashSnapshot struct {
 	SpawnLeashSnapshot
 }
 
+type SpawnGroupReturnStepSnapshot struct {
+	Actor StaticActorSnapshot          `json:"actor"`
+	Step  SpawnLeashReturnStepSnapshot `json:"step"`
+}
+
+type SpawnLeashReturnStepSnapshot struct {
+	SpawnLeashSnapshot
+	Next     worldruntime.PositionSnapshot `json:"next"`
+	Complete bool                          `json:"complete"`
+}
+
 type InteractionDefinition = interactionstore.Definition
 
 type QuestFlagSnapshot = queststate.FlagSnapshot
@@ -1761,6 +1772,50 @@ func (r *gameRuntime) ReturnSpawnGroupHome(entityID uint64) (SpawnGroupLeashSnap
 		return SpawnGroupLeashSnapshot{}, false
 	}
 	return returned, true
+}
+
+func (r *gameRuntime) StepSpawnGroupReturnHome(entityID uint64, maxStep int32) (SpawnGroupReturnStepSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil || entityID == 0 || maxStep <= 0 {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+
+	r.staticActorMu.Lock()
+	defer r.staticActorMu.Unlock()
+
+	current := r.sharedWorld.StaticActors()
+	idx := staticActorSnapshotIndex(current, entityID)
+	if idx == -1 || current[idx].SpawnGroupRef == "" || current[idx].SpawnHome == nil {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	plan, ok := r.sharedWorld.PlanSpawnGroupReturnHomeStep(entityID, maxStep)
+	if !ok {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	if plan.Complete && !plan.Evaluation.ReturnRequired {
+		currentLeash := worldruntime.SpawnLeashSnapshotFromEvaluation(plan.Evaluation)
+		return SpawnGroupReturnStepSnapshot{
+			Actor: current[idx],
+			Step: SpawnLeashReturnStepSnapshot{
+				SpawnLeashSnapshot: currentLeash,
+				Next:               worldruntime.PositionSnapshotFromPosition(plan.Next),
+				Complete:           true,
+			},
+		}, true
+	}
+
+	target := cloneStaticActorSnapshots(current)
+	target[idx].MapIndex = plan.Next.MapIndex
+	target[idx].X = plan.Next.X
+	target[idx].Y = plan.Next.Y
+	if !r.persistStaticActorSnapshot(target) {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	stepped, ok := r.sharedWorld.StepSpawnGroupReturnHome(entityID, maxStep)
+	if !ok {
+		_ = r.persistStaticActorSnapshot(current)
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	return stepped, true
 }
 
 func (r *gameRuntime) StaticActor(entityID uint64) (StaticActorSnapshot, bool) {
