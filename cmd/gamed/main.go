@@ -605,6 +605,10 @@ func main() {
 		opsHandler,
 		exportContentBundleSummary,
 	)
+	opsHandler = ops.RegisterLocalContentBundleCombatProfileEndpoint(
+		opsHandler,
+		exportContentBundleSummary,
+	)
 	opsHandler = ops.RegisterLocalContentBundleInteractableStaticActorEndpoint(
 		opsHandler,
 		exportContentBundleSummary,

@@ -527,6 +527,12 @@ Returns one exact spawn-group row from the live content-bundle summary. This loo
 
 Use it when local QA needs to inspect one practice-mob/spawn definition without fetching the full bundle summary or querying live runtime entity state. It is not a gameplay protocol endpoint and does not mutate authored content.
 
+### `GET /local/content-bundle/combat-profiles/{profile}`
+
+Returns one exact portable custom combat-profile snapshot from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; `profile` must satisfy the same canonical lowercase snake-case profile identity used by bundled `combat_profiles[].profile`. It returns the matching `combat_profiles[]` row with HP, attack/defense formula metadata, presentation values, respawn delay, optional custom retaliation delta, and death-reward defaults, returns `404` when the live authored bundle has no matching portable profile, rejects malformed identities with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
+
+Use it when local QA needs to inspect one process-local portable combat profile without fetching the full content-bundle summary or querying the broader runtime profile registry. It is not a gameplay protocol endpoint and does not mutate authored content.
+
 ### `GET /local/content-bundle/interaction-kinds/{kind}`
 
 Returns one exact per-kind interaction summary row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; `kind` must be one of the currently owned interaction kinds. It returns JSON with `kind`, `count`, `referenced_count`, and `unreferenced_count`, returns `404` when the live authored bundle has no definitions for that kind, rejects malformed or unsupported identities with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
@@ -1138,6 +1144,7 @@ curl http://127.0.0.1:6060/local/content-bundle/summary
 curl http://127.0.0.1:6060/local/content-bundle/maps/1
 curl http://127.0.0.1:6060/local/content-bundle/static-actors/Village%20Guide
 curl http://127.0.0.1:6060/local/content-bundle/spawn-groups/practice.qa_reward_mob
+curl http://127.0.0.1:6060/local/content-bundle/combat-profiles/practice_reward_profile
 curl http://127.0.0.1:6060/local/content-bundle/interactable-static-actors/Village%20Guide
 curl http://127.0.0.1:6060/local/content-bundle/interaction-kinds/shop_preview
 curl http://127.0.0.1:6060/local/content-bundle/item-templates/27001
@@ -1156,6 +1163,8 @@ curl -X POST http://127.0.0.1:6060/local/quest-state/transition-preview \
 ```
 
 `/local/content-bundle/spawn-groups/{ref}` is a loopback-only exact-ref reader over the exported bundle summary. It returns one authored spawn-group row including resolved reward-drop item metadata, or `404` when that authored ref is absent, so local QA can inspect one practice-mob definition without fetching the full summary.
+
+`/local/content-bundle/combat-profiles/{profile}` is a loopback-only exact-profile reader over the exported bundle summary. It returns one portable custom combat-profile snapshot with HP/damage/formula/presentation/respawn/reward defaults, or `404` when the live bundle has no such portable custom profile, so local QA can inspect one authored profile without fetching the full summary or listing the whole process-local registry.
 
 `/local/content-bundle/static-actors/{name}` is a loopback-only exact-name reader over the exported bundle summary. It returns every matching portable static-actor row, including plain non-interactable actors, so duplicate placements with the same name remain inspectable without fetching the full summary.
 

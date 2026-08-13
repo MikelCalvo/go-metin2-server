@@ -1761,6 +1761,153 @@ func TestLocalContentBundleSpawnGroupEndpointForwardsSummaryExporterErrors(t *te
 	}
 }
 
+func TestLocalContentBundleCombatProfileEndpointReturnsExactProfileForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{
+			{Profile: "practice_alpha_profile", MaxHP: 24, DamagePerNormalAttack: 3, AttackValue: 7, DefenseValue: 4, Level: 4, Rank: 1, RespawnDelayMs: 1500},
+			{Profile: "practice_reward_profile", MaxHP: 30, DamagePerNormalAttack: 5, AttackValue: 9, DefenseValue: 4, Level: 6, Rank: 2, RespawnDelayMs: 2500, RetaliationPointDelta: -2, DeathReward: worldruntime.StaticActorDeathReward{Experience: 12, Gold: 7, DropVnums: []uint32{27001}}},
+		}},
+	}
+	mux := RegisterLocalContentBundleCombatProfileEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/combat-profiles/practice_reward_profile", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got worldruntime.StaticActorCombatProfileSnapshot
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode combat-profile response body: %v", err)
+	}
+	want := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_reward_profile", MaxHP: 30, DamagePerNormalAttack: 5, AttackValue: 9, DefenseValue: 4, Level: 6, Rank: 2, RespawnDelayMs: 2500, RetaliationPointDelta: -2, DeathReward: worldruntime.StaticActorDeathReward{Experience: 12, Gold: 7, DropVnums: []uint32{27001}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle combat-profile summary:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleCombatProfileEndpointCoexistsWithContentBundleCollectionRoutes(t *testing.T) {
+	exporter := &stubContentBundleExporter{status: http.StatusOK, bundle: contentbundle.Bundle{}}
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{Profile: "practice_reward_profile", MaxHP: 30, DamagePerNormalAttack: 5, AttackValue: 9, DefenseValue: 4, RespawnDelayMs: 2500}}}}
+	mux := RegisterLocalContentBundleEndpoint(NewPprofMux("gamed"), exporter.ExportContentBundle, nil)
+	mux = RegisterLocalContentBundleCombatProfileEndpoint(mux, summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/combat-profiles/practice_reward_profile", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d for combat-profile summary alongside content-bundle routes, got %d", http.StatusOK, rec.Code)
+	}
+	if exporter.calls != 0 {
+		t.Fatalf("expected collection exporter not to handle combat-profile summary route, got %d calls", exporter.calls)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleCombatProfileEndpointReturnsNotFoundForMissingProfile(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{Profile: "practice_reward_profile", MaxHP: 30, DamagePerNormalAttack: 5, AttackValue: 9, DefenseValue: 4, RespawnDelayMs: 2500}}}}
+	mux := RegisterLocalContentBundleCombatProfileEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/combat-profiles/practice_missing_profile", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for missing combat profile, got %d", http.StatusNotFound, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleCombatProfileEndpointRejectsInvalidProfile(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{Profile: "practice_reward_profile"}}}}
+	mux := RegisterLocalContentBundleCombatProfileEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	for _, path := range []string{"/local/content-bundle/combat-profiles/", "/local/content-bundle/combat-profiles/bad%20profile", "/local/content-bundle/combat-profiles/practice%2Freward_profile", "/local/content-bundle/combat-profiles/practice.reward_profile", "/local/content-bundle/combat-profiles/practice_reward_profile%20", "/local/content-bundle/combat-profiles/practice_reward_profile/extra"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for invalid combat-profile path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called for invalid combat-profile names, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleCombatProfileEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{Profile: "practice_reward_profile"}}}}
+	mux := RegisterLocalContentBundleCombatProfileEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/combat-profiles/practice_reward_profile", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback caller, got %d", http.StatusForbidden, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleCombatProfileEndpointRejectsWrongMethod(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{Profile: "practice_reward_profile"}}}}
+	mux := RegisterLocalContentBundleCombatProfileEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/combat-profiles/practice_reward_profile", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleCombatProfileEndpointForwardsSummaryExporterErrors(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusConflict, result: map[string]string{"error": "content summary unavailable"}}
+	mux := RegisterLocalContentBundleCombatProfileEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/combat-profiles/practice_reward_profile", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d for exporter failure, got %d", http.StatusConflict, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
 func TestLocalContentBundleInteractableStaticActorEndpointReturnsMatchingActorsForLoopbackGet(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{
 		status: http.StatusOK,

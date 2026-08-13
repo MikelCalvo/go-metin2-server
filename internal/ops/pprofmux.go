@@ -2224,6 +2224,41 @@ func RegisterLocalContentBundleSpawnGroupEndpoint(mux *http.ServeMux, exportCont
 	return mux
 }
 
+func RegisterLocalContentBundleCombatProfileEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/content-bundle/combat-profiles/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		profile, ok := decodeLocalContentBundleCombatProfileName(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		for _, snapshot := range summary.CombatProfiles {
+			if snapshot.Profile == profile {
+				writeLocalJSONMutationResponse(w, snapshot, http.StatusOK)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	return mux
+}
+
 func RegisterLocalContentBundleInteractableStaticActorEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
 	if mux == nil || exportContentBundleSummary == nil {
 		return mux
@@ -3432,6 +3467,17 @@ func decodeLocalContentBundleSpawnGroupRef(r *http.Request) (string, bool) {
 		return "", false
 	}
 	return ref, true
+}
+
+func decodeLocalContentBundleCombatProfileName(r *http.Request) (string, bool) {
+	profile, err := url.PathUnescape(strings.TrimPrefix(r.URL.Path, "/local/content-bundle/combat-profiles/"))
+	if err != nil {
+		return "", false
+	}
+	if profile == "" || strings.Contains(profile, "/") || !worldruntime.ValidStaticActorCombatProfileName(profile) {
+		return "", false
+	}
+	return profile, true
 }
 
 func decodeLocalContentBundleInteractableStaticActorName(r *http.Request) (string, bool) {
