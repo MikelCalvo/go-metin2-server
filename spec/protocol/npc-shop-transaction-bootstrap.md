@@ -219,6 +219,11 @@ Current authored-content summary support:
 - the same summary rows now also surface direct-use guard metadata (`confirm_when_use`, `quest_use`, `quest_use_multiple`, `applicable`, and `use_reject_message`) so quest-/confirmation-/applicable-gated consumables are visible in dry-run content audits even when they appear only as merchant catalog entries or reward drops
 - this is an operator/QA read model only; it does not change the already-owned merchant sell validation or packet choreography
 
+Exchange-shell interaction in this bootstrap contract:
+- if a merchant `SHOP BUY`, `SHOP SELL`, or `SHOP SELL2` succeeds while the same socket is paired in the bootstrap exchange shell, the runtime first closes that display shell with self/peer `GC::EXCHANGE END`
+- the exchange close is a presentation teardown only; the merchant transaction then follows the normal self-only item/gold refresh and persistence path below
+- no exchange item/gold transfer or exchange finalization result is produced by the merchant transaction
+
 Failure behavior in this bootstrap contract:
 - no partial live mutation may remain committed
 - no gold may be debited on failure

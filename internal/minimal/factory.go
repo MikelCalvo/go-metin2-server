@@ -2770,7 +2770,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !ownsLiveSharedWorldSession() {
 				return frames, true
 			}
-			return commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+			frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+			if !ok {
+				return nil, false
+			}
+			frames = prependExchangeCloseFrame(frames)
+			return frames, true
 		}
 		executeActiveMerchantSell := func(selectedPlayer *player.Runtime, slot inventory.SlotIndex, count uint16, explicitCount bool, packetShopFrames bool) ([][]byte, bool) {
 			if selectedPlayer == nil || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveMerchantBuy || activeMerchantBuy.Definition.Kind != interactionstore.KindShopPreview || activeMerchantBuy.TargetVID == 0 {
@@ -2855,7 +2860,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !ownsLiveSharedWorldSession() {
 				return frames, true
 			}
-			return commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+			frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+			if !ok {
+				return nil, false
+			}
+			frames = prependExchangeCloseFrame(frames)
+			return frames, true
 		}
 		executeSelectedItemUse := func(position itemproto.Position, emitUseEcho bool) gameflow.ItemUseResult {
 			selectedPlayer, ok := currentSelectedPlayer()
