@@ -1966,6 +1966,7 @@ func (r *gameRuntime) ReturnSpawnGroupHome(entityID uint64) (SpawnGroupLeashSnap
 		_ = r.persistStaticActorSnapshot(current)
 		return SpawnGroupLeashSnapshot{}, false
 	}
+	r.syncSpawnGroupReturnStepSchedule(returned.Actor)
 	return returned, true
 }
 
@@ -2053,6 +2054,7 @@ func (r *gameRuntime) RemoveStaticActor(entityID uint64) (StaticActorSnapshot, b
 		_ = r.persistStaticActorSnapshot(current)
 		return StaticActorSnapshot{}, false
 	}
+	r.clearSpawnGroupReturnStep(entityID)
 	return removed, true
 }
 

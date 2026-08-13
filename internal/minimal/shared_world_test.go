@@ -1058,6 +1058,156 @@ func TestGameRuntimeManualReturnStepReschedulesAutomaticReturnStepFromManualStep
 	}
 }
 
+func TestGameRuntimeReturnSpawnGroupHomeClearsAutomaticReturnStepSchedule(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	viewer := peerVisibilityCharacter("ReturnHomeScheduleViewer", 0x0103018a, 0x0204018a, 2401, 2800, 0, 101, 201)
+	viewer.MapIndex = 42
+	issuePeerTicket(t, store, "return-home-schedule-viewer", 0x8a8a8a8a, viewer)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700000940, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for return-home schedule cleanup: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_home_schedule",
+		Name:          "ReturnHomeScheduleMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import return-home schedule spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_home_schedule")
+	if !ok {
+		t.Fatal("expected return-home schedule spawn group to resolve by ref")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "return-home-schedule-viewer", 0x8a8a8a8a)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "ReturnHomeScheduleMob", 42, 2401, 2800, 20350); !ok {
+		t.Fatal("expected spawn-backed actor update to return-required position to succeed")
+	}
+	flushServerFrames(t, flow)
+
+	runtime.spawnReturnMu.Lock()
+	originalDueAt, scheduled := runtime.spawnReturnStepDueAt[group.EntityID]
+	runtime.spawnReturnMu.Unlock()
+	if !scheduled {
+		t.Fatalf("expected return-required actor %d to have a pending automatic return-step schedule", group.EntityID)
+	}
+
+	returned, ok := runtime.ReturnSpawnGroupHome(group.EntityID)
+	if !ok {
+		t.Fatalf("expected return-home trigger to accept entity %d", group.EntityID)
+	}
+	if returned.Actor.X != 1700 || returned.Actor.Y != 2800 || returned.SpawnLeashSnapshot.Status != worldruntime.SpawnLeashStatusAtHome {
+		t.Fatalf("expected return-home trigger to restore authored home, got %+v", returned)
+	}
+	runtime.spawnReturnMu.Lock()
+	_, stillScheduled := runtime.spawnReturnStepDueAt[group.EntityID]
+	runtime.spawnReturnMu.Unlock()
+	if stillScheduled {
+		t.Fatalf("expected return-home trigger to clear pending automatic return-step schedule for entity %d", group.EntityID)
+	}
+	flushServerFrames(t, flow)
+
+	currentTime = originalDueAt.Add(time.Nanosecond)
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected old return-step deadline not to fire after return-home cleanup, got %d frames", len(queued))
+	}
+}
+
+func TestGameRuntimeRemoveSpawnGroupClearsAutomaticReturnStepSchedule(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	viewer := peerVisibilityCharacter("ReturnRemoveScheduleViewer", 0x0103018b, 0x0204018b, 2401, 2800, 0, 101, 201)
+	viewer.MapIndex = 42
+	issuePeerTicket(t, store, "return-remove-schedule-viewer", 0x8b8b8b8b, viewer)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700000950, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for return-step removal cleanup: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_remove_schedule",
+		Name:          "ReturnRemoveScheduleMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import return-step removal cleanup spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_remove_schedule")
+	if !ok {
+		t.Fatal("expected return-step removal cleanup spawn group to resolve by ref")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "return-remove-schedule-viewer", 0x8b8b8b8b)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "ReturnRemoveScheduleMob", 42, 2401, 2800, 20350); !ok {
+		t.Fatal("expected spawn-backed actor update to return-required position to succeed")
+	}
+	flushServerFrames(t, flow)
+
+	runtime.spawnReturnMu.Lock()
+	_, scheduled := runtime.spawnReturnStepDueAt[group.EntityID]
+	runtime.spawnReturnMu.Unlock()
+	if !scheduled {
+		t.Fatalf("expected return-required actor %d to have a pending automatic return-step schedule", group.EntityID)
+	}
+
+	removed, ok := runtime.RemoveStaticActor(group.EntityID)
+	if !ok {
+		t.Fatalf("expected spawn-backed actor removal for entity %d to succeed", group.EntityID)
+	}
+	if removed.EntityID != group.EntityID || removed.SpawnGroupRef != "practice.return_remove_schedule" {
+		t.Fatalf("expected removal to return the spawn-backed actor snapshot, got %+v", removed)
+	}
+	runtime.spawnReturnMu.Lock()
+	_, stillScheduled := runtime.spawnReturnStepDueAt[group.EntityID]
+	runtime.spawnReturnMu.Unlock()
+	if stillScheduled {
+		t.Fatalf("expected removal to clear pending automatic return-step schedule for entity %d", group.EntityID)
+	}
+}
+
 func TestGameRuntimeStepSpawnGroupReturnHomeClearsStaleTargetAndEngagementWhenActorMoves(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("ReturnStepOwner", 0x0103016c, 0x0204016c, 1700, 2800, 0, 101, 201)
