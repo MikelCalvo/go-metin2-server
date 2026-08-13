@@ -28,7 +28,8 @@ Behavior:
 - originally supported only pending `up` steps; down-step rollback execution is now frozen separately in [Programmatic Migration Rollback Primitive](2026-08-13-programmatic-migration-rollback.md),
 - rejects nil or typed-nil executors with `ErrMigrationApplyExecutorRequired`,
 - runs all pending up migrations and their ledger inserts in one transaction,
-- executes each migration SQL body before inserting the matching `schema_migrations` row,
+- validates conservative SQL statement boundaries before opening the transaction,
+- executes each terminated up-migration SQL statement before inserting the matching `schema_migrations` row,
 - writes ledger rows with `version`, `name`, and `up_sha256`, matching the `0001_bootstrap_schema_migrations` ledger contract,
 - rolls back when migration SQL or ledger insertion fails,
 - joins rollback failure with the original apply failure when rollback itself fails,
@@ -45,7 +46,7 @@ This slice deliberately does not add:
 - a production rollback command or backup/restore orchestration,
 - a production database driver dependency,
 - DB engine selection,
-- statement splitting or dialect-specific SQL execution policy,
+- dialect-specific SQL execution policy,
 - DB-backed account, character, item, quest, content, or login-ticket repositories,
 - JSON snapshot import/backfill execution.
 

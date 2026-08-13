@@ -164,8 +164,14 @@ func validatePlanCatalog(catalog []Migration) error {
 		if err := validateMigrationHeader(parsedMigrationFilename{version: migration.Version, versionID: versionID, name: migration.Name, direction: DirectionUp}, migration.UpSQL); err != nil {
 			return err
 		}
+		if _, err := splitMigrationSQLStatements(migration.UpSQL); err != nil {
+			return fmt.Errorf("%w: plan catalog migration %04d up has invalid SQL statement boundaries: %v", ErrInvalidCatalog, migration.Version, err)
+		}
 		if err := validateMigrationHeader(parsedMigrationFilename{version: migration.Version, versionID: versionID, name: migration.Name, direction: "down"}, migration.DownSQL); err != nil {
 			return err
+		}
+		if _, err := splitMigrationSQLStatements(migration.DownSQL); err != nil {
+			return fmt.Errorf("%w: plan catalog migration %04d down has invalid SQL statement boundaries: %v", ErrInvalidCatalog, migration.Version, err)
 		}
 	}
 	return nil

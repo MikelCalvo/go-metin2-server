@@ -49,17 +49,65 @@ func TestApplyCatalogUpToVersionExecutesPendingMigrationsAndRecordsLedgerInOneTr
 		t.Fatalf("unexpected applied steps: %#v", result.Applied)
 	}
 
-	want := []string{
-		"begin",
-		"exec:" + catalog[0].UpSQL,
-		"exec:" + schemaMigrationLedgerInsertSQL(catalog[0]),
-		"exec:" + catalog[1].UpSQL,
-		"exec:" + schemaMigrationLedgerInsertSQL(catalog[1]),
-		"query:" + SchemaMigrationsLedgerQuery,
+	want := append([]string{"begin"}, execEventsForMigrationSQL(t, catalog[0].UpSQL)...)
+	want = append(want,
+		"exec:"+schemaMigrationLedgerInsertSQL(catalog[0]),
+	)
+	want = append(want, execEventsForMigrationSQL(t, catalog[1].UpSQL)...)
+	want = append(want,
+		"exec:"+schemaMigrationLedgerInsertSQL(catalog[1]),
+		"query:"+SchemaMigrationsLedgerQuery,
 		"commit",
-	}
+	)
 	if got := scenario.eventsSnapshot(); strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("unexpected execution order:\ngot:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestApplyCatalogUpToVersionExecutesEachMigrationStatementBeforeLedgerWrite(t *testing.T) {
+	catalog := testCatalog(t,
+		bootstrapSchemaMigration(),
+		testMigration{
+			version:  2,
+			name:     "accounts",
+			upPath:   "0002_accounts.up.sql",
+			downPath: "0002_accounts.down.sql",
+			upSQL: "-- go-metin2 migration: 0002 accounts up\n" +
+				"CREATE TABLE accounts (login TEXT PRIMARY KEY CHECK (login <> 'semi;colon'));\n" +
+				"CREATE INDEX accounts_login_index ON accounts (login);\n",
+			downSQL: "-- go-metin2 migration: 0002 accounts down\n" +
+				"DROP INDEX accounts_login_index;\n" +
+				"DROP TABLE accounts;\n",
+		},
+	)
+	scenario := &testMigrationApplySQLScenario{}
+
+	_, err := ApplyCatalogUpToVersion(context.Background(), openTestMigrationApplyDB(t, scenario), catalog, nil, 2)
+	if err != nil {
+		t.Fatalf("apply multi-statement migration: %v", err)
+	}
+
+	got := scenario.eventsSnapshot()
+	upStatements := execEventsForMigrationSQL(t, catalog[1].UpSQL)
+	ledgerEvent := "exec:" + schemaMigrationLedgerInsertSQL(catalog[1])
+	for _, want := range upStatements {
+		if !containsEvent(got, want) {
+			t.Fatalf("expected statement event %q, got %#v", want, got)
+		}
+	}
+	ledgerIndex := eventIndex(got, ledgerEvent)
+	if ledgerIndex < 0 {
+		t.Fatalf("expected ledger insert event %q, got %#v", ledgerEvent, got)
+	}
+	for _, statement := range upStatements {
+		statementIndex := eventIndex(got, statement)
+		if statementIndex < 0 || statementIndex > ledgerIndex {
+			t.Fatalf("expected statement %q before ledger insert; got events %#v", statement, got)
+		}
+	}
+	combinedBodyEvent := "exec:" + catalog[1].UpSQL
+	if containsEvent(got, combinedBodyEvent) {
+		t.Fatalf("expected migration body to be split into individual statements, got combined exec event %#v", got)
 	}
 }
 
@@ -82,6 +130,30 @@ func TestApplyCatalogUpToVersionNoopsWhenTargetAlreadyApplied(t *testing.T) {
 	}
 }
 
+func TestApplyCatalogUpToVersionRejectsUnterminatedStatementBeforeTransaction(t *testing.T) {
+	upSQL := "-- go-metin2 migration: 0001 bootstrap_schema_migrations up\nCREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)\n"
+	downSQL := "-- go-metin2 migration: 0001 bootstrap_schema_migrations down\nDROP TABLE schema_migrations;\n"
+	catalog := []Migration{{
+		Version:    1,
+		Name:       "bootstrap_schema_migrations",
+		UpPath:     "0001_bootstrap_schema_migrations.up.sql",
+		DownPath:   "0001_bootstrap_schema_migrations.down.sql",
+		UpSQL:      upSQL,
+		DownSQL:    downSQL,
+		UpSHA256:   testSHA256Hex(upSQL),
+		DownSHA256: testSHA256Hex(downSQL),
+	}}
+	scenario := &testMigrationApplySQLScenario{}
+
+	_, err := ApplyCatalogUpToVersion(context.Background(), openTestMigrationApplyDB(t, scenario), catalog, nil, 1)
+	if !errors.Is(err, ErrInvalidCatalog) {
+		t.Fatalf("expected ErrInvalidCatalog for unterminated statement, got %v", err)
+	}
+	if got := scenario.eventsSnapshot(); len(got) != 0 {
+		t.Fatalf("expected invalid catalog to fail before transaction begin, got events %#v", got)
+	}
+}
+
 func TestApplyCatalogUpToVersionRejectsStaleInputLedgerInsideTransaction(t *testing.T) {
 	catalog := testCatalog(t, bootstrapSchemaMigration())
 	scenario := &testMigrationApplySQLScenario{currentLedger: nil}
@@ -94,7 +166,7 @@ func TestApplyCatalogUpToVersionRejectsStaleInputLedgerInsideTransaction(t *test
 	if !containsEvent(got, "rollback") {
 		t.Fatalf("expected stale ledger validation to roll back, got events %#v", got)
 	}
-	if containsEvent(got, "exec:"+catalog[0].UpSQL) || containsEvent(got, "exec:"+schemaMigrationLedgerInsertSQL(catalog[0])) {
+	if containsAnyExecEventForMigrationSQL(t, got, catalog[0].UpSQL) || containsEvent(got, "exec:"+schemaMigrationLedgerInsertSQL(catalog[0])) {
 		t.Fatalf("expected stale ledger validation to reject before executing migration SQL, got events %#v", got)
 	}
 	if containsEvent(got, "commit") {
@@ -114,7 +186,7 @@ func TestApplyCatalogUpToVersionRejectsLedgerDriftBeforeCommit(t *testing.T) {
 		t.Fatalf("expected post-apply ledger verification failure, got %v", err)
 	}
 	got := scenario.eventsSnapshot()
-	if !containsEvent(got, "exec:"+catalog[0].UpSQL) || !containsEvent(got, "exec:"+schemaMigrationLedgerInsertSQL(catalog[0])) {
+	if !containsAnyExecEventForMigrationSQL(t, got, catalog[0].UpSQL) || !containsEvent(got, "exec:"+schemaMigrationLedgerInsertSQL(catalog[0])) {
 		t.Fatalf("expected migration and ledger insert before verification, got events %#v", got)
 	}
 	if !containsEvent(got, "rollback") {
@@ -137,7 +209,7 @@ func TestApplyCatalogUpToVersionRollsBackWhenTransactionalLedgerReadFails(t *tes
 	if !containsEvent(got, "rollback") {
 		t.Fatalf("expected query failure to roll back, got events %#v", got)
 	}
-	if containsEvent(got, "exec:"+catalog[0].UpSQL) || containsEvent(got, "commit") {
+	if containsAnyExecEventForMigrationSQL(t, got, catalog[0].UpSQL) || containsEvent(got, "commit") {
 		t.Fatalf("expected query failure before migration execution/commit, got events %#v", got)
 	}
 }
@@ -184,12 +256,16 @@ func TestApplyCatalogUpToVersionExecutesRollbackMigrationsAndDeletesLedgerRowsIn
 		"begin",
 		"query:" + SchemaMigrationsLedgerQuery,
 		"exec:" + schemaMigrationLedgerDeleteSQL(catalog[2]),
-		"exec:" + catalog[2].DownSQL,
-		"exec:" + schemaMigrationLedgerDeleteSQL(catalog[1]),
-		"exec:" + catalog[1].DownSQL,
-		"query:" + SchemaMigrationsLedgerQuery,
-		"commit",
 	}
+	want = append(want, execEventsForMigrationSQL(t, catalog[2].DownSQL)...)
+	want = append(want,
+		"exec:"+schemaMigrationLedgerDeleteSQL(catalog[1]),
+	)
+	want = append(want, execEventsForMigrationSQL(t, catalog[1].DownSQL)...)
+	want = append(want,
+		"query:"+SchemaMigrationsLedgerQuery,
+		"commit",
+	)
 	if got := scenario.eventsSnapshot(); strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("unexpected rollback execution order:\ngot:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
@@ -211,9 +287,9 @@ func TestApplyCatalogUpToVersionRollsBackToZeroByDeletingLedgerBeforeDroppingSch
 		"begin",
 		"query:" + SchemaMigrationsLedgerQuery,
 		"exec:" + schemaMigrationLedgerDeleteSQL(catalog[0]),
-		"exec:" + catalog[0].DownSQL,
-		"commit",
 	}
+	want = append(want, execEventsForMigrationSQL(t, catalog[0].DownSQL)...)
+	want = append(want, "commit")
 	if got := scenario.eventsSnapshot(); strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("unexpected rollback-to-zero order:\ngot:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
@@ -326,7 +402,7 @@ func TestApplyCatalogUpToVersionRollsBackWhenLedgerDeleteFailsBeforeDownMigratio
 	if !containsEvent(got, "rollback") {
 		t.Fatalf("expected failed ledger delete to roll back, got events %#v", got)
 	}
-	if containsEvent(got, "exec:"+catalog[1].DownSQL) {
+	if containsAnyExecEventForMigrationSQL(t, got, catalog[1].DownSQL) {
 		t.Fatalf("expected failed ledger delete not to execute down SQL, got events %#v", got)
 	}
 	if containsEvent(got, "commit") {
@@ -360,7 +436,7 @@ func TestApplyCatalogUpToVersionRollsBackWhenLedgerDeleteAffectsNoRowsBeforeDown
 	if !containsEvent(got, "rollback") {
 		t.Fatalf("expected zero-row ledger delete to roll back, got events %#v", got)
 	}
-	if containsEvent(got, "exec:"+catalog[1].DownSQL) {
+	if containsAnyExecEventForMigrationSQL(t, got, catalog[1].DownSQL) {
 		t.Fatalf("expected zero-row ledger delete not to execute down SQL, got events %#v", got)
 	}
 	if containsEvent(got, "commit") {
@@ -392,7 +468,7 @@ func TestApplyCatalogUpToVersionRollsBackWhenDownMigrationSQLFailsAfterLedgerDel
 	}
 	got := scenario.eventsSnapshot()
 	if !containsEvent(got, "exec:"+schemaMigrationLedgerDeleteSQL(catalog[1])) {
-		t.Fatalf("expected down migration to delete ledger row before SQL body, got events %#v", got)
+		t.Fatalf("expected down migration to delete ledger row before SQL statement execution, got events %#v", got)
 	}
 	if !containsEvent(got, "rollback") {
 		t.Fatalf("expected failed down migration SQL to roll back, got events %#v", got)
@@ -445,13 +521,40 @@ func TestApplyCatalogUpToVersionRejectsNilExecutor(t *testing.T) {
 	})
 }
 
-func containsEvent(events []string, want string) bool {
-	for _, event := range events {
-		if event == want {
+func execEventsForMigrationSQL(t *testing.T, sql string) []string {
+	t.Helper()
+	statements, err := splitMigrationSQLStatements(sql)
+	if err != nil {
+		t.Fatalf("split test migration SQL: %v", err)
+	}
+	events := make([]string, 0, len(statements))
+	for _, statement := range statements {
+		events = append(events, "exec:"+statement)
+	}
+	return events
+}
+
+func containsAnyExecEventForMigrationSQL(t *testing.T, events []string, sql string) bool {
+	t.Helper()
+	for _, want := range execEventsForMigrationSQL(t, sql) {
+		if containsEvent(events, want) {
 			return true
 		}
 	}
 	return false
+}
+
+func eventIndex(events []string, want string) int {
+	for i, event := range events {
+		if event == want {
+			return i
+		}
+	}
+	return -1
+}
+
+func containsEvent(events []string, want string) bool {
+	return eventIndex(events, want) >= 0
 }
 
 const testMigrationApplySQLDriverName = "go_metin2_migrations_apply_test"

@@ -159,6 +159,9 @@ func LoadCatalog(fsys fs.FS) ([]Migration, error) {
 		if err := validateMigrationHeader(parsed, body); err != nil {
 			return nil, err
 		}
+		if _, err := splitMigrationSQLStatements(body); err != nil {
+			return nil, fmt.Errorf("%w: migration %q has invalid SQL statement boundaries: %v", ErrInvalidCatalog, filename, err)
+		}
 
 		sum := sha256Hex(raw)
 		if err := manifest.validateSQLFile(parsed, filename, sum); err != nil {

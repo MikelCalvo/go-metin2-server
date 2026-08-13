@@ -80,10 +80,11 @@ func ApplyToVersion(ctx context.Context, executor SQLMigrationExecutor, ledger [
 // transactional ledger now matches the requested target. Rolling an empty DB up
 // from version zero skips the pre-read because schema_migrations does not exist
 // until migration 0001 has run; rollback-to-zero skips the post-read because the
-// table is dropped by 0001 down. Up migrations execute their SQL body before
-// inserting the corresponding schema_migrations ledger row. Down migrations
-// delete their ledger row before executing the down SQL body, so rollback-to-zero
-// can still remove the 0001 ledger row before dropping schema_migrations. Ledger
+// table is dropped by 0001 down. Up migrations execute every terminated SQL
+// statement before inserting the corresponding schema_migrations ledger row.
+// Down migrations delete their ledger row before executing every down SQL
+// statement, so rollback-to-zero can still remove the 0001 ledger row before
+// dropping schema_migrations. Ledger
 // inserts/deletes must affect exactly one row. Any migration or ledger failure
 // rolls the entire batch back.
 func ApplyCatalogUpToVersion(ctx context.Context, executor SQLMigrationExecutor, catalog []Migration, ledger []LedgerEntry, targetVersion int) (ApplyResult, error) {
@@ -125,7 +126,7 @@ func ApplyCatalogUpToVersion(ctx context.Context, executor SQLMigrationExecutor,
 		migration := catalog[step.Version-1]
 		switch step.Direction {
 		case DirectionUp:
-			if _, err := tx.ExecContext(ctx, migration.UpSQL); err != nil {
+			if err := executeMigrationSQLStatements(ctx, tx, DirectionUp, migration.UpSQL); err != nil {
 				return ApplyResult{}, rollbackAfterApplyFailure(tx, fmt.Errorf("execute migration %04d %s up: %w", migration.Version, migration.Name, err))
 			}
 			ledgerResult, err := tx.ExecContext(ctx, schemaMigrationLedgerInsertSQL(migration))
@@ -144,7 +145,7 @@ func ApplyCatalogUpToVersion(ctx context.Context, executor SQLMigrationExecutor,
 			if err := requireOneLedgerRowAffected(ledgerResult, "delete schema_migrations ledger row", migration); err != nil {
 				return ApplyResult{}, rollbackAfterApplyFailure(tx, err)
 			}
-			if _, err := tx.ExecContext(ctx, migration.DownSQL); err != nil {
+			if err := executeMigrationSQLStatements(ctx, tx, DirectionDown, migration.DownSQL); err != nil {
 				return ApplyResult{}, rollbackAfterApplyFailure(tx, fmt.Errorf("execute migration %04d %s down: %w", migration.Version, migration.Name, err))
 			}
 			result.CurrentVersion = step.Version - 1
@@ -217,6 +218,19 @@ func ledgerEntriesEqual(left []LedgerEntry, right []LedgerEntry) bool {
 		}
 	}
 	return true
+}
+
+func executeMigrationSQLStatements(ctx context.Context, tx migrationSQLTx, direction string, body string) error {
+	statements, err := splitMigrationSQLStatements(body)
+	if err != nil {
+		return err
+	}
+	for i, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("execute %s statement %d/%d: %w", direction, i+1, len(statements), err)
+		}
+	}
+	return nil
 }
 
 func requireOneLedgerRowAffected(result sql.Result, action string, migration Migration) error {

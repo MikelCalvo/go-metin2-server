@@ -11,12 +11,12 @@ The existing planner already produced down steps for explicit target versions, i
 `db/migrations.ApplyToVersion(...)` and `ApplyCatalogUpToVersion(...)` now execute both directions produced by `PlanToVersion(...)` / `PlanCatalogToVersion(...)`:
 
 - up steps:
-  - execute the migration `UpSQL`,
+  - execute each terminated statement in the migration `UpSQL`,
   - then insert the matching `schema_migrations` row with `version`, `name`, and `up_sha256`,
   - update `ApplyResult.current_version` to the applied version.
 - down steps:
   - delete the matching `schema_migrations` row by `version`, `name`, and `up_sha256`,
-  - then execute the migration `DownSQL`,
+  - then execute each terminated statement in the migration `DownSQL`,
   - update `ApplyResult.current_version` to `version - 1`.
 - all pending steps still run inside one caller-supplied transaction.
 - no-op targets still return without opening a transaction.
@@ -35,7 +35,7 @@ This slice deliberately does not add:
 - daemon startup auto-migration,
 - a CLI command,
 - a production database driver dependency or DB engine selection,
-- statement splitting or dialect-specific SQL execution policy,
+- dialect-specific SQL execution policy,
 - backup/restore orchestration around rollback,
 - repository writes or DB-backed account/character/item/quest/login-ticket stores.
 

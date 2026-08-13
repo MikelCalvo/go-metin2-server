@@ -23,6 +23,7 @@ The previous apply primitive validated the supplied ledger before opening a tran
   - Drift fails closed and rolls the transaction back instead of committing a partially applied batch.
 - Rollback-to-zero still deletes the `0001` ledger row before running `0001_bootstrap_schema_migrations.down.sql`; it deliberately skips the post-read because that down migration drops `schema_migrations`.
 - Ledger inserts/deletes still must report exactly one affected row.
+- The executor now validates conservative statement boundaries and executes each terminated migration statement individually inside the same transaction; this keeps multi-statement migrations driver-friendly without adding dialect-specific parsing or daemon mutation endpoints.
 - Migration SQL, ledger write/delete, ledger read, row-count, commit, and rollback failures remain surfaced with explicit errors and no daemon mutation endpoint is added.
 
 ## What this is not yet

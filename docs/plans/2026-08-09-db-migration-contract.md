@@ -90,8 +90,8 @@ Rules frozen by tests:
 - `ApplyUpToLatest` / `ApplyToVersion` / `ApplyCatalogUpToVersion` add the first programmatic migration apply primitive:
   - callers still supply the current applied ledger and a `database/sql` transaction boundary instead of letting the migration package own driver selection, DSNs, or connection pools,
   - the same catalog/ledger/target validation used by dry-run planning runs before any transaction is opened,
-  - pending up migration SQL executes before its matching `schema_migrations` ledger insert,
-  - pending down migrations delete the matching `schema_migrations` row by `version`, `name`, and `up_sha256` before executing the down SQL body, preserving rollback-to-zero ordering for the `schema_migrations` table,
+  - pending up migration SQL is split on conservative statement boundaries and each terminated statement executes before its matching `schema_migrations` ledger insert,
+  - pending down migrations delete the matching `schema_migrations` row by `version`, `name`, and `up_sha256` before executing each terminated down statement, preserving rollback-to-zero ordering for the `schema_migrations` table,
   - ledger insert/delete row-count drift fails closed when the database reports anything other than exactly one affected row,
   - migration SQL failures, ledger insert/delete failures, or commit failures return errors; migration/ledger failures attempt to roll back and report rollback errors with the original failure,
   - the returned `ApplyResult` exposes only version metadata and applied plan steps, not executable SQL text, DSNs, or row data,
