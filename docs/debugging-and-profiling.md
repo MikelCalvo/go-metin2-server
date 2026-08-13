@@ -352,7 +352,7 @@ Returns the same metadata-only migration dry-run shape from an operator-supplied
 
 Request body JSON uses format marker `go-metin2-schema-migrations-ledger-v1` and contains only `entries` rows with `version`, `name`, and `up_sha256`. The decoder rejects invalid UTF-8, unknown fields, trailing JSON, missing/null entries, malformed names, malformed checksums, zero/negative versions, and duplicate versions. An empty applied ledger is encoded explicitly as `"entries": []`. The response never includes executable SQL and the endpoint does not open a configured DB, execute SQL, apply migrations, roll migrations back, or mutate `schema_migrations`; it exists so operators and future CLI/runbook tooling can plan from copied ledger metadata safely. The companion `GET /local/db/migrations/ledger-snapshot` endpoint can produce this strict body shape from the daemon's current DB-preflight target.
 
-There is intentionally no `/local/db/migrations/apply` endpoint. The programmatic apply/rollback primitive lives only in `db/migrations` for future CLI/repository work; shipped daemons still expose read-only catalog, status, target-plan, and ledger-snapshot surfaces only.
+There is intentionally no `/local/db/migrations/apply` endpoint. The programmatic apply/rollback primitive lives only in `db/migrations` for future CLI/repository work; shipped daemons still expose read-only catalog, status, target-plan, and ledger-snapshot surfaces only. For mutating package callers, the apply/rollback primitive now re-verifies transaction-local `schema_migrations` rows around non-zero migration targets so stale caller preflight input fails closed before commit.
 
 ### `GET /local/account-store/exports/account-character-roster`
 

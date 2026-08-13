@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 )
 
@@ -13,6 +14,7 @@ var (
 	ErrMigrationApplyExecutorRequired     = errors.New("migration apply executor is required")
 	ErrMigrationApplyUnsupportedDirection = errors.New("migration apply direction is unsupported")
 	ErrMigrationApplyLedgerRowCount       = errors.New("migration apply ledger row count mismatch")
+	ErrMigrationApplyLedgerVerification   = errors.New("migration apply ledger verification failed")
 )
 
 // SQLMigrationExecutor is the narrow database/sql-compatible transaction
@@ -21,6 +23,13 @@ var (
 // selection, DSN loading, connection pools, or daemon startup policy.
 type SQLMigrationExecutor interface {
 	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}
+
+type migrationSQLTx interface {
+	SQLLedgerQuerier
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	Commit() error
+	Rollback() error
 }
 
 // ApplyResult reports the metadata-only effect of an apply attempt. It exposes
@@ -64,12 +73,19 @@ func ApplyToVersion(ctx context.Context, executor SQLMigrationExecutor, ledger [
 }
 
 // ApplyCatalogUpToVersion validates a catalog/ledger pair and executes pending
-// up or down migrations inside one transaction. Up migrations execute their SQL
-// body before inserting the corresponding schema_migrations ledger row. Down
-// migrations delete their ledger row before executing the down SQL body, so a
-// rollback-to-zero can still remove the 0001 ledger row before dropping the
-// schema_migrations table. Ledger inserts/deletes must affect exactly one row.
-// Any migration or ledger failure rolls the entire batch back.
+// up or down migrations inside one transaction. The caller-supplied ledger is a
+// preflight expectation: for mutating rollback plans, the executor re-reads and
+// validates the transaction-local schema_migrations rows before executing SQL;
+// for any non-zero target, it reads them again before commit to ensure the
+// transactional ledger now matches the requested target. Rolling an empty DB up
+// from version zero skips the pre-read because schema_migrations does not exist
+// until migration 0001 has run; rollback-to-zero skips the post-read because the
+// table is dropped by 0001 down. Up migrations execute their SQL body before
+// inserting the corresponding schema_migrations ledger row. Down migrations
+// delete their ledger row before executing the down SQL body, so rollback-to-zero
+// can still remove the 0001 ledger row before dropping schema_migrations. Ledger
+// inserts/deletes must affect exactly one row. Any migration or ledger failure
+// rolls the entire batch back.
 func ApplyCatalogUpToVersion(ctx context.Context, executor SQLMigrationExecutor, catalog []Migration, ledger []LedgerEntry, targetVersion int) (ApplyResult, error) {
 	if migrationExecutorIsNil(executor) {
 		return ApplyResult{}, ErrMigrationApplyExecutorRequired
@@ -97,6 +113,12 @@ func ApplyCatalogUpToVersion(ctx context.Context, executor SQLMigrationExecutor,
 	tx, err := executor.BeginTx(ctx, nil)
 	if err != nil {
 		return ApplyResult{}, fmt.Errorf("begin migration apply transaction: %w", err)
+	}
+
+	if plan.CurrentVersion > 0 {
+		if err := verifyTransactionalLedger(ctx, tx, catalog, ledger, plan.CurrentVersion, "pre-apply"); err != nil {
+			return ApplyResult{}, rollbackAfterApplyFailure(tx, err)
+		}
 	}
 
 	for _, step := range plan.Pending {
@@ -132,10 +154,69 @@ func ApplyCatalogUpToVersion(ctx context.Context, executor SQLMigrationExecutor,
 		result.Applied = append(result.Applied, step)
 	}
 
+	if targetVersion > 0 {
+		if err := verifyTransactionalLedger(ctx, tx, catalog, expectedLedgerForVersion(catalog, targetVersion), targetVersion, "post-apply"); err != nil {
+			return ApplyResult{}, rollbackAfterApplyFailure(tx, err)
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return ApplyResult{}, fmt.Errorf("commit migration apply transaction: %w", err)
 	}
 	return result, nil
+}
+
+func verifyTransactionalLedger(ctx context.Context, tx migrationSQLTx, catalog []Migration, wantLedger []LedgerEntry, wantVersion int, phase string) error {
+	gotLedger, err := ReadSQLLedgerEntries(ctx, tx)
+	if err != nil {
+		return fmt.Errorf("%w: %s read schema_migrations ledger: %w", ErrMigrationApplyLedgerVerification, phase, err)
+	}
+	gotVersion, err := validateLedgerAgainstCatalog(catalog, gotLedger)
+	if err != nil {
+		return fmt.Errorf("%w: %s transactional ledger invalid: %w", ErrMigrationApplyLedgerVerification, phase, err)
+	}
+	if gotVersion != wantVersion {
+		return fmt.Errorf("%w: %s transactional ledger at version %d, want %d", ErrMigrationApplyLedgerVerification, phase, gotVersion, wantVersion)
+	}
+	if !ledgerEntriesEqual(gotLedger, wantLedger) {
+		return fmt.Errorf("%w: %s transactional ledger rows do not match planned boundary", ErrMigrationApplyLedgerVerification, phase)
+	}
+	return nil
+}
+
+func expectedLedgerForVersion(catalog []Migration, version int) []LedgerEntry {
+	if version <= 0 {
+		return nil
+	}
+	entries := make([]LedgerEntry, 0, version)
+	for _, migration := range catalog[:version] {
+		entries = append(entries, LedgerEntry{
+			Version:  migration.Version,
+			Name:     migration.Name,
+			UpSHA256: migration.UpSHA256,
+		})
+	}
+	return entries
+}
+
+func ledgerEntriesEqual(left []LedgerEntry, right []LedgerEntry) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	leftSorted := append([]LedgerEntry(nil), left...)
+	rightSorted := append([]LedgerEntry(nil), right...)
+	sort.Slice(leftSorted, func(i, j int) bool {
+		return leftSorted[i].Version < leftSorted[j].Version
+	})
+	sort.Slice(rightSorted, func(i, j int) bool {
+		return rightSorted[i].Version < rightSorted[j].Version
+	})
+	for i := range leftSorted {
+		if leftSorted[i] != rightSorted[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func requireOneLedgerRowAffected(result sql.Result, action string, migration Migration) error {

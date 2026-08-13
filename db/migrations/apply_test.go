@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +16,7 @@ import (
 var (
 	errStubMigrationBegin    = errors.New("stub migration begin failed")
 	errStubMigrationExec     = errors.New("stub migration exec failed")
+	errStubMigrationQuery    = errors.New("stub migration query failed")
 	errStubMigrationCommit   = errors.New("stub migration commit failed")
 	errStubMigrationRollback = errors.New("stub migration rollback failed")
 	errStubMigrationRows     = errors.New("stub migration rows affected failed")
@@ -32,7 +34,9 @@ func TestApplyCatalogUpToVersionExecutesPendingMigrationsAndRecordsLedgerInOneTr
 			downSQL:  "-- go-metin2 migration: 0002 accounts down\nDROP TABLE accounts;\n",
 		},
 	)
-	scenario := &testMigrationApplySQLScenario{}
+	scenario := &testMigrationApplySQLScenario{
+		currentLedger: nil,
+	}
 
 	result, err := ApplyCatalogUpToVersion(context.Background(), openTestMigrationApplyDB(t, scenario), catalog, nil, 2)
 	if err != nil {
@@ -51,6 +55,7 @@ func TestApplyCatalogUpToVersionExecutesPendingMigrationsAndRecordsLedgerInOneTr
 		"exec:" + schemaMigrationLedgerInsertSQL(catalog[0]),
 		"exec:" + catalog[1].UpSQL,
 		"exec:" + schemaMigrationLedgerInsertSQL(catalog[1]),
+		"query:" + SchemaMigrationsLedgerQuery,
 		"commit",
 	}
 	if got := scenario.eventsSnapshot(); strings.Join(got, "\n") != strings.Join(want, "\n") {
@@ -77,6 +82,66 @@ func TestApplyCatalogUpToVersionNoopsWhenTargetAlreadyApplied(t *testing.T) {
 	}
 }
 
+func TestApplyCatalogUpToVersionRejectsStaleInputLedgerInsideTransaction(t *testing.T) {
+	catalog := testCatalog(t, bootstrapSchemaMigration())
+	scenario := &testMigrationApplySQLScenario{currentLedger: nil}
+
+	_, err := ApplyCatalogUpToVersion(context.Background(), openTestMigrationApplyDB(t, scenario), catalog, []LedgerEntry{ledgerEntryFor(t, catalog, 1)}, 0)
+	if !errors.Is(err, ErrMigrationApplyLedgerVerification) {
+		t.Fatalf("expected stale caller ledger to fail closed, got %v", err)
+	}
+	got := scenario.eventsSnapshot()
+	if !containsEvent(got, "rollback") {
+		t.Fatalf("expected stale ledger validation to roll back, got events %#v", got)
+	}
+	if containsEvent(got, "exec:"+catalog[0].UpSQL) || containsEvent(got, "exec:"+schemaMigrationLedgerInsertSQL(catalog[0])) {
+		t.Fatalf("expected stale ledger validation to reject before executing migration SQL, got events %#v", got)
+	}
+	if containsEvent(got, "commit") {
+		t.Fatalf("expected stale ledger validation not to commit, got events %#v", got)
+	}
+}
+
+func TestApplyCatalogUpToVersionRejectsLedgerDriftBeforeCommit(t *testing.T) {
+	catalog := testCatalog(t, bootstrapSchemaMigration())
+	scenario := &testMigrationApplySQLScenario{
+		currentLedger:      nil,
+		skipLedgerMutation: true,
+	}
+
+	_, err := ApplyCatalogUpToVersion(context.Background(), openTestMigrationApplyDB(t, scenario), catalog, nil, 1)
+	if !errors.Is(err, ErrMigrationApplyLedgerVerification) {
+		t.Fatalf("expected post-apply ledger verification failure, got %v", err)
+	}
+	got := scenario.eventsSnapshot()
+	if !containsEvent(got, "exec:"+catalog[0].UpSQL) || !containsEvent(got, "exec:"+schemaMigrationLedgerInsertSQL(catalog[0])) {
+		t.Fatalf("expected migration and ledger insert before verification, got events %#v", got)
+	}
+	if !containsEvent(got, "rollback") {
+		t.Fatalf("expected post-apply verification failure to roll back, got events %#v", got)
+	}
+	if containsEvent(got, "commit") {
+		t.Fatalf("expected post-apply verification failure not to commit, got events %#v", got)
+	}
+}
+
+func TestApplyCatalogUpToVersionRollsBackWhenTransactionalLedgerReadFails(t *testing.T) {
+	catalog := testCatalog(t, bootstrapSchemaMigration())
+	scenario := &testMigrationApplySQLScenario{currentLedger: []LedgerEntry{ledgerEntryFor(t, catalog, 1)}, queryErr: errStubMigrationQuery}
+
+	_, err := ApplyCatalogUpToVersion(context.Background(), openTestMigrationApplyDB(t, scenario), catalog, []LedgerEntry{ledgerEntryFor(t, catalog, 1)}, 0)
+	if !errors.Is(err, errStubMigrationQuery) {
+		t.Fatalf("expected transactional ledger read failure, got %v", err)
+	}
+	got := scenario.eventsSnapshot()
+	if !containsEvent(got, "rollback") {
+		t.Fatalf("expected query failure to roll back, got events %#v", got)
+	}
+	if containsEvent(got, "exec:"+catalog[0].UpSQL) || containsEvent(got, "commit") {
+		t.Fatalf("expected query failure before migration execution/commit, got events %#v", got)
+	}
+}
+
 func TestApplyCatalogUpToVersionExecutesRollbackMigrationsAndDeletesLedgerRowsInOneTransaction(t *testing.T) {
 	catalog := testCatalog(t,
 		bootstrapSchemaMigration(),
@@ -97,13 +162,14 @@ func TestApplyCatalogUpToVersionExecutesRollbackMigrationsAndDeletesLedgerRowsIn
 			downSQL:  "-- go-metin2 migration: 0003 characters down\nDROP TABLE characters;\n",
 		},
 	)
-	scenario := &testMigrationApplySQLScenario{}
-
-	result, err := ApplyCatalogUpToVersion(context.Background(), openTestMigrationApplyDB(t, scenario), catalog, []LedgerEntry{
+	ledger := []LedgerEntry{
 		ledgerEntryFor(t, catalog, 1),
 		ledgerEntryFor(t, catalog, 2),
 		ledgerEntryFor(t, catalog, 3),
-	}, 1)
+	}
+	scenario := &testMigrationApplySQLScenario{currentLedger: append([]LedgerEntry(nil), ledger...)}
+
+	result, err := ApplyCatalogUpToVersion(context.Background(), openTestMigrationApplyDB(t, scenario), catalog, ledger, 1)
 	if err != nil {
 		t.Fatalf("rollback migrations: %v", err)
 	}
@@ -116,10 +182,12 @@ func TestApplyCatalogUpToVersionExecutesRollbackMigrationsAndDeletesLedgerRowsIn
 
 	want := []string{
 		"begin",
+		"query:" + SchemaMigrationsLedgerQuery,
 		"exec:" + schemaMigrationLedgerDeleteSQL(catalog[2]),
 		"exec:" + catalog[2].DownSQL,
 		"exec:" + schemaMigrationLedgerDeleteSQL(catalog[1]),
 		"exec:" + catalog[1].DownSQL,
+		"query:" + SchemaMigrationsLedgerQuery,
 		"commit",
 	}
 	if got := scenario.eventsSnapshot(); strings.Join(got, "\n") != strings.Join(want, "\n") {
@@ -129,9 +197,10 @@ func TestApplyCatalogUpToVersionExecutesRollbackMigrationsAndDeletesLedgerRowsIn
 
 func TestApplyCatalogUpToVersionRollsBackToZeroByDeletingLedgerBeforeDroppingSchemaMigrationsTable(t *testing.T) {
 	catalog := testCatalog(t, bootstrapSchemaMigration())
-	scenario := &testMigrationApplySQLScenario{}
+	ledger := []LedgerEntry{ledgerEntryFor(t, catalog, 1)}
+	scenario := &testMigrationApplySQLScenario{currentLedger: append([]LedgerEntry(nil), ledger...)}
 
-	result, err := ApplyCatalogUpToVersion(context.Background(), openTestMigrationApplyDB(t, scenario), catalog, []LedgerEntry{ledgerEntryFor(t, catalog, 1)}, 0)
+	result, err := ApplyCatalogUpToVersion(context.Background(), openTestMigrationApplyDB(t, scenario), catalog, ledger, 0)
 	if err != nil {
 		t.Fatalf("rollback schema_migrations to zero: %v", err)
 	}
@@ -140,6 +209,7 @@ func TestApplyCatalogUpToVersionRollsBackToZeroByDeletingLedgerBeforeDroppingSch
 	}
 	want := []string{
 		"begin",
+		"query:" + SchemaMigrationsLedgerQuery,
 		"exec:" + schemaMigrationLedgerDeleteSQL(catalog[0]),
 		"exec:" + catalog[0].DownSQL,
 		"commit",
@@ -242,12 +312,13 @@ func TestApplyCatalogUpToVersionRollsBackWhenLedgerDeleteFailsBeforeDownMigratio
 			downSQL:  "-- go-metin2 migration: 0002 accounts down\nDROP TABLE accounts;\n",
 		},
 	)
-	scenario := &testMigrationApplySQLScenario{execErrContains: "DELETE FROM schema_migrations"}
-
-	_, err := ApplyCatalogUpToVersion(context.Background(), openTestMigrationApplyDB(t, scenario), catalog, []LedgerEntry{
+	ledger := []LedgerEntry{
 		ledgerEntryFor(t, catalog, 1),
 		ledgerEntryFor(t, catalog, 2),
-	}, 1)
+	}
+	scenario := &testMigrationApplySQLScenario{currentLedger: append([]LedgerEntry(nil), ledger...), execErrContains: "DELETE FROM schema_migrations"}
+
+	_, err := ApplyCatalogUpToVersion(context.Background(), openTestMigrationApplyDB(t, scenario), catalog, ledger, 1)
 	if !errors.Is(err, errStubMigrationExec) {
 		t.Fatalf("expected ledger delete failure, got %v", err)
 	}
@@ -275,12 +346,13 @@ func TestApplyCatalogUpToVersionRollsBackWhenLedgerDeleteAffectsNoRowsBeforeDown
 			downSQL:  "-- go-metin2 migration: 0002 accounts down\nDROP TABLE accounts;\n",
 		},
 	)
-	scenario := &testMigrationApplySQLScenario{execRowsAffectedContains: "DELETE FROM schema_migrations", execRowsAffected: 0}
-
-	_, err := ApplyCatalogUpToVersion(context.Background(), openTestMigrationApplyDB(t, scenario), catalog, []LedgerEntry{
+	ledger := []LedgerEntry{
 		ledgerEntryFor(t, catalog, 1),
 		ledgerEntryFor(t, catalog, 2),
-	}, 1)
+	}
+	scenario := &testMigrationApplySQLScenario{currentLedger: append([]LedgerEntry(nil), ledger...), execRowsAffectedContains: "DELETE FROM schema_migrations", execRowsAffected: 0}
+
+	_, err := ApplyCatalogUpToVersion(context.Background(), openTestMigrationApplyDB(t, scenario), catalog, ledger, 1)
 	if !errors.Is(err, ErrMigrationApplyLedgerRowCount) {
 		t.Fatalf("expected ledger row count failure, got %v", err)
 	}
@@ -308,12 +380,13 @@ func TestApplyCatalogUpToVersionRollsBackWhenDownMigrationSQLFailsAfterLedgerDel
 			downSQL:  "-- go-metin2 migration: 0002 accounts down\nDROP TABLE accounts;\n",
 		},
 	)
-	scenario := &testMigrationApplySQLScenario{execErrContains: "DROP TABLE accounts"}
-
-	_, err := ApplyCatalogUpToVersion(context.Background(), openTestMigrationApplyDB(t, scenario), catalog, []LedgerEntry{
+	ledger := []LedgerEntry{
 		ledgerEntryFor(t, catalog, 1),
 		ledgerEntryFor(t, catalog, 2),
-	}, 1)
+	}
+	scenario := &testMigrationApplySQLScenario{currentLedger: append([]LedgerEntry(nil), ledger...), execErrContains: "DROP TABLE accounts"}
+
+	_, err := ApplyCatalogUpToVersion(context.Background(), openTestMigrationApplyDB(t, scenario), catalog, ledger, 1)
 	if !errors.Is(err, errStubMigrationExec) {
 		t.Fatalf("expected down migration SQL failure, got %v", err)
 	}
@@ -393,6 +466,9 @@ var (
 type testMigrationApplySQLScenario struct {
 	mu                       sync.Mutex
 	events                   []string
+	currentLedger            []LedgerEntry
+	skipLedgerMutation       bool
+	queryErr                 error
 	beginErr                 error
 	execErrContains          string
 	execRowsAffectedContains string
@@ -426,10 +502,111 @@ func (s *testMigrationApplySQLScenario) execErrorFor(query string) error {
 func (s *testMigrationApplySQLScenario) execResultFor(query string) driver.Result {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	rowsAffected := int64(1)
+	rowsAffectedErr := error(nil)
 	if s.execRowsAffectedContains != "" && strings.Contains(query, s.execRowsAffectedContains) {
-		return testMigrationApplySQLResult{rowsAffected: s.execRowsAffected, rowsAffectedErr: s.execRowsAffectedErr}
+		rowsAffected = s.execRowsAffected
+		rowsAffectedErr = s.execRowsAffectedErr
 	}
-	return testMigrationApplySQLResult{rowsAffected: 1}
+	if rowsAffected == 1 && rowsAffectedErr == nil && !s.skipLedgerMutation {
+		if migration, ok := migrationFromLedgerSQL(query); ok {
+			s.applyLedgerMutation(query, migration)
+		}
+	}
+	return testMigrationApplySQLResult{rowsAffected: rowsAffected, rowsAffectedErr: rowsAffectedErr}
+}
+
+func (s *testMigrationApplySQLScenario) applyLedgerMutation(query string, entry LedgerEntry) {
+	if strings.HasPrefix(query, "INSERT INTO schema_migrations") {
+		s.currentLedger = append(s.currentLedger, entry)
+		return
+	}
+	if strings.HasPrefix(query, "DELETE FROM schema_migrations") {
+		for i, current := range s.currentLedger {
+			if current == entry {
+				s.currentLedger = append(s.currentLedger[:i], s.currentLedger[i+1:]...)
+				return
+			}
+		}
+	}
+}
+
+func migrationFromLedgerSQL(query string) (LedgerEntry, bool) {
+	if strings.HasPrefix(query, "INSERT INTO schema_migrations") {
+		start := strings.Index(query, "VALUES (")
+		if start < 0 {
+			return LedgerEntry{}, false
+		}
+		body := strings.TrimSuffix(strings.TrimSpace(query[start+len("VALUES ("):]), ");")
+		parts := strings.Split(body, ", ")
+		if len(parts) != 3 {
+			return LedgerEntry{}, false
+		}
+		version, err := strconv.Atoi(parts[0])
+		if err != nil {
+			return LedgerEntry{}, false
+		}
+		return LedgerEntry{Version: version, Name: strings.Trim(parts[1], "'"), UpSHA256: strings.Trim(parts[2], "'")}, true
+	}
+	if strings.HasPrefix(query, "DELETE FROM schema_migrations") {
+		version, ok := sqlIntAfter(query, "version = ")
+		if !ok {
+			return LedgerEntry{}, false
+		}
+		name, ok := sqlTextAfter(query, "name = ")
+		if !ok {
+			return LedgerEntry{}, false
+		}
+		upSHA256, ok := sqlTextAfter(query, "up_sha256 = ")
+		if !ok {
+			return LedgerEntry{}, false
+		}
+		return LedgerEntry{Version: version, Name: name, UpSHA256: upSHA256}, true
+	}
+	return LedgerEntry{}, false
+}
+
+func sqlIntAfter(query, marker string) (int, bool) {
+	start := strings.Index(query, marker)
+	if start < 0 {
+		return 0, false
+	}
+	rest := query[start+len(marker):]
+	end := strings.IndexAny(rest, " ;\n")
+	if end >= 0 {
+		rest = rest[:end]
+	}
+	value, err := strconv.Atoi(rest)
+	return value, err == nil
+}
+
+func sqlTextAfter(query, marker string) (string, bool) {
+	start := strings.Index(query, marker)
+	if start < 0 {
+		return "", false
+	}
+	rest := strings.TrimSpace(query[start+len(marker):])
+	if !strings.HasPrefix(rest, "'") {
+		return "", false
+	}
+	rest = rest[1:]
+	end := strings.IndexByte(rest, '\'')
+	if end < 0 {
+		return "", false
+	}
+	return rest[:end], true
+}
+
+func (s *testMigrationApplySQLScenario) queryError() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.queryErr
+}
+
+func (s *testMigrationApplySQLScenario) ledgerForQuery() []LedgerEntry {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]LedgerEntry(nil), s.currentLedger...)
 }
 
 func openTestMigrationApplyDB(t *testing.T, scenario *testMigrationApplySQLScenario) *sql.DB {
@@ -549,14 +726,36 @@ func (tx *testMigrationApplySQLTx) Rollback() error {
 	return nil
 }
 
-func (c *testMigrationApplySQLConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
-	return testMigrationApplySQLRows{}, nil
+func (c *testMigrationApplySQLConn) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	if len(args) != 0 {
+		return nil, errors.New("test migration apply driver expected no bound query args")
+	}
+	scenario, err := c.scenario()
+	if err != nil {
+		return nil, err
+	}
+	scenario.record("query:" + query)
+	if err := scenario.queryError(); err != nil {
+		return nil, err
+	}
+	return &testMigrationApplySQLRows{entries: scenario.ledgerForQuery()}, nil
 }
 
-type testMigrationApplySQLRows struct{}
+type testMigrationApplySQLRows struct {
+	entries []LedgerEntry
+	index   int
+}
 
-func (testMigrationApplySQLRows) Columns() []string { return nil }
+func (testMigrationApplySQLRows) Columns() []string { return []string{"version", "name", "up_sha256"} }
 func (testMigrationApplySQLRows) Close() error      { return nil }
-func (testMigrationApplySQLRows) Next([]driver.Value) error {
-	return io.EOF
+func (r *testMigrationApplySQLRows) Next(dest []driver.Value) error {
+	if r.index >= len(r.entries) {
+		return io.EOF
+	}
+	entry := r.entries[r.index]
+	r.index++
+	dest[0] = int64(entry.Version)
+	dest[1] = entry.Name
+	dest[2] = entry.UpSHA256
+	return nil
 }
