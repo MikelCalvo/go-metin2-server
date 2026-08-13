@@ -811,8 +811,10 @@ func writeJSONFileAtomically(dir, filename string, value any, context string) er
 	if err := encoder.Encode(value); err != nil {
 		return fmt.Errorf("encode %s: %w", context, err)
 	}
-	if err := temp.Sync(); err != nil {
-		return fmt.Errorf("sync %s temp file: %w", context, err)
+	if !durableSyncDisabledForTest {
+		if err := temp.Sync(); err != nil {
+			return fmt.Errorf("sync %s temp file: %w", context, err)
+		}
 	}
 	if err := temp.Close(); err != nil {
 		return fmt.Errorf("close %s temp file: %w", context, err)

@@ -2192,6 +2192,9 @@ func TestFileStoreRestoreFromRejectsCorruptBackupSnapshot(t *testing.T) {
 }
 
 func TestFileStoreRestoreFromRollsBackCommittedFilesWhenSaveFails(t *testing.T) {
+	restoreDurableSync := DisableDurableSyncForTest()
+	defer restoreDurableSync()
+
 	source := NewFileStore(t.TempDir())
 	accounts := []Account{
 		{Login: "alpha", Empire: 1},
@@ -2206,6 +2209,7 @@ func TestFileStoreRestoreFromRollsBackCommittedFilesWhenSaveFails(t *testing.T) 
 	if err := source.BackupTo(backupDir); err != nil {
 		t.Fatalf("create validated backup: %v", err)
 	}
+	restoreDurableSync()
 
 	restoreDir := filepath.Join(t.TempDir(), "restored")
 	restored := NewFileStore(restoreDir)
