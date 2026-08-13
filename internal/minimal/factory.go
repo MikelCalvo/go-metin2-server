@@ -3580,7 +3580,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						} else {
 							frames = append(frames, quickslotFrames...)
 						}
-						return commitSelectedNonPointItemMutation(selectedPlayer, previousSelected, frames)
+						chatResult := commitSelectedNonPointItemMutation(selectedPlayer, previousSelected, frames)
+						if !chatResult.Accepted {
+							return chatResult
+						}
+						chatResult.Frames = prependExchangeCloseFrame(chatResult.Frames)
+						return chatResult
 					}
 
 					if fromSlot, equipSlot, ok := slashEquipItemCommand(packet.Message); ok {
@@ -4143,7 +4148,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						frames = append(frames, quickslotFrames...)
 					}
 					chatResult := commitSelectedNonPointItemMutation(selectedPlayer, previousSelected, frames)
-					return gameflow.ItemMoveResult{Accepted: chatResult.Accepted, Frames: chatResult.Frames}
+					if !chatResult.Accepted {
+						return gameflow.ItemMoveResult{Accepted: false, Frames: chatResult.Frames}
+					}
+					chatResult.Frames = prependExchangeCloseFrame(chatResult.Frames)
+					return gameflow.ItemMoveResult{Accepted: true, Frames: chatResult.Frames}
 				},
 				HandleItemPickup: func(packet itemproto.ClientPickupPacket) gameflow.ItemPickupResult {
 					stateMu.Lock()

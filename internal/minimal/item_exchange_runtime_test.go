@@ -1702,6 +1702,180 @@ func TestGameRuntimeItemUseToItemClosesActiveExchangeShellBeforeStackMergeFrames
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "peer active-exchange use-to-item")
 }
 
+func TestGameRuntimeItemMoveClosesActiveExchangeShellBeforeMoveFrames(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeMoveOwner", 0x010307c3, 0x020407c3, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 791, Vnum: 27047, Count: 1, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeMovePeer", 0x010307c4, 0x020407c4, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerLogin := "exchange-move-owner"
+	peerLogin := "exchange-move-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070c3, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070c4, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange item-move owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange item-move peer account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27047, Name: "Exchange Move Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange item-move runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070c3)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070c4)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected exchange item-move start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected exchange item-move start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "exchange item-move owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected exchange item-move peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "exchange item-move peer start")
+
+	itemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 7, Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected exchange item-move item-add error: %v", err)
+	}
+	if len(itemAddOut) != 1 {
+		t.Fatalf("expected exchange item-move item-add to emit one owner frame, got %d", len(itemAddOut))
+	}
+	assertExchangeItemAddFrame(t, itemAddOut[0], 1, 7, owner.Inventory[0], template, "exchange item-move owner item-add")
+	queuedItemAdd := flushServerFrames(t, peerFlow)
+	if len(queuedItemAdd) != 1 {
+		t.Fatalf("expected exchange item-move peer item-add frame, got %d", len(queuedItemAdd))
+	}
+	assertExchangeItemAddFrame(t, queuedItemAdd[0], 0, 7, owner.Inventory[0], template, "exchange item-move peer item-add")
+
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{Source: itemproto.InventoryPosition(5), Destination: itemproto.InventoryPosition(8)})))
+	if err != nil {
+		t.Fatalf("unexpected active-exchange ITEM_MOVE error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected active-exchange ITEM_MOVE to emit exchange end plus item delete and set frames, got %d", len(out))
+	}
+	assertExchangeEndFrame(t, out[0], "active-exchange item-move self close")
+	itemDel, err := itemproto.DecodeDel(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode active-exchange item-move item delete: %v", err)
+	}
+	if itemDel.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected active-exchange item-move item delete: %+v", itemDel)
+	}
+	itemSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode active-exchange item-move item set: %v", err)
+	}
+	if itemSet.Position != itemproto.InventoryPosition(8) || itemSet.Vnum != template.Vnum || itemSet.Count != 1 {
+		t.Fatalf("unexpected active-exchange item-move item set: %+v", itemSet)
+	}
+	queuedClose := flushServerFrames(t, peerFlow)
+	if len(queuedClose) != 1 {
+		t.Fatalf("expected active-exchange ITEM_MOVE to queue one peer close frame, got %d", len(queuedClose))
+	}
+	assertExchangeEndFrame(t, queuedClose[0], "active-exchange item-move peer close")
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected post-item-move exchange cancel error: %v", err)
+	}
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected post-item-move exchange cancel to emit no frames after the shell was closed, got %d", len(cancelOut))
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after post-item-move exchange cancel, got %d", len(queued))
+	}
+	persistedOwner, err := accounts.Load(ownerLogin)
+	if err != nil {
+		t.Fatalf("load persisted active-exchange item-move owner account: %v", err)
+	}
+	if !reflect.DeepEqual(persistedOwner.Characters[0].Inventory, []inventory.ItemInstance{{ID: 791, Vnum: 27047, Count: 1, Slot: 8}}) {
+		t.Fatalf("active-exchange item-move persisted inventory got %+v", persistedOwner.Characters[0].Inventory)
+	}
+
+	slashStartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected exchange slash item-move start error: %v", err)
+	}
+	if len(slashStartOut) != 1 {
+		t.Fatalf("expected exchange slash item-move start to emit one owner frame, got %d", len(slashStartOut))
+	}
+	assertExchangeStartFrame(t, slashStartOut[0], peer.VID, "exchange slash item-move owner start")
+	slashQueuedStart := flushServerFrames(t, peerFlow)
+	if len(slashQueuedStart) != 1 {
+		t.Fatalf("expected exchange slash item-move peer start frame, got %d", len(slashQueuedStart))
+	}
+	assertExchangeStartFrame(t, slashQueuedStart[0], owner.VID, "exchange slash item-move peer start")
+
+	currentItem := inventory.ItemInstance{ID: 791, Vnum: 27047, Count: 1, Slot: 8}
+	slashItemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 8, Position: itemproto.InventoryPosition(8)})))
+	if err != nil {
+		t.Fatalf("unexpected exchange slash item-move item-add error: %v", err)
+	}
+	if len(slashItemAddOut) != 1 {
+		t.Fatalf("expected exchange slash item-move item-add to emit one owner frame, got %d", len(slashItemAddOut))
+	}
+	assertExchangeItemAddFrame(t, slashItemAddOut[0], 1, 8, currentItem, template, "exchange slash item-move owner item-add")
+	slashQueuedItemAdd := flushServerFrames(t, peerFlow)
+	if len(slashQueuedItemAdd) != 1 {
+		t.Fatalf("expected exchange slash item-move peer item-add frame, got %d", len(slashQueuedItemAdd))
+	}
+	assertExchangeItemAddFrame(t, slashQueuedItemAdd[0], 0, 8, currentItem, template, "exchange slash item-move peer item-add")
+
+	slashOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/inventory_move 8 6"})))
+	if err != nil {
+		t.Fatalf("unexpected active-exchange slash inventory move error: %v", err)
+	}
+	if len(slashOut) != 3 {
+		t.Fatalf("expected active-exchange slash /inventory_move to emit exchange end plus item delete and set frames, got %d", len(slashOut))
+	}
+	assertExchangeEndFrame(t, slashOut[0], "active-exchange slash item-move self close")
+	slashItemDel, err := itemproto.DecodeDel(decodeSingleFrame(t, slashOut[1]))
+	if err != nil {
+		t.Fatalf("decode active-exchange slash item-move item delete: %v", err)
+	}
+	if slashItemDel.Position != itemproto.InventoryPosition(8) {
+		t.Fatalf("unexpected active-exchange slash item-move item delete: %+v", slashItemDel)
+	}
+	slashItemSet, err := itemproto.DecodeSet(decodeSingleFrame(t, slashOut[2]))
+	if err != nil {
+		t.Fatalf("decode active-exchange slash item-move item set: %v", err)
+	}
+	if slashItemSet.Position != itemproto.InventoryPosition(6) || slashItemSet.Vnum != template.Vnum || slashItemSet.Count != 1 {
+		t.Fatalf("unexpected active-exchange slash item-move item set: %+v", slashItemSet)
+	}
+	slashQueuedClose := flushServerFrames(t, peerFlow)
+	if len(slashQueuedClose) != 1 {
+		t.Fatalf("expected active-exchange slash /inventory_move to queue one peer close frame, got %d", len(slashQueuedClose))
+	}
+	assertExchangeEndFrame(t, slashQueuedClose[0], "active-exchange slash item-move peer close")
+
+	persistedOwner, err = accounts.Load(ownerLogin)
+	if err != nil {
+		t.Fatalf("load persisted active-exchange slash item-move owner account: %v", err)
+	}
+	if !reflect.DeepEqual(persistedOwner.Characters[0].Inventory, []inventory.ItemInstance{{ID: 791, Vnum: 27047, Count: 1, Slot: 6}}) {
+		t.Fatalf("active-exchange slash item-move persisted inventory got %+v", persistedOwner.Characters[0].Inventory)
+	}
+	if persistedOwner.Characters[0].Gold != owner.Gold {
+		t.Fatalf("active-exchange item-move mutated persisted gold got %d want %d", persistedOwner.Characters[0].Gold, owner.Gold)
+	}
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "peer active-exchange item-move")
+}
+
 func TestGameRuntimeItemDropClosesActiveExchangeShellBeforeDropFrames(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
