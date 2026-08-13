@@ -597,6 +597,14 @@ func main() {
 		opsHandler,
 		exportContentBundleSummary,
 	)
+	opsHandler = ops.RegisterLocalContentBundleMapShopRoutesEndpoint(
+		opsHandler,
+		exportContentBundleSummary,
+	)
+	opsHandler = ops.RegisterLocalContentBundleMapWarpRoutesEndpoint(
+		opsHandler,
+		exportContentBundleSummary,
+	)
 	opsHandler = ops.RegisterLocalContentBundleStaticActorEndpoint(
 		opsHandler,
 		exportContentBundleSummary,

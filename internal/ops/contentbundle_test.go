@@ -1467,6 +1467,270 @@ func TestLocalContentBundleMapSummaryEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalContentBundleMapShopRoutesEndpointReturnsMatchingRoutesForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{
+			Maps: []contentbundle.MapContentSummary{
+				{MapIndex: 1, StaticActorCount: 2, ShopPreviewActorCount: 2},
+				{MapIndex: 7, StaticActorCount: 1, ShopPreviewActorCount: 1},
+			},
+			ShopRoutes: []contentbundle.ShopRouteSummary{
+				{ActorName: "Remote Merchant", SourceMapIndex: 7, SourceX: 1300, SourceY: 2300, Ref: "npc:remote_merchant", Title: "Remote Merchant", EntryCount: 1},
+				{ActorName: "Village Merchant", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:village_merchant", Title: "Village Merchant", EntryCount: 2},
+				{ActorName: "Village Provisioner", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:village_provisioner", Title: "Village Provisioner", EntryCount: 1},
+			},
+		},
+	}
+	mux := RegisterLocalContentBundleMapShopRoutesEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/maps/1/shop-routes", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got []contentbundle.ShopRouteSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode map shop-route response body: %v", err)
+	}
+	want := []contentbundle.ShopRouteSummary{
+		{ActorName: "Village Merchant", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:village_merchant", Title: "Village Merchant", EntryCount: 2},
+		{ActorName: "Village Provisioner", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:village_provisioner", Title: "Village Provisioner", EntryCount: 1},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle map shop routes:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleMapWarpRoutesEndpointReturnsMatchingRoutesForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{
+			Maps: []contentbundle.MapContentSummary{
+				{MapIndex: 1, StaticActorCount: 2, WarpActorCount: 2},
+				{MapIndex: 7, StaticActorCount: 1, WarpActorCount: 1},
+			},
+			WarpRoutes: []contentbundle.WarpRouteSummary{
+				{ActorName: "Remote Gate", SourceMapIndex: 7, SourceX: 1300, SourceY: 2300, Ref: "npc:remote_gate", Text: "Remote gate.", TargetMapIndex: 8, TargetX: 1400, TargetY: 2400},
+				{ActorName: "Village Gate", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:village_gate", Text: "Step through the gate.", TargetMapIndex: 42, TargetX: 1700, TargetY: 2800},
+				{ActorName: "Village Ferry", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:village_ferry", TargetMapIndex: 43, TargetX: 1800, TargetY: 2900},
+			},
+		},
+	}
+	mux := RegisterLocalContentBundleMapWarpRoutesEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/maps/1/warp-routes", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got []contentbundle.WarpRouteSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode map warp-route response body: %v", err)
+	}
+	want := []contentbundle.WarpRouteSummary{
+		{ActorName: "Village Gate", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:village_gate", Text: "Step through the gate.", TargetMapIndex: 42, TargetX: 1700, TargetY: 2800},
+		{ActorName: "Village Ferry", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:village_ferry", TargetMapIndex: 43, TargetX: 1800, TargetY: 2900},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle map warp routes:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleMapServiceRouteEndpointsReturnEmptyListForKnownMapWithoutRoutes(t *testing.T) {
+	tests := []struct {
+		name     string
+		register func(*http.ServeMux, func() (any, int)) *http.ServeMux
+		path     string
+	}{
+		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
+		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{Maps: []contentbundle.MapContentSummary{{MapIndex: 42, StaticActorCount: 1}}}}
+			mux := tc.register(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req.RemoteAddr = "127.0.0.1:12345"
+			rec := httptest.NewRecorder()
+
+			mux.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected status %d for known map without routes, got %d", http.StatusOK, rec.Code)
+			}
+			if strings.TrimSpace(rec.Body.String()) != "[]" {
+				t.Fatalf("expected empty JSON list for known map without routes, got %q", rec.Body.String())
+			}
+			if summaryer.calls != 1 {
+				t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+			}
+		})
+	}
+}
+
+func TestLocalContentBundleMapServiceRouteEndpointsReturnNotFoundForMissingMap(t *testing.T) {
+	tests := []struct {
+		name     string
+		register func(*http.ServeMux, func() (any, int)) *http.ServeMux
+		path     string
+	}{
+		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
+		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{Maps: []contentbundle.MapContentSummary{{MapIndex: 7, StaticActorCount: 1}}}}
+			mux := tc.register(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req.RemoteAddr = "127.0.0.1:12345"
+			rec := httptest.NewRecorder()
+
+			mux.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("expected status %d for missing map service route list, got %d", http.StatusNotFound, rec.Code)
+			}
+			if summaryer.calls != 1 {
+				t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+			}
+		})
+	}
+}
+
+func TestLocalContentBundleMapServiceRouteEndpointsRejectInvalidMapIndex(t *testing.T) {
+	tests := []struct {
+		name     string
+		register func(*http.ServeMux, func() (any, int)) *http.ServeMux
+		paths    []string
+	}{
+		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, paths: []string{"/local/content-bundle/maps/0/shop-routes", "/local/content-bundle/maps/not-a-map/shop-routes", "/local/content-bundle/maps/42/shop-routes/extra"}},
+		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, paths: []string{"/local/content-bundle/maps/0/warp-routes", "/local/content-bundle/maps/not-a-map/warp-routes", "/local/content-bundle/maps/42/warp-routes/extra"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{Maps: []contentbundle.MapContentSummary{{MapIndex: 42, StaticActorCount: 1}}}}
+			mux := tc.register(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+			for _, path := range tc.paths {
+				req := httptest.NewRequest(http.MethodGet, path, nil)
+				req.RemoteAddr = "127.0.0.1:12345"
+				rec := httptest.NewRecorder()
+
+				mux.ServeHTTP(rec, req)
+
+				if rec.Code != http.StatusBadRequest {
+					t.Fatalf("expected status %d for invalid map service route path %q, got %d", http.StatusBadRequest, path, rec.Code)
+				}
+			}
+			if summaryer.calls != 0 {
+				t.Fatalf("expected content bundle summary exporter not to be called for invalid map index, got %d calls", summaryer.calls)
+			}
+		})
+	}
+}
+
+func TestLocalContentBundleMapServiceRouteEndpointsRejectNonLoopbackRemoteAddr(t *testing.T) {
+	tests := []struct {
+		name     string
+		register func(*http.ServeMux, func() (any, int)) *http.ServeMux
+		path     string
+	}{
+		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
+		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{Maps: []contentbundle.MapContentSummary{{MapIndex: 42, StaticActorCount: 1}}}}
+			mux := tc.register(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req.RemoteAddr = "203.0.113.10:12345"
+			rec := httptest.NewRecorder()
+
+			mux.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusForbidden {
+				t.Fatalf("expected status %d for non-loopback caller, got %d", http.StatusForbidden, rec.Code)
+			}
+			if summaryer.calls != 0 {
+				t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+			}
+		})
+	}
+}
+
+func TestLocalContentBundleMapServiceRouteEndpointsRejectWrongMethod(t *testing.T) {
+	tests := []struct {
+		name     string
+		register func(*http.ServeMux, func() (any, int)) *http.ServeMux
+		path     string
+	}{
+		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
+		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{Maps: []contentbundle.MapContentSummary{{MapIndex: 42, StaticActorCount: 1}}}}
+			mux := tc.register(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+			req := httptest.NewRequest(http.MethodPost, tc.path, nil)
+			req.RemoteAddr = "127.0.0.1:12345"
+			rec := httptest.NewRecorder()
+
+			mux.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("expected status %d for wrong method, got %d", http.StatusMethodNotAllowed, rec.Code)
+			}
+			if summaryer.calls != 0 {
+				t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+			}
+		})
+	}
+}
+
+func TestLocalContentBundleMapServiceRouteEndpointsCoexistWithMapSummaryRoute(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{
+			Maps:       []contentbundle.MapContentSummary{{MapIndex: 42, StaticActorCount: 1, ShopPreviewActorCount: 1}},
+			ShopRoutes: []contentbundle.ShopRouteSummary{{ActorName: "Village Merchant", SourceMapIndex: 42, SourceX: 1700, SourceY: 2800, Ref: "npc:village_merchant", Title: "Village Merchant", EntryCount: 1}},
+		},
+	}
+	mux := RegisterLocalContentBundleMapSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+	mux = RegisterLocalContentBundleMapShopRoutesEndpoint(mux, summaryer.ExportContentBundleSummary)
+	mux = RegisterLocalContentBundleMapWarpRoutesEndpoint(mux, summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/maps/42/shop-routes", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d for map-scoped shop routes alongside map summary route, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected map-scoped service route handler to call summary exporter once, got %d calls", summaryer.calls)
+	}
+}
+
 func TestLocalContentBundleStaticActorEndpointReturnsMatchingActorsForLoopbackGet(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{
 		status: http.StatusOK,

@@ -517,6 +517,18 @@ Returns one exact per-map row from the live content-bundle summary. This is a lo
 
 Use it when local QA needs a compact authored-content view for one map without fetching the full bundle summary or inferring counts from live runtime occupancy. It is not a gameplay protocol endpoint and does not mutate authored content.
 
+### `GET /local/content-bundle/maps/{map_index}/shop-routes`
+
+Returns every authored merchant route whose source static actor is on one map. This loopback-only read-only endpoint is registered only on `gamed`; it reuses the same live export + canonicalization + summary path as `GET /local/content-bundle/summary`, returns `404` when the authored bundle has no row for that `map_index`, returns an empty JSON array for a known map with no `shop_preview` routes, rejects malformed/zero map indexes with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
+
+Use it when local QA needs to audit map-local merchant placement without fetching the full bundle summary or filtering global `/local/content-bundle/shop-routes/{actor_name}` responses by `source_map_index`. It is not a gameplay protocol endpoint and does not mutate authored content.
+
+### `GET /local/content-bundle/maps/{map_index}/warp-routes`
+
+Returns every authored teleporter route whose source static actor is on one map. This loopback-only read-only endpoint is registered only on `gamed`; it reuses the same live export + canonicalization + summary path as `GET /local/content-bundle/summary`, returns `404` when the authored bundle has no row for that `map_index`, returns an empty JSON array for a known map with no `warp` routes, rejects malformed/zero map indexes with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
+
+Use it when local QA needs to audit map-local teleporter placement without fetching the full bundle summary or filtering global `/local/content-bundle/warp-routes/{actor_name}` responses by `source_map_index`. It is not a gameplay protocol endpoint and does not mutate authored content.
+
 ### `GET /local/content-bundle/static-actors/{name}`
 
 Returns every exact portable static-actor row for one authored actor name from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; `name` is URL-decoded with the same path-safe name rules used by `/local/content-bundle/interactable-static-actors/{name}`. It returns matching `static_actors[]` rows for plain and interactable placements, returns `404` when the live authored bundle has no matching static actor, rejects blank or slash-containing names with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
@@ -1150,6 +1162,8 @@ Inspect compact authored-content summaries without fetching the full bundle payl
 ```bash
 curl http://127.0.0.1:6060/local/content-bundle/summary
 curl http://127.0.0.1:6060/local/content-bundle/maps/1
+curl http://127.0.0.1:6060/local/content-bundle/maps/1/shop-routes
+curl http://127.0.0.1:6060/local/content-bundle/maps/1/warp-routes
 curl http://127.0.0.1:6060/local/content-bundle/static-actors/Village%20Guide
 curl http://127.0.0.1:6060/local/content-bundle/spawn-groups/practice.qa_reward_mob
 curl http://127.0.0.1:6060/local/content-bundle/combat-profiles/practice_reward_profile
