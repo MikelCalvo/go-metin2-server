@@ -70,6 +70,8 @@ const bootstrapGoldPointType uint8 = 11
 const bootstrapPracticeMobRetaliationPointDelta int32 = -1
 const bootstrapNormalAttackCadenceWindow = 250 * time.Millisecond
 const bootstrapPracticeMobServerOriginRetaliationDelay = time.Second
+const bootstrapSpawnGroupReturnStepDelay = time.Second
+const bootstrapSpawnGroupReturnStepMaxStep int32 = 100
 const itemDropRejectedInfoMessage = "You cannot drop this item."
 const itemPickupInventoryFullInfoMessage = "You have too many items."
 const itemBuyRejectedInfoMessage = "The merchant will not sell this item to you."
@@ -371,6 +373,8 @@ type gameRuntime struct {
 	interactionDefinitions  map[string]interactionstore.Definition
 	questStateMu            sync.Mutex
 	staticActorMu           sync.Mutex
+	spawnReturnMu           sync.Mutex
+	spawnReturnStepDueAt    map[uint64]time.Time
 	now                     func() time.Time
 }
 
@@ -1062,6 +1066,83 @@ func (r *gameRuntime) flushReadyStaticActorRespawns() {
 	r.sharedWorld.FlushReadyStaticActorRespawns()
 }
 
+func (r *gameRuntime) scheduleSpawnGroupReturnStep(entityID uint64) {
+	if r == nil || entityID == 0 || bootstrapSpawnGroupReturnStepDelay <= 0 {
+		return
+	}
+	now := time.Now()
+	if r.now != nil {
+		now = r.now()
+	}
+	r.spawnReturnMu.Lock()
+	defer r.spawnReturnMu.Unlock()
+	if r.spawnReturnStepDueAt == nil {
+		r.spawnReturnStepDueAt = make(map[uint64]time.Time)
+	}
+	r.spawnReturnStepDueAt[entityID] = now.Add(bootstrapSpawnGroupReturnStepDelay)
+}
+
+func (r *gameRuntime) clearSpawnGroupReturnStep(entityID uint64) {
+	if r == nil || entityID == 0 {
+		return
+	}
+	r.spawnReturnMu.Lock()
+	defer r.spawnReturnMu.Unlock()
+	delete(r.spawnReturnStepDueAt, entityID)
+}
+
+func (r *gameRuntime) syncSpawnGroupReturnStepSchedule(actor StaticActorSnapshot) {
+	if r == nil || actor.EntityID == 0 {
+		return
+	}
+	if actor.SpawnGroupRef != "" && actor.SpawnLeash != nil && actor.SpawnLeash.ReturnRequired {
+		r.scheduleSpawnGroupReturnStep(actor.EntityID)
+		return
+	}
+	r.clearSpawnGroupReturnStep(actor.EntityID)
+}
+
+func (r *gameRuntime) dueSpawnGroupReturnStepIDs() []uint64 {
+	if r == nil {
+		return nil
+	}
+	now := time.Now()
+	if r.now != nil {
+		now = r.now()
+	}
+	r.spawnReturnMu.Lock()
+	defer r.spawnReturnMu.Unlock()
+	if len(r.spawnReturnStepDueAt) == 0 {
+		return nil
+	}
+	dueIDs := make([]uint64, 0, len(r.spawnReturnStepDueAt))
+	for entityID, dueAt := range r.spawnReturnStepDueAt {
+		if dueAt.IsZero() || now.Before(dueAt) {
+			continue
+		}
+		dueIDs = append(dueIDs, entityID)
+	}
+	sort.Slice(dueIDs, func(i, j int) bool { return dueIDs[i] < dueIDs[j] })
+	return dueIDs
+}
+
+func (r *gameRuntime) flushDueSpawnGroupReturnSteps() {
+	if r == nil {
+		return
+	}
+	for _, entityID := range r.dueSpawnGroupReturnStepIDs() {
+		step, ok := r.stepSpawnGroupReturnHome(entityID, bootstrapSpawnGroupReturnStepMaxStep, true)
+		if !ok {
+			r.clearSpawnGroupReturnStep(entityID)
+			continue
+		}
+		if step.Step.Complete {
+			r.clearSpawnGroupReturnStep(entityID)
+			continue
+		}
+	}
+}
+
 func (r *gameRuntime) RelocateCharacter(name string, mapIndex uint32, x int32, y int32) bool {
 	_, ok := r.TransferCharacter(name, mapIndex, x, y)
 	return ok
@@ -1633,6 +1714,7 @@ func (r *gameRuntime) registerStaticActorWithInteractionCombatProfileSpawnGroupR
 		_ = r.persistStaticActorSnapshot(current)
 		return StaticActorSnapshot{}, false
 	}
+	r.syncSpawnGroupReturnStepSchedule(registered)
 	return registered, true
 }
 
@@ -1693,6 +1775,7 @@ func (r *gameRuntime) updateStaticActorWithInteractionCombatProfileAndSpawnGroup
 		_ = r.persistStaticActorSnapshot(current)
 		return StaticActorSnapshot{}, false
 	}
+	r.syncSpawnGroupReturnStepSchedule(updated)
 	return updated, true
 }
 
@@ -1775,6 +1858,10 @@ func (r *gameRuntime) ReturnSpawnGroupHome(entityID uint64) (SpawnGroupLeashSnap
 }
 
 func (r *gameRuntime) StepSpawnGroupReturnHome(entityID uint64, maxStep int32) (SpawnGroupReturnStepSnapshot, bool) {
+	return r.stepSpawnGroupReturnHome(entityID, maxStep, false)
+}
+
+func (r *gameRuntime) stepSpawnGroupReturnHome(entityID uint64, maxStep int32, reschedule bool) (SpawnGroupReturnStepSnapshot, bool) {
 	if r == nil || r.sharedWorld == nil || entityID == 0 || maxStep <= 0 {
 		return SpawnGroupReturnStepSnapshot{}, false
 	}
@@ -1789,9 +1876,11 @@ func (r *gameRuntime) StepSpawnGroupReturnHome(entityID uint64, maxStep int32) (
 	}
 	plan, ok := r.sharedWorld.PlanSpawnGroupReturnHomeStep(entityID, maxStep)
 	if !ok {
+		r.clearSpawnGroupReturnStep(entityID)
 		return SpawnGroupReturnStepSnapshot{}, false
 	}
 	if plan.Complete && !plan.Evaluation.ReturnRequired {
+		r.clearSpawnGroupReturnStep(entityID)
 		currentLeash := worldruntime.SpawnLeashSnapshotFromEvaluation(plan.Evaluation)
 		return SpawnGroupReturnStepSnapshot{
 			Actor: current[idx],
@@ -1814,6 +1903,11 @@ func (r *gameRuntime) StepSpawnGroupReturnHome(entityID uint64, maxStep int32) (
 	if !ok {
 		_ = r.persistStaticActorSnapshot(current)
 		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	if stepped.Step.Complete {
+		r.clearSpawnGroupReturnStep(entityID)
+	} else if reschedule {
+		r.scheduleSpawnGroupReturnStep(entityID)
 	}
 	return stepped, true
 }
@@ -2044,6 +2138,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		interactionStore:     interactions,
 		questStateStore:      queststate.NewFileStore(serviceQuestStateStorePath(cfg)),
 		liveCharactersByName: make(map[string]liveCharacterRegistration),
+		spawnReturnStepDueAt: make(map[uint64]time.Time),
 		now:                  time.Now,
 	}
 	sharedWorld.now = func() time.Time {
@@ -4561,6 +4656,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		})
 		return newQueuedSessionFlow(inner, pending, func() {
 			runtime.flushReadyStaticActorRespawns()
+			runtime.flushDueSpawnGroupReturnSteps()
 			stateMu.Lock()
 			defer stateMu.Unlock()
 			flushPendingPracticeMobServerOriginRetaliation(pending)
