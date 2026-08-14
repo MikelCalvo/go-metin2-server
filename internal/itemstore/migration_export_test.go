@@ -41,6 +41,8 @@ func TestExportItemTemplateStateBuildsDeterministicRowsMatchingMigrationShape(t 
 			Name:              "Wooden Sword",
 			Stackable:         false,
 			MaxCount:          1,
+			Refineable:        true,
+			RefineInfo:        &RefineInfo{ResultVnum: 11201, Cost: 2500, Probability: 75, Materials: []RefineMaterial{{Vnum: 27001, Count: 2}, {Vnum: 27002, Count: 3}}},
 			Save:              true,
 			Irremovable:       true,
 			AntiMale:          true,
@@ -60,11 +62,11 @@ func TestExportItemTemplateStateBuildsDeterministicRowsMatchingMigrationShape(t 
 	if export.MigrationVersion != ItemTemplateStateMigrationVersion || export.MigrationName != ItemTemplateStateMigrationName {
 		t.Fatalf("unexpected migration boundary: version=%d name=%q", export.MigrationVersion, export.MigrationName)
 	}
-	if export.MigrationVersion != 6 || export.MigrationName != "item_template_safebox_reject_message" {
-		t.Fatalf("expected safebox-reject export boundary, got version=%d name=%q", export.MigrationVersion, export.MigrationName)
+	if export.MigrationVersion != 9 || export.MigrationName != "item_template_refine_info" {
+		t.Fatalf("expected refine-info export boundary, got version=%d name=%q", export.MigrationVersion, export.MigrationName)
 	}
 	wantTemplates := []ItemTemplateRow{
-		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, Save: true, Irremovable: true, AppearanceVnum: 11201, AntiMale: true, EquipSlot: "weapon", EquipRejectText: "You cannot wield this.", UnequipRejectText: "You cannot remove this."},
+		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, Refineable: true, Save: true, Irremovable: true, AppearanceVnum: 11201, AntiMale: true, EquipSlot: "weapon", EquipRejectText: "You cannot wield this.", UnequipRejectText: "You cannot remove this."},
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 50, ShopSellPrice: 13, Highlight: true, Unique: true, AntiSell: true, AntiGet: true, AntiSafebox: true, PickupRange: 750, UseRejectText: "You cannot use this yet.", BuyRejectText: "The merchant will not sell this.", DropRejectText: "You cannot drop this.", PickupRejectText: "You cannot pick this up.", SellRejectText: "The merchant refuses this.", SafeboxRejectText: "You cannot store this."},
 	}
 	if !reflect.DeepEqual(export.Templates, wantTemplates) {
@@ -89,6 +91,14 @@ func TestExportItemTemplateStateBuildsDeterministicRowsMatchingMigrationShape(t 
 	wantEquipEffects := []ItemTemplateEquipEffectRow{{Vnum: 11200, PointType: 1, PointIndex: 0, PointDelta: 4}}
 	if !reflect.DeepEqual(export.EquipEffects, wantEquipEffects) {
 		t.Fatalf("unexpected item-template equip-effect rows:\n got: %#v\nwant: %#v", export.EquipEffects, wantEquipEffects)
+	}
+	wantRefineInfos := []ItemTemplateRefineInfoRow{{Vnum: 11200, ResultVnum: 11201, Cost: 2500, Probability: 75}}
+	if !reflect.DeepEqual(export.RefineInfos, wantRefineInfos) {
+		t.Fatalf("unexpected item-template refine-info rows:\n got: %#v\nwant: %#v", export.RefineInfos, wantRefineInfos)
+	}
+	wantRefineMaterials := []ItemTemplateRefineMaterialRow{{Vnum: 11200, Position: 0, ItemVnum: 27001, Count: 2}, {Vnum: 11200, Position: 1, ItemVnum: 27002, Count: 3}}
+	if !reflect.DeepEqual(export.RefineMaterials, wantRefineMaterials) {
+		t.Fatalf("unexpected item-template refine-material rows:\n got: %#v\nwant: %#v", export.RefineMaterials, wantRefineMaterials)
 	}
 
 	rawJSON, err := json.Marshal(export)
@@ -176,7 +186,7 @@ func TestFileStoreExportItemTemplateStateTreatsMissingSnapshotAsEmptyExport(t *t
 	if export.MigrationVersion != ItemTemplateStateMigrationVersion || export.MigrationName != ItemTemplateStateMigrationName {
 		t.Fatalf("unexpected migration boundary: %#v", export)
 	}
-	if len(export.Templates) != 0 || len(export.Sockets) != 0 || len(export.Attributes) != 0 || len(export.UseEffects) != 0 || len(export.EquipEffects) != 0 {
+	if len(export.Templates) != 0 || len(export.Sockets) != 0 || len(export.Attributes) != 0 || len(export.UseEffects) != 0 || len(export.EquipEffects) != 0 || len(export.RefineInfos) != 0 || len(export.RefineMaterials) != 0 {
 		t.Fatalf("expected empty item-template export for missing snapshot, got %#v", export)
 	}
 }

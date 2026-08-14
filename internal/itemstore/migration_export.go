@@ -6,18 +6,20 @@ import (
 )
 
 const (
-	ItemTemplateStateMigrationVersion = 6
-	ItemTemplateStateMigrationName    = "item_template_safebox_reject_message"
+	ItemTemplateStateMigrationVersion = 9
+	ItemTemplateStateMigrationName    = "item_template_refine_info"
 )
 
 type ItemTemplateStateExport struct {
-	MigrationVersion int                          `json:"migration_version"`
-	MigrationName    string                       `json:"migration_name"`
-	Templates        []ItemTemplateRow            `json:"templates"`
-	Sockets          []ItemTemplateSocketRow      `json:"sockets"`
-	Attributes       []ItemTemplateAttributeRow   `json:"attributes"`
-	UseEffects       []ItemTemplateUseEffectRow   `json:"use_effects"`
-	EquipEffects     []ItemTemplateEquipEffectRow `json:"equip_effects"`
+	MigrationVersion int                             `json:"migration_version"`
+	MigrationName    string                          `json:"migration_name"`
+	Templates        []ItemTemplateRow               `json:"templates"`
+	Sockets          []ItemTemplateSocketRow         `json:"sockets"`
+	Attributes       []ItemTemplateAttributeRow      `json:"attributes"`
+	UseEffects       []ItemTemplateUseEffectRow      `json:"use_effects"`
+	EquipEffects     []ItemTemplateEquipEffectRow    `json:"equip_effects"`
+	RefineInfos      []ItemTemplateRefineInfoRow     `json:"refine_infos"`
+	RefineMaterials  []ItemTemplateRefineMaterialRow `json:"refine_materials"`
 }
 
 type ItemTemplateRow struct {
@@ -106,6 +108,20 @@ type ItemTemplateEquipEffectRow struct {
 	PointDelta int32  `json:"point_delta"`
 }
 
+type ItemTemplateRefineInfoRow struct {
+	Vnum        uint32 `json:"vnum"`
+	ResultVnum  uint32 `json:"result_vnum"`
+	Cost        int32  `json:"cost"`
+	Probability int32  `json:"probability"`
+}
+
+type ItemTemplateRefineMaterialRow struct {
+	Vnum     uint32 `json:"vnum"`
+	Position uint8  `json:"position"`
+	ItemVnum uint32 `json:"item_vnum"`
+	Count    int32  `json:"count"`
+}
+
 func ExportItemTemplateState(snapshot Snapshot) (ItemTemplateStateExport, error) {
 	normalized := normalizeSnapshot(snapshot)
 	if err := validateSnapshot(normalized); err != nil {
@@ -119,6 +135,8 @@ func ExportItemTemplateState(snapshot Snapshot) (ItemTemplateStateExport, error)
 		Attributes:       []ItemTemplateAttributeRow{},
 		UseEffects:       []ItemTemplateUseEffectRow{},
 		EquipEffects:     []ItemTemplateEquipEffectRow{},
+		RefineInfos:      []ItemTemplateRefineInfoRow{},
+		RefineMaterials:  []ItemTemplateRefineMaterialRow{},
 	}
 	seen := make(map[uint32]struct{}, len(normalized.Templates))
 	for _, template := range normalized.Templates {
@@ -151,6 +169,12 @@ func ExportItemTemplateState(snapshot Snapshot) (ItemTemplateStateExport, error)
 		}
 		if template.EquipEffect != nil {
 			export.EquipEffects = append(export.EquipEffects, ItemTemplateEquipEffectRow{Vnum: template.Vnum, PointType: template.EquipEffect.PointType, PointIndex: template.EquipEffect.PointIndex, PointDelta: template.EquipEffect.PointDelta})
+		}
+		if template.RefineInfo != nil {
+			export.RefineInfos = append(export.RefineInfos, ItemTemplateRefineInfoRow{Vnum: template.Vnum, ResultVnum: template.RefineInfo.ResultVnum, Cost: template.RefineInfo.Cost, Probability: template.RefineInfo.Probability})
+			for i, material := range template.RefineInfo.Materials {
+				export.RefineMaterials = append(export.RefineMaterials, ItemTemplateRefineMaterialRow{Vnum: template.Vnum, Position: uint8(i), ItemVnum: material.Vnum, Count: material.Count})
+			}
 		}
 	}
 	return export, nil
