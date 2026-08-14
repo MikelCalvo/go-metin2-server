@@ -517,6 +517,18 @@ Returns one exact per-map row from the live content-bundle summary. This is a lo
 
 Use it when local QA needs a compact authored-content view for one map without fetching the full bundle summary or inferring counts from live runtime occupancy. It is not a gameplay protocol endpoint and does not mutate authored content.
 
+### `GET /local/content-bundle/maps/{map_index}/static-actors`
+
+Returns every portable static-actor row authored on one map. This loopback-only read-only endpoint is registered only on `gamed`; it reuses the same live export + canonicalization + summary path as `GET /local/content-bundle/summary`, returns `404` when the authored bundle has no row for that `map_index`, returns an empty JSON array for a known map with no static actors, rejects malformed/zero map indexes with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
+
+Use it when local QA needs to audit all authored static placements on a map before checking narrower interactable, merchant, teleporter, or spawn-group projections. It is not a gameplay protocol endpoint and does not mutate authored content.
+
+### `GET /local/content-bundle/maps/{map_index}/interactable-static-actors`
+
+Returns every interactable static-actor summary row authored on one map, including the compact resolved preview strings from the broader content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; it reuses the same live export + canonicalization + summary path as `GET /local/content-bundle/summary`, returns `404` when the authored bundle has no row for that `map_index`, returns an empty JSON array for a known map with no interactable actors, rejects malformed/zero map indexes with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
+
+Use it when local QA needs a map-local list of clickable/service-style NPC content without fetching the full summary or filtering global `/local/content-bundle/interactable-static-actors/{name}` responses. It is not a gameplay protocol endpoint and does not mutate authored content.
+
 ### `GET /local/content-bundle/maps/{map_index}/shop-routes`
 
 Returns every authored merchant route whose source static actor is on one map. This loopback-only read-only endpoint is registered only on `gamed`; it reuses the same live export + canonicalization + summary path as `GET /local/content-bundle/summary`, returns `404` when the authored bundle has no row for that `map_index`, returns an empty JSON array for a known map with no `shop_preview` routes, rejects malformed/zero map indexes with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.

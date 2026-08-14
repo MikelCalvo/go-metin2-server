@@ -1752,6 +1752,8 @@ func TestLocalContentBundleMapFocusedContentEndpointsRejectInvalidMapIndex(t *te
 		register func(*http.ServeMux, func() (any, int)) *http.ServeMux
 		paths    []string
 	}{
+		{name: "static actors", register: RegisterLocalContentBundleMapStaticActorsEndpoint, paths: []string{"/local/content-bundle/maps/0/static-actors", "/local/content-bundle/maps/not-a-map/static-actors", "/local/content-bundle/maps/42/static-actors/extra"}},
+		{name: "interactable static actors", register: RegisterLocalContentBundleMapInteractableStaticActorsEndpoint, paths: []string{"/local/content-bundle/maps/0/interactable-static-actors", "/local/content-bundle/maps/not-a-map/interactable-static-actors", "/local/content-bundle/maps/42/interactable-static-actors/extra"}},
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, paths: []string{"/local/content-bundle/maps/0/shop-routes", "/local/content-bundle/maps/not-a-map/shop-routes", "/local/content-bundle/maps/42/shop-routes/extra"}},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, paths: []string{"/local/content-bundle/maps/0/warp-routes", "/local/content-bundle/maps/not-a-map/warp-routes", "/local/content-bundle/maps/42/warp-routes/extra"}},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, paths: []string{"/local/content-bundle/maps/0/spawn-groups", "/local/content-bundle/maps/not-a-map/spawn-groups", "/local/content-bundle/maps/42/spawn-groups/extra"}},
@@ -1784,6 +1786,8 @@ func TestLocalContentBundleMapFocusedContentEndpointsRejectNonLoopbackRemoteAddr
 		register func(*http.ServeMux, func() (any, int)) *http.ServeMux
 		path     string
 	}{
+		{name: "static actors", register: RegisterLocalContentBundleMapStaticActorsEndpoint, path: "/local/content-bundle/maps/42/static-actors"},
+		{name: "interactable static actors", register: RegisterLocalContentBundleMapInteractableStaticActorsEndpoint, path: "/local/content-bundle/maps/42/interactable-static-actors"},
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
@@ -1815,6 +1819,8 @@ func TestLocalContentBundleMapFocusedContentEndpointsRejectWrongMethod(t *testin
 		register func(*http.ServeMux, func() (any, int)) *http.ServeMux
 		path     string
 	}{
+		{name: "static actors", register: RegisterLocalContentBundleMapStaticActorsEndpoint, path: "/local/content-bundle/maps/42/static-actors"},
+		{name: "interactable static actors", register: RegisterLocalContentBundleMapInteractableStaticActorsEndpoint, path: "/local/content-bundle/maps/42/interactable-static-actors"},
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
