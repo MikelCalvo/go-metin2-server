@@ -1519,6 +1519,100 @@ func TestGameRuntimeSpawnGroupReturnStepSnapshotsReportPendingSchedules(t *testi
 	}
 }
 
+func TestGameRuntimeSpawnGroupReturnStepsForMapReturnsMapLocalPendingSchedules(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700000945, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for map-local return-step schedule snapshots: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{
+		{
+			Ref:           "practice.return_step_map_42",
+			Name:          "ReturnStepMap42Mob",
+			MapIndex:      42,
+			X:             1700,
+			Y:             2800,
+			RaceNum:       20350,
+			CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+		},
+		{
+			Ref:           "practice.return_step_map_43",
+			Name:          "ReturnStepMap43Mob",
+			MapIndex:      43,
+			X:             1700,
+			Y:             2800,
+			RaceNum:       20350,
+			CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+		},
+		{
+			Ref:           "practice.return_step_map_idle",
+			Name:          "ReturnStepMapIdleMob",
+			MapIndex:      44,
+			X:             1700,
+			Y:             2800,
+			RaceNum:       20350,
+			CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+		},
+	}})
+	if err != nil {
+		t.Fatalf("import map-local return-step spawn groups: %v", err)
+	}
+	map42Group, ok := runtime.SpawnGroupByRef("practice.return_step_map_42")
+	if !ok {
+		t.Fatal("expected map 42 spawn group to resolve")
+	}
+	map43Group, ok := runtime.SpawnGroupByRef("practice.return_step_map_43")
+	if !ok {
+		t.Fatal("expected map 43 spawn group to resolve")
+	}
+	if _, ok := runtime.UpdateStaticActor(map42Group.EntityID, "ReturnStepMap42Mob", 42, 2301, 2800, 20350); !ok {
+		t.Fatal("expected map 42 actor update to schedule a return step")
+	}
+	if _, ok := runtime.UpdateStaticActor(map43Group.EntityID, "ReturnStepMap43Mob", 43, 2301, 2800, 20350); !ok {
+		t.Fatal("expected map 43 actor update to schedule a return step")
+	}
+
+	map42Pending, ok := runtime.SpawnGroupReturnStepsForMap(42)
+	if !ok || len(map42Pending) != 1 {
+		t.Fatalf("expected one map 42 pending return step, ok=%v snapshots=%+v", ok, map42Pending)
+	}
+	if map42Pending[0].EntityID != map42Group.EntityID || map42Pending[0].Actor.MapIndex != 42 || map42Pending[0].Step.Next.MapIndex != 42 {
+		t.Fatalf("expected map 42 pending return step to stay map-local, got %+v", map42Pending[0])
+	}
+
+	map43Pending, ok := runtime.SpawnGroupReturnStepsForMap(43)
+	if !ok || len(map43Pending) != 1 {
+		t.Fatalf("expected one map 43 pending return step, ok=%v snapshots=%+v", ok, map43Pending)
+	}
+	if map43Pending[0].EntityID != map43Group.EntityID || map43Pending[0].Actor.MapIndex != 43 || map43Pending[0].Step.Next.MapIndex != 43 {
+		t.Fatalf("expected map 43 pending return step to stay map-local, got %+v", map43Pending[0])
+	}
+
+	idlePending, ok := runtime.SpawnGroupReturnStepsForMap(44)
+	if !ok || len(idlePending) != 0 {
+		t.Fatalf("expected known idle map to return an empty pending return-step list, ok=%v snapshots=%+v", ok, idlePending)
+	}
+	if unknown, ok := runtime.SpawnGroupReturnStepsForMap(99); ok || len(unknown) != 0 {
+		t.Fatalf("expected unknown map pending return-step lookup to fail closed, ok=%v snapshots=%+v", ok, unknown)
+	}
+}
+
 func TestGameRuntimeFlushServerFramesRetriesSpawnGroupReturnStepAfterPersistenceFailure(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	viewer := peerVisibilityCharacter("ReturnStepRetryViewer", 0x0103017e, 0x0204017e, 2301, 2800, 0, 101, 201)

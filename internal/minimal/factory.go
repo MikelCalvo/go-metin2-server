@@ -1173,6 +1173,28 @@ func (r *gameRuntime) SpawnGroupReturnStep(entityID uint64) (SpawnGroupPendingRe
 	return r.spawnGroupReturnStepSnapshot(entityID, dueAt, r.spawnGroupReturnStepNow())
 }
 
+func (r *gameRuntime) SpawnGroupReturnStepsForMap(mapIndex uint32) ([]SpawnGroupPendingReturnStepSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil || mapIndex == 0 {
+		return nil, false
+	}
+	if _, ok := r.MapOccupancySnapshot(mapIndex); !ok {
+		return nil, false
+	}
+
+	all := r.SpawnGroupReturnSteps()
+	if len(all) == 0 {
+		return []SpawnGroupPendingReturnStepSnapshot{}, true
+	}
+	filtered := make([]SpawnGroupPendingReturnStepSnapshot, 0, len(all))
+	for _, snapshot := range all {
+		if snapshot.Actor.MapIndex != mapIndex {
+			continue
+		}
+		filtered = append(filtered, snapshot)
+	}
+	return filtered, true
+}
+
 func (r *gameRuntime) spawnGroupReturnStepDueAtSnapshot() map[uint64]time.Time {
 	if r == nil {
 		return nil

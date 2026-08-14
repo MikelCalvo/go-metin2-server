@@ -933,6 +933,7 @@ Invalid path IDs return `400`; missing entities or ordinary non-spawn static act
 `GET /local/maps/{map_index}/spawn-groups` returns the same snapshot shape for one effective map's materialized spawn-backed actors, rejects malformed or zero map-index path values with `400`, and returns `404` when the runtime cannot resolve that map-scoped snapshot.
 Use it when local QA already knows the map under investigation and needs the authored spawn subset without fetching the broader `/local/maps/{map_index}` occupancy row.
 `GET /local/maps/{map_index}/static-actor-respawns` returns pending static-actor respawn rows for one effective map, using the same row shape as `/local/static-actor-respawns` and returning an empty JSON array when the map is known but currently has no pending respawn timers.
+`GET /local/maps/{map_index}/spawn-group-return-steps` returns pending server-owned spawn return-step rows for one effective map, using the same row shape as `/local/spawn-group-return-steps` and returning an empty JSON array when the map is known but currently has no pending return-step timers.
 `GET /local/maps/{map_index}/combat-targets` returns active selected combat-target rows for one effective map, using the same row shape as `/local/combat-targets` and returning an empty JSON array when the map is known but currently has no active selections.
 
 Each row reuses the same static-actor snapshot shape exposed by `/local/static-actors`, including:
@@ -1149,6 +1150,7 @@ curl -X POST http://127.0.0.1:6060/local/spawn-groups/117440769/return-home
 curl http://127.0.0.1:6060/local/maps/42/static-actors
 curl http://127.0.0.1:6060/local/maps/42/spawn-groups
 curl http://127.0.0.1:6060/local/maps/42/static-actor-respawns
+curl http://127.0.0.1:6060/local/maps/42/spawn-group-return-steps
 ```
 
 The spawn-group snapshots filter to attackable content materialized from `spawn_groups`; use `/local/static-actors` for the global full static-actor set, or `/local/maps/{map_index}/static-actors` for the full map-local set.

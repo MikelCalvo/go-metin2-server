@@ -372,6 +372,16 @@ func main() {
 			return respawns, true
 		},
 	)
+	opsHandler = ops.RegisterLocalMapSpawnGroupReturnStepsEndpoint(
+		opsHandler,
+		func(mapIndex uint32) (any, bool) {
+			returnSteps, ok := gameRuntime.SpawnGroupReturnStepsForMap(mapIndex)
+			if !ok {
+				return nil, false
+			}
+			return returnSteps, true
+		},
+	)
 	opsHandler = ops.RegisterLocalMapCombatTargetsEndpoint(
 		opsHandler,
 		func(mapIndex uint32) (any, bool) {
