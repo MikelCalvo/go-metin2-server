@@ -272,6 +272,7 @@ This keeps authored attackable spawn content distinct from hand-authored visible
 The shipped `gamed` runtime also exposes a loopback-only read model for the currently materialized spawn-backed actors:
 
 - `GET /local/content-bundle/maps/{map_index}/spawn-groups`
+- `GET /local/content-bundle/maps/{map_index}/reward-drops`
 - `GET /local/spawn-groups`
 - `GET /local/spawn-groups/{entity_id}`
 - `GET /local/spawn-groups/by-ref/{spawn_group_ref}`
@@ -289,6 +290,7 @@ The shipped `gamed` runtime also exposes a loopback-only read model for the curr
 This is an operator/debugging surface, not a gameplay packet and not a content mutation API.
 
 `GET /local/content-bundle/maps/{map_index}/spawn-groups` returns the deterministic authored-content `spawn_groups[]` rows for one map from the live exported content-bundle summary. It rejects malformed or zero map indexes with `400`, returns `404` when the exported bundle has no authored row for that map, and returns an empty JSON array for a known authored map with no spawn groups. This is the bundle-summary counterpart to the live runtime map-spawn endpoint; it reads authored placement/reward definitions, not current HP/death/leash state.
+`GET /local/content-bundle/maps/{map_index}/reward-drops` returns deterministic map-local aggregate `reward_drops[]` rows for item-shaped rewards contributed by spawn groups on that map. It shares the same loopback-only, read-only, malformed-map, missing-map, and empty-array semantics as the map spawn-group reader. The row shape matches global summary `reward_drops[]`, but `source_count` is recomputed from only that map's `spawn_groups[].reward_drop_vnums`, so QA can audit one map's reward item exposure without expanding every spawn group.
 `GET /local/spawn-groups` returns the deterministic global subset of static-actor snapshots whose `spawn_group_ref` is non-empty.
 It intentionally omits ordinary `static_actors`, even if they have a combat profile, so local QA can distinguish authored attackable spawn presence from hand-authored visible/service actors without fetching and filtering the full `/local/static-actors` list.
 `GET /local/spawn-groups/{entity_id}` returns the same snapshot shape for one currently materialized spawn-backed actor, using the runtime entity ID / client-visible static-actor `VID` as the path key.

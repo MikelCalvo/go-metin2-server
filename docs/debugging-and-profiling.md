@@ -553,6 +553,12 @@ Returns every authored spawn-group row whose source placement is on one map. Thi
 
 Use it when local QA needs to audit map-local practice-mob placement and reward descriptors without fetching the full bundle summary or filtering global `/local/content-bundle/spawn-groups/{ref}` responses by `map_index`. It is not a gameplay protocol endpoint and does not mutate authored content.
 
+### `GET /local/content-bundle/maps/{map_index}/reward-drops`
+
+Returns aggregate authored reward-drop rows contributed by spawn groups on one map. This loopback-only read-only endpoint is registered only on `gamed`; it reuses the same live export + canonicalization + summary path as `GET /local/content-bundle/summary`, returns `404` when the authored bundle has no row for that `map_index`, returns an empty JSON array for a known map with no item-shaped reward drops, rejects malformed/zero map indexes with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
+
+Each row uses the same `reward_drops[]` shape as the global summary, but `source_count` is recomputed from only the matching map's `spawn_groups[].reward_drop_vnums`. Use it when local QA needs to audit map-local reward item exposure without expanding every spawn group or fetching the full bundle summary. It is not a gameplay protocol endpoint and does not mutate authored content.
+
 ### `GET /local/content-bundle/static-actors/{name}`
 
 Returns every exact portable static-actor row for one authored actor name from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; `name` is URL-decoded with the same path-safe name rules used by `/local/content-bundle/interactable-static-actors/{name}`. It returns matching `static_actors[]` rows for plain and interactable placements, returns `404` when the live authored bundle has no matching static actor, rejects blank or slash-containing names with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
@@ -1068,7 +1074,7 @@ Exports or imports one deterministic authored-content artifact spanning both boo
 - `GET` exports the current bundle
 - `POST` imports a full replacement bundle
 - imports reject dangling interaction references before mutating runtime state
-- `GET /local/content-bundle/summary` and dry-run `POST /local/content-bundle/summary` include compact `shop_routes` and `warp_routes` entries for placed service actors, aggregate `reward_drops` entries for authored reward items, distinct quest-state flag/character/quest counts for bundled quest-state rows, and focused readers (`/local/content-bundle/static-actors/{name}` / `/local/content-bundle/shop-routes/{actor_name}` / `/local/content-bundle/warp-routes/{actor_name}` / `/local/content-bundle/reward-drops/{item_vnum}`) let local QA inspect one authored actor name, service placement, or reward-drop aggregate without fetching or applying the full bundle
+- `GET /local/content-bundle/summary` and dry-run `POST /local/content-bundle/summary` include compact `shop_routes` and `warp_routes` entries for placed service actors, aggregate `reward_drops` entries for authored reward items, distinct quest-state flag/character/quest counts for bundled quest-state rows, and focused readers (`/local/content-bundle/static-actors/{name}` / `/local/content-bundle/shop-routes/{actor_name}` / `/local/content-bundle/warp-routes/{actor_name}` / `/local/content-bundle/reward-drops/{item_vnum}` / `/local/content-bundle/maps/{map_index}/reward-drops`) let local QA inspect one authored actor name, service placement, global reward-drop aggregate, or map-local reward-drop aggregate without fetching or applying the full bundle
 - `POST /local/content-bundle/import-preview` compares a candidate replacement against the live exported bundle and returns no-mutation `current` / `candidate` summaries plus count/amount `deltas`, including per-interaction-kind reference deltas, per-definition `added` / `removed` / `changed` deltas with compact current/candidate previews, per-map before/after/signed deltas for changed authored map counts, grouped reward-drop deltas, spawn reward EXP/gold totals, and quest-state flag/character/quest-count changes
 
 A small reference artifact lives at `docs/examples/bootstrap-npc-service-bundle.json`.
@@ -1232,6 +1238,7 @@ curl http://127.0.0.1:6060/local/content-bundle/maps/1
 curl http://127.0.0.1:6060/local/content-bundle/maps/1/shop-routes
 curl http://127.0.0.1:6060/local/content-bundle/maps/1/warp-routes
 curl http://127.0.0.1:6060/local/content-bundle/maps/1/spawn-groups
+curl http://127.0.0.1:6060/local/content-bundle/maps/1/reward-drops
 curl http://127.0.0.1:6060/local/content-bundle/static-actors/Village%20Guide
 curl http://127.0.0.1:6060/local/content-bundle/spawn-groups/practice.qa_reward_mob
 curl http://127.0.0.1:6060/local/content-bundle/combat-profiles/practice_reward_profile

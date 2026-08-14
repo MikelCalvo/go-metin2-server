@@ -2474,6 +2474,45 @@ func RegisterLocalContentBundleMapSpawnGroupsEndpoint(mux *http.ServeMux, export
 	return mux
 }
 
+func RegisterLocalContentBundleMapRewardDropsEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		mapIndex, ok := decodeLocalContentBundleMapServiceRouteIndex(r, "reward-drops")
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if !contentBundleSummaryHasMap(summary, mapIndex) {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		matches := contentbundle.RewardDropAggregatesForMap(summary, mapIndex)
+		if matches == nil {
+			matches = []contentbundle.RewardDropAggregateSummary{}
+		}
+		writeLocalJSONMutationResponse(w, matches, http.StatusOK)
+	}
+	mux.HandleFunc("GET /local/content-bundle/maps/{map_index}/reward-drops", handler)
+	mux.HandleFunc("GET /local/content-bundle/maps/{map_index}/reward-drops/", handler)
+	return mux
+}
+
 func contentBundleSummaryHasMap(summary contentbundle.Summary, mapIndex uint32) bool {
 	for _, mapSummary := range summary.Maps {
 		if mapSummary.MapIndex == mapIndex {

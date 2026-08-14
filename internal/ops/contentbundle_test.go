@@ -1913,6 +1913,52 @@ func TestLocalContentBundleMapSpawnGroupsEndpointReturnsMatchingSpawnGroupsForLo
 	}
 }
 
+func TestLocalContentBundleMapRewardDropsEndpointReturnsMapLocalAggregatesForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{
+			Maps: []contentbundle.MapContentSummary{
+				{MapIndex: 1, SpawnGroupCount: 2, RewardDropItemCount: 3},
+				{MapIndex: 7, SpawnGroupCount: 1, RewardDropItemCount: 1},
+			},
+			SpawnGroups: []contentbundle.SpawnGroupReferenceSummary{
+				{Ref: "practice.remote_wolf", Name: "Remote Wolf", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 101, CombatProfile: "practice_mob", RewardDropVnums: []uint32{27001}},
+				{Ref: "practice.village_dummy", Name: "Village Dummy", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 102, CombatProfile: "training_dummy", RewardDropVnums: []uint32{27002, 27001}},
+				{Ref: "practice.village_wolf", Name: "Village Wolf", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 101, CombatProfile: "practice_mob", RewardDropVnums: []uint32{27001}},
+			},
+			RewardDrops: []contentbundle.RewardDropAggregateSummary{
+				{ItemVnum: 27001, ItemName: "Small Red Potion", SourceCount: 3, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+				{ItemVnum: 27002, ItemName: "Small Blue Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 7},
+			},
+		},
+	}
+	mux := RegisterLocalContentBundleMapRewardDropsEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/maps/1/reward-drops", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got []contentbundle.RewardDropAggregateSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode map reward-drop response body: %v", err)
+	}
+	want := []contentbundle.RewardDropAggregateSummary{
+		{ItemVnum: 27001, ItemName: "Small Red Potion", SourceCount: 2, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		{ItemVnum: 27002, ItemName: "Small Blue Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 7},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle map reward drops:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
 func TestLocalContentBundleMapShopRoutesEndpointReturnsMatchingRoutesForLoopbackGet(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{
 		status: http.StatusOK,
@@ -2008,6 +2054,7 @@ func TestLocalContentBundleMapFocusedContentEndpointsReturnEmptyListForKnownMapW
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
+		{name: "reward drops", register: RegisterLocalContentBundleMapRewardDropsEndpoint, path: "/local/content-bundle/maps/42/reward-drops"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2044,6 +2091,7 @@ func TestLocalContentBundleMapFocusedContentEndpointsReturnNotFoundForMissingMap
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
+		{name: "reward drops", register: RegisterLocalContentBundleMapRewardDropsEndpoint, path: "/local/content-bundle/maps/42/reward-drops"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2077,6 +2125,7 @@ func TestLocalContentBundleMapFocusedContentEndpointsRejectInvalidMapIndex(t *te
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, paths: []string{"/local/content-bundle/maps/0/shop-routes", "/local/content-bundle/maps/not-a-map/shop-routes", "/local/content-bundle/maps/42/shop-routes/extra"}},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, paths: []string{"/local/content-bundle/maps/0/warp-routes", "/local/content-bundle/maps/not-a-map/warp-routes", "/local/content-bundle/maps/42/warp-routes/extra"}},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, paths: []string{"/local/content-bundle/maps/0/spawn-groups", "/local/content-bundle/maps/not-a-map/spawn-groups", "/local/content-bundle/maps/42/spawn-groups/extra"}},
+		{name: "reward drops", register: RegisterLocalContentBundleMapRewardDropsEndpoint, paths: []string{"/local/content-bundle/maps/0/reward-drops", "/local/content-bundle/maps/not-a-map/reward-drops", "/local/content-bundle/maps/42/reward-drops/extra"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2111,6 +2160,7 @@ func TestLocalContentBundleMapFocusedContentEndpointsRejectNonLoopbackRemoteAddr
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
+		{name: "reward drops", register: RegisterLocalContentBundleMapRewardDropsEndpoint, path: "/local/content-bundle/maps/42/reward-drops"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2144,6 +2194,7 @@ func TestLocalContentBundleMapFocusedContentEndpointsRejectWrongMethod(t *testin
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
+		{name: "reward drops", register: RegisterLocalContentBundleMapRewardDropsEndpoint, path: "/local/content-bundle/maps/42/reward-drops"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2170,15 +2221,17 @@ func TestLocalContentBundleMapFocusedContentEndpointsCoexistWithMapSummaryRoute(
 	summaryer := &stubContentBundleSummaryExporter{
 		status: http.StatusOK,
 		summary: contentbundle.Summary{
-			Maps:        []contentbundle.MapContentSummary{{MapIndex: 42, StaticActorCount: 1, ShopPreviewActorCount: 1, SpawnGroupCount: 1}},
+			Maps:        []contentbundle.MapContentSummary{{MapIndex: 42, StaticActorCount: 1, ShopPreviewActorCount: 1, SpawnGroupCount: 1, RewardDropItemCount: 1}},
 			ShopRoutes:  []contentbundle.ShopRouteSummary{{ActorName: "Village Merchant", SourceMapIndex: 42, SourceX: 1700, SourceY: 2800, Ref: "npc:village_merchant", Title: "Village Merchant", EntryCount: 1}},
-			SpawnGroups: []contentbundle.SpawnGroupReferenceSummary{{Ref: "practice.village_wolf", Name: "Village Wolf", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: "practice_mob"}},
+			SpawnGroups: []contentbundle.SpawnGroupReferenceSummary{{Ref: "practice.village_wolf", Name: "Village Wolf", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: "practice_mob", RewardDropVnums: []uint32{27001}}},
+			RewardDrops: []contentbundle.RewardDropAggregateSummary{{ItemVnum: 27001, ItemName: "Small Red Potion", SourceCount: 1, Stackable: true, MaxCount: 200}},
 		},
 	}
 	mux := RegisterLocalContentBundleMapSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
 	mux = RegisterLocalContentBundleMapShopRoutesEndpoint(mux, summaryer.ExportContentBundleSummary)
 	mux = RegisterLocalContentBundleMapWarpRoutesEndpoint(mux, summaryer.ExportContentBundleSummary)
 	mux = RegisterLocalContentBundleMapSpawnGroupsEndpoint(mux, summaryer.ExportContentBundleSummary)
+	mux = RegisterLocalContentBundleMapRewardDropsEndpoint(mux, summaryer.ExportContentBundleSummary)
 
 	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/maps/42/shop-routes", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -2204,6 +2257,19 @@ func TestLocalContentBundleMapFocusedContentEndpointsCoexistWithMapSummaryRoute(
 	}
 	if summaryer.calls != 2 {
 		t.Fatalf("expected map-scoped spawn-group handler to call summary exporter once, got total calls %d", summaryer.calls)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/local/content-bundle/maps/42/reward-drops", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec = httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d for map-scoped reward drops alongside map summary route, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 3 {
+		t.Fatalf("expected map-scoped reward-drop handler to call summary exporter once, got total calls %d", summaryer.calls)
 	}
 }
 

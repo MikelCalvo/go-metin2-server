@@ -657,6 +657,10 @@ func main() {
 		opsHandler,
 		exportContentBundleSummary,
 	)
+	opsHandler = ops.RegisterLocalContentBundleMapRewardDropsEndpoint(
+		opsHandler,
+		exportContentBundleSummary,
+	)
 	opsHandler = ops.RegisterLocalContentBundleStaticActorEndpoint(
 		opsHandler,
 		exportContentBundleSummary,
