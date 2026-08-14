@@ -36,7 +36,7 @@ func TestRunCatalogWritesMetadataOnlySummary(t *testing.T) {
 	if summary.Format != dbmigrations.CatalogSummaryFormat {
 		t.Fatalf("unexpected catalog summary format: %#v", summary)
 	}
-	if summary.LatestVersion < 7 || len(summary.Migrations) != summary.LatestVersion {
+	if summary.LatestVersion < 8 || len(summary.Migrations) != summary.LatestVersion {
 		t.Fatalf("unexpected catalog summary size: %#v", summary)
 	}
 	if summary.Migrations[0].Name != "bootstrap_schema_migrations" || summary.Migrations[0].UpPath != "0001_bootstrap_schema_migrations.up.sql" {
@@ -392,7 +392,7 @@ func TestRunApplyResolvesLatestTargetVersion(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("decode latest apply result JSON: %v\nbody:\n%s", err, stdout.String())
 	}
-	if result.CurrentVersion != result.LatestVersion || result.LatestVersion < 7 {
+	if result.CurrentVersion != result.LatestVersion || result.LatestVersion < 8 {
 		t.Fatalf("expected latest apply to reach catalog tip, got %#v", result)
 	}
 	if len(result.Applied) != result.LatestVersion {

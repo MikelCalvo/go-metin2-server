@@ -346,8 +346,8 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	if plan.CurrentVersion != 0 || plan.LatestVersion < 1 || plan.UpToDate {
 		t.Fatalf("unexpected migration plan versions: %#v", plan)
 	}
-	if len(plan.Pending) < 7 {
-		t.Fatalf("expected schema, account/character, item-state, quest-state, item-template-state, safebox-reject, and auth login-ticket handoff migrations for empty ledger: %#v", plan)
+	if len(plan.Pending) < 8 {
+		t.Fatalf("expected schema, account/character, item-state, quest-state, item-template-state, safebox-reject, auth login-ticket handoff, and static actor content-state migrations for empty ledger: %#v", plan)
 	}
 	first := plan.Pending[0]
 	if first.Version != 1 || first.Name != "bootstrap_schema_migrations" || first.Direction != dbmigrations.DirectionUp || first.Path != "0001_bootstrap_schema_migrations.up.sql" {
@@ -377,7 +377,11 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	if seventh.Version != 7 || seventh.Name != "auth_login_ticket_handoff" || seventh.Direction != dbmigrations.DirectionUp || seventh.Path != "0007_auth_login_ticket_handoff.up.sql" {
 		t.Fatalf("unexpected seventh pending migration step: %#v", seventh)
 	}
-	for _, step := range []dbmigrations.PlanStep{first, second, third, fourth, fifth, sixth, seventh} {
+	eighth := plan.Pending[7]
+	if eighth.Version != 8 || eighth.Name != "static_actor_content_state" || eighth.Direction != dbmigrations.DirectionUp || eighth.Path != "0008_static_actor_content_state.up.sql" {
+		t.Fatalf("unexpected eighth pending migration step: %#v", eighth)
+	}
+	for _, step := range []dbmigrations.PlanStep{first, second, third, fourth, fifth, sixth, seventh, eighth} {
 		if step.SHA256 == "" || strings.Contains(step.Path, "CREATE TABLE") {
 			t.Fatalf("expected metadata-only pending steps with checksums, got %#v", plan.Pending)
 		}
@@ -402,7 +406,7 @@ func TestGameRuntimeMigrationCatalogSummaryReturnsMetadataOnlyCatalog(t *testing
 	if err != nil {
 		t.Fatalf("migration catalog summary: %v", err)
 	}
-	if summary.Format != dbmigrations.CatalogSummaryFormat || summary.LatestVersion < 7 {
+	if summary.Format != dbmigrations.CatalogSummaryFormat || summary.LatestVersion < 8 {
 		t.Fatalf("unexpected migration catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -413,7 +417,7 @@ func TestGameRuntimeMigrationCatalogSummaryReturnsMetadataOnlyCatalog(t *testing
 		t.Fatalf("unexpected first catalog summary row: %#v", first)
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "auth_login_ticket_handoff" || latest.DownSHA256 == "" {
+	if latest.Version != summary.LatestVersion || latest.Name != "static_actor_content_state" || latest.DownSHA256 == "" {
 		t.Fatalf("unexpected latest catalog summary row: %#v", latest)
 	}
 	raw, err := json.Marshal(summary)

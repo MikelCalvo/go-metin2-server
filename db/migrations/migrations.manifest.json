@@ -56,6 +56,14 @@
       "down_path": "0007_auth_login_ticket_handoff.down.sql",
       "up_sha256": "e42ae108f6b12938f4f622cc6c71f1d091ad5fc51c9892df78c6f05f3207eae9",
       "down_sha256": "eec9767c316afeefe6319861e0a193df7b77c8e9eac6b42a2d6cf8f396127268"
+    },
+    {
+      "version": 8,
+      "name": "static_actor_content_state",
+      "up_path": "0008_static_actor_content_state.up.sql",
+      "down_path": "0008_static_actor_content_state.down.sql",
+      "up_sha256": "303d4608766de8147c676e4d93f27e53a3744bf09343b060ec662d9c2378d9ad",
+      "down_sha256": "8a58559911600f73c9f8c0e23bd4b4df8919a0c0dbe19c2ede6a2771ac43a2d7"
     }
   ]
 }

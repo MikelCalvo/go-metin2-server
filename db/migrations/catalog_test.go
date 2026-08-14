@@ -27,6 +27,8 @@ const (
 	expectedItemTemplateSafeboxRejectDownSHA256 = "7f04a66fc85f5e5b70be54c7ad8afae47d1b4e63004716e8814fdf141d3f1d81"
 	expectedAuthLoginTicketHandoffUpSHA256      = "e42ae108f6b12938f4f622cc6c71f1d091ad5fc51c9892df78c6f05f3207eae9"
 	expectedAuthLoginTicketHandoffDownSHA256    = "eec9767c316afeefe6319861e0a193df7b77c8e9eac6b42a2d6cf8f396127268"
+	expectedStaticActorContentStateUpSHA256     = "303d4608766de8147c676e4d93f27e53a3744bf09343b060ec662d9c2378d9ad"
+	expectedStaticActorContentStateDownSHA256   = "8a58559911600f73c9f8c0e23bd4b4df8919a0c0dbe19c2ede6a2771ac43a2d7"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -295,6 +297,51 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 		t.Fatalf("expected auth-login-ticket-handoff down migration to drop ticket table, got:\n%s", seventh.DownSQL)
 	}
 
+	if len(catalog) < 8 {
+		t.Fatalf("expected static actor content-state migration after auth login-ticket handoff, got %d", len(catalog))
+	}
+	eighth := catalog[7]
+	if eighth.Version != 8 || eighth.Name != "static_actor_content_state" {
+		t.Fatalf("unexpected eighth migration: %#v", eighth)
+	}
+	if eighth.UpPath != "0008_static_actor_content_state.up.sql" {
+		t.Fatalf("unexpected eighth up path: %q", eighth.UpPath)
+	}
+	if eighth.DownPath != "0008_static_actor_content_state.down.sql" {
+		t.Fatalf("unexpected eighth down path: %q", eighth.DownPath)
+	}
+	if eighth.UpSHA256 != expectedStaticActorContentStateUpSHA256 {
+		t.Fatalf("unexpected static-actor-content-state up checksum: got %q want %q", eighth.UpSHA256, expectedStaticActorContentStateUpSHA256)
+	}
+	if eighth.DownSHA256 != expectedStaticActorContentStateDownSHA256 {
+		t.Fatalf("unexpected static-actor-content-state down checksum: got %q want %q", eighth.DownSHA256, expectedStaticActorContentStateDownSHA256)
+	}
+	for _, want := range []string{
+		"CREATE TABLE static_actors",
+		"CREATE TABLE static_actor_reward_drops",
+		"CREATE TABLE interaction_definitions",
+		"CREATE TABLE interaction_merchant_catalog_entries",
+		"FOREIGN KEY (entity_id) REFERENCES static_actors(entity_id)",
+		"CHECK (race_num > 0 AND race_num <= 65535)",
+		"CHECK (kind IN ('info', 'talk', 'warp', 'shop_preview'))",
+		"CHECK (price > 0 AND price <= 4294967295)",
+		"CREATE UNIQUE INDEX static_actors_spawn_group_ref_unique",
+	} {
+		if !strings.Contains(eighth.UpSQL, want) {
+			t.Fatalf("expected static-actor-content-state migration to contain %q, got:\n%s", want, eighth.UpSQL)
+		}
+	}
+	for _, want := range []string{
+		"DROP TABLE interaction_merchant_catalog_entries",
+		"DROP TABLE interaction_definitions",
+		"DROP TABLE static_actor_reward_drops",
+		"DROP TABLE static_actors",
+	} {
+		if !strings.Contains(eighth.DownSQL, want) {
+			t.Fatalf("expected static-actor-content-state down migration to contain %q, got:\n%s", want, eighth.DownSQL)
+		}
+	}
+
 	for i, migration := range catalog {
 		wantVersion := i + 1
 		if migration.Version != wantVersion {
@@ -364,7 +411,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("built-in catalog summary: %v", err)
 	}
-	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 7 {
+	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 8 {
 		t.Fatalf("unexpected built-in catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -374,7 +421,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 		t.Fatalf("unexpected first built-in catalog summary row: %#v", summary.Migrations[0])
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "auth_login_ticket_handoff" {
+	if latest.Version != summary.LatestVersion || latest.Name != "static_actor_content_state" {
 		t.Fatalf("unexpected latest built-in catalog summary row: %#v", latest)
 	}
 }
