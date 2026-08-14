@@ -2366,6 +2366,64 @@ func rewardDropItemSummaries(dropVnums []uint32, itemTemplatesByVnum map[uint32]
 	return summaries
 }
 
+func RewardDropAggregatesForMap(summary Summary, mapIndex uint32) []RewardDropAggregateSummary {
+	if mapIndex == 0 || len(summary.SpawnGroups) == 0 || len(summary.RewardDrops) == 0 {
+		return nil
+	}
+	totalByVnum := make(map[uint32]RewardDropAggregateSummary, len(summary.RewardDrops))
+	for _, drop := range summary.RewardDrops {
+		drop = normalizeRewardDropAggregateSummary(drop)
+		if drop.ItemVnum == 0 || drop.SourceCount == 0 {
+			continue
+		}
+		totalByVnum[drop.ItemVnum] = drop
+	}
+	if len(totalByVnum) == 0 {
+		return nil
+	}
+	countsByVnum := make(map[uint32]int)
+	for _, spawnGroup := range summary.SpawnGroups {
+		if spawnGroup.MapIndex != mapIndex {
+			continue
+		}
+		for _, vnum := range spawnGroup.RewardDropVnums {
+			if _, ok := totalByVnum[vnum]; ok {
+				countsByVnum[vnum]++
+			}
+		}
+	}
+	if len(countsByVnum) == 0 {
+		return nil
+	}
+	vnums := make([]uint32, 0, len(countsByVnum))
+	for vnum := range countsByVnum {
+		vnums = append(vnums, vnum)
+	}
+	sort.Slice(vnums, func(i int, j int) bool { return vnums[i] < vnums[j] })
+	aggregates := make([]RewardDropAggregateSummary, 0, len(vnums))
+	for _, vnum := range vnums {
+		aggregate := totalByVnum[vnum]
+		aggregate.SourceCount = countsByVnum[vnum]
+		aggregates = append(aggregates, aggregate)
+	}
+	return aggregates
+}
+
+func normalizeRewardDropAggregateSummary(drop RewardDropAggregateSummary) RewardDropAggregateSummary {
+	drop.ItemName = strings.TrimSpace(drop.ItemName)
+	drop.RefineRejectMessage = strings.TrimSpace(drop.RefineRejectMessage)
+	drop.UseRejectMessage = strings.TrimSpace(drop.UseRejectMessage)
+	drop.BuyRejectMessage = strings.TrimSpace(drop.BuyRejectMessage)
+	drop.DropRejectMessage = strings.TrimSpace(drop.DropRejectMessage)
+	drop.GiveRejectMessage = strings.TrimSpace(drop.GiveRejectMessage)
+	drop.PickupRejectMessage = strings.TrimSpace(drop.PickupRejectMessage)
+	drop.SellRejectMessage = strings.TrimSpace(drop.SellRejectMessage)
+	drop.EquipRejectMessage = strings.TrimSpace(drop.EquipRejectMessage)
+	drop.UnequipRejectMessage = strings.TrimSpace(drop.UnequipRejectMessage)
+	drop.SafeboxRejectMessage = strings.TrimSpace(drop.SafeboxRejectMessage)
+	return drop
+}
+
 func cloneRewardDropItemSummaries(items []RewardDropItemSummary) []RewardDropItemSummary {
 	if len(items) == 0 {
 		return nil

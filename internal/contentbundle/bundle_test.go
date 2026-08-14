@@ -2421,6 +2421,42 @@ func TestSummarizeReturnsDeterministicRewardTotalsAndDropAggregates(t *testing.T
 	}
 }
 
+func TestRewardDropAggregatesForMapReturnsDeterministicMapLocalAggregates(t *testing.T) {
+	summary, err := Summarize(Bundle{
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 7},
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		},
+		SpawnGroups: []SpawnGroup{
+			{Ref: "practice.village_alpha", Name: "Village Alpha", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardDropVnums: []uint32{27002, 27001}},
+			{Ref: "practice.village_beta", Name: "Village Beta", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 102, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardDropVnums: []uint32{27001}},
+			{Ref: "practice.remote_alpha", Name: "Remote Alpha", MapIndex: 7, X: 1200, Y: 2200, RaceNum: 103, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardDropVnums: []uint32{27001}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("summarize map-local reward drops: %v", err)
+	}
+
+	got := RewardDropAggregatesForMap(summary, 1)
+	want := []RewardDropAggregateSummary{
+		{ItemVnum: 27001, ItemName: "Small Red Potion", SourceCount: 2, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		{ItemVnum: 27002, ItemName: "Small Blue Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 7},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected map-local reward drops for village map:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	remote := RewardDropAggregatesForMap(summary, 7)
+	wantRemote := []RewardDropAggregateSummary{{ItemVnum: 27001, ItemName: "Small Red Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 5}}
+	if !reflect.DeepEqual(remote, wantRemote) {
+		t.Fatalf("unexpected map-local reward drops for remote map:\n got: %#v\nwant: %#v", remote, wantRemote)
+	}
+
+	if missing := RewardDropAggregatesForMap(summary, 42); len(missing) != 0 {
+		t.Fatalf("expected missing map reward drops to be empty, got %#v", missing)
+	}
+}
+
 func TestSummarizeReturnsDeterministicCombatProfileDetails(t *testing.T) {
 	summary, err := Summarize(Bundle{
 		SpawnGroups: []SpawnGroup{
