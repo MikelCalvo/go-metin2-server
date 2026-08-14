@@ -2221,6 +2221,88 @@ func RegisterLocalContentBundleMapSummaryEndpoint(mux *http.ServeMux, exportCont
 	return mux
 }
 
+func RegisterLocalContentBundleMapStaticActorsEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		mapIndex, ok := decodeLocalContentBundleMapServiceRouteIndex(r, "static-actors")
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if !contentBundleSummaryHasMap(summary, mapIndex) {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		matches := make([]contentbundle.StaticActor, 0)
+		for _, actor := range summary.StaticActors {
+			if actor.MapIndex == mapIndex {
+				matches = append(matches, actor)
+			}
+		}
+		writeLocalJSONMutationResponse(w, matches, http.StatusOK)
+	}
+	mux.HandleFunc("GET /local/content-bundle/maps/{map_index}/static-actors", handler)
+	mux.HandleFunc("GET /local/content-bundle/maps/{map_index}/static-actors/", handler)
+	return mux
+}
+
+func RegisterLocalContentBundleMapInteractableStaticActorsEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		mapIndex, ok := decodeLocalContentBundleMapServiceRouteIndex(r, "interactable-static-actors")
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if !contentBundleSummaryHasMap(summary, mapIndex) {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		matches := make([]contentbundle.InteractableStaticActorSummary, 0)
+		for _, actor := range summary.InteractableStaticActors {
+			if actor.MapIndex == mapIndex {
+				matches = append(matches, actor)
+			}
+		}
+		writeLocalJSONMutationResponse(w, matches, http.StatusOK)
+	}
+	mux.HandleFunc("GET /local/content-bundle/maps/{map_index}/interactable-static-actors", handler)
+	mux.HandleFunc("GET /local/content-bundle/maps/{map_index}/interactable-static-actors/", handler)
+	return mux
+}
+
 func RegisterLocalContentBundleMapShopRoutesEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
 	if mux == nil || exportContentBundleSummary == nil {
 		return mux

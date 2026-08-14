@@ -1467,6 +1467,90 @@ func TestLocalContentBundleMapSummaryEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalContentBundleMapStaticActorsEndpointReturnsMatchingActorsForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{
+			Maps: []contentbundle.MapContentSummary{
+				{MapIndex: 1, StaticActorCount: 2, InteractableStaticActorCount: 1},
+				{MapIndex: 7, StaticActorCount: 1, InteractableStaticActorCount: 1},
+			},
+			StaticActors: []contentbundle.StaticActor{
+				{Name: "Remote Guide", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:remote_guide"},
+				{Name: "Village Guide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guide"},
+				{Name: "Village Herald", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 20303},
+			},
+		},
+	}
+	mux := RegisterLocalContentBundleMapStaticActorsEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/maps/1/static-actors", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got []contentbundle.StaticActor
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode map static-actor response body: %v", err)
+	}
+	want := []contentbundle.StaticActor{
+		{Name: "Village Guide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guide"},
+		{Name: "Village Herald", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 20303},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle map static actors:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleMapInteractableStaticActorsEndpointReturnsMatchingActorsForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{
+			Maps: []contentbundle.MapContentSummary{
+				{MapIndex: 1, StaticActorCount: 3, InteractableStaticActorCount: 2, InfoActorCount: 1, TalkActorCount: 1},
+				{MapIndex: 7, StaticActorCount: 1, InteractableStaticActorCount: 1, TalkActorCount: 1},
+			},
+			InteractableStaticActors: []contentbundle.InteractableStaticActorSummary{
+				{Name: "Remote Guide", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:remote_guide", Preview: "Remote hello."},
+				{Name: "Village Guide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guide", Preview: "Welcome."},
+				{Name: "Village Lore", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 20303, InteractionKind: interactionstore.KindInfo, InteractionRef: "lore:village", Preview: "The village is quiet."},
+			},
+		},
+	}
+	mux := RegisterLocalContentBundleMapInteractableStaticActorsEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/maps/1/interactable-static-actors", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got []contentbundle.InteractableStaticActorSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode map interactable-static-actor response body: %v", err)
+	}
+	want := []contentbundle.InteractableStaticActorSummary{
+		{Name: "Village Guide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guide", Preview: "Welcome."},
+		{Name: "Village Lore", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 20303, InteractionKind: interactionstore.KindInfo, InteractionRef: "lore:village", Preview: "The village is quiet."},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle map interactable static actors:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
 func TestLocalContentBundleMapSpawnGroupsEndpointReturnsMatchingSpawnGroupsForLoopbackGet(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{
 		status: http.StatusOK,
@@ -1599,6 +1683,8 @@ func TestLocalContentBundleMapFocusedContentEndpointsReturnEmptyListForKnownMapW
 		register func(*http.ServeMux, func() (any, int)) *http.ServeMux
 		path     string
 	}{
+		{name: "static actors", register: RegisterLocalContentBundleMapStaticActorsEndpoint, path: "/local/content-bundle/maps/42/static-actors"},
+		{name: "interactable static actors", register: RegisterLocalContentBundleMapInteractableStaticActorsEndpoint, path: "/local/content-bundle/maps/42/interactable-static-actors"},
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
@@ -1633,6 +1719,8 @@ func TestLocalContentBundleMapFocusedContentEndpointsReturnNotFoundForMissingMap
 		register func(*http.ServeMux, func() (any, int)) *http.ServeMux
 		path     string
 	}{
+		{name: "static actors", register: RegisterLocalContentBundleMapStaticActorsEndpoint, path: "/local/content-bundle/maps/42/static-actors"},
+		{name: "interactable static actors", register: RegisterLocalContentBundleMapInteractableStaticActorsEndpoint, path: "/local/content-bundle/maps/42/interactable-static-actors"},
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
