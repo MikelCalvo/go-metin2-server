@@ -679,6 +679,110 @@ func TestSummarizeExposesItemTransferGuardsInTemplateBackedContentSummaries(t *t
 	}
 }
 
+func TestSummarizeExposesRefineGuardMetadataInTemplateBackedContentSummaries(t *testing.T) {
+	const refineRejectMessage = "This stone cannot be refined yet."
+	bundle := Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:             "practice.refine_reward",
+			Name:            "Refine Reward",
+			MapIndex:        42,
+			X:               1800,
+			Y:               2900,
+			RaceNum:         101,
+			CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropVnums: []uint32{27001, 11200},
+		}},
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Sealed Upgrade Stone", Stackable: true, MaxCount: 200, RefineRejectText: refineRejectMessage},
+			{Vnum: 11200, Name: "Refineable Practice Sword", Stackable: false, MaxCount: 1, Refineable: true},
+		},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:  interactionstore.KindShopPreview,
+			Ref:   "npc:refine_merchant",
+			Title: "Refine Merchant",
+			Catalog: []interactionstore.MerchantCatalogEntry{
+				{Slot: 0, ItemVnum: 27001, Price: 50, Count: 2},
+				{Slot: 1, ItemVnum: 11200, Price: 500, Count: 1},
+			},
+		}},
+	}
+
+	summary, err := Summarize(bundle)
+	if err != nil {
+		t.Fatalf("summarize refine-guard bundle: %v", err)
+	}
+
+	itemTemplate := func(vnum uint32) (ItemTemplateReferenceSummary, bool) {
+		for _, template := range summary.ItemTemplates {
+			if template.Vnum == vnum {
+				return template, true
+			}
+		}
+		return ItemTemplateReferenceSummary{}, false
+	}
+	shopEntry := func(vnum uint32) (ShopCatalogEntrySummary, bool) {
+		if len(summary.ShopCatalogs) != 1 {
+			return ShopCatalogEntrySummary{}, false
+		}
+		for _, entry := range summary.ShopCatalogs[0].Entries {
+			if entry.ItemVnum == vnum {
+				return entry, true
+			}
+		}
+		return ShopCatalogEntrySummary{}, false
+	}
+	rewardDropItem := func(vnum uint32) (RewardDropItemSummary, bool) {
+		if len(summary.SpawnGroups) != 1 {
+			return RewardDropItemSummary{}, false
+		}
+		for _, item := range summary.SpawnGroups[0].RewardDropItems {
+			if item.ItemVnum == vnum {
+				return item, true
+			}
+		}
+		return RewardDropItemSummary{}, false
+	}
+	aggregateDrop := func(vnum uint32) (RewardDropAggregateSummary, bool) {
+		for _, item := range summary.RewardDrops {
+			if item.ItemVnum == vnum {
+				return item, true
+			}
+		}
+		return RewardDropAggregateSummary{}, false
+	}
+
+	refineableTemplate, ok := itemTemplate(11200)
+	if !ok || !refineableTemplate.Refineable || refineableTemplate.RefineRejectMessage != "" {
+		t.Fatalf("expected refineable item-template metadata, got %+v ok=%v", refineableTemplate, ok)
+	}
+	refineRejectTemplate, ok := itemTemplate(27001)
+	if !ok || refineRejectTemplate.Refineable || refineRejectTemplate.RefineRejectMessage != refineRejectMessage {
+		t.Fatalf("expected refine-reject item-template metadata, got %+v ok=%v", refineRejectTemplate, ok)
+	}
+
+	for label, lookup := range map[string]func(uint32) (bool, string, bool){
+		"shop catalog": func(vnum uint32) (bool, string, bool) {
+			entry, ok := shopEntry(vnum)
+			return entry.Refineable, entry.RefineRejectMessage, ok
+		},
+		"spawn reward drop": func(vnum uint32) (bool, string, bool) {
+			item, ok := rewardDropItem(vnum)
+			return item.Refineable, item.RefineRejectMessage, ok
+		},
+		"aggregate reward drop": func(vnum uint32) (bool, string, bool) {
+			item, ok := aggregateDrop(vnum)
+			return item.Refineable, item.RefineRejectMessage, ok
+		},
+	} {
+		if refineable, rejectMessage, ok := lookup(11200); !ok || !refineable || rejectMessage != "" {
+			t.Fatalf("expected %s refineable metadata, refineable=%v reject=%q ok=%v", label, refineable, rejectMessage, ok)
+		}
+		if refineable, rejectMessage, ok := lookup(27001); !ok || refineable || rejectMessage != refineRejectMessage {
+			t.Fatalf("expected %s refine-reject metadata, refineable=%v reject=%q ok=%v", label, refineable, rejectMessage, ok)
+		}
+	}
+}
+
 func TestSummarizeExposesSelectedCharacterGuardsInTemplateBackedContentSummaries(t *testing.T) {
 	const (
 		buyRejectMessage  = "The merchant will not sell this restricted potion to you."

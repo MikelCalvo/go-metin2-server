@@ -4227,6 +4227,62 @@ func TestLocalContentBundleSummaryEndpointReturnsEquipmentGuardMetadataForLoopba
 	}
 }
 
+func TestLocalContentBundleSummaryEndpointReturnsRefineGuardMetadataForLoopbackPost(t *testing.T) {
+	const refineRejectMessage = "This stone cannot be refined yet."
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	body := `{"spawn_groups":[{"ref":"practice.refine_reward","name":"Refine Reward","map_index":42,"x":1800,"y":2900,"race_num":101,"combat_profile":"practice_mob","reward_drop_vnums":[27001,11200]}],"item_templates":[{"vnum":27001,"name":"Sealed Upgrade Stone","stackable":true,"max_count":200,"refine_reject_message":"This stone cannot be refined yet."},{"vnum":11200,"name":"Refineable Practice Sword","stackable":false,"max_count":1,"refineable":true}],"interaction_definitions":[{"kind":"shop_preview","ref":"npc:refine_merchant","title":"Refine Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":2},{"slot":1,"item_vnum":11200,"price":500,"count":1}]}]}`
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/summary", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected dry-run summary not to call live exporter, got %d calls", summaryer.calls)
+	}
+	var got contentbundle.Summary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode refine guard summary response body: %v", err)
+	}
+	itemTemplateByVnum := make(map[uint32]contentbundle.ItemTemplateReferenceSummary, len(got.ItemTemplates))
+	for _, template := range got.ItemTemplates {
+		itemTemplateByVnum[template.Vnum] = template
+	}
+	if len(itemTemplateByVnum) != 2 || !itemTemplateByVnum[11200].Refineable || itemTemplateByVnum[27001].RefineRejectMessage != refineRejectMessage {
+		t.Fatalf("expected refine metadata on item-template summaries, got %+v", got.ItemTemplates)
+	}
+	shopCatalogEntriesByVnum := make(map[uint32]contentbundle.ShopCatalogEntrySummary)
+	if len(got.ShopCatalogs) == 1 {
+		for _, entry := range got.ShopCatalogs[0].Entries {
+			shopCatalogEntriesByVnum[entry.ItemVnum] = entry
+		}
+	}
+	if len(shopCatalogEntriesByVnum) != 2 || shopCatalogEntriesByVnum[27001].RefineRejectMessage != refineRejectMessage || !shopCatalogEntriesByVnum[11200].Refineable {
+		t.Fatalf("expected refine metadata on shop catalog summaries, got %+v", got.ShopCatalogs)
+	}
+	rewardDropItemsByVnum := make(map[uint32]contentbundle.RewardDropItemSummary)
+	if len(got.SpawnGroups) == 1 {
+		for _, item := range got.SpawnGroups[0].RewardDropItems {
+			rewardDropItemsByVnum[item.ItemVnum] = item
+		}
+	}
+	if len(rewardDropItemsByVnum) != 2 || rewardDropItemsByVnum[27001].RefineRejectMessage != refineRejectMessage || !rewardDropItemsByVnum[11200].Refineable {
+		t.Fatalf("expected refine metadata on reward item summaries, got %+v", got.SpawnGroups)
+	}
+	aggregateDropsByVnum := make(map[uint32]contentbundle.RewardDropAggregateSummary, len(got.RewardDrops))
+	for _, item := range got.RewardDrops {
+		aggregateDropsByVnum[item.ItemVnum] = item
+	}
+	if len(aggregateDropsByVnum) != 2 || aggregateDropsByVnum[27001].RefineRejectMessage != refineRejectMessage || !aggregateDropsByVnum[11200].Refineable {
+		t.Fatalf("expected refine metadata on aggregate reward drop summaries, got %+v", got.RewardDrops)
+	}
+}
+
 func TestLocalContentBundleSummaryEndpointReturnsDirectUseGuardMetadataForLoopbackPost(t *testing.T) {
 	const useRejectMessage = "This quest-sealed potion cannot be used yet."
 	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}

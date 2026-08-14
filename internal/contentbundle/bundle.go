@@ -406,6 +406,8 @@ type RewardDropItemSummary struct {
 	MaxCount             uint16 `json:"max_count"`
 	ShopBuyPrice         uint64 `json:"shop_buy_price,omitempty"`
 	ShopSellPrice        uint64 `json:"shop_sell_price,omitempty"`
+	Refineable           bool   `json:"refineable,omitempty"`
+	RefineRejectMessage  string `json:"refine_reject_message,omitempty"`
 	ConfirmWhenUse       bool   `json:"confirm_when_use,omitempty"`
 	QuestUse             bool   `json:"quest_use,omitempty"`
 	QuestUseMultiple     bool   `json:"quest_use_multiple,omitempty"`
@@ -449,6 +451,8 @@ type RewardDropAggregateSummary struct {
 	MaxCount             uint16 `json:"max_count"`
 	ShopBuyPrice         uint64 `json:"shop_buy_price,omitempty"`
 	ShopSellPrice        uint64 `json:"shop_sell_price,omitempty"`
+	Refineable           bool   `json:"refineable,omitempty"`
+	RefineRejectMessage  string `json:"refine_reject_message,omitempty"`
 	ConfirmWhenUse       bool   `json:"confirm_when_use,omitempty"`
 	QuestUse             bool   `json:"quest_use,omitempty"`
 	QuestUseMultiple     bool   `json:"quest_use_multiple,omitempty"`
@@ -491,6 +495,8 @@ type ItemTemplateReferenceSummary struct {
 	MaxCount             uint16 `json:"max_count"`
 	ShopBuyPrice         uint64 `json:"shop_buy_price,omitempty"`
 	ShopSellPrice        uint64 `json:"shop_sell_price,omitempty"`
+	Refineable           bool   `json:"refineable,omitempty"`
+	RefineRejectMessage  string `json:"refine_reject_message,omitempty"`
 	ConfirmWhenUse       bool   `json:"confirm_when_use,omitempty"`
 	QuestUse             bool   `json:"quest_use,omitempty"`
 	QuestUseMultiple     bool   `json:"quest_use_multiple,omitempty"`
@@ -544,6 +550,8 @@ type ShopCatalogEntrySummary struct {
 	MaxCount             uint16 `json:"max_count"`
 	ShopBuyPrice         uint64 `json:"shop_buy_price,omitempty"`
 	ShopSellPrice        uint64 `json:"shop_sell_price,omitempty"`
+	Refineable           bool   `json:"refineable,omitempty"`
+	RefineRejectMessage  string `json:"refine_reject_message,omitempty"`
 	ConfirmWhenUse       bool   `json:"confirm_when_use,omitempty"`
 	QuestUse             bool   `json:"quest_use,omitempty"`
 	QuestUseMultiple     bool   `json:"quest_use_multiple,omitempty"`
@@ -2088,6 +2096,8 @@ func shopCatalogSummary(definition interactionstore.Definition, itemTemplatesByV
 			MaxCount:             template.MaxCount,
 			ShopBuyPrice:         template.ShopBuyPrice,
 			ShopSellPrice:        template.ShopSellPrice,
+			Refineable:           template.Refineable,
+			RefineRejectMessage:  template.RefineRejectText,
 			ConfirmWhenUse:       template.ConfirmWhenUse,
 			QuestUse:             template.QuestUse,
 			QuestUseMultiple:     template.QuestUseMultiple,
@@ -2182,6 +2192,8 @@ func itemTemplateReferenceSummaries(templates []itemcatalog.Template) []ItemTemp
 			MaxCount:             template.MaxCount,
 			ShopBuyPrice:         template.ShopBuyPrice,
 			ShopSellPrice:        template.ShopSellPrice,
+			Refineable:           template.Refineable,
+			RefineRejectMessage:  template.RefineRejectText,
 			ConfirmWhenUse:       template.ConfirmWhenUse,
 			QuestUse:             template.QuestUse,
 			QuestUseMultiple:     template.QuestUseMultiple,
@@ -2241,6 +2253,8 @@ func rewardDropItemSummaries(dropVnums []uint32, itemTemplatesByVnum map[uint32]
 			MaxCount:             template.MaxCount,
 			ShopBuyPrice:         template.ShopBuyPrice,
 			ShopSellPrice:        template.ShopSellPrice,
+			Refineable:           template.Refineable,
+			RefineRejectMessage:  template.RefineRejectText,
 			ConfirmWhenUse:       template.ConfirmWhenUse,
 			QuestUse:             template.QuestUse,
 			QuestUseMultiple:     template.QuestUseMultiple,
@@ -2320,6 +2334,8 @@ func rewardDropAggregateSummaries(countsByVnum map[uint32]int, itemTemplatesByVn
 			MaxCount:             template.MaxCount,
 			ShopBuyPrice:         template.ShopBuyPrice,
 			ShopSellPrice:        template.ShopSellPrice,
+			Refineable:           template.Refineable,
+			RefineRejectMessage:  template.RefineRejectText,
 			ConfirmWhenUse:       template.ConfirmWhenUse,
 			QuestUse:             template.QuestUse,
 			QuestUseMultiple:     template.QuestUseMultiple,
@@ -2508,6 +2524,7 @@ func validInteractionDefinitionStrings(definition interactionstore.Definition) b
 
 func validItemTemplateStrings(template itemcatalog.Template) bool {
 	if !validAuthoredContentString(template.Name) ||
+		!validAuthoredContentString(template.RefineRejectText) ||
 		!validAuthoredContentString(template.UseRejectText) ||
 		!validAuthoredContentString(template.BuyRejectText) ||
 		!validAuthoredContentString(template.DropRejectText) ||
