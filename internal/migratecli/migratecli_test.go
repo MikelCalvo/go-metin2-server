@@ -498,6 +498,157 @@ func TestRunLedgerSnapshotRedactsDSNFromRuntimeErrors(t *testing.T) {
 	}
 }
 
+func TestRunStatusReadsDatabaseLedgerAndWritesMetadataOnlyPlan(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	catalog, err := dbmigrations.Catalog()
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	applied := []dbmigrations.LedgerEntry{{Version: catalog[0].Version, Name: catalog[0].Name, UpSHA256: catalog[0].UpSHA256}}
+	currentMigrateCLITestDriver(t).setLedger(applied)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"status", "--driver", driverName, "--dsn", "memory://status", "--target-version", "latest"}, nil, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected successful status command, exit=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr on success, got %q", stderr.String())
+	}
+	var plan dbmigrations.Plan
+	if err := json.Unmarshal(stdout.Bytes(), &plan); err != nil {
+		t.Fatalf("decode status plan JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if plan.CurrentVersion != 1 || plan.LatestVersion != len(catalog) || plan.UpToDate {
+		t.Fatalf("unexpected status plan versions: %#v", plan)
+	}
+	if len(plan.Pending) != len(catalog)-1 {
+		t.Fatalf("expected pending steps from version 1 to latest, got %#v", plan.Pending)
+	}
+	if len(plan.Pending) > 0 && (plan.Pending[0].Version != 2 || plan.Pending[0].Direction != dbmigrations.DirectionUp) {
+		t.Fatalf("expected first pending status step to be migration 0002 up, got %#v", plan.Pending[0])
+	}
+	body := stdout.String()
+	if strings.Contains(body, "CREATE TABLE") || strings.Contains(body, "DROP TABLE") || strings.Contains(body, "-- go-metin2 migration") || strings.Contains(body, "memory://") {
+		t.Fatalf("status CLI must not expose executable SQL or DSN text, got %s", body)
+	}
+
+	events := currentMigrateCLITestDriver(t).eventsSnapshot()
+	for _, want := range []string{"open:memory://status", "query:SELECT version, name, up_sha256 FROM schema_migrations ORDER BY version ASC", "close"} {
+		if !containsMigrateCLITestEventPrefix(events, want) {
+			t.Fatalf("expected event prefix %q in events %#v", want, events)
+		}
+	}
+	for _, forbidden := range []string{"begin", "exec:", "commit", "rollback"} {
+		if containsMigrateCLITestEventPrefix(events, forbidden) {
+			t.Fatalf("status command must be read-only; unexpected %q event in %#v", forbidden, events)
+		}
+	}
+}
+
+func TestRunStatusDefaultsToLatestTargetVersion(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	catalog, err := dbmigrations.Catalog()
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"status", "--driver", driverName, "--dsn", "memory://status-default"}, nil, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected successful default status command, exit=%d stderr=%q", code, stderr.String())
+	}
+	var plan dbmigrations.Plan
+	if err := json.Unmarshal(stdout.Bytes(), &plan); err != nil {
+		t.Fatalf("decode default status plan JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if plan.CurrentVersion != 0 || plan.LatestVersion != len(catalog) || plan.UpToDate {
+		t.Fatalf("expected default status to plan empty ledger to latest, got %#v", plan)
+	}
+	if len(plan.Pending) != len(catalog) {
+		t.Fatalf("expected default status to include every pending migration, got %#v", plan.Pending)
+	}
+}
+
+func TestRunStatusAcceptsRollbackTargetVersion(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	catalog, err := dbmigrations.Catalog()
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	applied := []dbmigrations.LedgerEntry{{Version: catalog[0].Version, Name: catalog[0].Name, UpSHA256: catalog[0].UpSHA256}}
+	currentMigrateCLITestDriver(t).setLedger(applied)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"status", "--driver", driverName, "--dsn", "memory://status-rollback", "--target-version", "0"}, nil, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected successful rollback status command, exit=%d stderr=%q", code, stderr.String())
+	}
+	var plan dbmigrations.Plan
+	if err := json.Unmarshal(stdout.Bytes(), &plan); err != nil {
+		t.Fatalf("decode rollback status plan JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if plan.CurrentVersion != 1 || len(plan.Pending) != 1 {
+		t.Fatalf("expected one rollback status step from version 1, got %#v", plan)
+	}
+	if plan.Pending[0].Version != 1 || plan.Pending[0].Direction != dbmigrations.DirectionDown {
+		t.Fatalf("unexpected rollback status step: %#v", plan.Pending[0])
+	}
+}
+
+func TestRunStatusRejectsMissingDriverOrDSNAsUsageError(t *testing.T) {
+	for _, args := range [][]string{
+		{"status", "--driver", "sqlite3"},
+		{"status", "--dsn", "file:metin2.db"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			code := Run(args, nil, &stdout, &stderr)
+
+			if code != 2 {
+				t.Fatalf("expected missing driver/DSN usage exit 2, got %d", code)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("expected usage error not to write stdout, got %q", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), "--driver and --dsn are required") {
+				t.Fatalf("expected driver/DSN usage guidance, got %q", stderr.String())
+			}
+		})
+	}
+}
+
+func TestRunStatusRedactsDSNFromRuntimeErrors(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	secretDSN := "memory://secret-password@db/status"
+	currentMigrateCLITestDriver(t).setError(fmt.Errorf("query %s refused", secretDSN))
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"status", "--driver", driverName, "--dsn", secretDSN}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected status runtime error to exit 1, got %d", code)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected failed status not to write stdout, got %q", stdout.String())
+	}
+	if strings.Contains(stderr.String(), secretDSN) {
+		t.Fatalf("expected status errors to redact DSN, got %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "<redacted-dsn>") {
+		t.Fatalf("expected redacted DSN marker in error, got %q", stderr.String())
+	}
+}
+
 func TestRunRejectsUnknownCommandAsUsageError(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

@@ -24,10 +24,11 @@ const (
 )
 
 // Run executes the small migration preflight CLI and returns a process-style exit
-// code. The default catalog/plan commands are read-only. The apply command is an
-// explicit CLI-only mutation surface: it requires an operator-supplied database
-// driver, DSN, strict offline ledger snapshot, and target version, and it remains
-// deliberately separate from daemon startup and local ops endpoints.
+// code. The catalog, status, ledger-snapshot, and plan commands are read-only.
+// The apply command is an explicit CLI-only mutation surface: it requires an
+// operator-supplied database driver, DSN, strict offline ledger snapshot, and
+// target version, and it remains deliberately separate from daemon startup and
+// local ops endpoints.
 func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	if stdout == nil {
 		stdout = io.Discard
@@ -48,6 +49,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 	switch args[0] {
 	case "catalog":
 		return runCatalog(args[1:], stdout, stderr)
+	case "status":
+		return runStatus(args[1:], stdout, stderr)
 	case "plan":
 		return runPlan(args[1:], stdin, stdout, stderr)
 	case "ledger-snapshot":
@@ -113,6 +116,55 @@ func runLedgerSnapshot(args []string, stdout io.Writer, stderr io.Writer) int {
 		return exitError
 	}
 	return writeJSON(stdout, stderr, snapshot)
+}
+
+func runStatus(args []string, stdout io.Writer, stderr io.Writer) int {
+	flags := flag.NewFlagSet("status", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	var driverName string
+	var dsn string
+	var targetVersionText string
+	flags.StringVar(&driverName, "driver", "", "database/sql driver name for the migration target")
+	flags.StringVar(&dsn, "dsn", "", "database/sql DSN for the migration target")
+	flags.StringVar(&targetVersionText, "target-version", "latest", "catalog target version for the read-only status plan")
+	flags.Usage = func() { printStatusUsage(stderr) }
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintf(stderr, "unexpected status argument %q\n", flags.Arg(0))
+		printStatusUsage(stderr)
+		return exitUsage
+	}
+	if strings.TrimSpace(driverName) == "" || strings.TrimSpace(dsn) == "" {
+		fmt.Fprintln(stderr, "--driver and --dsn are required for status")
+		printStatusUsage(stderr)
+		return exitUsage
+	}
+	targetVersion, targetLatest, err := parseTargetVersion(targetVersionText)
+	if err != nil {
+		fmt.Fprintf(stderr, "invalid --target-version %q: %v\n", targetVersionText, err)
+		return exitUsage
+	}
+
+	db, err := sql.Open(strings.TrimSpace(driverName), strings.TrimSpace(dsn))
+	if err != nil {
+		writeMigrationCommandError(stderr, dsn, "migration status: open database driver %q: %v", strings.TrimSpace(driverName), err)
+		return exitError
+	}
+	defer db.Close()
+
+	snapshot, err := dbmigrations.LedgerSnapshotFromSQLLedger(context.Background(), db)
+	if err != nil {
+		writeMigrationCommandError(stderr, dsn, "migration status: %v", err)
+		return exitError
+	}
+	plan, err := planDecodedLedgerSnapshot(snapshot, targetVersion, targetLatest)
+	if err != nil {
+		writeMigrationCommandError(stderr, dsn, "migration status: %v", err)
+		return exitError
+	}
+	return writeJSON(stdout, stderr, plan)
 }
 
 func runPlan(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
@@ -308,6 +360,17 @@ func planLedgerSnapshot(raw []byte, targetVersion int, targetLatest bool) (dbmig
 	return dbmigrations.PlanToVersionFromJSONLedgerSnapshot(bytes.NewReader(raw), targetVersion)
 }
 
+func planDecodedLedgerSnapshot(snapshot dbmigrations.LedgerSnapshot, targetVersion int, targetLatest bool) (dbmigrations.Plan, error) {
+	if targetLatest {
+		catalog, err := dbmigrations.Catalog()
+		if err != nil {
+			return dbmigrations.Plan{}, err
+		}
+		return dbmigrations.PlanCatalogToVersionFromLedgerSnapshot(catalog, snapshot, catalog[len(catalog)-1].Version)
+	}
+	return dbmigrations.PlanToVersionFromLedgerSnapshot(snapshot, targetVersion)
+}
+
 func resolveTargetVersion(targetVersion int, targetLatest bool) (int, error) {
 	if !targetLatest {
 		return targetVersion, nil
@@ -334,9 +397,12 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "commands:")
 	fmt.Fprintln(w, "  catalog          print metadata-only embedded migration catalog summary")
+	fmt.Fprintln(w, "  status           read database schema_migrations metadata and print a dry-run plan")
 	fmt.Fprintln(w, "  ledger-snapshot  export metadata-only schema_migrations ledger snapshot from a database/sql target")
 	fmt.Fprintln(w, "  plan             print metadata-only dry-run plan from an offline ledger snapshot")
 	fmt.Fprintln(w, "  apply            apply a target plan using a database/sql driver and offline ledger snapshot")
+	fmt.Fprintln(w, "")
+	printStatusUsage(w)
 	fmt.Fprintln(w, "")
 	printLedgerSnapshotUsage(w)
 	fmt.Fprintln(w, "")
@@ -348,6 +414,11 @@ func printUsage(w io.Writer) {
 func printLedgerSnapshotUsage(w io.Writer) {
 	fmt.Fprintln(w, "ledger-snapshot usage:")
 	fmt.Fprintln(w, "  metin2-migrate ledger-snapshot --driver <database/sql-driver> --dsn <dsn>")
+}
+
+func printStatusUsage(w io.Writer) {
+	fmt.Fprintln(w, "status usage:")
+	fmt.Fprintln(w, "  metin2-migrate status --driver <database/sql-driver> --dsn <dsn> [--target-version <version|latest>]")
 }
 
 func printPlanUsage(w io.Writer) {

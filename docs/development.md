@@ -134,17 +134,18 @@ The database-backed runtime is still future work, but `gamed` can now point the 
 
 Both driver and DSN must be empty to keep DB preflight disabled, or both must be set. Partial values fail daemon startup instead of silently returning the embedded empty-ledger migration plan. The project does not yet ship a DB driver dependency or select a production database engine, so operators must not treat this as a finished DB-backed runtime. `/local/runtime-config` reports only whether a DSN is configured plus the driver name; it intentionally never exposes the DSN value. For offline preflight, `GET /local/db/migrations/ledger-snapshot` exports the running daemon's configured ledger metadata as strict `go-metin2-schema-migrations-ledger-v1` JSON (`version` / `name` / `up_sha256` only), returning an explicit empty snapshot when DB preflight is disabled. `POST /local/db/migrations/plan-from-ledger-snapshot?target_version=N` accepts that same metadata-only snapshot shape and returns the dry-run plan without opening the configured DB or exposing executable SQL.
 
-`cmd/metin2-migrate` is the first shipped migration CLI. Its catalog, ledger-snapshot, and plan commands are preflight surfaces:
+`cmd/metin2-migrate` is the first shipped migration CLI. Its catalog, status, ledger-snapshot, and plan commands are preflight surfaces:
 
 ```bash
 go run ./cmd/metin2-migrate catalog
+go run ./cmd/metin2-migrate status --driver <database/sql-driver> --dsn <dsn> --target-version latest
 go run ./cmd/metin2-migrate ledger-snapshot --driver <database/sql-driver> --dsn <dsn> > snapshot.json
 go run ./cmd/metin2-migrate plan --ledger-snapshot snapshot.json --target-version 0
 curl -s http://127.0.0.1:6060/local/db/migrations/ledger-snapshot \
   | go run ./cmd/metin2-migrate plan --ledger-snapshot - --target-version latest
 ```
 
-`catalog` prints the embedded metadata-only migration catalog summary. `ledger-snapshot` opens an operator-supplied `database/sql` target only long enough to read `schema_migrations` metadata (`version`, `name`, and `up_sha256`) into strict `go-metin2-schema-migrations-ledger-v1` JSON; it does not begin a transaction, execute migration SQL, apply, roll back, or print the supplied DSN. `plan` reads that same strict snapshot shape from a path or stdin and prints a metadata-only dry-run plan to the requested target; the target may be an explicit version such as `0` for full rollback preview or `latest` for the embedded catalog tip. The CLI caps ledger-snapshot input at 64 KiB, matching the local ops snapshot-plan endpoint, and rejects oversized input before planning.
+`catalog` prints the embedded metadata-only migration catalog summary. `status` opens an operator-supplied `database/sql` target only long enough to read `schema_migrations` metadata and print the same metadata-only dry-run `Plan` shape used by the daemon-local status endpoint; `--target-version` defaults to `latest` and may also be an explicit version such as rollback target `0`. `ledger-snapshot` performs the same read-only ledger query but writes strict `go-metin2-schema-migrations-ledger-v1` JSON for later offline use; it does not begin a transaction, execute migration SQL, apply, roll back, or print the supplied DSN. `plan` reads that same strict snapshot shape from a path or stdin and prints a metadata-only dry-run plan to the requested target; the target may be an explicit version such as `0` for full rollback preview or `latest` for the embedded catalog tip. The CLI caps ledger-snapshot input at 64 KiB, matching the local ops snapshot-plan endpoint, and rejects oversized input before planning.
 
 `metin2-migrate apply` is the first CLI-only mutating migration boundary:
 
