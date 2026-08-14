@@ -3809,9 +3809,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
 						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equippedItem.EquipSlot, runtime.itemTemplates)
-						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
+						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 						if !ok {
 							return gameflow.ChatResult{Accepted: false}
+						}
+						frames = prependExchangeCloseFrame(frames)
+						if ownsLiveSharedWorldSession() {
+							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selectedPlayer.LiveCharacter(), stablePeerFrames)
 						}
 						return gameflow.ChatResult{Accepted: true, Frames: frames}
 					}
@@ -3859,9 +3863,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
 						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equipSlot, runtime.itemTemplates)
-						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
+						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 						if !ok {
 							return gameflow.ChatResult{Accepted: false}
+						}
+						frames = prependExchangeCloseFrame(frames)
+						if ownsLiveSharedWorldSession() {
+							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selectedPlayer.LiveCharacter(), stablePeerFrames)
 						}
 						return gameflow.ChatResult{Accepted: true, Frames: frames}
 					}
@@ -4181,8 +4189,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ItemMoveResult{Accepted: false}
 						}
 						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equipSlot, runtime.itemTemplates)
-						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
-						return gameflow.ItemMoveResult{Accepted: ok, Frames: frames}
+						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+						if !ok {
+							return gameflow.ItemMoveResult{Accepted: false}
+						}
+						frames = prependExchangeCloseFrame(frames)
+						if ownsLiveSharedWorldSession() {
+							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selectedPlayer.LiveCharacter(), stablePeerFrames)
+						}
+						return gameflow.ItemMoveResult{Accepted: true, Frames: frames}
 					}
 					if inventory.SlotIndex(packet.Source.Cell) >= inventory.CarriedInventorySlotCount {
 						return gameflow.ItemMoveResult{Accepted: false}
@@ -4237,8 +4252,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							frames = append(frames, quickslotFrames...)
 						}
 						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equippedItem.EquipSlot, runtime.itemTemplates)
-						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
-						return gameflow.ItemMoveResult{Accepted: ok, Frames: frames}
+						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+						if !ok {
+							return gameflow.ItemMoveResult{Accepted: false}
+						}
+						frames = prependExchangeCloseFrame(frames)
+						if ownsLiveSharedWorldSession() {
+							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selectedPlayer.LiveCharacter(), stablePeerFrames)
+						}
+						return gameflow.ItemMoveResult{Accepted: true, Frames: frames}
 					}
 					if packet.Destination.WindowType != itemproto.WindowInventory || inventory.SlotIndex(packet.Destination.Cell) >= inventory.CarriedInventorySlotCount {
 						return gameflow.ItemMoveResult{Accepted: false}

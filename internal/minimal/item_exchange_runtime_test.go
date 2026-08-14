@@ -2286,6 +2286,253 @@ func TestGameRuntimeItemDropClosesActiveExchangeShellBeforeDropFrames(t *testing
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "peer active-exchange item-drop")
 }
 
+func TestGameRuntimeItemMoveEquipClosesActiveExchangeShellBeforeEquipFrames(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeEquipOwner", 0x010307e1, 0x020407e1, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 811, Vnum: 11200, Count: 1, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeEquipPeer", 0x010307e2, 0x020407e2, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerLogin := "item-exchange-equip-owner"
+	peerLogin := "item-exchange-equip-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070e1, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070e2, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange equip owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange equip peer account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 11200, Name: "Exchange Equip Sword", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotWeapon.String()}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange equip runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070e1)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070e2)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected exchange equip start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected exchange equip start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "exchange equip owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected exchange equip peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "exchange equip peer start")
+
+	itemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 7, Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected exchange equip item-add error: %v", err)
+	}
+	if len(itemAddOut) != 1 {
+		t.Fatalf("expected exchange equip item-add to emit one owner frame, got %d", len(itemAddOut))
+	}
+	assertExchangeItemAddFrame(t, itemAddOut[0], 1, 7, owner.Inventory[0], template, "exchange equip owner item-add")
+	queuedItemAdd := flushServerFrames(t, peerFlow)
+	if len(queuedItemAdd) != 1 {
+		t.Fatalf("expected exchange equip peer item-add frame, got %d", len(queuedItemAdd))
+	}
+	assertExchangeItemAddFrame(t, queuedItemAdd[0], 0, 7, owner.Inventory[0], template, "exchange equip peer item-add")
+
+	weaponPosition, err := itemproto.EquipmentPosition(4)
+	if err != nil {
+		t.Fatalf("build exchange equip weapon position: %v", err)
+	}
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{Source: itemproto.InventoryPosition(5), Destination: weaponPosition})))
+	if err != nil {
+		t.Fatalf("unexpected active-exchange item equip packet error: %v", err)
+	}
+	if len(out) != 5 {
+		t.Fatalf("expected active-exchange item equip to emit exchange end plus item delete, equipment set, update, and quickslot delete, got %d", len(out))
+	}
+	assertExchangeEndFrame(t, out[0], "active-exchange item equip self close")
+	itemDel, err := itemproto.DecodeDel(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode active-exchange item equip inventory delete: %v", err)
+	}
+	if itemDel.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected active-exchange item equip inventory delete: %+v", itemDel)
+	}
+	itemSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode active-exchange item equip equipment set: %v", err)
+	}
+	if itemSet.Position != weaponPosition || itemSet.Vnum != template.Vnum || itemSet.Count != 1 {
+		t.Fatalf("unexpected active-exchange item equip equipment set: %+v", itemSet)
+	}
+	selfUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode active-exchange item equip self update: %v", err)
+	}
+	if selfUpdate.VID != owner.VID {
+		t.Fatalf("unexpected active-exchange item equip self update: %+v", selfUpdate)
+	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[4]))
+	if err != nil {
+		t.Fatalf("decode active-exchange item equip quickslot delete: %v", err)
+	}
+	if quickslotDel.Position != 2 {
+		t.Fatalf("unexpected active-exchange item equip quickslot delete: %+v", quickslotDel)
+	}
+	queuedClose := flushServerFrames(t, peerFlow)
+	if len(queuedClose) != 2 {
+		t.Fatalf("expected active-exchange item equip to queue exchange close before peer appearance update, got %d frames", len(queuedClose))
+	}
+	assertExchangeEndFrame(t, queuedClose[0], "active-exchange item equip peer close")
+	peerUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, queuedClose[1]))
+	if err != nil {
+		t.Fatalf("decode active-exchange item equip peer update: %v", err)
+	}
+	if peerUpdate.VID != owner.VID {
+		t.Fatalf("unexpected active-exchange item equip peer update: %+v", peerUpdate)
+	}
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected post-equip exchange cancel error: %v", err)
+	}
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected post-equip exchange cancel to emit no frames after the shell was closed, got %d", len(cancelOut))
+	}
+
+	persistedOwner, err := accounts.Load(ownerLogin)
+	if err != nil {
+		t.Fatalf("load persisted active-exchange equip owner account: %v", err)
+	}
+	if len(persistedOwner.Characters[0].Inventory) != 0 {
+		t.Fatalf("active-exchange equip persisted inventory got %+v want empty", persistedOwner.Characters[0].Inventory)
+	}
+	if len(persistedOwner.Characters[0].Equipment) != 1 || persistedOwner.Characters[0].Equipment[0].Vnum != template.Vnum || persistedOwner.Characters[0].Equipment[0].EquipSlot != inventory.EquipmentSlotWeapon {
+		t.Fatalf("active-exchange equip persisted equipment got %+v", persistedOwner.Characters[0].Equipment)
+	}
+	if len(persistedOwner.Characters[0].Quickslots) != 0 {
+		t.Fatalf("active-exchange equip persisted quickslots got %+v want empty", persistedOwner.Characters[0].Quickslots)
+	}
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "peer active-exchange equip")
+}
+
+func TestGameRuntimeSlashUnequipClosesActiveExchangeShellBeforeUnequipFrames(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeUnequipOwner", 0x010307e3, 0x020407e3, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Equipment = []inventory.ItemInstance{{ID: 812, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
+	peer := peerVisibilityCharacter("ExchangeUnequipPeer", 0x010307e4, 0x020407e4, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerLogin := "item-exchange-unequip-owner"
+	peerLogin := "item-exchange-unequip-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070e3, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070e4, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange unequip owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange unequip peer account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 11200, Name: "Exchange Unequip Sword", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotWeapon.String()}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange unequip runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070e3)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070e4)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected exchange unequip start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected exchange unequip start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "exchange unequip owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected exchange unequip peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "exchange unequip peer start")
+
+	weaponPosition, err := itemproto.EquipmentPosition(4)
+	if err != nil {
+		t.Fatalf("build exchange unequip weapon position: %v", err)
+	}
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/unequip_item weapon 5"})))
+	if err != nil {
+		t.Fatalf("unexpected active-exchange slash unequip error: %v", err)
+	}
+	if len(out) != 4 {
+		t.Fatalf("expected active-exchange slash unequip to emit exchange end plus equipment delete, inventory set, and update, got %d", len(out))
+	}
+	assertExchangeEndFrame(t, out[0], "active-exchange slash unequip self close")
+	itemDel, err := itemproto.DecodeDel(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode active-exchange slash unequip equipment delete: %v", err)
+	}
+	if itemDel.Position != weaponPosition {
+		t.Fatalf("unexpected active-exchange slash unequip equipment delete: %+v", itemDel)
+	}
+	itemSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode active-exchange slash unequip inventory set: %v", err)
+	}
+	if itemSet.Position != itemproto.InventoryPosition(5) || itemSet.Vnum != template.Vnum || itemSet.Count != 1 {
+		t.Fatalf("unexpected active-exchange slash unequip inventory set: %+v", itemSet)
+	}
+	selfUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode active-exchange slash unequip self update: %v", err)
+	}
+	if selfUpdate.VID != owner.VID {
+		t.Fatalf("unexpected active-exchange slash unequip self update: %+v", selfUpdate)
+	}
+	queuedClose := flushServerFrames(t, peerFlow)
+	if len(queuedClose) != 2 {
+		t.Fatalf("expected active-exchange slash unequip to queue exchange close before peer appearance update, got %d frames", len(queuedClose))
+	}
+	assertExchangeEndFrame(t, queuedClose[0], "active-exchange slash unequip peer close")
+	peerUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, queuedClose[1]))
+	if err != nil {
+		t.Fatalf("decode active-exchange slash unequip peer update: %v", err)
+	}
+	if peerUpdate.VID != owner.VID {
+		t.Fatalf("unexpected active-exchange slash unequip peer update: %+v", peerUpdate)
+	}
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected post-unequip exchange cancel error: %v", err)
+	}
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected post-unequip exchange cancel to emit no frames after the shell was closed, got %d", len(cancelOut))
+	}
+
+	persistedOwner, err := accounts.Load(ownerLogin)
+	if err != nil {
+		t.Fatalf("load persisted active-exchange unequip owner account: %v", err)
+	}
+	if len(persistedOwner.Characters[0].Equipment) != 0 {
+		t.Fatalf("active-exchange unequip persisted equipment got %+v want empty", persistedOwner.Characters[0].Equipment)
+	}
+	if len(persistedOwner.Characters[0].Inventory) != 1 || persistedOwner.Characters[0].Inventory[0].Vnum != template.Vnum || persistedOwner.Characters[0].Inventory[0].Slot != 5 {
+		t.Fatalf("active-exchange unequip persisted inventory got %+v", persistedOwner.Characters[0].Inventory)
+	}
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "peer active-exchange unequip")
+}
+
 func TestGameRuntimeItemExchangeAntiGiveItemAddReturnsAuthoredRejectTextInsideActiveShellWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
