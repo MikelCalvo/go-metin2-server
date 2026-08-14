@@ -1,6 +1,6 @@
 # Character Position and Change Speed Bootstrap
 
-This note freezes the first owned server-side presentation codecs for character stance/position and movement-speed refreshes without adding runtime emission policy yet.
+This note freezes the first owned stance/position presentation path and the server movement-speed refresh codec for `go-metin2-server`.
 
 It sits next to:
 - `combat-normal-attack-bootstrap.md`
@@ -9,7 +9,7 @@ It sits next to:
 
 ## Scope
 
-This slice owns only the fixed server-to-client packet shapes and the current non-emission rule.
+This slice owns the fixed server-to-client packet shapes plus the first deliberately narrow runtime emission policy for client-originated sit/stand requests.
 
 The first packet is:
 - name: `CHARACTER_POSITION`
@@ -45,21 +45,29 @@ The server `CHARACTER_POSITION` packet in this note is deliberately separate fro
 
 ## Current runtime rule
 
-The current Go runtime does not emit either packet.
+The current Go runtime accepts only the smallest legacy-compatible stance presentation subset on client `CHARACTER_POSITION` (`0x0A60`) ingress:
+- `position = 0` (`POSITION_GENERAL`) is treated as a stand/general presentation request,
+- `position = 4` (`POSITION_SITTING_GROUND`) is treated as a ground-sit presentation request,
+- any other position byte, including the battle-position byte, still fails closed with no response.
 
-That means the existing owned flows remain unchanged:
+When accepted in `GAME`, the socket must still own its live shared-world session, and the selected live character must exist and be above the bootstrap `0`-HP floor. The runtime emits exactly one self `GC CHARACTER_POSITION(selected_vid, position)` frame and queues the same frame to currently visible live peers through the existing shared-world visibility seam.
+
+This is presentation-only for now:
+- it does not persist stance to account or content snapshots,
+- it does not mutate selected combat target, runtime HP, normal-attack cadence, retaliation timers, inventory, points, or static/non-player actor state,
 - accepted normal attacks continue to use `TARGET`, optional `DAMAGE_INFO`, `PLAYER_POINT_CHANGE`, `DEAD`, and target clear according to the combat docs,
 - movement and sync continue to use the existing move/sync acknowledgement and peer fanout families,
-- player death/restart and non-player death/respawn do not add these packets as extra companions,
-- unsupported stance, battle-mode, speed-buff, slow, haste, stun, knockdown, skill, or AI effects stay out of scope until later tests freeze a concrete runtime policy.
+- player death/restart and non-player death/respawn do not add extra stance packets unless a later slice freezes that companion.
+
+The current Go runtime still does not emit `CHANGE_SPEED`. Unsupported battle-mode, speed-buff, slow, haste, stun, knockdown, skill, or AI effects stay out of scope until later tests freeze a concrete runtime policy.
 
 ## Non-goals
 
 This slice does not freeze:
-- the semantic meaning of every `position` byte,
-- sit/stand/battle-mode transitions,
+- the semantic meaning of every `position` byte beyond `0` and `4`,
+- persisted stance state,
+- battle-mode transitions,
 - speed formulas, buffs, debuffs, equipment speed effects, or mob chase/leash speed behavior,
-- peer fanout policy for future emitted stance or speed updates,
 - compatibility-grade choreography around stun, knockdown, skills, or projectile combat.
 
 ## Success definition
@@ -68,5 +76,7 @@ After this slice:
 - `internal/proto/world` can encode and decode `GC CHARACTER_POSITION(vid, position)` exactly,
 - `internal/proto/world` can encode and decode `GC CHANGE_SPEED(vid, moving_speed)` exactly,
 - wrong-header and invalid-payload frames fail closed at the codec layer,
-- the packet matrix lists both families as documented but currently non-emitted by the bootstrap runtime,
+- accepted client `CHARACTER_POSITION(position=0|4)` emits self + visible-peer `GC CHARACTER_POSITION(selected_vid, position)` without mutating combat state,
+- unsupported position bytes still fail closed through the existing combat/targeting ingress guard,
+- `CHANGE_SPEED` remains documented but currently non-emitted by the bootstrap runtime,
 - later movement/combat presentation slices can start from tested packet shapes rather than guessing these layouts.

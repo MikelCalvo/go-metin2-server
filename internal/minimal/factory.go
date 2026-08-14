@@ -72,6 +72,9 @@ const bootstrapNormalAttackCadenceWindow = 250 * time.Millisecond
 const bootstrapPracticeMobServerOriginRetaliationDelay = time.Second
 const bootstrapSpawnGroupReturnStepDelay = time.Second
 const bootstrapSpawnGroupReturnStepMaxStep int32 = 100
+
+const bootstrapCharacterPositionGeneral uint8 = 0
+const bootstrapCharacterPositionSittingGround uint8 = 4
 const itemDropRejectedInfoMessage = "You cannot drop this item."
 const itemPickupInventoryFullInfoMessage = "You have too many items."
 const itemBuyRejectedInfoMessage = "The merchant will not sell this item to you."
@@ -4597,6 +4600,31 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					notFound := ticketWhisperNotExistPacket(packet.Target)
 					return gameflow.WhisperResult{Accepted: true, Delivery: &notFound}
+				},
+				HandleCharacterPosition: func(packet combatproto.ClientCharacterPositionPacket) gameflow.CharacterPositionResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					if packet.Position != bootstrapCharacterPositionGeneral && packet.Position != bootstrapCharacterPositionSittingGround {
+						return gameflow.CharacterPositionResult{Accepted: false}
+					}
+					if !ownsLiveSharedWorldSession() {
+						return gameflow.CharacterPositionResult{Accepted: false}
+					}
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+						return gameflow.CharacterPositionResult{Accepted: false}
+					}
+					selected := selectedPlayer.LiveCharacter()
+					if selected.ID == 0 || selected.VID == 0 {
+						return gameflow.CharacterPositionResult{Accepted: false}
+					}
+
+					frame := worldproto.EncodeCharacterPosition(worldproto.CharacterPositionPacket{VID: selected.VID, Position: packet.Position})
+					if ownsLiveSharedWorldSession() {
+						sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selected, [][]byte{frame})
+					}
+					return gameflow.CharacterPositionResult{Accepted: true, Frames: [][]byte{frame}}
 				},
 				HandleInteraction: func(packet interactproto.RequestPacket) gameflow.InteractionResult {
 					stateMu.Lock()

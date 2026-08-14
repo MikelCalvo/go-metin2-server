@@ -517,6 +517,16 @@ Expected result:
 - the client remains connected
 - there is no severe rubber-band that blocks testing
 
+### 5.1.1 Stance presentation smoke
+
+- [ ] If the client UI exposes sit/stand controls, toggle ground-sit and then stand while another live character can see the actor
+- [ ] If packet tooling is available, send client `CHARACTER_POSITION(position=4)` and then `CHARACTER_POSITION(position=0)` from a live `GAME` session, and try one unsupported/battle position byte as a negative check
+
+Expected result:
+- accepted `position=4` and `position=0` requests return `GC::CHARACTER_POSITION(selected_vid, position)` to the sender and are visible to the nearby live peer
+- the selected combat target, practice-mob HP, normal-attack cadence, retaliation timers, inventory, points, and persistence are unchanged by the stance presentation
+- unsupported/battle position bytes fail closed with no visible frames or side effects
+
 ### 5.2 Repeat movement after idle
 
 - [ ] Wait 15 seconds

@@ -38,7 +38,7 @@ This contract currently applies only to:
 - one decode-and-fail-closed skill-intent guard so client `USE_SKILL` traffic cannot fall through as an unknown combat header
 - one decode-and-fail-closed projectile targeting guard so client `FLY_TARGETING` / `ADD_FLY_TARGETING` traffic cannot fall through as unknown combat headers
 - one decode-and-fail-closed `ON_CLICK` guard so legacy click traffic cannot fall through as an unknown target/UI header
-- one decode-and-fail-closed character-position / battle-position guard so client `CHARACTER_POSITION` traffic cannot fall through as an unknown target/UI header
+- one narrow character-position ingress seam so client `CHARACTER_POSITION(position=0|4)` traffic can drive the first self/peer stance presentation while unsupported/battle-position bytes still fail closed instead of falling through as unknown target/UI headers
 - one read-only runtime snapshot of the session's current selected combat target for local/debug surfaces
 
 This contract does **not** yet claim:
@@ -173,17 +173,19 @@ Client and legacy-oracle source inspection also shows a client -> server positio
 - payload length: `1`
 - payload: `uint8 position`
 
-The current bootstrap runtime owns this packet only as a safe ingress guard, not as accepted sit/stand, battle-mode, or stance gameplay.
-The `GAME` dispatcher decodes the fixed-width packet and can route it through a narrow handler seam, but the shipped minimal runtime leaves it unsupported and fail-closed:
+The current bootstrap runtime owns this packet as a narrow presentation-only stance ingress. The `GAME` dispatcher decodes the fixed-width packet and routes it through a minimal handler seam:
+- `position = 0` (`POSITION_GENERAL`) emits self `GC CHARACTER_POSITION(selected_vid, 0)` and queues the same frame to currently visible live peers,
+- `position = 4` (`POSITION_SITTING_GROUND`) emits self `GC CHARACTER_POSITION(selected_vid, 4)` and queues the same frame to currently visible live peers,
+- unsupported bytes, including the battle-position byte, still fail closed with no frames.
+
+Accepted stance presentation deliberately remains side-effect-free for combat and persistence:
 - no selected-target rewrite
 - no target HP mutation
 - no normal-attack cadence change
 - no immediate or delayed retaliation scheduling side effect
-- no self response frame
-- no queued peer frame
 - no point, inventory, or account-persistence side effect
 
-The server -> client `CHARACTER_POSITION` update family is now codec-owned separately in `character-position-change-speed-bootstrap.md`, but the shipped bootstrap runtime still does not emit it. This ingress guard only prevents known client position/battle-position traffic from becoming an unexpected-packet disconnect/error while leaving final sit/stand/battle-mode rendering policy to a later dedicated slice.
+The server -> client `CHARACTER_POSITION` update family and the still-non-emitted `CHANGE_SPEED` family are documented separately in `character-position-change-speed-bootstrap.md`. This ingress handling prevents known client sit/stand traffic from becoming an unexpected-packet disconnect/error while leaving final battle-mode, persistent stance, speed, stun, skill, and projectile presentation policy to later dedicated slices.
 
 ## Active-target prerequisite
 
@@ -438,7 +440,7 @@ This slice does **not** yet freeze:
 - ranged `SHOOT` gameplay beyond the current decode-and-fail-closed guard
 - accepted `USE_SKILL` gameplay beyond the current decode-and-fail-closed guard
 - accepted `ON_CLICK` interaction/shop/quest gameplay beyond the current decode-and-fail-closed guard
-- accepted `CHARACTER_POSITION` / battle-position gameplay beyond the current decode-and-fail-closed guard
+- broader `CHARACTER_POSITION` / battle-position gameplay beyond the current presentation-only `position=0|4` stance echo and unsupported-byte fail-closed guard
 - the broader server-driven respawn/delete-readd choreography details beyond the already-owned fixed timed rebuild that the separate death / respawn doc now freezes
 - broader hostile retaliation beyond the current owner-side self-only point-loss surfaces: one immediate piggyback on accepted practice-mob hits plus one sustained fixed-delay delayed server-origin follow-up cadence at a time
 - broader player-death / respawn semantics or broader non-combat gameplay gating for zero-HP owners after that floor is reached beyond the self-only `GC DEAD(owner_vid)` signal frozen in `player-death-bootstrap.md`
@@ -483,7 +485,7 @@ After this document lands, the repository should be able to say:
 - client `SHOOT(0x0403)` is now codec- and dispatch-owned as an unsupported ranged-shot guard; the minimal runtime decodes it in `GAME` but returns no frames and leaves selected-target HP/cadence/peer queues unchanged
 - client `FLY_TARGETING(0x0404)` and `ADD_FLY_TARGETING(0x0405)` are now codec- and dispatch-owned as unsupported projectile-targeting guards; the minimal runtime decodes them in `GAME` but returns no frames and leaves selected-target HP, normal-attack cadence, retaliation timers, peer queues, points, inventory, and account persistence unchanged
 - client `ON_CLICK(0x0A02)` is now codec- and dispatch-owned as an unsupported target/UI click guard; the minimal runtime decodes it in `GAME` but returns no frames and leaves selected-target HP, normal-attack cadence, interaction/shop/quest state, peer queues, points, inventory, and account persistence unchanged
-- client `CHARACTER_POSITION(0x0A60)` is now codec- and dispatch-owned as an unsupported position / battle-position guard; the minimal runtime decodes it in `GAME` but returns no frames and leaves selected-target HP, normal-attack cadence, retaliation timers, peer queues, points, inventory, and account persistence unchanged
+- client `CHARACTER_POSITION(0x0A60)` is now codec- and dispatch-owned as a narrow stance-presentation ingress: `position=0` and `position=4` return `GC CHARACTER_POSITION(selected_vid, position)` to the selected socket and currently visible live peers while leaving selected-target HP, normal-attack cadence, retaliation timers, points, inventory, and account persistence unchanged; unsupported bytes, including the current battle-position byte, still fail closed with no frames or side effects
 - if that engaged owner loses live shared-world ownership, clears or replaces target intent, or the engaged actor dies / rebuilds before a pending delay expires, the queued follow-up beat fails closed and the current cadence stops instead of claiming broader AI cleanup
 - when the engaged actor dies, the killing hit does not append an extra owner-side retaliation point-change, any pending delayed follow-up beat is canceled before respawn, and the respawn rebuild does not resurrect stale retaliation work without a fresh target / accepted hit
 - same-socket `/quit`, `/logout`, and `/phase_select` now all count as immediate owner-disappearance boundaries for that queued delayed cadence, and abrupt session close does too: each path removes the owner from shared-world visibility, cancels any pending delayed beat, and releases the same still-live practice mob right away; `/quit` still remains in `GAME` just long enough to return its self `CHAT_TYPE_COMMAND quit` delivery, `/logout` continues toward close, `/phase_select` returns to character select while any later fresh bootstrap still requires a new `TARGET`, and close tears the session down without a compensating gameplay packet

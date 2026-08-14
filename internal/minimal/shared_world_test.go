@@ -7006,10 +7006,10 @@ func TestNewGameSessionFactoryCharacterPositionFailsClosedWithoutMutatingSelecte
 		t.Fatalf("unexpected character-position guard dispatch error: %v", err)
 	}
 	if len(positionOut) != 0 {
-		t.Fatalf("expected character-position to fail closed with no frames, got %d", len(positionOut))
+		t.Fatalf("expected unsupported battle-position to fail closed with no frames, got %d", len(positionOut))
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
-		t.Fatalf("expected character-position to queue no server frames, got %d", len(queued))
+		t.Fatalf("expected unsupported battle-position to queue no server frames, got %d", len(queued))
 	}
 
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
@@ -7025,6 +7025,88 @@ func TestNewGameSessionFactoryCharacterPositionFailsClosedWithoutMutatingSelecte
 	}
 	if refresh.TargetVID != targetVID || refresh.HPPercent != 90 {
 		t.Fatalf("expected character-position to leave selected target at full HP before first normal hit, got %+v", refresh)
+	}
+}
+
+func TestNewGameSessionFactoryCharacterPositionEmitsSelfAndPeerPresentationWithoutMutatingCombat(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PositionOwner", 0x01030142, 0x02040142, 1100, 2100, 0, 101, 201)
+	peer := peerVisibilityCharacter("PositionPeer", 0x01030143, 0x02040143, 1120, 2100, 0, 102, 202)
+	issuePeerTicket(t, store, "position-owner", 0x42424242, owner)
+	issuePeerTicket(t, store, "position-peer", 0x43434343, peer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected character-position runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "PositionPresentationDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected character-position presentation dummy registration to succeed")
+	}
+	targetVID := uint32(actor.EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "position-owner", 0x42424242)
+	defer closeSessionFlow(t, ownerFlow)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected owner bootstrap frames with visible training dummy, got %d", len(ownerEnter))
+	}
+	peerFlow, peerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "position-peer", 0x43434343)
+	defer closeSessionFlow(t, peerFlow)
+	if len(peerEnter) != 11 {
+		t.Fatalf("expected peer bootstrap frames with owner and visible training dummy, got %d", len(peerEnter))
+	}
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, peerFlow)
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before character-position presentation: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target-selection frame before character-position presentation, got %d", len(selectOut))
+	}
+
+	for _, position := range []uint8{4, 0} {
+		positionOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientCharacterPosition(combatproto.ClientCharacterPositionPacket{Position: position})))
+		if err != nil {
+			t.Fatalf("unexpected character-position %d dispatch error: %v", position, err)
+		}
+		if len(positionOut) != 1 {
+			t.Fatalf("expected character-position %d to emit one self presentation frame, got %d", position, len(positionOut))
+		}
+		selfPosition, err := worldproto.DecodeCharacterPosition(decodeSingleFrame(t, positionOut[0]))
+		if err != nil {
+			t.Fatalf("decode self character-position %d presentation: %v", position, err)
+		}
+		if selfPosition.VID != owner.VID || selfPosition.Position != position {
+			t.Fatalf("expected self character-position %d presentation for owner VID, got %+v", position, selfPosition)
+		}
+		peerQueued := flushServerFrames(t, peerFlow)
+		if len(peerQueued) != 1 {
+			t.Fatalf("expected visible peer to receive one character-position %d presentation frame, got %d", position, len(peerQueued))
+		}
+		peerPosition, err := worldproto.DecodeCharacterPosition(decodeSingleFrame(t, peerQueued[0]))
+		if err != nil {
+			t.Fatalf("decode peer character-position %d presentation: %v", position, err)
+		}
+		if peerPosition.VID != owner.VID || peerPosition.Position != position {
+			t.Fatalf("expected peer character-position %d presentation for owner VID, got %+v", position, peerPosition)
+		}
+	}
+
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected attack error after character-position presentation: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected first normal attack after character-position presentation to return target refresh plus damage-info, got %d", len(attackOut))
+	}
+	refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[0]))
+	if err != nil {
+		t.Fatalf("decode target refresh after character-position presentation: %v", err)
+	}
+	if refresh.TargetVID != targetVID || refresh.HPPercent != 90 {
+		t.Fatalf("expected character-position presentation not to mutate combat HP before first normal hit, got %+v", refresh)
 	}
 }
 
