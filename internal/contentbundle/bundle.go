@@ -1161,6 +1161,20 @@ func buildInteractionDefinitionDeltas(current Bundle, candidate Bundle) []Intera
 	return deltas
 }
 
+func InteractionDefinitionDeltaByIdentity(deltas []InteractionDefinitionDelta, kind string, ref string) (InteractionDefinitionDelta, bool) {
+	kind = strings.TrimSpace(kind)
+	ref = strings.TrimSpace(ref)
+	if kind == "" || ref == "" || !interactionstore.ValidKind(kind) || !interactionstore.ValidRef(ref) {
+		return InteractionDefinitionDelta{}, false
+	}
+	for _, delta := range deltas {
+		if strings.TrimSpace(delta.Kind) == kind && strings.TrimSpace(delta.Ref) == ref {
+			return delta, true
+		}
+	}
+	return InteractionDefinitionDelta{}, false
+}
+
 func buildItemTemplateDeltas(currentTemplates []itemcatalog.Template, candidateTemplates []itemcatalog.Template) []ItemTemplateDelta {
 	if len(currentTemplates) == 0 && len(candidateTemplates) == 0 {
 		return nil

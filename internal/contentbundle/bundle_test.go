@@ -1340,6 +1340,25 @@ func TestBuildImportPreviewReturnsInteractionDefinitionDeltas(t *testing.T) {
 	}
 }
 
+func TestInteractionDefinitionDeltaByIdentityReturnsExactDelta(t *testing.T) {
+	deltas := []InteractionDefinitionDelta{
+		{Kind: interactionstore.KindInfo, Ref: "lore:notice", Change: "added", CandidatePreview: "New notice."},
+		{Kind: interactionstore.KindTalk, Ref: "npc:guide", Change: "changed", CurrentPreview: "Old text.", CandidatePreview: "New text."},
+	}
+
+	got, ok := InteractionDefinitionDeltaByIdentity(deltas, " talk ", " npc:guide ")
+	want := InteractionDefinitionDelta{Kind: interactionstore.KindTalk, Ref: "npc:guide", Change: "changed", CurrentPreview: "Old text.", CandidatePreview: "New text."}
+	if !ok || got != want {
+		t.Fatalf("unexpected exact interaction-definition delta: got=%#v ok=%v want=%#v", got, ok, want)
+	}
+	if _, ok := InteractionDefinitionDeltaByIdentity(deltas, interactionstore.KindTalk, "npc:missing"); ok {
+		t.Fatal("expected missing interaction-definition delta lookup to fail closed")
+	}
+	if _, ok := InteractionDefinitionDeltaByIdentity(deltas, "quest", "quest:first_steps"); ok {
+		t.Fatal("expected unsupported interaction kind lookup to fail closed")
+	}
+}
+
 func TestBuildImportPreviewReturnsServiceRouteDeltas(t *testing.T) {
 	redPotion := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}
 	woodenSword := itemcatalog.Template{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1}

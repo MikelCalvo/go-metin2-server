@@ -589,6 +589,12 @@ Returns one compact authored interaction-definition preview row from the live co
 
 Use it when local QA needs to inspect one authored definition preview and whether it is referenced by any static actor without fetching the full content-bundle summary or full bundle payload. It is not a gameplay protocol endpoint and does not mutate authored content.
 
+### `POST /local/content-bundle/import-preview/interaction-definitions/{kind}/{ref}`
+
+Returns one exact authored interaction-definition delta from a candidate content-bundle import preview without mutating runtime state. This loopback-only endpoint is registered only on `gamed`; it accepts the same candidate bundle body as `POST /local/content-bundle/import-preview`, validates `kind` and `ref` with the same owned interaction identity rules as the read-only definition reader, and returns the matching `deltas.interaction_definitions[]` row with `change` plus compact current/candidate previews. It returns `404` when that exact definition has no added/removed/changed delta, `400` for malformed identities or invalid candidate bundles, `403` for non-loopback callers, and accepts only `POST`.
+
+Use it when local QA needs to inspect one authored interaction-definition import impact before applying a bundle, without fetching and manually filtering the broad import-preview response. It is not a gameplay protocol endpoint and does not mutate authored content.
+
 ### `GET /local/content-bundle/item-templates/{vnum}`
 
 Returns one exact item-template summary row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; `vnum` must be a non-zero unsigned item template ID. It returns the matching `item_templates[]` row with the currently summarized item metadata, returns `404` when the live authored bundle has no matching item template, rejects malformed or zero vnums with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.

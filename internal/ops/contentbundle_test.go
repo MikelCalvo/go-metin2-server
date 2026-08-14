@@ -1224,6 +1224,136 @@ func TestLocalContentBundleQuestStateFlagImportPreviewEndpointRejectsWrongMethod
 	}
 }
 
+func TestLocalContentBundleInteractionDefinitionImportPreviewEndpointReturnsExactDeltaForLoopbackPost(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{InteractionDefinitions: []interactionstore.Definition{
+		{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Old text."},
+	}}}
+	mux := RegisterLocalContentBundleInteractionDefinitionImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/interaction-definitions/talk/npc:guide", strings.NewReader(`{"interaction_definitions":[{"kind":"talk","ref":"npc:guide","text":"New text."}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected import previewer to be called once, got %d calls", previewer.calls)
+	}
+	var got contentbundle.InteractionDefinitionDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode exact interaction-definition import-preview delta response: %v", err)
+	}
+	want := contentbundle.InteractionDefinitionDelta{Kind: interactionstore.KindTalk, Ref: "npc:guide", Change: "changed", CurrentPreview: "Old text.", CandidatePreview: "New text."}
+	if got != want {
+		t.Fatalf("unexpected exact interaction-definition import-preview delta:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleInteractionDefinitionImportPreviewEndpointReturnsNotFoundWhenDefinitionDoesNotChange(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{InteractionDefinitions: []interactionstore.Definition{
+		{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Same text."},
+	}}}
+	mux := RegisterLocalContentBundleInteractionDefinitionImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/interaction-definitions/talk/npc:guide", strings.NewReader(`{"interaction_definitions":[{"kind":"talk","ref":"npc:guide","text":"Same text."}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for unchanged interaction-definition delta, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
+func TestLocalContentBundleInteractionDefinitionImportPreviewEndpointRejectsInvalidIdentityBeforeCallback(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleInteractionDefinitionImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	for _, path := range []string{
+		"/local/content-bundle/import-preview/interaction-definitions/quest/quest:first_steps",
+		"/local/content-bundle/import-preview/interaction-definitions/talk/npc%2Fguide",
+		"/local/content-bundle/import-preview/interaction-definitions/talk/npc:guide/extra",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"interaction_definitions":[]}`))
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for malformed interaction-definition import-preview path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected malformed identity not to call previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleInteractionDefinitionImportPreviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleInteractionDefinitionImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/interaction-definitions/talk/npc:guide", strings.NewReader(`{"interaction_definitions":[]}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback interaction-definition import-preview, got %d", http.StatusForbidden, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected non-loopback import preview not to call previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleInteractionDefinitionImportPreviewEndpointRejectsWrongMethod(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleInteractionDefinitionImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/import-preview/interaction-definitions/talk/npc:guide", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method interaction-definition import-preview, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected wrong-method import preview not to call previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleInteractionDefinitionImportPreviewEndpointCoexistsWithBroadImportPreview(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{InteractionDefinitions: []interactionstore.Definition{
+		{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Old text."},
+	}}}
+	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+	mux = RegisterLocalContentBundleInteractionDefinitionImportPreviewEndpoint(mux, previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/interaction-definitions/talk/npc:guide", strings.NewReader(`{"interaction_definitions":[{"kind":"talk","ref":"npc:guide","text":"New text."}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d from focused route on shared mux, got %d", http.StatusOK, rec.Code)
+	}
+	var got contentbundle.InteractionDefinitionDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode focused interaction-definition import-preview delta response from shared mux: %v", err)
+	}
+	if got.Kind != interactionstore.KindTalk || got.Ref != "npc:guide" || got.Change != "changed" {
+		t.Fatalf("unexpected focused interaction-definition import-preview response from shared mux: %#v", got)
+	}
+}
+
 func TestLocalContentBundleImportPreviewEndpointReturnsServiceRouteDeltaJSONForLoopbackPost(t *testing.T) {
 	currentShop := interactionstore.Definition{
 		Kind:  interactionstore.KindShopPreview,
