@@ -1192,7 +1192,7 @@ func (r *Runtime) RefineRejectText(slot inventory.SlotIndex, template itemcatalo
 }
 
 func (r *Runtime) RefineInformation(slot inventory.SlotIndex, refineType uint8, template itemcatalog.Template) (RefineInformation, bool) {
-	if r == nil || !template.Refineable || template.RefineInfo == nil || slot >= inventory.CarriedInventorySlotCount || !itemcatalog.ValidTemplate(template) {
+	if r == nil || !template.Refineable || template.RefineInfo == nil || slot >= inventory.CarriedInventorySlotCount || !itemcatalog.ValidTemplate(template) || !r.CanUseTemplate(template) || template.AntiStack || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell {
 		return RefineInformation{}, false
 	}
 	if countInventorySlotOccupancy(r.liveInventory, slot) != 1 {

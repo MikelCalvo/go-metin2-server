@@ -3411,6 +3411,75 @@ func TestRuntimeRefineInformationComesFromTemplateWithoutMutation(t *testing.T) 
 	}
 }
 
+func TestRuntimeRefineInformationRejectsTransferAndSelectedCharacterGuardsWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name     string
+		job      uint8
+		raceNum  uint16
+		empire   uint8
+		level    uint8
+		template itemcatalog.Template
+	}{
+		{name: "anti get", template: guardedRefinePreviewTemplate(func(t *itemcatalog.Template) { t.AntiGet = true })},
+		{name: "anti drop", template: guardedRefinePreviewTemplate(func(t *itemcatalog.Template) { t.AntiDrop = true })},
+		{name: "anti give", template: guardedRefinePreviewTemplate(func(t *itemcatalog.Template) { t.AntiGive = true })},
+		{name: "anti sell", template: guardedRefinePreviewTemplate(func(t *itemcatalog.Template) { t.AntiSell = true })},
+		{name: "anti stack", template: guardedRefinePreviewTemplate(func(t *itemcatalog.Template) { t.AntiStack = true })},
+		{name: "anti warrior", job: 0, template: guardedRefinePreviewTemplate(func(t *itemcatalog.Template) { t.AntiWarrior = true })},
+		{name: "anti female", raceNum: 1, template: guardedRefinePreviewTemplate(func(t *itemcatalog.Template) { t.AntiFemale = true })},
+		{name: "anti empire b", empire: 2, template: guardedRefinePreviewTemplate(func(t *itemcatalog.Template) { t.AntiEmpireB = true })},
+		{name: "min level", level: 5, template: guardedRefinePreviewTemplate(func(t *itemcatalog.Template) { t.MinLevel = 10 })},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			level := tc.level
+			if level == 0 {
+				level = 1
+			}
+			persisted := loginticket.Character{
+				ID:      0x01030116,
+				VID:     0x02040116,
+				Name:    "GuardedRefine",
+				Job:     tc.job,
+				RaceNum: tc.raceNum,
+				Empire:  tc.empire,
+				Level:   level,
+				Inventory: []inventory.ItemInstance{
+					{ID: 115, Vnum: 11200, Count: 1, Slot: 8},
+				},
+				Quickslots: []loginticket.Quickslot{{Position: 4, Type: quickslotproto.TypeItem, Slot: 8}},
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "guarded-refine", CharacterIndex: 1})
+
+			if info, ok := runtime.RefineInformation(8, 3, tc.template); ok {
+				t.Fatalf("expected %s refine preview guard to fail closed, got %+v", tc.name, info)
+			}
+			live := runtime.LiveCharacter()
+			if !reflect.DeepEqual(live.Inventory, persisted.Inventory) || !reflect.DeepEqual(live.Quickslots, persisted.Quickslots) || live.Gold != persisted.Gold || live.Points != persisted.Points {
+				t.Fatalf("%s refine preview guard mutated live character: got %#v want %#v", tc.name, live, persisted)
+			}
+			persistedAfter := runtime.PersistedSnapshot()
+			if !reflect.DeepEqual(persistedAfter.Inventory, persisted.Inventory) || !reflect.DeepEqual(persistedAfter.Quickslots, persisted.Quickslots) || persistedAfter.Gold != persisted.Gold || persistedAfter.Points != persisted.Points {
+				t.Fatalf("%s refine preview guard mutated persisted character: got %#v want %#v", tc.name, persistedAfter, persisted)
+			}
+		})
+	}
+}
+
+func guardedRefinePreviewTemplate(mutate func(*itemcatalog.Template)) itemcatalog.Template {
+	template := itemcatalog.Template{
+		Vnum:       11200,
+		Name:       "Guarded Practice Blade",
+		Stackable:  false,
+		MaxCount:   1,
+		Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{ResultVnum: 11201, Cost: 2500, Probability: 75, Materials: []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}}},
+	}
+	mutate(&template)
+	return template
+}
+
 func TestRuntimeEquipItemWithTemplateRejectsAntiGetWithoutMutation(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030102,
