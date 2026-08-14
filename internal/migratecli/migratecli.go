@@ -1,6 +1,7 @@
 package migratecli
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -16,6 +17,8 @@ const (
 	exitOK    = 0
 	exitError = 1
 	exitUsage = 2
+
+	maxLedgerSnapshotBytes = 64 * 1024
 )
 
 // Run executes the small migration preflight CLI and returns a process-style exit
@@ -95,7 +98,7 @@ func runPlan(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer)
 		printPlanUsage(stderr)
 		return exitUsage
 	}
-	targetVersion, err := strconv.Atoi(targetVersionText)
+	targetVersion, targetLatest, err := parseTargetVersion(targetVersionText)
 	if err != nil {
 		fmt.Fprintf(stderr, "invalid --target-version %q: %v\n", targetVersionText, err)
 		return exitUsage
@@ -110,7 +113,12 @@ func runPlan(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer)
 		defer closeReader()
 	}
 
-	plan, err := dbmigrations.PlanToVersionFromJSONLedgerSnapshot(reader, targetVersion)
+	ledger, err := readBoundedLedgerSnapshot(reader)
+	if err != nil {
+		fmt.Fprintf(stderr, "migration plan: %v\n", err)
+		return exitError
+	}
+	plan, err := planLedgerSnapshot(ledger, targetVersion, targetLatest)
 	if err != nil {
 		fmt.Fprintf(stderr, "migration plan: %v\n", err)
 		return exitError
@@ -128,6 +136,43 @@ func openLedgerSnapshotReader(path string, stdin io.Reader) (io.Reader, func(), 
 		return nil, nil, err
 	}
 	return file, func() { _ = file.Close() }, nil
+}
+
+func parseTargetVersion(value string) (int, bool, error) {
+	trimmed := strings.TrimSpace(value)
+	if strings.EqualFold(trimmed, "latest") {
+		return 0, true, nil
+	}
+	version, err := strconv.Atoi(trimmed)
+	if err != nil {
+		return 0, false, err
+	}
+	return version, false, nil
+}
+
+func readBoundedLedgerSnapshot(reader io.Reader) ([]byte, error) {
+	if reader == nil {
+		reader = strings.NewReader("")
+	}
+	raw, err := io.ReadAll(io.LimitReader(reader, maxLedgerSnapshotBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read ledger snapshot: %w", err)
+	}
+	if len(raw) > maxLedgerSnapshotBytes {
+		return nil, fmt.Errorf("ledger snapshot exceeds %d bytes", maxLedgerSnapshotBytes)
+	}
+	return raw, nil
+}
+
+func planLedgerSnapshot(raw []byte, targetVersion int, targetLatest bool) (dbmigrations.Plan, error) {
+	if targetLatest {
+		catalog, err := dbmigrations.Catalog()
+		if err != nil {
+			return dbmigrations.Plan{}, err
+		}
+		return dbmigrations.PlanCatalogUpToLatestFromJSONLedgerSnapshot(catalog, bytes.NewReader(raw))
+	}
+	return dbmigrations.PlanToVersionFromJSONLedgerSnapshot(bytes.NewReader(raw), targetVersion)
 }
 
 func writeJSON(stdout io.Writer, stderr io.Writer, value any) int {
@@ -152,5 +197,5 @@ func printUsage(w io.Writer) {
 
 func printPlanUsage(w io.Writer) {
 	fmt.Fprintln(w, "plan usage:")
-	fmt.Fprintln(w, "  metin2-migrate plan --ledger-snapshot <path|-> --target-version <version>")
+	fmt.Fprintln(w, "  metin2-migrate plan --ledger-snapshot <path|-> --target-version <version|latest>")
 }

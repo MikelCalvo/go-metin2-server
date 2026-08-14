@@ -15,11 +15,13 @@ The migration package already had a validated embedded catalog, strict offline l
   - prints `go-metin2-migration-catalog-summary-v1` JSON,
   - includes version, name, paths, and SHA-256 checksums only,
   - never prints executable SQL.
-- `metin2-migrate plan --ledger-snapshot <path|-> --target-version <version>`
+- `metin2-migrate plan --ledger-snapshot <path|-> --target-version <version|latest>`
   - reads strict `go-metin2-schema-migrations-ledger-v1` JSON from a file or stdin,
+  - bounds snapshot input at 64 KiB before planning,
   - validates the snapshot against the embedded catalog,
   - prints the metadata-only dry-run plan toward the requested target version,
   - supports both up plans and rollback plans, including target `0`,
+  - accepts `latest` as an alias for the embedded catalog tip,
   - never opens a database and never applies or rolls back SQL.
 
 Exit-code policy:
@@ -54,7 +56,8 @@ Focused coverage in `internal/migratecli/migratecli_test.go` proves:
 
 - `catalog` writes metadata-only catalog JSON and omits SQL,
 - `plan` reads an offline ledger snapshot from stdin or a file path and emits a target plan,
-- invalid ledger snapshots fail before writing a plan,
+- invalid or oversized ledger snapshots fail before writing a plan,
+- `latest` resolves to the embedded catalog tip,
 - unsupported mutating commands such as `apply` fail as usage errors.
 
 Validation for this slice:

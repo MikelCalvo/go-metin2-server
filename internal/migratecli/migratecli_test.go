@@ -121,6 +121,58 @@ func TestRunPlanReadsOfflineLedgerSnapshotFromPath(t *testing.T) {
 	}
 }
 
+func TestRunPlanAcceptsLatestTargetVersion(t *testing.T) {
+	catalog, err := dbmigrations.Catalog()
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	snapshot := dbmigrations.LedgerSnapshot{Format: dbmigrations.LedgerSnapshotFormat, Entries: []dbmigrations.LedgerEntry{}}
+	rawSnapshot, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatalf("marshal ledger snapshot: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"plan", "--ledger-snapshot", "-", "--target-version", "latest"}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected latest target plan to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	var plan dbmigrations.Plan
+	if err := json.Unmarshal(stdout.Bytes(), &plan); err != nil {
+		t.Fatalf("decode latest target plan JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if plan.CurrentVersion != 0 || plan.LatestVersion != len(catalog) || plan.UpToDate {
+		t.Fatalf("unexpected latest target plan versions: %#v", plan)
+	}
+	if len(plan.Pending) != len(catalog) {
+		t.Fatalf("expected latest target to plan every migration from empty ledger, got %#v", plan.Pending)
+	}
+	last := plan.Pending[len(plan.Pending)-1]
+	if last.Version != len(catalog) || last.Direction != dbmigrations.DirectionUp {
+		t.Fatalf("expected last latest target step to reach catalog latest, got %#v", last)
+	}
+}
+
+func TestRunPlanRejectsOversizedLedgerSnapshotBeforePlanning(t *testing.T) {
+	oversizedSnapshot := `{"format":"` + dbmigrations.LedgerSnapshotFormat + `","entries":[]}` + strings.Repeat(" ", 70*1024)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"plan", "--ledger-snapshot", "-", "--target-version", "0"}, strings.NewReader(oversizedSnapshot), &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected oversized snapshot to exit 1, got %d", code)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected oversized snapshot not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "ledger snapshot exceeds") {
+		t.Fatalf("expected bounded snapshot error on stderr, got %q", stderr.String())
+	}
+}
+
 func TestRunPlanRejectsInvalidSnapshotBeforeWritingPlan(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

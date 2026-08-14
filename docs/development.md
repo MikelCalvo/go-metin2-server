@@ -140,10 +140,10 @@ Both driver and DSN must be empty to keep DB preflight disabled, or both must be
 go run ./cmd/metin2-migrate catalog
 go run ./cmd/metin2-migrate plan --ledger-snapshot snapshot.json --target-version 0
 curl -s http://127.0.0.1:6060/local/db/migrations/ledger-snapshot \
-  | go run ./cmd/metin2-migrate plan --ledger-snapshot - --target-version 7
+  | go run ./cmd/metin2-migrate plan --ledger-snapshot - --target-version latest
 ```
 
-`catalog` prints the embedded metadata-only migration catalog summary. `plan` reads a strict `go-metin2-schema-migrations-ledger-v1` snapshot from a path or stdin and prints a metadata-only dry-run plan to the requested target. The CLI never opens a database, applies SQL, rolls migrations back, or talks to the daemons.
+`catalog` prints the embedded metadata-only migration catalog summary. `plan` reads a strict `go-metin2-schema-migrations-ledger-v1` snapshot from a path or stdin and prints a metadata-only dry-run plan to the requested target; the target may be an explicit version such as `0` for full rollback preview or `latest` for the embedded catalog tip. The CLI caps ledger-snapshot input at 64 KiB, matching the local ops snapshot-plan endpoint, and rejects oversized input before planning. The CLI never opens a database, applies SQL, rolls migrations back, or talks to the daemons.
 
 `db/migrations` also exposes a programmatic apply primitive for future CLI/repository work. `ApplyCatalogUpToVersion` validates the same catalog/ledger/target boundary used by dry-run planning, executes pending up and down migration statements inside one transaction, writes or deletes matching `schema_migrations` rows, verifies transaction-local ledger state before commit when applicable, and rolls the transaction back on SQL, ledger, row-count, verification, or commit failures. This primitive is deliberately not registered as a local ops endpoint and is not wired into daemon startup; production use still needs an explicit driver/engine choice, backup/restore runbook, and a separate operator command surface before any mutating migration command is exposed.
 
