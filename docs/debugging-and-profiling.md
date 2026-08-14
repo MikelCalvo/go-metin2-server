@@ -619,6 +619,18 @@ Returns one exact quest-state flag row from the live content-bundle summary. Thi
 
 Use it when local QA needs to inspect one authored/bundled flag without fetching the full content-bundle summary or scanning a whole character/quest grouping. It is not a client quest protocol endpoint and does not mutate quest state.
 
+### `POST /local/content-bundle/import-preview/quest-state/characters/{character}`
+
+Returns the character-scoped quest-state flag deltas from a candidate content-bundle import preview without mutating runtime state. This loopback-only endpoint is registered only on `gamed`; it accepts the same candidate bundle body as `POST /local/content-bundle/import-preview`, validates `character` with the bootstrap quest-state character-name rule, and returns only matching `quest_state_flags[]` delta rows for that character. It returns `404` when that character has no added/removed/changed deltas, `400` for malformed identities or invalid candidate bundles, `403` for non-loopback callers, and accepts only `POST`.
+
+Use it when local QA needs to inspect every authored quest-state import impact for one character before applying a bundle, without fetching and manually filtering the broad import-preview response. It is not a client quest protocol endpoint and does not mutate quest state.
+
+### `POST /local/content-bundle/import-preview/quest-state/quests/{quest_ref}`
+
+Returns the quest-scoped quest-state flag deltas from a candidate content-bundle import preview without mutating runtime state. This loopback-only endpoint is registered only on `gamed`; it accepts the same candidate bundle body as `POST /local/content-bundle/import-preview`, validates `quest_ref` with the owned `quest:<name>` lower-snake reference rule, and returns only matching `quest_state_flags[]` delta rows for that quest. It returns `404` when that quest has no added/removed/changed deltas, `400` for malformed identities or invalid candidate bundles, `403` for non-loopback callers, and accepts only `POST`.
+
+Use it when local QA needs to inspect every authored quest-state import impact for one quest ref before applying a bundle, without fetching and manually filtering the broad import-preview response. It is not a client quest protocol endpoint and does not mutate quest state.
+
 ### `POST /local/content-bundle/import-preview/quest-state/flags/{character}/{quest_ref}/{flag}`
 
 Returns one exact quest-state flag delta from a candidate content-bundle import preview without mutating runtime state. This loopback-only endpoint is registered only on `gamed`; it accepts the same candidate bundle body as `POST /local/content-bundle/import-preview`, validates the path identity with the same `character`, `quest_ref`, and lower-snake `flag` rules as the read-only quest-state flag endpoints, and returns the matching `quest_state_flags[]` delta with `change` plus canonical current/candidate snapshots. It returns `404` when that exact flag has no added/removed/changed delta, `400` for malformed identities or invalid candidate bundles, `403` for non-loopback callers, and accepts only `POST`.

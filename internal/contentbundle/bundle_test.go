@@ -245,6 +245,60 @@ func TestQuestStateFlagDeltaByIdentityReturnsClonedExactDelta(t *testing.T) {
 	}
 }
 
+func TestQuestStateFlagDeltasByCharacterReturnsClonedCharacterDeltas(t *testing.T) {
+	currentStep := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "step", Value: 1}
+	candidateStep := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "step", Value: 2}
+	deltas := []QuestStateDelta{
+		{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "met_guard", Change: "added", Candidate: &queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}},
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "old_flag", Change: "removed", Current: &queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "old_flag", Value: 1}},
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Change: "changed", Current: &currentStep, Candidate: &candidateStep},
+	}
+
+	got := QuestStateFlagDeltasByCharacter(deltas, " QuestHero ")
+	want := []QuestStateDelta{
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "old_flag", Change: "removed", Current: &queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "old_flag", Value: 1}},
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Change: "changed", Current: &currentStep, Candidate: &candidateStep},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected character-scoped quest-state deltas:\n got: %#v\nwant: %#v", got, want)
+	}
+	got[1].Current.Value = 99
+	got[1].Candidate.Value = 100
+	if currentStep.Value != 1 || candidateStep.Value != 2 {
+		t.Fatalf("expected character-scoped quest-state delta lookup to clone nested snapshots, got current=%+v candidate=%+v", currentStep, candidateStep)
+	}
+	if got := QuestStateFlagDeltasByCharacter(deltas, "MissingHero"); len(got) != 0 {
+		t.Fatalf("expected missing character-scoped quest-state delta lookup to return no rows, got %#v", got)
+	}
+}
+
+func TestQuestStateFlagDeltasByQuestRefReturnsClonedQuestDeltas(t *testing.T) {
+	currentStep := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "step", Value: 1}
+	candidateStep := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "step", Value: 2}
+	deltas := []QuestStateDelta{
+		{Character: "QuestHero", QuestRef: "quest:daily_check", Name: "talked_to_guide", Change: "added", Candidate: &queststate.FlagSnapshot{QuestRef: "quest:daily_check", Name: "talked_to_guide", Value: 1}},
+		{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "met_guard", Change: "added", Candidate: &queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}},
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Change: "changed", Current: &currentStep, Candidate: &candidateStep},
+	}
+
+	got := QuestStateFlagDeltasByQuestRef(deltas, " quest:first_steps ")
+	want := []QuestStateDelta{
+		{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "met_guard", Change: "added", Candidate: &queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}},
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Change: "changed", Current: &currentStep, Candidate: &candidateStep},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected quest-scoped quest-state deltas:\n got: %#v\nwant: %#v", got, want)
+	}
+	got[1].Current.Value = 99
+	got[1].Candidate.Value = 100
+	if currentStep.Value != 1 || candidateStep.Value != 2 {
+		t.Fatalf("expected quest-scoped quest-state delta lookup to clone nested snapshots, got current=%+v candidate=%+v", currentStep, candidateStep)
+	}
+	if got := QuestStateFlagDeltasByQuestRef(deltas, "quest:missing_steps"); len(got) != 0 {
+		t.Fatalf("expected missing quest-scoped quest-state delta lookup to return no rows, got %#v", got)
+	}
+}
+
 func TestBuildImportPreviewReturnsQuestStateQuestCountDelta(t *testing.T) {
 	preview, err := BuildImportPreview(
 		Bundle{QuestState: []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1}}},

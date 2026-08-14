@@ -981,6 +981,42 @@ func QuestStateFlagDeltaByIdentity(deltas []QuestStateDelta, identity QuestState
 	return QuestStateDelta{}, false
 }
 
+func QuestStateFlagDeltasByCharacter(deltas []QuestStateDelta, character string) []QuestStateDelta {
+	character = strings.TrimSpace(character)
+	if character == "" || !queststate.ValidCharacterName(character) {
+		return nil
+	}
+	matches := make([]QuestStateDelta, 0)
+	for _, delta := range deltas {
+		if delta.Character != character {
+			continue
+		}
+		matches = append(matches, cloneQuestStateDelta(delta))
+	}
+	if len(matches) == 0 {
+		return nil
+	}
+	return matches
+}
+
+func QuestStateFlagDeltasByQuestRef(deltas []QuestStateDelta, questRef string) []QuestStateDelta {
+	questRef = strings.TrimSpace(questRef)
+	if questRef == "" || !queststate.ValidQuestRef(questRef) {
+		return nil
+	}
+	matches := make([]QuestStateDelta, 0)
+	for _, delta := range deltas {
+		if delta.QuestRef != questRef {
+			continue
+		}
+		matches = append(matches, cloneQuestStateDelta(delta))
+	}
+	if len(matches) == 0 {
+		return nil
+	}
+	return matches
+}
+
 func cloneQuestStateDelta(delta QuestStateDelta) QuestStateDelta {
 	cloned := delta
 	if delta.Current != nil {

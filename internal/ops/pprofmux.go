@@ -3152,6 +3152,94 @@ func RegisterLocalContentBundleQuestStateFlagImportPreviewEndpoint(mux *http.Ser
 	return mux
 }
 
+func RegisterLocalContentBundleQuestStateCharacterImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
+	if mux == nil || previewContentBundleImport == nil {
+		return mux
+	}
+	mux.HandleFunc("POST /local/content-bundle/import-preview/quest-state/characters/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		character, ok := decodeLocalContentBundleQuestStateCharacterImportPreviewIdentity(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bundle, status, ok := decodeLocalContentBundleRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		normalized, err := contentbundle.Canonicalize(bundle)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		preview, status := previewContentBundleImport(normalized)
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, preview, status)
+			return
+		}
+		importPreview, ok := preview.(contentbundle.ImportPreview)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		deltas := contentbundle.QuestStateFlagDeltasByCharacter(importPreview.Deltas.QuestStateFlags, character)
+		if len(deltas) == 0 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, deltas, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalContentBundleQuestStateQuestImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
+	if mux == nil || previewContentBundleImport == nil {
+		return mux
+	}
+	mux.HandleFunc("POST /local/content-bundle/import-preview/quest-state/quests/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		questRef, ok := decodeLocalContentBundleQuestStateQuestImportPreviewIdentity(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bundle, status, ok := decodeLocalContentBundleRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		normalized, err := contentbundle.Canonicalize(bundle)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		preview, status := previewContentBundleImport(normalized)
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, preview, status)
+			return
+		}
+		importPreview, ok := preview.(contentbundle.ImportPreview)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		deltas := contentbundle.QuestStateFlagDeltasByQuestRef(importPreview.Deltas.QuestStateFlags, questRef)
+		if len(deltas) == 0 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, deltas, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalContentBundleValidateEndpoint(mux *http.ServeMux) *http.ServeMux {
 	if mux == nil {
 		return mux
@@ -3982,6 +4070,18 @@ func decodeLocalQuestStateFlagIdentity(r *http.Request) (string, string, string,
 
 func decodeLocalContentBundleQuestStateFlagIdentity(r *http.Request) (string, string, string, bool) {
 	return decodeQuestStateFlagIdentityWithPrefix(r, "/local/content-bundle/quest-state/flags/")
+}
+
+func decodeLocalContentBundleQuestStateCharacterImportPreviewIdentity(r *http.Request) (string, bool) {
+	character, ok := decodeLocalCharacterName(r, "/local/content-bundle/import-preview/quest-state/characters/")
+	if !ok || !queststate.ValidCharacterName(character) {
+		return "", false
+	}
+	return character, true
+}
+
+func decodeLocalContentBundleQuestStateQuestImportPreviewIdentity(r *http.Request) (string, bool) {
+	return decodeQuestRefWithPrefix(r, "/local/content-bundle/import-preview/quest-state/quests/")
 }
 
 func decodeLocalContentBundleQuestStateFlagImportPreviewIdentity(r *http.Request) (contentbundle.QuestStateFlagIdentity, bool) {
