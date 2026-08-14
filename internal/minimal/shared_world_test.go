@@ -2495,6 +2495,100 @@ func TestGameRuntimeSpawnGroupsForMapReturnsMapLocalSpawnBackedActors(t *testing
 	}
 }
 
+func TestGameRuntimeSpawnGroupLeashesForMapReturnsMapLocalLeashSnapshots(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{
+		StaticActors: []contentbundle.StaticActor{{
+			Name:     "MapLeashGuideOnly",
+			MapIndex: 99,
+			X:        1400,
+			Y:        2400,
+			RaceNum:  20301,
+		}},
+		SpawnGroups: []contentbundle.SpawnGroup{
+			{
+				Ref:           "practice.map_leash_home",
+				Name:          "MapLeashAtHome",
+				MapIndex:      42,
+				X:             1200,
+				Y:             2200,
+				RaceNum:       20350,
+				CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+			},
+			{
+				Ref:           "practice.map_leash_return",
+				Name:          "MapLeashReturnRequired",
+				MapIndex:      42,
+				X:             1700,
+				Y:             2800,
+				RaceNum:       20351,
+				CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+			},
+			{
+				Ref:           "practice.map_leash_other",
+				Name:          "MapLeashOtherMap",
+				MapIndex:      43,
+				X:             1300,
+				Y:             2300,
+				RaceNum:       20352,
+				CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("import map-local leash spawn-group bundle: %v", err)
+	}
+	returnGroup, ok := runtime.SpawnGroupByRef("practice.map_leash_return")
+	if !ok {
+		t.Fatal("expected return-required map leash spawn group to resolve")
+	}
+	if _, ok := runtime.UpdateStaticActor(returnGroup.EntityID, "MapLeashReturnRequired", 42, 2301, 2800, 20351); !ok {
+		t.Fatal("expected map-local leash actor current-position update to succeed")
+	}
+
+	leashes, ok := runtime.SpawnGroupLeashesForMap(42, 400)
+	if !ok {
+		t.Fatal("expected map-local spawn-group leash lookup to resolve map 42")
+	}
+	if len(leashes) != 2 {
+		t.Fatalf("expected two map 42 leash snapshots, got %+v", leashes)
+	}
+	if leashes[0].Actor.Name != "MapLeashAtHome" || leashes[0].Status != worldruntime.SpawnLeashStatusAtHome || leashes[0].ReturnRequired {
+		t.Fatalf("expected first map-local leash to be at home, got %+v", leashes[0])
+	}
+	if leashes[1].Actor.Name != "MapLeashReturnRequired" || leashes[1].Status != worldruntime.SpawnLeashStatusReturnRequired || !leashes[1].ReturnRequired || leashes[1].ReturnTarget == nil {
+		t.Fatalf("expected second map-local leash to require return, got %+v", leashes[1])
+	}
+	if leashes[1].Home.X != 1700 || leashes[1].Current.X != 2301 || leashes[1].Actor.SpawnGroupRef != "practice.map_leash_return" {
+		t.Fatalf("expected map-local leash to preserve authored home and current position, got %+v", leashes[1])
+	}
+
+	otherMapLeashes, ok := runtime.SpawnGroupLeashesForMap(43, 400)
+	if !ok || len(otherMapLeashes) != 1 || otherMapLeashes[0].Actor.Name != "MapLeashOtherMap" {
+		t.Fatalf("expected one map 43 leash snapshot, ok=%v snapshots=%+v", ok, otherMapLeashes)
+	}
+	guideOnlyLeashes, ok := runtime.SpawnGroupLeashesForMap(99, 400)
+	if !ok || len(guideOnlyLeashes) != 0 {
+		t.Fatalf("expected occupied map 99 with no spawn groups to return an empty leash slice, ok=%v snapshots=%+v", ok, guideOnlyLeashes)
+	}
+	if leashes, ok := runtime.SpawnGroupLeashesForMap(42, 0); ok || len(leashes) != 0 {
+		t.Fatalf("expected non-positive radius lookup to fail closed, got ok=%v leashes=%+v", ok, leashes)
+	}
+	if leashes, ok := runtime.SpawnGroupLeashesForMap(0, 400); ok || len(leashes) != 0 {
+		t.Fatalf("expected map 0 leash lookup to fail closed, got ok=%v leashes=%+v", ok, leashes)
+	}
+}
+
 func TestGameRuntimeStaticActorsForMapReturnsMapLocalStaticActors(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},

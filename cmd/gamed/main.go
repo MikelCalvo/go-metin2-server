@@ -362,6 +362,16 @@ func main() {
 			return groups, true
 		},
 	)
+	opsHandler = ops.RegisterLocalMapSpawnGroupLeashesEndpoint(
+		opsHandler,
+		func(mapIndex uint32, radius int32) (any, bool) {
+			leashes, ok := gameRuntime.SpawnGroupLeashesForMap(mapIndex, radius)
+			if !ok {
+				return nil, false
+			}
+			return leashes, true
+		},
+	)
 	opsHandler = ops.RegisterLocalMapStaticActorRespawnsEndpoint(
 		opsHandler,
 		func(mapIndex uint32) (any, bool) {

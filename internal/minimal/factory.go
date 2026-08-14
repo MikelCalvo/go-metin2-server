@@ -1934,6 +1934,13 @@ func (r *gameRuntime) SpawnGroupsForMap(mapIndex uint32) ([]StaticActorSnapshot,
 	return r.sharedWorld.SpawnGroupsForMap(mapIndex)
 }
 
+func (r *gameRuntime) SpawnGroupLeashesForMap(mapIndex uint32, radius int32) ([]SpawnGroupLeashSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil {
+		return nil, false
+	}
+	return r.sharedWorld.SpawnGroupLeashesForMap(mapIndex, radius)
+}
+
 func (r *gameRuntime) StaticActorsForMap(mapIndex uint32) ([]StaticActorSnapshot, bool) {
 	if r == nil || r.sharedWorld == nil {
 		return nil, false

@@ -3354,6 +3354,123 @@ func TestLocalMapOccupancySpawnGroupsEndpointReturnsMapLocalSpawnGroupsForLoopba
 	}
 }
 
+func TestLocalMapOccupancySpawnGroupLeashesEndpointReturnsMapLocalLeashesForLoopbackGet(t *testing.T) {
+	lookup := &stubMapSpawnGroupLeashesLookup{snapshots: map[uint32]any{
+		42: []map[string]any{{"actor": map[string]any{"entity_id": uint64(88), "name": "PracticeMob", "spawn_group_ref": "practice.map_mob"}, "status": "return_required", "return_required": true}},
+	}}
+	mux := RegisterLocalMapSpawnGroupLeashesEndpoint(NewPprofMux("gamed"), lookup.MapSpawnGroupLeashes)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/42/spawn-group-leashes?radius=400", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if lookup.calls != 1 || lookup.lastMapIndex != 42 || lookup.lastRadius != 400 {
+		t.Fatalf("expected map spawn-group leash lookup for map 42/radius 400 once, got calls=%d map_index=%d radius=%d", lookup.calls, lookup.lastMapIndex, lookup.lastRadius)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"spawn_group_ref":"practice.map_mob"`) || !strings.Contains(body, `"status":"return_required"`) || !strings.Contains(body, `"return_required":true`) {
+		t.Fatalf("unexpected JSON response body %q", body)
+	}
+}
+
+func TestLocalMapOccupancySpawnGroupLeashesEndpointRejectsInvalidRadius(t *testing.T) {
+	lookup := &stubMapSpawnGroupLeashesLookup{}
+	mux := RegisterLocalMapSpawnGroupLeashesEndpoint(NewPprofMux("gamed"), lookup.MapSpawnGroupLeashes)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/42/spawn-group-leashes?radius=0", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected map spawn-group leash lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalMapOccupancySpawnGroupLeashesEndpointRejectsInvalidMapIndex(t *testing.T) {
+	lookup := &stubMapSpawnGroupLeashesLookup{}
+	mux := RegisterLocalMapSpawnGroupLeashesEndpoint(NewPprofMux("gamed"), lookup.MapSpawnGroupLeashes)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/not-a-map/spawn-group-leashes?radius=400", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected map spawn-group leash lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalMapOccupancySpawnGroupLeashesEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	lookup := &stubMapSpawnGroupLeashesLookup{}
+	mux := RegisterLocalMapSpawnGroupLeashesEndpoint(NewPprofMux("gamed"), lookup.MapSpawnGroupLeashes)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/42/spawn-group-leashes?radius=400", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected map spawn-group leash lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalMapOccupancySpawnGroupLeashesEndpointRejectsWrongMethod(t *testing.T) {
+	lookup := &stubMapSpawnGroupLeashesLookup{}
+	mux := RegisterLocalMapSpawnGroupLeashesEndpoint(NewPprofMux("gamed"), lookup.MapSpawnGroupLeashes)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/maps/42/spawn-group-leashes?radius=400", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected map spawn-group leash lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalMapOccupancySpawnGroupLeashesEndpointReturnsNotFoundForMissingMap(t *testing.T) {
+	lookup := &stubMapSpawnGroupLeashesLookup{snapshots: map[uint32]any{}}
+	mux := RegisterLocalMapSpawnGroupLeashesEndpoint(NewPprofMux("gamed"), lookup.MapSpawnGroupLeashes)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/42/spawn-group-leashes?radius=400", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+	if lookup.calls != 1 || lookup.lastMapIndex != 42 || lookup.lastRadius != 400 {
+		t.Fatalf("expected map spawn-group leash lookup for map 42/radius 400 once, got calls=%d map_index=%d radius=%d", lookup.calls, lookup.lastMapIndex, lookup.lastRadius)
+	}
+}
+
 func TestLocalMapOccupancySpawnGroupsEndpointRejectsInvalidMapIndex(t *testing.T) {
 	lookup := &stubMapSpawnGroupsLookup{}
 	mux := RegisterLocalMapSpawnGroupsEndpoint(NewPprofMux("gamed"), lookup.MapSpawnGroups)
@@ -3698,11 +3815,13 @@ func TestLocalMapOccupancyCombatTargetsEndpointReturnsNotFoundForMissingMap(t *t
 func TestLocalMapOccupancyMapCombatTargetsAndSpawnLifecycleEndpointsCoexist(t *testing.T) {
 	occupancy := &stubMapOccupancyLookup{snapshots: map[uint32]any{42: map[string]any{"map_index": uint32(42), "character_count": 1}}}
 	spawnGroups := &stubMapSpawnGroupsLookup{snapshots: map[uint32]any{42: []map[string]any{{"entity_id": uint64(88), "spawn_group_ref": "practice.map_mob"}}}}
+	leashes := &stubMapSpawnGroupLeashesLookup{snapshots: map[uint32]any{42: []map[string]any{{"actor": map[string]any{"entity_id": uint64(88), "spawn_group_ref": "practice.map_mob"}, "status": "at_home"}}}}
 	respawns := &stubMapStaticActorRespawnsLookup{snapshots: map[uint32]any{42: []map[string]any{{"entity_id": uint64(99), "remaining_ms": int64(1200)}}}}
 	combatTargets := &stubMapCombatTargetsLookup{snapshots: map[uint32]any{42: []map[string]any{{"target_vid": uint32(99), "hp_percent": uint8(80)}}}}
 	returnSteps := &stubMapSpawnGroupReturnStepsLookup{snapshots: map[uint32]any{42: []map[string]any{{"entity_id": uint64(88), "remaining_ms": int64(1000)}}}}
 	mux := RegisterLocalMapOccupancyEndpoint(NewPprofMux("gamed"), occupancy.MapOccupancy)
 	mux = RegisterLocalMapSpawnGroupsEndpoint(mux, spawnGroups.MapSpawnGroups)
+	mux = RegisterLocalMapSpawnGroupLeashesEndpoint(mux, leashes.MapSpawnGroupLeashes)
 	mux = RegisterLocalMapStaticActorRespawnsEndpoint(mux, respawns.MapStaticActorRespawns)
 	mux = RegisterLocalMapCombatTargetsEndpoint(mux, combatTargets.MapCombatTargets)
 	mux = RegisterLocalMapSpawnGroupReturnStepsEndpoint(mux, returnSteps.MapSpawnGroupReturnSteps)
@@ -3714,8 +3833,8 @@ func TestLocalMapOccupancyMapCombatTargetsAndSpawnLifecycleEndpointsCoexist(t *t
 	if occupancyRec.Code != http.StatusOK {
 		t.Fatalf("expected occupancy endpoint status %d, got %d", http.StatusOK, occupancyRec.Code)
 	}
-	if occupancy.calls != 1 || spawnGroups.calls != 0 || respawns.calls != 0 || combatTargets.calls != 0 || returnSteps.calls != 0 {
-		t.Fatalf("expected only occupancy lookup for /local/maps/42, got occupancy=%d spawn=%d respawn=%d combat=%d return=%d", occupancy.calls, spawnGroups.calls, respawns.calls, combatTargets.calls, returnSteps.calls)
+	if occupancy.calls != 1 || spawnGroups.calls != 0 || leashes.calls != 0 || respawns.calls != 0 || combatTargets.calls != 0 || returnSteps.calls != 0 {
+		t.Fatalf("expected only occupancy lookup for /local/maps/42, got occupancy=%d spawn=%d leash=%d respawn=%d combat=%d return=%d", occupancy.calls, spawnGroups.calls, leashes.calls, respawns.calls, combatTargets.calls, returnSteps.calls)
 	}
 
 	combatReq := httptest.NewRequest(http.MethodGet, "/local/maps/42/combat-targets", nil)
@@ -3725,8 +3844,8 @@ func TestLocalMapOccupancyMapCombatTargetsAndSpawnLifecycleEndpointsCoexist(t *t
 	if combatRec.Code != http.StatusOK {
 		t.Fatalf("expected map combat-targets endpoint status %d, got %d", http.StatusOK, combatRec.Code)
 	}
-	if occupancy.calls != 1 || spawnGroups.calls != 0 || respawns.calls != 0 || combatTargets.calls != 1 || combatTargets.lastMapIndex != 42 || returnSteps.calls != 0 {
-		t.Fatalf("expected combat-target lookup after occupancy, got occupancy=%d spawn=%d respawn=%d combat=%d combat_map=%d return=%d", occupancy.calls, spawnGroups.calls, respawns.calls, combatTargets.calls, combatTargets.lastMapIndex, returnSteps.calls)
+	if occupancy.calls != 1 || spawnGroups.calls != 0 || leashes.calls != 0 || respawns.calls != 0 || combatTargets.calls != 1 || combatTargets.lastMapIndex != 42 || returnSteps.calls != 0 {
+		t.Fatalf("expected combat-target lookup after occupancy, got occupancy=%d spawn=%d leash=%d respawn=%d combat=%d combat_map=%d return=%d", occupancy.calls, spawnGroups.calls, leashes.calls, respawns.calls, combatTargets.calls, combatTargets.lastMapIndex, returnSteps.calls)
 	}
 
 	respawnReq := httptest.NewRequest(http.MethodGet, "/local/maps/42/static-actor-respawns", nil)
@@ -3736,8 +3855,19 @@ func TestLocalMapOccupancyMapCombatTargetsAndSpawnLifecycleEndpointsCoexist(t *t
 	if respawnRec.Code != http.StatusOK {
 		t.Fatalf("expected map static-actor-respawns endpoint status %d, got %d", http.StatusOK, respawnRec.Code)
 	}
-	if occupancy.calls != 1 || spawnGroups.calls != 0 || respawns.calls != 1 || respawns.lastMapIndex != 42 || combatTargets.calls != 1 || returnSteps.calls != 0 {
-		t.Fatalf("expected respawn lookup after combat-target, got occupancy=%d spawn=%d respawn=%d respawn_map=%d combat=%d return=%d", occupancy.calls, spawnGroups.calls, respawns.calls, respawns.lastMapIndex, combatTargets.calls, returnSteps.calls)
+	if occupancy.calls != 1 || spawnGroups.calls != 0 || leashes.calls != 0 || respawns.calls != 1 || respawns.lastMapIndex != 42 || combatTargets.calls != 1 || returnSteps.calls != 0 {
+		t.Fatalf("expected respawn lookup after combat-target, got occupancy=%d spawn=%d leash=%d respawn=%d respawn_map=%d combat=%d return=%d", occupancy.calls, spawnGroups.calls, leashes.calls, respawns.calls, respawns.lastMapIndex, combatTargets.calls, returnSteps.calls)
+	}
+
+	leashReq := httptest.NewRequest(http.MethodGet, "/local/maps/42/spawn-group-leashes?radius=400", nil)
+	leashReq.RemoteAddr = "127.0.0.1:12345"
+	leashRec := httptest.NewRecorder()
+	mux.ServeHTTP(leashRec, leashReq)
+	if leashRec.Code != http.StatusOK {
+		t.Fatalf("expected map spawn-group-leashes endpoint status %d, got %d", http.StatusOK, leashRec.Code)
+	}
+	if occupancy.calls != 1 || spawnGroups.calls != 0 || leashes.calls != 1 || leashes.lastMapIndex != 42 || leashes.lastRadius != 400 || respawns.calls != 1 || combatTargets.calls != 1 || returnSteps.calls != 0 {
+		t.Fatalf("expected leash lookup after respawn, got occupancy=%d spawn=%d leash=%d leash_map=%d leash_radius=%d respawn=%d combat=%d return=%d", occupancy.calls, spawnGroups.calls, leashes.calls, leashes.lastMapIndex, leashes.lastRadius, respawns.calls, combatTargets.calls, returnSteps.calls)
 	}
 
 	returnReq := httptest.NewRequest(http.MethodGet, "/local/maps/42/spawn-group-return-steps", nil)
@@ -3747,8 +3877,8 @@ func TestLocalMapOccupancyMapCombatTargetsAndSpawnLifecycleEndpointsCoexist(t *t
 	if returnRec.Code != http.StatusOK {
 		t.Fatalf("expected map spawn-group-return-steps endpoint status %d, got %d", http.StatusOK, returnRec.Code)
 	}
-	if occupancy.calls != 1 || spawnGroups.calls != 0 || respawns.calls != 1 || combatTargets.calls != 1 || returnSteps.calls != 1 || returnSteps.lastMapIndex != 42 {
-		t.Fatalf("expected return-step lookup after respawn, got occupancy=%d spawn=%d respawn=%d combat=%d return=%d return_map=%d", occupancy.calls, spawnGroups.calls, respawns.calls, combatTargets.calls, returnSteps.calls, returnSteps.lastMapIndex)
+	if occupancy.calls != 1 || spawnGroups.calls != 0 || leashes.calls != 1 || respawns.calls != 1 || combatTargets.calls != 1 || returnSteps.calls != 1 || returnSteps.lastMapIndex != 42 {
+		t.Fatalf("expected return-step lookup after respawn, got occupancy=%d spawn=%d leash=%d respawn=%d combat=%d return=%d return_map=%d", occupancy.calls, spawnGroups.calls, leashes.calls, respawns.calls, combatTargets.calls, returnSteps.calls, returnSteps.lastMapIndex)
 	}
 
 	spawnReq := httptest.NewRequest(http.MethodGet, "/local/maps/42/spawn-groups", nil)
@@ -3758,8 +3888,8 @@ func TestLocalMapOccupancyMapCombatTargetsAndSpawnLifecycleEndpointsCoexist(t *t
 	if spawnRec.Code != http.StatusOK {
 		t.Fatalf("expected map spawn-groups endpoint status %d, got %d", http.StatusOK, spawnRec.Code)
 	}
-	if occupancy.calls != 1 || spawnGroups.calls != 1 || spawnGroups.lastMapIndex != 42 || respawns.calls != 1 || combatTargets.calls != 1 || returnSteps.calls != 1 {
-		t.Fatalf("expected spawn lookup after return-step, got occupancy=%d spawn=%d spawn_map=%d respawn=%d combat=%d return=%d", occupancy.calls, spawnGroups.calls, spawnGroups.lastMapIndex, respawns.calls, combatTargets.calls, returnSteps.calls)
+	if occupancy.calls != 1 || spawnGroups.calls != 1 || spawnGroups.lastMapIndex != 42 || leashes.calls != 1 || respawns.calls != 1 || combatTargets.calls != 1 || returnSteps.calls != 1 {
+		t.Fatalf("expected spawn lookup after return-step, got occupancy=%d spawn=%d spawn_map=%d leash=%d respawn=%d combat=%d return=%d", occupancy.calls, spawnGroups.calls, spawnGroups.lastMapIndex, leashes.calls, respawns.calls, combatTargets.calls, returnSteps.calls)
 	}
 }
 
@@ -7393,6 +7523,21 @@ type stubMapSpawnGroupsLookup struct {
 func (s *stubMapSpawnGroupsLookup) MapSpawnGroups(mapIndex uint32) (any, bool) {
 	s.calls++
 	s.lastMapIndex = mapIndex
+	value, ok := s.snapshots[mapIndex]
+	return value, ok
+}
+
+type stubMapSpawnGroupLeashesLookup struct {
+	snapshots    map[uint32]any
+	calls        int
+	lastMapIndex uint32
+	lastRadius   int32
+}
+
+func (s *stubMapSpawnGroupLeashesLookup) MapSpawnGroupLeashes(mapIndex uint32, radius int32) (any, bool) {
+	s.calls++
+	s.lastMapIndex = mapIndex
+	s.lastRadius = radius
 	value, ok := s.snapshots[mapIndex]
 	return value, ok
 }

@@ -2660,6 +2660,35 @@ func (r *sharedWorldRegistry) SpawnGroupsForMap(mapIndex uint32) ([]StaticActorS
 	return r.markStaticActorSnapshotsStateLocked(groups), true
 }
 
+func (r *sharedWorldRegistry) SpawnGroupLeashesForMap(mapIndex uint32, radius int32) ([]SpawnGroupLeashSnapshot, bool) {
+	if r == nil || r.entities == nil || mapIndex == 0 || radius <= 0 {
+		return nil, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	groups, ok := r.scopesLocked().SpawnGroupsForMap(mapIndex)
+	if !ok {
+		return nil, false
+	}
+	leashes := make([]SpawnGroupLeashSnapshot, 0, len(groups))
+	for _, group := range groups {
+		actor, ok := r.entities.StaticActor(group.EntityID)
+		if !ok || actor.SpawnGroupRef == "" {
+			continue
+		}
+		evaluation, ok := worldruntime.EvaluateStaticActorCurrentSpawnLeash(actor, radius)
+		if !ok {
+			continue
+		}
+		leashes = append(leashes, SpawnGroupLeashSnapshot{
+			Actor:              r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor)),
+			SpawnLeashSnapshot: worldruntime.SpawnLeashSnapshotFromEvaluation(evaluation),
+		})
+	}
+	return leashes, true
+}
+
 func (r *sharedWorldRegistry) StaticActorsForMap(mapIndex uint32) ([]StaticActorSnapshot, bool) {
 	if r == nil || r.entities == nil || mapIndex == 0 {
 		return nil, false

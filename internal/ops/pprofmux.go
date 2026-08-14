@@ -1607,6 +1607,30 @@ func RegisterLocalMapSpawnGroupsEndpoint(mux *http.ServeMux, spawnGroupsForMap f
 	return mux
 }
 
+func RegisterLocalMapSpawnGroupLeashesEndpoint(mux *http.ServeMux, spawnGroupLeashesForMap func(uint32, int32) (any, bool)) *http.ServeMux {
+	if mux == nil || spawnGroupLeashesForMap == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/maps/{map_index}/spawn-group-leashes", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		mapIndex, radius, ok := decodeLocalMapSpawnGroupLeashesRequest(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		value, ok := spawnGroupLeashesForMap(mapIndex, radius)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalMapStaticActorRespawnsEndpoint(mux *http.ServeMux, staticActorRespawnsForMap func(uint32) (any, bool)) *http.ServeMux {
 	if mux == nil || staticActorRespawnsForMap == nil {
 		return mux
@@ -3753,6 +3777,26 @@ func decodeLocalMapIndex(r *http.Request) (uint32, bool) {
 
 func decodeLocalMapScopedListIndex(r *http.Request) (uint32, bool) {
 	return decodeLocalMapIndexRaw(r.PathValue("map_index"))
+}
+
+func decodeLocalMapSpawnGroupLeashesRequest(r *http.Request) (uint32, int32, bool) {
+	mapIndex, ok := decodeLocalMapScopedListIndex(r)
+	if !ok {
+		return 0, 0, false
+	}
+	radiusValues := r.URL.Query()["radius"]
+	if len(radiusValues) != 1 {
+		return 0, 0, false
+	}
+	radiusRaw := strings.TrimSpace(radiusValues[0])
+	if radiusRaw == "" || strings.Contains(radiusRaw, "/") {
+		return 0, 0, false
+	}
+	radius, err := strconv.ParseInt(radiusRaw, 10, 32)
+	if err != nil || radius <= 0 {
+		return 0, 0, false
+	}
+	return mapIndex, int32(radius), true
 }
 
 func decodeLocalMapIndexRaw(raw string) (uint32, bool) {
