@@ -50,6 +50,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runCatalog(args[1:], stdout, stderr)
 	case "plan":
 		return runPlan(args[1:], stdin, stdout, stderr)
+	case "ledger-snapshot":
+		return runLedgerSnapshot(args[1:], stdout, stderr)
 	case "apply":
 		return runApply(args[1:], stdin, stdout, stderr)
 	case "help", "-h", "--help":
@@ -74,6 +76,43 @@ func runCatalog(args []string, stdout io.Writer, stderr io.Writer) int {
 		return exitError
 	}
 	return writeJSON(stdout, stderr, summary)
+}
+
+func runLedgerSnapshot(args []string, stdout io.Writer, stderr io.Writer) int {
+	flags := flag.NewFlagSet("ledger-snapshot", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	var driverName string
+	var dsn string
+	flags.StringVar(&driverName, "driver", "", "database/sql driver name for the migration target")
+	flags.StringVar(&dsn, "dsn", "", "database/sql DSN for the migration target")
+	flags.Usage = func() { printLedgerSnapshotUsage(stderr) }
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintf(stderr, "unexpected ledger-snapshot argument %q\n", flags.Arg(0))
+		printLedgerSnapshotUsage(stderr)
+		return exitUsage
+	}
+	if strings.TrimSpace(driverName) == "" || strings.TrimSpace(dsn) == "" {
+		fmt.Fprintln(stderr, "--driver and --dsn are required for ledger-snapshot")
+		printLedgerSnapshotUsage(stderr)
+		return exitUsage
+	}
+
+	db, err := sql.Open(strings.TrimSpace(driverName), strings.TrimSpace(dsn))
+	if err != nil {
+		writeMigrationCommandError(stderr, dsn, "migration ledger-snapshot: open database driver %q: %v", strings.TrimSpace(driverName), err)
+		return exitError
+	}
+	defer db.Close()
+
+	snapshot, err := dbmigrations.LedgerSnapshotFromSQLLedger(context.Background(), db)
+	if err != nil {
+		writeMigrationCommandError(stderr, dsn, "migration ledger-snapshot: %v", err)
+		return exitError
+	}
+	return writeJSON(stdout, stderr, snapshot)
 }
 
 func runPlan(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
@@ -172,13 +211,13 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 	}
 	resolvedTarget, err := resolveTargetVersion(targetVersion, targetLatest)
 	if err != nil {
-		writeMigrationApplyError(stderr, dsn, "migration apply: %v", err)
+		writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
 		return exitError
 	}
 
 	reader, closeReader, err := openLedgerSnapshotReader(snapshotPath, stdin)
 	if err != nil {
-		writeMigrationApplyError(stderr, dsn, "open ledger snapshot: %v", err)
+		writeMigrationCommandError(stderr, dsn, "open ledger snapshot: %v", err)
 		return exitError
 	}
 	if closeReader != nil {
@@ -187,31 +226,31 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 
 	rawLedger, err := readBoundedLedgerSnapshot(reader)
 	if err != nil {
-		writeMigrationApplyError(stderr, dsn, "migration apply: %v", err)
+		writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
 		return exitError
 	}
 	ledger, err := dbmigrations.ReadJSONLedgerSnapshot(bytes.NewReader(rawLedger))
 	if err != nil {
-		writeMigrationApplyError(stderr, dsn, "migration apply: %v", err)
+		writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
 		return exitError
 	}
 
 	db, err := sql.Open(strings.TrimSpace(driverName), strings.TrimSpace(dsn))
 	if err != nil {
-		writeMigrationApplyError(stderr, dsn, "migration apply: open database driver %q: %v", strings.TrimSpace(driverName), err)
+		writeMigrationCommandError(stderr, dsn, "migration apply: open database driver %q: %v", strings.TrimSpace(driverName), err)
 		return exitError
 	}
 	defer db.Close()
 
 	result, err := dbmigrations.ApplyToVersion(context.Background(), db, ledger, resolvedTarget)
 	if err != nil {
-		writeMigrationApplyError(stderr, dsn, "migration apply: %v", err)
+		writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
 		return exitError
 	}
 	return writeJSON(stdout, stderr, result)
 }
 
-func writeMigrationApplyError(stderr io.Writer, dsn string, format string, args ...any) {
+func writeMigrationCommandError(stderr io.Writer, dsn string, format string, args ...any) {
 	message := fmt.Sprintf(format, args...)
 	trimmedDSN := strings.TrimSpace(dsn)
 	if trimmedDSN != "" {
@@ -294,13 +333,21 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "usage: metin2-migrate <command> [options]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "commands:")
-	fmt.Fprintln(w, "  catalog  print metadata-only embedded migration catalog summary")
-	fmt.Fprintln(w, "  plan     print metadata-only dry-run plan from an offline ledger snapshot")
-	fmt.Fprintln(w, "  apply    apply a target plan using a database/sql driver and offline ledger snapshot")
+	fmt.Fprintln(w, "  catalog          print metadata-only embedded migration catalog summary")
+	fmt.Fprintln(w, "  ledger-snapshot  export metadata-only schema_migrations ledger snapshot from a database/sql target")
+	fmt.Fprintln(w, "  plan             print metadata-only dry-run plan from an offline ledger snapshot")
+	fmt.Fprintln(w, "  apply            apply a target plan using a database/sql driver and offline ledger snapshot")
+	fmt.Fprintln(w, "")
+	printLedgerSnapshotUsage(w)
 	fmt.Fprintln(w, "")
 	printPlanUsage(w)
 	fmt.Fprintln(w, "")
 	printApplyUsage(w)
+}
+
+func printLedgerSnapshotUsage(w io.Writer) {
+	fmt.Fprintln(w, "ledger-snapshot usage:")
+	fmt.Fprintln(w, "  metin2-migrate ledger-snapshot --driver <database/sql-driver> --dsn <dsn>")
 }
 
 func printPlanUsage(w io.Writer) {

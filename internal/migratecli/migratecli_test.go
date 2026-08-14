@@ -404,6 +404,100 @@ func TestRunApplyResolvesLatestTargetVersion(t *testing.T) {
 	}
 }
 
+func TestRunLedgerSnapshotExportsMetadataOnlySQLLedgerSnapshot(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	catalog, err := dbmigrations.Catalog()
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	applied := []dbmigrations.LedgerEntry{{Version: catalog[0].Version, Name: catalog[0].Name, UpSHA256: catalog[0].UpSHA256}}
+	currentMigrateCLITestDriver(t).setLedger(applied)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"ledger-snapshot", "--driver", driverName, "--dsn", "memory://snapshot"}, nil, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected successful ledger-snapshot command, exit=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr on success, got %q", stderr.String())
+	}
+	var snapshot dbmigrations.LedgerSnapshot
+	if err := json.Unmarshal(stdout.Bytes(), &snapshot); err != nil {
+		t.Fatalf("decode ledger snapshot JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if snapshot.Format != dbmigrations.LedgerSnapshotFormat {
+		t.Fatalf("unexpected ledger snapshot format: %#v", snapshot)
+	}
+	if len(snapshot.Entries) != 1 || snapshot.Entries[0] != applied[0] {
+		t.Fatalf("unexpected SQL ledger snapshot entries: %#v", snapshot.Entries)
+	}
+	body := stdout.String()
+	if strings.Contains(body, "CREATE TABLE") || strings.Contains(body, "DROP TABLE") || strings.Contains(body, "-- go-metin2 migration") || strings.Contains(body, "memory://") {
+		t.Fatalf("ledger-snapshot CLI must not expose executable SQL or DSN text, got %s", body)
+	}
+
+	events := currentMigrateCLITestDriver(t).eventsSnapshot()
+	for _, want := range []string{"open:memory://snapshot", "query:SELECT version, name, up_sha256 FROM schema_migrations ORDER BY version ASC", "close"} {
+		if !containsMigrateCLITestEventPrefix(events, want) {
+			t.Fatalf("expected event prefix %q in events %#v", want, events)
+		}
+	}
+	for _, forbidden := range []string{"begin", "exec:", "commit", "rollback"} {
+		if containsMigrateCLITestEventPrefix(events, forbidden) {
+			t.Fatalf("ledger-snapshot command must be read-only; unexpected %q event in %#v", forbidden, events)
+		}
+	}
+}
+
+func TestRunLedgerSnapshotRejectsMissingDriverOrDSNAsUsageError(t *testing.T) {
+	for _, args := range [][]string{
+		{"ledger-snapshot", "--driver", "sqlite3"},
+		{"ledger-snapshot", "--dsn", "file:metin2.db"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			code := Run(args, nil, &stdout, &stderr)
+
+			if code != 2 {
+				t.Fatalf("expected missing driver/DSN usage exit 2, got %d", code)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("expected usage error not to write stdout, got %q", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), "--driver and --dsn are required") {
+				t.Fatalf("expected driver/DSN usage guidance, got %q", stderr.String())
+			}
+		})
+	}
+}
+
+func TestRunLedgerSnapshotRedactsDSNFromRuntimeErrors(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	secretDSN := "memory://secret-password@db/snapshot"
+	currentMigrateCLITestDriver(t).setError(fmt.Errorf("query %s refused", secretDSN))
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"ledger-snapshot", "--driver", driverName, "--dsn", secretDSN}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected ledger-snapshot runtime error to exit 1, got %d", code)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected failed ledger-snapshot not to write stdout, got %q", stdout.String())
+	}
+	if strings.Contains(stderr.String(), secretDSN) {
+		t.Fatalf("expected ledger-snapshot errors to redact DSN, got %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "<redacted-dsn>") {
+		t.Fatalf("expected redacted DSN marker in error, got %q", stderr.String())
+	}
+}
+
 func TestRunRejectsUnknownCommandAsUsageError(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -626,6 +720,9 @@ func (tx *migrateCLITestTx) ExecContext(_ context.Context, query string, _ []dri
 
 func (tx *migrateCLITestTx) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
 	tx.driver.record("query:" + normalizeMigrateCLITestSQL(query))
+	if err := tx.driver.errorSnapshot(); err != nil {
+		return nil, err
+	}
 	return &migrateCLITestRows{entries: tx.driver.ledgerSnapshot()}, nil
 }
 
