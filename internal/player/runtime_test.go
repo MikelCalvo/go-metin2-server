@@ -3356,6 +3356,61 @@ func TestRuntimeRefineRejectTextRejectsMismatchedTemplateWithoutMutation(t *test
 	}
 }
 
+func TestRuntimeRefineInformationComesFromTemplateWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:    0x01030106,
+		VID:   0x02040106,
+		Name:  "PeerSix",
+		Level: 1,
+		Inventory: []inventory.ItemInstance{
+			{ID: 105, Vnum: 11200, Count: 1, Slot: 8},
+		},
+		Quickslots: []loginticket.Quickslot{{Position: 4, Type: quickslotproto.TypeItem, Slot: 8}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-six", CharacterIndex: 1})
+	template := itemcatalog.Template{
+		Vnum:       11200,
+		Name:       "Practice Blade",
+		Stackable:  false,
+		MaxCount:   1,
+		Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{
+			ResultVnum:  11201,
+			Cost:        2500,
+			Probability: 75,
+			Materials: []itemcatalog.RefineMaterial{
+				{Vnum: 27001, Count: 2},
+				{Vnum: 27002, Count: 3},
+			},
+		},
+	}
+
+	info, ok := runtime.RefineInformation(8, 3, template)
+	if !ok {
+		t.Fatal("expected refineable template to provide refine information")
+	}
+	want := RefineInformation{
+		Type:        3,
+		Position:    8,
+		SourceVnum:  11200,
+		ResultVnum:  11201,
+		Cost:        2500,
+		Probability: 75,
+		Materials:   []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}, {Vnum: 27002, Count: 3}},
+	}
+	if !reflect.DeepEqual(info, want) {
+		t.Fatalf("unexpected template-authored refine information:\n got: %#v\nwant: %#v", info, want)
+	}
+	live := runtime.LiveCharacter()
+	if !reflect.DeepEqual(live.Inventory, persisted.Inventory) || !reflect.DeepEqual(live.Quickslots, persisted.Quickslots) || live.Gold != persisted.Gold || live.Points != persisted.Points {
+		t.Fatalf("refine information mutated live character: got %#v want %#v", live, persisted)
+	}
+	persistedAfter := runtime.PersistedSnapshot()
+	if !reflect.DeepEqual(persistedAfter.Inventory, persisted.Inventory) || !reflect.DeepEqual(persistedAfter.Quickslots, persisted.Quickslots) || persistedAfter.Gold != persisted.Gold || persistedAfter.Points != persisted.Points {
+		t.Fatalf("refine information mutated persisted character: got %#v want %#v", persistedAfter, persisted)
+	}
+}
+
 func TestRuntimeEquipItemWithTemplateRejectsAntiGetWithoutMutation(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030102,

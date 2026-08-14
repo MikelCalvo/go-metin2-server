@@ -4121,6 +4121,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if message, ok := selectedPlayer.RefineRejectText(inventory.SlotIndex(packet.Position), template); ok {
 						return gameflow.ItemRefineResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}}
 					}
+					if info, ok := selectedPlayer.RefineInformation(inventory.SlotIndex(packet.Position), packet.Type, template); ok {
+						frame, err := refineInformationFrame(info)
+						if err != nil {
+							return gameflow.ItemRefineResult{Accepted: false}
+						}
+						return gameflow.ItemRefineResult{Accepted: true, Frames: [][]byte{frame}}
+					}
 					return gameflow.ItemRefineResult{Accepted: false}
 				},
 				HandleSafeboxCheckin: func(packet itemproto.ClientSafeboxCheckinPacket) gameflow.SafeboxCheckinResult {
@@ -5609,6 +5616,27 @@ func encodeInventoryItemUpdateFrameWithTemplates(item inventory.ItemInstance, te
 		Sockets:    bootstrapItemSockets(template),
 		Attributes: bootstrapItemAttributes(template),
 	}), nil
+}
+
+func refineInformationFrame(info player.RefineInformation) ([]byte, error) {
+	if len(info.Materials) > itemproto.RefineMaterialMaxNum {
+		return nil, fmt.Errorf("bootstrap refine material count exceeds fixed table: %d", len(info.Materials))
+	}
+	packet := itemproto.RefineInformationPacket{
+		Type:     info.Type,
+		Position: uint8(info.Position),
+		Table: itemproto.RefineTable{
+			SourceVnum:    info.SourceVnum,
+			ResultVnum:    info.ResultVnum,
+			MaterialCount: uint8(len(info.Materials)),
+			Cost:          info.Cost,
+			Probability:   info.Probability,
+		},
+	}
+	for i, material := range info.Materials {
+		packet.Table.Materials[i] = itemproto.RefineMaterial{Vnum: material.Vnum, Count: material.Count}
+	}
+	return itemproto.EncodeRefineInformationNew(packet)
 }
 
 func equipResultFrames(character loginticket.Character, from inventory.SlotIndex, equippedItem inventory.ItemInstance, pointChange *player.PointChangeResult, templates map[uint32]itemcatalog.Template) ([][]byte, error) {

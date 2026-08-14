@@ -86,6 +86,16 @@ type ExchangeItemAddDisplay struct {
 	Attributes itemcatalog.AttributeValues
 }
 
+type RefineInformation struct {
+	Type        uint8
+	Position    inventory.SlotIndex
+	SourceVnum  uint32
+	ResultVnum  uint32
+	Cost        int32
+	Probability int32
+	Materials   []itemcatalog.RefineMaterial
+}
+
 type GroundItemPickupResult struct {
 	Item         inventory.ItemInstance
 	Merged       bool
@@ -1179,6 +1189,35 @@ func (r *Runtime) RefineRejectText(slot inventory.SlotIndex, template itemcatalo
 		return "", false
 	}
 	return template.RefineRejectText, true
+}
+
+func (r *Runtime) RefineInformation(slot inventory.SlotIndex, refineType uint8, template itemcatalog.Template) (RefineInformation, bool) {
+	if r == nil || !template.Refineable || template.RefineInfo == nil || slot >= inventory.CarriedInventorySlotCount || !itemcatalog.ValidTemplate(template) {
+		return RefineInformation{}, false
+	}
+	if countInventorySlotOccupancy(r.liveInventory, slot) != 1 {
+		return RefineInformation{}, false
+	}
+	index := findInventorySlot(r.liveInventory, slot)
+	if index < 0 {
+		return RefineInformation{}, false
+	}
+	item := r.liveInventory[index]
+	if item.Equipped || item.Locked || item.Vnum != template.Vnum || item.Count == 0 || item.Count > template.MaxCount {
+		return RefineInformation{}, false
+	}
+	if err := item.Validate(); err != nil {
+		return RefineInformation{}, false
+	}
+	return RefineInformation{
+		Type:        refineType,
+		Position:    slot,
+		SourceVnum:  item.Vnum,
+		ResultVnum:  template.RefineInfo.ResultVnum,
+		Cost:        template.RefineInfo.Cost,
+		Probability: template.RefineInfo.Probability,
+		Materials:   append([]itemcatalog.RefineMaterial(nil), template.RefineInfo.Materials...),
+	}, true
 }
 
 func useEffectInfoMessage(effect *itemcatalog.UseEffect) string {

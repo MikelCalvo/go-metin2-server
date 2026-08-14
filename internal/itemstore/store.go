@@ -33,6 +33,7 @@ const (
 	BackupManifestFormat   = "go-metin2-item-template-backup-v1"
 	MaxPickupRange         = 10000
 	MaxSpecialEffectType   = 25
+	MaxRefineMaterialCount = 5
 )
 
 type Template struct {
@@ -44,6 +45,7 @@ type Template struct {
 	ShopSellPrice     uint64          `json:"shop_sell_price,omitempty"`
 	Refineable        bool            `json:"refineable,omitempty"`
 	RefineRejectText  string          `json:"refine_reject_message,omitempty"`
+	RefineInfo        *RefineInfo     `json:"refine_info,omitempty"`
 	Save              bool            `json:"save,omitempty"`
 	SellCountPerGold  bool            `json:"sell_count_per_gold,omitempty"`
 	SlowQuery         bool            `json:"slow_query,omitempty"`
@@ -112,6 +114,7 @@ type templateJSON struct {
 	ShopSellPrice     uint64           `json:"shop_sell_price,omitempty"`
 	Refineable        bool             `json:"refineable,omitempty"`
 	RefineRejectText  string           `json:"refine_reject_message,omitempty"`
+	RefineInfo        *RefineInfo      `json:"refine_info,omitempty"`
 	Save              bool             `json:"save,omitempty"`
 	SellCountPerGold  bool             `json:"sell_count_per_gold,omitempty"`
 	SlowQuery         bool             `json:"slow_query,omitempty"`
@@ -172,6 +175,7 @@ func (template Template) MarshalJSON() ([]byte, error) {
 		ShopSellPrice:     template.ShopSellPrice,
 		Refineable:        template.Refineable,
 		RefineRejectText:  template.RefineRejectText,
+		RefineInfo:        cloneRefineInfo(template.RefineInfo),
 		Save:              template.Save,
 		SellCountPerGold:  template.SellCountPerGold,
 		SlowQuery:         template.SlowQuery,
@@ -244,6 +248,7 @@ func (template *Template) UnmarshalJSON(raw []byte) error {
 		ShopSellPrice:     jsonTemplate.ShopSellPrice,
 		Refineable:        jsonTemplate.Refineable,
 		RefineRejectText:  jsonTemplate.RefineRejectText,
+		RefineInfo:        cloneRefineInfo(jsonTemplate.RefineInfo),
 		Save:              jsonTemplate.Save,
 		SellCountPerGold:  jsonTemplate.SellCountPerGold,
 		SlowQuery:         jsonTemplate.SlowQuery,
@@ -304,6 +309,18 @@ type PointEffect struct {
 	PointType  uint8 `json:"point_type"`
 	PointIndex uint8 `json:"point_index"`
 	PointDelta int32 `json:"point_delta"`
+}
+
+type RefineInfo struct {
+	ResultVnum  uint32           `json:"result_vnum"`
+	Cost        int32            `json:"cost"`
+	Probability int32            `json:"probability"`
+	Materials   []RefineMaterial `json:"materials,omitempty"`
+}
+
+type RefineMaterial struct {
+	Vnum  uint32 `json:"vnum"`
+	Count int32  `json:"count"`
 }
 
 type UseEffect struct {
@@ -407,6 +424,10 @@ func normalizeTemplate(template Template) Template {
 		effect.InfoMessage = strings.TrimSpace(effect.InfoMessage)
 		template.UseEffect = &effect
 	}
+	if template.RefineInfo != nil {
+		info := cloneRefineInfo(template.RefineInfo)
+		template.RefineInfo = info
+	}
 	if template.EquipEffect != nil {
 		effect := *template.EquipEffect
 		template.EquipEffect = &effect
@@ -459,6 +480,9 @@ func validTemplate(template Template) bool {
 		return false
 	}
 	if template.RefineRejectText != "" && template.Refineable {
+		return false
+	}
+	if !validRefineInfo(template.RefineInfo, template) {
 		return false
 	}
 	if template.PickupRange > MaxPickupRange {
@@ -560,6 +584,21 @@ func validDisplayAttributes(attributes AttributeValues) bool {
 
 func validTemplateMessage(message string) bool {
 	return utf8.ValidString(message) && !strings.ContainsRune(message, '\x00')
+}
+
+func validRefineInfo(info *RefineInfo, template Template) bool {
+	if info == nil {
+		return true
+	}
+	if !template.Refineable || info.ResultVnum == 0 || info.Cost < 0 || info.Probability < 0 || info.Probability > 100 || len(info.Materials) > MaxRefineMaterialCount {
+		return false
+	}
+	for _, material := range info.Materials {
+		if material.Vnum == 0 || material.Count <= 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func templateHasEquipRejectGuard(template Template) bool {
@@ -677,10 +716,24 @@ func cloneTemplates(templates []Template) []Template {
 			effect := *templates[i].UseEffect
 			cloned[i].UseEffect = &effect
 		}
+		if templates[i].RefineInfo != nil {
+			cloned[i].RefineInfo = cloneRefineInfo(templates[i].RefineInfo)
+		}
 		if templates[i].EquipEffect != nil {
 			effect := *templates[i].EquipEffect
 			cloned[i].EquipEffect = &effect
 		}
 	}
 	return cloned
+}
+
+func cloneRefineInfo(info *RefineInfo) *RefineInfo {
+	if info == nil {
+		return nil
+	}
+	cloned := *info
+	if len(info.Materials) != 0 {
+		cloned.Materials = append([]RefineMaterial(nil), info.Materials...)
+	}
+	return &cloned
 }

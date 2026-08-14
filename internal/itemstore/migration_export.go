@@ -6,18 +6,20 @@ import (
 )
 
 const (
-	ItemTemplateStateMigrationVersion = 6
-	ItemTemplateStateMigrationName    = "item_template_safebox_reject_message"
+	ItemTemplateStateMigrationVersion = 7
+	ItemTemplateStateMigrationName    = "item_template_refine_information"
 )
 
 type ItemTemplateStateExport struct {
-	MigrationVersion int                          `json:"migration_version"`
-	MigrationName    string                       `json:"migration_name"`
-	Templates        []ItemTemplateRow            `json:"templates"`
-	Sockets          []ItemTemplateSocketRow      `json:"sockets"`
-	Attributes       []ItemTemplateAttributeRow   `json:"attributes"`
-	UseEffects       []ItemTemplateUseEffectRow   `json:"use_effects"`
-	EquipEffects     []ItemTemplateEquipEffectRow `json:"equip_effects"`
+	MigrationVersion int                             `json:"migration_version"`
+	MigrationName    string                          `json:"migration_name"`
+	Templates        []ItemTemplateRow               `json:"templates"`
+	RefineInfos      []ItemTemplateRefineInfoRow     `json:"refine_infos"`
+	RefineMaterials  []ItemTemplateRefineMaterialRow `json:"refine_materials"`
+	Sockets          []ItemTemplateSocketRow         `json:"sockets"`
+	Attributes       []ItemTemplateAttributeRow      `json:"attributes"`
+	UseEffects       []ItemTemplateUseEffectRow      `json:"use_effects"`
+	EquipEffects     []ItemTemplateEquipEffectRow    `json:"equip_effects"`
 }
 
 type ItemTemplateRow struct {
@@ -81,6 +83,20 @@ type ItemTemplateSocketRow struct {
 	Value    int32  `json:"value"`
 }
 
+type ItemTemplateRefineInfoRow struct {
+	Vnum        uint32 `json:"vnum"`
+	ResultVnum  uint32 `json:"result_vnum"`
+	Cost        int32  `json:"cost"`
+	Probability int32  `json:"probability"`
+}
+
+type ItemTemplateRefineMaterialRow struct {
+	Vnum         uint32 `json:"vnum"`
+	Position     uint8  `json:"position"`
+	MaterialVnum uint32 `json:"material_vnum"`
+	Count        int32  `json:"count"`
+}
+
 type ItemTemplateAttributeRow struct {
 	Vnum     uint32 `json:"vnum"`
 	Position uint8  `json:"position"`
@@ -115,6 +131,8 @@ func ExportItemTemplateState(snapshot Snapshot) (ItemTemplateStateExport, error)
 		MigrationVersion: ItemTemplateStateMigrationVersion,
 		MigrationName:    ItemTemplateStateMigrationName,
 		Templates:        []ItemTemplateRow{},
+		RefineInfos:      []ItemTemplateRefineInfoRow{},
+		RefineMaterials:  []ItemTemplateRefineMaterialRow{},
 		Sockets:          []ItemTemplateSocketRow{},
 		Attributes:       []ItemTemplateAttributeRow{},
 		UseEffects:       []ItemTemplateUseEffectRow{},
@@ -130,6 +148,12 @@ func ExportItemTemplateState(snapshot Snapshot) (ItemTemplateStateExport, error)
 			return ItemTemplateStateExport{}, ErrInvalidSnapshot
 		}
 		export.Templates = append(export.Templates, itemTemplateRowForExport(template))
+		if template.RefineInfo != nil {
+			export.RefineInfos = append(export.RefineInfos, ItemTemplateRefineInfoRow{Vnum: template.Vnum, ResultVnum: template.RefineInfo.ResultVnum, Cost: template.RefineInfo.Cost, Probability: template.RefineInfo.Probability})
+			for i, material := range template.RefineInfo.Materials {
+				export.RefineMaterials = append(export.RefineMaterials, ItemTemplateRefineMaterialRow{Vnum: template.Vnum, Position: uint8(i), MaterialVnum: material.Vnum, Count: material.Count})
+			}
+		}
 		for i, value := range template.Sockets {
 			if value == 0 {
 				continue

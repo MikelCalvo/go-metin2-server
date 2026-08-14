@@ -1220,6 +1220,130 @@ func TestFileStoreSaveThenLoadRoundTripPreservesRefineRejectMessage(t *testing.T
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripPreservesRefineInformationMetadata(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:       11200,
+		Name:       "Practice Blade",
+		Stackable:  false,
+		MaxCount:   1,
+		Refineable: true,
+		RefineInfo: &RefineInfo{
+			ResultVnum:  11201,
+			Cost:        2500,
+			Probability: 75,
+			Materials: []RefineMaterial{
+				{Vnum: 27001, Count: 2},
+				{Vnum: 27002, Count: 3},
+			},
+		},
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with refine information metadata: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with refine information metadata: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with refine information metadata:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with refine information metadata: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 11200,\n      \"name\": \"Practice Blade\",\n      \"stackable\": false,\n      \"max_count\": 1,\n      \"refineable\": true,\n      \"refine_info\": {\n        \"result_vnum\": 11201,\n        \"cost\": 2500,\n        \"probability\": 75,\n        \"materials\": [\n          {\n            \"vnum\": 27001,\n            \"count\": 2\n          },\n          {\n            \"vnum\": 27002,\n            \"count\": 3\n          }\n        ]\n      }\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with refine information metadata:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
+func TestFileStoreRejectsInvalidRefineInformationMetadata(t *testing.T) {
+	cases := []struct {
+		name     string
+		template Template
+	}{
+		{
+			name: "without refineable flag",
+			template: Template{
+				Vnum:       11200,
+				Name:       "Practice Blade",
+				Stackable:  false,
+				MaxCount:   1,
+				RefineInfo: &RefineInfo{ResultVnum: 11201, Cost: 2500, Probability: 75},
+			},
+		},
+		{
+			name: "zero result vnum",
+			template: Template{
+				Vnum:       11200,
+				Name:       "Practice Blade",
+				Stackable:  false,
+				MaxCount:   1,
+				Refineable: true,
+				RefineInfo: &RefineInfo{Cost: 2500, Probability: 75},
+			},
+		},
+		{
+			name: "too many material rows",
+			template: Template{
+				Vnum:       11200,
+				Name:       "Practice Blade",
+				Stackable:  false,
+				MaxCount:   1,
+				Refineable: true,
+				RefineInfo: &RefineInfo{ResultVnum: 11201, Cost: 2500, Probability: 75, Materials: []RefineMaterial{{Vnum: 27001, Count: 1}, {Vnum: 27002, Count: 1}, {Vnum: 27003, Count: 1}, {Vnum: 27004, Count: 1}, {Vnum: 27005, Count: 1}, {Vnum: 27006, Count: 1}}},
+			},
+		},
+		{
+			name: "negative cost",
+			template: Template{
+				Vnum:       11200,
+				Name:       "Practice Blade",
+				Stackable:  false,
+				MaxCount:   1,
+				Refineable: true,
+				RefineInfo: &RefineInfo{ResultVnum: 11201, Cost: -1, Probability: 75},
+			},
+		},
+		{
+			name: "zero material count",
+			template: Template{
+				Vnum:       11200,
+				Name:       "Practice Blade",
+				Stackable:  false,
+				MaxCount:   1,
+				Refineable: true,
+				RefineInfo: &RefineInfo{ResultVnum: 11201, Cost: 2500, Probability: 75, Materials: []RefineMaterial{{Vnum: 27001}}},
+			},
+		},
+		{
+			name: "probability over one hundred",
+			template: Template{
+				Vnum:       11200,
+				Name:       "Practice Blade",
+				Stackable:  false,
+				MaxCount:   1,
+				Refineable: true,
+				RefineInfo: &RefineInfo{ResultVnum: 11201, Cost: 2500, Probability: 101},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+			store := NewFileStore(path)
+			if err := store.Save(Snapshot{Templates: []Template{tc.template}}); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot for %s, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
 func TestFileStoreRejectsContradictoryRefineRejectMessage(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)
