@@ -2415,6 +2415,152 @@ func TestSharedWorldRegistrySpawnGroupRespawnReturnsMovedActorToAuthoredHome(t *
 	}
 }
 
+func TestGameRuntimeSpawnGroupRespawnPersistsAuthoredHomePosition(t *testing.T) {
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700000960, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for persisted respawn home: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.respawn_persist_home",
+		Name:          "RespawnPersistHomeMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import persisted respawn home spawn group: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.respawn_persist_home")
+	if !ok {
+		t.Fatal("expected persisted respawn home spawn group to resolve by ref")
+	}
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "RespawnPersistHomeMob", 42, 1900, 2900, 20350); !ok {
+		t.Fatal("expected spawn-backed actor current-position update inside leash radius to succeed")
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot before respawn: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != 1900 || persisted.StaticActors[0].Y != 2900 || persisted.StaticActors[0].SpawnHome == nil {
+		t.Fatalf("expected moved current position with preserved spawn home before respawn, got %+v", persisted.StaticActors)
+	}
+
+	runtime.sharedWorld.mu.Lock()
+	actor, ok := runtime.sharedWorld.entities.StaticActor(group.EntityID)
+	if !ok {
+		runtime.sharedWorld.mu.Unlock()
+		t.Fatalf("expected actor %d before forced death", group.EntityID)
+	}
+	runtime.sharedWorld.staticActorCombatHP[group.EntityID] = 0
+	runtime.sharedWorld.scheduleStaticActorCombatRespawnLocked(actor)
+	runtime.sharedWorld.mu.Unlock()
+
+	currentTime = currentTime.Add(worldruntime.PracticeMobBootstrapRespawnDelay)
+	runtime.flushReadyStaticActorRespawns()
+
+	respawned, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || respawned.Dead || respawned.X != 1700 || respawned.Y != 2800 || respawned.SpawnLeash == nil || respawned.SpawnLeash.Status != worldruntime.SpawnLeashStatusAtHome {
+		t.Fatalf("expected runtime spawn group to respawn at authored home, ok=%v snapshot=%+v", ok, respawned)
+	}
+	persisted, err = staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after respawn: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != 1700 || persisted.StaticActors[0].Y != 2800 || persisted.StaticActors[0].SpawnHome == nil || persisted.StaticActors[0].SpawnHome.X != 1700 || persisted.StaticActors[0].SpawnHome.Y != 2800 {
+		t.Fatalf("expected respawn to persist authored-home current position, got %+v", persisted.StaticActors)
+	}
+}
+
+func TestGameRuntimeSpawnGroupRespawnRetriesWhenAuthoredHomePersistenceFails(t *testing.T) {
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700000970, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for failed persisted respawn home: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.respawn_persist_retry",
+		Name:          "RespawnPersistRetryMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import respawn persistence retry spawn group: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.respawn_persist_retry")
+	if !ok {
+		t.Fatal("expected respawn persistence retry spawn group to resolve by ref")
+	}
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "RespawnPersistRetryMob", 42, 1900, 2900, 20350); !ok {
+		t.Fatal("expected spawn-backed actor current-position update inside leash radius to succeed")
+	}
+
+	runtime.sharedWorld.mu.Lock()
+	actor, ok := runtime.sharedWorld.entities.StaticActor(group.EntityID)
+	if !ok {
+		runtime.sharedWorld.mu.Unlock()
+		t.Fatalf("expected retry actor %d before forced death", group.EntityID)
+	}
+	runtime.sharedWorld.staticActorCombatHP[group.EntityID] = 0
+	runtime.sharedWorld.scheduleStaticActorCombatRespawnLocked(actor)
+	runtime.sharedWorld.mu.Unlock()
+
+	runtime.staticStore = &failOnSaveStaticActorStore{delegate: staticActorStore, failOnSave: 1, err: errors.New("temporary respawn persistence failure")}
+	currentTime = currentTime.Add(worldruntime.PracticeMobBootstrapRespawnDelay)
+	runtime.flushReadyStaticActorRespawns()
+	stillDead, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || !stillDead.Dead || stillDead.X != 1900 || stillDead.Y != 2900 {
+		t.Fatalf("expected failed respawn persistence to keep runtime actor dead at displaced position, ok=%v snapshot=%+v", ok, stillDead)
+	}
+	if pending, ok := runtime.sharedWorld.StaticActorRespawn(group.EntityID); !ok || pending.RemainingMs != 0 {
+		t.Fatalf("expected failed respawn persistence to leave a due pending respawn for retry, ok=%v pending=%+v", ok, pending)
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after failed respawn persistence: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != 1900 || persisted.StaticActors[0].Y != 2900 {
+		t.Fatalf("expected failed respawn persistence not to mutate stored position, got %+v", persisted.StaticActors)
+	}
+
+	runtime.staticStore = staticActorStore
+	runtime.flushReadyStaticActorRespawns()
+	respawned, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || respawned.Dead || respawned.X != 1700 || respawned.Y != 2800 {
+		t.Fatalf("expected retried respawn to restore authored home, ok=%v snapshot=%+v", ok, respawned)
+	}
+	persisted, err = staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after retried respawn: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != 1700 || persisted.StaticActors[0].Y != 2800 {
+		t.Fatalf("expected retried respawn to persist authored home, got %+v", persisted.StaticActors)
+	}
+}
+
 func TestGameRuntimeSpawnGroupsForMapReturnsMapLocalSpawnBackedActors(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},

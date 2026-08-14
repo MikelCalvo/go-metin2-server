@@ -219,6 +219,7 @@ The first spawn-group contract keeps respawn deliberately narrow:
 - the recreated actor uses the authored `combat_profile`, or the default bootstrap `practice_mob` profile when the authored group omits that field
 - the live runtime actor after respawn is a fresh instance of the same authored spawn group, not persistence resurrecting an old runtime entity ID
 - respawn visibility fanout is calculated from the old dead runtime position to the authored-home position: old-only viewers receive `CHARACTER_DEL`, new-only viewers receive the normal add/info/update burst, and retained viewers receive the usual delete-plus-readd refresh
+- for the shipped file-backed `gamed` runtime, the authored-home respawn position is written back to the static-actor snapshot before the live actor is revived; a failed write leaves the dead/displaced actor and due respawn timer intact for retry instead of partially reviving runtime state or queuing visibility frames
 
 What is **not** yet frozen here:
 - per-group custom respawn delays

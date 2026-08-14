@@ -149,6 +149,7 @@ What is frozen now:
 - registered bootstrap combat profiles use the `respawn_delay` accepted by `RegisterStaticActorCombatProfile(...)`; the pending respawn still uses the same runtime-owned shared-world state and `FlushServerFrames()` server-push seam between legacy-client reads
 - if an operator/static-actor update changes the actor's combat profile while the old runtime instance is already dead and has a pending respawn timer, the update cancels the stale pending respawn state and starts the updated actor as a fresh live snapshot using the new profile's full HP instead of letting the old profile's timer rebuild the new actor later
 - for spawn-backed combatants, respawn restores the materialized actor to the preserved authored spawn home before rebuilding visibility, so a displaced current runtime position does not become the new respawn point by accident
+- in the shipped file-backed runtime path, a due spawn-backed respawn persists that authored-home current position before mutating the live shared-world actor; if that static-actor snapshot write fails, the actor remains dead at the previous runtime position, the pending respawn stays due for a later retry, and no visibility rebuild frames are fabricated
 
 For content-loaded attackable actors, the authored identity that tells the runtime what to recreate and where to recreate it is documented separately in `content-spawn-groups-bootstrap.md`.
 

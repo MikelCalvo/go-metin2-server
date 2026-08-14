@@ -1040,24 +1040,48 @@ func (r *sharedWorldRegistry) FlushReadyStaticActorRespawns() {
 	}
 }
 
-func (r *sharedWorldRegistry) flushReadyStaticActorRespawnLocked(entityID uint64) {
+func (r *sharedWorldRegistry) FlushReadyStaticActorRespawn(entityID uint64) bool {
 	if r == nil || r.entities == nil || entityID == 0 {
-		return
+		return false
 	}
-	if r.staticActorCombatRespawnAt != nil {
-		delete(r.staticActorCombatRespawnAt, entityID)
+	now := time.Now()
+	if r.now != nil {
+		now = r.now()
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	readyAt, ok := r.staticActorCombatRespawnAt[entityID]
+	if !ok || readyAt.IsZero() || now.Before(readyAt) {
+		return false
+	}
+	return r.flushReadyStaticActorRespawnLocked(entityID)
+}
+
+func (r *sharedWorldRegistry) flushReadyStaticActorRespawnLocked(entityID uint64) bool {
+	if r == nil || r.entities == nil || entityID == 0 {
+		return false
 	}
 	actor, ok := r.entities.StaticActor(entityID)
 	if !ok || actor.CombatKind == "" {
-		return
+		if r.staticActorCombatRespawnAt != nil {
+			delete(r.staticActorCombatRespawnAt, entityID)
+		}
+		return false
 	}
 	currentHP, ok := r.ensureStaticActorCombatCurrentHPLocked(actor)
 	if !ok || currentHP > 0 {
-		return
+		if r.staticActorCombatRespawnAt != nil {
+			delete(r.staticActorCombatRespawnAt, entityID)
+		}
+		return false
 	}
 	resetHP, ok := worldruntime.BootstrapStaticActorCurrentHP(actor.CombatKind)
 	if !ok {
-		return
+		if r.staticActorCombatRespawnAt != nil {
+			delete(r.staticActorCombatRespawnAt, entityID)
+		}
+		return false
 	}
 	respawnActor := actor
 	if actor.SpawnGroupRef != "" {
@@ -1067,27 +1091,30 @@ func (r *sharedWorldRegistry) flushReadyStaticActorRespawnLocked(entityID uint64
 			respawnActor.SpawnHome = actor.Position
 		}
 	}
+	deleteRaw, encodable := encodeStaticActorDeleteFrame(actor)
+	if !encodable {
+		return false
+	}
+	addFrames := encodeStaticActorVisibilityFrames(respawnActor)
+	if len(addFrames) == 0 {
+		return false
+	}
 	targetDiff := r.scopesLocked().RelocateStaticActorTargetDiff(actor, respawnActor)
 	if !respawnActor.Position.Equal(actor.Position) || !respawnActor.SpawnHome.Equal(actor.SpawnHome) {
 		updated, ok := r.entities.UpdateStaticActor(respawnActor)
 		if !ok {
-			return
+			return false
 		}
 		respawnActor = updated
+	}
+	if r.staticActorCombatRespawnAt != nil {
+		delete(r.staticActorCombatRespawnAt, entityID)
 	}
 	if r.staticActorCombatHP == nil {
 		r.staticActorCombatHP = make(map[uint64]uint8)
 	}
 	r.staticActorCombatHP[entityID] = resetHP
 	r.assignStaticActorCombatSnapshotLocked(entityID)
-	deleteRaw, encodable := encodeStaticActorDeleteFrame(actor)
-	if !encodable {
-		return
-	}
-	addFrames := encodeStaticActorVisibilityFrames(respawnActor)
-	if len(addFrames) == 0 {
-		return
-	}
 	refreshFrames := make([][]byte, 0, 1+len(addFrames))
 	refreshFrames = append(refreshFrames, deleteRaw)
 	refreshFrames = append(refreshFrames, addFrames...)
@@ -1109,6 +1136,7 @@ func (r *sharedWorldRegistry) flushReadyStaticActorRespawnLocked(entityID uint64
 		}
 		r.enqueueToEntityLocked(target.Entity.ID, addFrames)
 	}
+	return true
 }
 
 func (r *sharedWorldRegistry) clearSessionCombatTargetLocked(entityID uint64) {
