@@ -64,6 +64,18 @@ type QuestSnapshot struct {
 	Characters []CharacterSnapshot `json:"characters"`
 }
 
+// Overview is a deterministic read-only projection of the whole committed
+// quest-state snapshot. It is an operator/debug shape only and does not define
+// quest objectives, trigger rules, rewards, or client quest packets.
+type Overview struct {
+	FlagCount      int                 `json:"flag_count"`
+	CharacterCount int                 `json:"character_count"`
+	QuestCount     int                 `json:"quest_count"`
+	QuestRefs      []string            `json:"quest_refs,omitempty"`
+	Characters     []CharacterSnapshot `json:"characters,omitempty"`
+	Quests         []QuestSnapshot     `json:"quests,omitempty"`
+}
+
 type Transition struct {
 	Character string `json:"character"`
 	QuestRef  string `json:"quest_ref"`
@@ -143,6 +155,39 @@ func SummarizeSnapshot(snapshot Snapshot) (SnapshotSummary, error) {
 		return SnapshotSummary{}, err
 	}
 	return summarizeSnapshot(normalized), nil
+}
+
+func OverviewSnapshot(snapshot Snapshot) (Overview, error) {
+	normalized := normalizeSnapshot(snapshot)
+	if err := validateSnapshot(normalized); err != nil {
+		return Overview{}, err
+	}
+	summary := summarizeSnapshot(normalized)
+	overview := Overview{
+		FlagCount:      summary.FlagCount,
+		CharacterCount: len(summary.Characters),
+		QuestCount:     len(summary.QuestRefs),
+		QuestRefs:      cloneStrings(summary.QuestRefs),
+	}
+	for _, character := range summary.Characters {
+		snapshot, ok, err := CharacterSnapshotFor(normalized, character)
+		if err != nil {
+			return Overview{}, err
+		}
+		if ok {
+			overview.Characters = append(overview.Characters, snapshot)
+		}
+	}
+	for _, questRef := range summary.QuestRefs {
+		snapshot, ok, err := QuestSnapshotFor(normalized, questRef)
+		if err != nil {
+			return Overview{}, err
+		}
+		if ok {
+			overview.Quests = append(overview.Quests, snapshot)
+		}
+	}
+	return overview, nil
 }
 
 func ApplyTransition(snapshot Snapshot, transition Transition) (Snapshot, TransitionResult) {
@@ -426,6 +471,20 @@ func (s *FileStore) PreviewTransition(transition Transition) (TransitionApplyRes
 	return applyResult, nil
 }
 
+func (s *FileStore) Overview() (Overview, error) {
+	if s == nil || s.path == "" {
+		return Overview{}, ErrStorePathRequired
+	}
+	snapshot, err := s.Load()
+	if err != nil {
+		if !errors.Is(err, ErrSnapshotNotFound) {
+			return Overview{}, err
+		}
+		snapshot = Snapshot{Flags: []Flag{}}
+	}
+	return OverviewSnapshot(snapshot)
+}
+
 func summarizeSnapshot(snapshot Snapshot) SnapshotSummary {
 	charactersSeen := make(map[string]struct{})
 	questRefsSeen := make(map[string]struct{})
@@ -646,6 +705,15 @@ func cloneFlags(flags []Flag) []Flag {
 	}
 	cloned := make([]Flag, len(flags))
 	copy(cloned, flags)
+	return cloned
+}
+
+func cloneStrings(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+	cloned := make([]string, len(values))
+	copy(cloned, values)
 	return cloned
 }
 

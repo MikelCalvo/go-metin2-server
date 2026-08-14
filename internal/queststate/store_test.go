@@ -408,6 +408,56 @@ func TestFileStorePreviewTransitionDoesNotRewriteExistingSnapshot(t *testing.T) 
 	}
 }
 
+func TestOverviewSnapshotReturnsDeterministicQuestStateRows(t *testing.T) {
+	snapshot := Snapshot{Flags: []Flag{
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},
+		{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "met_guard", Value: 1},
+		{Character: "QuestHero", QuestRef: "quest:daily_check", Name: "talked_to_guide", Value: 1},
+	}}
+
+	overview, err := OverviewSnapshot(snapshot)
+	if err != nil {
+		t.Fatalf("build quest-state overview: %v", err)
+	}
+	want := Overview{
+		FlagCount:      3,
+		CharacterCount: 2,
+		QuestCount:     2,
+		QuestRefs:      []string{"quest:daily_check", "quest:first_steps"},
+		Characters: []CharacterSnapshot{
+			{Character: "AnotherHero", Flags: []FlagSnapshot{{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}}},
+			{Character: "QuestHero", Flags: []FlagSnapshot{{QuestRef: "quest:daily_check", Name: "talked_to_guide", Value: 1}, {QuestRef: "quest:first_steps", Name: "step", Value: 2}}},
+		},
+		Quests: []QuestSnapshot{
+			{QuestRef: "quest:daily_check", FlagCount: 1, Characters: []CharacterSnapshot{{Character: "QuestHero", Flags: []FlagSnapshot{{QuestRef: "quest:daily_check", Name: "talked_to_guide", Value: 1}}}}},
+			{QuestRef: "quest:first_steps", FlagCount: 2, Characters: []CharacterSnapshot{{Character: "AnotherHero", Flags: []FlagSnapshot{{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}}}, {Character: "QuestHero", Flags: []FlagSnapshot{{QuestRef: "quest:first_steps", Name: "step", Value: 2}}}}},
+		},
+	}
+	if !reflect.DeepEqual(overview, want) {
+		t.Fatalf("unexpected quest-state overview:\n got: %#v\nwant: %#v", overview, want)
+	}
+
+	overview.QuestRefs[0] = "quest:mutated"
+	overview.Characters[0].Flags[0].Name = "mutated"
+	overview.Quests[0].Characters[0].Flags[0].Name = "mutated"
+	if snapshot.Flags[0].QuestRef != "quest:first_steps" || snapshot.Flags[1].Name != "met_guard" || snapshot.Flags[2].Name != "talked_to_guide" {
+		t.Fatalf("expected quest-state overview to clone rows, got source snapshot %#v", snapshot)
+	}
+}
+
+func TestFileStoreOverviewTreatsMissingSnapshotAsEmptyOverview(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "missing", "quest-state.json"))
+
+	overview, err := store.Overview()
+	if err != nil {
+		t.Fatalf("overview missing quest state snapshot: %v", err)
+	}
+	want := Overview{QuestRefs: []string{}}
+	if !reflect.DeepEqual(overview, want) {
+		t.Fatalf("unexpected missing quest-state overview:\n got: %#v\nwant: %#v", overview, want)
+	}
+}
+
 func TestQuestSnapshotForReturnsDeterministicQuestGrouping(t *testing.T) {
 	snapshot := Snapshot{Flags: []Flag{
 		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},

@@ -117,6 +117,7 @@ The first local-only operator surfaces are also frozen on `gamed`:
 - `POST /local/quest-state/crash-temps/cleanup`
 - `POST /local/quest-state/transition-preview`
 - `POST /local/quest-state/transition`
+- `GET /local/quest-state`
 - `GET /local/quest-state/characters/{character}`
 - `GET /local/quest-state/quests/{quest_ref}`
 - `GET /local/quest-state/flags/{character}/{quest_ref}/{flag}`
@@ -132,6 +133,8 @@ The validation and cleanup endpoints are loopback-only, reject non-`POST` method
 - the post-attempt `summary`.
 
 Compare-and-set failures such as `current_value_mismatch` return `200 OK` with `applied = false` and the failure `reason`; they are expected authored-state outcomes, not transport errors. Runtime/store failures that prevent evaluating or persisting the transition return `409`. This endpoint is an operator/bootstrap harness for testing authored quest-state progression and recovery. It is still not a client-visible quest packet, NPC dialog path, reward path, or remote admin API.
+
+`GET /local/quest-state` is the no-argument read-only overview for the committed standalone quest-state store. It is loopback-only, accepts only `GET`, returns `409` when the committed snapshot cannot be loaded or validated, and treats a missing committed snapshot as an empty overview. Successful responses include deterministic counts, sorted `quest_refs`, exact per-character flag snapshots, and exact per-quest grouped snapshots. This is the store-backed counterpart to the content-bundle overview reader; it lets local QA inspect live committed quest flags directly without fetching the broader content bundle summary.
 
 `GET /local/quest-state/characters/{character}` is the first read-only exact-character inspection endpoint for the same store. It is loopback-only, rejects non-`GET` methods with `405`, rejects blank or slash-containing character path values with `400`, returns `404` when the store has no flags for that character, and returns `409` when the committed quest-state snapshot cannot be loaded or validated. Successful responses use this deterministic JSON shape:
 
@@ -168,7 +171,7 @@ The exact-flag response uses the persisted row shape:
 {"character":"QuestHero","quest_ref":"quest:first_steps","name":"step","value":2}
 ```
 
-Both shapes are local QA/operator inspection aids only; they do not define quest objectives, NPC dialog state, reward state, or client quest packets.
+All readback shapes are local QA/operator inspection aids only; they do not define quest objectives, NPC dialog state, reward state, or client quest packets.
 
 ## Store validation and crash-temp cleanup
 
@@ -239,7 +242,7 @@ The current repository can now say:
 - one single-flag transition can initialize, advance, or clear a flag only when the caller-provided current value matches,
 - `gamed` exposes a loopback-only `POST /local/quest-state/transition-preview` harness for dry-running the exact same primitive without writing the committed snapshot,
 - `gamed` exposes a loopback-only `POST /local/quest-state/transition` harness for applying that primitive without inventing client quest packets or NPC dialog semantics,
-- `gamed` exposes loopback-only readback harnesses for inspecting one persisted character flag set, all persisted flags for one quest ref, or one exact flag row without mutating quest state,
+- `gamed` exposes loopback-only readback harnesses for inspecting the whole committed quest-state overview, one persisted character flag set, all persisted flags for one quest ref, or one exact flag row without mutating quest state,
 - content-bundle import/export now includes the configured quest-state snapshot and exposes focused `GET /local/content-bundle/quest-state`, `GET /local/content-bundle/quest-state/characters/{character}`, `GET /local/content-bundle/quest-state/quests/{quest_ref}`, and `GET /local/content-bundle/quest-state/flags/{character}/{quest_ref}/{flag}` readers for bundle-summary rows,
 - the same store can be validated and cleaned of owned crash-temp files without mutating committed quest flags,
 - bad identities, duplicate rows, malformed JSON, symlinked committed snapshots, symlinked crash-temp candidates, and mismatched current values fail closed,

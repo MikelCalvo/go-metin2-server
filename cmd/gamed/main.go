@@ -134,6 +134,12 @@ func main() {
 			return gameRuntime.PreviewQuestStateTransition(transition)
 		},
 	)
+	opsHandler = ops.RegisterLocalQuestStateOverviewEndpoint(
+		opsHandler,
+		func() (any, error) {
+			return gameRuntime.QuestStateOverview()
+		},
+	)
 	opsHandler = ops.RegisterLocalQuestStateCharacterEndpoint(
 		opsHandler,
 		func(character string) (any, bool, error) {

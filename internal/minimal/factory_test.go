@@ -817,6 +817,49 @@ func TestGameRuntimePreviewQuestStateTransitionDoesNotMutateStore(t *testing.T) 
 	}
 }
 
+func TestGameRuntimeQuestStateOverviewReturnsGroupedSnapshot(t *testing.T) {
+	questStatePath := filepath.Join(t.TempDir(), "state", "quest-state.json")
+	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},
+		{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "met_guard", Value: 1},
+	}}); err != nil {
+		t.Fatalf("save quest state snapshot: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	overview, err := runtime.QuestStateOverview()
+	if err != nil {
+		t.Fatalf("read quest-state overview: %v", err)
+	}
+	want := queststate.Overview{
+		FlagCount:      2,
+		CharacterCount: 2,
+		QuestCount:     1,
+		QuestRefs:      []string{"quest:first_steps"},
+		Characters: []queststate.CharacterSnapshot{
+			{Character: "AnotherHero", Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}}},
+			{Character: "QuestHero", Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "step", Value: 2}}},
+		},
+		Quests: []queststate.QuestSnapshot{
+			{QuestRef: "quest:first_steps", FlagCount: 2, Characters: []queststate.CharacterSnapshot{{Character: "AnotherHero", Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}}}, {Character: "QuestHero", Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "step", Value: 2}}}}},
+		},
+	}
+	if !reflect.DeepEqual(overview, want) {
+		t.Fatalf("unexpected runtime quest-state overview:\n got: %#v\nwant: %#v", overview, want)
+	}
+}
+
 func TestGameRuntimeQuestStateReturnsSortedCharacterSnapshot(t *testing.T) {
 	questStatePath := filepath.Join(t.TempDir(), "state", "quest-state.json")
 	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{

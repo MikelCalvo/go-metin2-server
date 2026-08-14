@@ -1,9 +1,11 @@
 package ops
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -339,6 +341,94 @@ func TestLocalQuestStateTransitionEndpointRejectsWrongMethod(t *testing.T) {
 	}
 	if applier.calls != 0 {
 		t.Fatalf("expected wrong method not to call applier, got %d", applier.calls)
+	}
+}
+
+func TestLocalQuestStateOverviewEndpointReturnsOverviewForLoopbackGet(t *testing.T) {
+	reader := &stubQuestStateOverviewReader{overview: queststate.Overview{
+		FlagCount:      2,
+		CharacterCount: 2,
+		QuestCount:     1,
+		QuestRefs:      []string{"quest:first_steps"},
+		Characters: []queststate.CharacterSnapshot{
+			{Character: "AnotherHero", Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}}},
+			{Character: "QuestHero", Flags: []queststate.FlagSnapshot{{QuestRef: "quest:first_steps", Name: "step", Value: 2}}},
+		},
+	}}
+	mux := RegisterLocalQuestStateOverviewEndpoint(NewPprofMux("gamed"), reader.Read)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/quest-state", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if reader.calls != 1 {
+		t.Fatalf("expected overview reader to be called once, got %d", reader.calls)
+	}
+	var got queststate.Overview
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode quest-state overview response body: %v", err)
+	}
+	if !reflect.DeepEqual(got, reader.overview) {
+		t.Fatalf("unexpected quest-state overview response:\n got: %#v\nwant: %#v", got, reader.overview)
+	}
+}
+
+func TestLocalQuestStateOverviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	reader := &stubQuestStateOverviewReader{}
+	mux := RegisterLocalQuestStateOverviewEndpoint(NewPprofMux("gamed"), reader.Read)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/quest-state", nil)
+	req.RemoteAddr = "192.0.2.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if reader.calls != 0 {
+		t.Fatalf("expected non-loopback request not to call overview reader, got %d", reader.calls)
+	}
+}
+
+func TestLocalQuestStateOverviewEndpointRejectsWrongMethod(t *testing.T) {
+	reader := &stubQuestStateOverviewReader{}
+	mux := RegisterLocalQuestStateOverviewEndpoint(NewPprofMux("gamed"), reader.Read)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/quest-state", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if reader.calls != 0 {
+		t.Fatalf("expected wrong method not to call overview reader, got %d", reader.calls)
+	}
+}
+
+func TestLocalQuestStateOverviewEndpointReturnsConflictOnReadError(t *testing.T) {
+	reader := &stubQuestStateOverviewReader{err: errors.New("invalid quest state")}
+	mux := RegisterLocalQuestStateOverviewEndpoint(NewPprofMux("gamed"), reader.Read)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/quest-state", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if reader.calls != 1 {
+		t.Fatalf("expected overview reader to be called once, got %d", reader.calls)
 	}
 }
 
@@ -812,6 +902,17 @@ func (s *stubQuestStateTransitionApplier) Apply(transition queststate.Transition
 	s.calls++
 	s.lastTransition = transition
 	return s.result, s.err
+}
+
+type stubQuestStateOverviewReader struct {
+	calls    int
+	overview queststate.Overview
+	err      error
+}
+
+func (s *stubQuestStateOverviewReader) Read() (any, error) {
+	s.calls++
+	return s.overview, s.err
 }
 
 type stubQuestStateCharacterReader struct {

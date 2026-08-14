@@ -789,6 +789,22 @@ func (r *gameRuntime) PreviewQuestStateTransition(transition queststate.Transiti
 	return previewer.PreviewTransition(transition)
 }
 
+func (r *gameRuntime) QuestStateOverview() (queststate.Overview, error) {
+	if r == nil || r.questStateStore == nil {
+		return queststate.Overview{QuestRefs: []string{}}, nil
+	}
+	r.questStateMu.Lock()
+	defer r.questStateMu.Unlock()
+	snapshot, err := r.questStateStore.Load()
+	if err != nil {
+		if errors.Is(err, queststate.ErrSnapshotNotFound) {
+			return queststate.OverviewSnapshot(queststate.Snapshot{Flags: []queststate.Flag{}})
+		}
+		return queststate.Overview{}, err
+	}
+	return queststate.OverviewSnapshot(snapshot)
+}
+
 func (r *gameRuntime) QuestState(character string) (CharacterQuestStateSnapshot, bool, error) {
 	character = strings.TrimSpace(character)
 	if r == nil || r.questStateStore == nil || character == "" {

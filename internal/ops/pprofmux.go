@@ -653,6 +653,30 @@ func RegisterLocalQuestStateTransitionPreviewEndpoint(mux *http.ServeMux, previe
 	return mux
 }
 
+func RegisterLocalQuestStateOverviewEndpoint(mux *http.ServeMux, overview func() (any, error)) *http.ServeMux {
+	if mux == nil || overview == nil {
+		return mux
+	}
+	mux.HandleFunc("/local/quest-state", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		value, err := overview()
+		if err != nil {
+			slog.Warn("local quest state overview failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalQuestStateCharacterEndpoint(mux *http.ServeMux, questState func(string) (any, bool, error)) *http.ServeMux {
 	if mux == nil || questState == nil {
 		return mux

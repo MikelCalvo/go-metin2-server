@@ -214,6 +214,12 @@ Request body:
 
 Successful HTTP responses are JSON transition-attempt results with `transition`, `result`, and post-attempt `summary`. Compare-and-set misses such as `current_value_mismatch` still return `200 OK` with `applied = false`; they are authored quest-state outcomes rather than transport errors. The endpoint is a local bootstrap/operator harness for validating quest-state progression and recovery. It is not a client quest packet, NPC dialog hook, reward hook, or remote admin API.
 
+### `GET /local/quest-state`
+
+Returns a read-only overview of the committed standalone bootstrap quest-state store. This endpoint is registered only on `gamed`, is loopback-only, accepts only `GET`, treats a missing committed `quest-state.json` as an empty overview, and returns `409` when the committed snapshot cannot be loaded or validated.
+
+Successful responses include `flag_count`, `character_count`, `quest_count`, sorted `quest_refs`, deterministic per-character flag snapshots, and deterministic per-quest grouped snapshots. Use it when local QA needs the whole committed quest-state projection without fetching `/local/content-bundle/summary` or calling each character/quest/flag reader separately. It is not a client quest protocol endpoint and does not mutate quest state.
+
 ### `GET /local/quest-state/characters/{character}`
 
 Returns one read-only exact-character quest-state snapshot from the configured `gamed` quest-state store. The endpoint is loopback-only, rejects non-`GET` methods with `405`, rejects blank or slash-containing character path values with `400`, returns `404` when no persisted non-zero flags exist for that character, and returns `409` if the committed quest-state snapshot cannot be loaded or validated.
@@ -1214,6 +1220,7 @@ curl http://127.0.0.1:6060/local/content-bundle/interactable-static-actors/Villa
 curl http://127.0.0.1:6060/local/content-bundle/interaction-kinds/shop_preview
 curl http://127.0.0.1:6060/local/content-bundle/item-templates/27001
 curl http://127.0.0.1:6060/local/content-bundle/reward-drops/27001
+curl http://127.0.0.1:6060/local/quest-state
 curl http://127.0.0.1:6060/local/content-bundle/quest-state/flags/QuestHero/quest:first_steps/step
 curl http://127.0.0.1:6060/local/content-bundle/shop-catalogs/shop_preview/npc:qa_merchant
 curl http://127.0.0.1:6060/local/content-bundle/warp-destinations/warp/npc:qa_teleporter
