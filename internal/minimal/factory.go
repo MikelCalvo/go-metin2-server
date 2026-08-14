@@ -74,6 +74,7 @@ const bootstrapSpawnGroupReturnStepDelay = time.Second
 const bootstrapSpawnGroupReturnStepMaxStep int32 = 100
 
 const bootstrapCharacterPositionGeneral uint8 = 0
+const bootstrapCharacterPositionSittingChair uint8 = 3
 const bootstrapCharacterPositionSittingGround uint8 = 4
 const itemDropRejectedInfoMessage = "You cannot drop this item."
 const itemPickupInventoryFullInfoMessage = "You have too many items."
@@ -2368,6 +2369,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		var activeCombatTargetVID uint32
 		var activeCombatTargetSnapshotVersion uint64
 		var nextAllowedNormalAttackAt time.Time
+		activeCharacterPosition := bootstrapCharacterPositionGeneral
 		var pendingPracticeMobServerOriginRetaliation bool
 		var pendingPracticeMobServerOriginRetaliationAt time.Time
 		var pendingPracticeMobServerOriginRetaliationTargetVID uint32
@@ -3531,6 +3533,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					sessionTicket = ticket
 					hasTicket = true
 					hasSelected = false
+					activeCharacterPosition = bootstrapCharacterPositionGeneral
 					clearActiveMerchantBuy()
 					clearActiveCombatTarget()
 					selectedPlayer = nil
@@ -3614,6 +3617,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					selectedIndex = index
 					hasSelected = true
 					selectedPlayer = player.NewRuntime(selected, player.SessionLink{Login: sessionTicket.Login, CharacterIndex: index})
+					activeCharacterPosition = bootstrapCharacterPositionGeneral
 					clearActiveCombatTarget()
 					refreshLiveCharacterRegistration()
 					return worldentry.Result{
@@ -3948,6 +3952,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
+							activeCharacterPosition = bootstrapCharacterPositionGeneral
 							clearActiveCombatTarget()
 							clearLiveCharacterRegistration()
 							delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeCommand, Message: "quit"}
@@ -3957,6 +3962,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
+							activeCharacterPosition = bootstrapCharacterPositionGeneral
 							clearActiveCombatTarget()
 							clearLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: true, Frames: logoutFrames, NextPhase: session.PhaseClose}
@@ -3965,6 +3971,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
+							activeCharacterPosition = bootstrapCharacterPositionGeneral
 							clearActiveCombatTarget()
 							clearLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: true, Frames: phaseSelectFrames, NextPhase: session.PhaseSelect}
@@ -4004,6 +4011,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							sharedWorld.UpdateCharacter(sharedWorldID, restartedLive)
 							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, restartedLive, [][]byte{encodeCharacterDeleteFrame(previousSelected)})
 							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, restartedLive, peerRefreshFrames)
+							activeCharacterPosition = bootstrapCharacterPositionGeneral
 							clearActiveCombatTarget()
 							return gameflow.ChatResult{Accepted: true, Frames: bootstrapFrames}
 						case "restart_town":
@@ -4041,6 +4049,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							sessionTicket.Characters = updatedCharacters
 							selectedPlayer.ApplyPersistedSnapshot(restartedSelected)
 							refreshLiveCharacterRegistration()
+							activeCharacterPosition = bootstrapCharacterPositionGeneral
 							clearActiveCombatTarget()
 							frames := append(append([][]byte(nil), bootstrapFrames...), transferFrames...)
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
@@ -4606,7 +4615,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					defer stateMu.Unlock()
 
 					if packet.Position != bootstrapCharacterPositionGeneral && packet.Position != bootstrapCharacterPositionSittingGround {
-						return gameflow.CharacterPositionResult{Accepted: false}
+						switch packet.Position {
+						case bootstrapCharacterPositionSittingChair:
+							packet.Position = bootstrapCharacterPositionSittingGround
+						default:
+							return gameflow.CharacterPositionResult{Accepted: false}
+						}
 					}
 					if !ownsLiveSharedWorldSession() {
 						return gameflow.CharacterPositionResult{Accepted: false}
@@ -4619,6 +4633,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if selected.ID == 0 || selected.VID == 0 {
 						return gameflow.CharacterPositionResult{Accepted: false}
 					}
+					if activeCharacterPosition == packet.Position {
+						return gameflow.CharacterPositionResult{Accepted: true}
+					}
+					activeCharacterPosition = packet.Position
 
 					frame := worldproto.EncodeCharacterPosition(worldproto.CharacterPositionPacket{VID: selected.VID, Position: packet.Position})
 					if ownsLiveSharedWorldSession() {

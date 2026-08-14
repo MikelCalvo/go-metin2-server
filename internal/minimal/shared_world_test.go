@@ -7203,6 +7203,135 @@ func TestNewGameSessionFactoryCharacterPositionEmitsSelfAndPeerPresentationWitho
 	}
 }
 
+func TestNewGameSessionFactoryCharacterPositionFollowsStandSitState(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PositionStateOwner", 0x01030144, 0x02040144, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "position-state-owner", 0x44444444, owner)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected character-position state runtime error: %v", err)
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "position-state-owner", 0x44444444)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 5 {
+		t.Fatalf("expected base bootstrap frames before character-position state test, got %d", len(enterOut))
+	}
+
+	initialStand, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientCharacterPosition(combatproto.ClientCharacterPositionPacket{Position: 0})))
+	if err != nil {
+		t.Fatalf("unexpected initial stand character-position dispatch error: %v", err)
+	}
+	if len(initialStand) != 0 {
+		t.Fatalf("expected duplicate initial stand request to no-op, got %d frames", len(initialStand))
+	}
+
+	sitOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientCharacterPosition(combatproto.ClientCharacterPositionPacket{Position: 4})))
+	if err != nil {
+		t.Fatalf("unexpected sit character-position dispatch error: %v", err)
+	}
+	if len(sitOut) != 1 {
+		t.Fatalf("expected first ground-sit request to emit one frame, got %d", len(sitOut))
+	}
+	sit, err := worldproto.DecodeCharacterPosition(decodeSingleFrame(t, sitOut[0]))
+	if err != nil {
+		t.Fatalf("decode first ground-sit presentation: %v", err)
+	}
+	if sit.VID != owner.VID || sit.Position != 4 {
+		t.Fatalf("expected first ground-sit presentation for owner VID, got %+v", sit)
+	}
+
+	duplicateSit, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientCharacterPosition(combatproto.ClientCharacterPositionPacket{Position: 4})))
+	if err != nil {
+		t.Fatalf("unexpected duplicate sit character-position dispatch error: %v", err)
+	}
+	if len(duplicateSit) != 0 {
+		t.Fatalf("expected duplicate sit request to no-op, got %d frames", len(duplicateSit))
+	}
+
+	standOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientCharacterPosition(combatproto.ClientCharacterPositionPacket{Position: 0})))
+	if err != nil {
+		t.Fatalf("unexpected stand character-position dispatch error: %v", err)
+	}
+	if len(standOut) != 1 {
+		t.Fatalf("expected stand-after-sit request to emit one frame, got %d", len(standOut))
+	}
+	stand, err := worldproto.DecodeCharacterPosition(decodeSingleFrame(t, standOut[0]))
+	if err != nil {
+		t.Fatalf("decode stand-after-sit presentation: %v", err)
+	}
+	if stand.VID != owner.VID || stand.Position != 0 {
+		t.Fatalf("expected stand-after-sit presentation for owner VID, got %+v", stand)
+	}
+
+	duplicateStand, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientCharacterPosition(combatproto.ClientCharacterPositionPacket{Position: 0})))
+	if err != nil {
+		t.Fatalf("unexpected duplicate stand character-position dispatch error: %v", err)
+	}
+	if len(duplicateStand) != 0 {
+		t.Fatalf("expected duplicate stand request to no-op, got %d frames", len(duplicateStand))
+	}
+}
+
+func TestNewGameSessionFactoryCharacterPositionChairRequestEmitsGroundSittingPresentation(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PositionChairOwner", 0x01030145, 0x02040145, 1100, 2100, 0, 101, 201)
+	peer := peerVisibilityCharacter("PositionChairPeer", 0x01030146, 0x02040146, 1120, 2100, 0, 102, 202)
+	issuePeerTicket(t, store, "position-chair-owner", 0x45454545, owner)
+	issuePeerTicket(t, store, "position-chair-peer", 0x46464646, peer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected character-position chair runtime error: %v", err)
+	}
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "position-chair-owner", 0x45454545)
+	defer closeSessionFlow(t, ownerFlow)
+	if len(ownerEnter) != 5 {
+		t.Fatalf("expected owner base bootstrap frames before chair-position test, got %d", len(ownerEnter))
+	}
+	peerFlow, peerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "position-chair-peer", 0x46464646)
+	defer closeSessionFlow(t, peerFlow)
+	if len(peerEnter) != 8 {
+		t.Fatalf("expected peer bootstrap frames with owner before chair-position test, got %d", len(peerEnter))
+	}
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, peerFlow)
+
+	chairOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientCharacterPosition(combatproto.ClientCharacterPositionPacket{Position: 3})))
+	if err != nil {
+		t.Fatalf("unexpected chair-position dispatch error: %v", err)
+	}
+	if len(chairOut) != 1 {
+		t.Fatalf("expected chair-position request to emit one self ground-sit frame, got %d", len(chairOut))
+	}
+	selfPosition, err := worldproto.DecodeCharacterPosition(decodeSingleFrame(t, chairOut[0]))
+	if err != nil {
+		t.Fatalf("decode self chair-position presentation: %v", err)
+	}
+	if selfPosition.VID != owner.VID || selfPosition.Position != 4 {
+		t.Fatalf("expected chair-position request to present as ground-sit for owner VID, got %+v", selfPosition)
+	}
+	peerQueued := flushServerFrames(t, peerFlow)
+	if len(peerQueued) != 1 {
+		t.Fatalf("expected visible peer to receive one chair-position ground-sit frame, got %d", len(peerQueued))
+	}
+	peerPosition, err := worldproto.DecodeCharacterPosition(decodeSingleFrame(t, peerQueued[0]))
+	if err != nil {
+		t.Fatalf("decode peer chair-position presentation: %v", err)
+	}
+	if peerPosition.VID != owner.VID || peerPosition.Position != 4 {
+		t.Fatalf("expected peer chair-position request to present as ground-sit for owner VID, got %+v", peerPosition)
+	}
+
+	duplicateChair, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientCharacterPosition(combatproto.ClientCharacterPositionPacket{Position: 3})))
+	if err != nil {
+		t.Fatalf("unexpected duplicate chair-position dispatch error: %v", err)
+	}
+	if len(duplicateChair) != 0 {
+		t.Fatalf("expected duplicate chair-position request to no-op while already sitting, got %d frames", len(duplicateChair))
+	}
+}
+
 func TestNewGameSessionFactoryPracticeMobDeathClearsPendingServerOriginRetaliationUntilRespawn(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	attacker := peerVisibilityCharacter("Attacker", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

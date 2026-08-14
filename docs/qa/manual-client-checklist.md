@@ -524,6 +524,8 @@ Expected result:
 
 Expected result:
 - accepted `position=4` and `position=0` requests return `GC::CHARACTER_POSITION(selected_vid, position)` to the sender and are visible to the nearby live peer
+- `position=3` chair-sit requests are accepted as conservative sit requests and publish the same `position=4` ground-sit presentation until real chair placement is owned
+- repeating the already active stand/sit state is a no-op: no duplicate self or peer `CHARACTER_POSITION` frame is visible
 - the selected combat target, practice-mob HP, normal-attack cadence, retaliation timers, inventory, points, and persistence are unchanged by the stance presentation
 - unsupported/battle position bytes fail closed with no visible frames or side effects
 
