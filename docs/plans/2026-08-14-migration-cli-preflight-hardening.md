@@ -61,9 +61,12 @@ Validation for this slice:
 - `gofmt -l .`,
 - `git diff --check`.
 
+## Follow-up status — CLI apply boundary
+
+A later same-day slice added the first explicit CLI-only `metin2-migrate apply` command. The command still requires an operator-supplied driver/DSN, a strict offline ledger snapshot, and a target version; daemon-local migration endpoints remain read-only.
+
 ## Follow-up options
 
 1. Add a driver-backed integration harness once the project selects a concrete DB engine.
 2. Add backup/restore preflight orchestration around mutating migration commands.
-3. Add explicit CLI apply/rollback commands only after the driver, recovery policy, and operator safeguards are proven.
-4. Keep daemon-local migration endpoints read-only unless a future production-admin design intentionally changes that boundary.
+3. Keep daemon-local migration endpoints read-only unless a future production-admin design intentionally changes that boundary.

@@ -17,7 +17,7 @@ The current `main` branch owns:
 - authored static actors, interactions, merchant catalogs, content bundles, spawn groups, and stationary practice-mob profiles,
 - first combat/death/respawn/restart/reward behavior around practice mobs,
 - loopback-only debug/operator endpoints for runtime inspection, content/state validation, quest-state validation, backup/restore preflights, and local QA,
-- a read-only migration preflight CLI for catalog summaries and offline ledger-snapshot plans,
+- a migration CLI for catalog summaries, offline ledger-snapshot plans, and explicit CLI-only apply runs,
 - GitHub Actions CI for formatting, tests, vet, binary builds, and Docker image builds.
 
 Latest repository scan for this refresh:
@@ -54,7 +54,7 @@ Legend used below:
   - Practice mobs can be targeted, attacked, killed, respawned, and can grant deterministic EXP/gold/fixed-drop descriptors through narrow owned contracts. Retaliation/player-death/restart seams, the spawn-position leash classifier, a pure capped return-step planner, a loopback-only one-step return trigger, a pending-frame return-step executor, and local pending return-step inspection exist, with authored spawn home preserved separately from current placement for spawn-backed actors. Real autonomous mob AI movement, chase/return packet choreography, attack formulas, skills, projectile/ranged combat, loot tables, PvP/duels, and full death/revive/corpse choreography remain future work.
 
 - `[~]` **M5 — Operations and developer workflow**
-  - The repo has a Makefile, Dockerfile, CI, pprof/debug mux, health endpoint, local-only runtime/config/player/map/visibility/content/persistence endpoints, backup/restore preflights, crash-temp cleanup primitives, a validated migration catalog with dry-run planning, a read-only migration preflight CLI, and a first programmatic up/down apply primitive, QA docs, and clean-room workflow docs. Release/versioning policy, production migration execution, production deployment, metrics/logging policy, and production-safe admin tooling are still pending.
+  - The repo has a Makefile, Dockerfile, CI, pprof/debug mux, health endpoint, local-only runtime/config/player/map/visibility/content/persistence endpoints, backup/restore preflights, crash-temp cleanup primitives, a validated migration catalog with dry-run planning, a migration CLI with explicit apply support, QA docs, and clean-room workflow docs. Release/versioning policy, production DB engine/driver selection, production deployment, metrics/logging policy, and production-safe admin tooling are still pending.
 
 - `[ ]` **M6 — Legacy parity / production server**
   - The project does not claim full legacy parity. The next target is a narrow playable vertical; broad parity and production operations come later.
@@ -217,7 +217,7 @@ Already present:
 - persisted selected character, position, inventory, equipment, quickslots, gold, item-template, quest-state, static actor, and interaction slices needed by current behavior,
 - strict snapshot/template validation, crash-temp reporting/cleanup, manifest-backed backup/restore preflights for several stores, and a first migration catalog with schema ledger, account/character roster, character item-state, character quest-state, item-template, and auth login-ticket handoff migrations plus read-only ledger dry-run planning and a programmatic up/down migration apply primitive,
 - loopback-only local endpoints for validation, backup/restore, runtime inspection, and controlled debug actions,
-- a read-only `metin2-migrate` CLI that prints catalog summaries and plans from offline ledger snapshots without opening a database or applying SQL.
+- a `metin2-migrate` CLI that prints catalog summaries and plans from offline ledger snapshots, plus an explicit CLI-only `apply` command that requires an operator-supplied driver/DSN/snapshot/target and stays outside daemon ops endpoints.
 
 Still missing:
 
@@ -231,7 +231,7 @@ Still missing:
 ## Repository layout
 
 - `cmd/authd` / `cmd/gamed` — daemon entrypoints.
-- `cmd/metin2-migrate` — read-only migration preflight CLI for catalog summaries and offline ledger-snapshot plans.
+- `cmd/metin2-migrate` — migration CLI for catalog summaries, offline ledger-snapshot plans, and explicit CLI-only apply runs.
 - `internal/proto/*` — owned packet codecs, fixtures, and wire contracts.
 - `internal/auth`, `internal/authboot`, `internal/boot`, `internal/handshake`, `internal/login`, `internal/worldentry`, `internal/game` — connection/session/auth/select/game flow.
 - `internal/service` — legacy TCP service runtime and secure session wiring.

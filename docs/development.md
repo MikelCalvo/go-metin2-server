@@ -134,7 +134,7 @@ The database-backed runtime is still future work, but `gamed` can now point the 
 
 Both driver and DSN must be empty to keep DB preflight disabled, or both must be set. Partial values fail daemon startup instead of silently returning the embedded empty-ledger migration plan. The project does not yet ship a DB driver dependency or select a production database engine, so operators must not treat this as a finished DB-backed runtime. `/local/runtime-config` reports only whether a DSN is configured plus the driver name; it intentionally never exposes the DSN value. For offline preflight, `GET /local/db/migrations/ledger-snapshot` exports the running daemon's configured ledger metadata as strict `go-metin2-schema-migrations-ledger-v1` JSON (`version` / `name` / `up_sha256` only), returning an explicit empty snapshot when DB preflight is disabled. `POST /local/db/migrations/plan-from-ledger-snapshot?target_version=N` accepts that same metadata-only snapshot shape and returns the dry-run plan without opening the configured DB or exposing executable SQL.
 
-`cmd/metin2-migrate` is the first shipped migration preflight CLI. It is intentionally read-only:
+`cmd/metin2-migrate` is the first shipped migration CLI. Its catalog/plan commands are read-only preflight surfaces:
 
 ```bash
 go run ./cmd/metin2-migrate catalog
@@ -143,9 +143,21 @@ curl -s http://127.0.0.1:6060/local/db/migrations/ledger-snapshot \
   | go run ./cmd/metin2-migrate plan --ledger-snapshot - --target-version latest
 ```
 
-`catalog` prints the embedded metadata-only migration catalog summary. `plan` reads a strict `go-metin2-schema-migrations-ledger-v1` snapshot from a path or stdin and prints a metadata-only dry-run plan to the requested target; the target may be an explicit version such as `0` for full rollback preview or `latest` for the embedded catalog tip. The CLI caps ledger-snapshot input at 64 KiB, matching the local ops snapshot-plan endpoint, and rejects oversized input before planning. The CLI never opens a database, applies SQL, rolls migrations back, or talks to the daemons.
+`catalog` prints the embedded metadata-only migration catalog summary. `plan` reads a strict `go-metin2-schema-migrations-ledger-v1` snapshot from a path or stdin and prints a metadata-only dry-run plan to the requested target; the target may be an explicit version such as `0` for full rollback preview or `latest` for the embedded catalog tip. The CLI caps ledger-snapshot input at 64 KiB, matching the local ops snapshot-plan endpoint, and rejects oversized input before planning.
 
-`db/migrations` also exposes a programmatic apply primitive for future CLI/repository work. `ApplyCatalogUpToVersion` validates the same catalog/ledger/target boundary used by dry-run planning, executes pending up and down migration statements inside one transaction, writes or deletes matching `schema_migrations` rows, verifies transaction-local ledger state before commit when applicable, and rolls the transaction back on SQL, ledger, row-count, verification, or commit failures. This primitive is deliberately not registered as a local ops endpoint and is not wired into daemon startup; production use still needs an explicit driver/engine choice, backup/restore runbook, and a separate operator command surface before any mutating migration command is exposed.
+`metin2-migrate apply` is the first CLI-only mutating migration boundary:
+
+```bash
+go run ./cmd/metin2-migrate apply \
+  --driver <database/sql-driver> \
+  --dsn <dsn> \
+  --ledger-snapshot snapshot.json \
+  --target-version latest
+```
+
+`apply` requires an operator-supplied `database/sql` driver name, DSN, strict offline ledger snapshot, and target version. It reuses `db/migrations.ApplyToVersion`, so pending up/down migration statements run inside one transaction and the transaction-local `schema_migrations` ledger is re-verified before commit when applicable. Successful output is metadata-only `ApplyResult` JSON; executable SQL and DSNs are not printed, and the supplied DSN is redacted from apply errors. The command is not a daemon endpoint, not an auto-migration hook, and not proof that runtime stores are DB-backed. Production use still needs an explicit driver/engine choice in the build, backup/restore runbook, and deployment coordination before real rollout.
+
+`db/migrations` also exposes the same apply primitive for future repository work. `ApplyCatalogUpToVersion` validates the same catalog/ledger/target boundary used by dry-run planning, executes pending up and down migration statements inside one transaction, writes or deletes matching `schema_migrations` rows, verifies transaction-local ledger state before commit when applicable, and rolls the transaction back on SQL, ledger, row-count, verification, or commit failures. This primitive and the CLI are deliberately not registered as local ops endpoints and are not wired into daemon startup.
 
 ### Bootstrap file-backed persistence
 

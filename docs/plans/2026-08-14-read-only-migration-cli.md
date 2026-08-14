@@ -44,7 +44,7 @@ This slice deliberately does not add:
 - backup/restore orchestration around mutating migration runs,
 - DB-backed account/character/item/quest/login-ticket repositories.
 
-The shipped daemon migration endpoints remain read-only, and this CLI remains read-only too.
+At the time of this slice, the shipped daemon migration endpoints and CLI were both read-only; the later CLI apply boundary is documented below and still remains outside daemon ops endpoints.
 
 ## Why this order
 
@@ -69,9 +69,12 @@ Validation for this slice:
 - `gofmt -l .`,
 - `git diff --check`.
 
+## Follow-up status — CLI apply boundary
+
+A later same-day slice added a CLI-only `metin2-migrate apply` command. That command is intentionally outside daemon ops endpoints, requires an operator-supplied `database/sql` driver/DSN plus strict offline ledger snapshot, and emits metadata-only apply results. The original `catalog` and `plan` commands remain read-only.
+
 ## Follow-up options
 
 1. Add a driver-backed integration harness once the project selects a concrete DB engine.
 2. Add a backup/restore preflight contract for mutating migration runs.
-3. Add explicit CLI apply/rollback commands only after the driver and recovery policy are proven.
-4. Keep daemon-local migration endpoints read-only unless a future production-admin design intentionally changes that boundary.
+3. Keep daemon-local migration endpoints read-only unless a future production-admin design intentionally changes that boundary.
