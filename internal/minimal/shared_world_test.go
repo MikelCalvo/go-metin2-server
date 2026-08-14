@@ -1613,6 +1613,80 @@ func TestGameRuntimeSpawnGroupReturnStepsForMapReturnsMapLocalPendingSchedules(t
 	}
 }
 
+func TestGameRuntimeSpawnGroupReturnStepSnapshotsOmitDeadScheduledActors(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700000925, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for dead return-step snapshot guard: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_step_dead_hidden",
+		Name:          "ReturnStepDeadHiddenMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import dead-hidden return-step spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_step_dead_hidden")
+	if !ok {
+		t.Fatal("expected dead-hidden return-step spawn group to resolve by ref")
+	}
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "ReturnStepDeadHiddenMob", 42, 2301, 2800, 20350); !ok {
+		t.Fatal("expected spawn-backed actor current-position update to arm a return step")
+	}
+	if pending, ok := runtime.SpawnGroupReturnStep(group.EntityID); !ok || pending.EntityID != group.EntityID || pending.Actor.Dead {
+		t.Fatalf("expected live return-required actor to expose a pending return-step row before death, ok=%v snapshot=%+v", ok, pending)
+	}
+
+	runtime.sharedWorld.mu.Lock()
+	actor, ok := runtime.sharedWorld.entities.StaticActor(group.EntityID)
+	if !ok {
+		runtime.sharedWorld.mu.Unlock()
+		t.Fatalf("expected static actor %d before forced dead-state guard", group.EntityID)
+	}
+	runtime.sharedWorld.staticActorCombatHP[group.EntityID] = 0
+	runtime.sharedWorld.scheduleStaticActorCombatRespawnLocked(actor)
+	runtime.sharedWorld.mu.Unlock()
+	deadGroup, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || !deadGroup.Dead || deadGroup.SpawnLeash == nil || !deadGroup.SpawnLeash.ReturnRequired {
+		t.Fatalf("expected fixture to be dead while still return-required, ok=%v snapshot=%+v", ok, deadGroup)
+	}
+
+	if pending, ok := runtime.SpawnGroupReturnStep(group.EntityID); ok || pending.EntityID != 0 {
+		t.Fatalf("expected dead return-required spawn group to be omitted from exact pending return-step snapshot, ok=%v snapshot=%+v", ok, pending)
+	}
+	if pending := runtime.SpawnGroupReturnSteps(); len(pending) != 0 {
+		t.Fatalf("expected dead return-required spawn group to be omitted from global pending return-step snapshots, got %+v", pending)
+	}
+	mapPending, ok := runtime.SpawnGroupReturnStepsForMap(42)
+	if !ok {
+		t.Fatal("expected occupied map-42 return-step lookup to resolve")
+	}
+	if len(mapPending) != 0 {
+		t.Fatalf("expected dead return-required spawn group to be omitted from map-local pending return-step snapshots, got %+v", mapPending)
+	}
+}
+
 func TestGameRuntimeFlushServerFramesRetriesSpawnGroupReturnStepAfterPersistenceFailure(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	viewer := peerVisibilityCharacter("ReturnStepRetryViewer", 0x0103017e, 0x0204017e, 2301, 2800, 0, 101, 201)
