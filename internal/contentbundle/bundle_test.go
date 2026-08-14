@@ -219,6 +219,32 @@ func TestBuildImportPreviewReturnsQuestStateDeltas(t *testing.T) {
 	}
 }
 
+func TestQuestStateFlagDeltaByIdentityReturnsClonedExactDelta(t *testing.T) {
+	currentStep := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "step", Value: 1}
+	candidateStep := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "step", Value: 2}
+	deltas := []QuestStateDelta{
+		{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "met_guard", Change: "added", Candidate: &queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}},
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Change: "changed", Current: &currentStep, Candidate: &candidateStep},
+	}
+
+	delta, ok := QuestStateFlagDeltaByIdentity(deltas, QuestStateFlagIdentity{Character: " QuestHero ", QuestRef: " quest:first_steps ", Name: " step "})
+	if !ok {
+		t.Fatal("expected exact quest-state flag delta lookup to succeed")
+	}
+	want := QuestStateDelta{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Change: "changed", Current: &currentStep, Candidate: &candidateStep}
+	if !reflect.DeepEqual(delta, want) {
+		t.Fatalf("unexpected exact quest-state flag delta:\n got: %#v\nwant: %#v", delta, want)
+	}
+	delta.Current.Value = 99
+	delta.Candidate.Value = 100
+	if currentStep.Value != 1 || candidateStep.Value != 2 {
+		t.Fatalf("expected exact quest-state delta lookup to clone nested snapshots, got current=%+v candidate=%+v", currentStep, candidateStep)
+	}
+	if _, ok := QuestStateFlagDeltaByIdentity(deltas, QuestStateFlagIdentity{Character: "MissingHero", QuestRef: "quest:first_steps", Name: "step"}); ok {
+		t.Fatal("expected missing exact quest-state flag delta lookup to fail")
+	}
+}
+
 func TestBuildImportPreviewReturnsQuestStateQuestCountDelta(t *testing.T) {
 	preview, err := BuildImportPreview(
 		Bundle{QuestState: []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1}}},

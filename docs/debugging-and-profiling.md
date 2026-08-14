@@ -619,6 +619,12 @@ Returns one exact quest-state flag row from the live content-bundle summary. Thi
 
 Use it when local QA needs to inspect one authored/bundled flag without fetching the full content-bundle summary or scanning a whole character/quest grouping. It is not a client quest protocol endpoint and does not mutate quest state.
 
+### `POST /local/content-bundle/import-preview/quest-state/flags/{character}/{quest_ref}/{flag}`
+
+Returns one exact quest-state flag delta from a candidate content-bundle import preview without mutating runtime state. This loopback-only endpoint is registered only on `gamed`; it accepts the same candidate bundle body as `POST /local/content-bundle/import-preview`, validates the path identity with the same `character`, `quest_ref`, and lower-snake `flag` rules as the read-only quest-state flag endpoints, and returns the matching `quest_state_flags[]` delta with `change` plus canonical current/candidate snapshots. It returns `404` when that exact flag has no added/removed/changed delta, `400` for malformed identities or invalid candidate bundles, `403` for non-loopback callers, and accepts only `POST`.
+
+Use it when local QA needs to inspect one authored quest-state import impact before applying a bundle, without fetching and manually filtering the broad import-preview response. It is not a client quest protocol endpoint and does not mutate quest state.
+
 ### `GET /local/content-bundle/shop-catalogs/{kind}/{ref}`
 
 Returns one exact structured shop-catalog summary row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; the only accepted `kind` for this path is `shop_preview`, and `ref` must satisfy the same path-safe interaction reference rule used by `/local/interactions/{kind}/{ref}`. It returns `404` when the live authored bundle has no matching catalog, rejects malformed identities with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.

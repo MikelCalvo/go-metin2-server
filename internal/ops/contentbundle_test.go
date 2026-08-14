@@ -904,6 +904,117 @@ func TestLocalContentBundleImportPreviewEndpointReturnsDeltaJSONForLoopbackPost(
 	}
 }
 
+func TestLocalContentBundleQuestStateFlagImportPreviewEndpointReturnsExactDeltaForLoopbackPost(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{QuestState: []queststate.Flag{
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "old_flag", Value: 1},
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1},
+	}}}
+	mux := RegisterLocalContentBundleQuestStateFlagImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	body := `{"quest_state":[{"character":"QuestHero","quest_ref":"quest:first_steps","name":"step","value":2},{"character":"AnotherHero","quest_ref":"quest:first_steps","name":"met_guard","value":1}]}`
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/quest-state/flags/QuestHero/quest:first_steps/step", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected import previewer to be called once, got %d calls", previewer.calls)
+	}
+	wantCandidate := contentbundle.Bundle{QuestState: []queststate.Flag{
+		{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "met_guard", Value: 1},
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},
+	}}
+	if !reflect.DeepEqual(previewer.lastBundle, wantCandidate) {
+		t.Fatalf("expected canonical candidate bundle passed to previewer:\n got: %#v\nwant: %#v", previewer.lastBundle, wantCandidate)
+	}
+	var got contentbundle.QuestStateDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode exact quest-state import-preview delta response: %v", err)
+	}
+	current := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "step", Value: 1}
+	candidate := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "step", Value: 2}
+	want := contentbundle.QuestStateDelta{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Change: "changed", Current: &current, Candidate: &candidate}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected exact quest-state import-preview delta:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleQuestStateFlagImportPreviewEndpointReturnsNotFoundWhenExactFlagDoesNotChange(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{QuestState: []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1}}}}
+	mux := RegisterLocalContentBundleQuestStateFlagImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/quest-state/flags/QuestHero/quest:first_steps/step", strings.NewReader(`{"quest_state":[{"character":"QuestHero","quest_ref":"quest:first_steps","name":"step","value":1}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for unchanged exact quest-state flag, got %d", http.StatusNotFound, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected unchanged flag lookup to call import previewer once, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleQuestStateFlagImportPreviewEndpointRejectsMalformedIdentityBeforeCallback(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleQuestStateFlagImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/quest-state/flags/QuestHero/quest:first_steps/bad-flag", strings.NewReader(`{"quest_state":[]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for malformed exact quest-state flag identity, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected malformed identity not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleQuestStateFlagImportPreviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleQuestStateFlagImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/quest-state/flags/QuestHero/quest:first_steps/step", strings.NewReader(`{"quest_state":[]}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback exact quest-state import preview, got %d", http.StatusForbidden, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected non-loopback request not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleQuestStateFlagImportPreviewEndpointRejectsWrongMethod(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleQuestStateFlagImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/import-preview/quest-state/flags/QuestHero/quest:first_steps/step", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method exact quest-state import preview, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected wrong method not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
 func TestLocalContentBundleImportPreviewEndpointReturnsServiceRouteDeltaJSONForLoopbackPost(t *testing.T) {
 	currentShop := interactionstore.Definition{
 		Kind:  interactionstore.KindShopPreview,

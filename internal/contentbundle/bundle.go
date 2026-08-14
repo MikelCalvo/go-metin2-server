@@ -259,6 +259,12 @@ type QuestStateDelta struct {
 	Candidate *queststate.FlagSnapshot `json:"candidate,omitempty"`
 }
 
+type QuestStateFlagIdentity struct {
+	Character string
+	QuestRef  string
+	Name      string
+}
+
 type InteractionDefinitionDelta struct {
 	Kind             string `json:"kind"`
 	Ref              string `json:"ref"`
@@ -958,6 +964,34 @@ func buildQuestStateFlagDeltas(currentFlags []queststate.Flag, candidateFlags []
 		return nil
 	}
 	return deltas
+}
+
+func QuestStateFlagDeltaByIdentity(deltas []QuestStateDelta, identity QuestStateFlagIdentity) (QuestStateDelta, bool) {
+	identity.Character = strings.TrimSpace(identity.Character)
+	identity.QuestRef = strings.TrimSpace(identity.QuestRef)
+	identity.Name = strings.TrimSpace(identity.Name)
+	if identity.Character == "" || identity.QuestRef == "" || identity.Name == "" {
+		return QuestStateDelta{}, false
+	}
+	for _, delta := range deltas {
+		if delta.Character == identity.Character && delta.QuestRef == identity.QuestRef && delta.Name == identity.Name {
+			return cloneQuestStateDelta(delta), true
+		}
+	}
+	return QuestStateDelta{}, false
+}
+
+func cloneQuestStateDelta(delta QuestStateDelta) QuestStateDelta {
+	cloned := delta
+	if delta.Current != nil {
+		current := *delta.Current
+		cloned.Current = &current
+	}
+	if delta.Candidate != nil {
+		candidate := *delta.Candidate
+		cloned.Candidate = &candidate
+	}
+	return cloned
 }
 
 func questStateFlagMapByKey(flags []queststate.Flag) map[string]queststate.Flag {

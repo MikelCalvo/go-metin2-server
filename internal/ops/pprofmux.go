@@ -3108,6 +3108,50 @@ func RegisterLocalContentBundleImportPreviewEndpoint(mux *http.ServeMux, preview
 	return mux
 }
 
+func RegisterLocalContentBundleQuestStateFlagImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
+	if mux == nil || previewContentBundleImport == nil {
+		return mux
+	}
+	mux.HandleFunc("POST /local/content-bundle/import-preview/quest-state/flags/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		identity, ok := decodeLocalContentBundleQuestStateFlagImportPreviewIdentity(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bundle, status, ok := decodeLocalContentBundleRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		normalized, err := contentbundle.Canonicalize(bundle)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		preview, status := previewContentBundleImport(normalized)
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, preview, status)
+			return
+		}
+		importPreview, ok := preview.(contentbundle.ImportPreview)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		delta, ok := contentbundle.QuestStateFlagDeltaByIdentity(importPreview.Deltas.QuestStateFlags, identity)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, delta, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalContentBundleValidateEndpoint(mux *http.ServeMux) *http.ServeMux {
 	if mux == nil {
 		return mux
@@ -3938,6 +3982,14 @@ func decodeLocalQuestStateFlagIdentity(r *http.Request) (string, string, string,
 
 func decodeLocalContentBundleQuestStateFlagIdentity(r *http.Request) (string, string, string, bool) {
 	return decodeQuestStateFlagIdentityWithPrefix(r, "/local/content-bundle/quest-state/flags/")
+}
+
+func decodeLocalContentBundleQuestStateFlagImportPreviewIdentity(r *http.Request) (contentbundle.QuestStateFlagIdentity, bool) {
+	character, questRef, flagName, ok := decodeQuestStateFlagIdentityWithPrefix(r, "/local/content-bundle/import-preview/quest-state/flags/")
+	if !ok {
+		return contentbundle.QuestStateFlagIdentity{}, false
+	}
+	return contentbundle.QuestStateFlagIdentity{Character: character, QuestRef: questRef, Name: flagName}, true
 }
 
 func decodeQuestStateFlagIdentityWithPrefix(r *http.Request, prefix string) (string, string, string, bool) {
