@@ -420,14 +420,17 @@ Run this only if packet tooling or the client build can emit a refine attempt.
 
 - [ ] Attempt one `REFINE` request for a disposable carried item slot / refine type
 - [ ] Repeat with a carried item whose loaded template is not `refineable` and authors a non-empty `refine_reject_message`
-- [ ] If packet tooling allows it, repeat with a different raw refine `type` value
+- [ ] Repeat with a carried item whose loaded template is `refineable` and authors valid `refine_info` (`result_vnum`, `cost`, `probability`, and up to five materials)
+- [ ] If packet tooling allows it, repeat with a different raw refine `type` value and confirm that the preview frame echoes that type
 
 Expected result:
 - ordinary `REFINE` attempts are parsed by the game socket but remain unsupported in the shipped bootstrap runtime: no response frames are visible, no carried inventory/equipment/quickslot/point state changes, no ground actor appears, no peer receives item-result frames, and reconnect/operator inspection shows the selected-character snapshot unchanged
 - a non-refineable carried item with template-authored `refine_reject_message` returns exactly one self-only `CHAT_TYPE_INFO` message with that authored text, while still leaving inventory, equipment, quickslots, points, peers, ground handles, and persistence unchanged
+- a refineable carried item with template-authored `refine_info` returns exactly one self-only `REFINE_INFORMATION_NEW` frame with the request `type` / `pos`, source item `vnum`, authored result `vnum`, cost, probability, and material rows; this is a dialog preview only, and the selected-character snapshot remains unchanged
 - item-template validation rejects `refine_reject_message` if it contains embedded NUL bytes or is authored on a template that also sets `refineable = true`, so contradictory refine feedback should fail before gameplay testing starts
-- if packet tooling injects server refine-dialog fixtures for client UI inspection, the owned `REFINE_INFORMATION` / `REFINE_INFORMATION_NEW` payload has `type`, `pos`, `src_vnum`, `result_vnum`, `material_count`, `cost`, `prob`, and exactly five fixed material rows; `material_count > 5` is malformed for the current codec boundary
-- this is a fail-closed guard plus codec-only refine-information ownership, not a completed refine or upgrade feature
+- item-template validation rejects `refine_info` without `refineable`, with a zero result `vnum`, negative cost, probability outside `0..100`, more than five materials, or material rows with zero `vnum` / non-positive count
+- the owned `REFINE_INFORMATION` / `REFINE_INFORMATION_NEW` payload has `type`, `pos`, `src_vnum`, `result_vnum`, `material_count`, `cost`, `prob`, and exactly five fixed material rows; `material_count > 5` is malformed for the codec boundary
+- this is a fail-closed guard plus template-backed refine-dialog preview, not a completed refine or upgrade feature
 
 ### 4.5.12b Unsupported storage/safebox/mall guard
 
