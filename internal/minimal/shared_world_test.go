@@ -1208,6 +1208,99 @@ func TestGameRuntimeRemoveSpawnGroupClearsAutomaticReturnStepSchedule(t *testing
 	}
 }
 
+func TestGameRuntimeDeadSpawnGroupUpdateDoesNotArmAutomaticReturnStep(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("DeadReturnUpdateOwner", 0x0103018c, 0x0204018c, 1700, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "dead-return-update-owner", 0x8c8c8c8c, owner)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700000955, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for dead return-step update guard: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.dead_return_step_update",
+		Name:          "DeadReturnStepUpdateMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import dead return-step update spawn group: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.dead_return_step_update")
+	if !ok {
+		t.Fatal("expected dead return-step update spawn group to resolve by ref")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "dead-return-update-owner", 0x8c8c8c8c)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+	targetVID := uint32(group.EntityID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target error before dead return-step update: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected target selection before dead return-step update, got %d frames", len(selectOut))
+	}
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected attack %d before dead return-step update: %v", hit, err)
+		}
+		if len(attackOut) == 0 {
+			t.Fatalf("expected accepted attack %d before dead return-step update", hit)
+		}
+	}
+	deadGroup, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || !deadGroup.Dead {
+		t.Fatalf("expected killed spawn group to be dead before update, ok=%v snapshot=%+v", ok, deadGroup)
+	}
+	respawn, ok := runtime.StaticActorRespawn(group.EntityID)
+	if !ok || respawn.EntityID != group.EntityID {
+		t.Fatalf("expected killed spawn group to retain pending respawn before update, ok=%v snapshot=%+v", ok, respawn)
+	}
+
+	updated, ok := runtime.UpdateStaticActor(group.EntityID, "DeadReturnStepUpdateMob", 42, 2301, 2800, 20350)
+	if !ok {
+		t.Fatalf("expected same-profile dead spawn-group position update to succeed")
+	}
+	if !updated.Dead || updated.SpawnLeash == nil || !updated.SpawnLeash.ReturnRequired {
+		t.Fatalf("expected updated dead spawn group to remain dead and return-required, got %+v", updated)
+	}
+	runtime.spawnReturnMu.Lock()
+	_, scheduled := runtime.spawnReturnStepDueAt[group.EntityID]
+	runtime.spawnReturnMu.Unlock()
+	if scheduled {
+		t.Fatalf("expected dead return-required spawn group update not to arm an automatic return-step schedule")
+	}
+	if respawn, ok := runtime.StaticActorRespawn(group.EntityID); !ok || respawn.EntityID != group.EntityID || !respawn.Actor.Dead {
+		t.Fatalf("expected dead spawn group update to keep respawn ownership, ok=%v snapshot=%+v", ok, respawn)
+	}
+}
+
 func TestGameRuntimeStepSpawnGroupReturnHomeClearsStaleTargetAndEngagementWhenActorMoves(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("ReturnStepOwner", 0x0103016c, 0x0204016c, 1700, 2800, 0, 101, 201)

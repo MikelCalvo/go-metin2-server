@@ -1154,7 +1154,7 @@ func (r *gameRuntime) syncSpawnGroupReturnStepSchedule(actor StaticActorSnapshot
 	if r == nil || actor.EntityID == 0 {
 		return
 	}
-	if actor.SpawnGroupRef != "" && actor.SpawnLeash != nil && actor.SpawnLeash.ReturnRequired {
+	if actor.SpawnGroupRef != "" && actor.SpawnLeash != nil && actor.SpawnLeash.ReturnRequired && !actor.Dead {
 		r.scheduleSpawnGroupReturnStep(actor.EntityID)
 		return
 	}
