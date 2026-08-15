@@ -3345,6 +3345,94 @@ func RegisterLocalContentBundleWarpDestinationImportPreviewEndpoint(mux *http.Se
 	return mux
 }
 
+func RegisterLocalContentBundleShopRouteImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
+	if mux == nil || previewContentBundleImport == nil {
+		return mux
+	}
+	mux.HandleFunc("POST /local/content-bundle/import-preview/shop-routes/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		actorName, ok := decodeLocalContentBundleShopRouteImportPreviewActorName(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bundle, status, ok := decodeLocalContentBundleRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		normalized, err := contentbundle.Canonicalize(bundle)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		preview, status := previewContentBundleImport(normalized)
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, preview, status)
+			return
+		}
+		importPreview, ok := preview.(contentbundle.ImportPreview)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		deltas := contentbundle.ShopRouteDeltasByActorName(importPreview.Deltas.ShopRoutes, actorName)
+		if len(deltas) == 0 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, deltas, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalContentBundleWarpRouteImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
+	if mux == nil || previewContentBundleImport == nil {
+		return mux
+	}
+	mux.HandleFunc("POST /local/content-bundle/import-preview/warp-routes/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		actorName, ok := decodeLocalContentBundleWarpRouteImportPreviewActorName(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bundle, status, ok := decodeLocalContentBundleRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		normalized, err := contentbundle.Canonicalize(bundle)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		preview, status := previewContentBundleImport(normalized)
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, preview, status)
+			return
+		}
+		importPreview, ok := preview.(contentbundle.ImportPreview)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		deltas := contentbundle.WarpRouteDeltasByActorName(importPreview.Deltas.WarpRoutes, actorName)
+		if len(deltas) == 0 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, deltas, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalContentBundleMapImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
 	if mux == nil || previewContentBundleImport == nil {
 		return mux
@@ -4625,8 +4713,16 @@ func decodeLocalContentBundleWarpDestinationImportPreviewIdentity(r *http.Reques
 	return kind, ref, true
 }
 
+func decodeLocalContentBundleShopRouteImportPreviewActorName(r *http.Request) (string, bool) {
+	return decodeLocalCharacterName(r, "/local/content-bundle/import-preview/shop-routes/")
+}
+
 func decodeLocalContentBundleWarpRouteActorName(r *http.Request) (string, bool) {
 	return decodeLocalCharacterName(r, "/local/content-bundle/warp-routes/")
+}
+
+func decodeLocalContentBundleWarpRouteImportPreviewActorName(r *http.Request) (string, bool) {
+	return decodeLocalCharacterName(r, "/local/content-bundle/import-preview/warp-routes/")
 }
 
 func decodeLocalKindRefIdentityWithPrefix(r *http.Request, prefix string) (string, string, bool) {

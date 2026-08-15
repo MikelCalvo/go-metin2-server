@@ -760,6 +760,14 @@ func main() {
 		opsHandler,
 		previewContentBundleImport,
 	)
+	opsHandler = ops.RegisterLocalContentBundleShopRouteImportPreviewEndpoint(
+		opsHandler,
+		previewContentBundleImport,
+	)
+	opsHandler = ops.RegisterLocalContentBundleWarpRouteImportPreviewEndpoint(
+		opsHandler,
+		previewContentBundleImport,
+	)
 	opsHandler = ops.RegisterLocalContentBundleRewardDropImportPreviewEndpoint(
 		opsHandler,
 		previewContentBundleImport,

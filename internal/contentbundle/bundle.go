@@ -1823,6 +1823,84 @@ func buildWarpRouteDeltas(currentRoutes []WarpRouteSummary, candidateRoutes []Wa
 	return deltas
 }
 
+func ShopRouteDeltasByActorName(deltas []ShopRouteDelta, actorName string) []ShopRouteDelta {
+	actorName = strings.TrimSpace(actorName)
+	if actorName == "" || strings.Contains(actorName, "/") {
+		return nil
+	}
+	matches := make([]ShopRouteDelta, 0)
+	for _, delta := range deltas {
+		if shopRouteDeltaMatchesActorName(delta, actorName) {
+			matches = append(matches, cloneShopRouteDelta(delta))
+		}
+	}
+	if len(matches) == 0 {
+		return nil
+	}
+	return matches
+}
+
+func shopRouteDeltaMatchesActorName(delta ShopRouteDelta, actorName string) bool {
+	return strings.TrimSpace(delta.ActorName) == actorName ||
+		(delta.Current != nil && strings.TrimSpace(delta.Current.ActorName) == actorName) ||
+		(delta.Candidate != nil && strings.TrimSpace(delta.Candidate.ActorName) == actorName)
+}
+
+func cloneShopRouteDelta(delta ShopRouteDelta) ShopRouteDelta {
+	cloned := delta
+	cloned.ActorName = strings.TrimSpace(cloned.ActorName)
+	cloned.Ref = strings.TrimSpace(cloned.Ref)
+	cloned.Change = strings.TrimSpace(cloned.Change)
+	if delta.Current != nil {
+		current := normalizeShopRouteSummary(*delta.Current)
+		cloned.Current = &current
+	}
+	if delta.Candidate != nil {
+		candidate := normalizeShopRouteSummary(*delta.Candidate)
+		cloned.Candidate = &candidate
+	}
+	return cloned
+}
+
+func WarpRouteDeltasByActorName(deltas []WarpRouteDelta, actorName string) []WarpRouteDelta {
+	actorName = strings.TrimSpace(actorName)
+	if actorName == "" || strings.Contains(actorName, "/") {
+		return nil
+	}
+	matches := make([]WarpRouteDelta, 0)
+	for _, delta := range deltas {
+		if warpRouteDeltaMatchesActorName(delta, actorName) {
+			matches = append(matches, cloneWarpRouteDelta(delta))
+		}
+	}
+	if len(matches) == 0 {
+		return nil
+	}
+	return matches
+}
+
+func warpRouteDeltaMatchesActorName(delta WarpRouteDelta, actorName string) bool {
+	return strings.TrimSpace(delta.ActorName) == actorName ||
+		(delta.Current != nil && strings.TrimSpace(delta.Current.ActorName) == actorName) ||
+		(delta.Candidate != nil && strings.TrimSpace(delta.Candidate.ActorName) == actorName)
+}
+
+func cloneWarpRouteDelta(delta WarpRouteDelta) WarpRouteDelta {
+	cloned := delta
+	cloned.ActorName = strings.TrimSpace(cloned.ActorName)
+	cloned.Ref = strings.TrimSpace(cloned.Ref)
+	cloned.Change = strings.TrimSpace(cloned.Change)
+	if delta.Current != nil {
+		current := normalizeWarpRouteSummary(*delta.Current)
+		cloned.Current = &current
+	}
+	if delta.Candidate != nil {
+		candidate := normalizeWarpRouteSummary(*delta.Candidate)
+		cloned.Candidate = &candidate
+	}
+	return cloned
+}
+
 func normalizeShopRouteSummary(route ShopRouteSummary) ShopRouteSummary {
 	route.ActorName = strings.TrimSpace(route.ActorName)
 	route.Ref = strings.TrimSpace(route.Ref)

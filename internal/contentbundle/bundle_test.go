@@ -1520,6 +1520,52 @@ func TestBuildImportPreviewReturnsServiceRouteDeltas(t *testing.T) {
 	}
 }
 
+func TestShopRouteDeltasByActorNameReturnsMatchingClonedDeltas(t *testing.T) {
+	currentMerchant := ShopRouteSummary{ActorName: "Merchant", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:merchant", Title: "Old Merchant", EntryCount: 1}
+	candidateMerchant := ShopRouteSummary{ActorName: "Merchant", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:merchant", Title: "Village Merchant", EntryCount: 2}
+	candidateRemote := ShopRouteSummary{ActorName: "RemoteMerchant", SourceMapIndex: 3, SourceX: 3000, SourceY: 4000, Ref: "npc:remote_merchant", Title: "Remote Merchant", EntryCount: 1}
+	deltas := []ShopRouteDelta{
+		{ActorName: "Merchant", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:merchant", Change: "changed", Current: &currentMerchant, Candidate: &candidateMerchant},
+		{ActorName: "RemoteMerchant", SourceMapIndex: 3, SourceX: 3000, SourceY: 4000, Ref: "npc:remote_merchant", Change: "added", Candidate: &candidateRemote},
+	}
+
+	got := ShopRouteDeltasByActorName(deltas, " Merchant ")
+	want := []ShopRouteDelta{{ActorName: "Merchant", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:merchant", Change: "changed", Current: &currentMerchant, Candidate: &candidateMerchant}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected shop-route deltas by actor name:\n got: %#v\nwant: %#v", got, want)
+	}
+	got[0].Candidate.Title = "Mutated Merchant"
+	if deltas[0].Candidate.Title != "Village Merchant" {
+		t.Fatalf("expected shop-route delta helper to clone candidate route, source deltas=%#v", deltas)
+	}
+	if invalid := ShopRouteDeltasByActorName(deltas, "Bad/Name"); invalid != nil {
+		t.Fatalf("expected path-ambiguous shop route actor lookup to fail closed, got %#v", invalid)
+	}
+}
+
+func TestWarpRouteDeltasByActorNameReturnsMatchingClonedDeltas(t *testing.T) {
+	currentGate := WarpRouteSummary{ActorName: "Gate", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:gate", Text: "Old gate.", TargetMapIndex: 2, TargetX: 2000, TargetY: 3000}
+	candidateGate := WarpRouteSummary{ActorName: "Gate", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:gate", Text: "New gate.", TargetMapIndex: 3, TargetX: 2100, TargetY: 3100}
+	candidateRemote := WarpRouteSummary{ActorName: "RemoteGate", SourceMapIndex: 3, SourceX: 3000, SourceY: 4000, Ref: "npc:remote_gate", Text: "Remote route.", TargetMapIndex: 9, TargetX: 9000, TargetY: 9100}
+	deltas := []WarpRouteDelta{
+		{ActorName: "Gate", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:gate", Change: "changed", Current: &currentGate, Candidate: &candidateGate},
+		{ActorName: "RemoteGate", SourceMapIndex: 3, SourceX: 3000, SourceY: 4000, Ref: "npc:remote_gate", Change: "added", Candidate: &candidateRemote},
+	}
+
+	got := WarpRouteDeltasByActorName(deltas, " Gate ")
+	want := []WarpRouteDelta{{ActorName: "Gate", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:gate", Change: "changed", Current: &currentGate, Candidate: &candidateGate}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected warp-route deltas by actor name:\n got: %#v\nwant: %#v", got, want)
+	}
+	got[0].Candidate.Text = "Mutated gate."
+	if deltas[0].Candidate.Text != "New gate." {
+		t.Fatalf("expected warp-route delta helper to clone candidate route, source deltas=%#v", deltas)
+	}
+	if invalid := WarpRouteDeltasByActorName(deltas, "Bad/Name"); invalid != nil {
+		t.Fatalf("expected path-ambiguous warp route actor lookup to fail closed, got %#v", invalid)
+	}
+}
+
 func TestBuildImportPreviewReturnsWarpDestinationDeltas(t *testing.T) {
 	currentGate := interactionstore.Definition{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "Old gate.", MapIndex: 2, X: 2000, Y: 3000}
 	currentOldGate := interactionstore.Definition{Kind: interactionstore.KindWarp, Ref: "npc:old_gate", Text: "Old route.", MapIndex: 4, X: 2200, Y: 3200}

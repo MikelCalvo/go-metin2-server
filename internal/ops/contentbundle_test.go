@@ -1784,6 +1784,287 @@ func TestLocalContentBundleWarpDestinationImportPreviewEndpointCoexistsWithBroad
 	}
 }
 
+func TestLocalContentBundleShopRouteImportPreviewEndpointReturnsActorDeltasForLoopbackPost(t *testing.T) {
+	currentShop := interactionstore.Definition{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Title: "Old Merchant", Catalog: []interactionstore.MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}}}
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "Merchant", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: currentShop.Ref}},
+		ItemTemplates:          []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}},
+		InteractionDefinitions: []interactionstore.Definition{currentShop},
+	}}
+	mux := RegisterLocalContentBundleShopRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/shop-routes/Merchant", strings.NewReader(`{"static_actors":[{"name":"Merchant","map_index":1,"x":1000,"y":2000,"race_num":20301,"interaction_kind":"shop_preview","interaction_ref":"npc:merchant"},{"name":"RemoteMerchant","map_index":3,"x":3000,"y":4000,"race_num":20301,"interaction_kind":"shop_preview","interaction_ref":"npc:remote_merchant"}],"item_templates":[{"vnum":27001,"name":"Small Red Potion","stackable":true,"max_count":200,"shop_buy_price":5},{"vnum":11200,"name":"Wooden Sword","stackable":false,"max_count":1}],"interaction_definitions":[{"kind":"shop_preview","ref":"npc:merchant","title":"Village Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":1},{"slot":1,"item_vnum":11200,"price":500,"count":1}]},{"kind":"shop_preview","ref":"npc:remote_merchant","title":"Remote Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":75,"count":1}]}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected import previewer to be called once, got %d calls", previewer.calls)
+	}
+	var got []contentbundle.ShopRouteDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode shop-route import-preview delta response: %v", err)
+	}
+	currentRoute := contentbundle.ShopRouteSummary{ActorName: "Merchant", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:merchant", Title: "Old Merchant", EntryCount: 1}
+	candidateRoute := contentbundle.ShopRouteSummary{ActorName: "Merchant", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:merchant", Title: "Village Merchant", EntryCount: 2}
+	want := []contentbundle.ShopRouteDelta{{ActorName: "Merchant", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:merchant", Change: "changed", Current: &currentRoute, Candidate: &candidateRoute}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected shop-route import-preview deltas:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleShopRouteImportPreviewEndpointReturnsNotFoundWhenActorHasNoRouteDeltas(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "Merchant", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
+		ItemTemplates:          []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Title: "Village Merchant", Catalog: []interactionstore.MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}}}},
+	}}
+	mux := RegisterLocalContentBundleShopRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/shop-routes/Merchant", strings.NewReader(`{"static_actors":[{"name":"Merchant","map_index":1,"x":1000,"y":2000,"race_num":20301,"interaction_kind":"shop_preview","interaction_ref":"npc:merchant"}],"item_templates":[{"vnum":27001,"name":"Small Red Potion","stackable":true,"max_count":200}],"interaction_definitions":[{"kind":"shop_preview","ref":"npc:merchant","title":"Village Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":1}]}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for unchanged shop route actor, got %d", http.StatusNotFound, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected missing shop route delta lookup to call import previewer once, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleShopRouteImportPreviewEndpointRejectsMalformedActorNameBeforeCallback(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleShopRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	for _, path := range []string{
+		"/local/content-bundle/import-preview/shop-routes/",
+		"/local/content-bundle/import-preview/shop-routes/Bad%2FMerchant",
+		"/local/content-bundle/import-preview/shop-routes/Merchant/extra",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"interaction_definitions":[]}`))
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for malformed shop-route import-preview path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected malformed shop route actor names not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleShopRouteImportPreviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleShopRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/shop-routes/Merchant", strings.NewReader(`{"interaction_definitions":[]}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback shop-route import preview, got %d", http.StatusForbidden, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected non-loopback request not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleShopRouteImportPreviewEndpointRejectsWrongMethod(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleShopRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/import-preview/shop-routes/Merchant", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method shop-route import preview, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected wrong-method request not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleShopRouteImportPreviewEndpointCoexistsWithBroadImportPreview(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "Merchant", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
+		ItemTemplates:          []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Title: "Old Merchant", Catalog: []interactionstore.MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}}}},
+	}}
+	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+	mux = RegisterLocalContentBundleShopRouteImportPreviewEndpoint(mux, previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/shop-routes/Merchant", strings.NewReader(`{"static_actors":[{"name":"Merchant","map_index":1,"x":1000,"y":2000,"race_num":20301,"interaction_kind":"shop_preview","interaction_ref":"npc:merchant"}],"item_templates":[{"vnum":27001,"name":"Small Red Potion","stackable":true,"max_count":200},{"vnum":11200,"name":"Wooden Sword","stackable":false,"max_count":1}],"interaction_definitions":[{"kind":"shop_preview","ref":"npc:merchant","title":"Village Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":1},{"slot":1,"item_vnum":11200,"price":500,"count":1}]}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d from focused route on shared mux, got %d", http.StatusOK, rec.Code)
+	}
+	var got []contentbundle.ShopRouteDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode focused shop-route import-preview delta response from shared mux: %v", err)
+	}
+	if len(got) != 1 || got[0].ActorName != "Merchant" || got[0].Change != "changed" || got[0].Candidate == nil || got[0].Candidate.EntryCount != 2 {
+		t.Fatalf("unexpected focused shop-route import-preview response from shared mux: %#v", got)
+	}
+}
+
+func TestLocalContentBundleWarpRouteImportPreviewEndpointReturnsActorDeltasForLoopbackPost(t *testing.T) {
+	currentGate := interactionstore.Definition{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "Old gate.", MapIndex: 2, X: 2000, Y: 3000}
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "Gate", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 20300, InteractionKind: interactionstore.KindWarp, InteractionRef: currentGate.Ref}},
+		InteractionDefinitions: []interactionstore.Definition{currentGate},
+	}}
+	mux := RegisterLocalContentBundleWarpRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/warp-routes/Gate", strings.NewReader(`{"static_actors":[{"name":"Gate","map_index":1,"x":1100,"y":2100,"race_num":20300,"interaction_kind":"warp","interaction_ref":"npc:gate"},{"name":"RemoteGate","map_index":3,"x":3000,"y":4000,"race_num":20300,"interaction_kind":"warp","interaction_ref":"npc:remote_gate"}],"interaction_definitions":[{"kind":"warp","ref":"npc:gate","text":"New gate.","map_index":3,"x":2100,"y":3100},{"kind":"warp","ref":"npc:remote_gate","text":"Remote route.","map_index":9,"x":9000,"y":9100}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected import previewer to be called once, got %d calls", previewer.calls)
+	}
+	var got []contentbundle.WarpRouteDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode warp-route import-preview delta response: %v", err)
+	}
+	currentRoute := contentbundle.WarpRouteSummary{ActorName: "Gate", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:gate", Text: "Old gate.", TargetMapIndex: 2, TargetX: 2000, TargetY: 3000}
+	candidateRoute := contentbundle.WarpRouteSummary{ActorName: "Gate", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:gate", Text: "New gate.", TargetMapIndex: 3, TargetX: 2100, TargetY: 3100}
+	want := []contentbundle.WarpRouteDelta{{ActorName: "Gate", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:gate", Change: "changed", Current: &currentRoute, Candidate: &candidateRoute}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected warp-route import-preview deltas:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleWarpRouteImportPreviewEndpointReturnsNotFoundWhenActorHasNoRouteDeltas(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "Gate", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 20300, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:gate"}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "Same gate.", MapIndex: 2, X: 2000, Y: 3000}},
+	}}
+	mux := RegisterLocalContentBundleWarpRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/warp-routes/Gate", strings.NewReader(`{"static_actors":[{"name":"Gate","map_index":1,"x":1100,"y":2100,"race_num":20300,"interaction_kind":"warp","interaction_ref":"npc:gate"}],"interaction_definitions":[{"kind":"warp","ref":"npc:gate","text":"Same gate.","map_index":2,"x":2000,"y":3000}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for unchanged warp route actor, got %d", http.StatusNotFound, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected missing warp route delta lookup to call import previewer once, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleWarpRouteImportPreviewEndpointRejectsMalformedActorNameBeforeCallback(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleWarpRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	for _, path := range []string{
+		"/local/content-bundle/import-preview/warp-routes/",
+		"/local/content-bundle/import-preview/warp-routes/Bad%2FGate",
+		"/local/content-bundle/import-preview/warp-routes/Gate/extra",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"interaction_definitions":[]}`))
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for malformed warp-route import-preview path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected malformed warp route actor names not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleWarpRouteImportPreviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleWarpRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/warp-routes/Gate", strings.NewReader(`{"interaction_definitions":[]}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback warp-route import preview, got %d", http.StatusForbidden, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected non-loopback request not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleWarpRouteImportPreviewEndpointRejectsWrongMethod(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleWarpRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/import-preview/warp-routes/Gate", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method warp-route import preview, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected wrong-method request not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleWarpRouteImportPreviewEndpointCoexistsWithBroadImportPreview(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "Gate", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 20300, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:gate"}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "Old gate.", MapIndex: 2, X: 2000, Y: 3000}},
+	}}
+	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+	mux = RegisterLocalContentBundleWarpRouteImportPreviewEndpoint(mux, previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/warp-routes/Gate", strings.NewReader(`{"static_actors":[{"name":"Gate","map_index":1,"x":1100,"y":2100,"race_num":20300,"interaction_kind":"warp","interaction_ref":"npc:gate"}],"interaction_definitions":[{"kind":"warp","ref":"npc:gate","text":"New gate.","map_index":3,"x":2100,"y":3100}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d from focused route on shared mux, got %d", http.StatusOK, rec.Code)
+	}
+	var got []contentbundle.WarpRouteDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode focused warp-route import-preview delta response from shared mux: %v", err)
+	}
+	if len(got) != 1 || got[0].ActorName != "Gate" || got[0].Change != "changed" || got[0].Candidate == nil || got[0].Candidate.TargetMapIndex != 3 {
+		t.Fatalf("unexpected focused warp-route import-preview response from shared mux: %#v", got)
+	}
+}
+
 func TestLocalContentBundleImportPreviewEndpointReturnsServiceRouteDeltaJSONForLoopbackPost(t *testing.T) {
 	currentShop := interactionstore.Definition{
 		Kind:  interactionstore.KindShopPreview,
