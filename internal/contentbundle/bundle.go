@@ -1270,6 +1270,31 @@ func buildItemTemplateDeltas(currentTemplates []itemcatalog.Template, candidateT
 	return deltas
 }
 
+func ItemTemplateDeltaByVnum(deltas []ItemTemplateDelta, vnum uint32) (ItemTemplateDelta, bool) {
+	if vnum == 0 {
+		return ItemTemplateDelta{}, false
+	}
+	for _, delta := range deltas {
+		if delta.Vnum == vnum {
+			return cloneItemTemplateDelta(delta), true
+		}
+	}
+	return ItemTemplateDelta{}, false
+}
+
+func cloneItemTemplateDelta(delta ItemTemplateDelta) ItemTemplateDelta {
+	cloned := delta
+	if delta.Current != nil {
+		current := itemcatalog.NormalizeTemplate(*delta.Current)
+		cloned.Current = &current
+	}
+	if delta.Candidate != nil {
+		candidate := itemcatalog.NormalizeTemplate(*delta.Candidate)
+		cloned.Candidate = &candidate
+	}
+	return cloned
+}
+
 func buildCombatProfileDeltas(currentProfiles []worldruntime.StaticActorCombatProfileSnapshot, candidateProfiles []worldruntime.StaticActorCombatProfileSnapshot) []CombatProfileDelta {
 	if len(currentProfiles) == 0 && len(candidateProfiles) == 0 {
 		return nil

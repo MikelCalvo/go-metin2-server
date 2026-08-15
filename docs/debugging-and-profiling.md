@@ -631,6 +631,12 @@ Returns one exact item-template summary row from the live content-bundle summary
 
 Use it when local QA needs to inspect one merchant/reward item template plus its point-effect, guard, and rejection metadata without fetching the full content-bundle summary or opening an in-game merchant window. It is not a gameplay protocol endpoint and does not mutate authored content.
 
+### `POST /local/content-bundle/import-preview/item-templates/{vnum}`
+
+Returns one exact item-template delta from a candidate content-bundle import preview without mutating runtime state. This loopback-only endpoint is registered only on `gamed`; it accepts the same candidate bundle body as `POST /local/content-bundle/import-preview`, validates `vnum` as a non-zero unsigned item template ID, and returns the matching `deltas.item_templates[]` row with `change` plus canonical current/candidate template metadata. It returns `404` when that item template has no added/removed/changed delta, `400` for malformed identities or invalid candidate bundles, `403` for non-loopback callers, and accepts only `POST`.
+
+Use it when local QA needs to inspect one merchant/reward item-template import impact before applying a bundle, without fetching and manually filtering the broad import-preview response. It is not a gameplay protocol endpoint and does not mutate authored content.
+
 ### `GET /local/content-bundle/reward-drops/{item_vnum}`
 
 Returns one exact aggregate reward-drop summary row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; `item_vnum` must be a non-zero unsigned item template ID. It returns the matching `reward_drops[]` row with `source_count` and resolved item-template metadata, returns `404` when the live authored bundle has no matching reward-drop aggregate, rejects malformed or zero vnums with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.

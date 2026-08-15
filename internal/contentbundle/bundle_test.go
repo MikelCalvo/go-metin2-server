@@ -1988,6 +1988,38 @@ func TestBuildImportPreviewReturnsItemTemplateDeltas(t *testing.T) {
 	}
 }
 
+func TestItemTemplateDeltaByVnumReturnsClonedExactDelta(t *testing.T) {
+	currentUseEffect := &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, ConsumeCount: 2, Message: "old-use", InfoMessage: "Old info.", SpecialEffectType: 3}
+	candidateRefineInfo := &itemcatalog.RefineInfo{ResultVnum: 27002, Cost: 100, Probability: 80, Materials: []itemcatalog.RefineMaterial{{Vnum: 27003, Count: 2}}}
+	currentRedPotion := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, UseEffect: currentUseEffect}
+	candidateRedPotion := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 7, Refineable: true, RefineInfo: candidateRefineInfo}
+	removedSword := itemcatalog.Template{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1}
+	deltas := []ItemTemplateDelta{
+		{Vnum: 11200, Change: "removed", Current: &removedSword},
+		{Vnum: 27001, Change: "changed", Current: &currentRedPotion, Candidate: &candidateRedPotion},
+	}
+
+	got, ok := ItemTemplateDeltaByVnum(deltas, 27001)
+	if !ok {
+		t.Fatal("expected exact item-template delta lookup to succeed")
+	}
+	want := ItemTemplateDelta{Vnum: 27001, Change: "changed", Current: &currentRedPotion, Candidate: &candidateRedPotion}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected exact item-template delta:\n got: %#v\nwant: %#v", got, want)
+	}
+	got.Current.UseEffect.Message = "mutated"
+	got.Candidate.RefineInfo.Materials[0].Count = 99
+	if currentRedPotion.UseEffect.Message != "old-use" || candidateRedPotion.RefineInfo.Materials[0].Count != 2 {
+		t.Fatalf("expected exact item-template delta lookup to clone nested metadata, current=%+v candidate=%+v", currentRedPotion, candidateRedPotion)
+	}
+	if _, ok := ItemTemplateDeltaByVnum(deltas, 0); ok {
+		t.Fatal("expected zero item-template vnum lookup to fail")
+	}
+	if _, ok := ItemTemplateDeltaByVnum(deltas, 99999); ok {
+		t.Fatal("expected missing exact item-template delta lookup to fail")
+	}
+}
+
 func TestBuildImportPreviewReturnsPerMapStaticActorDeltas(t *testing.T) {
 	currentAlpha := StaticActor{Name: "AlphaGuide", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300}
 	currentKeep := StaticActor{Name: "KeepGuide", MapIndex: 42, X: 1710, Y: 2810, RaceNum: 20301}

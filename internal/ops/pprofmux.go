@@ -3477,6 +3477,50 @@ func RegisterLocalContentBundleMapImportPreviewEndpoint(mux *http.ServeMux, prev
 	return mux
 }
 
+func RegisterLocalContentBundleItemTemplateImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
+	if mux == nil || previewContentBundleImport == nil {
+		return mux
+	}
+	mux.HandleFunc("POST /local/content-bundle/import-preview/item-templates/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		vnum, ok := decodeLocalContentBundleItemTemplateImportPreviewVnum(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bundle, status, ok := decodeLocalContentBundleRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		normalized, err := contentbundle.Canonicalize(bundle)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		preview, status := previewContentBundleImport(normalized)
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, preview, status)
+			return
+		}
+		importPreview, ok := preview.(contentbundle.ImportPreview)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		delta, ok := contentbundle.ItemTemplateDeltaByVnum(importPreview.Deltas.ItemTemplates, vnum)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, delta, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalContentBundleRewardDropImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
 	if mux == nil || previewContentBundleImport == nil {
 		return mux
@@ -4579,6 +4623,10 @@ func decodeLocalContentBundleInteractionDefinitionImportPreviewIdentity(r *http.
 
 func decodeLocalContentBundleStaticActorImportPreviewName(r *http.Request) (string, bool) {
 	return decodeLocalCharacterName(r, "/local/content-bundle/import-preview/static-actors/")
+}
+
+func decodeLocalContentBundleItemTemplateImportPreviewVnum(r *http.Request) (uint32, bool) {
+	return decodeLocalContentBundleVnumWithPrefix(r, "/local/content-bundle/import-preview/item-templates/")
 }
 
 func decodeLocalContentBundleRewardDropImportPreviewVnum(r *http.Request) (uint32, bool) {
