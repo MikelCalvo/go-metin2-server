@@ -29,6 +29,8 @@ const (
 	expectedAuthLoginTicketHandoffDownSHA256    = "eec9767c316afeefe6319861e0a193df7b77c8e9eac6b42a2d6cf8f396127268"
 	expectedStaticActorContentStateUpSHA256     = "303d4608766de8147c676e4d93f27e53a3744bf09343b060ec662d9c2378d9ad"
 	expectedStaticActorContentStateDownSHA256   = "8a58559911600f73c9f8c0e23bd4b4df8919a0c0dbe19c2ede6a2771ac43a2d7"
+	expectedItemTemplateRefineInfoUpSHA256      = "89ff5fd8c8e7f4c97a580b59d5b80196d5200aa0f19e1a3281691104e906788d"
+	expectedItemTemplateRefineInfoDownSHA256    = "446ab6e77951ed82c7ca5eadb41c27855cf7eb10ad7c807939e58f4f23450ec6"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -342,6 +344,49 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 		}
 	}
 
+	if len(catalog) < 9 {
+		t.Fatalf("expected item-template refine-info migration after static actor content-state, got %d", len(catalog))
+	}
+	ninth := catalog[8]
+	if ninth.Version != 9 || ninth.Name != "item_template_refine_info" {
+		t.Fatalf("unexpected ninth migration: %#v", ninth)
+	}
+	if ninth.UpPath != "0009_item_template_refine_info.up.sql" {
+		t.Fatalf("unexpected ninth up path: %q", ninth.UpPath)
+	}
+	if ninth.DownPath != "0009_item_template_refine_info.down.sql" {
+		t.Fatalf("unexpected ninth down path: %q", ninth.DownPath)
+	}
+	if ninth.UpSHA256 != expectedItemTemplateRefineInfoUpSHA256 {
+		t.Fatalf("unexpected item-template-refine-info up checksum: got %q want %q", ninth.UpSHA256, expectedItemTemplateRefineInfoUpSHA256)
+	}
+	if ninth.DownSHA256 != expectedItemTemplateRefineInfoDownSHA256 {
+		t.Fatalf("unexpected item-template-refine-info down checksum: got %q want %q", ninth.DownSHA256, expectedItemTemplateRefineInfoDownSHA256)
+	}
+	for _, want := range []string{
+		"CREATE TABLE item_template_refine_infos",
+		"CREATE TABLE item_template_refine_materials",
+		"FOREIGN KEY (vnum) REFERENCES item_templates(vnum)",
+		"FOREIGN KEY (vnum) REFERENCES item_template_refine_infos(vnum)",
+		"CHECK (result_vnum > 0 AND result_vnum <= 4294967295)",
+		"CHECK (cost >= 0 AND cost <= 2147483647)",
+		"CHECK (probability >= 0 AND probability <= 100)",
+		"CHECK (position >= 0 AND position < 5)",
+		"CHECK (count > 0 AND count <= 2147483647)",
+	} {
+		if !strings.Contains(ninth.UpSQL, want) {
+			t.Fatalf("expected item-template-refine-info migration to contain %q, got:\n%s", want, ninth.UpSQL)
+		}
+	}
+	for _, want := range []string{
+		"DROP TABLE item_template_refine_materials",
+		"DROP TABLE item_template_refine_infos",
+	} {
+		if !strings.Contains(ninth.DownSQL, want) {
+			t.Fatalf("expected item-template-refine-info down migration to contain %q, got:\n%s", want, ninth.DownSQL)
+		}
+	}
+
 	for i, migration := range catalog {
 		wantVersion := i + 1
 		if migration.Version != wantVersion {
@@ -411,7 +456,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("built-in catalog summary: %v", err)
 	}
-	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 8 {
+	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 9 {
 		t.Fatalf("unexpected built-in catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -421,7 +466,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 		t.Fatalf("unexpected first built-in catalog summary row: %#v", summary.Migrations[0])
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "static_actor_content_state" {
+	if latest.Version != summary.LatestVersion || latest.Name != "item_template_refine_info" {
 		t.Fatalf("unexpected latest built-in catalog summary row: %#v", latest)
 	}
 }
