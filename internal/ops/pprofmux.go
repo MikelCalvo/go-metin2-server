@@ -22,6 +22,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
+	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
@@ -1255,6 +1256,27 @@ func RegisterLocalItemTemplateStateExportEndpoint(mux *http.ServeMux, exportItem
 		export, err := exportItemTemplates()
 		if err != nil {
 			slog.Warn("local item-template-state export failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, export, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalStaticActorContentStateExportEndpoint(mux *http.ServeMux, exportContentState func() (staticstore.StaticActorContentStateExport, error)) *http.ServeMux {
+	if mux == nil || exportContentState == nil {
+		return mux
+	}
+
+	mux.HandleFunc("GET /local/static-actors/exports/static-actor-content-state", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		export, err := exportContentState()
+		if err != nil {
+			slog.Warn("local static actor content-state export failed", "err", err)
 			w.WriteHeader(http.StatusConflict)
 			return
 		}

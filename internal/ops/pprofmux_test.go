@@ -14,6 +14,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
@@ -7276,6 +7277,105 @@ func TestLocalItemTemplateStateExportEndpointReportsExporterFailure(t *testing.T
 	}
 }
 
+func TestLocalStaticActorContentStateExportEndpointReturnsLoopbackJSON(t *testing.T) {
+	exporter := &stubStaticActorContentStateExporter{export: staticstore.StaticActorContentStateExport{
+		MigrationVersion: staticstore.StaticActorContentStateMigrationVersion,
+		MigrationName:    staticstore.StaticActorContentStateMigrationName,
+		InteractionDefinitions: []staticstore.InteractionDefinitionRow{
+			{Kind: "talk", Ref: "npc:village_guard", Text: "VillageGuard : Keep your blade sharp."},
+		},
+		MerchantCatalogEntries: []staticstore.InteractionMerchantCatalogEntryRow{
+			{DefinitionKind: "shop_preview", DefinitionRef: "npc:merchant", Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+		},
+		StaticActors: []staticstore.StaticActorContentStateRow{
+			{EntityID: 9, Name: "VillageGuard", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355, InteractionKind: "talk", InteractionRef: "npc:village_guard"},
+		},
+		RewardDrops: []staticstore.StaticActorRewardDropRow{
+			{EntityID: 22, Position: 0, ItemVnum: 27001},
+		},
+	}}
+	mux := RegisterLocalStaticActorContentStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actors/exports/static-actor-content-state", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if exporter.calls != 1 {
+		t.Fatalf("expected exporter to be called once, got %d", exporter.calls)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"migration_version":8`, `"migration_name":"static_actor_content_state"`, `"interaction_definitions":[`, `"merchant_catalog_entries":[`, `"static_actors":[`, `"reward_drops":[`, `"ref":"npc:village_guard"`, `"entity_id":9`, `"item_vnum":27001`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected static actor content-state export body to contain %s, got %s", want, body)
+		}
+	}
+	if strings.Contains(body, "CREATE TABLE") || strings.Contains(body, "DROP TABLE") {
+		t.Fatalf("static actor content-state export endpoint must not expose SQL, got %s", body)
+	}
+}
+
+func TestLocalStaticActorContentStateExportEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	exporter := &stubStaticActorContentStateExporter{export: staticstore.StaticActorContentStateExport{MigrationVersion: 8}}
+	mux := RegisterLocalStaticActorContentStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actors/exports/static-actor-content-state", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if exporter.calls != 0 {
+		t.Fatalf("expected exporter not to be called, got %d", exporter.calls)
+	}
+}
+
+func TestLocalStaticActorContentStateExportEndpointRejectsWrongMethod(t *testing.T) {
+	exporter := &stubStaticActorContentStateExporter{export: staticstore.StaticActorContentStateExport{MigrationVersion: 8}}
+	mux := RegisterLocalStaticActorContentStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors/exports/static-actor-content-state", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if exporter.calls != 0 {
+		t.Fatalf("expected exporter not to be called, got %d", exporter.calls)
+	}
+}
+
+func TestLocalStaticActorContentStateExportEndpointReportsExporterFailure(t *testing.T) {
+	exporter := &stubStaticActorContentStateExporter{err: errStubMigrationStatusInvalid}
+	mux := RegisterLocalStaticActorContentStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actors/exports/static-actor-content-state", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if exporter.calls != 1 {
+		t.Fatalf("expected exporter to be called once, got %d", exporter.calls)
+	}
+}
+
 func TestNewPprofMuxDoesNotExposeLocalMigrationStatusByDefault(t *testing.T) {
 	mux := NewPprofMux("authd")
 
@@ -7382,6 +7482,12 @@ type stubItemTemplateStateExporter struct {
 	calls  int
 }
 
+type stubStaticActorContentStateExporter struct {
+	export staticstore.StaticActorContentStateExport
+	err    error
+	calls  int
+}
+
 var errStubMigrationStatusInvalid = errors.New("invalid migration status")
 
 func (p *stubMigrationStatusPlanner) Plan() (dbmigrations.Plan, error) {
@@ -7428,6 +7534,11 @@ func (e *stubAuthLoginTicketHandoffExporter) Export() (loginticket.AuthLoginTick
 }
 
 func (e *stubItemTemplateStateExporter) Export() (itemstore.ItemTemplateStateExport, error) {
+	e.calls++
+	return e.export, e.err
+}
+
+func (e *stubStaticActorContentStateExporter) Export() (staticstore.StaticActorContentStateExport, error) {
 	e.calls++
 	return e.export, e.err
 }

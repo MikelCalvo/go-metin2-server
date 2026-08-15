@@ -37,7 +37,6 @@ The `down` migration drops child tables, indexes, and parent tables in reverse d
 This slice deliberately does not:
 
 - make static actors or interactions DB-backed at runtime;
-- add static actor / interaction migration-shaped JSON exports;
 - import file-backed content into a database;
 - add runtime repository implementations;
 - add DB-backed content bundles, combat-profile tables, shop runtime tables, ground items, exchange/trade state, or world runtime persistence;
@@ -70,7 +69,6 @@ Validation for this slice:
 
 ## Follow-up options
 
-1. Add read-only static actor and interaction-definition migration-shaped exports from the committed JSON stores.
-2. Add a strict import/quarantine preflight that validates exported content rows against this schema without applying them.
-3. Extract a narrow static actor / interaction repository seam only after an export/import test proves the boundary reduces file-state coupling.
-4. Keep daemon-local migration endpoints read-only unless a future production-admin design intentionally changes that boundary.
+1. Add a strict import/quarantine preflight that validates exported content rows against this schema without applying them.
+2. Extract a narrow static actor / interaction repository seam only after an export/import test proves the boundary reduces file-state coupling.
+3. Keep daemon-local migration endpoints read-only unless a future production-admin design intentionally changes that boundary.

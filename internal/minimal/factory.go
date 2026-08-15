@@ -1087,6 +1087,13 @@ func (r *gameRuntime) ExportItemTemplateState() (itemcatalog.ItemTemplateStateEx
 	return exporter.ExportItemTemplateState()
 }
 
+func (r *gameRuntime) ExportStaticActorContentState() (staticstore.StaticActorContentStateExport, error) {
+	if r == nil {
+		return staticstore.ExportStaticActorContentState(staticstore.Snapshot{}, interactionstore.Snapshot{})
+	}
+	return staticstore.ExportStaticActorContentStateFromStores(r.staticStore, r.interactionStore)
+}
+
 func (r *gameRuntime) flushReadyStaticActorRespawns() {
 	if r == nil || r.sharedWorld == nil {
 		return

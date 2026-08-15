@@ -390,6 +390,12 @@ Returns a loopback-only, read-only JSON projection of the committed authored ite
 
 Successful responses include `migration_version`, `migration_name`, deterministic `templates`, and deterministic child rows for non-zero `sockets`, non-zero `attributes`, `use_effects`, `equip_effects`, `refine_infos`, and `refine_materials`. A missing committed `item-templates.json` returns an empty migration-shaped export instead of exporting built-in fallback bootstrap templates. The response deliberately omits executable SQL, content bundles, account/item-instance rows, login tickets, authored actor state, runtime world state, and accepted refine result execution, and it does not apply migrations or mutate the item-template store. Use it as an operator/backfill preflight for authored item metadata before future import or repository work.
 
+### `GET /local/static-actors/exports/static-actor-content-state`
+
+Returns a loopback-only, read-only JSON projection of the committed authored static-actor and interaction-definition snapshots onto the `0008_static_actor_content_state` migration boundary. This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if either committed content store cannot be loaded or if any actor/definition/catalog/reward row would violate the schema shape.
+
+Successful responses include `migration_version`, `migration_name`, deterministic `interaction_definitions`, `merchant_catalog_entries`, `static_actors`, and `reward_drops`. Missing committed static-actor or interaction-definition snapshots are exported as empty migration-shaped collections. Actor rows keep only the current authored content boundary (placement, race, optional interaction ref, optional spawn home/group/combat profile, and reward scalar fields), while ordered reward drops are emitted as child rows. The response deliberately omits executable SQL, account/item-instance rows, live runtime-only actor HP/respawn timers/combat targets, content-bundle import previews, and any database apply output; it does not mutate the JSON stores.
+
 ### `GET /local/runtime-config`
 
 Returns JSON describing the active bootstrap runtime selection. This endpoint is read-only, rejects non-`GET` methods with `405`, and exposes only the local runtime facts needed for AOI/debugging:

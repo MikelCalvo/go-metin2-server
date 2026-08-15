@@ -325,6 +325,43 @@ func TestGameRuntimeItemTemplateStateExportProjectsCommittedSnapshot(t *testing.
 	}
 }
 
+func TestGameRuntimeStaticActorContentStateExportProjectsCommittedSnapshots(t *testing.T) {
+	staticActors := staticstore.NewFileStore(filepath.Join(t.TempDir(), "state", "static-actors.json"))
+	interactions := interactionstore.NewFileStore(filepath.Join(t.TempDir(), "state", "interaction-definitions.json"))
+	if err := interactions.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "VillageGuard : Keep your blade sharp."}}}); err != nil {
+		t.Fatalf("save interaction definitions: %v", err)
+	}
+	if err := staticActors.Save(staticstore.Snapshot{StaticActors: []staticstore.StaticActor{{EntityID: 9, Name: "VillageGuard", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"}}}); err != nil {
+		t.Fatalf("save static actor snapshot: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		staticActors,
+		interactions,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	export, err := runtime.ExportStaticActorContentState()
+	if err != nil {
+		t.Fatalf("runtime static actor content-state export: %v", err)
+	}
+	if export.MigrationVersion != staticstore.StaticActorContentStateMigrationVersion || export.MigrationName != staticstore.StaticActorContentStateMigrationName {
+		t.Fatalf("unexpected migration boundary: %#v", export)
+	}
+	if len(export.InteractionDefinitions) != 1 || export.InteractionDefinitions[0].Ref != "npc:village_guard" {
+		t.Fatalf("unexpected runtime interaction definition export rows: %#v", export.InteractionDefinitions)
+	}
+	if len(export.StaticActors) != 1 || export.StaticActors[0].EntityID != 9 || export.StaticActors[0].InteractionRef != "npc:village_guard" {
+		t.Fatalf("unexpected runtime static actor export rows: %#v", export.StaticActors)
+	}
+}
+
 func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
