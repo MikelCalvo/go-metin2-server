@@ -4455,7 +4455,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.ItemGiveResult{Accepted: false}
 					}
 					if message, ok := selectedPlayer.GiveRejectText(inventory.SlotIndex(packet.Position.Cell), uint16(packet.Count), template); ok {
-						return gameflow.ItemGiveResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}}
+						frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}
+						frames = prependExchangeCloseFrame(frames)
+						return gameflow.ItemGiveResult{Accepted: true, Frames: frames}
 					}
 					return gameflow.ItemGiveResult{Accepted: false}
 				},

@@ -59,7 +59,9 @@ then the minimal runtime accepts only the guard response and returns one self-on
 - `vid = 0`
 - `message = template.give_reject_message`
 
-That response is deliberately not a transfer attempt. It still performs no inventory, equipment, quickslot, ground-handle, peer, or persistence mutation, and the named visible target receives no queued transfer or rejection frames.
+If the requester is paired in the current bootstrap exchange shell, the server first returns self `GC::EXCHANGE END` and queues peer `GC::EXCHANGE END`, clears the in-memory exchange display/accept state, and then returns the self-only `ITEM_GIVE` rejection chat.
+
+That response is deliberately not a transfer attempt. Apart from the optional active-exchange close above, it still performs no inventory, equipment, quickslot, ground-handle, peer-transfer, or persistence mutation, and the named visible target receives no queued item-transfer or item-give rejection frames.
 
 Templates that author `give_reject_message` without `anti_give` are invalid at the item-template store boundary, and embedded NUL bytes in the message fail closed before runtime boot.
 
@@ -86,4 +88,4 @@ Later slices must write a new contract before broadening this packet into real g
 - `internal/game` freezes `GAME`-phase dispatch to a handler hook, with denied results returning no frames.
 - `internal/itemstore` freezes `give_reject_message` round-trip and fail-closed validation: it is valid only with `anti_give` and rejects embedded NUL bytes.
 - `internal/player` freezes the metadata-driven, no-mutation `anti_give` rejection lookup, including the non-zero / not-over-stack requested-count guard.
-- `internal/minimal` freezes the shipped runtime fail-closed behavior with persisted inventory and quickslots unchanged after an `ITEM_GIVE` packet, the self-only `CHAT_TYPE_INFO` rejection frame when the request names a currently visible player target, the carried item's template authors `anti_give` and `give_reject_message`, and the requested count is valid for the live stack, plus the no-frame/no-mutation guard for missing/invisible targets and the post-floor dead-owner guard that denies `ITEM_GIVE` before that feedback path can run.
+- `internal/minimal` freezes the shipped runtime fail-closed behavior with persisted inventory and quickslots unchanged after an `ITEM_GIVE` packet, the self-only `CHAT_TYPE_INFO` rejection frame when the request names a currently visible player target, the carried item's template authors `anti_give` and `give_reject_message`, and the requested count is valid for the live stack, active same-socket exchange-shell teardown before that authored rejection feedback, plus the no-frame/no-mutation guard for missing/invisible targets and the post-floor dead-owner guard that denies `ITEM_GIVE` before that feedback path can run.
