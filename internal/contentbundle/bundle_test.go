@@ -1578,6 +1578,69 @@ func TestBuildImportPreviewReturnsShopCatalogDeltas(t *testing.T) {
 	}
 }
 
+func TestShopCatalogDeltaByIdentityReturnsClonedExactDelta(t *testing.T) {
+	currentCatalog := ShopCatalogSummary{
+		Kind:       interactionstore.KindShopPreview,
+		Ref:        "npc:merchant",
+		Title:      "Old Merchant",
+		EntryCount: 1,
+		Entries: []ShopCatalogEntrySummary{
+			{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 50, Stackable: true, MaxCount: 200},
+		},
+	}
+	candidateCatalog := ShopCatalogSummary{
+		Kind:       interactionstore.KindShopPreview,
+		Ref:        "npc:merchant",
+		Title:      "Village Merchant",
+		EntryCount: 1,
+		Entries: []ShopCatalogEntrySummary{
+			{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 2, Price: 75, Stackable: true, MaxCount: 200},
+		},
+	}
+	deltas := []ShopCatalogDelta{
+		{Kind: interactionstore.KindShopPreview, Ref: "npc:alchemist", Change: "added", Candidate: &ShopCatalogSummary{Kind: interactionstore.KindShopPreview, Ref: "npc:alchemist", Title: "Alchemist"}},
+		{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Change: "changed", Current: &currentCatalog, Candidate: &candidateCatalog},
+	}
+
+	delta, ok := ShopCatalogDeltaByIdentity(deltas, " shop_preview ", " npc:merchant ")
+	if !ok {
+		t.Fatal("expected exact shop-catalog delta lookup to succeed")
+	}
+	want := ShopCatalogDelta{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Change: "changed", Current: &currentCatalog, Candidate: &candidateCatalog}
+	if !reflect.DeepEqual(delta, want) {
+		t.Fatalf("unexpected exact shop-catalog delta:\n got: %#v\nwant: %#v", delta, want)
+	}
+	delta.Current.Entries[0].ItemName = "mutated"
+	delta.Candidate.Entries[0].Count = 99
+	if currentCatalog.Entries[0].ItemName != "Small Red Potion" || candidateCatalog.Entries[0].Count != 2 {
+		t.Fatalf("expected exact shop-catalog delta lookup to clone nested catalog entries, got current=%+v candidate=%+v", currentCatalog, candidateCatalog)
+	}
+	if _, ok := ShopCatalogDeltaByIdentity(deltas, interactionstore.KindShopPreview, "npc:missing"); ok {
+		t.Fatal("expected missing exact shop-catalog delta lookup to fail")
+	}
+}
+
+func TestWarpDestinationDeltaByIdentityReturnsExactDelta(t *testing.T) {
+	currentDestination := WarpDestinationSummary{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "Old gate.", MapIndex: 2, X: 2000, Y: 3000}
+	candidateDestination := WarpDestinationSummary{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "New gate.", MapIndex: 42, X: 1700, Y: 2800}
+	deltas := []WarpDestinationDelta{
+		{Kind: interactionstore.KindWarp, Ref: "npc:remote_gate", Change: "added", Candidate: &WarpDestinationSummary{Kind: interactionstore.KindWarp, Ref: "npc:remote_gate", MapIndex: 7, X: 700, Y: 800}},
+		{Kind: interactionstore.KindWarp, Ref: "npc:gate", Change: "changed", Current: &currentDestination, Candidate: &candidateDestination},
+	}
+
+	delta, ok := WarpDestinationDeltaByIdentity(deltas, " warp ", " npc:gate ")
+	if !ok {
+		t.Fatal("expected exact warp-destination delta lookup to succeed")
+	}
+	want := WarpDestinationDelta{Kind: interactionstore.KindWarp, Ref: "npc:gate", Change: "changed", Current: &currentDestination, Candidate: &candidateDestination}
+	if !reflect.DeepEqual(delta, want) {
+		t.Fatalf("unexpected exact warp-destination delta:\n got: %#v\nwant: %#v", delta, want)
+	}
+	if _, ok := WarpDestinationDeltaByIdentity(deltas, interactionstore.KindWarp, "npc:missing"); ok {
+		t.Fatal("expected missing exact warp-destination delta lookup to fail")
+	}
+}
+
 func TestBuildImportPreviewReturnsCombatProfileDeltasForSpawnReferencedProfiles(t *testing.T) {
 	currentAlpha := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_alpha_profile", MaxHP: 24, DamagePerNormalAttack: 3, AttackValue: 7, DefenseValue: 4, Level: 4, Rank: 1, RespawnDelayMs: 1500}
 	currentBeta := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_beta_profile", MaxHP: 30, DamagePerNormalAttack: 5, AttackValue: 8, DefenseValue: 3, Level: 6, Rank: 2, RespawnDelayMs: 2500}

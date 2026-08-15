@@ -667,6 +667,12 @@ Returns one exact structured shop-catalog summary row from the live content-bund
 
 Use it when local QA needs to inspect one merchant catalog, including resolved item-template metadata and guard/rejection fields, without fetching the full bundle summary or opening the merchant in-game. It is not a gameplay protocol endpoint and does not mutate authored content.
 
+### `POST /local/content-bundle/import-preview/shop-catalogs/{kind}/{ref}`
+
+Returns one exact structured shop-catalog delta from a candidate content-bundle import preview without mutating runtime state. This loopback-only endpoint is registered only on `gamed`; it accepts the same candidate bundle body as `POST /local/content-bundle/import-preview`, accepts only `kind = shop_preview`, and validates `ref` with the same path-safe interaction reference rule used by `/local/content-bundle/shop-catalogs/{kind}/{ref}`. It returns the matching `deltas.shop_catalogs[]` row with `change` plus canonical current/candidate catalog snapshots, returns `404` when that catalog has no added/removed/changed delta, rejects malformed identities or invalid candidate bundles with `400`, rejects non-loopback callers with `403`, and accepts only `POST`.
+
+Use it when local QA needs to inspect one merchant catalog import impact before applying a bundle, without fetching and manually filtering the broad import-preview response. It is not a gameplay protocol endpoint and does not mutate authored content.
+
 ### `GET /local/content-bundle/shop-routes/{actor_name}`
 
 Returns every exact shop-route summary row for one authored merchant actor name from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; `actor_name` is URL-decoded with the same path-safe name rules used by `/local/content-bundle/interactable-static-actors/{name}`. It returns every matching `shop_routes[]` row so duplicated merchant placements with the same actor name remain inspectable, returns `404` when no route uses that name, rejects blank or slash-containing names with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
@@ -678,6 +684,12 @@ Use it when local QA needs to inspect exact actor-to-catalog placement for one m
 Returns one exact authored warp-destination summary row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; the only accepted `kind` for this path is `warp`, and `ref` must satisfy the canonical path-safe interaction reference rule. It returns `404` when the live authored bundle has no matching warp destination, rejects malformed identities with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
 
 Use it when local QA needs to inspect one teleporter destination (`text`, `map_index`, `x`, `y`) without fetching the full bundle summary or triggering an in-game transfer. It is not a gameplay protocol endpoint and does not mutate authored content.
+
+### `POST /local/content-bundle/import-preview/warp-destinations/{kind}/{ref}`
+
+Returns one exact authored warp-destination delta from a candidate content-bundle import preview without mutating runtime state. This loopback-only endpoint is registered only on `gamed`; it accepts the same candidate bundle body as `POST /local/content-bundle/import-preview`, accepts only `kind = warp`, and validates `ref` with the same path-safe interaction reference rule used by `/local/content-bundle/warp-destinations/{kind}/{ref}`. It returns the matching `deltas.warp_destinations[]` row with `change` plus canonical current/candidate destination snapshots, returns `404` when that destination has no added/removed/changed delta, rejects malformed identities or invalid candidate bundles with `400`, rejects non-loopback callers with `403`, and accepts only `POST`.
+
+Use it when local QA needs to inspect one teleporter destination import impact before applying a bundle, without fetching and manually filtering the broad import-preview response. It is not a gameplay protocol endpoint and does not mutate authored content.
 
 ### `GET /local/content-bundle/warp-routes/{actor_name}`
 
@@ -1267,7 +1279,9 @@ curl http://127.0.0.1:6060/local/content-bundle/reward-drops/27001
 curl http://127.0.0.1:6060/local/quest-state
 curl http://127.0.0.1:6060/local/content-bundle/quest-state/flags/QuestHero/quest:first_steps/step
 curl http://127.0.0.1:6060/local/content-bundle/shop-catalogs/shop_preview/npc:qa_merchant
+curl -X POST --data-binary @docs/examples/bootstrap-npc-service-bundle.json http://127.0.0.1:6060/local/content-bundle/import-preview/shop-catalogs/shop_preview/npc:qa_merchant
 curl http://127.0.0.1:6060/local/content-bundle/warp-destinations/warp/npc:qa_teleporter
+curl -X POST --data-binary @docs/examples/bootstrap-npc-service-bundle.json http://127.0.0.1:6060/local/content-bundle/import-preview/warp-destinations/warp/npc:qa_teleporter
 ```
 
 Dry-run one quest-state transition before applying it:

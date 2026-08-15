@@ -3213,6 +3213,94 @@ func RegisterLocalContentBundleInteractionDefinitionImportPreviewEndpoint(mux *h
 	return mux
 }
 
+func RegisterLocalContentBundleShopCatalogImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
+	if mux == nil || previewContentBundleImport == nil {
+		return mux
+	}
+	mux.HandleFunc("POST /local/content-bundle/import-preview/shop-catalogs/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		kind, ref, ok := decodeLocalContentBundleShopCatalogImportPreviewIdentity(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bundle, status, ok := decodeLocalContentBundleRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		normalized, err := contentbundle.Canonicalize(bundle)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		preview, status := previewContentBundleImport(normalized)
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, preview, status)
+			return
+		}
+		importPreview, ok := preview.(contentbundle.ImportPreview)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		delta, ok := contentbundle.ShopCatalogDeltaByIdentity(importPreview.Deltas.ShopCatalogs, kind, ref)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, delta, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalContentBundleWarpDestinationImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
+	if mux == nil || previewContentBundleImport == nil {
+		return mux
+	}
+	mux.HandleFunc("POST /local/content-bundle/import-preview/warp-destinations/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		kind, ref, ok := decodeLocalContentBundleWarpDestinationImportPreviewIdentity(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bundle, status, ok := decodeLocalContentBundleRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		normalized, err := contentbundle.Canonicalize(bundle)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		preview, status := previewContentBundleImport(normalized)
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, preview, status)
+			return
+		}
+		importPreview, ok := preview.(contentbundle.ImportPreview)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		delta, ok := contentbundle.WarpDestinationDeltaByIdentity(importPreview.Deltas.WarpDestinations, kind, ref)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, delta, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalContentBundleRewardDropImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
 	if mux == nil || previewContentBundleImport == nil {
 		return mux
@@ -4301,12 +4389,28 @@ func decodeLocalContentBundleShopCatalogIdentity(r *http.Request) (string, strin
 	return kind, ref, true
 }
 
+func decodeLocalContentBundleShopCatalogImportPreviewIdentity(r *http.Request) (string, string, bool) {
+	kind, ref, ok := decodeLocalKindRefIdentityWithPrefix(r, "/local/content-bundle/import-preview/shop-catalogs/")
+	if !ok || kind != interactionstore.KindShopPreview {
+		return "", "", false
+	}
+	return kind, ref, true
+}
+
 func decodeLocalContentBundleShopRouteActorName(r *http.Request) (string, bool) {
 	return decodeLocalCharacterName(r, "/local/content-bundle/shop-routes/")
 }
 
 func decodeLocalContentBundleWarpDestinationIdentity(r *http.Request) (string, string, bool) {
 	kind, ref, ok := decodeLocalKindRefIdentityWithPrefix(r, "/local/content-bundle/warp-destinations/")
+	if !ok || kind != interactionstore.KindWarp {
+		return "", "", false
+	}
+	return kind, ref, true
+}
+
+func decodeLocalContentBundleWarpDestinationImportPreviewIdentity(r *http.Request) (string, string, bool) {
+	kind, ref, ok := decodeLocalKindRefIdentityWithPrefix(r, "/local/content-bundle/import-preview/warp-destinations/")
 	if !ok || kind != interactionstore.KindWarp {
 		return "", "", false
 	}

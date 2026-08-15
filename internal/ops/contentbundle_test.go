@@ -1354,6 +1354,282 @@ func TestLocalContentBundleInteractionDefinitionImportPreviewEndpointCoexistsWit
 	}
 }
 
+func TestLocalContentBundleShopCatalogImportPreviewEndpointReturnsExactDeltaForLoopbackPost(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:  interactionstore.KindShopPreview,
+			Ref:   "npc:merchant",
+			Title: "Old Merchant",
+			Catalog: []interactionstore.MerchantCatalogEntry{
+				{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+			},
+		}},
+	}}
+	mux := RegisterLocalContentBundleShopCatalogImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/shop-catalogs/shop_preview/npc:merchant", strings.NewReader(`{"item_templates":[{"vnum":27001,"name":"Small Red Potion","stackable":true,"max_count":200}],"interaction_definitions":[{"kind":"shop_preview","ref":"npc:merchant","title":"Village Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":75,"count":2}]}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected import previewer to be called once, got %d calls", previewer.calls)
+	}
+	var got contentbundle.ShopCatalogDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode exact shop-catalog import-preview delta response: %v", err)
+	}
+	current := contentbundle.ShopCatalogSummary{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Title: "Old Merchant", EntryCount: 1, Entries: []contentbundle.ShopCatalogEntrySummary{{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 50, Stackable: true, MaxCount: 200}}}
+	candidate := contentbundle.ShopCatalogSummary{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Title: "Village Merchant", EntryCount: 1, Entries: []contentbundle.ShopCatalogEntrySummary{{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 2, Price: 75, Stackable: true, MaxCount: 200}}}
+	want := contentbundle.ShopCatalogDelta{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Change: "changed", Current: &current, Candidate: &candidate}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected exact shop-catalog import-preview delta:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleShopCatalogImportPreviewEndpointReturnsNotFoundWhenCatalogDoesNotChange(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		ItemTemplates:          []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Title: "Village Merchant", Catalog: []interactionstore.MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}}}},
+	}}
+	mux := RegisterLocalContentBundleShopCatalogImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/shop-catalogs/shop_preview/npc:merchant", strings.NewReader(`{"item_templates":[{"vnum":27001,"name":"Small Red Potion","stackable":true,"max_count":200}],"interaction_definitions":[{"kind":"shop_preview","ref":"npc:merchant","title":"Village Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":1}]}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for unchanged shop catalog delta, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
+func TestLocalContentBundleShopCatalogImportPreviewEndpointRejectsInvalidIdentityBeforeCallback(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleShopCatalogImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	for _, path := range []string{
+		"/local/content-bundle/import-preview/shop-catalogs/shop_preview",
+		"/local/content-bundle/import-preview/shop-catalogs/quest/npc:first_steps",
+		"/local/content-bundle/import-preview/shop-catalogs/shop_preview/npc%2Fmerchant",
+		"/local/content-bundle/import-preview/shop-catalogs/shop_preview/npc:merchant/extra",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"interaction_definitions":[]}`))
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for malformed shop-catalog import-preview path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected malformed identity not to call previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleShopCatalogImportPreviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleShopCatalogImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/shop-catalogs/shop_preview/npc:merchant", strings.NewReader(`{"interaction_definitions":[]}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback shop-catalog import-preview, got %d", http.StatusForbidden, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected non-loopback import preview not to call previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleShopCatalogImportPreviewEndpointRejectsWrongMethod(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleShopCatalogImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/import-preview/shop-catalogs/shop_preview/npc:merchant", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method shop-catalog import-preview, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected wrong-method import preview not to call previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleShopCatalogImportPreviewEndpointCoexistsWithBroadImportPreview(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		ItemTemplates:          []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Title: "Old Merchant", Catalog: []interactionstore.MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}}}},
+	}}
+	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+	mux = RegisterLocalContentBundleShopCatalogImportPreviewEndpoint(mux, previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/shop-catalogs/shop_preview/npc:merchant", strings.NewReader(`{"item_templates":[{"vnum":27001,"name":"Small Red Potion","stackable":true,"max_count":200}],"interaction_definitions":[{"kind":"shop_preview","ref":"npc:merchant","title":"Village Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":75,"count":2}]}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d from focused route on shared mux, got %d", http.StatusOK, rec.Code)
+	}
+	var got contentbundle.ShopCatalogDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode focused shop-catalog import-preview delta response from shared mux: %v", err)
+	}
+	if got.Kind != interactionstore.KindShopPreview || got.Ref != "npc:merchant" || got.Change != "changed" {
+		t.Fatalf("unexpected focused shop-catalog import-preview response from shared mux: %#v", got)
+	}
+}
+
+func TestLocalContentBundleWarpDestinationImportPreviewEndpointReturnsExactDeltaForLoopbackPost(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{InteractionDefinitions: []interactionstore.Definition{
+		{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "Old gate.", MapIndex: 2, X: 2000, Y: 3000},
+	}}}
+	mux := RegisterLocalContentBundleWarpDestinationImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/warp-destinations/warp/npc:gate", strings.NewReader(`{"interaction_definitions":[{"kind":"warp","ref":"npc:gate","text":"New gate.","map_index":42,"x":1700,"y":2800}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected import previewer to be called once, got %d calls", previewer.calls)
+	}
+	var got contentbundle.WarpDestinationDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode exact warp-destination import-preview delta response: %v", err)
+	}
+	current := contentbundle.WarpDestinationSummary{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "Old gate.", MapIndex: 2, X: 2000, Y: 3000}
+	candidate := contentbundle.WarpDestinationSummary{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "New gate.", MapIndex: 42, X: 1700, Y: 2800}
+	want := contentbundle.WarpDestinationDelta{Kind: interactionstore.KindWarp, Ref: "npc:gate", Change: "changed", Current: &current, Candidate: &candidate}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected exact warp-destination import-preview delta:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleWarpDestinationImportPreviewEndpointReturnsNotFoundWhenDestinationDoesNotChange(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{InteractionDefinitions: []interactionstore.Definition{
+		{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "Same gate.", MapIndex: 42, X: 1700, Y: 2800},
+	}}}
+	mux := RegisterLocalContentBundleWarpDestinationImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/warp-destinations/warp/npc:gate", strings.NewReader(`{"interaction_definitions":[{"kind":"warp","ref":"npc:gate","text":"Same gate.","map_index":42,"x":1700,"y":2800}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for unchanged warp destination delta, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
+func TestLocalContentBundleWarpDestinationImportPreviewEndpointRejectsInvalidIdentityBeforeCallback(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleWarpDestinationImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	for _, path := range []string{
+		"/local/content-bundle/import-preview/warp-destinations/warp",
+		"/local/content-bundle/import-preview/warp-destinations/quest/npc:first_steps",
+		"/local/content-bundle/import-preview/warp-destinations/warp/npc%2Fgate",
+		"/local/content-bundle/import-preview/warp-destinations/warp/npc:gate/extra",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"interaction_definitions":[]}`))
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for malformed warp-destination import-preview path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected malformed identity not to call previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleWarpDestinationImportPreviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleWarpDestinationImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/warp-destinations/warp/npc:gate", strings.NewReader(`{"interaction_definitions":[]}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback warp-destination import-preview, got %d", http.StatusForbidden, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected non-loopback import preview not to call previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleWarpDestinationImportPreviewEndpointRejectsWrongMethod(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleWarpDestinationImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/import-preview/warp-destinations/warp/npc:gate", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method warp-destination import-preview, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected wrong-method import preview not to call previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleWarpDestinationImportPreviewEndpointCoexistsWithBroadImportPreview(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{InteractionDefinitions: []interactionstore.Definition{
+		{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "Old gate.", MapIndex: 2, X: 2000, Y: 3000},
+	}}}
+	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+	mux = RegisterLocalContentBundleWarpDestinationImportPreviewEndpoint(mux, previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/warp-destinations/warp/npc:gate", strings.NewReader(`{"interaction_definitions":[{"kind":"warp","ref":"npc:gate","text":"New gate.","map_index":42,"x":1700,"y":2800}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d from focused route on shared mux, got %d", http.StatusOK, rec.Code)
+	}
+	var got contentbundle.WarpDestinationDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode focused warp-destination import-preview delta response from shared mux: %v", err)
+	}
+	if got.Kind != interactionstore.KindWarp || got.Ref != "npc:gate" || got.Change != "changed" {
+		t.Fatalf("unexpected focused warp-destination import-preview response from shared mux: %#v", got)
+	}
+}
+
 func TestLocalContentBundleImportPreviewEndpointReturnsServiceRouteDeltaJSONForLoopbackPost(t *testing.T) {
 	currentShop := interactionstore.Definition{
 		Kind:  interactionstore.KindShopPreview,

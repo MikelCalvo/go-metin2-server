@@ -1460,6 +1460,33 @@ func buildShopCatalogDeltas(currentCatalogs []ShopCatalogSummary, candidateCatal
 	return deltas
 }
 
+func ShopCatalogDeltaByIdentity(deltas []ShopCatalogDelta, kind string, ref string) (ShopCatalogDelta, bool) {
+	kind = strings.TrimSpace(kind)
+	ref = strings.TrimSpace(ref)
+	if kind == "" || ref == "" || kind != interactionstore.KindShopPreview || !interactionstore.ValidRef(ref) {
+		return ShopCatalogDelta{}, false
+	}
+	for _, delta := range deltas {
+		if strings.TrimSpace(delta.Kind) == kind && strings.TrimSpace(delta.Ref) == ref {
+			return cloneShopCatalogDelta(delta), true
+		}
+	}
+	return ShopCatalogDelta{}, false
+}
+
+func cloneShopCatalogDelta(delta ShopCatalogDelta) ShopCatalogDelta {
+	cloned := delta
+	if delta.Current != nil {
+		current := normalizeShopCatalogSummary(*delta.Current)
+		cloned.Current = &current
+	}
+	if delta.Candidate != nil {
+		candidate := normalizeShopCatalogSummary(*delta.Candidate)
+		cloned.Candidate = &candidate
+	}
+	return cloned
+}
+
 func normalizeShopCatalogSummary(catalog ShopCatalogSummary) ShopCatalogSummary {
 	catalog.Kind = strings.TrimSpace(catalog.Kind)
 	catalog.Ref = strings.TrimSpace(catalog.Ref)
@@ -1529,6 +1556,33 @@ func buildWarpDestinationDeltas(currentDestinations []WarpDestinationSummary, ca
 		return nil
 	}
 	return deltas
+}
+
+func WarpDestinationDeltaByIdentity(deltas []WarpDestinationDelta, kind string, ref string) (WarpDestinationDelta, bool) {
+	kind = strings.TrimSpace(kind)
+	ref = strings.TrimSpace(ref)
+	if kind == "" || ref == "" || kind != interactionstore.KindWarp || !interactionstore.ValidRef(ref) {
+		return WarpDestinationDelta{}, false
+	}
+	for _, delta := range deltas {
+		if strings.TrimSpace(delta.Kind) == kind && strings.TrimSpace(delta.Ref) == ref {
+			return cloneWarpDestinationDelta(delta), true
+		}
+	}
+	return WarpDestinationDelta{}, false
+}
+
+func cloneWarpDestinationDelta(delta WarpDestinationDelta) WarpDestinationDelta {
+	cloned := delta
+	if delta.Current != nil {
+		current := normalizeWarpDestinationSummary(*delta.Current)
+		cloned.Current = &current
+	}
+	if delta.Candidate != nil {
+		candidate := normalizeWarpDestinationSummary(*delta.Candidate)
+		cloned.Candidate = &candidate
+	}
+	return cloned
 }
 
 func normalizeWarpDestinationSummary(destination WarpDestinationSummary) WarpDestinationSummary {
