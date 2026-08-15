@@ -3851,7 +3851,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						}
 						if requiresTemplate && !runtimeTemplateAllowsEquip(template, selectedPlayer, equipSlot) {
 							if message, ok := runtimeTemplateEquipRejectText(template, selectedPlayer, equipSlot); ok {
-								return gameflow.ChatResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}}
+								frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}
+								frames = prependExchangeCloseFrame(frames)
+								return gameflow.ChatResult{Accepted: true, Frames: frames}
 							}
 							return gameflow.ChatResult{Accepted: false}
 						}
@@ -3915,6 +3917,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						var inventoryItem inventory.ItemInstance
 						if hasUnequipTemplate && template.Irremovable {
 							frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemUnequipRejectText(template)})}
+							frames = prependExchangeCloseFrame(frames)
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
 						if hasUnequipTemplate {
@@ -4261,6 +4264,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						var inventoryItem inventory.ItemInstance
 						if hasUnequipTemplate && template.Irremovable {
 							frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemUnequipRejectText(template)})}
+							frames = prependExchangeCloseFrame(frames)
 							return gameflow.ItemMoveResult{Accepted: true, Frames: frames}
 						}
 						if hasUnequipTemplate {
@@ -4313,7 +4317,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						}
 						if requiresTemplate && !runtimeTemplateAllowsEquip(template, selectedPlayer, equipSlot) {
 							if message, ok := runtimeTemplateEquipRejectText(template, selectedPlayer, equipSlot); ok {
-								return gameflow.ItemMoveResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}}
+								frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}
+								frames = prependExchangeCloseFrame(frames)
+								return gameflow.ItemMoveResult{Accepted: true, Frames: frames}
 							}
 							return gameflow.ItemMoveResult{Accepted: false}
 						}

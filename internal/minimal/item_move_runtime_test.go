@@ -1614,6 +1614,190 @@ func TestGameRuntimeItemMoveEquipRejectsAntiFlagWithTemplateText(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeItemMoveEquipRejectTextClosesActiveExchangeShellWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	template := itemcatalog.Template{
+		Vnum:            11503,
+		Name:            "Exchange Class-Locked Test Armor",
+		Stackable:       false,
+		MaxCount:        1,
+		AntiWarrior:     true,
+		EquipSlot:       inventory.EquipmentSlotBody.String(),
+		EquipRejectText: "Close trade before rejecting this armor.",
+	}
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{template}}); err != nil {
+		t.Fatalf("seed exchange template-authored equip rejection text: %v", err)
+	}
+	owner := peerVisibilityCharacter("ExchangeTextRejectEquip", 0x01030259, 0x02040259, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 5703, Vnum: template.Vnum, Count: 1, Slot: 5}}
+	owner.Equipment = nil
+	peer := peerVisibilityCharacter("ExchangeTextRejectPeer", 0x0103025a, 0x0204025a, 1320, 2320, 0, 101, 201)
+	peer.Inventory = []inventory.ItemInstance{{ID: 5704, Vnum: 27001, Count: 2, Slot: 6}}
+	issuePeerTicket(t, ticketStore, "exchange-text-reject-equip", 0x59595959, owner)
+	issuePeerTicket(t, ticketStore, "exchange-text-reject-peer", 0x5a5a5a5a, peer)
+	if err := accounts.Save(accountstore.Account{Login: "exchange-text-reject-equip", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange text-reject equip account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "exchange-text-reject-peer", Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange text-reject peer account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange text-reject equip runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "exchange-text-reject-equip", 0x59595959)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "exchange-text-reject-peer", 0x5a5a5a5a)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected equip rejection exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected equip rejection exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "equip rejection exchange owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected equip rejection peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "equip rejection exchange peer start")
+	bodyPosition, err := itemproto.EquipmentPosition(0)
+	if err != nil {
+		t.Fatalf("build body equipment position: %v", err)
+	}
+
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{Source: itemproto.InventoryPosition(5), Destination: bodyPosition})))
+	if err != nil {
+		t.Fatalf("unexpected exchange text-reject equip error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected exchange equip rejection to emit END plus info-chat frame, got %d", len(out))
+	}
+	assertExchangeEndFrame(t, out[0], "equip rejection exchange owner close")
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode exchange template-authored equip rejection info chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != template.EquipRejectText {
+		t.Fatalf("unexpected exchange template-authored equip rejection chat: %+v", delivery)
+	}
+	queuedClose := flushServerFrames(t, peerFlow)
+	if len(queuedClose) != 1 {
+		t.Fatalf("expected equip rejection peer to receive one queued END, got %d", len(queuedClose))
+	}
+	assertExchangeEndFrame(t, queuedClose[0], "equip rejection exchange peer close")
+
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected post-equip-rejection exchange cancel error: %v", err)
+	}
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected post-equip-rejection exchange cancel to emit no frames after shell close, got %d", len(cancelOut))
+	}
+	assertExchangeAccountUnchanged(t, accounts, "exchange-text-reject-equip", owner, "owner exchange equip rejection")
+	assertExchangeAccountUnchanged(t, accounts, "exchange-text-reject-peer", peer, "peer exchange equip rejection")
+}
+
+func TestGameRuntimeItemMoveUnequipRejectTextClosesActiveExchangeShellWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	template := itemcatalog.Template{
+		Vnum:              11504,
+		Name:              "Exchange Sealed Test Armor",
+		Stackable:         false,
+		MaxCount:          1,
+		EquipSlot:         inventory.EquipmentSlotBody.String(),
+		Irremovable:       true,
+		UnequipRejectText: "Close trade before rejecting this unequip.",
+	}
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{template}}); err != nil {
+		t.Fatalf("seed exchange template-authored unequip rejection text: %v", err)
+	}
+	owner := peerVisibilityCharacter("ExchangeTextRejectUnequip", 0x0103025b, 0x0204025b, 1300, 2300, 0, 101, 201)
+	owner.Inventory = nil
+	owner.Equipment = []inventory.ItemInstance{{ID: 5705, Vnum: template.Vnum, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}}
+	peer := peerVisibilityCharacter("ExchangeTextRejectUnequipPeer", 0x0103025c, 0x0204025c, 1320, 2320, 0, 101, 201)
+	peer.Inventory = []inventory.ItemInstance{{ID: 5706, Vnum: 27001, Count: 2, Slot: 6}}
+	ownerLogin := "ex-reject-unequip"
+	peerLogin := "ex-reject-un-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x5b5b5b5b, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x5c5c5c5c, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange text-reject unequip account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange text-reject unequip peer account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange text-reject unequip runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x5b5b5b5b)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x5c5c5c5c)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected unequip rejection exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected unequip rejection exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "unequip rejection exchange owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected unequip rejection peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "unequip rejection exchange peer start")
+	bodyPosition, err := itemproto.EquipmentPosition(0)
+	if err != nil {
+		t.Fatalf("build body equipment position: %v", err)
+	}
+
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{Source: bodyPosition, Destination: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected exchange text-reject unequip error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected exchange unequip rejection to emit END plus info-chat frame, got %d", len(out))
+	}
+	assertExchangeEndFrame(t, out[0], "unequip rejection exchange owner close")
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode exchange template-authored unequip rejection info chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != template.UnequipRejectText {
+		t.Fatalf("unexpected exchange template-authored unequip rejection chat: %+v", delivery)
+	}
+	queuedClose := flushServerFrames(t, peerFlow)
+	if len(queuedClose) != 1 {
+		t.Fatalf("expected unequip rejection peer to receive one queued END, got %d", len(queuedClose))
+	}
+	assertExchangeEndFrame(t, queuedClose[0], "unequip rejection exchange peer close")
+
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected post-unequip-rejection exchange cancel error: %v", err)
+	}
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected post-unequip-rejection exchange cancel to emit no frames after shell close, got %d", len(cancelOut))
+	}
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "owner exchange unequip rejection")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "peer exchange unequip rejection")
+}
+
 func TestGameRuntimeSlashEquipRejectsAntiFlagWithTemplateText(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

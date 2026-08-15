@@ -74,7 +74,7 @@ The minimal runtime accepts an item move only when all of these are true:
 
 The bootstrap `/inventory_move <from> <to>` command seam remains a local operator/test compatibility path rather than a new packet, but for full-stack incompatible occupied-destination carried swaps it now uses the same authored-template source/target metadata boundary as `CG::ITEM_MOVE`: missing source or target templates in an explicitly authored snapshot, invalid template metadata, or live source/target counts already above the resolved template `max_count` fail closed before item refreshes, quickslot retarget/delete frames, or persistence.
 
-Rejected requests fail closed and emit no frames.
+Rejected requests fail closed and emit no frames, except for the currently owned template-authored equipment guard feedback paths. When selected-character/template metadata rejects an equip and authors `equip_reject_message`, or when `irremovable` metadata rejects an unequip and authors/falls back to the owned unequip rejection text, the runtime returns one self-only `CHAT_TYPE_INFO` with no inventory/equipment/point/quickslot/persistence mutation. If that feedback runs while the requester has an active bootstrap exchange shell, the shell is closed first with self/peer `GC::EXCHANGE END`, then the self-only rejection chat is delivered.
 
 ## Successful replies
 

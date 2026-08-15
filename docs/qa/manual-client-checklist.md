@@ -355,12 +355,14 @@ Expected result:
 - [ ] Repeat with the same item shape but a selected-character job/sex anti-flag that should reject the character
 - [ ] Repeat with authored metadata whose `equip_slot` or `vnum` does not match the carried item/destination cell
 - [ ] Repeat with otherwise matching equipment metadata guarded by one of `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell`
+- [ ] While an exchange shell is open with a visible peer, repeat a guarded equip attempt that returns template-authored `equip_reject_message`
 
 Expected result:
 - allowed equipment moves from carried inventory to the authored equipment cell, emits the self-only item refresh burst, deletes item quickslots bound to the cleared carried source cell, leaves unrelated skill/command quickslots with the same byte slot value unchanged, applies any template-authored `equip_effect` point change only after the matching item is actually equipped in that authored cell, and refreshes visible `CHARACTER_UPDATE.parts` for projected `body` / `weapon` / `head` / `hair` equipment
 - if the wearable template authors non-zero `appearance_vnum`, `CHARACTER_UPDATE.parts` and peer-visible appearance should use that authored visible id while the equipment `ITEM_SET.vnum`, persisted equipment item, and later inventory/equipment inspection still show the original item `vnum`
 - equipment templates may now author negative `equip_effect.point_delta` penalties; on equip the visible `PLAYER_POINT_CHANGE.amount` should be the negative authored value, and on unequip the inverse positive amount should restore the point value
 - selected-character anti-flagged, mismatched-`vnum`, mismatched-slot, or transfer-guarded equipment fails closed: no item refresh, no quickslot change, no point change, no carried/equipment mutation, and no persistence change
+- if the guarded equip rejection runs while an exchange shell is open, the requester first receives one self-only `GC::EXCHANGE END`, the paired peer receives one queued `GC::EXCHANGE END`, then the requester receives the authored self-only `CHAT_TYPE_INFO` rejection; no exchange result/finalization frame or inventory/equipment/point/quickslot/persistence mutation appears
 - disposable corrupted persistence fixtures where an `inventory` entry is already marked equipped, or an `equipment` entry is not marked equipped, should be rejected by account/login-ticket validation before the character can enter the normal inventory/equipment runtime path
 - corrupt/disposable fixtures that try to apply an equipment point effect without a matching valid equipped item in the authored equipment cell fail closed with no point mutation
 - equipment whose template-authored `equip_effect` point delta would overflow the bootstrap signed 32-bit point value also fails closed before item, quickslot, point, or persistence mutation
@@ -373,11 +375,13 @@ Expected result:
 - [ ] Drag the worn item back into an empty carried inventory cell
 - [ ] Repeat with otherwise matching equipment metadata marked `irremovable`
 - [ ] Repeat with a corrupt/disposable fixture where the removal metadata does not match the just-removed item `vnum`
+- [ ] While an exchange shell is open with a visible peer, repeat an `irremovable` unequip rejection
 
 Expected result:
 - allowed unequip emits the self-only equipment clear, carried-cell set, any template-authored inverse `PLAYER_POINT_CHANGE` when the item has `equip_effect`, and appearance update; unequipping projected `hair` equipment restores `parts[3]` to the character's base `HairPart`
 - the point-effect removal is backed by the just-removed item instance, so it still subtracts the authored delta after the item has moved out of the equipment slice
 - `irremovable` removal metadata fails closed with one self-only `CHAT_TYPE_INFO` rejection; when the template authors `unequip_reject_message`, that text is shown, otherwise the deterministic fallback is `You cannot remove this item.`; no carried/equipment, point, appearance, quickslot, or persisted-state mutation is committed
+- if the `irremovable` unequip rejection runs while an exchange shell is open, the requester first receives one self-only `GC::EXCHANGE END`, the paired peer receives one queued `GC::EXCHANGE END`, then the requester receives the unequip rejection chat; no exchange result/finalization frame or carried/equipment/point/quickslot/persistence mutation appears
 - mismatched or malformed removal metadata fails closed with no point change and no committed inventory/equipment/persistence mutation
 - corrupt/disposable equipped-source fixtures whose live count exceeds the authored template `max_count` fail closed the same way: no item refresh, no point change, no appearance update, and no committed inventory/equipment/persistence mutation
 - corrupt/disposable duplicate equipped-slot fixtures also fail closed for both fallback and template-backed unequip: no ambiguous first-match item is moved, no item refresh is emitted, and no carried/equipment or persisted-state mutation is committed
