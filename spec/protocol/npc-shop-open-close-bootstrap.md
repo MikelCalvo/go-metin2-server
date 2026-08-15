@@ -286,6 +286,10 @@ The current bootstrap runtime now owns one explicit post-floor teardown case too
 - if an already-open merchant window belongs to the same selected live owner session whose immediate or delayed practice-mob retaliation beat just reached `0` HP, the owner still receives the ordinary retaliation floor transition first (`GC PLAYER_POINT_CHANGE`, `GC DEAD`, `GC TARGET(0, 0)`) and then one self-only `GC::SHOP END`
 - that same floor transition also clears the active merchant context immediately, so a later client `SHOP END` request on the same dead owner session now fails closed until a future slice owns broader revive / reopen behavior
 
+The current bootstrap runtime now owns one storage-guard teardown case too:
+- if the same selected live owner sends `SAFEBOX_CHECKIN` for a carried item whose loaded template authors `anti_safebox` plus `safebox_reject_message` while a merchant window is open, the runtime prepends one self-only `GC::SHOP END` before the storage rejection chat
+- that storage-guard close clears the active merchant context immediately, so later `SHOP END` / `SHOP BUY` attempts fail closed until the player opens a fresh merchant window again
+
 This document does **not** yet claim that every teardown path must always emit a visible merchant close frame before other phase or disconnect behavior takes over.
 
 ## Session rule

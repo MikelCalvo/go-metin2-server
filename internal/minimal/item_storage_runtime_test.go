@@ -5,12 +5,14 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
+	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 )
 
 func TestGameRuntimeSafeboxCheckinAntiSafeboxTemplateReturnsAuthoredRejectTextWithoutMutation(t *testing.T) {
@@ -144,4 +146,75 @@ func TestGameRuntimeSafeboxCheckinAntiSafeboxTemplateClosesActiveExchangeShellWi
 	}
 	assertExchangeAccountUnchanged(t, accounts, "storage-exchange-bound", owner, "owner storage exchange close")
 	assertExchangeAccountUnchanged(t, accounts, "storage-exchange-peer", peer, "peer storage exchange close")
+}
+
+func TestGameRuntimeSafeboxCheckinAntiSafeboxTemplateClosesActiveMerchantWindowWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := merchantBuyerCharacter("StorageMerchantBound", 0x010307c4, 0x020407c4, 12345, []inventory.ItemInstance{{ID: 764, Vnum: 71126, Count: 1, Slot: 5}})
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "storage-merchant-bound", 0x707070c4, owner)
+	if err := accounts.Save(accountstore.Account{Login: "storage-merchant-bound", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed storage merchant account: %v", err)
+	}
+	template := itemcatalog.Template{
+		Vnum:              71126,
+		Name:              "Merchant Protected Storage Charm",
+		Stackable:         false,
+		MaxCount:          1,
+		AntiSafebox:       true,
+		SafeboxRejectText: "This item cannot be stored while shopping.",
+	}
+	templates := append(defaultMerchantItemTemplates(), template)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{defaultMerchantCatalogDefinition()})
+	itemStore := newItemTemplateStore(t, templates)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected storage merchant runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:merchant")
+	if !ok {
+		t.Fatal("expected merchant static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "storage-merchant-bound", 0x707070c4)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+	interactWithMerchantForBuy(t, flow, actor.EntityID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{SafeSlot: 7, Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected anti-safebox merchant checkin packet error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected anti-safebox checkin to emit SHOP END plus info-chat frame, got %d", len(out))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, out[0])); err != nil {
+		t.Fatalf("decode storage merchant SHOP END before rejection info chat: %v", err)
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode storage merchant anti-safebox rejection info chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != template.SafeboxRejectText {
+		t.Fatalf("unexpected storage merchant anti-safebox rejection chat: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after anti-safebox merchant rejection, got %d", len(queued))
+	}
+
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected post-storage merchant SHOP END error: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected post-storage merchant SHOP END to emit no frames after shell close, got %d", len(closeOut))
+	}
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected post-storage merchant SHOP BUY error: %v", err)
+	}
+	if len(buyOut) != 0 {
+		t.Fatalf("expected post-storage merchant SHOP BUY to fail closed until reopen, got %d", len(buyOut))
+	}
+	assertExchangeAccountUnchanged(t, accounts, "storage-merchant-bound", owner, "storage merchant close")
 }
