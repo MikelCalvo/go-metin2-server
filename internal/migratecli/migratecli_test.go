@@ -244,6 +244,112 @@ func TestRunPlanArtifactOutputCanFeedApplyPlanConfirmation(t *testing.T) {
 	}
 }
 
+func TestRunApplyAcceptsPlanArtifactBeforeMutation(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var artifactStdout bytes.Buffer
+	var artifactStderr bytes.Buffer
+	if code := Run([]string{"plan-artifact", "--ledger-snapshot", "-", "--target-version", "1"}, bytes.NewReader(rawSnapshot), &artifactStdout, &artifactStderr); code != 0 {
+		t.Fatalf("expected plan-artifact command to succeed, exit=%d stderr=%q", code, artifactStderr.String())
+	}
+	artifactPath := t.TempDir() + "/migration-plan-artifact.json"
+	if err := os.WriteFile(artifactPath, artifactStdout.Bytes(), 0o600); err != nil {
+		t.Fatalf("write plan artifact: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://artifact-path", "--ledger-snapshot", "-", "--target-version", "1", "--plan-artifact", artifactPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected apply with plan artifact path to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	var result dbmigrations.ApplyResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode plan-artifact apply result JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if result.PreviousVersion != 0 || result.CurrentVersion != 1 || len(result.Applied) != 1 {
+		t.Fatalf("unexpected plan-artifact apply result: %#v", result)
+	}
+	for _, forbidden := range []string{"CREATE TABLE", "DROP TABLE", "-- go-metin2 migration", "memory://artifact-path"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("plan-artifact apply output must stay metadata-only and redacted, stdout=%q stderr=%q", stdout.String(), stderr.String())
+		}
+	}
+	got := currentMigrateCLITestDriver(t).eventsSnapshot()
+	for _, want := range []string{"open:memory://artifact-path", "begin", "commit", "close"} {
+		if !containsMigrateCLITestEventPrefix(got, want) {
+			t.Fatalf("expected event prefix %q in events %#v", want, got)
+		}
+	}
+}
+
+func TestRunApplyRejectsMismatchedPlanArtifactBeforeOpeningDatabase(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var artifactStdout bytes.Buffer
+	var artifactStderr bytes.Buffer
+	if code := Run([]string{"plan-artifact", "--ledger-snapshot", "-", "--target-version", "0"}, bytes.NewReader(rawSnapshot), &artifactStdout, &artifactStderr); code != 0 {
+		t.Fatalf("expected rollback plan-artifact command to succeed, exit=%d stderr=%q", code, artifactStderr.String())
+	}
+	artifactPath := t.TempDir() + "/mismatched-plan-artifact.json"
+	if err := os.WriteFile(artifactPath, artifactStdout.Bytes(), 0o600); err != nil {
+		t.Fatalf("write mismatched plan artifact: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://artifact-mismatch", "--ledger-snapshot", "-", "--target-version", "1", "--plan-artifact", artifactPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected mismatched plan artifact to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected mismatched plan artifact not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "plan artifact does not match") {
+		t.Fatalf("expected plan artifact mismatch guidance, got %q", stderr.String())
+	}
+	if got := currentMigrateCLITestDriver(t).eventsSnapshot(); len(got) != 0 {
+		t.Fatalf("expected plan artifact mismatch guard before opening DB, got events %#v", got)
+	}
+}
+
+func TestRunApplyRejectsPlanArtifactAndPlanSHA256TogetherAsUsageError(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	artifactPath := t.TempDir() + "/unused-plan-artifact.json"
+	if err := os.WriteFile(artifactPath, []byte(`{"format":"unused"}`), 0o600); err != nil {
+		t.Fatalf("write unused artifact: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://artifact-and-sha", "--ledger-snapshot", "-", "--target-version", "1", "--plan-sha256", strings.Repeat("0", 64), "--plan-artifact", artifactPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 2 {
+		t.Fatalf("expected plan artifact plus checksum to exit 2, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected usage error not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "--plan-sha256 and --plan-artifact cannot be used together") {
+		t.Fatalf("expected mutually exclusive plan confirmation guidance, got %q", stderr.String())
+	}
+	if got := currentMigrateCLITestDriver(t).eventsSnapshot(); len(got) != 0 {
+		t.Fatalf("expected plan confirmation usage guard before opening DB, got events %#v", got)
+	}
+}
+
 func TestRunPlanArtifactRejectsOversizedLedgerSnapshotBeforePlanning(t *testing.T) {
 	oversizedSnapshot := `{"format":"` + dbmigrations.LedgerSnapshotFormat + `","entries":[]}` + strings.Repeat(" ", 70*1024)
 	var stdout bytes.Buffer

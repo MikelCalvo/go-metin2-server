@@ -12,9 +12,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
 )
@@ -291,12 +293,14 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 	var targetVersionText string
 	var auditFilePath string
 	var planSHA256Text string
+	var planArtifactPath string
 	flags.StringVar(&driverName, "driver", "", "database/sql driver name for the migration target")
 	flags.StringVar(&dsn, "dsn", "", "database/sql DSN for the migration target")
 	flags.StringVar(&snapshotPath, "ledger-snapshot", "", "path to go-metin2 schema_migrations ledger snapshot JSON, or - for stdin")
 	flags.StringVar(&targetVersionText, "target-version", "", "catalog target version to apply")
 	flags.StringVar(&auditFilePath, "audit-file", "", "optional path for an exclusive metadata-only apply audit JSON file")
 	flags.StringVar(&planSHA256Text, "plan-sha256", "", "optional SHA-256 of the metadata-only dry-run plan JSON that must match before applying")
+	flags.StringVar(&planArtifactPath, "plan-artifact", "", "optional path to a metadata-only migration plan artifact that must match before applying")
 	flags.Usage = func() { printApplyUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
@@ -332,8 +336,15 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 		return exitError
 	}
 	confirmedPlanSHA256 := ""
-	if strings.TrimSpace(planSHA256Text) != "" {
-		confirmedPlanSHA256, err = parsePlanSHA256(planSHA256Text)
+	trimmedPlanSHA256 := strings.TrimSpace(planSHA256Text)
+	trimmedPlanArtifactPath := strings.TrimSpace(planArtifactPath)
+	if trimmedPlanSHA256 != "" && trimmedPlanArtifactPath != "" {
+		fmt.Fprintln(stderr, "--plan-sha256 and --plan-artifact cannot be used together")
+		printApplyUsage(stderr)
+		return exitUsage
+	}
+	if trimmedPlanSHA256 != "" {
+		confirmedPlanSHA256, err = parsePlanSHA256(trimmedPlanSHA256)
 		if err != nil {
 			fmt.Fprintf(stderr, "invalid --plan-sha256 %q: %v\n", planSHA256Text, err)
 			return exitUsage
