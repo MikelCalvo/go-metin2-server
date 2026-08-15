@@ -36,8 +36,9 @@ const (
 // mutation surface: it requires an operator-supplied database driver, DSN, strict
 // offline ledger snapshot, and target version, and it remains deliberately
 // separate from daemon startup and local ops endpoints. Operators can optionally
-// require a previously inspected plan checksum or plan artifact and request an
-// exclusive metadata-only audit file for non-empty apply plans.
+// require a previously inspected plan checksum or plan artifact, reserve an
+// exclusive local lock file before opening the database, and request an exclusive
+// metadata-only audit file for non-empty apply plans.
 func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	if stdout == nil {
 		stdout = io.Discard
@@ -293,6 +294,7 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 	var snapshotPath string
 	var targetVersionText string
 	var auditFilePath string
+	var lockFilePath string
 	var planSHA256Text string
 	var planArtifactPath string
 	flags.StringVar(&driverName, "driver", "", "database/sql driver name for the migration target")
@@ -300,6 +302,7 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 	flags.StringVar(&snapshotPath, "ledger-snapshot", "", "path to go-metin2 schema_migrations ledger snapshot JSON, or - for stdin")
 	flags.StringVar(&targetVersionText, "target-version", "", "catalog target version to apply")
 	flags.StringVar(&auditFilePath, "audit-file", "", "optional path for an exclusive metadata-only apply audit JSON file")
+	flags.StringVar(&lockFilePath, "lock-file", "", "optional path for an exclusive local migration apply lock file")
 	flags.StringVar(&planSHA256Text, "plan-sha256", "", "optional SHA-256 of the metadata-only dry-run plan JSON that must match before applying")
 	flags.StringVar(&planArtifactPath, "plan-artifact", "", "optional path to a metadata-only migration plan artifact that must match before applying")
 	flags.Usage = func() { printApplyUsage(stderr) }
@@ -398,6 +401,16 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 		confirmedPlanSHA256 = artifact.PlanSHA256
 	}
 
+	var lockFile *migrationApplyLockFile
+	if strings.TrimSpace(lockFilePath) != "" {
+		lockFile, err = createMigrationApplyLockFile(lockFilePath)
+		if err != nil {
+			writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
+			return exitError
+		}
+		defer lockFile.Release()
+	}
+
 	var auditFile *migrationApplyAuditFile
 	if strings.TrimSpace(auditFilePath) != "" {
 		if len(plan.Pending) == 0 {
@@ -447,6 +460,8 @@ const migrationApplyAuditFormat = "go-metin2-migration-apply-audit-v1"
 
 var ErrMigrationApplyAudit = errors.New("migration apply audit failed")
 
+var ErrMigrationApplyLock = errors.New("migration apply lock failed")
+
 var ErrMigrationApplyPlanConfirmation = errors.New("migration apply plan confirmation failed")
 
 type migrationApplyAudit struct {
@@ -459,6 +474,50 @@ type migrationApplyAudit struct {
 	ConfirmedPlanSHA256  string                   `json:"confirmed_plan_sha256,omitempty"`
 	LedgerSnapshotSHA256 string                   `json:"ledger_snapshot_sha256"`
 	Result               dbmigrations.ApplyResult `json:"result"`
+}
+
+type migrationApplyLockFile struct {
+	path string
+	file *os.File
+}
+
+func createMigrationApplyLockFile(path string) (*migrationApplyLockFile, error) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return nil, nil
+	}
+	file, err := os.OpenFile(trimmed, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return nil, fmt.Errorf("%w: lock file already exists: %s", ErrMigrationApplyLock, trimmed)
+		}
+		return nil, fmt.Errorf("%w: create lock file: %v", ErrMigrationApplyLock, err)
+	}
+	if _, err := fmt.Fprintf(file, "pid=%d\n", os.Getpid()); err != nil {
+		_ = file.Close()
+		_ = os.Remove(trimmed)
+		return nil, fmt.Errorf("%w: write lock file: %v", ErrMigrationApplyLock, err)
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		_ = os.Remove(trimmed)
+		return nil, fmt.Errorf("%w: sync lock file: %v", ErrMigrationApplyLock, err)
+	}
+	return &migrationApplyLockFile{path: trimmed, file: file}, nil
+}
+
+func (f *migrationApplyLockFile) Release() {
+	if f == nil {
+		return
+	}
+	if f.file != nil {
+		_ = f.file.Close()
+		f.file = nil
+	}
+	if f.path != "" {
+		_ = os.Remove(f.path)
+		f.path = ""
+	}
 }
 
 type migrationApplyAuditFile struct {
@@ -734,5 +793,5 @@ func printPlanArtifactUsage(w io.Writer) {
 
 func printApplyUsage(w io.Writer) {
 	fmt.Fprintln(w, "apply usage:")
-	fmt.Fprintln(w, "  metin2-migrate apply --driver <database/sql-driver> --dsn <dsn> --ledger-snapshot <path|-> --target-version <version|latest> [--plan-sha256 <hex> | --plan-artifact <path>] [--audit-file <path>]")
+	fmt.Fprintln(w, "  metin2-migrate apply --driver <database/sql-driver> --dsn <dsn> --ledger-snapshot <path|-> --target-version <version|latest> [--plan-sha256 <hex> | --plan-artifact <path>] [--lock-file <path>] [--audit-file <path>]")
 }

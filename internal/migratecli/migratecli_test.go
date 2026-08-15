@@ -454,6 +454,106 @@ func TestRunApplyRejectsOversizedPlanArtifactBeforeOpeningDatabase(t *testing.T)
 	}
 }
 
+func TestRunApplyRejectsExistingLockFileBeforeOpeningDatabase(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	lockPath := t.TempDir() + "/migration-apply.lock"
+	if err := os.WriteFile(lockPath, []byte("already locked\n"), 0o600); err != nil {
+		t.Fatalf("write existing lock file: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://locked", "--ledger-snapshot", "-", "--target-version", "1", "--lock-file", lockPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected existing lock to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected existing lock not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "migration apply lock failed") || !strings.Contains(stderr.String(), "lock file already exists") {
+		t.Fatalf("expected lock failure guidance, got %q", stderr.String())
+	}
+	if got := currentMigrateCLITestDriver(t).eventsSnapshot(); len(got) != 0 {
+		t.Fatalf("expected existing lock guard before opening DB, got events %#v", got)
+	}
+	rawLock, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatalf("read existing lock file: %v", err)
+	}
+	if string(rawLock) != "already locked\n" {
+		t.Fatalf("expected existing lock file to remain untouched, got %q", string(rawLock))
+	}
+}
+
+func TestRunApplyRemovesLockFileAfterSuccessfulMutation(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	lockPath := t.TempDir() + "/migration-apply.lock"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://lock-success", "--ledger-snapshot", "-", "--target-version", "1", "--lock-file", lockPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected locked apply to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected successful apply to remove lock file, got %v", err)
+	}
+	got := currentMigrateCLITestDriver(t).eventsSnapshot()
+	for _, want := range []string{"open:memory://lock-success", "begin", "commit", "close"} {
+		if !containsMigrateCLITestEventPrefix(got, want) {
+			t.Fatalf("expected event prefix %q in events %#v", want, got)
+		}
+	}
+	body := stdout.String()
+	if strings.Contains(body, "migration-apply.lock") || strings.Contains(body, "memory://lock-success") || strings.Contains(body, "CREATE TABLE") {
+		t.Fatalf("locked apply output must stay metadata-only, got %s", body)
+	}
+}
+
+func TestRunApplyRemovesReservedLockFileWhenApplyFails(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	secretDSN := "memory://lock-failed-secret"
+	currentMigrateCLITestDriver(t).setError(fmt.Errorf("apply failed for %s", secretDSN))
+	lockPath := t.TempDir() + "/migration-apply.lock"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", secretDSN, "--ledger-snapshot", "-", "--target-version", "1", "--lock-file", lockPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected failed locked apply to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected failed locked apply not to write stdout, got %q", stdout.String())
+	}
+	if strings.Contains(stderr.String(), secretDSN) || !strings.Contains(stderr.String(), "<redacted-dsn>") {
+		t.Fatalf("expected failed locked apply to redact DSN, got %q", stderr.String())
+	}
+	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected failed apply to remove reserved lock file, got %v", err)
+	}
+	got := currentMigrateCLITestDriver(t).eventsSnapshot()
+	for _, want := range []string{"open:" + secretDSN, "begin", "rollback", "close"} {
+		if !containsMigrateCLITestEventPrefix(got, want) {
+			t.Fatalf("expected event prefix %q in events %#v", want, got)
+		}
+	}
+}
+
 func TestRunPlanArtifactRejectsOversizedLedgerSnapshotBeforePlanning(t *testing.T) {
 	oversizedSnapshot := `{"format":"` + dbmigrations.LedgerSnapshotFormat + `","entries":[]}` + strings.Repeat(" ", 70*1024)
 	var stdout bytes.Buffer
