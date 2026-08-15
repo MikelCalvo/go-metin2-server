@@ -406,6 +406,129 @@ func TestRunApplyResolvesLatestTargetVersion(t *testing.T) {
 	}
 }
 
+func TestRunApplyAcceptsConfirmedPlanSHA256BeforeMutation(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var planStdout bytes.Buffer
+	var planStderr bytes.Buffer
+	if code := Run([]string{"plan", "--ledger-snapshot", "-", "--target-version", "1"}, bytes.NewReader(rawSnapshot), &planStdout, &planStderr); code != 0 {
+		t.Fatalf("expected plan command for apply confirmation to succeed, exit=%d stderr=%q", code, planStderr.String())
+	}
+	planSHA256 := testSHA256HexBytes(planStdout.Bytes())
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://confirmed-plan", "--ledger-snapshot", "-", "--target-version", "1", "--plan-sha256", planSHA256}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected apply with confirmed plan checksum to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	var result dbmigrations.ApplyResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode confirmed-plan apply result JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if result.PreviousVersion != 0 || result.CurrentVersion != 1 || len(result.Applied) != 1 {
+		t.Fatalf("unexpected confirmed-plan apply result: %#v", result)
+	}
+	events := currentMigrateCLITestDriver(t).eventsSnapshot()
+	for _, want := range []string{"open:memory://confirmed-plan", "begin", "commit", "close"} {
+		if !containsMigrateCLITestEventPrefix(events, want) {
+			t.Fatalf("expected event prefix %q in events %#v", want, events)
+		}
+	}
+}
+
+func TestRunApplyWritesConfirmedPlanSHA256IntoAuditFile(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var planStdout bytes.Buffer
+	var planStderr bytes.Buffer
+	if code := Run([]string{"plan", "--ledger-snapshot", "-", "--target-version", "1"}, bytes.NewReader(rawSnapshot), &planStdout, &planStderr); code != 0 {
+		t.Fatalf("expected plan command for audited apply confirmation to succeed, exit=%d stderr=%q", code, planStderr.String())
+	}
+	planSHA256 := testSHA256HexBytes(planStdout.Bytes())
+	auditPath := t.TempDir() + "/confirmed-plan-audit.json"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://confirmed-plan-audit", "--ledger-snapshot", "-", "--target-version", "1", "--plan-sha256", planSHA256, "--audit-file", auditPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected audited apply with confirmed plan checksum to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	rawAudit, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("read confirmed-plan audit file: %v", err)
+	}
+	var audit migrationApplyAudit
+	if err := json.Unmarshal(rawAudit, &audit); err != nil {
+		t.Fatalf("decode confirmed-plan audit JSON: %v\nbody:\n%s", err, string(rawAudit))
+	}
+	if audit.ConfirmedPlanSHA256 != planSHA256 {
+		t.Fatalf("expected audit to carry confirmed plan checksum %q, got %#v", planSHA256, audit)
+	}
+	body := string(rawAudit)
+	if strings.Contains(body, "memory://confirmed-plan-audit") || strings.Contains(body, "CREATE TABLE") || strings.Contains(body, "DROP TABLE") {
+		t.Fatalf("confirmed-plan audit file must stay metadata-only, got %s", body)
+	}
+}
+
+func TestRunApplyRejectsMismatchedPlanSHA256BeforeOpeningDatabase(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://plan-mismatch", "--ledger-snapshot", "-", "--target-version", "1", "--plan-sha256", strings.Repeat("0", 64)}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected plan checksum mismatch to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected plan checksum mismatch not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "plan sha256 mismatch") {
+		t.Fatalf("expected plan checksum mismatch guidance, got %q", stderr.String())
+	}
+	if got := currentMigrateCLITestDriver(t).eventsSnapshot(); len(got) != 0 {
+		t.Fatalf("expected plan checksum mismatch guard before opening DB, got events %#v", got)
+	}
+}
+
+func TestRunApplyRejectsMalformedPlanSHA256AsUsageError(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://plan-malformed", "--ledger-snapshot", "-", "--target-version", "1", "--plan-sha256", "not-a-sha"}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 2 {
+		t.Fatalf("expected malformed plan checksum to exit 2, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected malformed plan checksum not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "invalid --plan-sha256") {
+		t.Fatalf("expected malformed plan checksum guidance, got %q", stderr.String())
+	}
+	if got := currentMigrateCLITestDriver(t).eventsSnapshot(); len(got) != 0 {
+		t.Fatalf("expected malformed plan checksum guard before opening DB, got events %#v", got)
+	}
+}
+
 func TestRunApplyWritesAuditFileAfterSuccessfulMutation(t *testing.T) {
 	driverName := registerMigrateCLITestSQLDriver(t)
 	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})

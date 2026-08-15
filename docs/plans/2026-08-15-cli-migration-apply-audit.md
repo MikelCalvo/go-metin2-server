@@ -84,7 +84,7 @@ Validation for this slice:
 
 ## Follow-up options
 
-1. Add a backup/restore preflight runbook that requires `ledger-snapshot -> plan -> backup/validate -> apply --audit-file` ordering before recommending real deployments.
+1. Add a backup/restore preflight runbook that requires `ledger-snapshot -> plan -> checksum -> backup/validate -> apply --plan-sha256 --audit-file` ordering before recommending real deployments.
 2. Add build-tagged driver-backed integration tests once a concrete DB engine/driver is selected.
 3. Add advisory-lock or single-writer coordination after deployment topology and DB engine are known.
 4. Keep daemon-local migration endpoints read-only unless a future production-admin design intentionally changes that boundary.

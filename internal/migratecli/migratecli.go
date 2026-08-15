@@ -32,8 +32,9 @@ const (
 // commands are read-only. The apply command is an explicit CLI-only mutation
 // surface: it requires an operator-supplied database driver, DSN, strict offline
 // ledger snapshot, and target version, and it remains deliberately separate from
-// daemon startup and local ops endpoints. Operators can optionally request an
-// exclusive metadata-only audit file for non-empty apply plans.
+// daemon startup and local ops endpoints. Operators can optionally require a
+// previously inspected plan checksum and request an exclusive metadata-only
+// audit file for non-empty apply plans.
 func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	if stdout == nil {
 		stdout = io.Discard
@@ -254,11 +255,13 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 	var snapshotPath string
 	var targetVersionText string
 	var auditFilePath string
+	var planSHA256Text string
 	flags.StringVar(&driverName, "driver", "", "database/sql driver name for the migration target")
 	flags.StringVar(&dsn, "dsn", "", "database/sql DSN for the migration target")
 	flags.StringVar(&snapshotPath, "ledger-snapshot", "", "path to go-metin2 schema_migrations ledger snapshot JSON, or - for stdin")
 	flags.StringVar(&targetVersionText, "target-version", "", "catalog target version to apply")
 	flags.StringVar(&auditFilePath, "audit-file", "", "optional path for an exclusive metadata-only apply audit JSON file")
+	flags.StringVar(&planSHA256Text, "plan-sha256", "", "optional SHA-256 of the metadata-only dry-run plan JSON that must match before applying")
 	flags.Usage = func() { printApplyUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
@@ -293,6 +296,14 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 		writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
 		return exitError
 	}
+	confirmedPlanSHA256 := ""
+	if strings.TrimSpace(planSHA256Text) != "" {
+		confirmedPlanSHA256, err = parsePlanSHA256(planSHA256Text)
+		if err != nil {
+			fmt.Fprintf(stderr, "invalid --plan-sha256 %q: %v\n", planSHA256Text, err)
+			return exitUsage
+		}
+	}
 
 	reader, closeReader, err := openLedgerSnapshotReader(snapshotPath, stdin)
 	if err != nil {
@@ -312,6 +323,22 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 	if err != nil {
 		writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
 		return exitError
+	}
+	if confirmedPlanSHA256 != "" {
+		plan, err := dbmigrations.PlanToVersion(ledger, resolvedTarget)
+		if err != nil {
+			writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
+			return exitError
+		}
+		gotPlanSHA256, err := planSHA256(plan)
+		if err != nil {
+			writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
+			return exitError
+		}
+		if gotPlanSHA256 != confirmedPlanSHA256 {
+			writeMigrationCommandError(stderr, dsn, "migration apply: %v", fmt.Errorf("%w: plan sha256 mismatch: got %s want %s", ErrMigrationApplyPlanConfirmation, gotPlanSHA256, confirmedPlanSHA256))
+			return exitError
+		}
 	}
 
 	var auditFile *migrationApplyAuditFile
@@ -353,6 +380,7 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 			DSNConfigured:        strings.TrimSpace(dsn) != "",
 			TargetVersion:        resolvedTarget,
 			TargetLatest:         targetLatest,
+			ConfirmedPlanSHA256:  confirmedPlanSHA256,
 			LedgerSnapshotSHA256: sha256Hex(rawLedger),
 			Result:               result,
 		}); err != nil {
@@ -367,6 +395,8 @@ const migrationApplyAuditFormat = "go-metin2-migration-apply-audit-v1"
 
 var ErrMigrationApplyAudit = errors.New("migration apply audit failed")
 
+var ErrMigrationApplyPlanConfirmation = errors.New("migration apply plan confirmation failed")
+
 type migrationApplyAudit struct {
 	Format               string                   `json:"format"`
 	AppliedAt            string                   `json:"applied_at"`
@@ -374,6 +404,7 @@ type migrationApplyAudit struct {
 	DSNConfigured        bool                     `json:"dsn_configured"`
 	TargetVersion        int                      `json:"target_version"`
 	TargetLatest         bool                     `json:"target_latest"`
+	ConfirmedPlanSHA256  string                   `json:"confirmed_plan_sha256,omitempty"`
 	LedgerSnapshotSHA256 string                   `json:"ledger_snapshot_sha256"`
 	Result               dbmigrations.ApplyResult `json:"result"`
 }
@@ -486,6 +517,26 @@ func sha256Hex(raw []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func parsePlanSHA256(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) != sha256.Size*2 {
+		return "", fmt.Errorf("must be %d hex characters", sha256.Size*2)
+	}
+	if _, err := hex.DecodeString(trimmed); err != nil {
+		return "", err
+	}
+	return strings.ToLower(trimmed), nil
+}
+
+func planSHA256(plan dbmigrations.Plan) (string, error) {
+	raw, err := json.MarshalIndent(plan, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("plan sha256: marshal plan: %w", err)
+	}
+	raw = append(raw, '\n')
+	return sha256Hex(raw), nil
+}
+
 func planLedgerSnapshot(raw []byte, targetVersion int, targetLatest bool) (dbmigrations.Plan, error) {
 	if targetLatest {
 		catalog, err := dbmigrations.Catalog()
@@ -573,5 +624,5 @@ func printPlanUsage(w io.Writer) {
 
 func printApplyUsage(w io.Writer) {
 	fmt.Fprintln(w, "apply usage:")
-	fmt.Fprintln(w, "  metin2-migrate apply --driver <database/sql-driver> --dsn <dsn> --ledger-snapshot <path|-> --target-version <version|latest> [--audit-file <path>]")
+	fmt.Fprintln(w, "  metin2-migrate apply --driver <database/sql-driver> --dsn <dsn> --ledger-snapshot <path|-> --target-version <version|latest> [--plan-sha256 <hex>] [--audit-file <path>]")
 }
