@@ -470,6 +470,97 @@ func TestGameRuntimeReturnSpawnGroupHomeFailsClosedWithoutPersistingOrClearingTa
 	}
 }
 
+func TestGameRuntimeReturnSpawnGroupHomeAtHomeClearsTargetsEvenWhenSnapshotPersistFails(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ReturnHomeNoPersistOwner", 0x01030170, 0x02040170, 1700, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	peer := peerVisibilityCharacter("ReturnHomeNoPersistPeer", 0x01030171, 0x02040171, 1720, 2800, 0, 102, 202)
+	peer.MapIndex = 42
+	issuePeerTicket(t, store, "return-home-no-persist-owner", 0x20202020, owner)
+	issuePeerTicket(t, store, "return-home-no-persist-peer", 0x21212121, peer)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for at-home no-persist return-home: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_home_no_persist",
+		Name:          "ReturnHomeNoPersistMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import at-home no-persist spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_home_no_persist")
+	if !ok {
+		t.Fatal("expected at-home no-persist spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	factory := runtime.SessionFactory()
+	ownerFlow, _ := enterGameWithLoginTicket(t, factory, "return-home-no-persist-owner", 0x20202020)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, factory, "return-home-no-persist-peer", 0x21212121)
+	defer closeSessionFlow(t, peerFlow)
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, peerFlow)
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected owner target error before at-home no-persist return-home: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected owner to select at-home no-persist practice mob, got %d frames", len(selectOut))
+	}
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected owner attack before at-home no-persist return-home: %v", err)
+	}
+	if len(attackOut) == 0 {
+		t.Fatal("expected owner attack to establish no-persist practice-mob engagement")
+	}
+	flushServerFrames(t, peerFlow)
+
+	runtime.staticStore = &failingStaticActorStore{}
+	returned, ok := runtime.ReturnSpawnGroupHome(group.EntityID)
+	if !ok {
+		t.Fatalf("expected at-home return-home to skip static snapshot persistence and still clear target ownership for entity %d", group.EntityID)
+	}
+	if returned.Status != worldruntime.SpawnLeashStatusAtHome || returned.ReturnRequired || returned.Actor.X != 1700 || returned.Actor.Y != 2800 {
+		t.Fatalf("expected at-home no-persist return-home result to stay at authored home, got %+v", returned)
+	}
+
+	ownerQueued := flushServerFrames(t, ownerFlow)
+	if len(ownerQueued) != 1 {
+		t.Fatalf("expected at-home no-persist return-home to queue one selected-target clear to owner, got %d frames", len(ownerQueued))
+	}
+	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, ownerQueued[0]))
+	if err != nil {
+		t.Fatalf("decode owner clear-target after at-home no-persist return-home: %v", err)
+	}
+	if clear.TargetVID != 0 || clear.HPPercent != 0 {
+		t.Fatalf("expected owner target clear after at-home no-persist return-home, got %+v", clear)
+	}
+
+	peerSelect, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected peer target error after at-home no-persist return-home: %v", err)
+	}
+	if len(peerSelect) != 1 {
+		t.Fatalf("expected at-home no-persist return-home to release engagement so peer can target, got %d frames", len(peerSelect))
+	}
+}
+
 func TestGameRuntimeReturnSpawnGroupHomeAtHomeClearsCombatTargetAndReleasesEngagement(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("ReturnHomeEngagedOwner", 0x01030166, 0x02040166, 1700, 2800, 0, 101, 201)

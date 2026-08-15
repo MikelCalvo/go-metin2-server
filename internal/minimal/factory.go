@@ -2070,12 +2070,17 @@ func (r *gameRuntime) ReturnSpawnGroupHome(entityID uint64) (SpawnGroupLeashSnap
 	target[idx].MapIndex = home.MapIndex
 	target[idx].X = home.X
 	target[idx].Y = home.Y
-	if !r.persistStaticActorSnapshot(target) {
-		return SpawnGroupLeashSnapshot{}, false
+	positionUnchanged := target[idx].MapIndex == current[idx].MapIndex && target[idx].X == current[idx].X && target[idx].Y == current[idx].Y
+	if !positionUnchanged {
+		if !r.persistStaticActorSnapshot(target) {
+			return SpawnGroupLeashSnapshot{}, false
+		}
 	}
 	returned, ok := r.sharedWorld.ReturnSpawnGroupHome(entityID)
 	if !ok {
-		_ = r.persistStaticActorSnapshot(current)
+		if !positionUnchanged {
+			_ = r.persistStaticActorSnapshot(current)
+		}
 		return SpawnGroupLeashSnapshot{}, false
 	}
 	r.syncSpawnGroupReturnStepSchedule(returned.Actor)
