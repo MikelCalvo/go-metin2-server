@@ -47,6 +47,7 @@ type sharedWorldRegistry struct {
 	staticActorCombatEngagedBy      map[uint64]uint64
 	staticActorDeathReward          map[uint64]worldruntime.StaticActorDeathReward
 	sessionCombatTargets            map[uint64]uint32
+	sessionCombatRetaliations       map[uint64]combatRetaliationTimer
 	exchangePartners                map[uint64]uint64
 	exchangeItems                   map[uint64]map[uint8]uint64
 	exchangeAccepted                map[uint64]bool
@@ -88,6 +89,12 @@ type sharedGroundItemPickup struct {
 type sharedGroundItemVisibilityDiff struct {
 	Removed []sharedGroundItem
 	Added   []sharedGroundItem
+}
+
+type combatRetaliationTimer struct {
+	TargetVID       uint32
+	SnapshotVersion uint64
+	ReadyAt         time.Time
 }
 
 type staticActorCombatStateSnapshot struct {
@@ -166,6 +173,9 @@ type CombatTargetSnapshot struct {
 	EngagedBy               *ConnectedCharacterSnapshot `json:"engaged_by,omitempty"`
 	RetaliationPointDelta   int32                       `json:"retaliation_point_delta,omitempty"`
 	RetaliationServerOrigin bool                        `json:"retaliation_server_origin,omitempty"`
+	RetaliationPending      bool                        `json:"retaliation_pending,omitempty"`
+	RetaliationReadyAt      *time.Time                  `json:"retaliation_ready_at,omitempty"`
+	RetaliationRemainingMs  *int64                      `json:"retaliation_remaining_ms,omitempty"`
 }
 
 type StaticActorCombatAttackAttempt struct {
@@ -287,6 +297,7 @@ func newSharedWorldRegistryWithTopology(topology worldruntime.BootstrapTopology)
 		staticActorCombatSnapshot:  make(map[uint64]uint64),
 		staticActorCombatEngagedBy: make(map[uint64]uint64),
 		staticActorDeathReward:     make(map[uint64]worldruntime.StaticActorDeathReward),
+		sessionCombatRetaliations:  make(map[uint64]combatRetaliationTimer),
 		exchangePartners:           make(map[uint64]uint64),
 		exchangeAccepted:           make(map[uint64]bool),
 		lastKnownCharacters:        make(map[uint64]loginticket.Character),
@@ -1145,10 +1156,15 @@ func (r *sharedWorldRegistry) flushReadyStaticActorRespawnLocked(entityID uint64
 }
 
 func (r *sharedWorldRegistry) clearSessionCombatTargetLocked(entityID uint64) {
-	if r == nil || entityID == 0 || r.sessionCombatTargets == nil {
+	if r == nil || entityID == 0 {
 		return
 	}
-	delete(r.sessionCombatTargets, entityID)
+	if r.sessionCombatTargets != nil {
+		delete(r.sessionCombatTargets, entityID)
+	}
+	if r.sessionCombatRetaliations != nil {
+		delete(r.sessionCombatRetaliations, entityID)
+	}
 }
 
 func (r *sharedWorldRegistry) setSessionCombatTargetLocked(entityID uint64, targetVID uint32) {
@@ -1186,6 +1202,9 @@ func (r *sharedWorldRegistry) clearSelectedCombatTargetsLocked(targetVID uint32,
 			continue
 		}
 		delete(r.sessionCombatTargets, entityID)
+		if r.sessionCombatRetaliations != nil {
+			delete(r.sessionCombatRetaliations, entityID)
+		}
 		if clearTargetRaw != nil {
 			r.enqueueToEntityLocked(entityID, [][]byte{clearTargetRaw})
 		}
@@ -1260,6 +1279,41 @@ func (r *sharedWorldRegistry) SetSessionCombatTarget(entityID uint64, targetVID 
 	}
 	r.setSessionCombatTargetLocked(entityID, targetVID)
 	return true
+}
+
+func (r *sharedWorldRegistry) SetSessionCombatRetaliation(entityID uint64, targetVID uint32, snapshotVersion uint64, readyAt time.Time) bool {
+	if r == nil || entityID == 0 || targetVID == 0 || snapshotVersion == 0 || readyAt.IsZero() {
+		return false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.sessionEntryLocked(entityID); !ok {
+		return false
+	}
+	selectedTarget, ok := r.sessionCombatTargetLocked(entityID)
+	if !ok || selectedTarget != targetVID {
+		return false
+	}
+	if r.sessionCombatRetaliations == nil {
+		r.sessionCombatRetaliations = make(map[uint64]combatRetaliationTimer)
+	}
+	r.sessionCombatRetaliations[entityID] = combatRetaliationTimer{TargetVID: targetVID, SnapshotVersion: snapshotVersion, ReadyAt: readyAt}
+	return true
+}
+
+func (r *sharedWorldRegistry) ClearSessionCombatRetaliation(entityID uint64) {
+	if r == nil || entityID == 0 {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.sessionCombatRetaliations != nil {
+		delete(r.sessionCombatRetaliations, entityID)
+	}
 }
 
 func (r *sharedWorldRegistry) CombatTargetSnapshot(entityID uint64) (CombatTargetSnapshot, bool) {
@@ -1523,6 +1577,20 @@ func (r *sharedWorldRegistry) combatTargetSnapshotLocked(entityID uint64) (Comba
 			if retaliationPointDelta, ok := worldruntime.BootstrapStaticActorRetaliationPointDelta(actor.CombatKind); ok {
 				snapshot.RetaliationPointDelta = retaliationPointDelta
 				snapshot.RetaliationServerOrigin = true
+				if timer, ok := r.sessionCombatRetaliations[entityID]; ok && timer.TargetVID == targetVID && timer.SnapshotVersion == currentSnapshotVersion && !timer.ReadyAt.IsZero() {
+					readyAt := timer.ReadyAt
+					snapshot.RetaliationPending = true
+					snapshot.RetaliationReadyAt = &readyAt
+					now := time.Now()
+					if r.now != nil {
+						now = r.now()
+					}
+					remaining := readyAt.Sub(now).Milliseconds()
+					if remaining < 0 {
+						remaining = 0
+					}
+					snapshot.RetaliationRemainingMs = &remaining
+				}
 			}
 		}
 	}
@@ -3246,6 +3314,9 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 			}
 			targetedSessionIDs[entityID] = struct{}{}
 			delete(r.sessionCombatTargets, entityID)
+			if r.sessionCombatRetaliations != nil {
+				delete(r.sessionCombatRetaliations, entityID)
+			}
 		}
 		for _, target := range r.scopesLocked().VisibleTargetsForStaticActor(actor) {
 			if target.Entity.ID == subjectID {

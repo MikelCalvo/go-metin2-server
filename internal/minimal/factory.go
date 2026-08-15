@@ -2501,6 +2501,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			pendingPracticeMobServerOriginRetaliationAt = time.Time{}
 			pendingPracticeMobServerOriginRetaliationTargetVID = 0
 			pendingPracticeMobServerOriginRetaliationSnapshotVersion = 0
+			if sharedWorld != nil && sharedWorldID != 0 {
+				sharedWorld.ClearSessionCombatRetaliation(sharedWorldID)
+			}
 		}
 		resetPracticeMobServerOriginRetaliationState := func() {
 			clearPendingPracticeMobServerOriginRetaliation()
@@ -2514,11 +2517,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return
 			}
 			now := sessionNow()
+			readyAt := now.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
 			pendingPracticeMobServerOriginRetaliation = true
-			pendingPracticeMobServerOriginRetaliationAt = now.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+			pendingPracticeMobServerOriginRetaliationAt = readyAt
 			pendingPracticeMobServerOriginRetaliationTargetVID = targetVID
 			pendingPracticeMobServerOriginRetaliationSnapshotVersion = snapshotVersion
 			issuedPracticeMobServerOriginRetaliationSnapshotVersion = snapshotVersion
+			if sharedWorld != nil && sharedWorldID != 0 {
+				sharedWorld.SetSessionCombatRetaliation(sharedWorldID, targetVID, snapshotVersion, readyAt)
+			}
 		}
 		var flushPendingPracticeMobServerOriginRetaliation func(pending *pendingServerFrames)
 		enqueueCombatTargetClear := func() {

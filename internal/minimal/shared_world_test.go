@@ -24541,6 +24541,67 @@ func TestGameRuntimeCombatTargetSnapshotsExposeEngagementAndRetaliationAfterPrac
 	}
 }
 
+func TestGameRuntimeCombatTargetSnapshotExposesPendingServerOriginRetaliationTimer(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	attacker := peerVisibilityCharacter("SnapshotPendingRetaliation", 0x01030105, 0x02040105, 1100, 2100, 0, 101, 201)
+	attacker.Points[bootstrapPlayerPointValueIndex] = 5
+	issuePeerTicket(t, store, "snapshot-pending-retaliation", 0x35353536, attacker)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000520, 0)
+	runtime.now = func() time.Time { return currentTime }
+	actor, ok := runtime.sharedWorld.registerStaticActor(0, "SnapshotPendingPracticeMob", bootstrapMapIndex, 1200, 2200, 20350, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "practice.snapshot_pending_retaliation", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected spawn-backed practice-mob registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "snapshot-pending-retaliation", 0x35353536)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.EntityID)
+	if selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(selectOut) != 1 {
+		t.Fatalf("expected target selection before pending-retaliation snapshot to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
+	}
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected attack before pending-retaliation snapshot: %v", err)
+	}
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target refresh, self retaliation, and damage-info before pending-retaliation snapshot, got %d frames", len(attackOut))
+	}
+
+	wantReadyAt := currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	snapshot, ok := runtime.CombatTargetSnapshot(attacker.Name)
+	if !ok {
+		t.Fatal("expected runtime exact-name combat target snapshot after pending-retaliation schedule")
+	}
+	if !snapshot.RetaliationPending || snapshot.RetaliationReadyAt == nil || !snapshot.RetaliationReadyAt.Equal(wantReadyAt) || snapshot.RetaliationRemainingMs == nil || *snapshot.RetaliationRemainingMs != bootstrapPracticeMobServerOriginRetaliationDelay.Milliseconds() {
+		t.Fatalf("expected pending retaliation timing ready_at=%s remaining_ms=%d, got %+v", wantReadyAt, bootstrapPracticeMobServerOriginRetaliationDelay.Milliseconds(), snapshot)
+	}
+
+	currentTime = wantReadyAt.Add(25 * time.Millisecond)
+	dueSnapshot, ok := runtime.CombatTargetSnapshot(attacker.Name)
+	if !ok || !dueSnapshot.RetaliationPending || dueSnapshot.RetaliationReadyAt == nil || !dueSnapshot.RetaliationReadyAt.Equal(wantReadyAt) || dueSnapshot.RetaliationRemainingMs == nil || *dueSnapshot.RetaliationRemainingMs != 0 {
+		t.Fatalf("expected due-but-unflushed retaliation snapshot to remain visible with remaining_ms=0, ok=%v snapshot=%+v", ok, dueSnapshot)
+	}
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 1 {
+		t.Fatalf("expected due delayed retaliation flush to emit one point-change frame, got %d", len(queued))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode due delayed-retaliation point-change for pending snapshot: %v", err)
+	}
+	if pointChange.Value != 3 {
+		t.Fatalf("expected due delayed retaliation to decrement live HP to 3 before rescheduling, got %+v", pointChange)
+	}
+	nextReadyAt := currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	rescheduled, ok := runtime.CombatTargetSnapshot(attacker.Name)
+	if !ok || !rescheduled.RetaliationPending || rescheduled.RetaliationReadyAt == nil || !rescheduled.RetaliationReadyAt.Equal(nextReadyAt) || rescheduled.RetaliationRemainingMs == nil || *rescheduled.RetaliationRemainingMs != bootstrapPracticeMobServerOriginRetaliationDelay.Milliseconds() {
+		t.Fatalf("expected flushed delayed retaliation to reschedule next pending timer ready_at=%s remaining_ms=%d, ok=%v snapshot=%+v", nextReadyAt, bootstrapPracticeMobServerOriginRetaliationDelay.Milliseconds(), ok, rescheduled)
+	}
+}
+
 func TestSharedWorldRegistryRegisterSpawnGroupActorWithPracticeMobProfileIsCombatTargetable(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
