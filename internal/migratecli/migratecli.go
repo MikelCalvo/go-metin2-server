@@ -26,7 +26,8 @@ const (
 	exitError = 1
 	exitUsage = 2
 
-	maxLedgerSnapshotBytes = 64 * 1024
+	maxLedgerSnapshotBytes        = 64 * 1024
+	maxMigrationPlanArtifactBytes = 128 * 1024
 )
 
 // Run executes the small migration preflight CLI and returns a process-style exit
@@ -35,8 +36,8 @@ const (
 // mutation surface: it requires an operator-supplied database driver, DSN, strict
 // offline ledger snapshot, and target version, and it remains deliberately
 // separate from daemon startup and local ops endpoints. Operators can optionally
-// require a previously inspected plan checksum and request an exclusive
-// metadata-only audit file for non-empty apply plans.
+// require a previously inspected plan checksum or plan artifact and request an
+// exclusive metadata-only audit file for non-empty apply plans.
 func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	if stdout == nil {
 		stdout = io.Discard
@@ -370,30 +371,35 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 		writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
 		return exitError
 	}
-	if confirmedPlanSHA256 != "" {
-		plan, err := dbmigrations.PlanToVersion(ledger, resolvedTarget)
+	plan, err := dbmigrations.PlanToVersion(ledger, resolvedTarget)
+	if err != nil {
+		writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
+		return exitError
+	}
+	gotPlanSHA256, err := planSHA256(plan)
+	if err != nil {
+		writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
+		return exitError
+	}
+	if confirmedPlanSHA256 != "" && gotPlanSHA256 != confirmedPlanSHA256 {
+		writeMigrationCommandError(stderr, dsn, "migration apply: %v", fmt.Errorf("%w: plan sha256 mismatch: got %s want %s", ErrMigrationApplyPlanConfirmation, gotPlanSHA256, confirmedPlanSHA256))
+		return exitError
+	}
+	if trimmedPlanArtifactPath != "" {
+		artifact, err := readMigrationPlanArtifactFile(trimmedPlanArtifactPath)
 		if err != nil {
 			writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
 			return exitError
 		}
-		gotPlanSHA256, err := planSHA256(plan)
-		if err != nil {
-			writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
+		if artifact.PlanSHA256 != gotPlanSHA256 || !reflect.DeepEqual(artifact.Plan, plan) {
+			writeMigrationCommandError(stderr, dsn, "migration apply: %v", fmt.Errorf("%w: plan artifact does not match requested ledger snapshot and target", ErrMigrationApplyPlanConfirmation))
 			return exitError
 		}
-		if gotPlanSHA256 != confirmedPlanSHA256 {
-			writeMigrationCommandError(stderr, dsn, "migration apply: %v", fmt.Errorf("%w: plan sha256 mismatch: got %s want %s", ErrMigrationApplyPlanConfirmation, gotPlanSHA256, confirmedPlanSHA256))
-			return exitError
-		}
+		confirmedPlanSHA256 = artifact.PlanSHA256
 	}
 
 	var auditFile *migrationApplyAuditFile
 	if strings.TrimSpace(auditFilePath) != "" {
-		plan, err := dbmigrations.PlanToVersion(ledger, resolvedTarget)
-		if err != nil {
-			writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
-			return exitError
-		}
 		if len(plan.Pending) == 0 {
 			writeMigrationCommandError(stderr, dsn, "migration apply: %v", fmt.Errorf("%w: audit file requires at least one applied migration", ErrMigrationApplyAudit))
 			return exitError
@@ -558,6 +564,56 @@ func readBoundedLedgerSnapshot(reader io.Reader) ([]byte, error) {
 	return raw, nil
 }
 
+func readMigrationPlanArtifactFile(path string) (migrationPlanArtifact, error) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return migrationPlanArtifact{}, fmt.Errorf("%w: plan artifact path is required", ErrMigrationApplyPlanConfirmation)
+	}
+	file, err := os.Open(trimmed)
+	if err != nil {
+		return migrationPlanArtifact{}, fmt.Errorf("%w: read plan artifact: %v", ErrMigrationApplyPlanConfirmation, err)
+	}
+	defer file.Close()
+	raw, err := io.ReadAll(io.LimitReader(file, maxMigrationPlanArtifactBytes+1))
+	if err != nil {
+		return migrationPlanArtifact{}, fmt.Errorf("%w: read plan artifact: %v", ErrMigrationApplyPlanConfirmation, err)
+	}
+	if len(raw) > maxMigrationPlanArtifactBytes {
+		return migrationPlanArtifact{}, fmt.Errorf("%w: plan artifact exceeds %d bytes", ErrMigrationApplyPlanConfirmation, maxMigrationPlanArtifactBytes)
+	}
+	if !utf8.Valid(raw) {
+		return migrationPlanArtifact{}, fmt.Errorf("%w: plan artifact is not valid UTF-8", ErrMigrationApplyPlanConfirmation)
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return migrationPlanArtifact{}, fmt.Errorf("%w: plan artifact is empty", ErrMigrationApplyPlanConfirmation)
+	}
+	var artifact migrationPlanArtifact
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&artifact); err != nil {
+		return migrationPlanArtifact{}, fmt.Errorf("%w: decode plan artifact: %v", ErrMigrationApplyPlanConfirmation, err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return migrationPlanArtifact{}, fmt.Errorf("%w: plan artifact has trailing JSON", ErrMigrationApplyPlanConfirmation)
+	}
+	if artifact.Format != migrationPlanArtifactFormat {
+		return migrationPlanArtifact{}, fmt.Errorf("%w: unsupported plan artifact format %q", ErrMigrationApplyPlanConfirmation, artifact.Format)
+	}
+	parsedPlanSHA256, err := parsePlanSHA256(artifact.PlanSHA256)
+	if err != nil {
+		return migrationPlanArtifact{}, fmt.Errorf("%w: invalid plan artifact checksum: %v", ErrMigrationApplyPlanConfirmation, err)
+	}
+	artifact.PlanSHA256 = parsedPlanSHA256
+	computedSHA256, err := planSHA256(artifact.Plan)
+	if err != nil {
+		return migrationPlanArtifact{}, fmt.Errorf("%w: validate plan artifact checksum: %v", ErrMigrationApplyPlanConfirmation, err)
+	}
+	if artifact.PlanSHA256 != computedSHA256 {
+		return migrationPlanArtifact{}, fmt.Errorf("%w: plan artifact checksum mismatch: got %s want %s", ErrMigrationApplyPlanConfirmation, computedSHA256, artifact.PlanSHA256)
+	}
+	return artifact, nil
+}
+
 func sha256Hex(raw []byte) string {
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
@@ -678,5 +734,5 @@ func printPlanArtifactUsage(w io.Writer) {
 
 func printApplyUsage(w io.Writer) {
 	fmt.Fprintln(w, "apply usage:")
-	fmt.Fprintln(w, "  metin2-migrate apply --driver <database/sql-driver> --dsn <dsn> --ledger-snapshot <path|-> --target-version <version|latest> [--plan-sha256 <hex>] [--audit-file <path>]")
+	fmt.Fprintln(w, "  metin2-migrate apply --driver <database/sql-driver> --dsn <dsn> --ledger-snapshot <path|-> --target-version <version|latest> [--plan-sha256 <hex> | --plan-artifact <path>] [--audit-file <path>]")
 }

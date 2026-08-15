@@ -287,6 +287,51 @@ func TestRunApplyAcceptsPlanArtifactBeforeMutation(t *testing.T) {
 	}
 }
 
+func TestRunApplyWritesPlanArtifactSHA256IntoAuditFile(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var artifactStdout bytes.Buffer
+	var artifactStderr bytes.Buffer
+	if code := Run([]string{"plan-artifact", "--ledger-snapshot", "-", "--target-version", "1"}, bytes.NewReader(rawSnapshot), &artifactStdout, &artifactStderr); code != 0 {
+		t.Fatalf("expected plan-artifact command to succeed, exit=%d stderr=%q", code, artifactStderr.String())
+	}
+	var artifact migrationPlanArtifact
+	if err := json.Unmarshal(artifactStdout.Bytes(), &artifact); err != nil {
+		t.Fatalf("decode plan artifact JSON: %v\nbody:\n%s", err, artifactStdout.String())
+	}
+	artifactPath := t.TempDir() + "/migration-plan-artifact.json"
+	if err := os.WriteFile(artifactPath, artifactStdout.Bytes(), 0o600); err != nil {
+		t.Fatalf("write plan artifact: %v", err)
+	}
+	auditPath := t.TempDir() + "/plan-artifact-audit.json"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://artifact-audit", "--ledger-snapshot", "-", "--target-version", "1", "--plan-artifact", artifactPath, "--audit-file", auditPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected audited apply with plan artifact to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	rawAudit, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("read plan-artifact audit file: %v", err)
+	}
+	var audit migrationApplyAudit
+	if err := json.Unmarshal(rawAudit, &audit); err != nil {
+		t.Fatalf("decode plan-artifact audit JSON: %v\nbody:\n%s", err, string(rawAudit))
+	}
+	if audit.ConfirmedPlanSHA256 != artifact.PlanSHA256 {
+		t.Fatalf("expected audit to carry plan artifact checksum %q, got %#v", artifact.PlanSHA256, audit)
+	}
+	body := string(rawAudit)
+	if strings.Contains(body, "memory://artifact-audit") || strings.Contains(body, "CREATE TABLE") || strings.Contains(body, "DROP TABLE") {
+		t.Fatalf("plan-artifact audit file must stay metadata-only, got %s", body)
+	}
+}
+
 func TestRunApplyRejectsMismatchedPlanArtifactBeforeOpeningDatabase(t *testing.T) {
 	driverName := registerMigrateCLITestSQLDriver(t)
 	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
@@ -321,6 +366,36 @@ func TestRunApplyRejectsMismatchedPlanArtifactBeforeOpeningDatabase(t *testing.T
 	}
 }
 
+func TestRunApplyRejectsInvalidPlanArtifactBeforeOpeningDatabase(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	artifactPath := t.TempDir() + "/invalid-plan-artifact.json"
+	invalidArtifact := `{"format":"` + migrationPlanArtifactFormat + `","plan_sha256":"` + strings.Repeat("0", 64) + `","plan":{"current_version":0,"latest_version":1,"up_to_date":false,"pending":[]}}`
+	if err := os.WriteFile(artifactPath, []byte(invalidArtifact), 0o600); err != nil {
+		t.Fatalf("write invalid plan artifact: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://invalid-artifact", "--ledger-snapshot", "-", "--target-version", "1", "--plan-artifact", artifactPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected invalid plan artifact to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected invalid plan artifact not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "plan artifact checksum mismatch") {
+		t.Fatalf("expected plan artifact checksum validation guidance, got %q", stderr.String())
+	}
+	if got := currentMigrateCLITestDriver(t).eventsSnapshot(); len(got) != 0 {
+		t.Fatalf("expected invalid plan artifact guard before opening DB, got events %#v", got)
+	}
+}
+
 func TestRunApplyRejectsPlanArtifactAndPlanSHA256TogetherAsUsageError(t *testing.T) {
 	driverName := registerMigrateCLITestSQLDriver(t)
 	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
@@ -347,6 +422,35 @@ func TestRunApplyRejectsPlanArtifactAndPlanSHA256TogetherAsUsageError(t *testing
 	}
 	if got := currentMigrateCLITestDriver(t).eventsSnapshot(); len(got) != 0 {
 		t.Fatalf("expected plan confirmation usage guard before opening DB, got events %#v", got)
+	}
+}
+
+func TestRunApplyRejectsOversizedPlanArtifactBeforeOpeningDatabase(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	artifactPath := t.TempDir() + "/oversized-plan-artifact.json"
+	if err := os.WriteFile(artifactPath, []byte(strings.Repeat(" ", maxMigrationPlanArtifactBytes+1)), 0o600); err != nil {
+		t.Fatalf("write oversized plan artifact: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://oversized-artifact", "--ledger-snapshot", "-", "--target-version", "1", "--plan-artifact", artifactPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected oversized plan artifact to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected oversized plan artifact not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "plan artifact exceeds") {
+		t.Fatalf("expected bounded plan artifact guidance, got %q", stderr.String())
+	}
+	if got := currentMigrateCLITestDriver(t).eventsSnapshot(); len(got) != 0 {
+		t.Fatalf("expected oversized plan artifact guard before opening DB, got events %#v", got)
 	}
 }
 

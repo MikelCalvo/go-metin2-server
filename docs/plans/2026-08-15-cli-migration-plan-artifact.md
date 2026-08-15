@@ -2,7 +2,7 @@
 
 ## Objective
 
-Add a read-only migration CLI command that emits both the dry-run plan and the exact checksum expected by `metin2-migrate apply --plan-sha256`.
+Add a read-only migration CLI command that emits both the dry-run plan and the exact checksum accepted by `metin2-migrate apply` plan confirmation.
 
 The project already had strict ledger snapshots, `metin2-migrate plan`, CLI-only `metin2-migrate apply`, optional apply audit files, and a plan-checksum confirmation guard. This slice removes the remaining runbook footgun where operators had to separately compute the checksum over the exact indented plan JSON bytes before applying.
 
@@ -46,15 +46,16 @@ The intended runbook shape is now:
 ```bash
 metin2-migrate ledger-snapshot --driver <driver> --dsn <dsn> > ledger.json
 metin2-migrate plan-artifact --ledger-snapshot ledger.json --target-version latest > plan-artifact.json
-PLAN_SHA256=$(jq -r .plan_sha256 plan-artifact.json)
 metin2-migrate apply \
   --driver <driver> \
   --dsn <dsn> \
   --ledger-snapshot ledger.json \
   --target-version latest \
-  --plan-sha256 "$PLAN_SHA256" \
+  --plan-artifact plan-artifact.json \
   --audit-file migration-apply-audit.json
 ```
+
+`apply --plan-sha256 <hex>` remains available for scripts that already extract only the checksum, but newer runbooks should prefer `--plan-artifact <path>` so the CLI validates the reviewed artifact shape and checksum together.
 
 ## What this is not yet
 
@@ -80,7 +81,7 @@ A read-only artifact command keeps mutation in the existing CLI-only `apply` pat
 Focused coverage in `internal/migratecli/migratecli_test.go` proves:
 
 - `plan-artifact` writes the expected format marker, embedded plan, and checksum over the exact `plan` JSON bytes;
-- the emitted `plan_sha256` can feed `apply --plan-sha256` successfully;
+- the emitted `plan_sha256` can feed `apply --plan-sha256` successfully, and follow-up coverage now proves the whole artifact can feed `apply --plan-artifact`;
 - oversized ledger snapshots fail closed before planning or artifact output;
 - the artifact remains metadata-only and does not expose SQL or DSN text.
 
@@ -91,7 +92,7 @@ Validation for this slice:
 
 ## Follow-up options
 
-1. Add a production migration runbook that sequences ledger export, plan artifact, backup validation, `apply --plan-sha256`, and audit-file retention.
+1. Add a production migration runbook that sequences ledger export, plan artifact, backup validation, `apply --plan-artifact`, and audit-file retention.
 2. Add build-tagged driver-backed integration tests once a concrete DB engine/driver is selected.
 3. Add advisory-lock or single-writer coordination after deployment topology and DB engine are known.
 4. Keep daemon-local migration endpoints read-only unless a future production-admin design intentionally changes that boundary.
