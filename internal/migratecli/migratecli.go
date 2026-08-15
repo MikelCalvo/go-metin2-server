@@ -35,9 +35,10 @@ const (
 // plan-artifact commands are read-only. The apply command is an explicit CLI-only
 // mutation surface: it requires an operator-supplied database driver, DSN, strict
 // offline ledger snapshot, and target version, and it remains deliberately
-// separate from daemon startup and local ops endpoints. Operators can optionally
-// require a previously inspected plan checksum or plan artifact, reserve an
-// exclusive local lock file before opening the database, and request an exclusive
+// separate from daemon startup and local ops endpoints. Rollback/down plans must
+// be explicitly confirmed with --allow-rollback. Operators can optionally require
+// a previously inspected plan checksum or plan artifact, reserve an exclusive
+// local lock file before opening the database, and request an exclusive
 // metadata-only audit file for non-empty apply plans.
 func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	if stdout == nil {
@@ -297,6 +298,7 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 	var lockFilePath string
 	var planSHA256Text string
 	var planArtifactPath string
+	var allowRollback bool
 	flags.StringVar(&driverName, "driver", "", "database/sql driver name for the migration target")
 	flags.StringVar(&dsn, "dsn", "", "database/sql DSN for the migration target")
 	flags.StringVar(&snapshotPath, "ledger-snapshot", "", "path to go-metin2 schema_migrations ledger snapshot JSON, or - for stdin")
@@ -305,6 +307,7 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 	flags.StringVar(&lockFilePath, "lock-file", "", "optional path for an exclusive local migration apply lock file")
 	flags.StringVar(&planSHA256Text, "plan-sha256", "", "optional SHA-256 of the metadata-only dry-run plan JSON that must match before applying")
 	flags.StringVar(&planArtifactPath, "plan-artifact", "", "optional path to a metadata-only migration plan artifact that must match before applying")
+	flags.BoolVar(&allowRollback, "allow-rollback", false, "allow apply to execute down/rollback migration steps")
 	flags.Usage = func() { printApplyUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
@@ -382,6 +385,10 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 	gotPlanSHA256, err := planSHA256(plan)
 	if err != nil {
 		writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
+		return exitError
+	}
+	if planContainsRollbackStep(plan) && !allowRollback {
+		writeMigrationCommandError(stderr, dsn, "migration apply: %v", fmt.Errorf("%w: rollback/down migration plan requires --allow-rollback", ErrMigrationApplyRollbackConfirmation))
 		return exitError
 	}
 	if confirmedPlanSHA256 != "" && gotPlanSHA256 != confirmedPlanSHA256 {
@@ -463,6 +470,8 @@ var ErrMigrationApplyAudit = errors.New("migration apply audit failed")
 var ErrMigrationApplyLock = errors.New("migration apply lock failed")
 
 var ErrMigrationApplyPlanConfirmation = errors.New("migration apply plan confirmation failed")
+
+var ErrMigrationApplyRollbackConfirmation = errors.New("migration apply rollback confirmation failed")
 
 type migrationApplyAudit struct {
 	Format               string                   `json:"format"`
@@ -678,6 +687,15 @@ func sha256Hex(raw []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func planContainsRollbackStep(plan dbmigrations.Plan) bool {
+	for _, step := range plan.Pending {
+		if step.Direction == dbmigrations.DirectionDown {
+			return true
+		}
+	}
+	return false
+}
+
 func parsePlanSHA256(value string) (string, error) {
 	trimmed := strings.TrimSpace(value)
 	if len(trimmed) != sha256.Size*2 {
@@ -793,5 +811,5 @@ func printPlanArtifactUsage(w io.Writer) {
 
 func printApplyUsage(w io.Writer) {
 	fmt.Fprintln(w, "apply usage:")
-	fmt.Fprintln(w, "  metin2-migrate apply --driver <database/sql-driver> --dsn <dsn> --ledger-snapshot <path|-> --target-version <version|latest> [--plan-sha256 <hex> | --plan-artifact <path>] [--lock-file <path>] [--audit-file <path>]")
+	fmt.Fprintln(w, "  metin2-migrate apply --driver <database/sql-driver> --dsn <dsn> --ledger-snapshot <path|-> --target-version <version|latest> [--plan-sha256 <hex> | --plan-artifact <path>] [--lock-file <path>] [--audit-file <path>] [--allow-rollback]")
 }
