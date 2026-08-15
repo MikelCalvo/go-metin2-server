@@ -160,7 +160,105 @@ func TestRunPlanAcceptsLatestTargetVersion(t *testing.T) {
 	}
 	last := plan.Pending[len(plan.Pending)-1]
 	if last.Version != len(catalog) || last.Direction != dbmigrations.DirectionUp {
-		t.Fatalf("expected last latest target step to reach catalog latest, got %#v", last)
+		t.Fatalf("expected last latest target step to reach catalog tip, got %#v", last)
+	}
+}
+
+func TestRunPlanArtifactWritesChecksumForExactPlanJSON(t *testing.T) {
+	catalog, err := dbmigrations.Catalog()
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	snapshot := dbmigrations.LedgerSnapshot{Format: dbmigrations.LedgerSnapshotFormat, Entries: []dbmigrations.LedgerEntry{}}
+	rawSnapshot, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatalf("marshal ledger snapshot: %v", err)
+	}
+	var planStdout bytes.Buffer
+	var planStderr bytes.Buffer
+	if code := Run([]string{"plan", "--ledger-snapshot", "-", "--target-version", "latest"}, bytes.NewReader(rawSnapshot), &planStdout, &planStderr); code != 0 {
+		t.Fatalf("expected plan command to succeed, exit=%d stderr=%q", code, planStderr.String())
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"plan-artifact", "--ledger-snapshot", "-", "--target-version", "latest"}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected plan-artifact command to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr on success, got %q", stderr.String())
+	}
+	var artifact migrationPlanArtifact
+	if err := json.Unmarshal(stdout.Bytes(), &artifact); err != nil {
+		t.Fatalf("decode plan artifact JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if artifact.Format != migrationPlanArtifactFormat {
+		t.Fatalf("unexpected plan artifact format: %#v", artifact)
+	}
+	if artifact.PlanSHA256 != testSHA256HexBytes(planStdout.Bytes()) {
+		t.Fatalf("expected artifact checksum over exact plan JSON, got %q want %q", artifact.PlanSHA256, testSHA256HexBytes(planStdout.Bytes()))
+	}
+	if artifact.Plan.CurrentVersion != 0 || artifact.Plan.LatestVersion != len(catalog) || artifact.Plan.UpToDate || len(artifact.Plan.Pending) != len(catalog) {
+		t.Fatalf("unexpected embedded plan artifact: %#v", artifact.Plan)
+	}
+	body := stdout.String()
+	if strings.Contains(body, "CREATE TABLE") || strings.Contains(body, "DROP TABLE") || strings.Contains(body, "-- go-metin2 migration") || strings.Contains(body, "memory://") {
+		t.Fatalf("plan-artifact CLI must not expose executable SQL or DSN text, got %s", body)
+	}
+}
+
+func TestRunPlanArtifactOutputCanFeedApplyPlanConfirmation(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var artifactStdout bytes.Buffer
+	var artifactStderr bytes.Buffer
+	if code := Run([]string{"plan-artifact", "--ledger-snapshot", "-", "--target-version", "1"}, bytes.NewReader(rawSnapshot), &artifactStdout, &artifactStderr); code != 0 {
+		t.Fatalf("expected plan-artifact command to succeed, exit=%d stderr=%q", code, artifactStderr.String())
+	}
+	var artifact migrationPlanArtifact
+	if err := json.Unmarshal(artifactStdout.Bytes(), &artifact); err != nil {
+		t.Fatalf("decode plan artifact JSON: %v\nbody:\n%s", err, artifactStdout.String())
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://artifact-confirmed-plan", "--ledger-snapshot", "-", "--target-version", "1", "--plan-sha256", artifact.PlanSHA256}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected apply with plan-artifact checksum to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	var result dbmigrations.ApplyResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode plan-artifact confirmed apply result JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if result.PreviousVersion != 0 || result.CurrentVersion != 1 || len(result.Applied) != 1 {
+		t.Fatalf("unexpected plan-artifact confirmed apply result: %#v", result)
+	}
+	if got := currentMigrateCLITestDriver(t).eventsSnapshot(); !containsMigrateCLITestEventPrefix(got, "open:memory://artifact-confirmed-plan") {
+		t.Fatalf("expected artifact-confirmed apply to open migration target, got events %#v", got)
+	}
+}
+
+func TestRunPlanArtifactRejectsOversizedLedgerSnapshotBeforePlanning(t *testing.T) {
+	oversizedSnapshot := `{"format":"` + dbmigrations.LedgerSnapshotFormat + `","entries":[]}` + strings.Repeat(" ", 70*1024)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"plan-artifact", "--ledger-snapshot", "-", "--target-version", "0"}, strings.NewReader(oversizedSnapshot), &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected oversized snapshot to exit 1, got %d", code)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected oversized snapshot not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "ledger snapshot exceeds") {
+		t.Fatalf("expected bounded snapshot error on stderr, got %q", stderr.String())
 	}
 }
 

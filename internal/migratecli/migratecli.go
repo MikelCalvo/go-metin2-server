@@ -28,13 +28,13 @@ const (
 )
 
 // Run executes the small migration preflight CLI and returns a process-style exit
-// code. The catalog, status, empty-ledger-snapshot, ledger-snapshot, and plan
-// commands are read-only. The apply command is an explicit CLI-only mutation
-// surface: it requires an operator-supplied database driver, DSN, strict offline
-// ledger snapshot, and target version, and it remains deliberately separate from
-// daemon startup and local ops endpoints. Operators can optionally require a
-// previously inspected plan checksum and request an exclusive metadata-only
-// audit file for non-empty apply plans.
+// code. The catalog, status, empty-ledger-snapshot, ledger-snapshot, plan, and
+// plan-artifact commands are read-only. The apply command is an explicit CLI-only
+// mutation surface: it requires an operator-supplied database driver, DSN, strict
+// offline ledger snapshot, and target version, and it remains deliberately
+// separate from daemon startup and local ops endpoints. Operators can optionally
+// require a previously inspected plan checksum and request an exclusive
+// metadata-only audit file for non-empty apply plans.
 func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	if stdout == nil {
 		stdout = io.Discard
@@ -59,6 +59,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runStatus(args[1:], stdout, stderr)
 	case "plan":
 		return runPlan(args[1:], stdin, stdout, stderr)
+	case "plan-artifact":
+		return runPlanArtifact(args[1:], stdin, stdout, stderr)
 	case "empty-ledger-snapshot":
 		return runEmptyLedgerSnapshot(args[1:], stdout, stderr)
 	case "ledger-snapshot":
@@ -194,41 +196,74 @@ func runStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 func runPlan(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
-	flags := flag.NewFlagSet("plan", flag.ContinueOnError)
+	plan, code := readMigrationPlanFromArgs("plan", args, stdin, stderr, printPlanUsage)
+	if code != exitOK {
+		return code
+	}
+	return writeJSON(stdout, stderr, plan)
+}
+
+const migrationPlanArtifactFormat = "go-metin2-migration-plan-artifact-v1"
+
+type migrationPlanArtifact struct {
+	Format     string            `json:"format"`
+	PlanSHA256 string            `json:"plan_sha256"`
+	Plan       dbmigrations.Plan `json:"plan"`
+}
+
+func runPlanArtifact(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
+	plan, code := readMigrationPlanFromArgs("plan-artifact", args, stdin, stderr, printPlanArtifactUsage)
+	if code != exitOK {
+		return code
+	}
+	planSHA256, err := planSHA256(plan)
+	if err != nil {
+		fmt.Fprintf(stderr, "migration plan-artifact: %v\n", err)
+		return exitError
+	}
+	return writeJSON(stdout, stderr, migrationPlanArtifact{
+		Format:     migrationPlanArtifactFormat,
+		PlanSHA256: planSHA256,
+		Plan:       plan,
+	})
+}
+
+func readMigrationPlanFromArgs(command string, args []string, stdin io.Reader, stderr io.Writer, printCommandUsage func(io.Writer)) (dbmigrations.Plan, int) {
+	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	var snapshotPath string
 	var targetVersionText string
 	flags.StringVar(&snapshotPath, "ledger-snapshot", "", "path to go-metin2 schema_migrations ledger snapshot JSON, or - for stdin")
 	flags.StringVar(&targetVersionText, "target-version", "", "catalog target version for the dry-run plan")
-	flags.Usage = func() { printPlanUsage(stderr) }
+	flags.Usage = func() { printCommandUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
-		return exitUsage
+		return dbmigrations.Plan{}, exitUsage
 	}
 	if flags.NArg() != 0 {
-		fmt.Fprintf(stderr, "unexpected plan argument %q\n", flags.Arg(0))
-		printPlanUsage(stderr)
-		return exitUsage
+		fmt.Fprintf(stderr, "unexpected %s argument %q\n", command, flags.Arg(0))
+		printCommandUsage(stderr)
+		return dbmigrations.Plan{}, exitUsage
 	}
 	if strings.TrimSpace(snapshotPath) == "" {
 		fmt.Fprintln(stderr, "missing --ledger-snapshot")
-		printPlanUsage(stderr)
-		return exitUsage
+		printCommandUsage(stderr)
+		return dbmigrations.Plan{}, exitUsage
 	}
 	if strings.TrimSpace(targetVersionText) == "" {
 		fmt.Fprintln(stderr, "missing --target-version")
-		printPlanUsage(stderr)
-		return exitUsage
+		printCommandUsage(stderr)
+		return dbmigrations.Plan{}, exitUsage
 	}
 	targetVersion, targetLatest, err := parseTargetVersion(targetVersionText)
 	if err != nil {
 		fmt.Fprintf(stderr, "invalid --target-version %q: %v\n", targetVersionText, err)
-		return exitUsage
+		return dbmigrations.Plan{}, exitUsage
 	}
 
 	reader, closeReader, err := openLedgerSnapshotReader(snapshotPath, stdin)
 	if err != nil {
 		fmt.Fprintf(stderr, "open ledger snapshot: %v\n", err)
-		return exitError
+		return dbmigrations.Plan{}, exitError
 	}
 	if closeReader != nil {
 		defer closeReader()
@@ -236,15 +271,15 @@ func runPlan(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer)
 
 	ledger, err := readBoundedLedgerSnapshot(reader)
 	if err != nil {
-		fmt.Fprintf(stderr, "migration plan: %v\n", err)
-		return exitError
+		fmt.Fprintf(stderr, "migration %s: %v\n", command, err)
+		return dbmigrations.Plan{}, exitError
 	}
 	plan, err := planLedgerSnapshot(ledger, targetVersion, targetLatest)
 	if err != nil {
-		fmt.Fprintf(stderr, "migration plan: %v\n", err)
-		return exitError
+		fmt.Fprintf(stderr, "migration %s: %v\n", command, err)
+		return dbmigrations.Plan{}, exitError
 	}
-	return writeJSON(stdout, stderr, plan)
+	return plan, exitOK
 }
 
 func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
@@ -589,6 +624,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  empty-ledger-snapshot  print an explicit empty schema_migrations ledger snapshot")
 	fmt.Fprintln(w, "  ledger-snapshot        export metadata-only schema_migrations ledger snapshot from a database/sql target")
 	fmt.Fprintln(w, "  plan                   print metadata-only dry-run plan from an offline ledger snapshot")
+	fmt.Fprintln(w, "  plan-artifact          print dry-run plan plus checksum for apply confirmation")
 	fmt.Fprintln(w, "  apply                  apply a target plan using a database/sql driver and offline ledger snapshot")
 	fmt.Fprintln(w, "")
 	printStatusUsage(w)
@@ -598,6 +634,8 @@ func printUsage(w io.Writer) {
 	printLedgerSnapshotUsage(w)
 	fmt.Fprintln(w, "")
 	printPlanUsage(w)
+	fmt.Fprintln(w, "")
+	printPlanArtifactUsage(w)
 	fmt.Fprintln(w, "")
 	printApplyUsage(w)
 }
@@ -620,6 +658,11 @@ func printStatusUsage(w io.Writer) {
 func printPlanUsage(w io.Writer) {
 	fmt.Fprintln(w, "plan usage:")
 	fmt.Fprintln(w, "  metin2-migrate plan --ledger-snapshot <path|-> --target-version <version|latest>")
+}
+
+func printPlanArtifactUsage(w io.Writer) {
+	fmt.Fprintln(w, "plan-artifact usage:")
+	fmt.Fprintln(w, "  metin2-migrate plan-artifact --ledger-snapshot <path|-> --target-version <version|latest>")
 }
 
 func printApplyUsage(w io.Writer) {
