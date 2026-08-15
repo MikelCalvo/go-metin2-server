@@ -4148,3 +4148,36 @@ func TestFromSnapshotsSeparatesSpawnGroupsFromStaticActors(t *testing.T) {
 		t.Fatalf("unexpected bundle with separated spawn groups:\n got: %#v\nwant: %#v", bundle, want)
 	}
 }
+
+func TestFromSnapshotsExportsSpawnGroupsFromPreservedAuthoredHome(t *testing.T) {
+	bundle, err := FromSnapshotsWithItems(
+		staticstore.Snapshot{StaticActors: []staticstore.StaticActor{{
+			EntityID:      5,
+			Name:          "PracticeMobAlpha",
+			MapIndex:      42,
+			X:             2301,
+			Y:             2800,
+			RaceNum:       101,
+			SpawnHome:     &worldruntime.PositionSnapshot{MapIndex: 42, X: 1775, Y: 2875},
+			CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob,
+			SpawnGroupRef: "practice.mob_alpha",
+		}}},
+		interactionstore.Snapshot{},
+		itemcatalog.Snapshot{},
+	)
+	if err != nil {
+		t.Fatalf("from displaced spawn snapshot: %v", err)
+	}
+	want := []SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      42,
+		X:             1775,
+		Y:             2875,
+		RaceNum:       101,
+		CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob,
+	}}
+	if !reflect.DeepEqual(bundle.SpawnGroups, want) {
+		t.Fatalf("expected spawn-group export to use preserved authored home instead of materialized position:\n got: %#v\nwant: %#v", bundle.SpawnGroups, want)
+	}
+}

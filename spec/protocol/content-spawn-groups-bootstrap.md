@@ -253,6 +253,7 @@ The bootstrap content-bundle surface uses the same top-level `spawn_groups` coll
 
 Current runtime rules:
 - spawn-backed live actors export as `spawn_groups`, not as ordinary `static_actors`
+- exported spawn-group `map_index`, `x`, and `y` come from the preserved authored spawn home when present, not from a displaced materialized current position; older snapshots without `spawn_home` fall back to their current actor position for compatibility
 - importing a bundle with `spawn_groups` materializes one runtime static actor per group with the authored `spawn_group_ref`
 - the imported actor uses the authored placement, `race_num`, and normalized `combat_profile`
 - if the candidate bundle canonicalizes to the exact same content bundle currently exported by the runtime, import is treated as a no-op: the runtime returns the canonical bundle without rewriting item templates, interaction definitions, static actors, live combat HP, selected-target ownership, pending respawn/retaliation state, or queued visibility fanout

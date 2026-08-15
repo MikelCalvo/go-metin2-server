@@ -2410,6 +2410,23 @@ func TestGameRuntimePersistsSpawnGroupAuthoredHomeAcrossReload(t *testing.T) {
 		t.Fatalf("expected persisted actor current position plus authored home, got %+v", persisted.StaticActors[0])
 	}
 
+	exported, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("export content bundle with displaced spawn group: %v", err)
+	}
+	wantGroups := []contentbundle.SpawnGroup{{
+		Ref:           "practice.leash_persisted_home",
+		Name:          "LeashPersistedHomeMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}
+	if !reflect.DeepEqual(exported.SpawnGroups, wantGroups) {
+		t.Fatalf("expected content-bundle export to use authored spawn home instead of displaced runtime position:\n got: %#v\nwant: %#v", exported.SpawnGroups, wantGroups)
+	}
+
 	reloaded, err := newGameRuntimeWithStoresAndTransferTriggers(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		loginticket.NewFileStore(t.TempDir()),
@@ -3929,8 +3946,8 @@ func TestGameRuntimeUpdateSpawnGroupActorPreservesRewardDescriptor(t *testing.T)
 		t.Fatalf("expected one exported spawn group, got %d", len(exported.SpawnGroups))
 	}
 	spawn := exported.SpawnGroups[0]
-	if spawn.Ref != "practice.mob_alpha" || spawn.Name != "Practice Mob Alpha Moved" || spawn.MapIndex != 43 || spawn.X != 1800 || spawn.Y != 2900 || spawn.RaceNum != 20351 {
-		t.Fatalf("unexpected exported moved spawn group: %+v", spawn)
+	if spawn.Ref != "practice.mob_alpha" || spawn.Name != "Practice Mob Alpha Moved" || spawn.MapIndex != 42 || spawn.X != 1700 || spawn.Y != 2800 || spawn.RaceNum != 20351 {
+		t.Fatalf("expected exported spawn group to preserve authored home while using updated presentation: %+v", spawn)
 	}
 	if spawn.RewardExperience != 125 || spawn.RewardGold != 75 || !reflect.DeepEqual(spawn.RewardDropVnums, []uint32{3001, 3002}) {
 		t.Fatalf("expected exported reward descriptor to be preserved, got %+v", spawn)

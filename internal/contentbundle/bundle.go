@@ -643,6 +643,13 @@ func FromSnapshots(staticActors staticstore.Snapshot, interactions interactionst
 	return FromSnapshotsWithItems(staticActors, interactions, itemcatalog.Snapshot{})
 }
 
+func spawnGroupAuthoredPosition(actor staticstore.StaticActor) (uint32, int32, int32) {
+	if actor.SpawnHome != nil && actor.SpawnHome.MapIndex != 0 {
+		return actor.SpawnHome.MapIndex, actor.SpawnHome.X, actor.SpawnHome.Y
+	}
+	return actor.MapIndex, actor.X, actor.Y
+}
+
 func FromSnapshotsWithItems(staticActors staticstore.Snapshot, interactions interactionstore.Snapshot, items itemcatalog.Snapshot) (Bundle, error) {
 	bundle := Bundle{
 		InteractionDefinitions: cloneDefinitions(interactions.Definitions),
@@ -651,12 +658,13 @@ func FromSnapshotsWithItems(staticActors staticstore.Snapshot, interactions inte
 	bundle.SpawnGroups = make([]SpawnGroup, 0, len(staticActors.StaticActors))
 	for _, actor := range staticActors.StaticActors {
 		if actor.SpawnGroupRef != "" {
+			mapIndex, x, y := spawnGroupAuthoredPosition(actor)
 			bundle.SpawnGroups = append(bundle.SpawnGroups, SpawnGroup{
 				Ref:              actor.SpawnGroupRef,
 				Name:             actor.Name,
-				MapIndex:         actor.MapIndex,
-				X:                actor.X,
-				Y:                actor.Y,
+				MapIndex:         mapIndex,
+				X:                x,
+				Y:                y,
 				RaceNum:          actor.RaceNum,
 				CombatProfile:    actor.CombatProfile,
 				RewardExperience: actor.RewardExperience,
