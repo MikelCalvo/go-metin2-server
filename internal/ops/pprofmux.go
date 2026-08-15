@@ -3345,6 +3345,50 @@ func RegisterLocalContentBundleWarpDestinationImportPreviewEndpoint(mux *http.Se
 	return mux
 }
 
+func RegisterLocalContentBundleMapImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
+	if mux == nil || previewContentBundleImport == nil {
+		return mux
+	}
+	mux.HandleFunc("POST /local/content-bundle/import-preview/maps/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		mapIndex, ok := decodeLocalContentBundleMapImportPreviewIndex(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bundle, status, ok := decodeLocalContentBundleRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		normalized, err := contentbundle.Canonicalize(bundle)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		preview, status := previewContentBundleImport(normalized)
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, preview, status)
+			return
+		}
+		importPreview, ok := preview.(contentbundle.ImportPreview)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		delta, ok := contentbundle.MapContentDeltaByIndex(importPreview.Deltas.Maps, mapIndex)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, delta, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalContentBundleRewardDropImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
 	if mux == nil || previewContentBundleImport == nil {
 		return mux
@@ -4451,6 +4495,10 @@ func decodeLocalContentBundleStaticActorImportPreviewName(r *http.Request) (stri
 
 func decodeLocalContentBundleRewardDropImportPreviewVnum(r *http.Request) (uint32, bool) {
 	return decodeLocalContentBundleVnumWithPrefix(r, "/local/content-bundle/import-preview/reward-drops/")
+}
+
+func decodeLocalContentBundleMapImportPreviewIndex(r *http.Request) (uint32, bool) {
+	return decodeLocalMapIndexWithPrefix(r, "/local/content-bundle/import-preview/maps/")
 }
 
 func decodeLocalContentBundleQuestStateCharacterImportPreviewIdentity(r *http.Request) (string, bool) {

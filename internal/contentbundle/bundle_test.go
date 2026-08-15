@@ -316,6 +316,50 @@ func TestBuildImportPreviewReturnsQuestStateQuestCountDelta(t *testing.T) {
 	}
 }
 
+func TestMapContentDeltaByIndexReturnsClonedExactMapDelta(t *testing.T) {
+	currentActor := StaticActor{Name: "Village Guide", MapIndex: 42, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}
+	candidateActor := StaticActor{Name: "Village Guide", MapIndex: 42, X: 1100, Y: 2100, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}
+	currentSpawn := SpawnGroupReferenceSummary{Ref: "practice.reward", Name: "Old Reward", MapIndex: 42, X: 1200, Y: 2200, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 25, RewardGold: 10, RewardDropVnums: []uint32{27001}}
+	candidateSpawn := SpawnGroupReferenceSummary{Ref: "practice.reward", Name: "New Reward", MapIndex: 42, X: 1300, Y: 2300, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 75, RewardGold: 60, RewardDropVnums: []uint32{27001, 27002}}
+	deltas := []MapContentDelta{
+		{MapIndex: 7, StaticActorCount: SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}},
+		{
+			MapIndex:            42,
+			StaticActorCount:    SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
+			SpawnGroupCount:     SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
+			RewardGoldTotal:     SummaryAmountDelta{Current: 10, Candidate: 60, Delta: 50},
+			RewardDropItemCount: SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
+			StaticActors: []StaticActorDelta{
+				{Change: "removed", Current: &currentActor},
+				{Change: "added", Candidate: &candidateActor},
+			},
+			SpawnGroups: []SpawnGroupDelta{{Ref: "practice.reward", Change: "changed", Current: &currentSpawn, Candidate: &candidateSpawn}},
+		},
+	}
+
+	got, ok := MapContentDeltaByIndex(deltas, 42)
+	if !ok {
+		t.Fatal("expected exact map-content delta lookup to succeed")
+	}
+	want := deltas[1]
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected exact map-content delta:\n got: %#v\nwant: %#v", got, want)
+	}
+	got.StaticActors[0].Current.Name = "Mutated Actor"
+	got.StaticActors[1].Candidate.Name = "Mutated Candidate"
+	got.SpawnGroups[0].Current.Name = "Mutated Spawn"
+	got.SpawnGroups[0].Candidate.RewardDropVnums[0] = 99999
+	if currentActor.Name != "Village Guide" || candidateActor.Name != "Village Guide" || currentSpawn.Name != "Old Reward" || candidateSpawn.RewardDropVnums[0] != 27001 {
+		t.Fatalf("expected exact map-content delta lookup to clone nested rows, current_actor=%+v candidate_actor=%+v current_spawn=%+v candidate_spawn=%+v", currentActor, candidateActor, currentSpawn, candidateSpawn)
+	}
+	if _, ok := MapContentDeltaByIndex(deltas, 0); ok {
+		t.Fatal("expected zero map index lookup to fail closed")
+	}
+	if _, ok := MapContentDeltaByIndex(deltas, 99); ok {
+		t.Fatal("expected missing map-content delta lookup to fail")
+	}
+}
+
 func TestBundleJSONRejectsUnknownTopLevelFields(t *testing.T) {
 	var bundle Bundle
 	err := json.Unmarshal([]byte(`{"static_actors":[],"interaction_definitions":[],"quest_state":[]}`), &bundle)

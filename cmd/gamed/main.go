@@ -748,6 +748,10 @@ func main() {
 		opsHandler,
 		previewContentBundleImport,
 	)
+	opsHandler = ops.RegisterLocalContentBundleMapImportPreviewEndpoint(
+		opsHandler,
+		previewContentBundleImport,
+	)
 	opsHandler = ops.RegisterLocalContentBundleShopCatalogImportPreviewEndpoint(
 		opsHandler,
 		previewContentBundleImport,

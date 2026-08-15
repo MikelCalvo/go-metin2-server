@@ -529,6 +529,12 @@ Returns one exact per-map row from the live content-bundle summary. This is a lo
 
 Use it when local QA needs a compact authored-content view for one map without fetching the full bundle summary or inferring counts from live runtime occupancy. It is not a gameplay protocol endpoint and does not mutate authored content.
 
+### `POST /local/content-bundle/import-preview/maps/{map_index}`
+
+Returns one exact per-map delta row from a candidate content-bundle import preview without mutating runtime state. This loopback-only endpoint is registered only on `gamed`; it accepts the same candidate bundle body as `POST /local/content-bundle/import-preview`, validates `map_index` as a non-zero authored map id, and returns the matching `deltas.maps[]` row with count/amount deltas plus any map-local static-actor and spawn-group delta rows. It returns `404` when that map has no added/removed/changed tracked content, `400` for malformed map indexes or invalid candidate bundles, `403` for non-loopback callers, and accepts only `POST`.
+
+Use it when local QA needs to inspect one authored map's import impact before applying a bundle, without fetching and manually filtering the broad import-preview response. It is not a gameplay protocol endpoint and does not mutate authored content.
+
 ### `GET /local/content-bundle/maps/{map_index}/static-actors`
 
 Returns every portable static-actor row authored on one map. This loopback-only read-only endpoint is registered only on `gamed`; it reuses the same live export + canonicalization + summary path as `GET /local/content-bundle/summary`, returns `404` when the authored bundle has no row for that `map_index`, returns an empty JSON array for a known map with no static actors, rejects malformed/zero map indexes with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.
@@ -1286,6 +1292,7 @@ Inspect compact authored-content summaries without fetching the full bundle payl
 ```bash
 curl http://127.0.0.1:6060/local/content-bundle/summary
 curl http://127.0.0.1:6060/local/content-bundle/maps/1
+curl -X POST --data-binary @docs/examples/bootstrap-npc-service-bundle.json http://127.0.0.1:6060/local/content-bundle/import-preview/maps/1
 curl http://127.0.0.1:6060/local/content-bundle/maps/1/shop-routes
 curl http://127.0.0.1:6060/local/content-bundle/maps/1/warp-routes
 curl http://127.0.0.1:6060/local/content-bundle/maps/1/spawn-groups

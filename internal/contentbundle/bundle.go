@@ -1880,6 +1880,35 @@ func sortedServiceRouteIdentities(idsSeen map[serviceRouteIdentity]struct{}) []s
 	return ids
 }
 
+func MapContentDeltaByIndex(deltas []MapContentDelta, mapIndex uint32) (MapContentDelta, bool) {
+	if mapIndex == 0 {
+		return MapContentDelta{}, false
+	}
+	for _, delta := range deltas {
+		if delta.MapIndex == mapIndex {
+			return cloneMapContentDelta(delta), true
+		}
+	}
+	return MapContentDelta{}, false
+}
+
+func cloneMapContentDelta(delta MapContentDelta) MapContentDelta {
+	cloned := delta
+	if len(delta.StaticActors) > 0 {
+		cloned.StaticActors = make([]StaticActorDelta, len(delta.StaticActors))
+		for i, actorDelta := range delta.StaticActors {
+			cloned.StaticActors[i] = cloneStaticActorDelta(actorDelta)
+		}
+	}
+	if len(delta.SpawnGroups) > 0 {
+		cloned.SpawnGroups = make([]SpawnGroupDelta, len(delta.SpawnGroups))
+		for i, spawnGroupDelta := range delta.SpawnGroups {
+			cloned.SpawnGroups[i] = cloneSpawnGroupDelta(spawnGroupDelta)
+		}
+	}
+	return cloned
+}
+
 func buildMapContentDeltas(current Summary, candidate Summary, currentBundle Bundle, candidateBundle Bundle) []MapContentDelta {
 	currentMaps := current.Maps
 	candidateMaps := candidate.Maps
