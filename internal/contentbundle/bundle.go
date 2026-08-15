@@ -360,6 +360,8 @@ type MapContentDelta struct {
 	RewardDropItemCount          SummaryCountDelta  `json:"reward_drop_item_count,omitempty"`
 	StaticActors                 []StaticActorDelta `json:"static_actors,omitempty"`
 	SpawnGroups                  []SpawnGroupDelta  `json:"spawn_groups,omitempty"`
+	ShopRoutes                   []ShopRouteDelta   `json:"shop_routes,omitempty"`
+	WarpRoutes                   []WarpRouteDelta   `json:"warp_routes,omitempty"`
 }
 
 type InteractionKindSummary struct {
@@ -1996,6 +1998,18 @@ func cloneMapContentDelta(delta MapContentDelta) MapContentDelta {
 			cloned.SpawnGroups[i] = cloneSpawnGroupDelta(spawnGroupDelta)
 		}
 	}
+	if len(delta.ShopRoutes) > 0 {
+		cloned.ShopRoutes = make([]ShopRouteDelta, len(delta.ShopRoutes))
+		for i, routeDelta := range delta.ShopRoutes {
+			cloned.ShopRoutes[i] = cloneShopRouteDelta(routeDelta)
+		}
+	}
+	if len(delta.WarpRoutes) > 0 {
+		cloned.WarpRoutes = make([]WarpRouteDelta, len(delta.WarpRoutes))
+		for i, routeDelta := range delta.WarpRoutes {
+			cloned.WarpRoutes[i] = cloneWarpRouteDelta(routeDelta)
+		}
+	}
 	return cloned
 }
 
@@ -2040,6 +2054,8 @@ func buildMapContentDeltas(current Summary, candidate Summary, currentBundle Bun
 			RewardDropItemCount:          summaryCountDelta(currentMap.RewardDropItemCount, candidateMap.RewardDropItemCount),
 			StaticActors:                 buildStaticActorDeltas(staticActorsForMap(currentBundle.StaticActors, index), staticActorsForMap(candidateBundle.StaticActors, index)),
 			SpawnGroups:                  buildSpawnGroupDeltas(spawnGroupSummariesForMap(current.SpawnGroups, index), spawnGroupSummariesForMap(candidate.SpawnGroups, index)),
+			ShopRoutes:                   buildShopRouteDeltas(shopRouteSummariesForMap(current.ShopRoutes, index), shopRouteSummariesForMap(candidate.ShopRoutes, index)),
+			WarpRoutes:                   buildWarpRouteDeltas(warpRouteSummariesForMap(current.WarpRoutes, index), warpRouteSummariesForMap(candidate.WarpRoutes, index)),
 		}
 		if !mapContentDeltaIsZero(delta) {
 			deltas = append(deltas, delta)
@@ -2085,6 +2101,42 @@ func spawnGroupSummariesForMap(spawnGroups []SpawnGroupReferenceSummary, mapInde
 	return filtered
 }
 
+func shopRouteSummariesForMap(routes []ShopRouteSummary, mapIndex uint32) []ShopRouteSummary {
+	if len(routes) == 0 {
+		return nil
+	}
+	filtered := make([]ShopRouteSummary, 0, len(routes))
+	for _, route := range routes {
+		route = normalizeShopRouteSummary(route)
+		if route.SourceMapIndex != mapIndex {
+			continue
+		}
+		filtered = append(filtered, route)
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
+}
+
+func warpRouteSummariesForMap(routes []WarpRouteSummary, mapIndex uint32) []WarpRouteSummary {
+	if len(routes) == 0 {
+		return nil
+	}
+	filtered := make([]WarpRouteSummary, 0, len(routes))
+	for _, route := range routes {
+		route = normalizeWarpRouteSummary(route)
+		if route.SourceMapIndex != mapIndex {
+			continue
+		}
+		filtered = append(filtered, route)
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
+}
+
 func mapContentDeltaIsZero(delta MapContentDelta) bool {
 	return delta.StaticActorCount.Delta == 0 &&
 		delta.InteractableStaticActorCount.Delta == 0 &&
@@ -2098,7 +2150,9 @@ func mapContentDeltaIsZero(delta MapContentDelta) bool {
 		delta.RewardGoldTotal.Delta == 0 &&
 		delta.RewardDropItemCount.Delta == 0 &&
 		len(delta.StaticActors) == 0 &&
-		len(delta.SpawnGroups) == 0
+		len(delta.SpawnGroups) == 0 &&
+		len(delta.ShopRoutes) == 0 &&
+		len(delta.WarpRoutes) == 0
 }
 
 func Summarize(bundle Bundle) (Summary, error) {

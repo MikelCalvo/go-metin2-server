@@ -531,7 +531,7 @@ Use it when local QA needs a compact authored-content view for one map without f
 
 ### `POST /local/content-bundle/import-preview/maps/{map_index}`
 
-Returns one exact per-map delta row from a candidate content-bundle import preview without mutating runtime state. This loopback-only endpoint is registered only on `gamed`; it accepts the same candidate bundle body as `POST /local/content-bundle/import-preview`, validates `map_index` as a non-zero authored map id, and returns the matching `deltas.maps[]` row with count/amount deltas plus any map-local static-actor and spawn-group delta rows. It returns `404` when that map has no added/removed/changed tracked content, `400` for malformed map indexes or invalid candidate bundles, `403` for non-loopback callers, and accepts only `POST`.
+Returns one exact per-map delta row from a candidate content-bundle import preview without mutating runtime state. This loopback-only endpoint is registered only on `gamed`; it accepts the same candidate bundle body as `POST /local/content-bundle/import-preview`, validates `map_index` as a non-zero authored map id, and returns the matching `deltas.maps[]` row with count/amount deltas plus any map-local static-actor, spawn-group, shop-route, and warp-route delta rows. It returns `404` when that map has no added/removed/changed tracked content, `400` for malformed map indexes or invalid candidate bundles, `403` for non-loopback callers, and accepts only `POST`.
 
 Use it when local QA needs to inspect one authored map's import impact before applying a bundle, without fetching and manually filtering the broad import-preview response. It is not a gameplay protocol endpoint and does not mutate authored content.
 

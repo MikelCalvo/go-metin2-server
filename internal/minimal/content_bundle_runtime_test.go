@@ -230,6 +230,9 @@ func TestGameRuntimePreviewContentBundleImportReturnsDeltasWithoutMutatingRuntim
 				{Change: "added", Candidate: &contentbundle.StaticActor{Name: "Merchant", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20302, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
 				{Change: "removed", Current: &contentbundle.StaticActor{Name: "VillageGuide", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}},
 			},
+			ShopRoutes: []contentbundle.ShopRouteDelta{
+				{ActorName: "Merchant", SourceMapIndex: 42, SourceX: 1800, SourceY: 2900, Ref: "npc:merchant", Change: "added", Candidate: &contentbundle.ShopRouteSummary{ActorName: "Merchant", SourceMapIndex: 42, SourceX: 1800, SourceY: 2900, Ref: "npc:merchant", Title: "Village Merchant", EntryCount: 3}},
+			},
 		}},
 	}
 	if !reflect.DeepEqual(preview.Deltas, wantDeltas) {

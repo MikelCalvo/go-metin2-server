@@ -2198,6 +2198,7 @@ func TestLocalContentBundleImportPreviewEndpointReturnsPerMapDeltaJSONForLoopbac
 				{Change: "added", Candidate: &contentbundle.StaticActor{Name: "Merchant", MapIndex: 1, X: 1200, Y: 2200, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
 				{Change: "removed", Current: &contentbundle.StaticActor{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}},
 			},
+			ShopRoutes: []contentbundle.ShopRouteDelta{{ActorName: "Merchant", SourceMapIndex: 1, SourceX: 1200, SourceY: 2200, Ref: "npc:merchant", Change: "added", Candidate: &contentbundle.ShopRouteSummary{ActorName: "Merchant", SourceMapIndex: 1, SourceX: 1200, SourceY: 2200, Ref: "npc:merchant", Title: "Village Merchant", EntryCount: 2}}},
 		},
 		{
 			MapIndex:                     7,
@@ -2210,6 +2211,7 @@ func TestLocalContentBundleImportPreviewEndpointReturnsPerMapDeltaJSONForLoopbac
 			RewardDropItemCount:          contentbundle.SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
 			StaticActors:                 []contentbundle.StaticActorDelta{{Change: "added", Candidate: &contentbundle.StaticActor{Name: "Teleporter", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 20303, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:teleporter"}}},
 			SpawnGroups:                  []contentbundle.SpawnGroupDelta{{Ref: "practice.reward_mob", Change: "added", Candidate: &contentbundle.SpawnGroupReferenceSummary{Ref: "practice.reward_mob", Name: "Reward Mob", MapIndex: 7, X: 1400, Y: 2400, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 75, RewardGold: 60, RewardDropVnums: []uint32{27001}, RewardDropItems: []contentbundle.RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}}}}},
+			WarpRoutes:                   []contentbundle.WarpRouteDelta{{ActorName: "Teleporter", SourceMapIndex: 7, SourceX: 1300, SourceY: 2300, Ref: "npc:teleporter", Change: "added", Candidate: &contentbundle.WarpRouteSummary{ActorName: "Teleporter", SourceMapIndex: 7, SourceX: 1300, SourceY: 2300, Ref: "npc:teleporter", Text: "Step through the gate.", TargetMapIndex: 7, TargetX: 1300, TargetY: 2300}}},
 		},
 	}
 	if !reflect.DeepEqual(got.Deltas.Maps, want) {
@@ -2294,6 +2296,59 @@ func TestLocalContentBundleMapImportPreviewEndpointReturnsExactDeltaForLoopbackP
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected exact map import-preview delta:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleMapImportPreviewEndpointReturnsServiceRouteDeltasForLoopbackPost(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		StaticActors: []contentbundle.StaticActor{
+			{Name: "Merchant", MapIndex: 42, X: 1000, Y: 2000, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"},
+			{Name: "Gate", MapIndex: 42, X: 1100, Y: 2100, RaceNum: 20300, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:gate"},
+		},
+		ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}},
+		InteractionDefinitions: []interactionstore.Definition{
+			{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Title: "Old Merchant", Catalog: []interactionstore.MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}}},
+			{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "Old gate.", MapIndex: 2, X: 2000, Y: 3000},
+		},
+	}}
+	mux := RegisterLocalContentBundleMapImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/maps/42", strings.NewReader(`{"static_actors":[{"name":"Merchant","map_index":42,"x":1000,"y":2000,"race_num":20301,"interaction_kind":"shop_preview","interaction_ref":"npc:merchant"},{"name":"Gate","map_index":42,"x":1100,"y":2100,"race_num":20300,"interaction_kind":"warp","interaction_ref":"npc:gate"}],"item_templates":[{"vnum":27001,"name":"Small Red Potion","stackable":true,"max_count":200,"shop_buy_price":5}],"interaction_definitions":[{"kind":"shop_preview","ref":"npc:merchant","title":"New Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":1}]},{"kind":"warp","ref":"npc:gate","text":"New gate.","map_index":3,"x":2100,"y":3100}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected import previewer to be called once, got %d calls", previewer.calls)
+	}
+	var got contentbundle.MapContentDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode exact map import-preview service-route delta response: %v", err)
+	}
+	currentShopRoute := contentbundle.ShopRouteSummary{ActorName: "Merchant", SourceMapIndex: 42, SourceX: 1000, SourceY: 2000, Ref: "npc:merchant", Title: "Old Merchant", EntryCount: 1}
+	candidateShopRoute := contentbundle.ShopRouteSummary{ActorName: "Merchant", SourceMapIndex: 42, SourceX: 1000, SourceY: 2000, Ref: "npc:merchant", Title: "New Merchant", EntryCount: 1}
+	currentWarpRoute := contentbundle.WarpRouteSummary{ActorName: "Gate", SourceMapIndex: 42, SourceX: 1100, SourceY: 2100, Ref: "npc:gate", Text: "Old gate.", TargetMapIndex: 2, TargetX: 2000, TargetY: 3000}
+	candidateWarpRoute := contentbundle.WarpRouteSummary{ActorName: "Gate", SourceMapIndex: 42, SourceX: 1100, SourceY: 2100, Ref: "npc:gate", Text: "New gate.", TargetMapIndex: 3, TargetX: 2100, TargetY: 3100}
+	want := contentbundle.MapContentDelta{
+		MapIndex:                     42,
+		StaticActorCount:             contentbundle.SummaryCountDelta{Current: 2, Candidate: 2, Delta: 0},
+		InteractableStaticActorCount: contentbundle.SummaryCountDelta{Current: 2, Candidate: 2, Delta: 0},
+		ShopPreviewActorCount:        contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
+		ShopCatalogEntryCount:        contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
+		WarpActorCount:               contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
+		ShopRoutes: []contentbundle.ShopRouteDelta{
+			{ActorName: "Merchant", SourceMapIndex: 42, SourceX: 1000, SourceY: 2000, Ref: "npc:merchant", Change: "changed", Current: &currentShopRoute, Candidate: &candidateShopRoute},
+		},
+		WarpRoutes: []contentbundle.WarpRouteDelta{
+			{ActorName: "Gate", SourceMapIndex: 42, SourceX: 1100, SourceY: 2100, Ref: "npc:gate", Change: "changed", Current: &currentWarpRoute, Candidate: &candidateWarpRoute},
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected exact map service-route import-preview delta:\n got: %#v\nwant: %#v", got, want)
 	}
 }
 
