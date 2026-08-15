@@ -756,6 +756,14 @@ func main() {
 		opsHandler,
 		previewContentBundleImport,
 	)
+	opsHandler = ops.RegisterLocalContentBundleSpawnGroupImportPreviewEndpoint(
+		opsHandler,
+		previewContentBundleImport,
+	)
+	opsHandler = ops.RegisterLocalContentBundleCombatProfileImportPreviewEndpoint(
+		opsHandler,
+		previewContentBundleImport,
+	)
 	opsHandler = ops.RegisterLocalContentBundleQuestStateFlagImportPreviewEndpoint(
 		opsHandler,
 		previewContentBundleImport,

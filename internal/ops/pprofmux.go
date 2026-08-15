@@ -3345,6 +3345,94 @@ func RegisterLocalContentBundleRewardDropImportPreviewEndpoint(mux *http.ServeMu
 	return mux
 }
 
+func RegisterLocalContentBundleSpawnGroupImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
+	if mux == nil || previewContentBundleImport == nil {
+		return mux
+	}
+	mux.HandleFunc("POST /local/content-bundle/import-preview/spawn-groups/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		ref, ok := decodeLocalContentBundleSpawnGroupImportPreviewRef(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bundle, status, ok := decodeLocalContentBundleRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		normalized, err := contentbundle.Canonicalize(bundle)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		preview, status := previewContentBundleImport(normalized)
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, preview, status)
+			return
+		}
+		importPreview, ok := preview.(contentbundle.ImportPreview)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		delta, ok := contentbundle.SpawnGroupDeltaByRef(importPreview.Deltas.SpawnGroups, ref)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, delta, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalContentBundleCombatProfileImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
+	if mux == nil || previewContentBundleImport == nil {
+		return mux
+	}
+	mux.HandleFunc("POST /local/content-bundle/import-preview/combat-profiles/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		profile, ok := decodeLocalContentBundleCombatProfileImportPreviewName(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bundle, status, ok := decodeLocalContentBundleRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		normalized, err := contentbundle.Canonicalize(bundle)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		preview, status := previewContentBundleImport(normalized)
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, preview, status)
+			return
+		}
+		importPreview, ok := preview.(contentbundle.ImportPreview)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		delta, ok := contentbundle.CombatProfileDeltaByProfile(importPreview.Deltas.CombatProfiles, profile)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, delta, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalContentBundleQuestStateFlagImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
 	if mux == nil || previewContentBundleImport == nil {
 		return mux
@@ -4335,6 +4423,30 @@ func decodeLocalContentBundleQuestStateFlagImportPreviewIdentity(r *http.Request
 		return contentbundle.QuestStateFlagIdentity{}, false
 	}
 	return contentbundle.QuestStateFlagIdentity{Character: character, QuestRef: questRef, Name: flagName}, true
+}
+
+func decodeLocalContentBundleSpawnGroupImportPreviewRef(r *http.Request) (string, bool) {
+	ref, err := url.PathUnescape(strings.TrimPrefix(r.URL.Path, "/local/content-bundle/import-preview/spawn-groups/"))
+	if err != nil {
+		return "", false
+	}
+	ref = strings.TrimSpace(ref)
+	if ref == "" || strings.Contains(ref, "/") || !worldruntime.ValidStaticActorSpawnGroupRef(ref) {
+		return "", false
+	}
+	return ref, true
+}
+
+func decodeLocalContentBundleCombatProfileImportPreviewName(r *http.Request) (string, bool) {
+	profile, err := url.PathUnescape(strings.TrimPrefix(r.URL.Path, "/local/content-bundle/import-preview/combat-profiles/"))
+	if err != nil {
+		return "", false
+	}
+	profile = strings.TrimSpace(profile)
+	if profile == "" || strings.Contains(profile, "/") || !worldruntime.ValidStaticActorCombatProfileName(profile) {
+		return "", false
+	}
+	return profile, true
 }
 
 func decodeQuestStateFlagIdentityWithPrefix(r *http.Request, prefix string) (string, string, string, bool) {

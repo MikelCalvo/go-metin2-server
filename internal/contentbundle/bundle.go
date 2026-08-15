@@ -1259,6 +1259,37 @@ func buildCombatProfileDeltas(currentProfiles []worldruntime.StaticActorCombatPr
 	return deltas
 }
 
+func CombatProfileDeltaByProfile(deltas []CombatProfileDelta, profile string) (CombatProfileDelta, bool) {
+	profile = strings.TrimSpace(profile)
+	if !worldruntime.ValidStaticActorCombatProfileName(profile) {
+		return CombatProfileDelta{}, false
+	}
+	for _, delta := range deltas {
+		if strings.TrimSpace(delta.Profile) == profile {
+			return cloneCombatProfileDelta(delta), true
+		}
+	}
+	return CombatProfileDelta{}, false
+}
+
+func cloneCombatProfileDelta(delta CombatProfileDelta) CombatProfileDelta {
+	cloned := delta
+	cloned.Profile = strings.TrimSpace(cloned.Profile)
+	if delta.Current != nil {
+		current := *delta.Current
+		current.Profile = strings.TrimSpace(current.Profile)
+		current.DeathReward = current.DeathReward.Clone()
+		cloned.Current = &current
+	}
+	if delta.Candidate != nil {
+		candidate := *delta.Candidate
+		candidate.Profile = strings.TrimSpace(candidate.Profile)
+		candidate.DeathReward = candidate.DeathReward.Clone()
+		cloned.Candidate = &candidate
+	}
+	return cloned
+}
+
 func combatProfileSnapshotMapByProfile(profiles []worldruntime.StaticActorCombatProfileSnapshot) map[string]worldruntime.StaticActorCombatProfileSnapshot {
 	byProfile := make(map[string]worldruntime.StaticActorCombatProfileSnapshot, len(profiles))
 	for _, profile := range cloneCombatProfileSnapshots(profiles) {
@@ -1312,14 +1343,46 @@ func buildSpawnGroupDeltas(currentSpawnGroups []SpawnGroupReferenceSummary, cand
 	return deltas
 }
 
+func SpawnGroupDeltaByRef(deltas []SpawnGroupDelta, ref string) (SpawnGroupDelta, bool) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" || !worldruntime.ValidStaticActorSpawnGroupRef(ref) {
+		return SpawnGroupDelta{}, false
+	}
+	for _, delta := range deltas {
+		if strings.TrimSpace(delta.Ref) == ref {
+			return cloneSpawnGroupDelta(delta), true
+		}
+	}
+	return SpawnGroupDelta{}, false
+}
+
+func cloneSpawnGroupDelta(delta SpawnGroupDelta) SpawnGroupDelta {
+	cloned := delta
+	cloned.Ref = strings.TrimSpace(cloned.Ref)
+	if delta.Current != nil {
+		current := cloneSpawnGroupReferenceSummary(*delta.Current)
+		cloned.Current = &current
+	}
+	if delta.Candidate != nil {
+		candidate := cloneSpawnGroupReferenceSummary(*delta.Candidate)
+		cloned.Candidate = &candidate
+	}
+	return cloned
+}
+
+func cloneSpawnGroupReferenceSummary(spawnGroup SpawnGroupReferenceSummary) SpawnGroupReferenceSummary {
+	spawnGroup.Ref = strings.TrimSpace(spawnGroup.Ref)
+	spawnGroup.Name = strings.TrimSpace(spawnGroup.Name)
+	spawnGroup.CombatProfile = strings.TrimSpace(spawnGroup.CombatProfile)
+	spawnGroup.RewardDropVnums = cloneUint32s(spawnGroup.RewardDropVnums)
+	spawnGroup.RewardDropItems = cloneRewardDropItemSummaries(spawnGroup.RewardDropItems)
+	return spawnGroup
+}
+
 func spawnGroupSummaryMapByRef(spawnGroups []SpawnGroupReferenceSummary) map[string]SpawnGroupReferenceSummary {
 	byRef := make(map[string]SpawnGroupReferenceSummary, len(spawnGroups))
 	for _, spawnGroup := range spawnGroups {
-		spawnGroup.Ref = strings.TrimSpace(spawnGroup.Ref)
-		spawnGroup.Name = strings.TrimSpace(spawnGroup.Name)
-		spawnGroup.CombatProfile = strings.TrimSpace(spawnGroup.CombatProfile)
-		spawnGroup.RewardDropVnums = cloneUint32s(spawnGroup.RewardDropVnums)
-		spawnGroup.RewardDropItems = cloneRewardDropItemSummaries(spawnGroup.RewardDropItems)
+		spawnGroup = cloneSpawnGroupReferenceSummary(spawnGroup)
 		byRef[spawnGroup.Ref] = spawnGroup
 	}
 	return byRef

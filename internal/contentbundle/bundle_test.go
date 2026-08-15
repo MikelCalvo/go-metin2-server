@@ -2025,6 +2025,35 @@ func TestBuildImportPreviewReturnsSpawnGroupDeltas(t *testing.T) {
 	}
 }
 
+func TestSpawnGroupDeltaByRefReturnsClonedExactDelta(t *testing.T) {
+	currentKeep := SpawnGroupReferenceSummary{Ref: "practice.keep", Name: "Keep Mob", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardDropVnums: []uint32{27001}, RewardDropItems: []RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Small Red Potion", Stackable: true, MaxCount: 200}}}
+	candidateKeep := SpawnGroupReferenceSummary{Ref: "practice.keep", Name: "Keep Mob", MapIndex: 1, X: 1200, Y: 2200, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardDropVnums: []uint32{27001, 27002}, RewardDropItems: []RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Small Red Potion", Stackable: true, MaxCount: 200}, {ItemVnum: 27002, ItemName: "Small Blue Potion", Stackable: true, MaxCount: 200}}}
+	deltas := []SpawnGroupDelta{
+		{Ref: "practice.add", Change: "added", Candidate: &SpawnGroupReferenceSummary{Ref: "practice.add", Name: "Added Mob", MapIndex: 2, X: 1300, Y: 2300, RaceNum: 103, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob}},
+		{Ref: "practice.keep", Change: "changed", Current: &currentKeep, Candidate: &candidateKeep},
+	}
+
+	delta, ok := SpawnGroupDeltaByRef(deltas, " practice.keep ")
+	if !ok {
+		t.Fatal("expected exact spawn-group delta lookup to succeed")
+	}
+	want := SpawnGroupDelta{Ref: "practice.keep", Change: "changed", Current: &currentKeep, Candidate: &candidateKeep}
+	if !reflect.DeepEqual(delta, want) {
+		t.Fatalf("unexpected exact spawn-group delta:\n got: %#v\nwant: %#v", delta, want)
+	}
+	delta.Current.RewardDropVnums[0] = 99999
+	delta.Candidate.RewardDropItems[0].ItemName = "mutated"
+	if currentKeep.RewardDropVnums[0] != 27001 || candidateKeep.RewardDropItems[0].ItemName != "Small Red Potion" {
+		t.Fatalf("expected exact spawn-group delta lookup to clone nested reward metadata, current=%+v candidate=%+v", currentKeep, candidateKeep)
+	}
+	if _, ok := SpawnGroupDeltaByRef(deltas, ""); ok {
+		t.Fatal("expected blank spawn-group ref lookup to fail")
+	}
+	if _, ok := SpawnGroupDeltaByRef(deltas, "practice.missing"); ok {
+		t.Fatal("expected missing exact spawn-group delta lookup to fail")
+	}
+}
+
 func TestBuildImportPreviewReturnsCombatProfileDeltas(t *testing.T) {
 	currentKeepProfile := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_keep_profile", MaxHP: 24, DamagePerNormalAttack: 3, AttackValue: 7, DefenseValue: 4, Level: 2, Rank: 1, RespawnDelayMs: 1500}
 	currentRemovedProfile := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_remove_profile", MaxHP: 20, DamagePerNormalAttack: 2, AttackValue: 6, DefenseValue: 4, Level: 1, RespawnDelayMs: 1500}
@@ -2058,6 +2087,35 @@ func TestBuildImportPreviewReturnsCombatProfileDeltas(t *testing.T) {
 	}
 	if !reflect.DeepEqual(preview.Deltas.CombatProfiles, want) {
 		t.Fatalf("unexpected combat-profile import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas.CombatProfiles, want)
+	}
+}
+
+func TestCombatProfileDeltaByProfileReturnsClonedExactDelta(t *testing.T) {
+	currentKeep := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_keep_profile", MaxHP: 24, DamagePerNormalAttack: 3, AttackValue: 7, DefenseValue: 4, Level: 2, Rank: 1, RespawnDelayMs: 1500, DeathReward: worldruntime.StaticActorDeathReward{Experience: 10, Gold: 5, DropVnums: []uint32{27001}}}
+	candidateKeep := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_keep_profile", MaxHP: 28, DamagePerNormalAttack: 4, AttackValue: 8, DefenseValue: 4, Level: 2, Rank: 1, RespawnDelayMs: 1500, DeathReward: worldruntime.StaticActorDeathReward{Experience: 20, Gold: 8, DropVnums: []uint32{27001, 27002}}}
+	deltas := []CombatProfileDelta{
+		{Profile: "practice_add_profile", Change: "added", Candidate: &worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_add_profile", MaxHP: 30, DamagePerNormalAttack: 4, AttackValue: 8, DefenseValue: 4, Level: 3, Rank: 1, RespawnDelayMs: 2000}},
+		{Profile: "practice_keep_profile", Change: "changed", Current: &currentKeep, Candidate: &candidateKeep},
+	}
+
+	delta, ok := CombatProfileDeltaByProfile(deltas, " practice_keep_profile ")
+	if !ok {
+		t.Fatal("expected exact combat-profile delta lookup to succeed")
+	}
+	want := CombatProfileDelta{Profile: "practice_keep_profile", Change: "changed", Current: &currentKeep, Candidate: &candidateKeep}
+	if !reflect.DeepEqual(delta, want) {
+		t.Fatalf("unexpected exact combat-profile delta:\n got: %#v\nwant: %#v", delta, want)
+	}
+	delta.Current.DeathReward.DropVnums[0] = 99999
+	delta.Candidate.DeathReward.DropVnums[0] = 88888
+	if currentKeep.DeathReward.DropVnums[0] != 27001 || candidateKeep.DeathReward.DropVnums[0] != 27001 {
+		t.Fatalf("expected exact combat-profile delta lookup to clone nested reward metadata, current=%+v candidate=%+v", currentKeep, candidateKeep)
+	}
+	if _, ok := CombatProfileDeltaByProfile(deltas, "bad-profile"); ok {
+		t.Fatal("expected invalid combat-profile name lookup to fail")
+	}
+	if _, ok := CombatProfileDeltaByProfile(deltas, "practice_missing_profile"); ok {
+		t.Fatal("expected missing exact combat-profile delta lookup to fail")
 	}
 }
 

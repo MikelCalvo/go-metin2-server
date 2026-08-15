@@ -1966,6 +1966,287 @@ func TestLocalContentBundleRewardDropImportPreviewEndpointCoexistsWithBroadImpor
 	}
 }
 
+func TestLocalContentBundleSpawnGroupImportPreviewEndpointReturnsExactDeltaForLoopbackPost(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}},
+		SpawnGroups: []contentbundle.SpawnGroup{
+			{Ref: "practice.keep", Name: "Keep Mob", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 10, RewardGold: 5, RewardDropVnums: []uint32{27001}},
+			{Ref: "practice.remove", Name: "Removed Mob", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 102, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 3, RewardGold: 1},
+		},
+	}}
+	mux := RegisterLocalContentBundleSpawnGroupImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/spawn-groups/practice.keep", strings.NewReader(`{"item_templates":[{"vnum":27001,"name":"Small Red Potion","stackable":true,"max_count":200,"shop_buy_price":5},{"vnum":27002,"name":"Small Blue Potion","stackable":true,"max_count":200,"shop_buy_price":7}],"spawn_groups":[{"ref":"practice.add","name":"Added Mob","map_index":2,"x":1300,"y":2300,"race_num":103,"combat_profile":"practice_mob","reward_experience":7,"reward_gold":2,"reward_drop_vnums":[27002]},{"ref":"practice.keep","name":"Keep Mob","map_index":1,"x":1200,"y":2200,"race_num":101,"combat_profile":"practice_mob","reward_experience":20,"reward_gold":8,"reward_drop_vnums":[27001]}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected import previewer to be called once, got %d calls", previewer.calls)
+	}
+	var got contentbundle.SpawnGroupDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode exact spawn-group import-preview delta response: %v", err)
+	}
+	currentKeep := contentbundle.SpawnGroupReferenceSummary{Ref: "practice.keep", Name: "Keep Mob", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 10, RewardGold: 5, RewardDropVnums: []uint32{27001}, RewardDropItems: []contentbundle.RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}}}
+	candidateKeep := contentbundle.SpawnGroupReferenceSummary{Ref: "practice.keep", Name: "Keep Mob", MapIndex: 1, X: 1200, Y: 2200, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 20, RewardGold: 8, RewardDropVnums: []uint32{27001}, RewardDropItems: []contentbundle.RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}}}
+	want := contentbundle.SpawnGroupDelta{Ref: "practice.keep", Change: "changed", Current: &currentKeep, Candidate: &candidateKeep}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected exact spawn-group import-preview delta:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleSpawnGroupImportPreviewEndpointReturnsNotFoundWhenSpawnGroupDoesNotChange(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{Ref: "practice.keep", Name: "Keep Mob", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob}},
+	}}
+	mux := RegisterLocalContentBundleSpawnGroupImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/spawn-groups/practice.keep", strings.NewReader(`{"spawn_groups":[{"ref":"practice.keep","name":"Keep Mob","map_index":1,"x":1000,"y":2000,"race_num":101,"combat_profile":"practice_mob"}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for unchanged spawn-group import preview, got %d", http.StatusNotFound, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected missing spawn-group delta lookup to call import previewer once, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleSpawnGroupImportPreviewEndpointRejectsInvalidRefBeforeCallback(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleSpawnGroupImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	for _, path := range []string{
+		"/local/content-bundle/import-preview/spawn-groups/practice",
+		"/local/content-bundle/import-preview/spawn-groups/practice%2Fkeep",
+		"/local/content-bundle/import-preview/spawn-groups/practice.keep/extra",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"spawn_groups":[]}`))
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for malformed spawn-group import-preview path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected malformed spawn-group identities not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleSpawnGroupImportPreviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleSpawnGroupImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/spawn-groups/practice.keep", strings.NewReader(`{"spawn_groups":[]}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback spawn-group import preview, got %d", http.StatusForbidden, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected non-loopback request not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleSpawnGroupImportPreviewEndpointRejectsWrongMethod(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleSpawnGroupImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/import-preview/spawn-groups/practice.keep", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method spawn-group import preview, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected wrong-method request not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleSpawnGroupImportPreviewEndpointCoexistsWithBroadImportPreview(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{Ref: "practice.keep", Name: "Keep Mob", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob}},
+	}}
+	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+	mux = RegisterLocalContentBundleSpawnGroupImportPreviewEndpoint(mux, previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/spawn-groups/practice.keep", strings.NewReader(`{"spawn_groups":[{"ref":"practice.keep","name":"Keep Mob","map_index":1,"x":1200,"y":2200,"race_num":101,"combat_profile":"practice_mob"}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d from focused route on shared mux, got %d", http.StatusOK, rec.Code)
+	}
+	var got contentbundle.SpawnGroupDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode focused spawn-group import-preview delta response from shared mux: %v", err)
+	}
+	if got.Ref != "practice.keep" || got.Change != "changed" || got.Candidate == nil || got.Candidate.X != 1200 {
+		t.Fatalf("unexpected focused spawn-group import-preview response from shared mux: %#v", got)
+	}
+}
+
+func TestLocalContentBundleCombatProfileImportPreviewEndpointReturnsExactDeltaForLoopbackPost(t *testing.T) {
+	currentKeepProfile := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_keep_profile", MaxHP: 24, DamagePerNormalAttack: 3, AttackValue: 7, DefenseValue: 4, Level: 2, Rank: 1, RespawnDelayMs: 1500}
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{currentKeepProfile},
+		SpawnGroups: []contentbundle.SpawnGroup{
+			{Ref: "practice.keep", Name: "Keep Mob", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: currentKeepProfile.Profile},
+		},
+	}}
+	mux := RegisterLocalContentBundleCombatProfileImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/combat-profiles/practice_keep_profile", strings.NewReader(`{"combat_profiles":[{"profile":"practice_keep_profile","max_hp":28,"damage_per_normal_attack":3,"attack_value":7,"defense_value":4,"level":2,"rank":1,"respawn_delay_ms":1500}],"spawn_groups":[{"ref":"practice.keep","name":"Keep Mob","map_index":1,"x":1000,"y":2000,"race_num":101,"combat_profile":"practice_keep_profile"}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected import previewer to be called once, got %d calls", previewer.calls)
+	}
+	var got contentbundle.CombatProfileDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode exact combat-profile import-preview delta response: %v", err)
+	}
+	candidateKeepProfile := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_keep_profile", MaxHP: 28, DamagePerNormalAttack: 3, AttackValue: 7, DefenseValue: 4, Level: 2, Rank: 1, RespawnDelayMs: 1500}
+	want := contentbundle.CombatProfileDelta{Profile: "practice_keep_profile", Change: "changed", Current: &currentKeepProfile, Candidate: &candidateKeepProfile}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected exact combat-profile import-preview delta:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleCombatProfileImportPreviewEndpointReturnsNotFoundWhenProfileDoesNotChange(t *testing.T) {
+	currentKeepProfile := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_keep_profile", MaxHP: 24, DamagePerNormalAttack: 3, AttackValue: 7, DefenseValue: 4, Level: 2, Rank: 1, RespawnDelayMs: 1500}
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{currentKeepProfile},
+		SpawnGroups:    []contentbundle.SpawnGroup{{Ref: "practice.keep", Name: "Keep Mob", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: currentKeepProfile.Profile}},
+	}}
+	mux := RegisterLocalContentBundleCombatProfileImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/combat-profiles/practice_keep_profile", strings.NewReader(`{"combat_profiles":[{"profile":"practice_keep_profile","max_hp":24,"damage_per_normal_attack":3,"attack_value":7,"defense_value":4,"level":2,"rank":1,"respawn_delay_ms":1500}],"spawn_groups":[{"ref":"practice.keep","name":"Keep Mob","map_index":1,"x":1000,"y":2000,"race_num":101,"combat_profile":"practice_keep_profile"}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for unchanged combat-profile import preview, got %d", http.StatusNotFound, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected missing combat-profile delta lookup to call import previewer once, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleCombatProfileImportPreviewEndpointRejectsInvalidProfileBeforeCallback(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleCombatProfileImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	for _, path := range []string{
+		"/local/content-bundle/import-preview/combat-profiles/PracticeKeep",
+		"/local/content-bundle/import-preview/combat-profiles/practice%2Fkeep",
+		"/local/content-bundle/import-preview/combat-profiles/practice_keep_profile/extra",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"combat_profiles":[]}`))
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for malformed combat-profile import-preview path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected malformed combat-profile identities not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleCombatProfileImportPreviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleCombatProfileImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/combat-profiles/practice_keep_profile", strings.NewReader(`{"combat_profiles":[]}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback combat-profile import preview, got %d", http.StatusForbidden, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected non-loopback request not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleCombatProfileImportPreviewEndpointRejectsWrongMethod(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleCombatProfileImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/import-preview/combat-profiles/practice_keep_profile", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method combat-profile import preview, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected wrong-method request not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleCombatProfileImportPreviewEndpointCoexistsWithBroadImportPreview(t *testing.T) {
+	currentKeepProfile := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_keep_profile", MaxHP: 24, DamagePerNormalAttack: 3, AttackValue: 7, DefenseValue: 4, Level: 2, Rank: 1, RespawnDelayMs: 1500}
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{currentKeepProfile},
+		SpawnGroups:    []contentbundle.SpawnGroup{{Ref: "practice.keep", Name: "Keep Mob", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: currentKeepProfile.Profile}},
+	}}
+	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+	mux = RegisterLocalContentBundleCombatProfileImportPreviewEndpoint(mux, previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/combat-profiles/practice_keep_profile", strings.NewReader(`{"combat_profiles":[{"profile":"practice_keep_profile","max_hp":28,"damage_per_normal_attack":3,"attack_value":7,"defense_value":4,"level":2,"rank":1,"respawn_delay_ms":1500}],"spawn_groups":[{"ref":"practice.keep","name":"Keep Mob","map_index":1,"x":1000,"y":2000,"race_num":101,"combat_profile":"practice_keep_profile"}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d from focused route on shared mux, got %d", http.StatusOK, rec.Code)
+	}
+	var got contentbundle.CombatProfileDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode focused combat-profile import-preview delta response from shared mux: %v", err)
+	}
+	if got.Profile != "practice_keep_profile" || got.Change != "changed" || got.Candidate == nil || got.Candidate.MaxHP != 28 {
+		t.Fatalf("unexpected focused combat-profile import-preview response from shared mux: %#v", got)
+	}
+}
+
 func TestLocalContentBundleImportPreviewEndpointReturnsSpawnGroupDeltaJSONForLoopbackPost(t *testing.T) {
 	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
 		ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}},
