@@ -175,8 +175,9 @@ The only current output is template-authored rejection feedback for safebox chec
 - `CG::SAFEBOX_CHECKIN` must reference the inventory window and a carried cell inside the owned carried-inventory range;
 - the selected character must own exactly one valid, unlocked, unequipped live item in that cell;
 - the loaded template for that `vnum` must be valid, must match the live item `vnum`, must bound the live stack count with `max_count`, and must author both `anti_safebox` and non-empty `safebox_reject_message`;
-- if those guards pass, the runtime returns exactly one self-only `GC::CHAT` / `CHAT_TYPE_INFO` with `vid = 0` and the authored message;
-- inventory, equipment, quickslots, points, gold, peers, ground handles, storage state, and persisted snapshots remain unchanged.
+- if those guards pass with no active exchange shell, the runtime returns exactly one self-only `GC::CHAT` / `CHAT_TYPE_INFO` with `vid = 0` and the authored message;
+- if the same socket has an active bootstrap exchange shell, the runtime closes that presentation shell first with self/peer `GC::EXCHANGE END`, then returns the self-only authored info-chat rejection;
+- inventory, equipment, quickslots, points, gold, ground handles, storage state, exchange item/gold displays, and persisted snapshots remain unchanged.
 
 If the template omits `safebox_reject_message`, if `anti_safebox` is absent, if metadata is missing/invalid/mismatched, or if the live item is malformed, locked, duplicated, absent, or already over template `max_count`, the request preserves the older no-frame/no-mutation fail-closed behavior.
 
@@ -199,4 +200,4 @@ Later slices must write a new contract before broadening storage behavior. In pa
 
 - `internal/proto/item` freezes encode/decode behavior, exact wire bytes, unexpected-header rejection, and invalid-payload rejection for the four client storage request packets and the first eight server safebox/mall response packets.
 - `internal/game` freezes `GAME`-phase decode dispatch and optional handler-frame paths for all four storage-facing packets while preserving no-frame fail-closed defaults.
-- `internal/minimal` freezes both ordinary no-frame/no-mutation/no-persistence storage guards and the authored `anti_safebox` / `safebox_reject_message` info-chat feedback path through the normal session harness.
+- `internal/minimal` freezes both ordinary no-frame/no-mutation/no-persistence storage guards and the authored `anti_safebox` / `safebox_reject_message` info-chat feedback path through the normal session harness, including active-exchange-shell teardown before that feedback is delivered.

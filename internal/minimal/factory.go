@@ -4189,7 +4189,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.SafeboxCheckinResult{Accepted: false}
 					}
 					if message, ok := selectedPlayer.SafeboxCheckinRejectText(inventory.SlotIndex(packet.Position.Cell), template); ok {
-						return gameflow.SafeboxCheckinResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}}
+						frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}
+						frames = prependExchangeCloseFrame(frames)
+						return gameflow.SafeboxCheckinResult{Accepted: true, Frames: frames}
 					}
 					return gameflow.SafeboxCheckinResult{Accepted: false}
 				},
