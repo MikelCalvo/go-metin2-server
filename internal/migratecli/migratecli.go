@@ -24,11 +24,11 @@ const (
 )
 
 // Run executes the small migration preflight CLI and returns a process-style exit
-// code. The catalog, status, ledger-snapshot, and plan commands are read-only.
-// The apply command is an explicit CLI-only mutation surface: it requires an
-// operator-supplied database driver, DSN, strict offline ledger snapshot, and
-// target version, and it remains deliberately separate from daemon startup and
-// local ops endpoints.
+// code. The catalog, status, empty-ledger-snapshot, ledger-snapshot, and plan
+// commands are read-only. The apply command is an explicit CLI-only mutation
+// surface: it requires an operator-supplied database driver, DSN, strict offline
+// ledger snapshot, and target version, and it remains deliberately separate from
+// daemon startup and local ops endpoints.
 func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	if stdout == nil {
 		stdout = io.Discard
@@ -53,6 +53,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runStatus(args[1:], stdout, stderr)
 	case "plan":
 		return runPlan(args[1:], stdin, stdout, stderr)
+	case "empty-ledger-snapshot":
+		return runEmptyLedgerSnapshot(args[1:], stdout, stderr)
 	case "ledger-snapshot":
 		return runLedgerSnapshot(args[1:], stdout, stderr)
 	case "apply":
@@ -79,6 +81,24 @@ func runCatalog(args []string, stdout io.Writer, stderr io.Writer) int {
 		return exitError
 	}
 	return writeJSON(stdout, stderr, summary)
+}
+
+func runEmptyLedgerSnapshot(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) != 0 {
+		fmt.Fprintln(stderr, "empty-ledger-snapshot does not accept arguments")
+		printEmptyLedgerSnapshotUsage(stderr)
+		return exitUsage
+	}
+	raw, err := dbmigrations.MarshalJSONLedgerSnapshot(nil)
+	if err != nil {
+		fmt.Fprintf(stderr, "migration empty-ledger-snapshot: %v\n", err)
+		return exitError
+	}
+	if _, err := stdout.Write(raw); err != nil {
+		fmt.Fprintf(stderr, "write JSON: %v\n", err)
+		return exitError
+	}
+	return exitOK
 }
 
 func runLedgerSnapshot(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -396,19 +416,27 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "usage: metin2-migrate <command> [options]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "commands:")
-	fmt.Fprintln(w, "  catalog          print metadata-only embedded migration catalog summary")
-	fmt.Fprintln(w, "  status           read database schema_migrations metadata and print a dry-run plan")
-	fmt.Fprintln(w, "  ledger-snapshot  export metadata-only schema_migrations ledger snapshot from a database/sql target")
-	fmt.Fprintln(w, "  plan             print metadata-only dry-run plan from an offline ledger snapshot")
-	fmt.Fprintln(w, "  apply            apply a target plan using a database/sql driver and offline ledger snapshot")
+	fmt.Fprintln(w, "  catalog                print metadata-only embedded migration catalog summary")
+	fmt.Fprintln(w, "  status                 read database schema_migrations metadata and print a dry-run plan")
+	fmt.Fprintln(w, "  empty-ledger-snapshot  print an explicit empty schema_migrations ledger snapshot")
+	fmt.Fprintln(w, "  ledger-snapshot        export metadata-only schema_migrations ledger snapshot from a database/sql target")
+	fmt.Fprintln(w, "  plan                   print metadata-only dry-run plan from an offline ledger snapshot")
+	fmt.Fprintln(w, "  apply                  apply a target plan using a database/sql driver and offline ledger snapshot")
 	fmt.Fprintln(w, "")
 	printStatusUsage(w)
+	fmt.Fprintln(w, "")
+	printEmptyLedgerSnapshotUsage(w)
 	fmt.Fprintln(w, "")
 	printLedgerSnapshotUsage(w)
 	fmt.Fprintln(w, "")
 	printPlanUsage(w)
 	fmt.Fprintln(w, "")
 	printApplyUsage(w)
+}
+
+func printEmptyLedgerSnapshotUsage(w io.Writer) {
+	fmt.Fprintln(w, "empty-ledger-snapshot usage:")
+	fmt.Fprintln(w, "  metin2-migrate empty-ledger-snapshot")
 }
 
 func printLedgerSnapshotUsage(w io.Writer) {

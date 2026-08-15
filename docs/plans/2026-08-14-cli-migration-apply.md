@@ -21,7 +21,7 @@ metin2-migrate apply \
 Behavior:
 
 - requires both `--driver` and `--dsn`;
-- requires a strict offline `go-metin2-schema-migrations-ledger-v1` snapshot from a file path or stdin;
+- requires a strict offline `go-metin2-schema-migrations-ledger-v1` snapshot from a file path or stdin, including the generated `metin2-migrate empty-ledger-snapshot` artifact for version-zero initialization;
 - caps ledger snapshot input at 64 KiB before decoding, planning, opening the database, or applying SQL;
 - accepts explicit numeric targets, rollback target `0`, and `latest` for the embedded catalog tip;
 - reuses `db/migrations.ApplyToVersion(...)`, so up and down steps run inside one transaction and transaction-local ledger verification still applies;

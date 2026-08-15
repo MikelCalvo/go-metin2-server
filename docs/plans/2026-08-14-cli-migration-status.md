@@ -75,6 +75,6 @@ Validation for this slice:
 ## Follow-up options
 
 1. Add a build-tagged driver-backed integration harness after selecting a concrete DB engine.
-2. Add a migration runbook that sequences `status -> ledger-snapshot -> plan -> backup/preflight -> apply` for production-style operator drills.
+2. Add a migration runbook that sequences `empty-ledger-snapshot -> plan -> backup/preflight -> apply` for brand-new databases and `status -> ledger-snapshot -> plan -> backup/preflight -> apply` for existing targets.
 3. Add advisory locking or single-writer coordination after deployment topology and DB engine are known.
 4. Keep daemon-local migration endpoints read-only unless a future production-admin design intentionally changes that boundary.

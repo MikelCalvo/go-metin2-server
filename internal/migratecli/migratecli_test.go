@@ -404,6 +404,81 @@ func TestRunApplyResolvesLatestTargetVersion(t *testing.T) {
 	}
 }
 
+func TestRunEmptyLedgerSnapshotWritesStrictEmptySnapshot(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"empty-ledger-snapshot"}, nil, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected successful empty-ledger-snapshot command, exit=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr on success, got %q", stderr.String())
+	}
+	var snapshot dbmigrations.LedgerSnapshot
+	if err := json.Unmarshal(stdout.Bytes(), &snapshot); err != nil {
+		t.Fatalf("decode empty ledger snapshot JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if snapshot.Format != dbmigrations.LedgerSnapshotFormat {
+		t.Fatalf("unexpected ledger snapshot format: %#v", snapshot)
+	}
+	if snapshot.Entries == nil || len(snapshot.Entries) != 0 {
+		t.Fatalf("expected explicit empty entries array, got %#v", snapshot.Entries)
+	}
+	body := stdout.String()
+	if !strings.Contains(body, `"entries": []`) {
+		t.Fatalf("expected explicit empty entries array in JSON, got %s", body)
+	}
+	if strings.Contains(body, "CREATE TABLE") || strings.Contains(body, "DROP TABLE") || strings.Contains(body, "-- go-metin2 migration") || strings.Contains(body, "memory://") {
+		t.Fatalf("empty ledger snapshot CLI must not expose executable SQL or DSN text, got %s", body)
+	}
+}
+
+func TestRunEmptyLedgerSnapshotOutputCanFeedPlan(t *testing.T) {
+	catalog, err := dbmigrations.Catalog()
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	var snapshotStdout bytes.Buffer
+	var snapshotStderr bytes.Buffer
+	if code := Run([]string{"empty-ledger-snapshot"}, nil, &snapshotStdout, &snapshotStderr); code != 0 {
+		t.Fatalf("expected empty-ledger-snapshot success, exit=%d stderr=%q", code, snapshotStderr.String())
+	}
+	var planStdout bytes.Buffer
+	var planStderr bytes.Buffer
+
+	code := Run([]string{"plan", "--ledger-snapshot", "-", "--target-version", "latest"}, bytes.NewReader(snapshotStdout.Bytes()), &planStdout, &planStderr)
+
+	if code != 0 {
+		t.Fatalf("expected plan from empty snapshot to succeed, exit=%d stderr=%q", code, planStderr.String())
+	}
+	var plan dbmigrations.Plan
+	if err := json.Unmarshal(planStdout.Bytes(), &plan); err != nil {
+		t.Fatalf("decode plan JSON: %v\nbody:\n%s", err, planStdout.String())
+	}
+	if plan.CurrentVersion != 0 || plan.LatestVersion != len(catalog) || plan.UpToDate || len(plan.Pending) != len(catalog) {
+		t.Fatalf("unexpected plan from generated empty snapshot: %#v", plan)
+	}
+}
+
+func TestRunEmptyLedgerSnapshotRejectsUnexpectedArguments(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"empty-ledger-snapshot", "extra"}, nil, &stdout, &stderr)
+
+	if code != 2 {
+		t.Fatalf("expected unexpected empty-ledger-snapshot argument to exit 2, got %d", code)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected usage error not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "empty-ledger-snapshot does not accept arguments") {
+		t.Fatalf("expected empty-ledger-snapshot usage guidance, got %q", stderr.String())
+	}
+}
+
 func TestRunLedgerSnapshotExportsMetadataOnlySQLLedgerSnapshot(t *testing.T) {
 	driverName := registerMigrateCLITestSQLDriver(t)
 	catalog, err := dbmigrations.Catalog()

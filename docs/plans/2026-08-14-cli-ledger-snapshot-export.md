@@ -4,7 +4,7 @@
 
 Add a read-only `metin2-migrate ledger-snapshot` command so operators can export strict `schema_migrations` metadata from a `database/sql` target without relying on a running `gamed` local ops endpoint and without applying migrations.
 
-The repo already had the strict `go-metin2-schema-migrations-ledger-v1` snapshot shape, loopback-only daemon export endpoint, offline snapshot planning, and CLI-only apply boundary. This slice closes the CLI preflight loop by letting the same CLI produce the snapshot artifact that `metin2-migrate plan` and `metin2-migrate apply` consume.
+The repo already had the strict `go-metin2-schema-migrations-ledger-v1` snapshot shape, loopback-only daemon export endpoint, offline snapshot planning, and CLI-only apply boundary. This slice closed the CLI preflight loop by letting the same CLI produce the snapshot artifact that `metin2-migrate plan` and `metin2-migrate apply` consume. A later small helper, `metin2-migrate empty-ledger-snapshot`, now emits the strict version-zero artifact for first-time database initialization without hand-written JSON.
 
 ## Contract frozen by this slice
 
