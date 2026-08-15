@@ -166,6 +166,7 @@ func TestGameRuntimePreviewContentBundleImportReturnsDeltasWithoutMutatingRuntim
 	if err != nil {
 		t.Fatalf("preview content bundle import: %v", err)
 	}
+	defaultUseEffect := &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27001:+50"}
 	wantDeltas := contentbundle.SummaryDeltas{
 		StaticActorCount:             contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
 		InteractableStaticActorCount: contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
@@ -183,9 +184,9 @@ func TestGameRuntimePreviewContentBundleImportReturnsDeltasWithoutMutatingRuntim
 				Title:      "Village Merchant",
 				EntryCount: 3,
 				Entries: []contentbundle.ShopCatalogEntrySummary{
-					{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+					{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, UseEffect: defaultUseEffect},
 					{Slot: 1, ItemVnum: 11200, ItemName: "Wooden Sword", Count: 1, Price: 500, Stackable: false, MaxCount: 1},
-					{Slot: 2, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 2, Price: 100, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+					{Slot: 2, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 2, Price: 100, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, UseEffect: defaultUseEffect},
 				},
 			},
 		}},
@@ -617,7 +618,7 @@ func TestGameRuntimeExportContentBundleSummaryIncludesItemTemplateDetails(t *tes
 	}
 	want := []contentbundle.ItemTemplateReferenceSummary{
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1},
-		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27001:+50"}},
 	}
 	if !reflect.DeepEqual(summary.ItemTemplates, want) {
 		t.Fatalf("unexpected runtime summary item templates:\n got: %#v\nwant: %#v", summary.ItemTemplates, want)

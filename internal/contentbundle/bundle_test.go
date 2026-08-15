@@ -1114,7 +1114,8 @@ func TestSummarizeExposesDirectUseGuardMetadataInTemplateBackedContentSummaries(
 		t.Fatalf("summarize direct-use guard bundle: %v", err)
 	}
 
-	wantTemplates := []ItemTemplateReferenceSummary{{Vnum: 27001, Name: "Quest-Sealed Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ConfirmWhenUse: true, QuestUse: true, QuestUseMultiple: true, Applicable: true, UseRejectMessage: useRejectMessage}}
+	wantUseEffect := &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "quest-sealed-use"}
+	wantTemplates := []ItemTemplateReferenceSummary{{Vnum: 27001, Name: "Quest-Sealed Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ConfirmWhenUse: true, QuestUse: true, QuestUseMultiple: true, Applicable: true, UseEffect: wantUseEffect, UseRejectMessage: useRejectMessage}}
 	if !reflect.DeepEqual(summary.ItemTemplates, wantTemplates) {
 		t.Fatalf("unexpected item-template direct-use guard summary:\n got: %#v\nwant: %#v", summary.ItemTemplates, wantTemplates)
 	}
@@ -1124,7 +1125,7 @@ func TestSummarizeExposesDirectUseGuardMetadataInTemplateBackedContentSummaries(
 		Title:      "Quest Sealed Merchant",
 		EntryCount: 1,
 		Entries: []ShopCatalogEntrySummary{
-			{Slot: 0, ItemVnum: 27001, ItemName: "Quest-Sealed Potion", Count: 2, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ConfirmWhenUse: true, QuestUse: true, QuestUseMultiple: true, Applicable: true, UseRejectMessage: useRejectMessage},
+			{Slot: 0, ItemVnum: 27001, ItemName: "Quest-Sealed Potion", Count: 2, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ConfirmWhenUse: true, QuestUse: true, QuestUseMultiple: true, Applicable: true, UseEffect: wantUseEffect, UseRejectMessage: useRejectMessage},
 		},
 	}}
 	if !reflect.DeepEqual(summary.ShopCatalogs, wantCatalogs) {
@@ -1139,14 +1140,90 @@ func TestSummarizeExposesDirectUseGuardMetadataInTemplateBackedContentSummaries(
 		RaceNum:         101,
 		CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
 		RewardDropVnums: []uint32{27001},
-		RewardDropItems: []RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Quest-Sealed Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ConfirmWhenUse: true, QuestUse: true, QuestUseMultiple: true, Applicable: true, UseRejectMessage: useRejectMessage}},
+		RewardDropItems: []RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Quest-Sealed Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ConfirmWhenUse: true, QuestUse: true, QuestUseMultiple: true, Applicable: true, UseEffect: wantUseEffect, UseRejectMessage: useRejectMessage}},
 	}}
 	if !reflect.DeepEqual(summary.SpawnGroups, wantSpawnGroups) {
 		t.Fatalf("unexpected spawn-group direct-use guard summary:\n got: %#v\nwant: %#v", summary.SpawnGroups, wantSpawnGroups)
 	}
-	wantRewardDrops := []RewardDropAggregateSummary{{ItemVnum: 27001, ItemName: "Quest-Sealed Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ConfirmWhenUse: true, QuestUse: true, QuestUseMultiple: true, Applicable: true, UseRejectMessage: useRejectMessage}}
+	wantRewardDrops := []RewardDropAggregateSummary{{ItemVnum: 27001, ItemName: "Quest-Sealed Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ConfirmWhenUse: true, QuestUse: true, QuestUseMultiple: true, Applicable: true, UseEffect: wantUseEffect, UseRejectMessage: useRejectMessage}}
 	if !reflect.DeepEqual(summary.RewardDrops, wantRewardDrops) {
 		t.Fatalf("unexpected reward-drop direct-use guard summary:\n got: %#v\nwant: %#v", summary.RewardDrops, wantRewardDrops)
+	}
+}
+
+func TestSummarizeExposesUseAndEquipEffectMetadataInTemplateBackedContentSummaries(t *testing.T) {
+	useEffect := &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, ConsumeCount: 2, Message: "consume:27020:+50", InfoMessage: "You feel restored.", SpecialEffectType: 3}
+	equipEffect := &itemcatalog.PointEffect{PointType: 1, PointIndex: 2, PointDelta: -10}
+	bundle := Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:             "practice.effect_reward",
+			Name:            "Effect Reward",
+			MapIndex:        42,
+			X:               1800,
+			Y:               2900,
+			RaceNum:         101,
+			CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropVnums: []uint32{27020, 12220},
+		}},
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27020, Name: "Effect Potion", Stackable: true, MaxCount: 200, UseEffect: useEffect},
+			{Vnum: 12220, Name: "Penalty Blade", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotWeapon.String(), EquipEffect: equipEffect},
+		},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:  interactionstore.KindShopPreview,
+			Ref:   "npc:effect_merchant",
+			Title: "Effect Merchant",
+			Catalog: []interactionstore.MerchantCatalogEntry{
+				{Slot: 0, ItemVnum: 27020, Price: 50, Count: 2},
+				{Slot: 1, ItemVnum: 12220, Price: 500, Count: 1},
+			},
+		}},
+	}
+
+	summary, err := Summarize(bundle)
+	if err != nil {
+		t.Fatalf("summarize effect metadata bundle: %v", err)
+	}
+
+	itemTemplatesByVnum := make(map[uint32]ItemTemplateReferenceSummary, len(summary.ItemTemplates))
+	for _, template := range summary.ItemTemplates {
+		itemTemplatesByVnum[template.Vnum] = template
+	}
+	if !reflect.DeepEqual(itemTemplatesByVnum[27020].UseEffect, useEffect) {
+		t.Fatalf("expected top-level item template to expose use effect: got %#v want %#v", itemTemplatesByVnum[27020].UseEffect, useEffect)
+	}
+	if !reflect.DeepEqual(itemTemplatesByVnum[12220].EquipEffect, equipEffect) {
+		t.Fatalf("expected top-level item template to expose equip effect: got %#v want %#v", itemTemplatesByVnum[12220].EquipEffect, equipEffect)
+	}
+
+	if len(summary.ShopCatalogs) != 1 || len(summary.ShopCatalogs[0].Entries) != 2 {
+		t.Fatalf("expected effect merchant catalog entries, got %+v", summary.ShopCatalogs)
+	}
+	shopEntriesByVnum := make(map[uint32]ShopCatalogEntrySummary)
+	for _, entry := range summary.ShopCatalogs[0].Entries {
+		shopEntriesByVnum[entry.ItemVnum] = entry
+	}
+	if !reflect.DeepEqual(shopEntriesByVnum[27020].UseEffect, useEffect) || !reflect.DeepEqual(shopEntriesByVnum[12220].EquipEffect, equipEffect) {
+		t.Fatalf("expected shop-catalog effect metadata, got %+v", summary.ShopCatalogs[0].Entries)
+	}
+
+	if len(summary.SpawnGroups) != 1 || len(summary.SpawnGroups[0].RewardDropItems) != 2 {
+		t.Fatalf("expected effect reward drop items, got %+v", summary.SpawnGroups)
+	}
+	rewardItemsByVnum := make(map[uint32]RewardDropItemSummary)
+	for _, item := range summary.SpawnGroups[0].RewardDropItems {
+		rewardItemsByVnum[item.ItemVnum] = item
+	}
+	if !reflect.DeepEqual(rewardItemsByVnum[27020].UseEffect, useEffect) || !reflect.DeepEqual(rewardItemsByVnum[12220].EquipEffect, equipEffect) {
+		t.Fatalf("expected reward-drop item effect metadata, got %+v", summary.SpawnGroups[0].RewardDropItems)
+	}
+
+	aggregateDropsByVnum := make(map[uint32]RewardDropAggregateSummary, len(summary.RewardDrops))
+	for _, item := range summary.RewardDrops {
+		aggregateDropsByVnum[item.ItemVnum] = item
+	}
+	if !reflect.DeepEqual(aggregateDropsByVnum[27020].UseEffect, useEffect) || !reflect.DeepEqual(aggregateDropsByVnum[12220].EquipEffect, equipEffect) {
+		t.Fatalf("expected aggregate reward-drop effect metadata, got %+v", summary.RewardDrops)
 	}
 }
 

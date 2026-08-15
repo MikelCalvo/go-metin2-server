@@ -6123,6 +6123,64 @@ func TestLocalContentBundleSummaryEndpointReturnsDirectUseGuardMetadataForLoopba
 	}
 }
 
+func TestLocalContentBundleSummaryEndpointReturnsUseAndEquipEffectMetadataForLoopbackPost(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	body := `{"spawn_groups":[{"ref":"practice.effect_reward","name":"Effect Reward","map_index":42,"x":1800,"y":2900,"race_num":101,"combat_profile":"practice_mob","reward_drop_vnums":[27020,12220]}],"item_templates":[{"vnum":27020,"name":"Effect Potion","stackable":true,"max_count":200,"use_effect":{"point_type":1,"point_index":1,"point_delta":50,"consume_count":2,"message":"consume:27020:+50","info_message":"You feel restored.","special_effect_type":3}},{"vnum":12220,"name":"Penalty Blade","stackable":false,"max_count":1,"equip_slot":"weapon","equip_effect":{"point_type":1,"point_index":2,"point_delta":-10}}],"interaction_definitions":[{"kind":"shop_preview","ref":"npc:effect_merchant","title":"Effect Merchant","catalog":[{"slot":0,"item_vnum":27020,"price":50,"count":2},{"slot":1,"item_vnum":12220,"price":500,"count":1}]}]}`
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/summary", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected dry-run summary not to call live exporter, got %d calls", summaryer.calls)
+	}
+	var got contentbundle.Summary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode effect metadata summary response body: %v", err)
+	}
+
+	useEffect := &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, ConsumeCount: 2, Message: "consume:27020:+50", InfoMessage: "You feel restored.", SpecialEffectType: 3}
+	equipEffect := &itemcatalog.PointEffect{PointType: 1, PointIndex: 2, PointDelta: -10}
+	itemTemplatesByVnum := make(map[uint32]contentbundle.ItemTemplateReferenceSummary, len(got.ItemTemplates))
+	for _, template := range got.ItemTemplates {
+		itemTemplatesByVnum[template.Vnum] = template
+	}
+	if !reflect.DeepEqual(itemTemplatesByVnum[27020].UseEffect, useEffect) || !reflect.DeepEqual(itemTemplatesByVnum[12220].EquipEffect, equipEffect) {
+		t.Fatalf("expected effect metadata on item-template summaries, got %+v", got.ItemTemplates)
+	}
+	shopEntriesByVnum := make(map[uint32]contentbundle.ShopCatalogEntrySummary)
+	if len(got.ShopCatalogs) == 1 {
+		for _, entry := range got.ShopCatalogs[0].Entries {
+			shopEntriesByVnum[entry.ItemVnum] = entry
+		}
+	}
+	if !reflect.DeepEqual(shopEntriesByVnum[27020].UseEffect, useEffect) || !reflect.DeepEqual(shopEntriesByVnum[12220].EquipEffect, equipEffect) {
+		t.Fatalf("expected effect metadata on shop-catalog summaries, got %+v", got.ShopCatalogs)
+	}
+	rewardItemsByVnum := make(map[uint32]contentbundle.RewardDropItemSummary)
+	if len(got.SpawnGroups) == 1 {
+		for _, item := range got.SpawnGroups[0].RewardDropItems {
+			rewardItemsByVnum[item.ItemVnum] = item
+		}
+	}
+	if !reflect.DeepEqual(rewardItemsByVnum[27020].UseEffect, useEffect) || !reflect.DeepEqual(rewardItemsByVnum[12220].EquipEffect, equipEffect) {
+		t.Fatalf("expected effect metadata on reward item summaries, got %+v", got.SpawnGroups)
+	}
+	aggregateDropsByVnum := make(map[uint32]contentbundle.RewardDropAggregateSummary, len(got.RewardDrops))
+	for _, item := range got.RewardDrops {
+		aggregateDropsByVnum[item.ItemVnum] = item
+	}
+	if !reflect.DeepEqual(aggregateDropsByVnum[27020].UseEffect, useEffect) || !reflect.DeepEqual(aggregateDropsByVnum[12220].EquipEffect, equipEffect) {
+		t.Fatalf("expected effect metadata on aggregate reward drop summaries, got %+v", got.RewardDrops)
+	}
+}
+
 func TestLocalContentBundleSummaryEndpointRejectsInvalidDryRunBundle(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
 	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
