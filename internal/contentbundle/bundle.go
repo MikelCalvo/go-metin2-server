@@ -1088,6 +1088,49 @@ func buildStaticActorDeltas(currentActors []StaticActor, candidateActors []Stati
 	return deltas
 }
 
+func StaticActorDeltasByName(deltas []StaticActorDelta, name string) []StaticActorDelta {
+	name = strings.TrimSpace(name)
+	if name == "" || strings.Contains(name, "/") {
+		return nil
+	}
+	matches := make([]StaticActorDelta, 0)
+	for _, delta := range deltas {
+		if staticActorDeltaMatchesName(delta, name) {
+			matches = append(matches, cloneStaticActorDelta(delta))
+		}
+	}
+	if len(matches) == 0 {
+		return nil
+	}
+	return matches
+}
+
+func staticActorDeltaMatchesName(delta StaticActorDelta, name string) bool {
+	return (delta.Current != nil && strings.TrimSpace(delta.Current.Name) == name) ||
+		(delta.Candidate != nil && strings.TrimSpace(delta.Candidate.Name) == name)
+}
+
+func cloneStaticActorDelta(delta StaticActorDelta) StaticActorDelta {
+	cloned := delta
+	if delta.Current != nil {
+		current := *delta.Current
+		current.Name = strings.TrimSpace(current.Name)
+		current.CombatProfile = strings.TrimSpace(current.CombatProfile)
+		current.InteractionKind = strings.TrimSpace(current.InteractionKind)
+		current.InteractionRef = strings.TrimSpace(current.InteractionRef)
+		cloned.Current = &current
+	}
+	if delta.Candidate != nil {
+		candidate := *delta.Candidate
+		candidate.Name = strings.TrimSpace(candidate.Name)
+		candidate.CombatProfile = strings.TrimSpace(candidate.CombatProfile)
+		candidate.InteractionKind = strings.TrimSpace(candidate.InteractionKind)
+		candidate.InteractionRef = strings.TrimSpace(candidate.InteractionRef)
+		cloned.Candidate = &candidate
+	}
+	return cloned
+}
+
 func staticActorMapByAuthoringKey(actors []StaticActor) map[string]StaticActor {
 	byKey := make(map[string]StaticActor, len(actors))
 	for _, actor := range normalizeStaticActors(actors) {

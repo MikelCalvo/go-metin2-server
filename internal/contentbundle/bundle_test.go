@@ -1244,6 +1244,36 @@ func TestBuildImportPreviewReturnsStaticActorDeltas(t *testing.T) {
 	}
 }
 
+func TestStaticActorDeltasByNameReturnsClonedNameDeltas(t *testing.T) {
+	currentPlacement := StaticActor{Name: "Village Guide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}
+	candidateMovedPlacement := StaticActor{Name: "Village Guide", MapIndex: 2, X: 1100, Y: 2100, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}
+	deltas := []StaticActorDelta{
+		{Change: "removed", Current: &currentPlacement},
+		{Change: "added", Candidate: &candidateMovedPlacement},
+		{Change: "added", Candidate: &StaticActor{Name: "Remote Merchant", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
+	}
+
+	got := StaticActorDeltasByName(deltas, " Village Guide ")
+	want := []StaticActorDelta{
+		{Change: "removed", Current: &currentPlacement},
+		{Change: "added", Candidate: &candidateMovedPlacement},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected name-scoped static-actor deltas:\n got: %#v\nwant: %#v", got, want)
+	}
+	got[0].Current.Name = "mutated"
+	got[1].Candidate.X = 9999
+	if currentPlacement.Name != "Village Guide" || candidateMovedPlacement.X != 1100 {
+		t.Fatalf("expected name-scoped static-actor delta lookup to clone nested actors, got current=%+v candidate=%+v", currentPlacement, candidateMovedPlacement)
+	}
+	if missing := StaticActorDeltasByName(deltas, "Missing Guide"); len(missing) != 0 {
+		t.Fatalf("expected missing static-actor name lookup to return no rows, got %#v", missing)
+	}
+	if invalid := StaticActorDeltasByName(deltas, ""); len(invalid) != 0 {
+		t.Fatalf("expected blank static-actor name lookup to fail closed, got %#v", invalid)
+	}
+}
+
 func TestBuildImportPreviewReturnsInteractionKindDeltas(t *testing.T) {
 	preview, err := BuildImportPreview(
 		Bundle{

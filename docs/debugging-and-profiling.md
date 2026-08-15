@@ -571,6 +571,12 @@ Returns every exact portable static-actor row for one authored actor name from t
 
 Use it when local QA needs to inspect duplicated authored static placements without fetching the full bundle summary or filtering out plain non-interactable actors. It is not a gameplay protocol endpoint and does not mutate authored content.
 
+### `POST /local/content-bundle/import-preview/static-actors/{name}`
+
+Returns the exact static-actor deltas for one authored actor name from a candidate content-bundle import preview without mutating runtime state. This loopback-only endpoint is registered only on `gamed`; it accepts the same candidate bundle body as `POST /local/content-bundle/import-preview`, URL-decodes `name` with the same path-safe name rules as the read-only static-actor reader, and returns matching `deltas.static_actors[]` rows whose current or candidate portable actor name matches. It returns `404` when that actor name has no added/removed/changed static-actor delta, `400` for malformed names or invalid candidate bundles, `403` for non-loopback callers, and accepts only `POST`.
+
+Use it when local QA needs to inspect one authored NPC/static placement import impact before applying a bundle, without fetching and manually filtering the broad import-preview response. It is not a gameplay protocol endpoint and does not mutate authored content.
+
 ### `GET /local/content-bundle/spawn-groups/{ref}`
 
 Returns one exact spawn-group row from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; `ref` must satisfy the same path-safe authored spawn-group ref rule used by `/local/spawn-groups/by-ref/{ref}`. It returns the matching `spawn_groups[]` row including resolved reward-drop item metadata when present, returns `404` when the live authored bundle has no matching spawn group, rejects malformed identities with `400`, rejects non-loopback callers with `403`, and accepts only `GET`.

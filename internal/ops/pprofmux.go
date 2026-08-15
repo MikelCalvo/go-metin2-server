@@ -3213,6 +3213,50 @@ func RegisterLocalContentBundleInteractionDefinitionImportPreviewEndpoint(mux *h
 	return mux
 }
 
+func RegisterLocalContentBundleStaticActorImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
+	if mux == nil || previewContentBundleImport == nil {
+		return mux
+	}
+	mux.HandleFunc("POST /local/content-bundle/import-preview/static-actors/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		name, ok := decodeLocalContentBundleStaticActorImportPreviewName(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bundle, status, ok := decodeLocalContentBundleRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		normalized, err := contentbundle.Canonicalize(bundle)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		preview, status := previewContentBundleImport(normalized)
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, preview, status)
+			return
+		}
+		importPreview, ok := preview.(contentbundle.ImportPreview)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		deltas := contentbundle.StaticActorDeltasByName(importPreview.Deltas.StaticActors, name)
+		if len(deltas) == 0 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, deltas, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalContentBundleShopCatalogImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
 	if mux == nil || previewContentBundleImport == nil {
 		return mux
@@ -4399,6 +4443,10 @@ func decodeLocalContentBundleQuestStateFlagIdentity(r *http.Request) (string, st
 
 func decodeLocalContentBundleInteractionDefinitionImportPreviewIdentity(r *http.Request) (string, string, bool) {
 	return decodeLocalKindRefIdentityWithPrefix(r, "/local/content-bundle/import-preview/interaction-definitions/")
+}
+
+func decodeLocalContentBundleStaticActorImportPreviewName(r *http.Request) (string, bool) {
+	return decodeLocalCharacterName(r, "/local/content-bundle/import-preview/static-actors/")
 }
 
 func decodeLocalContentBundleRewardDropImportPreviewVnum(r *http.Request) (uint32, bool) {

@@ -1354,6 +1354,160 @@ func TestLocalContentBundleInteractionDefinitionImportPreviewEndpointCoexistsWit
 	}
 }
 
+func TestLocalContentBundleStaticActorImportPreviewEndpointReturnsNameDeltasForLoopbackPost(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		StaticActors: []contentbundle.StaticActor{{Name: "Village Guide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}},
+		InteractionDefinitions: []interactionstore.Definition{
+			{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Welcome."},
+			{Kind: interactionstore.KindInfo, Ref: "lore:notice", Text: "Notice."},
+		},
+	}}
+	mux := RegisterLocalContentBundleStaticActorImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/static-actors/Village%20Guide", strings.NewReader(`{"static_actors":[{"name":"Village Guide","map_index":2,"x":1100,"y":2100,"race_num":20302,"interaction_kind":"talk","interaction_ref":"npc:guide"},{"name":"Remote Notice","map_index":7,"x":1300,"y":2300,"race_num":20304,"interaction_kind":"info","interaction_ref":"lore:notice"}],"interaction_definitions":[{"kind":"talk","ref":"npc:guide","text":"Welcome."},{"kind":"info","ref":"lore:notice","text":"Notice."}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected import previewer to be called once, got %d calls", previewer.calls)
+	}
+	wantCandidate := contentbundle.Bundle{
+		StaticActors: []contentbundle.StaticActor{
+			{Name: "Remote Notice", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 20304, InteractionKind: interactionstore.KindInfo, InteractionRef: "lore:notice"},
+			{Name: "Village Guide", MapIndex: 2, X: 1100, Y: 2100, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"},
+		},
+		InteractionDefinitions: []interactionstore.Definition{
+			{Kind: interactionstore.KindInfo, Ref: "lore:notice", Text: "Notice."},
+			{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Welcome."},
+		},
+	}
+	if !reflect.DeepEqual(previewer.lastBundle, wantCandidate) {
+		t.Fatalf("expected canonical candidate bundle passed to previewer:\n got: %#v\nwant: %#v", previewer.lastBundle, wantCandidate)
+	}
+	var got []contentbundle.StaticActorDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode static-actor import-preview delta response: %v", err)
+	}
+	current := contentbundle.StaticActor{Name: "Village Guide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}
+	candidate := contentbundle.StaticActor{Name: "Village Guide", MapIndex: 2, X: 1100, Y: 2100, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}
+	want := []contentbundle.StaticActorDelta{
+		{Change: "removed", Current: &current},
+		{Change: "added", Candidate: &candidate},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected static-actor import-preview deltas:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleStaticActorImportPreviewEndpointReturnsNotFoundWhenNameDoesNotChange(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "Village Guide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Welcome."}},
+	}}
+	mux := RegisterLocalContentBundleStaticActorImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/static-actors/Village%20Guide", strings.NewReader(`{"static_actors":[{"name":"Village Guide","map_index":1,"x":1000,"y":2000,"race_num":20302,"interaction_kind":"talk","interaction_ref":"npc:guide"}],"interaction_definitions":[{"kind":"talk","ref":"npc:guide","text":"Welcome."}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for unchanged static-actor name, got %d", http.StatusNotFound, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected unchanged static-actor lookup to call import previewer once, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleStaticActorImportPreviewEndpointRejectsInvalidNameBeforeCallback(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleStaticActorImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	for _, path := range []string{
+		"/local/content-bundle/import-preview/static-actors/",
+		"/local/content-bundle/import-preview/static-actors/Bad%2FGuide",
+		"/local/content-bundle/import-preview/static-actors/Village%20Guide/extra",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"static_actors":[]}`))
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for malformed static-actor import-preview path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected malformed static-actor identity not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleStaticActorImportPreviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleStaticActorImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/static-actors/Village%20Guide", strings.NewReader(`{"static_actors":[]}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback static-actor import preview, got %d", http.StatusForbidden, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected non-loopback static-actor import preview not to call previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleStaticActorImportPreviewEndpointRejectsWrongMethod(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleStaticActorImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/import-preview/static-actors/Village%20Guide", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method static-actor import preview, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected wrong-method static-actor import preview not to call previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleStaticActorImportPreviewEndpointCoexistsWithBroadImportPreview(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{StaticActors: []contentbundle.StaticActor{{Name: "Village Guide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302}}}}
+	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+	mux = RegisterLocalContentBundleStaticActorImportPreviewEndpoint(mux, previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/static-actors/Village%20Guide", strings.NewReader(`{"static_actors":[{"name":"Village Guide","map_index":2,"x":1100,"y":2100,"race_num":20302}],"interaction_definitions":[]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d from focused static-actor route on shared mux, got %d", http.StatusOK, rec.Code)
+	}
+	var got []contentbundle.StaticActorDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode focused static-actor import-preview delta response from shared mux: %v", err)
+	}
+	if len(got) != 2 || got[0].Change != "removed" || got[1].Change != "added" {
+		t.Fatalf("unexpected focused static-actor import-preview response from shared mux: %#v", got)
+	}
+}
+
 func TestLocalContentBundleShopCatalogImportPreviewEndpointReturnsExactDeltaForLoopbackPost(t *testing.T) {
 	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
 		ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}},
