@@ -26738,8 +26738,8 @@ func assertFirstSpawnHitClearsOtherPreselectedTargetOwnership(t *testing.T, comb
 	if thirdPartyRetarget.Accepted {
 		t.Fatalf("expected fresh third-party retarget after owner engagement to fail closed, got %+v", thirdPartyRetarget)
 	}
-	if thirdPartyRetarget.Failure != StaticActorCombatTargetFailureTargetNotTargetable {
-		t.Fatalf("expected fresh third-party retarget to fail as %q, got %+v", StaticActorCombatTargetFailureTargetNotTargetable, thirdPartyRetarget)
+	if thirdPartyRetarget.Failure != StaticActorCombatTargetFailureTargetEngaged {
+		t.Fatalf("expected fresh third-party retarget to fail as %q, got %+v", StaticActorCombatTargetFailureTargetEngaged, thirdPartyRetarget)
 	}
 	ownerRefresh := registry.AttemptStaticActorCombatTarget(ownerID, uint32(actor.EntityID))
 	if !ownerRefresh.Accepted {
@@ -26747,6 +26747,52 @@ func assertFirstSpawnHitClearsOtherPreselectedTargetOwnership(t *testing.T, comb
 	}
 	if ownerRefresh.HPPercent != 90 {
 		t.Fatalf("expected stale third-party selection to leave mob HP at 90 after one owner hit, got %+v", ownerRefresh)
+	}
+}
+
+func TestSharedWorldRegistryAttemptSelectedStaticActorAttackReportsEngagedTarget(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	owner := peerVisibilityCharacter("Owner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	thirdParty := peerVisibilityCharacter("ThirdParty", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected owner join to return a live shared-world entity ID")
+	}
+	thirdPartyID, _ := registry.Join(thirdParty, newPendingServerFrames(), nil)
+	if thirdPartyID == 0 {
+		t.Fatal("expected third-party join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.registerStaticActor(0, "PracticeMob", bootstrapMapIndex, 1200, 2200, 20350, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "practice.engaged_attack_reason", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected visible spawn-group practice mob registration to succeed")
+	}
+	ownerTarget := registry.AttemptStaticActorCombatTarget(ownerID, uint32(actor.EntityID))
+	if !ownerTarget.Accepted {
+		t.Fatalf("expected owner target selection before engagement to succeed, got %+v", ownerTarget)
+	}
+	thirdPartyTarget := registry.AttemptStaticActorCombatTarget(thirdPartyID, uint32(actor.EntityID))
+	if !thirdPartyTarget.Accepted {
+		t.Fatalf("expected third-party target selection before engagement to succeed, got %+v", thirdPartyTarget)
+	}
+	if !registry.SetSessionCombatTarget(ownerID, ownerTarget.TargetVID) {
+		t.Fatal("expected owner target to be recorded")
+	}
+	ownerAttack := registry.AttemptSelectedStaticActorAttack(ownerID, ownerTarget.TargetVID, ownerTarget.SnapshotVersion, uint32(actor.EntityID))
+	if !ownerAttack.Accepted || ownerAttack.Died {
+		t.Fatalf("expected owner attack to establish live engagement, got %+v", ownerAttack)
+	}
+
+	// Simulate a stale caller that still presents an old selected target after the
+	// engagement owner cleared ordinary shared target ownership. The attempt seam
+	// should expose the aggro-lite ownership gate distinctly instead of falling
+	// back to a generic non-targetable or snapshot-mismatch reason.
+	if !registry.SetSessionCombatTarget(thirdPartyID, thirdPartyTarget.TargetVID) {
+		t.Fatal("expected stale third-party target ownership fixture to be recorded")
+	}
+	thirdPartyAttack := registry.AttemptSelectedStaticActorAttack(thirdPartyID, thirdPartyTarget.TargetVID, thirdPartyTarget.SnapshotVersion, uint32(actor.EntityID))
+	if thirdPartyAttack.Accepted || thirdPartyAttack.Failure != StaticActorCombatAttackFailureTargetEngaged {
+		t.Fatalf("expected stale third-party attack to fail as %q, got %+v", StaticActorCombatAttackFailureTargetEngaged, thirdPartyAttack)
 	}
 }
 
@@ -26779,7 +26825,7 @@ func TestSharedWorldRegistryAttemptStaticActorCombatTargetReleasesAggroForZeroHP
 		t.Fatalf("expected first owner attack to establish a live engagement, got %+v", ownerAttack)
 	}
 	blockedTarget := registry.AttemptStaticActorCombatTarget(thirdPartyID, uint32(actor.EntityID))
-	if blockedTarget.Accepted || blockedTarget.Failure != StaticActorCombatTargetFailureTargetNotTargetable {
+	if blockedTarget.Accepted || blockedTarget.Failure != StaticActorCombatTargetFailureTargetEngaged {
 		t.Fatalf("expected live owner engagement to block fresh third-party target first, got %+v", blockedTarget)
 	}
 

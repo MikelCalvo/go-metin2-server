@@ -113,6 +113,7 @@ const (
 	StaticActorCombatTargetFailureTargetOutOfRange     = "target_out_of_range"
 	StaticActorCombatTargetFailureTargetNotTargetable  = "target_not_targetable"
 	StaticActorCombatTargetFailureTargetReturnRequired = "target_return_required"
+	StaticActorCombatTargetFailureTargetEngaged        = "target_engaged"
 	StaticActorCombatTargetFailureTargetDead           = "target_dead"
 
 	StaticActorCombatAttackFailureSubjectNotFound        = "subject_not_found"
@@ -123,6 +124,7 @@ const (
 	StaticActorCombatAttackFailureTargetOutOfRange       = "target_out_of_range"
 	StaticActorCombatAttackFailureTargetNotTargetable    = "target_not_targetable"
 	StaticActorCombatAttackFailureTargetReturnRequired   = "target_return_required"
+	StaticActorCombatAttackFailureTargetEngaged          = "target_engaged"
 	StaticActorCombatAttackFailureTargetDead             = "target_dead"
 	StaticActorCombatAttackFailureTargetSnapshotMismatch = "target_snapshot_mismatch"
 
@@ -3176,6 +3178,8 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 			attempt.Failure = StaticActorCombatAttackFailureTargetNotTargetable
 		case StaticActorCombatTargetFailureTargetReturnRequired:
 			attempt.Failure = StaticActorCombatAttackFailureTargetReturnRequired
+		case StaticActorCombatTargetFailureTargetEngaged:
+			attempt.Failure = StaticActorCombatAttackFailureTargetEngaged
 		case StaticActorCombatTargetFailureTargetDead:
 			attempt.Failure = StaticActorCombatAttackFailureTargetDead
 		default:
@@ -3307,7 +3311,7 @@ func (r *sharedWorldRegistry) attemptStaticActorCombatTargetLocked(subjectID uin
 		return attempt
 	}
 	if r.staticActorAggroLiteBlocksFreshTargetLocked(subjectID, actor, targetVID) {
-		attempt.Failure = StaticActorCombatTargetFailureTargetNotTargetable
+		attempt.Failure = StaticActorCombatTargetFailureTargetEngaged
 		return attempt
 	}
 	hpPercent, ok := worldruntime.BootstrapStaticActorHPPercent(actor.CombatKind, currentHP)
