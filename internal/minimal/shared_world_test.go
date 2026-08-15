@@ -3826,6 +3826,123 @@ func TestGameRuntimeFailedContentBundleImportDoesNotLeakSelectedTargetClear(t *t
 	}
 }
 
+func TestGameRuntimeFailedContentBundleImportRestoresSpawnGroupReturnStepSchedule(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	viewer := peerVisibilityCharacter("SpawnReturnRollback", 0x01035541, 4, 2301, 2800, 0, 101, 201)
+	viewer.MapIndex = 42
+	issuePeerTicket(t, store, "spawn-return-rollback", 0x55554141, viewer)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	currentTime := time.Unix(1700000960, 0)
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "radius", VisibilityRadius: 500, VisibilitySectorSize: 256},
+		store,
+		nil,
+		staticActorStore,
+		interactionStore,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "spawn-return-rollback", 0x55554141)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 5 {
+		t.Fatalf("expected base enter-game burst before spawn import, got %d frames", len(enterOut))
+	}
+	flushServerFrames(t, flow)
+
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_step_rollback_original",
+		Name:          "ReturnStepRollbackOriginalMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import original return-step rollback spawn bundle: %v", err)
+	}
+	flushServerFrames(t, flow)
+	group, ok := runtime.SpawnGroupByRef("practice.return_step_rollback_original")
+	if !ok {
+		t.Fatal("expected original return-step rollback spawn group to resolve by ref")
+	}
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "ReturnStepRollbackOriginalMob", 42, 2301, 2800, 20350); !ok {
+		t.Fatal("expected spawn-backed actor update to return-required position to succeed")
+	}
+	flushServerFrames(t, flow)
+
+	runtime.spawnReturnMu.Lock()
+	originalDueAt, scheduled := runtime.spawnReturnStepDueAt[group.EntityID]
+	runtime.spawnReturnMu.Unlock()
+	if !scheduled {
+		t.Fatalf("expected return-required actor %d to have a pending automatic return-step schedule before failed import", group.EntityID)
+	}
+
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{
+		{
+			Ref:           "practice.return_step_rollback_first",
+			Name:          "ReturnStepRollbackFirstMob",
+			MapIndex:      42,
+			X:             1810,
+			Y:             2910,
+			RaceNum:       20350,
+			CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+		},
+		{
+			Ref:           "practice.return_step_rollback_conflict",
+			Name:          "ReturnStepRollbackConflictMob",
+			MapIndex:      42,
+			X:             1820,
+			Y:             2920,
+			RaceNum:       20350,
+			CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+		},
+	}})
+	if err == nil {
+		t.Fatal("expected replacement import to fail when the second spawn actor conflicts with a live player VID")
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected failed replacement import not to leak staged visibility frames, got %d", len(queued))
+	}
+	restored, ok := runtime.SpawnGroupByRef("practice.return_step_rollback_original")
+	if !ok || restored.EntityID != group.EntityID || restored.X != 2301 || restored.SpawnLeash == nil || !restored.SpawnLeash.ReturnRequired {
+		t.Fatalf("expected failed import rollback to restore return-required spawn actor, ok=%v snapshot=%+v", ok, restored)
+	}
+	runtime.spawnReturnMu.Lock()
+	restoredDueAt, restoredScheduled := runtime.spawnReturnStepDueAt[group.EntityID]
+	runtime.spawnReturnMu.Unlock()
+	if !restoredScheduled || !restoredDueAt.Equal(originalDueAt) {
+		t.Fatalf("expected failed import rollback to restore pending return-step schedule at %s, got scheduled=%v due_at=%s", originalDueAt, restoredScheduled, restoredDueAt)
+	}
+
+	currentTime = originalDueAt.Add(time.Nanosecond)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 4 {
+		t.Fatalf("expected restored return-step schedule to fire retained viewer refresh, got %d frames", len(queued))
+	}
+	if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0])); err != nil || deleted.VID != uint32(group.EntityID) {
+		t.Fatalf("decode restored return-step delete: packet=%+v err=%v", deleted, err)
+	}
+	add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	if err != nil {
+		t.Fatalf("decode restored return-step add: %v", err)
+	}
+	if add.VID != uint32(group.EntityID) || add.X != 2201 || add.Y != 2800 {
+		t.Fatalf("expected restored return-step add at planned next position, got %+v", add)
+	}
+	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, queued[2])); err != nil {
+		t.Fatalf("decode restored return-step additional info: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, queued[3])); err != nil {
+		t.Fatalf("decode restored return-step update: %v", err)
+	}
+}
+
 func TestGameRuntimeUpdateSpawnGroupActorSnapshotKeepsCombatLevelAndRank(t *testing.T) {
 	const profile = "practice_spawn_update_ranked_wolf"
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)

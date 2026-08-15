@@ -1270,6 +1270,30 @@ func (r *gameRuntime) spawnGroupReturnStepDueAtSnapshot() map[uint64]time.Time {
 	return snapshot
 }
 
+func (r *gameRuntime) restoreSpawnGroupReturnStepDueAtSnapshot(snapshot map[uint64]time.Time) {
+	if r == nil {
+		return
+	}
+	restored := make(map[uint64]time.Time, len(snapshot))
+	for entityID, dueAt := range snapshot {
+		if entityID == 0 || dueAt.IsZero() || !r.spawnGroupReturnStepStillRequired(entityID) {
+			continue
+		}
+		restored[entityID] = dueAt
+	}
+	r.spawnReturnMu.Lock()
+	defer r.spawnReturnMu.Unlock()
+	if r.spawnReturnStepDueAt == nil {
+		r.spawnReturnStepDueAt = make(map[uint64]time.Time, len(restored))
+	}
+	for entityID := range r.spawnReturnStepDueAt {
+		delete(r.spawnReturnStepDueAt, entityID)
+	}
+	for entityID, dueAt := range restored {
+		r.spawnReturnStepDueAt[entityID] = dueAt
+	}
+}
+
 func (r *gameRuntime) spawnGroupReturnStepNow() time.Time {
 	now := time.Now()
 	if r != nil && r.now != nil {
@@ -7336,6 +7360,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		return normalized, nil
 	}
 	previousActors := r.StaticActors()
+	previousSpawnReturnStepDueAt := r.spawnGroupReturnStepDueAtSnapshot()
 	var previousCombatState staticActorCombatStateSnapshot
 	if r.sharedWorld != nil {
 		r.sharedWorld.mu.Lock()
@@ -7384,6 +7409,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		if !r.persistStaticActorSnapshot(previousActors) {
 			rollbackErr = errors.Join(rollbackErr, ErrContentBundleUnavailable)
 		}
+		r.restoreSpawnGroupReturnStepDueAtSnapshot(previousSpawnReturnStepDueAt)
 		if r.sharedWorld != nil {
 			r.sharedWorld.discardStaticActorImportFanout()
 		}
