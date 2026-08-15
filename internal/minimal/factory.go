@@ -4162,14 +4162,17 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.ItemRefineResult{Accepted: false}
 					}
 					if message, ok := selectedPlayer.RefineRejectText(inventory.SlotIndex(packet.Position), template); ok {
-						return gameflow.ItemRefineResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}}
+						frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}
+						frames = prependExchangeCloseFrame(frames)
+						return gameflow.ItemRefineResult{Accepted: true, Frames: frames}
 					}
 					if info, ok := selectedPlayer.RefineInformation(inventory.SlotIndex(packet.Position), packet.Type, template); ok {
 						frame, err := refineInformationFrame(info)
 						if err != nil {
 							return gameflow.ItemRefineResult{Accepted: false}
 						}
-						return gameflow.ItemRefineResult{Accepted: true, Frames: [][]byte{frame}}
+						frames := prependExchangeCloseFrame([][]byte{frame})
+						return gameflow.ItemRefineResult{Accepted: true, Frames: frames}
 					}
 					return gameflow.ItemRefineResult{Accepted: false}
 				},
