@@ -22611,6 +22611,31 @@ func TestSharedWorldRegistryStaticActorRespawnReportsExactPendingDeadActor(t *te
 	}
 }
 
+func TestSharedWorldRegistryStaticActorRespawnsForMapReturnsEmptySliceForKnownMapWithoutPendingRespawns(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	viewer := peerVisibilityCharacter("EmptyRespawnMapViewer", 0x01030143, 0x02040143, 4100, 5100, 0, 102, 202)
+	viewer.MapIndex = 42
+	viewerID, _ := registry.Join(viewer, newPendingServerFrames(), nil)
+	if viewerID == 0 {
+		t.Fatal("expected viewer join to make map 42 known")
+	}
+
+	respawns, ok := registry.StaticActorRespawnsForMap(42)
+	if !ok {
+		t.Fatal("expected known map-42 pending respawn lookup to resolve")
+	}
+	if respawns == nil || len(respawns) != 0 {
+		t.Fatalf("expected known map with no pending respawns to return a non-nil empty slice, got %#v", respawns)
+	}
+	encoded, err := json.Marshal(respawns)
+	if err != nil {
+		t.Fatalf("marshal empty map-local respawn slice: %v", err)
+	}
+	if string(encoded) != "[]" {
+		t.Fatalf("expected map-local empty respawn slice to marshal as [], got %s", encoded)
+	}
+}
+
 func TestSharedWorldRegistryStaticActorRespawnsForMapReturnsMapLocalPendingDeadActors(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	currentTime := time.Unix(1700000921, 0)

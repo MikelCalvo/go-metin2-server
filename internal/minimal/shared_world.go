@@ -1404,7 +1404,7 @@ func (r *sharedWorldRegistry) StaticActorRespawnsForMap(mapIndex uint32) ([]Stat
 		return nil, false
 	}
 	if len(r.staticActorCombatRespawnAt) == 0 {
-		return nil, true
+		return []StaticActorRespawnSnapshot{}, true
 	}
 	entityIDs := make([]uint64, 0, len(r.staticActorCombatRespawnAt))
 	for entityID := range r.staticActorCombatRespawnAt {
