@@ -1365,6 +1365,31 @@ func buildRewardDropDeltas(currentDrops []RewardDropAggregateSummary, candidateD
 	return deltas
 }
 
+func RewardDropDeltaByVnum(deltas []RewardDropDelta, itemVnum uint32) (RewardDropDelta, bool) {
+	if itemVnum == 0 {
+		return RewardDropDelta{}, false
+	}
+	for _, delta := range deltas {
+		if delta.ItemVnum == itemVnum {
+			return cloneRewardDropDelta(delta), true
+		}
+	}
+	return RewardDropDelta{}, false
+}
+
+func cloneRewardDropDelta(delta RewardDropDelta) RewardDropDelta {
+	cloned := delta
+	if delta.Current != nil {
+		current := *delta.Current
+		cloned.Current = &current
+	}
+	if delta.Candidate != nil {
+		candidate := *delta.Candidate
+		cloned.Candidate = &candidate
+	}
+	return cloned
+}
+
 func rewardDropSummaryMapByVnum(drops []RewardDropAggregateSummary) map[uint32]RewardDropAggregateSummary {
 	byVnum := make(map[uint32]RewardDropAggregateSummary, len(drops))
 	for _, drop := range drops {

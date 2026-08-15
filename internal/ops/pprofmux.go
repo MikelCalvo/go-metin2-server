@@ -3191,6 +3191,50 @@ func RegisterLocalContentBundleInteractionDefinitionImportPreviewEndpoint(mux *h
 	return mux
 }
 
+func RegisterLocalContentBundleRewardDropImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
+	if mux == nil || previewContentBundleImport == nil {
+		return mux
+	}
+	mux.HandleFunc("POST /local/content-bundle/import-preview/reward-drops/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		itemVnum, ok := decodeLocalContentBundleRewardDropImportPreviewVnum(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bundle, status, ok := decodeLocalContentBundleRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		normalized, err := contentbundle.Canonicalize(bundle)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		preview, status := previewContentBundleImport(normalized)
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, preview, status)
+			return
+		}
+		importPreview, ok := preview.(contentbundle.ImportPreview)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		delta, ok := contentbundle.RewardDropDeltaByVnum(importPreview.Deltas.RewardDrops, itemVnum)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, delta, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalContentBundleQuestStateFlagImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
 	if mux == nil || previewContentBundleImport == nil {
 		return mux
@@ -4157,6 +4201,10 @@ func decodeLocalContentBundleQuestStateFlagIdentity(r *http.Request) (string, st
 
 func decodeLocalContentBundleInteractionDefinitionImportPreviewIdentity(r *http.Request) (string, string, bool) {
 	return decodeLocalKindRefIdentityWithPrefix(r, "/local/content-bundle/import-preview/interaction-definitions/")
+}
+
+func decodeLocalContentBundleRewardDropImportPreviewVnum(r *http.Request) (uint32, bool) {
+	return decodeLocalContentBundleVnumWithPrefix(r, "/local/content-bundle/import-preview/reward-drops/")
 }
 
 func decodeLocalContentBundleQuestStateCharacterImportPreviewIdentity(r *http.Request) (string, bool) {

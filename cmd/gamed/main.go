@@ -740,6 +740,10 @@ func main() {
 		opsHandler,
 		previewContentBundleImport,
 	)
+	opsHandler = ops.RegisterLocalContentBundleRewardDropImportPreviewEndpoint(
+		opsHandler,
+		previewContentBundleImport,
+	)
 	opsHandler = ops.RegisterLocalContentBundleQuestStateFlagImportPreviewEndpoint(
 		opsHandler,
 		previewContentBundleImport,

@@ -607,6 +607,12 @@ Returns one exact aggregate reward-drop summary row from the live content-bundle
 
 Use it when local QA needs to inspect one authored reward item's aggregate source count and guard/rejection metadata without fetching the full content-bundle summary or expanding every spawn group. It is not a gameplay protocol endpoint and does not mutate authored content.
 
+### `POST /local/content-bundle/import-preview/reward-drops/{item_vnum}`
+
+Returns one exact aggregate reward-drop delta from a candidate content-bundle import preview without mutating runtime state. This loopback-only endpoint is registered only on `gamed`; it accepts the same candidate bundle body as `POST /local/content-bundle/import-preview`, validates `item_vnum` as a non-zero unsigned item template ID, and returns the matching `deltas.reward_drops[]` row with `change` plus current/candidate source-count and template metadata. It returns `404` when that reward item has no added/removed/changed delta, `400` for malformed identities or invalid candidate bundles, `403` for non-loopback callers, and accepts only `POST`.
+
+Use it when local QA needs to inspect one authored reward-item import impact before applying a bundle, without fetching and manually filtering the broad import-preview response. It is not a gameplay protocol endpoint and does not mutate authored content.
+
 ### `GET /local/content-bundle/quest-state`
 
 Returns a compact quest-state overview from the live content-bundle summary. This loopback-only read-only endpoint is registered only on `gamed`; it returns the live exported bundle's quest-state counts, quest refs, per-character summaries, and per-quest summaries, rejects non-loopback callers with `403`, forwards live bundle-summary export failures, and accepts only `GET`.

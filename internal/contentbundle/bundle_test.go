@@ -1894,6 +1894,36 @@ func TestBuildImportPreviewReturnsRewardDropDeltas(t *testing.T) {
 	}
 }
 
+func TestRewardDropDeltaByVnumReturnsClonedExactDelta(t *testing.T) {
+	currentRed := RewardDropAggregateSummary{ItemVnum: 27001, ItemName: "Small Red Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 5}
+	candidateRed := RewardDropAggregateSummary{ItemVnum: 27001, ItemName: "Small Red Potion", SourceCount: 2, Stackable: true, MaxCount: 200, ShopBuyPrice: 5}
+	currentBlue := RewardDropAggregateSummary{ItemVnum: 27002, ItemName: "Small Blue Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 7}
+	deltas := []RewardDropDelta{
+		{ItemVnum: 27001, Change: "changed", Current: &currentRed, Candidate: &candidateRed},
+		{ItemVnum: 27002, Change: "removed", Current: &currentBlue},
+	}
+
+	got, ok := RewardDropDeltaByVnum(deltas, 27001)
+	if !ok {
+		t.Fatal("expected reward-drop delta for vnum 27001")
+	}
+	want := RewardDropDelta{ItemVnum: 27001, Change: "changed", Current: &currentRed, Candidate: &candidateRed}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected exact reward-drop delta:\n got: %#v\nwant: %#v", got, want)
+	}
+	got.Current.ItemName = "mutated"
+	got.Candidate.SourceCount = 99
+	if currentRed.ItemName != "Small Red Potion" || candidateRed.SourceCount != 2 {
+		t.Fatalf("expected exact reward-drop delta lookup to clone pointer payloads, current=%+v candidate=%+v", currentRed, candidateRed)
+	}
+	if _, ok := RewardDropDeltaByVnum(deltas, 0); ok {
+		t.Fatal("expected zero reward-drop vnum lookup to fail")
+	}
+	if _, ok := RewardDropDeltaByVnum(deltas, 99999); ok {
+		t.Fatal("expected missing reward-drop vnum lookup to fail")
+	}
+}
+
 func TestBuildImportPreviewReturnsSpawnGroupDeltas(t *testing.T) {
 	redPotion := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}
 	bluePotion := itemcatalog.Template{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 7}

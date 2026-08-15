@@ -1546,6 +1546,150 @@ func TestLocalContentBundleImportPreviewEndpointReturnsRewardDropDeltaJSONForLoo
 	}
 }
 
+func TestLocalContentBundleRewardDropImportPreviewEndpointReturnsExactDeltaForLoopbackPost(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 7},
+		},
+		SpawnGroups: []contentbundle.SpawnGroup{
+			{Ref: "practice.red", Name: "Red Drop Mob", MapIndex: 42, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardDropVnums: []uint32{27001}},
+			{Ref: "practice.blue", Name: "Blue Drop Mob", MapIndex: 42, X: 1100, Y: 2100, RaceNum: 102, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardDropVnums: []uint32{27002}},
+		},
+	}}
+	mux := RegisterLocalContentBundleRewardDropImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/reward-drops/27001", strings.NewReader(`{"item_templates":[{"vnum":27001,"name":"Small Red Potion","stackable":true,"max_count":200,"shop_buy_price":5}],"spawn_groups":[{"ref":"practice.red","name":"Red Drop Mob","map_index":42,"x":1000,"y":2000,"race_num":101,"combat_profile":"practice_mob","reward_drop_vnums":[27001]},{"ref":"practice.red_bonus","name":"Bonus Red Drop Mob","map_index":42,"x":1200,"y":2200,"race_num":103,"combat_profile":"practice_mob","reward_drop_vnums":[27001]}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected import previewer to be called once, got %d calls", previewer.calls)
+	}
+	var got contentbundle.RewardDropDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode exact reward-drop import-preview delta response: %v", err)
+	}
+	currentRed := contentbundle.RewardDropAggregateSummary{ItemVnum: 27001, ItemName: "Small Red Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 5}
+	candidateRed := contentbundle.RewardDropAggregateSummary{ItemVnum: 27001, ItemName: "Small Red Potion", SourceCount: 2, Stackable: true, MaxCount: 200, ShopBuyPrice: 5}
+	want := contentbundle.RewardDropDelta{ItemVnum: 27001, Change: "changed", Current: &currentRed, Candidate: &candidateRed}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected exact reward-drop import-preview delta:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleRewardDropImportPreviewEndpointReturnsNotFoundWhenRewardDropDoesNotChange(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}},
+		SpawnGroups:   []contentbundle.SpawnGroup{{Ref: "practice.red", Name: "Red Drop Mob", MapIndex: 42, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardDropVnums: []uint32{27001}}},
+	}}
+	mux := RegisterLocalContentBundleRewardDropImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/reward-drops/27001", strings.NewReader(`{"item_templates":[{"vnum":27001,"name":"Small Red Potion","stackable":true,"max_count":200,"shop_buy_price":5}],"spawn_groups":[{"ref":"practice.red","name":"Red Drop Mob","map_index":42,"x":1000,"y":2000,"race_num":101,"combat_profile":"practice_mob","reward_drop_vnums":[27001]}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for unchanged reward-drop import preview, got %d", http.StatusNotFound, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected missing reward-drop delta lookup to call import previewer once, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleRewardDropImportPreviewEndpointRejectsInvalidVnumBeforeCallback(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleRewardDropImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	for _, path := range []string{
+		"/local/content-bundle/import-preview/reward-drops/0",
+		"/local/content-bundle/import-preview/reward-drops/not-a-vnum",
+		"/local/content-bundle/import-preview/reward-drops/27001/extra",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"item_templates":[],"spawn_groups":[]}`))
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for malformed reward-drop import-preview path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected malformed reward-drop identities not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleRewardDropImportPreviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleRewardDropImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/reward-drops/27001", strings.NewReader(`{"item_templates":[],"spawn_groups":[]}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback reward-drop import preview, got %d", http.StatusForbidden, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected non-loopback request not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleRewardDropImportPreviewEndpointRejectsWrongMethod(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleRewardDropImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/import-preview/reward-drops/27001", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method reward-drop import preview, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected wrong-method request not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleRewardDropImportPreviewEndpointCoexistsWithBroadImportPreview(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}},
+		SpawnGroups:   []contentbundle.SpawnGroup{{Ref: "practice.red", Name: "Red Drop Mob", MapIndex: 42, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardDropVnums: []uint32{27001}}},
+	}}
+	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+	mux = RegisterLocalContentBundleRewardDropImportPreviewEndpoint(mux, previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/reward-drops/27001", strings.NewReader(`{"item_templates":[{"vnum":27001,"name":"Small Red Potion","stackable":true,"max_count":200,"shop_buy_price":5}],"spawn_groups":[{"ref":"practice.red","name":"Red Drop Mob","map_index":42,"x":1000,"y":2000,"race_num":101,"combat_profile":"practice_mob","reward_drop_vnums":[27001]},{"ref":"practice.red_bonus","name":"Bonus Red Drop Mob","map_index":42,"x":1200,"y":2200,"race_num":103,"combat_profile":"practice_mob","reward_drop_vnums":[27001]}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d from focused route on shared mux, got %d", http.StatusOK, rec.Code)
+	}
+	var got contentbundle.RewardDropDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode focused reward-drop import-preview delta response from shared mux: %v", err)
+	}
+	if got.ItemVnum != 27001 || got.Change != "changed" || got.Candidate == nil || got.Candidate.SourceCount != 2 {
+		t.Fatalf("unexpected focused reward-drop import-preview response from shared mux: %#v", got)
+	}
+}
+
 func TestLocalContentBundleImportPreviewEndpointReturnsSpawnGroupDeltaJSONForLoopbackPost(t *testing.T) {
 	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
 		ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}},
