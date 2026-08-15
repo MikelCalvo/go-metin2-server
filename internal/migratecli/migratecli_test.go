@@ -3,8 +3,10 @@ package migratecli
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -401,6 +403,182 @@ func TestRunApplyResolvesLatestTargetVersion(t *testing.T) {
 	last := result.Applied[len(result.Applied)-1]
 	if last.Version != result.LatestVersion || last.Direction != dbmigrations.DirectionUp {
 		t.Fatalf("expected last latest step to reach catalog tip, got %#v", last)
+	}
+}
+
+func TestRunApplyWritesAuditFileAfterSuccessfulMutation(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	auditPath := t.TempDir() + "/migration-apply-audit.json"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://audit", "--ledger-snapshot", "-", "--target-version", "1", "--audit-file", auditPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected audited apply command, exit=%d stderr=%q", code, stderr.String())
+	}
+	var result dbmigrations.ApplyResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode apply result JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	rawAudit, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("read audit file: %v", err)
+	}
+	var audit migrationApplyAudit
+	if err := json.Unmarshal(rawAudit, &audit); err != nil {
+		t.Fatalf("decode audit JSON: %v\nbody:\n%s", err, string(rawAudit))
+	}
+	if audit.Format != migrationApplyAuditFormat {
+		t.Fatalf("unexpected audit format: %#v", audit)
+	}
+	if audit.Driver != driverName || audit.DSNConfigured != true {
+		t.Fatalf("unexpected audit database metadata: %#v", audit)
+	}
+	if audit.TargetVersion != 1 || audit.TargetLatest {
+		t.Fatalf("unexpected audit target metadata: %#v", audit)
+	}
+	if audit.Result.PreviousVersion != result.PreviousVersion || audit.Result.CurrentVersion != result.CurrentVersion || audit.Result.LatestVersion != result.LatestVersion || len(audit.Result.Applied) != len(result.Applied) {
+		t.Fatalf("audit result does not match stdout result: audit=%#v stdout=%#v", audit.Result, result)
+	}
+	if audit.LedgerSnapshotSHA256 != testSHA256HexBytes(rawSnapshot) {
+		t.Fatalf("unexpected audit ledger snapshot checksum: got %q want %q", audit.LedgerSnapshotSHA256, testSHA256HexBytes(rawSnapshot))
+	}
+	if audit.AppliedAt == "" {
+		t.Fatalf("expected audit to include applied_at timestamp: %#v", audit)
+	}
+	body := string(rawAudit)
+	for _, forbidden := range []string{"memory://audit", "CREATE TABLE", "DROP TABLE", "-- go-metin2 migration"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("audit file must not expose %q, got %s", forbidden, body)
+		}
+	}
+}
+
+func TestRunApplyRejectsAuditFileWhenNoMigrationWouldRun(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	catalog, err := dbmigrations.Catalog()
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	applied := []dbmigrations.LedgerEntry{{Version: catalog[0].Version, Name: catalog[0].Name, UpSHA256: catalog[0].UpSHA256}}
+	currentMigrateCLITestDriver(t).setLedger(applied)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot(applied)
+	if err != nil {
+		t.Fatalf("marshal ledger snapshot: %v", err)
+	}
+	auditPath := t.TempDir() + "/noop-audit.json"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://noop-audit", "--ledger-snapshot", "-", "--target-version", "1", "--audit-file", auditPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected no-op audited apply to fail closed, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected rejected no-op audit not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "audit file requires at least one applied migration") {
+		t.Fatalf("expected no-op audit guidance, got %q", stderr.String())
+	}
+	if _, err := os.Stat(auditPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected no audit file for rejected no-op apply, got %v", err)
+	}
+	if got := currentMigrateCLITestDriver(t).eventsSnapshot(); len(got) != 0 {
+		t.Fatalf("expected no-op audit guard before opening DB, got events %#v", got)
+	}
+}
+
+func TestRunApplyRejectsAuditFileOverwriteBeforeOpeningDatabase(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	auditPath := t.TempDir() + "/existing-audit.json"
+	if err := os.WriteFile(auditPath, []byte("existing\n"), 0o600); err != nil {
+		t.Fatalf("seed existing audit file: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://overwrite-audit", "--ledger-snapshot", "-", "--target-version", "1", "--audit-file", auditPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected audit overwrite to fail closed, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected audit overwrite failure not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "audit file already exists") {
+		t.Fatalf("expected audit overwrite guidance, got %q", stderr.String())
+	}
+	if got := currentMigrateCLITestDriver(t).eventsSnapshot(); len(got) != 0 {
+		t.Fatalf("expected audit overwrite guard before opening DB, got events %#v", got)
+	}
+	if raw, err := os.ReadFile(auditPath); err != nil || string(raw) != "existing\n" {
+		t.Fatalf("expected existing audit file to remain unchanged, raw=%q err=%v", string(raw), err)
+	}
+}
+
+func TestRunApplyRemovesReservedAuditFileWhenApplyFails(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	auditPath := t.TempDir() + "/failed-audit.json"
+	currentMigrateCLITestDriver(t).setError(fmt.Errorf("migration target refused write"))
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://failed-audit", "--ledger-snapshot", "-", "--target-version", "1", "--audit-file", auditPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected failed audited apply to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected failed audited apply not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "migration target refused write") {
+		t.Fatalf("expected apply failure on stderr, got %q", stderr.String())
+	}
+	if _, err := os.Stat(auditPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected reserved audit file to be removed after failed apply, got %v", err)
+	}
+	if got := currentMigrateCLITestDriver(t).eventsSnapshot(); !containsMigrateCLITestEventPrefix(got, "rollback") {
+		t.Fatalf("expected failed apply to roll back, got events %#v", got)
+	}
+}
+
+func TestRunApplyRejectsAuditFileWhenParentDirectoryIsMissing(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	auditPath := t.TempDir() + "/missing/failed-audit.json"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://missing-parent-audit", "--ledger-snapshot", "-", "--target-version", "1", "--audit-file", auditPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected missing audit parent to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected missing audit parent not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "create audit file") {
+		t.Fatalf("expected audit create error, got %q", stderr.String())
+	}
+	if got := currentMigrateCLITestDriver(t).eventsSnapshot(); len(got) != 0 {
+		t.Fatalf("expected missing audit parent guard before opening DB, got events %#v", got)
 	}
 }
 
@@ -1054,4 +1232,9 @@ func strconvAtoiForTest(value string) (int, error) {
 	var result int
 	_, err := fmt.Sscanf(strings.TrimSpace(value), "%d", &result)
 	return result, err
+}
+
+func testSHA256HexBytes(raw []byte) string {
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
 }

@@ -3,14 +3,18 @@ package migratecli
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
 )
@@ -28,7 +32,8 @@ const (
 // commands are read-only. The apply command is an explicit CLI-only mutation
 // surface: it requires an operator-supplied database driver, DSN, strict offline
 // ledger snapshot, and target version, and it remains deliberately separate from
-// daemon startup and local ops endpoints.
+// daemon startup and local ops endpoints. Operators can optionally request an
+// exclusive metadata-only audit file for non-empty apply plans.
 func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	if stdout == nil {
 		stdout = io.Discard
@@ -248,10 +253,12 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 	var dsn string
 	var snapshotPath string
 	var targetVersionText string
+	var auditFilePath string
 	flags.StringVar(&driverName, "driver", "", "database/sql driver name for the migration target")
 	flags.StringVar(&dsn, "dsn", "", "database/sql DSN for the migration target")
 	flags.StringVar(&snapshotPath, "ledger-snapshot", "", "path to go-metin2 schema_migrations ledger snapshot JSON, or - for stdin")
 	flags.StringVar(&targetVersionText, "target-version", "", "catalog target version to apply")
+	flags.StringVar(&auditFilePath, "audit-file", "", "optional path for an exclusive metadata-only apply audit JSON file")
 	flags.Usage = func() { printApplyUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
@@ -307,6 +314,25 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 		return exitError
 	}
 
+	var auditFile *migrationApplyAuditFile
+	if strings.TrimSpace(auditFilePath) != "" {
+		plan, err := dbmigrations.PlanToVersion(ledger, resolvedTarget)
+		if err != nil {
+			writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
+			return exitError
+		}
+		if len(plan.Pending) == 0 {
+			writeMigrationCommandError(stderr, dsn, "migration apply: %v", fmt.Errorf("%w: audit file requires at least one applied migration", ErrMigrationApplyAudit))
+			return exitError
+		}
+		auditFile, err = createMigrationApplyAuditFile(auditFilePath)
+		if err != nil {
+			writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
+			return exitError
+		}
+		defer auditFile.Discard()
+	}
+
 	db, err := sql.Open(strings.TrimSpace(driverName), strings.TrimSpace(dsn))
 	if err != nil {
 		writeMigrationCommandError(stderr, dsn, "migration apply: open database driver %q: %v", strings.TrimSpace(driverName), err)
@@ -319,7 +345,93 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 		writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
 		return exitError
 	}
+	if auditFile != nil {
+		if err := auditFile.Commit(migrationApplyAudit{
+			Format:               migrationApplyAuditFormat,
+			AppliedAt:            time.Now().UTC().Format(time.RFC3339Nano),
+			Driver:               strings.TrimSpace(driverName),
+			DSNConfigured:        strings.TrimSpace(dsn) != "",
+			TargetVersion:        resolvedTarget,
+			TargetLatest:         targetLatest,
+			LedgerSnapshotSHA256: sha256Hex(rawLedger),
+			Result:               result,
+		}); err != nil {
+			writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
+			return exitError
+		}
+	}
 	return writeJSON(stdout, stderr, result)
+}
+
+const migrationApplyAuditFormat = "go-metin2-migration-apply-audit-v1"
+
+var ErrMigrationApplyAudit = errors.New("migration apply audit failed")
+
+type migrationApplyAudit struct {
+	Format               string                   `json:"format"`
+	AppliedAt            string                   `json:"applied_at"`
+	Driver               string                   `json:"driver"`
+	DSNConfigured        bool                     `json:"dsn_configured"`
+	TargetVersion        int                      `json:"target_version"`
+	TargetLatest         bool                     `json:"target_latest"`
+	LedgerSnapshotSHA256 string                   `json:"ledger_snapshot_sha256"`
+	Result               dbmigrations.ApplyResult `json:"result"`
+}
+
+type migrationApplyAuditFile struct {
+	path string
+	file *os.File
+}
+
+func createMigrationApplyAuditFile(path string) (*migrationApplyAuditFile, error) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return nil, nil
+	}
+	file, err := os.OpenFile(trimmed, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return nil, fmt.Errorf("%w: audit file already exists: %s", ErrMigrationApplyAudit, trimmed)
+		}
+		return nil, fmt.Errorf("%w: create audit file: %v", ErrMigrationApplyAudit, err)
+	}
+	return &migrationApplyAuditFile{path: trimmed, file: file}, nil
+}
+
+func (f *migrationApplyAuditFile) Commit(audit migrationApplyAudit) error {
+	if f == nil || f.file == nil {
+		return nil
+	}
+	if len(audit.Result.Applied) == 0 {
+		return fmt.Errorf("%w: audit file requires at least one applied migration", ErrMigrationApplyAudit)
+	}
+	raw, err := json.MarshalIndent(audit, "", "  ")
+	if err != nil {
+		return fmt.Errorf("%w: marshal audit file: %v", ErrMigrationApplyAudit, err)
+	}
+	raw = append(raw, '\n')
+	if _, err := f.file.Write(raw); err != nil {
+		return fmt.Errorf("%w: write audit file: %v", ErrMigrationApplyAudit, err)
+	}
+	if err := f.file.Sync(); err != nil {
+		return fmt.Errorf("%w: sync audit file: %v", ErrMigrationApplyAudit, err)
+	}
+	if err := f.file.Close(); err != nil {
+		return fmt.Errorf("%w: close audit file: %v", ErrMigrationApplyAudit, err)
+	}
+	f.file = nil
+	return nil
+}
+
+func (f *migrationApplyAuditFile) Discard() {
+	if f == nil {
+		return
+	}
+	if f.file != nil {
+		_ = f.file.Close()
+		f.file = nil
+		_ = os.Remove(f.path)
+	}
 }
 
 func writeMigrationCommandError(stderr io.Writer, dsn string, format string, args ...any) {
@@ -367,6 +479,11 @@ func readBoundedLedgerSnapshot(reader io.Reader) ([]byte, error) {
 		return nil, fmt.Errorf("ledger snapshot exceeds %d bytes", maxLedgerSnapshotBytes)
 	}
 	return raw, nil
+}
+
+func sha256Hex(raw []byte) string {
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
 }
 
 func planLedgerSnapshot(raw []byte, targetVersion int, targetLatest bool) (dbmigrations.Plan, error) {
@@ -456,5 +573,5 @@ func printPlanUsage(w io.Writer) {
 
 func printApplyUsage(w io.Writer) {
 	fmt.Fprintln(w, "apply usage:")
-	fmt.Fprintln(w, "  metin2-migrate apply --driver <database/sql-driver> --dsn <dsn> --ledger-snapshot <path|-> --target-version <version|latest>")
+	fmt.Fprintln(w, "  metin2-migrate apply --driver <database/sql-driver> --dsn <dsn> --ledger-snapshot <path|-> --target-version <version|latest> [--audit-file <path>]")
 }
