@@ -172,6 +172,7 @@ Already present:
 
 - target selection and normal attack ingress,
 - cadence gates, runtime HP, HP percent refreshes, dead-state rejection, target clear, and delayed respawn rebuild,
+- read-only loopback combat-target snapshots that mirror current visibility/range/leash/aggro/death gates without mutating stale target state,
 - aggro-lite engagement ownership and retaliation ticks,
 - player death floor and restart-here/restart-town bootstrap recovery seams,
 - deterministic EXP/gold/fixed-drop reward descriptors for accepted non-player deaths,

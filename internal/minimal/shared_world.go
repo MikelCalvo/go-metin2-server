@@ -1219,6 +1219,24 @@ func (r *sharedWorldRegistry) staticActorAggroLiteBlocksFreshTargetLocked(subjec
 	return true
 }
 
+func (r *sharedWorldRegistry) staticActorAggroLiteBlocksFreshTargetReadOnlyLocked(subjectID uint64, actor worldruntime.StaticEntity, targetVID uint32) bool {
+	if r == nil || subjectID == 0 || actor.Entity.ID == 0 || targetVID == 0 {
+		return false
+	}
+	if actor.SpawnGroupRef == "" || !staticActorSpawnGroupAggroLiteCombatKind(actor.CombatKind) {
+		return false
+	}
+	engagedBy, ok := r.staticActorCombatEngagedBy[actor.Entity.ID]
+	if !ok || engagedBy == 0 || engagedBy == subjectID {
+		return false
+	}
+	if _, ok := r.sessionEntryLocked(engagedBy); !ok {
+		return false
+	}
+	engagedOwner, ok := r.playerCharacter(engagedBy)
+	return ok && !characterAtBootstrapHPFloor(engagedOwner)
+}
+
 func staticActorSpawnGroupAggroLiteCombatKind(combatKind string) bool {
 	_, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(combatKind)
 	return ok
@@ -1444,21 +1462,39 @@ func (r *sharedWorldRegistry) combatTargetSnapshotLocked(entityID uint64) (Comba
 	if !ok || actor.Entity.ID == 0 {
 		return CombatTargetSnapshot{}, false
 	}
+	if !worldruntime.StaticActorWithinInteractionRange(subject, actor, staticActorCombatTargetMaxDistance) {
+		return CombatTargetSnapshot{}, false
+	}
+	if !staticActorCombatKindTargetable(actor.CombatKind) {
+		return CombatTargetSnapshot{}, false
+	}
+	if actor.SpawnGroupRef != "" {
+		leash, ok := worldruntime.EvaluateStaticActorCurrentSpawnLeash(actor, worldruntime.DefaultSpawnLeashRadius)
+		if !ok || leash.ReturnRequired {
+			return CombatTargetSnapshot{}, false
+		}
+	}
+	if r.staticActorAggroLiteBlocksFreshTargetReadOnlyLocked(entityID, actor, targetVID) {
+		return CombatTargetSnapshot{}, false
+	}
+	currentSnapshotVersion := r.staticActorCombatSnapshotLocked(actor.Entity.ID)
+	if currentSnapshotVersion == 0 {
+		return CombatTargetSnapshot{}, false
+	}
 	currentHP, ok := r.ensureStaticActorCombatCurrentHPLocked(actor)
-	if !ok {
+	if !ok || currentHP == 0 {
 		return CombatTargetSnapshot{}, false
 	}
 	hpPercent, ok := worldruntime.BootstrapStaticActorHPPercent(actor.CombatKind, currentHP)
 	if !ok {
 		return CombatTargetSnapshot{}, false
 	}
-	actorSnapshot := staticActorSnapshot(r.topology, actor)
-	actorSnapshot.Dead = currentHP == 0
+	actorSnapshot := r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor))
 	snapshot := CombatTargetSnapshot{
 		SubjectEntityID: entityID,
 		Subject:         worldruntime.ConnectedCharacterSnapshotFor(r.topology, subject),
 		TargetVID:       targetVID,
-		SnapshotVersion: r.staticActorCombatSnapshot[actor.Entity.ID],
+		SnapshotVersion: currentSnapshotVersion,
 		HPPercent:       hpPercent,
 		Actor:           actorSnapshot,
 	}

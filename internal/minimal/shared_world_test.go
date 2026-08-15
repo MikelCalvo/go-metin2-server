@@ -448,9 +448,15 @@ func TestGameRuntimeReturnSpawnGroupHomeFailsClosedWithoutPersistingOrClearingTa
 	if !ok || leash.Status != worldruntime.SpawnLeashStatusReturnRequired || leash.Current.X != 2301 || leash.Current.Y != 2800 {
 		t.Fatalf("expected failed return-home not to mutate runtime position, ok=%v leash=%+v", ok, leash)
 	}
-	selectedAfterFailure, ok := runtime.CombatTargetSnapshot("ReturnFailOwner")
-	if !ok || selectedAfterFailure.TargetVID != uint32(group.EntityID) || selectedAfterFailure.SnapshotVersion != selectedBeforeFailure.SnapshotVersion {
-		t.Fatalf("expected failed return-home to preserve selected combat target, ok=%v before=%+v after=%+v", ok, selectedBeforeFailure, selectedAfterFailure)
+	if selectedAfterFailure, ok := runtime.CombatTargetSnapshot("ReturnFailOwner"); ok || selectedAfterFailure.TargetVID != 0 {
+		t.Fatalf("expected failed return-home to omit return-required selected target from read-only combat snapshots, ok=%v before=%+v after=%+v", ok, selectedBeforeFailure, selectedAfterFailure)
+	}
+	runtime.sharedWorld.mu.Lock()
+	ownerEntity, ownerOK := runtime.sharedWorld.playerEntityByName("ReturnFailOwner")
+	selectedTargetVID := runtime.sharedWorld.sessionCombatTargets[ownerEntity.Entity.ID]
+	runtime.sharedWorld.mu.Unlock()
+	if !ownerOK || selectedTargetVID != uint32(group.EntityID) {
+		t.Fatalf("expected failed return-home to preserve underlying selected combat target ownership, owner_ok=%v selected_vid=%d before=%+v", ownerOK, selectedTargetVID, selectedBeforeFailure)
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected failed return-home not to queue target clear or visibility frames, got %d", len(queued))
@@ -23776,6 +23782,124 @@ func TestSharedWorldRegistryCombatTargetSnapshotReportsSelectedPracticeMob(t *te
 
 	if missing, ok := registry.CombatTargetSnapshotByName("Unknown"); ok || missing.TargetVID != 0 {
 		t.Fatalf("expected unknown exact-name combat target snapshot to fail closed, got ok=%v snapshot=%+v", ok, missing)
+	}
+}
+
+func TestSharedWorldRegistryCombatTargetSnapshotOmitsOutOfRangeSelectedTarget(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(1000, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("SnapshotRangeSubject", 0x01030137, 0x02040137, 1700, 2800, 0, 101, 201)
+	subject.MapIndex = 42
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.registerStaticActor(0, "SnapshotRangeMob", 42, 1700, 2800, 20350, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "practice.snapshot_range", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected visible spawn-backed practice mob registration to succeed")
+	}
+	targetAttempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if !targetAttempt.Accepted || !registry.SetSessionCombatTarget(subjectID, targetAttempt.TargetVID) {
+		t.Fatalf("expected initial in-range target selection to be recorded, got %+v", targetAttempt)
+	}
+
+	movedSubject := subject
+	movedSubject.X = 2101
+	registry.UpdateCharacter(subjectID, movedSubject)
+	rangeAttempt := registry.AttemptStaticActorCombatTarget(subjectID, targetAttempt.TargetVID)
+	if rangeAttempt.Accepted || rangeAttempt.Failure != StaticActorCombatTargetFailureTargetOutOfRange {
+		t.Fatalf("expected moved subject to keep target visible but outside combat range, got %+v", rangeAttempt)
+	}
+
+	if snapshot, ok := registry.CombatTargetSnapshot(subjectID); ok || snapshot.TargetVID != 0 {
+		t.Fatalf("expected out-of-range selected target to be omitted from exact combat-target snapshot, got ok=%v snapshot=%+v", ok, snapshot)
+	}
+	if byName, ok := registry.CombatTargetSnapshotByName(subject.Name); ok || byName.TargetVID != 0 {
+		t.Fatalf("expected out-of-range selected target to be omitted from exact-name snapshot, got ok=%v snapshot=%+v", ok, byName)
+	}
+	if snapshots := registry.CombatTargetSnapshots(); len(snapshots) != 0 {
+		t.Fatalf("expected out-of-range selected target to be omitted from aggregate snapshots, got %+v", snapshots)
+	}
+}
+
+func TestSharedWorldRegistryCombatTargetSnapshotOmitsReturnRequiredSpawnGroup(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(1000, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("SnapshotLeashSubject", 0x01030138, 0x02040138, 1700, 2800, 0, 101, 201)
+	subject.MapIndex = 42
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.registerStaticActor(0, "SnapshotLeashMob", 42, 1700, 2800, 20350, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "practice.snapshot_leash", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected visible spawn-backed practice mob registration to succeed")
+	}
+	targetAttempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if !targetAttempt.Accepted || !registry.SetSessionCombatTarget(subjectID, targetAttempt.TargetVID) {
+		t.Fatalf("expected initial at-home target selection to be recorded, got %+v", targetAttempt)
+	}
+	movedActor, ok := registry.entities.StaticActor(actor.EntityID)
+	if !ok {
+		t.Fatalf("expected actor %d to resolve before return-required move", actor.EntityID)
+	}
+	movedActor.Position = worldruntime.NewPosition(42, 2301, 2800)
+	if _, ok := registry.entities.UpdateStaticActor(movedActor); !ok {
+		t.Fatal("expected direct runtime actor move to return-required position to succeed")
+	}
+	movedSubject := subject
+	movedSubject.X = 2301
+	registry.UpdateCharacter(subjectID, movedSubject)
+	leash, ok := registry.SpawnGroupLeash(actor.EntityID, worldruntime.DefaultSpawnLeashRadius)
+	if !ok || !leash.ReturnRequired {
+		t.Fatalf("expected moved actor to require return before snapshot, ok=%v leash=%+v", ok, leash)
+	}
+
+	if snapshot, ok := registry.CombatTargetSnapshot(subjectID); ok || snapshot.TargetVID != 0 {
+		t.Fatalf("expected return-required selected target to be omitted from exact combat-target snapshot, got ok=%v snapshot=%+v", ok, snapshot)
+	}
+	if byName, ok := registry.CombatTargetSnapshotByName(subject.Name); ok || byName.TargetVID != 0 {
+		t.Fatalf("expected return-required selected target to be omitted from exact-name snapshot, got ok=%v snapshot=%+v", ok, byName)
+	}
+	if snapshots := registry.CombatTargetSnapshots(); len(snapshots) != 0 {
+		t.Fatalf("expected return-required selected target to be omitted from aggregate snapshots, got %+v", snapshots)
+	}
+}
+
+func TestSharedWorldRegistryCombatTargetSnapshotOmitsAggroLiteBlockedThirdParty(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	owner := peerVisibilityCharacter("SnapshotAggroOwner", 0x01030139, 0x02040139, 1100, 2100, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected owner join to return a live shared-world entity ID")
+	}
+	thirdParty := peerVisibilityCharacter("SnapshotAggroThird", 0x0103013a, 0x0204013a, 1120, 2120, 0, 101, 201)
+	thirdPartyID, _ := registry.Join(thirdParty, newPendingServerFrames(), nil)
+	if thirdPartyID == 0 {
+		t.Fatal("expected third-party join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.registerStaticActor(0, "SnapshotAggroMob", bootstrapMapIndex, 1200, 2200, 20350, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "practice.snapshot_aggro", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected visible spawn-backed practice mob registration to succeed")
+	}
+	targetAttempt := registry.AttemptStaticActorCombatTarget(ownerID, uint32(actor.EntityID))
+	if !targetAttempt.Accepted || !registry.SetSessionCombatTarget(ownerID, targetAttempt.TargetVID) {
+		t.Fatalf("expected owner target selection to be recorded, got %+v", targetAttempt)
+	}
+	attack := registry.AttemptSelectedStaticActorAttack(ownerID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, targetAttempt.TargetVID)
+	if !attack.Accepted || attack.Died {
+		t.Fatalf("expected owner hit to establish live aggro-lite engagement, got %+v", attack)
+	}
+	if !registry.SetSessionCombatTarget(thirdPartyID, targetAttempt.TargetVID) {
+		t.Fatal("expected stale third-party target ownership to be recorded for read-only regression")
+	}
+
+	if snapshot, ok := registry.CombatTargetSnapshot(thirdPartyID); ok || snapshot.TargetVID != 0 {
+		t.Fatalf("expected aggro-lite blocked third-party target to be omitted from combat-target snapshot, got ok=%v snapshot=%+v", ok, snapshot)
+	}
+	if ownerSnapshot, ok := registry.CombatTargetSnapshot(ownerID); !ok || ownerSnapshot.TargetVID != targetAttempt.TargetVID || ownerSnapshot.EngagedByEntityID != ownerID {
+		t.Fatalf("expected owner combat-target snapshot to remain visible after third-party omission, ok=%v snapshot=%+v", ok, ownerSnapshot)
 	}
 }
 
