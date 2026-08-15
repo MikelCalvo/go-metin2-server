@@ -245,6 +245,9 @@ For a live shared-world session with an active selected static-actor combat targ
 - `target_vid`
 - the target `snapshot_version` captured from runtime combat ownership
 - current target `hp_percent`
+- current target `target_current_hp`, resolved from runtime-owned combat HP
+- profile-owned `target_max_hp`
+- profile-owned `normal_attack_damage`, using the same compact attack/defense formula currently applied by accepted normal hits
 - the same compact static-actor snapshot shape used by local static-actor/visibility introspection
 - optional `engaged_by_entity_id` once an accepted hit has established the current practice-mob engagement owner
 - optional `engaged_by`, using the same effective connected-character snapshot shape, when that owner still resolves as a live connected player
@@ -252,7 +255,7 @@ For a live shared-world session with an active selected static-actor combat targ
 - optional `retaliation_server_origin = true` when the current selected target has an engaged owner on the server-origin retaliation cadence seam
 
 The per-subject snapshot fails closed when the subject is missing, no longer has a live session hook, is already at the current bootstrap zero-HP floor, no target is selected, the selected target is no longer visible, outside the current combat band, classified as spawn-group `return_required`, blocked by the current aggro-lite owner gate for that subject, or the selected actor no longer has owned bootstrap combat HP semantics.
-After accepted non-lethal hits, snapshots report the runtime-owned damaged `hp_percent`, engagement owner, and current retaliation delta rather than resetting to full HP or hiding the aggro-lite ownership boundary; after the subject reaches the zero-HP floor or the target reaches the zero-HP death edge and selected-target ownership is cleared, the per-subject and aggregate snapshots omit that stale target instead of reporting a dead active selection.
+After accepted non-lethal hits, snapshots report the runtime-owned damaged `hp_percent`, exact current HP, profile max HP, normal-hit damage, engagement owner, and current retaliation delta rather than resetting to full HP or hiding the aggro-lite ownership boundary; after the subject reaches the zero-HP floor or the target reaches the zero-HP death edge and selected-target ownership is cleared, the per-subject and aggregate snapshots omit that stale target instead of reporting a dead active selection.
 The read-only surface intentionally mirrors the same target/attack authority gates already used by gameplay, but without mutating stale engagement records or selected-target state merely because an operator endpoint was read.
 The embedded `subject` and `engaged_by` fields let local operator/debug consumers verify the selected subject and current engagement owner's effective map, position, empire/guild, and dead-state without joining the combat-target result to a separate `/local/players` response.
 The loopback `/local/combat-target/{name}` operator/debug endpoint exposes that per-subject snapshot by exact character name.

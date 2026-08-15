@@ -156,6 +156,9 @@ type CombatTargetSnapshot struct {
 	TargetVID               uint32                      `json:"target_vid"`
 	SnapshotVersion         uint64                      `json:"snapshot_version"`
 	HPPercent               uint8                       `json:"hp_percent"`
+	TargetCurrentHP         uint8                       `json:"target_current_hp,omitempty"`
+	TargetMaxHP             uint8                       `json:"target_max_hp,omitempty"`
+	NormalAttackDamage      uint8                       `json:"normal_attack_damage,omitempty"`
 	Actor                   StaticActorSnapshot         `json:"actor"`
 	EngagedByEntityID       uint64                      `json:"engaged_by_entity_id,omitempty"`
 	EngagedBy               *ConnectedCharacterSnapshot `json:"engaged_by,omitempty"`
@@ -1490,13 +1493,22 @@ func (r *sharedWorldRegistry) combatTargetSnapshotLocked(entityID uint64) (Comba
 		return CombatTargetSnapshot{}, false
 	}
 	actorSnapshot := r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor))
+	defaults, defaultsOK := worldruntime.BootstrapStaticActorCombatProfileDefaults(actor.CombatKind)
+	normalAttackDamage, damageOK := worldruntime.BootstrapStaticActorNormalAttackDamage(actor.CombatKind)
 	snapshot := CombatTargetSnapshot{
 		SubjectEntityID: entityID,
 		Subject:         worldruntime.ConnectedCharacterSnapshotFor(r.topology, subject),
 		TargetVID:       targetVID,
 		SnapshotVersion: currentSnapshotVersion,
 		HPPercent:       hpPercent,
+		TargetCurrentHP: currentHP,
 		Actor:           actorSnapshot,
+	}
+	if defaultsOK {
+		snapshot.TargetMaxHP = defaults.MaxHP
+	}
+	if damageOK {
+		snapshot.NormalAttackDamage = normalAttackDamage
 	}
 	engagedBy := r.staticActorCombatEngagedBy[actor.Entity.ID]
 	if engagedBy != 0 {

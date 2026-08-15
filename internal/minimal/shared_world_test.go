@@ -23902,6 +23902,57 @@ func TestSharedWorldRegistryCombatTargetSnapshotReportsSelectedPracticeMob(t *te
 	}
 }
 
+func TestSharedWorldRegistryCombatTargetSnapshotReportsResolvedHPAndDamage(t *testing.T) {
+	const profile = "snapshot_damage_probe"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:        12,
+		AttackValue:  7,
+		DefenseValue: 2,
+		Level:        1,
+		RespawnDelay: worldruntime.PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatal("expected formula combat profile registration to succeed")
+	}
+
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("SnapshotDamageSubject", 0x0103013d, 0x0204013d, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.registerStaticActor(0, "SnapshotDamageMob", bootstrapMapIndex, 1200, 2200, 20350, "", "", profile, "practice.snapshot_damage_probe", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected formula-profile practice mob registration to succeed")
+	}
+	targetAttempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if !targetAttempt.Accepted || !registry.SetSessionCombatTarget(subjectID, targetAttempt.TargetVID) {
+		t.Fatalf("expected formula-profile target selection to be recorded, got %+v", targetAttempt)
+	}
+
+	initial, ok := registry.CombatTargetSnapshot(subjectID)
+	if !ok {
+		t.Fatal("expected initial formula-profile combat target snapshot")
+	}
+	if initial.TargetCurrentHP != 12 || initial.TargetMaxHP != 12 || initial.NormalAttackDamage != 5 {
+		t.Fatalf("expected initial resolved combat HP/damage fields, got %+v", initial)
+	}
+
+	attack := registry.AttemptSelectedStaticActorAttack(subjectID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, uint32(actor.EntityID))
+	if !attack.Accepted || attack.Died || attack.Damage != 5 || attack.HPPercent != 58 {
+		t.Fatalf("expected first formula-profile hit to apply five damage and leave target alive, got %+v", attack)
+	}
+	damaged, ok := registry.CombatTargetSnapshot(subjectID)
+	if !ok {
+		t.Fatal("expected damaged formula-profile combat target snapshot")
+	}
+	if damaged.TargetCurrentHP != 7 || damaged.TargetMaxHP != 12 || damaged.NormalAttackDamage != 5 || damaged.HPPercent != attack.HPPercent {
+		t.Fatalf("expected damaged snapshot to expose current/max HP and normal-hit damage, got snapshot=%+v attack=%+v", damaged, attack)
+	}
+}
+
 func TestSharedWorldRegistryCombatTargetSnapshotOmitsOutOfRangeSelectedTarget(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(1000, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)

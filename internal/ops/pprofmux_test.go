@@ -5320,7 +5320,7 @@ func TestLocalStaticActorCombatProfileEndpointRejectsNonLoopbackList(t *testing.
 }
 
 func TestLocalCombatTargetsEndpointReturnsJSONSnapshotsForLoopbackGet(t *testing.T) {
-	snapshotter := &stubListSnapshotter{snapshots: []map[string]any{{"subject_entity_id": uint64(17), "subject": map[string]any{"name": "MkmkSura", "vid": uint32(99), "map_index": uint32(1)}, "target_vid": uint32(22), "snapshot_version": uint64(3), "hp_percent": uint8(80), "engaged_by_entity_id": uint64(17), "engaged_by": map[string]any{"name": "MkmkSura", "vid": uint32(99), "map_index": uint32(1)}, "retaliation_point_delta": int32(-1), "retaliation_server_origin": true}}}
+	snapshotter := &stubListSnapshotter{snapshots: []map[string]any{{"subject_entity_id": uint64(17), "subject": map[string]any{"name": "MkmkSura", "vid": uint32(99), "map_index": uint32(1)}, "target_vid": uint32(22), "snapshot_version": uint64(3), "hp_percent": uint8(80), "target_current_hp": uint8(8), "target_max_hp": uint8(10), "normal_attack_damage": uint8(1), "engaged_by_entity_id": uint64(17), "engaged_by": map[string]any{"name": "MkmkSura", "vid": uint32(99), "map_index": uint32(1)}, "retaliation_point_delta": int32(-1), "retaliation_server_origin": true}}}
 	mux := RegisterLocalCombatTargetsEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
 
 	req := httptest.NewRequest(http.MethodGet, "/local/combat-targets", nil)
@@ -5342,7 +5342,7 @@ func TestLocalCombatTargetsEndpointReturnsJSONSnapshotsForLoopbackGet(t *testing
 	if err != nil {
 		t.Fatalf("read response body: %v", err)
 	}
-	if !strings.Contains(string(body), `"target_vid":22`) || !strings.Contains(string(body), `"hp_percent":80`) || !strings.Contains(string(body), `"subject"`) || !strings.Contains(string(body), `"name":"MkmkSura"`) || !strings.Contains(string(body), `"engaged_by_entity_id":17`) || !strings.Contains(string(body), `"retaliation_point_delta":-1`) || !strings.Contains(string(body), `"retaliation_server_origin":true`) {
+	if !strings.Contains(string(body), `"target_vid":22`) || !strings.Contains(string(body), `"hp_percent":80`) || !strings.Contains(string(body), `"target_current_hp":8`) || !strings.Contains(string(body), `"target_max_hp":10`) || !strings.Contains(string(body), `"normal_attack_damage":1`) || !strings.Contains(string(body), `"subject"`) || !strings.Contains(string(body), `"name":"MkmkSura"`) || !strings.Contains(string(body), `"engaged_by_entity_id":17`) || !strings.Contains(string(body), `"retaliation_point_delta":-1`) || !strings.Contains(string(body), `"retaliation_server_origin":true`) {
 		t.Fatalf("unexpected JSON response body %q", string(body))
 	}
 }
@@ -5384,7 +5384,7 @@ func TestLocalCombatTargetsEndpointRejectsWrongMethod(t *testing.T) {
 }
 
 func TestLocalCombatTargetEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
-	snapshotter := &stubNamedSnapshotter{snapshots: map[string]any{"MkmkSura": map[string]any{"subject_entity_id": uint64(17), "subject": map[string]any{"name": "MkmkSura", "vid": uint32(99), "map_index": uint32(1)}, "target_vid": uint32(22), "snapshot_version": uint64(3), "hp_percent": uint8(80), "engaged_by_entity_id": uint64(17), "engaged_by": map[string]any{"name": "MkmkSura", "vid": uint32(99), "map_index": uint32(1)}, "retaliation_point_delta": int32(-1), "retaliation_server_origin": true}}}
+	snapshotter := &stubNamedSnapshotter{snapshots: map[string]any{"MkmkSura": map[string]any{"subject_entity_id": uint64(17), "subject": map[string]any{"name": "MkmkSura", "vid": uint32(99), "map_index": uint32(1)}, "target_vid": uint32(22), "snapshot_version": uint64(3), "hp_percent": uint8(80), "target_current_hp": uint8(8), "target_max_hp": uint8(10), "normal_attack_damage": uint8(1), "engaged_by_entity_id": uint64(17), "engaged_by": map[string]any{"name": "MkmkSura", "vid": uint32(99), "map_index": uint32(1)}, "retaliation_point_delta": int32(-1), "retaliation_server_origin": true}}}
 	mux := RegisterLocalCombatTargetEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
 
 	req := httptest.NewRequest(http.MethodGet, "/local/combat-target/MkmkSura", nil)
@@ -5406,7 +5406,7 @@ func TestLocalCombatTargetEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T
 	if err != nil {
 		t.Fatalf("read response body: %v", err)
 	}
-	if !strings.Contains(string(body), `"target_vid":22`) || !strings.Contains(string(body), `"hp_percent":80`) || !strings.Contains(string(body), `"subject"`) || !strings.Contains(string(body), `"name":"MkmkSura"`) || !strings.Contains(string(body), `"engaged_by_entity_id":17`) || !strings.Contains(string(body), `"retaliation_point_delta":-1`) || !strings.Contains(string(body), `"retaliation_server_origin":true`) {
+	if !strings.Contains(string(body), `"target_vid":22`) || !strings.Contains(string(body), `"hp_percent":80`) || !strings.Contains(string(body), `"target_current_hp":8`) || !strings.Contains(string(body), `"target_max_hp":10`) || !strings.Contains(string(body), `"normal_attack_damage":1`) || !strings.Contains(string(body), `"subject"`) || !strings.Contains(string(body), `"name":"MkmkSura"`) || !strings.Contains(string(body), `"engaged_by_entity_id":17`) || !strings.Contains(string(body), `"retaliation_point_delta":-1`) || !strings.Contains(string(body), `"retaliation_server_origin":true`) {
 		t.Fatalf("unexpected JSON response body %q", string(body))
 	}
 }
