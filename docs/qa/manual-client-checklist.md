@@ -933,6 +933,7 @@ Run this when the target build has authored QA `spawn_groups` practice-mob conte
 - [ ] If the materialized spawn-backed mob had been moved away from its authored spawn position by a local/runtime update before death, confirm the respawn rebuild returns it to the authored home rather than to the displaced current position; old-position-only viewers should see only the delete while authored-home viewers see the add/info/update burst
 - [ ] If `/local/static-actor-respawns/{entity_id}` is available, confirm the due respawn row disappears after a successful rebuild; if the mob had a stale pending `/local/spawn-group-return-steps/{entity_id}` row before death, confirm that return-step row is also gone after the authored-home respawn; if a static-actor store failure is intentionally injected in a test harness, confirm the actor stays dead/displaced and the due row remains visible for retry instead of queuing a partial rebuild
 - [ ] Confirm no stale delayed retaliation beat arrives immediately after that respawn rebuild unless the mob is freshly reselected and hit again
+- [ ] If a debug harness can preserve a stale selected target across the respawn boundary, confirm the selected client receives one `TARGET(0, 0)` clear before the respawn rebuild and that later attacks still fail closed until a fresh `TARGET` succeeds
 
 Expected result:
 - owner-side retaliation death uses `PLAYER_POINT_CHANGE(value=0)` -> `DEAD(owner_vid)` -> `TARGET(0, 0)`
@@ -941,7 +942,7 @@ Expected result:
 - if persisted player HP is already `0`, `/restart_here` is not treated as a revival source and emits no recovery frames
 - post-floor `ITEM_MOVE` is silent and non-mutating until a restart/recovery seam is used
 - open bootstrap exchange windows are closed with `GC::EXCHANGE END` on the player-death edge and do not remain usable after the owner reaches the zero-HP floor
-- mob death cancels pending delayed retaliation and respawn does not resurrect stale retaliation work without fresh target acquisition
+- mob death cancels pending delayed retaliation, respawn clears any stale selected-target / aggro-lite ownership that survived to the rebuild boundary, and respawn does not resurrect stale retaliation work without fresh target acquisition
 
 ### 5.13 Practice-mob retaliation restart-town smoke
 

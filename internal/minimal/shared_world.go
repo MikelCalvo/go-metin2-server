@@ -1250,6 +1250,12 @@ func (r *sharedWorldRegistry) flushReadyStaticActorRespawnLocked(entityID uint64
 	}
 	r.staticActorCombatHP[entityID] = resetHP
 	r.assignStaticActorCombatSnapshotLocked(entityID)
+	if r.staticActorCombatEngagedBy != nil {
+		delete(r.staticActorCombatEngagedBy, entityID)
+	}
+	if targetVID, ok := worldruntime.StaticActorVisibilityVID(actor); ok {
+		r.clearSelectedCombatTargetsLocked(targetVID, 0)
+	}
 	refreshFrames := make([][]byte, 0, 1+len(addFrames))
 	refreshFrames = append(refreshFrames, deleteRaw)
 	refreshFrames = append(refreshFrames, addFrames...)

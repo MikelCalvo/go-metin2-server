@@ -223,6 +223,7 @@ The first spawn-group contract keeps respawn deliberately narrow:
 - respawn visibility fanout is calculated from the old dead runtime position to the authored-home position: old-only viewers receive `CHARACTER_DEL`, new-only viewers receive the normal add/info/update burst, and retained viewers receive the usual delete-plus-readd refresh
 - for the shipped file-backed `gamed` runtime, the authored-home respawn position is written back to the static-actor snapshot before the live actor is revived; a failed write leaves the dead/displaced actor and due respawn timer intact for retry instead of partially reviving runtime state or queuing visibility frames
 - same-profile runtime/operator edits made while a spawn-backed actor is dead may move the materialized snapshot for inspection, but they do not convert that dead return-required actor into an automatic return-step candidate; the pending respawn timer stays the only server-owned lifecycle action until it rebuilds the actor at authored home
+- a successful respawn now also treats the rebuilt actor as a fresh combat intent boundary: any stale selected target, pending retaliation timer, or aggro-lite owner state for that actor is scrubbed, affected selected sessions receive one self-only `TARGET(0, 0)` clear before their respawn rebuild frames, and later attacks still require fresh `TARGET` selection
 
 What is **not** yet frozen here:
 - per-group custom respawn delays

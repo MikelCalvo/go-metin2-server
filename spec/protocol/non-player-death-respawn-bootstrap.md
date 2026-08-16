@@ -152,6 +152,7 @@ What is frozen now:
 - if a same-profile runtime/operator update moves a dead spawn-backed combatant away from authored home before that pending respawn fires, the actor can still inspect as `dead` and `return_required`, but return-step scheduling remains suppressed while the respawn timer is authoritative
 - in the shipped file-backed runtime path, a due spawn-backed respawn persists that authored-home current position before mutating the live shared-world actor; if that static-actor snapshot write fails, the actor remains dead at the previous runtime position, the pending respawn stays due for a later retry, and no visibility rebuild frames are fabricated
 - after a due spawn-backed respawn successfully rebuilds the actor, any stale pre-death pending return-step deadline for that same actor is reconciled against the rebuilt live leash state, so an authored-home respawn clears the stale return-step schedule instead of letting it fire after the mob is already back home
+- a successful respawn also scrubs any stale selected-target ownership, pending retaliation timer, and aggro-lite engagement state for the respawned actor before emitting the rebuild burst; if a still-connected session somehow still had that actor selected, it first receives one self-only `GC TARGET(0, 0)` clear and must freshly reselect the rebuilt live actor
 
 For content-loaded attackable actors, the authored identity that tells the runtime what to recreate and where to recreate it is documented separately in `content-spawn-groups-bootstrap.md`.
 

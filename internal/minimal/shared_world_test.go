@@ -2776,6 +2776,111 @@ func TestSharedWorldRegistrySpawnGroupLeashUsesPreservedAuthoredHomeWhenCurrentP
 	}
 }
 
+func TestSharedWorldRegistryRespawnClearsStaleCombatTargetAndEngagementState(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	currentTime := time.Unix(1700000605, 0)
+	registry.now = func() time.Time { return currentTime }
+
+	owner := peerVisibilityCharacter("RespawnStaleOwner", 0x01030151, 0x02040151, 1100, 2100, 0, 101, 201)
+	watcher := peerVisibilityCharacter("RespawnStaleWatcher", 0x01030152, 0x02040152, 1300, 2300, 0, 102, 202)
+	ownerPending := newPendingServerFrames()
+	watcherPending := newPendingServerFrames()
+	ownerID, _ := registry.Join(owner, ownerPending, nil)
+	if ownerID == 0 {
+		t.Fatal("expected owner to join shared world before stale respawn cleanup")
+	}
+	watcherID, _ := registry.Join(watcher, watcherPending, nil)
+	if watcherID == 0 {
+		t.Fatal("expected watcher to join shared world before stale respawn cleanup")
+	}
+	ownerPending.flush()
+	watcherPending.flush()
+
+	actor, ok := registry.registerStaticActor(0, "RespawnStaleMob", bootstrapMapIndex, 1200, 2200, 20350, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "practice.respawn_stale_state", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected spawn-backed practice mob registration to succeed before stale respawn cleanup")
+	}
+	ownerPending.flush()
+	watcherPending.flush()
+	targetVID := uint32(actor.EntityID)
+	targetAttempt := registry.AttemptStaticActorCombatTarget(ownerID, targetVID)
+	if !targetAttempt.Accepted {
+		t.Fatalf("expected owner target selection before stale respawn cleanup, got %+v", targetAttempt)
+	}
+	if !registry.SetSessionCombatTarget(ownerID, targetAttempt.TargetVID) {
+		t.Fatal("expected stale respawn cleanup target ownership to be recorded")
+	}
+	attack := registry.AttemptSelectedStaticActorAttack(ownerID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, targetVID)
+	if !attack.Accepted || attack.Died {
+		t.Fatalf("expected one live hit to establish stale respawn engagement without killing, got %+v", attack)
+	}
+	blocked := registry.AttemptStaticActorCombatTarget(watcherID, targetVID)
+	if blocked.Accepted || blocked.Failure != StaticActorCombatTargetFailureTargetEngaged {
+		t.Fatalf("expected watcher to be aggro-gated before forced stale respawn cleanup, got %+v", blocked)
+	}
+
+	registry.mu.Lock()
+	liveActor, ok := registry.entities.StaticActor(actor.EntityID)
+	if !ok {
+		registry.mu.Unlock()
+		t.Fatalf("expected actor %d before forced stale respawn cleanup", actor.EntityID)
+	}
+	registry.staticActorCombatHP[liveActor.Entity.ID] = 0
+	registry.staticActorCombatEngagedBy[liveActor.Entity.ID] = ownerID
+	registry.sessionCombatTargets[ownerID] = targetVID
+	registry.sessionCombatRetaliations[ownerID] = combatRetaliationTimer{TargetVID: targetVID, SnapshotVersion: targetAttempt.SnapshotVersion, ReadyAt: currentTime.Add(time.Second)}
+	registry.scheduleStaticActorCombatRespawnLocked(liveActor)
+	registry.mu.Unlock()
+
+	currentTime = currentTime.Add(worldruntime.PracticeMobBootstrapRespawnDelay)
+	registry.FlushReadyStaticActorRespawns()
+
+	ownerRespawnFrames := ownerPending.flush()
+	if len(ownerRespawnFrames) != 5 {
+		t.Fatalf("expected stale selected owner to receive target clear plus respawn rebuild, got %d frames", len(ownerRespawnFrames))
+	}
+	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, ownerRespawnFrames[0]))
+	if err != nil {
+		t.Fatalf("decode stale selected target clear before respawn rebuild: %v", err)
+	}
+	if clear.TargetVID != 0 || clear.HPPercent != 0 {
+		t.Fatalf("expected stale selected target clear before respawn rebuild, got %+v", clear)
+	}
+	if _, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, ownerRespawnFrames[1])); err != nil {
+		t.Fatalf("decode owner respawn delete after stale target clear: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, ownerRespawnFrames[2])); err != nil {
+		t.Fatalf("decode owner respawn add after stale target clear: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, ownerRespawnFrames[3])); err != nil {
+		t.Fatalf("decode owner respawn additional info after stale target clear: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, ownerRespawnFrames[4])); err != nil {
+		t.Fatalf("decode owner respawn update after stale target clear: %v", err)
+	}
+	watcherRespawnFrames := watcherPending.flush()
+	if len(watcherRespawnFrames) != 4 {
+		t.Fatalf("expected unselected watcher to receive only respawn rebuild, got %d frames", len(watcherRespawnFrames))
+	}
+
+	if snapshot, ok := registry.CombatTargetSnapshot(ownerID); ok {
+		t.Fatalf("expected respawn to clear stale selected combat target ownership, got %+v", snapshot)
+	}
+	registry.mu.Lock()
+	_, targetStillSelected := registry.sessionCombatTargets[ownerID]
+	_, retaliationStillPending := registry.sessionCombatRetaliations[ownerID]
+	engagedBy := registry.staticActorCombatEngagedBy[actor.EntityID]
+	registry.mu.Unlock()
+	if targetStillSelected || retaliationStillPending || engagedBy != 0 {
+		t.Fatalf("expected respawn to scrub stale target/retaliation/engagement state, selected=%v retaliation=%v engaged_by=%d", targetStillSelected, retaliationStillPending, engagedBy)
+	}
+	watcherTarget := registry.AttemptStaticActorCombatTarget(watcherID, targetVID)
+	if !watcherTarget.Accepted {
+		t.Fatalf("expected respawn cleanup to release stale aggro gate for fresh watcher target selection, got %+v", watcherTarget)
+	}
+}
+
 func TestSharedWorldRegistrySpawnGroupRespawnReturnsMovedActorToAuthoredHome(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
