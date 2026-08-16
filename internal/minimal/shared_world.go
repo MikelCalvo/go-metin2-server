@@ -653,14 +653,14 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 	if live.ID == 0 || live.ID != origin.ID || live.VID != origin.VID || normalizeLiveCharacterName(live.Name) != normalizeLiveCharacterName(origin.Name) {
 		return nil, false
 	}
-	if !exchangeDisplayedItemsStillLive(r.exchangeItems[originID], live) {
+	if !exchangeDisplayedItemsStillLive(r.exchangeItems[originID], live, r.itemTemplates) {
 		return nil, false
 	}
 	if displayedGold := r.exchangeGold[originID]; displayedGold != 0 && uint64(displayedGold) > availableGold {
 		return [][]byte{encodeExchangeLessGoldFrame()}, true
 	}
 	if r.exchangeAccepted[partnerID] {
-		if !exchangeDisplayedItemsStillLive(r.exchangeItems[partnerID], partner) {
+		if !exchangeDisplayedItemsStillLive(r.exchangeItems[partnerID], partner, r.itemTemplates) {
 			return nil, false
 		}
 		if displayedGold := r.exchangeGold[partnerID]; displayedGold != 0 && uint64(displayedGold) > partner.Gold {
@@ -677,7 +677,7 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 	return [][]byte{selfFrame}, true
 }
 
-func exchangeDisplayedItemsStillLive(displayed map[uint8]exchangeDisplayedItem, live loginticket.Character) bool {
+func exchangeDisplayedItemsStillLive(displayed map[uint8]exchangeDisplayedItem, live loginticket.Character, templates map[uint32]itemcatalog.Template) bool {
 	if len(displayed) == 0 {
 		return true
 	}
@@ -688,9 +688,13 @@ func exchangeDisplayedItemsStillLive(displayed map[uint8]exchangeDisplayedItem, 
 		if display.ItemID == 0 || display.Vnum == 0 || display.Count == 0 || display.Slot >= inventory.CarriedInventorySlotCount {
 			return false
 		}
+		template, ok := templates[display.Vnum]
+		if !ok || !itemcatalog.ValidTemplate(template) || template.Vnum != display.Vnum || template.AntiStack || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || !templateUsableByCharacter(live, template) {
+			return false
+		}
 		matches := 0
 		for _, liveItem := range live.Inventory {
-			if liveItem.Equipped || liveItem.Slot != display.Slot || liveItem.ID != display.ItemID || liveItem.Vnum != display.Vnum || liveItem.Count != display.Count || liveItem.Locked {
+			if liveItem.Equipped || liveItem.Slot != display.Slot || liveItem.ID != display.ItemID || liveItem.Vnum != display.Vnum || liveItem.Count != display.Count || liveItem.Locked || liveItem.Count > template.MaxCount {
 				continue
 			}
 			if err := liveItem.Validate(); err != nil {
@@ -703,6 +707,10 @@ func exchangeDisplayedItemsStillLive(displayed map[uint8]exchangeDisplayedItem, 
 		}
 	}
 	return true
+}
+
+func templateUsableByCharacter(character loginticket.Character, template itemcatalog.Template) bool {
+	return player.NewRuntime(character, player.SessionLink{}).CanUseTemplate(template)
 }
 
 func exchangeInventorySnapshotInvalidForDisplayedItems(items []inventory.ItemInstance) bool {

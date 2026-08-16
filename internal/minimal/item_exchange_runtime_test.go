@@ -561,16 +561,17 @@ func TestGameRuntimeItemExchangeGoldAddAboveLiveGoldReportsLessGoldWithoutMutati
 	assertExchangeAccountUnchanged(t, accounts, "item-exchange-gold-rich-peer", peer, "peer exchange less-gold")
 }
 
-func TestExchangeDisplayedItemsStillLiveRejectsStaleOrDuplicateDisplayState(t *testing.T) {
+func TestExchangeDisplayedItemsStillLiveRejectsStaleDuplicateOrTemplateDriftedDisplayState(t *testing.T) {
 	displayed := map[uint8]exchangeDisplayedItem{7: {ItemID: 729, Vnum: 27045, Count: 3, Slot: 5}}
-	valid := loginticket.Character{Inventory: []inventory.ItemInstance{{ID: 729, Vnum: 27045, Count: 3, Slot: 5}}}
-	if !exchangeDisplayedItemsStillLive(displayed, valid) {
-		t.Fatal("expected exact live displayed item to pass exchange accept revalidation")
+	valid := loginticket.Character{Job: 0, RaceNum: 0, Empire: 1, Level: 10, Inventory: []inventory.ItemInstance{{ID: 729, Vnum: 27045, Count: 3, Slot: 5}}}
+	templates := map[uint32]itemcatalog.Template{27045: {Vnum: 27045, Name: "Displayed Recheck Potion", Stackable: true, MaxCount: 200}}
+	if !exchangeDisplayedItemsStillLive(displayed, valid, templates) {
+		t.Fatal("expected exact live displayed item plus template to pass exchange accept revalidation")
 	}
 
 	countDrift := valid
 	countDrift.Inventory = []inventory.ItemInstance{{ID: 729, Vnum: 27045, Count: 2, Slot: 5}}
-	if exchangeDisplayedItemsStillLive(displayed, countDrift) {
+	if exchangeDisplayedItemsStillLive(displayed, countDrift, templates) {
 		t.Fatal("expected count-drifted displayed item to fail exchange accept revalidation")
 	}
 
@@ -579,7 +580,7 @@ func TestExchangeDisplayedItemsStillLiveRejectsStaleOrDuplicateDisplayState(t *t
 		{ID: 729, Vnum: 27045, Count: 3, Slot: 5},
 		{ID: 729, Vnum: 27045, Count: 3, Slot: 6},
 	}
-	if exchangeDisplayedItemsStillLive(displayed, duplicateID) {
+	if exchangeDisplayedItemsStillLive(displayed, duplicateID, templates) {
 		t.Fatal("expected duplicate live item identity to fail exchange accept revalidation")
 	}
 
@@ -588,14 +589,34 @@ func TestExchangeDisplayedItemsStillLiveRejectsStaleOrDuplicateDisplayState(t *t
 		{ID: 729, Vnum: 27045, Count: 3, Slot: 5},
 		{ID: 730, Vnum: 27046, Count: 1, Slot: 5},
 	}
-	if exchangeDisplayedItemsStillLive(displayed, duplicateSlot) {
+	if exchangeDisplayedItemsStillLive(displayed, duplicateSlot, templates) {
 		t.Fatal("expected duplicate carried slot occupancy to fail exchange accept revalidation")
 	}
 
 	locked := valid
 	locked.Inventory = []inventory.ItemInstance{{ID: 729, Vnum: 27045, Count: 3, Slot: 5, Locked: true}}
-	if exchangeDisplayedItemsStillLive(displayed, locked) {
+	if exchangeDisplayedItemsStillLive(displayed, locked, templates) {
 		t.Fatal("expected locked displayed item to fail exchange accept revalidation")
+	}
+
+	missingTemplate := map[uint32]itemcatalog.Template{}
+	if exchangeDisplayedItemsStillLive(displayed, valid, missingTemplate) {
+		t.Fatal("expected missing displayed-item template to fail exchange accept revalidation")
+	}
+
+	maxCountDrift := map[uint32]itemcatalog.Template{27045: {Vnum: 27045, Name: "Tiny Displayed Potion", Stackable: true, MaxCount: 2}}
+	if exchangeDisplayedItemsStillLive(displayed, valid, maxCountDrift) {
+		t.Fatal("expected displayed-item template max-count drift to fail exchange accept revalidation")
+	}
+
+	transferGuardDrift := map[uint32]itemcatalog.Template{27045: {Vnum: 27045, Name: "Now Bound Displayed Potion", Stackable: true, MaxCount: 200, AntiGive: true}}
+	if exchangeDisplayedItemsStillLive(displayed, valid, transferGuardDrift) {
+		t.Fatal("expected displayed-item transfer-guard template drift to fail exchange accept revalidation")
+	}
+
+	selectedCharacterGuardDrift := map[uint32]itemcatalog.Template{27045: {Vnum: 27045, Name: "Later Level Displayed Potion", Stackable: true, MaxCount: 200, MinLevel: 11}}
+	if exchangeDisplayedItemsStillLive(displayed, valid, selectedCharacterGuardDrift) {
+		t.Fatal("expected selected-character template drift to fail exchange accept revalidation")
 	}
 }
 
@@ -697,6 +718,112 @@ func TestGameRuntimeItemExchangeAcceptRevalidatesDisplayedItemAgainstCurrentSele
 
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, driftedOwner, "stale displayed-item accept owner")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "stale displayed-item accept peer")
+}
+
+func TestGameRuntimeItemExchangeAcceptRevalidatesDisplayedTemplateMetadataWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name     string
+		template itemcatalog.Template
+	}{
+		{name: "max count shrink", template: itemcatalog.Template{Vnum: 27045, Name: "Shrunk Recheck Potion", Stackable: true, MaxCount: 2}},
+		{name: "transfer guard", template: itemcatalog.Template{Vnum: 27045, Name: "Bound Recheck Potion", Stackable: true, MaxCount: 200, AntiGive: true}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("ExchangeTemplateRecheckOwner", 0x010307ad, 0x020407ad, 1100, 2100, 0, 101, 201)
+			owner.Gold = 500
+			owner.Inventory = []inventory.ItemInstance{{ID: 777, Vnum: 27045, Count: 3, Slot: 5}}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			peer := peerVisibilityCharacter("ExchangeTemplateRecheckPeer", 0x010307ae, 0x020407ae, 1120, 2120, 0, 101, 201)
+			peer.Gold = 22222
+			peer.Inventory = []inventory.ItemInstance{{ID: 778, Vnum: 27002, Count: 2, Slot: 6}}
+			peer.Quickslots = []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeItem, Slot: 6}}
+			ownerLogin := "ex-template-recheck-a"
+			peerLogin := "ex-template-recheck-b"
+			issuePeerTicket(t, ticketStore, ownerLogin, 0x707070ad, owner)
+			issuePeerTicket(t, ticketStore, peerLogin, 0x707070ae, peer)
+			if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed exchange template recheck owner account: %v", err)
+			}
+			if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+				t.Fatalf("seed exchange template recheck peer account: %v", err)
+			}
+			originalTemplate := itemcatalog.Template{Vnum: 27045, Name: "Displayed Template Recheck Potion", Stackable: true, MaxCount: 200, Sockets: itemcatalog.SocketValues{5, 6, 7}}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{originalTemplate})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected exchange template recheck runtime error: %v", err)
+			}
+			ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070ad)
+			defer closeSessionFlow(t, ownerFlow)
+			peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070ae)
+			defer closeSessionFlow(t, peerFlow)
+			_ = flushServerFrames(t, ownerFlow)
+			_ = flushServerFrames(t, peerFlow)
+
+			startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+			if err != nil {
+				t.Fatalf("unexpected template recheck exchange start error: %v", err)
+			}
+			if len(startOut) != 1 {
+				t.Fatalf("expected template recheck exchange start to emit one owner frame, got %d", len(startOut))
+			}
+			assertExchangeStartFrame(t, startOut[0], peer.VID, "template recheck owner start")
+			queuedStart := flushServerFrames(t, peerFlow)
+			if len(queuedStart) != 1 {
+				t.Fatalf("expected template recheck exchange start to queue one peer frame, got %d", len(queuedStart))
+			}
+			assertExchangeStartFrame(t, queuedStart[0], owner.VID, "template recheck peer start")
+
+			itemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 7, Position: itemproto.InventoryPosition(5)})))
+			if err != nil {
+				t.Fatalf("unexpected template recheck item-add error: %v", err)
+			}
+			if len(itemAddOut) != 1 {
+				t.Fatalf("expected template recheck item-add to emit one self frame, got %d", len(itemAddOut))
+			}
+			assertExchangeItemAddFrame(t, itemAddOut[0], 1, 7, owner.Inventory[0], originalTemplate, "template recheck self item-add")
+			queuedItemAdd := flushServerFrames(t, peerFlow)
+			if len(queuedItemAdd) != 1 {
+				t.Fatalf("expected template recheck item-add to queue one peer frame, got %d", len(queuedItemAdd))
+			}
+			assertExchangeItemAddFrame(t, queuedItemAdd[0], 0, 7, owner.Inventory[0], originalTemplate, "template recheck peer item-add")
+
+			runtime.itemTemplates[27045] = tc.template
+			runtime.sharedWorld.SetItemTemplates(runtime.itemTemplates)
+
+			acceptOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+			if err != nil {
+				t.Fatalf("unexpected stale-template exchange accept error: %v", err)
+			}
+			if len(acceptOut) != 0 {
+				t.Fatalf("expected stale-template accept to emit no frames, got %d", len(acceptOut))
+			}
+			if queuedAccept := flushServerFrames(t, peerFlow); len(queuedAccept) != 0 {
+				t.Fatalf("expected stale-template accept to queue no peer frames, got %d", len(queuedAccept))
+			}
+
+			cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+			if err != nil {
+				t.Fatalf("unexpected cancel after stale-template accept error: %v", err)
+			}
+			if len(cancelOut) != 1 {
+				t.Fatalf("expected exchange shell to remain cancellable after stale-template accept rejection, got %d frames", len(cancelOut))
+			}
+			assertExchangeEndFrame(t, cancelOut[0], "template recheck cancel after stale accept")
+			queuedCancel := flushServerFrames(t, peerFlow)
+			if len(queuedCancel) != 1 {
+				t.Fatalf("expected cancel after stale-template accept to queue one peer END, got %d", len(queuedCancel))
+			}
+			assertExchangeEndFrame(t, queuedCancel[0], "template recheck peer cancel after stale accept")
+
+			assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "stale displayed-template accept owner")
+			assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "stale displayed-template accept peer")
+		})
+	}
 }
 
 func TestGameRuntimeItemExchangeAcceptRevalidatesDisplayedGoldAgainstLiveGoldWithoutMutation(t *testing.T) {
@@ -1115,7 +1242,8 @@ func TestGameRuntimeItemExchangeAcceptDisplaysWithoutFinalizingTrade(t *testing.
 	if err := accounts.Save(accountstore.Account{Login: "item-exchange-accept-peer", Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
 		t.Fatalf("seed exchange accept peer account: %v", err)
 	}
-	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27045, Name: "Exchange Accept Potion", Stackable: true, MaxCount: 200}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected exchange accept runtime error: %v", err)
 	}
