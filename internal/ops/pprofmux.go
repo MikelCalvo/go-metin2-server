@@ -89,7 +89,7 @@ type localStaticActorCombatProfileResponse struct {
 }
 
 type localStaticActorCombatProfileListResponse struct {
-	Profiles []localStaticActorCombatProfileResponse `json:"profiles"`
+	Profiles []worldruntime.StaticActorCombatProfileSnapshot `json:"profiles"`
 }
 
 type localInteractionDefinitionRequest struct {
@@ -1980,7 +1980,7 @@ func RegisterLocalStaticActorCombatProfileEndpoint(mux *http.ServeMux) *http.Ser
 		switch r.Method {
 		case http.MethodGet:
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			if err := json.NewEncoder(w).Encode(worldruntime.StaticActorCombatProfileSnapshots()); err != nil {
+			if err := json.NewEncoder(w).Encode(localStaticActorCombatProfileListResponse{Profiles: worldruntime.StaticActorCombatProfileSnapshots()}); err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 			}
 		case http.MethodPost:

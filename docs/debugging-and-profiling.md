@@ -491,7 +491,7 @@ The response deliberately exposes metadata only: it does not include executable 
 
 Lists and registers process-local bootstrap static-actor combat profiles for later static-actor or spawn-group authoring. This is loopback-only operator tooling, not gameplay protocol and not durable content storage.
 
-`GET` returns a deterministic JSON list under `profiles`, including the built-in `practice_mob` and `training_dummy` profiles plus any registered process-local profiles. Each entry exposes the same canonical defaults returned by registration, including derived `damage_per_normal_attack`, formula fields, presentation fields, respawn delay, and cloned reward descriptors. Nested `death_reward` fields use the same stable snake-case JSON keys accepted by `POST`: `experience`, `gold`, and `drop_vnums`.
+`GET` returns a deterministic JSON object whose `profiles` field lists the built-in `practice_mob` and `training_dummy` profiles plus any registered process-local profiles. Each entry exposes the same canonical defaults returned by registration, including derived `damage_per_normal_attack`, formula fields, presentation fields, respawn delay, and cloned reward descriptors. Nested `death_reward` fields use the same stable snake-case JSON keys accepted by `POST`: `experience`, `gold`, and `drop_vnums`.
 
 `POST` request body JSON fields:
 

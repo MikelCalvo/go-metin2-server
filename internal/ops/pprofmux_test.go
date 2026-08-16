@@ -2,6 +2,7 @@ package ops
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -5215,6 +5216,45 @@ func TestLocalStaticActorCombatProfileEndpointReturnsProfilesForLoopbackGet(t *t
 	}
 	if !strings.Contains(bodyText, `"damage_per_normal_attack":5`) || !strings.Contains(bodyText, `"respawn_delay_ms":2000`) || !strings.Contains(bodyText, `"drop_vnums":[27001,27002]`) {
 		t.Fatalf("expected canonical profile defaults and normalized reward drops in JSON response body %q", bodyText)
+	}
+}
+
+func TestLocalStaticActorCombatProfileEndpointWrapsProfilesInObjectForLoopbackGet(t *testing.T) {
+	const profile = "ops_wrapped_profile_wolf"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{MaxHP: 18, AttackValue: 6, DefenseValue: 2, RespawnDelay: 1200 * time.Millisecond}) {
+		t.Fatalf("expected %q profile registration to succeed", profile)
+	}
+
+	mux := RegisterLocalStaticActorCombatProfileEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actor-combat-profiles", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body %q", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	trimmed := bytes.TrimSpace(rec.Body.Bytes())
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		t.Fatalf("expected wrapped combat-profile JSON object, got %q", string(trimmed))
+	}
+	var got struct {
+		Profiles []worldruntime.StaticActorCombatProfileSnapshot `json:"profiles"`
+	}
+	if err := json.Unmarshal(trimmed, &got); err != nil {
+		t.Fatalf("decode wrapped combat-profile list: %v", err)
+	}
+	seen := map[string]bool{}
+	for _, snapshot := range got.Profiles {
+		seen[snapshot.Profile] = true
+	}
+	for _, want := range []string{worldruntime.StaticActorCombatProfileTrainingDummy, worldruntime.StaticActorCombatProfilePracticeMob, profile} {
+		if !seen[want] {
+			t.Fatalf("expected wrapped profile list to include %q, got %+v", want, got.Profiles)
+		}
 	}
 }
 
