@@ -249,7 +249,8 @@ For a live shared-world session with an active selected static-actor combat targ
 - current target `target_current_hp`, resolved from runtime-owned combat HP
 - profile-owned `target_max_hp`
 - profile-owned `normal_attack_damage`, using the same compact attack/defense formula currently applied by accepted normal hits
-- the same compact static-actor snapshot shape used by local static-actor/visibility introspection
+- profile-owned `target_attack_value` and `target_defense_value`, so local QA can inspect the authored formula inputs beside the resolved damage result
+- the same compact static-actor snapshot shape used by local static-actor/visibility introspection; combat-profile actors now expose `combat_max_hp`, `combat_normal_damage`, `combat_attack_value`, and `combat_defense_value` alongside `combat_level` / `combat_rank`
 - optional `engaged_by_entity_id` once an accepted hit has established the current practice-mob engagement owner
 - optional `engaged_by`, using the same effective connected-character snapshot shape, when that owner still resolves as a live connected player
 - optional `retaliation_point_delta` for engaged spawn-backed practice mobs whose bootstrap combat profile owns immediate or delayed owner-side retaliation

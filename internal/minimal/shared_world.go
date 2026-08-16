@@ -171,6 +171,8 @@ type CombatTargetSnapshot struct {
 	TargetCurrentHP         uint8                       `json:"target_current_hp,omitempty"`
 	TargetMaxHP             uint8                       `json:"target_max_hp,omitempty"`
 	NormalAttackDamage      uint8                       `json:"normal_attack_damage,omitempty"`
+	TargetAttackValue       uint16                      `json:"target_attack_value"`
+	TargetDefenseValue      uint16                      `json:"target_defense_value"`
 	Actor                   StaticActorSnapshot         `json:"actor"`
 	EngagedByEntityID       uint64                      `json:"engaged_by_entity_id,omitempty"`
 	EngagedBy               *ConnectedCharacterSnapshot `json:"engaged_by,omitempty"`
@@ -1616,6 +1618,8 @@ func (r *sharedWorldRegistry) combatTargetSnapshotLocked(entityID uint64) (Comba
 	}
 	if defaultsOK {
 		snapshot.TargetMaxHP = defaults.MaxHP
+		snapshot.TargetAttackValue = defaults.AttackValue
+		snapshot.TargetDefenseValue = defaults.DefenseValue
 	}
 	if damageOK {
 		snapshot.NormalAttackDamage = normalAttackDamage
@@ -3698,10 +3702,18 @@ func staticActorSnapshot(topology worldruntime.BootstrapTopology, actor worldrun
 	if combatProfile == "" {
 		combatProfile = actor.CombatKind
 	}
+	var combatMaxHP uint8
+	var combatNormalDamage uint8
+	var combatAttackValue uint16
+	var combatDefenseValue uint16
 	var combatLevel uint16
 	var combatRank uint8
 	var retaliationPointDelta int32
 	if defaults, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(combatProfile); ok {
+		combatMaxHP = defaults.MaxHP
+		combatNormalDamage = defaults.DamagePerNormalAttack
+		combatAttackValue = defaults.AttackValue
+		combatDefenseValue = defaults.DefenseValue
 		combatLevel = defaults.Level
 		combatRank = defaults.Rank
 		if defaults.RetaliationPointDelta != worldruntime.PracticeMobBootstrapRetaliationPointDelta {
@@ -3716,6 +3728,10 @@ func staticActorSnapshot(topology worldruntime.BootstrapTopology, actor worldrun
 		Y:                     actor.Position.Y,
 		RaceNum:               actor.RaceNum,
 		CombatProfile:         combatProfile,
+		CombatMaxHP:           combatMaxHP,
+		CombatNormalDamage:    combatNormalDamage,
+		CombatAttackValue:     combatAttackValue,
+		CombatDefenseValue:    combatDefenseValue,
 		CombatLevel:           combatLevel,
 		CombatRank:            combatRank,
 		RetaliationPointDelta: retaliationPointDelta,

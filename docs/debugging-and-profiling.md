@@ -1002,6 +1002,8 @@ These responses reuse the runtime debug snapshot shape documented in `spec/proto
 - `target_current_hp`
 - `target_max_hp`
 - `normal_attack_damage`
+- `target_attack_value`
+- `target_defense_value`
 - `actor`
 - optional `engaged_by_entity_id`
 - optional `engaged_by`
@@ -1012,7 +1014,7 @@ These responses reuse the runtime debug snapshot shape documented in `spec/proto
 - optional `retaliation_remaining_ms`
 
 The embedded `subject` field uses the same effective connected-character snapshot shape exposed by `/local/players`, so combat-target debugging can verify the current selected subject location/dead-state without a second lookup.
-The resolved HP/damage fields expose the current runtime-owned target HP, profile max HP, and compact normal-hit damage formula result used by accepted attacks. After a spawn-backed practice mob has accepted an owner-side hit, the optional engagement fields expose the current aggro-lite owner, fresh third-party target attempts fail closed internally as `target_engaged`, and the optional retaliation fields expose the runtime-owned owner-side point-loss cadence without introducing a new gameplay packet or mutation endpoint. When a delayed server-origin retaliation beat is armed for the currently selected target snapshot, the read-only row includes `retaliation_pending: true`, `retaliation_ready_at`, and `retaliation_remaining_ms`; due-but-unflushed beats remain visible with `retaliation_remaining_ms = 0` until the pending server-frame path flushes them.
+The resolved HP/damage fields expose the current runtime-owned target HP, profile max HP, compact normal-hit damage result, and authored attack/defense formula inputs used by accepted attacks. After a spawn-backed practice mob has accepted an owner-side hit, the optional engagement fields expose the current aggro-lite owner, fresh third-party target attempts fail closed internally as `target_engaged`, and the optional retaliation fields expose the runtime-owned owner-side point-loss cadence without introducing a new gameplay packet or mutation endpoint. When a delayed server-origin retaliation beat is armed for the currently selected target snapshot, the read-only row includes `retaliation_pending: true`, `retaliation_ready_at`, and `retaliation_remaining_ms`; due-but-unflushed beats remain visible with `retaliation_remaining_ms = 0` until the pending server-frame path flushes them.
 All combat-target endpoints are loopback-only and read-only. The exact-name endpoint returns `404` when the character is not connected, no longer has a live session hook, has no active target, or the target no longer resolves through the current visibility/range/leash/aggro/runtime combat rules; the global and map-local list endpoints omit unresolved/stale selections instead of leaking hidden or invalid target data. These reads mirror the gameplay gates without cleaning up stale engagement or target state as a side effect. The map-local endpoint rejects malformed or zero map-index path values with `400`, returns `404` when the runtime cannot resolve that map-scoped snapshot, and returns an empty JSON array for a known map that currently has no active target selections.
 
 ### `GET /local/static-actor-respawns` and `GET /local/static-actor-respawns/{entity_id}`
@@ -1081,6 +1083,10 @@ Each row reuses the same static-actor snapshot shape exposed by `/local/static-a
 - `y`
 - `race_num`
 - `combat_profile`
+- `combat_max_hp`
+- `combat_normal_damage`
+- `combat_attack_value`
+- `combat_defense_value`
 - `combat_level`
 - `combat_rank`
 - optional `retaliation_point_delta` when the resolved combat profile uses a non-default owner-retaliation amount; omitted means the bootstrap default `-1` point loss applies
@@ -1108,7 +1114,7 @@ Create/update bodies currently use:
 If one interaction field is present, the other must also be present.
 `name` is trimmed before use and must remain non-empty, valid UTF-8, and embedded-NUL-free; raw create/update bodies containing invalid UTF-8 are rejected before the runtime mutation callback is invoked.
 `combat_profile` follows the same bootstrap profile identifiers accepted by content bundles and spawn groups, letting local operator create/update calls seed practice-mob/training-dummy descriptors without importing a full bundle.
-Returned static-actor snapshots expose the resolved `combat_level`, `combat_rank`, and any non-default `retaliation_point_delta` from that combat profile, so operator/debug consumers can inspect custom presentation and hostility metadata without re-resolving the profile registry.
+Returned static-actor snapshots expose the resolved `combat_max_hp`, `combat_normal_damage`, `combat_attack_value`, `combat_defense_value`, `combat_level`, `combat_rank`, and any non-default `retaliation_point_delta` from that combat profile, so operator/debug consumers can inspect authored formula, presentation, and hostility metadata without re-resolving the profile registry.
 Returned static-actor snapshots now also expose `dead: true` while a runtime-owned practice mob is still in its server-owned dead interval, including `DELETE /local/static-actors/{entity_id}` responses when a dead dummy is removed before respawn.
 
 ### `GET` / `POST /local/interactions` and `PATCH` / `PUT` / `DELETE /local/interactions/{kind}/{ref}`

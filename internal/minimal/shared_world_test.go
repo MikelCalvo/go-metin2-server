@@ -24483,8 +24483,11 @@ func TestSharedWorldRegistryCombatTargetSnapshotReportsResolvedHPAndDamage(t *te
 	if !ok {
 		t.Fatal("expected initial formula-profile combat target snapshot")
 	}
-	if initial.TargetCurrentHP != 12 || initial.TargetMaxHP != 12 || initial.NormalAttackDamage != 5 {
-		t.Fatalf("expected initial resolved combat HP/damage fields, got %+v", initial)
+	if initial.TargetCurrentHP != 12 || initial.TargetMaxHP != 12 || initial.NormalAttackDamage != 5 || initial.TargetAttackValue != 7 || initial.TargetDefenseValue != 2 {
+		t.Fatalf("expected initial resolved combat HP/damage/formula fields, got %+v", initial)
+	}
+	if initial.Actor.CombatMaxHP != 12 || initial.Actor.CombatNormalDamage != 5 || initial.Actor.CombatAttackValue != 7 || initial.Actor.CombatDefenseValue != 2 {
+		t.Fatalf("expected initial actor snapshot to expose combat formula metadata, got %+v", initial.Actor)
 	}
 
 	attack := registry.AttemptSelectedStaticActorAttack(subjectID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, uint32(actor.EntityID))
@@ -24495,8 +24498,8 @@ func TestSharedWorldRegistryCombatTargetSnapshotReportsResolvedHPAndDamage(t *te
 	if !ok {
 		t.Fatal("expected damaged formula-profile combat target snapshot")
 	}
-	if damaged.TargetCurrentHP != 7 || damaged.TargetMaxHP != 12 || damaged.NormalAttackDamage != 5 || damaged.HPPercent != attack.HPPercent {
-		t.Fatalf("expected damaged snapshot to expose current/max HP and normal-hit damage, got snapshot=%+v attack=%+v", damaged, attack)
+	if damaged.TargetCurrentHP != 7 || damaged.TargetMaxHP != 12 || damaged.NormalAttackDamage != 5 || damaged.TargetAttackValue != 7 || damaged.TargetDefenseValue != 2 || damaged.HPPercent != attack.HPPercent {
+		t.Fatalf("expected damaged snapshot to expose current/max HP and normal-hit formula metadata, got snapshot=%+v attack=%+v", damaged, attack)
 	}
 }
 

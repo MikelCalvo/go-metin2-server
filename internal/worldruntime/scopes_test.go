@@ -266,6 +266,9 @@ func TestStaticActorSnapshotOmitsRuntimeCombatHPPercentWithoutRuntimeState(t *te
 	if snapshot.CombatHPPercent != 0 || snapshot.Dead {
 		t.Fatalf("expected worldruntime-only static-actor snapshots to omit runtime combat HP/dead state, got %+v", snapshot)
 	}
+	if snapshot.CombatMaxHP != PracticeMobBootstrapMaxHP || snapshot.CombatNormalDamage != PracticeMobBootstrapDamagePerNormalAttack || snapshot.CombatAttackValue != PracticeMobBootstrapAttackValue || snapshot.CombatDefenseValue != PracticeMobBootstrapDefenseValue {
+		t.Fatalf("expected worldruntime-only static-actor snapshots to expose resolved combat profile formula metadata, got %+v", snapshot)
+	}
 }
 
 func TestScopesSpawnGroupSnapshotsReturnOnlySpawnBackedActorsInDeterministicOrder(t *testing.T) {

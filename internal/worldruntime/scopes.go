@@ -72,6 +72,10 @@ type StaticActorSnapshot struct {
 	Dead                  bool                `json:"dead,omitempty"`
 	CombatProfile         string              `json:"combat_profile,omitempty"`
 	CombatHPPercent       uint8               `json:"combat_hp_percent,omitempty"`
+	CombatMaxHP           uint8               `json:"combat_max_hp,omitempty"`
+	CombatNormalDamage    uint8               `json:"combat_normal_damage,omitempty"`
+	CombatAttackValue     uint16              `json:"combat_attack_value,omitempty"`
+	CombatDefenseValue    uint16              `json:"combat_defense_value"`
 	CombatLevel           uint16              `json:"combat_level,omitempty"`
 	CombatRank            uint8               `json:"combat_rank,omitempty"`
 	RetaliationPointDelta int32               `json:"retaliation_point_delta,omitempty"`
@@ -546,10 +550,18 @@ func bootstrapPlayerSnapshotDead(character loginticket.Character) bool {
 
 func staticActorSnapshot(topology BootstrapTopology, actor StaticEntity) StaticActorSnapshot {
 	combatProfile := staticActorCombatProfile(actor.CombatProfile, actor.CombatKind)
+	var combatMaxHP uint8
+	var combatNormalDamage uint8
+	var combatAttackValue uint16
+	var combatDefenseValue uint16
 	var combatLevel uint16
 	var combatRank uint8
 	var retaliationPointDelta int32
 	if defaults, ok := BootstrapStaticActorCombatProfileDefaults(combatProfile); ok {
+		combatMaxHP = defaults.MaxHP
+		combatNormalDamage = defaults.DamagePerNormalAttack
+		combatAttackValue = defaults.AttackValue
+		combatDefenseValue = defaults.DefenseValue
 		combatLevel = defaults.Level
 		combatRank = defaults.Rank
 		if defaults.RetaliationPointDelta != PracticeMobBootstrapRetaliationPointDelta {
@@ -564,6 +576,10 @@ func staticActorSnapshot(topology BootstrapTopology, actor StaticEntity) StaticA
 		Y:                     actor.Position.Y,
 		RaceNum:               actor.RaceNum,
 		CombatProfile:         combatProfile,
+		CombatMaxHP:           combatMaxHP,
+		CombatNormalDamage:    combatNormalDamage,
+		CombatAttackValue:     combatAttackValue,
+		CombatDefenseValue:    combatDefenseValue,
 		CombatLevel:           combatLevel,
 		CombatRank:            combatRank,
 		RetaliationPointDelta: retaliationPointDelta,
