@@ -6,12 +6,14 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
+	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 )
 
 func TestGameRuntimeItemRefineFailsClosedWithoutMutation(t *testing.T) {
@@ -112,6 +114,169 @@ func TestGameRuntimeItemRefineTemplateRejectMessageWithoutMutation(t *testing.T)
 	}
 	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
 		t.Fatalf("template-backed REFINE rejection mutated point value: got %d want %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex], owner.Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
+func TestGameRuntimeItemRefineRejectMessageClosesActiveMerchantWindowWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := merchantBuyerCharacter("RefineMerchantReject", 0x01030754, 0x02040754, 12345, []inventory.ItemInstance{{ID: 605, Vnum: 11205, Count: 1, Slot: 5}})
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "item-refine-merchant-reject", 0x70707054, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-refine-merchant-reject", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-refine merchant reject account: %v", err)
+	}
+	template := itemcatalog.Template{
+		Vnum:             11205,
+		Name:             "Merchant Non Refine Practice Blade",
+		Stackable:        false,
+		MaxCount:         1,
+		RefineRejectText: "This item cannot be refined while shopping.",
+	}
+	templates := append(defaultMerchantItemTemplates(), template)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{defaultMerchantCatalogDefinition()})
+	itemStore := newItemTemplateStore(t, templates)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected item-refine merchant reject runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:merchant")
+	if !ok {
+		t.Fatal("expected merchant static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-refine-merchant-reject", 0x70707054)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+	interactWithMerchantForBuy(t, flow, actor.EntityID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 2})))
+	if err != nil {
+		t.Fatalf("unexpected item-refine merchant rejection packet error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected template-backed REFINE rejection to close SHOP before info chat, got %d frames", len(out))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, out[0])); err != nil {
+		t.Fatalf("decode merchant SHOP END before refine rejection chat: %v", err)
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode merchant refine rejection chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != template.RefineRejectText {
+		t.Fatalf("unexpected merchant refine rejection chat: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after merchant refine rejection, got %d", len(queued))
+	}
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected post-refine-reject merchant SHOP END error: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected post-refine-reject merchant SHOP END to emit no frames after refine closed the shell, got %d", len(closeOut))
+	}
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected post-refine-reject merchant SHOP BUY error: %v", err)
+	}
+	if len(buyOut) != 0 {
+		t.Fatalf("expected post-refine-reject merchant SHOP BUY to fail closed until reopen, got %d", len(buyOut))
+	}
+	persisted, err := accounts.Load("item-refine-merchant-reject")
+	if err != nil {
+		t.Fatalf("load persisted item-refine merchant reject account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) || !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) || persisted.Characters[0].Gold != owner.Gold || persisted.Characters[0].Points != owner.Points {
+		t.Fatalf("merchant refine rejection mutated persisted character:\n got: %+v\nwant: %+v", persisted.Characters[0], owner)
+	}
+}
+
+func TestGameRuntimeItemRefineInformationClosesActiveMerchantWindowWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := merchantBuyerCharacter("RefineMerchantOpen", 0x01030753, 0x02040753, 12345, []inventory.ItemInstance{{ID: 604, Vnum: 11203, Count: 1, Slot: 5}})
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "item-refine-merchant-open", 0x70707053, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-refine-merchant-open", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-refine merchant account: %v", err)
+	}
+	template := itemcatalog.Template{
+		Vnum:       11203,
+		Name:       "Merchant Refineable Practice Blade",
+		Stackable:  false,
+		MaxCount:   1,
+		Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{ResultVnum: 11204, Cost: 1250, Probability: 65, Materials: []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 1}}},
+	}
+	templates := append(defaultMerchantItemTemplates(), template)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{defaultMerchantCatalogDefinition()})
+	itemStore := newItemTemplateStore(t, templates)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected item-refine merchant runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:merchant")
+	if !ok {
+		t.Fatal("expected merchant static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-refine-merchant-open", 0x70707053)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+	interactWithMerchantForBuy(t, flow, actor.EntityID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 4})))
+	if err != nil {
+		t.Fatalf("unexpected item-refine merchant information packet error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected template-backed REFINE information to close SHOP before preview, got %d frames", len(out))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, out[0])); err != nil {
+		t.Fatalf("decode merchant SHOP END before refine information frame: %v", err)
+	}
+	packet, err := itemproto.DecodeRefineInformationNew(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode merchant refine information frame: %v", err)
+	}
+	want := itemproto.RefineInformationPacket{
+		Type:     4,
+		Position: 5,
+		Table: itemproto.RefineTable{
+			SourceVnum:    11203,
+			ResultVnum:    11204,
+			MaterialCount: 1,
+			Cost:          1250,
+			Probability:   65,
+			Materials:     [itemproto.RefineMaterialMaxNum]itemproto.RefineMaterial{{Vnum: 27001, Count: 1}},
+		},
+	}
+	if packet != want {
+		t.Fatalf("unexpected merchant refine information frame:\n got: %+v\nwant: %+v", packet, want)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after merchant refine information, got %d", len(queued))
+	}
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected post-refine merchant SHOP END error: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected post-refine merchant SHOP END to emit no frames after refine closed the shell, got %d", len(closeOut))
+	}
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected post-refine merchant SHOP BUY error: %v", err)
+	}
+	if len(buyOut) != 0 {
+		t.Fatalf("expected post-refine merchant SHOP BUY to fail closed until reopen, got %d", len(buyOut))
+	}
+	persisted, err := accounts.Load("item-refine-merchant-open")
+	if err != nil {
+		t.Fatalf("load persisted item-refine merchant account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) || !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) || persisted.Characters[0].Gold != owner.Gold || persisted.Characters[0].Points != owner.Points {
+		t.Fatalf("merchant refine information mutated persisted character:\n got: %+v\nwant: %+v", persisted.Characters[0], owner)
 	}
 }
 
