@@ -198,37 +198,38 @@ type ImportPreview struct {
 }
 
 type SummaryDeltas struct {
-	StaticActorCount                       SummaryCountDelta            `json:"static_actor_count"`
-	InteractableStaticActorCount           SummaryCountDelta            `json:"interactable_static_actor_count"`
-	SpawnGroupCount                        SummaryCountDelta            `json:"spawn_group_count"`
-	CombatProfileCount                     SummaryCountDelta            `json:"combat_profile_count"`
-	ItemTemplateCount                      SummaryCountDelta            `json:"item_template_count"`
-	QuestStateFlagCount                    SummaryCountDelta            `json:"quest_state_flag_count,omitempty"`
-	QuestStateCharacterCount               SummaryCountDelta            `json:"quest_state_character_count,omitempty"`
-	QuestStateQuestCount                   SummaryCountDelta            `json:"quest_state_quest_count,omitempty"`
-	QuestStateFlags                        []QuestStateDelta            `json:"quest_state_flags,omitempty"`
-	ShopCatalogEntryCount                  SummaryCountDelta            `json:"shop_catalog_entry_count"`
-	ShopCatalogs                           []ShopCatalogDelta           `json:"shop_catalogs,omitempty"`
-	ShopRouteCount                         SummaryCountDelta            `json:"shop_route_count"`
-	WarpDestinationCount                   SummaryCountDelta            `json:"warp_destination_count"`
-	WarpDestinations                       []WarpDestinationDelta       `json:"warp_destinations,omitempty"`
-	WarpRouteCount                         SummaryCountDelta            `json:"warp_route_count"`
-	RewardExperienceTotal                  SummaryAmountDelta           `json:"reward_experience_total"`
-	RewardGoldTotal                        SummaryAmountDelta           `json:"reward_gold_total"`
-	RewardDropItemCount                    SummaryCountDelta            `json:"reward_drop_item_count"`
-	RewardDrops                            []RewardDropDelta            `json:"reward_drops,omitempty"`
-	InteractionDefinitionCount             SummaryCountDelta            `json:"interaction_definition_count"`
-	ReferencedInteractionDefinitionCount   SummaryCountDelta            `json:"referenced_interaction_definition_count"`
-	UnreferencedInteractionDefinitionCount SummaryCountDelta            `json:"unreferenced_interaction_definition_count"`
-	StaticActors                           []StaticActorDelta           `json:"static_actors,omitempty"`
-	InteractionKinds                       []InteractionKindDelta       `json:"interaction_kinds,omitempty"`
-	InteractionDefinitions                 []InteractionDefinitionDelta `json:"interaction_definitions,omitempty"`
-	ItemTemplates                          []ItemTemplateDelta          `json:"item_templates,omitempty"`
-	CombatProfiles                         []CombatProfileDelta         `json:"combat_profiles,omitempty"`
-	SpawnGroups                            []SpawnGroupDelta            `json:"spawn_groups,omitempty"`
-	ShopRoutes                             []ShopRouteDelta             `json:"shop_routes,omitempty"`
-	WarpRoutes                             []WarpRouteDelta             `json:"warp_routes,omitempty"`
-	Maps                                   []MapContentDelta            `json:"maps,omitempty"`
+	StaticActorCount                       SummaryCountDelta              `json:"static_actor_count"`
+	InteractableStaticActorCount           SummaryCountDelta              `json:"interactable_static_actor_count"`
+	SpawnGroupCount                        SummaryCountDelta              `json:"spawn_group_count"`
+	CombatProfileCount                     SummaryCountDelta              `json:"combat_profile_count"`
+	ItemTemplateCount                      SummaryCountDelta              `json:"item_template_count"`
+	QuestStateFlagCount                    SummaryCountDelta              `json:"quest_state_flag_count,omitempty"`
+	QuestStateCharacterCount               SummaryCountDelta              `json:"quest_state_character_count,omitempty"`
+	QuestStateQuestCount                   SummaryCountDelta              `json:"quest_state_quest_count,omitempty"`
+	QuestStateFlags                        []QuestStateDelta              `json:"quest_state_flags,omitempty"`
+	ShopCatalogEntryCount                  SummaryCountDelta              `json:"shop_catalog_entry_count"`
+	ShopCatalogs                           []ShopCatalogDelta             `json:"shop_catalogs,omitempty"`
+	ShopRouteCount                         SummaryCountDelta              `json:"shop_route_count"`
+	WarpDestinationCount                   SummaryCountDelta              `json:"warp_destination_count"`
+	WarpDestinations                       []WarpDestinationDelta         `json:"warp_destinations,omitempty"`
+	WarpRouteCount                         SummaryCountDelta              `json:"warp_route_count"`
+	RewardExperienceTotal                  SummaryAmountDelta             `json:"reward_experience_total"`
+	RewardGoldTotal                        SummaryAmountDelta             `json:"reward_gold_total"`
+	RewardDropItemCount                    SummaryCountDelta              `json:"reward_drop_item_count"`
+	RewardDrops                            []RewardDropDelta              `json:"reward_drops,omitempty"`
+	InteractionDefinitionCount             SummaryCountDelta              `json:"interaction_definition_count"`
+	ReferencedInteractionDefinitionCount   SummaryCountDelta              `json:"referenced_interaction_definition_count"`
+	UnreferencedInteractionDefinitionCount SummaryCountDelta              `json:"unreferenced_interaction_definition_count"`
+	StaticActors                           []StaticActorDelta             `json:"static_actors,omitempty"`
+	InteractableStaticActors               []InteractableStaticActorDelta `json:"interactable_static_actors,omitempty"`
+	InteractionKinds                       []InteractionKindDelta         `json:"interaction_kinds,omitempty"`
+	InteractionDefinitions                 []InteractionDefinitionDelta   `json:"interaction_definitions,omitempty"`
+	ItemTemplates                          []ItemTemplateDelta            `json:"item_templates,omitempty"`
+	CombatProfiles                         []CombatProfileDelta           `json:"combat_profiles,omitempty"`
+	SpawnGroups                            []SpawnGroupDelta              `json:"spawn_groups,omitempty"`
+	ShopRoutes                             []ShopRouteDelta               `json:"shop_routes,omitempty"`
+	WarpRoutes                             []WarpRouteDelta               `json:"warp_routes,omitempty"`
+	Maps                                   []MapContentDelta              `json:"maps,omitempty"`
 }
 
 type SummaryCountDelta struct {
@@ -277,6 +278,12 @@ type StaticActorDelta struct {
 	Change    string       `json:"change"`
 	Current   *StaticActor `json:"current,omitempty"`
 	Candidate *StaticActor `json:"candidate,omitempty"`
+}
+
+type InteractableStaticActorDelta struct {
+	Change    string                          `json:"change"`
+	Current   *InteractableStaticActorSummary `json:"current,omitempty"`
+	Candidate *InteractableStaticActorSummary `json:"candidate,omitempty"`
 }
 
 type ItemTemplateDelta struct {
@@ -860,6 +867,7 @@ func buildSummaryDeltas(current Summary, candidate Summary, currentBundle Bundle
 		ReferencedInteractionDefinitionCount:   summaryCountDelta(current.ReferencedInteractionDefinitionCount, candidate.ReferencedInteractionDefinitionCount),
 		UnreferencedInteractionDefinitionCount: summaryCountDelta(current.UnreferencedInteractionDefinitionCount, candidate.UnreferencedInteractionDefinitionCount),
 		StaticActors:                           buildStaticActorDeltas(currentBundle.StaticActors, candidateBundle.StaticActors),
+		InteractableStaticActors:               buildInteractableStaticActorDeltas(current.InteractableStaticActors, candidate.InteractableStaticActors),
 		InteractionKinds:                       buildInteractionKindDeltas(current.InteractionKinds, candidate.InteractionKinds),
 		InteractionDefinitions:                 buildInteractionDefinitionDeltas(currentBundle, candidateBundle),
 		ItemTemplates:                          buildItemTemplateDeltas(currentBundle.ItemTemplates, candidateBundle.ItemTemplates),
@@ -1152,6 +1160,104 @@ func cloneStaticActorDelta(delta StaticActorDelta) StaticActorDelta {
 		cloned.Candidate = &candidate
 	}
 	return cloned
+}
+
+func buildInteractableStaticActorDeltas(currentActors []InteractableStaticActorSummary, candidateActors []InteractableStaticActorSummary) []InteractableStaticActorDelta {
+	if len(currentActors) == 0 && len(candidateActors) == 0 {
+		return nil
+	}
+	currentByKey := interactableStaticActorMapByAuthoringKey(currentActors)
+	candidateByKey := interactableStaticActorMapByAuthoringKey(candidateActors)
+	keysSeen := make(map[string]struct{}, len(currentByKey)+len(candidateByKey))
+	for key := range currentByKey {
+		keysSeen[key] = struct{}{}
+	}
+	for key := range candidateByKey {
+		keysSeen[key] = struct{}{}
+	}
+	keys := make([]string, 0, len(keysSeen))
+	for key := range keysSeen {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	deltas := make([]InteractableStaticActorDelta, 0, len(keys))
+	for _, key := range keys {
+		current, currentOK := currentByKey[key]
+		candidate, candidateOK := candidateByKey[key]
+		switch {
+		case !currentOK:
+			candidateCopy := candidate
+			deltas = append(deltas, InteractableStaticActorDelta{Change: "added", Candidate: &candidateCopy})
+		case !candidateOK:
+			currentCopy := current
+			deltas = append(deltas, InteractableStaticActorDelta{Change: "removed", Current: &currentCopy})
+		case !reflect.DeepEqual(current, candidate):
+			currentCopy := current
+			candidateCopy := candidate
+			deltas = append(deltas, InteractableStaticActorDelta{Change: "changed", Current: &currentCopy, Candidate: &candidateCopy})
+		}
+	}
+	if len(deltas) == 0 {
+		return nil
+	}
+	return deltas
+}
+
+func InteractableStaticActorDeltasByName(deltas []InteractableStaticActorDelta, name string) []InteractableStaticActorDelta {
+	name = strings.TrimSpace(name)
+	if name == "" || strings.Contains(name, "/") {
+		return nil
+	}
+	matches := make([]InteractableStaticActorDelta, 0)
+	for _, delta := range deltas {
+		if interactableStaticActorDeltaMatchesName(delta, name) {
+			matches = append(matches, cloneInteractableStaticActorDelta(delta))
+		}
+	}
+	if len(matches) == 0 {
+		return nil
+	}
+	return matches
+}
+
+func interactableStaticActorDeltaMatchesName(delta InteractableStaticActorDelta, name string) bool {
+	return (delta.Current != nil && strings.TrimSpace(delta.Current.Name) == name) ||
+		(delta.Candidate != nil && strings.TrimSpace(delta.Candidate.Name) == name)
+}
+
+func cloneInteractableStaticActorDelta(delta InteractableStaticActorDelta) InteractableStaticActorDelta {
+	cloned := delta
+	if delta.Current != nil {
+		current := normalizeInteractableStaticActorSummary(*delta.Current)
+		cloned.Current = &current
+	}
+	if delta.Candidate != nil {
+		candidate := normalizeInteractableStaticActorSummary(*delta.Candidate)
+		cloned.Candidate = &candidate
+	}
+	return cloned
+}
+
+func interactableStaticActorMapByAuthoringKey(actors []InteractableStaticActorSummary) map[string]InteractableStaticActorSummary {
+	byKey := make(map[string]InteractableStaticActorSummary, len(actors))
+	for _, actor := range actors {
+		actor = normalizeInteractableStaticActorSummary(actor)
+		byKey[interactableStaticActorAuthoringKey(actor)] = actor
+	}
+	return byKey
+}
+
+func interactableStaticActorAuthoringKey(actor InteractableStaticActorSummary) string {
+	return fmt.Sprintf("%s\x00%d\x00%d\x00%d\x00%d\x00%s\x00%s", actor.Name, actor.MapIndex, actor.X, actor.Y, actor.RaceNum, actor.InteractionKind, actor.InteractionRef)
+}
+
+func normalizeInteractableStaticActorSummary(actor InteractableStaticActorSummary) InteractableStaticActorSummary {
+	actor.Name = strings.TrimSpace(actor.Name)
+	actor.InteractionKind = strings.TrimSpace(actor.InteractionKind)
+	actor.InteractionRef = strings.TrimSpace(actor.InteractionRef)
+	actor.Preview = strings.TrimSpace(actor.Preview)
+	return actor
 }
 
 func staticActorMapByAuthoringKey(actors []StaticActor) map[string]StaticActor {

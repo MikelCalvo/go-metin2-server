@@ -203,6 +203,10 @@ func TestGameRuntimePreviewContentBundleImportReturnsDeltasWithoutMutatingRuntim
 			{Change: "added", Candidate: &contentbundle.StaticActor{Name: "Merchant", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20302, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
 			{Change: "removed", Current: &contentbundle.StaticActor{Name: "VillageGuide", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}},
 		},
+		InteractableStaticActors: []contentbundle.InteractableStaticActorDelta{
+			{Change: "added", Candidate: &contentbundle.InteractableStaticActorSummary{Name: "Merchant", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20302, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant", Preview: defaultMerchantPreview}},
+			{Change: "removed", Current: &contentbundle.InteractableStaticActorSummary{Name: "VillageGuide", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide", Preview: "VillageGuide:\nWelcome."}},
+		},
 		InteractionKinds: []contentbundle.InteractionKindDelta{
 			{Kind: interactionstore.KindShopPreview, Count: contentbundle.SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}, ReferencedCount: contentbundle.SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}, UnreferencedCount: contentbundle.SummaryCountDelta{}},
 			{Kind: interactionstore.KindTalk, Count: contentbundle.SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1}, ReferencedCount: contentbundle.SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1}, UnreferencedCount: contentbundle.SummaryCountDelta{}},

@@ -1350,6 +1350,11 @@ func TestBuildImportPreviewReturnsDeterministicSummaryDeltas(t *testing.T) {
 			{Change: "added", Candidate: &StaticActor{Name: "Teleporter", MapIndex: 1, X: 1300, Y: 2300, RaceNum: 20303, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:teleporter"}},
 			{Change: "removed", Current: &StaticActor{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}},
 		},
+		InteractableStaticActors: []InteractableStaticActorDelta{
+			{Change: "added", Candidate: &InteractableStaticActorSummary{Name: "Merchant", MapIndex: 1, X: 1200, Y: 2200, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant", Preview: "Village Merchant: [0] Small Red Potion x1 @ 50g; [1] Wooden Sword x1 @ 500g"}},
+			{Change: "added", Candidate: &InteractableStaticActorSummary{Name: "Teleporter", MapIndex: 1, X: 1300, Y: 2300, RaceNum: 20303, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:teleporter", Preview: "Step through the gate. [warp -> map 7 @ 1300,2300]"}},
+			{Change: "removed", Current: &InteractableStaticActorSummary{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide", Preview: "VillageGuide:\nWelcome."}},
+		},
 		InteractionKinds: []InteractionKindDelta{
 			{Kind: interactionstore.KindShopPreview, Count: SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}, ReferencedCount: SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}, UnreferencedCount: SummaryCountDelta{}},
 			{Kind: interactionstore.KindTalk, Count: SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1}, ReferencedCount: SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1}, UnreferencedCount: SummaryCountDelta{}},
@@ -1460,6 +1465,74 @@ func TestStaticActorDeltasByNameReturnsClonedNameDeltas(t *testing.T) {
 	}
 	if invalid := StaticActorDeltasByName(deltas, ""); len(invalid) != 0 {
 		t.Fatalf("expected blank static-actor name lookup to fail closed, got %#v", invalid)
+	}
+}
+
+func TestBuildImportPreviewReturnsInteractableStaticActorDeltas(t *testing.T) {
+	preview, err := BuildImportPreview(
+		Bundle{
+			StaticActors: []StaticActor{
+				{Name: "Village Guide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"},
+				{Name: "Old Notice", MapIndex: 1, X: 900, Y: 1900, RaceNum: 20304, InteractionKind: interactionstore.KindInfo, InteractionRef: "lore:old_notice"},
+			},
+			InteractionDefinitions: []interactionstore.Definition{
+				{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Old greeting."},
+				{Kind: interactionstore.KindInfo, Ref: "lore:old_notice", Text: "Old notice."},
+			},
+		},
+		Bundle{
+			StaticActors: []StaticActor{
+				{Name: "Village Guide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"},
+				{Name: "New Merchant", MapIndex: 1, X: 1200, Y: 2200, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"},
+			},
+			ItemTemplates: testMerchantItemTemplates(),
+			InteractionDefinitions: []interactionstore.Definition{
+				{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "New greeting."},
+				testMerchantCatalogDefinition(),
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build import preview interactable static actor deltas: %v", err)
+	}
+
+	oldGuide := InteractableStaticActorSummary{Name: "Village Guide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide", Preview: "Village Guide:\nOld greeting."}
+	newGuide := InteractableStaticActorSummary{Name: "Village Guide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide", Preview: "Village Guide:\nNew greeting."}
+	oldNotice := InteractableStaticActorSummary{Name: "Old Notice", MapIndex: 1, X: 900, Y: 1900, RaceNum: 20304, InteractionKind: interactionstore.KindInfo, InteractionRef: "lore:old_notice", Preview: "Old notice."}
+	newMerchant := InteractableStaticActorSummary{Name: "New Merchant", MapIndex: 1, X: 1200, Y: 2200, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant", Preview: "Village Merchant: [0] Small Red Potion x1 @ 50g; [1] Wooden Sword x1 @ 500g"}
+	want := []InteractableStaticActorDelta{
+		{Change: "added", Candidate: &newMerchant},
+		{Change: "removed", Current: &oldNotice},
+		{Change: "changed", Current: &oldGuide, Candidate: &newGuide},
+	}
+	if !reflect.DeepEqual(preview.Deltas.InteractableStaticActors, want) {
+		t.Fatalf("unexpected interactable static actor deltas:\n got: %#v\nwant: %#v", preview.Deltas.InteractableStaticActors, want)
+	}
+}
+
+func TestInteractableStaticActorDeltasByNameReturnsClonedNameDeltas(t *testing.T) {
+	currentGuide := InteractableStaticActorSummary{Name: "Village Guide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide", Preview: "Village Guide:\nOld greeting."}
+	candidateGuide := InteractableStaticActorSummary{Name: "Village Guide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide", Preview: "Village Guide:\nNew greeting."}
+	deltas := []InteractableStaticActorDelta{
+		{Change: "changed", Current: &currentGuide, Candidate: &candidateGuide},
+		{Change: "added", Candidate: &InteractableStaticActorSummary{Name: "Remote Merchant", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant", Preview: "Merchant preview."}},
+	}
+
+	got := InteractableStaticActorDeltasByName(deltas, " Village Guide ")
+	want := []InteractableStaticActorDelta{{Change: "changed", Current: &currentGuide, Candidate: &candidateGuide}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected name-scoped interactable static-actor deltas:\n got: %#v\nwant: %#v", got, want)
+	}
+	got[0].Current.Preview = "mutated"
+	got[0].Candidate.X = 9999
+	if currentGuide.Preview != "Village Guide:\nOld greeting." || candidateGuide.X != 1000 {
+		t.Fatalf("expected name-scoped interactable static-actor lookup to clone nested actors, got current=%+v candidate=%+v", currentGuide, candidateGuide)
+	}
+	if missing := InteractableStaticActorDeltasByName(deltas, "Missing Guide"); len(missing) != 0 {
+		t.Fatalf("expected missing interactable static-actor name lookup to return no rows, got %#v", missing)
+	}
+	if invalid := InteractableStaticActorDeltasByName(deltas, "Bad/Guide"); len(invalid) != 0 {
+		t.Fatalf("expected path-ambiguous interactable static-actor name lookup to fail closed, got %#v", invalid)
 	}
 }
 

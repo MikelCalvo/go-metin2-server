@@ -752,6 +752,10 @@ func main() {
 		opsHandler,
 		previewContentBundleImport,
 	)
+	opsHandler = ops.RegisterLocalContentBundleInteractableStaticActorImportPreviewEndpoint(
+		opsHandler,
+		previewContentBundleImport,
+	)
 	opsHandler = ops.RegisterLocalContentBundleMapImportPreviewEndpoint(
 		opsHandler,
 		previewContentBundleImport,
