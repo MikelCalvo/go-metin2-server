@@ -5806,6 +5806,106 @@ func TestLocalGroundItemsEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalMapGroundItemsEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
+	lookup := &stubMapGroundItemsLookup{snapshots: []map[string]any{{"vid": uint32(0x07000034), "vnum": uint32(3004), "count": uint16(2), "owner_name": "MapGroundOwner", "map_index": uint32(42), "x": int32(1200), "y": int32(2200)}}}
+	mux := RegisterLocalMapGroundItemsEndpoint(NewPprofMux("gamed"), lookup.MapGroundItems)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/42/ground-items", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if lookup.calls != 1 || lookup.lastMapIndex != 42 {
+		t.Fatalf("expected map ground lookup for map 42, got calls=%d map=%d", lookup.calls, lookup.lastMapIndex)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"vid":117440564`) || !strings.Contains(string(body), `"vnum":3004`) || !strings.Contains(string(body), `"owner_name":"MapGroundOwner"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalMapGroundItemsEndpointRejectsInvalidMapIndex(t *testing.T) {
+	lookup := &stubMapGroundItemsLookup{}
+	mux := RegisterLocalMapGroundItemsEndpoint(NewPprofMux("gamed"), lookup.MapGroundItems)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/not-a-map/ground-items", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected map ground lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalMapGroundItemsEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	lookup := &stubMapGroundItemsLookup{}
+	mux := RegisterLocalMapGroundItemsEndpoint(NewPprofMux("gamed"), lookup.MapGroundItems)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/42/ground-items", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected map ground lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalMapGroundItemsEndpointRejectsWrongMethod(t *testing.T) {
+	lookup := &stubMapGroundItemsLookup{}
+	mux := RegisterLocalMapGroundItemsEndpoint(NewPprofMux("gamed"), lookup.MapGroundItems)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/maps/42/ground-items", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected map ground lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalMapGroundItemsEndpointReturnsNotFoundForMissingMap(t *testing.T) {
+	lookup := &stubMapGroundItemsLookup{ok: false}
+	mux := RegisterLocalMapGroundItemsEndpoint(NewPprofMux("gamed"), lookup.MapGroundItems)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/777/ground-items", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+	if lookup.calls != 1 || lookup.lastMapIndex != 777 {
+		t.Fatalf("expected map ground lookup for missing map 777, got calls=%d map=%d", lookup.calls, lookup.lastMapIndex)
+	}
+}
+
 func TestLocalStaticActorsEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
 	snapshotter := &stubStaticActorSnapshotter{actors: []map[string]any{{"entity_id": uint64(2), "name": "Blacksmith", "map_index": uint32(42), "x": int32(1900), "y": int32(3000), "race_num": uint32(20301)}, {"entity_id": uint64(1), "name": "VillageGuard", "map_index": uint32(42), "x": int32(1700), "y": int32(2800), "race_num": uint32(20300)}}}
 	mux := RegisterLocalStaticActorEndpoints(NewPprofMux("gamed"), snapshotter.StaticActors, nil)
@@ -7840,6 +7940,22 @@ func (s *stubMapSpawnGroupReturnStepsLookup) MapSpawnGroupReturnSteps(mapIndex u
 	s.lastMapIndex = mapIndex
 	value, ok := s.snapshots[mapIndex]
 	return value, ok
+}
+
+type stubMapGroundItemsLookup struct {
+	snapshots    []map[string]any
+	ok           bool
+	calls        int
+	lastMapIndex uint32
+}
+
+func (s *stubMapGroundItemsLookup) MapGroundItems(mapIndex uint32) (any, bool) {
+	s.calls++
+	s.lastMapIndex = mapIndex
+	if !s.ok && s.snapshots == nil {
+		return nil, false
+	}
+	return s.snapshots, true
 }
 
 type stubMapCombatTargetsLookup struct {

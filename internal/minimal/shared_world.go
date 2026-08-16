@@ -3740,6 +3740,28 @@ func (r *sharedWorldRegistry) GroundItem(vid uint32) (GroundItemSnapshot, bool) 
 	return groundItemSnapshot(ground), true
 }
 
+func (r *sharedWorldRegistry) GroundItemsForMap(mapIndex uint32) ([]GroundItemSnapshot, bool) {
+	if r == nil || mapIndex == 0 {
+		return nil, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, snapshot := range r.mapOccupancySnapshotsLocked() {
+		if snapshot.MapIndex != mapIndex {
+			continue
+		}
+		if len(snapshot.GroundItems) == 0 {
+			return []GroundItemSnapshot{}, true
+		}
+		groundItems := append([]GroundItemSnapshot(nil), snapshot.GroundItems...)
+		sortGroundItemSnapshots(groundItems)
+		return groundItems, true
+	}
+	return nil, false
+}
+
 func (r *sharedWorldRegistry) mapOccupancySnapshotsLocked() []MapOccupancySnapshot {
 	if r == nil || r.entities == nil {
 		return nil

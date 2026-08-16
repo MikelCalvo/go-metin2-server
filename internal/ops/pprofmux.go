@@ -1746,6 +1746,30 @@ func RegisterLocalMapSpawnGroupReturnStepsEndpoint(mux *http.ServeMux, spawnGrou
 	return mux
 }
 
+func RegisterLocalMapGroundItemsEndpoint(mux *http.ServeMux, groundItemsForMap func(uint32) (any, bool)) *http.ServeMux {
+	if mux == nil || groundItemsForMap == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/maps/{map_index}/ground-items", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		mapIndex, ok := decodeLocalMapScopedListIndex(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		value, ok := groundItemsForMap(mapIndex)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalMapCombatTargetsEndpoint(mux *http.ServeMux, combatTargetsForMap func(uint32) (any, bool)) *http.ServeMux {
 	if mux == nil || combatTargetsForMap == nil {
 		return mux

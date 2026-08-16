@@ -406,6 +406,16 @@ func main() {
 			return returnSteps, true
 		},
 	)
+	opsHandler = ops.RegisterLocalMapGroundItemsEndpoint(
+		opsHandler,
+		func(mapIndex uint32) (any, bool) {
+			groundItems, ok := gameRuntime.GroundItemsForMap(mapIndex)
+			if !ok {
+				return nil, false
+			}
+			return groundItems, true
+		},
+	)
 	opsHandler = ops.RegisterLocalMapCombatTargetsEndpoint(
 		opsHandler,
 		func(mapIndex uint32) (any, bool) {

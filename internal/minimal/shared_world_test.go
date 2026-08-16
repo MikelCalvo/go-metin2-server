@@ -4866,6 +4866,65 @@ func TestGameRuntimeGroundItemReturnsSinglePendingGroundSnapshotByVID(t *testing
 	}
 }
 
+func TestGameRuntimeGroundItemsForMapReportsMapLocalPendingGroundSnapshots(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), accountstore.NewFileStore(t.TempDir()))
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	mapFortyTwoOwner := peerVisibilityCharacter("MapGroundOwnerFortyTwo", 0x010301a1, 0x020401a1, 1200, 2200, 0, 101, 201)
+	mapFortyTwoOwner.MapIndex = 42
+	mapOneOwner := peerVisibilityCharacter("MapGroundOwnerOne", 0x010301a2, 0x020401a2, 1300, 2300, 0, 101, 201)
+	mapOneOwner.MapIndex = bootstrapMapIndex
+	emptyMapOwner := peerVisibilityCharacter("MapGroundEmptyOwner", 0x010301a3, 0x020401a3, 1400, 2400, 0, 101, 201)
+	emptyMapOwner.MapIndex = 99
+	mapFortyTwoOwnerID, _ := runtime.sharedWorld.Join(mapFortyTwoOwner, newPendingServerFrames(), nil)
+	mapOneOwnerID, _ := runtime.sharedWorld.Join(mapOneOwner, newPendingServerFrames(), nil)
+	if emptyMapOwnerID, _ := runtime.sharedWorld.Join(emptyMapOwner, newPendingServerFrames(), nil); emptyMapOwnerID == 0 {
+		t.Fatal("expected empty-map owner join to allocate a shared-world entity id")
+	}
+	if mapFortyTwoOwnerID == 0 || mapOneOwnerID == 0 {
+		t.Fatalf("expected ground snapshot owners to join, got map42=%d map1=%d", mapFortyTwoOwnerID, mapOneOwnerID)
+	}
+
+	if !runtime.sharedWorld.RegisterGroundItemWithPickupRange(mapFortyTwoOwnerID, "map-ground-owner-forty-two", mapFortyTwoOwner, 0x07000034, inventory.ItemInstance{ID: 0x30010034, Vnum: 3004, Count: 2}, 450) {
+		t.Fatal("expected map-42 ground-item registration to succeed")
+	}
+	if !runtime.sharedWorld.RegisterGroundGoldWithPickupRange(mapOneOwnerID, "map-ground-owner-one", mapOneOwner, 0x07000035, 275, 750) {
+		t.Fatal("expected bootstrap-map ground-gold registration to succeed")
+	}
+
+	mapFortyTwoGround, ok := runtime.GroundItemsForMap(42)
+	if !ok {
+		t.Fatal("expected map-42 ground item lookup to resolve")
+	}
+	if len(mapFortyTwoGround) != 1 || mapFortyTwoGround[0].VID != 0x07000034 || mapFortyTwoGround[0].Vnum != 3004 || mapFortyTwoGround[0].MapIndex != 42 || mapFortyTwoGround[0].OwnerName != mapFortyTwoOwner.Name || mapFortyTwoGround[0].PickupRange != 450 {
+		t.Fatalf("unexpected map-42 ground item snapshot: %+v", mapFortyTwoGround)
+	}
+	mapOneGround, ok := runtime.GroundItemsForMap(bootstrapMapIndex)
+	if !ok {
+		t.Fatal("expected bootstrap-map ground item lookup to resolve")
+	}
+	if len(mapOneGround) != 1 || mapOneGround[0].VID != 0x07000035 || mapOneGround[0].GoldAmount != 275 || mapOneGround[0].MapIndex != bootstrapMapIndex || mapOneGround[0].OwnerName != mapOneOwner.Name || mapOneGround[0].PickupRange != 750 {
+		t.Fatalf("unexpected bootstrap-map ground snapshot: %+v", mapOneGround)
+	}
+	emptyMapGround, ok := runtime.GroundItemsForMap(99)
+	if !ok || emptyMapGround == nil || len(emptyMapGround) != 0 {
+		t.Fatalf("expected occupied map with no ground items to resolve empty non-nil, got ok=%v snapshots=%+v", ok, emptyMapGround)
+	}
+	if snapshots, ok := runtime.GroundItemsForMap(777); ok || len(snapshots) != 0 {
+		t.Fatalf("expected unknown map ground lookup to fail closed, got ok=%v snapshots=%+v", ok, snapshots)
+	}
+	if snapshots, ok := runtime.GroundItemsForMap(0); ok || len(snapshots) != 0 {
+		t.Fatalf("expected zero map ground lookup to fail closed, got ok=%v snapshots=%+v", ok, snapshots)
+	}
+
+	mapFortyTwoGround[0].Count = 99
+	fresh, ok := runtime.GroundItemsForMap(42)
+	if !ok || len(fresh) != 1 || fresh[0].Count != 2 {
+		t.Fatalf("expected map-local ground output to be cloned, got ok=%v snapshots=%+v", ok, fresh)
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundItemRejectsDuplicateVIDWithoutReplacingExistingItem(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("DuplicateItemVIDOwner", 0x0103019a, 0x0204019a, 1200, 2200, 0, 101, 201)

@@ -1526,6 +1526,13 @@ func (r *gameRuntime) GroundItem(vid uint32) (GroundItemSnapshot, bool) {
 	return r.sharedWorld.GroundItem(vid)
 }
 
+func (r *gameRuntime) GroundItemsForMap(mapIndex uint32) ([]GroundItemSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil {
+		return nil, false
+	}
+	return r.sharedWorld.GroundItemsForMap(mapIndex)
+}
+
 func (r *gameRuntime) RuntimeConfigSnapshot() RuntimeConfigSnapshot {
 	if r == nil || r.sharedWorld == nil {
 		return RuntimeConfigSnapshot{}
