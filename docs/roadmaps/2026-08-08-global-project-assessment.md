@@ -137,17 +137,17 @@ Status: useful authored content seam, not a complete content system.
 Already present:
 
 - static actor and interaction stores,
-- `info`, `talk`, `warp`, and `shop_preview` definitions,
+- `info`, `talk`, `quest_flag`, `warp`, and `shop_preview` definitions,
 - merchant catalogs and first buy/sell behavior,
+- first standalone quest-flag persistence plus one static-actor `quest_flag` trigger seam,
 - content bundle import/export and preview deltas,
 - portable combat profiles, reward descriptors, and spawn groups,
 - local inspection endpoints and a deterministic bootstrap NPC service bundle.
 
 Still missing:
 
-- quest runtime,
-- quest flags and persistent quest state,
-- scripted triggers/results,
+- client-visible quest UI/runtime,
+- branching quest scripts and rewards,
 - regen/drop table ingestion,
 - richer NPC service kinds,
 - live reload/update policy.

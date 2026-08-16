@@ -14,9 +14,10 @@ The current owned surface is limited to `internal/queststate`:
 - one compare-and-set transition primitive for a single character flag,
 - one read-only transition preview plus store validation summary and crash-temp cleanup for the same snapshot format,
 - one read-only exact-character quest-state snapshot for local operator QA,
-- content-bundle import/export/summary inclusion for the same standalone quest-state snapshot.
+- content-bundle import/export/summary inclusion for the same standalone quest-state snapshot,
+- the first static-actor `quest_flag` interaction kind that applies one authored compare-and-set transition for the selected character.
 
-This seam is meant to support future content/NPC work such as “talk to an actor once and advance a flag”. The current local operator endpoints can validate, dry-run or mutate through one compare-and-set transition, read back one character's quest flags, and inspect/import/export quest-state rows through authored content bundles, but no static actor, client packet, reward, dialog runtime, or quest script calls it automatically yet.
+This seam supports the first content/NPC path of “interact with an actor once and advance a flag”. The current local operator endpoints can validate, dry-run or mutate through one compare-and-set transition, read back one character's quest flags, and inspect/import/export quest-state rows through authored content bundles. A visible static actor can now call the same primitive through `INTERACT` when its authored definition uses `interaction_kind = "quest_flag"`, but no client quest packet, reward, branching dialog runtime, or quest script exists yet.
 
 ## Snapshot shape
 
@@ -100,6 +101,43 @@ Failed transitions return no mutated snapshot.
 The file-backed store now exposes that operation as `ApplyTransition(...)`. It treats a missing committed snapshot as an empty current quest-state snapshot only for the purpose of evaluating the transition, then persists a canonical snapshot only when `applied = true`. Invalid transitions and `current_value_mismatch` results return the current summary without rewriting the snapshot.
 
 `PreviewTransition(...)` uses the same compare-and-set evaluator and response shape without writing the committed snapshot. If the transition would apply, its response summary describes the hypothetical post-transition snapshot. If the transition would fail, its response summary describes the current committed snapshot. A missing committed snapshot is previewed as an empty snapshot, but no store file is created.
+
+## Static-actor quest flag interaction
+
+The first authored NPC/content trigger is `interaction_kind = "quest_flag"` on the existing `INTERACT (0x0501)` static-actor path. Its interaction definition shape extends the ordinary `kind + ref` catalog entry with the transition fields:
+
+```json
+{
+  "kind": "quest_flag",
+  "ref": "quest:first_steps",
+  "text": "Quest updated: first_steps.met_guide = 1.",
+  "quest_ref": "quest:first_steps",
+  "quest_flag": "met_guide",
+  "quest_from": 0,
+  "quest_to": 1
+}
+```
+
+Owned rules:
+
+- `kind` must be exactly `quest_flag`.
+- `ref` is still the interaction-definition identity and must use the existing namespaced lower-snake ref rule.
+- `text` is required, UTF-8, NUL-free, and is returned as one self-only `CHAT_TYPE_INFO` acknowledgement after a successful transition.
+- `quest_ref` must satisfy the quest-state `quest:<name>` identity rule.
+- `quest_flag` must satisfy the lower-snake flag-name rule.
+- `quest_from` defaults to `0` when omitted and is the compare-and-set expected value.
+- `quest_to` must be non-zero and must differ from `quest_from` for this first interaction kind; clearing flags can be added later with its own tests/docs.
+- `title`, merchant `catalog`, warp `map_index`, `x`, and `y` are not valid for `quest_flag` definitions.
+
+Runtime behavior:
+
+1. the player must already be in `GAME`, have a live selected character, and target a visible/in-range interactable static actor,
+2. the actor's metadata must resolve to a valid `quest_flag` definition,
+3. `gamed` applies the transition to the selected character name through the same quest-state store primitive used by `/local/quest-state/transition`,
+4. if and only if the transition applies, the client receives one self-only `GC_CHAT` with `type = INFO`, `vid = 0`, `empire = 0`, and `message = definition.text`,
+5. failed compare-and-set outcomes or store errors fail closed with no frames and no peer fanout.
+
+This is still a bootstrap quest-state trigger, not a client quest UI, reward system, branching dialog tree, or script runtime.
 
 ## Runtime configuration and local ops
 

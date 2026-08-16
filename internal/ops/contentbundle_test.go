@@ -519,7 +519,7 @@ func TestLocalContentBundleValidateEndpointAcceptsExampleBundle(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode example validation response: %v", err)
 	}
-	if len(got.StaticActors) != 4 || len(got.SpawnGroups) != 1 || len(got.ItemTemplates) != 2 || len(got.QuestState) != 1 || len(got.InteractionDefinitions) != 4 {
+	if len(got.StaticActors) != 5 || len(got.SpawnGroups) != 1 || len(got.ItemTemplates) != 2 || len(got.QuestState) != 1 || len(got.InteractionDefinitions) != 5 {
 		t.Fatalf("unexpected canonical example validation response: %+v", got)
 	}
 	wantQuestState := []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1}}

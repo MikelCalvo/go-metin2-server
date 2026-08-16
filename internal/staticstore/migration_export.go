@@ -207,6 +207,9 @@ func normalizedInteractionDefinitionsForExport(snapshot interactionstore.Snapsho
 		if !interactionstore.ValidDefinition(definition) {
 			return interactionstore.Snapshot{}, fmt.Errorf("%w: validate interaction definition content-state export", interactionstore.ErrInvalidSnapshot)
 		}
+		if !validStaticActorContentStateInteractionDefinition(definition) {
+			return interactionstore.Snapshot{}, fmt.Errorf("%w: interaction definition %s:%s cannot target static actor content-state migration", interactionstore.ErrInvalidSnapshot, definition.Kind, definition.Ref)
+		}
 		key := interactionDefinitionExportKey(definition.Kind, definition.Ref)
 		if _, ok := seen[key]; ok {
 			return interactionstore.Snapshot{}, fmt.Errorf("%w: duplicate interaction definition %s:%s", interactionstore.ErrInvalidSnapshot, definition.Kind, definition.Ref)
@@ -214,6 +217,15 @@ func normalizedInteractionDefinitionsForExport(snapshot interactionstore.Snapsho
 		seen[key] = struct{}{}
 	}
 	return interactionstore.Snapshot{Definitions: definitions}, nil
+}
+
+func validStaticActorContentStateInteractionDefinition(definition interactionstore.Definition) bool {
+	switch definition.Kind {
+	case interactionstore.KindInfo, interactionstore.KindTalk, interactionstore.KindWarp, interactionstore.KindShopPreview:
+		return true
+	default:
+		return false
+	}
 }
 
 func interactionDefinitionRowForExport(definition interactionstore.Definition) InteractionDefinitionRow {

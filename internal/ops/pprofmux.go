@@ -93,14 +93,18 @@ type localStaticActorCombatProfileListResponse struct {
 }
 
 type localInteractionDefinitionRequest struct {
-	Kind     string                                  `json:"kind"`
-	Ref      string                                  `json:"ref"`
-	Text     string                                  `json:"text"`
-	Title    string                                  `json:"title"`
-	Catalog  []interactionstore.MerchantCatalogEntry `json:"catalog"`
-	MapIndex uint32                                  `json:"map_index"`
-	X        int32                                   `json:"x"`
-	Y        int32                                   `json:"y"`
+	Kind      string                                  `json:"kind"`
+	Ref       string                                  `json:"ref"`
+	Text      string                                  `json:"text"`
+	Title     string                                  `json:"title"`
+	Catalog   []interactionstore.MerchantCatalogEntry `json:"catalog"`
+	MapIndex  uint32                                  `json:"map_index"`
+	X         int32                                   `json:"x"`
+	Y         int32                                   `json:"y"`
+	QuestRef  string                                  `json:"quest_ref"`
+	QuestFlag string                                  `json:"quest_flag"`
+	QuestFrom uint32                                  `json:"quest_from"`
+	QuestTo   uint32                                  `json:"quest_to"`
 }
 
 type localContentBundleRequest struct {
@@ -4383,14 +4387,18 @@ func decodeLocalInteractionDefinitionRequest(r *http.Request) (interactionstore.
 		return interactionstore.Definition{}, http.StatusBadRequest, false
 	}
 	definition := interactionstore.NormalizeDefinition(interactionstore.Definition{
-		Kind:     strings.TrimSpace(request.Kind),
-		Ref:      strings.TrimSpace(request.Ref),
-		Text:     request.Text,
-		Title:    request.Title,
-		Catalog:  request.Catalog,
-		MapIndex: request.MapIndex,
-		X:        request.X,
-		Y:        request.Y,
+		Kind:      strings.TrimSpace(request.Kind),
+		Ref:       strings.TrimSpace(request.Ref),
+		Text:      request.Text,
+		Title:     request.Title,
+		Catalog:   request.Catalog,
+		MapIndex:  request.MapIndex,
+		X:         request.X,
+		Y:         request.Y,
+		QuestRef:  request.QuestRef,
+		QuestFlag: request.QuestFlag,
+		QuestFrom: request.QuestFrom,
+		QuestTo:   request.QuestTo,
 	})
 	if !interactionstore.ValidDefinition(definition) {
 		return interactionstore.Definition{}, http.StatusBadRequest, false

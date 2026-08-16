@@ -135,6 +135,35 @@ func TestGameRuntimeCreateShopPreviewInteractionDefinitionPersistsSnapshotAndRes
 	}
 }
 
+func TestGameRuntimeCreateQuestFlagInteractionDefinitionPersistsSnapshotAndResolvesDefinition(t *testing.T) {
+	interactionStore := newInteractionDefinitionStore(t, nil)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	wantDefinition := interactionstore.Definition{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1, QuestTo: 2}
+
+	definition, err := runtime.CreateInteractionDefinition(wantDefinition)
+	if err != nil {
+		t.Fatalf("create quest flag interaction definition: %v", err)
+	}
+	if !reflect.DeepEqual(definition, wantDefinition) {
+		t.Fatalf("unexpected created quest flag interaction definition:\n got: %#v\nwant: %#v", definition, wantDefinition)
+	}
+	resolved, ok := runtime.ResolveInteractionDefinition(interactionstore.KindQuestFlag, "quest:first_steps")
+	if !ok || !reflect.DeepEqual(resolved, definition) {
+		t.Fatalf("expected created quest flag interaction definition to resolve, got definition=%+v ok=%v", resolved, ok)
+	}
+	persisted, err := interactionStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted interaction definitions: %v", err)
+	}
+	wantSnapshot := interactionstore.Snapshot{Definitions: []interactionstore.Definition{wantDefinition}}
+	if !reflect.DeepEqual(persisted, wantSnapshot) {
+		t.Fatalf("unexpected persisted quest flag interaction definitions:\n got: %#v\nwant: %#v", persisted, wantSnapshot)
+	}
+}
+
 func TestGameRuntimeCreateInteractionDefinitionRejectsDuplicateDefinition(t *testing.T) {
 	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."}})
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)

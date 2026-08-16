@@ -16,7 +16,7 @@ Those documents already freeze:
 
 What this document adds is the next narrower question:
 
-**What is the first honest NPC gameplay vertical the project can own now, before inventory, quests, dialog-window UI, or real shop buy/sell exist?**
+**What is the first honest NPC gameplay vertical the project can own now, before branching quests, dialog-window UI, or final shop choreography exist?**
 
 ## Scope
 
@@ -41,13 +41,13 @@ The current repository already owns enough runtime to support a narrow but real 
 - gameplay-triggered transfer / rebootstrap already exists
 
 At the same time, several larger systems are still intentionally missing:
-- sell-back and richer merchant-window acknowledgement choreography
-- quest flags / script runtime
+- richer merchant-window acknowledgement choreography
+- branching quest scripts, rewards, and client quest UI
 - broader client-owned dialog-window or option-selection contracts beyond the current merchant window family
 
-The first standalone quest-state primitive and loopback transition harness are now documented in `quest-state-bootstrap.md`, but they are deliberately not part of this service-style NPC execution path yet. `info`, `talk`, `warp`, and `shop_preview` continue to run without mutating quest flags.
+The first standalone quest-state primitive, loopback transition harness, and a narrow static-actor `quest_flag` trigger are now documented in `quest-state-bootstrap.md`. They are deliberately separate from this service-style NPC execution path: `warp` and `shop_preview` continue to focus on one-request service outcomes rather than branching quest/dialog state.
 
-Because of those constraints, the next honest NPC gameplay vertical is **service-style interaction**, not branching dialogs, quest trees, or broader merchant/dialog semantics first.
+Because of those constraints, the next honest NPC gameplay vertical here remains **service-style interaction**, not branching dialogs, quest trees, or broader merchant/dialog semantics first.
 
 ## First owned service-style families
 
@@ -79,7 +79,7 @@ Current owned warp operator-summary semantics:
 - `GET /local/content-bundle/maps/{map_index}/static-actors` and `/interactable-static-actors` now return map-local authored static-actor rows and clickable/service-preview rows, so operators can audit one map's NPC content before narrowing to route-specific projections
 - the same summary `maps[]` audit reports `warp_actor_count` for each authored map, counting visible static actors on that map that resolve to a `warp` definition
 - `POST /local/content-bundle/import-preview` compares a candidate replacement bundle against the live exported bundle and returns no-mutation `current` / `candidate` summaries plus count/amount `deltas`, including exact portable static-actor `added` / `removed` rows, exact interactable static-actor `added` / `removed` / `changed` rows with compact resolved previews, per-interaction-kind reference deltas, per-definition `added` / `removed` / `changed` deltas with compact current/candidate previews, exact `warp_destinations` `added` / `removed` / `changed` deltas keyed by interaction `kind` + `ref`, exact `warp_routes` `added` / `removed` / `changed` deltas keyed by actor/source/ref route, exact `spawn_groups` `added` / `removed` / `changed` deltas keyed by authored spawn-group `ref`, exact portable `combat_profiles` `added` / `removed` / `changed` deltas keyed by profile name, reward EXP/gold totals when authored spawn rewards would change, and grouped `reward_drops` `added` / `removed` / `changed` deltas keyed by item vnum
-- `POST /local/content-bundle/import-preview/interaction-kinds/{kind}` returns one exact interaction-kind delta for a candidate replacement bundle, so local QA can inspect whether a family such as `info`, `talk`, `shop_preview`, or `warp` changes total, referenced, or unreferenced counts without fetching and filtering the broad preview
+- `POST /local/content-bundle/import-preview/interaction-kinds/{kind}` returns one exact interaction-kind delta for a candidate replacement bundle, so local QA can inspect whether a family such as `info`, `talk`, `quest_flag`, `shop_preview`, or `warp` changes total, referenced, or unreferenced counts without fetching and filtering the broad preview
 - `POST /local/content-bundle/import-preview/interactable-static-actors/{name}` returns exact clickable actor preview deltas for one authored actor name, so local QA can inspect whether a visible NPC's resolved interaction preview would be added, removed, or changed without filtering the broad preview
 - `POST /local/content-bundle/import-preview/warp-destinations/{kind}/{ref}` returns one exact authored warp-destination delta for a candidate replacement bundle, so local QA can inspect one teleporter destination impact without fetching and filtering the broad preview
 - `POST /local/content-bundle/import-preview/warp-routes/{actor_name}` returns every exact warp-route delta for one authored teleporter actor name, so local QA can inspect one teleporter placement impact without fetching and filtering the broad preview
@@ -89,7 +89,7 @@ Current owned warp operator-summary semantics:
 
 Current owned interaction cooldown semantics:
 - a fixed `1s` runtime cooldown now applies per live session and per target static-actor `VID`
-- the cooldown currently applies across all owned interaction kinds, including `info`, `talk`, `shop_preview`, and `warp`
+- the cooldown currently applies across all owned interaction kinds, including `info`, `talk`, `quest_flag`, `shop_preview`, and `warp`
 - repeated `INTERACT` requests for the same target while that cooldown is active are consumed as a deliberate no-op with no outgoing frames
 - different players do not share a cooldown bucket with each other, and a fresh reconnect starts with a fresh cooldown state
 
@@ -121,9 +121,9 @@ Current owned shop operator-summary semantics:
 - this makes exact actor-to-catalog merchant placement inspectable without fetching the full authored bundle or applying a candidate import
 
 Current owned self-only interaction operator-summary semantics:
-- per-map `maps[]` entries now also include `info_actor_count` and `talk_actor_count`
-- these counts audit authored `info` / `talk` static actors separately from service-style `shop_preview` and `warp` actors without requiring operators to expand the full `interactable_static_actors` array
-- `GET /local/content-bundle/interaction-definitions/{kind}/{ref}` now returns one compact authored definition preview row with `kind`, `ref`, `preview`, and `referenced`, so operators can inspect a single `info` / `talk` / service definition summary without fetching the full bundle summary or full bundle payload
+- per-map `maps[]` entries now also include `info_actor_count`, `talk_actor_count`, and `quest_flag_actor_count`
+- these counts audit authored `info` / `talk` / `quest_flag` static actors separately from service-style `shop_preview` and `warp` actors without requiring operators to expand the full `interactable_static_actors` array
+- `GET /local/content-bundle/interaction-definitions/{kind}/{ref}` now returns one compact authored definition preview row with `kind`, `ref`, `preview`, and `referenced`, so operators can inspect a single `info` / `talk` / `quest_flag` / service definition summary without fetching the full bundle summary or full bundle payload
 - `GET /local/content-bundle/item-templates/{vnum}` now returns one exact summarized item-template row for local QA, including the guard/rejection metadata already exposed in content-bundle summaries, without fetching the full bundle summary or opening a merchant in-game
 
 This remains intentionally narrow even now that the first buy-only merchant path exists: sell-back, stock depletion, and richer merchant-window choreography still remain separate later work.

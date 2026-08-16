@@ -106,6 +106,63 @@ func TestCanonicalJSONIncludesDeterministicQuestState(t *testing.T) {
 	}
 }
 
+func TestCanonicalJSONIncludesQuestFlagInteractionDefinition(t *testing.T) {
+	got, err := CanonicalJSON(Bundle{
+		StaticActors: []StaticActor{{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindQuestFlag, InteractionRef: "quest:first_steps"}},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:      interactionstore.KindQuestFlag,
+			Ref:       "quest:first_steps",
+			Text:      "You have met the village guide.",
+			QuestRef:  "quest:first_steps",
+			QuestFlag: "met_guide",
+			QuestTo:   1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonical JSON with quest flag interaction: %v", err)
+	}
+	want := "{\n  \"static_actors\": [\n    {\n      \"name\": \"VillageGuide\",\n      \"map_index\": 1,\n      \"x\": 1000,\n      \"y\": 2000,\n      \"race_num\": 20302,\n      \"interaction_kind\": \"quest_flag\",\n      \"interaction_ref\": \"quest:first_steps\"\n    }\n  ],\n  \"interaction_definitions\": [\n    {\n      \"kind\": \"quest_flag\",\n      \"ref\": \"quest:first_steps\",\n      \"text\": \"You have met the village guide.\",\n      \"quest_ref\": \"quest:first_steps\",\n      \"quest_flag\": \"met_guide\",\n      \"quest_to\": 1\n    }\n  ]\n}\n"
+	if string(got) != want {
+		t.Fatalf("unexpected quest-flag interaction canonical JSON:\n got: %s\nwant: %s", string(got), want)
+	}
+}
+
+func TestSummarizeIncludesQuestFlagInteractionRoutes(t *testing.T) {
+	summary, err := Summarize(Bundle{
+		StaticActors: []StaticActor{{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindQuestFlag, InteractionRef: "quest:first_steps"}},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:      interactionstore.KindQuestFlag,
+			Ref:       "quest:first_steps",
+			Text:      "You have met the village guide.",
+			QuestRef:  "quest:first_steps",
+			QuestFlag: "met_guide",
+			QuestTo:   1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("summarize quest flag interaction: %v", err)
+	}
+	if summary.InteractionDefinitionCount != 1 || summary.InteractableStaticActorCount != 1 {
+		t.Fatalf("unexpected quest flag interaction counts: %+v", summary)
+	}
+	wantKinds := []InteractionKindSummary{{Kind: interactionstore.KindQuestFlag, Count: 1, ReferencedCount: 1}}
+	if !reflect.DeepEqual(summary.InteractionKinds, wantKinds) {
+		t.Fatalf("unexpected quest flag interaction kind summary:\n got: %#v\nwant: %#v", summary.InteractionKinds, wantKinds)
+	}
+	wantPreview := []InteractionDefinitionPreviewSummary{{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Preview: "You have met the village guide."}}
+	if !reflect.DeepEqual(summary.InteractionDefinitionPreviews, wantPreview) {
+		t.Fatalf("unexpected quest flag interaction previews:\n got: %#v\nwant: %#v", summary.InteractionDefinitionPreviews, wantPreview)
+	}
+	wantActors := []InteractableStaticActorSummary{{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindQuestFlag, InteractionRef: "quest:first_steps", Preview: "You have met the village guide."}}
+	if !reflect.DeepEqual(summary.InteractableStaticActors, wantActors) {
+		t.Fatalf("unexpected quest flag interactable actor summary:\n got: %#v\nwant: %#v", summary.InteractableStaticActors, wantActors)
+	}
+	wantMaps := []MapContentSummary{{MapIndex: 1, StaticActorCount: 1, InteractableStaticActorCount: 1, QuestFlagActorCount: 1}}
+	if !reflect.DeepEqual(summary.Maps, wantMaps) {
+		t.Fatalf("unexpected quest flag map summary:\n got: %#v\nwant: %#v", summary.Maps, wantMaps)
+	}
+}
+
 func TestSummarizeIncludesQuestStateCountsAndCharacterFlags(t *testing.T) {
 	summary, err := Summarize(Bundle{QuestState: []queststate.Flag{
 		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},

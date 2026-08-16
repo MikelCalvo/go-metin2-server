@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 )
 
 const (
@@ -12,6 +14,7 @@ const (
 	KindTalk        = "talk"
 	KindWarp        = "warp"
 	KindShopPreview = "shop_preview"
+	KindQuestFlag   = "quest_flag"
 
 	MerchantCatalogMaxEntryPrice uint64 = 1<<32 - 1
 	MerchantCatalogMaxEntryCount uint16 = 1<<8 - 1
@@ -31,14 +34,18 @@ type MerchantCatalogEntry struct {
 }
 
 type Definition struct {
-	Kind     string                 `json:"kind"`
-	Ref      string                 `json:"ref"`
-	Text     string                 `json:"text,omitempty"`
-	Title    string                 `json:"title,omitempty"`
-	Catalog  []MerchantCatalogEntry `json:"catalog,omitempty"`
-	MapIndex uint32                 `json:"map_index,omitempty"`
-	X        int32                  `json:"x,omitempty"`
-	Y        int32                  `json:"y,omitempty"`
+	Kind      string                 `json:"kind"`
+	Ref       string                 `json:"ref"`
+	Text      string                 `json:"text,omitempty"`
+	Title     string                 `json:"title,omitempty"`
+	Catalog   []MerchantCatalogEntry `json:"catalog,omitempty"`
+	MapIndex  uint32                 `json:"map_index,omitempty"`
+	X         int32                  `json:"x,omitempty"`
+	Y         int32                  `json:"y,omitempty"`
+	QuestRef  string                 `json:"quest_ref,omitempty"`
+	QuestFlag string                 `json:"quest_flag,omitempty"`
+	QuestFrom uint32                 `json:"quest_from,omitempty"`
+	QuestTo   uint32                 `json:"quest_to,omitempty"`
 }
 
 type Snapshot struct {
@@ -79,6 +86,8 @@ func normalizeDefinition(definition Definition) Definition {
 	definition.Ref = strings.TrimSpace(definition.Ref)
 	definition.Text = strings.TrimSpace(definition.Text)
 	definition.Title = strings.TrimSpace(definition.Title)
+	definition.QuestRef = strings.TrimSpace(definition.QuestRef)
+	definition.QuestFlag = strings.TrimSpace(definition.QuestFlag)
 	definition.Catalog = cloneCatalog(definition.Catalog)
 	sort.Slice(definition.Catalog, func(i int, j int) bool {
 		return definition.Catalog[i].Slot < definition.Catalog[j].Slot
@@ -108,7 +117,7 @@ func validateSnapshot(snapshot Snapshot) error {
 
 func validKind(kind string) bool {
 	switch kind {
-	case KindInfo, KindTalk, KindWarp, KindShopPreview:
+	case KindInfo, KindTalk, KindWarp, KindShopPreview, KindQuestFlag:
 		return true
 	default:
 		return false
@@ -156,14 +165,16 @@ func validDefinition(definition Definition) bool {
 	}
 	switch definition.Kind {
 	case KindInfo, KindTalk:
-		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0
+		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.QuestRef == "" && definition.QuestFlag == "" && definition.QuestFrom == 0 && definition.QuestTo == 0
 	case KindShopPreview:
-		if definition.Title == "" || !validDefinitionText(definition.Title) || definition.Text != "" || definition.MapIndex != 0 || definition.X != 0 || definition.Y != 0 {
+		if definition.Title == "" || !validDefinitionText(definition.Title) || definition.Text != "" || definition.MapIndex != 0 || definition.X != 0 || definition.Y != 0 || definition.QuestRef != "" || definition.QuestFlag != "" || definition.QuestFrom != 0 || definition.QuestTo != 0 {
 			return false
 		}
 		return validMerchantCatalog(definition.Catalog)
 	case KindWarp:
-		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && definition.MapIndex != 0 && definition.X != 0 && definition.Y != 0
+		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && definition.MapIndex != 0 && definition.X != 0 && definition.Y != 0 && definition.QuestRef == "" && definition.QuestFlag == "" && definition.QuestFrom == 0 && definition.QuestTo == 0
+	case KindQuestFlag:
+		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && queststate.ValidQuestRef(definition.QuestRef) && queststate.ValidFlagName(definition.QuestFlag) && definition.QuestTo != 0 && definition.QuestFrom != definition.QuestTo
 	default:
 		return false
 	}

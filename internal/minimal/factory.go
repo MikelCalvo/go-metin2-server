@@ -4763,6 +4763,22 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						markInteractionCooldown(packet.TargetVID)
 						return gameflow.InteractionResult{Accepted: true, Frames: frames}
 					}
+					if resolution.Definition.Kind == interactionstore.KindQuestFlag {
+						if resolution.Delivery == nil {
+							return gameflow.InteractionResult{Accepted: false}
+						}
+						selected := selectedPlayer.LiveCharacter()
+						if selected.ID == 0 {
+							return gameflow.InteractionResult{Accepted: false}
+						}
+						transitionResult, err := runtime.ApplyQuestStateTransition(queststate.Transition{Character: selected.Name, QuestRef: resolution.Definition.QuestRef, Flag: resolution.Definition.QuestFlag, From: resolution.Definition.QuestFrom, To: resolution.Definition.QuestTo})
+						if err != nil || !transitionResult.Result.Applied {
+							return gameflow.InteractionResult{Accepted: false}
+						}
+						clearActiveMerchantBuy()
+						markInteractionCooldown(packet.TargetVID)
+						return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(*resolution.Delivery)}}
+					}
 					if resolution.Delivery == nil {
 						return gameflow.InteractionResult{Accepted: false}
 					}
@@ -7804,6 +7820,17 @@ func (r *gameRuntime) resolveStaticActorInteraction(subjectID uint64, targetVID 
 		}
 		return resolution
 	}
+	if definition.Kind == interactionstore.KindQuestFlag {
+		if !interactionstore.ValidDefinition(definition) {
+			resolution.Failure = staticActorInteractionFailureUnsupportedKind
+			resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
+			return resolution
+		}
+		resolution.Accepted = true
+		delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: definition.Text}
+		resolution.Delivery = &delivery
+		return resolution
+	}
 	preview, ok := r.interactionDefinitionPreview(attempt.Actor.Name, definition)
 	if !ok {
 		resolution.Failure = staticActorInteractionFailureUnsupportedKind
@@ -7944,6 +7971,8 @@ func (r *gameRuntime) interactionDefinitionPreview(actorName string, definition 
 			return summary, true
 		}
 		return fmt.Sprintf("%s [%s]", message, summary), true
+	case interactionstore.KindQuestFlag:
+		return definition.Text, true
 	default:
 		return "", false
 	}

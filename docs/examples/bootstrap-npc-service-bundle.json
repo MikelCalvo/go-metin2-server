@@ -10,6 +10,15 @@
       "interaction_ref": "npc:qa_merchant"
     },
     {
+      "name": "QuestGuide",
+      "map_index": 1,
+      "x": 469350,
+      "y": 964200,
+      "race_num": 20302,
+      "interaction_kind": "quest_flag",
+      "interaction_ref": "quest:first_steps"
+    },
+    {
       "name": "Teleporter",
       "map_index": 1,
       "x": 469650,
@@ -21,7 +30,7 @@
     {
       "name": "VillageGuide",
       "map_index": 1,
-      "x": 469350,
+      "x": 469425,
       "y": 964200,
       "race_num": 20302,
       "interaction_kind": "talk",
@@ -83,6 +92,14 @@
       "kind": "info",
       "ref": "lore:qa_square",
       "text": "The QA square contains a merchant, teleporter, guide, and reward mob."
+    },
+    {
+      "kind": "quest_flag",
+      "ref": "quest:first_steps",
+      "text": "Quest updated: first_steps.met_guide = 1.",
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "met_guide",
+      "quest_to": 1
     },
     {
       "kind": "shop_preview",

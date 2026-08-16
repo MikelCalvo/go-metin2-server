@@ -88,6 +88,7 @@ func TestExportStaticActorContentStateRejectsRowsThatCannotTargetMigrationSchema
 		{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "VillageGuard : Keep your blade sharp."},
 		{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "VillageGuard : Keep your spear sharp."},
 	}}
+	questFlagDefinitions := interactionstore.Snapshot{Definitions: []interactionstore.Definition{{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}}}
 
 	cases := []struct {
 		name        string
@@ -99,6 +100,7 @@ func TestExportStaticActorContentStateRejectsRowsThatCannotTargetMigrationSchema
 		{name: "too many reward drops for migration position column", actors: tooManyDropActor, definitions: validDefinitions, wantErr: ErrInvalidSnapshot},
 		{name: "duplicate interaction definition key", actors: Snapshot{}, definitions: duplicateDefinitions, wantErr: interactionstore.ErrInvalidSnapshot},
 		{name: "invalid interaction definition body", actors: Snapshot{}, definitions: interactionstore.Snapshot{Definitions: []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:empty"}}}, wantErr: interactionstore.ErrInvalidSnapshot},
+		{name: "quest flag definition has no migration 0008 columns yet", actors: Snapshot{}, definitions: questFlagDefinitions, wantErr: interactionstore.ErrInvalidSnapshot},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

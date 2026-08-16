@@ -160,7 +160,7 @@ The endpoint does not accept a request body: empty or whitespace-only bodies are
 
 ### `POST /local/interaction-store/validate`
 
-Validates the authored bootstrap interaction-definition snapshot store without mutating interaction content. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects non-empty request bodies with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the committed `interaction-definitions.json` snapshot is a symlink, is malformed, has unknown/trailing JSON, duplicates a `kind:ref`, or violates definition policy for supported `info`, `talk`, `shop_preview`, or `warp` definitions. Empty or whitespace-only bodies remain accepted so local scripts can issue a plain `POST` safely.
+Validates the authored bootstrap interaction-definition snapshot store without mutating interaction content. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects non-empty request bodies with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the committed `interaction-definitions.json` snapshot is a symlink, is malformed, has unknown/trailing JSON, duplicates a `kind:ref`, or violates definition policy for supported `info`, `talk`, `quest_flag`, `shop_preview`, or `warp` definitions. Empty or whitespace-only bodies remain accepted so local scripts can issue a plain `POST` safely.
 
 Successful responses are JSON summaries with:
 
@@ -392,7 +392,7 @@ Successful responses include `migration_version`, `migration_name`, deterministi
 
 ### `GET /local/static-actors/exports/static-actor-content-state`
 
-Returns a loopback-only, read-only JSON projection of the committed authored static-actor and interaction-definition snapshots onto the `0008_static_actor_content_state` migration boundary. This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if either committed content store cannot be loaded or if any actor/definition/catalog/reward row would violate the schema shape.
+Returns a loopback-only, read-only JSON projection of the committed authored static-actor and interaction-definition snapshots onto the `0008_static_actor_content_state` migration boundary. This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if either committed content store cannot be loaded, if any actor/definition/catalog/reward row would violate the schema shape, or if a newer file-backed interaction kind such as `quest_flag` has no owned columns/kind in migration `0008` yet.
 
 Successful responses include `migration_version`, `migration_name`, deterministic `interaction_definitions`, `merchant_catalog_entries`, `static_actors`, and `reward_drops`. Missing committed static-actor or interaction-definition snapshots are exported as empty migration-shaped collections. Actor rows keep only the current authored content boundary (placement, race, optional interaction ref, optional spawn home/group/combat profile, and reward scalar fields), while ordered reward drops are emitted as child rows. The response deliberately omits executable SQL, account/item-instance rows, live runtime-only actor HP/respawn timers/combat targets, content-bundle import previews, and any database apply output; it does not mutate the JSON stores.
 

@@ -395,6 +395,31 @@ func TestLocalInteractionDefinitionsEndpointCreatesShopPreviewDefinitionForLoopb
 	}
 }
 
+func TestLocalInteractionDefinitionsEndpointCreatesQuestFlagDefinitionForLoopbackPost(t *testing.T) {
+	creator := &stubInteractionDefinitionCreator{status: http.StatusOK, definition: map[string]any{"kind": "quest_flag", "ref": "quest:first_steps", "text": "Quest updated.", "quest_ref": "quest:first_steps", "quest_flag": "met_guide", "quest_from": float64(1), "quest_to": float64(2)}}
+	mux := RegisterLocalInteractionDefinitionEndpoints(NewPprofMux("gamed"), nil, creator.CreateInteractionDefinition)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interactions", strings.NewReader(`{"kind":"quest_flag","ref":"quest:first_steps","text":"Quest updated.","quest_ref":"quest:first_steps","quest_flag":"met_guide","quest_from":1,"quest_to":2}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if creator.calls != 1 || creator.lastDefinition.Kind != interactionstore.KindQuestFlag || creator.lastDefinition.Ref != "quest:first_steps" || creator.lastDefinition.Text != "Quest updated." || creator.lastDefinition.QuestRef != "quest:first_steps" || creator.lastDefinition.QuestFlag != "met_guide" || creator.lastDefinition.QuestFrom != 1 || creator.lastDefinition.QuestTo != 2 {
+		t.Fatalf("unexpected quest flag interaction definition creator call state: %+v", creator)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"kind":"quest_flag"`) || !strings.Contains(string(body), `"quest_ref":"quest:first_steps"`) || !strings.Contains(string(body), `"quest_flag":"met_guide"`) || !strings.Contains(string(body), `"quest_to":2`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
 func TestLocalInteractionDefinitionUpdateEndpointUpsertsDefinitionForLoopbackPatch(t *testing.T) {
 	updater := &stubInteractionDefinitionUpdater{status: http.StatusOK, definition: map[string]any{"kind": "talk", "ref": "npc:village_guard", "text": "Keep your blade sharp."}}
 	mux := RegisterLocalInteractionDefinitionUpdateEndpoint(NewPprofMux("gamed"), updater.UpsertInteractionDefinition)
@@ -484,6 +509,31 @@ func TestLocalInteractionDefinitionUpdateEndpointUpsertsShopPreviewDefinitionFor
 		t.Fatalf("read response body: %v", err)
 	}
 	if !strings.Contains(string(body), `"kind":"shop_preview"`) || !strings.Contains(string(body), `"ref":"npc:merchant"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalInteractionDefinitionUpdateEndpointUpsertsQuestFlagDefinitionForLoopbackPut(t *testing.T) {
+	updater := &stubInteractionDefinitionUpdater{status: http.StatusOK, definition: map[string]any{"kind": "quest_flag", "ref": "quest:first_steps", "text": "Quest advanced.", "quest_ref": "quest:first_steps", "quest_flag": "met_guide", "quest_to": float64(1)}}
+	mux := RegisterLocalInteractionDefinitionUpdateEndpoint(NewPprofMux("gamed"), updater.UpsertInteractionDefinition)
+
+	req := httptest.NewRequest(http.MethodPut, "/local/interactions/quest_flag/quest:first_steps", strings.NewReader(`{"kind":"quest_flag","ref":"quest:first_steps","text":"Quest advanced.","quest_ref":"quest:first_steps","quest_flag":"met_guide","quest_to":1}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if updater.calls != 1 || updater.lastDefinition.Kind != interactionstore.KindQuestFlag || updater.lastDefinition.Ref != "quest:first_steps" || updater.lastDefinition.Text != "Quest advanced." || updater.lastDefinition.QuestRef != "quest:first_steps" || updater.lastDefinition.QuestFlag != "met_guide" || updater.lastDefinition.QuestFrom != 0 || updater.lastDefinition.QuestTo != 1 {
+		t.Fatalf("unexpected quest flag interaction definition updater call state: %+v", updater)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"kind":"quest_flag"`) || !strings.Contains(string(body), `"quest_to":1`) {
 		t.Fatalf("unexpected JSON response body %q", string(body))
 	}
 }

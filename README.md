@@ -149,7 +149,7 @@ Status: `[~]` authored content seam, not a full content system.
 Already present:
 
 - static actor store and interaction definition store,
-- `info`, `talk`, `warp`, and `shop_preview` interaction kinds,
+- `info`, `talk`, `quest_flag`, `warp`, and `shop_preview` interaction kinds,
 - merchant catalogs and first shop open/buy/sell behavior,
 - first standalone deterministic quest-flag store/transition primitive with loopback validation, focused readback, and crash-temp cleanup preflights,
 - content bundle import/export with preview deltas for static actors, interaction families, spawn groups, combat profiles, reward drops, NPC routes, warp destinations, focused portable quest-state overview/flag readers, and exact quest-flag import-preview deltas,

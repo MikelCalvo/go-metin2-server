@@ -82,6 +82,71 @@ func TestFileStoreSaveThenLoadMerchantCatalogKeepsStableBuySlotAddressing(t *tes
 	}
 }
 
+func TestFileStoreSaveThenLoadQuestFlagDefinition(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	want := Snapshot{Definitions: []Definition{{
+		Kind:      KindQuestFlag,
+		Ref:       "quest:first_steps",
+		Text:      "You have met the village guide.",
+		QuestRef:  "quest:first_steps",
+		QuestFlag: "met_guide",
+		QuestTo:   1,
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save quest flag definition: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load quest flag definition: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected quest flag definition snapshot:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestFileStoreRejectsInvalidQuestFlagInteractionDefinition(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	cases := []struct {
+		name       string
+		definition Definition
+	}{
+		{
+			name:       "missing quest ref",
+			definition: Definition{Kind: KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestFlag: "met_guide", QuestTo: 1},
+		},
+		{
+			name:       "missing quest flag",
+			definition: Definition{Kind: KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestTo: 1},
+		},
+		{
+			name:       "zero target value",
+			definition: Definition{Kind: KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide"},
+		},
+		{
+			name:       "same source and target value",
+			definition: Definition{Kind: KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1, QuestTo: 1},
+		},
+		{
+			name:       "missing player feedback text",
+			definition: Definition{Kind: KindQuestFlag, Ref: "quest:first_steps", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1},
+		},
+		{
+			name:       "catalog not allowed",
+			definition: Definition{Kind: KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1, Catalog: []MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := store.Save(Snapshot{Definitions: []Definition{tc.definition}}); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot, got %v", err)
+			}
+		})
+	}
+}
+
 func TestFileStoreSaveWritesDeterministicSortedSnapshotAndReplacesPreviousContent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
 	store := NewFileStore(path)

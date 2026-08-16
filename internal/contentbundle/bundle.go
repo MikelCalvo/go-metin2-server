@@ -371,6 +371,7 @@ type MapContentDelta struct {
 	InteractableStaticActorCount SummaryCountDelta  `json:"interactable_static_actor_count"`
 	InfoActorCount               SummaryCountDelta  `json:"info_actor_count,omitempty"`
 	TalkActorCount               SummaryCountDelta  `json:"talk_actor_count,omitempty"`
+	QuestFlagActorCount          SummaryCountDelta  `json:"quest_flag_actor_count,omitempty"`
 	ShopPreviewActorCount        SummaryCountDelta  `json:"shop_preview_actor_count,omitempty"`
 	ShopCatalogEntryCount        SummaryCountDelta  `json:"shop_catalog_entry_count,omitempty"`
 	WarpActorCount               SummaryCountDelta  `json:"warp_actor_count,omitempty"`
@@ -660,6 +661,7 @@ type MapContentSummary struct {
 	InteractableStaticActorCount int    `json:"interactable_static_actor_count"`
 	InfoActorCount               int    `json:"info_actor_count,omitempty"`
 	TalkActorCount               int    `json:"talk_actor_count,omitempty"`
+	QuestFlagActorCount          int    `json:"quest_flag_actor_count,omitempty"`
 	ShopPreviewActorCount        int    `json:"shop_preview_actor_count,omitempty"`
 	ShopCatalogEntryCount        int    `json:"shop_catalog_entry_count,omitempty"`
 	WarpActorCount               int    `json:"warp_actor_count,omitempty"`
@@ -2213,6 +2215,7 @@ func buildMapContentDeltas(current Summary, candidate Summary, currentBundle Bun
 			InteractableStaticActorCount: summaryCountDelta(currentMap.InteractableStaticActorCount, candidateMap.InteractableStaticActorCount),
 			InfoActorCount:               summaryCountDelta(currentMap.InfoActorCount, candidateMap.InfoActorCount),
 			TalkActorCount:               summaryCountDelta(currentMap.TalkActorCount, candidateMap.TalkActorCount),
+			QuestFlagActorCount:          summaryCountDelta(currentMap.QuestFlagActorCount, candidateMap.QuestFlagActorCount),
 			ShopPreviewActorCount:        summaryCountDelta(currentMap.ShopPreviewActorCount, candidateMap.ShopPreviewActorCount),
 			ShopCatalogEntryCount:        summaryCountDelta(currentMap.ShopCatalogEntryCount, candidateMap.ShopCatalogEntryCount),
 			WarpActorCount:               summaryCountDelta(currentMap.WarpActorCount, candidateMap.WarpActorCount),
@@ -2310,6 +2313,7 @@ func mapContentDeltaIsZero(delta MapContentDelta) bool {
 		delta.InteractableStaticActorCount.Delta == 0 &&
 		delta.InfoActorCount.Delta == 0 &&
 		delta.TalkActorCount.Delta == 0 &&
+		delta.QuestFlagActorCount.Delta == 0 &&
 		delta.ShopPreviewActorCount.Delta == 0 &&
 		delta.ShopCatalogEntryCount.Delta == 0 &&
 		delta.WarpActorCount.Delta == 0 &&
@@ -2638,6 +2642,8 @@ func interactionDefinitionPreview(actorName string, definition interactionstore.
 		return definition.Text
 	case interactionstore.KindTalk:
 		return fmt.Sprintf("%s:\n%s", actorName, definition.Text)
+	case interactionstore.KindQuestFlag:
+		return definition.Text
 	case interactionstore.KindShopPreview:
 		return shopCatalogPreview(definition, itemTemplatesByVnum)
 	case interactionstore.KindWarp:
@@ -2658,7 +2664,7 @@ func interactionDefinitionPreviewSummary(definition interactionstore.Definition,
 
 func interactionDefinitionCatalogPreview(definition interactionstore.Definition, itemTemplatesByVnum map[uint32]itemcatalog.Template) string {
 	switch definition.Kind {
-	case interactionstore.KindInfo, interactionstore.KindTalk:
+	case interactionstore.KindInfo, interactionstore.KindTalk, interactionstore.KindQuestFlag:
 		return definition.Text
 	case interactionstore.KindShopPreview:
 		return shopCatalogPreview(definition, itemTemplatesByVnum)
@@ -3113,6 +3119,8 @@ func addMapServiceInteractionSummary(entry *MapContentSummary, definition intera
 		entry.InfoActorCount++
 	case interactionstore.KindTalk:
 		entry.TalkActorCount++
+	case interactionstore.KindQuestFlag:
+		entry.QuestFlagActorCount++
 	case interactionstore.KindShopPreview:
 		entry.ShopPreviewActorCount++
 		entry.ShopCatalogEntryCount += len(definition.Catalog)

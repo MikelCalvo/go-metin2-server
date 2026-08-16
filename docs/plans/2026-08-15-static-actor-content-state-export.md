@@ -34,11 +34,12 @@ The export validates both source snapshots before returning rows. It rejects:
 
 - invalid static actor snapshots;
 - invalid interaction definitions;
+- interaction-definition kinds that are valid in the newer file-backed runtime but are not columns/kinds in the historical `0008_static_actor_content_state` migration yet, including `quest_flag`;
 - duplicate interaction definition keys;
 - static actors whose interaction refs do not exist in the committed interaction-definition snapshot;
 - static actors with more than `255` reward drop rows, matching the migration's `position < 255` constraint.
 
-It does not silently coerce dangling refs or lossy reward-drop payloads into a future database shape.
+It does not silently coerce dangling refs, newer quest-state trigger definitions, or lossy reward-drop payloads into a future database shape. A future migration/export slice can add `quest_flag` rows explicitly once the DB boundary owns the quest trigger fields.
 
 ## Local ops surface
 

@@ -46,7 +46,7 @@ The first owned validation rule is:
 - both fields empty = no interaction
 - both fields non-empty = interaction metadata present
 - exactly one field present = invalid
-- when present, `interaction_kind` must be one of the currently owned interaction-definition kinds: `info`, `talk`, `warp`, or `shop_preview`
+- when present, `interaction_kind` must be one of the currently owned interaction-definition kinds: `info`, `talk`, `quest_flag`, `warp`, or `shop_preview`
 - when present, `interaction_ref` must satisfy the canonical `<namespace>:<name>` rule above
 - low-level runtime entities in `internal/worldruntime` must already carry canonical, unpadded metadata; whitespace-padded `interaction_kind` or `interaction_ref` values are rejected fail-closed at that boundary rather than normalized into a different live actor
 
@@ -81,6 +81,7 @@ At this stage, the repository owns metadata plus the first narrow interaction-re
 
 The first owned interaction families stay intentionally narrow:
 - self-only `info` / `talk`
+- quest-state `quest_flag`
 - service-style `warp`
 - merchant-style `shop_preview`
 
@@ -90,9 +91,10 @@ The currently implemented bootstrap interaction families remain conservative:
 - the actor must not be in the runtime-owned dead interval; dead interactable actors remain visible/introspectable but resolve `INTERACT` as the fail-closed `target_dead` path until respawn
 - the runtime resolves `interaction_kind` + `interaction_ref`
 - `info` and `talk` remain self-facing chat-backed responses
+- `quest_flag` runs one compare-and-set transition against the selected character's persisted quest-state flags and returns one self-facing info-chat acknowledgement only when the transition applies
 - `warp` reuses the existing self-session transfer / rebootstrap path instead of inventing a separate dialog or warp packet family
 - `shop_preview` reuses the structured merchant catalog plus the current bootstrap merchant window open / buy / close contract instead of inventing a second merchant-definition seam
-- no quest progression, barter, or combat side effects are required; the first standalone quest-state primitive and loopback transition harness exist separately in `quest-state-bootstrap.md` but are not yet wired to static-actor interaction execution
+- no broader quest scripting, barter, reward, or combat side effects are required; the standalone quest-state primitive and loopback transition harness remain documented in `quest-state-bootstrap.md`
 
 The current out-of-range failure is intentionally bootstrap-scoped. It is owned only as a fail-closed guard around already-visible static actors, not as the final NPC interaction distance policy.
 
@@ -101,6 +103,8 @@ Current owned meanings:
   - return a simple self-facing informational response carrying the authored text
 - `interaction_kind = "talk"`
   - return a simple self-facing talk/dialog-style response carrying a deterministic speaker-prefixed multi-line payload
+- `interaction_kind = "quest_flag"`
+  - resolve a content-authored quest-state trigger using the existing `INTERACT` ingress, apply exactly one selected-character compare-and-set flag transition, and return one self-only `CHAT_TYPE_INFO` acknowledgement only on success
 - `interaction_kind = "warp"`
   - resolve a teleporter-style service interaction using the existing `INTERACT` ingress and the existing transfer / rebootstrap runtime rather than a dedicated dialog or warp packet family
 - `interaction_kind = "shop_preview"`
@@ -112,7 +116,7 @@ This slice does not yet freeze:
 - click packet handling
 - NPC dialog trees
 - sell-back, stock depletion, or richer merchant-window choreography beyond the current bootstrap open / buy / close seam
-- static-actor-driven quests, mission UI, or script runtimes
+- quest mission UI, branching quest scripts, rewards, or multi-step dialog runtime
 - actor targeting/combat semantics
 - animation/emote/state-machine behavior
 - persistent merchant stock state
@@ -123,10 +127,10 @@ After this slice, the repository should be able to say:
 - bootstrap static actors can carry `interaction_kind` / `interaction_ref`
 - that metadata survives create/update/list/persist/boot paths
 - invalid partial metadata is rejected consistently
-- a deterministic file-backed interaction-definition store now exists for minimal `info` / `talk` / `shop_preview` content plus the first `warp` destination payload keyed by `kind + ref`
+- a deterministic file-backed interaction-definition store now exists for minimal `info` / `talk` / `quest_flag` / `shop_preview` content plus the first `warp` destination payload keyed by `kind + ref`
 - interaction definition validation rejects embedded NUL bytes in the owned client-visible text/title fields, so local operator writes, content-bundle validation/import, and runtime startup cannot persist or load truncated authored strings
 - `gamed` now loads that catalog before boot-restoring persisted static actors and before accepting new interaction metadata on static-actor create/update paths
 - loopback-only CRUD endpoints now author that catalog while preserving stable `kind + ref` identity on update and rejecting deletes for referenced definitions
 - static actors that point at missing interaction definitions are now rejected fail closed at boot and on runtime create/update
-- visible actors can now answer the interacting player with self-only `info` / `talk`, can reuse the same metadata seam for the current merchant-window `shop_preview` flow, and can still power QA/debug preview rendering without redesigning the actor model first
+- visible actors can now answer the interacting player with self-only `info` / `talk`, can apply one persisted selected-character `quest_flag`, can reuse the same metadata seam for the current merchant-window `shop_preview` flow, and can still power QA/debug preview rendering without redesigning the actor model first
 - the same metadata seam now also powers the current service-style NPC `warp` interaction family
