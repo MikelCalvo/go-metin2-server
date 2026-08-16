@@ -65,8 +65,9 @@ The only authored feedback exception is a non-refineable carried item template t
 - the carried item must be well-formed, unlocked, and match the resolved template `vnum`
 - the template must be valid, must not be `refineable`, and must carry non-empty `refine_reject_message`
 - the server returns one self-only `CHAT_TYPE_INFO` frame with that exact authored text
-- if the requester is paired in the current bootstrap exchange shell, the server first returns self `GC::EXCHANGE END` and queues peer `GC::EXCHANGE END`, clears the in-memory exchange display/accept state, and then returns the self-only rejection chat
-- apart from the optional active-exchange close above, no peer-facing refine/item-result frames are queued and no inventory, equipment, quickslot, point, ground-item, or persisted account state is mutated
+- if the same socket has an active merchant window, the server first returns self-only `GC::SHOP END`, clears the active merchant context, and then returns the self-only rejection chat
+- if the requester is paired in the current bootstrap exchange shell, the server first returns self `GC::EXCHANGE END` and queues peer `GC::EXCHANGE END`, clears the in-memory exchange display/accept state, and then returns the self-only rejection chat; when both merchant and exchange shells are active, the merchant close is ordered before the exchange close, and both precede the refine feedback frame
+- apart from the optional active-merchant / active-exchange closes above, no peer-facing refine/item-result frames are queued and no inventory, equipment, quickslot, point, ground-item, or persisted account state is mutated
 
 All other `REFINE` packets currently fail closed:
 
@@ -89,8 +90,9 @@ The first refine-dialog preview path is template-backed and mutation-free:
 - the template must also pass the same currently owned selected-character and transfer-guard policy used by other carried-item mutation previews: selected class/sex/empire/level restrictions must allow the character, and `anti_stack`, `anti_get`, `anti_drop`, `anti_give`, and `anti_sell` must be unset
 - `refine_info.result_vnum` must be non-zero, `cost` must be non-negative, `probability` must be in `0..100`, and at most five material rows may be authored; every material row must carry a non-zero material `vnum` and positive `count`
 - the server returns one self-only `REFINE_INFORMATION_NEW` frame with the request `type`, request `pos`, carried item `vnum` as `src_vnum`, the authored result/cost/probability, and the authored material rows in order only after those guards pass
-- if the requester is paired in the current bootstrap exchange shell, the server first returns self `GC::EXCHANGE END` and queues peer `GC::EXCHANGE END`, clears the in-memory exchange display/accept state, and then returns the self-only refine-information frame
-- apart from the optional active-exchange close above, no peer-facing refine/item-result frames are queued and no inventory, equipment, quickslot, point, gold, ground-item, or persisted account state is mutated
+- if the same socket has an active merchant window, the server first returns self-only `GC::SHOP END`, clears the active merchant context, and then returns the self-only refine-information frame
+- if the requester is paired in the current bootstrap exchange shell, the server first returns self `GC::EXCHANGE END` and queues peer `GC::EXCHANGE END`, clears the in-memory exchange display/accept state, and then returns the self-only refine-information frame; when both merchant and exchange shells are active, the merchant close is ordered before the exchange close, and both precede the refine preview frame
+- apart from the optional active-merchant / active-exchange closes above, no peer-facing refine/item-result frames are queued and no inventory, equipment, quickslot, point, gold, ground-item, or persisted account state is mutated
 
 This preview frame is deliberately not a success/failure/result action. It only gives the client enough authored metadata to display the first bootstrap refine dialog for a valid carried item.
 
@@ -103,7 +105,7 @@ Later slices must write a new contract before broadening this packet into real g
 - refine catalyst semantics beyond the authored dialog-preview material/cost fields above
 - success, failure, downgrade, destroy, or safe-refine outcomes
 - item socket, metin-stone, attribute, or bonus-changing behavior
-- broader runtime refine window/open/close choreography beyond the single self-only `REFINE_INFORMATION_NEW` preview frame
+- broader runtime refine window/open/close choreography beyond the single self-only `REFINE_INFORMATION_NEW` preview frame and the currently owned same-socket merchant/exchange presentation teardowns before authored refine feedback
 - dragon-soul refine packets
 - inventory/equipment refresh ordering for accepted refine results
 - audit, rollback, or durable economic policy for refine attempts
@@ -115,4 +117,4 @@ Later slices must write a new contract before broadening this packet into real g
 - `internal/itemstore` freezes deterministic `refine_reject_message` and `refine_info` persistence, rejects contradictory `refineable` templates that also author rejection text, and rejects malformed `refine_info` metadata before runtime boot.
 - `internal/contentbundle` and `internal/ops` freeze loopback content-bundle summaries that project `refineable` and `refine_reject_message` into top-level item-template, merchant-catalog entry, spawn reward-drop, and aggregate reward-drop rows so QA can inspect refine-gated authored items before import.
 - `internal/player` freezes the no-mutation helper boundary that extracts template-authored refine rejection text or refine-information metadata from the currently carried item, including fail-closed transfer-guard and selected-character restriction checks before emitting refine-information previews.
-- `internal/minimal` freezes the shipped no-frame fail-closed behavior, the template-authored self-only info-chat rejection path, the self-only `REFINE_INFORMATION_NEW` preview path with persisted inventory, quickslots, and points unchanged after a `REFINE` packet, the active same-socket exchange-shell close that precedes either template-authored refine feedback path without mutating exchange/item/gold state, guarded-template no-frame/no-mutation suppression for that preview path, and the post-floor dead-owner guard that denies `REFINE` before those feedback paths can run.
+- `internal/minimal` freezes the shipped no-frame fail-closed behavior, the template-authored self-only info-chat rejection path, the self-only `REFINE_INFORMATION_NEW` preview path with persisted inventory, quickslots, and points unchanged after a `REFINE` packet, the active same-socket merchant-window close and active same-socket exchange-shell close that precede either template-authored refine feedback path without mutating merchant/exchange/item/gold state, guarded-template no-frame/no-mutation suppression for that preview path, and the post-floor dead-owner guard that denies `REFINE` before those feedback paths can run.

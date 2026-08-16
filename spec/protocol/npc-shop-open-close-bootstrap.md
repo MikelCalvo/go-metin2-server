@@ -290,6 +290,10 @@ The current bootstrap runtime now owns one storage-guard teardown case too:
 - if the same selected live owner sends `SAFEBOX_CHECKIN` for a carried item whose loaded template authors `anti_safebox` plus `safebox_reject_message` while a merchant window is open, the runtime prepends one self-only `GC::SHOP END` before the storage rejection chat
 - that storage-guard close clears the active merchant context immediately, so later `SHOP END` / `SHOP BUY` attempts fail closed until the player opens a fresh merchant window again
 
+The current bootstrap runtime now owns one refine-feedback teardown case too:
+- if the same selected live owner sends `REFINE` for a carried item whose loaded template authors either the non-refineable `refine_reject_message` path or the refineable `refine_info` preview path while a merchant window is open, the runtime prepends one self-only `GC::SHOP END` before the refine rejection chat or `REFINE_INFORMATION_NEW` preview frame
+- that refine-feedback close clears the active merchant context immediately, so later `SHOP END` / `SHOP BUY` attempts fail closed until the player opens a fresh merchant window again
+
 This document does **not** yet claim that every teardown path must always emit a visible merchant close frame before other phase or disconnect behavior takes over.
 
 ## Session rule
