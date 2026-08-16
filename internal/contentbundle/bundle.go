@@ -191,6 +191,19 @@ type QuestStateOverview struct {
 	Quests         []QuestStateQuestSummary     `json:"quests,omitempty"`
 }
 
+type QuestStateImportPreview struct {
+	Current   QuestStateOverview            `json:"current"`
+	Candidate QuestStateOverview            `json:"candidate"`
+	Deltas    QuestStateImportPreviewDeltas `json:"deltas"`
+}
+
+type QuestStateImportPreviewDeltas struct {
+	FlagCount      SummaryCountDelta `json:"flag_count"`
+	CharacterCount SummaryCountDelta `json:"character_count"`
+	QuestCount     SummaryCountDelta `json:"quest_count"`
+	Flags          []QuestStateDelta `json:"flags,omitempty"`
+}
+
 type ImportPreview struct {
 	Current   Summary       `json:"current"`
 	Candidate Summary       `json:"candidate"`
@@ -1065,6 +1078,17 @@ func cloneQuestStateDelta(delta QuestStateDelta) QuestStateDelta {
 	if delta.Candidate != nil {
 		candidate := *delta.Candidate
 		cloned.Candidate = &candidate
+	}
+	return cloned
+}
+
+func cloneQuestStateDeltas(deltas []QuestStateDelta) []QuestStateDelta {
+	if len(deltas) == 0 {
+		return nil
+	}
+	cloned := make([]QuestStateDelta, len(deltas))
+	for i, delta := range deltas {
+		cloned[i] = cloneQuestStateDelta(delta)
 	}
 	return cloned
 }
@@ -2535,6 +2559,19 @@ func QuestStateOverviewFromSummary(summary Summary) QuestStateOverview {
 		QuestRefs:      cloneStrings(summary.QuestStateQuestRefs),
 		Characters:     cloneQuestStateCharacterSummaries(summary.QuestStateCharacters),
 		Quests:         cloneQuestStateQuestSummaries(summary.QuestStateQuests),
+	}
+}
+
+func QuestStateImportPreviewFromImportPreview(preview ImportPreview) QuestStateImportPreview {
+	return QuestStateImportPreview{
+		Current:   QuestStateOverviewFromSummary(preview.Current),
+		Candidate: QuestStateOverviewFromSummary(preview.Candidate),
+		Deltas: QuestStateImportPreviewDeltas{
+			FlagCount:      preview.Deltas.QuestStateFlagCount,
+			CharacterCount: preview.Deltas.QuestStateCharacterCount,
+			QuestCount:     preview.Deltas.QuestStateQuestCount,
+			Flags:          cloneQuestStateDeltas(preview.Deltas.QuestStateFlags),
+		},
 	}
 }
 

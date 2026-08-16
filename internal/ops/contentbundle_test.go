@@ -1042,6 +1042,125 @@ func TestLocalContentBundleInteractionKindImportPreviewEndpointCoexistsWithBroad
 	}
 }
 
+func TestLocalContentBundleQuestStateImportPreviewEndpointReturnsCompactOverviewAndDeltasForLoopbackPost(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{QuestState: []queststate.Flag{
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "old_flag", Value: 1},
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1},
+	}}}
+	mux := RegisterLocalContentBundleQuestStateImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/quest-state", strings.NewReader(`{"quest_state":[{"character":"QuestHero","quest_ref":"quest:first_steps","name":"step","value":2},{"character":"AnotherHero","quest_ref":"quest:first_steps","name":"met_guard","value":1}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected import previewer to be called once, got %d calls", previewer.calls)
+	}
+	var got contentbundle.QuestStateImportPreview
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode compact quest-state import-preview response: %v", err)
+	}
+	currentOldFlag := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "old_flag", Value: 1}
+	currentStep := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "step", Value: 1}
+	candidateMetGuard := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}
+	candidateStep := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "step", Value: 2}
+	want := contentbundle.QuestStateImportPreview{
+		Current: contentbundle.QuestStateOverview{FlagCount: 2, CharacterCount: 1, QuestCount: 1, QuestRefs: []string{"quest:first_steps"}},
+		Candidate: contentbundle.QuestStateOverview{
+			FlagCount:      2,
+			CharacterCount: 2,
+			QuestCount:     1,
+			QuestRefs:      []string{"quest:first_steps"},
+			Characters: []contentbundle.QuestStateCharacterSummary{
+				{Character: "AnotherHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{candidateMetGuard}},
+				{Character: "QuestHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{candidateStep}},
+			},
+			Quests: []contentbundle.QuestStateQuestSummary{{
+				QuestRef:  "quest:first_steps",
+				FlagCount: 2,
+				Characters: []contentbundle.QuestStateCharacterSummary{
+					{Character: "AnotherHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{candidateMetGuard}},
+					{Character: "QuestHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{candidateStep}},
+				},
+			}},
+		},
+		Deltas: contentbundle.QuestStateImportPreviewDeltas{
+			FlagCount:      contentbundle.SummaryCountDelta{Current: 2, Candidate: 2, Delta: 0},
+			CharacterCount: contentbundle.SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
+			QuestCount:     contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
+			Flags: []contentbundle.QuestStateDelta{
+				{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "met_guard", Change: "added", Candidate: &candidateMetGuard},
+				{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "old_flag", Change: "removed", Current: &currentOldFlag},
+				{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Change: "changed", Current: &currentStep, Candidate: &candidateStep},
+			},
+		},
+	}
+	want.Current.Characters = []contentbundle.QuestStateCharacterSummary{{Character: "QuestHero", FlagCount: 2, Flags: []queststate.FlagSnapshot{currentOldFlag, currentStep}}}
+	want.Current.Quests = []contentbundle.QuestStateQuestSummary{{QuestRef: "quest:first_steps", FlagCount: 2, Characters: []contentbundle.QuestStateCharacterSummary{{Character: "QuestHero", FlagCount: 2, Flags: []queststate.FlagSnapshot{currentOldFlag, currentStep}}}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected compact quest-state import-preview response:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleQuestStateImportPreviewEndpointReturnsNotFoundWhenNoQuestStateDeltas(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{QuestState: []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1}}}}
+	mux := RegisterLocalContentBundleQuestStateImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/quest-state", strings.NewReader(`{"quest_state":[{"character":"QuestHero","quest_ref":"quest:first_steps","name":"step","value":1}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for unchanged quest-state import preview, got %d", http.StatusNotFound, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected unchanged compact quest-state preview to call import previewer once, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleQuestStateImportPreviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleQuestStateImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/quest-state", strings.NewReader(`{"quest_state":[]}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback compact quest-state import preview, got %d", http.StatusForbidden, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected non-loopback compact quest-state request not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleQuestStateImportPreviewEndpointRejectsWrongMethod(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleQuestStateImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/import-preview/quest-state", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong-method compact quest-state import preview, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected wrong-method compact quest-state request not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
 func TestLocalContentBundleQuestStateFlagImportPreviewEndpointReturnsExactDeltaForLoopbackPost(t *testing.T) {
 	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{QuestState: []queststate.Flag{
 		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "old_flag", Value: 1},

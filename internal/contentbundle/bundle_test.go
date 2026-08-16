@@ -3106,6 +3106,82 @@ func TestBootstrapNPCServiceExampleBundleCarriesQuestStateSeed(t *testing.T) {
 	}
 }
 
+func TestQuestStateImportPreviewFromImportPreviewReturnsCompactOverviewAndDeltas(t *testing.T) {
+	preview, err := BuildImportPreview(
+		Bundle{QuestState: []queststate.Flag{
+			{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "old_flag", Value: 1},
+			{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1},
+		}},
+		Bundle{QuestState: []queststate.Flag{
+			{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "met_guard", Value: 1},
+			{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},
+		}},
+	)
+	if err != nil {
+		t.Fatalf("build quest-state import preview: %v", err)
+	}
+
+	got := QuestStateImportPreviewFromImportPreview(preview)
+
+	currentOldFlag := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "old_flag", Value: 1}
+	currentStep := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "step", Value: 1}
+	candidateMetGuard := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "met_guard", Value: 1}
+	candidateStep := queststate.FlagSnapshot{QuestRef: "quest:first_steps", Name: "step", Value: 2}
+	want := QuestStateImportPreview{
+		Current: QuestStateOverview{
+			FlagCount:      2,
+			CharacterCount: 1,
+			QuestCount:     1,
+			QuestRefs:      []string{"quest:first_steps"},
+			Characters: []QuestStateCharacterSummary{{
+				Character: "QuestHero",
+				FlagCount: 2,
+				Flags:     []queststate.FlagSnapshot{currentOldFlag, currentStep},
+			}},
+			Quests: []QuestStateQuestSummary{{
+				QuestRef:  "quest:first_steps",
+				FlagCount: 2,
+				Characters: []QuestStateCharacterSummary{{
+					Character: "QuestHero",
+					FlagCount: 2,
+					Flags:     []queststate.FlagSnapshot{currentOldFlag, currentStep},
+				}},
+			}},
+		},
+		Candidate: QuestStateOverview{
+			FlagCount:      2,
+			CharacterCount: 2,
+			QuestCount:     1,
+			QuestRefs:      []string{"quest:first_steps"},
+			Characters: []QuestStateCharacterSummary{
+				{Character: "AnotherHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{candidateMetGuard}},
+				{Character: "QuestHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{candidateStep}},
+			},
+			Quests: []QuestStateQuestSummary{{
+				QuestRef:  "quest:first_steps",
+				FlagCount: 2,
+				Characters: []QuestStateCharacterSummary{
+					{Character: "AnotherHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{candidateMetGuard}},
+					{Character: "QuestHero", FlagCount: 1, Flags: []queststate.FlagSnapshot{candidateStep}},
+				},
+			}},
+		},
+		Deltas: QuestStateImportPreviewDeltas{
+			FlagCount:      SummaryCountDelta{Current: 2, Candidate: 2, Delta: 0},
+			CharacterCount: SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
+			QuestCount:     SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
+			Flags: []QuestStateDelta{
+				{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "met_guard", Change: "added", Candidate: &candidateMetGuard},
+				{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "old_flag", Change: "removed", Current: &currentOldFlag},
+				{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Change: "changed", Current: &currentStep, Candidate: &candidateStep},
+			},
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected compact quest-state import preview:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
 func loadBootstrapNPCServiceExampleBundle(t *testing.T) Bundle {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
