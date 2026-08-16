@@ -659,6 +659,14 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 	if displayedGold := r.exchangeGold[originID]; displayedGold != 0 && uint64(displayedGold) > availableGold {
 		return [][]byte{encodeExchangeLessGoldFrame()}, true
 	}
+	if r.exchangeAccepted[partnerID] {
+		if !exchangeDisplayedItemsStillLive(r.exchangeItems[partnerID], partner) {
+			return nil, false
+		}
+		if displayedGold := r.exchangeGold[partnerID]; displayedGold != 0 && uint64(displayedGold) > partner.Gold {
+			return nil, false
+		}
+	}
 
 	selfFrame := encodeExchangeAcceptFrame(1)
 	peerFrame := encodeExchangeAcceptFrame(0)
