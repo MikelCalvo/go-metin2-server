@@ -49,7 +49,7 @@ type sharedWorldRegistry struct {
 	sessionCombatTargets            map[uint64]uint32
 	sessionCombatRetaliations       map[uint64]combatRetaliationTimer
 	exchangePartners                map[uint64]uint64
-	exchangeItems                   map[uint64]map[uint8]uint64
+	exchangeItems                   map[uint64]map[uint8]exchangeDisplayedItem
 	exchangeGold                    map[uint64]uint32
 	exchangeAccepted                map[uint64]bool
 	nextStaticActorCombatSnapshotID uint64
@@ -85,6 +85,13 @@ type sharedGroundItemPickup struct {
 	OwnerLogin string
 	OwnerName  string
 	Owner      loginticket.Character
+}
+
+type exchangeDisplayedItem struct {
+	ItemID uint64
+	Vnum   uint32
+	Count  uint16
+	Slot   inventory.SlotIndex
 }
 
 type sharedGroundItemVisibilityDiff struct {
@@ -544,18 +551,18 @@ func (r *sharedWorldRegistry) AddExchangeItem(originID uint64, displaySlot uint8
 		return nil, false
 	}
 	if r.exchangeItems == nil {
-		r.exchangeItems = make(map[uint64]map[uint8]uint64)
+		r.exchangeItems = make(map[uint64]map[uint8]exchangeDisplayedItem)
 	}
 	originItems := r.exchangeItems[originID]
 	if originItems == nil {
-		originItems = make(map[uint8]uint64)
+		originItems = make(map[uint8]exchangeDisplayedItem)
 		r.exchangeItems[originID] = originItems
 	}
 	if _, occupied := originItems[displaySlot]; occupied {
 		return nil, false
 	}
-	for _, displayedItemID := range originItems {
-		if displayedItemID == display.Item.ID {
+	for _, displayedItem := range originItems {
+		if displayedItem.ItemID == display.Item.ID {
 			return nil, false
 		}
 	}
@@ -567,7 +574,7 @@ func (r *sharedWorldRegistry) AddExchangeItem(originID uint64, displaySlot uint8
 	if !r.enqueueToEntityLocked(partnerID, peerFrames) {
 		return nil, false
 	}
-	originItems[displaySlot] = display.Item.ID
+	originItems[displaySlot] = exchangeDisplayedItem{ItemID: display.Item.ID, Vnum: display.Item.Vnum, Count: display.Item.Count, Slot: display.Item.Slot}
 	r.setExchangeAcceptedLocked(originID, false)
 	r.setExchangeAcceptedLocked(partnerID, false)
 	return selfFrames, true
@@ -617,7 +624,7 @@ func (r *sharedWorldRegistry) AddExchangeGold(originID uint64, amount uint32, av
 	return selfFrames, true
 }
 
-func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint64) ([][]byte, bool) {
+func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint64, live loginticket.Character) ([][]byte, bool) {
 	if r == nil || originID == 0 {
 		return nil, false
 	}
@@ -643,6 +650,12 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 	if !ok || characterAtBootstrapHPFloor(partner) {
 		return nil, false
 	}
+	if live.ID == 0 || live.ID != origin.ID || live.VID != origin.VID || normalizeLiveCharacterName(live.Name) != normalizeLiveCharacterName(origin.Name) {
+		return nil, false
+	}
+	if !exchangeDisplayedItemsStillLive(r.exchangeItems[originID], live) {
+		return nil, false
+	}
 	if displayedGold := r.exchangeGold[originID]; displayedGold != 0 && uint64(displayedGold) > availableGold {
 		return [][]byte{encodeExchangeLessGoldFrame()}, true
 	}
@@ -654,6 +667,56 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 	}
 	r.setExchangeAcceptedLocked(originID, true)
 	return [][]byte{selfFrame}, true
+}
+
+func exchangeDisplayedItemsStillLive(displayed map[uint8]exchangeDisplayedItem, live loginticket.Character) bool {
+	if len(displayed) == 0 {
+		return true
+	}
+	if exchangeInventorySnapshotInvalidForDisplayedItems(live.Inventory) {
+		return false
+	}
+	for _, display := range displayed {
+		if display.ItemID == 0 || display.Vnum == 0 || display.Count == 0 || display.Slot >= inventory.CarriedInventorySlotCount {
+			return false
+		}
+		matches := 0
+		for _, liveItem := range live.Inventory {
+			if liveItem.Equipped || liveItem.Slot != display.Slot || liveItem.ID != display.ItemID || liveItem.Vnum != display.Vnum || liveItem.Count != display.Count || liveItem.Locked {
+				continue
+			}
+			if err := liveItem.Validate(); err != nil {
+				return false
+			}
+			matches++
+		}
+		if matches != 1 {
+			return false
+		}
+	}
+	return true
+}
+
+func exchangeInventorySnapshotInvalidForDisplayedItems(items []inventory.ItemInstance) bool {
+	seenSlots := make(map[inventory.SlotIndex]struct{}, len(items))
+	seenIDs := make(map[uint64]struct{}, len(items))
+	for _, item := range items {
+		if item.Equipped || item.Slot >= inventory.CarriedInventorySlotCount {
+			return true
+		}
+		if err := item.Validate(); err != nil {
+			return true
+		}
+		if _, exists := seenSlots[item.Slot]; exists {
+			return true
+		}
+		if _, exists := seenIDs[item.ID]; exists {
+			return true
+		}
+		seenSlots[item.Slot] = struct{}{}
+		seenIDs[item.ID] = struct{}{}
+	}
+	return false
 }
 
 func (r *sharedWorldRegistry) RemoveExchangeItem(originID uint64, displaySlot uint8) ([][]byte, bool) {

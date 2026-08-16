@@ -4586,7 +4586,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !ownsLiveSharedWorldSession() {
 							return gameflow.ItemExchangeResult{Accepted: false}
 						}
-						frames, ok := sharedWorld.AcceptExchange(sharedWorldID, selectedPlayer.LiveGold())
+						frames, ok := sharedWorld.AcceptExchange(sharedWorldID, selectedPlayer.LiveGold(), selectedPlayer.LiveCharacter())
 						if !ok {
 							return gameflow.ItemExchangeResult{Accepted: false}
 						}

@@ -561,6 +561,144 @@ func TestGameRuntimeItemExchangeGoldAddAboveLiveGoldReportsLessGoldWithoutMutati
 	assertExchangeAccountUnchanged(t, accounts, "item-exchange-gold-rich-peer", peer, "peer exchange less-gold")
 }
 
+func TestExchangeDisplayedItemsStillLiveRejectsStaleOrDuplicateDisplayState(t *testing.T) {
+	displayed := map[uint8]exchangeDisplayedItem{7: {ItemID: 729, Vnum: 27045, Count: 3, Slot: 5}}
+	valid := loginticket.Character{Inventory: []inventory.ItemInstance{{ID: 729, Vnum: 27045, Count: 3, Slot: 5}}}
+	if !exchangeDisplayedItemsStillLive(displayed, valid) {
+		t.Fatal("expected exact live displayed item to pass exchange accept revalidation")
+	}
+
+	countDrift := valid
+	countDrift.Inventory = []inventory.ItemInstance{{ID: 729, Vnum: 27045, Count: 2, Slot: 5}}
+	if exchangeDisplayedItemsStillLive(displayed, countDrift) {
+		t.Fatal("expected count-drifted displayed item to fail exchange accept revalidation")
+	}
+
+	duplicateID := valid
+	duplicateID.Inventory = []inventory.ItemInstance{
+		{ID: 729, Vnum: 27045, Count: 3, Slot: 5},
+		{ID: 729, Vnum: 27045, Count: 3, Slot: 6},
+	}
+	if exchangeDisplayedItemsStillLive(displayed, duplicateID) {
+		t.Fatal("expected duplicate live item identity to fail exchange accept revalidation")
+	}
+
+	duplicateSlot := valid
+	duplicateSlot.Inventory = []inventory.ItemInstance{
+		{ID: 729, Vnum: 27045, Count: 3, Slot: 5},
+		{ID: 730, Vnum: 27046, Count: 1, Slot: 5},
+	}
+	if exchangeDisplayedItemsStillLive(displayed, duplicateSlot) {
+		t.Fatal("expected duplicate carried slot occupancy to fail exchange accept revalidation")
+	}
+
+	locked := valid
+	locked.Inventory = []inventory.ItemInstance{{ID: 729, Vnum: 27045, Count: 3, Slot: 5, Locked: true}}
+	if exchangeDisplayedItemsStillLive(displayed, locked) {
+		t.Fatal("expected locked displayed item to fail exchange accept revalidation")
+	}
+}
+
+func TestGameRuntimeItemExchangeAcceptRevalidatesDisplayedItemAgainstCurrentSelectionWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeItemRecheckOwner", 0x0103077d, 0x0204077d, 1100, 2100, 0, 101, 201)
+	owner.Gold = 500
+	owner.Inventory = []inventory.ItemInstance{{ID: 729, Vnum: 27045, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeItemRecheckPeer", 0x0103077e, 0x0204077e, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 730, Vnum: 27002, Count: 2, Slot: 6}}
+	peer.Quickslots = []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeItem, Slot: 6}}
+	ownerLogin := "ex-item-recheck-a"
+	peerLogin := "ex-item-recheck-b"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x7070707d, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x7070707e, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange item recheck owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange item recheck peer account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27045, Name: "Displayed Recheck Potion", Stackable: true, MaxCount: 200, Sockets: itemcatalog.SocketValues{5, 6, 7}}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange item recheck runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x7070707d)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x7070707e)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected item recheck exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected item recheck exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "item recheck owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected item recheck exchange start to queue one peer frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "item recheck peer start")
+
+	itemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 7, Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected item recheck item-add error: %v", err)
+	}
+	if len(itemAddOut) != 1 {
+		t.Fatalf("expected item recheck item-add to emit one self frame, got %d", len(itemAddOut))
+	}
+	assertExchangeItemAddFrame(t, itemAddOut[0], 1, 7, owner.Inventory[0], template, "item recheck self item-add")
+	queuedItemAdd := flushServerFrames(t, peerFlow)
+	if len(queuedItemAdd) != 1 {
+		t.Fatalf("expected item recheck item-add to queue one peer frame, got %d", len(queuedItemAdd))
+	}
+	assertExchangeItemAddFrame(t, queuedItemAdd[0], 0, 7, owner.Inventory[0], template, "item recheck peer item-add")
+
+	driftedOwner := owner
+	driftedOwner.Inventory = []inventory.ItemInstance{{ID: 729, Vnum: 27045, Count: 2, Slot: 5}}
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{driftedOwner})}); err != nil {
+		t.Fatalf("persist drifted exchange item recheck owner account: %v", err)
+	}
+	if !runtime.applyLiveCharacterPersistedSnapshot(owner.Name, driftedOwner) {
+		t.Fatal("expected test drift to refresh the live selected character snapshot")
+	}
+
+	acceptOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected stale-item exchange accept error: %v", err)
+	}
+	if len(acceptOut) != 0 {
+		t.Fatalf("expected stale displayed-item accept to emit no frames, got %d", len(acceptOut))
+	}
+	if queuedAccept := flushServerFrames(t, peerFlow); len(queuedAccept) != 0 {
+		t.Fatalf("expected stale displayed-item accept to queue no peer frames, got %d", len(queuedAccept))
+	}
+
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected cancel after stale-item accept error: %v", err)
+	}
+	if len(cancelOut) != 1 {
+		t.Fatalf("expected exchange shell to remain cancellable after stale-item accept rejection, got %d frames", len(cancelOut))
+	}
+	assertExchangeEndFrame(t, cancelOut[0], "item recheck cancel after stale accept")
+	queuedCancel := flushServerFrames(t, peerFlow)
+	if len(queuedCancel) != 1 {
+		t.Fatalf("expected cancel after stale-item accept to queue one peer END, got %d", len(queuedCancel))
+	}
+	assertExchangeEndFrame(t, queuedCancel[0], "item recheck peer cancel after stale accept")
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, driftedOwner, "stale displayed-item accept owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "stale displayed-item accept peer")
+}
+
 func TestGameRuntimeItemExchangeAcceptRevalidatesDisplayedGoldAgainstLiveGoldWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
