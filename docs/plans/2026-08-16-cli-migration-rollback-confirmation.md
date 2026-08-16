@@ -1,10 +1,12 @@
-# CLI Migration Rollback Confirmation Guard — 2026-08-16
+# CLI Migration Rollback Acknowledgement Guard — 2026-08-16
 
 ## Objective
 
 Harden the CLI-only migration apply boundary so rollback/down plans cannot be executed solely by passing a lower `--target-version`.
 
-The repo already had strict ledger snapshots, metadata-only dry-run plans, plan artifacts, optional local lock files, optional audit files, and a CLI-only `metin2-migrate apply` command. This slice keeps the mutating surface outside daemon ops endpoints while adding one explicit rollback acknowledgement before any database connection is opened.
+The repo already had strict ledger snapshots, metadata-only dry-run plans, plan artifacts, optional local lock files, optional audit files, and a CLI-only `metin2-migrate apply` command. This slice kept the mutating surface outside daemon ops endpoints while adding one explicit rollback acknowledgement before any database connection is opened.
+
+Follow-up note: `2026-08-16-cli-migration-rollback-plan-confirmation.md` tightened this further. Current rollback execution requires both `--allow-rollback` and exact reviewed-plan confirmation via `--plan-sha256` or `--plan-artifact`.
 
 ## Contract frozen by this slice
 
@@ -45,7 +47,7 @@ The `--allow-rollback` flag is intentionally separate from:
 - `--lock-file`;
 - `--audit-file`.
 
-Plan confirmation proves the plan matches what was reviewed; it does not by itself authorize destructive direction. The rollback acknowledgement makes the dangerous direction explicit in the apply command line.
+This slice made the dangerous direction explicit in the apply command line. The later plan-confirmation guard made `--plan-sha256` or `--plan-artifact` mandatory for rollback too, so current rollback runs require both an acknowledgement and a reviewed-plan match.
 
 ## What this is not yet
 
@@ -68,7 +70,7 @@ This guard complements the existing recommended runbook flow:
 2. generate and inspect a metadata-only plan artifact;
 3. take and validate backups through the existing file-store preflight surfaces where applicable;
 4. run `metin2-migrate apply` with plan confirmation, a local lock, and an audit file;
-5. add `--allow-rollback` only for an intentional rollback/down plan.
+5. add `--allow-rollback` and exact plan confirmation only for an intentional rollback/down plan.
 
 ## TDD and validation
 

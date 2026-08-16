@@ -664,10 +664,16 @@ func TestRunApplyUsesOfflineLedgerSnapshotForRollbackTarget(t *testing.T) {
 	}
 	driver := currentMigrateCLITestDriver(t)
 	driver.setLedger(applied)
+	var planStdout bytes.Buffer
+	var planStderr bytes.Buffer
+	if code := Run([]string{"plan", "--ledger-snapshot", "-", "--target-version", "0"}, bytes.NewReader(rawSnapshot), &planStdout, &planStderr); code != 0 {
+		t.Fatalf("expected rollback plan command, exit=%d stderr=%q", code, planStderr.String())
+	}
+	planSHA256 := testSHA256HexBytes(planStdout.Bytes())
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://rollback", "--ledger-snapshot", "-", "--target-version", "0", "--allow-rollback"}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://rollback", "--ledger-snapshot", "-", "--target-version", "0", "--allow-rollback", "--plan-sha256", planSHA256}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
 
 	if code != 0 {
 		t.Fatalf("expected successful rollback apply, exit=%d stderr=%q", code, stderr.String())
@@ -694,6 +700,89 @@ func TestRunApplyUsesOfflineLedgerSnapshotForRollbackTarget(t *testing.T) {
 	}
 	if !containsMigrateCLITestEventPrefix(events, "commit") {
 		t.Fatalf("expected rollback command to commit, got events %#v", events)
+	}
+}
+
+func TestRunApplyUsesPlanArtifactForRollbackTarget(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	catalog, err := dbmigrations.Catalog()
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	applied := []dbmigrations.LedgerEntry{{Version: catalog[0].Version, Name: catalog[0].Name, UpSHA256: catalog[0].UpSHA256}}
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot(applied)
+	if err != nil {
+		t.Fatalf("marshal ledger snapshot: %v", err)
+	}
+	var artifactStdout bytes.Buffer
+	var artifactStderr bytes.Buffer
+	if code := Run([]string{"plan-artifact", "--ledger-snapshot", "-", "--target-version", "0"}, bytes.NewReader(rawSnapshot), &artifactStdout, &artifactStderr); code != 0 {
+		t.Fatalf("expected rollback plan-artifact command, exit=%d stderr=%q", code, artifactStderr.String())
+	}
+	artifactPath := t.TempDir() + "/rollback-plan-artifact.json"
+	if err := os.WriteFile(artifactPath, artifactStdout.Bytes(), 0o600); err != nil {
+		t.Fatalf("write rollback plan artifact: %v", err)
+	}
+	driver := currentMigrateCLITestDriver(t)
+	driver.setLedger(applied)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://rollback-artifact", "--ledger-snapshot", "-", "--target-version", "0", "--allow-rollback", "--plan-artifact", artifactPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected successful artifact-confirmed rollback apply, exit=%d stderr=%q", code, stderr.String())
+	}
+	var result dbmigrations.ApplyResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode artifact-confirmed rollback result JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if result.PreviousVersion != 1 || result.CurrentVersion != 0 || len(result.Applied) != 1 || result.Applied[0].Direction != dbmigrations.DirectionDown {
+		t.Fatalf("unexpected artifact-confirmed rollback result: %#v", result)
+	}
+	for _, want := range []string{"open:memory://rollback-artifact", "begin", "commit", "close"} {
+		if !containsMigrateCLITestEventPrefix(driver.eventsSnapshot(), want) {
+			t.Fatalf("expected event prefix %q in events %#v", want, driver.eventsSnapshot())
+		}
+	}
+}
+
+func TestRunApplyRejectsRollbackWithoutPlanConfirmationBeforeOpeningDatabase(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	catalog, err := dbmigrations.Catalog()
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	applied := []dbmigrations.LedgerEntry{{Version: catalog[0].Version, Name: catalog[0].Name, UpSHA256: catalog[0].UpSHA256}}
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot(applied)
+	if err != nil {
+		t.Fatalf("marshal ledger snapshot: %v", err)
+	}
+	currentMigrateCLITestDriver(t).setLedger(applied)
+	dir := t.TempDir()
+	lockPath := dir + "/migration-rollback.lock"
+	auditPath := dir + "/migration-rollback-audit.json"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://rollback-unconfirmed-plan", "--ledger-snapshot", "-", "--target-version", "0", "--allow-rollback", "--lock-file", lockPath, "--audit-file", auditPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected rollback without plan confirmation to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected unconfirmed rollback not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "--plan-sha256") || !strings.Contains(stderr.String(), "--plan-artifact") {
+		t.Fatalf("expected rollback plan confirmation guidance, got %q", stderr.String())
+	}
+	for _, path := range []string{lockPath, auditPath} {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("expected unconfirmed rollback not to reserve %s, got %v", path, err)
+		}
+	}
+	if got := currentMigrateCLITestDriver(t).eventsSnapshot(); len(got) != 0 {
+		t.Fatalf("expected rollback plan confirmation guard before opening database, got events %#v", got)
 	}
 }
 

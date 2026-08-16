@@ -36,10 +36,11 @@ const (
 // mutation surface: it requires an operator-supplied database driver, DSN, strict
 // offline ledger snapshot, and target version, and it remains deliberately
 // separate from daemon startup and local ops endpoints. Rollback/down plans must
-// be explicitly confirmed with --allow-rollback. Operators can optionally require
-// a previously inspected plan checksum or plan artifact, reserve an exclusive
-// local lock file before opening the database, and request an exclusive
-// metadata-only audit file for non-empty apply plans.
+// be explicitly confirmed with --allow-rollback plus either --plan-sha256 or
+// --plan-artifact. Operators can optionally require a previously inspected plan
+// checksum or plan artifact, reserve an exclusive local lock file before opening
+// the database, and request an exclusive metadata-only audit file for non-empty
+// apply plans.
 func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	if stdout == nil {
 		stdout = io.Discard
@@ -387,9 +388,15 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 		writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
 		return exitError
 	}
-	if planContainsRollbackStep(plan) && !allowRollback {
-		writeMigrationCommandError(stderr, dsn, "migration apply: %v", fmt.Errorf("%w: rollback/down migration plan requires --allow-rollback", ErrMigrationApplyRollbackConfirmation))
-		return exitError
+	if planContainsRollbackStep(plan) {
+		if !allowRollback {
+			writeMigrationCommandError(stderr, dsn, "migration apply: %v", fmt.Errorf("%w: rollback/down migration plan requires --allow-rollback", ErrMigrationApplyRollbackConfirmation))
+			return exitError
+		}
+		if confirmedPlanSHA256 == "" && trimmedPlanArtifactPath == "" {
+			writeMigrationCommandError(stderr, dsn, "migration apply: %v", fmt.Errorf("%w: rollback/down migration plan requires --plan-sha256 or --plan-artifact", ErrMigrationApplyPlanConfirmation))
+			return exitError
+		}
 	}
 	if confirmedPlanSHA256 != "" && gotPlanSHA256 != confirmedPlanSHA256 {
 		writeMigrationCommandError(stderr, dsn, "migration apply: %v", fmt.Errorf("%w: plan sha256 mismatch: got %s want %s", ErrMigrationApplyPlanConfirmation, gotPlanSHA256, confirmedPlanSHA256))
