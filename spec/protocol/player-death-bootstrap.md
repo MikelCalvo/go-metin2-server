@@ -24,6 +24,7 @@ Those documents already freeze:
 - fail-closed owner-side item-refine attempts at that same floor before template-authored reject feedback, inventory, quickslot, point, ground-item, or persistence side effects can run through `REFINE`
 - fail-closed owner-side slash equipment mutation attempts at that same retaliation floor before carried/equipped item movement, appearance refresh, or template-backed point mutation can run through the local `/equip_item` and `/unequip_item` harness paths
 - fail-closed owner-side quickslot add/delete/swap attempts at that same retaliation floor before quickslot mutation can run through packet `QUICKSLOT_ADD` / `QUICKSLOT_DEL` / `QUICKSLOT_SWAP`
+- fail-closed owner-side stance / position presentation attempts at that same retaliation floor before `GC CHARACTER_POSITION` self echoes or queued peer stance frames can run through client `CHARACTER_POSITION`
 
 What this document adds is the next narrower question:
 
@@ -59,7 +60,7 @@ This contract currently applies only to:
 This contract does **not** yet claim:
 - corpse state, knockdown animations, or corpse interaction
 - broader player respawn, revive menus, or compatibility-grade death return rules beyond the currently owned same-socket `/restart_here` and `/restart_town` bootstrap recovery seams
-- broader full input gating after death beyond the now-owned combat `TARGET` / `ATTACK`, relocation `MOVE` / `SYNC_POSITION`, static-actor `INTERACT`, merchant-buy / merchant-sell rejection, client/slash item-use / use-to-item rejection, item/gold drop rejection, packet exchange-shell rejection/close, slash inventory-move rejection, slash equipment-mutation rejection, quickslot mutation rejection, peer-facing `CHAT` / `WHISPER` rejection, self-only `CHAT_TYPE_INFO` rejection, and recipient-side server-origin `CHAT_TYPE_NOTICE` skip at `0` HP
+- broader full input gating after death beyond the now-owned combat `TARGET` / `ATTACK`, relocation `MOVE` / `SYNC_POSITION`, stance `CHARACTER_POSITION`, static-actor `INTERACT`, merchant-buy / merchant-sell rejection, client/slash item-use / use-to-item rejection, item/gold drop rejection, packet exchange-shell rejection/close, slash inventory-move rejection, slash equipment-mutation rejection, quickslot mutation rejection, peer-facing `CHAT` / `WHISPER` rejection, self-only `CHAT_TYPE_INFO` rejection, and recipient-side server-origin `CHAT_TYPE_NOTICE` skip at `0` HP
 - PvP death semantics or non-combat causes of player death
 
 ## Current implementation status
@@ -83,6 +84,7 @@ The repository now implements this narrow bootstrap contract:
 - once this floor is reached, later owner-side carried-inventory move attempts also fail closed with no item-set success burst and no runtime or persisted carried-slot mutation; this applies to both packet `ITEM_MOVE` and the local `/inventory_move` harness path
 - once this floor is reached, later owner-side slash `/equip_item` and `/unequip_item` attempts also fail closed with no item-delete / item-set / point-change / character-update success burst and no runtime or persisted inventory / equipment / point mutation
 - once this floor is reached, later owner-side packet quickslot add/delete/swap attempts also fail closed with no quickslot refresh frames and no runtime or persisted quickslot or inventory mutation
+- once this floor is reached, later owner-side client `CHARACTER_POSITION` stance attempts also fail closed with no self `GC CHARACTER_POSITION` response, no queued peer stance frame, and no selected-target, combat cadence, retaliation, point, inventory, or persistence side effect
 - if this floor is reached while the owner is paired in the bootstrap exchange-window shell, the same floor transition now also appends one self-only `GC::EXCHANGE END` after the death/clear sequence, queues one `GC::EXCHANGE END` to the paired live peer, and clears the in-memory exchange pairing/display state so later `EXCHANGE CANCEL` / display requests fail closed instead of operating on stale trade UI state
 - once this floor is reached, later owner-side peer-facing `CHAT` requests with `type = TALKING`, `PARTY`, `GUILD`, or `SHOUT` plus later owner-side `WHISPER` requests also fail closed before sender echo, queued peer delivery, or exact-name target lookup can run
 - once this floor is reached, later peer-originated `WHISPER` requests targeting that same exact owner name also fail closed before queued target delivery or a synthetic `WHISPER_TYPE_NOT_EXIST` fallback can run
@@ -359,7 +361,7 @@ Why this is the current owned boundary:
 This slice does **not** yet freeze:
 - a player respawn timer or revive request packet
 - broader self-bootstrap or transfer choreography after death beyond the currently owned persisted `/phase_select` re-entry / reconnect rebuild semantics plus dead-owner destination peer/static-actor burst suppression on the current loopback/operator transfer path
-- broader self-only chat/command surfaces or full action-lock semantics at `0` HP beyond the now-owned combat, relocation, static-actor interaction, merchant-buy, client/slash item-use, packet item-move, packet item-give, packet refine, packet exchange-shell close/rejection, slash inventory/equipment mutation, peer-facing chat / whisper, and self-only `CHAT_TYPE_INFO` rejection seams above
+- broader self-only chat/command surfaces or full action-lock semantics at `0` HP beyond the now-owned combat, relocation, stance/position presentation, static-actor interaction, merchant-buy, client/slash item-use, packet item-move, packet item-give, packet refine, packet exchange-shell close/rejection, slash inventory/equipment mutation, peer-facing chat / whisper, and self-only `CHAT_TYPE_INFO` rejection seams above
 - broader recipient-side communication or world-visibility policy beyond the now-owned exact-name whisper denial, queued `CHAT_TYPE_TALKING` / `PARTY` / `GUILD` / `SHOUT` recipient skips, queued peer-entry visibility recipient skips on join plus movement/sync/transfer visibility rebuilds, queued peer-teardown `CHARACTER_DEL` recipient skips on leave plus relocate-away transfer plus AOI move/sync out-of-range teardown, queued static-actor visibility recipient skips on register/update/remove, queued practice-mob death/respawn lifecycle recipient skips, queued destination ground-item visibility skips on transfer/rebootstrap, and server-origin `CHAT_TYPE_NOTICE` recipient skip for connected zero-HP owners
 - death penalties, EXP loss, inventory drops, or corpse recovery
 
@@ -380,6 +382,7 @@ After this document lands, the repository should be able to say:
 - once that same floor is reached, later owner-side packet `ITEM_MOVE` attempts also fail closed before runtime/persisted carried-inventory slot mutation or item-set success frames can run
 - once that same floor is reached, later owner-side packet `ITEM_GIVE` attempts also fail closed before anti-give feedback, peer delivery, inventory, quickslot, ground-handle, or persistence side effects can run
 - once that same floor is reached, later owner-side packet `REFINE` attempts also fail closed before template-authored reject feedback, inventory, quickslot, point, ground-item, or persistence side effects can run
+- once that same floor is reached, later owner-side client `CHARACTER_POSITION` stance attempts also fail closed before self or peer `GC CHARACTER_POSITION` presentation can run
 - once that same floor is reached, later owner-side peer-facing `CHAT` requests with types `TALKING`, `PARTY`, `GUILD`, and `SHOUT` plus later owner-side `WHISPER` requests also fail closed before sender echo, peer delivery, or exact-name lookup can run
 - once that same floor is reached, later peer-originated `WHISPER` requests aimed at that same exact connected owner name also fail closed before queued target delivery or a synthetic `WHISPER_TYPE_NOT_EXIST` fallback can run
 - once retaliation has already driven the owning character to `0` HP, later peer-originated `CHAT` requests with types `TALKING`, `PARTY`, `GUILD`, and `SHOUT` continue to return the live sender's ordinary self echo, but queued peer delivery skips that same zero-HP owner recipient under the current bootstrap routing rules

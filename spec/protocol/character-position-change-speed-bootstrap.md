@@ -82,6 +82,7 @@ After this slice:
 - accepted client `CHARACTER_POSITION(position=0|4)` emits self + visible-peer `GC CHARACTER_POSITION(selected_vid, position)` without mutating combat state,
 - accepted client `CHARACTER_POSITION(position=3)` emits the same ground-sit presentation as `position=4`,
 - duplicate stand/sit requests are accepted no-ops with no repeated presentation frame,
+- selected owners already at the bootstrap `0`-HP floor fail closed before any self or peer stance presentation frame,
 - unsupported position bytes still fail closed through the existing combat/targeting ingress guard,
 - `CHANGE_SPEED` remains documented but currently non-emitted by the bootstrap runtime,
 - later movement/combat presentation slices can start from tested packet shapes rather than guessing these layouts.

@@ -9941,6 +9941,25 @@ func TestGameSessionFlowRejectsInfoChatAfterDelayedRetaliationReachesOwnerHPFloo
 	}
 }
 
+func TestGameSessionFlowRejectsCharacterPositionAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
+	_, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
+	defer closeSessionFlow(t, ownerFlow)
+	defer closeSessionFlow(t, watcherFlow)
+
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, watcherFlow, targetVID, owner.VID, advance)
+
+	positionOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientCharacterPosition(combatproto.ClientCharacterPositionPacket{Position: bootstrapCharacterPositionSittingGround})))
+	if err != nil {
+		t.Fatalf("unexpected zero-HP owner character-position error: %v", err)
+	}
+	if len(positionOut) != 0 {
+		t.Fatalf("expected zero-HP owner character-position to fail closed, got %d frames", len(positionOut))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
+		t.Fatalf("expected zero-HP owner character-position to queue no peer frames, got %d", len(queued))
+	}
+}
+
 func TestGameSessionFlowRejectsNonTalkingSlashRestartAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
 	runtime, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
 	defer closeSessionFlow(t, ownerFlow)
