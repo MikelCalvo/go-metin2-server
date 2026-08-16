@@ -1569,6 +1569,95 @@ func TestGameRuntimeItemUseClosesActiveExchangeShellBeforeUseFrames(t *testing.T
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "peer active-exchange item-use")
 }
 
+func TestGameRuntimeItemDropRejectTextClosesActiveExchangeShellWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeDropRejectOwner", 0x010307a1, 0x020407a1, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 771, Vnum: 27045, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeDropRejectPeer", 0x010307a2, 0x020407a2, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerLogin := "exchange-drop-reject-owner"
+	peerLogin := "exchange-drop-reject-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070a1, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070a2, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange item-drop reject owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange item-drop reject peer account: %v", err)
+	}
+	template := itemcatalog.Template{
+		Vnum:           27045,
+		Name:           "Exchange Drop-Sealed Potion",
+		Stackable:      true,
+		MaxCount:       200,
+		AntiDrop:       true,
+		DropRejectText: "The seal prevents dropping this item while trading.",
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange item-drop reject runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070a1)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070a2)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected exchange item-drop reject start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected exchange item-drop reject start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "exchange item-drop reject owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected exchange item-drop reject peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "exchange item-drop reject peer start")
+
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop2(itemproto.ClientDrop2Packet{Position: itemproto.InventoryPosition(5), Count: 1})))
+	if err != nil {
+		t.Fatalf("unexpected active-exchange item-drop reject packet error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected active-exchange item-drop reject to emit exchange END plus info chat, got %d", len(out))
+	}
+	assertExchangeEndFrame(t, out[0], "active-exchange item-drop reject self close")
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode active-exchange item-drop reject info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != template.DropRejectText {
+		t.Fatalf("unexpected active-exchange item-drop reject info chat: %+v", infoChat)
+	}
+	queuedClose := flushServerFrames(t, peerFlow)
+	if len(queuedClose) != 1 {
+		t.Fatalf("expected active-exchange item-drop reject to queue one peer close frame, got %d", len(queuedClose))
+	}
+	assertExchangeEndFrame(t, queuedClose[0], "active-exchange item-drop reject peer close")
+
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected post-drop-reject exchange cancel error: %v", err)
+	}
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected post-drop-reject exchange cancel to emit no frames after the shell was closed, got %d", len(cancelOut))
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after post-drop-reject exchange cancel, got %d", len(queued))
+	}
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "owner active-exchange item-drop reject")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "peer active-exchange item-drop reject")
+}
+
 func TestGameRuntimeItemUseToItemClosesActiveExchangeShellBeforeStackMergeFrames(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

@@ -3260,7 +3260,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			if hasDropTemplate {
 				if message, ok := runtimeTemplateDropRejectText(dropTemplate, selectedPlayer); ok {
-					return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}, true
+					frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}
+					frames = prependExchangeCloseFrame(frames)
+					return frames, true
 				}
 				if !selectedPlayer.CanUseTemplate(dropTemplate) {
 					return nil, false
