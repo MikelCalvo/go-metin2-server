@@ -1274,6 +1274,50 @@ func TestRunApplyWritesConfirmedPlanSHA256IntoAuditFile(t *testing.T) {
 	}
 }
 
+func TestRunApplyWritesComputedPlanSHA256IntoAuditFile(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var planStdout bytes.Buffer
+	var planStderr bytes.Buffer
+	if code := Run([]string{"plan", "--ledger-snapshot", "-", "--target-version", "1"}, bytes.NewReader(rawSnapshot), &planStdout, &planStderr); code != 0 {
+		t.Fatalf("expected plan command for audited apply checksum to succeed, exit=%d stderr=%q", code, planStderr.String())
+	}
+	planSHA256 := testSHA256HexBytes(planStdout.Bytes())
+	auditPath := t.TempDir() + "/computed-plan-audit.json"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://computed-plan-audit", "--ledger-snapshot", "-", "--target-version", "1", "--audit-file", auditPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected audited apply to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	rawAudit, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("read computed-plan audit file: %v", err)
+	}
+	var audit struct {
+		PlanSHA256          string `json:"plan_sha256"`
+		ConfirmedPlanSHA256 string `json:"confirmed_plan_sha256"`
+	}
+	if err := json.Unmarshal(rawAudit, &audit); err != nil {
+		t.Fatalf("decode computed-plan audit JSON: %v\nbody:\n%s", err, string(rawAudit))
+	}
+	if audit.PlanSHA256 != planSHA256 {
+		t.Fatalf("expected audit to carry computed plan checksum %q, got %#v", planSHA256, audit)
+	}
+	if audit.ConfirmedPlanSHA256 != "" {
+		t.Fatalf("expected unconfirmed apply audit to leave confirmed_plan_sha256 empty, got %#v", audit)
+	}
+	body := string(rawAudit)
+	if strings.Contains(body, "memory://computed-plan-audit") || strings.Contains(body, "CREATE TABLE") || strings.Contains(body, "DROP TABLE") {
+		t.Fatalf("computed-plan audit file must stay metadata-only, got %s", body)
+	}
+}
+
 func TestRunApplyRejectsMismatchedPlanSHA256BeforeOpeningDatabase(t *testing.T) {
 	driverName := registerMigrateCLITestSQLDriver(t)
 	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})

@@ -40,7 +40,9 @@ The audit JSON uses format marker `go-metin2-migration-apply-audit-v1` and conta
 - `dsn_configured` boolean, never the DSN itself;
 - resolved numeric `target_version`;
 - whether the operator supplied `latest` as the target;
-- SHA-256 of the exact offline ledger-snapshot bytes supplied to this run;
+- `ledger_snapshot_sha256` — SHA-256 of the exact offline ledger-snapshot bytes supplied to this run;
+- `plan_sha256` — SHA-256 of the exact dry-run plan computed from that ledger snapshot and target;
+- optional `confirmed_plan_sha256` when the operator passed `--plan-sha256` or a matching `--plan-artifact`;
 - the same metadata-only `ApplyResult` written to stdout.
 
 The audit file never includes executable SQL text, migration SQL bodies, runtime store rows, or the supplied DSN.
@@ -70,6 +72,7 @@ Focused coverage in `internal/migratecli/migratecli_test.go` proves:
 
 - successful audited apply writes strict metadata-only audit JSON;
 - the audit result matches stdout metadata;
+- the audit records the computed `plan_sha256` and, when supplied, the confirmed plan checksum;
 - the supplied DSN and executable SQL are absent from the audit file;
 - no-op audited apply is rejected and writes no audit file;
 - existing audit files fail closed before opening the database;

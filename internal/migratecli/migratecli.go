@@ -595,6 +595,7 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 			DSNConfigured:        strings.TrimSpace(dsn) != "",
 			TargetVersion:        resolvedTarget,
 			TargetLatest:         targetLatest,
+			PlanSHA256:           gotPlanSHA256,
 			ConfirmedPlanSHA256:  confirmedPlanSHA256,
 			LedgerSnapshotSHA256: sha256Hex(rawLedger),
 			Result:               result,
@@ -623,6 +624,7 @@ type migrationApplyAudit struct {
 	DSNConfigured        bool                     `json:"dsn_configured"`
 	TargetVersion        int                      `json:"target_version"`
 	TargetLatest         bool                     `json:"target_latest"`
+	PlanSHA256           string                   `json:"plan_sha256"`
 	ConfirmedPlanSHA256  string                   `json:"confirmed_plan_sha256,omitempty"`
 	LedgerSnapshotSHA256 string                   `json:"ledger_snapshot_sha256"`
 	Result               dbmigrations.ApplyResult `json:"result"`

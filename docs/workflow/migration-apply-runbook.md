@@ -30,7 +30,7 @@ Keep these files together for each migration run:
 - `ledger_snapshot_sha256` — checksum over the exact offline ledger snapshot bytes;
 - `plan_sha256` — checksum over the exact reviewed dry-run plan bytes.
 
-Those two checksums let an operator correlate the preflight with the plan artifact and the later apply audit without storing executable SQL or DSNs in the audit trail.
+Those two checksums let an operator correlate the preflight with the plan artifact and the later apply audit without storing executable SQL or DSNs in the audit trail. `migration-apply-audit.json` records `plan_sha256` for the exact plan applied, `ledger_snapshot_sha256` for the exact ledger snapshot supplied to `apply`, and `confirmed_plan_sha256` when the run used `--plan-sha256` or `--plan-artifact`.
 
 ## Forward apply workflow
 
