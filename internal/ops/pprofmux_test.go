@@ -7418,6 +7418,110 @@ func TestLocalStaticActorContentStateExportEndpointReportsExporterFailure(t *tes
 	}
 }
 
+func TestLocalBootstrapGroundItemStateExportEndpointReturnsLoopbackJSON(t *testing.T) {
+	count := uint16(2)
+	gold := uint32(250)
+	exporter := &stubBootstrapGroundItemStateExporter{export: worldruntime.BootstrapGroundItemStateExport{
+		MigrationVersion: worldruntime.BootstrapGroundItemStateMigrationVersion,
+		MigrationName:    worldruntime.BootstrapGroundItemStateMigrationName,
+		GroundItems: []worldruntime.BootstrapGroundItemStateRow{
+			{VID: 0x0700002c, Vnum: 3001, ItemCount: &count, OwnerLogin: "ground-export-owner", OwnerCharacterID: 0x010301ad, OwnerVID: 0x020401ad, OwnerName: "GroundExportOwner", MapIndex: 1, X: 1200, Y: 2200, PickupRange: 450},
+			{VID: 0x0700002d, Vnum: 1, GoldAmount: &gold, OwnerLogin: "ground-export-owner", OwnerCharacterID: 0x010301ad, OwnerVID: 0x020401ad, OwnerName: "GroundExportOwner", MapIndex: 1, X: 1200, Y: 2200, PickupRange: 750},
+		},
+	}}
+	mux := RegisterLocalBootstrapGroundItemStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/ground-items/exports/bootstrap-ground-item-state", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if exporter.calls != 1 {
+		t.Fatalf("expected exporter to be called once, got %d", exporter.calls)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"migration_version":10`, `"migration_name":"bootstrap_ground_item_state"`, `"ground_items"`, `"vid":117440556`, `"item_count":2`, `"gold_amount":250`, `"pickup_range":750`, `"owner_login":"ground-export-owner"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected ground-item-state export body to contain %s, got %s", want, body)
+		}
+	}
+}
+
+func TestLocalBootstrapGroundItemStateExportEndpointWinsOverGroundItemSubtreeLookup(t *testing.T) {
+	exporter := &stubBootstrapGroundItemStateExporter{export: worldruntime.BootstrapGroundItemStateExport{MigrationVersion: worldruntime.BootstrapGroundItemStateMigrationVersion, MigrationName: worldruntime.BootstrapGroundItemStateMigrationName, GroundItems: []worldruntime.BootstrapGroundItemStateRow{}}}
+	mux := RegisterLocalGroundItemEndpoint(NewPprofMux("gamed"), func(uint32) (any, bool) {
+		t.Fatal("ground-item by-VID lookup should not handle the migration export route")
+		return nil, false
+	})
+	mux = RegisterLocalBootstrapGroundItemStateExportEndpoint(mux, exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/ground-items/exports/bootstrap-ground-item-state", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if exporter.calls != 1 {
+		t.Fatalf("expected exporter to be called once, got %d", exporter.calls)
+	}
+}
+
+func TestLocalBootstrapGroundItemStateExportEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	exporter := &stubBootstrapGroundItemStateExporter{export: worldruntime.BootstrapGroundItemStateExport{MigrationVersion: 10}}
+	mux := RegisterLocalBootstrapGroundItemStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/ground-items/exports/bootstrap-ground-item-state", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rec.Code)
+	}
+	if exporter.calls != 0 {
+		t.Fatalf("expected exporter not to be called, got %d", exporter.calls)
+	}
+}
+
+func TestLocalBootstrapGroundItemStateExportEndpointRejectsWrongMethod(t *testing.T) {
+	exporter := &stubBootstrapGroundItemStateExporter{export: worldruntime.BootstrapGroundItemStateExport{MigrationVersion: 10}}
+	mux := RegisterLocalBootstrapGroundItemStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/ground-items/exports/bootstrap-ground-item-state", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", rec.Code)
+	}
+	if exporter.calls != 0 {
+		t.Fatalf("expected exporter not to be called, got %d", exporter.calls)
+	}
+}
+
+func TestLocalBootstrapGroundItemStateExportEndpointReportsExporterFailure(t *testing.T) {
+	exporter := &stubBootstrapGroundItemStateExporter{err: errStubMigrationStatusInvalid}
+	mux := RegisterLocalBootstrapGroundItemStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/ground-items/exports/bootstrap-ground-item-state", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d", rec.Code)
+	}
+	if exporter.calls != 1 {
+		t.Fatalf("expected exporter to be called once, got %d", exporter.calls)
+	}
+}
+
 func TestNewPprofMuxDoesNotExposeLocalMigrationStatusByDefault(t *testing.T) {
 	mux := NewPprofMux("authd")
 
@@ -7434,6 +7538,8 @@ func TestNewPprofMuxDoesNotExposeLocalMigrationStatusByDefault(t *testing.T) {
 		{method: http.MethodGet, path: "/local/login-tickets/exports/auth-login-ticket-handoff"},
 		{method: http.MethodGet, path: "/local/quest-state/exports/character-quest-state"},
 		{method: http.MethodGet, path: "/local/item-templates/exports/item-template-state"},
+		{method: http.MethodGet, path: "/local/static-actors/exports/static-actor-content-state"},
+		{method: http.MethodGet, path: "/local/ground-items/exports/bootstrap-ground-item-state"},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			req := httptest.NewRequest(tc.method, tc.path, nil)
@@ -7530,6 +7636,12 @@ type stubStaticActorContentStateExporter struct {
 	calls  int
 }
 
+type stubBootstrapGroundItemStateExporter struct {
+	export worldruntime.BootstrapGroundItemStateExport
+	err    error
+	calls  int
+}
+
 var errStubMigrationStatusInvalid = errors.New("invalid migration status")
 
 func (p *stubMigrationStatusPlanner) Plan() (dbmigrations.Plan, error) {
@@ -7581,6 +7693,11 @@ func (e *stubItemTemplateStateExporter) Export() (itemstore.ItemTemplateStateExp
 }
 
 func (e *stubStaticActorContentStateExporter) Export() (staticstore.StaticActorContentStateExport, error) {
+	e.calls++
+	return e.export, e.err
+}
+
+func (e *stubBootstrapGroundItemStateExporter) Export() (worldruntime.BootstrapGroundItemStateExport, error) {
 	e.calls++
 	return e.export, e.err
 }

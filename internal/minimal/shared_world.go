@@ -2138,6 +2138,7 @@ func sharedGroundItemOccupancy(ground sharedGroundItem) worldruntime.GroundItemO
 		OwnerCharacterID: ground.OwnerCharacterID,
 		OwnerVID:         ground.OwnerVID,
 		GoldAmount:       ground.GoldAmount,
+		PickupRange:      ground.PickupRange,
 		MapIndex:         ground.MapIndex,
 		X:                ground.X,
 		Y:                ground.Y,

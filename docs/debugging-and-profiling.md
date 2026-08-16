@@ -396,6 +396,12 @@ Returns a loopback-only, read-only JSON projection of the committed authored sta
 
 Successful responses include `migration_version`, `migration_name`, deterministic `interaction_definitions`, `merchant_catalog_entries`, `static_actors`, and `reward_drops`. Missing committed static-actor or interaction-definition snapshots are exported as empty migration-shaped collections. Actor rows keep only the current authored content boundary (placement, race, optional interaction ref, optional spawn home/group/combat profile, and reward scalar fields), while ordered reward drops are emitted as child rows. The response deliberately omits executable SQL, account/item-instance rows, live runtime-only actor HP/respawn timers/combat targets, content-bundle import previews, and any database apply output; it does not mutate the JSON stores.
 
+### `GET /local/ground-items/exports/bootstrap-ground-item-state`
+
+Returns a loopback-only, read-only JSON projection of the currently pending live bootstrap ground handles onto the `0010_bootstrap_ground_item_state` migration boundary. This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if any live item-shaped or gold-shaped handle cannot be projected onto the schema shape.
+
+Successful responses include `migration_version`, `migration_name`, and deterministic `ground_items` rows sorted by visible ground `vid`. Item-shaped rows expose `item_count`; gold-shaped rows expose `gold_amount` and use the current bootstrap gold marker `vnum = 1`; both shapes expose owner identity, map position, and `pickup_range`. This projection reads live in-memory runtime state rather than a committed JSON store, deliberately omits executable SQL and database apply output, and does not make pending ground handles durable across restart. Use it as an operator/backfill preflight for the `0010` boundary before any future import, recovery, or DB-backed world-state repository work.
+
 ### `GET /local/runtime-config`
 
 Returns JSON describing the active bootstrap runtime selection. This endpoint is read-only, rejects non-`GET` methods with `405`, and exposes only the local runtime facts needed for AOI/debugging:
@@ -905,7 +911,7 @@ The `characters` array is sorted by name and each character uses the same effect
 Static actors are surfaced in the owned map snapshots as the current runtime expands beyond player-only visibility.
 Those static-actor entries now also expose `dead: true` while a runtime-owned practice mob is still dead before respawn.
 `spawn_group_count` and `spawn_groups` provide the deterministic per-map subset of those static actors whose `spawn_group_ref` is non-empty, using the same spawn-backed static-actor snapshot shape as `/local/spawn-groups`. This keeps attackable authored spawn presence inspectable from map occupancy without removing the actor from the full `static_actors` array.
-Temporary pending ground items are surfaced with their visible `vid`, `vnum`, optional `count`, optional display `owner_name`, owner identity (`owner_login`, `owner_character_id`, `owner_vid`), optional `gold_amount`, effective `map_index`, and `x/y/z` position so operator map snapshots show both connected actors and transient ground occupancy without losing the owned ground-entry identity used by stale-pickup guards.
+Temporary pending ground items are surfaced with their visible `vid`, `vnum`, optional `count`, optional display `owner_name`, owner identity (`owner_login`, `owner_character_id`, `owner_vid`), optional `gold_amount`, `pickup_range`, effective `map_index`, and `x/y/z` position so operator map snapshots show both connected actors and transient ground occupancy without losing the owned ground-entry identity used by stale-pickup guards.
 
 ### `GET /local/maps/{map_index}`
 
@@ -928,6 +934,7 @@ Each entry includes:
 - `owner_character_id`
 - `owner_vid`
 - `gold_amount` for gold-shaped ground rewards
+- `pickup_range`
 - `map_index`
 - `x`
 - `y`

@@ -4792,7 +4792,7 @@ func TestSharedWorldRegistryRegisterGroundGoldRejectsDuplicateVIDWithoutReplacin
 	}
 }
 
-func TestGameRuntimeGroundItemsReturnsDeterministicPendingGroundSnapshots(t *testing.T) {
+func TestGameRuntimeGroundItemsReturnsSortedPendingGroundSnapshotsIncludingMigrationPickupRange(t *testing.T) {
 	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), accountstore.NewFileStore(t.TempDir()))
 	if err != nil {
 		t.Fatalf("new game runtime: %v", err)
@@ -4803,10 +4803,10 @@ func TestGameRuntimeGroundItemsReturnsDeterministicPendingGroundSnapshots(t *tes
 		t.Fatal("expected ground snapshot owner join to allocate a shared-world entity id")
 	}
 
-	if !runtime.sharedWorld.RegisterGroundGold(ownerID, "ground-snapshot-owner", owner, 0x0700002d, 250) {
+	if !runtime.sharedWorld.RegisterGroundGoldWithPickupRange(ownerID, "ground-snapshot-owner", owner, 0x0700002d, 250, 750) {
 		t.Fatal("expected ground-gold registration to succeed")
 	}
-	if !runtime.sharedWorld.RegisterGroundItem(ownerID, "ground-snapshot-owner", owner, 0x0700002c, inventory.ItemInstance{ID: 0x3001002c, Vnum: 3001, Count: 2}) {
+	if !runtime.sharedWorld.RegisterGroundItemWithPickupRange(ownerID, "ground-snapshot-owner", owner, 0x0700002c, inventory.ItemInstance{ID: 0x3001002c, Vnum: 3001, Count: 2}, 450) {
 		t.Fatal("expected ground-item registration to succeed")
 	}
 
@@ -4814,10 +4814,10 @@ func TestGameRuntimeGroundItemsReturnsDeterministicPendingGroundSnapshots(t *tes
 	if len(snapshots) != 2 {
 		t.Fatalf("expected two pending ground snapshots, got %+v", snapshots)
 	}
-	if snapshots[0].VID != 0x0700002c || snapshots[0].Vnum != 3001 || snapshots[0].Count != 2 || snapshots[0].OwnerName != owner.Name || snapshots[0].OwnerLogin != "ground-snapshot-owner" || snapshots[0].OwnerCharacterID != owner.ID || snapshots[0].OwnerVID != owner.VID || snapshots[0].MapIndex != bootstrapMapIndex || snapshots[0].X != owner.X || snapshots[0].Y != owner.Y {
+	if snapshots[0].VID != 0x0700002c || snapshots[0].Vnum != 3001 || snapshots[0].Count != 2 || snapshots[0].OwnerName != owner.Name || snapshots[0].OwnerLogin != "ground-snapshot-owner" || snapshots[0].OwnerCharacterID != owner.ID || snapshots[0].OwnerVID != owner.VID || snapshots[0].PickupRange != 450 || snapshots[0].MapIndex != bootstrapMapIndex || snapshots[0].X != owner.X || snapshots[0].Y != owner.Y {
 		t.Fatalf("unexpected item-shaped ground snapshot: %+v", snapshots[0])
 	}
-	if snapshots[1].VID != 0x0700002d || snapshots[1].GoldAmount != 250 || snapshots[1].Count != 0 || snapshots[1].OwnerName != owner.Name || snapshots[1].OwnerLogin != "ground-snapshot-owner" || snapshots[1].OwnerCharacterID != owner.ID || snapshots[1].OwnerVID != owner.VID || snapshots[1].MapIndex != bootstrapMapIndex || snapshots[1].X != owner.X || snapshots[1].Y != owner.Y {
+	if snapshots[1].VID != 0x0700002d || snapshots[1].GoldAmount != 250 || snapshots[1].Count != 0 || snapshots[1].OwnerName != owner.Name || snapshots[1].OwnerLogin != "ground-snapshot-owner" || snapshots[1].OwnerCharacterID != owner.ID || snapshots[1].OwnerVID != owner.VID || snapshots[1].PickupRange != 750 || snapshots[1].MapIndex != bootstrapMapIndex || snapshots[1].X != owner.X || snapshots[1].Y != owner.Y {
 		t.Fatalf("unexpected gold-shaped ground snapshot: %+v", snapshots[1])
 	}
 

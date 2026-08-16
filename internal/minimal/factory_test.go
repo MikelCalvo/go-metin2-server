@@ -325,6 +325,43 @@ func TestGameRuntimeItemTemplateStateExportProjectsCommittedSnapshot(t *testing.
 	}
 }
 
+func TestGameRuntimeBootstrapGroundItemStateExportProjectsPendingGroundHandles(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), accountstore.NewFileStore(t.TempDir()))
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	owner := peerVisibilityCharacter("GroundExportOwner", 0x010301ad, 0x020401ad, 1200, 2200, 0, 101, 201)
+	ownerID, _ := runtime.sharedWorld.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected ground export owner join to allocate a shared-world entity id")
+	}
+	if !runtime.sharedWorld.RegisterGroundItemWithPickupRange(ownerID, "ground-export-owner", owner, 0x0700003c, inventory.ItemInstance{ID: 0x3001003c, Vnum: 3001, Count: 2}, 450) {
+		t.Fatal("expected ground-item registration to succeed")
+	}
+	if !runtime.sharedWorld.RegisterGroundGoldWithPickupRange(ownerID, "ground-export-owner", owner, 0x0700003d, 250, 750) {
+		t.Fatal("expected ground-gold registration to succeed")
+	}
+
+	export, err := runtime.ExportBootstrapGroundItemState()
+	if err != nil {
+		t.Fatalf("runtime bootstrap ground-item-state export: %v", err)
+	}
+	if export.MigrationVersion != worldruntime.BootstrapGroundItemStateMigrationVersion || export.MigrationName != worldruntime.BootstrapGroundItemStateMigrationName {
+		t.Fatalf("unexpected migration boundary: %#v", export)
+	}
+	if len(export.GroundItems) != 2 {
+		t.Fatalf("expected two ground rows, got %#v", export.GroundItems)
+	}
+	itemRow := export.GroundItems[0]
+	if itemRow.VID != 0x0700003c || itemRow.Vnum != 3001 || itemRow.ItemCount == nil || *itemRow.ItemCount != 2 || itemRow.GoldAmount != nil || itemRow.OwnerLogin != "ground-export-owner" || itemRow.OwnerName != owner.Name || itemRow.PickupRange != 450 {
+		t.Fatalf("unexpected item-shaped ground export row: %#v", itemRow)
+	}
+	goldRow := export.GroundItems[1]
+	if goldRow.VID != 0x0700003d || goldRow.Vnum != 1 || goldRow.GoldAmount == nil || *goldRow.GoldAmount != 250 || goldRow.ItemCount != nil || goldRow.OwnerLogin != "ground-export-owner" || goldRow.OwnerName != owner.Name || goldRow.PickupRange != 750 {
+		t.Fatalf("unexpected gold-shaped ground export row: %#v", goldRow)
+	}
+}
+
 func TestGameRuntimeStaticActorContentStateExportProjectsCommittedSnapshots(t *testing.T) {
 	staticActors := staticstore.NewFileStore(filepath.Join(t.TempDir(), "state", "static-actors.json"))
 	interactions := interactionstore.NewFileStore(filepath.Join(t.TempDir(), "state", "interaction-definitions.json"))

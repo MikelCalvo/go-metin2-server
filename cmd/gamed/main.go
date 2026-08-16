@@ -246,6 +246,10 @@ func main() {
 		opsHandler,
 		gameRuntime.ExportStaticActorContentState,
 	)
+	opsHandler = ops.RegisterLocalBootstrapGroundItemStateExportEndpoint(
+		opsHandler,
+		gameRuntime.ExportBootstrapGroundItemState,
+	)
 	opsHandler = ops.RegisterLocalStaticActorRespawnsEndpoint(
 		opsHandler,
 		func() any { return gameRuntime.StaticActorRespawns() },

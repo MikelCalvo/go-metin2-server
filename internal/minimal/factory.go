@@ -1094,6 +1094,13 @@ func (r *gameRuntime) ExportStaticActorContentState() (staticstore.StaticActorCo
 	return staticstore.ExportStaticActorContentStateFromStores(r.staticStore, r.interactionStore)
 }
 
+func (r *gameRuntime) ExportBootstrapGroundItemState() (worldruntime.BootstrapGroundItemStateExport, error) {
+	if r == nil {
+		return worldruntime.ExportBootstrapGroundItemState(nil)
+	}
+	return worldruntime.ExportBootstrapGroundItemState(r.GroundItems())
+}
+
 func (r *gameRuntime) flushReadyStaticActorRespawns() {
 	if r == nil || r.sharedWorld == nil {
 		return

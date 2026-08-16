@@ -92,6 +92,7 @@ type GroundItemSnapshot struct {
 	OwnerCharacterID uint32 `json:"owner_character_id,omitempty"`
 	OwnerVID         uint32 `json:"owner_vid,omitempty"`
 	GoldAmount       uint32 `json:"gold_amount,omitempty"`
+	PickupRange      int64  `json:"pickup_range,omitempty"`
 	MapIndex         uint32 `json:"map_index"`
 	X                int32  `json:"x"`
 	Y                int32  `json:"y"`

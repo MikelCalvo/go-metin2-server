@@ -1285,6 +1285,27 @@ func RegisterLocalStaticActorContentStateExportEndpoint(mux *http.ServeMux, expo
 	return mux
 }
 
+func RegisterLocalBootstrapGroundItemStateExportEndpoint(mux *http.ServeMux, exportGroundItems func() (worldruntime.BootstrapGroundItemStateExport, error)) *http.ServeMux {
+	if mux == nil || exportGroundItems == nil {
+		return mux
+	}
+
+	mux.HandleFunc("GET /local/ground-items/exports/bootstrap-ground-item-state", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		export, err := exportGroundItems()
+		if err != nil {
+			slog.Warn("local bootstrap ground-item-state export failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, export, http.StatusOK)
+	})
+	return mux
+}
+
 func decodeLocalMigrationPlanTarget(r *http.Request) (int, bool) {
 	rawTargets := r.URL.Query()["target_version"]
 	if len(rawTargets) != 1 {

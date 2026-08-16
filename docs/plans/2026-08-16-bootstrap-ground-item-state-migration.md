@@ -31,9 +31,17 @@ The migration also adds:
 
 The down migration drops only `bootstrap_ground_items`.
 
+## Read-only live export follow-up
+
+A later persistence-lane slice added a loopback-only read-only export for currently pending runtime ground handles:
+
+- `GET /local/ground-items/exports/bootstrap-ground-item-state`
+
+The export projects live item-shaped and gold-shaped ground snapshots onto the `0010_bootstrap_ground_item_state` row shape with `migration_version`, `migration_name`, and deterministic `ground_items` ordered by visible `vid`. It fails closed if any live handle cannot target the migration schema and includes the schema-owned pickup reach so operator/backfill tooling can inspect exactly the fields `0010` froze.
+
 ## What this is not yet
 
-This slice deliberately does not add:
+These slices deliberately do not add:
 
 - a DB-backed ground-item repository;
 - process-restart restoration of pending ground handles;
@@ -41,10 +49,10 @@ This slice deliberately does not add:
 - public ownership release policy;
 - party loot ownership tables;
 - item sockets/bonuses for ground entries;
-- a JSON export/import/backfill tool for live ground handles;
+- import/backfill execution tooling for live ground handles;
 - any daemon-local mutating migration endpoint.
 
-The shipped runtime still keeps pending bootstrap ground handles in memory. `0010` is a durable schema contract and planning/checksum boundary only.
+The shipped runtime still keeps pending bootstrap ground handles in memory. `0010` is a durable schema contract, planning/checksum boundary, and now a read-only migration-shaped export only.
 
 ## Why this order
 
@@ -74,7 +82,7 @@ Validation for this slice:
 
 ## Follow-up options
 
-1. Add a read-only migration-shaped export for currently pending runtime ground handles only if there is a stable operator need for live-state capture.
-2. Add crash/restart recovery for pending ground entries only after deciding whether in-memory bootstrap handles should survive process restart at all.
+1. Add crash/restart recovery for pending ground entries only after deciding whether in-memory bootstrap handles should survive process restart at all.
+2. Add import/backfill execution tooling only after the live export has a quarantine/validation policy.
 3. Add ownership timer/public-release columns in a separate migration once timer semantics are owned.
 4. Keep DB apply/rollback surfaces CLI-only and daemon ops endpoints read-only unless a future production-admin design explicitly changes that boundary.
