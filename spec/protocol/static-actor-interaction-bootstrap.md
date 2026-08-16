@@ -91,7 +91,7 @@ The currently implemented bootstrap interaction families remain conservative:
 - the actor must not be in the runtime-owned dead interval; dead interactable actors remain visible/introspectable but resolve `INTERACT` as the fail-closed `target_dead` path until respawn
 - the runtime resolves `interaction_kind` + `interaction_ref`
 - `info` and `talk` remain self-facing chat-backed responses
-- `quest_flag` runs one compare-and-set transition against the selected character's persisted quest-state flags and returns one self-facing info-chat acknowledgement only when the transition applies
+- `quest_flag` runs one compare-and-set transition against the selected character's persisted quest-state flags, returns one self-facing info-chat acknowledgement when the transition applies, and now returns a deterministic self-facing requirement-mismatch info chat when the persisted current value does not match the authored `quest_from` value
 - `warp` reuses the existing self-session transfer / rebootstrap path instead of inventing a separate dialog or warp packet family
 - `shop_preview` reuses the structured merchant catalog plus the current bootstrap merchant window open / buy / close contract instead of inventing a second merchant-definition seam
 - no broader quest scripting, barter, reward, or combat side effects are required; the standalone quest-state primitive and loopback transition harness remain documented in `quest-state-bootstrap.md`
@@ -104,7 +104,7 @@ Current owned meanings:
 - `interaction_kind = "talk"`
   - return a simple self-facing talk/dialog-style response carrying a deterministic speaker-prefixed multi-line payload
 - `interaction_kind = "quest_flag"`
-  - resolve a content-authored quest-state trigger using the existing `INTERACT` ingress, apply exactly one selected-character compare-and-set flag transition, and return one self-only `CHAT_TYPE_INFO` acknowledgement only on success
+  - resolve a content-authored quest-state trigger using the existing `INTERACT` ingress, apply exactly one selected-character compare-and-set flag transition, return one self-only `CHAT_TYPE_INFO` acknowledgement on success, and return self-only `Quest requirements are not met.` info chat on `current_value_mismatch` without mutating the quest-state snapshot
 - `interaction_kind = "warp"`
   - resolve a teleporter-style service interaction using the existing `INTERACT` ingress and the existing transfer / rebootstrap runtime rather than a dedicated dialog or warp packet family
 - `interaction_kind = "shop_preview"`

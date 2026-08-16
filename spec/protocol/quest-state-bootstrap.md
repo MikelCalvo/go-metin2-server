@@ -135,9 +135,10 @@ Runtime behavior:
 2. the actor's metadata must resolve to a valid `quest_flag` definition,
 3. `gamed` applies the transition to the selected character name through the same quest-state store primitive used by `/local/quest-state/transition`,
 4. if and only if the transition applies, the client receives one self-only `GC_CHAT` with `type = INFO`, `vid = 0`, `empire = 0`, and `message = definition.text`,
-5. failed compare-and-set outcomes or store errors fail closed with no frames and no peer fanout.
+5. when the compare-and-set result is `current_value_mismatch`, the quest-state snapshot remains unchanged and the client now receives one self-only `GC_CHAT` with `type = INFO`, `vid = 0`, `empire = 0`, and `message = "Quest requirements are not met."`,
+6. invalid transition definitions, store errors, unsupported content, and other non-CAS failures still fail closed with no frames and no peer fanout.
 
-This is still a bootstrap quest-state trigger, not a client quest UI, reward system, branching dialog tree, or script runtime.
+This is still a bootstrap quest-state trigger, not a client quest UI, reward system, branching dialog tree, or script runtime. The mismatch acknowledgement exists only so player-visible authored-state failures are not silent; it does not expose a quest window, reward, objective tracker, or alternate branch.
 
 ## Runtime configuration and local ops
 

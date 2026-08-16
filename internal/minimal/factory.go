@@ -225,11 +225,12 @@ type StaticActorRespawnSnapshot struct {
 }
 
 const (
-	staticActorInteractionFailureDefinitionNotFound     = "interaction_definition_not_found"
-	staticActorInteractionFailureUnsupportedKind        = "unsupported_interaction_kind"
-	staticActorInteractionFailureWarpDestinationInvalid = "warp_destination_invalid"
-	staticActorInteractionFailureWarpNotApplied         = "warp_not_applied"
-	staticActorInteractionCooldown                      = time.Second
+	staticActorInteractionFailureDefinitionNotFound        = "interaction_definition_not_found"
+	staticActorInteractionFailureUnsupportedKind           = "unsupported_interaction_kind"
+	staticActorInteractionFailureWarpDestinationInvalid    = "warp_destination_invalid"
+	staticActorInteractionFailureWarpNotApplied            = "warp_not_applied"
+	staticActorInteractionFailureQuestCurrentValueMismatch = "quest_current_value_mismatch"
+	staticActorInteractionCooldown                         = time.Second
 )
 
 type staticActorInteractionResolution struct {
@@ -4810,8 +4811,20 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.InteractionResult{Accepted: false}
 						}
 						transitionResult, err := runtime.ApplyQuestStateTransition(queststate.Transition{Character: selected.Name, QuestRef: resolution.Definition.QuestRef, Flag: resolution.Definition.QuestFlag, From: resolution.Definition.QuestFrom, To: resolution.Definition.QuestTo})
-						if err != nil || !transitionResult.Result.Applied {
+						if err != nil {
 							return gameflow.InteractionResult{Accepted: false}
+						}
+						if !transitionResult.Result.Applied {
+							if transitionResult.Result.Reason != queststate.TransitionReasonCurrentValueMismatch {
+								return gameflow.InteractionResult{Accepted: false}
+							}
+							failureDelivery := staticActorInteractionFailureDelivery(staticActorInteractionFailureQuestCurrentValueMismatch)
+							if failureDelivery == nil {
+								return gameflow.InteractionResult{Accepted: false}
+							}
+							clearActiveMerchantBuy()
+							markInteractionCooldown(packet.TargetVID)
+							return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(*failureDelivery)}}
 						}
 						clearActiveMerchantBuy()
 						markInteractionCooldown(packet.TargetVID)
@@ -7989,6 +8002,8 @@ func staticActorInteractionFailureMessage(failure string) (string, bool) {
 		return "Warp destination is invalid.", true
 	case staticActorInteractionFailureWarpNotApplied:
 		return "Warp unavailable right now.", true
+	case staticActorInteractionFailureQuestCurrentValueMismatch:
+		return "Quest requirements are not met.", true
 	default:
 		return "", false
 	}

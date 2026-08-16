@@ -27819,6 +27819,65 @@ func TestGameSessionFlowStaticActorQuestFlagInteractionPersistsQuestStateAndRetu
 	}
 }
 
+func TestGameSessionFlowStaticActorQuestFlagMismatchReturnsSelfOnlyInfoWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	peer := peerVisibilityCharacter("QuestHero", 0x01030102, 0x02040102, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, ticketStore, "quest-hero-mismatch", 0x12121212, peer)
+	before := queststate.Snapshot{Flags: []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "met_guide", Value: 1}}}
+	if err := queststate.NewFileStore(questStatePath).Save(before); err != nil {
+		t.Fatalf("seed quest-state mismatch snapshot: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+		Kind:      interactionstore.KindQuestFlag,
+		Ref:       "quest:first_steps",
+		Text:      "You have met the village guide.",
+		QuestRef:  "quest:first_steps",
+		QuestFlag: "met_guide",
+		QuestFrom: 0,
+		QuestTo:   2,
+	}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, ticketStore, nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected quest-flag mismatch runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("VillageGuide", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindQuestFlag, "quest:first_steps")
+	if !ok {
+		t.Fatal("expected quest-flag static actor registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "quest-hero-mismatch", 0x12121212)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible quest-flag actor, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected quest-flag mismatch interaction error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 self-only quest-flag mismatch frame, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode quest-flag mismatch chat delivery: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != "Quest requirements are not met." {
+		t.Fatalf("unexpected quest-flag mismatch chat delivery: %+v", delivery)
+	}
+	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	if err != nil {
+		t.Fatalf("load quest-state after quest-flag mismatch: %v", err)
+	}
+	if !reflect.DeepEqual(loaded, before) {
+		t.Fatalf("quest-flag mismatch mutated quest-state:\n got: %#v\nwant: %#v", loaded, before)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for self-only quest-flag mismatch, got %d", len(queued))
+	}
+}
+
 func TestGameRuntimeResolveStaticActorTalkInteractionReturnsChatDelivery(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
