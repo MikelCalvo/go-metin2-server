@@ -244,6 +244,207 @@ func TestRunPlanArtifactOutputCanFeedApplyPlanConfirmation(t *testing.T) {
 	}
 }
 
+func TestRunApplyPreflightValidatesPlanArtifactWithoutOpeningDatabase(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var artifactStdout bytes.Buffer
+	var artifactStderr bytes.Buffer
+	if code := Run([]string{"plan-artifact", "--ledger-snapshot", "-", "--target-version", "1"}, bytes.NewReader(rawSnapshot), &artifactStdout, &artifactStderr); code != 0 {
+		t.Fatalf("expected plan-artifact command to succeed, exit=%d stderr=%q", code, artifactStderr.String())
+	}
+	var artifact migrationPlanArtifact
+	if err := json.Unmarshal(artifactStdout.Bytes(), &artifact); err != nil {
+		t.Fatalf("decode plan artifact JSON: %v\nbody:\n%s", err, artifactStdout.String())
+	}
+	artifactPath := t.TempDir() + "/migration-plan-artifact.json"
+	if err := os.WriteFile(artifactPath, artifactStdout.Bytes(), 0o600); err != nil {
+		t.Fatalf("write plan artifact: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-preflight", "--ledger-snapshot", "-", "--target-version", "1", "--plan-artifact", artifactPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected apply-preflight to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr on successful apply-preflight, got %q", stderr.String())
+	}
+	var got struct {
+		Format        string            `json:"format"`
+		TargetVersion int               `json:"target_version"`
+		TargetLatest  bool              `json:"target_latest"`
+		PlanSHA256    string            `json:"plan_sha256"`
+		Plan          dbmigrations.Plan `json:"plan"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode apply-preflight JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if got.Format != "go-metin2-migration-apply-preflight-v1" {
+		t.Fatalf("unexpected apply-preflight format: %#v", got)
+	}
+	if got.TargetVersion != 1 || got.TargetLatest || got.PlanSHA256 != artifact.PlanSHA256 {
+		t.Fatalf("unexpected apply-preflight metadata: %#v", got)
+	}
+	if got.Plan.CurrentVersion != 0 || got.Plan.LatestVersion < 1 || len(got.Plan.Pending) != 1 || got.Plan.Pending[0].Direction != dbmigrations.DirectionUp {
+		t.Fatalf("unexpected apply-preflight plan: %#v", got.Plan)
+	}
+	for _, forbidden := range []string{"CREATE TABLE", "DROP TABLE", "-- go-metin2 migration", "memory://"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("apply-preflight output must stay metadata-only, stdout=%q stderr=%q", stdout.String(), stderr.String())
+		}
+	}
+	if gotEvents := currentMigrateCLITestDriver(t).eventsSnapshot(); len(gotEvents) != 0 {
+		t.Fatalf("apply-preflight must not open a database target, got events %#v", gotEvents)
+	}
+}
+
+func TestRunApplyPreflightRejectsRollbackWithoutConfirmationBeforeOpeningDatabase(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	catalog, err := dbmigrations.Catalog()
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	applied := []dbmigrations.LedgerEntry{{Version: catalog[0].Version, Name: catalog[0].Name, UpSHA256: catalog[0].UpSHA256}}
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot(applied)
+	if err != nil {
+		t.Fatalf("marshal rollback ledger snapshot: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-preflight", "--ledger-snapshot", "-", "--target-version", "0"}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected unconfirmed rollback apply-preflight to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected unconfirmed rollback apply-preflight not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "--allow-rollback") {
+		t.Fatalf("expected rollback apply-preflight direction acknowledgement guidance, got %q", stderr.String())
+	}
+	if got := currentMigrateCLITestDriver(t).eventsSnapshot(); len(got) != 0 {
+		t.Fatalf("expected rollback apply-preflight guard before opening database, got events %#v", got)
+	}
+}
+
+func TestRunApplyPreflightAcceptsConfirmedRollbackPlanArtifactWithoutOpeningDatabase(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	catalog, err := dbmigrations.Catalog()
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	applied := []dbmigrations.LedgerEntry{{Version: catalog[0].Version, Name: catalog[0].Name, UpSHA256: catalog[0].UpSHA256}}
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot(applied)
+	if err != nil {
+		t.Fatalf("marshal rollback ledger snapshot: %v", err)
+	}
+	var artifactStdout bytes.Buffer
+	var artifactStderr bytes.Buffer
+	if code := Run([]string{"plan-artifact", "--ledger-snapshot", "-", "--target-version", "0"}, bytes.NewReader(rawSnapshot), &artifactStdout, &artifactStderr); code != 0 {
+		t.Fatalf("expected rollback plan-artifact command, exit=%d stderr=%q", code, artifactStderr.String())
+	}
+	artifactPath := t.TempDir() + "/rollback-plan-artifact.json"
+	if err := os.WriteFile(artifactPath, artifactStdout.Bytes(), 0o600); err != nil {
+		t.Fatalf("write rollback plan artifact: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-preflight", "--ledger-snapshot", "-", "--target-version", "0", "--plan-artifact", artifactPath, "--allow-rollback"}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected confirmed rollback apply-preflight to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	var got struct {
+		Format        string            `json:"format"`
+		TargetVersion int               `json:"target_version"`
+		TargetLatest  bool              `json:"target_latest"`
+		PlanSHA256    string            `json:"plan_sha256"`
+		Plan          dbmigrations.Plan `json:"plan"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode rollback apply-preflight JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if got.Format != "go-metin2-migration-apply-preflight-v1" || got.TargetVersion != 0 || got.TargetLatest {
+		t.Fatalf("unexpected rollback apply-preflight metadata: %#v", got)
+	}
+	if len(got.Plan.Pending) != 1 || got.Plan.Pending[0].Direction != dbmigrations.DirectionDown {
+		t.Fatalf("expected one down migration in rollback apply-preflight, got %#v", got.Plan)
+	}
+	if gotEvents := currentMigrateCLITestDriver(t).eventsSnapshot(); len(gotEvents) != 0 {
+		t.Fatalf("confirmed rollback apply-preflight must not open a database target, got events %#v", gotEvents)
+	}
+}
+
+func TestRunApplyPreflightRejectsPlanArtifactAndPlanSHA256TogetherAsUsageError(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	artifactPath := t.TempDir() + "/unused-plan-artifact.json"
+	if err := os.WriteFile(artifactPath, []byte(`{"format":"unused"}`), 0o600); err != nil {
+		t.Fatalf("write unused artifact: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-preflight", "--ledger-snapshot", "-", "--target-version", "1", "--plan-sha256", strings.Repeat("0", 64), "--plan-artifact", artifactPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 2 {
+		t.Fatalf("expected plan artifact plus checksum to exit 2, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected apply-preflight usage error not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "--plan-sha256 and --plan-artifact cannot be used together") {
+		t.Fatalf("expected mutually exclusive plan confirmation guidance, got %q", stderr.String())
+	}
+	if got := currentMigrateCLITestDriver(t).eventsSnapshot(); len(got) != 0 {
+		t.Fatalf("expected apply-preflight usage guard before opening DB, got events %#v", got)
+	}
+}
+
+func TestRunApplyPreflightRejectsMismatchedPlanArtifact(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var artifactStdout bytes.Buffer
+	var artifactStderr bytes.Buffer
+	if code := Run([]string{"plan-artifact", "--ledger-snapshot", "-", "--target-version", "0"}, bytes.NewReader(rawSnapshot), &artifactStdout, &artifactStderr); code != 0 {
+		t.Fatalf("expected mismatched plan-artifact command to succeed, exit=%d stderr=%q", code, artifactStderr.String())
+	}
+	artifactPath := t.TempDir() + "/mismatched-plan-artifact.json"
+	if err := os.WriteFile(artifactPath, artifactStdout.Bytes(), 0o600); err != nil {
+		t.Fatalf("write mismatched plan artifact: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-preflight", "--ledger-snapshot", "-", "--target-version", "1", "--plan-artifact", artifactPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected mismatched plan artifact to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected mismatched plan artifact not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "plan artifact does not match") {
+		t.Fatalf("expected plan artifact mismatch guidance, got %q", stderr.String())
+	}
+	if got := currentMigrateCLITestDriver(t).eventsSnapshot(); len(got) != 0 {
+		t.Fatalf("expected apply-preflight artifact mismatch guard before opening DB, got events %#v", got)
+	}
+}
+
 func TestRunApplyAcceptsPlanArtifactBeforeMutation(t *testing.T) {
 	driverName := registerMigrateCLITestSQLDriver(t)
 	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})

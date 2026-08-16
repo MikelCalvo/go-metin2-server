@@ -31,16 +31,16 @@ const (
 )
 
 // Run executes the small migration preflight CLI and returns a process-style exit
-// code. The catalog, status, empty-ledger-snapshot, ledger-snapshot, plan, and
-// plan-artifact commands are read-only. The apply command is an explicit CLI-only
-// mutation surface: it requires an operator-supplied database driver, DSN, strict
-// offline ledger snapshot, and target version, and it remains deliberately
-// separate from daemon startup and local ops endpoints. Rollback/down plans must
-// be explicitly confirmed with --allow-rollback plus either --plan-sha256 or
-// --plan-artifact. Operators can optionally require a previously inspected plan
-// checksum or plan artifact, reserve an exclusive local lock file before opening
-// the database, and request an exclusive metadata-only audit file for non-empty
-// apply plans.
+// code. The catalog, status, empty-ledger-snapshot, ledger-snapshot, plan,
+// plan-artifact, and apply-preflight commands are read-only. The apply command is
+// an explicit CLI-only mutation surface: it requires an operator-supplied
+// database driver, DSN, strict offline ledger snapshot, and target version, and it
+// remains deliberately separate from daemon startup and local ops endpoints.
+// Rollback/down plans must be explicitly confirmed with --allow-rollback plus
+// either --plan-sha256 or --plan-artifact. Operators can optionally require a
+// previously inspected plan checksum or plan artifact, reserve an exclusive local
+// lock file before opening the database, and request an exclusive metadata-only
+// audit file for non-empty apply plans.
 func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	if stdout == nil {
 		stdout = io.Discard
@@ -67,6 +67,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runPlan(args[1:], stdin, stdout, stderr)
 	case "plan-artifact":
 		return runPlanArtifact(args[1:], stdin, stdout, stderr)
+	case "apply-preflight":
+		return runApplyPreflight(args[1:], stdin, stdout, stderr)
 	case "empty-ledger-snapshot":
 		return runEmptyLedgerSnapshot(args[1:], stdout, stderr)
 	case "ledger-snapshot":
@@ -211,10 +213,20 @@ func runPlan(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer)
 
 const migrationPlanArtifactFormat = "go-metin2-migration-plan-artifact-v1"
 
+const migrationApplyPreflightFormat = "go-metin2-migration-apply-preflight-v1"
+
 type migrationPlanArtifact struct {
 	Format     string            `json:"format"`
 	PlanSHA256 string            `json:"plan_sha256"`
 	Plan       dbmigrations.Plan `json:"plan"`
+}
+
+type migrationApplyPreflight struct {
+	Format        string            `json:"format"`
+	TargetVersion int               `json:"target_version"`
+	TargetLatest  bool              `json:"target_latest"`
+	PlanSHA256    string            `json:"plan_sha256"`
+	Plan          dbmigrations.Plan `json:"plan"`
 }
 
 func runPlanArtifact(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
@@ -231,6 +243,128 @@ func runPlanArtifact(args []string, stdin io.Reader, stdout io.Writer, stderr io
 		Format:     migrationPlanArtifactFormat,
 		PlanSHA256: planSHA256,
 		Plan:       plan,
+	})
+}
+
+func runApplyPreflight(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
+	flags := flag.NewFlagSet("apply-preflight", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	var snapshotPath string
+	var targetVersionText string
+	var planSHA256Text string
+	var planArtifactPath string
+	var allowRollback bool
+	flags.StringVar(&snapshotPath, "ledger-snapshot", "", "path to go-metin2 schema_migrations ledger snapshot JSON, or - for stdin")
+	flags.StringVar(&targetVersionText, "target-version", "", "catalog target version to preflight for apply")
+	flags.StringVar(&planSHA256Text, "plan-sha256", "", "optional SHA-256 of the metadata-only dry-run plan JSON that must match")
+	flags.StringVar(&planArtifactPath, "plan-artifact", "", "optional path to a metadata-only migration plan artifact that must match")
+	flags.BoolVar(&allowRollback, "allow-rollback", false, "allow preflight of down/rollback migration steps")
+	flags.Usage = func() { printApplyPreflightUsage(stderr) }
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintf(stderr, "unexpected apply-preflight argument %q\n", flags.Arg(0))
+		printApplyPreflightUsage(stderr)
+		return exitUsage
+	}
+	if strings.TrimSpace(snapshotPath) == "" {
+		fmt.Fprintln(stderr, "--ledger-snapshot is required for apply-preflight")
+		printApplyPreflightUsage(stderr)
+		return exitUsage
+	}
+	if strings.TrimSpace(targetVersionText) == "" {
+		fmt.Fprintln(stderr, "missing --target-version")
+		printApplyPreflightUsage(stderr)
+		return exitUsage
+	}
+	targetVersion, targetLatest, err := parseTargetVersion(targetVersionText)
+	if err != nil {
+		fmt.Fprintf(stderr, "invalid --target-version %q: %v\n", targetVersionText, err)
+		return exitUsage
+	}
+	resolvedTarget, err := resolveTargetVersion(targetVersion, targetLatest)
+	if err != nil {
+		fmt.Fprintf(stderr, "migration apply-preflight: %v\n", err)
+		return exitError
+	}
+	confirmedPlanSHA256 := ""
+	trimmedPlanSHA256 := strings.TrimSpace(planSHA256Text)
+	trimmedPlanArtifactPath := strings.TrimSpace(planArtifactPath)
+	if trimmedPlanSHA256 != "" && trimmedPlanArtifactPath != "" {
+		fmt.Fprintln(stderr, "--plan-sha256 and --plan-artifact cannot be used together")
+		printApplyPreflightUsage(stderr)
+		return exitUsage
+	}
+	if trimmedPlanSHA256 != "" {
+		confirmedPlanSHA256, err = parsePlanSHA256(trimmedPlanSHA256)
+		if err != nil {
+			fmt.Fprintf(stderr, "invalid --plan-sha256 %q: %v\n", planSHA256Text, err)
+			return exitUsage
+		}
+	}
+
+	reader, closeReader, err := openLedgerSnapshotReader(snapshotPath, stdin)
+	if err != nil {
+		fmt.Fprintf(stderr, "open ledger snapshot: %v\n", err)
+		return exitError
+	}
+	if closeReader != nil {
+		defer closeReader()
+	}
+
+	rawLedger, err := readBoundedLedgerSnapshot(reader)
+	if err != nil {
+		fmt.Fprintf(stderr, "migration apply-preflight: %v\n", err)
+		return exitError
+	}
+	ledger, err := dbmigrations.ReadJSONLedgerSnapshot(bytes.NewReader(rawLedger))
+	if err != nil {
+		fmt.Fprintf(stderr, "migration apply-preflight: %v\n", err)
+		return exitError
+	}
+	plan, err := dbmigrations.PlanToVersion(ledger, resolvedTarget)
+	if err != nil {
+		fmt.Fprintf(stderr, "migration apply-preflight: %v\n", err)
+		return exitError
+	}
+	gotPlanSHA256, err := planSHA256(plan)
+	if err != nil {
+		fmt.Fprintf(stderr, "migration apply-preflight: %v\n", err)
+		return exitError
+	}
+	if planContainsRollbackStep(plan) {
+		if !allowRollback {
+			fmt.Fprintf(stderr, "migration apply-preflight: %v\n", fmt.Errorf("%w: rollback/down migration plan requires --allow-rollback", ErrMigrationApplyRollbackConfirmation))
+			return exitError
+		}
+		if confirmedPlanSHA256 == "" && trimmedPlanArtifactPath == "" {
+			fmt.Fprintf(stderr, "migration apply-preflight: %v\n", fmt.Errorf("%w: rollback/down migration plan requires --plan-sha256 or --plan-artifact", ErrMigrationApplyPlanConfirmation))
+			return exitError
+		}
+	}
+	if confirmedPlanSHA256 != "" && gotPlanSHA256 != confirmedPlanSHA256 {
+		fmt.Fprintf(stderr, "migration apply-preflight: %v\n", fmt.Errorf("%w: plan sha256 mismatch: got %s want %s", ErrMigrationApplyPlanConfirmation, gotPlanSHA256, confirmedPlanSHA256))
+		return exitError
+	}
+	if trimmedPlanArtifactPath != "" {
+		artifact, err := readMigrationPlanArtifactFile(trimmedPlanArtifactPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "migration apply-preflight: %v\n", err)
+			return exitError
+		}
+		if artifact.PlanSHA256 != gotPlanSHA256 || !reflect.DeepEqual(artifact.Plan, plan) {
+			fmt.Fprintf(stderr, "migration apply-preflight: %v\n", fmt.Errorf("%w: plan artifact does not match requested ledger snapshot and target", ErrMigrationApplyPlanConfirmation))
+			return exitError
+		}
+	}
+
+	return writeJSON(stdout, stderr, migrationApplyPreflight{
+		Format:        migrationApplyPreflightFormat,
+		TargetVersion: resolvedTarget,
+		TargetLatest:  targetLatest,
+		PlanSHA256:    gotPlanSHA256,
+		Plan:          plan,
 	})
 }
 
@@ -776,6 +910,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  ledger-snapshot        export metadata-only schema_migrations ledger snapshot from a database/sql target")
 	fmt.Fprintln(w, "  plan                   print metadata-only dry-run plan from an offline ledger snapshot")
 	fmt.Fprintln(w, "  plan-artifact          print dry-run plan plus checksum for apply confirmation")
+	fmt.Fprintln(w, "  apply-preflight        validate apply inputs and plan confirmation without opening a database")
 	fmt.Fprintln(w, "  apply                  apply a target plan using a database/sql driver and offline ledger snapshot")
 	fmt.Fprintln(w, "")
 	printStatusUsage(w)
@@ -787,6 +922,8 @@ func printUsage(w io.Writer) {
 	printPlanUsage(w)
 	fmt.Fprintln(w, "")
 	printPlanArtifactUsage(w)
+	fmt.Fprintln(w, "")
+	printApplyPreflightUsage(w)
 	fmt.Fprintln(w, "")
 	printApplyUsage(w)
 }
@@ -814,6 +951,11 @@ func printPlanUsage(w io.Writer) {
 func printPlanArtifactUsage(w io.Writer) {
 	fmt.Fprintln(w, "plan-artifact usage:")
 	fmt.Fprintln(w, "  metin2-migrate plan-artifact --ledger-snapshot <path|-> --target-version <version|latest>")
+}
+
+func printApplyPreflightUsage(w io.Writer) {
+	fmt.Fprintln(w, "apply-preflight usage:")
+	fmt.Fprintln(w, "  metin2-migrate apply-preflight --ledger-snapshot <path|-> --target-version <version|latest> [--plan-sha256 <hex> | --plan-artifact <path>] [--allow-rollback]")
 }
 
 func printApplyUsage(w io.Writer) {
