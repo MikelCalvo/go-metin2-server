@@ -48,10 +48,10 @@ Legend used below:
   - Inventory/equipment replay, item move/split/merge/use/drop/pickup, quickslots, merchant buy/sell, gold mutation, a first exchange open/cancel shell, refine fail-closed path, authored item-template guards, and persistence validation exist. Accepted trade finalization, storage, item sockets/bonuses, full restrictions, refine success, ownership timers, and DB-backed item persistence remain future work.
 
 - `[~]` **M3 — Content and NPC authoring seam**
-  - Static actors, interaction definitions, `info`/`talk`/`warp`/`shop_preview`, merchant catalogs, content bundle import/export, portable combat profiles, reward descriptors, and spawn groups can drive current bootstrap content. This is useful content infrastructure, not a quest scripting system yet.
+  - Static actors, interaction definitions, `info`/`talk`/`warp`/`shop_preview`, merchant catalogs, content bundle import/export, portable combat profiles, reward descriptors, authoring-only fixed drop tables, and spawn groups can drive current bootstrap content. This is useful content infrastructure, not a quest scripting system yet.
 
 - `[~]` **M4 — PvE practice loop**
-  - Practice mobs can be targeted, attacked, killed, respawned, and can grant deterministic EXP/gold/fixed-drop descriptors through narrow owned contracts. Retaliation/player-death/restart seams, the spawn-position leash classifier, a pure capped return-step planner, a loopback-only one-step return trigger, a pending-frame return-step executor, and local pending return-step inspection exist, with authored spawn home preserved separately from current placement for spawn-backed actors. Real autonomous mob AI movement, chase/return packet choreography, attack formulas, skills, projectile/ranged combat, loot tables, PvP/duels, and full death/revive/corpse choreography remain future work.
+  - Practice mobs can be targeted, attacked, killed, respawned, and can grant deterministic EXP/gold/fixed-drop descriptors through narrow owned contracts. Retaliation/player-death/restart seams, the spawn-position leash classifier, a pure capped return-step planner, a loopback-only one-step return trigger, a pending-frame return-step executor, and local pending return-step inspection exist, with authored spawn home preserved separately from current placement for spawn-backed actors. Real autonomous mob AI movement, chase/return packet choreography, attack formulas, skills, projectile/ranged combat, randomized loot tables, PvP/duels, and full death/revive/corpse choreography remain future work.
 
 - `[~]` **M5 — Operations and developer workflow**
   - The repo has a Makefile, Dockerfile, CI, pprof/debug mux, health endpoint, local-only runtime/config/player/map/visibility/content/persistence endpoints, backup/restore preflights, crash-temp cleanup primitives, a validated migration catalog with dry-run planning, a migration CLI with explicit apply support, QA docs, and clean-room workflow docs. Release/versioning policy, production DB engine/driver selection, production deployment, metrics/logging policy, and production-safe admin tooling are still pending.
@@ -152,7 +152,7 @@ Already present:
 - `info`, `talk`, `quest_flag`, `warp`, and `shop_preview` interaction kinds,
 - merchant catalogs and first shop open/buy/sell behavior,
 - first standalone deterministic quest-flag store/transition primitive with loopback validation, focused readback, and crash-temp cleanup preflights,
-- content bundle import/export with preview deltas for static actors, interaction families, spawn groups, combat profiles, reward drops, NPC routes, warp destinations, focused portable quest-state overview/flag readers, and exact quest-flag import-preview deltas,
+- content bundle import/export with preview deltas for static actors, interaction families, spawn groups, combat profiles, reward drops, authoring-only fixed drop-table expansion, NPC routes, warp destinations, focused portable quest-state overview/flag readers, and exact quest-flag import-preview deltas,
 - loopback-only authoring/inspection endpoints and a deterministic bootstrap NPC service bundle.
 
 Still missing:
@@ -161,7 +161,7 @@ Still missing:
 - scripted triggers/results,
 - richer NPC service kinds,
 - live reload/update policy,
-- compatibility-grade regen/drop table ingestion,
+- compatibility-grade regen/randomized drop table ingestion,
 - content tooling beyond the current validation and bundle checks.
 
 ### Combat, mobs, death, restart, and rewards

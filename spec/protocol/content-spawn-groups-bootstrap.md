@@ -245,6 +245,7 @@ The first content contract should fail closed when:
 - when a spawn group omits explicit reward fields and references a custom bundled combat profile, canonicalization applies that profile snapshot's death-reward defaults so import, export, and loopback POST validation all share the same deterministic reward descriptor; if those defaults include drop vnums, the same bundle must also carry matching `item_templates`
 - coordinates are malformed for the current bundle schema
 - reward scalar values overflow the current bootstrap point-change carrier, or `reward_drop_vnums` contains `0` or duplicate drop vnums
+- authoring-only `drop_tables` are malformed: `ref` must use the same canonical dotted lowercase identity rule as `spawn_groups.ref`, `drop_vnums` must be non-empty, non-zero, duplicate-free, and backed by bundled `item_templates`, every table must be referenced by a `spawn_groups[].reward_drop_table_ref`, and each referencing spawn group must omit explicit `reward_drop_vnums` so the table expansion cannot silently conflict with a direct descriptor
 
 Import should reject malformed spawn groups before mutating live runtime state. The bundle canonicalization path now keeps spawn-group names explicit instead of synthesizing them from `ref`, rejects duplicate or non-canonical `ref` values without trimming the authored identifier into a different key, and preserves the prior authored/runtime snapshot when validation fails.
 
@@ -256,6 +257,7 @@ The bootstrap content-bundle surface uses the same top-level `spawn_groups` coll
 
 Current runtime rules:
 - spawn-backed live actors export as `spawn_groups`, not as ordinary `static_actors`
+- candidate bundles may include a narrow authoring-only `drop_tables` collection for fixed reward-drop vnum lists; canonicalization expands `spawn_groups[].reward_drop_table_ref` into deterministic sorted `reward_drop_vnums`, strips `drop_tables` and `reward_drop_table_ref` from the canonical bundle, and leaves runtime/import/export behavior on the existing fixed-drop reward descriptor seam instead of adding randomized loot-table execution
 - exported spawn-group `map_index`, `x`, and `y` come from the preserved authored spawn home when present, not from a displaced materialized current position; older snapshots without `spawn_home` fall back to their current actor position for compatibility
 - importing a bundle with `spawn_groups` materializes one runtime static actor per group with the authored `spawn_group_ref`
 - the imported actor uses the authored placement, `race_num`, and normalized `combat_profile`

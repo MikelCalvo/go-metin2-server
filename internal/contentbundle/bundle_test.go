@@ -504,7 +504,7 @@ func TestBundleJSONRejectsInvalidUTF8BeforeLossyDecode(t *testing.T) {
 }
 
 func TestBundleJSONRejectsNullCollectionFields(t *testing.T) {
-	for _, field := range []string{"static_actors", "spawn_groups", "combat_profiles", "item_templates", "quest_state", "interaction_definitions"} {
+	for _, field := range []string{"static_actors", "spawn_groups", "drop_tables", "combat_profiles", "item_templates", "quest_state", "interaction_definitions"} {
 		t.Run(field, func(t *testing.T) {
 			var bundle Bundle
 			err := json.Unmarshal([]byte(fmt.Sprintf(`{"%s":null}`, field)), &bundle)
@@ -3701,6 +3701,154 @@ func TestCanonicalizeAcceptsRewardDropsBackedByBundledItemTemplates(t *testing.T
 	wantDrops := []uint32{27001, 27002}
 	if len(bundle.SpawnGroups) != 1 || !reflect.DeepEqual(bundle.SpawnGroups[0].RewardDropVnums, wantDrops) {
 		t.Fatalf("unexpected canonical reward drops: %+v", bundle.SpawnGroups)
+	}
+}
+
+func TestCanonicalizeExpandsAuthoringDropTablesIntoSpawnGroupRewardDrops(t *testing.T) {
+	bundle, err := Canonicalize(Bundle{
+		DropTables: []DropTable{{Ref: "loot.qa_reward", DropVnums: []uint32{27002, 27001}}},
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+		},
+		SpawnGroups: []SpawnGroup{{
+			Ref:                "practice.drop_table_mob",
+			Name:               "Drop Table Mob",
+			MapIndex:           42,
+			X:                  1785,
+			Y:                  2885,
+			RaceNum:            101,
+			CombatProfile:      worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropTableRef: "loot.qa_reward",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize reward drop table bundle: %v", err)
+	}
+	if len(bundle.DropTables) != 0 {
+		t.Fatalf("expected authoring-only drop tables to be stripped from canonical bundle, got %+v", bundle.DropTables)
+	}
+	wantDrops := []uint32{27001, 27002}
+	if len(bundle.SpawnGroups) != 1 || bundle.SpawnGroups[0].RewardDropTableRef != "" || !reflect.DeepEqual(bundle.SpawnGroups[0].RewardDropVnums, wantDrops) {
+		t.Fatalf("expected reward drop table to expand into canonical spawn-group drops, got %+v", bundle.SpawnGroups)
+	}
+}
+
+func TestCanonicalizeRejectsSpawnGroupDropTableRefWithoutMatchingTable(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:                "practice.missing_drop_table_mob",
+			Name:               "Missing Drop Table Mob",
+			MapIndex:           42,
+			X:                  1785,
+			Y:                  2885,
+			RaceNum:            101,
+			CombatProfile:      worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropTableRef: "loot.missing_reward",
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for missing reward drop table ref, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsConflictingSpawnGroupDropTableRewardDrops(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		DropTables: []DropTable{{Ref: "loot.qa_reward", DropVnums: []uint32{27001}}},
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		},
+		SpawnGroups: []SpawnGroup{{
+			Ref:                "practice.conflicting_drop_table_mob",
+			Name:               "Conflicting Drop Table Mob",
+			MapIndex:           42,
+			X:                  1785,
+			Y:                  2885,
+			RaceNum:            101,
+			CombatProfile:      worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropTableRef: "loot.qa_reward",
+			RewardDropVnums:    []uint32{27002},
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for conflicting reward drop table expansion, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsMalformedDropTableDefinitions(t *testing.T) {
+	baseSpawn := SpawnGroup{
+		Ref:                "practice.drop_table_mob",
+		Name:               "Drop Table Mob",
+		MapIndex:           42,
+		X:                  1785,
+		Y:                  2885,
+		RaceNum:            101,
+		CombatProfile:      worldruntime.StaticActorCombatProfilePracticeMob,
+		RewardDropTableRef: "loot.qa_reward",
+	}
+	itemTemplates := []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}, {Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200}}
+	cases := []struct {
+		name      string
+		dropTable DropTable
+	}{
+		{name: "zero drop", dropTable: DropTable{Ref: "loot.qa_reward", DropVnums: []uint32{27001, 0}}},
+		{name: "duplicate drop", dropTable: DropTable{Ref: "loot.qa_reward", DropVnums: []uint32{27001, 27002, 27001}}},
+		{name: "empty drops", dropTable: DropTable{Ref: "loot.qa_reward"}},
+		{name: "malformed ref", dropTable: DropTable{Ref: "loot/qa_reward", DropVnums: []uint32{27001}}},
+		{name: "padded ref", dropTable: DropTable{Ref: " loot.qa_reward ", DropVnums: []uint32{27001}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Canonicalize(Bundle{DropTables: []DropTable{tc.dropTable}, ItemTemplates: itemTemplates, SpawnGroups: []SpawnGroup{baseSpawn}})
+			if !errors.Is(err, ErrInvalidBundle) {
+				t.Fatalf("expected ErrInvalidBundle for malformed drop table %q, got %v", tc.name, err)
+			}
+		})
+	}
+	_, err := Canonicalize(Bundle{
+		DropTables:    []DropTable{{Ref: "loot.qa_reward", DropVnums: []uint32{27001}}, {Ref: "loot.qa_reward", DropVnums: []uint32{27002}}},
+		ItemTemplates: itemTemplates,
+		SpawnGroups:   []SpawnGroup{baseSpawn},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for duplicate drop table refs, got %v", err)
+	}
+}
+
+func TestCanonicalizeDropTableAuthoringExampleExpandsToCanonicalRewardDescriptor(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-drop-table-authoring-bundle.json"))
+	if err != nil {
+		t.Fatalf("read drop-table authoring example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode drop-table authoring example bundle: %v", err)
+	}
+	canonical, err := Canonicalize(bundle)
+	if err != nil {
+		t.Fatalf("canonicalize drop-table authoring example bundle: %v", err)
+	}
+	if len(canonical.DropTables) != 0 {
+		t.Fatalf("expected drop-table authoring example to canonicalize without top-level drop_tables, got %+v", canonical.DropTables)
+	}
+	want := []SpawnGroup{{
+		Ref:             "practice.qa_reward_table_mob",
+		Name:            "QATableRewardMob",
+		MapIndex:        1,
+		X:               469850,
+		Y:               964200,
+		RaceNum:         20350,
+		CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+		RewardDropVnums: []uint32{27001, 27002},
+	}}
+	if !reflect.DeepEqual(canonical.SpawnGroups, want) {
+		t.Fatalf("unexpected canonical drop-table authoring spawn groups:\n got: %#v\nwant: %#v", canonical.SpawnGroups, want)
 	}
 }
 

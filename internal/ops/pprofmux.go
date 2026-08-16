@@ -110,6 +110,7 @@ type localInteractionDefinitionRequest struct {
 type localContentBundleRequest struct {
 	StaticActors           json.RawMessage `json:"static_actors"`
 	SpawnGroups            json.RawMessage `json:"spawn_groups"`
+	DropTables             json.RawMessage `json:"drop_tables"`
 	CombatProfiles         json.RawMessage `json:"combat_profiles"`
 	ItemTemplates          json.RawMessage `json:"item_templates"`
 	QuestState             json.RawMessage `json:"quest_state"`
@@ -137,6 +138,9 @@ func (request localContentBundleRequest) bundle() (contentbundle.Bundle, bool) {
 		return contentbundle.Bundle{}, false
 	}
 	if !decodeLocalContentBundleCollection(request.SpawnGroups, &bundle.SpawnGroups) {
+		return contentbundle.Bundle{}, false
+	}
+	if !decodeLocalContentBundleCollection(request.DropTables, &bundle.DropTables) {
 		return contentbundle.Bundle{}, false
 	}
 	if !decodeLocalContentBundleCollection(request.CombatProfiles, &bundle.CombatProfiles) {

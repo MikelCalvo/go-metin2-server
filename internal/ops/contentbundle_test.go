@@ -288,7 +288,7 @@ func TestLocalContentBundleEndpointsRejectNullRootBeforeCallbacks(t *testing.T) 
 }
 
 func TestLocalContentBundleEndpointRejectsNullCollectionFieldsBeforeImport(t *testing.T) {
-	for _, field := range []string{"static_actors", "spawn_groups", "combat_profiles", "item_templates", "quest_state", "interaction_definitions"} {
+	for _, field := range []string{"static_actors", "spawn_groups", "drop_tables", "combat_profiles", "item_templates", "quest_state", "interaction_definitions"} {
 		t.Run(field, func(t *testing.T) {
 			importer := &stubContentBundleImporter{status: http.StatusOK}
 			mux := RegisterLocalContentBundleEndpoint(NewPprofMux("gamed"), nil, importer.ImportContentBundle)
@@ -528,6 +528,39 @@ func TestLocalContentBundleValidateEndpointAcceptsExampleBundle(t *testing.T) {
 	}
 	if !reflect.DeepEqual(rec.Body.Bytes(), raw) {
 		t.Fatalf("expected example validation response to be byte-for-byte canonical\n--- got ---\n%s\n--- want ---\n%s", rec.Body.String(), string(raw))
+	}
+}
+
+func TestLocalContentBundleValidateEndpointExpandsDropTableAuthoringExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate ops contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-drop-table-authoring-bundle.json"))
+	if err != nil {
+		t.Fatalf("read drop-table authoring example bundle: %v", err)
+	}
+	mux := RegisterLocalContentBundleValidateEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/validate", bytes.NewReader(raw))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d for drop-table authoring example validation, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte(`"drop_tables"`)) || bytes.Contains(rec.Body.Bytes(), []byte(`"reward_drop_table_ref"`)) {
+		t.Fatalf("expected validation response to strip authoring-only drop-table fields, got %s", rec.Body.String())
+	}
+	var got contentbundle.Bundle
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode drop-table validation response: %v", err)
+	}
+	wantDrops := []uint32{27001, 27002}
+	if len(got.SpawnGroups) != 1 || !reflect.DeepEqual(got.SpawnGroups[0].RewardDropVnums, wantDrops) {
+		t.Fatalf("expected validation response to expand fixed drop table into spawn-group drops, got %+v", got.SpawnGroups)
 	}
 }
 

@@ -1,0 +1,40 @@
+{
+  "drop_tables": [
+    {
+      "ref": "loot.qa_reward",
+      "drop_vnums": [
+        27002,
+        27001
+      ]
+    }
+  ],
+  "spawn_groups": [
+    {
+      "ref": "practice.qa_reward_table_mob",
+      "name": "QATableRewardMob",
+      "map_index": 1,
+      "x": 469850,
+      "y": 964200,
+      "race_num": 20350,
+      "combat_profile": "practice_mob",
+      "reward_drop_table_ref": "loot.qa_reward"
+    }
+  ],
+  "item_templates": [
+    {
+      "vnum": 27001,
+      "name": "Small Red Potion",
+      "stackable": true,
+      "max_count": 200,
+      "shop_buy_price": 5,
+      "shop_sell_price": 2
+    },
+    {
+      "vnum": 27002,
+      "name": "Small Blue Potion",
+      "stackable": true,
+      "max_count": 200
+    }
+  ],
+  "interaction_definitions": []
+}

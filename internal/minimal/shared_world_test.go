@@ -3848,6 +3848,53 @@ func TestGameRuntimeImportsContentBundleCombatProfilesBeforeSpawnGroups(t *testi
 	}
 }
 
+func TestGameRuntimeImportsContentBundleDropTablesAsSpawnGroupRewardDrops(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected drop-table runtime error: %v", err)
+	}
+	bundle := contentbundle.Bundle{
+		DropTables: []contentbundle.DropTable{{Ref: "loot.qa_reward", DropVnums: []uint32{27002, 27001}}},
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+		},
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:                "practice.drop_table_mob",
+			Name:               "Drop Table Mob",
+			MapIndex:           42,
+			X:                  1775,
+			Y:                  2875,
+			RaceNum:            101,
+			CombatProfile:      worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropTableRef: "loot.qa_reward",
+		}},
+	}
+
+	imported, err := runtime.ImportContentBundle(bundle)
+	if err != nil {
+		t.Fatalf("import content bundle with authoring-only drop table: %v", err)
+	}
+	if len(imported.DropTables) != 0 || len(imported.SpawnGroups) != 1 || imported.SpawnGroups[0].RewardDropTableRef != "" || !reflect.DeepEqual(imported.SpawnGroups[0].RewardDropVnums, []uint32{27001, 27002}) {
+		t.Fatalf("expected imported bundle to expand drop table into spawn-group reward drops, got %#v", imported)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one imported drop-table spawn actor, got %#v", actors)
+	}
+	if actors[0].SpawnGroupRef != "practice.drop_table_mob" || !reflect.DeepEqual(actors[0].RewardDropVnums, []uint32{27001, 27002}) {
+		t.Fatalf("expected runtime actor to carry canonical drop-table reward descriptor, got %+v", actors[0])
+	}
+}
+
 func TestGameRuntimeReimportsFormulaOnlyCombatProfileBundleIdempotently(t *testing.T) {
 	const profile = "practice_reimport_formula_wolf"
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
