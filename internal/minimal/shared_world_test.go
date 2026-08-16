@@ -1528,6 +1528,126 @@ func TestGameRuntimeStepSpawnGroupReturnHomeClearsStaleTargetAndEngagementWhenAc
 	}
 }
 
+func TestGameRuntimeAutomaticReturnStepClearsSelectedCombatState(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ReturnStepAutoOwner", 0x0103016e, 0x0204016e, 1700, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 10
+	peer := peerVisibilityCharacter("ReturnStepAutoPeer", 0x0103016f, 0x0204016f, 2002, 2800, 0, 102, 202)
+	peer.MapIndex = 42
+	issuePeerTicket(t, store, "return-step-auto-owner", 0x1e1e1e1e, owner)
+	issuePeerTicket(t, store, "return-step-auto-peer", 0x1f1f1f1f, peer)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700000905, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for automatic return-step combat-state clear: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_step_auto_clear",
+		Name:          "ReturnStepAutoClearMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import automatic return-step clear spawn group: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_step_auto_clear")
+	if !ok {
+		t.Fatal("expected automatic return-step clear spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "return-step-auto-owner", 0x1e1e1e1e)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "return-step-auto-peer", 0x1f1f1f1f)
+	defer closeSessionFlow(t, peerFlow)
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, peerFlow)
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected owner target error before automatic return-step clear: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected owner to select automatic return-step clear mob, got %d frames", len(selectOut))
+	}
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected attack before automatic return-step clear: %v", err)
+	}
+	if len(attackOut) != 3 {
+		t.Fatalf("expected attack to emit target refresh, immediate retaliation, and damage-info, got %d frames", len(attackOut))
+	}
+	flushSingleDamageInfoFrame(t, peerFlow, targetVID, int32(worldruntime.PracticeMobBootstrapDamagePerNormalAttack), "before automatic return-step clear")
+
+	runtime.sharedWorld.mu.Lock()
+	actor, ok := runtime.sharedWorld.entities.StaticActor(group.EntityID)
+	if !ok {
+		runtime.sharedWorld.mu.Unlock()
+		t.Fatalf("expected automatic return-step clear actor %d before direct drift", group.EntityID)
+	}
+	actor.Position = worldruntime.NewPosition(42, 2102, 2800)
+	if _, ok := runtime.sharedWorld.entities.UpdateStaticActor(actor); !ok {
+		runtime.sharedWorld.mu.Unlock()
+		t.Fatal("expected direct automatic return-step drift to preserve stale target for reset guard")
+	}
+	runtime.sharedWorld.mu.Unlock()
+	runtime.scheduleSpawnGroupReturnStep(group.EntityID)
+	currentTime = currentTime.Add(bootstrapSpawnGroupReturnStepDelay)
+
+	ownerQueued := flushServerFrames(t, ownerFlow)
+	if len(ownerQueued) != 5 {
+		t.Fatalf("expected automatic return-step to queue refresh plus target clear for selected owner, got %d frames", len(ownerQueued))
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, ownerQueued[4]))
+	if err != nil {
+		t.Fatalf("decode automatic return-step owner target clear: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected automatic return-step target clear, got %+v", clearTarget)
+	}
+	if snapshot, ok := runtime.CombatTargetSnapshot("ReturnStepAutoOwner"); ok {
+		t.Fatalf("expected automatic return-step to clear runtime combat target snapshot, got %+v", snapshot)
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected automatic return-step to cancel stale delayed retaliation, got %d queued frames", len(queued))
+	}
+
+	staleAttack, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected stale attack error after automatic return-step clear: %v", err)
+	}
+	if len(staleAttack) != 0 {
+		t.Fatalf("expected stale attack after automatic return-step clear to fail closed, got %d frames", len(staleAttack))
+	}
+
+	peerRefresh := flushServerFrames(t, peerFlow)
+	if len(peerRefresh) != 4 {
+		t.Fatalf("expected peer to receive automatic return-step refresh without target clear, got %d frames", len(peerRefresh))
+	}
+	peerSelect, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected peer target error after automatic return-step clear: %v", err)
+	}
+	if len(peerSelect) != 1 {
+		t.Fatalf("expected automatic return-step to release engagement so peer can reselect, got %d frames", len(peerSelect))
+	}
+}
+
 func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupReturnStep(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	viewer := peerVisibilityCharacter("ReturnStepAutoViewer", 0x0103016c, 0x0204016c, 2301, 2800, 0, 101, 201)
