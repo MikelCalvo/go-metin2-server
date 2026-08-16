@@ -294,6 +294,10 @@ The current bootstrap runtime now owns one refine-feedback teardown case too:
 - if the same selected live owner sends `REFINE` for a carried item whose loaded template authors either the non-refineable `refine_reject_message` path or the refineable `refine_info` preview path while a merchant window is open, the runtime prepends one self-only `GC::SHOP END` before the refine rejection chat or `REFINE_INFORMATION_NEW` preview frame
 - that refine-feedback close clears the active merchant context immediately, so later `SHOP END` / `SHOP BUY` attempts fail closed until the player opens a fresh merchant window again
 
+The current bootstrap runtime now owns one item-give guard teardown case too:
+- if the same selected live owner sends `ITEM_GIVE` for a carried item whose loaded template authors `anti_give` plus `give_reject_message` while a merchant window is open and the request names a currently visible connected player with a valid count, the runtime prepends one self-only `GC::SHOP END` before the item-give rejection chat
+- that item-give-feedback close clears the active merchant context immediately, so later `SHOP END` / `SHOP BUY` attempts fail closed until the player opens a fresh merchant window again
+
 This document does **not** yet claim that every teardown path must always emit a visible merchant close frame before other phase or disconnect behavior takes over.
 
 ## Session rule
@@ -365,7 +369,7 @@ The following remain intentionally unfrozen for the next merchant packet/runtime
 - whether later compatibility work will force `START_EX` instead of the currently owned `START` open path
 - the final gameplay semantic meaning of the opaque leading buy-specific byte in client `SHOP BUY`
 - the exact minimal success-side `GC::SHOP` sequence needed to keep the TMP4 merchant UI stable after a `BUY` once the two frozen bare packet-path error frames are no longer the only owned merchant-window buy companions
-- whether teardown paths beyond explicit `SHOP END`, stale-window auto-close, transfer-triggered rebootstrap close, position-only `MOVE` / `SYNC_POSITION` visibility/range close, same-socket `/phase_select` close, and the current retaliation-floor close also need a visible `GC::SHOP END` before phase/disconnect behavior takes over
+- whether teardown paths beyond explicit `SHOP END`, stale-window auto-close, transfer-triggered rebootstrap close, position-only `MOVE` / `SYNC_POSITION` visibility/range close, same-socket `/phase_select` close, the current retaliation-floor close, storage/refine feedback close, and item-give guard feedback close also need a visible `GC::SHOP END` before phase/disconnect behavior takes over
 - whether any merchant-side refresh frames must accompany a successful `BUY` beyond the already-owned self-facing state refresh packets
 
 These unknowns are the gate for the next merchant buy runtime slice.

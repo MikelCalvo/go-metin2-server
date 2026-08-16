@@ -6,12 +6,14 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
+	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 )
 
 func TestGameRuntimeItemGiveFailsClosedWithoutMutation(t *testing.T) {
@@ -119,6 +121,89 @@ func TestGameRuntimeItemGiveAntiGiveTemplateReturnsAuthoredRejectTextWithoutMuta
 		t.Fatalf("anti-give ITEM_GIVE mutated quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
 	}
 	assertExchangeAccountUnchanged(t, accounts, "item-give-bound-target", target, "anti-give ITEM_GIVE visible target")
+}
+
+func TestGameRuntimeItemGiveAntiGiveTemplateClosesActiveMerchantWindowWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := merchantBuyerCharacter("GiveMerchantBound", 0x01030749, 0x02040749, 12345, []inventory.ItemInstance{{ID: 507, Vnum: 27044, Count: 3, Slot: 5}})
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	target := peerVisibilityCharacter("GiveMerchantTarget", 0x0103074a, 0x0204074a, 1120, 2120, 0, 101, 201)
+	issuePeerTicket(t, ticketStore, "item-give-merchant-bound", 0x70707049, owner)
+	issuePeerTicket(t, ticketStore, "item-give-merchant-target", 0x7070704a, target)
+	if err := accounts.Save(accountstore.Account{Login: "item-give-merchant-bound", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed merchant-bound item-give account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "item-give-merchant-target", Empire: target.Empire, Characters: cloneCharacters([]loginticket.Character{target})}); err != nil {
+		t.Fatalf("seed merchant-bound item-give target account: %v", err)
+	}
+	template := itemcatalog.Template{
+		Vnum:           27044,
+		Name:           "Merchant Bound Gift Potion",
+		Stackable:      true,
+		MaxCount:       200,
+		AntiGive:       true,
+		GiveRejectText: "You cannot give this item while shopping.",
+	}
+	templates := append(defaultMerchantItemTemplates(), template)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{defaultMerchantCatalogDefinition()})
+	itemStore := newItemTemplateStore(t, templates)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected merchant-bound item-give runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:merchant")
+	if !ok {
+		t.Fatal("expected merchant static actor registration to succeed")
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-give-merchant-bound", 0x70707049)
+	defer closeSessionFlow(t, ownerFlow)
+	targetFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-give-merchant-target", 0x7070704a)
+	defer closeSessionFlow(t, targetFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, targetFlow)
+	interactWithMerchantForBuy(t, ownerFlow, actor.EntityID)
+
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientGive(itemproto.ClientGivePacket{TargetVID: target.VID, Position: itemproto.InventoryPosition(5), Count: 1})))
+	if err != nil {
+		t.Fatalf("unexpected merchant anti-give item-give packet error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected anti-give ITEM_GIVE to emit SHOP END plus info-chat frame, got %d", len(out))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, out[0])); err != nil {
+		t.Fatalf("decode item-give merchant SHOP END before rejection info chat: %v", err)
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode merchant anti-give item-give rejection info chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != template.GiveRejectText {
+		t.Fatalf("unexpected merchant anti-give item-give rejection chat: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected no queued owner frames after merchant anti-give ITEM_GIVE rejection, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, targetFlow); len(queued) != 0 {
+		t.Fatalf("expected visible target to receive no queued frames after merchant anti-give ITEM_GIVE rejection, got %d", len(queued))
+	}
+
+	closeOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected post-item-give merchant SHOP END error: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected post-item-give merchant SHOP END to emit no frames after shell close, got %d", len(closeOut))
+	}
+	buyOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected post-item-give merchant SHOP BUY error: %v", err)
+	}
+	if len(buyOut) != 0 {
+		t.Fatalf("expected post-item-give merchant SHOP BUY to fail closed until reopen, got %d", len(buyOut))
+	}
+	assertExchangeAccountUnchanged(t, accounts, "item-give-merchant-bound", owner, "owner item-give merchant close")
+	assertExchangeAccountUnchanged(t, accounts, "item-give-merchant-target", target, "target item-give merchant close")
 }
 
 func TestGameRuntimeItemGiveAntiGiveTemplateClosesActiveExchangeShellWithoutMutation(t *testing.T) {

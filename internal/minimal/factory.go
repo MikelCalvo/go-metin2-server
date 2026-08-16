@@ -4480,7 +4480,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					if message, ok := selectedPlayer.GiveRejectText(inventory.SlotIndex(packet.Position.Cell), uint16(packet.Count), template); ok {
 						frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}
-						frames = prependExchangeCloseFrame(frames)
+						frames = prependMerchantCloseFrame(prependExchangeCloseFrame(frames))
 						return gameflow.ItemGiveResult{Accepted: true, Frames: frames}
 					}
 					return gameflow.ItemGiveResult{Accepted: false}
