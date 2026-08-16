@@ -46,8 +46,10 @@ type SpawnGroup struct {
 }
 
 type DropTable struct {
-	Ref       string   `json:"ref"`
-	DropVnums []uint32 `json:"drop_vnums"`
+	Ref              string   `json:"ref"`
+	RewardExperience uint64   `json:"reward_experience,omitempty"`
+	RewardGold       uint64   `json:"reward_gold,omitempty"`
+	DropVnums        []uint32 `json:"drop_vnums,omitempty"`
 }
 
 type Bundle struct {
@@ -3458,8 +3460,10 @@ func normalizeSpawnGroups(spawnGroups []SpawnGroup, profileSnapshots []worldrunt
 		if spawnGroup.CombatProfile == "" {
 			spawnGroup.CombatProfile = worldruntime.StaticActorCombatProfilePracticeMob
 		}
-		if spawnGroup.RewardDropTableRef != "" && len(spawnGroup.RewardDropVnums) == 0 {
+		if spawnGroup.RewardDropTableRef != "" && spawnGroup.RewardExperience == 0 && spawnGroup.RewardGold == 0 && len(spawnGroup.RewardDropVnums) == 0 {
 			if table, ok := dropTablesByRef[spawnGroup.RewardDropTableRef]; ok {
+				spawnGroup.RewardExperience = table.RewardExperience
+				spawnGroup.RewardGold = table.RewardGold
 				spawnGroup.RewardDropVnums = cloneUint32s(table.DropVnums)
 				spawnGroup.RewardDropTableRef = ""
 			}
@@ -3487,7 +3491,7 @@ func normalizeDropTables(dropTables []DropTable) []DropTable {
 	}
 	normalized := make([]DropTable, len(dropTables))
 	for i, table := range dropTables {
-		normalized[i] = DropTable{Ref: table.Ref, DropVnums: cloneUint32s(table.DropVnums)}
+		normalized[i] = DropTable{Ref: table.Ref, RewardExperience: table.RewardExperience, RewardGold: table.RewardGold, DropVnums: cloneUint32s(table.DropVnums)}
 	}
 	sort.Slice(normalized, func(i int, j int) bool {
 		return normalized[i].Ref < normalized[j].Ref
@@ -3498,10 +3502,11 @@ func normalizeDropTables(dropTables []DropTable) []DropTable {
 func validDropTables(dropTables []DropTable) bool {
 	seen := make(map[string]struct{}, len(dropTables))
 	for _, table := range dropTables {
-		if !worldruntime.ValidStaticActorSpawnGroupRef(table.Ref) || strings.TrimSpace(table.Ref) == "" || len(table.DropVnums) == 0 {
+		if !worldruntime.ValidStaticActorSpawnGroupRef(table.Ref) || strings.TrimSpace(table.Ref) == "" {
 			return false
 		}
-		if !worldruntime.ValidStaticActorDeathReward(worldruntime.StaticActorDeathReward{DropVnums: table.DropVnums}) {
+		reward := worldruntime.StaticActorDeathReward{Experience: table.RewardExperience, Gold: table.RewardGold, DropVnums: table.DropVnums}
+		if reward.Empty() || !worldruntime.ValidStaticActorDeathReward(reward) {
 			return false
 		}
 		if _, ok := seen[table.Ref]; ok {

@@ -559,8 +559,8 @@ func TestLocalContentBundleValidateEndpointExpandsDropTableAuthoringExample(t *t
 		t.Fatalf("decode drop-table validation response: %v", err)
 	}
 	wantDrops := []uint32{27001, 27002}
-	if len(got.SpawnGroups) != 1 || !reflect.DeepEqual(got.SpawnGroups[0].RewardDropVnums, wantDrops) {
-		t.Fatalf("expected validation response to expand fixed drop table into spawn-group drops, got %+v", got.SpawnGroups)
+	if len(got.SpawnGroups) != 1 || got.SpawnGroups[0].RewardExperience != 75 || got.SpawnGroups[0].RewardGold != 60 || !reflect.DeepEqual(got.SpawnGroups[0].RewardDropVnums, wantDrops) {
+		t.Fatalf("expected validation response to expand fixed reward table into spawn-group descriptor, got %+v", got.SpawnGroups)
 	}
 }
 

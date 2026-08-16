@@ -99,7 +99,7 @@ In bundle form, the authored surface is therefore:
 }
 ```
 
-The repository-owned example bundle at `docs/examples/bootstrap-npc-service-bundle.json` now includes one `spawn_groups` practice mob with a deliberately non-zero bootstrap reward descriptor. That example is intended for local QA of the owned target -> hit -> death -> reward-drop loop; broader loot tables and quest/corpse reward systems remain out of scope.
+The repository-owned example bundle at `docs/examples/bootstrap-npc-service-bundle.json` now includes one `spawn_groups` practice mob with a deliberately non-zero bootstrap reward descriptor. That example is intended for local QA of the owned target -> hit -> death -> reward loop. A separate authoring-only example at `docs/examples/bootstrap-drop-table-authoring-bundle.json` shows the first fixed reward-table convenience shape for EXP, gold, and drop-vnum descriptors; broader randomized loot tables and quest/corpse reward systems remain out of scope.
 
 ## Field meanings
 
@@ -151,6 +151,12 @@ The first bootstrap spawn-group contract freezes these fields:
   - `GET /local/content-bundle/combat-profiles/{profile}` is the loopback-only exact-profile reader over the same live exported bundle summary; it accepts only canonical lowercase snake-case profile names, returns one portable custom `combat_profiles[]` snapshot when present, returns `404` when the live exported bundle does not carry that profile, and exists for local QA/introspection rather than gameplay protocol or content mutation
   - non-zero values use the narrow reward contract in `non-player-reward-bootstrap.md` on the accepted killing hit
   - reward data belongs to the authored spawn group and round-trips through content bundles, static-actor snapshots, and runtime import/export; it is not live character persistence by itself
+- `drop_tables[].reward_experience`, `drop_tables[].reward_gold`, `drop_tables[].drop_vnums`, and `spawn_groups[].reward_drop_table_ref`
+  - authoring-only fixed reward-table convenience fields for candidate bundles
+  - a referenced table can now carry the same deterministic descriptor channels as a direct spawn group: EXP, gold, and zero or more fixed item-vnum drops
+  - canonicalization expands those table fields into the referencing `spawn_groups[].reward_experience`, `reward_gold`, and sorted `reward_drop_vnums`, then strips both `drop_tables` and `reward_drop_table_ref` before runtime import/export
+  - scalar-only reward tables are valid and do not require `item_templates`; table entries with non-empty `drop_vnums` must still be backed by bundled `item_templates` for every referenced vnum
+  - table expansion is a no-random-roll authoring convenience only; the live runtime still sees the existing fixed reward descriptor on the materialized spawn-backed actor
 - operator/runtime edits that preserve the same `spawn_group_ref` must preserve the authored `combat_profile`, reward descriptor, and spawn-home position while changing mutable actor presentation/current-placement fields; delete/recreate or bundle replacement remains the explicit way to replace reward metadata or authored home ownership
 - when a spawn-backed actor is updated through the generic static-actor edit path without specifying a new combat profile, the runtime keeps the existing spawn-group combat profile instead of downgrading the actor to non-combat static content
 
@@ -245,7 +251,7 @@ The first content contract should fail closed when:
 - when a spawn group omits explicit reward fields and references a custom bundled combat profile, canonicalization applies that profile snapshot's death-reward defaults so import, export, and loopback POST validation all share the same deterministic reward descriptor; if those defaults include drop vnums, the same bundle must also carry matching `item_templates`
 - coordinates are malformed for the current bundle schema
 - reward scalar values overflow the current bootstrap point-change carrier, or `reward_drop_vnums` contains `0` or duplicate drop vnums
-- authoring-only `drop_tables` are malformed: `ref` must use the same canonical dotted lowercase identity rule as `spawn_groups.ref`, `drop_vnums` must be non-empty, non-zero, duplicate-free, and backed by bundled `item_templates`, every table must be referenced by a `spawn_groups[].reward_drop_table_ref`, and each referencing spawn group must omit explicit `reward_drop_vnums` so the table expansion cannot silently conflict with a direct descriptor
+- authoring-only `drop_tables` are malformed: `ref` must use the same canonical dotted lowercase identity rule as `spawn_groups.ref`, at least one descriptor channel (`reward_experience`, `reward_gold`, or `drop_vnums`) must be non-zero/non-empty, scalar values must fit the current bootstrap point-change carrier, `drop_vnums` must be non-zero, duplicate-free, and backed by bundled `item_templates`, every table must be referenced by a `spawn_groups[].reward_drop_table_ref`, and each referencing spawn group must omit explicit `reward_experience`, `reward_gold`, and `reward_drop_vnums` so table expansion cannot silently conflict with a direct descriptor
 
 Import should reject malformed spawn groups before mutating live runtime state. The bundle canonicalization path now keeps spawn-group names explicit instead of synthesizing them from `ref`, rejects duplicate or non-canonical `ref` values without trimming the authored identifier into a different key, and preserves the prior authored/runtime snapshot when validation fails.
 
@@ -257,7 +263,7 @@ The bootstrap content-bundle surface uses the same top-level `spawn_groups` coll
 
 Current runtime rules:
 - spawn-backed live actors export as `spawn_groups`, not as ordinary `static_actors`
-- candidate bundles may include a narrow authoring-only `drop_tables` collection for fixed reward-drop vnum lists; canonicalization expands `spawn_groups[].reward_drop_table_ref` into deterministic sorted `reward_drop_vnums`, strips `drop_tables` and `reward_drop_table_ref` from the canonical bundle, and leaves runtime/import/export behavior on the existing fixed-drop reward descriptor seam instead of adding randomized loot-table execution
+- candidate bundles may include a narrow authoring-only `drop_tables` collection for fixed reward descriptors; canonicalization expands `spawn_groups[].reward_drop_table_ref` into direct `reward_experience`, `reward_gold`, and deterministic sorted `reward_drop_vnums`, strips `drop_tables` and `reward_drop_table_ref` from the canonical bundle, and leaves runtime/import/export behavior on the existing fixed reward descriptor seam instead of adding randomized loot-table execution
 - exported spawn-group `map_index`, `x`, and `y` come from the preserved authored spawn home when present, not from a displaced materialized current position; older snapshots without `spawn_home` fall back to their current actor position for compatibility
 - importing a bundle with `spawn_groups` materializes one runtime static actor per group with the authored `spawn_group_ref`
 - the imported actor uses the authored placement, `race_num`, and normalized `combat_profile`

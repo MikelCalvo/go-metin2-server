@@ -3704,9 +3704,9 @@ func TestCanonicalizeAcceptsRewardDropsBackedByBundledItemTemplates(t *testing.T
 	}
 }
 
-func TestCanonicalizeExpandsAuthoringDropTablesIntoSpawnGroupRewardDrops(t *testing.T) {
+func TestCanonicalizeExpandsAuthoringDropTablesIntoSpawnGroupRewardDescriptor(t *testing.T) {
 	bundle, err := Canonicalize(Bundle{
-		DropTables: []DropTable{{Ref: "loot.qa_reward", DropVnums: []uint32{27002, 27001}}},
+		DropTables: []DropTable{{Ref: "loot.qa_reward", RewardExperience: 75, RewardGold: 60, DropVnums: []uint32{27002, 27001}}},
 		ItemTemplates: []itemcatalog.Template{
 			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
 			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
@@ -3723,14 +3723,39 @@ func TestCanonicalizeExpandsAuthoringDropTablesIntoSpawnGroupRewardDrops(t *test
 		}},
 	})
 	if err != nil {
-		t.Fatalf("canonicalize reward drop table bundle: %v", err)
+		t.Fatalf("canonicalize reward descriptor table bundle: %v", err)
 	}
 	if len(bundle.DropTables) != 0 {
 		t.Fatalf("expected authoring-only drop tables to be stripped from canonical bundle, got %+v", bundle.DropTables)
 	}
 	wantDrops := []uint32{27001, 27002}
-	if len(bundle.SpawnGroups) != 1 || bundle.SpawnGroups[0].RewardDropTableRef != "" || !reflect.DeepEqual(bundle.SpawnGroups[0].RewardDropVnums, wantDrops) {
-		t.Fatalf("expected reward drop table to expand into canonical spawn-group drops, got %+v", bundle.SpawnGroups)
+	if len(bundle.SpawnGroups) != 1 || bundle.SpawnGroups[0].RewardDropTableRef != "" || bundle.SpawnGroups[0].RewardExperience != 75 || bundle.SpawnGroups[0].RewardGold != 60 || !reflect.DeepEqual(bundle.SpawnGroups[0].RewardDropVnums, wantDrops) {
+		t.Fatalf("expected reward table to expand into canonical spawn-group descriptor, got %+v", bundle.SpawnGroups)
+	}
+}
+
+func TestCanonicalizeExpandsAuthoringDropTablesIntoScalarOnlyRewardDescriptor(t *testing.T) {
+	bundle, err := Canonicalize(Bundle{
+		DropTables: []DropTable{{Ref: "loot.qa_scalars", RewardExperience: 75, RewardGold: 60}},
+		SpawnGroups: []SpawnGroup{{
+			Ref:                "practice.scalar_table_mob",
+			Name:               "Scalar Table Mob",
+			MapIndex:           42,
+			X:                  1785,
+			Y:                  2885,
+			RaceNum:            101,
+			CombatProfile:      worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropTableRef: "loot.qa_scalars",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize scalar reward table bundle: %v", err)
+	}
+	if len(bundle.DropTables) != 0 {
+		t.Fatalf("expected scalar reward table to be stripped from canonical bundle, got %+v", bundle.DropTables)
+	}
+	if len(bundle.SpawnGroups) != 1 || bundle.SpawnGroups[0].RewardExperience != 75 || bundle.SpawnGroups[0].RewardGold != 60 || len(bundle.SpawnGroups[0].RewardDropVnums) != 0 {
+		t.Fatalf("expected scalar-only reward table to expand without requiring item templates, got %+v", bundle.SpawnGroups)
 	}
 }
 
@@ -3776,6 +3801,26 @@ func TestCanonicalizeRejectsConflictingSpawnGroupDropTableRewardDrops(t *testing
 	}
 }
 
+func TestCanonicalizeRejectsConflictingSpawnGroupDropTableScalars(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		DropTables: []DropTable{{Ref: "loot.qa_reward", RewardExperience: 75}},
+		SpawnGroups: []SpawnGroup{{
+			Ref:                "practice.conflicting_scalar_table_mob",
+			Name:               "Conflicting Scalar Table Mob",
+			MapIndex:           42,
+			X:                  1785,
+			Y:                  2885,
+			RaceNum:            101,
+			CombatProfile:      worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropTableRef: "loot.qa_reward",
+			RewardGold:         60,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for conflicting scalar reward table expansion, got %v", err)
+	}
+}
+
 func TestCanonicalizeRejectsMalformedDropTableDefinitions(t *testing.T) {
 	baseSpawn := SpawnGroup{
 		Ref:                "practice.drop_table_mob",
@@ -3794,7 +3839,9 @@ func TestCanonicalizeRejectsMalformedDropTableDefinitions(t *testing.T) {
 	}{
 		{name: "zero drop", dropTable: DropTable{Ref: "loot.qa_reward", DropVnums: []uint32{27001, 0}}},
 		{name: "duplicate drop", dropTable: DropTable{Ref: "loot.qa_reward", DropVnums: []uint32{27001, 27002, 27001}}},
-		{name: "empty drops", dropTable: DropTable{Ref: "loot.qa_reward"}},
+		{name: "empty reward descriptor", dropTable: DropTable{Ref: "loot.qa_reward"}},
+		{name: "experience overflow", dropTable: DropTable{Ref: "loot.qa_reward", RewardExperience: uint64(^uint32(0)>>1) + 1}},
+		{name: "gold overflow", dropTable: DropTable{Ref: "loot.qa_reward", RewardGold: uint64(^uint32(0)>>1) + 1}},
 		{name: "malformed ref", dropTable: DropTable{Ref: "loot/qa_reward", DropVnums: []uint32{27001}}},
 		{name: "padded ref", dropTable: DropTable{Ref: " loot.qa_reward ", DropVnums: []uint32{27001}}},
 	}
@@ -3838,14 +3885,16 @@ func TestCanonicalizeDropTableAuthoringExampleExpandsToCanonicalRewardDescriptor
 		t.Fatalf("expected drop-table authoring example to canonicalize without top-level drop_tables, got %+v", canonical.DropTables)
 	}
 	want := []SpawnGroup{{
-		Ref:             "practice.qa_reward_table_mob",
-		Name:            "QATableRewardMob",
-		MapIndex:        1,
-		X:               469850,
-		Y:               964200,
-		RaceNum:         20350,
-		CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
-		RewardDropVnums: []uint32{27001, 27002},
+		Ref:              "practice.qa_reward_table_mob",
+		Name:             "QATableRewardMob",
+		MapIndex:         1,
+		X:                469850,
+		Y:                964200,
+		RaceNum:          20350,
+		CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+		RewardExperience: 75,
+		RewardGold:       60,
+		RewardDropVnums:  []uint32{27001, 27002},
 	}}
 	if !reflect.DeepEqual(canonical.SpawnGroups, want) {
 		t.Fatalf("unexpected canonical drop-table authoring spawn groups:\n got: %#v\nwant: %#v", canonical.SpawnGroups, want)

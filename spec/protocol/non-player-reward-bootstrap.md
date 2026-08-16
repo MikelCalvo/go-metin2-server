@@ -33,7 +33,7 @@ It does **not** yet claim:
 
 ## Descriptor ownership
 
-Reward descriptors can come from authored `spawn_groups` or from the live static-actor snapshot that was materialized from that authored content.
+Reward descriptors can come from authored `spawn_groups`, from authoring-only fixed `drop_tables` after content-bundle canonicalization expands them into direct spawn-group descriptor fields, or from the live static-actor snapshot that was materialized from that authored content.
 Standalone static actors that are not backed by a non-empty `spawn_group_ref` must remain rewardless; both the static snapshot store and the in-memory non-player directory reject reward metadata on those actors so rewards do not become a generic static-actor feature by accident.
 
 The descriptor is not character persistence by itself.
@@ -87,6 +87,8 @@ The descriptor validator itself owns the static authoring checks before runtime 
 - registered combat-profile reward defaults are validated before clone normalization, so duplicate authored/default drop vnums still fail closed instead of being silently deduplicated during registration
 - runtime reward overrides used by the bootstrap shared-world seam are also validated before replacing an existing descriptor; malformed overrides fail closed and leave the last valid descriptor intact
 - file-backed static actor snapshots reject malformed spawn-group reward descriptors before loading or saving runtime state
+
+For authored fixed reward tables, the table is intentionally only a bundle-authoring convenience. `drop_tables[].reward_experience`, `drop_tables[].reward_gold`, and `drop_tables[].drop_vnums` expand into the referencing spawn group's ordinary fixed descriptor before import commits. Empty tables, overflowing scalar values, duplicate/zero drop vnums, missing item-template backing for drop vnums, unreferenced tables, or spawn groups that combine `reward_drop_table_ref` with any direct reward descriptor channel fail validation before runtime mutation. Scalar-only tables are valid and do not require bundled item templates.
 
 Malformed reward descriptors must not roll back the already-accepted combat death edge.
 They simply suppress reward mutation and reward frames for that kill.
@@ -193,7 +195,7 @@ A combined descriptor must not accidentally suppress one reward family just beca
 The repository can now say:
 - non-player rewards are a documented bootstrap seam rather than an implied future system
 - default bootstrap combatants are still rewardless
-- authored spawn groups may carry deterministic EXP, gold, and fixed drop-vnum descriptors
+- authored spawn groups may carry deterministic EXP, gold, and fixed drop-vnum descriptors directly or through authoring-only fixed reward tables that canonicalize into those same direct descriptor fields
 - registered formula-only combat profiles can drive both deterministic HP mutation and profile-default EXP/gold reward payout on the same accepted death edge
 - a single accepted kill can emit EXP, gold, and owned drop feedback together in documented order
 - accepted non-player death is preserved even when reward application fails

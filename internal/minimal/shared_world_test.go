@@ -3848,7 +3848,7 @@ func TestGameRuntimeImportsContentBundleCombatProfilesBeforeSpawnGroups(t *testi
 	}
 }
 
-func TestGameRuntimeImportsContentBundleDropTablesAsSpawnGroupRewardDrops(t *testing.T) {
+func TestGameRuntimeImportsContentBundleDropTablesAsSpawnGroupRewardDescriptor(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		loginticket.NewFileStore(t.TempDir()),
@@ -3862,7 +3862,7 @@ func TestGameRuntimeImportsContentBundleDropTablesAsSpawnGroupRewardDrops(t *tes
 		t.Fatalf("unexpected drop-table runtime error: %v", err)
 	}
 	bundle := contentbundle.Bundle{
-		DropTables: []contentbundle.DropTable{{Ref: "loot.qa_reward", DropVnums: []uint32{27002, 27001}}},
+		DropTables: []contentbundle.DropTable{{Ref: "loot.qa_reward", RewardExperience: 75, RewardGold: 60, DropVnums: []uint32{27002, 27001}}},
 		ItemTemplates: []itemcatalog.Template{
 			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
 			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
@@ -3883,14 +3883,14 @@ func TestGameRuntimeImportsContentBundleDropTablesAsSpawnGroupRewardDrops(t *tes
 	if err != nil {
 		t.Fatalf("import content bundle with authoring-only drop table: %v", err)
 	}
-	if len(imported.DropTables) != 0 || len(imported.SpawnGroups) != 1 || imported.SpawnGroups[0].RewardDropTableRef != "" || !reflect.DeepEqual(imported.SpawnGroups[0].RewardDropVnums, []uint32{27001, 27002}) {
-		t.Fatalf("expected imported bundle to expand drop table into spawn-group reward drops, got %#v", imported)
+	if len(imported.DropTables) != 0 || len(imported.SpawnGroups) != 1 || imported.SpawnGroups[0].RewardDropTableRef != "" || imported.SpawnGroups[0].RewardExperience != 75 || imported.SpawnGroups[0].RewardGold != 60 || !reflect.DeepEqual(imported.SpawnGroups[0].RewardDropVnums, []uint32{27001, 27002}) {
+		t.Fatalf("expected imported bundle to expand drop table into spawn-group reward descriptor, got %#v", imported)
 	}
 	actors := runtime.StaticActors()
 	if len(actors) != 1 {
 		t.Fatalf("expected one imported drop-table spawn actor, got %#v", actors)
 	}
-	if actors[0].SpawnGroupRef != "practice.drop_table_mob" || !reflect.DeepEqual(actors[0].RewardDropVnums, []uint32{27001, 27002}) {
+	if actors[0].SpawnGroupRef != "practice.drop_table_mob" || actors[0].RewardExperience != 75 || actors[0].RewardGold != 60 || !reflect.DeepEqual(actors[0].RewardDropVnums, []uint32{27001, 27002}) {
 		t.Fatalf("expected runtime actor to carry canonical drop-table reward descriptor, got %+v", actors[0])
 	}
 }
@@ -16456,6 +16456,120 @@ func TestGameRuntimeCombinedScalarAndDropRewardEmitsAllRewards(t *testing.T) {
 	}
 	if len(account.Characters) != 1 || account.Characters[0].Points[bootstrapExperiencePointType] != 100 || account.Characters[0].Gold != 100 {
 		t.Fatalf("expected combined scalar reward to persist, got %+v", account.Characters)
+	}
+}
+
+func TestGameRuntimeDropTableRewardDescriptorKillingHitEmitsAllRewards(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	killer := peerVisibilityCharacter("TableRewardKiller", 0x0103014E, 0x0204014E, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapExperiencePointType] = 25
+	killer.Gold = 40
+	issuePeerTicket(t, ticketStore, "table-reward-killer", 0x4E4E4E4E, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "table-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed table reward killer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		ticketStore,
+		accounts,
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new table reward runtime: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_428, 0)
+	runtime.now = func() time.Time { return currentTime }
+	imported, err := runtime.ImportContentBundle(contentbundle.Bundle{
+		DropTables:    []contentbundle.DropTable{{Ref: "loot.qa_reward", RewardExperience: 75, RewardGold: 60, DropVnums: []uint32{27002, 27001}}},
+		ItemTemplates: rewardDropItemTemplates(27001, 27002),
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:                "practice.table_reward_mob",
+			Name:               "TableRewardMob",
+			MapIndex:           bootstrapMapIndex,
+			X:                  1200,
+			Y:                  2200,
+			RaceNum:            20350,
+			CombatProfile:      worldruntime.StaticActorCombatProfileTrainingDummy,
+			RewardDropTableRef: "loot.qa_reward",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("import table reward bundle: %v", err)
+	}
+	if len(imported.SpawnGroups) != 1 || imported.SpawnGroups[0].RewardExperience != 75 || imported.SpawnGroups[0].RewardGold != 60 || !reflect.DeepEqual(imported.SpawnGroups[0].RewardDropVnums, []uint32{27001, 27002}) {
+		t.Fatalf("expected imported table reward descriptor to become canonical spawn-group rewards, got %+v", imported.SpawnGroups)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one table reward mob actor, got %+v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "table-reward-killer", 0x4E4E4E4E)
+	defer closeSessionFlow(t, flow)
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected table reward target selection to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected table reward attack error on hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 8 {
+		t.Fatalf("expected table killing hit to return dead, clear, exp, gold, two ground-add/ownership pairs, got %d", len(killOut))
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0]))
+	if err != nil || dead.VID != targetVID {
+		t.Fatalf("unexpected table reward dead frame: dead=%+v err=%v", dead, err)
+	}
+	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killOut[1]))
+	if err != nil || clear.TargetVID != 0 || clear.HPPercent != 0 {
+		t.Fatalf("unexpected table reward clear-target frame: clear=%+v err=%v", clear, err)
+	}
+	expChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	if err != nil || expChange.Type != bootstrapExperiencePointType || expChange.Amount != 75 || expChange.Value != 100 {
+		t.Fatalf("unexpected table reward exp point-change: %+v err=%v", expChange, err)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
+	if err != nil || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != 60 || goldChange.Value != 100 {
+		t.Fatalf("unexpected table reward gold point-change: %+v err=%v", goldChange, err)
+	}
+	firstGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[4]))
+	if err != nil || firstGround.Vnum != 27001 || firstGround.X != killer.X || firstGround.Y != killer.Y {
+		t.Fatalf("unexpected first table reward ground add: %+v err=%v", firstGround, err)
+	}
+	firstOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[5]))
+	if err != nil || firstOwnership.VID != firstGround.VID || firstOwnership.OwnerName != killer.Name {
+		t.Fatalf("unexpected first table reward ownership: %+v err=%v", firstOwnership, err)
+	}
+	secondGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[6]))
+	if err != nil || secondGround.Vnum != 27002 || secondGround.X != killer.X || secondGround.Y != killer.Y {
+		t.Fatalf("unexpected second table reward ground add: %+v err=%v", secondGround, err)
+	}
+	secondOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[7]))
+	if err != nil || secondOwnership.VID != secondGround.VID || secondOwnership.OwnerName != killer.Name {
+		t.Fatalf("unexpected second table reward ownership: %+v err=%v", secondOwnership, err)
+	}
+	if !runtime.sharedWorld.GroundItemExists(firstGround.VID) || !runtime.sharedWorld.GroundItemExists(secondGround.VID) {
+		t.Fatalf("expected both table reward drops to be registered, first=%d second=%d", firstGround.VID, secondGround.VID)
+	}
+	account, err := accounts.Load("table-reward-killer")
+	if err != nil {
+		t.Fatalf("load table reward account: %v", err)
+	}
+	if len(account.Characters) != 1 || account.Characters[0].Points[bootstrapExperiencePointType] != 100 || account.Characters[0].Gold != 100 {
+		t.Fatalf("expected table scalar rewards to persist, got %+v", account.Characters)
 	}
 }
 

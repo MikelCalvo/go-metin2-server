@@ -2,6 +2,8 @@
   "drop_tables": [
     {
       "ref": "loot.qa_reward",
+      "reward_experience": 75,
+      "reward_gold": 60,
       "drop_vnums": [
         27002,
         27001
