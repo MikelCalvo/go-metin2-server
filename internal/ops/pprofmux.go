@@ -3169,6 +3169,50 @@ func RegisterLocalContentBundleImportPreviewEndpoint(mux *http.ServeMux, preview
 	return mux
 }
 
+func RegisterLocalContentBundleInteractionKindImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
+	if mux == nil || previewContentBundleImport == nil {
+		return mux
+	}
+	mux.HandleFunc("POST /local/content-bundle/import-preview/interaction-kinds/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		kind, ok := decodeLocalContentBundleInteractionKindImportPreviewKind(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bundle, status, ok := decodeLocalContentBundleRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		normalized, err := contentbundle.Canonicalize(bundle)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		preview, status := previewContentBundleImport(normalized)
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, preview, status)
+			return
+		}
+		importPreview, ok := preview.(contentbundle.ImportPreview)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		delta, ok := contentbundle.InteractionKindDeltaByKind(importPreview.Deltas.InteractionKinds, kind)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, delta, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalContentBundleInteractionDefinitionImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
 	if mux == nil || previewContentBundleImport == nil {
 		return mux
@@ -4557,7 +4601,11 @@ func decodeLocalContentBundleInteractableStaticActorName(r *http.Request) (strin
 }
 
 func decodeLocalContentBundleInteractionKind(r *http.Request) (string, bool) {
-	raw := strings.TrimPrefix(r.URL.Path, "/local/content-bundle/interaction-kinds/")
+	return decodeLocalInteractionKindWithPrefix(r, "/local/content-bundle/interaction-kinds/")
+}
+
+func decodeLocalInteractionKindWithPrefix(r *http.Request, prefix string) (string, bool) {
+	raw := strings.TrimPrefix(r.URL.Path, prefix)
 	raw = strings.TrimSpace(raw)
 	if raw == "" || strings.Contains(raw, "/") {
 		return "", false
@@ -4619,6 +4667,10 @@ func decodeLocalContentBundleQuestStateFlagIdentity(r *http.Request) (string, st
 
 func decodeLocalContentBundleInteractionDefinitionImportPreviewIdentity(r *http.Request) (string, string, bool) {
 	return decodeLocalKindRefIdentityWithPrefix(r, "/local/content-bundle/import-preview/interaction-definitions/")
+}
+
+func decodeLocalContentBundleInteractionKindImportPreviewKind(r *http.Request) (string, bool) {
+	return decodeLocalInteractionKindWithPrefix(r, "/local/content-bundle/import-preview/interaction-kinds/")
 }
 
 func decodeLocalContentBundleStaticActorImportPreviewName(r *http.Request) (string, bool) {

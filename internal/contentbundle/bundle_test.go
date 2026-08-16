@@ -1522,6 +1522,25 @@ func TestBuildImportPreviewReturnsInteractionKindDeltas(t *testing.T) {
 	}
 }
 
+func TestInteractionKindDeltaByKindReturnsExactDelta(t *testing.T) {
+	deltas := []InteractionKindDelta{
+		{Kind: interactionstore.KindInfo, Count: SummaryCountDelta{Current: 1, Candidate: 1}, ReferencedCount: SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}, UnreferencedCount: SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1}},
+		{Kind: interactionstore.KindTalk, Count: SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1}, ReferencedCount: SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1}},
+	}
+
+	got, ok := InteractionKindDeltaByKind(deltas, " info ")
+	want := InteractionKindDelta{Kind: interactionstore.KindInfo, Count: SummaryCountDelta{Current: 1, Candidate: 1}, ReferencedCount: SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}, UnreferencedCount: SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1}}
+	if !ok || got != want {
+		t.Fatalf("unexpected exact interaction-kind delta: got=%#v ok=%v want=%#v", got, ok, want)
+	}
+	if _, ok := InteractionKindDeltaByKind(deltas, interactionstore.KindWarp); ok {
+		t.Fatal("expected missing interaction-kind delta lookup to fail closed")
+	}
+	if _, ok := InteractionKindDeltaByKind(deltas, "quest"); ok {
+		t.Fatal("expected unsupported interaction kind lookup to fail closed")
+	}
+}
+
 func TestBuildImportPreviewReturnsInteractionDefinitionDeltas(t *testing.T) {
 	preview, err := BuildImportPreview(
 		Bundle{

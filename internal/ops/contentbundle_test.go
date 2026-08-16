@@ -904,6 +904,144 @@ func TestLocalContentBundleImportPreviewEndpointReturnsDeltaJSONForLoopbackPost(
 	}
 }
 
+func TestLocalContentBundleInteractionKindImportPreviewEndpointReturnsExactDeltaForLoopbackPost(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:notice", Text: "Read the notice board."}},
+	}}
+	mux := RegisterLocalContentBundleInteractionKindImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/interaction-kinds/info", strings.NewReader(`{"static_actors":[{"name":"NoticeBoard","map_index":1,"x":900,"y":1900,"race_num":20304,"interaction_kind":"info","interaction_ref":"lore:notice"}],"interaction_definitions":[{"kind":"info","ref":"lore:notice","text":"Read the notice board."}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected import previewer to be called once, got %d calls", previewer.calls)
+	}
+	var got contentbundle.InteractionKindDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode exact interaction-kind import-preview delta response: %v", err)
+	}
+	want := contentbundle.InteractionKindDelta{
+		Kind:              interactionstore.KindInfo,
+		Count:             contentbundle.SummaryCountDelta{Current: 1, Candidate: 1},
+		ReferencedCount:   contentbundle.SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+		UnreferencedCount: contentbundle.SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1},
+	}
+	if got != want {
+		t.Fatalf("unexpected exact interaction-kind import-preview delta:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleInteractionKindImportPreviewEndpointReturnsNotFoundWhenKindDoesNotChange(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "NoticeBoard", MapIndex: 1, X: 900, Y: 1900, RaceNum: 20304, InteractionKind: interactionstore.KindInfo, InteractionRef: "lore:notice"}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:notice", Text: "Read the notice board."}},
+	}}
+	mux := RegisterLocalContentBundleInteractionKindImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/interaction-kinds/info", strings.NewReader(`{"static_actors":[{"name":"NoticeBoard","map_index":1,"x":900,"y":1900,"race_num":20304,"interaction_kind":"info","interaction_ref":"lore:notice"}],"interaction_definitions":[{"kind":"info","ref":"lore:notice","text":"Read the notice board."}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for unchanged interaction-kind delta, got %d", http.StatusNotFound, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected unchanged interaction-kind lookup to call import previewer once, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleInteractionKindImportPreviewEndpointRejectsInvalidKindBeforeCallback(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleInteractionKindImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	for _, path := range []string{
+		"/local/content-bundle/import-preview/interaction-kinds/",
+		"/local/content-bundle/import-preview/interaction-kinds/quest",
+		"/local/content-bundle/import-preview/interaction-kinds/talk/extra",
+		"/local/content-bundle/import-preview/interaction-kinds/bad%2Fkind",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"interaction_definitions":[]}`))
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for malformed interaction-kind import-preview path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected malformed interaction kind not to call previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleInteractionKindImportPreviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleInteractionKindImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/interaction-kinds/info", strings.NewReader(`{"interaction_definitions":[]}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback interaction-kind import preview, got %d", http.StatusForbidden, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected non-loopback import preview not to call previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleInteractionKindImportPreviewEndpointRejectsWrongMethod(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleInteractionKindImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/import-preview/interaction-kinds/info", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method interaction-kind import preview, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected wrong-method import preview not to call previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleInteractionKindImportPreviewEndpointCoexistsWithBroadImportPreview(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:notice", Text: "Old notice."}}}}
+	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+	mux = RegisterLocalContentBundleInteractionKindImportPreviewEndpoint(mux, previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/interaction-kinds/info", strings.NewReader(`{"static_actors":[{"name":"NoticeBoard","map_index":1,"x":900,"y":1900,"race_num":20304,"interaction_kind":"info","interaction_ref":"lore:notice"}],"interaction_definitions":[{"kind":"info","ref":"lore:notice","text":"Old notice."}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d from focused route on shared mux, got %d", http.StatusOK, rec.Code)
+	}
+	var got contentbundle.InteractionKindDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode focused interaction-kind import-preview delta response from shared mux: %v", err)
+	}
+	if got.Kind != interactionstore.KindInfo || got.ReferencedCount.Delta != 1 || got.UnreferencedCount.Delta != -1 {
+		t.Fatalf("unexpected focused interaction-kind import-preview response from shared mux: %#v", got)
+	}
+}
+
 func TestLocalContentBundleQuestStateFlagImportPreviewEndpointReturnsExactDeltaForLoopbackPost(t *testing.T) {
 	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{QuestState: []queststate.Flag{
 		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "old_flag", Value: 1},

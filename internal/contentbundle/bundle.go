@@ -925,6 +925,19 @@ func buildInteractionKindDeltas(currentKinds []InteractionKindSummary, candidate
 	return deltas
 }
 
+func InteractionKindDeltaByKind(deltas []InteractionKindDelta, kind string) (InteractionKindDelta, bool) {
+	kind = strings.TrimSpace(kind)
+	if kind == "" || !interactionstore.ValidKind(kind) {
+		return InteractionKindDelta{}, false
+	}
+	for _, delta := range deltas {
+		if strings.TrimSpace(delta.Kind) == kind {
+			return delta, true
+		}
+	}
+	return InteractionKindDelta{}, false
+}
+
 func interactionKindDeltaIsZero(delta InteractionKindDelta) bool {
 	return delta.Count.Delta == 0 &&
 		delta.ReferencedCount.Delta == 0 &&

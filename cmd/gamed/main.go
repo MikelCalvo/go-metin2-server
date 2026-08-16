@@ -740,6 +740,10 @@ func main() {
 		opsHandler,
 		previewContentBundleImport,
 	)
+	opsHandler = ops.RegisterLocalContentBundleInteractionKindImportPreviewEndpoint(
+		opsHandler,
+		previewContentBundleImport,
+	)
 	opsHandler = ops.RegisterLocalContentBundleInteractionDefinitionImportPreviewEndpoint(
 		opsHandler,
 		previewContentBundleImport,
