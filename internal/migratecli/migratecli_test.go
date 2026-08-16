@@ -303,6 +303,37 @@ func TestRunApplyPreflightValidatesPlanArtifactWithoutOpeningDatabase(t *testing
 	}
 }
 
+func TestRunApplyPreflightReportsLedgerSnapshotSHA256ForRunbookAudit(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-preflight", "--ledger-snapshot", "-", "--target-version", "1"}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected apply-preflight to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	var got struct {
+		LedgerSnapshotSHA256 string `json:"ledger_snapshot_sha256"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode apply-preflight JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if got.LedgerSnapshotSHA256 != testSHA256HexBytes(rawSnapshot) {
+		t.Fatalf("expected apply-preflight to report ledger snapshot checksum %q, got %#v", testSHA256HexBytes(rawSnapshot), got)
+	}
+	if strings.Contains(stdout.String(), "CREATE TABLE") || strings.Contains(stdout.String(), "DROP TABLE") || strings.Contains(stdout.String(), "memory://") {
+		t.Fatalf("apply-preflight ledger checksum output must stay metadata-only, got %s", stdout.String())
+	}
+	if gotEvents := currentMigrateCLITestDriver(t).eventsSnapshot(); len(gotEvents) != 0 {
+		t.Fatalf("apply-preflight must not open a database target, got events %#v", gotEvents)
+	}
+}
+
 func TestRunApplyPreflightRejectsRollbackWithoutConfirmationBeforeOpeningDatabase(t *testing.T) {
 	_ = registerMigrateCLITestSQLDriver(t)
 	catalog, err := dbmigrations.Catalog()

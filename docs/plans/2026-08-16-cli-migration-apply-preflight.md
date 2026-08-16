@@ -22,6 +22,7 @@ On success it writes a metadata-only JSON document with format marker `go-metin2
 
 - `target_version` — resolved numeric target, so `latest` becomes the embedded catalog tip;
 - `target_latest` — whether the operator requested `latest`;
+- `ledger_snapshot_sha256` — checksum over the exact offline ledger-snapshot bytes supplied to the preflight command;
 - `plan_sha256` — checksum over the exact indented dry-run plan JSON;
 - `plan` — the same metadata-only `db/migrations.Plan` shape emitted by `plan` / `plan-artifact`.
 
@@ -82,6 +83,7 @@ metin2-migrate apply --driver <driver> --dsn <dsn> --ledger-snapshot ledger-snap
 Focused coverage in `internal/migratecli/migratecli_test.go` proves:
 
 - `apply-preflight` validates a reviewed plan artifact and writes metadata-only JSON without opening a database;
+- successful preflight output carries both the reviewed plan checksum and the exact ledger-snapshot checksum for runbook/audit correlation;
 - rollback preflight without `--allow-rollback` fails before any DB event;
 - confirmed rollback preflight with `--allow-rollback` and a matching plan artifact succeeds without opening a database.
 

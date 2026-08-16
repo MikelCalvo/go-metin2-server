@@ -222,11 +222,12 @@ type migrationPlanArtifact struct {
 }
 
 type migrationApplyPreflight struct {
-	Format        string            `json:"format"`
-	TargetVersion int               `json:"target_version"`
-	TargetLatest  bool              `json:"target_latest"`
-	PlanSHA256    string            `json:"plan_sha256"`
-	Plan          dbmigrations.Plan `json:"plan"`
+	Format               string            `json:"format"`
+	TargetVersion        int               `json:"target_version"`
+	TargetLatest         bool              `json:"target_latest"`
+	LedgerSnapshotSHA256 string            `json:"ledger_snapshot_sha256"`
+	PlanSHA256           string            `json:"plan_sha256"`
+	Plan                 dbmigrations.Plan `json:"plan"`
 }
 
 func runPlanArtifact(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
@@ -360,11 +361,12 @@ func runApplyPreflight(args []string, stdin io.Reader, stdout io.Writer, stderr 
 	}
 
 	return writeJSON(stdout, stderr, migrationApplyPreflight{
-		Format:        migrationApplyPreflightFormat,
-		TargetVersion: resolvedTarget,
-		TargetLatest:  targetLatest,
-		PlanSHA256:    gotPlanSHA256,
-		Plan:          plan,
+		Format:               migrationApplyPreflightFormat,
+		TargetVersion:        resolvedTarget,
+		TargetLatest:         targetLatest,
+		LedgerSnapshotSHA256: sha256Hex(rawLedger),
+		PlanSHA256:           gotPlanSHA256,
+		Plan:                 plan,
 	})
 }
 
