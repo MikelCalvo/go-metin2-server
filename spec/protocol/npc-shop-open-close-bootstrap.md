@@ -298,6 +298,10 @@ The current bootstrap runtime now owns one item-give guard teardown case too:
 - if the same selected live owner sends `ITEM_GIVE` for a carried item whose loaded template authors `anti_give` plus `give_reject_message` while a merchant window is open and the request names a currently visible connected player with a valid count, the runtime prepends one self-only `GC::SHOP END` before the item-give rejection chat
 - that item-give-feedback close clears the active merchant context immediately, so later `SHOP END` / `SHOP BUY` attempts fail closed until the player opens a fresh merchant window again
 
+The current bootstrap runtime now owns one item-use rejection teardown case too:
+- if the same selected live owner sends packet `ITEM_USE` or slash `/use_item <slot>` for a carried item whose loaded template rejects direct use and authors non-empty `use_reject_message` while a merchant window is open, the runtime prepends one self-only `GC::SHOP END` before the item-use rejection chat
+- that item-use rejection close clears the active merchant context immediately, so later `SHOP END` / `SHOP BUY` attempts fail closed until the player opens a fresh merchant window again
+
 This document does **not** yet claim that every teardown path must always emit a visible merchant close frame before other phase or disconnect behavior takes over.
 
 ## Session rule

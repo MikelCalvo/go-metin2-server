@@ -6,6 +6,7 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
@@ -13,6 +14,7 @@ import (
 	effectproto "github.com/MikelCalvo/go-metin2-server/internal/proto/effect"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
+	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 )
 
@@ -226,6 +228,177 @@ func TestGameSessionFlowItemUseRejectsConfirmWhenUseWithTemplateText(t *testing.
 	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
 		t.Fatalf("confirm_when_use text ITEM_USE mutated point value: got %d want %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex], owner.Points[bootstrapPlayerPointValueIndex])
 	}
+}
+
+func TestGameSessionFlowItemUseRejectTextClosesActiveMerchantWindowWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	login := "item-use-merchant-reject-text"
+	owner := merchantBuyerCharacter("UseMerchantRejectText", 0x01030543, 0x02040543, 12345, []inventory.ItemInstance{{ID: 212, Vnum: 27015, Count: 2, Slot: 5}})
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, login, 0x50505043, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed merchant item-use rejection account: %v", err)
+	}
+	template := itemcatalog.Template{
+		Vnum:           27015,
+		Name:           "Merchant Confirm Text Potion",
+		Stackable:      true,
+		MaxCount:       200,
+		ConfirmWhenUse: true,
+		UseEffect:      &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume while shopping"},
+		UseRejectText:  "You must close the merchant window before using this item.",
+	}
+	templates := append(defaultMerchantItemTemplates(), template)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{defaultMerchantCatalogDefinition()})
+	itemStore := newItemTemplateStore(t, templates)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected merchant item-use rejection runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:merchant")
+	if !ok {
+		t.Fatal("expected merchant static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x50505043)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+	interactWithMerchantForBuy(t, flow, actor.EntityID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected merchant item-use rejection packet error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected item-use rejection to emit SHOP END plus template-authored info-chat frame, got %d", len(out))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, out[0])); err != nil {
+		t.Fatalf("decode merchant SHOP END before item-use rejection chat: %v", err)
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode merchant item-use rejection info chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != template.UseRejectText {
+		t.Fatalf("unexpected merchant item-use rejection chat: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after merchant item-use rejection, got %d", len(queued))
+	}
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected post-item-use-reject merchant SHOP END error: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected post-item-use-reject SHOP END to emit no frames after shell close, got %d", len(closeOut))
+	}
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected post-item-use-reject merchant SHOP BUY error: %v", err)
+	}
+	if len(buyOut) != 0 {
+		t.Fatalf("expected post-item-use-reject SHOP BUY to fail closed until reopen, got %d", len(buyOut))
+	}
+	persisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load merchant item-use rejection account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) || !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) || persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] || persisted.Characters[0].Gold != owner.Gold {
+		t.Fatalf("merchant item-use rejection mutated persisted character:\n got: %+v\nwant: %+v", persisted.Characters[0], owner)
+	}
+}
+
+func TestGameSessionFlowItemUseRejectTextClosesActiveExchangeShellWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	ownerLogin := "item-use-exchange-reject-owner"
+	peerLogin := "item-use-exchange-reject-peer"
+	owner := peerVisibilityCharacter("UseExchangeRejectOwner", 0x01030544, 0x02040544, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	owner.Inventory = []inventory.ItemInstance{{ID: 213, Vnum: 27016, Count: 2, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("UseExchangeRejectPeer", 0x01030545, 0x02040545, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x50505044, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x50505045, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange item-use rejection owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange item-use rejection peer account: %v", err)
+	}
+	template := itemcatalog.Template{
+		Vnum:           27016,
+		Name:           "Exchange Confirm Text Potion",
+		Stackable:      true,
+		MaxCount:       200,
+		ConfirmWhenUse: true,
+		UseEffect:      &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume while trading"},
+		UseRejectText:  "You must confirm this item before using it while trading.",
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange item-use rejection runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x50505044)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x50505045)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected exchange item-use rejection start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected exchange item-use rejection start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "exchange item-use rejection owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected exchange item-use rejection peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "exchange item-use rejection peer start")
+
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected exchange item-use rejection packet error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected item-use rejection to emit exchange END plus template-authored info-chat frame, got %d", len(out))
+	}
+	assertExchangeEndFrame(t, out[0], "exchange item-use rejection self close")
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode exchange item-use rejection info chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != template.UseRejectText {
+		t.Fatalf("unexpected exchange item-use rejection chat: %+v", delivery)
+	}
+	queuedClose := flushServerFrames(t, peerFlow)
+	if len(queuedClose) != 1 {
+		t.Fatalf("expected item-use rejection to queue one exchange END for peer, got %d", len(queuedClose))
+	}
+	assertExchangeEndFrame(t, queuedClose[0], "exchange item-use rejection peer close")
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected post-item-use-reject exchange cancel error: %v", err)
+	}
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected post-item-use-reject exchange cancel to emit no frames after shell close, got %d", len(cancelOut))
+	}
+	persisted, err := accounts.Load(ownerLogin)
+	if err != nil {
+		t.Fatalf("load exchange item-use rejection owner account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) || !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) || persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] || persisted.Characters[0].Gold != owner.Gold {
+		t.Fatalf("exchange item-use rejection mutated persisted owner:\n got: %+v\nwant: %+v", persisted.Characters[0], owner)
+	}
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "peer exchange item-use rejection")
 }
 
 func TestGameSessionFlowItemUseRejectTextSurvivesHypotheticalPointOverflow(t *testing.T) {

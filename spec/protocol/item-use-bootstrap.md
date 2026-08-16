@@ -87,6 +87,7 @@ Exactly one consumable shape is frozen here:
 - templates with an authored `equip_slot` are rejected for direct consumable use even if they also carry a valid `use_effect`, so equipment metadata cannot accidentally execute the consumable point-effect path
 - templates with authored `confirm_when_use = true` are rejected for direct consumable use even if they also carry a valid `use_effect`, so the runtime cannot consume confirmation-gated items before a confirmation request/ack flow is owned; when the template also authors non-empty `use_reject_message`, the runtime returns that text as one self-only `CHAT_TYPE_INFO` rejection without mutating the stack or point state, and that guard feedback is not suppressed by a hypothetical point overflow/underflow that would only matter if the effect were actually applied
 - templates with authored `quest_use`, `quest_use_multiple`, or `applicable` metadata are rejected for direct consumable use even if they also carry a valid `use_effect`, so quest/applicable item families stay fail-closed until their dedicated flows are owned; the same template-authored `use_reject_message` feedback contract applies when those guarded templates provide text
+- when template-authored `use_reject_message` feedback is returned while a same-socket merchant window is open, the runtime first closes that local merchant presentation shell with self-only `GC::SHOP END`; when the requester is paired in the bootstrap exchange shell, it also closes that exchange presentation shell with self `GC::EXCHANGE END` and one queued peer `GC::EXCHANGE END` before the rejection chat. These teardown frames clear presentation state only and still do not consume the item or mutate points, inventory, quickslots, gold, exchange displays, merchant state, ground handles, or persistence.
 - templates with authored job/sex/empire restrictions for the selected character (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, `anti_female`, `anti_empire_a`, `anti_empire_b`, or `anti_empire_c`) are rejected before point effects or stack mutations are applied
 - templates with authored `min_level` above the selected character's current persisted `level` are rejected before point effects or stack mutations are applied
 - templates with authored transfer/trade guards (`anti_stack`, `anti_get`, `anti_drop`, `anti_give`, or `anti_sell`) are rejected for this direct consumable path too, so bound/untransferable bootstrap templates cannot be consumed through `ITEM_USE` while other item mutation paths treat them as restricted
@@ -188,7 +189,7 @@ The first consumable path must fail closed when any of these are true:
 Failure behavior in this bootstrap slice:
 - no partial live mutation may remain committed
 - the selected runtime must roll back to the pre-use snapshot
-- no peer-facing packets are emitted
+- no peer-facing gameplay packets are emitted; the one owned exception is presentation-only exchange teardown when an active bootstrap exchange shell is closed before template-authored `use_reject_message` feedback
 
 ## Persistence boundary
 
