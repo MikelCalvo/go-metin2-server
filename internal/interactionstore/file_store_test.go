@@ -106,6 +106,31 @@ func TestFileStoreSaveThenLoadQuestFlagDefinition(t *testing.T) {
 	}
 }
 
+func TestFileStoreSaveThenLoadQuestFlagClearDefinition(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	want := Snapshot{Definitions: []Definition{{
+		Kind:      KindQuestFlag,
+		Ref:       "quest:first_steps_reset",
+		Text:      "Quest cleared.",
+		QuestRef:  "quest:first_steps",
+		QuestFlag: "met_guide",
+		QuestFrom: 1,
+		QuestTo:   0,
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save quest flag clear definition: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load quest flag clear definition: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected quest flag clear definition snapshot:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
 func TestFileStoreRejectsInvalidQuestFlagInteractionDefinition(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
 	store := NewFileStore(path)
@@ -122,7 +147,7 @@ func TestFileStoreRejectsInvalidQuestFlagInteractionDefinition(t *testing.T) {
 			definition: Definition{Kind: KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestTo: 1},
 		},
 		{
-			name:       "zero target value",
+			name:       "default source and target no-op",
 			definition: Definition{Kind: KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide"},
 		},
 		{

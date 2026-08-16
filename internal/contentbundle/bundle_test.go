@@ -127,6 +127,27 @@ func TestCanonicalJSONIncludesQuestFlagInteractionDefinition(t *testing.T) {
 	}
 }
 
+func TestCanonicalJSONIncludesQuestFlagClearInteractionDefinition(t *testing.T) {
+	got, err := CanonicalJSON(Bundle{
+		StaticActors: []StaticActor{{Name: "QuestResetGuide", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 20302, InteractionKind: interactionstore.KindQuestFlag, InteractionRef: "quest:first_steps_reset"}},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:      interactionstore.KindQuestFlag,
+			Ref:       "quest:first_steps_reset",
+			Text:      "Quest cleared.",
+			QuestRef:  "quest:first_steps",
+			QuestFlag: "met_guide",
+			QuestFrom: 1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonical JSON with quest flag clear interaction: %v", err)
+	}
+	want := "{\n  \"static_actors\": [\n    {\n      \"name\": \"QuestResetGuide\",\n      \"map_index\": 1,\n      \"x\": 1100,\n      \"y\": 2100,\n      \"race_num\": 20302,\n      \"interaction_kind\": \"quest_flag\",\n      \"interaction_ref\": \"quest:first_steps_reset\"\n    }\n  ],\n  \"interaction_definitions\": [\n    {\n      \"kind\": \"quest_flag\",\n      \"ref\": \"quest:first_steps_reset\",\n      \"text\": \"Quest cleared.\",\n      \"quest_ref\": \"quest:first_steps\",\n      \"quest_flag\": \"met_guide\",\n      \"quest_from\": 1\n    }\n  ]\n}\n"
+	if string(got) != want {
+		t.Fatalf("unexpected quest-flag clear interaction canonical JSON:\n got: %s\nwant: %s", string(got), want)
+	}
+}
+
 func TestSummarizeIncludesQuestFlagInteractionRoutes(t *testing.T) {
 	summary, err := Summarize(Bundle{
 		StaticActors: []StaticActor{{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindQuestFlag, InteractionRef: "quest:first_steps"}},

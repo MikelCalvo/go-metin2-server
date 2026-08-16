@@ -17,7 +17,7 @@ The current owned surface is limited to `internal/queststate`:
 - content-bundle import/export/summary inclusion for the same standalone quest-state snapshot,
 - the first static-actor `quest_flag` interaction kind that applies one authored compare-and-set transition for the selected character.
 
-This seam supports the first content/NPC path of “interact with an actor once and advance a flag”. The current local operator endpoints can validate, dry-run or mutate through one compare-and-set transition, read back one character's quest flags, and inspect/import/export quest-state rows through authored content bundles. A visible static actor can now call the same primitive through `INTERACT` when its authored definition uses `interaction_kind = "quest_flag"`, but no client quest packet, reward, branching dialog runtime, or quest script exists yet.
+This seam supports the first content/NPC path of “interact with an actor once and advance or clear a flag”. The current local operator endpoints can validate, dry-run or mutate through one compare-and-set transition, read back one character's quest flags, and inspect/import/export quest-state rows through authored content bundles. A visible static actor can now call the same primitive through `INTERACT` when its authored definition uses `interaction_kind = "quest_flag"`, but no client quest packet, reward, branching dialog runtime, or quest script exists yet.
 
 ## Snapshot shape
 
@@ -126,7 +126,7 @@ Owned rules:
 - `quest_ref` must satisfy the quest-state `quest:<name>` identity rule.
 - `quest_flag` must satisfy the lower-snake flag-name rule.
 - `quest_from` defaults to `0` when omitted and is the compare-and-set expected value.
-- `quest_to` must be non-zero and must differ from `quest_from` for this first interaction kind; clearing flags can be added later with its own tests/docs.
+- `quest_to` must differ from `quest_from`; `quest_to = 0` clears the flag through the same compare-and-set primitive when the current value matches `quest_from`.
 - `title`, merchant `catalog`, warp `map_index`, `x`, and `y` are not valid for `quest_flag` definitions.
 
 Runtime behavior:

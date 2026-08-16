@@ -420,6 +420,24 @@ func TestLocalInteractionDefinitionsEndpointCreatesQuestFlagDefinitionForLoopbac
 	}
 }
 
+func TestLocalInteractionDefinitionsEndpointCreatesQuestFlagClearDefinitionForLoopbackPost(t *testing.T) {
+	creator := &stubInteractionDefinitionCreator{status: http.StatusOK, definition: map[string]any{"kind": "quest_flag", "ref": "quest:first_steps_reset", "text": "Quest cleared.", "quest_ref": "quest:first_steps", "quest_flag": "met_guide", "quest_from": float64(1)}}
+	mux := RegisterLocalInteractionDefinitionEndpoints(NewPprofMux("gamed"), nil, creator.CreateInteractionDefinition)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interactions", strings.NewReader(`{"kind":"quest_flag","ref":"quest:first_steps_reset","text":"Quest cleared.","quest_ref":"quest:first_steps","quest_flag":"met_guide","quest_from":1,"quest_to":0}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if creator.calls != 1 || creator.lastDefinition.Kind != interactionstore.KindQuestFlag || creator.lastDefinition.Ref != "quest:first_steps_reset" || creator.lastDefinition.Text != "Quest cleared." || creator.lastDefinition.QuestRef != "quest:first_steps" || creator.lastDefinition.QuestFlag != "met_guide" || creator.lastDefinition.QuestFrom != 1 || creator.lastDefinition.QuestTo != 0 {
+		t.Fatalf("unexpected quest flag clear interaction definition creator call state: %+v", creator)
+	}
+}
+
 func TestLocalInteractionDefinitionUpdateEndpointUpsertsDefinitionForLoopbackPatch(t *testing.T) {
 	updater := &stubInteractionDefinitionUpdater{status: http.StatusOK, definition: map[string]any{"kind": "talk", "ref": "npc:village_guard", "text": "Keep your blade sharp."}}
 	mux := RegisterLocalInteractionDefinitionUpdateEndpoint(NewPprofMux("gamed"), updater.UpsertInteractionDefinition)

@@ -19,6 +19,15 @@
       "interaction_ref": "quest:first_steps"
     },
     {
+      "name": "QuestResetGuide",
+      "map_index": 1,
+      "x": 469375,
+      "y": 964200,
+      "race_num": 20302,
+      "interaction_kind": "quest_flag",
+      "interaction_ref": "quest:first_steps_reset"
+    },
+    {
       "name": "Teleporter",
       "map_index": 1,
       "x": 469650,
@@ -100,6 +109,14 @@
       "quest_ref": "quest:first_steps",
       "quest_flag": "met_guide",
       "quest_to": 1
+    },
+    {
+      "kind": "quest_flag",
+      "ref": "quest:first_steps_reset",
+      "text": "Quest cleared: first_steps.met_guide = 0.",
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "met_guide",
+      "quest_from": 1
     },
     {
       "kind": "shop_preview",

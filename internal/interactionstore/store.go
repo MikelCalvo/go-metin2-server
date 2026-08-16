@@ -174,7 +174,7 @@ func validDefinition(definition Definition) bool {
 	case KindWarp:
 		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && definition.MapIndex != 0 && definition.X != 0 && definition.Y != 0 && definition.QuestRef == "" && definition.QuestFlag == "" && definition.QuestFrom == 0 && definition.QuestTo == 0
 	case KindQuestFlag:
-		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && queststate.ValidQuestRef(definition.QuestRef) && queststate.ValidFlagName(definition.QuestFlag) && definition.QuestTo != 0 && definition.QuestFrom != definition.QuestTo
+		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && queststate.ValidQuestRef(definition.QuestRef) && queststate.ValidFlagName(definition.QuestFlag) && definition.QuestFrom != definition.QuestTo
 	default:
 		return false
 	}

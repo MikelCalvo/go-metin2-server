@@ -28144,6 +28144,66 @@ func TestGameSessionFlowStaticActorQuestFlagMismatchReturnsSelfOnlyInfoWithoutMu
 	}
 }
 
+func TestGameSessionFlowStaticActorQuestFlagClearInteractionPersistsQuestStateAndReturnsSelfOnlyChatDelivery(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	peer := peerVisibilityCharacter("QuestHero", 0x01030103, 0x02040103, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, ticketStore, "quest-hero-clear", 0x13131313, peer)
+	before := queststate.Snapshot{Flags: []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "met_guide", Value: 1}}}
+	if err := queststate.NewFileStore(questStatePath).Save(before); err != nil {
+		t.Fatalf("seed quest-state clear snapshot: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+		Kind:      interactionstore.KindQuestFlag,
+		Ref:       "quest:first_steps_reset",
+		Text:      "Quest cleared.",
+		QuestRef:  "quest:first_steps",
+		QuestFlag: "met_guide",
+		QuestFrom: 1,
+		QuestTo:   0,
+	}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, ticketStore, nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected quest-flag clear runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("QuestResetGuide", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindQuestFlag, "quest:first_steps_reset")
+	if !ok {
+		t.Fatal("expected quest-flag clear static actor registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "quest-hero-clear", 0x13131313)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible quest-flag clear actor, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected quest-flag clear interaction error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 self-only quest-flag clear interaction frame, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode quest-flag clear interaction chat delivery: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != "Quest cleared." {
+		t.Fatalf("unexpected quest-flag clear interaction chat delivery: %+v", delivery)
+	}
+	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	if err != nil {
+		t.Fatalf("load quest-state after quest-flag clear interaction: %v", err)
+	}
+	want := queststate.Snapshot{Flags: []queststate.Flag{}}
+	if !reflect.DeepEqual(loaded, want) {
+		t.Fatalf("unexpected persisted quest-state after quest-flag clear interaction:\n got: %#v\nwant: %#v", loaded, want)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for self-only quest-flag clear interaction, got %d", len(queued))
+	}
+}
+
 func TestGameRuntimeResolveStaticActorTalkInteractionReturnsChatDelivery(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
