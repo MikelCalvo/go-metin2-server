@@ -4034,6 +4034,98 @@ func TestGameRuntimeFailedContentBundleImportRestoresSpawnGroupReturnStepSchedul
 	}
 }
 
+func TestGameRuntimeSuccessfulContentBundleReplacementClearsStaleSpawnGroupReturnStepSchedule(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	viewer := peerVisibilityCharacter("SpawnReturnReplace", 0x01035542, 4, 2301, 2800, 0, 101, 201)
+	viewer.MapIndex = 42
+	issuePeerTicket(t, store, "spawn-return-replace", 0x55554242, viewer)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	currentTime := time.Unix(1700000970, 0)
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "radius", VisibilityRadius: 500, VisibilitySectorSize: 256},
+		store,
+		nil,
+		staticActorStore,
+		interactionStore,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "spawn-return-replace", 0x55554242)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 5 {
+		t.Fatalf("expected base enter-game burst before spawn import, got %d frames", len(enterOut))
+	}
+	flushServerFrames(t, flow)
+
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_step_replace_original",
+		Name:          "ReturnStepReplaceOriginalMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import original return-step replacement spawn bundle: %v", err)
+	}
+	flushServerFrames(t, flow)
+	original, ok := runtime.SpawnGroupByRef("practice.return_step_replace_original")
+	if !ok {
+		t.Fatal("expected original return-step replacement spawn group to resolve by ref")
+	}
+	if _, ok := runtime.UpdateStaticActor(original.EntityID, "ReturnStepReplaceOriginalMob", 42, 2301, 2800, 20350); !ok {
+		t.Fatal("expected original spawn-backed actor update to return-required position to succeed")
+	}
+	flushServerFrames(t, flow)
+
+	runtime.spawnReturnMu.Lock()
+	originalDueAt, scheduled := runtime.spawnReturnStepDueAt[original.EntityID]
+	runtime.spawnReturnMu.Unlock()
+	if !scheduled {
+		t.Fatalf("expected return-required actor %d to have a pending automatic return-step schedule before successful replacement", original.EntityID)
+	}
+
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_step_replace_new",
+		Name:          "ReturnStepReplaceNewMob",
+		MapIndex:      42,
+		X:             1810,
+		Y:             2910,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import replacement return-step spawn bundle: %v", err)
+	}
+	flushServerFrames(t, flow)
+
+	runtime.spawnReturnMu.Lock()
+	_, stillScheduled := runtime.spawnReturnStepDueAt[original.EntityID]
+	scheduleCount := len(runtime.spawnReturnStepDueAt)
+	runtime.spawnReturnMu.Unlock()
+	if stillScheduled || scheduleCount != 0 {
+		t.Fatalf("expected successful replacement to clear stale return-step schedule for removed actor %d, still_scheduled=%v schedule_count=%d", original.EntityID, stillScheduled, scheduleCount)
+	}
+	if _, ok := runtime.SpawnGroupByRef("practice.return_step_replace_original"); ok {
+		t.Fatal("expected original spawn group to be absent after successful replacement")
+	}
+	replacement, ok := runtime.SpawnGroupByRef("practice.return_step_replace_new")
+	if !ok || replacement.SpawnLeash == nil || replacement.SpawnLeash.ReturnRequired {
+		t.Fatalf("expected replacement spawn group to be live at home without a pending return step, ok=%v snapshot=%+v", ok, replacement)
+	}
+
+	currentTime = originalDueAt.Add(time.Nanosecond)
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected cleared stale return-step schedule not to fire after successful replacement, got %d frames", len(queued))
+	}
+}
+
 func TestGameRuntimeUpdateSpawnGroupActorSnapshotKeepsCombatLevelAndRank(t *testing.T) {
 	const profile = "practice_spawn_update_ranked_wolf"
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
