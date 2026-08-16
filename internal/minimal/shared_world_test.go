@@ -4086,6 +4086,8 @@ func TestGameRuntimeSuccessfulContentBundleReplacementClearsStaleSpawnGroupRetur
 
 	runtime.spawnReturnMu.Lock()
 	originalDueAt, scheduled := runtime.spawnReturnStepDueAt[original.EntityID]
+	staleEntityID := original.EntityID + 9999
+	runtime.spawnReturnStepDueAt[staleEntityID] = originalDueAt
 	runtime.spawnReturnMu.Unlock()
 	if !scheduled {
 		t.Fatalf("expected return-required actor %d to have a pending automatic return-step schedule before successful replacement", original.EntityID)
@@ -4106,11 +4108,12 @@ func TestGameRuntimeSuccessfulContentBundleReplacementClearsStaleSpawnGroupRetur
 	flushServerFrames(t, flow)
 
 	runtime.spawnReturnMu.Lock()
-	_, stillScheduled := runtime.spawnReturnStepDueAt[original.EntityID]
+	_, removedActorStillScheduled := runtime.spawnReturnStepDueAt[original.EntityID]
+	_, unrelatedStaleStillScheduled := runtime.spawnReturnStepDueAt[staleEntityID]
 	scheduleCount := len(runtime.spawnReturnStepDueAt)
 	runtime.spawnReturnMu.Unlock()
-	if stillScheduled || scheduleCount != 0 {
-		t.Fatalf("expected successful replacement to clear stale return-step schedule for removed actor %d, still_scheduled=%v schedule_count=%d", original.EntityID, stillScheduled, scheduleCount)
+	if removedActorStillScheduled || unrelatedStaleStillScheduled || scheduleCount != 0 {
+		t.Fatalf("expected successful replacement to prune removed actor %d and unrelated stale %d return-step schedules, removed_scheduled=%v unrelated_scheduled=%v schedule_count=%d", original.EntityID, staleEntityID, removedActorStillScheduled, unrelatedStaleStillScheduled, scheduleCount)
 	}
 	if _, ok := runtime.SpawnGroupByRef("practice.return_step_replace_original"); ok {
 		t.Fatal("expected original spawn group to be absent after successful replacement")

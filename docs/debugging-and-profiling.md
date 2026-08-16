@@ -1033,6 +1033,7 @@ Each row exposes:
 
 Rows are sorted by `entity_id`.
 Actors that are missing, dead, no longer spawn-backed, no longer `return_required`, or no longer plan a safe capped step are omitted from the list and return `404` from the exact-entity endpoint.
+Successful content-bundle replacement prunes stale pending rows after the imported actor set commits, so old return-step deadlines for removed actors do not survive and fire against unrelated replacement content.
 Dead return-required spawn groups that still own a pending respawn timer remain visible in the broader spawn/respawn snapshots, but do not arm or expose automatic return-step rows until respawn makes them live again.
 Once `FlushServerFrames()` runs after a due timer and the actor steps back inside leash radius, that actor disappears from this snapshot.
 If the step leaves the actor still live and `return_required`, the row remains visible with a refreshed `ready_at` after the next server-owned deadline is armed.

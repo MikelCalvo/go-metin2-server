@@ -1294,6 +1294,10 @@ func (r *gameRuntime) restoreSpawnGroupReturnStepDueAtSnapshot(snapshot map[uint
 	}
 }
 
+func (r *gameRuntime) pruneSpawnGroupReturnStepSchedules() {
+	r.restoreSpawnGroupReturnStepDueAtSnapshot(r.spawnGroupReturnStepDueAtSnapshot())
+}
+
 func (r *gameRuntime) spawnGroupReturnStepNow() time.Time {
 	now := time.Now()
 	if r != nil && r.now != nil {
@@ -7446,6 +7450,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		}
 		return contentbundle.Bundle{}, replaceErr
 	}
+	r.pruneSpawnGroupReturnStepSchedules()
 	if r.sharedWorld != nil {
 		r.sharedWorld.flushStaticActorImportFanout()
 	}
