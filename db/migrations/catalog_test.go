@@ -33,6 +33,8 @@ const (
 	expectedItemTemplateRefineInfoDownSHA256    = "446ab6e77951ed82c7ca5eadb41c27855cf7eb10ad7c807939e58f4f23450ec6"
 	expectedBootstrapGroundItemStateUpSHA256    = "7c7c3b9e20c680224777955be2d15dd86326d511208fa17e4048ec41beaf4abb"
 	expectedBootstrapGroundItemStateDownSHA256  = "1509b9ae5105449c4ef1317b68d1ad8d05c120f2188b7c0fe110c84515381042"
+	expectedCharacterPointStateUpSHA256         = "2034ab84227eaa0701a257ed1dbd592d18e4d33fa09add30e05e93dcf4c8dc43"
+	expectedCharacterPointStateDownSHA256       = "a77745e16a6066f5acaa905699176b8e57ef809b4ae61383dd20fdd0fb8eeafa"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -435,6 +437,45 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 		t.Fatalf("expected bootstrap-ground-item-state down migration to drop ground items, got:\n%s", tenth.DownSQL)
 	}
 
+	if len(catalog) < 11 {
+		t.Fatalf("expected character point-state migration after bootstrap ground-item state, got %d", len(catalog))
+	}
+	eleventh := catalog[10]
+	if eleventh.Version != 11 || eleventh.Name != "character_point_state" {
+		t.Fatalf("unexpected eleventh migration: %#v", eleventh)
+	}
+	if eleventh.UpPath != "0011_character_point_state.up.sql" {
+		t.Fatalf("unexpected eleventh up path: %q", eleventh.UpPath)
+	}
+	if eleventh.DownPath != "0011_character_point_state.down.sql" {
+		t.Fatalf("unexpected eleventh down path: %q", eleventh.DownPath)
+	}
+	if eleventh.UpSHA256 != expectedCharacterPointStateUpSHA256 {
+		t.Fatalf("unexpected character-point-state up checksum: got %q want %q", eleventh.UpSHA256, expectedCharacterPointStateUpSHA256)
+	}
+	if eleventh.DownSHA256 != expectedCharacterPointStateDownSHA256 {
+		t.Fatalf("unexpected character-point-state down checksum: got %q want %q", eleventh.DownSHA256, expectedCharacterPointStateDownSHA256)
+	}
+	for _, want := range []string{
+		"CREATE TABLE character_points",
+		"character_id BIGINT NOT NULL",
+		"point_index INTEGER NOT NULL",
+		"value BIGINT NOT NULL",
+		"PRIMARY KEY (character_id, point_index)",
+		"FOREIGN KEY (character_id) REFERENCES characters(id)",
+		"CHECK (character_id > 0)",
+		"CHECK (point_index >= 0 AND point_index < 255)",
+		"CHECK (value >= -2147483648 AND value <= 2147483647)",
+		"CREATE INDEX character_points_character_index",
+	} {
+		if !strings.Contains(eleventh.UpSQL, want) {
+			t.Fatalf("expected character-point-state migration to contain %q, got:\n%s", want, eleventh.UpSQL)
+		}
+	}
+	if !strings.Contains(eleventh.DownSQL, "DROP TABLE character_points") {
+		t.Fatalf("expected character-point-state down migration to drop points, got:\n%s", eleventh.DownSQL)
+	}
+
 	for i, migration := range catalog {
 		wantVersion := i + 1
 		if migration.Version != wantVersion {
@@ -504,7 +545,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("built-in catalog summary: %v", err)
 	}
-	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 10 {
+	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 11 {
 		t.Fatalf("unexpected built-in catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -514,7 +555,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 		t.Fatalf("unexpected first built-in catalog summary row: %#v", summary.Migrations[0])
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "bootstrap_ground_item_state" {
+	if latest.Version != summary.LatestVersion || latest.Name != "character_point_state" {
 		t.Fatalf("unexpected latest built-in catalog summary row: %#v", latest)
 	}
 }

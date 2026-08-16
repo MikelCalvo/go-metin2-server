@@ -196,6 +196,54 @@ func TestGameRuntimeCharacterItemStateExportProjectsCommittedSnapshots(t *testin
 	}
 }
 
+func TestGameRuntimeCharacterPointStateExportProjectsCommittedSnapshots(t *testing.T) {
+	accountStore := accountstore.NewFileStore(t.TempDir())
+	character := loginticket.Character{
+		ID:       7,
+		Name:     "AlphaWar",
+		Level:    1,
+		MapIndex: 1,
+	}
+	character.Points[0] = 12
+	character.Points[1] = -3
+	character.Points[254] = 99
+	if err := accountStore.Save(accountstore.Account{Login: "Alpha", Empire: 1, Characters: []loginticket.Character{character}}); err != nil {
+		t.Fatalf("save account snapshot: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountStore,
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	export, err := runtime.ExportCharacterPointState()
+	if err != nil {
+		t.Fatalf("runtime character point-state export: %v", err)
+	}
+	if export.MigrationVersion != accountstore.CharacterPointStateMigrationVersion || export.MigrationName != accountstore.CharacterPointStateMigrationName {
+		t.Fatalf("unexpected migration boundary: %#v", export)
+	}
+	if len(export.Points) != 255 {
+		t.Fatalf("expected one fixed-width point vector, got %d rows", len(export.Points))
+	}
+	if export.Points[0].CharacterID != 7 || export.Points[0].PointIndex != 0 || export.Points[0].Value != 12 {
+		t.Fatalf("unexpected first point row: %#v", export.Points[0])
+	}
+	if export.Points[1].CharacterID != 7 || export.Points[1].PointIndex != 1 || export.Points[1].Value != -3 {
+		t.Fatalf("unexpected negative point row: %#v", export.Points[1])
+	}
+	if export.Points[254].CharacterID != 7 || export.Points[254].PointIndex != 254 || export.Points[254].Value != 99 {
+		t.Fatalf("unexpected final point row: %#v", export.Points[254])
+	}
+}
+
 func TestGameRuntimeAuthLoginTicketHandoffExportProjectsCommittedTickets(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	issuedAt := time.Date(2026, 8, 12, 9, 30, 0, 0, time.UTC)
@@ -420,8 +468,8 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	if plan.CurrentVersion != 0 || plan.LatestVersion < 1 || plan.UpToDate {
 		t.Fatalf("unexpected migration plan versions: %#v", plan)
 	}
-	if len(plan.Pending) < 10 {
-		t.Fatalf("expected schema, account/character, item-state, quest-state, item-template-state, safebox-reject, auth login-ticket handoff, static actor content-state, item-template refine-info, and bootstrap ground-item state migrations for empty ledger: %#v", plan)
+	if len(plan.Pending) < 11 {
+		t.Fatalf("expected schema, account/character, item-state, quest-state, item-template-state, safebox-reject, auth login-ticket handoff, static actor content-state, item-template refine-info, bootstrap ground-item state, and character point-state migrations for empty ledger: %#v", plan)
 	}
 	first := plan.Pending[0]
 	if first.Version != 1 || first.Name != "bootstrap_schema_migrations" || first.Direction != dbmigrations.DirectionUp || first.Path != "0001_bootstrap_schema_migrations.up.sql" {
@@ -463,7 +511,11 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	if tenth.Version != 10 || tenth.Name != "bootstrap_ground_item_state" || tenth.Direction != dbmigrations.DirectionUp || tenth.Path != "0010_bootstrap_ground_item_state.up.sql" {
 		t.Fatalf("unexpected tenth pending migration step: %#v", tenth)
 	}
-	for _, step := range []dbmigrations.PlanStep{first, second, third, fourth, fifth, sixth, seventh, eighth, ninth, tenth} {
+	eleventh := plan.Pending[10]
+	if eleventh.Version != 11 || eleventh.Name != "character_point_state" || eleventh.Direction != dbmigrations.DirectionUp || eleventh.Path != "0011_character_point_state.up.sql" {
+		t.Fatalf("unexpected eleventh pending migration step: %#v", eleventh)
+	}
+	for _, step := range []dbmigrations.PlanStep{first, second, third, fourth, fifth, sixth, seventh, eighth, ninth, tenth, eleventh} {
 		if step.SHA256 == "" || strings.Contains(step.Path, "CREATE TABLE") {
 			t.Fatalf("expected metadata-only pending steps with checksums, got %#v", plan.Pending)
 		}
@@ -488,7 +540,7 @@ func TestGameRuntimeMigrationCatalogSummaryReturnsMetadataOnlyCatalog(t *testing
 	if err != nil {
 		t.Fatalf("migration catalog summary: %v", err)
 	}
-	if summary.Format != dbmigrations.CatalogSummaryFormat || summary.LatestVersion < 10 {
+	if summary.Format != dbmigrations.CatalogSummaryFormat || summary.LatestVersion < 11 {
 		t.Fatalf("unexpected migration catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -499,7 +551,7 @@ func TestGameRuntimeMigrationCatalogSummaryReturnsMetadataOnlyCatalog(t *testing
 		t.Fatalf("unexpected first catalog summary row: %#v", first)
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "bootstrap_ground_item_state" || latest.DownSHA256 == "" {
+	if latest.Version != summary.LatestVersion || latest.Name != "character_point_state" || latest.DownSHA256 == "" {
 		t.Fatalf("unexpected latest catalog summary row: %#v", latest)
 	}
 	raw, err := json.Marshal(summary)

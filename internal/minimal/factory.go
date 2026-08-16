@@ -1035,6 +1035,19 @@ func (r *gameRuntime) ExportCharacterItemState() (accountstore.CharacterItemStat
 	return exporter.ExportCharacterItemState()
 }
 
+func (r *gameRuntime) ExportCharacterPointState() (accountstore.CharacterPointStateExport, error) {
+	if r == nil || r.accountStore == nil {
+		return accountstore.ExportCharacterPointState(nil)
+	}
+	exporter, ok := r.accountStore.(interface {
+		ExportCharacterPointState() (accountstore.CharacterPointStateExport, error)
+	})
+	if !ok {
+		return accountstore.CharacterPointStateExport{}, fmt.Errorf("character point-state export is not supported")
+	}
+	return exporter.ExportCharacterPointState()
+}
+
 func (r *gameRuntime) ExportAuthLoginTicketHandoff() (loginticket.AuthLoginTicketHandoffExport, error) {
 	if r == nil || r.loginTicketStore == nil {
 		return loginticket.ExportAuthLoginTicketHandoff(nil)

@@ -80,6 +80,14 @@
       "down_path": "0010_bootstrap_ground_item_state.down.sql",
       "up_sha256": "7c7c3b9e20c680224777955be2d15dd86326d511208fa17e4048ec41beaf4abb",
       "down_sha256": "1509b9ae5105449c4ef1317b68d1ad8d05c120f2188b7c0fe110c84515381042"
+    },
+    {
+      "version": 11,
+      "name": "character_point_state",
+      "up_path": "0011_character_point_state.up.sql",
+      "down_path": "0011_character_point_state.down.sql",
+      "up_sha256": "2034ab84227eaa0701a257ed1dbd592d18e4d33fa09add30e05e93dcf4c8dc43",
+      "down_sha256": "a77745e16a6066f5acaa905699176b8e57ef809b4ae61383dd20fdd0fb8eeafa"
     }
   ]
 }

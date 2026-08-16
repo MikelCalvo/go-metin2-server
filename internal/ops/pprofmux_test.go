@@ -32,6 +32,7 @@ const (
 	expectedStaticActorContentStateStatusSHA256   = "303d4608766de8147c676e4d93f27e53a3744bf09343b060ec662d9c2378d9ad"
 	expectedItemTemplateRefineInfoStatusSHA256    = "89ff5fd8c8e7f4c97a580b59d5b80196d5200aa0f19e1a3281691104e906788d"
 	expectedBootstrapGroundItemStateStatusSHA256  = "7c7c3b9e20c680224777955be2d15dd86326d511208fa17e4048ec41beaf4abb"
+	expectedCharacterPointStateStatusSHA256       = "2034ab84227eaa0701a257ed1dbd592d18e4d33fa09add30e05e93dcf4c8dc43"
 )
 
 func TestHealthzEndpointIncludesServiceName(t *testing.T) {
@@ -6516,7 +6517,7 @@ func TestLocalStaticActorDeleteEndpointRemovesActorForLoopbackDelete(t *testing.
 func TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet(t *testing.T) {
 	planner := &stubMigrationStatusPlanner{plan: dbmigrations.Plan{
 		CurrentVersion: 0,
-		LatestVersion:  10,
+		LatestVersion:  11,
 		UpToDate:       false,
 		Pending: []dbmigrations.PlanStep{
 			{Version: 1, Name: "bootstrap_schema_migrations", Direction: dbmigrations.DirectionUp, Path: "0001_bootstrap_schema_migrations.up.sql", SHA256: expectedBootstrapMigrationStatusSHA256},
@@ -6529,6 +6530,7 @@ func TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet(t *testing.
 			{Version: 8, Name: "static_actor_content_state", Direction: dbmigrations.DirectionUp, Path: "0008_static_actor_content_state.up.sql", SHA256: expectedStaticActorContentStateStatusSHA256},
 			{Version: 9, Name: "item_template_refine_info", Direction: dbmigrations.DirectionUp, Path: "0009_item_template_refine_info.up.sql", SHA256: expectedItemTemplateRefineInfoStatusSHA256},
 			{Version: 10, Name: "bootstrap_ground_item_state", Direction: dbmigrations.DirectionUp, Path: "0010_bootstrap_ground_item_state.up.sql", SHA256: expectedBootstrapGroundItemStateStatusSHA256},
+			{Version: 11, Name: "character_point_state", Direction: dbmigrations.DirectionUp, Path: "0011_character_point_state.up.sql", SHA256: expectedCharacterPointStateStatusSHA256},
 		},
 	}}
 	mux := RegisterLocalMigrationStatusEndpoint(NewPprofMux("gamed"), planner.Plan)
@@ -6549,7 +6551,7 @@ func TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet(t *testing.
 		t.Fatalf("expected application/json content type, got %q", contentType)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`"current_version":0`, `"latest_version":10`, `"up_to_date":false`, `"direction":"up"`, `"path":"0001_bootstrap_schema_migrations.up.sql"`, `"sha256":"` + expectedBootstrapMigrationStatusSHA256 + `"`, `"path":"0002_account_character_roster.up.sql"`, `"sha256":"` + expectedAccountCharacterRosterStatusSHA256 + `"`, `"path":"0003_character_item_state.up.sql"`, `"sha256":"` + expectedCharacterItemStateStatusSHA256 + `"`, `"path":"0004_character_quest_state.up.sql"`, `"sha256":"` + expectedCharacterQuestStateStatusSHA256 + `"`, `"path":"0005_item_template_state.up.sql"`, `"sha256":"` + expectedItemTemplateStateStatusSHA256 + `"`, `"path":"0006_item_template_safebox_reject_message.up.sql"`, `"sha256":"` + expectedItemTemplateSafeboxRejectStatusSHA256 + `"`, `"path":"0007_auth_login_ticket_handoff.up.sql"`, `"sha256":"` + expectedAuthLoginTicketHandoffStatusSHA256 + `"`, `"path":"0008_static_actor_content_state.up.sql"`, `"sha256":"` + expectedStaticActorContentStateStatusSHA256 + `"`, `"path":"0009_item_template_refine_info.up.sql"`, `"sha256":"` + expectedItemTemplateRefineInfoStatusSHA256 + `"`, `"path":"0010_bootstrap_ground_item_state.up.sql"`, `"sha256":"` + expectedBootstrapGroundItemStateStatusSHA256 + `"`} {
+	for _, want := range []string{`"current_version":0`, `"latest_version":11`, `"up_to_date":false`, `"direction":"up"`, `"path":"0001_bootstrap_schema_migrations.up.sql"`, `"sha256":"` + expectedBootstrapMigrationStatusSHA256 + `"`, `"path":"0002_account_character_roster.up.sql"`, `"sha256":"` + expectedAccountCharacterRosterStatusSHA256 + `"`, `"path":"0003_character_item_state.up.sql"`, `"sha256":"` + expectedCharacterItemStateStatusSHA256 + `"`, `"path":"0004_character_quest_state.up.sql"`, `"sha256":"` + expectedCharacterQuestStateStatusSHA256 + `"`, `"path":"0005_item_template_state.up.sql"`, `"sha256":"` + expectedItemTemplateStateStatusSHA256 + `"`, `"path":"0006_item_template_safebox_reject_message.up.sql"`, `"sha256":"` + expectedItemTemplateSafeboxRejectStatusSHA256 + `"`, `"path":"0007_auth_login_ticket_handoff.up.sql"`, `"sha256":"` + expectedAuthLoginTicketHandoffStatusSHA256 + `"`, `"path":"0008_static_actor_content_state.up.sql"`, `"sha256":"` + expectedStaticActorContentStateStatusSHA256 + `"`, `"path":"0009_item_template_refine_info.up.sql"`, `"sha256":"` + expectedItemTemplateRefineInfoStatusSHA256 + `"`, `"path":"0010_bootstrap_ground_item_state.up.sql"`, `"sha256":"` + expectedBootstrapGroundItemStateStatusSHA256 + `"`, `"path":"0011_character_point_state.up.sql"`, `"sha256":"` + expectedCharacterPointStateStatusSHA256 + `"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected migration status body to contain %s, got %s", want, body)
 		}
@@ -7229,6 +7231,97 @@ func TestLocalCharacterItemStateExportEndpointReportsExporterFailure(t *testing.
 	}
 }
 
+func TestLocalCharacterPointStateExportEndpointReturnsLoopbackJSON(t *testing.T) {
+	exporter := &stubCharacterPointStateExporter{export: accountstore.CharacterPointStateExport{
+		MigrationVersion: accountstore.CharacterPointStateMigrationVersion,
+		MigrationName:    accountstore.CharacterPointStateMigrationName,
+		Points: []accountstore.CharacterPointRow{
+			{CharacterID: 7, PointIndex: 0, Value: 12},
+			{CharacterID: 7, PointIndex: 1, Value: -3},
+		},
+	}}
+	mux := RegisterLocalCharacterPointStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/account-store/exports/character-point-state", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if exporter.calls != 1 {
+		t.Fatalf("expected exporter to be called once, got %d", exporter.calls)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"migration_version":11`, `"migration_name":"character_point_state"`, `"points":[`, `"character_id":7`, `"point_index":1`, `"value":-3`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected character point-state export body to contain %s, got %s", want, body)
+		}
+	}
+	if strings.Contains(body, "CREATE TABLE") || strings.Contains(body, "inventory_items") || strings.Contains(body, "equipment_items") {
+		t.Fatalf("point-state export endpoint must not expose SQL or item-state rows, got %s", body)
+	}
+}
+
+func TestLocalCharacterPointStateExportEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	exporter := &stubCharacterPointStateExporter{export: accountstore.CharacterPointStateExport{MigrationVersion: 11}}
+	mux := RegisterLocalCharacterPointStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/account-store/exports/character-point-state", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if exporter.calls != 0 {
+		t.Fatalf("expected exporter not to be called, got %d", exporter.calls)
+	}
+}
+
+func TestLocalCharacterPointStateExportEndpointRejectsWrongMethod(t *testing.T) {
+	exporter := &stubCharacterPointStateExporter{export: accountstore.CharacterPointStateExport{MigrationVersion: 11}}
+	mux := RegisterLocalCharacterPointStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/exports/character-point-state", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if exporter.calls != 0 {
+		t.Fatalf("expected exporter not to be called, got %d", exporter.calls)
+	}
+}
+
+func TestLocalCharacterPointStateExportEndpointReportsExporterFailure(t *testing.T) {
+	exporter := &stubCharacterPointStateExporter{err: errStubMigrationStatusInvalid}
+	mux := RegisterLocalCharacterPointStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/account-store/exports/character-point-state", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if exporter.calls != 1 {
+		t.Fatalf("expected exporter to be called once, got %d", exporter.calls)
+	}
+}
+
 func TestLocalAuthLoginTicketHandoffExportEndpointReturnsLoopbackJSON(t *testing.T) {
 	issuedAt := time.Date(2026, 8, 12, 9, 30, 0, 0, time.UTC)
 	exporter := &stubAuthLoginTicketHandoffExporter{export: loginticket.AuthLoginTicketHandoffExport{
@@ -7635,6 +7728,7 @@ func TestNewPprofMuxDoesNotExposeLocalMigrationStatusByDefault(t *testing.T) {
 		{method: http.MethodPost, path: "/local/db/migrations/plan-from-ledger-snapshot?target_version=0"},
 		{method: http.MethodGet, path: "/local/account-store/exports/account-character-roster"},
 		{method: http.MethodGet, path: "/local/account-store/exports/character-item-state"},
+		{method: http.MethodGet, path: "/local/account-store/exports/character-point-state"},
 		{method: http.MethodGet, path: "/local/login-tickets/exports/auth-login-ticket-handoff"},
 		{method: http.MethodGet, path: "/local/quest-state/exports/character-quest-state"},
 		{method: http.MethodGet, path: "/local/item-templates/exports/item-template-state"},
@@ -7718,6 +7812,12 @@ type stubCharacterItemStateExporter struct {
 	calls  int
 }
 
+type stubCharacterPointStateExporter struct {
+	export accountstore.CharacterPointStateExport
+	err    error
+	calls  int
+}
+
 type stubAuthLoginTicketHandoffExporter struct {
 	export loginticket.AuthLoginTicketHandoffExport
 	err    error
@@ -7778,6 +7878,11 @@ func (e *stubAccountCharacterRosterExporter) Export() (accountstore.AccountChara
 }
 
 func (e *stubCharacterItemStateExporter) Export() (accountstore.CharacterItemStateExport, error) {
+	e.calls++
+	return e.export, e.err
+}
+
+func (e *stubCharacterPointStateExporter) Export() (accountstore.CharacterPointStateExport, error) {
 	e.calls++
 	return e.export, e.err
 }

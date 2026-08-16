@@ -372,6 +372,12 @@ Returns a loopback-only, read-only JSON projection of committed bootstrap accoun
 
 Successful responses include `migration_version`, `migration_name`, deterministic `inventory_items`, deterministic `equipment_items`, and deterministic `quickslots`. Inventory rows are ordered by account/character/slot and expose item id, character id, carried slot, vnum, count, and lock flag. Equipment rows expose item id, character id, named equipment slot, vnum, count, and lock flag. Quickslot rows expose character id, quickslot position, type, and slot. The response deliberately omits roster account rows, executable SQL, item-template definitions, quest state, login tickets, authored content, and runtime world state, and it does not apply migrations or mutate the account store. Use it as a second-stage operator/backfill preflight after the account/character roster export.
 
+### `GET /local/account-store/exports/character-point-state`
+
+Returns a loopback-only, read-only JSON projection of committed bootstrap account snapshots onto the `0011_character_point_state` migration boundary. This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the account store cannot be listed or any committed snapshot would violate the roster or point-state schema shape.
+
+Successful responses include `migration_version`, `migration_name`, and deterministic `points` rows. Each non-empty character emits all 255 fixed point-vector indices in ascending order, including zero and negative values, with `character_id`, `point_index`, and signed `value`. The response deliberately omits roster account rows, executable SQL, item-state rows, item-template definitions, quest state, login tickets, authored content, and runtime world state, and it does not apply migrations or mutate the account store. Use it as a point-state backfill preflight after the account/character roster export and before any future DB-backed selected-character repository work.
+
 ### `GET /local/login-tickets/exports/auth-login-ticket-handoff`
 
 Returns a loopback-only, read-only JSON projection of committed pending bootstrap login-ticket snapshots onto the `0007_auth_login_ticket_handoff` migration boundary. This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the login-ticket store cannot be listed or any committed pending ticket would violate the handoff schema shape.
