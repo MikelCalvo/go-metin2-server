@@ -11,7 +11,8 @@ Owned in this slice family:
 - server `GC::ITEM_GROUND_DEL` codec shape;
 - server `GC::ITEM_OWNERSHIP` codec shape;
 - server `GC::ITEM_GET` codec shape for pickup notices;
-- pending bootstrap ground item snapshots in runtime/operator map occupancy and transfer-preview results.
+- pending bootstrap ground item snapshots in runtime/operator map occupancy and transfer-preview results;
+- the schema-only `0010_bootstrap_ground_item_state` migration boundary for future durable/import tooling around currently in-memory item-shaped and gold-shaped bootstrap ground handles.
 
 Owned by the first runtime drop slice:
 
@@ -22,7 +23,7 @@ Owned by the first runtime drop slice:
 
 Not owned yet:
 
-- permanent/shared-world ground item entity IDs, ownership timers, despawn timing, trade/shop restrictions, or range/path authorization beyond current visible-world scope;
+- permanent/shared-world ground item entity IDs, DB-backed runtime restoration, ownership timers, despawn timing, trade/shop restrictions, or range/path authorization beyond current visible-world scope;
 - `GC::ITEM_DROP`, timed/permission-changing ownership transitions, real party membership checks, or public ownership release.
 
 ## Client packets

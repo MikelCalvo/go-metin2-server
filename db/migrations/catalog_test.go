@@ -31,6 +31,8 @@ const (
 	expectedStaticActorContentStateDownSHA256   = "8a58559911600f73c9f8c0e23bd4b4df8919a0c0dbe19c2ede6a2771ac43a2d7"
 	expectedItemTemplateRefineInfoUpSHA256      = "89ff5fd8c8e7f4c97a580b59d5b80196d5200aa0f19e1a3281691104e906788d"
 	expectedItemTemplateRefineInfoDownSHA256    = "446ab6e77951ed82c7ca5eadb41c27855cf7eb10ad7c807939e58f4f23450ec6"
+	expectedBootstrapGroundItemStateUpSHA256    = "7c7c3b9e20c680224777955be2d15dd86326d511208fa17e4048ec41beaf4abb"
+	expectedBootstrapGroundItemStateDownSHA256  = "1509b9ae5105449c4ef1317b68d1ad8d05c120f2188b7c0fe110c84515381042"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -387,6 +389,52 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 		}
 	}
 
+	if len(catalog) < 10 {
+		t.Fatalf("expected bootstrap ground-item state migration after item-template refine-info, got %d", len(catalog))
+	}
+	tenth := catalog[9]
+	if tenth.Version != 10 || tenth.Name != "bootstrap_ground_item_state" {
+		t.Fatalf("unexpected tenth migration: %#v", tenth)
+	}
+	if tenth.UpPath != "0010_bootstrap_ground_item_state.up.sql" {
+		t.Fatalf("unexpected tenth up path: %q", tenth.UpPath)
+	}
+	if tenth.DownPath != "0010_bootstrap_ground_item_state.down.sql" {
+		t.Fatalf("unexpected tenth down path: %q", tenth.DownPath)
+	}
+	if tenth.UpSHA256 != expectedBootstrapGroundItemStateUpSHA256 {
+		t.Fatalf("unexpected bootstrap-ground-item-state up checksum: got %q want %q", tenth.UpSHA256, expectedBootstrapGroundItemStateUpSHA256)
+	}
+	if tenth.DownSHA256 != expectedBootstrapGroundItemStateDownSHA256 {
+		t.Fatalf("unexpected bootstrap-ground-item-state down checksum: got %q want %q", tenth.DownSHA256, expectedBootstrapGroundItemStateDownSHA256)
+	}
+	for _, want := range []string{
+		"CREATE TABLE bootstrap_ground_items",
+		"vid BIGINT PRIMARY KEY",
+		"owner_login TEXT NOT NULL",
+		"owner_character_id BIGINT NOT NULL",
+		"owner_vid BIGINT NOT NULL",
+		"owner_name TEXT NOT NULL",
+		"gold_amount BIGINT",
+		"item_count INTEGER",
+		"pickup_range INTEGER NOT NULL DEFAULT 300",
+		"FOREIGN KEY (owner_character_id) REFERENCES characters(id)",
+		"CHECK (vid > 0 AND vid <= 4294967295)",
+		"CHECK (map_index > 0)",
+		"CHECK (owner_name <> '' AND length(owner_name) <= 25)",
+		"item_count IS NOT NULL AND item_count > 0 AND item_count <= 255 AND gold_amount IS NULL",
+		"item_count IS NULL AND gold_amount IS NOT NULL AND gold_amount > 0 AND gold_amount <= 2147483647 AND vnum = 1",
+		"CREATE INDEX bootstrap_ground_items_map_index_index",
+		"CREATE INDEX bootstrap_ground_items_owner_identity_index",
+	} {
+		if !strings.Contains(tenth.UpSQL, want) {
+			t.Fatalf("expected bootstrap-ground-item-state migration to contain %q, got:\n%s", want, tenth.UpSQL)
+		}
+	}
+	if !strings.Contains(tenth.DownSQL, "DROP TABLE bootstrap_ground_items") {
+		t.Fatalf("expected bootstrap-ground-item-state down migration to drop ground items, got:\n%s", tenth.DownSQL)
+	}
+
 	for i, migration := range catalog {
 		wantVersion := i + 1
 		if migration.Version != wantVersion {
@@ -456,7 +504,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("built-in catalog summary: %v", err)
 	}
-	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 9 {
+	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 10 {
 		t.Fatalf("unexpected built-in catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -466,7 +514,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 		t.Fatalf("unexpected first built-in catalog summary row: %#v", summary.Migrations[0])
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "item_template_refine_info" {
+	if latest.Version != summary.LatestVersion || latest.Name != "bootstrap_ground_item_state" {
 		t.Fatalf("unexpected latest built-in catalog summary row: %#v", latest)
 	}
 }

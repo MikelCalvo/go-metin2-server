@@ -38,7 +38,7 @@ func TestRunCatalogWritesMetadataOnlySummary(t *testing.T) {
 	if summary.Format != dbmigrations.CatalogSummaryFormat {
 		t.Fatalf("unexpected catalog summary format: %#v", summary)
 	}
-	if summary.LatestVersion < 9 || len(summary.Migrations) != summary.LatestVersion {
+	if summary.LatestVersion < 10 || len(summary.Migrations) != summary.LatestVersion {
 		t.Fatalf("unexpected catalog summary size: %#v", summary)
 	}
 	if summary.Migrations[0].Name != "bootstrap_schema_migrations" || summary.Migrations[0].UpPath != "0001_bootstrap_schema_migrations.up.sql" {

@@ -190,8 +190,8 @@ func TestPlanUpToLatestUsesBuiltInCatalog(t *testing.T) {
 	if plan.Pending[0].Version != 1 || plan.Pending[0].Name != "bootstrap_schema_migrations" || plan.Pending[0].Direction != DirectionUp {
 		t.Fatalf("unexpected first built-in pending step: %#v", plan.Pending[0])
 	}
-	if len(plan.Pending) < 9 {
-		t.Fatalf("expected account/character roster, character item-state, character quest-state, item-template-state, safebox-reject, auth login-ticket handoff, static actor content-state, and item-template refine-info migrations in built-in pending plan, got %#v", plan.Pending)
+	if len(plan.Pending) < 10 {
+		t.Fatalf("expected account/character roster, character item-state, character quest-state, item-template-state, safebox-reject, auth login-ticket handoff, static actor content-state, item-template refine-info, and bootstrap ground-item state migrations in built-in pending plan, got %#v", plan.Pending)
 	}
 	if plan.Pending[1].Version != 2 || plan.Pending[1].Name != "account_character_roster" || plan.Pending[1].Direction != DirectionUp || plan.Pending[1].Path != "0002_account_character_roster.up.sql" {
 		t.Fatalf("unexpected second built-in pending step: %#v", plan.Pending[1])
@@ -216,6 +216,9 @@ func TestPlanUpToLatestUsesBuiltInCatalog(t *testing.T) {
 	}
 	if plan.Pending[8].Version != 9 || plan.Pending[8].Name != "item_template_refine_info" || plan.Pending[8].Direction != DirectionUp || plan.Pending[8].Path != "0009_item_template_refine_info.up.sql" {
 		t.Fatalf("unexpected ninth built-in pending step: %#v", plan.Pending[8])
+	}
+	if plan.Pending[9].Version != 10 || plan.Pending[9].Name != "bootstrap_ground_item_state" || plan.Pending[9].Direction != DirectionUp || plan.Pending[9].Path != "0010_bootstrap_ground_item_state.up.sql" {
+		t.Fatalf("unexpected tenth built-in pending step: %#v", plan.Pending[9])
 	}
 }
 

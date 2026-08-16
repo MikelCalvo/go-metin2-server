@@ -31,6 +31,7 @@ const (
 	expectedAuthLoginTicketHandoffStatusSHA256    = "e42ae108f6b12938f4f622cc6c71f1d091ad5fc51c9892df78c6f05f3207eae9"
 	expectedStaticActorContentStateStatusSHA256   = "303d4608766de8147c676e4d93f27e53a3744bf09343b060ec662d9c2378d9ad"
 	expectedItemTemplateRefineInfoStatusSHA256    = "89ff5fd8c8e7f4c97a580b59d5b80196d5200aa0f19e1a3281691104e906788d"
+	expectedBootstrapGroundItemStateStatusSHA256  = "7c7c3b9e20c680224777955be2d15dd86326d511208fa17e4048ec41beaf4abb"
 )
 
 func TestHealthzEndpointIncludesServiceName(t *testing.T) {
@@ -6415,7 +6416,7 @@ func TestLocalStaticActorDeleteEndpointRemovesActorForLoopbackDelete(t *testing.
 func TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet(t *testing.T) {
 	planner := &stubMigrationStatusPlanner{plan: dbmigrations.Plan{
 		CurrentVersion: 0,
-		LatestVersion:  9,
+		LatestVersion:  10,
 		UpToDate:       false,
 		Pending: []dbmigrations.PlanStep{
 			{Version: 1, Name: "bootstrap_schema_migrations", Direction: dbmigrations.DirectionUp, Path: "0001_bootstrap_schema_migrations.up.sql", SHA256: expectedBootstrapMigrationStatusSHA256},
@@ -6427,6 +6428,7 @@ func TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet(t *testing.
 			{Version: 7, Name: "auth_login_ticket_handoff", Direction: dbmigrations.DirectionUp, Path: "0007_auth_login_ticket_handoff.up.sql", SHA256: expectedAuthLoginTicketHandoffStatusSHA256},
 			{Version: 8, Name: "static_actor_content_state", Direction: dbmigrations.DirectionUp, Path: "0008_static_actor_content_state.up.sql", SHA256: expectedStaticActorContentStateStatusSHA256},
 			{Version: 9, Name: "item_template_refine_info", Direction: dbmigrations.DirectionUp, Path: "0009_item_template_refine_info.up.sql", SHA256: expectedItemTemplateRefineInfoStatusSHA256},
+			{Version: 10, Name: "bootstrap_ground_item_state", Direction: dbmigrations.DirectionUp, Path: "0010_bootstrap_ground_item_state.up.sql", SHA256: expectedBootstrapGroundItemStateStatusSHA256},
 		},
 	}}
 	mux := RegisterLocalMigrationStatusEndpoint(NewPprofMux("gamed"), planner.Plan)
@@ -6447,7 +6449,7 @@ func TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet(t *testing.
 		t.Fatalf("expected application/json content type, got %q", contentType)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`"current_version":0`, `"latest_version":9`, `"up_to_date":false`, `"direction":"up"`, `"path":"0001_bootstrap_schema_migrations.up.sql"`, `"sha256":"` + expectedBootstrapMigrationStatusSHA256 + `"`, `"path":"0002_account_character_roster.up.sql"`, `"sha256":"` + expectedAccountCharacterRosterStatusSHA256 + `"`, `"path":"0003_character_item_state.up.sql"`, `"sha256":"` + expectedCharacterItemStateStatusSHA256 + `"`, `"path":"0004_character_quest_state.up.sql"`, `"sha256":"` + expectedCharacterQuestStateStatusSHA256 + `"`, `"path":"0005_item_template_state.up.sql"`, `"sha256":"` + expectedItemTemplateStateStatusSHA256 + `"`, `"path":"0006_item_template_safebox_reject_message.up.sql"`, `"sha256":"` + expectedItemTemplateSafeboxRejectStatusSHA256 + `"`, `"path":"0007_auth_login_ticket_handoff.up.sql"`, `"sha256":"` + expectedAuthLoginTicketHandoffStatusSHA256 + `"`, `"path":"0008_static_actor_content_state.up.sql"`, `"sha256":"` + expectedStaticActorContentStateStatusSHA256 + `"`, `"path":"0009_item_template_refine_info.up.sql"`, `"sha256":"` + expectedItemTemplateRefineInfoStatusSHA256 + `"`} {
+	for _, want := range []string{`"current_version":0`, `"latest_version":10`, `"up_to_date":false`, `"direction":"up"`, `"path":"0001_bootstrap_schema_migrations.up.sql"`, `"sha256":"` + expectedBootstrapMigrationStatusSHA256 + `"`, `"path":"0002_account_character_roster.up.sql"`, `"sha256":"` + expectedAccountCharacterRosterStatusSHA256 + `"`, `"path":"0003_character_item_state.up.sql"`, `"sha256":"` + expectedCharacterItemStateStatusSHA256 + `"`, `"path":"0004_character_quest_state.up.sql"`, `"sha256":"` + expectedCharacterQuestStateStatusSHA256 + `"`, `"path":"0005_item_template_state.up.sql"`, `"sha256":"` + expectedItemTemplateStateStatusSHA256 + `"`, `"path":"0006_item_template_safebox_reject_message.up.sql"`, `"sha256":"` + expectedItemTemplateSafeboxRejectStatusSHA256 + `"`, `"path":"0007_auth_login_ticket_handoff.up.sql"`, `"sha256":"` + expectedAuthLoginTicketHandoffStatusSHA256 + `"`, `"path":"0008_static_actor_content_state.up.sql"`, `"sha256":"` + expectedStaticActorContentStateStatusSHA256 + `"`, `"path":"0009_item_template_refine_info.up.sql"`, `"sha256":"` + expectedItemTemplateRefineInfoStatusSHA256 + `"`, `"path":"0010_bootstrap_ground_item_state.up.sql"`, `"sha256":"` + expectedBootstrapGroundItemStateStatusSHA256 + `"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected migration status body to contain %s, got %s", want, body)
 		}
