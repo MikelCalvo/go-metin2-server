@@ -1119,7 +1119,15 @@ func (r *gameRuntime) flushReadyStaticActorRespawns() {
 		return
 	}
 	if r.staticStore == nil {
-		r.sharedWorld.FlushReadyStaticActorRespawns()
+		now := r.spawnGroupReturnStepNow()
+		for _, respawn := range r.sharedWorld.StaticActorRespawns() {
+			if respawn.EntityID == 0 || respawn.ReadyAt.IsZero() || now.Before(respawn.ReadyAt) {
+				continue
+			}
+			if r.sharedWorld.FlushReadyStaticActorRespawn(respawn.EntityID) {
+				r.syncSpawnGroupReturnStepScheduleForEntity(respawn.EntityID)
+			}
+		}
 		return
 	}
 
@@ -1134,7 +1142,9 @@ func (r *gameRuntime) flushReadyStaticActorRespawns() {
 		current := r.sharedWorld.StaticActors()
 		idx := staticActorSnapshotIndex(current, respawn.EntityID)
 		if idx == -1 {
-			_ = r.sharedWorld.FlushReadyStaticActorRespawn(respawn.EntityID)
+			if r.sharedWorld.FlushReadyStaticActorRespawn(respawn.EntityID) {
+				r.syncSpawnGroupReturnStepScheduleForEntity(respawn.EntityID)
+			}
 			continue
 		}
 		target := cloneStaticActorSnapshots(current)
@@ -1149,8 +1159,22 @@ func (r *gameRuntime) flushReadyStaticActorRespawns() {
 		}
 		if !r.sharedWorld.FlushReadyStaticActorRespawn(respawn.EntityID) {
 			_ = r.persistStaticActorSnapshot(current)
+			continue
 		}
+		r.syncSpawnGroupReturnStepScheduleForEntity(respawn.EntityID)
 	}
+}
+
+func (r *gameRuntime) syncSpawnGroupReturnStepScheduleForEntity(entityID uint64) {
+	if r == nil || entityID == 0 {
+		return
+	}
+	actor, ok := r.SpawnGroup(entityID)
+	if !ok {
+		r.clearSpawnGroupReturnStep(entityID)
+		return
+	}
+	r.syncSpawnGroupReturnStepSchedule(actor)
 }
 
 func (r *gameRuntime) scheduleSpawnGroupReturnStep(entityID uint64) {

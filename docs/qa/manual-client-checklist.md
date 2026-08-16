@@ -929,7 +929,7 @@ Run this when the target build has authored QA `spawn_groups` practice-mob conte
 - [ ] Wait less than the owned respawn delay and confirm no stale delayed retaliation beat arrives after mob death
 - [ ] Wait until the owned respawn delay expires and confirm the ordinary mob rebuild burst (`CHARACTER_DEL` + add/info/update)
 - [ ] If the materialized spawn-backed mob had been moved away from its authored spawn position by a local/runtime update before death, confirm the respawn rebuild returns it to the authored home rather than to the displaced current position; old-position-only viewers should see only the delete while authored-home viewers see the add/info/update burst
-- [ ] If `/local/static-actor-respawns/{entity_id}` is available, confirm the due respawn row disappears after a successful rebuild; if a static-actor store failure is intentionally injected in a test harness, confirm the actor stays dead/displaced and the due row remains visible for retry instead of queuing a partial rebuild
+- [ ] If `/local/static-actor-respawns/{entity_id}` is available, confirm the due respawn row disappears after a successful rebuild; if the mob had a stale pending `/local/spawn-group-return-steps/{entity_id}` row before death, confirm that return-step row is also gone after the authored-home respawn; if a static-actor store failure is intentionally injected in a test harness, confirm the actor stays dead/displaced and the due row remains visible for retry instead of queuing a partial rebuild
 - [ ] Confirm no stale delayed retaliation beat arrives immediately after that respawn rebuild unless the mob is freshly reselected and hit again
 
 Expected result:

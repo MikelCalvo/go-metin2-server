@@ -1998,6 +1998,76 @@ func TestGameRuntimeSpawnGroupReturnStepSnapshotsOmitDeadScheduledActors(t *test
 	}
 }
 
+func TestGameRuntimeRespawnClearsStaleSpawnGroupReturnStepSchedule(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700000927, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for respawn return-step cleanup: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.respawn_clears_return_step",
+		Name:          "RespawnClearsReturnStepMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import respawn return-step cleanup spawn group: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.respawn_clears_return_step")
+	if !ok {
+		t.Fatal("expected respawn return-step cleanup spawn group to resolve by ref")
+	}
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "RespawnClearsReturnStepMob", 42, 2301, 2800, 20350); !ok {
+		t.Fatal("expected spawn-backed actor update to return-required position to arm a return step")
+	}
+	runtime.spawnReturnMu.Lock()
+	_, scheduled := runtime.spawnReturnStepDueAt[group.EntityID]
+	runtime.spawnReturnMu.Unlock()
+	if !scheduled {
+		t.Fatalf("expected displaced live spawn group %d to have a pending return-step deadline", group.EntityID)
+	}
+
+	runtime.sharedWorld.mu.Lock()
+	actor, ok := runtime.sharedWorld.entities.StaticActor(group.EntityID)
+	if !ok {
+		runtime.sharedWorld.mu.Unlock()
+		t.Fatalf("expected static actor %d before forced death", group.EntityID)
+	}
+	runtime.sharedWorld.staticActorCombatHP[group.EntityID] = 0
+	runtime.sharedWorld.scheduleStaticActorCombatRespawnLocked(actor)
+	runtime.sharedWorld.mu.Unlock()
+
+	currentTime = currentTime.Add(worldruntime.PracticeMobBootstrapRespawnDelay)
+	runtime.flushReadyStaticActorRespawns()
+
+	respawned, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || respawned.Dead || respawned.X != 1700 || respawned.Y != 2800 || respawned.SpawnLeash == nil || respawned.SpawnLeash.ReturnRequired {
+		t.Fatalf("expected respawn to restore the spawn group home and live leash state, ok=%v snapshot=%+v", ok, respawned)
+	}
+	runtime.spawnReturnMu.Lock()
+	_, stillScheduled := runtime.spawnReturnStepDueAt[group.EntityID]
+	runtime.spawnReturnMu.Unlock()
+	if stillScheduled {
+		t.Fatalf("expected respawn to clear stale pending return-step deadline for actor %d", group.EntityID)
+	}
+	if pending, ok := runtime.SpawnGroupReturnStep(group.EntityID); ok || pending.EntityID != 0 {
+		t.Fatalf("expected respawned home actor to have no pending return-step snapshot, ok=%v snapshot=%+v", ok, pending)
+	}
+}
+
 func TestGameRuntimeFlushServerFramesRetriesSpawnGroupReturnStepAfterPersistenceFailure(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	viewer := peerVisibilityCharacter("ReturnStepRetryViewer", 0x0103017e, 0x0204017e, 2301, 2800, 0, 101, 201)

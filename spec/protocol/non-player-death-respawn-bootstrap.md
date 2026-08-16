@@ -151,6 +151,7 @@ What is frozen now:
 - for spawn-backed combatants, respawn restores the materialized actor to the preserved authored spawn home before rebuilding visibility, so a displaced current runtime position does not become the new respawn point by accident
 - if a same-profile runtime/operator update moves a dead spawn-backed combatant away from authored home before that pending respawn fires, the actor can still inspect as `dead` and `return_required`, but return-step scheduling remains suppressed while the respawn timer is authoritative
 - in the shipped file-backed runtime path, a due spawn-backed respawn persists that authored-home current position before mutating the live shared-world actor; if that static-actor snapshot write fails, the actor remains dead at the previous runtime position, the pending respawn stays due for a later retry, and no visibility rebuild frames are fabricated
+- after a due spawn-backed respawn successfully rebuilds the actor, any stale pre-death pending return-step deadline for that same actor is reconciled against the rebuilt live leash state, so an authored-home respawn clears the stale return-step schedule instead of letting it fire after the mob is already back home
 
 For content-loaded attackable actors, the authored identity that tells the runtime what to recreate and where to recreate it is documented separately in `content-spawn-groups-bootstrap.md`.
 
