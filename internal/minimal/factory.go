@@ -7388,6 +7388,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		return contentbundle.Bundle{}, err
 	}
 	if reflect.DeepEqual(previousBundle, normalized) {
+		r.pruneSpawnGroupReturnStepSchedules()
 		return normalized, nil
 	}
 	previousActors := r.StaticActors()

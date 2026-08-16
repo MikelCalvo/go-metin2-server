@@ -4034,6 +4034,98 @@ func TestGameRuntimeFailedContentBundleImportRestoresSpawnGroupReturnStepSchedul
 	}
 }
 
+func TestGameRuntimeNoOpContentBundleImportPrunesStaleSpawnGroupReturnStepSchedule(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	viewer := peerVisibilityCharacter("SpawnReturnNoOp", 0x01035543, 4, 2301, 2800, 0, 101, 201)
+	viewer.MapIndex = 42
+	issuePeerTicket(t, store, "spawn-return-noop", 0x55554343, viewer)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	currentTime := time.Unix(1700000980, 0)
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "radius", VisibilityRadius: 500, VisibilitySectorSize: 256},
+		store,
+		nil,
+		staticActorStore,
+		interactionStore,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "spawn-return-noop", 0x55554343)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 5 {
+		t.Fatalf("expected base enter-game burst before spawn import, got %d frames", len(enterOut))
+	}
+	flushServerFrames(t, flow)
+
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_step_noop",
+		Name:          "ReturnStepNoOpMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import no-op return-step spawn bundle: %v", err)
+	}
+	flushServerFrames(t, flow)
+	group, ok := runtime.SpawnGroupByRef("practice.return_step_noop")
+	if !ok {
+		t.Fatal("expected no-op return-step spawn group to resolve by ref")
+	}
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "ReturnStepNoOpMob", 42, 2301, 2800, 20350); !ok {
+		t.Fatal("expected no-op spawn-backed actor update to return-required position to succeed")
+	}
+	flushServerFrames(t, flow)
+
+	runtime.spawnReturnMu.Lock()
+	originalDueAt, scheduled := runtime.spawnReturnStepDueAt[group.EntityID]
+	staleEntityID := group.EntityID + 9999
+	runtime.spawnReturnStepDueAt[staleEntityID] = originalDueAt
+	runtime.spawnReturnMu.Unlock()
+	if !scheduled {
+		t.Fatalf("expected return-required actor %d to have a pending automatic return-step schedule before no-op import", group.EntityID)
+	}
+
+	sameBundle, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("export no-op return-step content bundle: %v", err)
+	}
+	if _, err := runtime.ImportContentBundle(sameBundle); err != nil {
+		t.Fatalf("reimport same canonical return-step bundle: %v", err)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no-op content import not to queue visibility or target frames, got %d", len(queued))
+	}
+
+	runtime.spawnReturnMu.Lock()
+	preservedDueAt, validStillScheduled := runtime.spawnReturnStepDueAt[group.EntityID]
+	_, staleStillScheduled := runtime.spawnReturnStepDueAt[staleEntityID]
+	scheduleCount := len(runtime.spawnReturnStepDueAt)
+	runtime.spawnReturnMu.Unlock()
+	if !validStillScheduled || !preservedDueAt.Equal(originalDueAt) || staleStillScheduled || scheduleCount != 1 {
+		t.Fatalf("expected no-op import to preserve valid actor %d due at %s and prune stale %d schedule, valid_scheduled=%v due_at=%s stale_scheduled=%v schedule_count=%d", group.EntityID, originalDueAt, staleEntityID, validStillScheduled, preservedDueAt, staleStillScheduled, scheduleCount)
+	}
+	currentTime = originalDueAt.Add(time.Nanosecond)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 4 {
+		t.Fatalf("expected preserved return-step schedule to fire after no-op import, got %d frames", len(queued))
+	}
+	add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	if err != nil {
+		t.Fatalf("decode preserved no-op return-step add: %v", err)
+	}
+	if add.VID != uint32(group.EntityID) || add.X != 2201 || add.Y != 2800 {
+		t.Fatalf("expected preserved no-op return-step add at planned next position, got %+v", add)
+	}
+}
+
 func TestGameRuntimeSuccessfulContentBundleReplacementClearsStaleSpawnGroupReturnStepSchedule(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	viewer := peerVisibilityCharacter("SpawnReturnReplace", 0x01035542, 4, 2301, 2800, 0, 101, 201)
