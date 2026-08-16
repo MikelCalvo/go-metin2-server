@@ -50,6 +50,7 @@ type sharedWorldRegistry struct {
 	sessionCombatRetaliations       map[uint64]combatRetaliationTimer
 	exchangePartners                map[uint64]uint64
 	exchangeItems                   map[uint64]map[uint8]uint64
+	exchangeGold                    map[uint64]uint32
 	exchangeAccepted                map[uint64]bool
 	nextStaticActorCombatSnapshotID uint64
 	lastKnownCharacters             map[uint64]loginticket.Character
@@ -302,6 +303,7 @@ func newSharedWorldRegistryWithTopology(topology worldruntime.BootstrapTopology)
 		sessionCombatRetaliations:  make(map[uint64]combatRetaliationTimer),
 		exchangePartners:           make(map[uint64]uint64),
 		exchangeAccepted:           make(map[uint64]bool),
+		exchangeGold:               make(map[uint64]uint32),
 		lastKnownCharacters:        make(map[uint64]loginticket.Character),
 		groundItemsByVID:           make(map[uint32]sharedGroundItem),
 		now:                        time.Now,
@@ -446,6 +448,8 @@ func (r *sharedWorldRegistry) StartExchange(originID uint64, targetVID uint32) (
 	}
 	r.exchangePartners[originID] = target.Entity.ID
 	r.exchangePartners[target.Entity.ID] = originID
+	r.setExchangeGoldLocked(originID, 0)
+	r.setExchangeGoldLocked(target.Entity.ID, 0)
 	r.setExchangeAcceptedLocked(originID, false)
 	r.setExchangeAcceptedLocked(target.Entity.ID, false)
 	return originFrames, true
@@ -605,12 +609,13 @@ func (r *sharedWorldRegistry) AddExchangeGold(originID uint64, amount uint32, av
 	if !r.enqueueToEntityLocked(partnerID, peerFrames) {
 		return nil, false
 	}
+	r.setExchangeGoldLocked(originID, amount)
 	r.setExchangeAcceptedLocked(originID, false)
 	r.setExchangeAcceptedLocked(partnerID, false)
 	return selfFrames, true
 }
 
-func (r *sharedWorldRegistry) AcceptExchange(originID uint64) ([][]byte, bool) {
+func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint64) ([][]byte, bool) {
 	if r == nil || originID == 0 {
 		return nil, false
 	}
@@ -635,6 +640,9 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64) ([][]byte, bool) {
 	partner, ok := r.playerCharacter(partnerID)
 	if !ok || characterAtBootstrapHPFloor(partner) {
 		return nil, false
+	}
+	if displayedGold := r.exchangeGold[originID]; displayedGold != 0 && uint64(displayedGold) > availableGold {
+		return [][]byte{encodeExchangeLessGoldFrame()}, true
 	}
 
 	selfFrame := encodeExchangeAcceptFrame(1)
@@ -726,6 +734,20 @@ func (r *sharedWorldRegistry) setExchangeAcceptedLocked(entityID uint64, accepte
 	delete(r.exchangeAccepted, entityID)
 }
 
+func (r *sharedWorldRegistry) setExchangeGoldLocked(entityID uint64, amount uint32) {
+	if r == nil || entityID == 0 {
+		return
+	}
+	if r.exchangeGold == nil {
+		r.exchangeGold = make(map[uint64]uint32)
+	}
+	if amount == 0 {
+		delete(r.exchangeGold, entityID)
+		return
+	}
+	r.exchangeGold[entityID] = amount
+}
+
 func (r *sharedWorldRegistry) clearExchangeLocked(originID uint64, notifyPartner bool) bool {
 	if r == nil || originID == 0 || len(r.exchangePartners) == 0 {
 		return false
@@ -743,6 +765,10 @@ func (r *sharedWorldRegistry) clearExchangeLocked(originID uint64, notifyPartner
 	if r.exchangeAccepted != nil {
 		delete(r.exchangeAccepted, originID)
 		delete(r.exchangeAccepted, partnerID)
+	}
+	if r.exchangeGold != nil {
+		delete(r.exchangeGold, originID)
+		delete(r.exchangeGold, partnerID)
 	}
 	if notifyPartner {
 		r.enqueueToEntityLocked(partnerID, [][]byte{encodeExchangeEndFrame()})

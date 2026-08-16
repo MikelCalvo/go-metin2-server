@@ -561,6 +561,109 @@ func TestGameRuntimeItemExchangeGoldAddAboveLiveGoldReportsLessGoldWithoutMutati
 	assertExchangeAccountUnchanged(t, accounts, "item-exchange-gold-rich-peer", peer, "peer exchange less-gold")
 }
 
+func TestGameRuntimeItemExchangeAcceptRevalidatesDisplayedGoldAgainstLiveGoldWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeGoldRecheckOwner", 0x01030779, 0x02040779, 1100, 2100, 0, 101, 201)
+	owner.Gold = 500
+	owner.Inventory = []inventory.ItemInstance{{ID: 727, Vnum: 27045, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeGoldRecheckPeer", 0x0103077c, 0x0204077c, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 728, Vnum: 27002, Count: 2, Slot: 6}}
+	peer.Quickslots = []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeItem, Slot: 6}}
+	ownerLogin := "ex-gold-recheck-a"
+	peerLogin := "ex-gold-recheck-b"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707079, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x7070707c, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange gold recheck owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange gold recheck peer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange gold recheck runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707079)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x7070707c)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected gold recheck exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected gold recheck exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	goldOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderGoldAdd, Arg1: 400})))
+	if err != nil {
+		t.Fatalf("unexpected gold recheck gold-add error: %v", err)
+	}
+	if len(goldOut) != 1 {
+		t.Fatalf("expected gold recheck gold-add to emit one self frame, got %d", len(goldOut))
+	}
+	assertExchangeGoldAddFrame(t, goldOut[0], 1, 400, "gold recheck self gold-add")
+	queuedGold := flushServerFrames(t, peerFlow)
+	if len(queuedGold) != 1 {
+		t.Fatalf("expected gold recheck gold-add to queue one peer frame, got %d", len(queuedGold))
+	}
+	assertExchangeGoldAddFrame(t, queuedGold[0], 0, 400, "gold recheck peer gold-add")
+
+	dropOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Elk: 200})))
+	if err != nil {
+		t.Fatalf("unexpected gold recheck currency drop error: %v", err)
+	}
+	if len(dropOut) != 3 {
+		t.Fatalf("expected gold recheck currency drop to emit point, ground, ownership frames, got %d", len(dropOut))
+	}
+	point, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, dropOut[0]))
+	if err != nil {
+		t.Fatalf("decode gold recheck currency-drop point change: %v", err)
+	}
+	if point != (worldproto.PlayerPointChangePacket{VID: owner.VID, Type: bootstrapGoldPointType, Amount: -200, Value: 300}) {
+		t.Fatalf("unexpected gold recheck currency-drop point change: %+v", point)
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, dropOut[1]))
+	if err != nil {
+		t.Fatalf("decode gold recheck currency-drop ground add: %v", err)
+	}
+	queuedDrop := flushServerFrames(t, peerFlow)
+	if len(queuedDrop) != 2 {
+		t.Fatalf("expected gold recheck currency drop to queue visible ground frames, got %d", len(queuedDrop))
+	}
+	peerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, queuedDrop[0]))
+	if err != nil {
+		t.Fatalf("decode gold recheck peer ground add: %v", err)
+	}
+	if peerGround != ground {
+		t.Fatalf("unexpected gold recheck peer ground add: got %+v want %+v", peerGround, ground)
+	}
+
+	acceptOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected stale-gold exchange accept error: %v", err)
+	}
+	if len(acceptOut) != 1 {
+		t.Fatalf("expected stale-gold exchange accept to emit one self status frame, got %d", len(acceptOut))
+	}
+	assertExchangeLessGoldFrame(t, acceptOut[0], "stale displayed-gold accept self response")
+	if queuedAccept := flushServerFrames(t, peerFlow); len(queuedAccept) != 0 {
+		t.Fatalf("expected stale-gold exchange accept to queue no peer accept frames, got %d", len(queuedAccept))
+	}
+
+	wantOwner := owner
+	wantOwner.Gold = 300
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, wantOwner, "stale displayed-gold accept owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "stale displayed-gold accept peer")
+}
+
 func TestGameRuntimeStoragePacketsFailClosedWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
