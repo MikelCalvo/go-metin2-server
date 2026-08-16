@@ -98,12 +98,14 @@ type combatRetaliationTimer struct {
 }
 
 type staticActorCombatStateSnapshot struct {
-	HP             map[uint64]uint8
-	RespawnAt      map[uint64]time.Time
-	Snapshot       map[uint64]uint64
-	EngagedBy      map[uint64]uint64
-	DeathReward    map[uint64]worldruntime.StaticActorDeathReward
-	NextSnapshotID uint64
+	HP                  map[uint64]uint8
+	RespawnAt           map[uint64]time.Time
+	Snapshot            map[uint64]uint64
+	EngagedBy           map[uint64]uint64
+	DeathReward         map[uint64]worldruntime.StaticActorDeathReward
+	SessionTargets      map[uint64]uint32
+	SessionRetaliations map[uint64]combatRetaliationTimer
+	NextSnapshotID      uint64
 }
 
 const (
@@ -789,12 +791,14 @@ func (r *sharedWorldRegistry) captureStaticActorCombatStateLocked() staticActorC
 		return staticActorCombatStateSnapshot{}
 	}
 	return staticActorCombatStateSnapshot{
-		HP:             cloneUint64Uint8Map(r.staticActorCombatHP),
-		RespawnAt:      cloneUint64TimeMap(r.staticActorCombatRespawnAt),
-		Snapshot:       cloneUint64Uint64Map(r.staticActorCombatSnapshot),
-		EngagedBy:      cloneUint64Uint64Map(r.staticActorCombatEngagedBy),
-		DeathReward:    cloneStaticActorDeathRewardMap(r.staticActorDeathReward),
-		NextSnapshotID: r.nextStaticActorCombatSnapshotID,
+		HP:                  cloneUint64Uint8Map(r.staticActorCombatHP),
+		RespawnAt:           cloneUint64TimeMap(r.staticActorCombatRespawnAt),
+		Snapshot:            cloneUint64Uint64Map(r.staticActorCombatSnapshot),
+		EngagedBy:           cloneUint64Uint64Map(r.staticActorCombatEngagedBy),
+		DeathReward:         cloneStaticActorDeathRewardMap(r.staticActorDeathReward),
+		SessionTargets:      cloneUint64Uint32Map(r.sessionCombatTargets),
+		SessionRetaliations: cloneCombatRetaliationTimerMap(r.sessionCombatRetaliations),
+		NextSnapshotID:      r.nextStaticActorCombatSnapshotID,
 	}
 }
 
@@ -807,6 +811,8 @@ func (r *sharedWorldRegistry) restoreStaticActorCombatStateLocked(snapshot stati
 	r.staticActorCombatSnapshot = cloneUint64Uint64Map(snapshot.Snapshot)
 	r.staticActorCombatEngagedBy = cloneUint64Uint64Map(snapshot.EngagedBy)
 	r.staticActorDeathReward = cloneStaticActorDeathRewardMap(snapshot.DeathReward)
+	r.sessionCombatTargets = cloneUint64Uint32Map(snapshot.SessionTargets)
+	r.sessionCombatRetaliations = cloneCombatRetaliationTimerMap(snapshot.SessionRetaliations)
 	r.nextStaticActorCombatSnapshotID = snapshot.NextSnapshotID
 }
 
@@ -826,6 +832,28 @@ func cloneUint64Uint64Map(in map[uint64]uint64) map[uint64]uint64 {
 		return nil
 	}
 	out := make(map[uint64]uint64, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneUint64Uint32Map(in map[uint64]uint32) map[uint64]uint32 {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[uint64]uint32, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneCombatRetaliationTimerMap(in map[uint64]combatRetaliationTimer) map[uint64]combatRetaliationTimer {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[uint64]combatRetaliationTimer, len(in))
 	for key, value := range in {
 		out[key] = value
 	}

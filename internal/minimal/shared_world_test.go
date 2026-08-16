@@ -3946,6 +3946,51 @@ func TestGameRuntimeFailedContentBundleImportDoesNotLeakSpawnVisibilityFrames(t 
 	}
 }
 
+func TestSharedWorldRegistryStaticActorCombatStateSnapshotRestoresSessionTargetsAndRetaliation(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	const subjectEntityID uint64 = 17
+	const targetVID uint32 = 44
+	readyAt := time.Unix(1700000995, 0)
+
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	registry.staticActorCombatHP[uint64(targetVID)] = 7
+	registry.staticActorCombatRespawnAt[uint64(targetVID)] = readyAt.Add(time.Second)
+	registry.staticActorCombatSnapshot[uint64(targetVID)] = 99
+	registry.staticActorCombatEngagedBy[uint64(targetVID)] = subjectEntityID
+	registry.staticActorDeathReward[uint64(targetVID)] = worldruntime.StaticActorDeathReward{Experience: 12, Gold: 34, DropVnums: []uint32{27001}}
+	registry.nextStaticActorCombatSnapshotID = 100
+	registry.setSessionCombatTargetLocked(subjectEntityID, targetVID)
+	registry.sessionCombatRetaliations[subjectEntityID] = combatRetaliationTimer{TargetVID: targetVID, SnapshotVersion: 99, ReadyAt: readyAt}
+
+	snapshot := registry.captureStaticActorCombatStateLocked()
+	delete(registry.staticActorCombatHP, uint64(targetVID))
+	delete(registry.staticActorCombatSnapshot, uint64(targetVID))
+	delete(registry.staticActorCombatEngagedBy, uint64(targetVID))
+	delete(registry.staticActorDeathReward, uint64(targetVID))
+	delete(registry.sessionCombatTargets, subjectEntityID)
+	delete(registry.sessionCombatRetaliations, subjectEntityID)
+	registry.nextStaticActorCombatSnapshotID = 1
+
+	registry.restoreStaticActorCombatStateLocked(snapshot)
+	if got := registry.sessionCombatTargets[subjectEntityID]; got != targetVID {
+		t.Fatalf("expected restored session combat target %d, got %d", targetVID, got)
+	}
+	timer, ok := registry.sessionCombatRetaliations[subjectEntityID]
+	if !ok || timer.TargetVID != targetVID || timer.SnapshotVersion != 99 || !timer.ReadyAt.Equal(readyAt) {
+		t.Fatalf("expected restored session retaliation timer for target %d at %s, ok=%v timer=%+v", targetVID, readyAt, ok, timer)
+	}
+	if got := registry.staticActorCombatHP[uint64(targetVID)]; got != 7 {
+		t.Fatalf("expected restored combat HP 7, got %d", got)
+	}
+	if respawnAt := registry.staticActorCombatRespawnAt[uint64(targetVID)]; !respawnAt.Equal(readyAt.Add(time.Second)) {
+		t.Fatalf("expected restored respawn time %s, got %s", readyAt.Add(time.Second), respawnAt)
+	}
+	if reward := registry.staticActorDeathReward[uint64(targetVID)]; reward.Experience != 12 || reward.Gold != 34 || !reflect.DeepEqual(reward.DropVnums, []uint32{27001}) {
+		t.Fatalf("expected restored death reward, got %+v", reward)
+	}
+}
+
 func TestGameRuntimeFailedContentBundleImportDoesNotLeakSelectedTargetClear(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	near := peerVisibilityCharacter("SpawnSelRB", 0x01035531, 4, 1800, 2900, 0, 101, 201)
