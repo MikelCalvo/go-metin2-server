@@ -3895,6 +3895,53 @@ func TestGameRuntimeImportsContentBundleDropTablesAsSpawnGroupRewardDescriptor(t
 	}
 }
 
+func TestGameRuntimeImportsContentBundleRegenSpawnsAsSpawnGroups(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected regen-spawn runtime error: %v", err)
+	}
+	bundle := contentbundle.Bundle{
+		DropTables: []contentbundle.DropTable{{Ref: "loot.qa_regen_reward", RewardExperience: 90, RewardGold: 45, DropVnums: []uint32{27002, 27001}}},
+		RegenSpawns: []contentbundle.RegenSpawn{{
+			Ref:                "practice.qa_regen_mob",
+			Name:               "QARegenMob",
+			MapIndex:           1,
+			X:                  469900,
+			Y:                  964200,
+			RaceNum:            20350,
+			Count:              1,
+			RewardDropTableRef: "loot.qa_regen_reward",
+		}},
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+		},
+	}
+
+	imported, err := runtime.ImportContentBundle(bundle)
+	if err != nil {
+		t.Fatalf("import content bundle with authoring-only regen spawn: %v", err)
+	}
+	if len(imported.RegenSpawns) != 0 || len(imported.DropTables) != 0 || len(imported.SpawnGroups) != 1 || imported.SpawnGroups[0].Ref != "practice.qa_regen_mob" || imported.SpawnGroups[0].CombatProfile != worldruntime.StaticActorCombatProfilePracticeMob || imported.SpawnGroups[0].RewardExperience != 90 || imported.SpawnGroups[0].RewardGold != 45 || !reflect.DeepEqual(imported.SpawnGroups[0].RewardDropVnums, []uint32{27001, 27002}) {
+		t.Fatalf("expected imported bundle to expand regen spawn into canonical spawn-group descriptor, got %#v", imported)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one imported regen-backed spawn actor, got %#v", actors)
+	}
+	if actors[0].SpawnGroupRef != "practice.qa_regen_mob" || actors[0].Name != "QARegenMob" || actors[0].CombatProfile != worldruntime.StaticActorCombatProfilePracticeMob || actors[0].RewardExperience != 90 || actors[0].RewardGold != 45 || !reflect.DeepEqual(actors[0].RewardDropVnums, []uint32{27001, 27002}) {
+		t.Fatalf("expected runtime actor to carry canonical regen reward descriptor, got %+v", actors[0])
+	}
+}
+
 func TestGameRuntimeReimportsFormulaOnlyCombatProfileBundleIdempotently(t *testing.T) {
 	const profile = "practice_reimport_formula_wolf"
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)

@@ -45,6 +45,21 @@ type SpawnGroup struct {
 	RewardDropTableRef string   `json:"reward_drop_table_ref,omitempty"`
 }
 
+type RegenSpawn struct {
+	Ref                string   `json:"ref"`
+	Name               string   `json:"name,omitempty"`
+	MapIndex           uint32   `json:"map_index"`
+	X                  int32    `json:"x"`
+	Y                  int32    `json:"y"`
+	RaceNum            uint32   `json:"race_num"`
+	CombatProfile      string   `json:"combat_profile,omitempty"`
+	Count              uint16   `json:"count,omitempty"`
+	RewardExperience   uint64   `json:"reward_experience,omitempty"`
+	RewardGold         uint64   `json:"reward_gold,omitempty"`
+	RewardDropVnums    []uint32 `json:"reward_drop_vnums,omitempty"`
+	RewardDropTableRef string   `json:"reward_drop_table_ref,omitempty"`
+}
+
 type DropTable struct {
 	Ref              string   `json:"ref"`
 	RewardExperience uint64   `json:"reward_experience,omitempty"`
@@ -55,6 +70,7 @@ type DropTable struct {
 type Bundle struct {
 	StaticActors           []StaticActor                                   `json:"static_actors"`
 	SpawnGroups            []SpawnGroup                                    `json:"spawn_groups,omitempty"`
+	RegenSpawns            []RegenSpawn                                    `json:"regen_spawns,omitempty"`
 	DropTables             []DropTable                                     `json:"drop_tables,omitempty"`
 	CombatProfiles         []worldruntime.StaticActorCombatProfileSnapshot `json:"combat_profiles,omitempty"`
 	ItemTemplates          []itemcatalog.Template                          `json:"item_templates,omitempty"`
@@ -75,6 +91,7 @@ func (bundle *Bundle) UnmarshalJSON(raw []byte) error {
 	var jsonBundle struct {
 		StaticActors           json.RawMessage `json:"static_actors"`
 		SpawnGroups            json.RawMessage `json:"spawn_groups"`
+		RegenSpawns            json.RawMessage `json:"regen_spawns"`
 		DropTables             json.RawMessage `json:"drop_tables"`
 		CombatProfiles         json.RawMessage `json:"combat_profiles"`
 		ItemTemplates          json.RawMessage `json:"item_templates"`
@@ -98,6 +115,9 @@ func (bundle *Bundle) UnmarshalJSON(raw []byte) error {
 		return err
 	}
 	if err := decodeBundleCollection(jsonBundle.SpawnGroups, &decoded.SpawnGroups); err != nil {
+		return err
+	}
+	if err := decodeBundleCollection(jsonBundle.RegenSpawns, &decoded.RegenSpawns); err != nil {
 		return err
 	}
 	if err := decodeBundleCollection(jsonBundle.DropTables, &decoded.DropTables); err != nil {
@@ -816,11 +836,16 @@ func Canonicalize(bundle Bundle) (Bundle, error) {
 	}
 	normalizedStaticActors := normalizeStaticActors(bundle.StaticActors)
 	normalizedCombatProfiles := normalizeCombatProfiles(bundle.CombatProfiles)
-	normalizedDropTables := normalizeDropTables(bundle.DropTables)
-	if !validDropTables(normalizedDropTables) || !allDropTablesAreReferenced(normalizedDropTables, bundle.SpawnGroups) {
+	regenSpawnGroups, ok := spawnGroupsFromRegenSpawns(bundle.RegenSpawns)
+	if !ok {
 		return Bundle{}, ErrInvalidBundle
 	}
-	normalizedSpawnGroups := normalizeSpawnGroups(bundle.SpawnGroups, normalizedCombatProfiles, normalizedDropTables)
+	authoredSpawnGroups := append(cloneSpawnGroups(bundle.SpawnGroups), regenSpawnGroups...)
+	normalizedDropTables := normalizeDropTables(bundle.DropTables)
+	if !validDropTables(normalizedDropTables) || !allDropTablesAreReferenced(normalizedDropTables, authoredSpawnGroups) {
+		return Bundle{}, ErrInvalidBundle
+	}
+	normalizedSpawnGroups := normalizeSpawnGroups(authoredSpawnGroups, normalizedCombatProfiles, normalizedDropTables)
 	normalized := Bundle{
 		StaticActors:           normalizedStaticActors,
 		SpawnGroups:            normalizedSpawnGroups,
@@ -3443,7 +3468,7 @@ func validateBundle(bundle Bundle) error {
 		itemTemplatesByVnum[normalizedTemplate.Vnum] = normalizedTemplate
 	}
 	profileSnapshots := make(map[string]worldruntime.StaticActorCombatProfileSnapshot, len(bundle.CombatProfiles))
-	referencedProfiles := referencedCombatProfileNames(bundle.StaticActors, bundle.SpawnGroups)
+	referencedProfiles := referencedCombatProfileNames(bundle.StaticActors, bundle.SpawnGroups, bundle.RegenSpawns)
 	for _, profile := range bundle.CombatProfiles {
 		if !validCombatProfileSnapshot(profile) {
 			return ErrInvalidBundle
@@ -3697,6 +3722,32 @@ func validRewardDescriptor(spawnGroup SpawnGroup) bool {
 	return worldruntime.ValidStaticActorDeathReward(worldruntime.StaticActorDeathReward{Experience: spawnGroup.RewardExperience, Gold: spawnGroup.RewardGold, DropVnums: spawnGroup.RewardDropVnums})
 }
 
+func spawnGroupsFromRegenSpawns(regenSpawns []RegenSpawn) ([]SpawnGroup, bool) {
+	if len(regenSpawns) == 0 {
+		return nil, true
+	}
+	spawnGroups := make([]SpawnGroup, 0, len(regenSpawns))
+	for _, regenSpawn := range regenSpawns {
+		if regenSpawn.Count != 1 {
+			return nil, false
+		}
+		spawnGroups = append(spawnGroups, SpawnGroup{
+			Ref:                regenSpawn.Ref,
+			Name:               regenSpawn.Name,
+			MapIndex:           regenSpawn.MapIndex,
+			X:                  regenSpawn.X,
+			Y:                  regenSpawn.Y,
+			RaceNum:            regenSpawn.RaceNum,
+			CombatProfile:      regenSpawn.CombatProfile,
+			RewardExperience:   regenSpawn.RewardExperience,
+			RewardGold:         regenSpawn.RewardGold,
+			RewardDropVnums:    cloneUint32s(regenSpawn.RewardDropVnums),
+			RewardDropTableRef: regenSpawn.RewardDropTableRef,
+		})
+	}
+	return spawnGroups, true
+}
+
 func validMerchantCatalogCountForTemplate(entry interactionstore.MerchantCatalogEntry, template itemcatalog.Template) bool {
 	if entry.Count == 0 || template.MaxCount == 0 {
 		return false
@@ -3761,6 +3812,18 @@ func normalizeSpawnGroups(spawnGroups []SpawnGroup, profileSnapshots []worldrunt
 		normalized[i] = spawnGroup
 	}
 	return normalized
+}
+
+func cloneSpawnGroups(spawnGroups []SpawnGroup) []SpawnGroup {
+	if len(spawnGroups) == 0 {
+		return nil
+	}
+	cloned := make([]SpawnGroup, len(spawnGroups))
+	for i, spawnGroup := range spawnGroups {
+		cloned[i] = spawnGroup
+		cloned[i].RewardDropVnums = cloneUint32s(spawnGroup.RewardDropVnums)
+	}
+	return cloned
 }
 
 func normalizeDropTables(dropTables []DropTable) []DropTable {
@@ -3912,8 +3975,8 @@ func cloneCombatProfileSnapshots(profiles []worldruntime.StaticActorCombatProfil
 	return cloned
 }
 
-func referencedCombatProfileNames(staticActors []StaticActor, spawnGroups []SpawnGroup) map[string]struct{} {
-	referenced := make(map[string]struct{}, len(staticActors)+len(spawnGroups))
+func referencedCombatProfileNames(staticActors []StaticActor, spawnGroups []SpawnGroup, regenSpawns []RegenSpawn) map[string]struct{} {
+	referenced := make(map[string]struct{}, len(staticActors)+len(spawnGroups)+len(regenSpawns))
 	for _, actor := range staticActors {
 		profile := strings.TrimSpace(actor.CombatProfile)
 		if profile != "" {
@@ -3922,6 +3985,12 @@ func referencedCombatProfileNames(staticActors []StaticActor, spawnGroups []Spaw
 	}
 	for _, spawnGroup := range spawnGroups {
 		profile := strings.TrimSpace(spawnGroup.CombatProfile)
+		if profile != "" {
+			referenced[profile] = struct{}{}
+		}
+	}
+	for _, regenSpawn := range regenSpawns {
+		profile := strings.TrimSpace(regenSpawn.CombatProfile)
 		if profile != "" {
 			referenced[profile] = struct{}{}
 		}

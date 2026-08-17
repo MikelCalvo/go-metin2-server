@@ -593,7 +593,7 @@ func TestBundleJSONRejectsInvalidUTF8BeforeLossyDecode(t *testing.T) {
 }
 
 func TestBundleJSONRejectsNullCollectionFields(t *testing.T) {
-	for _, field := range []string{"static_actors", "spawn_groups", "drop_tables", "combat_profiles", "item_templates", "quest_state", "interaction_definitions"} {
+	for _, field := range []string{"static_actors", "spawn_groups", "regen_spawns", "drop_tables", "combat_profiles", "item_templates", "quest_state", "interaction_definitions"} {
 		t.Run(field, func(t *testing.T) {
 			var bundle Bundle
 			err := json.Unmarshal([]byte(fmt.Sprintf(`{"%s":null}`, field)), &bundle)
@@ -3987,6 +3987,136 @@ func TestCanonicalizeDropTableAuthoringExampleExpandsToCanonicalRewardDescriptor
 	}}
 	if !reflect.DeepEqual(canonical.SpawnGroups, want) {
 		t.Fatalf("unexpected canonical drop-table authoring spawn groups:\n got: %#v\nwant: %#v", canonical.SpawnGroups, want)
+	}
+}
+
+func TestCanonicalizeExpandsAuthoringRegenSpawnsIntoSpawnGroups(t *testing.T) {
+	bundle, err := Canonicalize(Bundle{
+		DropTables: []DropTable{{Ref: "loot.qa_regen_reward", RewardExperience: 90, RewardGold: 45, DropVnums: []uint32{27002, 27001}}},
+		RegenSpawns: []RegenSpawn{{
+			Ref:                "practice.qa_regen_mob",
+			Name:               "QARegenMob",
+			MapIndex:           1,
+			X:                  469900,
+			Y:                  964200,
+			RaceNum:            20350,
+			Count:              1,
+			RewardDropTableRef: "loot.qa_regen_reward",
+		}},
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize regen-spawn authoring bundle: %v", err)
+	}
+	if len(bundle.RegenSpawns) != 0 {
+		t.Fatalf("expected authoring-only regen spawns to be stripped from canonical bundle, got %+v", bundle.RegenSpawns)
+	}
+	want := []SpawnGroup{{
+		Ref:              "practice.qa_regen_mob",
+		Name:             "QARegenMob",
+		MapIndex:         1,
+		X:                469900,
+		Y:                964200,
+		RaceNum:          20350,
+		CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+		RewardExperience: 90,
+		RewardGold:       45,
+		RewardDropVnums:  []uint32{27001, 27002},
+	}}
+	if !reflect.DeepEqual(bundle.SpawnGroups, want) {
+		t.Fatalf("unexpected canonical regen-spawn expansion:\n got: %#v\nwant: %#v", bundle.SpawnGroups, want)
+	}
+}
+
+func TestCanonicalizeRejectsUnsupportedMultiCountRegenSpawn(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		RegenSpawns: []RegenSpawn{{
+			Ref:      "practice.multi_regen_mob",
+			Name:     "MultiRegenMob",
+			MapIndex: 1,
+			X:        469900,
+			Y:        964200,
+			RaceNum:  20350,
+			Count:    2,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for unsupported multi-count regen spawn, got %v", err)
+	}
+}
+
+func TestCanonicalizeRegenAuthoringExampleExpandsToCanonicalSpawnGroup(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-regen-authoring-bundle.json"))
+	if err != nil {
+		t.Fatalf("read regen authoring example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode regen authoring example bundle: %v", err)
+	}
+	canonical, err := Canonicalize(bundle)
+	if err != nil {
+		t.Fatalf("canonicalize regen authoring example bundle: %v", err)
+	}
+	if len(canonical.RegenSpawns) != 0 {
+		t.Fatalf("expected regen authoring example to canonicalize without top-level regen_spawns, got %+v", canonical.RegenSpawns)
+	}
+	want := []SpawnGroup{{
+		Ref:              "practice.qa_regen_mob",
+		Name:             "QARegenMob",
+		MapIndex:         1,
+		X:                469900,
+		Y:                964200,
+		RaceNum:          20350,
+		CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+		RewardExperience: 90,
+		RewardGold:       45,
+		RewardDropVnums:  []uint32{27001, 27002},
+	}}
+	if !reflect.DeepEqual(canonical.SpawnGroups, want) {
+		t.Fatalf("unexpected canonical regen authoring spawn groups:\n got: %#v\nwant: %#v", canonical.SpawnGroups, want)
+	}
+}
+
+func TestCanonicalizeRegenSpawnsCanReferenceBundledCombatProfile(t *testing.T) {
+	const profile = "regen_profile"
+	bundle, err := Canonicalize(Bundle{
+		RegenSpawns: []RegenSpawn{{
+			Ref:           "practice.profile_regen_mob",
+			Name:          "ProfileRegenMob",
+			MapIndex:      1,
+			X:             469900,
+			Y:             964200,
+			RaceNum:       20350,
+			CombatProfile: profile,
+			Count:         1,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               profile,
+			MaxHP:                 10,
+			DamagePerNormalAttack: 2,
+			AttackValue:           7,
+			DefenseValue:          5,
+			Level:                 3,
+			RespawnDelayMs:        1500,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize regen spawn with bundled combat profile: %v", err)
+	}
+	if len(bundle.CombatProfiles) != 1 || bundle.CombatProfiles[0].Profile != profile {
+		t.Fatalf("expected regen-referenced combat profile to remain portable, got %+v", bundle.CombatProfiles)
+	}
+	if len(bundle.SpawnGroups) != 1 || bundle.SpawnGroups[0].CombatProfile != profile {
+		t.Fatalf("expected regen spawn to expand with custom combat profile, got %+v", bundle.SpawnGroups)
 	}
 }
 

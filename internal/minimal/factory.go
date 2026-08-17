@@ -7598,7 +7598,7 @@ func contentBundleCombatProfileSnapshotFormulaDamage(snapshot worldruntime.Stati
 }
 
 func contentBundleReferencedCombatProfiles(bundle contentbundle.Bundle) map[string]struct{} {
-	referenced := make(map[string]struct{}, len(bundle.StaticActors)+len(bundle.SpawnGroups))
+	referenced := make(map[string]struct{}, len(bundle.StaticActors)+len(bundle.SpawnGroups)+len(bundle.RegenSpawns))
 	for _, actor := range bundle.StaticActors {
 		profile := strings.TrimSpace(actor.CombatProfile)
 		if profile != "" {
@@ -7607,6 +7607,12 @@ func contentBundleReferencedCombatProfiles(bundle contentbundle.Bundle) map[stri
 	}
 	for _, spawnGroup := range bundle.SpawnGroups {
 		profile := strings.TrimSpace(spawnGroup.CombatProfile)
+		if profile != "" {
+			referenced[profile] = struct{}{}
+		}
+	}
+	for _, regenSpawn := range bundle.RegenSpawns {
+		profile := strings.TrimSpace(regenSpawn.CombatProfile)
 		if profile != "" {
 			referenced[profile] = struct{}{}
 		}

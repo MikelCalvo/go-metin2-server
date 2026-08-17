@@ -288,7 +288,7 @@ func TestLocalContentBundleEndpointsRejectNullRootBeforeCallbacks(t *testing.T) 
 }
 
 func TestLocalContentBundleEndpointRejectsNullCollectionFieldsBeforeImport(t *testing.T) {
-	for _, field := range []string{"static_actors", "spawn_groups", "drop_tables", "combat_profiles", "item_templates", "quest_state", "interaction_definitions"} {
+	for _, field := range []string{"static_actors", "spawn_groups", "regen_spawns", "drop_tables", "combat_profiles", "item_templates", "quest_state", "interaction_definitions"} {
 		t.Run(field, func(t *testing.T) {
 			importer := &stubContentBundleImporter{status: http.StatusOK}
 			mux := RegisterLocalContentBundleEndpoint(NewPprofMux("gamed"), nil, importer.ImportContentBundle)
@@ -561,6 +561,39 @@ func TestLocalContentBundleValidateEndpointExpandsDropTableAuthoringExample(t *t
 	wantDrops := []uint32{27001, 27002}
 	if len(got.SpawnGroups) != 1 || got.SpawnGroups[0].RewardExperience != 75 || got.SpawnGroups[0].RewardGold != 60 || !reflect.DeepEqual(got.SpawnGroups[0].RewardDropVnums, wantDrops) {
 		t.Fatalf("expected validation response to expand fixed reward table into spawn-group descriptor, got %+v", got.SpawnGroups)
+	}
+}
+
+func TestLocalContentBundleValidateEndpointExpandsRegenAuthoringExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate ops contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-regen-authoring-bundle.json"))
+	if err != nil {
+		t.Fatalf("read regen authoring example bundle: %v", err)
+	}
+	mux := RegisterLocalContentBundleValidateEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/validate", bytes.NewReader(raw))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d for regen authoring example validation, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte(`"regen_spawns"`)) || bytes.Contains(rec.Body.Bytes(), []byte(`"drop_tables"`)) || bytes.Contains(rec.Body.Bytes(), []byte(`"reward_drop_table_ref"`)) {
+		t.Fatalf("expected validation response to strip authoring-only regen/drop-table fields, got %s", rec.Body.String())
+	}
+	var got contentbundle.Bundle
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode regen validation response: %v", err)
+	}
+	wantDrops := []uint32{27001, 27002}
+	if len(got.SpawnGroups) != 1 || got.SpawnGroups[0].Ref != "practice.qa_regen_mob" || got.SpawnGroups[0].RewardExperience != 90 || got.SpawnGroups[0].RewardGold != 45 || !reflect.DeepEqual(got.SpawnGroups[0].RewardDropVnums, wantDrops) {
+		t.Fatalf("expected validation response to expand regen authoring into spawn-group descriptor, got %+v", got.SpawnGroups)
 	}
 }
 

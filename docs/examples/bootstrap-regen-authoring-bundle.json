@@ -1,0 +1,42 @@
+{
+  "regen_spawns": [
+    {
+      "ref": "practice.qa_regen_mob",
+      "name": "QARegenMob",
+      "map_index": 1,
+      "x": 469900,
+      "y": 964200,
+      "race_num": 20350,
+      "count": 1,
+      "reward_drop_table_ref": "loot.qa_regen_reward"
+    }
+  ],
+  "drop_tables": [
+    {
+      "ref": "loot.qa_regen_reward",
+      "reward_experience": 90,
+      "reward_gold": 45,
+      "drop_vnums": [
+        27002,
+        27001
+      ]
+    }
+  ],
+  "item_templates": [
+    {
+      "vnum": 27001,
+      "name": "Small Red Potion",
+      "stackable": true,
+      "max_count": 200,
+      "shop_buy_price": 5,
+      "shop_sell_price": 2
+    },
+    {
+      "vnum": 27002,
+      "name": "Small Blue Potion",
+      "stackable": true,
+      "max_count": 200
+    }
+  ],
+  "interaction_definitions": []
+}
