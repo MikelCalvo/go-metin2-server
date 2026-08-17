@@ -29,11 +29,12 @@ const (
 	maxLedgerSnapshotBytes        = 64 * 1024
 	maxMigrationPlanArtifactBytes = 128 * 1024
 	maxMigrationApplyLockBytes    = 16 * 1024
+	maxMigrationApplyAuditBytes   = 128 * 1024
 )
 
 // Run executes the small migration preflight CLI and returns a process-style exit
 // code. The catalog, status, empty-ledger-snapshot, ledger-snapshot, plan,
-// plan-artifact, apply-preflight, and apply-lock-status commands are read-only.
+// plan-artifact, apply-preflight, apply-lock-status, and apply-audit-status commands are read-only.
 // The apply command is an explicit CLI-only mutation surface: it requires an
 // operator-supplied database driver, DSN, strict offline ledger snapshot, and
 // target version, and it remains deliberately separate from daemon startup and
@@ -73,6 +74,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runApplyPreflight(args[1:], stdin, stdout, stderr)
 	case "apply-lock-status":
 		return runApplyLockStatus(args[1:], stdout, stderr)
+	case "apply-audit-status":
+		return runApplyAuditStatus(args[1:], stdout, stderr)
 	case "empty-ledger-snapshot":
 		return runEmptyLedgerSnapshot(args[1:], stdout, stderr)
 	case "ledger-snapshot":
@@ -657,11 +660,48 @@ func runApplyLockStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 	return writeJSON(stdout, stderr, status)
 }
 
+func runApplyAuditStatus(args []string, stdout io.Writer, stderr io.Writer) int {
+	flags := flag.NewFlagSet("apply-audit-status", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	var auditFilePath string
+	flags.StringVar(&auditFilePath, "audit-file", "", "path to a migration apply audit file")
+	flags.Usage = func() { printApplyAuditStatusUsage(stderr) }
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintf(stderr, "unexpected apply-audit-status argument %q\n", flags.Arg(0))
+		printApplyAuditStatusUsage(stderr)
+		return exitUsage
+	}
+	if strings.TrimSpace(auditFilePath) == "" {
+		fmt.Fprintln(stderr, "--audit-file is required for apply-audit-status")
+		printApplyAuditStatusUsage(stderr)
+		return exitUsage
+	}
+
+	audit, present, err := readMigrationApplyAuditFile(auditFilePath)
+	if err != nil {
+		fmt.Fprintf(stderr, "migration apply audit status: %v\n", err)
+		return exitError
+	}
+	status := migrationApplyAuditStatus{
+		Format:  migrationApplyAuditStatusFormat,
+		Present: present,
+	}
+	if present {
+		status.Audit = &audit
+	}
+	return writeJSON(stdout, stderr, status)
+}
+
 const migrationApplyAuditFormat = "go-metin2-migration-apply-audit-v1"
 
 const migrationApplyLockFormat = "go-metin2-migration-apply-lock-v1"
 
 const migrationApplyLockStatusFormat = "go-metin2-migration-apply-lock-status-v1"
+
+const migrationApplyAuditStatusFormat = "go-metin2-migration-apply-audit-status-v1"
 
 var ErrMigrationApplyAudit = errors.New("migration apply audit failed")
 
@@ -701,6 +741,12 @@ type migrationApplyLockStatus struct {
 	Format  string              `json:"format"`
 	Present bool                `json:"present"`
 	Lock    *migrationApplyLock `json:"lock,omitempty"`
+}
+
+type migrationApplyAuditStatus struct {
+	Format  string               `json:"format"`
+	Present bool                 `json:"present"`
+	Audit   *migrationApplyAudit `json:"audit,omitempty"`
 }
 
 type migrationApplyLockFile struct {
@@ -881,6 +927,196 @@ func createMigrationApplyAuditFile(path string) (*migrationApplyAuditFile, error
 		return nil, fmt.Errorf("%w: create audit file: %v", ErrMigrationApplyAudit, err)
 	}
 	return &migrationApplyAuditFile{path: trimmed, file: file}, nil
+}
+
+func readMigrationApplyAuditFile(path string) (migrationApplyAudit, bool, error) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return migrationApplyAudit{}, false, fmt.Errorf("%w: audit file path is required", ErrMigrationApplyAudit)
+	}
+	info, err := os.Lstat(trimmed)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return migrationApplyAudit{}, false, nil
+		}
+		return migrationApplyAudit{}, false, fmt.Errorf("%w: stat audit file: %v", ErrMigrationApplyAudit, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return migrationApplyAudit{}, false, fmt.Errorf("%w: audit file must not be a symlink: %s", ErrMigrationApplyAudit, trimmed)
+	}
+	if !info.Mode().IsRegular() {
+		return migrationApplyAudit{}, false, fmt.Errorf("%w: audit file must be a regular file: %s", ErrMigrationApplyAudit, trimmed)
+	}
+	file, err := os.Open(trimmed)
+	if err != nil {
+		return migrationApplyAudit{}, false, fmt.Errorf("%w: read audit file: %v", ErrMigrationApplyAudit, err)
+	}
+	defer file.Close()
+	openedInfo, err := file.Stat()
+	if err != nil {
+		return migrationApplyAudit{}, false, fmt.Errorf("%w: stat opened audit file: %v", ErrMigrationApplyAudit, err)
+	}
+	if !openedInfo.Mode().IsRegular() {
+		return migrationApplyAudit{}, false, fmt.Errorf("%w: opened audit file must be a regular file: %s", ErrMigrationApplyAudit, trimmed)
+	}
+
+	raw, err := io.ReadAll(io.LimitReader(file, maxMigrationApplyAuditBytes+1))
+	if err != nil {
+		return migrationApplyAudit{}, false, fmt.Errorf("%w: read audit file: %v", ErrMigrationApplyAudit, err)
+	}
+	if len(raw) > maxMigrationApplyAuditBytes {
+		return migrationApplyAudit{}, false, fmt.Errorf("%w: audit file exceeds %d bytes", ErrMigrationApplyAudit, maxMigrationApplyAuditBytes)
+	}
+	if !utf8.Valid(raw) {
+		return migrationApplyAudit{}, false, fmt.Errorf("%w: audit file is not valid UTF-8", ErrMigrationApplyAudit)
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return migrationApplyAudit{}, false, fmt.Errorf("%w: audit file is empty", ErrMigrationApplyAudit)
+	}
+
+	var audit migrationApplyAudit
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&audit); err != nil {
+		return migrationApplyAudit{}, false, fmt.Errorf("%w: decode audit file: %v", ErrMigrationApplyAudit, err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return migrationApplyAudit{}, false, fmt.Errorf("%w: audit file has trailing JSON", ErrMigrationApplyAudit)
+	}
+	normalized, err := normalizeMigrationApplyAudit(audit)
+	if err != nil {
+		return migrationApplyAudit{}, false, err
+	}
+	return normalized, true, nil
+}
+
+func normalizeMigrationApplyAudit(audit migrationApplyAudit) (migrationApplyAudit, error) {
+	if audit.Format != migrationApplyAuditFormat {
+		return migrationApplyAudit{}, fmt.Errorf("%w: unsupported audit format %q", ErrMigrationApplyAudit, audit.Format)
+	}
+	appliedAt := strings.TrimSpace(audit.AppliedAt)
+	if appliedAt == "" {
+		return migrationApplyAudit{}, fmt.Errorf("%w: audit applied_at is required", ErrMigrationApplyAudit)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, appliedAt); err != nil {
+		return migrationApplyAudit{}, fmt.Errorf("%w: invalid audit applied_at: %v", ErrMigrationApplyAudit, err)
+	}
+	audit.AppliedAt = appliedAt
+	audit.Driver = strings.TrimSpace(audit.Driver)
+	if audit.Driver == "" {
+		return migrationApplyAudit{}, fmt.Errorf("%w: audit driver is required", ErrMigrationApplyAudit)
+	}
+	if !audit.DSNConfigured {
+		return migrationApplyAudit{}, fmt.Errorf("%w: audit dsn_configured must be true for apply audit files", ErrMigrationApplyAudit)
+	}
+	if audit.TargetVersion < 0 {
+		return migrationApplyAudit{}, fmt.Errorf("%w: audit target_version must be non-negative", ErrMigrationApplyAudit)
+	}
+	if audit.TargetLatest && audit.TargetVersion == 0 {
+		return migrationApplyAudit{}, fmt.Errorf("%w: latest target audit must name a positive resolved target_version", ErrMigrationApplyAudit)
+	}
+	parsedPlanSHA256, err := parsePlanSHA256(audit.PlanSHA256)
+	if err != nil {
+		return migrationApplyAudit{}, fmt.Errorf("%w: invalid audit plan_sha256: %v", ErrMigrationApplyAudit, err)
+	}
+	audit.PlanSHA256 = parsedPlanSHA256
+	ledgerSnapshotSHA256, err := parsePlanSHA256(audit.LedgerSnapshotSHA256)
+	if err != nil {
+		return migrationApplyAudit{}, fmt.Errorf("%w: invalid audit ledger_snapshot_sha256: %v", ErrMigrationApplyAudit, err)
+	}
+	audit.LedgerSnapshotSHA256 = ledgerSnapshotSHA256
+	if strings.TrimSpace(audit.ConfirmedPlanSHA256) != "" {
+		confirmedPlanSHA256, err := parsePlanSHA256(audit.ConfirmedPlanSHA256)
+		if err != nil {
+			return migrationApplyAudit{}, fmt.Errorf("%w: invalid audit confirmed_plan_sha256: %v", ErrMigrationApplyAudit, err)
+		}
+		audit.ConfirmedPlanSHA256 = confirmedPlanSHA256
+	}
+	if audit.Result.LatestVersion <= 0 {
+		return migrationApplyAudit{}, fmt.Errorf("%w: audit result latest_version must be positive", ErrMigrationApplyAudit)
+	}
+	if audit.Result.PreviousVersion < 0 || audit.Result.CurrentVersion < 0 {
+		return migrationApplyAudit{}, fmt.Errorf("%w: audit result versions must be non-negative", ErrMigrationApplyAudit)
+	}
+	if audit.Result.PreviousVersion > audit.Result.LatestVersion || audit.Result.CurrentVersion > audit.Result.LatestVersion {
+		return migrationApplyAudit{}, fmt.Errorf("%w: audit result versions must not exceed latest_version", ErrMigrationApplyAudit)
+	}
+	if audit.TargetVersion != audit.Result.CurrentVersion {
+		return migrationApplyAudit{}, fmt.Errorf("%w: audit target_version %d does not match result current_version %d", ErrMigrationApplyAudit, audit.TargetVersion, audit.Result.CurrentVersion)
+	}
+	if audit.TargetLatest && audit.TargetVersion != audit.Result.LatestVersion {
+		return migrationApplyAudit{}, fmt.Errorf("%w: latest audit target_version %d does not match result latest_version %d", ErrMigrationApplyAudit, audit.TargetVersion, audit.Result.LatestVersion)
+	}
+	if len(audit.Result.Applied) == 0 {
+		return migrationApplyAudit{}, fmt.Errorf("%w: audit result requires at least one applied migration", ErrMigrationApplyAudit)
+	}
+	for i, step := range audit.Result.Applied {
+		if step.Version <= 0 || step.Version > audit.Result.LatestVersion {
+			return migrationApplyAudit{}, fmt.Errorf("%w: audit result applied step %d has invalid version %d", ErrMigrationApplyAudit, i+1, step.Version)
+		}
+		if step.Direction != dbmigrations.DirectionUp && step.Direction != dbmigrations.DirectionDown {
+			return migrationApplyAudit{}, fmt.Errorf("%w: audit result applied step %d has invalid direction %q", ErrMigrationApplyAudit, i+1, step.Direction)
+		}
+		step.Name = strings.TrimSpace(step.Name)
+		if step.Name == "" {
+			return migrationApplyAudit{}, fmt.Errorf("%w: audit result applied step %d name is required", ErrMigrationApplyAudit, i+1)
+		}
+		step.Path = strings.TrimSpace(step.Path)
+		if step.Path == "" {
+			return migrationApplyAudit{}, fmt.Errorf("%w: audit result applied step %d path is required", ErrMigrationApplyAudit, i+1)
+		}
+		stepSHA256, err := parsePlanSHA256(step.SHA256)
+		if err != nil {
+			return migrationApplyAudit{}, fmt.Errorf("%w: invalid audit result applied step %d sha256: %v", ErrMigrationApplyAudit, i+1, err)
+		}
+		step.SHA256 = stepSHA256
+		audit.Result.Applied[i] = step
+	}
+	currentVersion, err := replayMigrationApplyAuditResult(audit.Result)
+	if err != nil {
+		return migrationApplyAudit{}, err
+	}
+	if currentVersion != audit.Result.CurrentVersion {
+		return migrationApplyAudit{}, fmt.Errorf("%w: audit result current_version %d does not match applied steps ending at %d", ErrMigrationApplyAudit, audit.Result.CurrentVersion, currentVersion)
+	}
+	planFromAudit := dbmigrations.Plan{
+		CurrentVersion: audit.Result.PreviousVersion,
+		LatestVersion:  audit.Result.LatestVersion,
+		UpToDate:       false,
+		Pending:        audit.Result.Applied,
+	}
+	computedPlanSHA256, err := planSHA256(planFromAudit)
+	if err != nil {
+		return migrationApplyAudit{}, fmt.Errorf("%w: validate audit plan checksum: %v", ErrMigrationApplyAudit, err)
+	}
+	if audit.PlanSHA256 != computedPlanSHA256 {
+		return migrationApplyAudit{}, fmt.Errorf("%w: audit plan_sha256 mismatch: got %s want %s", ErrMigrationApplyAudit, computedPlanSHA256, audit.PlanSHA256)
+	}
+	if audit.ConfirmedPlanSHA256 != "" && audit.ConfirmedPlanSHA256 != audit.PlanSHA256 {
+		return migrationApplyAudit{}, fmt.Errorf("%w: audit confirmed_plan_sha256 %s does not match plan_sha256 %s", ErrMigrationApplyAudit, audit.ConfirmedPlanSHA256, audit.PlanSHA256)
+	}
+	return audit, nil
+}
+
+func replayMigrationApplyAuditResult(result dbmigrations.ApplyResult) (int, error) {
+	currentVersion := result.PreviousVersion
+	for i, step := range result.Applied {
+		switch step.Direction {
+		case dbmigrations.DirectionUp:
+			if step.Version != currentVersion+1 {
+				return 0, fmt.Errorf("%w: audit result applied up step %d version %d does not continue from %d", ErrMigrationApplyAudit, i+1, step.Version, currentVersion)
+			}
+			currentVersion = step.Version
+		case dbmigrations.DirectionDown:
+			if step.Version != currentVersion {
+				return 0, fmt.Errorf("%w: audit result applied down step %d version %d does not continue from %d", ErrMigrationApplyAudit, i+1, step.Version, currentVersion)
+			}
+			currentVersion = step.Version - 1
+		default:
+			return 0, fmt.Errorf("%w: audit result applied step %d has invalid direction %q", ErrMigrationApplyAudit, i+1, step.Direction)
+		}
+	}
+	return currentVersion, nil
 }
 
 func (f *migrationApplyAuditFile) Commit(audit migrationApplyAudit) error {
@@ -1105,6 +1341,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  plan-artifact          print dry-run plan plus checksum for apply confirmation")
 	fmt.Fprintln(w, "  apply-preflight        validate apply inputs and plan confirmation without opening a database")
 	fmt.Fprintln(w, "  apply-lock-status      inspect a local migration apply lock file without mutating it")
+	fmt.Fprintln(w, "  apply-audit-status     inspect a migration apply audit file without mutating it")
 	fmt.Fprintln(w, "  apply                  apply a target plan using a database/sql driver and offline ledger snapshot")
 	fmt.Fprintln(w, "")
 	printStatusUsage(w)
@@ -1120,6 +1357,8 @@ func printUsage(w io.Writer) {
 	printApplyPreflightUsage(w)
 	fmt.Fprintln(w, "")
 	printApplyLockStatusUsage(w)
+	fmt.Fprintln(w, "")
+	printApplyAuditStatusUsage(w)
 	fmt.Fprintln(w, "")
 	printApplyUsage(w)
 }
@@ -1157,6 +1396,11 @@ func printApplyPreflightUsage(w io.Writer) {
 func printApplyLockStatusUsage(w io.Writer) {
 	fmt.Fprintln(w, "apply-lock-status usage:")
 	fmt.Fprintln(w, "  metin2-migrate apply-lock-status --lock-file <path>")
+}
+
+func printApplyAuditStatusUsage(w io.Writer) {
+	fmt.Fprintln(w, "apply-audit-status usage:")
+	fmt.Fprintln(w, "  metin2-migrate apply-audit-status --audit-file <path>")
 }
 
 func printApplyUsage(w io.Writer) {

@@ -852,6 +852,259 @@ func TestRunApplyLockStatusRejectsSymlinkLockFile(t *testing.T) {
 	}
 }
 
+func TestRunApplyAuditStatusReportsMissingAuditWithoutOpeningDatabase(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	auditPath := t.TempDir() + "/missing-migration-apply-audit.json"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-audit-status", "--audit-file", auditPath}, nil, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected missing apply-audit-status to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected missing apply-audit-status not to write stderr, got %q", stderr.String())
+	}
+	var got migrationApplyAuditStatus
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode missing audit status JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if got.Format != migrationApplyAuditStatusFormat || got.Present || got.Audit != nil {
+		t.Fatalf("unexpected missing audit status: %#v", got)
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("apply-audit-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunApplyAuditStatusReadsMetadataOnlyAuditFile(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var artifactStdout bytes.Buffer
+	var artifactStderr bytes.Buffer
+	if code := Run([]string{"plan-artifact", "--ledger-snapshot", "-", "--target-version", "1"}, bytes.NewReader(rawSnapshot), &artifactStdout, &artifactStderr); code != 0 {
+		t.Fatalf("expected plan-artifact command to succeed, exit=%d stderr=%q", code, artifactStderr.String())
+	}
+	var artifact migrationPlanArtifact
+	if err := json.Unmarshal(artifactStdout.Bytes(), &artifact); err != nil {
+		t.Fatalf("decode plan artifact JSON: %v\nbody:\n%s", err, artifactStdout.String())
+	}
+	auditPath := t.TempDir() + "/migration-apply-audit.json"
+	artifactPath := t.TempDir() + "/migration-plan-artifact.json"
+	if err := os.WriteFile(artifactPath, artifactStdout.Bytes(), 0o600); err != nil {
+		t.Fatalf("write plan artifact: %v", err)
+	}
+	secretDSN := "memory://apply-audit-secret"
+	var applyStdout bytes.Buffer
+	var applyStderr bytes.Buffer
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", secretDSN, "--ledger-snapshot", "-", "--target-version", "1", "--plan-artifact", artifactPath, "--audit-file", auditPath}, bytes.NewReader(rawSnapshot), &applyStdout, &applyStderr)
+	if code != 0 {
+		t.Fatalf("expected audited apply to succeed, exit=%d stdout=%q stderr=%q", code, applyStdout.String(), applyStderr.String())
+	}
+	eventsBeforeStatus := currentMigrateCLITestDriver(t).eventsSnapshot()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code = Run([]string{"apply-audit-status", "--audit-file", auditPath}, nil, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected apply-audit-status to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr on apply-audit-status success, got %q", stderr.String())
+	}
+	var got migrationApplyAuditStatus
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode audit status JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if got.Format != migrationApplyAuditStatusFormat || !got.Present || got.Audit == nil {
+		t.Fatalf("unexpected audit status envelope: %#v", got)
+	}
+	if got.Audit.Format != migrationApplyAuditFormat || got.Audit.AppliedAt == "" {
+		t.Fatalf("unexpected audit timestamp metadata: %#v", got.Audit)
+	}
+	if got.Audit.Driver != driverName || !got.Audit.DSNConfigured {
+		t.Fatalf("unexpected audit database metadata: %#v", got.Audit)
+	}
+	if got.Audit.TargetVersion != 1 || got.Audit.TargetLatest {
+		t.Fatalf("unexpected audit target metadata: %#v", got.Audit)
+	}
+	if got.Audit.PlanSHA256 != artifact.PlanSHA256 || got.Audit.ConfirmedPlanSHA256 != artifact.PlanSHA256 {
+		t.Fatalf("unexpected audit plan metadata: %#v", got.Audit)
+	}
+	if got.Audit.LedgerSnapshotSHA256 != testSHA256HexBytes(rawSnapshot) {
+		t.Fatalf("unexpected audit ledger checksum: %#v", got.Audit)
+	}
+	if got.Audit.Result.PreviousVersion != 0 || got.Audit.Result.CurrentVersion != 1 || len(got.Audit.Result.Applied) != 1 {
+		t.Fatalf("unexpected audit apply result: %#v", got.Audit.Result)
+	}
+	body := stdout.String()
+	for _, forbidden := range []string{secretDSN, "CREATE TABLE", "DROP TABLE", "-- go-metin2 migration"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("audit status output must not expose %q, got %s", forbidden, body)
+		}
+	}
+	if _, err := os.Stat(auditPath); err != nil {
+		t.Fatalf("apply-audit-status must not remove the inspected audit file: %v", err)
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != len(eventsBeforeStatus) {
+		t.Fatalf("apply-audit-status must not open a database target, before=%#v after=%#v", eventsBeforeStatus, events)
+	}
+}
+
+func TestRunApplyAuditStatusRejectsPlanChecksumDrift(t *testing.T) {
+	auditPath, eventsBeforeStatus := writeValidApplyAuditFileForStatusTest(t, "memory://audit-drift")
+	rawAudit, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("read audit file: %v", err)
+	}
+	var audit migrationApplyAudit
+	if err := json.Unmarshal(rawAudit, &audit); err != nil {
+		t.Fatalf("decode audit file: %v\nbody:\n%s", err, string(rawAudit))
+	}
+	audit.PlanSHA256 = strings.Repeat("0", 64)
+	rawDriftedAudit, err := json.MarshalIndent(audit, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal drifted audit: %v", err)
+	}
+	rawDriftedAudit = append(rawDriftedAudit, '\n')
+	if err := os.WriteFile(auditPath, rawDriftedAudit, 0o600); err != nil {
+		t.Fatalf("write drifted audit file: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-audit-status", "--audit-file", auditPath}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected checksum-drift apply-audit-status to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected checksum-drift apply-audit-status not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "migration apply audit failed") || !strings.Contains(stderr.String(), "plan_sha256 mismatch") {
+		t.Fatalf("expected audit plan checksum guidance, got %q", stderr.String())
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != len(eventsBeforeStatus) {
+		t.Fatalf("checksum-drift apply-audit-status must not open a database target, before=%#v after=%#v", eventsBeforeStatus, events)
+	}
+}
+
+func TestRunApplyAuditStatusRejectsTargetResultDrift(t *testing.T) {
+	auditPath, eventsBeforeStatus := writeValidApplyAuditFileForStatusTest(t, "memory://audit-target-drift")
+	rawAudit, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("read audit file: %v", err)
+	}
+	var audit migrationApplyAudit
+	if err := json.Unmarshal(rawAudit, &audit); err != nil {
+		t.Fatalf("decode audit file: %v\nbody:\n%s", err, string(rawAudit))
+	}
+	audit.TargetVersion = 0
+	rawDriftedAudit, err := json.MarshalIndent(audit, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal target-drift audit: %v", err)
+	}
+	rawDriftedAudit = append(rawDriftedAudit, '\n')
+	if err := os.WriteFile(auditPath, rawDriftedAudit, 0o600); err != nil {
+		t.Fatalf("write target-drift audit file: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-audit-status", "--audit-file", auditPath}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected target-drift apply-audit-status to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected target-drift apply-audit-status not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "migration apply audit failed") || !strings.Contains(stderr.String(), "target_version") {
+		t.Fatalf("expected audit target drift guidance, got %q", stderr.String())
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != len(eventsBeforeStatus) {
+		t.Fatalf("target-drift apply-audit-status must not open a database target, before=%#v after=%#v", eventsBeforeStatus, events)
+	}
+}
+
+func writeValidApplyAuditFileForStatusTest(t *testing.T, dsn string) (string, []string) {
+	t.Helper()
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	auditPath := t.TempDir() + "/migration-apply-audit.json"
+	var applyStdout bytes.Buffer
+	var applyStderr bytes.Buffer
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", dsn, "--ledger-snapshot", "-", "--target-version", "1", "--audit-file", auditPath}, bytes.NewReader(rawSnapshot), &applyStdout, &applyStderr)
+	if code != 0 {
+		t.Fatalf("expected audited apply to succeed, exit=%d stdout=%q stderr=%q", code, applyStdout.String(), applyStderr.String())
+	}
+	return auditPath, currentMigrateCLITestDriver(t).eventsSnapshot()
+}
+
+func TestRunApplyAuditStatusRejectsMalformedAuditFile(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	auditPath := t.TempDir() + "/migration-apply-audit.json"
+	malformedAudit := `{"format":"go-metin2-migration-apply-audit-v1","applied_at":"2026-08-17T00:00:00Z","driver":"driver","dsn_configured":true,"target_version":1,"target_latest":false,"plan_sha256":"` + strings.Repeat("0", 64) + `","ledger_snapshot_sha256":"` + strings.Repeat("1", 64) + `","result":{"previous_version":0,"current_version":1,"latest_version":1,"applied":[{"version":1,"name":"bootstrap_schema_migrations","direction":"up","path":"0001_bootstrap_schema_migrations.up.sql","sha256":"` + strings.Repeat("2", 64) + `"}]},"extra":true}`
+	if err := os.WriteFile(auditPath, []byte(malformedAudit), 0o600); err != nil {
+		t.Fatalf("write malformed audit file: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-audit-status", "--audit-file", auditPath}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected malformed apply-audit-status to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected malformed apply-audit-status not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "migration apply audit failed") || !strings.Contains(stderr.String(), "unknown field") {
+		t.Fatalf("expected strict malformed-audit guidance, got %q", stderr.String())
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("malformed apply-audit-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunApplyAuditStatusRejectsSymlinkAuditFile(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	dir := t.TempDir()
+	targetPath := dir + "/target-audit.json"
+	if err := os.WriteFile(targetPath, []byte("{}\n"), 0o600); err != nil {
+		t.Fatalf("write symlink audit target: %v", err)
+	}
+	auditPath := dir + "/migration-apply-audit.json"
+	if err := os.Symlink(targetPath, auditPath); err != nil {
+		t.Fatalf("create symlink audit: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-audit-status", "--audit-file", auditPath}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected symlink apply-audit-status to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected symlink apply-audit-status not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "audit file must not be a symlink") {
+		t.Fatalf("expected symlink rejection guidance, got %q", stderr.String())
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("symlink apply-audit-status must not open a database target, got events %#v", events)
+	}
+}
+
 func TestRunApplyRejectsExistingLockFileBeforeOpeningDatabase(t *testing.T) {
 	driverName := registerMigrateCLITestSQLDriver(t)
 	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
