@@ -63,10 +63,12 @@ The collection endpoint returns, per connected bootstrap player:
 - a compact resolved preview when the referenced definition currently resolves to a currently previewable kind (`info`, `talk`, `quest_flag`, `shop_preview`, `warp`); compact previews trim surrounding whitespace and cap by Unicode rune boundaries so operator JSON never receives truncated invalid UTF-8
 - a fail-closed `resolution_failure` marker when it does not
 
+For `quest_flag`, interaction-visibility previews are selected-character state-aware and use the same read-only compare-and-set evaluator as `/local/quest-state/transition-preview`: a transition that would apply previews the authored acknowledgement text, while a `current_value_mismatch` previews the same self-only mismatch text the live `INTERACT` path would emit (`Quest requirements are not met.`). Preview generation must not mutate the quest-state store.
+
 The exact-name endpoint returns the same snapshot shape for one connected bootstrap player and fails closed without leaking actor details when the subject does not resolve.
 It mirrors `/local/visibility/{name}` for interaction QA: URL-escaped names are accepted, blank or slash-containing path values are rejected, and missing/disconnected characters return `404`.
 
-This is intended for live QA/debugging without packet captures. It now preserves both sides of the runtime state needed for interaction triage: the connected-player `dead` flag and the visible interactable actor `dead` flag.
+This is intended for live QA/debugging without packet captures. It now preserves both sides of the runtime state needed for interaction triage: the connected-player `dead` flag, the selected-character quest-flag compare-and-set outcome preview, and the visible interactable actor `dead` flag.
 
 ## Deterministic authored-content bundle
 

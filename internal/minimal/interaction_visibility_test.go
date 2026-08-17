@@ -1,6 +1,8 @@
 package minimal
 
 import (
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -8,6 +10,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
@@ -161,6 +164,51 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagPreview(t *testing.T) {
 	entry := snapshots[0].VisibleInteractableStaticActors[0]
 	if entry.Name != "QuestGuide" || entry.Preview != "Quest updated: first_steps.met_guide = 1." || entry.ResolutionFailure != "" {
 		t.Fatalf("unexpected quest-flag interaction visibility entry: %+v", entry)
+	}
+}
+
+func TestGameRuntimeInteractionVisibilityReturnsQuestFlagMismatchPreviewWithoutMutatingQuestState(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	before := queststate.Snapshot{Flags: []queststate.Flag{{Character: "PeerOne", QuestRef: "quest:first_steps", Name: "met_guide", Value: 1}}}
+	if err := queststate.NewFileStore(questStatePath).Save(before); err != nil {
+		t.Fatalf("seed quest state: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+		Kind:      interactionstore.KindQuestFlag,
+		Ref:       "quest:first_steps",
+		Text:      "Quest updated: first_steps.met_guide = 1.",
+		QuestRef:  "quest:first_steps",
+		QuestFlag: "met_guide",
+		QuestTo:   1,
+	}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	if _, ok := runtime.RegisterStaticActorWithInteraction("QuestGuide", bootstrapMapIndex, 1250, 2250, 20301, interactionstore.KindQuestFlag, "quest:first_steps"); !ok {
+		t.Fatal("expected quest flag static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	defer closeSessionFlow(t, flow)
+
+	snapshots := runtime.InteractionVisibility()
+	if len(snapshots) != 1 || len(snapshots[0].VisibleInteractableStaticActors) != 1 {
+		t.Fatalf("expected one visible quest-flag interactable, got %+v", snapshots)
+	}
+	entry := snapshots[0].VisibleInteractableStaticActors[0]
+	if entry.Name != "QuestGuide" || entry.Preview != "Quest requirements are not met." || entry.ResolutionFailure != "" {
+		t.Fatalf("unexpected quest-flag mismatch interaction visibility entry: %+v", entry)
+	}
+	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	if err != nil {
+		t.Fatalf("load quest state after interaction-visibility preview: %v", err)
+	}
+	if !reflect.DeepEqual(loaded, before) {
+		t.Fatalf("quest-flag interaction visibility preview mutated quest-state:\n got: %#v\nwant: %#v", loaded, before)
 	}
 }
 

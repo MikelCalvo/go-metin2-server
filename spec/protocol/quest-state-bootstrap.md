@@ -138,7 +138,9 @@ Runtime behavior:
 5. when the compare-and-set result is `current_value_mismatch`, the quest-state snapshot remains unchanged and the client now receives one self-only `GC_CHAT` with `type = INFO`, `vid = 0`, `empire = 0`, and `message = "Quest requirements are not met."`,
 6. invalid transition definitions, store errors, unsupported content, and other non-CAS failures still fail closed with no frames and no peer fanout.
 
-This is still a bootstrap quest-state trigger, not a client quest UI, reward system, branching dialog tree, or script runtime. The mismatch acknowledgement exists only so player-visible authored-state failures are not silent; it does not expose a quest window, reward, objective tracker, or alternate branch.
+Loopback interaction visibility now mirrors that player-facing branch without mutation: `GET /local/interaction-visibility` and `GET /local/interaction-visibility/{character}` preview a `quest_flag` actor by dry-running the selected character's compare-and-set transition. A transition that would apply previews `definition.text`; a `current_value_mismatch` previews `Quest requirements are not met.`. Other dry-run failures surface as a fail-closed `resolution_failure` marker rather than mutating the quest-state store.
+
+This is still a bootstrap quest-state trigger, not a client quest UI, reward system, branching dialog tree, or script runtime. The mismatch acknowledgement and its loopback preview exist only so authored-state failures are not silent; they do not expose a quest window, reward, objective tracker, or alternate branch.
 
 ## Runtime configuration and local ops
 

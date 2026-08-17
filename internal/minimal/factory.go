@@ -1524,7 +1524,7 @@ func (r *gameRuntime) resolveInteractionVisibilitySnapshot(entry worldruntime.Ch
 			resolved = append(resolved, resolvedActor)
 			continue
 		}
-		preview, ok := r.interactionDefinitionPreview(actor.Name, definition)
+		preview, ok := r.interactionDefinitionVisibilityPreview(entry.Name, actor.Name, definition)
 		if !ok {
 			resolvedActor.ResolutionFailure = staticActorInteractionFailureUnsupportedKind
 			resolved = append(resolved, resolvedActor)
@@ -8053,6 +8053,10 @@ func staticActorInteractionFailureMessage(failure string) (string, bool) {
 }
 
 func (r *gameRuntime) interactionDefinitionPreview(actorName string, definition InteractionDefinition) (string, bool) {
+	return r.interactionDefinitionVisibilityPreview("", actorName, definition)
+}
+
+func (r *gameRuntime) interactionDefinitionVisibilityPreview(characterName string, actorName string, definition InteractionDefinition) (string, bool) {
 	switch definition.Kind {
 	case interactionstore.KindInfo:
 		return definition.Text, true
@@ -8068,10 +8072,38 @@ func (r *gameRuntime) interactionDefinitionPreview(actorName string, definition 
 		}
 		return fmt.Sprintf("%s [%s]", message, summary), true
 	case interactionstore.KindQuestFlag:
-		return definition.Text, true
+		if characterName == "" {
+			return definition.Text, true
+		}
+		preview, err := r.previewQuestFlagInteraction(characterName, definition)
+		if err != nil {
+			return "", false
+		}
+		return preview, true
 	default:
 		return "", false
 	}
+}
+
+func (r *gameRuntime) previewQuestFlagInteraction(characterName string, definition InteractionDefinition) (string, error) {
+	if !interactionstore.ValidDefinition(definition) {
+		return "", fmt.Errorf("invalid quest flag interaction definition")
+	}
+	result, err := r.PreviewQuestStateTransition(queststate.Transition{Character: characterName, QuestRef: definition.QuestRef, Flag: definition.QuestFlag, From: definition.QuestFrom, To: definition.QuestTo})
+	if err != nil {
+		return "", err
+	}
+	if result.Result.Applied {
+		return definition.Text, nil
+	}
+	if result.Result.Reason == queststate.TransitionReasonCurrentValueMismatch {
+		message, ok := staticActorInteractionFailureMessage(staticActorInteractionFailureQuestCurrentValueMismatch)
+		if !ok {
+			return "", fmt.Errorf("quest flag mismatch preview is unsupported")
+		}
+		return message, nil
+	}
+	return "", fmt.Errorf("quest flag transition preview failed: %s", result.Result.Reason)
 }
 
 func (r *gameRuntime) shopPreviewInteractionPreview(definition InteractionDefinition) (string, bool) {

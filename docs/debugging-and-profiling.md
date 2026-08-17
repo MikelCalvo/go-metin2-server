@@ -967,7 +967,7 @@ Each visible interactable entry reuses the static-actor snapshot shape from `/lo
 - a compact preview, or
 - `resolution_failure`
 
-Current previews cover self-only `info` / `talk`, structured merchant `shop_preview` catalog summaries, and compact `warp` destination summaries.
+Current previews cover self-only `info` / `talk`, state-aware `quest_flag` acknowledgement-or-mismatch text, structured merchant `shop_preview` catalog summaries, and compact `warp` destination summaries. `quest_flag` previews use the same read-only compare-and-set evaluator as `/local/quest-state/transition-preview`, so a selected character that no longer satisfies the authored `quest_from` value sees `Quest requirements are not met.` in the preview without mutating the quest-state store.
 The per-character subject snapshot in this endpoint also reuses the same player `dead: true` flag exposed by `/local/players` while a still-connected owner remains at the retaliation-owned `0`-HP floor.
 
 `GET /local/interaction-visibility/{name}` returns the same interaction-visibility snapshot for one connected bootstrap character by exact character name.
