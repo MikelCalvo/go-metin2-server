@@ -29992,6 +29992,93 @@ func TestGameSessionFlowItemUseToItemRejectsTargetCapacityEdgesWithoutMutation(t
 	}
 }
 
+func TestGameSessionFlowInteractingWithInfoActorClosesOpenMerchantWindowBeforeChat(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	buyer := merchantBuyerCharacter("MerchantInfoClose", 0x01040133, 0x02050133, 125, nil)
+	issuePeerTicket(t, store, "merchant-info-close", 0x33333333, buyer)
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "merchant-info-close", Empire: buyer.Empire, Characters: cloneCharacters([]loginticket.Character{buyer})}); err != nil {
+		t.Fatalf("seed merchant info-close account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{
+		defaultMerchantCatalogDefinition(),
+		{Kind: interactionstore.KindInfo, Ref: "lore:notice", Text: "The notice board is open."},
+	})
+	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected merchant info-close runtime error: %v", err)
+	}
+	merchant, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:merchant")
+	if !ok {
+		t.Fatal("expected merchant static actor registration to succeed")
+	}
+	notice, ok := runtime.RegisterStaticActorWithInteraction("NoticeBoard", bootstrapMapIndex, 1200, 2200, 20303, interactionstore.KindInfo, "lore:notice")
+	if !ok {
+		t.Fatal("expected notice static actor registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "merchant-info-close", 0x33333333)
+	if len(enterOut) < 11 {
+		t.Fatalf("expected merchant info-close bootstrap to include both static actors, got %d frames", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, merchant.EntityID)
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(notice.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected info interaction while merchant is open: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected merchant close plus info chat after interacting with info actor, got %d frames", len(out))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, out[0])); err != nil {
+		t.Fatalf("decode merchant close before info interaction chat: %v", err)
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode info interaction after merchant close: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != "The notice board is open." {
+		t.Fatalf("unexpected info interaction delivery after merchant close: %+v", delivery)
+	}
+
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected explicit SHOP END after info interaction closed merchant: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected info interaction to clear merchant context before later SHOP END, got %d frames", len(closeOut))
+	}
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected packet shop buy after info interaction closed merchant: %v", err)
+	}
+	if len(buyOut) != 0 {
+		t.Fatalf("expected info interaction to reject later packet buy frames, got %d", len(buyOut))
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after info interaction merchant close")
+	}
+	if currencySnapshot.Gold != 125 {
+		t.Fatalf("expected info interaction merchant close to keep gold at 125, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after info interaction merchant close")
+	}
+	if len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected info interaction merchant close to keep inventory unchanged, got %+v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load("merchant-info-close")
+	if err != nil {
+		t.Fatalf("load persisted info interaction merchant-close account: %v", err)
+	}
+	if account.Characters[0].Gold != 125 || len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected persisted info interaction merchant-close account to stay unchanged, got %#v", account.Characters[0])
+	}
+}
+
 func TestGameSessionFlowShopEndClosesMerchantWindowContext(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerClose", 0x01040104, 0x02050104, 125, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-close", 0x44444444, buyer)

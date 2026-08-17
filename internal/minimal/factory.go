@@ -4808,12 +4808,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					resolution := runtime.resolveStaticActorInteraction(sharedWorldID, packet.TargetVID)
 					if !resolution.Accepted {
-						clearActiveMerchantBuy()
 						if resolution.Delivery == nil {
+							clearActiveMerchantBuy()
 							return gameflow.InteractionResult{Accepted: false}
 						}
 						markInteractionCooldown(packet.TargetVID)
-						return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(*resolution.Delivery)}}
+						frames := prependMerchantCloseFrame([][]byte{chatproto.EncodeChatDelivery(*resolution.Delivery)})
+						return gameflow.InteractionResult{Accepted: true, Frames: frames}
 					}
 					if resolution.Definition.Kind == interactionstore.KindWarp {
 						_, transferFrames, ok := applySelectedCharacterTransfer(resolution.Definition.MapIndex, resolution.Definition.X, resolution.Definition.Y, true)
@@ -4853,13 +4854,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							if failureDelivery == nil {
 								return gameflow.InteractionResult{Accepted: false}
 							}
-							clearActiveMerchantBuy()
 							markInteractionCooldown(packet.TargetVID)
-							return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(*failureDelivery)}}
+							frames := prependMerchantCloseFrame([][]byte{chatproto.EncodeChatDelivery(*failureDelivery)})
+							return gameflow.InteractionResult{Accepted: true, Frames: frames}
 						}
-						clearActiveMerchantBuy()
 						markInteractionCooldown(packet.TargetVID)
-						return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(*resolution.Delivery)}}
+						frames := prependMerchantCloseFrame([][]byte{chatproto.EncodeChatDelivery(*resolution.Delivery)})
+						return gameflow.InteractionResult{Accepted: true, Frames: frames}
 					}
 					if resolution.Delivery == nil {
 						return gameflow.InteractionResult{Accepted: false}
@@ -4875,9 +4876,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						markInteractionCooldown(packet.TargetVID)
 						return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{shopproto.EncodeServerStart(start)}}
 					}
-					clearActiveMerchantBuy()
 					markInteractionCooldown(packet.TargetVID)
-					return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(*resolution.Delivery)}}
+					frames := prependMerchantCloseFrame([][]byte{chatproto.EncodeChatDelivery(*resolution.Delivery)})
+					return gameflow.InteractionResult{Accepted: true, Frames: frames}
 				},
 				HandleTarget: func(packet combatproto.ClientTargetPacket) gameflow.TargetResult {
 					stateMu.Lock()
