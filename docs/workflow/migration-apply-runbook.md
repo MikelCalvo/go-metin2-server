@@ -22,6 +22,7 @@ Keep these files together for each migration run:
 - `migration-plan-artifact.json` — strict `go-metin2-migration-plan-artifact-v1` output reviewed before mutation;
 - `plan-artifact-status.json` — optional `go-metin2-migration-plan-artifact-status-v1` output from re-validating a retained plan artifact before handoff review, preflight, or apply;
 - `apply-preflight.json` — strict `go-metin2-migration-apply-preflight-v1` output generated immediately before backup validation and mutation;
+- `apply-preflight-status.json` — optional `go-metin2-migration-apply-preflight-status-v1` output from re-validating a retained preflight artifact before handoff review, release evidence collection, or incident triage;
 - `migration-apply.lock` — an operator-chosen local lock path that should not already exist; while reserved, it contains metadata-only `go-metin2-migration-apply-lock-v1` JSON with the local PID, target version, plan checksum, and ledger-snapshot checksum, but never the DSN or executable SQL;
 - `apply-lock-status.json` — optional `go-metin2-migration-apply-lock-status-v1` output from inspecting an existing lock before any manual stale-lock decision;
 - `migration-apply-audit.json` — exclusive metadata-only audit output written after a successful non-empty apply;
@@ -57,6 +58,9 @@ metin2-migrate apply-preflight \
   --target-version latest \
   --plan-artifact migration-plan-artifact.json \
   > apply-preflight.json
+metin2-migrate apply-preflight-status \
+  --apply-preflight apply-preflight.json \
+  > apply-preflight-status.json
 ```
 
 Before applying, verify and retain deployment-specific backups outside the migration CLI. At minimum, validate that you can restore the target database from your backup system. For this bootstrap server, also validate any file-backed stores that matter to the deployment before running DB migrations:
@@ -109,6 +113,9 @@ metin2-migrate apply-preflight \
   --plan-artifact rollback-plan-artifact.json \
   --allow-rollback \
   > rollback-apply-preflight.json
+metin2-migrate apply-preflight-status \
+  --apply-preflight rollback-apply-preflight.json \
+  > rollback-apply-preflight-status.json
 ```
 
 Only after backup restoreability is proven, execute the rollback:
@@ -130,7 +137,7 @@ Rollback to zero is allowed by the current primitive, but it drops the `schema_m
 ## Failure handling
 
 - If `ledger-snapshot`, `status`, or daemon-local migration status fails, stop before planning and inspect the configured driver/DSN and `schema_migrations` metadata.
-- If `plan-artifact`, `plan-artifact-status`, or `apply-preflight` fails, do not run `apply`; regenerate or re-review the ledger snapshot and plan. `plan-artifact-status` is read-only: it validates the non-symlink regular plan artifact shape, returns `present: false` for an absent path, verifies the embedded plan checksum and contiguous pending-step sequence, and never opens the DB target, reserves lock/audit files, or exposes executable SQL / DSNs.
+- If `plan-artifact`, `plan-artifact-status`, `apply-preflight`, or `apply-preflight-status` fails, do not run `apply`; regenerate or re-review the ledger snapshot, plan, and preflight artifact. `plan-artifact-status` is read-only: it validates the non-symlink regular plan artifact shape, returns `present: false` for an absent path, verifies the embedded plan checksum and contiguous pending-step sequence, and never opens the DB target, reserves lock/audit files, or exposes executable SQL / DSNs. `apply-preflight-status` is also read-only: it validates the non-symlink regular preflight artifact shape, returns `present: false` for an absent path, verifies the preflight plan checksum plus target/plan endpoint consistency, and never opens the DB target, reserves lock/audit files, deletes the preflight artifact, or exposes executable SQL / DSNs.
 - If `--lock-file` already exists, assume another operator or interrupted run owns the migration window. Do not delete it blindly; first run `metin2-migrate apply-lock-status --lock-file <path> > apply-lock-status.json`, then inspect process ownership, the metadata-only lock JSON (`pid`, `target_version`, `plan_sha256`, `ledger_snapshot_sha256`), retained preflight/audit artifacts, and deployment notes. The status helper is read-only: it validates the non-symlink regular lock file shape, returns `present: false` for an absent path, and never removes the lock, opens the DB target, or exposes the DSN / executable SQL.
 - If a retained `migration-apply-audit.json` must be checked later, run `metin2-migrate apply-audit-status --audit-file <path> > apply-audit-status.json` before trusting it in release evidence. The helper is read-only: it validates the non-symlink regular audit file shape, returns `present: false` for an absent path, verifies metadata/result/checksum consistency, and never removes the audit, opens the DB target, or exposes the DSN / executable SQL.
 - If `apply` fails after reserving the lock or audit path, the CLI attempts to remove the reserved lock/audit files and roll back the SQL transaction. Keep stderr, the original ledger snapshot, and the failed plan artifact for diagnosis.

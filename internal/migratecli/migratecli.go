@@ -26,16 +26,18 @@ const (
 	exitError = 1
 	exitUsage = 2
 
-	maxLedgerSnapshotBytes        = 64 * 1024
-	maxMigrationPlanArtifactBytes = 128 * 1024
-	maxMigrationApplyLockBytes    = 16 * 1024
-	maxMigrationApplyAuditBytes   = 128 * 1024
+	maxLedgerSnapshotBytes          = 64 * 1024
+	maxMigrationPlanArtifactBytes   = 128 * 1024
+	maxMigrationApplyPreflightBytes = 128 * 1024
+	maxMigrationApplyLockBytes      = 16 * 1024
+	maxMigrationApplyAuditBytes     = 128 * 1024
 )
 
 // Run executes the small migration preflight CLI and returns a process-style exit
 // code. The catalog, status, empty-ledger-snapshot, ledger-snapshot, plan,
-// plan-artifact, plan-artifact-status, apply-preflight, apply-lock-status,
-// and apply-audit-status commands are read-only.
+// plan-artifact, plan-artifact-status, apply-preflight,
+// apply-preflight-status, apply-lock-status, and apply-audit-status commands are
+// read-only.
 // The apply command is an explicit CLI-only mutation surface: it requires an
 // operator-supplied database driver, DSN, strict offline ledger snapshot, and
 // target version, and it remains deliberately separate from daemon startup and
@@ -75,6 +77,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runPlanArtifactStatus(args[1:], stdout, stderr)
 	case "apply-preflight":
 		return runApplyPreflight(args[1:], stdin, stdout, stderr)
+	case "apply-preflight-status":
+		return runApplyPreflightStatus(args[1:], stdout, stderr)
 	case "apply-lock-status":
 		return runApplyLockStatus(args[1:], stdout, stderr)
 	case "apply-audit-status":
@@ -227,6 +231,8 @@ const migrationPlanArtifactStatusFormat = "go-metin2-migration-plan-artifact-sta
 
 const migrationApplyPreflightFormat = "go-metin2-migration-apply-preflight-v1"
 
+const migrationApplyPreflightStatusFormat = "go-metin2-migration-apply-preflight-status-v1"
+
 type migrationPlanArtifact struct {
 	Format     string            `json:"format"`
 	PlanSHA256 string            `json:"plan_sha256"`
@@ -246,6 +252,12 @@ type migrationApplyPreflight struct {
 	LedgerSnapshotSHA256 string            `json:"ledger_snapshot_sha256"`
 	PlanSHA256           string            `json:"plan_sha256"`
 	Plan                 dbmigrations.Plan `json:"plan"`
+}
+
+type migrationApplyPreflightStatus struct {
+	Format    string                   `json:"format"`
+	Present   bool                     `json:"present"`
+	Preflight *migrationApplyPreflight `json:"preflight,omitempty"`
 }
 
 func runPlanArtifact(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
@@ -421,6 +433,41 @@ func runApplyPreflight(args []string, stdin io.Reader, stdout io.Writer, stderr 
 		PlanSHA256:           gotPlanSHA256,
 		Plan:                 plan,
 	})
+}
+
+func runApplyPreflightStatus(args []string, stdout io.Writer, stderr io.Writer) int {
+	flags := flag.NewFlagSet("apply-preflight-status", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	var applyPreflightPath string
+	flags.StringVar(&applyPreflightPath, "apply-preflight", "", "path to a metadata-only migration apply preflight JSON file")
+	flags.Usage = func() { printApplyPreflightStatusUsage(stderr) }
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintf(stderr, "unexpected apply-preflight-status argument %q\n", flags.Arg(0))
+		printApplyPreflightStatusUsage(stderr)
+		return exitUsage
+	}
+	if strings.TrimSpace(applyPreflightPath) == "" {
+		fmt.Fprintln(stderr, "--apply-preflight is required for apply-preflight-status")
+		printApplyPreflightStatusUsage(stderr)
+		return exitUsage
+	}
+
+	preflight, present, err := readMigrationApplyPreflightStatusFile(applyPreflightPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "migration apply preflight status: %v\n", err)
+		return exitError
+	}
+	status := migrationApplyPreflightStatus{
+		Format:  migrationApplyPreflightStatusFormat,
+		Present: present,
+	}
+	if present {
+		status.Preflight = &preflight
+	}
+	return writeJSON(stdout, stderr, status)
 }
 
 func readMigrationPlanFromArgs(command string, args []string, stdin io.Reader, stderr io.Writer, printCommandUsage func(io.Writer)) (dbmigrations.Plan, int) {
@@ -754,6 +801,8 @@ var ErrMigrationApplyAudit = errors.New("migration apply audit failed")
 var ErrMigrationApplyLock = errors.New("migration apply lock failed")
 
 var ErrMigrationApplyPlanConfirmation = errors.New("migration apply plan confirmation failed")
+
+var ErrMigrationApplyPreflight = errors.New("migration apply preflight failed")
 
 var ErrMigrationApplyRollbackConfirmation = errors.New("migration apply rollback confirmation failed")
 
@@ -1343,58 +1392,172 @@ func normalizeMigrationPlanArtifact(artifact migrationPlanArtifact) (migrationPl
 	return artifact, nil
 }
 
+func readMigrationApplyPreflightStatusFile(path string) (migrationApplyPreflight, bool, error) {
+	return readMigrationApplyPreflightPath(path, true)
+}
+
+func readMigrationApplyPreflightPath(path string, reportMissing bool) (migrationApplyPreflight, bool, error) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return migrationApplyPreflight{}, false, fmt.Errorf("%w: preflight file path is required", ErrMigrationApplyPreflight)
+	}
+	info, err := os.Lstat(trimmed)
+	if err != nil {
+		if reportMissing && errors.Is(err, os.ErrNotExist) {
+			return migrationApplyPreflight{}, false, nil
+		}
+		return migrationApplyPreflight{}, false, fmt.Errorf("%w: stat preflight file: %v", ErrMigrationApplyPreflight, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return migrationApplyPreflight{}, false, fmt.Errorf("%w: preflight file must not be a symlink: %s", ErrMigrationApplyPreflight, trimmed)
+	}
+	if !info.Mode().IsRegular() {
+		return migrationApplyPreflight{}, false, fmt.Errorf("%w: preflight file must be a regular file: %s", ErrMigrationApplyPreflight, trimmed)
+	}
+	file, err := os.Open(trimmed)
+	if err != nil {
+		return migrationApplyPreflight{}, false, fmt.Errorf("%w: read preflight file: %v", ErrMigrationApplyPreflight, err)
+	}
+	defer file.Close()
+	openedInfo, err := file.Stat()
+	if err != nil {
+		return migrationApplyPreflight{}, false, fmt.Errorf("%w: stat opened preflight file: %v", ErrMigrationApplyPreflight, err)
+	}
+	if !openedInfo.Mode().IsRegular() {
+		return migrationApplyPreflight{}, false, fmt.Errorf("%w: opened preflight file must be a regular file: %s", ErrMigrationApplyPreflight, trimmed)
+	}
+
+	raw, err := io.ReadAll(io.LimitReader(file, maxMigrationApplyPreflightBytes+1))
+	if err != nil {
+		return migrationApplyPreflight{}, false, fmt.Errorf("%w: read preflight file: %v", ErrMigrationApplyPreflight, err)
+	}
+	if len(raw) > maxMigrationApplyPreflightBytes {
+		return migrationApplyPreflight{}, false, fmt.Errorf("%w: preflight file exceeds %d bytes", ErrMigrationApplyPreflight, maxMigrationApplyPreflightBytes)
+	}
+	preflight, err := decodeMigrationApplyPreflight(raw)
+	if err != nil {
+		return migrationApplyPreflight{}, false, err
+	}
+	return preflight, true, nil
+}
+
+func decodeMigrationApplyPreflight(raw []byte) (migrationApplyPreflight, error) {
+	if !utf8.Valid(raw) {
+		return migrationApplyPreflight{}, fmt.Errorf("%w: preflight file is not valid UTF-8", ErrMigrationApplyPreflight)
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return migrationApplyPreflight{}, fmt.Errorf("%w: preflight file is empty", ErrMigrationApplyPreflight)
+	}
+	var preflight migrationApplyPreflight
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&preflight); err != nil {
+		return migrationApplyPreflight{}, fmt.Errorf("%w: decode preflight file: %v", ErrMigrationApplyPreflight, err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return migrationApplyPreflight{}, fmt.Errorf("%w: preflight file has trailing JSON", ErrMigrationApplyPreflight)
+	}
+	return normalizeMigrationApplyPreflight(preflight)
+}
+
+func normalizeMigrationApplyPreflight(preflight migrationApplyPreflight) (migrationApplyPreflight, error) {
+	if preflight.Format != migrationApplyPreflightFormat {
+		return migrationApplyPreflight{}, fmt.Errorf("%w: unsupported preflight format %q", ErrMigrationApplyPreflight, preflight.Format)
+	}
+	if preflight.TargetVersion < 0 {
+		return migrationApplyPreflight{}, fmt.Errorf("%w: preflight target_version must be non-negative", ErrMigrationApplyPreflight)
+	}
+	if preflight.TargetLatest && preflight.TargetVersion == 0 {
+		return migrationApplyPreflight{}, fmt.Errorf("%w: latest target preflight must name a positive resolved target_version", ErrMigrationApplyPreflight)
+	}
+	ledgerSnapshotSHA256, err := parsePlanSHA256(preflight.LedgerSnapshotSHA256)
+	if err != nil {
+		return migrationApplyPreflight{}, fmt.Errorf("%w: invalid preflight ledger_snapshot_sha256: %v", ErrMigrationApplyPreflight, err)
+	}
+	preflight.LedgerSnapshotSHA256 = ledgerSnapshotSHA256
+	parsedPlanSHA256, err := parsePlanSHA256(preflight.PlanSHA256)
+	if err != nil {
+		return migrationApplyPreflight{}, fmt.Errorf("%w: invalid preflight plan_sha256: %v", ErrMigrationApplyPreflight, err)
+	}
+	preflight.PlanSHA256 = parsedPlanSHA256
+	computedPlanSHA256, err := planSHA256(preflight.Plan)
+	if err != nil {
+		return migrationApplyPreflight{}, fmt.Errorf("%w: validate preflight plan checksum: %v", ErrMigrationApplyPreflight, err)
+	}
+	if preflight.PlanSHA256 != computedPlanSHA256 {
+		return migrationApplyPreflight{}, fmt.Errorf("%w: preflight plan_sha256 mismatch: got %s want %s", ErrMigrationApplyPreflight, computedPlanSHA256, preflight.PlanSHA256)
+	}
+	endVersion, err := validateMigrationPlanShape(preflight.Plan, ErrMigrationApplyPreflight, "preflight")
+	if err != nil {
+		return migrationApplyPreflight{}, err
+	}
+	if preflight.TargetVersion != endVersion {
+		return migrationApplyPreflight{}, fmt.Errorf("%w: preflight target_version %d does not match plan ending at %d", ErrMigrationApplyPreflight, preflight.TargetVersion, endVersion)
+	}
+	if preflight.TargetLatest && preflight.TargetVersion != preflight.Plan.LatestVersion {
+		return migrationApplyPreflight{}, fmt.Errorf("%w: latest preflight target_version %d does not match plan latest_version %d", ErrMigrationApplyPreflight, preflight.TargetVersion, preflight.Plan.LatestVersion)
+	}
+	return preflight, nil
+}
+
 func validateMigrationPlanArtifactPlan(plan dbmigrations.Plan) error {
+	_, err := validateMigrationPlanShape(plan, ErrMigrationApplyPlanConfirmation, "plan artifact")
+	return err
+}
+
+func validateMigrationPlanShape(plan dbmigrations.Plan, errRoot error, label string) (int, error) {
 	if plan.LatestVersion <= 0 {
-		return fmt.Errorf("%w: plan artifact latest_version must be positive", ErrMigrationApplyPlanConfirmation)
+		return 0, fmt.Errorf("%w: %s latest_version must be positive", errRoot, label)
 	}
 	if plan.CurrentVersion < 0 || plan.CurrentVersion > plan.LatestVersion {
-		return fmt.Errorf("%w: plan artifact current_version must be inside catalog range", ErrMigrationApplyPlanConfirmation)
+		return 0, fmt.Errorf("%w: %s current_version must be inside catalog range", errRoot, label)
 	}
 	if plan.UpToDate != (len(plan.Pending) == 0) {
-		return fmt.Errorf("%w: plan artifact up_to_date does not match pending steps", ErrMigrationApplyPlanConfirmation)
+		return 0, fmt.Errorf("%w: %s up_to_date does not match pending steps", errRoot, label)
 	}
 	for i, step := range plan.Pending {
 		if step.Version <= 0 || step.Version > plan.LatestVersion {
-			return fmt.Errorf("%w: plan artifact pending step %d has invalid version %d", ErrMigrationApplyPlanConfirmation, i+1, step.Version)
+			return 0, fmt.Errorf("%w: %s pending step %d has invalid version %d", errRoot, label, i+1, step.Version)
 		}
 		if step.Direction != dbmigrations.DirectionUp && step.Direction != dbmigrations.DirectionDown {
-			return fmt.Errorf("%w: plan artifact pending step %d has invalid direction %q", ErrMigrationApplyPlanConfirmation, i+1, step.Direction)
+			return 0, fmt.Errorf("%w: %s pending step %d has invalid direction %q", errRoot, label, i+1, step.Direction)
 		}
 		if i > 0 && step.Direction != plan.Pending[0].Direction {
-			return fmt.Errorf("%w: plan artifact pending step %d mixes direction %q after %q", ErrMigrationApplyPlanConfirmation, i+1, step.Direction, plan.Pending[0].Direction)
+			return 0, fmt.Errorf("%w: %s pending step %d mixes direction %q after %q", errRoot, label, i+1, step.Direction, plan.Pending[0].Direction)
 		}
 		if strings.TrimSpace(step.Name) == "" {
-			return fmt.Errorf("%w: plan artifact pending step %d name is required", ErrMigrationApplyPlanConfirmation, i+1)
+			return 0, fmt.Errorf("%w: %s pending step %d name is required", errRoot, label, i+1)
 		}
 		if strings.TrimSpace(step.Path) == "" {
-			return fmt.Errorf("%w: plan artifact pending step %d path is required", ErrMigrationApplyPlanConfirmation, i+1)
+			return 0, fmt.Errorf("%w: %s pending step %d path is required", errRoot, label, i+1)
 		}
 		if _, err := parsePlanSHA256(step.SHA256); err != nil {
-			return fmt.Errorf("%w: invalid plan artifact pending step %d sha256: %v", ErrMigrationApplyPlanConfirmation, i+1, err)
+			return 0, fmt.Errorf("%w: invalid %s pending step %d sha256: %v", errRoot, label, i+1, err)
 		}
 	}
-	if _, err := replayMigrationPlanArtifactSteps(plan); err != nil {
-		return err
-	}
-	return nil
+	return replayMigrationPlanSteps(plan, errRoot, label)
 }
 
 func replayMigrationPlanArtifactSteps(plan dbmigrations.Plan) (int, error) {
+	return replayMigrationPlanSteps(plan, ErrMigrationApplyPlanConfirmation, "plan artifact")
+}
+
+func replayMigrationPlanSteps(plan dbmigrations.Plan, errRoot error, label string) (int, error) {
 	currentVersion := plan.CurrentVersion
 	for i, step := range plan.Pending {
 		switch step.Direction {
 		case dbmigrations.DirectionUp:
 			if step.Version != currentVersion+1 {
-				return 0, fmt.Errorf("%w: plan artifact pending up step %d version %d does not continue from %d", ErrMigrationApplyPlanConfirmation, i+1, step.Version, currentVersion)
+				return 0, fmt.Errorf("%w: %s pending up step %d version %d does not continue from %d", errRoot, label, i+1, step.Version, currentVersion)
 			}
 			currentVersion = step.Version
 		case dbmigrations.DirectionDown:
 			if step.Version != currentVersion {
-				return 0, fmt.Errorf("%w: plan artifact pending down step %d version %d does not continue from %d", ErrMigrationApplyPlanConfirmation, i+1, step.Version, currentVersion)
+				return 0, fmt.Errorf("%w: %s pending down step %d version %d does not continue from %d", errRoot, label, i+1, step.Version, currentVersion)
 			}
 			currentVersion = step.Version - 1
 		default:
-			return 0, fmt.Errorf("%w: plan artifact pending step %d has invalid direction %q", ErrMigrationApplyPlanConfirmation, i+1, step.Direction)
+			return 0, fmt.Errorf("%w: %s pending step %d has invalid direction %q", errRoot, label, i+1, step.Direction)
 		}
 	}
 	return currentVersion, nil
@@ -1489,6 +1652,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  plan-artifact          print dry-run plan plus checksum for apply confirmation")
 	fmt.Fprintln(w, "  plan-artifact-status   inspect a migration plan artifact without mutating it")
 	fmt.Fprintln(w, "  apply-preflight        validate apply inputs and plan confirmation without opening a database")
+	fmt.Fprintln(w, "  apply-preflight-status inspect a migration apply preflight file without mutating it")
 	fmt.Fprintln(w, "  apply-lock-status      inspect a local migration apply lock file without mutating it")
 	fmt.Fprintln(w, "  apply-audit-status     inspect a migration apply audit file without mutating it")
 	fmt.Fprintln(w, "  apply                  apply a target plan using a database/sql driver and offline ledger snapshot")
@@ -1506,6 +1670,8 @@ func printUsage(w io.Writer) {
 	printPlanArtifactStatusUsage(w)
 	fmt.Fprintln(w, "")
 	printApplyPreflightUsage(w)
+	fmt.Fprintln(w, "")
+	printApplyPreflightStatusUsage(w)
 	fmt.Fprintln(w, "")
 	printApplyLockStatusUsage(w)
 	fmt.Fprintln(w, "")
@@ -1547,6 +1713,11 @@ func printPlanArtifactStatusUsage(w io.Writer) {
 func printApplyPreflightUsage(w io.Writer) {
 	fmt.Fprintln(w, "apply-preflight usage:")
 	fmt.Fprintln(w, "  metin2-migrate apply-preflight --ledger-snapshot <path|-> --target-version <version|latest> [--plan-sha256 <hex> | --plan-artifact <path>] [--allow-rollback]")
+}
+
+func printApplyPreflightStatusUsage(w io.Writer) {
+	fmt.Fprintln(w, "apply-preflight-status usage:")
+	fmt.Fprintln(w, "  metin2-migrate apply-preflight-status --apply-preflight <path>")
 }
 
 func printApplyLockStatusUsage(w io.Writer) {

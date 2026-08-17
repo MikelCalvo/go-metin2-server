@@ -661,6 +661,236 @@ func TestRunApplyPreflightRejectsMismatchedPlanArtifact(t *testing.T) {
 	}
 }
 
+func TestRunApplyPreflightStatusReportsMissingPreflightWithoutOpeningDatabase(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	preflightPath := t.TempDir() + "/missing-apply-preflight.json"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-preflight-status", "--apply-preflight", preflightPath}, nil, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected missing apply-preflight-status to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected missing apply-preflight-status not to write stderr, got %q", stderr.String())
+	}
+	var got migrationApplyPreflightStatus
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode missing apply preflight status JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if got.Format != migrationApplyPreflightStatusFormat || got.Present || got.Preflight != nil {
+		t.Fatalf("unexpected missing apply preflight status: %#v", got)
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("apply-preflight-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunApplyPreflightStatusReadsMetadataOnlyPreflightFile(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var preflightStdout bytes.Buffer
+	var preflightStderr bytes.Buffer
+	if code := Run([]string{"apply-preflight", "--ledger-snapshot", "-", "--target-version", "1"}, bytes.NewReader(rawSnapshot), &preflightStdout, &preflightStderr); code != 0 {
+		t.Fatalf("expected apply-preflight command to succeed, exit=%d stderr=%q", code, preflightStderr.String())
+	}
+	preflightPath := t.TempDir() + "/apply-preflight.json"
+	if err := os.WriteFile(preflightPath, preflightStdout.Bytes(), 0o600); err != nil {
+		t.Fatalf("write apply preflight: %v", err)
+	}
+	var want migrationApplyPreflight
+	if err := json.Unmarshal(preflightStdout.Bytes(), &want); err != nil {
+		t.Fatalf("decode written apply preflight: %v\nbody:\n%s", err, preflightStdout.String())
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-preflight-status", "--apply-preflight", preflightPath}, nil, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected apply-preflight-status to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr on apply-preflight-status success, got %q", stderr.String())
+	}
+	var got migrationApplyPreflightStatus
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode apply preflight status JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if got.Format != migrationApplyPreflightStatusFormat || !got.Present || got.Preflight == nil {
+		t.Fatalf("unexpected apply preflight status envelope: %#v", got)
+	}
+	if got.Preflight.Format != migrationApplyPreflightFormat || got.Preflight.TargetVersion != want.TargetVersion || got.Preflight.TargetLatest != want.TargetLatest {
+		t.Fatalf("unexpected apply preflight status metadata: %#v", got.Preflight)
+	}
+	if got.Preflight.LedgerSnapshotSHA256 != testSHA256HexBytes(rawSnapshot) || got.Preflight.PlanSHA256 != want.PlanSHA256 {
+		t.Fatalf("unexpected apply preflight checksums: %#v", got.Preflight)
+	}
+	if got.Preflight.Plan.CurrentVersion != 0 || got.Preflight.Plan.LatestVersion < 1 || len(got.Preflight.Plan.Pending) != 1 || got.Preflight.Plan.Pending[0].Direction != dbmigrations.DirectionUp {
+		t.Fatalf("unexpected apply preflight plan: %#v", got.Preflight.Plan)
+	}
+	body := stdout.String()
+	for _, forbidden := range []string{"CREATE TABLE", "DROP TABLE", "-- go-metin2 migration", "memory://"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("apply preflight status output must stay metadata-only, exposed %q in %s", forbidden, body)
+		}
+	}
+	if _, err := os.Stat(preflightPath); err != nil {
+		t.Fatalf("apply-preflight-status must not remove the inspected preflight file: %v", err)
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("apply-preflight-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunApplyPreflightStatusRejectsMalformedPreflightFile(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	preflightPath := t.TempDir() + "/apply-preflight.json"
+	malformedPreflight := `{"format":"` + migrationApplyPreflightFormat + `","target_version":1,"target_latest":false,"ledger_snapshot_sha256":"` + strings.Repeat("0", 64) + `","plan_sha256":"` + strings.Repeat("1", 64) + `","plan":{"current_version":0,"latest_version":1,"up_to_date":false,"pending":[]},"extra":true}`
+	if err := os.WriteFile(preflightPath, []byte(malformedPreflight), 0o600); err != nil {
+		t.Fatalf("write malformed apply preflight: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-preflight-status", "--apply-preflight", preflightPath}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected malformed apply-preflight-status to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected malformed apply-preflight-status not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "migration apply preflight failed") || !strings.Contains(stderr.String(), "unknown field") {
+		t.Fatalf("expected strict malformed-preflight guidance, got %q", stderr.String())
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("malformed apply-preflight-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunApplyPreflightStatusRejectsPlanChecksumDrift(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var preflightStdout bytes.Buffer
+	var preflightStderr bytes.Buffer
+	if code := Run([]string{"apply-preflight", "--ledger-snapshot", "-", "--target-version", "1"}, bytes.NewReader(rawSnapshot), &preflightStdout, &preflightStderr); code != 0 {
+		t.Fatalf("expected apply-preflight command to succeed, exit=%d stderr=%q", code, preflightStderr.String())
+	}
+	var preflight migrationApplyPreflight
+	if err := json.Unmarshal(preflightStdout.Bytes(), &preflight); err != nil {
+		t.Fatalf("decode apply preflight: %v\nbody:\n%s", err, preflightStdout.String())
+	}
+	preflight.PlanSHA256 = strings.Repeat("0", 64)
+	rawDriftedPreflight, err := json.MarshalIndent(preflight, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal drifted apply preflight: %v", err)
+	}
+	rawDriftedPreflight = append(rawDriftedPreflight, '\n')
+	preflightPath := t.TempDir() + "/apply-preflight.json"
+	if err := os.WriteFile(preflightPath, rawDriftedPreflight, 0o600); err != nil {
+		t.Fatalf("write drifted apply preflight: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-preflight-status", "--apply-preflight", preflightPath}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected checksum-drift apply-preflight-status to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected checksum-drift apply-preflight-status not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "migration apply preflight failed") || !strings.Contains(stderr.String(), "plan_sha256 mismatch") {
+		t.Fatalf("expected preflight plan checksum guidance, got %q", stderr.String())
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("checksum-drift apply-preflight-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunApplyPreflightStatusRejectsTargetDrift(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var preflightStdout bytes.Buffer
+	var preflightStderr bytes.Buffer
+	if code := Run([]string{"apply-preflight", "--ledger-snapshot", "-", "--target-version", "1"}, bytes.NewReader(rawSnapshot), &preflightStdout, &preflightStderr); code != 0 {
+		t.Fatalf("expected apply-preflight command to succeed, exit=%d stderr=%q", code, preflightStderr.String())
+	}
+	var preflight migrationApplyPreflight
+	if err := json.Unmarshal(preflightStdout.Bytes(), &preflight); err != nil {
+		t.Fatalf("decode apply preflight: %v\nbody:\n%s", err, preflightStdout.String())
+	}
+	preflight.TargetVersion = 0
+	rawDriftedPreflight, err := json.MarshalIndent(preflight, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal target-drift apply preflight: %v", err)
+	}
+	rawDriftedPreflight = append(rawDriftedPreflight, '\n')
+	preflightPath := t.TempDir() + "/apply-preflight.json"
+	if err := os.WriteFile(preflightPath, rawDriftedPreflight, 0o600); err != nil {
+		t.Fatalf("write target-drift apply preflight: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-preflight-status", "--apply-preflight", preflightPath}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected target-drift apply-preflight-status to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected target-drift apply-preflight-status not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "migration apply preflight failed") || !strings.Contains(stderr.String(), "target_version") {
+		t.Fatalf("expected preflight target drift guidance, got %q", stderr.String())
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("target-drift apply-preflight-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunApplyPreflightStatusRejectsSymlinkPreflightFile(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	dir := t.TempDir()
+	targetPath := dir + "/target-apply-preflight.json"
+	if err := os.WriteFile(targetPath, []byte("{}\n"), 0o600); err != nil {
+		t.Fatalf("write symlink preflight target: %v", err)
+	}
+	preflightPath := dir + "/apply-preflight.json"
+	if err := os.Symlink(targetPath, preflightPath); err != nil {
+		t.Fatalf("create symlink apply preflight: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-preflight-status", "--apply-preflight", preflightPath}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected symlink apply-preflight-status to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected symlink apply-preflight-status not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "preflight file must not be a symlink") {
+		t.Fatalf("expected symlink rejection guidance, got %q", stderr.String())
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("symlink apply-preflight-status must not open a database target, got events %#v", events)
+	}
+}
+
 func TestRunApplyAcceptsPlanArtifactBeforeMutation(t *testing.T) {
 	driverName := registerMigrateCLITestSQLDriver(t)
 	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
