@@ -90,6 +90,81 @@ func TestGameSessionFlowPostFloorItemRefineFailsClosedBeforeRejectFeedback(t *te
 	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor REFINE")
 }
 
+func TestGameSessionFlowPostFloorStoragePacketsFailClosedWithoutMutation(t *testing.T) {
+	login := "post-floor-store"
+	loginKey := uint32(0x19191a60)
+	owner := peerVisibilityCharacter("DeadStorageOwner", 0x01030a60, 0x02040a60, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 803, Vnum: 27045, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: 1, Slot: 5}}
+	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, nil)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	requests := []struct {
+		name string
+		raw  []byte
+	}{
+		{name: "safebox checkin", raw: itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{SafeSlot: 7, Position: itemproto.InventoryPosition(5)})},
+		{name: "safebox checkout", raw: itemproto.EncodeClientSafeboxCheckout(itemproto.ClientSafeboxCheckoutPacket{SafeSlot: 8, Position: itemproto.InventoryPosition(6)})},
+		{name: "safebox item move", raw: itemproto.EncodeClientSafeboxItemMove(itemproto.ClientSafeboxItemMovePacket{Source: itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 7}, Destination: itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 8}, Count: 1})},
+		{name: "mall checkout", raw: itemproto.EncodeClientMallCheckout(itemproto.ClientMallCheckoutPacket{MallSlot: 4, Position: itemproto.InventoryPosition(9)})},
+	}
+	for _, request := range requests {
+		t.Run(request.name, func(t *testing.T) {
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, request.raw))
+			if err != nil {
+				t.Fatalf("unexpected post-floor %s dispatch error: %v", request.name, err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected post-floor %s to fail closed, got %d frames", request.name, len(out))
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected post-floor %s to queue no frames, got %d", request.name, len(queued))
+			}
+			assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor "+request.name)
+		})
+	}
+}
+
+func TestGameSessionFlowPostFloorSafeboxCheckinFailsClosedBeforeAntiSafeboxFeedback(t *testing.T) {
+	login := "post-floor-safe"
+	loginKey := uint32(0x19191a70)
+	owner := peerVisibilityCharacter("DeadSafeboxOwner", 0x01030a70, 0x02040a70, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 804, Vnum: 71127, Count: 1, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: 1, Slot: 5}}
+	template := itemcatalog.Template{
+		Vnum:              71127,
+		Name:              "Dead Guard Storage Charm",
+		Stackable:         false,
+		MaxCount:          1,
+		AntiSafebox:       true,
+		SafeboxRejectText: "This item cannot be placed in storage.",
+	}
+	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, []itemcatalog.Template{template})
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{SafeSlot: 7, Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor SAFEBOX_CHECKIN dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor SAFEBOX_CHECKIN to fail closed before anti-safebox feedback, got %d frames", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor SAFEBOX_CHECKIN to queue no frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor SAFEBOX_CHECKIN")
+}
+
 func newPostFloorItemGuardRuntime(t *testing.T, login string, loginKey uint32, owner loginticket.Character, templates []itemcatalog.Template) (*gameRuntime, accountstore.Store, uint32) {
 	t.Helper()
 	ticketStore := loginticket.NewFileStore(t.TempDir())

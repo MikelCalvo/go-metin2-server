@@ -183,6 +183,8 @@ The only current output is template-authored rejection feedback for safebox chec
 
 If the template omits `safebox_reject_message`, if `anti_safebox` is absent, if metadata is missing/invalid/mismatched, or if the live item is malformed, locked, duplicated, absent, or already over template `max_count`, the request preserves the older no-frame/no-mutation fail-closed behavior.
 
+That same no-frame/no-mutation rule now also covers the retaliation-owned player-death floor. Once a content practice mob has driven the selected owner's live bootstrap HP to `0`, later `SAFEBOX_CHECKIN`, `SAFEBOX_CHECKOUT`, `SAFEBOX_ITEM_MOVE`, and `MALL_CHECKOUT` requests fail closed before any storage response frame, before any template-authored `anti_safebox` info-chat feedback, and before carried inventory/equipment, quickslot, point, gold, ground-handle, or account-persistence side effects can run. This does not broaden storage itself; it only keeps the existing unsupported storage guard from becoming a post-death escape hatch.
+
 Malformed payload sizes fail at the codec/dispatcher boundary rather than reaching runtime mutation code.
 
 ## Deferred behavior
@@ -202,4 +204,4 @@ Later slices must write a new contract before broadening storage behavior. In pa
 
 - `internal/proto/item` freezes encode/decode behavior, exact wire bytes, unexpected-header rejection, and invalid-payload rejection for the four client storage request packets and the first eight server safebox/mall response packets.
 - `internal/game` freezes `GAME`-phase decode dispatch and optional handler-frame paths for all four storage-facing packets while preserving no-frame fail-closed defaults.
-- `internal/minimal` freezes both ordinary no-frame/no-mutation/no-persistence storage guards and the authored `anti_safebox` / `safebox_reject_message` info-chat feedback path through the normal session harness, including active merchant-window and active-exchange-shell teardown before that feedback is delivered.
+- `internal/minimal` freezes both ordinary no-frame/no-mutation/no-persistence storage guards and the authored `anti_safebox` / `safebox_reject_message` info-chat feedback path through the normal session harness, including active merchant-window and active-exchange-shell teardown before that feedback is delivered. It also freezes the player-death-floor variant where those same storage-facing requests stay silent and non-mutating after practice-mob retaliation has already driven the selected owner to `0` HP, including the `SAFEBOX_CHECKIN` case that would otherwise be allowed to emit authored `anti_safebox` feedback while alive.

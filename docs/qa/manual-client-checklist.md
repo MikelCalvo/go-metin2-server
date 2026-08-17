@@ -929,6 +929,8 @@ If that custom profile authors a negative `retaliation_point_delta`, expect both
 - [ ] Confirm the attempt fails closed with no new combat-visible frames
 - [ ] Try one carried-inventory `ITEM_MOVE` drag while still at `0` HP
 - [ ] Confirm the move fails closed: no item cells change and no item refresh frames are visible
+- [ ] If storage/safebox packet tooling is available, try `SAFEBOX_CHECKIN`, `SAFEBOX_CHECKOUT`, `SAFEBOX_ITEM_MOVE`, and `MALL_CHECKOUT` while still at `0` HP; also try `SAFEBOX_CHECKIN` with an `anti_safebox` item that would show template-authored info-chat feedback while alive
+- [ ] Confirm post-floor storage attempts stay silent and non-mutating: no safebox/mall response frames, no `anti_safebox` info-chat feedback, no carried inventory/equipment/quickslot/point/gold changes, no ground handles, and no persistence update
 - [ ] Issue whitespace-padded restart-looking chat such as `/restart_here ` or `/ restart_town` on the same socket
 - [ ] Confirm the owner remains dead and no recovery/peer frames are emitted
 - [ ] Issue exact `/restart_here` on the same socket
