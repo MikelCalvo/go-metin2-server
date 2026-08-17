@@ -174,6 +174,14 @@ func TestSummarizeIncludesQuestFlagInteractionRoutes(t *testing.T) {
 	if !reflect.DeepEqual(summary.InteractionDefinitionPreviews, wantPreview) {
 		t.Fatalf("unexpected quest flag interaction previews:\n got: %#v\nwant: %#v", summary.InteractionDefinitionPreviews, wantPreview)
 	}
+	wantTriggers := []QuestFlagTriggerSummary{{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "You have met the village guide.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}}
+	if summary.QuestFlagTriggerCount != 1 || !reflect.DeepEqual(summary.QuestFlagTriggers, wantTriggers) {
+		t.Fatalf("unexpected quest flag trigger summary:\n got count=%d rows=%#v\nwant count=1 rows=%#v", summary.QuestFlagTriggerCount, summary.QuestFlagTriggers, wantTriggers)
+	}
+	wantRoutes := []QuestFlagRouteSummary{{ActorName: "VillageGuide", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "quest:first_steps", Text: "You have met the village guide.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}}
+	if summary.QuestFlagRouteCount != 1 || !reflect.DeepEqual(summary.QuestFlagRoutes, wantRoutes) {
+		t.Fatalf("unexpected quest flag route summary:\n got count=%d rows=%#v\nwant count=1 rows=%#v", summary.QuestFlagRouteCount, summary.QuestFlagRoutes, wantRoutes)
+	}
 	wantActors := []InteractableStaticActorSummary{{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindQuestFlag, InteractionRef: "quest:first_steps", Preview: "You have met the village guide."}}
 	if !reflect.DeepEqual(summary.InteractableStaticActors, wantActors) {
 		t.Fatalf("unexpected quest flag interactable actor summary:\n got: %#v\nwant: %#v", summary.InteractableStaticActors, wantActors)
@@ -181,6 +189,66 @@ func TestSummarizeIncludesQuestFlagInteractionRoutes(t *testing.T) {
 	wantMaps := []MapContentSummary{{MapIndex: 1, StaticActorCount: 1, InteractableStaticActorCount: 1, QuestFlagActorCount: 1}}
 	if !reflect.DeepEqual(summary.Maps, wantMaps) {
 		t.Fatalf("unexpected quest flag map summary:\n got: %#v\nwant: %#v", summary.Maps, wantMaps)
+	}
+}
+
+func TestBuildImportPreviewReturnsQuestFlagTriggerAndRouteDeltas(t *testing.T) {
+	currentTrigger := QuestFlagTriggerSummary{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "Old quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}
+	candidateTrigger := QuestFlagTriggerSummary{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "New quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}
+	candidateResetTrigger := QuestFlagTriggerSummary{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps_reset", Text: "Quest cleared.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1}
+	currentRoute := QuestFlagRouteSummary{ActorName: "QuestGuide", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "quest:first_steps", Text: "Old quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}
+	candidateRoute := QuestFlagRouteSummary{ActorName: "QuestGuide", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "quest:first_steps", Text: "New quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}
+	candidateResetRoute := QuestFlagRouteSummary{ActorName: "QuestResetGuide", SourceMapIndex: 1, SourceX: 1100, SourceY: 2000, Ref: "quest:first_steps_reset", Text: "Quest cleared.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1}
+
+	preview, err := BuildImportPreview(
+		Bundle{
+			StaticActors: []StaticActor{{Name: "QuestGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindQuestFlag, InteractionRef: "quest:first_steps"}},
+			InteractionDefinitions: []interactionstore.Definition{{
+				Kind:      interactionstore.KindQuestFlag,
+				Ref:       "quest:first_steps",
+				Text:      "Old quest acknowledgement.",
+				QuestRef:  "quest:first_steps",
+				QuestFlag: "met_guide",
+				QuestTo:   1,
+			}},
+		},
+		Bundle{
+			StaticActors: []StaticActor{
+				{Name: "QuestGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindQuestFlag, InteractionRef: "quest:first_steps"},
+				{Name: "QuestResetGuide", MapIndex: 1, X: 1100, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindQuestFlag, InteractionRef: "quest:first_steps_reset"},
+			},
+			InteractionDefinitions: []interactionstore.Definition{
+				{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "New quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1},
+				{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps_reset", Text: "Quest cleared.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build quest-flag trigger import preview: %v", err)
+	}
+	if preview.Deltas.QuestFlagTriggerCount != (SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1}) || preview.Deltas.QuestFlagRouteCount != (SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1}) {
+		t.Fatalf("unexpected quest flag trigger/route count deltas: %+v", preview.Deltas)
+	}
+	wantTriggers := []QuestFlagTriggerDelta{
+		{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Change: "changed", Current: &currentTrigger, Candidate: &candidateTrigger},
+		{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps_reset", Change: "added", Candidate: &candidateResetTrigger},
+	}
+	if !reflect.DeepEqual(preview.Deltas.QuestFlagTriggers, wantTriggers) {
+		t.Fatalf("unexpected quest flag trigger deltas:\n got: %#v\nwant: %#v", preview.Deltas.QuestFlagTriggers, wantTriggers)
+	}
+	wantRoutes := []QuestFlagRouteDelta{
+		{ActorName: "QuestGuide", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "quest:first_steps", Change: "changed", Current: &currentRoute, Candidate: &candidateRoute},
+		{ActorName: "QuestResetGuide", SourceMapIndex: 1, SourceX: 1100, SourceY: 2000, Ref: "quest:first_steps_reset", Change: "added", Candidate: &candidateResetRoute},
+	}
+	if !reflect.DeepEqual(preview.Deltas.QuestFlagRoutes, wantRoutes) {
+		t.Fatalf("unexpected quest flag route deltas:\n got: %#v\nwant: %#v", preview.Deltas.QuestFlagRoutes, wantRoutes)
+	}
+	mapDelta, ok := MapContentDeltaByIndex(preview.Deltas.Maps, 1)
+	if !ok {
+		t.Fatal("expected map-local quest flag route delta")
+	}
+	if !reflect.DeepEqual(mapDelta.QuestFlagRoutes, wantRoutes) {
+		t.Fatalf("unexpected map-local quest flag route deltas:\n got: %#v\nwant: %#v", mapDelta.QuestFlagRoutes, wantRoutes)
 	}
 }
 

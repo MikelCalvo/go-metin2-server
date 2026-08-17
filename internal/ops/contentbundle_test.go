@@ -811,6 +811,36 @@ func TestLocalContentBundleSummaryEndpointReturnsDryRunSummaryForLoopbackPost(t 
 	}
 }
 
+func TestLocalContentBundleSummaryEndpointReturnsQuestFlagTriggerAndRouteJSONForLoopbackPost(t *testing.T) {
+	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), func() (any, int) {
+		t.Fatal("dry-run quest-flag summary should not call live exporter")
+		return nil, http.StatusInternalServerError
+	})
+
+	body := `{"static_actors":[{"name":"QuestGuide","map_index":1,"x":469350,"y":964200,"race_num":20302,"interaction_kind":"quest_flag","interaction_ref":"quest:first_steps"}],"interaction_definitions":[{"kind":"quest_flag","ref":"quest:first_steps","text":"Quest updated: first_steps.met_guide = 1.","quest_ref":"quest:first_steps","quest_flag":"met_guide","quest_to":1}]}`
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/summary", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	var got contentbundle.Summary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode quest-flag summary response: %v", err)
+	}
+	wantTrigger := []contentbundle.QuestFlagTriggerSummary{{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated: first_steps.met_guide = 1.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}}
+	if got.QuestFlagTriggerCount != 1 || !reflect.DeepEqual(got.QuestFlagTriggers, wantTrigger) {
+		t.Fatalf("unexpected quest-flag trigger summary:\n got count=%d rows=%#v\nwant count=1 rows=%#v", got.QuestFlagTriggerCount, got.QuestFlagTriggers, wantTrigger)
+	}
+	wantRoute := []contentbundle.QuestFlagRouteSummary{{ActorName: "QuestGuide", SourceMapIndex: 1, SourceX: 469350, SourceY: 964200, Ref: "quest:first_steps", Text: "Quest updated: first_steps.met_guide = 1.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}}
+	if got.QuestFlagRouteCount != 1 || !reflect.DeepEqual(got.QuestFlagRoutes, wantRoute) {
+		t.Fatalf("unexpected quest-flag route summary:\n got count=%d rows=%#v\nwant count=1 rows=%#v", got.QuestFlagRouteCount, got.QuestFlagRoutes, wantRoute)
+	}
+}
+
 func TestLocalContentBundleSummaryEndpointExposesSelectedCharacterGuardMetadataForLoopbackPost(t *testing.T) {
 	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), func() (any, int) {
 		t.Fatal("dry-run summary should not call live exporter")
@@ -934,6 +964,62 @@ func TestLocalContentBundleImportPreviewEndpointReturnsDeltaJSONForLoopbackPost(
 	}
 	if !reflect.DeepEqual(got.Deltas.ItemTemplates, wantItemTemplates) {
 		t.Fatalf("unexpected item-template import preview delta JSON:\n got: %#v\nwant: %#v", got.Deltas.ItemTemplates, wantItemTemplates)
+	}
+}
+
+func TestLocalContentBundleImportPreviewEndpointReturnsQuestFlagTriggerAndRouteDeltaJSONForLoopbackPost(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		StaticActors: []contentbundle.StaticActor{{Name: "QuestGuide", MapIndex: 1, X: 469350, Y: 964200, RaceNum: 20302, InteractionKind: interactionstore.KindQuestFlag, InteractionRef: "quest:first_steps"}},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:      interactionstore.KindQuestFlag,
+			Ref:       "quest:first_steps",
+			Text:      "Old quest acknowledgement.",
+			QuestRef:  "quest:first_steps",
+			QuestFlag: "met_guide",
+			QuestTo:   1,
+		}},
+	}}
+	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	body := `{"static_actors":[{"name":"QuestGuide","map_index":1,"x":469350,"y":964200,"race_num":20302,"interaction_kind":"quest_flag","interaction_ref":"quest:first_steps"},{"name":"QuestResetGuide","map_index":1,"x":469375,"y":964200,"race_num":20302,"interaction_kind":"quest_flag","interaction_ref":"quest:first_steps_reset"}],"interaction_definitions":[{"kind":"quest_flag","ref":"quest:first_steps","text":"New quest acknowledgement.","quest_ref":"quest:first_steps","quest_flag":"met_guide","quest_to":1},{"kind":"quest_flag","ref":"quest:first_steps_reset","text":"Quest cleared.","quest_ref":"quest:first_steps","quest_flag":"met_guide","quest_from":1}]}`
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	var got contentbundle.ImportPreview
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode quest-flag import preview response: %v", err)
+	}
+	if got.Deltas.QuestFlagTriggerCount != (contentbundle.SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1}) || got.Deltas.QuestFlagRouteCount != (contentbundle.SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1}) {
+		t.Fatalf("unexpected quest-flag trigger/route count deltas: %+v", got.Deltas)
+	}
+	currentTrigger := contentbundle.QuestFlagTriggerSummary{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "Old quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}
+	candidateTrigger := contentbundle.QuestFlagTriggerSummary{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "New quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}
+	candidateResetTrigger := contentbundle.QuestFlagTriggerSummary{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps_reset", Text: "Quest cleared.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1}
+	wantTriggers := []contentbundle.QuestFlagTriggerDelta{
+		{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Change: "changed", Current: &currentTrigger, Candidate: &candidateTrigger},
+		{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps_reset", Change: "added", Candidate: &candidateResetTrigger},
+	}
+	if !reflect.DeepEqual(got.Deltas.QuestFlagTriggers, wantTriggers) {
+		t.Fatalf("unexpected quest-flag trigger deltas:\n got: %#v\nwant: %#v", got.Deltas.QuestFlagTriggers, wantTriggers)
+	}
+	currentRoute := contentbundle.QuestFlagRouteSummary{ActorName: "QuestGuide", SourceMapIndex: 1, SourceX: 469350, SourceY: 964200, Ref: "quest:first_steps", Text: "Old quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}
+	candidateRoute := contentbundle.QuestFlagRouteSummary{ActorName: "QuestGuide", SourceMapIndex: 1, SourceX: 469350, SourceY: 964200, Ref: "quest:first_steps", Text: "New quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}
+	candidateResetRoute := contentbundle.QuestFlagRouteSummary{ActorName: "QuestResetGuide", SourceMapIndex: 1, SourceX: 469375, SourceY: 964200, Ref: "quest:first_steps_reset", Text: "Quest cleared.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1}
+	wantRoutes := []contentbundle.QuestFlagRouteDelta{
+		{ActorName: "QuestGuide", SourceMapIndex: 1, SourceX: 469350, SourceY: 964200, Ref: "quest:first_steps", Change: "changed", Current: &currentRoute, Candidate: &candidateRoute},
+		{ActorName: "QuestResetGuide", SourceMapIndex: 1, SourceX: 469375, SourceY: 964200, Ref: "quest:first_steps_reset", Change: "added", Candidate: &candidateResetRoute},
+	}
+	if !reflect.DeepEqual(got.Deltas.QuestFlagRoutes, wantRoutes) {
+		t.Fatalf("unexpected quest-flag route deltas:\n got: %#v\nwant: %#v", got.Deltas.QuestFlagRoutes, wantRoutes)
+	}
+	if len(got.Deltas.Maps) != 1 || !reflect.DeepEqual(got.Deltas.Maps[0].QuestFlagRoutes, wantRoutes) {
+		t.Fatalf("unexpected map-local quest-flag route deltas: %+v", got.Deltas.Maps)
 	}
 }
 

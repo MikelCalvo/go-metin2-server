@@ -157,6 +157,10 @@ type Summary struct {
 	QuestStateCharacters                   []QuestStateCharacterSummary                    `json:"quest_state_characters,omitempty"`
 	QuestStateQuests                       []QuestStateQuestSummary                        `json:"quest_state_quests,omitempty"`
 	StaticActors                           []StaticActor                                   `json:"static_actors,omitempty"`
+	QuestFlagTriggerCount                  int                                             `json:"quest_flag_trigger_count,omitempty"`
+	QuestFlagTriggers                      []QuestFlagTriggerSummary                       `json:"quest_flag_triggers,omitempty"`
+	QuestFlagRouteCount                    int                                             `json:"quest_flag_route_count,omitempty"`
+	QuestFlagRoutes                        []QuestFlagRouteSummary                         `json:"quest_flag_routes,omitempty"`
 	ShopCatalogEntryCount                  int                                             `json:"shop_catalog_entry_count"`
 	ShopCatalogs                           []ShopCatalogSummary                            `json:"shop_catalogs,omitempty"`
 	ShopRouteCount                         int                                             `json:"shop_route_count"`
@@ -233,6 +237,10 @@ type SummaryDeltas struct {
 	QuestStateCharacterCount               SummaryCountDelta              `json:"quest_state_character_count,omitempty"`
 	QuestStateQuestCount                   SummaryCountDelta              `json:"quest_state_quest_count,omitempty"`
 	QuestStateFlags                        []QuestStateDelta              `json:"quest_state_flags,omitempty"`
+	QuestFlagTriggerCount                  SummaryCountDelta              `json:"quest_flag_trigger_count,omitempty"`
+	QuestFlagTriggers                      []QuestFlagTriggerDelta        `json:"quest_flag_triggers,omitempty"`
+	QuestFlagRouteCount                    SummaryCountDelta              `json:"quest_flag_route_count,omitempty"`
+	QuestFlagRoutes                        []QuestFlagRouteDelta          `json:"quest_flag_routes,omitempty"`
 	ShopCatalogEntryCount                  SummaryCountDelta              `json:"shop_catalog_entry_count"`
 	ShopCatalogs                           []ShopCatalogDelta             `json:"shop_catalogs,omitempty"`
 	ShopRouteCount                         SummaryCountDelta              `json:"shop_route_count"`
@@ -284,6 +292,24 @@ type QuestStateDelta struct {
 	Change    string                   `json:"change"`
 	Current   *queststate.FlagSnapshot `json:"current,omitempty"`
 	Candidate *queststate.FlagSnapshot `json:"candidate,omitempty"`
+}
+
+type QuestFlagTriggerSummary struct {
+	Kind      string `json:"kind"`
+	Ref       string `json:"ref"`
+	Text      string `json:"text"`
+	QuestRef  string `json:"quest_ref"`
+	QuestFlag string `json:"quest_flag"`
+	QuestFrom uint32 `json:"quest_from,omitempty"`
+	QuestTo   uint32 `json:"quest_to,omitempty"`
+}
+
+type QuestFlagTriggerDelta struct {
+	Kind      string                   `json:"kind"`
+	Ref       string                   `json:"ref"`
+	Change    string                   `json:"change"`
+	Current   *QuestFlagTriggerSummary `json:"current,omitempty"`
+	Candidate *QuestFlagTriggerSummary `json:"candidate,omitempty"`
 }
 
 type QuestStateFlagIdentity struct {
@@ -356,6 +382,17 @@ type WarpDestinationDelta struct {
 	Candidate *WarpDestinationSummary `json:"candidate,omitempty"`
 }
 
+type QuestFlagRouteDelta struct {
+	ActorName      string                 `json:"actor_name"`
+	SourceMapIndex uint32                 `json:"source_map_index"`
+	SourceX        int32                  `json:"source_x"`
+	SourceY        int32                  `json:"source_y"`
+	Ref            string                 `json:"ref"`
+	Change         string                 `json:"change"`
+	Current        *QuestFlagRouteSummary `json:"current,omitempty"`
+	Candidate      *QuestFlagRouteSummary `json:"candidate,omitempty"`
+}
+
 type ShopRouteDelta struct {
 	ActorName      string            `json:"actor_name"`
 	SourceMapIndex uint32            `json:"source_map_index"`
@@ -379,23 +416,24 @@ type WarpRouteDelta struct {
 }
 
 type MapContentDelta struct {
-	MapIndex                     uint32             `json:"map_index"`
-	StaticActorCount             SummaryCountDelta  `json:"static_actor_count"`
-	InteractableStaticActorCount SummaryCountDelta  `json:"interactable_static_actor_count"`
-	InfoActorCount               SummaryCountDelta  `json:"info_actor_count,omitempty"`
-	TalkActorCount               SummaryCountDelta  `json:"talk_actor_count,omitempty"`
-	QuestFlagActorCount          SummaryCountDelta  `json:"quest_flag_actor_count,omitempty"`
-	ShopPreviewActorCount        SummaryCountDelta  `json:"shop_preview_actor_count,omitempty"`
-	ShopCatalogEntryCount        SummaryCountDelta  `json:"shop_catalog_entry_count,omitempty"`
-	WarpActorCount               SummaryCountDelta  `json:"warp_actor_count,omitempty"`
-	SpawnGroupCount              SummaryCountDelta  `json:"spawn_group_count"`
-	RewardExperienceTotal        SummaryAmountDelta `json:"reward_experience_total,omitempty"`
-	RewardGoldTotal              SummaryAmountDelta `json:"reward_gold_total,omitempty"`
-	RewardDropItemCount          SummaryCountDelta  `json:"reward_drop_item_count,omitempty"`
-	StaticActors                 []StaticActorDelta `json:"static_actors,omitempty"`
-	SpawnGroups                  []SpawnGroupDelta  `json:"spawn_groups,omitempty"`
-	ShopRoutes                   []ShopRouteDelta   `json:"shop_routes,omitempty"`
-	WarpRoutes                   []WarpRouteDelta   `json:"warp_routes,omitempty"`
+	MapIndex                     uint32                `json:"map_index"`
+	StaticActorCount             SummaryCountDelta     `json:"static_actor_count"`
+	InteractableStaticActorCount SummaryCountDelta     `json:"interactable_static_actor_count"`
+	InfoActorCount               SummaryCountDelta     `json:"info_actor_count,omitempty"`
+	TalkActorCount               SummaryCountDelta     `json:"talk_actor_count,omitempty"`
+	QuestFlagActorCount          SummaryCountDelta     `json:"quest_flag_actor_count,omitempty"`
+	ShopPreviewActorCount        SummaryCountDelta     `json:"shop_preview_actor_count,omitempty"`
+	ShopCatalogEntryCount        SummaryCountDelta     `json:"shop_catalog_entry_count,omitempty"`
+	WarpActorCount               SummaryCountDelta     `json:"warp_actor_count,omitempty"`
+	SpawnGroupCount              SummaryCountDelta     `json:"spawn_group_count"`
+	QuestFlagRoutes              []QuestFlagRouteDelta `json:"quest_flag_routes,omitempty"`
+	RewardExperienceTotal        SummaryAmountDelta    `json:"reward_experience_total,omitempty"`
+	RewardGoldTotal              SummaryAmountDelta    `json:"reward_gold_total,omitempty"`
+	RewardDropItemCount          SummaryCountDelta     `json:"reward_drop_item_count,omitempty"`
+	StaticActors                 []StaticActorDelta    `json:"static_actors,omitempty"`
+	SpawnGroups                  []SpawnGroupDelta     `json:"spawn_groups,omitempty"`
+	ShopRoutes                   []ShopRouteDelta      `json:"shop_routes,omitempty"`
+	WarpRoutes                   []WarpRouteDelta      `json:"warp_routes,omitempty"`
 }
 
 type InteractionKindSummary struct {
@@ -635,6 +673,19 @@ type ShopCatalogEntrySummary struct {
 	UnequipRejectMessage string                   `json:"unequip_reject_message,omitempty"`
 	SafeboxRejectMessage string                   `json:"safebox_reject_message,omitempty"`
 	PickupRange          uint16                   `json:"pickup_range,omitempty"`
+}
+
+type QuestFlagRouteSummary struct {
+	ActorName      string `json:"actor_name"`
+	SourceMapIndex uint32 `json:"source_map_index"`
+	SourceX        int32  `json:"source_x"`
+	SourceY        int32  `json:"source_y"`
+	Ref            string `json:"ref"`
+	Text           string `json:"text"`
+	QuestRef       string `json:"quest_ref"`
+	QuestFlag      string `json:"quest_flag"`
+	QuestFrom      uint32 `json:"quest_from,omitempty"`
+	QuestTo        uint32 `json:"quest_to,omitempty"`
 }
 
 type ShopRouteSummary struct {
@@ -885,6 +936,10 @@ func buildSummaryDeltas(current Summary, candidate Summary, currentBundle Bundle
 		QuestStateCharacterCount:               summaryCountDelta(current.QuestStateCharacterCount, candidate.QuestStateCharacterCount),
 		QuestStateQuestCount:                   summaryCountDelta(current.QuestStateQuestCount, candidate.QuestStateQuestCount),
 		QuestStateFlags:                        buildQuestStateFlagDeltas(currentBundle.QuestState, candidateBundle.QuestState),
+		QuestFlagTriggerCount:                  summaryCountDelta(current.QuestFlagTriggerCount, candidate.QuestFlagTriggerCount),
+		QuestFlagTriggers:                      buildQuestFlagTriggerDeltas(current.QuestFlagTriggers, candidate.QuestFlagTriggers),
+		QuestFlagRouteCount:                    summaryCountDelta(current.QuestFlagRouteCount, candidate.QuestFlagRouteCount),
+		QuestFlagRoutes:                        buildQuestFlagRouteDeltas(current.QuestFlagRoutes, candidate.QuestFlagRoutes),
 		ShopCatalogEntryCount:                  summaryCountDelta(current.ShopCatalogEntryCount, candidate.ShopCatalogEntryCount),
 		ShopCatalogs:                           buildShopCatalogDeltas(current.ShopCatalogs, candidate.ShopCatalogs),
 		ShopRouteCount:                         summaryCountDelta(current.ShopRouteCount, candidate.ShopRouteCount),
@@ -1973,6 +2028,57 @@ func buildShopRouteDeltas(currentRoutes []ShopRouteSummary, candidateRoutes []Sh
 	return deltas
 }
 
+func buildQuestFlagRouteDeltas(currentRoutes []QuestFlagRouteSummary, candidateRoutes []QuestFlagRouteSummary) []QuestFlagRouteDelta {
+	if len(currentRoutes) == 0 && len(candidateRoutes) == 0 {
+		return nil
+	}
+	currentByID := make(map[serviceRouteIdentity]QuestFlagRouteSummary, len(currentRoutes))
+	candidateByID := make(map[serviceRouteIdentity]QuestFlagRouteSummary, len(candidateRoutes))
+	idsSeen := make(map[serviceRouteIdentity]struct{}, len(currentRoutes)+len(candidateRoutes))
+	for _, route := range currentRoutes {
+		route = normalizeQuestFlagRouteSummary(route)
+		id := questFlagRouteIdentity(route)
+		currentByID[id] = route
+		idsSeen[id] = struct{}{}
+	}
+	for _, route := range candidateRoutes {
+		route = normalizeQuestFlagRouteSummary(route)
+		id := questFlagRouteIdentity(route)
+		candidateByID[id] = route
+		idsSeen[id] = struct{}{}
+	}
+	ids := sortedServiceRouteIdentities(idsSeen)
+	deltas := make([]QuestFlagRouteDelta, 0, len(ids))
+	for _, id := range ids {
+		current, currentOK := currentByID[id]
+		candidate, candidateOK := candidateByID[id]
+		delta := QuestFlagRouteDelta{ActorName: id.actorName, SourceMapIndex: id.sourceMapIndex, SourceX: id.sourceX, SourceY: id.sourceY, Ref: id.ref}
+		switch {
+		case !currentOK:
+			candidateCopy := candidate
+			delta.Change = "added"
+			delta.Candidate = &candidateCopy
+		case !candidateOK:
+			currentCopy := current
+			delta.Change = "removed"
+			delta.Current = &currentCopy
+		case !reflect.DeepEqual(current, candidate):
+			currentCopy := current
+			candidateCopy := candidate
+			delta.Change = "changed"
+			delta.Current = &currentCopy
+			delta.Candidate = &candidateCopy
+		default:
+			continue
+		}
+		deltas = append(deltas, delta)
+	}
+	if len(deltas) == 0 {
+		return nil
+	}
+	return deltas
+}
+
 func buildWarpRouteDeltas(currentRoutes []WarpRouteSummary, candidateRoutes []WarpRouteSummary) []WarpRouteDelta {
 	if len(currentRoutes) == 0 && len(candidateRoutes) == 0 {
 		return nil
@@ -2047,6 +2153,22 @@ func shopRouteDeltaMatchesActorName(delta ShopRouteDelta, actorName string) bool
 		(delta.Candidate != nil && strings.TrimSpace(delta.Candidate.ActorName) == actorName)
 }
 
+func cloneQuestFlagRouteDelta(delta QuestFlagRouteDelta) QuestFlagRouteDelta {
+	cloned := delta
+	cloned.ActorName = strings.TrimSpace(cloned.ActorName)
+	cloned.Ref = strings.TrimSpace(cloned.Ref)
+	cloned.Change = strings.TrimSpace(cloned.Change)
+	if delta.Current != nil {
+		current := normalizeQuestFlagRouteSummary(*delta.Current)
+		cloned.Current = &current
+	}
+	if delta.Candidate != nil {
+		candidate := normalizeQuestFlagRouteSummary(*delta.Candidate)
+		cloned.Candidate = &candidate
+	}
+	return cloned
+}
+
 func cloneShopRouteDelta(delta ShopRouteDelta) ShopRouteDelta {
 	cloned := delta
 	cloned.ActorName = strings.TrimSpace(cloned.ActorName)
@@ -2102,6 +2224,15 @@ func cloneWarpRouteDelta(delta WarpRouteDelta) WarpRouteDelta {
 	return cloned
 }
 
+func normalizeQuestFlagRouteSummary(route QuestFlagRouteSummary) QuestFlagRouteSummary {
+	route.ActorName = strings.TrimSpace(route.ActorName)
+	route.Ref = strings.TrimSpace(route.Ref)
+	route.Text = strings.TrimSpace(route.Text)
+	route.QuestRef = strings.TrimSpace(route.QuestRef)
+	route.QuestFlag = strings.TrimSpace(route.QuestFlag)
+	return route
+}
+
 func normalizeShopRouteSummary(route ShopRouteSummary) ShopRouteSummary {
 	route.ActorName = strings.TrimSpace(route.ActorName)
 	route.Ref = strings.TrimSpace(route.Ref)
@@ -2114,6 +2245,16 @@ func normalizeWarpRouteSummary(route WarpRouteSummary) WarpRouteSummary {
 	route.Ref = strings.TrimSpace(route.Ref)
 	route.Text = strings.TrimSpace(route.Text)
 	return route
+}
+
+func questFlagRouteIdentity(route QuestFlagRouteSummary) serviceRouteIdentity {
+	return serviceRouteIdentity{
+		actorName:      route.ActorName,
+		sourceMapIndex: route.SourceMapIndex,
+		sourceX:        route.SourceX,
+		sourceY:        route.SourceY,
+		ref:            route.Ref,
+	}
 }
 
 func shopRouteIdentity(route ShopRouteSummary) serviceRouteIdentity {
@@ -2185,6 +2326,12 @@ func cloneMapContentDelta(delta MapContentDelta) MapContentDelta {
 			cloned.SpawnGroups[i] = cloneSpawnGroupDelta(spawnGroupDelta)
 		}
 	}
+	if len(delta.QuestFlagRoutes) > 0 {
+		cloned.QuestFlagRoutes = make([]QuestFlagRouteDelta, len(delta.QuestFlagRoutes))
+		for i, routeDelta := range delta.QuestFlagRoutes {
+			cloned.QuestFlagRoutes[i] = cloneQuestFlagRouteDelta(routeDelta)
+		}
+	}
 	if len(delta.ShopRoutes) > 0 {
 		cloned.ShopRoutes = make([]ShopRouteDelta, len(delta.ShopRoutes))
 		for i, routeDelta := range delta.ShopRoutes {
@@ -2242,6 +2389,7 @@ func buildMapContentDeltas(current Summary, candidate Summary, currentBundle Bun
 			RewardDropItemCount:          summaryCountDelta(currentMap.RewardDropItemCount, candidateMap.RewardDropItemCount),
 			StaticActors:                 buildStaticActorDeltas(staticActorsForMap(currentBundle.StaticActors, index), staticActorsForMap(candidateBundle.StaticActors, index)),
 			SpawnGroups:                  buildSpawnGroupDeltas(spawnGroupSummariesForMap(current.SpawnGroups, index), spawnGroupSummariesForMap(candidate.SpawnGroups, index)),
+			QuestFlagRoutes:              buildQuestFlagRouteDeltas(questFlagRouteSummariesForMap(current.QuestFlagRoutes, index), questFlagRouteSummariesForMap(candidate.QuestFlagRoutes, index)),
 			ShopRoutes:                   buildShopRouteDeltas(shopRouteSummariesForMap(current.ShopRoutes, index), shopRouteSummariesForMap(candidate.ShopRoutes, index)),
 			WarpRoutes:                   buildWarpRouteDeltas(warpRouteSummariesForMap(current.WarpRoutes, index), warpRouteSummariesForMap(candidate.WarpRoutes, index)),
 		}
@@ -2282,6 +2430,24 @@ func spawnGroupSummariesForMap(spawnGroups []SpawnGroupReferenceSummary, mapInde
 			continue
 		}
 		filtered = append(filtered, spawnGroup)
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
+}
+
+func questFlagRouteSummariesForMap(routes []QuestFlagRouteSummary, mapIndex uint32) []QuestFlagRouteSummary {
+	if len(routes) == 0 {
+		return nil
+	}
+	filtered := make([]QuestFlagRouteSummary, 0, len(routes))
+	for _, route := range routes {
+		route = normalizeQuestFlagRouteSummary(route)
+		if route.SourceMapIndex != mapIndex {
+			continue
+		}
+		filtered = append(filtered, route)
 	}
 	if len(filtered) == 0 {
 		return nil
@@ -2340,6 +2506,7 @@ func mapContentDeltaIsZero(delta MapContentDelta) bool {
 		delta.RewardDropItemCount.Delta == 0 &&
 		len(delta.StaticActors) == 0 &&
 		len(delta.SpawnGroups) == 0 &&
+		len(delta.QuestFlagRoutes) == 0 &&
 		len(delta.ShopRoutes) == 0 &&
 		len(delta.WarpRoutes) == 0
 }
@@ -2389,6 +2556,9 @@ func Summarize(bundle Bundle) (Summary, error) {
 	for _, definition := range normalized.InteractionDefinitions {
 		interactionKindCounts[definition.Kind]++
 		summary.InteractionDefinitionPreviews = append(summary.InteractionDefinitionPreviews, interactionDefinitionPreviewSummary(definition, itemTemplatesByVnum))
+		if definition.Kind == interactionstore.KindQuestFlag {
+			summary.QuestFlagTriggers = append(summary.QuestFlagTriggers, questFlagTriggerSummary(definition))
+		}
 		if definition.Kind == interactionstore.KindShopPreview {
 			summary.ShopCatalogEntryCount += len(definition.Catalog)
 			summary.ShopCatalogs = append(summary.ShopCatalogs, shopCatalogSummary(definition, itemTemplatesByVnum))
@@ -2433,6 +2603,9 @@ func Summarize(bundle Bundle) (Summary, error) {
 			entry.InteractableStaticActorCount++
 			definition := definitionsByKey[interactionDefinitionKey(actor.InteractionKind, actor.InteractionRef)]
 			addMapServiceInteractionSummary(entry, definition)
+			if definition.Kind == interactionstore.KindQuestFlag {
+				summary.QuestFlagRoutes = append(summary.QuestFlagRoutes, questFlagRouteSummary(actor, definition))
+			}
 			if definition.Kind == interactionstore.KindShopPreview {
 				summary.ShopRoutes = append(summary.ShopRoutes, shopRouteSummary(actor, definition))
 			}
@@ -2442,6 +2615,8 @@ func Summarize(bundle Bundle) (Summary, error) {
 			summary.InteractableStaticActors = append(summary.InteractableStaticActors, interactableStaticActorSummary(actor, definition, itemTemplatesByVnum))
 		}
 	}
+	summary.QuestFlagTriggerCount = len(summary.QuestFlagTriggers)
+	summary.QuestFlagRouteCount = len(summary.QuestFlagRoutes)
 	summary.ShopRouteCount = len(summary.ShopRoutes)
 	summary.WarpRouteCount = len(summary.WarpRoutes)
 	rewardDropCountsByVnum := make(map[uint32]int)
@@ -2529,6 +2704,92 @@ func questStateCharacterSummaries(flags []queststate.Flag) []QuestStateCharacter
 		})
 	}
 	return summaries
+}
+
+func buildQuestFlagTriggerDeltas(currentTriggers []QuestFlagTriggerSummary, candidateTriggers []QuestFlagTriggerSummary) []QuestFlagTriggerDelta {
+	if len(currentTriggers) == 0 && len(candidateTriggers) == 0 {
+		return nil
+	}
+	currentByKey := make(map[string]QuestFlagTriggerSummary, len(currentTriggers))
+	candidateByKey := make(map[string]QuestFlagTriggerSummary, len(candidateTriggers))
+	keysSeen := make(map[string]struct{}, len(currentTriggers)+len(candidateTriggers))
+	for _, trigger := range currentTriggers {
+		trigger = normalizeQuestFlagTriggerSummary(trigger)
+		key := interactionDefinitionKey(trigger.Kind, trigger.Ref)
+		currentByKey[key] = trigger
+		keysSeen[key] = struct{}{}
+	}
+	for _, trigger := range candidateTriggers {
+		trigger = normalizeQuestFlagTriggerSummary(trigger)
+		key := interactionDefinitionKey(trigger.Kind, trigger.Ref)
+		candidateByKey[key] = trigger
+		keysSeen[key] = struct{}{}
+	}
+	keys := make([]string, 0, len(keysSeen))
+	for key := range keysSeen {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	deltas := make([]QuestFlagTriggerDelta, 0, len(keys))
+	for _, key := range keys {
+		current, currentOK := currentByKey[key]
+		candidate, candidateOK := candidateByKey[key]
+		kind, ref := splitInteractionDefinitionKey(key)
+		delta := QuestFlagTriggerDelta{Kind: kind, Ref: ref}
+		switch {
+		case !currentOK:
+			candidateCopy := candidate
+			delta.Change = "added"
+			delta.Candidate = &candidateCopy
+		case !candidateOK:
+			currentCopy := current
+			delta.Change = "removed"
+			delta.Current = &currentCopy
+		case !reflect.DeepEqual(current, candidate):
+			currentCopy := current
+			candidateCopy := candidate
+			delta.Change = "changed"
+			delta.Current = &currentCopy
+			delta.Candidate = &candidateCopy
+		default:
+			continue
+		}
+		deltas = append(deltas, delta)
+	}
+	if len(deltas) == 0 {
+		return nil
+	}
+	return deltas
+}
+
+func splitInteractionDefinitionKey(key string) (string, string) {
+	parts := strings.SplitN(key, "\x00", 2)
+	if len(parts) != 2 {
+		return strings.TrimSpace(key), ""
+	}
+	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+}
+
+func normalizeQuestFlagTriggerSummary(trigger QuestFlagTriggerSummary) QuestFlagTriggerSummary {
+	trigger.Kind = strings.TrimSpace(trigger.Kind)
+	trigger.Ref = strings.TrimSpace(trigger.Ref)
+	trigger.Text = strings.TrimSpace(trigger.Text)
+	trigger.QuestRef = strings.TrimSpace(trigger.QuestRef)
+	trigger.QuestFlag = strings.TrimSpace(trigger.QuestFlag)
+	return trigger
+}
+
+func questFlagTriggerSummary(definition interactionstore.Definition) QuestFlagTriggerSummary {
+	definition = interactionstore.NormalizeDefinition(definition)
+	return QuestFlagTriggerSummary{
+		Kind:      definition.Kind,
+		Ref:       definition.Ref,
+		Text:      definition.Text,
+		QuestRef:  definition.QuestRef,
+		QuestFlag: definition.QuestFlag,
+		QuestFrom: definition.QuestFrom,
+		QuestTo:   definition.QuestTo,
+	}
 }
 
 func questStateQuestSummaries(flags []queststate.Flag) []QuestStateQuestSummary {
@@ -2801,6 +3062,23 @@ func warpDestinationSummary(definition interactionstore.Definition) WarpDestinat
 		MapIndex: definition.MapIndex,
 		X:        definition.X,
 		Y:        definition.Y,
+	}
+}
+
+func questFlagRouteSummary(actor StaticActor, definition interactionstore.Definition) QuestFlagRouteSummary {
+	actor = normalizeStaticActors([]StaticActor{actor})[0]
+	definition = interactionstore.NormalizeDefinition(definition)
+	return QuestFlagRouteSummary{
+		ActorName:      actor.Name,
+		SourceMapIndex: actor.MapIndex,
+		SourceX:        actor.X,
+		SourceY:        actor.Y,
+		Ref:            definition.Ref,
+		Text:           definition.Text,
+		QuestRef:       definition.QuestRef,
+		QuestFlag:      definition.QuestFlag,
+		QuestFrom:      definition.QuestFrom,
+		QuestTo:        definition.QuestTo,
 	}
 }
 
