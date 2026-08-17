@@ -41556,6 +41556,32 @@ func TestGameSessionFlowPracticeMobRespawnRebuildOverPlainTCP(t *testing.T) {
 	if respawnUpdate.VID != h.targetID {
 		t.Fatalf("expected tcp respawn update for target %d, got %+v", h.targetID, respawnUpdate)
 	}
+
+	h.client.writeFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: h.targetID}))
+	h.client.expectNoFrame(t, "post-respawn attack without fresh target selection")
+	postRespawnSelected := h.selectTarget(t)
+	if postRespawnSelected.TargetVID != h.targetID || postRespawnSelected.HPPercent != 100 {
+		t.Fatalf("expected tcp post-respawn fresh reselect to return full-HP mob %d, got %+v", h.targetID, postRespawnSelected)
+	}
+	postRespawnAttack := h.attack(t)
+	if len(postRespawnAttack) != 3 {
+		t.Fatalf("expected tcp post-respawn attack after fresh reselect to return target refresh, retaliation, and damage-info frames, got %d", len(postRespawnAttack))
+	}
+	postRespawnRefresh, err := combatproto.DecodeServerTarget(postRespawnAttack[0])
+	if err != nil {
+		t.Fatalf("decode tcp post-respawn attack target refresh: %v", err)
+	}
+	if postRespawnRefresh.TargetVID != h.targetID || postRespawnRefresh.HPPercent != 90 {
+		t.Fatalf("expected tcp post-respawn attack to damage reselected mob %d to 90%% HP, got %+v", h.targetID, postRespawnRefresh)
+	}
+	postRespawnRetaliation, err := worldproto.DecodePlayerPointChange(postRespawnAttack[1])
+	if err != nil {
+		t.Fatalf("decode tcp post-respawn attack retaliation point-change: %v", err)
+	}
+	if postRespawnRetaliation.Type != bootstrapPlayerPointValueIndex || postRespawnRetaliation.Amount >= 0 {
+		t.Fatalf("expected tcp post-respawn attack to restart owner-side retaliation, got %+v", postRespawnRetaliation)
+	}
+	assertTCPDamageInfo(t, postRespawnAttack[2], h.targetID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "post-respawn attack after fresh reselect")
 }
 
 func TestGameSessionFlowPracticeMobRestartHereOverPlainTCP(t *testing.T) {
