@@ -553,7 +553,18 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 
 	var lockFile *migrationApplyLockFile
 	if strings.TrimSpace(lockFilePath) != "" {
-		lockFile, err = createMigrationApplyLockFile(lockFilePath)
+		lockFile, err = createMigrationApplyLockFile(lockFilePath, migrationApplyLock{
+			Format:               migrationApplyLockFormat,
+			CreatedAt:            time.Now().UTC().Format(time.RFC3339Nano),
+			PID:                  os.Getpid(),
+			Driver:               strings.TrimSpace(driverName),
+			DSNConfigured:        strings.TrimSpace(dsn) != "",
+			TargetVersion:        resolvedTarget,
+			TargetLatest:         targetLatest,
+			PlanSHA256:           gotPlanSHA256,
+			ConfirmedPlanSHA256:  confirmedPlanSHA256,
+			LedgerSnapshotSHA256: sha256Hex(rawLedger),
+		})
 		if err != nil {
 			writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
 			return exitError
@@ -609,6 +620,8 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 
 const migrationApplyAuditFormat = "go-metin2-migration-apply-audit-v1"
 
+const migrationApplyLockFormat = "go-metin2-migration-apply-lock-v1"
+
 var ErrMigrationApplyAudit = errors.New("migration apply audit failed")
 
 var ErrMigrationApplyLock = errors.New("migration apply lock failed")
@@ -630,12 +643,25 @@ type migrationApplyAudit struct {
 	Result               dbmigrations.ApplyResult `json:"result"`
 }
 
+type migrationApplyLock struct {
+	Format               string `json:"format"`
+	CreatedAt            string `json:"created_at"`
+	PID                  int    `json:"pid"`
+	Driver               string `json:"driver"`
+	DSNConfigured        bool   `json:"dsn_configured"`
+	TargetVersion        int    `json:"target_version"`
+	TargetLatest         bool   `json:"target_latest"`
+	PlanSHA256           string `json:"plan_sha256"`
+	ConfirmedPlanSHA256  string `json:"confirmed_plan_sha256,omitempty"`
+	LedgerSnapshotSHA256 string `json:"ledger_snapshot_sha256"`
+}
+
 type migrationApplyLockFile struct {
 	path string
 	file *os.File
 }
 
-func createMigrationApplyLockFile(path string) (*migrationApplyLockFile, error) {
+func createMigrationApplyLockFile(path string, lock migrationApplyLock) (*migrationApplyLockFile, error) {
 	trimmed := strings.TrimSpace(path)
 	if trimmed == "" {
 		return nil, nil
@@ -647,7 +673,14 @@ func createMigrationApplyLockFile(path string) (*migrationApplyLockFile, error) 
 		}
 		return nil, fmt.Errorf("%w: create lock file: %v", ErrMigrationApplyLock, err)
 	}
-	if _, err := fmt.Fprintf(file, "pid=%d\n", os.Getpid()); err != nil {
+	raw, err := json.MarshalIndent(lock, "", "  ")
+	if err != nil {
+		_ = file.Close()
+		_ = os.Remove(trimmed)
+		return nil, fmt.Errorf("%w: marshal lock file: %v", ErrMigrationApplyLock, err)
+	}
+	raw = append(raw, '\n')
+	if _, err := file.Write(raw); err != nil {
 		_ = file.Close()
 		_ = os.Remove(trimmed)
 		return nil, fmt.Errorf("%w: write lock file: %v", ErrMigrationApplyLock, err)

@@ -722,6 +722,87 @@ func TestRunApplyRejectsExistingLockFileBeforeOpeningDatabase(t *testing.T) {
 	}
 }
 
+func TestRunApplyWritesMetadataOnlyLockFileBeforeOpeningDatabase(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var artifactStdout bytes.Buffer
+	var artifactStderr bytes.Buffer
+	if code := Run([]string{"plan-artifact", "--ledger-snapshot", "-", "--target-version", "1"}, bytes.NewReader(rawSnapshot), &artifactStdout, &artifactStderr); code != 0 {
+		t.Fatalf("expected plan-artifact command to succeed, exit=%d stderr=%q", code, artifactStderr.String())
+	}
+	var artifact migrationPlanArtifact
+	if err := json.Unmarshal(artifactStdout.Bytes(), &artifact); err != nil {
+		t.Fatalf("decode plan artifact JSON: %v\nbody:\n%s", err, artifactStdout.String())
+	}
+	dir := t.TempDir()
+	artifactPath := dir + "/migration-plan-artifact.json"
+	if err := os.WriteFile(artifactPath, artifactStdout.Bytes(), 0o600); err != nil {
+		t.Fatalf("write plan artifact: %v", err)
+	}
+	lockPath := dir + "/migration-apply.lock"
+	secretDSN := "memory://lock-metadata-secret"
+	currentMigrateCLITestDriver(t).setOpenHook(func() error {
+		rawLock, err := os.ReadFile(lockPath)
+		if err != nil {
+			return fmt.Errorf("read reserved lock file before opening DB: %w", err)
+		}
+		var got struct {
+			Format               string `json:"format"`
+			CreatedAt            string `json:"created_at"`
+			PID                  int    `json:"pid"`
+			Driver               string `json:"driver"`
+			DSNConfigured        bool   `json:"dsn_configured"`
+			TargetVersion        int    `json:"target_version"`
+			TargetLatest         bool   `json:"target_latest"`
+			PlanSHA256           string `json:"plan_sha256"`
+			ConfirmedPlanSHA256  string `json:"confirmed_plan_sha256"`
+			LedgerSnapshotSHA256 string `json:"ledger_snapshot_sha256"`
+		}
+		if err := json.Unmarshal(rawLock, &got); err != nil {
+			return fmt.Errorf("decode reserved lock JSON: %w; body=%q", err, string(rawLock))
+		}
+		if got.Format != "go-metin2-migration-apply-lock-v1" {
+			return fmt.Errorf("unexpected lock format: %#v", got)
+		}
+		if got.CreatedAt == "" || got.PID <= 0 {
+			return fmt.Errorf("expected lock to include local process metadata: %#v", got)
+		}
+		if got.Driver != driverName || !got.DSNConfigured {
+			return fmt.Errorf("unexpected lock database metadata: %#v", got)
+		}
+		if got.TargetVersion != 1 || got.TargetLatest {
+			return fmt.Errorf("unexpected lock target metadata: %#v", got)
+		}
+		if got.PlanSHA256 != artifact.PlanSHA256 || got.ConfirmedPlanSHA256 != artifact.PlanSHA256 {
+			return fmt.Errorf("unexpected lock plan metadata: %#v", got)
+		}
+		if got.LedgerSnapshotSHA256 != testSHA256HexBytes(rawSnapshot) {
+			return fmt.Errorf("unexpected lock ledger checksum: %#v", got)
+		}
+		body := string(rawLock)
+		for _, forbidden := range []string{secretDSN, "CREATE TABLE", "DROP TABLE", "-- go-metin2 migration"} {
+			if strings.Contains(body, forbidden) {
+				return fmt.Errorf("reserved lock file must not expose %q, got %s", forbidden, body)
+			}
+		}
+		return nil
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", secretDSN, "--ledger-snapshot", "-", "--target-version", "1", "--plan-artifact", artifactPath, "--lock-file", lockPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected locked apply to succeed, exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected successful apply to remove metadata lock file, got %v", err)
+	}
+}
+
 func TestRunApplyRemovesLockFileAfterSuccessfulMutation(t *testing.T) {
 	driverName := registerMigrateCLITestSQLDriver(t)
 	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
@@ -1943,14 +2024,18 @@ func registerSQLDriverOnce(name string, driver driver.Driver) (err error) {
 }
 
 type migrateCLITestDriver struct {
-	mu     sync.Mutex
-	events []string
-	ledger []dbmigrations.LedgerEntry
-	err    error
+	mu       sync.Mutex
+	events   []string
+	ledger   []dbmigrations.LedgerEntry
+	err      error
+	openHook func() error
 }
 
 func (d *migrateCLITestDriver) Open(name string) (driver.Conn, error) {
 	d.record("open:" + name)
+	if err := d.runOpenHook(); err != nil {
+		return nil, err
+	}
 	return &migrateCLITestConn{driver: d}, nil
 }
 
@@ -1976,6 +2061,22 @@ func (d *migrateCLITestDriver) setError(err error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.err = err
+}
+
+func (d *migrateCLITestDriver) setOpenHook(hook func() error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.openHook = hook
+}
+
+func (d *migrateCLITestDriver) runOpenHook() error {
+	d.mu.Lock()
+	hook := d.openHook
+	d.mu.Unlock()
+	if hook == nil {
+		return nil
+	}
+	return hook()
 }
 
 func (d *migrateCLITestDriver) errorSnapshot() error {
