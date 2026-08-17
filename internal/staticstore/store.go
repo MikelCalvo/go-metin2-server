@@ -138,6 +138,15 @@ func validateCombatProfiles(profiles []worldruntime.StaticActorCombatProfileSnap
 	return profileSnapshots, nil
 }
 
+func combatProfileSnapshotIdentitiesAreCanonical(profiles []worldruntime.StaticActorCombatProfileSnapshot) bool {
+	for _, profile := range profiles {
+		if !worldruntime.ValidStaticActorCombatProfileName(profile.Profile) {
+			return false
+		}
+	}
+	return true
+}
+
 func referencedCombatProfileNames(actors []StaticActor) map[string]struct{} {
 	referenced := make(map[string]struct{}, len(actors))
 	for _, actor := range actors {

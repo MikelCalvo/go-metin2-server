@@ -124,6 +124,9 @@ func (s *FileStore) Load() (Snapshot, error) {
 			return Snapshot{}, fmt.Errorf("%w: decode static actor snapshot: %v", ErrInvalidSnapshot, err)
 		}
 	}
+	if !combatProfileSnapshotIdentitiesAreCanonical(snapshot.CombatProfiles) {
+		return Snapshot{}, fmt.Errorf("%w: validate static actor snapshot", ErrInvalidSnapshot)
+	}
 	normalized := normalizeSnapshot(snapshot)
 	if err := validateSnapshot(normalized); err != nil {
 		return Snapshot{}, fmt.Errorf("%w: validate static actor snapshot", err)
@@ -235,6 +238,9 @@ func (s *FileStore) Save(snapshot Snapshot) error {
 	}
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
 		return fmt.Errorf("create static actor store dir: %w", err)
+	}
+	if !combatProfileSnapshotIdentitiesAreCanonical(snapshot.CombatProfiles) {
+		return fmt.Errorf("%w: validate static actor snapshot", ErrInvalidSnapshot)
 	}
 
 	normalized := normalizeSnapshot(snapshot)

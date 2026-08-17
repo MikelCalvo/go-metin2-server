@@ -128,6 +128,59 @@ func TestFileStoreSaveLoadRoundTripIncludesCustomCombatProfiles(t *testing.T) {
 	}
 }
 
+func TestFileStoreRejectsNonCanonicalCustomCombatProfileSnapshotIdentity(t *testing.T) {
+	const profile = "practice_static_store_padded_wolf"
+	saveStore := NewFileStore(filepath.Join(t.TempDir(), "state", "static-actors.json"))
+	paddedSnapshot := Snapshot{
+		StaticActors: []StaticActor{{EntityID: 31, Name: "PaddedProfileWolf", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: profile, SpawnGroupRef: "practice.padded_profile_wolf"}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        " " + profile + " ",
+			MaxHP:          24,
+			AttackValue:    9,
+			DefenseValue:   4,
+			RespawnDelayMs: 1500,
+		}},
+	}
+	if err := saveStore.Save(paddedSnapshot); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot when saving padded custom combat profile identity, got %v", err)
+	}
+
+	loadPath := filepath.Join(t.TempDir(), "state", "static-actors.json")
+	if err := os.MkdirAll(filepath.Dir(loadPath), 0o755); err != nil {
+		t.Fatalf("create hand-edited snapshot dir: %v", err)
+	}
+	raw := `{
+  "static_actors": [
+    {
+      "entity_id": 31,
+      "name": "PaddedProfileWolf",
+      "map_index": 42,
+      "x": 1800,
+      "y": 2900,
+      "race_num": 101,
+      "combat_profile": "practice_static_store_padded_wolf",
+      "spawn_group_ref": "practice.padded_profile_wolf"
+    }
+  ],
+  "combat_profiles": [
+    {
+      "profile": " practice_static_store_padded_wolf ",
+      "max_hp": 24,
+      "attack_value": 9,
+      "defense_value": 4,
+      "respawn_delay_ms": 1500
+    }
+  ]
+}
+`
+	if err := os.WriteFile(loadPath, []byte(raw), 0o644); err != nil {
+		t.Fatalf("write hand-edited padded profile snapshot: %v", err)
+	}
+	if _, err := NewFileStore(loadPath).Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot when loading padded custom combat profile identity, got %v", err)
+	}
+}
+
 func TestFileStoreRoundTripsSpawnGroupAuthoredHome(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
 	store := NewFileStore(path)
