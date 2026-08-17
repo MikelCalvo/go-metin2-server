@@ -4674,7 +4674,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						frames = append(frames, quickslotproto.EncodeAdd(quickslotproto.AddPacket{Position: result.Position, Slot: quickslotproto.Slot{Type: result.Type, Position: result.Slot}}))
 					}
 					frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
-					return gameflow.QuickslotResult{Accepted: ok, Frames: frames}
+					if !ok {
+						return gameflow.QuickslotResult{Accepted: false}
+					}
+					frames = prependExchangeCloseFrame(frames)
+					return gameflow.QuickslotResult{Accepted: true, Frames: frames}
 				},
 				HandleQuickslotDel: func(packet quickslotproto.ClientDelPacket) gameflow.QuickslotResult {
 					stateMu.Lock()
@@ -4691,7 +4695,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					frames := [][]byte{quickslotproto.EncodeDel(quickslotproto.DelPacket{Position: result.Position})}
 					frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
-					return gameflow.QuickslotResult{Accepted: ok, Frames: frames}
+					if !ok {
+						return gameflow.QuickslotResult{Accepted: false}
+					}
+					frames = prependExchangeCloseFrame(frames)
+					return gameflow.QuickslotResult{Accepted: true, Frames: frames}
 				},
 				HandleQuickslotSwap: func(packet quickslotproto.ClientSwapPacket) gameflow.QuickslotResult {
 					stateMu.Lock()
@@ -4708,7 +4716,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					frames := [][]byte{quickslotproto.EncodeSwap(quickslotproto.SwapPacket{Position: result.Position, TargetPosition: result.TargetPosition})}
 					frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
-					return gameflow.QuickslotResult{Accepted: ok, Frames: frames}
+					if !ok {
+						return gameflow.QuickslotResult{Accepted: false}
+					}
+					frames = prependExchangeCloseFrame(frames)
+					return gameflow.QuickslotResult{Accepted: true, Frames: frames}
 				},
 				HandleWhisper: func(packet chatproto.ClientWhisperPacket) gameflow.WhisperResult {
 					stateMu.Lock()

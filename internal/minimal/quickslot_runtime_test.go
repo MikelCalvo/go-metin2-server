@@ -12,6 +12,7 @@ import (
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
+	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
@@ -578,6 +579,167 @@ func TestGameSessionFlowQuickslotAddStaleAfterReclaimIsSelfLocalOnly(t *testing.
 	}
 	if !reflect.DeepEqual(replacementOut, wantFrames) {
 		t.Fatalf("replacement quickslot add did not see authoritative original quickslot:\n got %#v\nwant %#v", replacementOut, wantFrames)
+	}
+}
+
+func TestGameSessionFlowQuickslotEditsCloseActiveExchangeShellBeforeRefresh(t *testing.T) {
+	tests := []struct {
+		name            string
+		ownerName       string
+		ownerLogin      string
+		peerName        string
+		peerLogin       string
+		loginKey        uint32
+		peerKey         uint32
+		ownerQuickslots []loginticket.Quickslot
+		request         []byte
+		wantFrames      [][]byte
+		wantQuickslots  []loginticket.Quickslot
+	}{
+		{
+			name:       "add",
+			ownerName:  "QuickslotExchangeAdd",
+			ownerLogin: "quickslot-exchange-add-owner",
+			peerName:   "QuickslotExchangeAddPeer",
+			peerLogin:  "quickslot-exchange-add-peer",
+			loginKey:   0x50505110,
+			peerKey:    0x50505111,
+			ownerQuickslots: []loginticket.Quickslot{
+				{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+			},
+			request: quickslotproto.EncodeClientAdd(quickslotproto.ClientAddPacket{Position: 2, Slot: quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 5}}),
+			wantFrames: [][]byte{
+				quickslotproto.EncodeAdd(quickslotproto.AddPacket{Position: 2, Slot: quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 5}}),
+			},
+			wantQuickslots: []loginticket.Quickslot{
+				{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+				{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+			},
+		},
+		{
+			name:       "delete",
+			ownerName:  "QuickslotExchangeDel",
+			ownerLogin: "quickslot-exchange-del-owner",
+			peerName:   "QuickslotExchangeDelPeer",
+			peerLogin:  "quickslot-exchange-del-peer",
+			loginKey:   0x50505112,
+			peerKey:    0x50505113,
+			ownerQuickslots: []loginticket.Quickslot{
+				{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+				{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+			},
+			request: quickslotproto.EncodeClientDel(quickslotproto.ClientDelPacket{Position: 2}),
+			wantFrames: [][]byte{
+				quickslotproto.EncodeDel(quickslotproto.DelPacket{Position: 2}),
+			},
+			wantQuickslots: []loginticket.Quickslot{
+				{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+			},
+		},
+		{
+			name:       "swap",
+			ownerName:  "QuickslotExchangeSwap",
+			ownerLogin: "quickslot-exchange-swap-owner",
+			peerName:   "QuickslotExchangeSwapPeer",
+			peerLogin:  "quickslot-exchange-swap-peer",
+			loginKey:   0x50505114,
+			peerKey:    0x50505115,
+			ownerQuickslots: []loginticket.Quickslot{
+				{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+				{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+			},
+			request: quickslotproto.EncodeClientSwap(quickslotproto.ClientSwapPacket{Position: 2, TargetPosition: 3}),
+			wantFrames: [][]byte{
+				quickslotproto.EncodeSwap(quickslotproto.SwapPacket{Position: 2, TargetPosition: 3}),
+			},
+			wantQuickslots: []loginticket.Quickslot{
+				{Position: 2, Type: quickslotproto.TypeSkill, Slot: 5},
+				{Position: 3, Type: quickslotproto.TypeItem, Slot: 5},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter(tt.ownerName, 0x010305b0, 0x020405b0, 1100, 2100, 0, 101, 201)
+			owner.Inventory = []inventory.ItemInstance{{ID: 511, Vnum: 27001, Count: 2, Slot: 5}}
+			owner.Quickslots = append([]loginticket.Quickslot(nil), tt.ownerQuickslots...)
+			peer := peerVisibilityCharacter(tt.peerName, 0x010305b1, 0x020405b1, 1120, 2120, 0, 102, 202)
+			peer.Inventory = []inventory.ItemInstance{{ID: 512, Vnum: 27002, Count: 1, Slot: 6}}
+			peer.Quickslots = []loginticket.Quickslot{{Position: 4, Type: quickslotproto.TypeItem, Slot: 6}}
+
+			issuePeerTicket(t, ticketStore, tt.ownerLogin, tt.loginKey, owner)
+			issuePeerTicket(t, ticketStore, tt.peerLogin, tt.peerKey, peer)
+			if err := accounts.Save(accountstore.Account{Login: tt.ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed %s quickslot exchange owner account: %v", tt.name, err)
+			}
+			if err := accounts.Save(accountstore.Account{Login: tt.peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+				t.Fatalf("seed %s quickslot exchange peer account: %v", tt.name, err)
+			}
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+			if err != nil {
+				t.Fatalf("unexpected %s quickslot exchange runtime error: %v", tt.name, err)
+			}
+			ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tt.ownerLogin, tt.loginKey)
+			defer closeSessionFlow(t, ownerFlow)
+			peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tt.peerLogin, tt.peerKey)
+			defer closeSessionFlow(t, peerFlow)
+			_ = flushServerFrames(t, ownerFlow)
+			_ = flushServerFrames(t, peerFlow)
+
+			startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+			if err != nil {
+				t.Fatalf("unexpected %s quickslot exchange start error: %v", tt.name, err)
+			}
+			if len(startOut) != 1 {
+				t.Fatalf("expected %s quickslot exchange start to emit one owner frame, got %d", tt.name, len(startOut))
+			}
+			assertExchangeStartFrame(t, startOut[0], peer.VID, tt.name+" owner start")
+			queuedStart := flushServerFrames(t, peerFlow)
+			if len(queuedStart) != 1 {
+				t.Fatalf("expected %s quickslot exchange peer start to queue one frame, got %d", tt.name, len(queuedStart))
+			}
+			assertExchangeStartFrame(t, queuedStart[0], owner.VID, tt.name+" peer start")
+
+			out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, tt.request))
+			if err != nil {
+				t.Fatalf("unexpected active-exchange quickslot %s error: %v", tt.name, err)
+			}
+			if len(out) != 1+len(tt.wantFrames) {
+				t.Fatalf("expected active-exchange quickslot %s to emit exchange end plus %d quickslot frames, got %d", tt.name, len(tt.wantFrames), len(out))
+			}
+			assertExchangeEndFrame(t, out[0], "active-exchange quickslot "+tt.name+" self close")
+			if !reflect.DeepEqual(out[1:], tt.wantFrames) {
+				t.Fatalf("unexpected active-exchange quickslot %s refresh frames:\n got %#v\nwant %#v", tt.name, out[1:], tt.wantFrames)
+			}
+			queuedClose := flushServerFrames(t, peerFlow)
+			if len(queuedClose) != 1 {
+				t.Fatalf("expected active-exchange quickslot %s to queue one peer exchange close, got %d", tt.name, len(queuedClose))
+			}
+			assertExchangeEndFrame(t, queuedClose[0], "active-exchange quickslot "+tt.name+" peer close")
+
+			cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+			if err != nil {
+				t.Fatalf("unexpected post-quickslot %s exchange cancel error: %v", tt.name, err)
+			}
+			if len(cancelOut) != 0 {
+				t.Fatalf("expected post-quickslot %s exchange shell to be closed before cancel, got %d frames", tt.name, len(cancelOut))
+			}
+
+			persistedOwner, err := accounts.Load(tt.ownerLogin)
+			if err != nil {
+				t.Fatalf("load active-exchange quickslot %s owner account: %v", tt.name, err)
+			}
+			if !reflect.DeepEqual(persistedOwner.Characters[0].Quickslots, tt.wantQuickslots) {
+				t.Fatalf("active-exchange quickslot %s persisted quickslots got %+v want %+v", tt.name, persistedOwner.Characters[0].Quickslots, tt.wantQuickslots)
+			}
+			if !reflect.DeepEqual(persistedOwner.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("active-exchange quickslot %s mutated inventory got %+v want %+v", tt.name, persistedOwner.Characters[0].Inventory, owner.Inventory)
+			}
+			assertExchangeAccountUnchanged(t, accounts, tt.peerLogin, peer, "peer active-exchange quickslot "+tt.name)
+		})
 	}
 }
 
