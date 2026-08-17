@@ -28,14 +28,16 @@ const (
 
 	maxLedgerSnapshotBytes        = 64 * 1024
 	maxMigrationPlanArtifactBytes = 128 * 1024
+	maxMigrationApplyLockBytes    = 16 * 1024
 )
 
 // Run executes the small migration preflight CLI and returns a process-style exit
 // code. The catalog, status, empty-ledger-snapshot, ledger-snapshot, plan,
-// plan-artifact, and apply-preflight commands are read-only. The apply command is
-// an explicit CLI-only mutation surface: it requires an operator-supplied
-// database driver, DSN, strict offline ledger snapshot, and target version, and it
-// remains deliberately separate from daemon startup and local ops endpoints.
+// plan-artifact, apply-preflight, and apply-lock-status commands are read-only.
+// The apply command is an explicit CLI-only mutation surface: it requires an
+// operator-supplied database driver, DSN, strict offline ledger snapshot, and
+// target version, and it remains deliberately separate from daemon startup and
+// local ops endpoints.
 // Rollback/down plans must be explicitly confirmed with --allow-rollback plus
 // either --plan-sha256 or --plan-artifact. Operators can optionally require a
 // previously inspected plan checksum or plan artifact, reserve an exclusive local
@@ -69,6 +71,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runPlanArtifact(args[1:], stdin, stdout, stderr)
 	case "apply-preflight":
 		return runApplyPreflight(args[1:], stdin, stdout, stderr)
+	case "apply-lock-status":
+		return runApplyLockStatus(args[1:], stdout, stderr)
 	case "empty-ledger-snapshot":
 		return runEmptyLedgerSnapshot(args[1:], stdout, stderr)
 	case "ledger-snapshot":
@@ -618,9 +622,46 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 	return writeJSON(stdout, stderr, result)
 }
 
+func runApplyLockStatus(args []string, stdout io.Writer, stderr io.Writer) int {
+	flags := flag.NewFlagSet("apply-lock-status", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	var lockFilePath string
+	flags.StringVar(&lockFilePath, "lock-file", "", "path to the local migration apply lock file")
+	flags.Usage = func() { printApplyLockStatusUsage(stderr) }
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintf(stderr, "unexpected apply-lock-status argument %q\n", flags.Arg(0))
+		printApplyLockStatusUsage(stderr)
+		return exitUsage
+	}
+	if strings.TrimSpace(lockFilePath) == "" {
+		fmt.Fprintln(stderr, "--lock-file is required for apply-lock-status")
+		printApplyLockStatusUsage(stderr)
+		return exitUsage
+	}
+
+	lock, present, err := readMigrationApplyLockFile(lockFilePath)
+	if err != nil {
+		fmt.Fprintf(stderr, "migration apply lock status: %v\n", err)
+		return exitError
+	}
+	status := migrationApplyLockStatus{
+		Format:  migrationApplyLockStatusFormat,
+		Present: present,
+	}
+	if present {
+		status.Lock = &lock
+	}
+	return writeJSON(stdout, stderr, status)
+}
+
 const migrationApplyAuditFormat = "go-metin2-migration-apply-audit-v1"
 
 const migrationApplyLockFormat = "go-metin2-migration-apply-lock-v1"
+
+const migrationApplyLockStatusFormat = "go-metin2-migration-apply-lock-status-v1"
 
 var ErrMigrationApplyAudit = errors.New("migration apply audit failed")
 
@@ -654,6 +695,12 @@ type migrationApplyLock struct {
 	PlanSHA256           string `json:"plan_sha256"`
 	ConfirmedPlanSHA256  string `json:"confirmed_plan_sha256,omitempty"`
 	LedgerSnapshotSHA256 string `json:"ledger_snapshot_sha256"`
+}
+
+type migrationApplyLockStatus struct {
+	Format  string              `json:"format"`
+	Present bool                `json:"present"`
+	Lock    *migrationApplyLock `json:"lock,omitempty"`
 }
 
 type migrationApplyLockFile struct {
@@ -705,6 +752,115 @@ func (f *migrationApplyLockFile) Release() {
 		_ = os.Remove(f.path)
 		f.path = ""
 	}
+}
+
+func readMigrationApplyLockFile(path string) (migrationApplyLock, bool, error) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return migrationApplyLock{}, false, fmt.Errorf("%w: lock file path is required", ErrMigrationApplyLock)
+	}
+	info, err := os.Lstat(trimmed)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return migrationApplyLock{}, false, nil
+		}
+		return migrationApplyLock{}, false, fmt.Errorf("%w: stat lock file: %v", ErrMigrationApplyLock, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return migrationApplyLock{}, false, fmt.Errorf("%w: lock file must not be a symlink: %s", ErrMigrationApplyLock, trimmed)
+	}
+	if !info.Mode().IsRegular() {
+		return migrationApplyLock{}, false, fmt.Errorf("%w: lock file must be a regular file: %s", ErrMigrationApplyLock, trimmed)
+	}
+	file, err := os.Open(trimmed)
+	if err != nil {
+		return migrationApplyLock{}, false, fmt.Errorf("%w: read lock file: %v", ErrMigrationApplyLock, err)
+	}
+	defer file.Close()
+	openedInfo, err := file.Stat()
+	if err != nil {
+		return migrationApplyLock{}, false, fmt.Errorf("%w: stat opened lock file: %v", ErrMigrationApplyLock, err)
+	}
+	if !openedInfo.Mode().IsRegular() {
+		return migrationApplyLock{}, false, fmt.Errorf("%w: opened lock file must be a regular file: %s", ErrMigrationApplyLock, trimmed)
+	}
+
+	raw, err := io.ReadAll(io.LimitReader(file, maxMigrationApplyLockBytes+1))
+	if err != nil {
+		return migrationApplyLock{}, false, fmt.Errorf("%w: read lock file: %v", ErrMigrationApplyLock, err)
+	}
+	if len(raw) > maxMigrationApplyLockBytes {
+		return migrationApplyLock{}, false, fmt.Errorf("%w: lock file exceeds %d bytes", ErrMigrationApplyLock, maxMigrationApplyLockBytes)
+	}
+	if !utf8.Valid(raw) {
+		return migrationApplyLock{}, false, fmt.Errorf("%w: lock file is not valid UTF-8", ErrMigrationApplyLock)
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return migrationApplyLock{}, false, fmt.Errorf("%w: lock file is empty", ErrMigrationApplyLock)
+	}
+
+	var lock migrationApplyLock
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&lock); err != nil {
+		return migrationApplyLock{}, false, fmt.Errorf("%w: decode lock file: %v", ErrMigrationApplyLock, err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return migrationApplyLock{}, false, fmt.Errorf("%w: lock file has trailing JSON", ErrMigrationApplyLock)
+	}
+	normalized, err := normalizeMigrationApplyLock(lock)
+	if err != nil {
+		return migrationApplyLock{}, false, err
+	}
+	return normalized, true, nil
+}
+
+func normalizeMigrationApplyLock(lock migrationApplyLock) (migrationApplyLock, error) {
+	if lock.Format != migrationApplyLockFormat {
+		return migrationApplyLock{}, fmt.Errorf("%w: unsupported lock format %q", ErrMigrationApplyLock, lock.Format)
+	}
+	createdAt := strings.TrimSpace(lock.CreatedAt)
+	if createdAt == "" {
+		return migrationApplyLock{}, fmt.Errorf("%w: lock created_at is required", ErrMigrationApplyLock)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, createdAt); err != nil {
+		return migrationApplyLock{}, fmt.Errorf("%w: invalid lock created_at: %v", ErrMigrationApplyLock, err)
+	}
+	lock.CreatedAt = createdAt
+	if lock.PID <= 0 {
+		return migrationApplyLock{}, fmt.Errorf("%w: lock pid must be positive", ErrMigrationApplyLock)
+	}
+	lock.Driver = strings.TrimSpace(lock.Driver)
+	if lock.Driver == "" {
+		return migrationApplyLock{}, fmt.Errorf("%w: lock driver is required", ErrMigrationApplyLock)
+	}
+	if !lock.DSNConfigured {
+		return migrationApplyLock{}, fmt.Errorf("%w: lock dsn_configured must be true for apply locks", ErrMigrationApplyLock)
+	}
+	if lock.TargetVersion < 0 {
+		return migrationApplyLock{}, fmt.Errorf("%w: lock target_version must be non-negative", ErrMigrationApplyLock)
+	}
+	if lock.TargetLatest && lock.TargetVersion == 0 {
+		return migrationApplyLock{}, fmt.Errorf("%w: latest target lock must name a positive resolved target_version", ErrMigrationApplyLock)
+	}
+	planSHA256, err := parsePlanSHA256(lock.PlanSHA256)
+	if err != nil {
+		return migrationApplyLock{}, fmt.Errorf("%w: invalid lock plan_sha256: %v", ErrMigrationApplyLock, err)
+	}
+	lock.PlanSHA256 = planSHA256
+	ledgerSnapshotSHA256, err := parsePlanSHA256(lock.LedgerSnapshotSHA256)
+	if err != nil {
+		return migrationApplyLock{}, fmt.Errorf("%w: invalid lock ledger_snapshot_sha256: %v", ErrMigrationApplyLock, err)
+	}
+	lock.LedgerSnapshotSHA256 = ledgerSnapshotSHA256
+	if strings.TrimSpace(lock.ConfirmedPlanSHA256) != "" {
+		confirmedPlanSHA256, err := parsePlanSHA256(lock.ConfirmedPlanSHA256)
+		if err != nil {
+			return migrationApplyLock{}, fmt.Errorf("%w: invalid lock confirmed_plan_sha256: %v", ErrMigrationApplyLock, err)
+		}
+		lock.ConfirmedPlanSHA256 = confirmedPlanSHA256
+	}
+	return lock, nil
 }
 
 type migrationApplyAuditFile struct {
@@ -948,6 +1104,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  plan                   print metadata-only dry-run plan from an offline ledger snapshot")
 	fmt.Fprintln(w, "  plan-artifact          print dry-run plan plus checksum for apply confirmation")
 	fmt.Fprintln(w, "  apply-preflight        validate apply inputs and plan confirmation without opening a database")
+	fmt.Fprintln(w, "  apply-lock-status      inspect a local migration apply lock file without mutating it")
 	fmt.Fprintln(w, "  apply                  apply a target plan using a database/sql driver and offline ledger snapshot")
 	fmt.Fprintln(w, "")
 	printStatusUsage(w)
@@ -961,6 +1118,8 @@ func printUsage(w io.Writer) {
 	printPlanArtifactUsage(w)
 	fmt.Fprintln(w, "")
 	printApplyPreflightUsage(w)
+	fmt.Fprintln(w, "")
+	printApplyLockStatusUsage(w)
 	fmt.Fprintln(w, "")
 	printApplyUsage(w)
 }
@@ -993,6 +1152,11 @@ func printPlanArtifactUsage(w io.Writer) {
 func printApplyPreflightUsage(w io.Writer) {
 	fmt.Fprintln(w, "apply-preflight usage:")
 	fmt.Fprintln(w, "  metin2-migrate apply-preflight --ledger-snapshot <path|-> --target-version <version|latest> [--plan-sha256 <hex> | --plan-artifact <path>] [--allow-rollback]")
+}
+
+func printApplyLockStatusUsage(w io.Writer) {
+	fmt.Fprintln(w, "apply-lock-status usage:")
+	fmt.Fprintln(w, "  metin2-migrate apply-lock-status --lock-file <path>")
 }
 
 func printApplyUsage(w io.Writer) {

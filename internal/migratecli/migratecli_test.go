@@ -686,6 +686,172 @@ func TestRunApplyRejectsOversizedPlanArtifactBeforeOpeningDatabase(t *testing.T)
 	}
 }
 
+func TestRunApplyLockStatusReportsMissingLockWithoutOpeningDatabase(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	lockPath := t.TempDir() + "/missing-migration-apply.lock"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-lock-status", "--lock-file", lockPath}, nil, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected missing apply-lock-status to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected missing apply-lock-status not to write stderr, got %q", stderr.String())
+	}
+	var got migrationApplyLockStatus
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode missing lock status JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if got.Format != migrationApplyLockStatusFormat || got.Present || got.Lock != nil {
+		t.Fatalf("unexpected missing lock status: %#v", got)
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("apply-lock-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunApplyLockStatusReadsMetadataOnlyLockFile(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var artifactStdout bytes.Buffer
+	var artifactStderr bytes.Buffer
+	if code := Run([]string{"plan-artifact", "--ledger-snapshot", "-", "--target-version", "1"}, bytes.NewReader(rawSnapshot), &artifactStdout, &artifactStderr); code != 0 {
+		t.Fatalf("expected plan-artifact command to succeed, exit=%d stderr=%q", code, artifactStderr.String())
+	}
+	var artifact migrationPlanArtifact
+	if err := json.Unmarshal(artifactStdout.Bytes(), &artifact); err != nil {
+		t.Fatalf("decode plan artifact JSON: %v\nbody:\n%s", err, artifactStdout.String())
+	}
+	lockPath := t.TempDir() + "/migration-apply.lock"
+	lock := migrationApplyLock{
+		Format:               migrationApplyLockFormat,
+		CreatedAt:            "2026-08-17T00:00:00Z",
+		PID:                  1234,
+		Driver:               driverName,
+		DSNConfigured:        true,
+		TargetVersion:        1,
+		TargetLatest:         false,
+		PlanSHA256:           artifact.PlanSHA256,
+		ConfirmedPlanSHA256:  artifact.PlanSHA256,
+		LedgerSnapshotSHA256: testSHA256HexBytes(rawSnapshot),
+	}
+	rawLock, err := json.MarshalIndent(lock, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal lock JSON: %v", err)
+	}
+	rawLock = append(rawLock, '\n')
+	if err := os.WriteFile(lockPath, rawLock, 0o600); err != nil {
+		t.Fatalf("write lock JSON: %v", err)
+	}
+	secretDSN := "memory://lock-status-secret"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-lock-status", "--lock-file", lockPath}, nil, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected apply-lock-status to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr on apply-lock-status success, got %q", stderr.String())
+	}
+	var got migrationApplyLockStatus
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode lock status JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if got.Format != migrationApplyLockStatusFormat || !got.Present || got.Lock == nil {
+		t.Fatalf("unexpected lock status envelope: %#v", got)
+	}
+	if got.Lock.Format != migrationApplyLockFormat || got.Lock.CreatedAt == "" || got.Lock.PID <= 0 {
+		t.Fatalf("unexpected lock process metadata: %#v", got.Lock)
+	}
+	if got.Lock.Driver != driverName || !got.Lock.DSNConfigured {
+		t.Fatalf("unexpected lock database metadata: %#v", got.Lock)
+	}
+	if got.Lock.TargetVersion != 1 || got.Lock.TargetLatest {
+		t.Fatalf("unexpected lock target metadata: %#v", got.Lock)
+	}
+	if got.Lock.PlanSHA256 != artifact.PlanSHA256 || got.Lock.ConfirmedPlanSHA256 != artifact.PlanSHA256 {
+		t.Fatalf("unexpected lock plan metadata: %#v", got.Lock)
+	}
+	if got.Lock.LedgerSnapshotSHA256 != testSHA256HexBytes(rawSnapshot) {
+		t.Fatalf("unexpected lock ledger checksum: %#v", got.Lock)
+	}
+	body := stdout.String()
+	for _, forbidden := range []string{secretDSN, "CREATE TABLE", "DROP TABLE", "-- go-metin2 migration"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("lock status output must not expose %q, got %s", forbidden, body)
+		}
+	}
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("apply-lock-status must not remove the inspected lock file: %v", err)
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("apply-lock-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunApplyLockStatusRejectsMalformedLockFile(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	lockPath := t.TempDir() + "/migration-apply.lock"
+	malformedLock := `{"format":"go-metin2-migration-apply-lock-v1","created_at":"2026-08-17T00:00:00Z","pid":1,"driver":"driver","dsn_configured":true,"target_version":1,"target_latest":false,"plan_sha256":"` + strings.Repeat("0", 64) + `","ledger_snapshot_sha256":"` + strings.Repeat("1", 64) + `","extra":true}`
+	if err := os.WriteFile(lockPath, []byte(malformedLock), 0o600); err != nil {
+		t.Fatalf("write malformed lock file: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-lock-status", "--lock-file", lockPath}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected malformed apply-lock-status to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected malformed apply-lock-status not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "migration apply lock failed") || !strings.Contains(stderr.String(), "unknown field") {
+		t.Fatalf("expected strict malformed-lock guidance, got %q", stderr.String())
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("malformed apply-lock-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunApplyLockStatusRejectsSymlinkLockFile(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	dir := t.TempDir()
+	targetPath := dir + "/target.lock"
+	if err := os.WriteFile(targetPath, []byte("{}\n"), 0o600); err != nil {
+		t.Fatalf("write symlink target: %v", err)
+	}
+	lockPath := dir + "/migration-apply.lock"
+	if err := os.Symlink(targetPath, lockPath); err != nil {
+		t.Fatalf("create symlink lock: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-lock-status", "--lock-file", lockPath}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected symlink apply-lock-status to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected symlink apply-lock-status not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "lock file must not be a symlink") {
+		t.Fatalf("expected symlink rejection guidance, got %q", stderr.String())
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("symlink apply-lock-status must not open a database target, got events %#v", events)
+	}
+}
+
 func TestRunApplyRejectsExistingLockFileBeforeOpeningDatabase(t *testing.T) {
 	driverName := registerMigrateCLITestSQLDriver(t)
 	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})

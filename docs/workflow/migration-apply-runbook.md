@@ -22,6 +22,7 @@ Keep these files together for each migration run:
 - `migration-plan-artifact.json` — strict `go-metin2-migration-plan-artifact-v1` output reviewed before mutation;
 - `apply-preflight.json` — strict `go-metin2-migration-apply-preflight-v1` output generated immediately before backup validation and mutation;
 - `migration-apply.lock` — an operator-chosen local lock path that should not already exist; while reserved, it contains metadata-only `go-metin2-migration-apply-lock-v1` JSON with the local PID, target version, plan checksum, and ledger-snapshot checksum, but never the DSN or executable SQL;
+- `apply-lock-status.json` — optional `go-metin2-migration-apply-lock-status-v1` output from inspecting an existing lock before any manual stale-lock decision;
 - `migration-apply-audit.json` — exclusive metadata-only audit output written after a successful non-empty apply;
 - deployment-specific DB backup evidence, kept outside this repo.
 
@@ -121,7 +122,7 @@ Rollback to zero is allowed by the current primitive, but it drops the `schema_m
 
 - If `ledger-snapshot`, `status`, or daemon-local migration status fails, stop before planning and inspect the configured driver/DSN and `schema_migrations` metadata.
 - If `plan-artifact` or `apply-preflight` fails, do not run `apply`; regenerate or re-review the ledger snapshot and plan.
-- If `--lock-file` already exists, assume another operator or interrupted run owns the migration window. Do not delete it blindly; inspect process ownership, the metadata-only lock JSON (`pid`, `target_version`, `plan_sha256`, `ledger_snapshot_sha256`), retained preflight/audit artifacts, and deployment notes first.
+- If `--lock-file` already exists, assume another operator or interrupted run owns the migration window. Do not delete it blindly; first run `metin2-migrate apply-lock-status --lock-file <path> > apply-lock-status.json`, then inspect process ownership, the metadata-only lock JSON (`pid`, `target_version`, `plan_sha256`, `ledger_snapshot_sha256`), retained preflight/audit artifacts, and deployment notes. The status helper is read-only: it validates the non-symlink regular lock file shape, returns `present: false` for an absent path, and never removes the lock, opens the DB target, or exposes the DSN / executable SQL.
 - If `apply` fails after reserving the lock or audit path, the CLI attempts to remove the reserved lock/audit files and roll back the SQL transaction. Keep stderr, the original ledger snapshot, and the failed plan artifact for diagnosis.
 - If the database reports an unknown or drifted ledger row, do not edit `schema_migrations` by hand. Compare `migration-catalog.json`, the deployed binary version, and the target database backup.
 
@@ -134,3 +135,4 @@ Do not use this runbook to justify:
 - committing DSNs or secrets to git;
 - DB-backed runtime claims for account, character, item, quest, content, login-ticket, or world state;
 - stale-lock auto-removal without a deployment-specific policy.
+- treating `apply-lock-status` as authorization to delete an existing lock; it is an inspection helper only.
