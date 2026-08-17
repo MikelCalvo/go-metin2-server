@@ -666,6 +666,9 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 		if displayedGold := r.exchangeGold[partnerID]; displayedGold != 0 && uint64(displayedGold) > partner.Gold {
 			return nil, false
 		}
+		if !r.exchangeFinalizationPreconditionsLocked(originID, partnerID, origin, partner) {
+			return nil, false
+		}
 	}
 
 	selfFrame := encodeExchangeAcceptFrame(1)
@@ -675,6 +678,152 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 	}
 	r.setExchangeAcceptedLocked(originID, true)
 	return [][]byte{selfFrame}, true
+}
+
+const exchangeGoldPointChangeCarrierMax = uint64(1<<31 - 1)
+
+func (r *sharedWorldRegistry) exchangeFinalizationPreconditionsLocked(originID uint64, partnerID uint64, origin loginticket.Character, partner loginticket.Character) bool {
+	if r == nil || originID == 0 || partnerID == 0 {
+		return false
+	}
+	if !r.exchangeRecipientCanAcceptLocked(origin, r.exchangeItems[partnerID], r.exchangeGold[partnerID]) {
+		return false
+	}
+	if !r.exchangeRecipientCanAcceptLocked(partner, r.exchangeItems[originID], r.exchangeGold[originID]) {
+		return false
+	}
+	return true
+}
+
+func (r *sharedWorldRegistry) exchangeRecipientCanAcceptLocked(recipient loginticket.Character, incoming map[uint8]exchangeDisplayedItem, incomingGold uint32) bool {
+	if r == nil || recipient.ID == 0 || characterAtBootstrapHPFloor(recipient) {
+		return false
+	}
+	if incomingGold != 0 {
+		if uint64(incomingGold) > exchangeGoldPointChangeCarrierMax || recipient.Gold > exchangeGoldPointChangeCarrierMax || recipient.Gold > exchangeGoldPointChangeCarrierMax-uint64(incomingGold) {
+			return false
+		}
+	}
+	if len(incoming) == 0 {
+		return true
+	}
+	if exchangeInventorySnapshotInvalidForDisplayedItems(recipient.Inventory) {
+		return false
+	}
+
+	working := append([]inventory.ItemInstance(nil), recipient.Inventory...)
+	seenIncomingIDs := make(map[uint64]struct{}, len(incoming))
+	for _, displaySlot := range sortedExchangeDisplaySlots(incoming) {
+		display := incoming[displaySlot]
+		if display.ItemID == 0 || display.Vnum == 0 || display.Count == 0 || display.Slot >= inventory.CarriedInventorySlotCount {
+			return false
+		}
+		if _, duplicate := seenIncomingIDs[display.ItemID]; duplicate {
+			return false
+		}
+		seenIncomingIDs[display.ItemID] = struct{}{}
+		if exchangeInventoryHasItemID(working, display.ItemID) {
+			return false
+		}
+		template, ok := r.itemTemplates[display.Vnum]
+		if !ok || !itemcatalog.ValidTemplate(template) || template.Vnum != display.Vnum || template.AntiStack || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || !templateUsableByCharacter(recipient, template) || display.Count > template.MaxCount {
+			return false
+		}
+		if !exchangePlaceIncomingDisplayedItem(&working, display, template) {
+			return false
+		}
+	}
+	return true
+}
+
+func sortedExchangeDisplaySlots(displayed map[uint8]exchangeDisplayedItem) []uint8 {
+	if len(displayed) == 0 {
+		return nil
+	}
+	slots := make([]uint8, 0, len(displayed))
+	for slot := range displayed {
+		slots = append(slots, slot)
+	}
+	sort.Slice(slots, func(i int, j int) bool { return slots[i] < slots[j] })
+	return slots
+}
+
+func exchangePlaceIncomingDisplayedItem(items *[]inventory.ItemInstance, display exchangeDisplayedItem, template itemcatalog.Template) bool {
+	if items == nil || display.Count == 0 || display.Count > template.MaxCount {
+		return false
+	}
+	remaining := display.Count
+	if template.Stackable {
+		for idx := range *items {
+			item := (*items)[idx]
+			if item.Equipped || item.Locked || item.Vnum != display.Vnum || item.Count >= template.MaxCount {
+				continue
+			}
+			room := template.MaxCount - item.Count
+			if room > remaining {
+				room = remaining
+			}
+			item.Count += room
+			if err := item.Validate(); err != nil {
+				return false
+			}
+			(*items)[idx] = item
+			remaining -= room
+			if remaining == 0 {
+				return true
+			}
+		}
+	}
+	if remaining == 0 {
+		return true
+	}
+	if !template.Stackable && remaining != 1 {
+		return false
+	}
+	slot, ok := exchangeNextFreeInventorySlot(*items)
+	if !ok {
+		return false
+	}
+	placed, err := (inventory.ItemInstance{ID: display.ItemID, Vnum: display.Vnum, Count: remaining}).WithInventorySlot(slot)
+	if err != nil {
+		return false
+	}
+	*items = append(*items, placed)
+	sort.Slice(*items, func(i int, j int) bool {
+		if (*items)[i].Slot != (*items)[j].Slot {
+			return (*items)[i].Slot < (*items)[j].Slot
+		}
+		return (*items)[i].ID < (*items)[j].ID
+	})
+	return true
+}
+
+func exchangeNextFreeInventorySlot(items []inventory.ItemInstance) (inventory.SlotIndex, bool) {
+	occupied := make(map[inventory.SlotIndex]struct{}, len(items))
+	for _, item := range items {
+		if item.Equipped || item.Slot >= inventory.CarriedInventorySlotCount {
+			return 0, false
+		}
+		occupied[item.Slot] = struct{}{}
+	}
+	for slot := inventory.SlotIndex(0); slot < inventory.CarriedInventorySlotCount; slot++ {
+		if _, exists := occupied[slot]; !exists {
+			return slot, true
+		}
+	}
+	return 0, false
+}
+
+func exchangeInventoryHasItemID(items []inventory.ItemInstance, id uint64) bool {
+	if id == 0 {
+		return false
+	}
+	for _, item := range items {
+		if item.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func exchangeDisplayedItemsStillLive(displayed map[uint8]exchangeDisplayedItem, live loginticket.Character, templates map[uint32]itemcatalog.Template) bool {
