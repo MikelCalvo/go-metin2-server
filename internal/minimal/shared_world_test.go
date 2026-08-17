@@ -37650,6 +37650,176 @@ func TestGameSessionFlowPracticeMobPacketShopSell2FailsClosedAfterDelayedRetalia
 	}
 }
 
+func TestGameSessionFlowPracticeMobPacketShopSell2KeepsRetaliationPointLossRuntimeOnlyWhilePersistingSell(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	seller := merchantBuyerCharacter("MerchantSellerRuntimeOnly", 0x0103011C, 0x0204011C, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
+	seller.Points[bootstrapPlayerPointValueIndex] = 3
+	issuePeerTicket(t, store, "merchant-seller-runtime-only", 0x56565656, seller)
+	if err := accounts.Save(accountstore.Account{Login: "merchant-seller-runtime-only", Empire: seller.Empire, Characters: cloneCharacters([]loginticket.Character{seller})}); err != nil {
+		t.Fatalf("seed runtime-only merchant seller account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected merchant/practice-mob seller runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000516, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{
+		StaticActors: []contentbundle.StaticActor{{
+			Name:            "Merchant",
+			MapIndex:        bootstrapMapIndex,
+			X:               1250,
+			Y:               2250,
+			RaceNum:         20300,
+			InteractionKind: interactionstore.KindShopPreview,
+			InteractionRef:  "npc:merchant",
+		}},
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:           "practice.mob_alpha",
+			Name:          "PracticeMobAlpha",
+			MapIndex:      bootstrapMapIndex,
+			X:             1200,
+			Y:             2200,
+			RaceNum:       101,
+			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		}},
+		ItemTemplates:          defaultMerchantItemTemplates(),
+		InteractionDefinitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()},
+	}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content merchant/practice-mob bundle for runtime-only merchant sell persistence: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 2 {
+		t.Fatalf("expected merchant and practice-mob actors before runtime-only merchant sell persistence, got %d", len(actors))
+	}
+	merchantEntityID := uint64(0)
+	practiceMobTargetVID := uint32(0)
+	for _, actor := range actors {
+		if actor.SpawnGroupRef == "practice.mob_alpha" {
+			practiceMobTargetVID = uint32(actor.EntityID)
+			continue
+		}
+		if actor.InteractionKind == interactionstore.KindShopPreview && actor.InteractionRef == "npc:merchant" {
+			merchantEntityID = actor.EntityID
+		}
+	}
+	if merchantEntityID == 0 || practiceMobTargetVID == 0 {
+		t.Fatalf("expected to find merchant and content-loaded practice mob before runtime-only merchant sell persistence, got %#v", actors)
+	}
+
+	factory := runtime.SessionFactory()
+	flow, enterOut := enterGameWithLoginTicket(t, factory, "merchant-seller-runtime-only", 0x56565656)
+	if len(enterOut) < 11 {
+		t.Fatalf("expected runtime-only merchant seller bootstrap to include merchant and practice-mob frames, got %d", len(enterOut))
+	}
+
+	interactWithMerchantForBuy(t, flow, merchantEntityID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: practiceMobTargetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before runtime-only merchant sell persistence: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected target selection to emit 1 frame before runtime-only merchant sell persistence, got %d", len(selectOut))
+	}
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: practiceMobTargetVID})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before runtime-only merchant sell persistence: %v", err)
+	}
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate retaliation setup attack to emit 3 frames before runtime-only merchant sell persistence, got %d", len(attackOut))
+	}
+	immediatePointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode immediate retaliation point-change before runtime-only merchant sell persistence: %v", err)
+	}
+	if immediatePointChange.Value != 2 {
+		t.Fatalf("expected immediate retaliation to drop live owner points to 2 before runtime-only merchant sell persistence, got %+v", immediatePointChange)
+	}
+
+	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell2(shopproto.ClientSell2Packet{Slot: 5, Count: 2})))
+	if err != nil {
+		t.Fatalf("unexpected packet merchant sell2 error before runtime-only merchant sell persistence: %v", err)
+	}
+	if len(sellOut) != 2 {
+		t.Fatalf("expected runtime-only merchant sell2 persistence to emit item update and gold point-change, got %d frames", len(sellOut))
+	}
+	itemUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, sellOut[0]))
+	if err != nil {
+		t.Fatalf("decode runtime-only merchant sell2 item update: %v", err)
+	}
+	if itemUpdate.Position.Cell != 5 || itemUpdate.Count != 1 {
+		t.Fatalf("expected runtime-only merchant sell2 to decrement carried slot 5 to count 1, got %+v", itemUpdate)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, sellOut[1]))
+	if err != nil {
+		t.Fatalf("decode runtime-only merchant sell2 gold point-change: %v", err)
+	}
+	if goldChange.VID != seller.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != 2 || goldChange.Value != 127 {
+		t.Fatalf("unexpected runtime-only merchant sell2 gold point-change: %+v", goldChange)
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 1 {
+		t.Fatalf("expected delayed retaliation cadence to keep live owner points runtime-only after merchant sell2, got %d queued frames", len(queued))
+	}
+	delayedPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode delayed retaliation point-change after runtime-only merchant sell2 persistence: %v", err)
+	}
+	if delayedPointChange.Value != 1 {
+		t.Fatalf("expected delayed retaliation cadence to keep live owner points at runtime-only value 1 after merchant sell2, got %+v", delayedPointChange)
+	}
+
+	currencySnapshot, ok := runtime.CurrencySnapshot(seller.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after runtime-only merchant sell2 persistence")
+	}
+	if currencySnapshot.Gold != 127 {
+		t.Fatalf("expected merchant sell2 to credit runtime gold to 127 while preserving runtime-only retaliation loss, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(seller.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after runtime-only merchant sell2 persistence")
+	}
+	if len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].ID != 77 || inventorySnapshot.Inventory[0].Vnum != 27001 || inventorySnapshot.Inventory[0].Count != 1 || inventorySnapshot.Inventory[0].Slot != 5 {
+		t.Fatalf("expected merchant sell2 to persist one remaining carried item at slot 5, got %+v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load("merchant-seller-runtime-only")
+	if err != nil {
+		t.Fatalf("load persisted runtime-only merchant seller account: %v", err)
+	}
+	if account.Characters[0].Gold != 127 {
+		t.Fatalf("expected persisted merchant seller gold 127 after runtime-only merchant sell2 persistence, got %d", account.Characters[0].Gold)
+	}
+	if len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0].ID != 77 || account.Characters[0].Inventory[0].Vnum != 27001 || account.Characters[0].Inventory[0].Count != 1 || account.Characters[0].Inventory[0].Slot != 5 {
+		t.Fatalf("unexpected persisted merchant seller inventory after runtime-only merchant sell2 persistence: %#v", account.Characters[0].Inventory)
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != seller.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected merchant sell2 persistence to keep pre-retaliation points[%d] value %d, got %d", bootstrapPlayerPointValueIndex, seller.Points[bootstrapPlayerPointValueIndex], account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+
+	closeSessionFlow(t, flow)
+	issuePeerTicket(t, store, "merchant-seller-runtime-only", 0x66666666, seller)
+	reconnectFlow, reconnectEnter := enterGameWithLoginTicket(t, factory, "merchant-seller-runtime-only", 0x66666666)
+	defer closeSessionFlow(t, reconnectFlow)
+	if len(reconnectEnter) < 5 {
+		t.Fatalf("expected runtime-only merchant sell2 reconnect bootstrap to emit at least 5 frames, got %d", len(reconnectEnter))
+	}
+	reconnectPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, reconnectEnter[4]))
+	if err != nil {
+		t.Fatalf("decode reconnect bootstrap point-change after runtime-only merchant sell2 persistence: %v", err)
+	}
+	if reconnectPointChange.Value != seller.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected reconnect bootstrap after merchant sell2 to rebuild pre-retaliation points[%d] value %d, got %+v", bootstrapPlayerPointValueIndex, seller.Points[bootstrapPlayerPointValueIndex], reconnectPointChange)
+	}
+}
+
 func TestGameSessionFlowPracticeMobMerchantBuyKeepsRetaliationPointLossRuntimeOnlyWhilePersistingPurchase(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
