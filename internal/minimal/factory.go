@@ -3746,6 +3746,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 				},
 				EnterGame: func(_ *player.Runtime) worldentry.EnterGameResult {
+					runtime.flushReadyStaticActorRespawns()
+
 					stateMu.Lock()
 					defer stateMu.Unlock()
 

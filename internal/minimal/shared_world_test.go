@@ -34059,6 +34059,106 @@ func TestGameSessionFlowContentSpawnGroupPracticeMobRespawnsAfterServerDrivenDel
 	}
 }
 
+func TestGameSessionFlowContentSpawnGroupDueRespawnFlushesBeforeFreshEnterBootstrap(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	killer := peerVisibilityCharacter("RespawnEnterKiller", 0x010301d1, 0x020401d1, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapPlayerPointValueIndex] = 50
+	newcomer := peerVisibilityCharacter("RespawnEnterNewcomer", 0x010301d2, 0x020401d2, 1100, 2100, 0, 102, 202)
+	issuePeerTicket(t, store, "respawn-enter-killer", 0xd1d1d1d1, killer)
+	issuePeerTicket(t, store, "respawn-enter-newcomer", 0xd2d2d2d2, newcomer)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000361, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_due_respawn_enter",
+		Name:          "PracticeMobDueRespawnEnter",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice mob after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	killerFlow, killerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "respawn-enter-killer", 0xd1d1d1d1)
+	if len(killerEnter) != 8 {
+		t.Fatalf("expected killer bootstrap with visible content practice mob, got %d frames", len(killerEnter))
+	}
+	killingAttack := drivePracticeMobOwnerKill(t, killerFlow, targetVID, "due-respawn fresh-enter bootstrap", func(duration time.Duration) {
+		currentTime = currentTime.Add(duration)
+	})
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, killingAttack[0]))
+	if err != nil {
+		t.Fatalf("decode mob-death frame before due-respawn fresh enter: %v", err)
+	}
+	if dead.VID != targetVID {
+		t.Fatalf("expected killing hit to kill target vid %d, got %+v", targetVID, dead)
+	}
+	if queued := flushServerFrames(t, killerFlow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames before closing killer after mob death, got %d", len(queued))
+	}
+	closeSessionFlow(t, killerFlow)
+
+	currentTime = currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay)
+	newcomerFlow, newcomerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "respawn-enter-newcomer", 0xd2d2d2d2)
+	defer closeSessionFlow(t, newcomerFlow)
+	if len(newcomerEnter) != 8 {
+		t.Fatalf("expected fresh enter after due respawn to include live static-actor burst without dead replay, got %d frames", len(newcomerEnter))
+	}
+	respawnAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, newcomerEnter[5]))
+	if err != nil {
+		t.Fatalf("decode fresh-enter respawned actor add: %v", err)
+	}
+	if respawnAdd.VID != targetVID || respawnAdd.X != 1200 || respawnAdd.Y != 2200 || respawnAdd.RaceNum != 101 {
+		t.Fatalf("expected fresh enter to see respawned actor at authored home, got %+v", respawnAdd)
+	}
+	respawnInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, newcomerEnter[6]))
+	if err != nil {
+		t.Fatalf("decode fresh-enter respawned actor info: %v", err)
+	}
+	if respawnInfo.VID != targetVID || respawnInfo.Name != "PracticeMobDueRespawnEnter" {
+		t.Fatalf("expected fresh enter to see respawned actor info for target %d, got %+v", targetVID, respawnInfo)
+	}
+	respawnUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, newcomerEnter[7]))
+	if err != nil {
+		t.Fatalf("decode fresh-enter respawned actor update: %v", err)
+	}
+	if respawnUpdate.VID != targetVID {
+		t.Fatalf("expected fresh enter to see respawned actor update for target %d, got %+v", targetVID, respawnUpdate)
+	}
+	if queued := flushServerFrames(t, newcomerFlow); len(queued) != 0 {
+		t.Fatalf("expected no stale due-respawn rebuild frames after fresh enter bootstrap, got %d", len(queued))
+	}
+
+	reselectOut, err := newcomerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected fresh-enter target error after due respawn: %v", err)
+	}
+	if len(reselectOut) != 1 {
+		t.Fatalf("expected fresh enter to target respawned content mob immediately, got %d frames", len(reselectOut))
+	}
+	reselected, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, reselectOut[0]))
+	if err != nil {
+		t.Fatalf("decode fresh-enter respawned target frame: %v", err)
+	}
+	if reselected.TargetVID != targetVID || reselected.HPPercent != 100 {
+		t.Fatalf("expected fresh enter to target full-HP respawned mob, got %+v", reselected)
+	}
+}
+
 func TestGameSessionFlowPracticeMobDeathCancelsPendingDelayedRetaliationBeforeRespawn(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
