@@ -1756,6 +1756,90 @@ func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupReturnStep(t *testing.T
 	}
 }
 
+func TestGameSessionFlowDueSpawnGroupReturnStepFlushesBeforeFreshEnterBootstrap(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	newcomer := peerVisibilityCharacter("ReturnStepFreshEnter", 0x0103016d, 0x0204016d, 2201, 2800, 0, 101, 201)
+	newcomer.MapIndex = 42
+	issuePeerTicket(t, store, "return-step-fresh-enter", 0x1d1d1d1d, newcomer)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700000905, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for fresh-enter return-step flush: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_step_fresh_enter",
+		Name:          "ReturnStepFreshEnterMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import fresh-enter return-step spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_step_fresh_enter")
+	if !ok {
+		t.Fatal("expected fresh-enter return-step spawn group to resolve by ref")
+	}
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "ReturnStepFreshEnterMob", 42, 2301, 2800, 20350); !ok {
+		t.Fatal("expected spawn-backed actor update to arm a return step before fresh enter")
+	}
+	currentTime = currentTime.Add(bootstrapSpawnGroupReturnStepDelay)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "return-step-fresh-enter", 0x1d1d1d1d)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected fresh enter after due return-step to include one stepped static-actor burst, got %d frames", len(enterOut))
+	}
+	steppedAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, enterOut[5]))
+	if err != nil {
+		t.Fatalf("decode fresh-enter stepped actor add: %v", err)
+	}
+	if steppedAdd.VID != uint32(group.EntityID) || steppedAdd.X != 2201 || steppedAdd.Y != 2800 {
+		t.Fatalf("expected fresh enter to see due return-step position 2201,2800 for actor %d, got %+v", group.EntityID, steppedAdd)
+	}
+	steppedInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, enterOut[6]))
+	if err != nil {
+		t.Fatalf("decode fresh-enter stepped actor info: %v", err)
+	}
+	if steppedInfo.VID != uint32(group.EntityID) || steppedInfo.Name != "ReturnStepFreshEnterMob" {
+		t.Fatalf("expected fresh enter to see stepped actor info for target %d, got %+v", group.EntityID, steppedInfo)
+	}
+	steppedUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, enterOut[7]))
+	if err != nil {
+		t.Fatalf("decode fresh-enter stepped actor update: %v", err)
+	}
+	if steppedUpdate.VID != uint32(group.EntityID) {
+		t.Fatalf("expected fresh enter to see stepped actor update for target %d, got %+v", group.EntityID, steppedUpdate)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no duplicate queued return-step rebuild after fresh enter bootstrap, got %d", len(queued))
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after fresh-enter return-step flush: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != 2201 || persisted.StaticActors[0].Y != 2800 {
+		t.Fatalf("expected fresh-enter return-step flush to persist stepped position, got %+v", persisted.StaticActors)
+	}
+}
+
 func TestGameRuntimeSpawnGroupReturnStepSnapshotsReportPendingSchedules(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
@@ -2215,27 +2299,26 @@ func TestGameRuntimeRestoreReturnRequiredSpawnGroupSchedulesReturnStep(t *testin
 	}
 	runtime.now = func() time.Time { return dueAt.Add(time.Nanosecond) }
 
-	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "return-step-restore-viewer", 0x2d2d2d2d)
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "return-step-restore-viewer", 0x2d2d2d2d)
 	defer closeSessionFlow(t, flow)
-	queued := flushServerFrames(t, flow)
-	if len(queued) != 4 {
-		t.Fatalf("expected restored due return-step to queue retained viewer refresh, got %d frames", len(queued))
+	if len(enterOut) != 8 {
+		t.Fatalf("expected restored due return-step to be flushed into fresh enter bootstrap, got %d frames", len(enterOut))
 	}
-	if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0])); err != nil || deleted.VID != uint32(group.EntityID) {
-		t.Fatalf("decode restored return-step retained delete: packet=%+v err=%v", deleted, err)
-	}
-	add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, enterOut[5]))
 	if err != nil {
-		t.Fatalf("decode restored return-step add: %v", err)
+		t.Fatalf("decode restored fresh-enter return-step add: %v", err)
 	}
 	if add.VID != uint32(group.EntityID) || add.X != 2201 || add.Y != 2800 {
-		t.Fatalf("expected restored return-step add at planned next position, got %+v", add)
+		t.Fatalf("expected restored fresh-enter return-step add at planned next position, got %+v", add)
 	}
-	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, queued[2])); err != nil {
-		t.Fatalf("decode restored return-step additional info: %v", err)
+	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, enterOut[6])); err != nil {
+		t.Fatalf("decode restored fresh-enter return-step additional info: %v", err)
 	}
-	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, queued[3])); err != nil {
-		t.Fatalf("decode restored return-step update: %v", err)
+	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, enterOut[7])); err != nil {
+		t.Fatalf("decode restored fresh-enter return-step update: %v", err)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected restored fresh-enter return-step preflight to avoid duplicate queued refresh, got %d frames", len(queued))
 	}
 	persisted, err := staticActorStore.Load()
 	if err != nil {
