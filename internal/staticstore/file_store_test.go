@@ -86,6 +86,48 @@ func TestFileStoreSaveNormalizesRewardDropOrder(t *testing.T) {
 	}
 }
 
+func TestFileStoreSaveLoadRoundTripIncludesCustomCombatProfiles(t *testing.T) {
+	const profile = "practice_static_store_formula_wolf"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
+	store := NewFileStore(path)
+	input := Snapshot{
+		StaticActors: []StaticActor{{EntityID: 23, Name: "FormulaWolf", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: profile, SpawnGroupRef: "practice.formula_wolf"}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        profile,
+			MaxHP:          24,
+			AttackValue:    9,
+			DefenseValue:   4,
+			RespawnDelayMs: 1500,
+		}},
+	}
+
+	if err := store.Save(input); err != nil {
+		t.Fatalf("save custom combat-profile static actor snapshot: %v", err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("load custom combat-profile static actor snapshot: %v", err)
+	}
+	want := Snapshot{
+		StaticActors: []StaticActor{{EntityID: 23, Name: "FormulaWolf", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: profile, SpawnGroupRef: "practice.formula_wolf"}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               profile,
+			MaxHP:                 24,
+			DamagePerNormalAttack: 5,
+			AttackValue:           9,
+			DefenseValue:          4,
+			Level:                 worldruntime.TrainingDummyBootstrapLevel,
+			RespawnDelayMs:        1500,
+		}},
+	}
+	if !reflect.DeepEqual(loaded, want) {
+		t.Fatalf("unexpected custom combat-profile static actor snapshot:\n got: %#v\nwant: %#v", loaded, want)
+	}
+}
+
 func TestFileStoreRoundTripsSpawnGroupAuthoredHome(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
 	store := NewFileStore(path)

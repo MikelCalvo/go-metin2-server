@@ -801,8 +801,10 @@ func FromSnapshotsWithItems(staticActors staticstore.Snapshot, interactions inte
 		})
 	}
 	normalizedStaticActors := normalizeStaticActors(bundle.StaticActors)
-	normalizedSpawnGroups := normalizeSpawnGroups(bundle.SpawnGroups, nil, nil)
-	portableCombatProfiles := combatProfilesForAuthoredActors(normalizedStaticActors, normalizedSpawnGroups, nil)
+	normalizedCombatProfiles := normalizeCombatProfiles(staticActors.CombatProfiles)
+	normalizedSpawnGroups := normalizeSpawnGroups(bundle.SpawnGroups, normalizedCombatProfiles, nil)
+	portableCombatProfiles := combatProfilesForAuthoredActors(normalizedStaticActors, normalizedSpawnGroups, normalizedCombatProfiles)
+	bundle.CombatProfiles = portableCombatProfiles
 	bundle.ItemTemplates = filterReferencedItemTemplates(items.Templates, referencedItemTemplateVnums(bundle.InteractionDefinitions, normalizedSpawnGroups, portableCombatProfiles))
 	return Canonicalize(bundle)
 }

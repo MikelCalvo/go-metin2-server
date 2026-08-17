@@ -988,6 +988,78 @@ func TestGameRuntimeImportContentBundlePreservesCombatProfileActors(t *testing.T
 	}
 }
 
+func TestGameRuntimeLoadsPersistedCustomCombatProfileSpawnGroupAfterRestart(t *testing.T) {
+	const profile = "practice_static_restart_formula_wolf"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	persisted := staticstore.Snapshot{
+		StaticActors: []staticstore.StaticActor{{
+			EntityID:      23,
+			Name:          "RestartFormulaWolf",
+			MapIndex:      42,
+			X:             1800,
+			Y:             2900,
+			RaceNum:       101,
+			CombatProfile: profile,
+			SpawnGroupRef: "practice.restart_formula",
+			SpawnHome:     &worldruntime.PositionSnapshot{MapIndex: 42, X: 1800, Y: 2900},
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        profile,
+			MaxHP:          24,
+			AttackValue:    9,
+			DefenseValue:   4,
+			RespawnDelayMs: 1500,
+		}},
+	}
+	if err := staticActorStore.Save(persisted); err != nil {
+		t.Fatalf("seed persisted static actors with custom combat profile: %v", err)
+	}
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"))
+	if err != nil {
+		t.Fatalf("restart runtime with persisted custom combat profile: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one persisted custom-profile actor after restart, got %#v", actors)
+	}
+	actor := actors[0]
+	if actor.SpawnGroupRef != "practice.restart_formula" || actor.CombatProfile != profile || actor.CombatMaxHP != 24 || actor.CombatNormalDamage != 5 || actor.CombatAttackValue != 9 || actor.CombatDefenseValue != 4 || actor.CombatLevel != worldruntime.TrainingDummyBootstrapLevel {
+		t.Fatalf("expected persisted custom-profile actor to expose registered formula defaults after restart, got %+v", actor)
+	}
+	bundle, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("export restarted custom-profile content bundle: %v", err)
+	}
+	wantBundle := contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:           "practice.restart_formula",
+			Name:          "RestartFormulaWolf",
+			MapIndex:      42,
+			X:             1800,
+			Y:             2900,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               profile,
+			MaxHP:                 24,
+			DamagePerNormalAttack: 5,
+			AttackValue:           9,
+			DefenseValue:          4,
+			Level:                 worldruntime.TrainingDummyBootstrapLevel,
+			RespawnDelayMs:        1500,
+		}},
+	}
+	if !reflect.DeepEqual(bundle, wantBundle) {
+		t.Fatalf("unexpected restarted custom-profile content bundle:\n got: %#v\nwant: %#v", bundle, wantBundle)
+	}
+}
+
 func TestGameRuntimeImportContentBundleMaterializesSpawnGroupsAsAttackablePracticeMobs(t *testing.T) {
 	staticPath := t.TempDir() + "/static-actors.json"
 	staticActorStore := staticstore.NewFileStore(staticPath)

@@ -76,7 +76,8 @@ func (s *FileStore) Load() (Snapshot, error) {
 	}
 
 	var rawSnapshot struct {
-		StaticActors json.RawMessage `json:"static_actors"`
+		StaticActors   json.RawMessage `json:"static_actors"`
+		CombatProfiles json.RawMessage `json:"combat_profiles"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
@@ -103,6 +104,22 @@ func (s *FileStore) Load() (Snapshot, error) {
 		if err := collectionDecoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 			if err == nil {
 				return Snapshot{}, fmt.Errorf("%w: decode static actor snapshot: trailing static_actors value", ErrInvalidSnapshot)
+			}
+			return Snapshot{}, fmt.Errorf("%w: decode static actor snapshot: %v", ErrInvalidSnapshot, err)
+		}
+	}
+	if rawSnapshot.CombatProfiles != nil {
+		if bytes.Equal(bytes.TrimSpace(rawSnapshot.CombatProfiles), []byte("null")) {
+			return Snapshot{}, fmt.Errorf("%w: decode static actor snapshot: null combat_profiles collection", ErrInvalidSnapshot)
+		}
+		profileDecoder := json.NewDecoder(bytes.NewReader(rawSnapshot.CombatProfiles))
+		profileDecoder.DisallowUnknownFields()
+		if err := profileDecoder.Decode(&snapshot.CombatProfiles); err != nil {
+			return Snapshot{}, fmt.Errorf("%w: decode static actor snapshot: %v", ErrInvalidSnapshot, err)
+		}
+		if err := profileDecoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+			if err == nil {
+				return Snapshot{}, fmt.Errorf("%w: decode static actor snapshot: trailing combat_profiles value", ErrInvalidSnapshot)
 			}
 			return Snapshot{}, fmt.Errorf("%w: decode static actor snapshot: %v", ErrInvalidSnapshot, err)
 		}

@@ -7103,6 +7103,16 @@ func (r *gameRuntime) loadPersistedStaticActors() error {
 		}
 		return err
 	}
+	rollbackProfiles, err := registerStaticStoreCombatProfiles(snapshot.CombatProfiles, snapshot.StaticActors)
+	if err != nil {
+		return err
+	}
+	loaded := false
+	defer func() {
+		if !loaded {
+			rollbackProfiles()
+		}
+	}()
 	for _, actor := range snapshot.StaticActors {
 		if !r.interactionDefinitionExists(actor.InteractionKind, actor.InteractionRef) {
 			return fmt.Errorf("%w: validate static actor interaction refs", staticstore.ErrInvalidSnapshot)
@@ -7114,6 +7124,7 @@ func (r *gameRuntime) loadPersistedStaticActors() error {
 		}
 		r.syncSpawnGroupReturnStepSchedule(registered)
 	}
+	loaded = true
 	return nil
 }
 
@@ -7694,6 +7705,17 @@ func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorComb
 	return rollback, nil
 }
 
+func registerStaticStoreCombatProfiles(profiles []worldruntime.StaticActorCombatProfileSnapshot, actors []staticstore.StaticActor) (func(), error) {
+	referencedProfiles := make(map[string]struct{}, len(actors))
+	for _, actor := range actors {
+		profile := strings.TrimSpace(actor.CombatProfile)
+		if profile != "" {
+			referencedProfiles[profile] = struct{}{}
+		}
+	}
+	return registerContentBundleCombatProfiles(profiles, referencedProfiles)
+}
+
 func (r *gameRuntime) CreateInteractionDefinition(definition InteractionDefinition) (InteractionDefinition, error) {
 	if r == nil || r.interactionStore == nil {
 		return InteractionDefinition{}, ErrInteractionDefinitionsUnavailable
@@ -8140,7 +8162,39 @@ func buildStaticActorStoreSnapshot(snapshot []StaticActorSnapshot) staticstore.S
 			actors[len(actors)-1].SpawnHome = &spawnHome
 		}
 	}
-	return staticstore.Snapshot{StaticActors: actors}
+	return staticstore.Snapshot{StaticActors: actors, CombatProfiles: staticActorStoreCombatProfiles(snapshot)}
+}
+
+func staticActorStoreCombatProfiles(snapshot []StaticActorSnapshot) []worldruntime.StaticActorCombatProfileSnapshot {
+	if len(snapshot) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(snapshot))
+	profiles := make([]worldruntime.StaticActorCombatProfileSnapshot, 0)
+	for _, actor := range snapshot {
+		profile := strings.TrimSpace(actor.CombatProfile)
+		if profile == "" || profile == worldruntime.StaticActorCombatProfilePracticeMob || profile == worldruntime.StaticActorCombatProfileTrainingDummy {
+			continue
+		}
+		if _, ok := seen[profile]; ok {
+			continue
+		}
+		for _, snapshot := range worldruntime.StaticActorCombatProfileSnapshots() {
+			if snapshot.Profile != profile {
+				continue
+			}
+			profiles = append(profiles, snapshot)
+			seen[profile] = struct{}{}
+			break
+		}
+	}
+	if len(profiles) == 0 {
+		return nil
+	}
+	sort.Slice(profiles, func(i int, j int) bool {
+		return profiles[i].Profile < profiles[j].Profile
+	})
+	return profiles
 }
 
 func cloneStaticActorSnapshots(snapshot []StaticActorSnapshot) []StaticActorSnapshot {
