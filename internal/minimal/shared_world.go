@@ -759,6 +759,9 @@ func exchangePlaceIncomingDisplayedItem(items *[]inventory.ItemInstance, display
 	if template.Stackable {
 		for idx := range *items {
 			item := (*items)[idx]
+			if item.Vnum == display.Vnum && item.Count > template.MaxCount {
+				return false
+			}
 			if item.Equipped || item.Locked || item.Vnum != display.Vnum || item.Count >= template.MaxCount {
 				continue
 			}

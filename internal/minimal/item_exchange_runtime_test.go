@@ -649,6 +649,35 @@ func TestExchangeRecipientCanAcceptRejectsIncomingItemIDCollisionWithRecipientEq
 	}
 }
 
+func TestExchangeRecipientCanAcceptRejectsOverTemplateMaxCompatibleStack(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	registry.SetItemTemplates(map[uint32]itemcatalog.Template{
+		27045: {Vnum: 27045, Name: "Displayed Over-Max Receiver Potion", Stackable: true, MaxCount: 200},
+	})
+	recipient := loginticket.Character{
+		ID:      0x010307bc,
+		VID:     0x020407bc,
+		Name:    "ExchangeOverMaxReceiver",
+		Job:     0,
+		RaceNum: 0,
+		Empire:  1,
+		Level:   10,
+		Points:  [255]int32{bootstrapPlayerPointValueIndex: 100},
+		Inventory: []inventory.ItemInstance{
+			{ID: 731, Vnum: 27045, Count: 201, Slot: 1},
+		},
+	}
+	incoming := map[uint8]exchangeDisplayedItem{7: {ItemID: 732, Vnum: 27045, Count: 3, Slot: 5}}
+	if registry.exchangeRecipientCanAcceptLocked(recipient, incoming, 0) {
+		t.Fatal("expected receiver compatible stack already above template max_count to fail finalization precondition")
+	}
+
+	recipient.Inventory[0].Count = 200
+	if !registry.exchangeRecipientCanAcceptLocked(recipient, incoming, 0) {
+		t.Fatal("expected receiver compatible stack at template max_count to allow incoming placement into an empty slot")
+	}
+}
+
 func TestGameRuntimeItemExchangeAcceptRevalidatesDisplayedItemAgainstCurrentSelectionWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -1521,6 +1550,111 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverEquipmentIDCollisionB
 
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "receiver equipment-id collision owner")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "receiver equipment-id collision peer")
+}
+
+func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverOverTemplateMaxCompatibleStackBeforeFinalizationWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeOverMaxStackOwner", 0x010307bd, 0x020407bd, 1100, 2100, 0, 101, 201)
+	owner.Gold = 500
+	owner.Inventory = []inventory.ItemInstance{{ID: 785, Vnum: 27045, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeOverMaxStackPeer", 0x010307be, 0x020407be, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 786, Vnum: 27045, Count: 201, Slot: 8}}
+	peer.Quickslots = []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeItem, Slot: 8}}
+	ownerLogin := "ex-overmax-stack-a"
+	peerLogin := "ex-overmax-stack-b"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070bd, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070be, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange over-max-stack owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange over-max-stack peer account: %v", err)
+	}
+	displayTemplate := itemcatalog.Template{Vnum: 27045, Name: "Displayed Over-Max Stack Potion", Stackable: true, MaxCount: 200, Sockets: itemcatalog.SocketValues{1, 3, 5}}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{displayTemplate})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange over-max-stack runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070bd)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070be)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected over-max-stack exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected over-max-stack exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "over-max-stack owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected over-max-stack exchange start to queue one peer frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "over-max-stack peer start")
+
+	itemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 7, Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected over-max-stack item-add error: %v", err)
+	}
+	if len(itemAddOut) != 1 {
+		t.Fatalf("expected over-max-stack item-add to emit one owner frame, got %d", len(itemAddOut))
+	}
+	assertExchangeItemAddFrame(t, itemAddOut[0], 1, 7, owner.Inventory[0], displayTemplate, "over-max-stack owner item-add")
+	queuedItemAdd := flushServerFrames(t, peerFlow)
+	if len(queuedItemAdd) != 1 {
+		t.Fatalf("expected over-max-stack item-add to queue one peer frame, got %d", len(queuedItemAdd))
+	}
+	assertExchangeItemAddFrame(t, queuedItemAdd[0], 0, 7, owner.Inventory[0], displayTemplate, "over-max-stack peer item-add")
+
+	ownerAcceptOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected over-max-stack owner accept error: %v", err)
+	}
+	if len(ownerAcceptOut) != 1 {
+		t.Fatalf("expected over-max-stack owner accept to emit one frame, got %d", len(ownerAcceptOut))
+	}
+	assertExchangeAcceptFrame(t, ownerAcceptOut[0], 1, "over-max-stack owner accept")
+	queuedOwnerAccept := flushServerFrames(t, peerFlow)
+	if len(queuedOwnerAccept) != 1 {
+		t.Fatalf("expected over-max-stack owner accept to queue one peer frame, got %d", len(queuedOwnerAccept))
+	}
+	assertExchangeAcceptFrame(t, queuedOwnerAccept[0], 0, "over-max-stack owner accept peer")
+
+	peerAcceptOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected over-max-stack peer accept error: %v", err)
+	}
+	if len(peerAcceptOut) != 0 {
+		t.Fatalf("expected second accept to reject receiver over-template-max compatible stack with no frames, got %d", len(peerAcceptOut))
+	}
+	if queuedAccept := flushServerFrames(t, ownerFlow); len(queuedAccept) != 0 {
+		t.Fatalf("expected receiver over-template-max precondition to queue no owner frames, got %d", len(queuedAccept))
+	}
+
+	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected over-max-stack cancel after rejected peer accept: %v", err)
+	}
+	if len(cancelOut) != 1 {
+		t.Fatalf("expected over-max-stack shell to remain cancellable, got %d frames", len(cancelOut))
+	}
+	assertExchangeEndFrame(t, cancelOut[0], "over-max-stack peer cancel")
+	queuedCancel := flushServerFrames(t, ownerFlow)
+	if len(queuedCancel) != 1 {
+		t.Fatalf("expected over-max-stack peer cancel to queue one owner END, got %d", len(queuedCancel))
+	}
+	assertExchangeEndFrame(t, queuedCancel[0], "over-max-stack owner queued cancel")
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "receiver over-template-max owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "receiver over-template-max peer")
 }
 
 func TestGameRuntimeStoragePacketsFailClosedWithoutMutation(t *testing.T) {
