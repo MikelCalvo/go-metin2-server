@@ -9918,6 +9918,139 @@ func TestNewGameSessionFactoryDueSpawnGroupReturnStepFlushesBeforeMoveTransferRe
 	}
 }
 
+func TestNewGameSessionFactoryDueStaticActorRespawnFlushesBeforeMoveTransferRebootstrap(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	killer := peerVisibilityCharacter("RespawnTransferKiller", 0x01030172, 0x02040172, 1200, 2200, 0, 101, 201)
+	killer.MapIndex = 42
+	killer.Points[bootstrapPlayerPointValueIndex] = 50
+	mover := peerVisibilityCharacter("RespawnTransferMover", 0x01030173, 0x02040173, 1300, 2300, 0, 102, 202)
+	issuePeerTicket(t, store, "respawn-transfer-killer", 0x72727272, killer)
+	issuePeerTicket(t, store, "respawn-transfer-mover", 0x73737373, mover)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700000940, 0)
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		[]bootstrapTransferTrigger{{
+			SourceMapIndex: bootstrapMapIndex,
+			SourceX:        1500,
+			SourceY:        2600,
+			TargetMapIndex: 42,
+			TargetX:        1200,
+			TargetY:        2200,
+		}},
+	)
+	if err != nil {
+		t.Fatalf("unexpected due-respawn transfer runtime error: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.due_respawn_transfer",
+		Name:          "DueRespawnTransferMob",
+		MapIndex:      42,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}})
+	if err != nil {
+		t.Fatalf("import due-respawn transfer spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.due_respawn_transfer")
+	if !ok {
+		t.Fatal("expected due-respawn transfer spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	killerFlow, killerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "respawn-transfer-killer", 0x72727272)
+	if len(killerEnter) != 8 {
+		t.Fatalf("expected killer bootstrap with visible due-respawn transfer mob, got %d frames", len(killerEnter))
+	}
+	killingAttack := drivePracticeMobOwnerKill(t, killerFlow, targetVID, "due-respawn transfer rebootstrap", func(duration time.Duration) {
+		currentTime = currentTime.Add(duration)
+	})
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, killingAttack[0]))
+	if err != nil {
+		t.Fatalf("decode mob-death frame before due-respawn transfer: %v", err)
+	}
+	if dead.VID != targetVID {
+		t.Fatalf("expected killing hit to kill target vid %d, got %+v", targetVID, dead)
+	}
+	if queued := flushServerFrames(t, killerFlow); len(queued) != 0 {
+		t.Fatalf("expected no queued killer frames before due-respawn transfer, got %d", len(queued))
+	}
+	closeSessionFlow(t, killerFlow)
+
+	moverFlow, moverEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "respawn-transfer-mover", 0x73737373)
+	defer closeSessionFlow(t, moverFlow)
+	if len(moverEnter) != 5 {
+		t.Fatalf("expected source-map mover enter before due-respawn transfer to avoid destination actor visibility, got %d frames", len(moverEnter))
+	}
+	currentTime = currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay)
+
+	moveOut, err := moverFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x31323334})))
+	if err != nil {
+		t.Fatalf("unexpected move transfer error before due respawn rebootstrap: %v", err)
+	}
+	if len(moveOut) != 7 {
+		t.Fatalf("expected transfer rebootstrap with one live respawned static-actor burst, got %d frames", len(moveOut))
+	}
+	respawnAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moveOut[4]))
+	if err != nil {
+		t.Fatalf("decode transfer respawned actor add: %v", err)
+	}
+	if respawnAdd.VID != targetVID || respawnAdd.X != 1200 || respawnAdd.Y != 2200 || respawnAdd.RaceNum != 101 {
+		t.Fatalf("expected transfer rebootstrap to see respawned actor at authored home, got %+v", respawnAdd)
+	}
+	respawnInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, moveOut[5]))
+	if err != nil {
+		t.Fatalf("decode transfer respawned actor info: %v", err)
+	}
+	if respawnInfo.VID != targetVID || respawnInfo.Name != "DueRespawnTransferMob" {
+		t.Fatalf("expected transfer rebootstrap to see respawned actor info for target %d, got %+v", targetVID, respawnInfo)
+	}
+	respawnUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, moveOut[6]))
+	if err != nil {
+		t.Fatalf("decode transfer respawned actor update: %v", err)
+	}
+	if respawnUpdate.VID != targetVID {
+		t.Fatalf("expected transfer rebootstrap to see respawned actor update for target %d, got %+v", targetVID, respawnUpdate)
+	}
+	for idx := 4; idx < len(moveOut); idx++ {
+		if deadReplay, err := worldproto.DecodeDead(decodeSingleFrame(t, moveOut[idx])); err == nil {
+			t.Fatalf("expected transfer due-respawn preflight not to replay stale DEAD frame, got %+v at frame %d", deadReplay, idx)
+		}
+	}
+	if queued := flushServerFrames(t, moverFlow); len(queued) != 0 {
+		t.Fatalf("expected no duplicate queued respawn rebuild after transfer rebootstrap, got %d", len(queued))
+	}
+
+	reselectOut, err := moverFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected mover target error after due-respawn transfer: %v", err)
+	}
+	if len(reselectOut) != 1 {
+		t.Fatalf("expected mover to target respawned content mob after transfer, got %d frames", len(reselectOut))
+	}
+	reselected, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, reselectOut[0]))
+	if err != nil {
+		t.Fatalf("decode transfer respawned target frame: %v", err)
+	}
+	if reselected.TargetVID != targetVID || reselected.HPPercent != 100 {
+		t.Fatalf("expected mover to target full-HP respawned mob after transfer, got %+v", reselected)
+	}
+}
+
 func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMoveWithStillDeadTrainingDummyReplay(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	killer := peerVisibilityCharacter("Killer", 0x01030101, 0x02040101, 1700, 2800, 0, 101, 201)

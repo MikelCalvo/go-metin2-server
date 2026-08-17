@@ -2767,6 +2767,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return warp.Result{}, false
 					}
 					if rebootstrap {
+						runtime.flushReadyStaticActorRespawns()
 						runtime.flushDueSpawnGroupReturnSteps()
 						bootstrapFrames, err := worldentry.BuildBootstrapFramesWithTemplates(updatedLive, runtime.itemTemplates)
 						if err != nil {
