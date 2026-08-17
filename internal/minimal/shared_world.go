@@ -2689,6 +2689,14 @@ func (r *sharedWorldRegistry) transfer(id uint64, character loginticket.Characte
 	if !ok {
 		return RelocationPreview{}, nil, false
 	}
+	var combatTargetClearFrames [][]byte
+	if targetVID, selected := r.sessionCombatTargetLocked(id); selected {
+		r.clearSessionCombatTargetLocked(id)
+		if clearRaw := combatproto.EncodeServerClearTarget(); targetVID != 0 && clearRaw != nil {
+			combatTargetClearFrames = [][]byte{clearRaw}
+		}
+	}
+	r.clearStaticActorCombatEngagementsBySubjectLocked(id)
 	scopes := r.scopesLocked()
 	visibilityDiff := scopes.RelocateVisibilityDiff(previous, character)
 	staticActorVisibilityDiff := scopes.RelocateStaticActorVisibilityDiff(previous, character)
@@ -2704,7 +2712,8 @@ func (r *sharedWorldRegistry) transfer(id uint64, character loginticket.Characte
 		originAddedVisibleStaticActors = nil
 		originAddedGroundItems = nil
 	}
-	originFrames := buildTransferOriginFramesWithTemplates(visibilityDiff.RemovedVisiblePeers, originAddedVisiblePeers, r.itemTemplates)
+	originFrames := append([][]byte(nil), combatTargetClearFrames...)
+	originFrames = append(originFrames, buildTransferOriginFramesWithTemplates(visibilityDiff.RemovedVisiblePeers, originAddedVisiblePeers, r.itemTemplates)...)
 	originFrames = append(originFrames, r.buildStaticActorVisibilityTransitionFramesLocked(staticActorVisibilityDiff.RemovedVisibleActors, originAddedVisibleStaticActors)...)
 	originFrames = append(originFrames, buildGroundItemVisibilityTransitionFrames(groundItemVisibilityDiff.Removed, originAddedGroundItems)...)
 	originEntry, _ := r.sessionEntryLocked(id)

@@ -14712,6 +14712,98 @@ func TestNewGameSessionFactoryReturnsWhisperNotExistForUnknownTarget(t *testing.
 	}
 }
 
+func TestSharedWorldRegistryTransferClearsPracticeMobCombatOwnership(t *testing.T) {
+	registry := newSharedWorldRegistryWithTopology(worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200))
+	ownerPending := newPendingServerFrames()
+	blockerPending := newPendingServerFrames()
+	owner := peerVisibilityCharacter("TransferCombatOwner", 0x01030181, 0x02040181, 1100, 2100, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 10
+	blocker := peerVisibilityCharacter("TransferCombatBlocker", 0x01030182, 0x02040182, 1300, 2300, 0, 102, 202)
+	blocker.MapIndex = 42
+	blocker.Points[bootstrapPlayerPointValueIndex] = 10
+	ownerID, _ := registry.Join(owner, ownerPending, nil)
+	if ownerID == 0 {
+		t.Fatal("expected transfer-combat owner to join shared world")
+	}
+	blockerID, _ := registry.Join(blocker, blockerPending, nil)
+	if blockerID == 0 {
+		t.Fatal("expected transfer-combat blocker to join shared world")
+	}
+	ownerPending.flush()
+	blockerPending.flush()
+
+	actor, ok := registry.registerStaticActor(0, "TransferCombatMob", 42, 1200, 2200, 20350, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "practice.transfer_combat_clear", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected transfer-combat practice mob registration to succeed")
+	}
+	ownerPending.flush()
+	blockerPending.flush()
+	targetVID := uint32(actor.EntityID)
+
+	targetAttempt := registry.AttemptStaticActorCombatTarget(ownerID, targetVID)
+	if !targetAttempt.Accepted {
+		t.Fatalf("expected owner to target practice mob before transfer cleanup, got %+v", targetAttempt)
+	}
+	if !registry.SetSessionCombatTarget(ownerID, targetAttempt.TargetVID) {
+		t.Fatal("expected owner target selection to be recorded before transfer cleanup")
+	}
+	attack := registry.AttemptSelectedStaticActorAttack(ownerID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, targetVID)
+	if !attack.Accepted || attack.Died {
+		t.Fatalf("expected non-lethal transfer cleanup setup attack, got %+v", attack)
+	}
+	if !registry.SetSessionCombatRetaliation(ownerID, targetVID, targetAttempt.SnapshotVersion, time.Unix(1700001200, 0)) {
+		t.Fatal("expected transfer cleanup setup to record pending retaliation")
+	}
+	blocked := registry.AttemptStaticActorCombatTarget(blockerID, targetVID)
+	if blocked.Accepted || blocked.Failure != StaticActorCombatTargetFailureTargetEngaged {
+		t.Fatalf("expected blocker to be aggro-gated before owner transfer cleanup, got %+v", blocked)
+	}
+
+	movedOwner := owner
+	movedOwner.MapIndex = 43
+	movedOwner.X = 5000
+	movedOwner.Y = 5000
+	if _, ok := registry.Transfer(ownerID, movedOwner); !ok {
+		t.Fatal("expected shared-world transfer to succeed for combat owner")
+	}
+
+	ownerQueued := ownerPending.flush()
+	if !containsServerTargetClear(t, ownerQueued) {
+		t.Fatalf("expected transferred owner to receive selected-target clear among queued frames, got %d frames", len(ownerQueued))
+	}
+	if snapshot, ok := registry.CombatTargetSnapshot(ownerID); ok {
+		t.Fatalf("expected transfer to clear owner combat target snapshot, got %+v", snapshot)
+	}
+	registry.mu.Lock()
+	_, targetStillSelected := registry.sessionCombatTargets[ownerID]
+	_, retaliationStillPending := registry.sessionCombatRetaliations[ownerID]
+	engagedBy := registry.staticActorCombatEngagedBy[actor.EntityID]
+	registry.mu.Unlock()
+	if targetStillSelected || retaliationStillPending || engagedBy != 0 {
+		t.Fatalf("expected transfer to clear selected target, pending retaliation, and engagement; target_selected=%v retaliation_pending=%v engaged_by=%d", targetStillSelected, retaliationStillPending, engagedBy)
+	}
+
+	released := registry.AttemptStaticActorCombatTarget(blockerID, targetVID)
+	if !released.Accepted || released.HPPercent != 90 {
+		t.Fatalf("expected blocker to reacquire owner-damaged practice mob after owner transfer release, got %+v", released)
+	}
+}
+
+func containsServerTargetClear(t *testing.T, frames [][]byte) bool {
+	t.Helper()
+	for _, raw := range frames {
+		packet, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, raw))
+		if err != nil {
+			continue
+		}
+		if packet.TargetVID == 0 && packet.HPPercent == 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func TestSharedWorldRegistryRelocateRebuildsVisibilityAcrossMaps(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	pendingOne := newPendingServerFrames()
