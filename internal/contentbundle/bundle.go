@@ -2180,6 +2180,29 @@ func shopRouteDeltaMatchesActorName(delta ShopRouteDelta, actorName string) bool
 		(delta.Candidate != nil && strings.TrimSpace(delta.Candidate.ActorName) == actorName)
 }
 
+func QuestFlagRouteDeltasByActorName(deltas []QuestFlagRouteDelta, actorName string) []QuestFlagRouteDelta {
+	actorName = strings.TrimSpace(actorName)
+	if actorName == "" || strings.Contains(actorName, "/") {
+		return nil
+	}
+	matches := make([]QuestFlagRouteDelta, 0)
+	for _, delta := range deltas {
+		if questFlagRouteDeltaMatchesActorName(delta, actorName) {
+			matches = append(matches, cloneQuestFlagRouteDelta(delta))
+		}
+	}
+	if len(matches) == 0 {
+		return nil
+	}
+	return matches
+}
+
+func questFlagRouteDeltaMatchesActorName(delta QuestFlagRouteDelta, actorName string) bool {
+	return strings.TrimSpace(delta.ActorName) == actorName ||
+		(delta.Current != nil && strings.TrimSpace(delta.Current.ActorName) == actorName) ||
+		(delta.Candidate != nil && strings.TrimSpace(delta.Candidate.ActorName) == actorName)
+}
+
 func cloneQuestFlagRouteDelta(delta QuestFlagRouteDelta) QuestFlagRouteDelta {
 	cloned := delta
 	cloned.ActorName = strings.TrimSpace(cloned.ActorName)

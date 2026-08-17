@@ -2455,6 +2455,47 @@ func RegisterLocalContentBundleMapInteractableStaticActorsEndpoint(mux *http.Ser
 	return mux
 }
 
+func RegisterLocalContentBundleMapQuestFlagRoutesEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		mapIndex, ok := decodeLocalContentBundleMapServiceRouteIndex(r, "quest-flag-routes")
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if !contentBundleSummaryHasMap(summary, mapIndex) {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		matches := make([]contentbundle.QuestFlagRouteSummary, 0)
+		for _, route := range summary.QuestFlagRoutes {
+			if route.SourceMapIndex == mapIndex {
+				matches = append(matches, route)
+			}
+		}
+		writeLocalJSONMutationResponse(w, matches, http.StatusOK)
+	}
+	mux.HandleFunc("GET /local/content-bundle/maps/{map_index}/quest-flag-routes", handler)
+	mux.HandleFunc("GET /local/content-bundle/maps/{map_index}/quest-flag-routes/", handler)
+	return mux
+}
+
 func RegisterLocalContentBundleMapShopRoutesEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
 	if mux == nil || exportContentBundleSummary == nil {
 		return mux
@@ -3147,6 +3188,45 @@ func RegisterLocalContentBundleShopRouteEndpoint(mux *http.ServeMux, exportConte
 	return mux
 }
 
+func RegisterLocalContentBundleQuestFlagRouteEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/content-bundle/quest-flag-routes/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		name, ok := decodeLocalContentBundleQuestFlagRouteActorName(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		matches := make([]contentbundle.QuestFlagRouteSummary, 0)
+		for _, route := range summary.QuestFlagRoutes {
+			if route.ActorName == name {
+				matches = append(matches, route)
+			}
+		}
+		if len(matches) == 0 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, matches, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalContentBundleWarpDestinationEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
 	if mux == nil || exportContentBundleSummary == nil {
 		return mux
@@ -3550,6 +3630,50 @@ func RegisterLocalContentBundleShopRouteImportPreviewEndpoint(mux *http.ServeMux
 			return
 		}
 		deltas := contentbundle.ShopRouteDeltasByActorName(importPreview.Deltas.ShopRoutes, actorName)
+		if len(deltas) == 0 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, deltas, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalContentBundleQuestFlagRouteImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
+	if mux == nil || previewContentBundleImport == nil {
+		return mux
+	}
+	mux.HandleFunc("POST /local/content-bundle/import-preview/quest-flag-routes/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		actorName, ok := decodeLocalContentBundleQuestFlagRouteImportPreviewActorName(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bundle, status, ok := decodeLocalContentBundleRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		normalized, err := contentbundle.Canonicalize(bundle)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		preview, status := previewContentBundleImport(normalized)
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, preview, status)
+			return
+		}
+		importPreview, ok := preview.(contentbundle.ImportPreview)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		deltas := contentbundle.QuestFlagRouteDeltasByActorName(importPreview.Deltas.QuestFlagRoutes, actorName)
 		if len(deltas) == 0 {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -4970,10 +5094,6 @@ func decodeLocalContentBundleShopCatalogImportPreviewIdentity(r *http.Request) (
 	return kind, ref, true
 }
 
-func decodeLocalContentBundleShopRouteActorName(r *http.Request) (string, bool) {
-	return decodeLocalCharacterName(r, "/local/content-bundle/shop-routes/")
-}
-
 func decodeLocalContentBundleWarpDestinationIdentity(r *http.Request) (string, string, bool) {
 	kind, ref, ok := decodeLocalKindRefIdentityWithPrefix(r, "/local/content-bundle/warp-destinations/")
 	if !ok || kind != interactionstore.KindWarp {
@@ -4990,8 +5110,20 @@ func decodeLocalContentBundleWarpDestinationImportPreviewIdentity(r *http.Reques
 	return kind, ref, true
 }
 
+func decodeLocalContentBundleShopRouteActorName(r *http.Request) (string, bool) {
+	return decodeLocalCharacterName(r, "/local/content-bundle/shop-routes/")
+}
+
+func decodeLocalContentBundleQuestFlagRouteActorName(r *http.Request) (string, bool) {
+	return decodeLocalCharacterName(r, "/local/content-bundle/quest-flag-routes/")
+}
+
 func decodeLocalContentBundleShopRouteImportPreviewActorName(r *http.Request) (string, bool) {
 	return decodeLocalCharacterName(r, "/local/content-bundle/import-preview/shop-routes/")
+}
+
+func decodeLocalContentBundleQuestFlagRouteImportPreviewActorName(r *http.Request) (string, bool) {
+	return decodeLocalCharacterName(r, "/local/content-bundle/import-preview/quest-flag-routes/")
 }
 
 func decodeLocalContentBundleWarpRouteActorName(r *http.Request) (string, bool) {

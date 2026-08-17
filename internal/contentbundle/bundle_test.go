@@ -252,6 +252,29 @@ func TestBuildImportPreviewReturnsQuestFlagTriggerAndRouteDeltas(t *testing.T) {
 	}
 }
 
+func TestQuestFlagRouteDeltasByActorNameReturnsMatchingClonedDeltas(t *testing.T) {
+	currentGuide := QuestFlagRouteSummary{ActorName: "QuestGuide", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "quest:first_steps", Text: "Old quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}
+	candidateGuide := QuestFlagRouteSummary{ActorName: "QuestGuide", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "quest:first_steps", Text: "New quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}
+	candidateRemote := QuestFlagRouteSummary{ActorName: "RemoteGuide", SourceMapIndex: 3, SourceX: 3000, SourceY: 4000, Ref: "quest:remote_steps", Text: "Remote quest acknowledgement.", QuestRef: "quest:remote_steps", QuestFlag: "met_remote", QuestTo: 1}
+	deltas := []QuestFlagRouteDelta{
+		{ActorName: "QuestGuide", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "quest:first_steps", Change: "changed", Current: &currentGuide, Candidate: &candidateGuide},
+		{ActorName: "RemoteGuide", SourceMapIndex: 3, SourceX: 3000, SourceY: 4000, Ref: "quest:remote_steps", Change: "added", Candidate: &candidateRemote},
+	}
+
+	got := QuestFlagRouteDeltasByActorName(deltas, " QuestGuide ")
+	want := []QuestFlagRouteDelta{{ActorName: "QuestGuide", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "quest:first_steps", Change: "changed", Current: &currentGuide, Candidate: &candidateGuide}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected quest-flag route deltas by actor name:\n got: %#v\nwant: %#v", got, want)
+	}
+	got[0].Candidate.Text = "Mutated quest acknowledgement."
+	if deltas[0].Candidate.Text != "New quest acknowledgement." {
+		t.Fatalf("expected quest-flag route delta helper to clone candidate route, source deltas=%#v", deltas)
+	}
+	if invalid := QuestFlagRouteDeltasByActorName(deltas, "Bad/Name"); invalid != nil {
+		t.Fatalf("expected path-ambiguous quest-flag route actor lookup to fail closed, got %#v", invalid)
+	}
+}
+
 func TestSummarizeIncludesQuestStateCountsAndCharacterFlags(t *testing.T) {
 	summary, err := Summarize(Bundle{QuestState: []queststate.Flag{
 		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},

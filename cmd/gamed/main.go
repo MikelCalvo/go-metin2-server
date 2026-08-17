@@ -667,6 +667,10 @@ func main() {
 		opsHandler,
 		exportContentBundleSummary,
 	)
+	opsHandler = ops.RegisterLocalContentBundleMapQuestFlagRoutesEndpoint(
+		opsHandler,
+		exportContentBundleSummary,
+	)
 	opsHandler = ops.RegisterLocalContentBundleMapShopRoutesEndpoint(
 		opsHandler,
 		exportContentBundleSummary,
@@ -739,6 +743,10 @@ func main() {
 		opsHandler,
 		exportContentBundleSummary,
 	)
+	opsHandler = ops.RegisterLocalContentBundleQuestFlagRouteEndpoint(
+		opsHandler,
+		exportContentBundleSummary,
+	)
 	opsHandler = ops.RegisterLocalContentBundleWarpDestinationEndpoint(
 		opsHandler,
 		exportContentBundleSummary,
@@ -791,6 +799,10 @@ func main() {
 		previewContentBundleImport,
 	)
 	opsHandler = ops.RegisterLocalContentBundleShopRouteImportPreviewEndpoint(
+		opsHandler,
+		previewContentBundleImport,
+	)
+	opsHandler = ops.RegisterLocalContentBundleQuestFlagRouteImportPreviewEndpoint(
 		opsHandler,
 		previewContentBundleImport,
 	)

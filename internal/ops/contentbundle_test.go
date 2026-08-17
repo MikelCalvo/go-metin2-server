@@ -2366,6 +2366,145 @@ func TestLocalContentBundleShopRouteImportPreviewEndpointReturnsActorDeltasForLo
 	}
 }
 
+func TestLocalContentBundleQuestFlagRouteImportPreviewEndpointReturnsActorDeltasForLoopbackPost(t *testing.T) {
+	currentQuest := interactionstore.Definition{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "Old quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "QuestGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindQuestFlag, InteractionRef: currentQuest.Ref}},
+		InteractionDefinitions: []interactionstore.Definition{currentQuest},
+	}}
+	mux := RegisterLocalContentBundleQuestFlagRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/quest-flag-routes/QuestGuide", strings.NewReader(`{"static_actors":[{"name":"QuestGuide","map_index":1,"x":1000,"y":2000,"race_num":20302,"interaction_kind":"quest_flag","interaction_ref":"quest:first_steps"},{"name":"RemoteGuide","map_index":3,"x":3000,"y":4000,"race_num":20302,"interaction_kind":"quest_flag","interaction_ref":"quest:remote_steps"}],"interaction_definitions":[{"kind":"quest_flag","ref":"quest:first_steps","text":"New quest acknowledgement.","quest_ref":"quest:first_steps","quest_flag":"met_guide","quest_to":1},{"kind":"quest_flag","ref":"quest:remote_steps","text":"Remote quest acknowledgement.","quest_ref":"quest:remote_steps","quest_flag":"met_remote","quest_to":1}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected import previewer to be called once, got %d calls", previewer.calls)
+	}
+	var got []contentbundle.QuestFlagRouteDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode quest-flag-route import-preview delta response: %v", err)
+	}
+	currentRoute := contentbundle.QuestFlagRouteSummary{ActorName: "QuestGuide", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "quest:first_steps", Text: "Old quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}
+	candidateRoute := contentbundle.QuestFlagRouteSummary{ActorName: "QuestGuide", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "quest:first_steps", Text: "New quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}
+	want := []contentbundle.QuestFlagRouteDelta{{ActorName: "QuestGuide", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "quest:first_steps", Change: "changed", Current: &currentRoute, Candidate: &candidateRoute}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected quest-flag-route import-preview deltas:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleQuestFlagRouteImportPreviewEndpointReturnsNotFoundWhenActorHasNoRouteDeltas(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "QuestGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindQuestFlag, InteractionRef: "quest:first_steps"}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "Same quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}},
+	}}
+	mux := RegisterLocalContentBundleQuestFlagRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/quest-flag-routes/QuestGuide", strings.NewReader(`{"static_actors":[{"name":"QuestGuide","map_index":1,"x":1000,"y":2000,"race_num":20302,"interaction_kind":"quest_flag","interaction_ref":"quest:first_steps"}],"interaction_definitions":[{"kind":"quest_flag","ref":"quest:first_steps","text":"Same quest acknowledgement.","quest_ref":"quest:first_steps","quest_flag":"met_guide","quest_to":1}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for unchanged quest-flag route actor, got %d", http.StatusNotFound, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected missing quest-flag route delta lookup to call import previewer once, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleQuestFlagRouteImportPreviewEndpointRejectsMalformedActorNameBeforeCallback(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleQuestFlagRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	for _, path := range []string{
+		"/local/content-bundle/import-preview/quest-flag-routes/",
+		"/local/content-bundle/import-preview/quest-flag-routes/Bad%2FGuide",
+		"/local/content-bundle/import-preview/quest-flag-routes/QuestGuide/extra",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"interaction_definitions":[]}`))
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for malformed quest-flag-route import-preview path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected malformed quest-flag route actor names not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleQuestFlagRouteImportPreviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleQuestFlagRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/quest-flag-routes/QuestGuide", strings.NewReader(`{"interaction_definitions":[]}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback quest-flag-route import preview, got %d", http.StatusForbidden, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected non-loopback request not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleQuestFlagRouteImportPreviewEndpointRejectsWrongMethod(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleQuestFlagRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/import-preview/quest-flag-routes/QuestGuide", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method quest-flag-route import preview, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected wrong-method request not to call import previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleQuestFlagRouteImportPreviewEndpointCoexistsWithBroadImportPreview(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "QuestGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindQuestFlag, InteractionRef: "quest:first_steps"}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "Old quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}},
+	}}
+	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+	mux = RegisterLocalContentBundleQuestFlagRouteImportPreviewEndpoint(mux, previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/quest-flag-routes/QuestGuide", strings.NewReader(`{"static_actors":[{"name":"QuestGuide","map_index":1,"x":1000,"y":2000,"race_num":20302,"interaction_kind":"quest_flag","interaction_ref":"quest:first_steps"}],"interaction_definitions":[{"kind":"quest_flag","ref":"quest:first_steps","text":"New quest acknowledgement.","quest_ref":"quest:first_steps","quest_flag":"met_guide","quest_to":1}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d from focused route on shared mux, got %d", http.StatusOK, rec.Code)
+	}
+	var got []contentbundle.QuestFlagRouteDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode focused quest-flag-route import-preview delta response from shared mux: %v", err)
+	}
+	if len(got) != 1 || got[0].ActorName != "QuestGuide" || got[0].Change != "changed" || got[0].Candidate == nil || got[0].Candidate.Text != "New quest acknowledgement." {
+		t.Fatalf("unexpected focused quest-flag-route import-preview response from shared mux: %#v", got)
+	}
+}
+
 func TestLocalContentBundleShopRouteImportPreviewEndpointReturnsNotFoundWhenActorHasNoRouteDeltas(t *testing.T) {
 	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
 		StaticActors:           []contentbundle.StaticActor{{Name: "Merchant", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
@@ -4151,6 +4290,48 @@ func TestLocalContentBundleMapShopRoutesEndpointReturnsMatchingRoutesForLoopback
 	}
 }
 
+func TestLocalContentBundleMapQuestFlagRoutesEndpointReturnsMatchingRoutesForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{
+			Maps: []contentbundle.MapContentSummary{
+				{MapIndex: 1, StaticActorCount: 2, QuestFlagActorCount: 2},
+				{MapIndex: 7, StaticActorCount: 1, QuestFlagActorCount: 1},
+			},
+			QuestFlagRoutes: []contentbundle.QuestFlagRouteSummary{
+				{ActorName: "Remote Guide", SourceMapIndex: 7, SourceX: 1300, SourceY: 2300, Ref: "quest:remote_steps", Text: "Remote quest acknowledgement.", QuestRef: "quest:remote_steps", QuestFlag: "met_remote", QuestTo: 1},
+				{ActorName: "Quest Guide", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1},
+				{ActorName: "Quest Reset", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "quest:first_steps_reset", Text: "Quest cleared.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1},
+			},
+		},
+	}
+	mux := RegisterLocalContentBundleMapQuestFlagRoutesEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/maps/1/quest-flag-routes", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got []contentbundle.QuestFlagRouteSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode map quest-flag-route response body: %v", err)
+	}
+	want := []contentbundle.QuestFlagRouteSummary{
+		{ActorName: "Quest Guide", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1},
+		{ActorName: "Quest Reset", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "quest:first_steps_reset", Text: "Quest cleared.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle map quest-flag routes:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
 func TestLocalContentBundleMapWarpRoutesEndpointReturnsMatchingRoutesForLoopbackGet(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{
 		status: http.StatusOK,
@@ -4201,6 +4382,7 @@ func TestLocalContentBundleMapFocusedContentEndpointsReturnEmptyListForKnownMapW
 	}{
 		{name: "static actors", register: RegisterLocalContentBundleMapStaticActorsEndpoint, path: "/local/content-bundle/maps/42/static-actors"},
 		{name: "interactable static actors", register: RegisterLocalContentBundleMapInteractableStaticActorsEndpoint, path: "/local/content-bundle/maps/42/interactable-static-actors"},
+		{name: "quest flag routes", register: RegisterLocalContentBundleMapQuestFlagRoutesEndpoint, path: "/local/content-bundle/maps/42/quest-flag-routes"},
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
@@ -4238,6 +4420,7 @@ func TestLocalContentBundleMapFocusedContentEndpointsReturnNotFoundForMissingMap
 	}{
 		{name: "static actors", register: RegisterLocalContentBundleMapStaticActorsEndpoint, path: "/local/content-bundle/maps/42/static-actors"},
 		{name: "interactable static actors", register: RegisterLocalContentBundleMapInteractableStaticActorsEndpoint, path: "/local/content-bundle/maps/42/interactable-static-actors"},
+		{name: "quest flag routes", register: RegisterLocalContentBundleMapQuestFlagRoutesEndpoint, path: "/local/content-bundle/maps/42/quest-flag-routes"},
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
@@ -4272,6 +4455,7 @@ func TestLocalContentBundleMapFocusedContentEndpointsRejectInvalidMapIndex(t *te
 	}{
 		{name: "static actors", register: RegisterLocalContentBundleMapStaticActorsEndpoint, paths: []string{"/local/content-bundle/maps/0/static-actors", "/local/content-bundle/maps/not-a-map/static-actors", "/local/content-bundle/maps/42/static-actors/extra"}},
 		{name: "interactable static actors", register: RegisterLocalContentBundleMapInteractableStaticActorsEndpoint, paths: []string{"/local/content-bundle/maps/0/interactable-static-actors", "/local/content-bundle/maps/not-a-map/interactable-static-actors", "/local/content-bundle/maps/42/interactable-static-actors/extra"}},
+		{name: "quest flag routes", register: RegisterLocalContentBundleMapQuestFlagRoutesEndpoint, paths: []string{"/local/content-bundle/maps/0/quest-flag-routes", "/local/content-bundle/maps/not-a-map/quest-flag-routes", "/local/content-bundle/maps/42/quest-flag-routes/extra"}},
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, paths: []string{"/local/content-bundle/maps/0/shop-routes", "/local/content-bundle/maps/not-a-map/shop-routes", "/local/content-bundle/maps/42/shop-routes/extra"}},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, paths: []string{"/local/content-bundle/maps/0/warp-routes", "/local/content-bundle/maps/not-a-map/warp-routes", "/local/content-bundle/maps/42/warp-routes/extra"}},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, paths: []string{"/local/content-bundle/maps/0/spawn-groups", "/local/content-bundle/maps/not-a-map/spawn-groups", "/local/content-bundle/maps/42/spawn-groups/extra"}},
@@ -4307,6 +4491,7 @@ func TestLocalContentBundleMapFocusedContentEndpointsRejectNonLoopbackRemoteAddr
 	}{
 		{name: "static actors", register: RegisterLocalContentBundleMapStaticActorsEndpoint, path: "/local/content-bundle/maps/42/static-actors"},
 		{name: "interactable static actors", register: RegisterLocalContentBundleMapInteractableStaticActorsEndpoint, path: "/local/content-bundle/maps/42/interactable-static-actors"},
+		{name: "quest flag routes", register: RegisterLocalContentBundleMapQuestFlagRoutesEndpoint, path: "/local/content-bundle/maps/42/quest-flag-routes"},
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
@@ -4341,6 +4526,7 @@ func TestLocalContentBundleMapFocusedContentEndpointsRejectWrongMethod(t *testin
 	}{
 		{name: "static actors", register: RegisterLocalContentBundleMapStaticActorsEndpoint, path: "/local/content-bundle/maps/42/static-actors"},
 		{name: "interactable static actors", register: RegisterLocalContentBundleMapInteractableStaticActorsEndpoint, path: "/local/content-bundle/maps/42/interactable-static-actors"},
+		{name: "quest flag routes", register: RegisterLocalContentBundleMapQuestFlagRoutesEndpoint, path: "/local/content-bundle/maps/42/quest-flag-routes"},
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
@@ -5479,6 +5665,116 @@ func TestLocalContentBundleShopRouteEndpointRejectsWrongMethod(t *testing.T) {
 	mux := RegisterLocalContentBundleShopRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
 
 	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/shop-routes/Village%20Merchant", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleQuestFlagRouteEndpointReturnsMatchingRoutesForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{QuestFlagRoutes: []contentbundle.QuestFlagRouteSummary{
+			{ActorName: "Remote Guide", SourceMapIndex: 7, SourceX: 1300, SourceY: 2300, Ref: "quest:remote_steps", Text: "Remote quest acknowledgement.", QuestRef: "quest:remote_steps", QuestFlag: "met_remote", QuestTo: 1},
+			{ActorName: "Quest Guide", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1},
+			{ActorName: "Quest Guide", SourceMapIndex: 2, SourceX: 1100, SourceY: 2100, Ref: "quest:first_steps_reset", Text: "Quest cleared.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1},
+		}},
+	}
+	mux := RegisterLocalContentBundleQuestFlagRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/quest-flag-routes/Quest%20Guide", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got []contentbundle.QuestFlagRouteSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode quest-flag route response body: %v", err)
+	}
+	want := []contentbundle.QuestFlagRouteSummary{
+		{ActorName: "Quest Guide", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1},
+		{ActorName: "Quest Guide", SourceMapIndex: 2, SourceX: 1100, SourceY: 2100, Ref: "quest:first_steps_reset", Text: "Quest cleared.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle quest-flag route rows:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleQuestFlagRouteEndpointReturnsNotFoundForMissingRoute(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{QuestFlagRoutes: []contentbundle.QuestFlagRouteSummary{{ActorName: "Quest Guide", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}}}}
+	mux := RegisterLocalContentBundleQuestFlagRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/quest-flag-routes/Missing%20Guide", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for missing quest-flag route, got %d", http.StatusNotFound, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleQuestFlagRouteEndpointRejectsInvalidActorName(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{QuestFlagRoutes: []contentbundle.QuestFlagRouteSummary{{ActorName: "Quest Guide"}}}}
+	mux := RegisterLocalContentBundleQuestFlagRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	for _, path := range []string{"/local/content-bundle/quest-flag-routes/", "/local/content-bundle/quest-flag-routes/Quest%2FGuide", "/local/content-bundle/quest-flag-routes/Quest%20Guide/extra"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for invalid quest-flag route path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called for invalid quest-flag route actor names, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleQuestFlagRouteEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{QuestFlagRoutes: []contentbundle.QuestFlagRouteSummary{{ActorName: "Quest Guide"}}}}
+	mux := RegisterLocalContentBundleQuestFlagRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/quest-flag-routes/Quest%20Guide", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback caller, got %d", http.StatusForbidden, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleQuestFlagRouteEndpointRejectsWrongMethod(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{QuestFlagRoutes: []contentbundle.QuestFlagRouteSummary{{ActorName: "Quest Guide"}}}}
+	mux := RegisterLocalContentBundleQuestFlagRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/quest-flag-routes/Quest%20Guide", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 
