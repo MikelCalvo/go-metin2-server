@@ -1457,6 +1457,21 @@ func (r *sharedWorldRegistry) clearSessionCombatTargetLocked(entityID uint64) {
 	}
 }
 
+func (r *sharedWorldRegistry) clearInvalidSessionCombatTargetLocked(entityID uint64) [][]byte {
+	if r == nil || entityID == 0 {
+		return nil
+	}
+	if _, ok := r.sessionCombatTargetLocked(entityID); !ok {
+		return nil
+	}
+	if _, ok := r.combatTargetSnapshotLocked(entityID); ok {
+		return nil
+	}
+	r.clearSessionCombatTargetLocked(entityID)
+	r.clearStaticActorCombatEngagementsBySubjectLocked(entityID)
+	return [][]byte{combatproto.EncodeServerClearTarget()}
+}
+
 func (r *sharedWorldRegistry) setSessionCombatTargetLocked(entityID uint64, targetVID uint32) {
 	if r == nil || entityID == 0 {
 		return
@@ -2593,6 +2608,10 @@ func (r *sharedWorldRegistry) UpdateCharacterWithVisibilityTransition(id uint64,
 	}
 	_ = r.entities.UpdatePlayer(id, current)
 	r.lastKnownCharacters[id] = current
+	var combatTargetClearFrames [][]byte
+	if len(stableFrames) == 0 {
+		combatTargetClearFrames = r.clearInvalidSessionCombatTargetLocked(id)
+	}
 
 	removedRaw := encodeCharacterDeleteFrame(previous)
 	addedRaw := encodePeerVisibilityBootstrapFramesWithTemplates(current, r.itemTemplates)
@@ -2624,7 +2643,8 @@ func (r *sharedWorldRegistry) UpdateCharacterWithVisibilityTransition(id uint64,
 		r.enqueueToCharacterLocked(peerCharacter, addedRaw)
 	}
 
-	originFrames := buildTransferOriginFramesWithTemplates(visibilityDiff.RemovedVisiblePeers, originAddedVisiblePeers, r.itemTemplates)
+	originFrames := append([][]byte(nil), combatTargetClearFrames...)
+	originFrames = append(originFrames, buildTransferOriginFramesWithTemplates(visibilityDiff.RemovedVisiblePeers, originAddedVisiblePeers, r.itemTemplates)...)
 	originFrames = append(originFrames, r.buildStaticActorVisibilityTransitionFramesLocked(staticActorVisibilityDiff.RemovedVisibleActors, originAddedVisibleStaticActors)...)
 	originFrames = append(originFrames, buildGroundItemVisibilityTransitionFrames(groundItemVisibilityDiff.Removed, originAddedGroundItems)...)
 	if len(originFrames) == 0 {

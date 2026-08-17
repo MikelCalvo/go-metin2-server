@@ -14790,6 +14790,81 @@ func TestSharedWorldRegistryTransferClearsPracticeMobCombatOwnership(t *testing.
 	}
 }
 
+func TestSharedWorldRegistryVisibilityTransitionClearsPracticeMobCombatOwnership(t *testing.T) {
+	registry := newSharedWorldRegistryWithTopology(worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200))
+	ownerPending := newPendingServerFrames()
+	blockerPending := newPendingServerFrames()
+	owner := peerVisibilityCharacter("MoveCombatOwner", 0x01030183, 0x02040183, 1100, 2100, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 10
+	blocker := peerVisibilityCharacter("MoveCombatBlocker", 0x01030184, 0x02040184, 1300, 2300, 0, 102, 202)
+	blocker.MapIndex = 42
+	blocker.Points[bootstrapPlayerPointValueIndex] = 10
+	ownerID, _ := registry.Join(owner, ownerPending, nil)
+	if ownerID == 0 {
+		t.Fatal("expected move-combat owner to join shared world")
+	}
+	blockerID, _ := registry.Join(blocker, blockerPending, nil)
+	if blockerID == 0 {
+		t.Fatal("expected move-combat blocker to join shared world")
+	}
+	ownerPending.flush()
+	blockerPending.flush()
+
+	actor, ok := registry.registerStaticActor(0, "MoveCombatMob", 42, 1200, 2200, 20350, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "practice.move_combat_clear", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected move-combat practice mob registration to succeed")
+	}
+	ownerPending.flush()
+	blockerPending.flush()
+	targetVID := uint32(actor.EntityID)
+
+	targetAttempt := registry.AttemptStaticActorCombatTarget(ownerID, targetVID)
+	if !targetAttempt.Accepted {
+		t.Fatalf("expected owner to target practice mob before movement cleanup, got %+v", targetAttempt)
+	}
+	if !registry.SetSessionCombatTarget(ownerID, targetAttempt.TargetVID) {
+		t.Fatal("expected owner target selection to be recorded before movement cleanup")
+	}
+	attack := registry.AttemptSelectedStaticActorAttack(ownerID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, targetVID)
+	if !attack.Accepted || attack.Died {
+		t.Fatalf("expected non-lethal movement cleanup setup attack, got %+v", attack)
+	}
+	if !registry.SetSessionCombatRetaliation(ownerID, targetVID, targetAttempt.SnapshotVersion, time.Unix(1700001210, 0)) {
+		t.Fatal("expected movement cleanup setup to record pending retaliation")
+	}
+	blocked := registry.AttemptStaticActorCombatTarget(blockerID, targetVID)
+	if blocked.Accepted || blocked.Failure != StaticActorCombatTargetFailureTargetEngaged {
+		t.Fatalf("expected blocker to be aggro-gated before owner movement cleanup, got %+v", blocked)
+	}
+
+	movedOwner := owner
+	movedOwner.X = 5000
+	movedOwner.Y = 5000
+	registry.UpdateCharacterWithVisibilityTransition(ownerID, owner, movedOwner, nil)
+
+	ownerQueued := ownerPending.flush()
+	if !containsServerTargetClear(t, ownerQueued) {
+		t.Fatalf("expected movement visibility transition to queue selected-target clear among owner frames, got %d frames", len(ownerQueued))
+	}
+	if snapshot, ok := registry.CombatTargetSnapshot(ownerID); ok {
+		t.Fatalf("expected movement visibility transition to clear owner combat target snapshot, got %+v", snapshot)
+	}
+	registry.mu.Lock()
+	_, targetStillSelected := registry.sessionCombatTargets[ownerID]
+	_, retaliationStillPending := registry.sessionCombatRetaliations[ownerID]
+	engagedBy := registry.staticActorCombatEngagedBy[actor.EntityID]
+	registry.mu.Unlock()
+	if targetStillSelected || retaliationStillPending || engagedBy != 0 {
+		t.Fatalf("expected movement visibility transition to clear selected target, pending retaliation, and engagement; target_selected=%v retaliation_pending=%v engaged_by=%d", targetStillSelected, retaliationStillPending, engagedBy)
+	}
+
+	released := registry.AttemptStaticActorCombatTarget(blockerID, targetVID)
+	if !released.Accepted || released.HPPercent != 90 {
+		t.Fatalf("expected blocker to reacquire owner-damaged practice mob after movement release, got %+v", released)
+	}
+}
+
 func containsServerTargetClear(t *testing.T, frames [][]byte) bool {
 	t.Helper()
 	for _, raw := range frames {
