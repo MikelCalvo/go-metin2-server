@@ -3945,6 +3945,9 @@ func TestGameRuntimeReimportsFormulaOnlyCombatProfileBundleIdempotently(t *testi
 	if len(imported.CombatProfiles) != 1 || imported.CombatProfiles[0].Profile != profile {
 		t.Fatalf("expected reimported bundle to retain formula-only combat profile snapshot, got %#v", imported.CombatProfiles)
 	}
+	if imported.CombatProfiles[0].DamagePerNormalAttack != 5 || imported.CombatProfiles[0].Level != worldruntime.TrainingDummyBootstrapLevel {
+		t.Fatalf("expected reimported formula-only combat profile to expose canonical damage/default level, got %+v", imported.CombatProfiles[0])
+	}
 	actors := runtime.StaticActors()
 	if len(actors) != 1 {
 		t.Fatalf("expected one actor after idempotent combat-profile reimport, got %#v", actors)

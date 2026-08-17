@@ -4440,7 +4440,7 @@ func TestCanonicalizeRegistersPortableCombatProfileSnapshotsBeforeValidatingActo
 		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
 			Profile:               profile,
 			MaxHP:                 24,
-			DamagePerNormalAttack: 0,
+			DamagePerNormalAttack: 5,
 			AttackValue:           8,
 			DefenseValue:          3,
 			Level:                 7,
@@ -4451,6 +4451,38 @@ func TestCanonicalizeRegistersPortableCombatProfileSnapshotsBeforeValidatingActo
 	}
 	if !reflect.DeepEqual(bundle, want) {
 		t.Fatalf("unexpected portable combat profile canonical bundle:\n got: %#v\nwant: %#v", bundle, want)
+	}
+}
+
+func TestCanonicalizeExpandsFormulaOnlyCombatProfileSnapshotDefaults(t *testing.T) {
+	const profile = "practice_formula_only_export_wolf"
+	bundle, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.formula_only_export_wolf",
+			Name:          "Formula Only Export Wolf",
+			MapIndex:      42,
+			X:             1775,
+			Y:             2875,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        profile,
+			MaxHP:          24,
+			AttackValue:    9,
+			DefenseValue:   4,
+			RespawnDelayMs: 1500,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize formula-only combat profile snapshot: %v", err)
+	}
+	if len(bundle.CombatProfiles) != 1 {
+		t.Fatalf("expected one canonical combat profile, got %#v", bundle.CombatProfiles)
+	}
+	got := bundle.CombatProfiles[0]
+	if got.Profile != profile || got.DamagePerNormalAttack != 5 || got.AttackValue != 9 || got.DefenseValue != 4 || got.Level != worldruntime.TrainingDummyBootstrapLevel {
+		t.Fatalf("expected formula-only profile to export canonical damage/default level, got %+v", got)
 	}
 }
 

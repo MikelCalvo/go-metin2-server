@@ -3573,10 +3573,21 @@ func normalizeCombatProfiles(profiles []worldruntime.StaticActorCombatProfileSna
 	if len(normalized) == 0 {
 		return nil
 	}
+	for i := range normalized {
+		normalized[i] = normalizeCombatProfileSnapshot(normalized[i])
+	}
 	sort.Slice(normalized, func(i int, j int) bool {
 		return normalized[i].Profile < normalized[j].Profile
 	})
 	return normalized
+}
+
+func normalizeCombatProfileSnapshot(profile worldruntime.StaticActorCombatProfileSnapshot) worldruntime.StaticActorCombatProfileSnapshot {
+	if defaults, ok := combatProfileSnapshotDefaults(profile); ok {
+		profile.DamagePerNormalAttack = defaults.DamagePerNormalAttack
+		profile.Level = defaults.Level
+	}
+	return profile
 }
 
 func combatProfileSnapshotIdentitiesAreCanonical(profiles []worldruntime.StaticActorCombatProfileSnapshot) bool {
