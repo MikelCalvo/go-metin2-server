@@ -3406,7 +3406,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if pickup.GoldAmount != 0 {
 				if pickup.OwnerID != 0 && pickup.OwnerID != sharedWorldID && pickup.Owner.ID != 0 {
 					if message, ok := runtimeTemplateGoldPeerPickupRejectText(runtime, pickup.Item); ok {
-						return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}, true
+						frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}
+						frames = prependExchangeCloseFrame(frames)
+						return frames, true
 					}
 					ownerSelected := pickup.Owner
 					if ownerSelected.Gold > uint64(math.MaxInt32)-uint64(pickup.GoldAmount) {
@@ -3430,9 +3432,6 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return nil, false
 					}
 					sharedWorld.UpdateCharacterWithVisibilityTransition(pickup.OwnerID, ownerSelected, updatedOwner, nil)
-					if !sharedWorld.RemoveGroundItem(sharedWorldID, previousSelected, vid) {
-						return nil, false
-					}
 					collectorGetFrame, err := encodeBootstrapItemGetFrameWithPartyArg(pickup.Item, itemproto.GetArgDeliveredToPartyMember, pickup.OwnerName)
 					if err != nil {
 						return nil, false
@@ -3441,12 +3440,16 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if err != nil {
 						return nil, false
 					}
+					collectorFrames := prependExchangeCloseFrame([][]byte{itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: vid}), collectorGetFrame})
+					if !sharedWorld.RemoveGroundItem(sharedWorldID, previousSelected, vid) {
+						return nil, false
+					}
 					ownerFrames := [][]byte{
 						worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{VID: ownerSelected.VID, Type: bootstrapGoldPointType, Amount: int32(pickup.GoldAmount), Value: int32(updatedOwner.Gold)}),
 						ownerGetFrame,
 					}
 					sharedWorld.EnqueueToEntity(pickup.OwnerID, ownerFrames)
-					return [][]byte{itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: vid}), collectorGetFrame}, true
+					return collectorFrames, true
 				}
 				updatedGold, ok := selectedPlayer.AddLiveGold(uint64(pickup.GoldAmount))
 				if !ok {
@@ -3465,6 +3468,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				if !ok {
 					return nil, false
 				}
+				frames = prependExchangeCloseFrame(frames)
 				if ownsLiveSharedWorldSession() && !sharedWorld.RemoveGroundItem(sharedWorldID, previousSelected, vid) {
 					return nil, false
 				}
@@ -3480,7 +3484,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return nil, false
 						}
 						if template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack || !ownerRuntime.CanUseTemplate(template) {
-							return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupRejectText(template)})}, true
+							frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupRejectText(template)})}
+							frames = prependExchangeCloseFrame(frames)
+							return frames, true
 						}
 						if pickup.Item.Count > template.MaxCount {
 							return nil, false
@@ -3496,7 +3502,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				if !ok {
 					collectorResult, collectorOK := selectedPlayer.PickupGroundItem(pickup.Item, pickup.Item.Slot, pickupMaxCount)
 					if !collectorOK {
-						return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}, true
+						frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}
+						frames = prependExchangeCloseFrame(frames)
+						return frames, true
 					}
 					collectorItemFrames, collectorOK := encodeBootstrapGroundPickupInventoryFrames(collectorResult, runtime.itemTemplates)
 					if !collectorOK {
@@ -3516,6 +3524,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if !collectorOK {
 						return nil, false
 					}
+					collectorFrames = prependExchangeCloseFrame(collectorFrames)
 					if !sharedWorld.RemoveGroundItem(sharedWorldID, previousSelected, vid) {
 						return nil, false
 					}
@@ -3545,9 +3554,6 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					return nil, false
 				}
 				sharedWorld.UpdateCharacterWithVisibilityTransition(pickup.OwnerID, ownerSelected, updatedOwner, nil)
-				if !sharedWorld.RemoveGroundItem(sharedWorldID, previousSelected, vid) {
-					return nil, false
-				}
 				collectorGetFrame, err := encodeBootstrapItemGetFrameWithPartyArg(pickup.Item, itemproto.GetArgDeliveredToPartyMember, pickup.OwnerName)
 				if err != nil {
 					return nil, false
@@ -3556,10 +3562,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				if err != nil {
 					return nil, false
 				}
+				collectorFrames := prependExchangeCloseFrame([][]byte{itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: vid}), collectorGetFrame})
+				if !sharedWorld.RemoveGroundItem(sharedWorldID, previousSelected, vid) {
+					return nil, false
+				}
 				ownerFrames := append([][]byte(nil), itemFrames...)
 				ownerFrames = append(ownerFrames, ownerGetFrame)
 				sharedWorld.EnqueueToEntity(pickup.OwnerID, ownerFrames)
-				return [][]byte{itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: vid}), collectorGetFrame}, true
+				return collectorFrames, true
 			}
 			pickupMaxCount := uint16(0)
 			if runtime != nil {
@@ -3568,7 +3578,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return nil, false
 					}
 					if template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack || !selectedPlayer.CanUseTemplate(template) {
-						return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupRejectText(template)})}, true
+						frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupRejectText(template)})}
+						frames = prependExchangeCloseFrame(frames)
+						return frames, true
 					}
 					if pickup.Item.Count > template.MaxCount {
 						return nil, false
@@ -3582,7 +3594,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			pickupResult, ok := selectedPlayer.PickupGroundItem(pickup.Item, pickup.Item.Slot, pickupMaxCount)
 			if !ok {
-				return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}, true
+				frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}
+				frames = prependExchangeCloseFrame(frames)
+				return frames, true
 			}
 			itemFrames, ok := encodeBootstrapGroundPickupInventoryFrames(pickupResult, runtime.itemTemplates)
 			if !ok {
@@ -3602,6 +3616,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !ok {
 				return nil, false
 			}
+			frames = prependExchangeCloseFrame(frames)
 			if ownsLiveSharedWorldSession() && !sharedWorld.RemoveGroundItem(sharedWorldID, previousSelected, vid) {
 				return nil, false
 			}

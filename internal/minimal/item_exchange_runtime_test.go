@@ -3201,6 +3201,249 @@ func TestGameRuntimeItemDropClosesActiveExchangeShellBeforeDropFrames(t *testing
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "peer active-exchange item-drop")
 }
 
+func TestGameRuntimeItemPickupClosesActiveExchangeShellBeforePickupFrames(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangePickupOwner", 0x010307e5, 0x020407e5, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 813, Vnum: 27049, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangePickupPeer", 0x010307e6, 0x020407e6, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerLogin := "item-exchange-pickup-owner"
+	peerLogin := "item-exchange-pickup-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070e5, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070e6, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange pickup owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange pickup peer account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27049, Name: "Exchange Pickup Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange pickup runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070e5)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070e6)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	dropOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected exchange pickup setup drop error: %v", err)
+	}
+	if len(dropOut) != 4 {
+		t.Fatalf("expected exchange pickup setup drop to emit item, quickslot, ground, and ownership frames, got %d", len(dropOut))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, dropOut[2]))
+	if err != nil {
+		t.Fatalf("decode exchange pickup setup ground add: %v", err)
+	}
+	if ground.Vnum != template.Vnum || ground.X != owner.X || ground.Y != owner.Y || ground.Z != owner.Z {
+		t.Fatalf("unexpected exchange pickup setup ground add: %+v", ground)
+	}
+	if queuedDrop := flushServerFrames(t, peerFlow); len(queuedDrop) != 2 {
+		t.Fatalf("expected peer to receive setup ground add/ownership, got %d", len(queuedDrop))
+	}
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected exchange pickup start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected exchange pickup start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "exchange pickup owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected exchange pickup peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "exchange pickup peer start")
+
+	pickupOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientPickup(itemproto.ClientPickupPacket{VID: ground.VID})))
+	if err != nil {
+		t.Fatalf("unexpected active-exchange item pickup packet error: %v", err)
+	}
+	if len(pickupOut) != 4 {
+		t.Fatalf("expected active-exchange item pickup to emit exchange end plus ground delete, item set, and item get, got %d", len(pickupOut))
+	}
+	assertExchangeEndFrame(t, pickupOut[0], "active-exchange item pickup self close")
+	groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, pickupOut[1]))
+	if err != nil {
+		t.Fatalf("decode active-exchange pickup ground del: %v", err)
+	}
+	if groundDel.VID != ground.VID {
+		t.Fatalf("unexpected active-exchange pickup ground del: %+v", groundDel)
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, pickupOut[2]))
+	if err != nil {
+		t.Fatalf("decode active-exchange pickup item set: %v", err)
+	}
+	if set.Position != itemproto.InventoryPosition(5) || set.Vnum != template.Vnum || set.Count != 3 {
+		t.Fatalf("unexpected active-exchange pickup item set: %+v", set)
+	}
+	get, err := itemproto.DecodeGet(decodeSingleFrame(t, pickupOut[3]))
+	if err != nil {
+		t.Fatalf("decode active-exchange pickup item get: %v", err)
+	}
+	if get.Vnum != template.Vnum || get.Count != 3 || get.Arg != itemproto.GetArgNormal {
+		t.Fatalf("unexpected active-exchange pickup item get: %+v", get)
+	}
+	queuedClose := flushServerFrames(t, peerFlow)
+	if len(queuedClose) != 2 {
+		t.Fatalf("expected active-exchange pickup to queue exchange close before peer ground delete, got %d frames", len(queuedClose))
+	}
+	assertExchangeEndFrame(t, queuedClose[0], "active-exchange item pickup peer close")
+	queuedGroundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, queuedClose[1]))
+	if err != nil {
+		t.Fatalf("decode active-exchange pickup peer ground del: %v", err)
+	}
+	if queuedGroundDel.VID != ground.VID {
+		t.Fatalf("unexpected active-exchange pickup peer ground del: %+v", queuedGroundDel)
+	}
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected post-pickup exchange cancel error: %v", err)
+	}
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected post-pickup exchange cancel to emit no frames after the shell was closed, got %d", len(cancelOut))
+	}
+	if runtime.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatalf("expected active-exchange pickup to remove ground item %d", ground.VID)
+	}
+	persistedOwner, err := accounts.Load(ownerLogin)
+	if err != nil {
+		t.Fatalf("load persisted active-exchange pickup owner account: %v", err)
+	}
+	if !reflect.DeepEqual(persistedOwner.Characters[0].Inventory, []inventory.ItemInstance{{ID: 813, Vnum: 27049, Count: 3, Slot: 5}}) {
+		t.Fatalf("active-exchange pickup persisted inventory got %+v", persistedOwner.Characters[0].Inventory)
+	}
+	if len(persistedOwner.Characters[0].Quickslots) != 0 {
+		t.Fatalf("active-exchange pickup persisted quickslots got %+v want empty after drop", persistedOwner.Characters[0].Quickslots)
+	}
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "peer active-exchange pickup")
+}
+
+func TestGameRuntimeItemPickupRejectTextClosesActiveExchangeShellWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangePickupRejectOwner", 0x010307e7, 0x020407e7, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 814, Vnum: 27050, Count: 1, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangePickupRejectPeer", 0x010307e8, 0x020407e8, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerLogin := "ex-pick-reject-owner"
+	peerLogin := "ex-pick-reject-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070e7, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070e8, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange pickup-reject owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange pickup-reject peer account: %v", err)
+	}
+	allowedTemplate := itemcatalog.Template{Vnum: 27050, Name: "Exchange Pickup Guard Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{allowedTemplate})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange pickup-reject runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070e7)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070e8)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	dropOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected exchange pickup-reject setup drop error: %v", err)
+	}
+	if len(dropOut) != 4 {
+		t.Fatalf("expected exchange pickup-reject setup drop to emit item, quickslot, ground, and ownership frames, got %d", len(dropOut))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, dropOut[2]))
+	if err != nil {
+		t.Fatalf("decode exchange pickup-reject setup ground add: %v", err)
+	}
+	if queuedDrop := flushServerFrames(t, peerFlow); len(queuedDrop) != 2 {
+		t.Fatalf("expected peer to receive pickup-reject setup ground add/ownership, got %d", len(queuedDrop))
+	}
+
+	guardedTemplate := itemcatalog.Template{
+		Vnum:             allowedTemplate.Vnum,
+		Name:             allowedTemplate.Name,
+		Stackable:        true,
+		MaxCount:         200,
+		AntiGet:          true,
+		PickupRejectText: "The seal prevents reclaiming this item while trading.",
+	}
+	runtime.itemTemplates[guardedTemplate.Vnum] = guardedTemplate
+	runtime.sharedWorld.SetItemTemplates(runtime.itemTemplates)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected exchange pickup-reject start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected exchange pickup-reject start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "exchange pickup-reject owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected exchange pickup-reject peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "exchange pickup-reject peer start")
+
+	pickupOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientPickup(itemproto.ClientPickupPacket{VID: ground.VID})))
+	if err != nil {
+		t.Fatalf("unexpected active-exchange pickup rejection packet error: %v", err)
+	}
+	if len(pickupOut) != 2 {
+		t.Fatalf("expected active-exchange pickup rejection to emit exchange end plus info chat, got %d", len(pickupOut))
+	}
+	assertExchangeEndFrame(t, pickupOut[0], "active-exchange pickup rejection self close")
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, pickupOut[1]))
+	if err != nil {
+		t.Fatalf("decode active-exchange pickup rejection info chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != guardedTemplate.PickupRejectText {
+		t.Fatalf("unexpected active-exchange pickup rejection chat: %+v", delivery)
+	}
+	queuedClose := flushServerFrames(t, peerFlow)
+	if len(queuedClose) != 1 {
+		t.Fatalf("expected active-exchange pickup rejection to queue only peer exchange close, got %d", len(queuedClose))
+	}
+	assertExchangeEndFrame(t, queuedClose[0], "active-exchange pickup rejection peer close")
+	if !runtime.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatalf("expected active-exchange pickup rejection to leave ground item %d pending", ground.VID)
+	}
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected post-pickup-reject exchange cancel error: %v", err)
+	}
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected post-pickup-reject exchange cancel to emit no frames after the shell was closed, got %d", len(cancelOut))
+	}
+	persistedOwner, err := accounts.Load(ownerLogin)
+	if err != nil {
+		t.Fatalf("load persisted active-exchange pickup-reject owner account: %v", err)
+	}
+	if len(persistedOwner.Characters[0].Inventory) != 0 {
+		t.Fatalf("active-exchange pickup rejection persisted inventory got %+v want empty after setup drop", persistedOwner.Characters[0].Inventory)
+	}
+	if len(persistedOwner.Characters[0].Quickslots) != 0 {
+		t.Fatalf("active-exchange pickup rejection persisted quickslots got %+v want empty after setup drop", persistedOwner.Characters[0].Quickslots)
+	}
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "peer active-exchange pickup rejection")
+}
+
 func TestGameRuntimeItemMoveEquipClosesActiveExchangeShellBeforeEquipFrames(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
