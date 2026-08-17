@@ -735,6 +735,10 @@ func main() {
 		opsHandler,
 		exportContentBundleSummary,
 	)
+	opsHandler = ops.RegisterLocalContentBundleQuestFlagTriggerEndpoint(
+		opsHandler,
+		exportContentBundleSummary,
+	)
 	opsHandler = ops.RegisterLocalContentBundleShopCatalogEndpoint(
 		opsHandler,
 		exportContentBundleSummary,
@@ -803,6 +807,10 @@ func main() {
 		previewContentBundleImport,
 	)
 	opsHandler = ops.RegisterLocalContentBundleQuestFlagRouteImportPreviewEndpoint(
+		opsHandler,
+		previewContentBundleImport,
+	)
+	opsHandler = ops.RegisterLocalContentBundleQuestFlagTriggerImportPreviewEndpoint(
 		opsHandler,
 		previewContentBundleImport,
 	)

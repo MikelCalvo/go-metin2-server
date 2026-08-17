@@ -252,6 +252,48 @@ func TestBuildImportPreviewReturnsQuestFlagTriggerAndRouteDeltas(t *testing.T) {
 	}
 }
 
+func TestQuestFlagTriggerByIdentityReturnsMatchingTrigger(t *testing.T) {
+	triggers := []QuestFlagTriggerSummary{
+		{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "You have met the village guide.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1},
+		{Kind: interactionstore.KindQuestFlag, Ref: "quest:daily_check", Text: "Daily check updated.", QuestRef: "quest:daily_check", QuestFlag: "talked_to_guide", QuestFrom: 1, QuestTo: 2},
+	}
+
+	got, ok := QuestFlagTriggerByIdentity(triggers, " quest_flag ", " quest:first_steps ")
+	want := QuestFlagTriggerSummary{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "You have met the village guide.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}
+	if !ok || !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected exact quest-flag trigger lookup:\n got: %#v ok=%v\nwant: %#v ok=true", got, ok, want)
+	}
+	if _, ok := QuestFlagTriggerByIdentity(triggers, interactionstore.KindInfo, "quest:first_steps"); ok {
+		t.Fatal("expected non-quest trigger kind lookup to fail closed")
+	}
+	if _, ok := QuestFlagTriggerByIdentity(triggers, interactionstore.KindQuestFlag, "quest/malformed"); ok {
+		t.Fatal("expected malformed trigger ref lookup to fail closed")
+	}
+}
+
+func TestQuestFlagTriggerDeltaByIdentityReturnsMatchingClonedDelta(t *testing.T) {
+	current := QuestFlagTriggerSummary{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "Old quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}
+	candidate := QuestFlagTriggerSummary{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "New quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}
+	remoteCandidate := QuestFlagTriggerSummary{Kind: interactionstore.KindQuestFlag, Ref: "quest:remote_steps", Text: "Remote quest acknowledgement.", QuestRef: "quest:remote_steps", QuestFlag: "met_remote", QuestTo: 1}
+	deltas := []QuestFlagTriggerDelta{
+		{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Change: "changed", Current: &current, Candidate: &candidate},
+		{Kind: interactionstore.KindQuestFlag, Ref: "quest:remote_steps", Change: "added", Candidate: &remoteCandidate},
+	}
+
+	got, ok := QuestFlagTriggerDeltaByIdentity(deltas, " quest_flag ", " quest:first_steps ")
+	want := QuestFlagTriggerDelta{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Change: "changed", Current: &current, Candidate: &candidate}
+	if !ok || !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected exact quest-flag trigger delta lookup:\n got: %#v ok=%v\nwant: %#v ok=true", got, ok, want)
+	}
+	got.Candidate.Text = "Mutated quest acknowledgement."
+	if deltas[0].Candidate.Text != "New quest acknowledgement." {
+		t.Fatalf("expected exact quest-flag trigger delta lookup to clone candidate, source deltas=%#v", deltas)
+	}
+	if _, ok := QuestFlagTriggerDeltaByIdentity(deltas, interactionstore.KindTalk, "quest:first_steps"); ok {
+		t.Fatal("expected non-quest trigger delta kind lookup to fail closed")
+	}
+}
+
 func TestQuestFlagRouteDeltasByActorNameReturnsMatchingClonedDeltas(t *testing.T) {
 	currentGuide := QuestFlagRouteSummary{ActorName: "QuestGuide", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "quest:first_steps", Text: "Old quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}
 	candidateGuide := QuestFlagRouteSummary{ActorName: "QuestGuide", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "quest:first_steps", Text: "New quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}

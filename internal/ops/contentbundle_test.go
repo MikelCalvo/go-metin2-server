@@ -874,6 +874,55 @@ func TestLocalContentBundleSummaryEndpointReturnsQuestFlagTriggerAndRouteJSONFor
 	}
 }
 
+func TestLocalContentBundleQuestFlagTriggerEndpointReturnsExactTriggerForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{
+		QuestFlagTriggers: []contentbundle.QuestFlagTriggerSummary{
+			{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1},
+			{Kind: interactionstore.KindQuestFlag, Ref: "quest:daily_check", Text: "Daily updated.", QuestRef: "quest:daily_check", QuestFlag: "talked_to_guide", QuestTo: 1},
+		},
+	}}
+	mux := RegisterLocalContentBundleQuestFlagTriggerEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/quest-flag-triggers/quest_flag/quest:first_steps", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected summary exporter to be called once, got %d", summaryer.calls)
+	}
+	var got contentbundle.QuestFlagTriggerSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode exact quest-flag trigger response: %v", err)
+	}
+	want := contentbundle.QuestFlagTriggerSummary{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected exact quest-flag trigger response:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleQuestFlagTriggerEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleQuestFlagTriggerEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/quest-flag-triggers/quest_flag/quest:first_steps", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback quest-flag trigger lookup, got %d", http.StatusForbidden, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected non-loopback request not to call summary exporter, got %d", summaryer.calls)
+	}
+}
+
 func TestLocalContentBundleSummaryEndpointExposesSelectedCharacterGuardMetadataForLoopbackPost(t *testing.T) {
 	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), func() (any, int) {
 		t.Fatal("dry-run summary should not call live exporter")
@@ -2395,6 +2444,53 @@ func TestLocalContentBundleQuestFlagRouteImportPreviewEndpointReturnsActorDeltas
 	want := []contentbundle.QuestFlagRouteDelta{{ActorName: "QuestGuide", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "quest:first_steps", Change: "changed", Current: &currentRoute, Candidate: &candidateRoute}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected quest-flag-route import-preview deltas:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleQuestFlagTriggerImportPreviewEndpointReturnsExactDeltaForLoopbackPost(t *testing.T) {
+	currentQuest := interactionstore.Definition{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "Old quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{InteractionDefinitions: []interactionstore.Definition{currentQuest}}}
+	mux := RegisterLocalContentBundleQuestFlagTriggerImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/quest-flag-triggers/quest_flag/quest:first_steps", strings.NewReader(`{"interaction_definitions":[{"kind":"quest_flag","ref":"quest:first_steps","text":"New quest acknowledgement.","quest_ref":"quest:first_steps","quest_flag":"met_guide","quest_to":1},{"kind":"quest_flag","ref":"quest:remote_steps","text":"Remote quest acknowledgement.","quest_ref":"quest:remote_steps","quest_flag":"met_remote","quest_to":1}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected import previewer to be called once, got %d calls", previewer.calls)
+	}
+	var got contentbundle.QuestFlagTriggerDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode exact quest-flag-trigger import-preview delta response: %v", err)
+	}
+	current := contentbundle.QuestFlagTriggerSummary{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "Old quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}
+	candidate := contentbundle.QuestFlagTriggerSummary{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "New quest acknowledgement.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}
+	want := contentbundle.QuestFlagTriggerDelta{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Change: "changed", Current: &current, Candidate: &candidate}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected exact quest-flag-trigger import-preview delta:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleQuestFlagTriggerImportPreviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleQuestFlagTriggerImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/quest-flag-triggers/quest_flag/quest:first_steps", strings.NewReader(`{"interaction_definitions":[]}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback quest-flag trigger import preview, got %d", http.StatusForbidden, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected non-loopback request not to call import previewer, got %d calls", previewer.calls)
 	}
 }
 

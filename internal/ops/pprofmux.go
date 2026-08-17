@@ -3105,6 +3105,40 @@ func RegisterLocalContentBundleQuestStateFlagEndpoint(mux *http.ServeMux, export
 	return mux
 }
 
+func RegisterLocalContentBundleQuestFlagTriggerEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/content-bundle/quest-flag-triggers/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		kind, ref, ok := decodeLocalContentBundleQuestFlagTriggerIdentity(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		trigger, ok := contentbundle.QuestFlagTriggerByIdentity(summary.QuestFlagTriggers, kind, ref)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, trigger, http.StatusOK)
+	})
+	return mux
+}
+
 func interactionDefinitionReferenceListContains(references []contentbundle.InteractionDefinitionReferenceSummary, kind string, ref string) bool {
 	for _, reference := range references {
 		if reference.Kind == kind && reference.Ref == ref {
@@ -3679,6 +3713,50 @@ func RegisterLocalContentBundleQuestFlagRouteImportPreviewEndpoint(mux *http.Ser
 			return
 		}
 		writeLocalJSONMutationResponse(w, deltas, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalContentBundleQuestFlagTriggerImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
+	if mux == nil || previewContentBundleImport == nil {
+		return mux
+	}
+	mux.HandleFunc("POST /local/content-bundle/import-preview/quest-flag-triggers/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		kind, ref, ok := decodeLocalContentBundleQuestFlagTriggerImportPreviewIdentity(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bundle, status, ok := decodeLocalContentBundleRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		normalized, err := contentbundle.Canonicalize(bundle)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		preview, status := previewContentBundleImport(normalized)
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, preview, status)
+			return
+		}
+		importPreview, ok := preview.(contentbundle.ImportPreview)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		delta, ok := contentbundle.QuestFlagTriggerDeltaByIdentity(importPreview.Deltas.QuestFlagTriggers, kind, ref)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, delta, http.StatusOK)
 	})
 	return mux
 }
@@ -4922,6 +5000,14 @@ func decodeLocalContentBundleInteractionDefinitionIdentity(r *http.Request) (str
 	return decodeLocalKindRefIdentityWithPrefix(r, "/local/content-bundle/interaction-definitions/")
 }
 
+func decodeLocalContentBundleQuestFlagTriggerIdentity(r *http.Request) (string, string, bool) {
+	kind, ref, ok := decodeLocalKindRefIdentityWithPrefix(r, "/local/content-bundle/quest-flag-triggers/")
+	if !ok || kind != interactionstore.KindQuestFlag {
+		return "", "", false
+	}
+	return kind, ref, true
+}
+
 func decodeLocalContentBundleItemTemplateVnum(r *http.Request) (uint32, bool) {
 	return decodeLocalContentBundleVnumWithPrefix(r, "/local/content-bundle/item-templates/")
 }
@@ -4964,6 +5050,14 @@ func decodeLocalContentBundleQuestStateFlagIdentity(r *http.Request) (string, st
 
 func decodeLocalContentBundleInteractionDefinitionImportPreviewIdentity(r *http.Request) (string, string, bool) {
 	return decodeLocalKindRefIdentityWithPrefix(r, "/local/content-bundle/import-preview/interaction-definitions/")
+}
+
+func decodeLocalContentBundleQuestFlagTriggerImportPreviewIdentity(r *http.Request) (string, string, bool) {
+	kind, ref, ok := decodeLocalKindRefIdentityWithPrefix(r, "/local/content-bundle/import-preview/quest-flag-triggers/")
+	if !ok || kind != interactionstore.KindQuestFlag {
+		return "", "", false
+	}
+	return kind, ref, true
 }
 
 func decodeLocalContentBundleInteractionKindImportPreviewKind(r *http.Request) (string, bool) {

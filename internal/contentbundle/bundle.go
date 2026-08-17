@@ -2829,6 +2829,57 @@ func normalizeQuestFlagTriggerSummary(trigger QuestFlagTriggerSummary) QuestFlag
 	return trigger
 }
 
+func QuestFlagTriggerByIdentity(triggers []QuestFlagTriggerSummary, kind string, ref string) (QuestFlagTriggerSummary, bool) {
+	kind = strings.TrimSpace(kind)
+	ref = strings.TrimSpace(ref)
+	if kind != interactionstore.KindQuestFlag || !interactionstore.ValidRef(ref) {
+		return QuestFlagTriggerSummary{}, false
+	}
+	for _, trigger := range triggers {
+		trigger = normalizeQuestFlagTriggerSummary(trigger)
+		if trigger.Kind == kind && trigger.Ref == ref {
+			return trigger, true
+		}
+	}
+	return QuestFlagTriggerSummary{}, false
+}
+
+func QuestFlagTriggerDeltaByIdentity(deltas []QuestFlagTriggerDelta, kind string, ref string) (QuestFlagTriggerDelta, bool) {
+	kind = strings.TrimSpace(kind)
+	ref = strings.TrimSpace(ref)
+	if kind != interactionstore.KindQuestFlag || !interactionstore.ValidRef(ref) {
+		return QuestFlagTriggerDelta{}, false
+	}
+	for _, delta := range deltas {
+		if questFlagTriggerDeltaMatchesIdentity(delta, kind, ref) {
+			return cloneQuestFlagTriggerDelta(delta), true
+		}
+	}
+	return QuestFlagTriggerDelta{}, false
+}
+
+func questFlagTriggerDeltaMatchesIdentity(delta QuestFlagTriggerDelta, kind string, ref string) bool {
+	return strings.TrimSpace(delta.Kind) == kind && strings.TrimSpace(delta.Ref) == ref ||
+		(delta.Current != nil && strings.TrimSpace(delta.Current.Kind) == kind && strings.TrimSpace(delta.Current.Ref) == ref) ||
+		(delta.Candidate != nil && strings.TrimSpace(delta.Candidate.Kind) == kind && strings.TrimSpace(delta.Candidate.Ref) == ref)
+}
+
+func cloneQuestFlagTriggerDelta(delta QuestFlagTriggerDelta) QuestFlagTriggerDelta {
+	cloned := delta
+	cloned.Kind = strings.TrimSpace(cloned.Kind)
+	cloned.Ref = strings.TrimSpace(cloned.Ref)
+	cloned.Change = strings.TrimSpace(cloned.Change)
+	if delta.Current != nil {
+		current := normalizeQuestFlagTriggerSummary(*delta.Current)
+		cloned.Current = &current
+	}
+	if delta.Candidate != nil {
+		candidate := normalizeQuestFlagTriggerSummary(*delta.Candidate)
+		cloned.Candidate = &candidate
+	}
+	return cloned
+}
+
 func questFlagTriggerSummary(definition interactionstore.Definition) QuestFlagTriggerSummary {
 	definition = interactionstore.NormalizeDefinition(definition)
 	return QuestFlagTriggerSummary{
