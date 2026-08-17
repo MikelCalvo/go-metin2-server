@@ -710,6 +710,9 @@ func (r *sharedWorldRegistry) exchangeRecipientCanAcceptLocked(recipient loginti
 	if exchangeInventorySnapshotInvalidForDisplayedItems(recipient.Inventory) {
 		return false
 	}
+	if exchangeEquipmentSnapshotInvalidForIncomingItems(recipient.Equipment) {
+		return false
+	}
 
 	working := append([]inventory.ItemInstance(nil), recipient.Inventory...)
 	seenIncomingIDs := make(map[uint64]struct{}, len(incoming))
@@ -722,7 +725,7 @@ func (r *sharedWorldRegistry) exchangeRecipientCanAcceptLocked(recipient loginti
 			return false
 		}
 		seenIncomingIDs[display.ItemID] = struct{}{}
-		if exchangeInventoryHasItemID(working, display.ItemID) {
+		if exchangeInventoryHasItemID(working, display.ItemID) || exchangeEquipmentHasItemID(recipient.Equipment, display.ItemID) {
 			return false
 		}
 		template, ok := r.itemTemplates[display.Vnum]
@@ -826,6 +829,18 @@ func exchangeInventoryHasItemID(items []inventory.ItemInstance, id uint64) bool 
 	return false
 }
 
+func exchangeEquipmentHasItemID(items []inventory.ItemInstance, id uint64) bool {
+	if id == 0 {
+		return false
+	}
+	for _, item := range items {
+		if item.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 func exchangeDisplayedItemsStillLive(displayed map[uint8]exchangeDisplayedItem, live loginticket.Character, templates map[uint32]itemcatalog.Template) bool {
 	if len(displayed) == 0 {
 		return true
@@ -879,6 +894,28 @@ func exchangeInventorySnapshotInvalidForDisplayedItems(items []inventory.ItemIns
 			return true
 		}
 		seenSlots[item.Slot] = struct{}{}
+		seenIDs[item.ID] = struct{}{}
+	}
+	return false
+}
+
+func exchangeEquipmentSnapshotInvalidForIncomingItems(items []inventory.ItemInstance) bool {
+	seenSlots := make(map[inventory.EquipmentSlot]struct{}, len(items))
+	seenIDs := make(map[uint64]struct{}, len(items))
+	for _, item := range items {
+		if !item.Equipped || !item.EquipSlot.Valid() {
+			return true
+		}
+		if err := item.Validate(); err != nil {
+			return true
+		}
+		if _, exists := seenSlots[item.EquipSlot]; exists {
+			return true
+		}
+		if _, exists := seenIDs[item.ID]; exists {
+			return true
+		}
+		seenSlots[item.EquipSlot] = struct{}{}
 		seenIDs[item.ID] = struct{}{}
 	}
 	return false
