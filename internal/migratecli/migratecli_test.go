@@ -209,6 +209,191 @@ func TestRunPlanArtifactWritesChecksumForExactPlanJSON(t *testing.T) {
 	}
 }
 
+func TestRunPlanArtifactStatusReportsMissingArtifactWithoutOpeningDatabase(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	artifactPath := t.TempDir() + "/missing-migration-plan-artifact.json"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"plan-artifact-status", "--plan-artifact", artifactPath}, nil, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected missing plan-artifact-status to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected missing plan-artifact-status not to write stderr, got %q", stderr.String())
+	}
+	var got migrationPlanArtifactStatus
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode missing plan artifact status JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if got.Format != migrationPlanArtifactStatusFormat || got.Present || got.Artifact != nil {
+		t.Fatalf("unexpected missing plan artifact status: %#v", got)
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("plan-artifact-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunPlanArtifactStatusReadsMetadataOnlyArtifactFile(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var artifactStdout bytes.Buffer
+	var artifactStderr bytes.Buffer
+	if code := Run([]string{"plan-artifact", "--ledger-snapshot", "-", "--target-version", "1"}, bytes.NewReader(rawSnapshot), &artifactStdout, &artifactStderr); code != 0 {
+		t.Fatalf("expected plan-artifact command to succeed, exit=%d stderr=%q", code, artifactStderr.String())
+	}
+	artifactPath := t.TempDir() + "/migration-plan-artifact.json"
+	if err := os.WriteFile(artifactPath, artifactStdout.Bytes(), 0o600); err != nil {
+		t.Fatalf("write plan artifact: %v", err)
+	}
+	var want migrationPlanArtifact
+	if err := json.Unmarshal(artifactStdout.Bytes(), &want); err != nil {
+		t.Fatalf("decode written plan artifact: %v\nbody:\n%s", err, artifactStdout.String())
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"plan-artifact-status", "--plan-artifact", artifactPath}, nil, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected plan-artifact-status to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr on plan-artifact-status success, got %q", stderr.String())
+	}
+	var got migrationPlanArtifactStatus
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode plan artifact status JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if got.Format != migrationPlanArtifactStatusFormat || !got.Present || got.Artifact == nil {
+		t.Fatalf("unexpected plan artifact status envelope: %#v", got)
+	}
+	if got.Artifact.Format != migrationPlanArtifactFormat || got.Artifact.PlanSHA256 != want.PlanSHA256 {
+		t.Fatalf("unexpected plan artifact status metadata: %#v", got.Artifact)
+	}
+	if got.Artifact.Plan.CurrentVersion != 0 || got.Artifact.Plan.LatestVersion < 1 || len(got.Artifact.Plan.Pending) != 1 || got.Artifact.Plan.Pending[0].Direction != dbmigrations.DirectionUp {
+		t.Fatalf("unexpected plan artifact status plan: %#v", got.Artifact.Plan)
+	}
+	body := stdout.String()
+	for _, forbidden := range []string{"CREATE TABLE", "DROP TABLE", "-- go-metin2 migration", "memory://"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("plan artifact status output must stay metadata-only, exposed %q in %s", forbidden, body)
+		}
+	}
+	if _, err := os.Stat(artifactPath); err != nil {
+		t.Fatalf("plan-artifact-status must not remove the inspected artifact file: %v", err)
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("plan-artifact-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunPlanArtifactStatusRejectsMalformedArtifactFile(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	artifactPath := t.TempDir() + "/migration-plan-artifact.json"
+	malformedArtifact := `{"format":"` + migrationPlanArtifactFormat + `","plan_sha256":"` + strings.Repeat("0", 64) + `","plan":{"current_version":0,"latest_version":1,"up_to_date":false,"pending":[]},"extra":true}`
+	if err := os.WriteFile(artifactPath, []byte(malformedArtifact), 0o600); err != nil {
+		t.Fatalf("write malformed plan artifact: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"plan-artifact-status", "--plan-artifact", artifactPath}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected malformed plan-artifact-status to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected malformed plan-artifact-status not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "migration apply plan confirmation failed") || !strings.Contains(stderr.String(), "unknown field") {
+		t.Fatalf("expected strict malformed-plan-artifact guidance, got %q", stderr.String())
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("malformed plan-artifact-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunPlanArtifactStatusRejectsNonContiguousStepSequence(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	catalog, err := dbmigrations.Catalog()
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	artifactPath := t.TempDir() + "/migration-plan-artifact.json"
+	driftedPlan := dbmigrations.Plan{
+		CurrentVersion: 0,
+		LatestVersion:  len(catalog),
+		UpToDate:       false,
+		Pending: []dbmigrations.PlanStep{
+			{Version: 2, Name: catalog[1].Name, Direction: dbmigrations.DirectionUp, Path: catalog[1].UpPath, SHA256: catalog[1].UpSHA256},
+		},
+	}
+	planSHA256, err := planSHA256(driftedPlan)
+	if err != nil {
+		t.Fatalf("hash drifted plan: %v", err)
+	}
+	rawArtifact, err := json.MarshalIndent(migrationPlanArtifact{Format: migrationPlanArtifactFormat, PlanSHA256: planSHA256, Plan: driftedPlan}, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal drifted plan artifact: %v", err)
+	}
+	rawArtifact = append(rawArtifact, '\n')
+	if err := os.WriteFile(artifactPath, rawArtifact, 0o600); err != nil {
+		t.Fatalf("write drifted plan artifact: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"plan-artifact-status", "--plan-artifact", artifactPath}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected non-contiguous plan-artifact-status to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected non-contiguous plan-artifact-status not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "migration apply plan confirmation failed") || !strings.Contains(stderr.String(), "does not continue") {
+		t.Fatalf("expected non-contiguous-step guidance, got %q", stderr.String())
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("non-contiguous plan-artifact-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunPlanArtifactStatusRejectsSymlinkArtifactFile(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	dir := t.TempDir()
+	targetPath := dir + "/target-plan-artifact.json"
+	if err := os.WriteFile(targetPath, []byte("{}\n"), 0o600); err != nil {
+		t.Fatalf("write symlink plan artifact target: %v", err)
+	}
+	artifactPath := dir + "/migration-plan-artifact.json"
+	if err := os.Symlink(targetPath, artifactPath); err != nil {
+		t.Fatalf("create symlink plan artifact: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"plan-artifact-status", "--plan-artifact", artifactPath}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected symlink plan-artifact-status to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected symlink plan-artifact-status not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "plan artifact must not be a symlink") {
+		t.Fatalf("expected symlink rejection guidance, got %q", stderr.String())
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("symlink plan-artifact-status must not open a database target, got events %#v", events)
+	}
+}
+
 func TestRunPlanArtifactOutputCanFeedApplyPlanConfirmation(t *testing.T) {
 	driverName := registerMigrateCLITestSQLDriver(t)
 	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})

@@ -34,7 +34,8 @@ const (
 
 // Run executes the small migration preflight CLI and returns a process-style exit
 // code. The catalog, status, empty-ledger-snapshot, ledger-snapshot, plan,
-// plan-artifact, apply-preflight, apply-lock-status, and apply-audit-status commands are read-only.
+// plan-artifact, plan-artifact-status, apply-preflight, apply-lock-status,
+// and apply-audit-status commands are read-only.
 // The apply command is an explicit CLI-only mutation surface: it requires an
 // operator-supplied database driver, DSN, strict offline ledger snapshot, and
 // target version, and it remains deliberately separate from daemon startup and
@@ -70,6 +71,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runPlan(args[1:], stdin, stdout, stderr)
 	case "plan-artifact":
 		return runPlanArtifact(args[1:], stdin, stdout, stderr)
+	case "plan-artifact-status":
+		return runPlanArtifactStatus(args[1:], stdout, stderr)
 	case "apply-preflight":
 		return runApplyPreflight(args[1:], stdin, stdout, stderr)
 	case "apply-lock-status":
@@ -220,12 +223,20 @@ func runPlan(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer)
 
 const migrationPlanArtifactFormat = "go-metin2-migration-plan-artifact-v1"
 
+const migrationPlanArtifactStatusFormat = "go-metin2-migration-plan-artifact-status-v1"
+
 const migrationApplyPreflightFormat = "go-metin2-migration-apply-preflight-v1"
 
 type migrationPlanArtifact struct {
 	Format     string            `json:"format"`
 	PlanSHA256 string            `json:"plan_sha256"`
 	Plan       dbmigrations.Plan `json:"plan"`
+}
+
+type migrationPlanArtifactStatus struct {
+	Format   string                 `json:"format"`
+	Present  bool                   `json:"present"`
+	Artifact *migrationPlanArtifact `json:"artifact,omitempty"`
 }
 
 type migrationApplyPreflight struct {
@@ -252,6 +263,41 @@ func runPlanArtifact(args []string, stdin io.Reader, stdout io.Writer, stderr io
 		PlanSHA256: planSHA256,
 		Plan:       plan,
 	})
+}
+
+func runPlanArtifactStatus(args []string, stdout io.Writer, stderr io.Writer) int {
+	flags := flag.NewFlagSet("plan-artifact-status", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	var planArtifactPath string
+	flags.StringVar(&planArtifactPath, "plan-artifact", "", "path to a metadata-only migration plan artifact")
+	flags.Usage = func() { printPlanArtifactStatusUsage(stderr) }
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintf(stderr, "unexpected plan-artifact-status argument %q\n", flags.Arg(0))
+		printPlanArtifactStatusUsage(stderr)
+		return exitUsage
+	}
+	if strings.TrimSpace(planArtifactPath) == "" {
+		fmt.Fprintln(stderr, "--plan-artifact is required for plan-artifact-status")
+		printPlanArtifactStatusUsage(stderr)
+		return exitUsage
+	}
+
+	artifact, present, err := readMigrationPlanArtifactStatusFile(planArtifactPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "migration plan artifact status: %v\n", err)
+		return exitError
+	}
+	status := migrationPlanArtifactStatus{
+		Format:  migrationPlanArtifactStatusFormat,
+		Present: present,
+	}
+	if present {
+		status.Artifact = &artifact
+	}
+	return writeJSON(stdout, stderr, status)
 }
 
 func runApplyPreflight(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
@@ -1203,22 +1249,60 @@ func readBoundedLedgerSnapshot(reader io.Reader) ([]byte, error) {
 }
 
 func readMigrationPlanArtifactFile(path string) (migrationPlanArtifact, error) {
+	artifact, _, err := readMigrationPlanArtifactPath(path, false)
+	return artifact, err
+}
+
+func readMigrationPlanArtifactStatusFile(path string) (migrationPlanArtifact, bool, error) {
+	return readMigrationPlanArtifactPath(path, true)
+}
+
+func readMigrationPlanArtifactPath(path string, reportMissing bool) (migrationPlanArtifact, bool, error) {
 	trimmed := strings.TrimSpace(path)
 	if trimmed == "" {
-		return migrationPlanArtifact{}, fmt.Errorf("%w: plan artifact path is required", ErrMigrationApplyPlanConfirmation)
+		return migrationPlanArtifact{}, false, fmt.Errorf("%w: plan artifact path is required", ErrMigrationApplyPlanConfirmation)
+	}
+	info, err := os.Lstat(trimmed)
+	if err != nil {
+		if reportMissing && errors.Is(err, os.ErrNotExist) {
+			return migrationPlanArtifact{}, false, nil
+		}
+		return migrationPlanArtifact{}, false, fmt.Errorf("%w: stat plan artifact: %v", ErrMigrationApplyPlanConfirmation, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return migrationPlanArtifact{}, false, fmt.Errorf("%w: plan artifact must not be a symlink: %s", ErrMigrationApplyPlanConfirmation, trimmed)
+	}
+	if !info.Mode().IsRegular() {
+		return migrationPlanArtifact{}, false, fmt.Errorf("%w: plan artifact must be a regular file: %s", ErrMigrationApplyPlanConfirmation, trimmed)
 	}
 	file, err := os.Open(trimmed)
 	if err != nil {
-		return migrationPlanArtifact{}, fmt.Errorf("%w: read plan artifact: %v", ErrMigrationApplyPlanConfirmation, err)
+		return migrationPlanArtifact{}, false, fmt.Errorf("%w: read plan artifact: %v", ErrMigrationApplyPlanConfirmation, err)
 	}
 	defer file.Close()
+	openedInfo, err := file.Stat()
+	if err != nil {
+		return migrationPlanArtifact{}, false, fmt.Errorf("%w: stat opened plan artifact: %v", ErrMigrationApplyPlanConfirmation, err)
+	}
+	if !openedInfo.Mode().IsRegular() {
+		return migrationPlanArtifact{}, false, fmt.Errorf("%w: opened plan artifact must be a regular file: %s", ErrMigrationApplyPlanConfirmation, trimmed)
+	}
+
 	raw, err := io.ReadAll(io.LimitReader(file, maxMigrationPlanArtifactBytes+1))
 	if err != nil {
-		return migrationPlanArtifact{}, fmt.Errorf("%w: read plan artifact: %v", ErrMigrationApplyPlanConfirmation, err)
+		return migrationPlanArtifact{}, false, fmt.Errorf("%w: read plan artifact: %v", ErrMigrationApplyPlanConfirmation, err)
 	}
 	if len(raw) > maxMigrationPlanArtifactBytes {
-		return migrationPlanArtifact{}, fmt.Errorf("%w: plan artifact exceeds %d bytes", ErrMigrationApplyPlanConfirmation, maxMigrationPlanArtifactBytes)
+		return migrationPlanArtifact{}, false, fmt.Errorf("%w: plan artifact exceeds %d bytes", ErrMigrationApplyPlanConfirmation, maxMigrationPlanArtifactBytes)
 	}
+	artifact, err := decodeMigrationPlanArtifact(raw)
+	if err != nil {
+		return migrationPlanArtifact{}, false, err
+	}
+	return artifact, true, nil
+}
+
+func decodeMigrationPlanArtifact(raw []byte) (migrationPlanArtifact, error) {
 	if !utf8.Valid(raw) {
 		return migrationPlanArtifact{}, fmt.Errorf("%w: plan artifact is not valid UTF-8", ErrMigrationApplyPlanConfirmation)
 	}
@@ -1234,6 +1318,10 @@ func readMigrationPlanArtifactFile(path string) (migrationPlanArtifact, error) {
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return migrationPlanArtifact{}, fmt.Errorf("%w: plan artifact has trailing JSON", ErrMigrationApplyPlanConfirmation)
 	}
+	return normalizeMigrationPlanArtifact(artifact)
+}
+
+func normalizeMigrationPlanArtifact(artifact migrationPlanArtifact) (migrationPlanArtifact, error) {
 	if artifact.Format != migrationPlanArtifactFormat {
 		return migrationPlanArtifact{}, fmt.Errorf("%w: unsupported plan artifact format %q", ErrMigrationApplyPlanConfirmation, artifact.Format)
 	}
@@ -1249,7 +1337,67 @@ func readMigrationPlanArtifactFile(path string) (migrationPlanArtifact, error) {
 	if artifact.PlanSHA256 != computedSHA256 {
 		return migrationPlanArtifact{}, fmt.Errorf("%w: plan artifact checksum mismatch: got %s want %s", ErrMigrationApplyPlanConfirmation, computedSHA256, artifact.PlanSHA256)
 	}
+	if err := validateMigrationPlanArtifactPlan(artifact.Plan); err != nil {
+		return migrationPlanArtifact{}, err
+	}
 	return artifact, nil
+}
+
+func validateMigrationPlanArtifactPlan(plan dbmigrations.Plan) error {
+	if plan.LatestVersion <= 0 {
+		return fmt.Errorf("%w: plan artifact latest_version must be positive", ErrMigrationApplyPlanConfirmation)
+	}
+	if plan.CurrentVersion < 0 || plan.CurrentVersion > plan.LatestVersion {
+		return fmt.Errorf("%w: plan artifact current_version must be inside catalog range", ErrMigrationApplyPlanConfirmation)
+	}
+	if plan.UpToDate != (len(plan.Pending) == 0) {
+		return fmt.Errorf("%w: plan artifact up_to_date does not match pending steps", ErrMigrationApplyPlanConfirmation)
+	}
+	for i, step := range plan.Pending {
+		if step.Version <= 0 || step.Version > plan.LatestVersion {
+			return fmt.Errorf("%w: plan artifact pending step %d has invalid version %d", ErrMigrationApplyPlanConfirmation, i+1, step.Version)
+		}
+		if step.Direction != dbmigrations.DirectionUp && step.Direction != dbmigrations.DirectionDown {
+			return fmt.Errorf("%w: plan artifact pending step %d has invalid direction %q", ErrMigrationApplyPlanConfirmation, i+1, step.Direction)
+		}
+		if i > 0 && step.Direction != plan.Pending[0].Direction {
+			return fmt.Errorf("%w: plan artifact pending step %d mixes direction %q after %q", ErrMigrationApplyPlanConfirmation, i+1, step.Direction, plan.Pending[0].Direction)
+		}
+		if strings.TrimSpace(step.Name) == "" {
+			return fmt.Errorf("%w: plan artifact pending step %d name is required", ErrMigrationApplyPlanConfirmation, i+1)
+		}
+		if strings.TrimSpace(step.Path) == "" {
+			return fmt.Errorf("%w: plan artifact pending step %d path is required", ErrMigrationApplyPlanConfirmation, i+1)
+		}
+		if _, err := parsePlanSHA256(step.SHA256); err != nil {
+			return fmt.Errorf("%w: invalid plan artifact pending step %d sha256: %v", ErrMigrationApplyPlanConfirmation, i+1, err)
+		}
+	}
+	if _, err := replayMigrationPlanArtifactSteps(plan); err != nil {
+		return err
+	}
+	return nil
+}
+
+func replayMigrationPlanArtifactSteps(plan dbmigrations.Plan) (int, error) {
+	currentVersion := plan.CurrentVersion
+	for i, step := range plan.Pending {
+		switch step.Direction {
+		case dbmigrations.DirectionUp:
+			if step.Version != currentVersion+1 {
+				return 0, fmt.Errorf("%w: plan artifact pending up step %d version %d does not continue from %d", ErrMigrationApplyPlanConfirmation, i+1, step.Version, currentVersion)
+			}
+			currentVersion = step.Version
+		case dbmigrations.DirectionDown:
+			if step.Version != currentVersion {
+				return 0, fmt.Errorf("%w: plan artifact pending down step %d version %d does not continue from %d", ErrMigrationApplyPlanConfirmation, i+1, step.Version, currentVersion)
+			}
+			currentVersion = step.Version - 1
+		default:
+			return 0, fmt.Errorf("%w: plan artifact pending step %d has invalid direction %q", ErrMigrationApplyPlanConfirmation, i+1, step.Direction)
+		}
+	}
+	return currentVersion, nil
 }
 
 func sha256Hex(raw []byte) string {
@@ -1339,6 +1487,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  ledger-snapshot        export metadata-only schema_migrations ledger snapshot from a database/sql target")
 	fmt.Fprintln(w, "  plan                   print metadata-only dry-run plan from an offline ledger snapshot")
 	fmt.Fprintln(w, "  plan-artifact          print dry-run plan plus checksum for apply confirmation")
+	fmt.Fprintln(w, "  plan-artifact-status   inspect a migration plan artifact without mutating it")
 	fmt.Fprintln(w, "  apply-preflight        validate apply inputs and plan confirmation without opening a database")
 	fmt.Fprintln(w, "  apply-lock-status      inspect a local migration apply lock file without mutating it")
 	fmt.Fprintln(w, "  apply-audit-status     inspect a migration apply audit file without mutating it")
@@ -1353,6 +1502,8 @@ func printUsage(w io.Writer) {
 	printPlanUsage(w)
 	fmt.Fprintln(w, "")
 	printPlanArtifactUsage(w)
+	fmt.Fprintln(w, "")
+	printPlanArtifactStatusUsage(w)
 	fmt.Fprintln(w, "")
 	printApplyPreflightUsage(w)
 	fmt.Fprintln(w, "")
@@ -1386,6 +1537,11 @@ func printPlanUsage(w io.Writer) {
 func printPlanArtifactUsage(w io.Writer) {
 	fmt.Fprintln(w, "plan-artifact usage:")
 	fmt.Fprintln(w, "  metin2-migrate plan-artifact --ledger-snapshot <path|-> --target-version <version|latest>")
+}
+
+func printPlanArtifactStatusUsage(w io.Writer) {
+	fmt.Fprintln(w, "plan-artifact-status usage:")
+	fmt.Fprintln(w, "  metin2-migrate plan-artifact-status --plan-artifact <path>")
 }
 
 func printApplyPreflightUsage(w io.Writer) {
