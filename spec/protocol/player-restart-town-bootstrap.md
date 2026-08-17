@@ -82,12 +82,15 @@ When accepted, `/restart_town`:
    - `CHAR_ADDITIONAL_INFO`
    - `CHARACTER_UPDATE`
    - `PLAYER_POINT_CHANGE`
-5. appends the already-owned transfer-origin visibility deltas after that self burst:
+5. preflights already-due server-owned non-player lifecycle timers before transfer-style visibility is composed:
+   - ready static-actor respawns flush first
+   - due spawn-group return steps flush next
+6. appends the already-owned transfer-origin visibility deltas after that self burst:
    - source visible peers leave through `CHARACTER_DEL`
    - destination visible peers enter through the ordinary add/info/update burst
-   - source and destination static-actor visibility still reuse the ordinary transfer/static-actor delta families already frozen elsewhere
-6. when the source map contains a still-visible practice mob and the restart moves the player to a different town map, the same socket also receives the ordinary source-map non-player visibility teardown (`CHARACTER_DEL(mob_vid)`) after the self bootstrap burst
-7. keeps the already-owned post-death rule that a fresh `TARGET` is required before later `ATTACK`
+   - source and destination static-actor visibility still reuse the ordinary transfer/static-actor delta families already frozen elsewhere, using the post-preflight mob/spawn lifecycle snapshot
+7. when the source map contains a still-visible practice mob and the restart moves the player to a different town map, the same socket also receives the ordinary source-map non-player visibility teardown (`CHARACTER_DEL(mob_vid)`) after the self bootstrap burst
+8. keeps the already-owned post-death rule that a fresh `TARGET` is required before later `ATTACK`
 
 For this bootstrap slice, the recovery stays intentionally asymmetric with the engaged practice mob:
 - the player rebuilds from persisted player state and moves to the owned town-return target

@@ -13085,6 +13085,170 @@ func TestGameSessionFlowPracticeMobRestartTownUsesOwnedEmpireCreatePositionTable
 	}
 }
 
+func TestGameSessionFlowPracticeMobRestartTownPreflightsDueDestinationRespawn(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("RTDueOwner", 0x010301a1, 0x020401a1, 1100, 2100, 0, 101, 201)
+	owner.Empire = 2
+	owner.Points[bootstrapPlayerPointValueIndex] = 2
+	destinationKiller := peerVisibilityCharacter("RTDueKiller", 0x010301a2, 0x020401a2, 52070, 166600, 0, 102, 202)
+	destinationKiller.MapIndex = 21
+	destinationKiller.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "rt-dr-owner", 0xa1a1a1a1, owner)
+	issuePeerTicket(t, store, "rt-dr-killer", 0xa2a2a2a2, destinationKiller)
+	if err := accounts.Save(accountstore.Account{Login: "rt-dr-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed restart-town due-respawn owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "rt-dr-killer", Empire: destinationKiller.Empire, Characters: cloneCharacters([]loginticket.Character{destinationKiller})}); err != nil {
+		t.Fatalf("seed restart-town due-respawn killer account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error in restart-town due-respawn preflight test: %v", err)
+	}
+	currentTime := time.Unix(1700000990, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{
+		{
+			Ref:           "practice.restart_town_due_respawn_source",
+			Name:          "RestartTownDueRespawnSourceMob",
+			MapIndex:      bootstrapMapIndex,
+			X:             1200,
+			Y:             2200,
+			RaceNum:       101,
+			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		},
+		{
+			Ref:           "practice.restart_town_due_respawn_destination",
+			Name:          "RestartTownDueRespawnDestinationMob",
+			MapIndex:      21,
+			X:             52070,
+			Y:             166600,
+			RaceNum:       101,
+			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		},
+	}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle for restart-town due-respawn preflight test: %v", err)
+	}
+	sourceGroup, ok := runtime.SpawnGroupByRef("practice.restart_town_due_respawn_source")
+	if !ok {
+		t.Fatal("expected source practice mob to resolve by ref before restart-town due-respawn preflight test")
+	}
+	destinationGroup, ok := runtime.SpawnGroupByRef("practice.restart_town_due_respawn_destination")
+	if !ok {
+		t.Fatal("expected destination practice mob to resolve by ref before restart-town due-respawn preflight test")
+	}
+	destinationVID := uint32(destinationGroup.EntityID)
+
+	killerFlow, killerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "rt-dr-killer", 0xa2a2a2a2)
+	if len(killerEnter) != 8 {
+		t.Fatalf("expected destination killer bootstrap with visible destination practice mob, got %d frames", len(killerEnter))
+	}
+	drivePracticeMobOwnerKill(t, killerFlow, destinationVID, "restart-town due destination respawn", func(duration time.Duration) {
+		currentTime = currentTime.Add(duration)
+	})
+	if queued := flushServerFrames(t, killerFlow); len(queued) != 0 {
+		t.Fatalf("expected no queued killer frames before restart-town due-respawn preflight, got %d", len(queued))
+	}
+	closeSessionFlow(t, killerFlow)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "rt-dr-owner", 0xa1a1a1a1)
+	defer closeSessionFlow(t, ownerFlow)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected owner bootstrap with visible source practice mob, got %d frames", len(ownerEnter))
+	}
+	sourceVID := uint32(sourceGroup.EntityID)
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: sourceVID})))
+	if err != nil {
+		t.Fatalf("unexpected source-mob target before restart-town due-respawn preflight: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected source-mob target before restart-town due-respawn preflight, got %d frames", len(selectOut))
+	}
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: sourceVID})))
+	if err != nil {
+		t.Fatalf("unexpected source-mob attack before restart-town due-respawn preflight: %v", err)
+	}
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target refresh, immediate retaliation, and damage-info before restart-town due-respawn preflight, got %d frames", len(attackOut))
+	}
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	ownerDeathFrames := flushServerFrames(t, ownerFlow)
+	if len(ownerDeathFrames) != 3 {
+		t.Fatalf("expected delayed retaliation point-loss, owner dead, and clear-target before restart-town due-respawn preflight, got %d frames", len(ownerDeathFrames))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, ownerDeathFrames[0]))
+	if err != nil {
+		t.Fatalf("decode owner point-change before restart-town due-respawn preflight: %v", err)
+	}
+	if pointChange.Value != 0 {
+		t.Fatalf("expected owner to reach zero HP before restart-town due-respawn preflight, got %+v", pointChange)
+	}
+	currentTime = currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay)
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_town"})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_town error after destination respawn became due: %v", err)
+	}
+	if len(restartOut) != 8 {
+		t.Fatalf("expected /restart_town to preflight due destination respawn and return self bootstrap, source mob delete, and live destination mob burst, got %d frames", len(restartOut))
+	}
+	sourceDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, restartOut[4]))
+	if err != nil {
+		t.Fatalf("decode source practice-mob delete after /restart_town due-respawn preflight: %v", err)
+	}
+	if sourceDelete.VID != sourceVID {
+		t.Fatalf("expected /restart_town source practice-mob delete for vid %d, got %+v", sourceVID, sourceDelete)
+	}
+	destinationAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[5]))
+	if err != nil {
+		t.Fatalf("decode live destination mob add after /restart_town due-respawn preflight: %v", err)
+	}
+	if destinationAdd.VID != destinationVID || destinationAdd.X != 52070 || destinationAdd.Y != 166600 || destinationAdd.RaceNum != 101 {
+		t.Fatalf("expected /restart_town to show live destination mob at authored home after due-respawn preflight, got %+v", destinationAdd)
+	}
+	destinationInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, restartOut[6]))
+	if err != nil {
+		t.Fatalf("decode live destination mob info after /restart_town due-respawn preflight: %v", err)
+	}
+	if destinationInfo.VID != destinationVID || destinationInfo.Name != "RestartTownDueRespawnDestinationMob" {
+		t.Fatalf("expected destination mob info for vid %d after /restart_town due-respawn preflight, got %+v", destinationVID, destinationInfo)
+	}
+	destinationUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, restartOut[7]))
+	if err != nil {
+		t.Fatalf("decode live destination mob update after /restart_town due-respawn preflight: %v", err)
+	}
+	if destinationUpdate.VID != destinationVID {
+		t.Fatalf("expected destination mob update for vid %d after /restart_town due-respawn preflight, got %+v", destinationVID, destinationUpdate)
+	}
+	for idx := 5; idx < len(restartOut); idx++ {
+		if deadReplay, err := worldproto.DecodeDead(decodeSingleFrame(t, restartOut[idx])); err == nil {
+			t.Fatalf("expected /restart_town due-respawn preflight not to replay stale destination DEAD, got %+v at frame %d", deadReplay, idx)
+		}
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected no duplicate queued destination respawn rebuild after /restart_town due-respawn preflight, got %d", len(queued))
+	}
+	reselectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: destinationVID})))
+	if err != nil {
+		t.Fatalf("unexpected destination target after /restart_town due-respawn preflight: %v", err)
+	}
+	if len(reselectOut) != 1 {
+		t.Fatalf("expected destination mob to be freshly targetable after /restart_town due-respawn preflight, got %d frames", len(reselectOut))
+	}
+	reselected, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, reselectOut[0]))
+	if err != nil {
+		t.Fatalf("decode destination target after /restart_town due-respawn preflight: %v", err)
+	}
+	if reselected.TargetVID != destinationVID || reselected.HPPercent != 100 {
+		t.Fatalf("expected destination mob target to be full HP after /restart_town due-respawn preflight, got %+v", reselected)
+	}
+}
+
 func TestGameSessionFlowPracticeMobRestartTownFreshTargetKeepsRuntimeOwnedMobHP(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

@@ -4162,6 +4162,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							rollbackPersistedTownRestart := func() {
 								_ = saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters)
 							}
+							runtime.flushReadyStaticActorRespawns()
+							runtime.flushDueSpawnGroupReturnSteps()
 							bootstrapFrames, err := worldentry.BuildBootstrapFramesWithTemplates(restartedSelected, runtime.itemTemplates)
 							if err != nil {
 								rollbackPersistedTownRestart()
