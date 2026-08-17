@@ -9826,6 +9826,98 @@ func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMoveWithStati
 	}
 }
 
+func TestNewGameSessionFactoryDueSpawnGroupReturnStepFlushesBeforeMoveTransferRebootstrap(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	mover := peerVisibilityCharacter("ReturnStepTransferMover", 0x0103016e, 0x0204016e, 1300, 2300, 0, 101, 201)
+	issuePeerTicket(t, store, "return-step-transfer-mover", 0x1e1e1e1e, mover)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700000910, 0)
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		[]bootstrapTransferTrigger{{
+			SourceMapIndex: bootstrapMapIndex,
+			SourceX:        1500,
+			SourceY:        2600,
+			TargetMapIndex: 42,
+			TargetX:        2201,
+			TargetY:        2800,
+		}},
+	)
+	if err != nil {
+		t.Fatalf("unexpected return-step transfer runtime error: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_step_transfer",
+		Name:          "ReturnStepTransferMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import transfer return-step spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_step_transfer")
+	if !ok {
+		t.Fatal("expected transfer return-step spawn group to resolve by ref")
+	}
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "ReturnStepTransferMob", 42, 2301, 2800, 20350); !ok {
+		t.Fatal("expected spawn-backed actor update to arm a return step before transfer")
+	}
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "return-step-transfer-mover", 0x1e1e1e1e)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 5 {
+		t.Fatalf("expected source-map enter before return-step transfer to avoid destination actor visibility, got %d frames", len(enterOut))
+	}
+	currentTime = currentTime.Add(bootstrapSpawnGroupReturnStepDelay)
+
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x21222324})))
+	if err != nil {
+		t.Fatalf("unexpected move transfer error before due return-step rebootstrap: %v", err)
+	}
+	if len(moveOut) != 7 {
+		t.Fatalf("expected transfer rebootstrap with one stepped static-actor burst, got %d frames", len(moveOut))
+	}
+	steppedAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moveOut[4]))
+	if err != nil {
+		t.Fatalf("decode transfer stepped actor add: %v", err)
+	}
+	if steppedAdd.VID != uint32(group.EntityID) || steppedAdd.X != 2201 || steppedAdd.Y != 2800 {
+		t.Fatalf("expected transfer rebootstrap to see due return-step position 2201,2800 for actor %d, got %+v", group.EntityID, steppedAdd)
+	}
+	steppedInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, moveOut[5]))
+	if err != nil {
+		t.Fatalf("decode transfer stepped actor info: %v", err)
+	}
+	if steppedInfo.VID != uint32(group.EntityID) || steppedInfo.Name != "ReturnStepTransferMob" {
+		t.Fatalf("expected transfer rebootstrap to see stepped actor info for target %d, got %+v", group.EntityID, steppedInfo)
+	}
+	steppedUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, moveOut[6]))
+	if err != nil {
+		t.Fatalf("decode transfer stepped actor update: %v", err)
+	}
+	if steppedUpdate.VID != uint32(group.EntityID) {
+		t.Fatalf("expected transfer rebootstrap to see stepped actor update for target %d, got %+v", group.EntityID, steppedUpdate)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no duplicate queued return-step rebuild after transfer rebootstrap, got %d", len(queued))
+	}
+}
+
 func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMoveWithStillDeadTrainingDummyReplay(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	killer := peerVisibilityCharacter("Killer", 0x01030101, 0x02040101, 1700, 2800, 0, 101, 201)
