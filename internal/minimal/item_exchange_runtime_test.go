@@ -1,6 +1,7 @@
 package minimal
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
@@ -2272,6 +2273,200 @@ func TestGameRuntimeItemExchangeMutualAcceptFinalizesDisplayedTradeAndClosesShel
 	if len(cancelOut) != 0 {
 		t.Fatalf("expected mutual-accept finalize to close the shell so later cancel is a no-op, got %d frames", len(cancelOut))
 	}
+}
+
+func TestGameRuntimeItemExchangeMutualAcceptFailsClosedWhenPartnerPersistenceFails(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangePersistFailOwner", 0x010307d1, 0x020407d1, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 870, Vnum: 27045, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangePersistFailPeer", 0x010307d2, 0x020407d2, 1120, 2120, 0, 101, 201)
+	peer.Gold = 7000
+	peer.Inventory = []inventory.ItemInstance{{ID: 871, Vnum: 27046, Count: 2, Slot: 6}}
+	peer.Quickslots = []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeItem, Slot: 6}}
+	ownerLogin := "ex-persist-fail-owner"
+	peerLogin := "ex-persist-fail-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070d1, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070d2, peer)
+	accounts := newExchangeFinalizeFailingAccountStore(
+		peerLogin,
+		accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})},
+		accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})},
+	)
+	ownerTemplate := itemcatalog.Template{Vnum: 27045, Name: "Persist Fail Owner Potion", Stackable: true, MaxCount: 200}
+	peerTemplate := itemcatalog.Template{Vnum: 27046, Name: "Persist Fail Peer Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{ownerTemplate, peerTemplate})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange persist-fail runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070d1)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070d2)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected persist-fail exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected persist-fail exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	if out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 3, Position: itemproto.InventoryPosition(5)}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected persist-fail owner item-add to emit one frame, got frames=%d err=%v", len(out), err)
+	}
+	_ = flushServerFrames(t, peerFlow)
+	if out, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 4, Position: itemproto.InventoryPosition(6)}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected persist-fail peer item-add to emit one frame, got frames=%d err=%v", len(out), err)
+	}
+	_ = flushServerFrames(t, ownerFlow)
+	if out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderGoldAdd, Arg1: 1200}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected persist-fail owner gold-add to emit one frame, got frames=%d err=%v", len(out), err)
+	}
+	_ = flushServerFrames(t, peerFlow)
+	if out, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderGoldAdd, Arg1: 800}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected persist-fail peer gold-add to emit one frame, got frames=%d err=%v", len(out), err)
+	}
+	_ = flushServerFrames(t, ownerFlow)
+
+	ownerAcceptOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected persist-fail owner accept error: %v", err)
+	}
+	if len(ownerAcceptOut) != 1 {
+		t.Fatalf("expected persist-fail owner accept to emit one frame, got %d", len(ownerAcceptOut))
+	}
+	assertExchangeAcceptFrame(t, ownerAcceptOut[0], 1, "persist-fail owner accept")
+	queuedOwnerAccept := flushServerFrames(t, peerFlow)
+	if len(queuedOwnerAccept) != 1 {
+		t.Fatalf("expected persist-fail owner accept to queue one peer frame, got %d", len(queuedOwnerAccept))
+	}
+	assertExchangeAcceptFrame(t, queuedOwnerAccept[0], 0, "persist-fail owner accept peer")
+
+	peerAcceptOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected persist-fail peer accept error: %v", err)
+	}
+	if len(peerAcceptOut) != 0 {
+		t.Fatalf("expected partner persistence failure to fail closed with no finalize frames, got %d", len(peerAcceptOut))
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected partner persistence failure to queue no owner frames, got %d", len(queued))
+	}
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "persist-fail owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "persist-fail peer")
+	assertExchangeLiveStateUnchanged(t, runtime, owner, "persist-fail owner live")
+	assertExchangeLiveStateUnchanged(t, runtime, peer, "persist-fail peer live")
+
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected persist-fail cancel after failed finalize error: %v", err)
+	}
+	if len(cancelOut) != 1 {
+		t.Fatalf("expected failed mutual-accept finalize to leave the shell cancellable with one self END, got %d", len(cancelOut))
+	}
+	assertExchangeEndFrame(t, cancelOut[0], "persist-fail owner cancel")
+	queuedCancel := flushServerFrames(t, peerFlow)
+	if len(queuedCancel) != 1 {
+		t.Fatalf("expected failed mutual-accept finalize cancel to queue one peer END, got %d", len(queuedCancel))
+	}
+	assertExchangeEndFrame(t, queuedCancel[0], "persist-fail peer cancel")
+}
+
+func TestGameRuntimeItemExchangeMutualAcceptFailsClosedWhenOriginPersistenceFails(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeOriginPersistFailOwner", 0x010307d3, 0x020407d3, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 872, Vnum: 27045, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeOriginPersistFailPeer", 0x010307d4, 0x020407d4, 1120, 2120, 0, 101, 201)
+	peer.Gold = 7000
+	peer.Inventory = []inventory.ItemInstance{{ID: 873, Vnum: 27046, Count: 2, Slot: 6}}
+	peer.Quickslots = []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeItem, Slot: 6}}
+	ownerLogin := "ex-origin-persist-fail-owner"
+	peerLogin := "ex-origin-persist-fail-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070d3, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070d4, peer)
+	accounts := newExchangeFinalizeFailingAccountStore(
+		ownerLogin,
+		accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})},
+		accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})},
+	)
+	ownerTemplate := itemcatalog.Template{Vnum: 27045, Name: "Origin Persist Fail Owner Potion", Stackable: true, MaxCount: 200}
+	peerTemplate := itemcatalog.Template{Vnum: 27046, Name: "Origin Persist Fail Peer Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{ownerTemplate, peerTemplate})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected origin persist-fail runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070d3)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070d4)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	if out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected origin persist-fail exchange start to emit one frame, got frames=%d err=%v", len(out), err)
+	}
+	_ = flushServerFrames(t, peerFlow)
+	if out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 3, Position: itemproto.InventoryPosition(5)}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected origin persist-fail owner item-add to emit one frame, got frames=%d err=%v", len(out), err)
+	}
+	_ = flushServerFrames(t, peerFlow)
+	if out, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 4, Position: itemproto.InventoryPosition(6)}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected origin persist-fail peer item-add to emit one frame, got frames=%d err=%v", len(out), err)
+	}
+	_ = flushServerFrames(t, ownerFlow)
+	if out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderGoldAdd, Arg1: 1200}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected origin persist-fail owner gold-add to emit one frame, got frames=%d err=%v", len(out), err)
+	}
+	_ = flushServerFrames(t, peerFlow)
+	if out, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderGoldAdd, Arg1: 800}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected origin persist-fail peer gold-add to emit one frame, got frames=%d err=%v", len(out), err)
+	}
+	_ = flushServerFrames(t, ownerFlow)
+
+	if out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected origin persist-fail owner accept to emit one frame, got frames=%d err=%v", len(out), err)
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	peerAcceptOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected origin persist-fail peer accept error: %v", err)
+	}
+	if len(peerAcceptOut) != 0 {
+		t.Fatalf("expected origin persistence failure to fail closed with no finalize frames, got %d", len(peerAcceptOut))
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected origin persistence failure to queue no owner frames, got %d", len(queued))
+	}
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "origin persist-fail owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "origin persist-fail peer")
+	assertExchangeLiveStateUnchanged(t, runtime, owner, "origin persist-fail owner live")
+	assertExchangeLiveStateUnchanged(t, runtime, peer, "origin persist-fail peer live")
+
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected origin persist-fail cancel after failed finalize error: %v", err)
+	}
+	if len(cancelOut) != 1 {
+		t.Fatalf("expected failed origin mutual-accept finalize to leave the shell cancellable with one self END, got %d", len(cancelOut))
+	}
+	assertExchangeEndFrame(t, cancelOut[0], "origin persist-fail owner cancel")
+	queuedCancel := flushServerFrames(t, peerFlow)
+	if len(queuedCancel) != 1 {
+		t.Fatalf("expected failed origin mutual-accept finalize cancel to queue one peer END, got %d", len(queuedCancel))
+	}
+	assertExchangeEndFrame(t, queuedCancel[0], "origin persist-fail peer cancel")
 }
 
 func TestGameRuntimeItemExchangeAcceptDisplaysWithoutFinalizingTrade(t *testing.T) {
@@ -4867,6 +5062,101 @@ func assertExchangeAccountUnchanged(t *testing.T, accounts accountstore.Store, l
 	if got.Gold != want.Gold {
 		t.Fatalf("%s mutated gold: got %d want %d", context, got.Gold, want.Gold)
 	}
+}
+
+func assertExchangeLiveStateUnchanged(t *testing.T, runtime *gameRuntime, want loginticket.Character, context string) {
+	t.Helper()
+	currency, ok := runtime.CurrencySnapshot(want.Name)
+	if !ok {
+		t.Fatalf("expected currency snapshot for %s", context)
+	}
+	if currency.Gold != want.Gold {
+		t.Fatalf("%s mutated live gold: got %d want %d", context, currency.Gold, want.Gold)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(want.Name)
+	if !ok {
+		t.Fatalf("expected inventory snapshot for %s", context)
+	}
+	gotInventory := make([]inventory.ItemInstance, 0, len(inventorySnapshot.Inventory))
+	for _, item := range inventorySnapshot.Inventory {
+		gotInventory = append(gotInventory, inventory.ItemInstance{ID: item.ID, Vnum: item.Vnum, Count: item.Count, Slot: inventory.SlotIndex(item.Slot), Locked: item.Locked})
+	}
+	if !sameExchangeInventory(gotInventory, want.Inventory) {
+		t.Fatalf("%s mutated live inventory: got %+v want %+v", context, gotInventory, want.Inventory)
+	}
+	quickslots, ok := runtime.QuickslotsSnapshot(want.Name)
+	if !ok {
+		t.Fatalf("expected quickslot snapshot for %s", context)
+	}
+	gotQuickslots := make([]loginticket.Quickslot, 0, len(quickslots.Quickslots))
+	for _, slot := range quickslots.Quickslots {
+		gotQuickslots = append(gotQuickslots, loginticket.Quickslot{Position: slot.Position, Type: slot.Type, Slot: slot.Slot})
+	}
+	if !sameExchangeQuickslots(gotQuickslots, want.Quickslots) {
+		t.Fatalf("%s mutated live quickslots: got %+v want %+v", context, gotQuickslots, want.Quickslots)
+	}
+}
+
+type exchangeFinalizeFailingAccountStore struct {
+	accounts  map[string]accountstore.Account
+	originals map[string]accountstore.Account
+	failLogin string
+}
+
+func newExchangeFinalizeFailingAccountStore(failLogin string, accounts ...accountstore.Account) *exchangeFinalizeFailingAccountStore {
+	cloned := make(map[string]accountstore.Account, len(accounts))
+	originals := make(map[string]accountstore.Account, len(accounts))
+	for _, account := range accounts {
+		copyAccount := account
+		copyAccount.Characters = cloneCharacters(account.Characters)
+		cloned[account.Login] = copyAccount
+		original := account
+		original.Characters = cloneCharacters(account.Characters)
+		originals[account.Login] = original
+	}
+	return &exchangeFinalizeFailingAccountStore{accounts: cloned, originals: originals, failLogin: failLogin}
+}
+
+func (s *exchangeFinalizeFailingAccountStore) Load(login string) (accountstore.Account, error) {
+	account, ok := s.accounts[login]
+	if !ok {
+		return accountstore.Account{}, accountstore.ErrAccountNotFound
+	}
+	return accountstore.Account{Login: account.Login, Empire: account.Empire, Characters: cloneCharacters(account.Characters)}, nil
+}
+
+func (s *exchangeFinalizeFailingAccountStore) Save(account accountstore.Account) error {
+	if account.Login == s.failLogin {
+		original, ok := s.originals[account.Login]
+		if ok && exchangeAccountTradeStateMutated(original, account) {
+			return errors.New("forced exchange finalize persistence failure")
+		}
+	}
+	s.accounts[account.Login] = accountstore.Account{Login: account.Login, Empire: account.Empire, Characters: cloneCharacters(account.Characters)}
+	return nil
+}
+
+func exchangeAccountTradeStateMutated(original accountstore.Account, updated accountstore.Account) bool {
+	if len(original.Characters) != len(updated.Characters) {
+		return true
+	}
+	for i := range original.Characters {
+		left := original.Characters[i]
+		right := updated.Characters[i]
+		if left.Gold != right.Gold {
+			return true
+		}
+		if !sameExchangeInventory(left.Inventory, right.Inventory) {
+			return true
+		}
+		if !sameExchangeQuickslots(left.Quickslots, right.Quickslots) {
+			return true
+		}
+		if !sameExchangeInventory(left.Equipment, right.Equipment) {
+			return true
+		}
+	}
+	return false
 }
 
 func sameExchangeInventory(got []inventory.ItemInstance, want []inventory.ItemInstance) bool {
