@@ -2403,6 +2403,306 @@ func TestGameRuntimeSpawnGroupReturnStepSnapshotsOmitDeadScheduledActors(t *test
 	}
 }
 
+func TestGameRuntimeSpawnGroupChaseStepSnapshotsReportPendingSchedules(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ChaseStepSnapshotOwner", 0x01030181, 0x02040181, 1900, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "chase-step-snapshot-owner", 0x30303031, owner)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700001100, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for chase-step schedule snapshots: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.chase_step_snapshot",
+		Name:          "ChaseStepSnapshotMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import chase-step snapshot spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.chase_step_snapshot")
+	if !ok {
+		t.Fatal("expected chase-step snapshot spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "chase-step-snapshot-owner", 0x30303031)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
+		t.Fatalf("unexpected owner target error before chase-step snapshot: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	}))); err != nil {
+		t.Fatalf("unexpected accepted hit before chase-step snapshot: %v", err)
+	}
+
+	pending := runtime.SpawnGroupChaseSteps()
+	if len(pending) != 1 {
+		t.Fatalf("expected one pending chase-step snapshot, got %d: %+v", len(pending), pending)
+	}
+	snapshot := pending[0]
+	wantReadyAt := currentTime.Add(bootstrapSpawnGroupChaseStepDelay)
+	if snapshot.EntityID != group.EntityID || !snapshot.ReadyAt.Equal(wantReadyAt) || snapshot.RemainingMs != bootstrapSpawnGroupChaseStepDelay.Milliseconds() {
+		t.Fatalf("unexpected pending chase-step timing/id: got %+v want entity=%d ready_at=%s remaining_ms=%d", snapshot, group.EntityID, wantReadyAt, bootstrapSpawnGroupChaseStepDelay.Milliseconds())
+	}
+	if snapshot.Actor.EntityID != group.EntityID || snapshot.Actor.X != 1700 || snapshot.Actor.Dead || snapshot.Actor.SpawnLeash == nil || snapshot.Actor.SpawnLeash.ReturnRequired {
+		t.Fatalf("expected pending chase-step actor to expose current live in-leash spawn group, got %+v", snapshot.Actor)
+	}
+	if snapshot.Step.Next.MapIndex != 42 || snapshot.Step.Next.X != 1800 || snapshot.Step.Next.Y != 2800 || snapshot.Step.Complete {
+		t.Fatalf("expected pending chase-step snapshot to expose planned next step toward owner, got %+v", snapshot.Step)
+	}
+
+	exact, ok := runtime.SpawnGroupChaseStep(group.EntityID)
+	if !ok || exact.EntityID != group.EntityID || !exact.ReadyAt.Equal(wantReadyAt) {
+		t.Fatalf("expected exact pending chase-step snapshot, ok=%v snapshot=%+v", ok, exact)
+	}
+	if missing, ok := runtime.SpawnGroupChaseStep(group.EntityID + 99); ok || missing.EntityID != 0 {
+		t.Fatalf("expected missing chase-step lookup to fail closed, ok=%v snapshot=%+v", ok, missing)
+	}
+
+	currentTime = wantReadyAt.Add(50 * time.Millisecond)
+	exact, ok = runtime.SpawnGroupChaseStep(group.EntityID)
+	if !ok || exact.RemainingMs != 0 {
+		t.Fatalf("expected expired but unflushed chase-step snapshot to remain visible with remaining_ms=0, ok=%v snapshot=%+v", ok, exact)
+	}
+}
+
+func TestGameRuntimeSpawnGroupChaseStepsForMapReturnsMapLocalPendingSchedules(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner42 := peerVisibilityCharacter("ChaseStepMap42Owner", 0x01030182, 0x02040182, 1900, 2800, 0, 101, 201)
+	owner42.MapIndex = 42
+	owner42.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "chase-step-map-42-owner", 0x30303032, owner42)
+	owner43 := peerVisibilityCharacter("ChaseStepMap43Owner", 0x01030183, 0x02040183, 1900, 2800, 0, 102, 202)
+	owner43.MapIndex = 43
+	owner43.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "chase-step-map-43-owner", 0x30303033, owner43)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700001105, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for map-local chase-step schedule snapshots: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{
+		{
+			Ref:           "practice.chase_step_map_42",
+			Name:          "ChaseStepMap42Mob",
+			MapIndex:      42,
+			X:             1700,
+			Y:             2800,
+			RaceNum:       20350,
+			CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+		},
+		{
+			Ref:           "practice.chase_step_map_43",
+			Name:          "ChaseStepMap43Mob",
+			MapIndex:      43,
+			X:             1700,
+			Y:             2800,
+			RaceNum:       20350,
+			CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+		},
+		{
+			Ref:           "practice.chase_step_map_idle",
+			Name:          "ChaseStepMapIdleMob",
+			MapIndex:      44,
+			X:             1700,
+			Y:             2800,
+			RaceNum:       20350,
+			CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+		},
+	}})
+	if err != nil {
+		t.Fatalf("import map-local chase-step spawn groups: %v", err)
+	}
+	map42Group, ok := runtime.SpawnGroupByRef("practice.chase_step_map_42")
+	if !ok {
+		t.Fatal("expected map 42 chase spawn group to resolve")
+	}
+	map43Group, ok := runtime.SpawnGroupByRef("practice.chase_step_map_43")
+	if !ok {
+		t.Fatal("expected map 43 chase spawn group to resolve")
+	}
+
+	flow42, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "chase-step-map-42-owner", 0x30303032)
+	defer closeSessionFlow(t, flow42)
+	flushServerFrames(t, flow42)
+	if _, err := flow42.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(map42Group.EntityID)}))); err != nil {
+		t.Fatalf("unexpected map 42 target error: %v", err)
+	}
+	if _, err := flow42.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  uint32(map42Group.EntityID),
+	}))); err != nil {
+		t.Fatalf("unexpected map 42 accepted hit: %v", err)
+	}
+
+	flow43, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "chase-step-map-43-owner", 0x30303033)
+	defer closeSessionFlow(t, flow43)
+	flushServerFrames(t, flow43)
+	if _, err := flow43.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(map43Group.EntityID)}))); err != nil {
+		t.Fatalf("unexpected map 43 target error: %v", err)
+	}
+	if _, err := flow43.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  uint32(map43Group.EntityID),
+	}))); err != nil {
+		t.Fatalf("unexpected map 43 accepted hit: %v", err)
+	}
+
+	map42Pending, ok := runtime.SpawnGroupChaseStepsForMap(42)
+	if !ok || len(map42Pending) != 1 {
+		t.Fatalf("expected one map 42 pending chase step, ok=%v snapshots=%+v", ok, map42Pending)
+	}
+	if map42Pending[0].EntityID != map42Group.EntityID || map42Pending[0].Actor.MapIndex != 42 || map42Pending[0].Step.Next.MapIndex != 42 {
+		t.Fatalf("expected map 42 pending chase step to stay map-local, got %+v", map42Pending[0])
+	}
+
+	map43Pending, ok := runtime.SpawnGroupChaseStepsForMap(43)
+	if !ok || len(map43Pending) != 1 {
+		t.Fatalf("expected one map 43 pending chase step, ok=%v snapshots=%+v", ok, map43Pending)
+	}
+	if map43Pending[0].EntityID != map43Group.EntityID || map43Pending[0].Actor.MapIndex != 43 || map43Pending[0].Step.Next.MapIndex != 43 {
+		t.Fatalf("expected map 43 pending chase step to stay map-local, got %+v", map43Pending[0])
+	}
+
+	idlePending, ok := runtime.SpawnGroupChaseStepsForMap(44)
+	if !ok || len(idlePending) != 0 {
+		t.Fatalf("expected known idle map to return an empty pending chase-step list, ok=%v snapshots=%+v", ok, idlePending)
+	}
+	if unknown, ok := runtime.SpawnGroupChaseStepsForMap(99); ok || len(unknown) != 0 {
+		t.Fatalf("expected unknown map pending chase-step lookup to fail closed, ok=%v snapshots=%+v", ok, unknown)
+	}
+}
+
+func TestGameRuntimeSpawnGroupChaseStepSnapshotsOmitIneligibleScheduledActors(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ChaseStepOmitOwner", 0x01030184, 0x02040184, 1900, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "chase-step-omit-owner", 0x30303034, owner)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700001110, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for chase-step omit guard: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.chase_step_omit",
+		Name:          "ChaseStepOmitMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import chase-step omit spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.chase_step_omit")
+	if !ok {
+		t.Fatal("expected chase-step omit spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "chase-step-omit-owner", 0x30303034)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
+		t.Fatalf("unexpected owner target error before chase-step omit: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	}))); err != nil {
+		t.Fatalf("unexpected accepted hit before chase-step omit: %v", err)
+	}
+	if pending, ok := runtime.SpawnGroupChaseStep(group.EntityID); !ok || pending.EntityID != group.EntityID || pending.Actor.Dead {
+		t.Fatalf("expected live engaged actor to expose a pending chase-step row before death, ok=%v snapshot=%+v", ok, pending)
+	}
+
+	runtime.sharedWorld.mu.Lock()
+	actor, ok := runtime.sharedWorld.entities.StaticActor(group.EntityID)
+	if !ok {
+		runtime.sharedWorld.mu.Unlock()
+		t.Fatalf("expected static actor %d before forced dead-state chase omit", group.EntityID)
+	}
+	runtime.sharedWorld.staticActorCombatHP[group.EntityID] = 0
+	runtime.sharedWorld.scheduleStaticActorCombatRespawnLocked(actor)
+	runtime.sharedWorld.mu.Unlock()
+	deadGroup, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || !deadGroup.Dead {
+		t.Fatalf("expected fixture to be dead after forced death, ok=%v snapshot=%+v", ok, deadGroup)
+	}
+
+	if pending, ok := runtime.SpawnGroupChaseStep(group.EntityID); ok || pending.EntityID != 0 {
+		t.Fatalf("expected dead scheduled chase actor to be omitted from exact pending chase-step snapshot, ok=%v snapshot=%+v", ok, pending)
+	}
+	if pending := runtime.SpawnGroupChaseSteps(); len(pending) != 0 {
+		t.Fatalf("expected dead scheduled chase actor to be omitted from global pending chase-step snapshots, got %+v", pending)
+	}
+	mapPending, ok := runtime.SpawnGroupChaseStepsForMap(42)
+	if !ok {
+		t.Fatal("expected occupied map-42 chase-step lookup to resolve")
+	}
+	if len(mapPending) != 0 {
+		t.Fatalf("expected dead scheduled chase actor to be omitted from map-local pending chase-step snapshots, got %+v", mapPending)
+	}
+}
+
 func TestGameRuntimeRespawnClearsStaleSpawnGroupReturnStepSchedule(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")

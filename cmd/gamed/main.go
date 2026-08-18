@@ -360,6 +360,20 @@ func main() {
 			return snapshot, true
 		},
 	)
+	opsHandler = ops.RegisterLocalSpawnGroupChaseStepsEndpoint(
+		opsHandler,
+		func() any { return gameRuntime.SpawnGroupChaseSteps() },
+	)
+	opsHandler = ops.RegisterLocalSpawnGroupChaseStepSnapshotEndpoint(
+		opsHandler,
+		func(entityID uint64) (any, bool) {
+			snapshot, ok := gameRuntime.SpawnGroupChaseStep(entityID)
+			if !ok {
+				return nil, false
+			}
+			return snapshot, true
+		},
+	)
 	opsHandler = ops.RegisterLocalGroundItemsEndpoint(
 		opsHandler,
 		func() any { return gameRuntime.GroundItems() },
@@ -432,6 +446,16 @@ func main() {
 				return nil, false
 			}
 			return returnSteps, true
+		},
+	)
+	opsHandler = ops.RegisterLocalMapSpawnGroupChaseStepsEndpoint(
+		opsHandler,
+		func(mapIndex uint32) (any, bool) {
+			chaseSteps, ok := gameRuntime.SpawnGroupChaseStepsForMap(mapIndex)
+			if !ok {
+				return nil, false
+			}
+			return chaseSteps, true
 		},
 	)
 	opsHandler = ops.RegisterLocalMapGroundItemsEndpoint(

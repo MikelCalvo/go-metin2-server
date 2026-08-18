@@ -4316,6 +4316,108 @@ func TestLocalMapOccupancySpawnGroupReturnStepsEndpointReturnsNotFoundForMissing
 	}
 }
 
+func TestLocalMapOccupancySpawnGroupChaseStepsEndpointReturnsMapLocalPendingStepsForLoopbackGet(t *testing.T) {
+	lookup := &stubMapSpawnGroupChaseStepsLookup{snapshots: map[uint32]any{
+		42: []map[string]any{{"entity_id": uint64(55), "remaining_ms": int64(5000), "actor": map[string]any{"entity_id": uint64(55), "spawn_group_ref": "practice.chase_step"}, "step": map[string]any{"next": map[string]any{"map_index": uint32(42), "x": int32(1800)}}}},
+	}}
+	mux := RegisterLocalMapSpawnGroupChaseStepsEndpoint(NewPprofMux("gamed"), lookup.MapSpawnGroupChaseSteps)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/42/spawn-group-chase-steps", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if lookup.calls != 1 || lookup.lastMapIndex != 42 {
+		t.Fatalf("expected map chase-step lookup for map 42, got calls=%d map=%d", lookup.calls, lookup.lastMapIndex)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"entity_id":55`) || !strings.Contains(string(body), `"remaining_ms":5000`) || !strings.Contains(string(body), `"step"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalMapOccupancySpawnGroupChaseStepsEndpointRejectsInvalidMapIndex(t *testing.T) {
+	lookup := &stubMapSpawnGroupChaseStepsLookup{}
+	mux := RegisterLocalMapSpawnGroupChaseStepsEndpoint(NewPprofMux("gamed"), lookup.MapSpawnGroupChaseSteps)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/not-a-map/spawn-group-chase-steps", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected chase-step lookup not to be called for invalid map, got %d", lookup.calls)
+	}
+}
+
+func TestLocalMapOccupancySpawnGroupChaseStepsEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	lookup := &stubMapSpawnGroupChaseStepsLookup{}
+	mux := RegisterLocalMapSpawnGroupChaseStepsEndpoint(NewPprofMux("gamed"), lookup.MapSpawnGroupChaseSteps)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/42/spawn-group-chase-steps", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected chase-step lookup not to be called for non-loopback, got %d", lookup.calls)
+	}
+}
+
+func TestLocalMapOccupancySpawnGroupChaseStepsEndpointRejectsWrongMethod(t *testing.T) {
+	lookup := &stubMapSpawnGroupChaseStepsLookup{}
+	mux := RegisterLocalMapSpawnGroupChaseStepsEndpoint(NewPprofMux("gamed"), lookup.MapSpawnGroupChaseSteps)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/maps/42/spawn-group-chase-steps", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected chase-step lookup not to be called for wrong method, got %d", lookup.calls)
+	}
+}
+
+func TestLocalMapOccupancySpawnGroupChaseStepsEndpointReturnsNotFoundForMissingMap(t *testing.T) {
+	lookup := &stubMapSpawnGroupChaseStepsLookup{snapshots: map[uint32]any{}}
+	mux := RegisterLocalMapSpawnGroupChaseStepsEndpoint(NewPprofMux("gamed"), lookup.MapSpawnGroupChaseSteps)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/42/spawn-group-chase-steps", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+	if lookup.calls != 1 || lookup.lastMapIndex != 42 {
+		t.Fatalf("expected map chase-step lookup for map 42 once, got calls=%d map_index=%d", lookup.calls, lookup.lastMapIndex)
+	}
+}
+
 func TestLocalMapOccupancyEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
 	lookup := &stubMapOccupancyLookup{}
 	mux := RegisterLocalMapOccupancyEndpoint(NewPprofMux("gamed"), lookup.MapOccupancy)
@@ -5241,6 +5343,167 @@ func TestLocalSpawnGroupReturnStepSnapshotEndpointReturnsNotFoundForMissingEntit
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/local/spawn-group-return-steps/44", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
+func TestLocalSpawnGroupChaseStepsEndpointReturnsJSONSnapshotsForLoopbackGet(t *testing.T) {
+	snapshotter := &stubListSnapshotter{snapshots: []map[string]any{{"entity_id": uint64(55), "ready_at": "2026-07-25T12:00:00Z", "remaining_ms": int64(5000), "actor": map[string]any{"entity_id": uint64(55), "spawn_group_ref": "practice.chase_step"}, "step": map[string]any{"next": map[string]any{"x": int32(1800)}}}}}
+	mux := RegisterLocalSpawnGroupChaseStepsEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/spawn-group-chase-steps", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if snapshotter.calls != 1 {
+		t.Fatalf("expected spawn-group chase-step snapshotter call, got %d calls", snapshotter.calls)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"entity_id":55`) || !strings.Contains(string(body), `"remaining_ms":5000`) || !strings.Contains(string(body), `"step"`) || !strings.Contains(string(body), `"next"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalSpawnGroupChaseStepsEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	snapshotter := &stubListSnapshotter{}
+	mux := RegisterLocalSpawnGroupChaseStepsEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/spawn-group-chase-steps", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected spawn-group chase-step snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
+func TestLocalSpawnGroupChaseStepsEndpointRejectsWrongMethod(t *testing.T) {
+	snapshotter := &stubListSnapshotter{}
+	mux := RegisterLocalSpawnGroupChaseStepsEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/spawn-group-chase-steps", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected spawn-group chase-step snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
+func TestLocalSpawnGroupChaseStepEndpointReturnsExactSnapshotForLoopbackGet(t *testing.T) {
+	snapshot := map[string]any{"entity_id": uint64(55), "ready_at": "2026-07-25T12:00:00Z", "remaining_ms": int64(5000), "actor": map[string]any{"entity_id": uint64(55), "spawn_group_ref": "practice.chase_step"}, "step": map[string]any{"next": map[string]any{"x": int32(1800)}}}
+	mux := RegisterLocalSpawnGroupChaseStepSnapshotEndpoint(NewPprofMux("gamed"), func(entityID uint64) (any, bool) {
+		if entityID != 55 {
+			return nil, false
+		}
+		return snapshot, true
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/spawn-group-chase-steps/55", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"entity_id":55`) || !strings.Contains(string(body), `"remaining_ms":5000`) || !strings.Contains(string(body), `"step"`) || !strings.Contains(string(body), `"next"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalSpawnGroupChaseStepEndpointRejectsInvalidEntityID(t *testing.T) {
+	mux := RegisterLocalSpawnGroupChaseStepSnapshotEndpoint(NewPprofMux("gamed"), func(uint64) (any, bool) {
+		t.Fatal("spawn-group chase-step lookup should not be called for invalid entity IDs")
+		return nil, false
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/spawn-group-chase-steps/not-an-id", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestLocalSpawnGroupChaseStepSnapshotEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	mux := RegisterLocalSpawnGroupChaseStepSnapshotEndpoint(NewPprofMux("gamed"), func(uint64) (any, bool) {
+		t.Fatal("spawn-group chase-step lookup should not be called for non-loopback callers")
+		return nil, false
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/spawn-group-chase-steps/55", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+}
+
+func TestLocalSpawnGroupChaseStepSnapshotEndpointRejectsWrongMethod(t *testing.T) {
+	mux := RegisterLocalSpawnGroupChaseStepSnapshotEndpoint(NewPprofMux("gamed"), func(uint64) (any, bool) {
+		t.Fatal("spawn-group chase-step lookup should not be called for wrong methods")
+		return nil, false
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/local/spawn-group-chase-steps/55", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+}
+
+func TestLocalSpawnGroupChaseStepSnapshotEndpointReturnsNotFoundForMissingEntityID(t *testing.T) {
+	mux := RegisterLocalSpawnGroupChaseStepSnapshotEndpoint(NewPprofMux("gamed"), func(uint64) (any, bool) {
+		return nil, false
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/spawn-group-chase-steps/55", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 
@@ -8359,6 +8622,19 @@ type stubMapSpawnGroupReturnStepsLookup struct {
 }
 
 func (s *stubMapSpawnGroupReturnStepsLookup) MapSpawnGroupReturnSteps(mapIndex uint32) (any, bool) {
+	s.calls++
+	s.lastMapIndex = mapIndex
+	value, ok := s.snapshots[mapIndex]
+	return value, ok
+}
+
+type stubMapSpawnGroupChaseStepsLookup struct {
+	snapshots    map[uint32]any
+	calls        int
+	lastMapIndex uint32
+}
+
+func (s *stubMapSpawnGroupChaseStepsLookup) MapSpawnGroupChaseSteps(mapIndex uint32) (any, bool) {
 	s.calls++
 	s.lastMapIndex = mapIndex
 	value, ok := s.snapshots[mapIndex]

@@ -215,7 +215,7 @@ Current implementation status:
 - accepted non-lethal content practice-mob hits arm the `5s` chase deadline
 - due chase steps persist position, queue the ordinary delete/readd visibility refresh, preserve engagement / selected-target ownership, and re-arm while the actor remains eligible
 - return-step, respawn, remove, return-home, and content-bundle prune/restore paths clear or restore chase deadlines alongside the return-step schedule
-- the read-only pending chase inspection endpoints above are the next owned consumer of that already-live schedule
+- the read-only pending chase inspection endpoints above are now live over that already-owned schedule
 
 Explicit non-goals for this chase-step executor freeze:
 - server-driven `MOVE` fanout or any dedicated chase packet family

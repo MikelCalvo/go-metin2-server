@@ -151,6 +151,14 @@ type SpawnGroupPendingReturnStepSnapshot struct {
 	Step        SpawnLeashReturnStepSnapshot `json:"step"`
 }
 
+type SpawnGroupPendingChaseStepSnapshot struct {
+	EntityID    uint64                       `json:"entity_id"`
+	ReadyAt     time.Time                    `json:"ready_at"`
+	RemainingMs int64                        `json:"remaining_ms"`
+	Actor       StaticActorSnapshot          `json:"actor"`
+	Step        SpawnLeashReturnStepSnapshot `json:"step"`
+}
+
 type SpawnLeashReturnStepSnapshot struct {
 	SpawnLeashSnapshot
 	Next     worldruntime.PositionSnapshot `json:"next"`
@@ -1677,6 +1685,115 @@ func (r *gameRuntime) spawnGroupChaseStepStillEligible(entityID uint64) bool {
 	ownerPos := worldruntime.NewPosition(owner.MapIndex, owner.X, owner.Y)
 	_, ok = r.sharedWorld.PlanSpawnGroupChaseStep(entityID, ownerPos, bootstrapSpawnGroupChaseStepMaxStep)
 	return ok
+}
+
+func (r *gameRuntime) SpawnGroupChaseSteps() []SpawnGroupPendingChaseStepSnapshot {
+	if r == nil {
+		return nil
+	}
+	dueAtByID := r.spawnGroupChaseStepDueAtSnapshot()
+	if len(dueAtByID) == 0 {
+		return nil
+	}
+	entityIDs := make([]uint64, 0, len(dueAtByID))
+	for entityID := range dueAtByID {
+		entityIDs = append(entityIDs, entityID)
+	}
+	sort.Slice(entityIDs, func(i, j int) bool { return entityIDs[i] < entityIDs[j] })
+
+	now := r.spawnGroupChaseStepNow()
+	snapshots := make([]SpawnGroupPendingChaseStepSnapshot, 0, len(entityIDs))
+	for _, entityID := range entityIDs {
+		snapshot, ok := r.spawnGroupChaseStepSnapshot(entityID, dueAtByID[entityID], now)
+		if !ok {
+			continue
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	return snapshots
+}
+
+func (r *gameRuntime) SpawnGroupChaseStep(entityID uint64) (SpawnGroupPendingChaseStepSnapshot, bool) {
+	if r == nil || entityID == 0 {
+		return SpawnGroupPendingChaseStepSnapshot{}, false
+	}
+	r.spawnChaseMu.Lock()
+	dueAt, ok := r.spawnChaseStepDueAt[entityID]
+	r.spawnChaseMu.Unlock()
+	if !ok {
+		return SpawnGroupPendingChaseStepSnapshot{}, false
+	}
+	return r.spawnGroupChaseStepSnapshot(entityID, dueAt, r.spawnGroupChaseStepNow())
+}
+
+func (r *gameRuntime) SpawnGroupChaseStepsForMap(mapIndex uint32) ([]SpawnGroupPendingChaseStepSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil || mapIndex == 0 {
+		return nil, false
+	}
+	if _, ok := r.MapOccupancySnapshot(mapIndex); !ok {
+		return nil, false
+	}
+
+	all := r.SpawnGroupChaseSteps()
+	if len(all) == 0 {
+		return []SpawnGroupPendingChaseStepSnapshot{}, true
+	}
+	filtered := make([]SpawnGroupPendingChaseStepSnapshot, 0, len(all))
+	for _, snapshot := range all {
+		if snapshot.Actor.MapIndex != mapIndex {
+			continue
+		}
+		filtered = append(filtered, snapshot)
+	}
+	return filtered, true
+}
+
+func (r *gameRuntime) spawnGroupChaseStepNow() time.Time {
+	now := time.Now()
+	if r != nil && r.now != nil {
+		now = r.now()
+	}
+	return now
+}
+
+func (r *gameRuntime) spawnGroupChaseStepSnapshot(entityID uint64, dueAt time.Time, now time.Time) (SpawnGroupPendingChaseStepSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil || entityID == 0 || dueAt.IsZero() {
+		return SpawnGroupPendingChaseStepSnapshot{}, false
+	}
+	actor, ok := r.SpawnGroup(entityID)
+	if !ok || actor.Dead || actor.SpawnGroupRef == "" || actor.SpawnLeash == nil || actor.SpawnLeash.ReturnRequired {
+		return SpawnGroupPendingChaseStepSnapshot{}, false
+	}
+	r.sharedWorld.mu.Lock()
+	engagedBy, engaged := r.sharedWorld.staticActorCombatEngagedBy[entityID]
+	r.sharedWorld.mu.Unlock()
+	if !engaged || engagedBy == 0 {
+		return SpawnGroupPendingChaseStepSnapshot{}, false
+	}
+	owner, ok := r.sharedWorld.playerCharacter(engagedBy)
+	if !ok || characterAtBootstrapHPFloor(owner) {
+		return SpawnGroupPendingChaseStepSnapshot{}, false
+	}
+	ownerPos := worldruntime.NewPosition(owner.MapIndex, owner.X, owner.Y)
+	plan, ok := r.sharedWorld.PlanSpawnGroupChaseStep(entityID, ownerPos, bootstrapSpawnGroupChaseStepMaxStep)
+	if !ok {
+		return SpawnGroupPendingChaseStepSnapshot{}, false
+	}
+	remaining := dueAt.Sub(now).Milliseconds()
+	if remaining < 0 {
+		remaining = 0
+	}
+	return SpawnGroupPendingChaseStepSnapshot{
+		EntityID:    entityID,
+		ReadyAt:     dueAt,
+		RemainingMs: remaining,
+		Actor:       actor,
+		Step: SpawnLeashReturnStepSnapshot{
+			SpawnLeashSnapshot: worldruntime.SpawnLeashSnapshotFromEvaluation(plan.Evaluation),
+			Next:               worldruntime.PositionSnapshotFromPosition(plan.Next),
+			Complete:           plan.Complete,
+		},
+	}, true
 }
 
 func (r *gameRuntime) flushDueSpawnGroupChaseSteps() {
