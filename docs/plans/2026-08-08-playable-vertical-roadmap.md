@@ -60,7 +60,7 @@ Next slices:
 2. Make one content-loaded practice mob lifecycle fully explicit: spawn → target → hit → death → respawn → fresh reselection.
 3. Add aggro-lite reset/cleanup boundaries for disconnect, transfer, death, and respawn; `/restart_here` now also has focused coverage for due return-step preflight while a zero-HP owner skipped lifecycle frames.
 4. Add first independent mob reaction timing that is not only piggybacked on player hits: proximity aggro-radius acquisition now has the pure helper plus pending-frame live consumer, and that same engagement now also arms the owned delayed self-only server-origin retaliation cadence without requiring an accepted hit or inventing selected-target ownership.
-5. Extend the first chase/leash/return planning seam beyond pure classification: tested pure return-step and chase-step planners, the pending-frame chase executor (including proximity-armed due chase without a hit), and read-only pending chase inspection now exist; chase/return packet choreography remains follow-on work.
+5. Extend the first chase/leash/return planning seam beyond pure classification: tested pure return-step and chase-step planners, the pending-frame chase executor (including proximity-armed due chase without a hit), and read-only pending chase inspection now exist; the chase `MOVE` packet choreography contract is now frozen, and its runtime consumer remains follow-on work.
 6. Harden multi-map and reconnect behavior so mobs do not duplicate, leak, or resurrect incorrectly.
 
 Exit criteria:

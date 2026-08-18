@@ -219,9 +219,35 @@ Current implementation status:
 - the read-only pending chase inspection endpoints above are now live over that already-owned schedule
 
 Explicit non-goals for this chase-step executor freeze:
-- server-driven `MOVE` fanout or any dedicated chase packet family
-- aggro-radius acquisition / target switching beyond the already-owned post-hit engagement gate
 - pathfinding, navmesh, patrol, or multi-actor flocking
 - chasing while `return_required` or across map boundaries
 - persisting a live mob position schema distinct from the current static-actor snapshot path
+- operator POST chase-step triggers
+
+## First owned chase MOVE packet choreography seam
+
+Question frozen here:
+
+**Once the pending-frame chase executor already applies one planned same-map step for a still-engaged practice mob, what is the smallest client-visible packet change that replaces the retained-viewer delete/readd refresh with a server-driven `MOVE` replication without inventing pathfinding, return-step MOVE fanout, or a second AI scheduler?**
+
+Contract for the first chase MOVE choreography:
+- reuse the already-owned server `MOVE` / `MOVE_ACK` wire shape (`0x0302`) from `move-peer-fanout.md` rather than inventing a dedicated chase packet family
+- apply only to a successful pending-frame chase step that actually changes the materialized actor position while the actor remains live, engaged by the same owner, same-map, and still `at_home` / `within_radius`
+- retained viewers that already had the actor visible before and after the step receive one queued `MOVE` replication for the actor's visible `VID` at the planned `next` coordinates instead of the current delete-plus-readd refresh
+- viewers that lose visibility across the step still receive `CHARACTER_DEL`
+- viewers that newly gain visibility across the step still receive the ordinary `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` bootstrap burst
+- chase MOVE fanout does **not** clear selected combat targets, does **not** release aggro-lite engagement, and does **not** invent selected-target ownership for proximity-armed chase
+- return-step recovery, return-home, respawn rebuild, operator actor updates, and content-bundle replacement keep using their already-owned delete/readd visibility paths; this freeze does not convert those seams to MOVE
+- no client-originated mob MOVE ingress is owned; this is server-origin replication only
+- no chase-specific duration/interpolation policy is owned beyond reusing the existing `MOVE` payload fields with a deterministic bootstrap duration suitable for the fixed `max_step = 100` step
+
+Current implementation status:
+- this chase MOVE choreography is frozen here as the next honest packet seam
+- the pending-frame chase executor still currently emits delete/readd for retained viewers until the runtime consumer lands
+
+Explicit non-goals for this chase MOVE freeze alone:
+- return-step / return-home MOVE fanout
+- pathfinding, navmesh, patrol, or continuous interpolation beyond one discrete planned step
+- cross-map chase or chase while `return_required`
+- a dedicated chase packet family distinct from `MOVE`
 - operator POST chase-step triggers
