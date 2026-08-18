@@ -12622,6 +12622,92 @@ func TestGameSessionFlowPracticeMobRestartHerePreflightsDueLocalRespawn(t *testi
 	}
 }
 
+func TestGameSessionFlowPracticeMobRestartHerePreflightsDueLocalReturnStep(t *testing.T) {
+	runtime, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
+	defer closeSessionFlow(t, ownerFlow)
+	defer closeSessionFlow(t, watcherFlow)
+
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, watcherFlow, targetVID, owner.VID, advance)
+
+	const displacedX int32 = 1701
+	const displacedY int32 = 2200
+	const steppedX int32 = 1601
+	const steppedY int32 = 2200
+	if _, ok := runtime.UpdateStaticActor(uint64(targetVID), "PracticeMobAlpha", bootstrapMapIndex, displacedX, displacedY, 101); !ok {
+		t.Fatal("expected post-death spawn-backed displace to succeed before /restart_here due return-step preflight")
+	}
+	if leash, ok := runtime.SpawnGroupLeash(uint64(targetVID), worldruntime.DefaultSpawnLeashRadius); !ok || !leash.ReturnRequired || leash.Current.X != displacedX || leash.Current.Y != displacedY {
+		t.Fatalf("expected displaced live practice mob to classify return_required before /restart_here due return-step preflight, ok=%v leash=%+v", ok, leash)
+	}
+	runtime.spawnReturnMu.Lock()
+	dueAt, scheduled := runtime.spawnReturnStepDueAt[uint64(targetVID)]
+	runtime.spawnReturnMu.Unlock()
+	if !scheduled {
+		t.Fatalf("expected return_required displace to arm one pending return-step deadline for entity %d", targetVID)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected already-dead owner to skip displace visibility before /restart_here due return-step preflight, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) < 4 {
+		t.Fatalf("expected watcher to receive displace refresh before /restart_here due return-step preflight, got %d", len(queued))
+	}
+
+	advance(bootstrapSpawnGroupReturnStepDelay)
+	if runtime.now().Before(dueAt) {
+		t.Fatalf("expected return-step deadline to be due before /restart_here, due_at=%s now=%s", dueAt, runtime.now())
+	}
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_here"})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here error after local return-step became due: %v", err)
+	}
+	if len(restartOut) != 8 {
+		t.Fatalf("expected /restart_here to preflight due local return-step and return self bootstrap plus stepped practice-mob catch-up, got %d frames", len(restartOut))
+	}
+	mobDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, restartOut[4]))
+	if err != nil {
+		t.Fatalf("decode practice-mob catch-up delete after /restart_here due return-step preflight: %v", err)
+	}
+	if mobDelete.VID != targetVID {
+		t.Fatalf("expected /restart_here due return-step catch-up delete for vid %d, got %+v", targetVID, mobDelete)
+	}
+	mobAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[5]))
+	if err != nil {
+		t.Fatalf("decode stepped practice-mob catch-up add after /restart_here due return-step preflight: %v", err)
+	}
+	if mobAdd.VID != targetVID || mobAdd.X != steppedX || mobAdd.Y != steppedY {
+		t.Fatalf("expected /restart_here due return-step catch-up to show stepped practice mob at %d,%d, got %+v", steppedX, steppedY, mobAdd)
+	}
+	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, restartOut[6])); err != nil {
+		t.Fatalf("decode practice-mob catch-up additional info after /restart_here due return-step preflight: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, restartOut[7])); err != nil {
+		t.Fatalf("decode practice-mob catch-up update after /restart_here due return-step preflight: %v", err)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected no duplicate queued practice-mob return-step rebuild after /restart_here due return-step preflight, got %d", len(queued))
+	}
+
+	stepped, ok := runtime.SpawnGroup(uint64(targetVID))
+	if !ok || stepped.X != steppedX || stepped.Y != steppedY || stepped.Dead || stepped.SpawnLeash == nil || !stepped.SpawnLeash.ReturnRequired {
+		t.Fatalf("expected runtime actor to remain live at stepped return-required position after /restart_here preflight, ok=%v snapshot=%+v", ok, stepped)
+	}
+	pending, ok := runtime.SpawnGroupReturnStep(uint64(targetVID))
+	if !ok || pending.EntityID != uint64(targetVID) || pending.Actor.X != steppedX || pending.Step.Next.X != steppedX-100 {
+		t.Fatalf("expected still-return-required actor to re-arm pending return-step after /restart_here preflight, ok=%v snapshot=%+v", ok, pending)
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) < 4 {
+		t.Fatalf("expected watcher to receive owner recovery refresh and/or return-step refresh after /restart_here due return-step preflight, got %d", len(queued))
+	}
+	reselectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected practice-mob target after /restart_here due return-step preflight: %v", err)
+	}
+	if len(reselectOut) != 0 {
+		t.Fatalf("expected stepped return_required practice mob to remain non-targetable after /restart_here due return-step preflight, got %d frames", len(reselectOut))
+	}
+}
+
 func TestGameSessionFlowPracticeMobRestartTownCoversOwnedEmpireCreatePositions(t *testing.T) {
 	tests := []struct {
 		name         string

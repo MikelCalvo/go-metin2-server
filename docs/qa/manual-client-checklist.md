@@ -950,6 +950,7 @@ If that custom profile authors a negative `retaliation_point_delta`, expect both
 - [ ] In that same clear-target run, confirm a second living visible client can freshly target the still-live practice mob after the owner clears it
 - [ ] Re-select the still-live practice mob and confirm its HP remains at the current runtime-owned value instead of resetting because of `/restart_here`
 - [ ] In a separate timing run, let a second living client kill the practice mob while the owner is still at `0` HP, wait until the owned respawn delay is already due, then issue `/restart_here` and confirm the recovery catch-up shows the live rebuilt mob (no stale `DEAD` replay and no duplicate queued respawn afterward)
+- [ ] In another timing run, while the owner is still at `0` HP, displace a still-live authored spawn-backed practice mob outside leash so it arms a server-owned return-step, wait until that return-step deadline is already due without flushing the dead owner's skipped lifecycle frames, then issue `/restart_here` and confirm the recovery catch-up shows the stepped post-return-step position (not the pre-step displaced coords), no duplicate queued return-step rebuild follows, and the mob remains non-targetable while it still classifies `return_required`
 - [ ] Optional fixture/debug guard: if the selected character's persisted account snapshot is deliberately seeded at `0` HP, issue `/restart_here` and confirm it fails closed with no recovery burst
 
 ### 5.12.1 Practice-mob pending-retaliation cleanup on mob death

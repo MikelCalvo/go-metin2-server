@@ -75,6 +75,7 @@ For this bootstrap slice, the self recovery rebuild is intentionally asymmetric 
 - that persisted player state must be a usable live snapshot; if it is itself already at `0` HP, the restart fails closed instead of replaying a dead bootstrap as a recovery
 - a still-live practice mob keeps its current runtime-owned HP and engagement reset rules
 - if that practice mob died and its server-owned respawn became due while the owner was still at the zero-HP floor, the restart-here preflight rebuilds the mob first and the catch-up refresh shows the live post-respawn actor rather than a stale dead replay followed by a duplicate queued rebuild
+- if a still-live spawn-backed practice mob became `return_required` and its server-owned return-step deadline became due while the owner was still at the zero-HP floor, the restart-here preflight applies that due return step before catch-up so the recovered owner sees the stepped server-owned position rather than the pre-step displaced snapshot followed by a duplicate queued rebuild; actors that remain `return_required` after the stepped preflight stay non-targetable under the already-owned leash gate
 
 ## Peer-visible result
 
