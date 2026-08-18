@@ -59,7 +59,7 @@ Next slices:
 1. Finish integrating map-local static actor snapshot coverage already pending on `lane/world`.
 2. Make one content-loaded practice mob lifecycle fully explicit: spawn → target → hit → death → respawn → fresh reselection.
 3. Add aggro-lite reset/cleanup boundaries for disconnect, transfer, death, and respawn; `/restart_here` now also has focused coverage for due return-step preflight while a zero-HP owner skipped lifecycle frames.
-4. Add first independent mob reaction timing that is not only piggybacked on player hits (proximity aggro-radius acquisition still needs an explicit contract freeze before RED).
+4. Add first independent mob reaction timing that is not only piggybacked on player hits: proximity aggro-radius acquisition is now frozen in `content-spawn-groups-bootstrap.md`; the pure helper / live consumer RED+GREEN remain next.
 5. Extend the first chase/leash/return planning seam beyond pure classification: tested pure return-step and chase-step planners now exist, the pending-frame chase executor is landing on `lane/combat`, and chase/return packet choreography plus pending chase inspection remain follow-on work.
 6. Harden multi-map and reconnect behavior so mobs do not duplicate, leak, or resurrect incorrectly.
 

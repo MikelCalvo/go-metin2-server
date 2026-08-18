@@ -387,7 +387,7 @@ A future actor might visually resemble a static actor, but attackable respawn-ow
 This slice does **not** yet freeze:
 - multi-member spawn packs
 - patrol routes or idle roaming
-- broader hostile retaliation or aggro-lite behavior beyond the first fresh-third-party `TARGET` gate, the first same-target `250ms` normal-attack cadence window, plus one profile-resolved sustained delayed self-only server-origin retaliation cadence at a time
+- broader hostile retaliation beyond the first fresh-third-party `TARGET` gate, the first same-target `250ms` normal-attack cadence window, one profile-resolved sustained delayed self-only server-origin retaliation cadence at a time, and the frozen proximity aggro-radius acquisition seam below
 - random spawn selection from a pool
 - random loot tables, broader kill rewards, or corpse gameplay
 - authored interaction metadata on attackable spawn groups
@@ -420,6 +420,40 @@ The first owned hostile post-hit reaction is intentionally tiny:
 - content-bundle import now suppresses live static-actor visibility fanout while the replacement is in progress, then flushes removed-actor `CHARACTER_DEL` frames followed by imported actors' bootstrap visibility only after the full replacement succeeds; if a later actor/spawn in the same bundle fails and the runtime rolls back, connected sessions do not receive partial `CHARACTER_DEL`, `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, `CHARACTER_UPDATE`, or `TARGET(0, 0)` clear frames for actors that were never committed, and a pre-existing selected practice mob remains selected and attackable through the restored runtime combat snapshot
 - a same-socket `/quit`, `/logout`, or `/phase_select` now counts as that live-session disappearance boundary immediately in the current bootstrap slice, and abrupt session close does too: each path removes the owner from shared-world visibility, cancels any pending delayed follow-up beat, and releases the current aggro-lite target gate before any later disconnect or fresh bootstrap finishes; `/quit` still stays in `GAME` long enough to return its self `CHAT_TYPE_COMMAND quit` delivery, `/logout` continues to transition toward close, `/phase_select` returns to character select while any later bootstrap still requires a fresh `TARGET`, and close tears the session down without a compensating gameplay packet
 - that first gate still does **not** imply movement, pathing, pack AI, or a broader aggro system beyond this fixed-delay owner-only cadence
+
+## First owned proximity aggro-radius acquisition seam
+
+Question frozen here:
+
+**Given one live unengaged spawn-backed practice mob that still classifies `at_home` or `within_radius`, and one live same-map player candidate, what is the smallest deterministic server-owned acquisition rule that can establish the already-owned aggro-lite `engaged_by` ownership without requiring an accepted hit first?**
+
+This is the first honest step toward roadmap item “independent mob reaction timing that is not only piggybacked on player hits.” It freezes acquisition only. Delayed retaliation, chase arming, and movement remain separate consumers of the existing engagement ownership gate.
+
+Contract for the first pure helper `EvaluateStaticActorSpawnAggroAcquisition(actor, candidatePosition, radius)` in `internal/worldruntime`:
+- fail closed for invalid/non-spawn actors, non-positive aggro `radius`, or invalid candidate positions
+- fail closed when the actor currently classifies `return_required`; leash recovery stays owned by the return-step seam and combat targeting already denies `target_return_required`
+- fail closed when the actor and candidate are on different maps; no cross-map aggro/warp choreography is owned yet
+- succeed only when the candidate is on the same map and Euclidean squared-distance from the actor's current position is `<= radius^2`, using the same bootstrap distance family as leash classification
+- by itself the helper never mutates actor position, never updates stores, never sets `engaged_by`, never arms delayed retaliation or chase deadlines, and never queues packets
+
+Bootstrap default radius for the first live consumer:
+- `DefaultSpawnAggroRadius = 200`
+- deliberately smaller than `DefaultSpawnLeashRadius = 400` so a player can enter aggro without immediately forcing leash/return pressure at the outer leash boundary
+
+First live consumer rules (implementation after this freeze, not part of the docs-only commit):
+- scan from the existing pending-frame / movement-adjacent server path for live spawn-backed practice mobs that currently lack `engaged_by` ownership and still classify `at_home` / `within_radius`
+- when exactly one eligible live same-map candidate is inside the default aggro radius, acquire the already-owned aggro-lite engagement ownership for that candidate
+- if multiple candidates are inside radius, choose the nearest by Euclidean squared-distance and break ties by ascending player entity ID
+- acquisition alone does **not** arm the delayed retaliation cadence; the first accepted hit (or a later dedicated reaction slice) remains the arming gate for owner-side retaliation
+- once engagement exists, the already-owned third-party `target_engaged` gate, chase arming (when present), and release boundaries continue to apply unchanged
+- never acquire for dead actors, actors waiting on respawn, zero-HP candidates, or candidates already at the bootstrap HP floor
+
+Explicit non-goals for this proximity aggro freeze alone:
+- delayed retaliation that fires without any accepted hit
+- aggro hysteresis / drop radius distinct from the acquire radius
+- pack aggro, assist calls, or multi-mob linkage
+- chase packets, patrol, or pathfinding
+- profile-authored per-mob aggro radii beyond the first bootstrap default (later profiles may widen that)
 
 ## Success definition
 
