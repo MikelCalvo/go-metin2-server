@@ -221,6 +221,9 @@ func (s *FileStore) List() ([]Ticket, error) {
 
 	tickets := make([]Ticket, 0, len(entries))
 	for _, entry := range entries {
+		if entry.Name() == BackupManifestFilename {
+			continue
+		}
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
@@ -257,6 +260,9 @@ func (s *FileStore) List() ([]Ticket, error) {
 func (s *FileStore) Validate() (SnapshotSummary, error) {
 	tickets, err := s.List()
 	if err != nil {
+		return SnapshotSummary{}, err
+	}
+	if err := s.validateActiveBackupManifestForTickets(tickets); err != nil {
 		return SnapshotSummary{}, err
 	}
 	crashTempFiles, err := s.crashTempFiles()
@@ -384,6 +390,9 @@ func (s *FileStore) CleanupIssuedBefore(issuedBefore time.Time) (IssuedBeforeCle
 	}
 	summary.RemovedCount = len(summary.RemovedLoginKeys)
 	if summary.RemovedCount != 0 {
+		if err := removeBackupManifest(s.dir); err != nil {
+			return IssuedBeforeCleanupSummary{}, fmt.Errorf("remove stale login ticket backup manifest: %w", err)
+		}
 		if err := s.syncStoreDir(); err != nil {
 			return IssuedBeforeCleanupSummary{}, fmt.Errorf("sync login ticket store dir after issued-before cleanup: %w", err)
 		}
@@ -472,6 +481,9 @@ func (s *FileStore) Issue(ticket Ticket) error {
 		return fmt.Errorf("commit login ticket file: %w", err)
 	}
 	_ = os.Remove(temp.Name())
+	if err := removeBackupManifest(s.dir); err != nil {
+		return fmt.Errorf("remove stale login ticket backup manifest: %w", err)
+	}
 	if err := s.syncStoreDir(); err != nil {
 		return fmt.Errorf("sync login ticket store dir: %w", err)
 	}
@@ -520,6 +532,9 @@ func (s *FileStore) read(login string, loginKey uint32, consume bool) (Ticket, e
 			return Ticket{}, ErrTicketNotFound
 		}
 		return Ticket{}, fmt.Errorf("delete consumed login ticket: %w", err)
+	}
+	if err := removeBackupManifest(s.dir); err != nil {
+		return Ticket{}, fmt.Errorf("remove stale login ticket backup manifest: %w", err)
 	}
 	if err := s.syncStoreDir(); err != nil {
 		return Ticket{}, fmt.Errorf("sync consumed login ticket store dir: %w", err)

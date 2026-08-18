@@ -100,6 +100,7 @@ var (
 	ErrContentBundleUnavailable             = errors.New("content bundle unavailable")
 	ErrItemTemplateStoreRestoreLiveSessions = errors.New("item template store restore requires no live sessions")
 	ErrAccountStoreRestoreLiveSessions      = errors.New("account store restore requires no live sessions")
+	ErrLoginTicketStoreRestoreLiveSessions  = errors.New("login ticket store restore requires no live sessions")
 )
 
 type loginKeyGenerator func() (uint32, error)
@@ -317,10 +318,12 @@ type AccountStoreStatus struct {
 }
 
 type LoginTicketStoreStatus struct {
-	Path    string                      `json:"path"`
-	Valid   bool                        `json:"valid"`
-	Summary loginticket.SnapshotSummary `json:"summary"`
-	Error   string                      `json:"error,omitempty"`
+	Path                         string                      `json:"path"`
+	Valid                        bool                        `json:"valid"`
+	Summary                      loginticket.SnapshotSummary `json:"summary"`
+	BackupManifest               BackupManifestStatus        `json:"backup_manifest"`
+	RestoreBlockedByLiveSessions bool                        `json:"restore_blocked_by_live_sessions"`
+	Error                        string                      `json:"error,omitempty"`
 }
 
 type ItemTemplateStoreStatus struct {
@@ -494,7 +497,7 @@ func (r *gameRuntime) PersistenceStatus() PersistenceStatusSnapshot {
 	}
 	liveSelectedCharacterCount := r.liveSelectedCharacterCount()
 	accountStatus := r.accountStoreStatus(liveSelectedCharacterCount)
-	loginTicketStatus := r.loginTicketStoreStatus()
+	loginTicketStatus := r.loginTicketStoreStatus(liveSelectedCharacterCount)
 	itemTemplateStatus := r.itemTemplateStoreStatus(liveSelectedCharacterCount)
 	staticActorStatus := r.staticActorStoreStatus()
 	interactionStatus := r.interactionStoreStatus()
@@ -528,11 +531,13 @@ func (r *gameRuntime) accountStoreStatus(liveSelectedCharacterCount int) Account
 	return status
 }
 
-func (r *gameRuntime) loginTicketStoreStatus() LoginTicketStoreStatus {
+func (r *gameRuntime) loginTicketStoreStatus(liveSelectedCharacterCount int) LoginTicketStoreStatus {
 	status := LoginTicketStoreStatus{Path: loginTicketStoreDir(nil)}
 	if r != nil {
 		status.Path = loginTicketStoreDir(r.loginTicketStore)
 	}
+	status.BackupManifest = loginTicketBackupManifestStatus(status.Path)
+	status.RestoreBlockedByLiveSessions = liveSelectedCharacterCount != 0
 	summary, err := r.ValidateLoginTicketStore()
 	if err != nil {
 		status.Error = err.Error()
@@ -1008,6 +1013,57 @@ func (r *gameRuntime) RestoreAccountStore(srcDir string) (accountstore.SnapshotS
 		return accountstore.SnapshotSummary{}, err
 	}
 	return r.ValidateAccountStore()
+}
+
+func (r *gameRuntime) BackupLoginTicketStore(dstDir string) (loginticket.SnapshotSummary, error) {
+	if r == nil || r.loginTicketStore == nil {
+		return loginticket.SnapshotSummary{Logins: []string{}, LoginKeys: []uint32{}}, nil
+	}
+	backer, ok := r.loginTicketStore.(interface {
+		BackupTo(string) error
+	})
+	if !ok {
+		return loginticket.SnapshotSummary{}, fmt.Errorf("login ticket store backup is not supported")
+	}
+	if err := backer.BackupTo(dstDir); err != nil {
+		return loginticket.SnapshotSummary{}, err
+	}
+	backup := loginticket.NewFileStore(dstDir)
+	return backup.Validate()
+}
+
+func (r *gameRuntime) ValidateLoginTicketStoreBackup(srcDir string) (loginticket.SnapshotSummary, error) {
+	if r == nil || r.loginTicketStore == nil {
+		return loginticket.SnapshotSummary{Logins: []string{}, LoginKeys: []uint32{}}, nil
+	}
+	validator, ok := r.loginTicketStore.(interface {
+		ValidateBackupFrom(string) (loginticket.SnapshotSummary, error)
+	})
+	if !ok {
+		return loginticket.SnapshotSummary{}, fmt.Errorf("login ticket store backup validation is not supported")
+	}
+	return validator.ValidateBackupFrom(srcDir)
+}
+
+func (r *gameRuntime) RestoreLoginTicketStore(srcDir string) (loginticket.SnapshotSummary, error) {
+	if r == nil || r.loginTicketStore == nil {
+		return loginticket.SnapshotSummary{Logins: []string{}, LoginKeys: []uint32{}}, nil
+	}
+	restorer, ok := r.loginTicketStore.(interface {
+		RestoreFrom(string) error
+	})
+	if !ok {
+		return loginticket.SnapshotSummary{}, fmt.Errorf("login ticket store restore is not supported")
+	}
+	r.liveCharacterMu.Lock()
+	defer r.liveCharacterMu.Unlock()
+	if len(r.liveCharactersByName) != 0 {
+		return loginticket.SnapshotSummary{}, ErrLoginTicketStoreRestoreLiveSessions
+	}
+	if err := restorer.RestoreFrom(srcDir); err != nil {
+		return loginticket.SnapshotSummary{}, err
+	}
+	return r.ValidateLoginTicketStore()
 }
 
 func (r *gameRuntime) ExportAccountCharacterRoster() (accountstore.AccountCharacterRosterExport, error) {
@@ -1692,6 +1748,27 @@ func accountBackupManifestStatus(accountStoreDir string) BackupManifestStatus {
 		return status
 	}
 	var manifest accountstore.BackupManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return status
+	}
+	status.Format = manifest.Format
+	status.FileCount = len(manifest.Files)
+	for _, file := range manifest.Files {
+		status.SnapshotSizeBytes += file.SizeBytes
+	}
+	return status
+}
+
+func loginTicketBackupManifestStatus(loginTicketStoreDir string) BackupManifestStatus {
+	if strings.TrimSpace(loginTicketStoreDir) == "" {
+		return BackupManifestStatus{}
+	}
+	path := filepath.Join(loginTicketStoreDir, loginticket.BackupManifestFilename)
+	raw, status, ok := readBackupManifestStatusRaw(path)
+	if !ok {
+		return status
+	}
+	var manifest loginticket.BackupManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		return status
 	}

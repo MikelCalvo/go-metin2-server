@@ -112,6 +112,157 @@ func TestGameRuntimeRestoreAccountStoreRejectsLiveSessionsWithoutMutation(t *tes
 	}
 }
 
+func TestGameRuntimeBackupLoginTicketStoreCopiesValidatedTickets(t *testing.T) {
+	tickets := loginticket.NewFileStore(t.TempDir())
+	issuedAt := time.Date(2026, 8, 18, 10, 0, 0, 0, time.UTC)
+	if err := tickets.Issue(loginticket.Ticket{Login: "zeta", LoginKey: 0x02000000, Empire: 3, IssuedAt: issuedAt.Add(time.Hour), Characters: []loginticket.Character{{ID: 3, Name: "ZetaWar"}}}); err != nil {
+		t.Fatalf("issue zeta ticket: %v", err)
+	}
+	if err := tickets.Issue(loginticket.Ticket{Login: "alpha", LoginKey: 0x01000000, Empire: 1, IssuedAt: issuedAt, Characters: []loginticket.Character{{ID: 1, Name: "AlphaWar"}, {ID: 2, Name: "AlphaNinja"}}}); err != nil {
+		t.Fatalf("issue alpha ticket: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, tickets, accountstore.NewFileStore(t.TempDir()))
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	backupDir := filepath.Join(t.TempDir(), "login-ticket-backup")
+	summary, err := runtime.BackupLoginTicketStore(backupDir)
+	if err != nil {
+		t.Fatalf("backup login ticket store: %v", err)
+	}
+	want := loginticket.SnapshotSummary{
+		TicketCount:    2,
+		CharacterCount: 3,
+		Logins:         []string{"alpha", "zeta"},
+		LoginKeys:      []uint32{0x01000000, 0x02000000},
+		OldestIssuedAt: minimalTimePtr(issuedAt),
+		NewestIssuedAt: minimalTimePtr(issuedAt.Add(time.Hour)),
+	}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected backup summary: got %#v want %#v", summary, want)
+	}
+}
+
+func TestGameRuntimeValidateLoginTicketStoreBackupDryRunsRestoreSource(t *testing.T) {
+	source := loginticket.NewFileStore(t.TempDir())
+	issuedAt := time.Date(2026, 8, 18, 10, 0, 0, 0, time.UTC)
+	if err := source.Issue(loginticket.Ticket{Login: "mkmk", LoginKey: 0x01020304, Empire: 2, IssuedAt: issuedAt, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("issue source ticket: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "login-ticket-backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated backup: %v", err)
+	}
+	active := loginticket.NewFileStore(filepath.Join(t.TempDir(), "active"))
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, active, accountstore.NewFileStore(t.TempDir()))
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.ValidateLoginTicketStoreBackup(backupDir)
+	if err != nil {
+		t.Fatalf("validate login ticket backup: %v", err)
+	}
+	want := loginticket.SnapshotSummary{
+		TicketCount:    1,
+		CharacterCount: 1,
+		Logins:         []string{"mkmk"},
+		LoginKeys:      []uint32{0x01020304},
+		OldestIssuedAt: minimalTimePtr(issuedAt),
+		NewestIssuedAt: minimalTimePtr(issuedAt),
+	}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected validate backup summary: got %#v want %#v", summary, want)
+	}
+	if got, err := active.List(); err != nil || len(got) != 0 {
+		t.Fatalf("expected dry-run validate not to mutate active ticket store, got %#v err=%v", got, err)
+	}
+}
+
+func TestGameRuntimeRestoreLoginTicketStoreRestoresValidatedBackup(t *testing.T) {
+	source := loginticket.NewFileStore(t.TempDir())
+	issuedAt := time.Date(2026, 8, 18, 10, 0, 0, 0, time.UTC)
+	ticket := loginticket.Ticket{Login: "mkmk", LoginKey: 0x01020304, Empire: 2, IssuedAt: issuedAt, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}
+	if err := source.Issue(ticket); err != nil {
+		t.Fatalf("issue source ticket: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "login-ticket-backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated backup: %v", err)
+	}
+	active := loginticket.NewFileStore(filepath.Join(t.TempDir(), "active"))
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, active, accountstore.NewFileStore(t.TempDir()))
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.RestoreLoginTicketStore(backupDir)
+	if err != nil {
+		t.Fatalf("restore login ticket store: %v", err)
+	}
+	want := loginticket.SnapshotSummary{
+		TicketCount:    1,
+		CharacterCount: 1,
+		Logins:         []string{"mkmk"},
+		LoginKeys:      []uint32{0x01020304},
+		OldestIssuedAt: minimalTimePtr(issuedAt),
+		NewestIssuedAt: minimalTimePtr(issuedAt),
+	}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected restore summary: got %#v want %#v", summary, want)
+	}
+	got, err := active.Load("mkmk", 0x01020304)
+	if err != nil {
+		t.Fatalf("load restored ticket: %v", err)
+	}
+	ticket.Characters[0].NormalizeItemState()
+	if !reflect.DeepEqual(got, ticket) {
+		t.Fatalf("unexpected restored ticket:\n got: %#v\nwant: %#v", got, ticket)
+	}
+}
+
+func TestGameRuntimeRestoreLoginTicketStoreRejectsLiveSessionsWithoutMutation(t *testing.T) {
+	source := loginticket.NewFileStore(t.TempDir())
+	if err := source.Issue(loginticket.Ticket{Login: "restored", LoginKey: 0x0abcdef0, Empire: 2, IssuedAt: time.Now().UTC(), Characters: []loginticket.Character{{ID: 1, Name: "RestoredWar"}}}); err != nil {
+		t.Fatalf("issue source ticket: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "login-ticket-backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated backup: %v", err)
+	}
+
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accountstore.NewFileStore(t.TempDir()))
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	owner := peerVisibilityCharacter("LiveTicketGuard", 0x01030704, 0x02040704, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, ticketStore, "ticket-live-restore", 0x70707004, owner)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "ticket-live-restore", 0x70707004)
+	defer closeSessionFlow(t, flow)
+
+	before, err := ticketStore.Validate()
+	if err != nil {
+		t.Fatalf("validate active ticket store before rejected live restore: %v", err)
+	}
+
+	_, err = runtime.RestoreLoginTicketStore(backupDir)
+	if !errors.Is(err, ErrLoginTicketStoreRestoreLiveSessions) {
+		t.Fatalf("expected live-session login ticket restore guard, got %v", err)
+	}
+	summary, err := ticketStore.Validate()
+	if err != nil {
+		t.Fatalf("validate active ticket store after rejected live restore: %v", err)
+	}
+	if !reflect.DeepEqual(summary, before) {
+		t.Fatalf("expected live-session restore guard to leave active ticket store unchanged, got %#v want %#v", summary, before)
+	}
+	if _, err := ticketStore.Load("restored", 0x0abcdef0); !errors.Is(err, loginticket.ErrTicketNotFound) {
+		t.Fatalf("expected backup ticket not to be restored over live state, got %v", err)
+	}
+}
+
 func TestGameRuntimeAccountCharacterRosterExportProjectsCommittedSnapshots(t *testing.T) {
 	accountStore := accountstore.NewFileStore(t.TempDir())
 	if err := accountStore.Save(accountstore.Account{Login: "Alpha", Empire: 1, Characters: []loginticket.Character{{ID: 7, Name: "AlphaWar", Level: 1, MapIndex: 1}}}); err != nil {

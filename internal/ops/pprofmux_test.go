@@ -696,6 +696,102 @@ func TestLocalAccountStoreRestoreEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalLoginTicketStoreBackupEndpointBacksUpToLoopbackRequestedDirectory(t *testing.T) {
+	backer := &stubLoginTicketStoreBacker{summary: map[string]any{"ticket_count": 2, "character_count": 3, "logins": []string{"alpha", "zeta"}, "login_keys": []uint32{0x01000000, 0x02000000}}}
+	mux := RegisterLocalLoginTicketStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/backup", strings.NewReader(`{"dst_dir":"/tmp/login-ticket-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if backer.calls != 1 || backer.dstDir != "/tmp/login-ticket-backup" {
+		t.Fatalf("expected backup callback once with requested dst dir, calls=%d dst=%q", backer.calls, backer.dstDir)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"ticket_count":2`, `"character_count":3`, `"logins":["alpha","zeta"]`, `"login_keys":[16777216,33554432]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+}
+
+func TestLocalLoginTicketStoreBackupEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	backer := &stubLoginTicketStoreBacker{summary: map[string]any{"ticket_count": 1}}
+	mux := RegisterLocalLoginTicketStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/backup", strings.NewReader(`{"dst_dir":"/tmp/login-ticket-backup"}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if backer.calls != 0 {
+		t.Fatalf("expected backup callback not to be called, got %d", backer.calls)
+	}
+}
+
+func TestLocalLoginTicketStoreBackupValidateEndpointDryRunsLoopbackRequestedSource(t *testing.T) {
+	validator := &stubLoginTicketStoreBackupValidator{summary: map[string]any{"ticket_count": 2, "character_count": 3, "logins": []string{"alpha", "zeta"}, "login_keys": []uint32{0x01000000, 0x02000000}, "crash_temp_count": 1, "crash_temp_files": []string{".ticket-crashed.json"}}}
+	mux := RegisterLocalLoginTicketStoreBackupValidateEndpoint(NewPprofMux("gamed"), validator.ValidateBackup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/backup/validate", strings.NewReader(`{"src_dir":"/tmp/login-ticket-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if validator.calls != 1 || validator.srcDir != "/tmp/login-ticket-backup" {
+		t.Fatalf("expected validate callback once with requested src dir, calls=%d src=%q", validator.calls, validator.srcDir)
+	}
+}
+
+func TestLocalLoginTicketStoreRestoreEndpointRestoresFromLoopbackRequestedSource(t *testing.T) {
+	restorer := &stubLoginTicketStoreRestorer{summary: map[string]any{"ticket_count": 2, "character_count": 3, "logins": []string{"alpha", "zeta"}, "login_keys": []uint32{0x01000000, 0x02000000}}}
+	mux := RegisterLocalLoginTicketStoreRestoreEndpoint(NewPprofMux("gamed"), restorer.Restore)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/restore", strings.NewReader(`{"src_dir":"/tmp/login-ticket-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if restorer.calls != 1 || restorer.srcDir != "/tmp/login-ticket-backup" {
+		t.Fatalf("expected restore callback once with requested src dir, calls=%d src=%q", restorer.calls, restorer.srcDir)
+	}
+}
+
+func TestLocalLoginTicketStoreRestoreEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	restorer := &stubLoginTicketStoreRestorer{summary: map[string]any{"ticket_count": 1}}
+	mux := RegisterLocalLoginTicketStoreRestoreEndpoint(NewPprofMux("gamed"), restorer.Restore)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/restore", strings.NewReader(`{"src_dir":"/tmp/login-ticket-backup"}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if restorer.calls != 0 {
+		t.Fatalf("expected restore callback not to be called, got %d", restorer.calls)
+	}
+}
+
 func TestLocalLoginTicketStoreValidateEndpointReturnsSummaryForLoopbackPost(t *testing.T) {
 	validator := &stubLoginTicketStoreValidator{summary: map[string]any{"ticket_count": 2, "character_count": 5, "empty_character_slot_count": 1, "logins": []string{"alpha", "zeta"}, "login_keys": []uint32{0x01000000, 0x02000000}, "crash_temp_count": 1, "crash_temp_files": []string{".ticket-crashed.json"}}}
 	mux := RegisterLocalLoginTicketStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
@@ -2354,6 +2450,45 @@ func (s *stubLoginTicketStoreValidator) Validate() (any, error) {
 }
 
 var errStubLoginTicketStoreInvalid = errors.New("login ticket store invalid")
+
+type stubLoginTicketStoreBacker struct {
+	summary any
+	err     error
+	calls   int
+	dstDir  string
+}
+
+func (s *stubLoginTicketStoreBacker) Backup(dstDir string) (any, error) {
+	s.calls++
+	s.dstDir = dstDir
+	return s.summary, s.err
+}
+
+type stubLoginTicketStoreBackupValidator struct {
+	summary any
+	err     error
+	calls   int
+	srcDir  string
+}
+
+func (s *stubLoginTicketStoreBackupValidator) ValidateBackup(srcDir string) (any, error) {
+	s.calls++
+	s.srcDir = srcDir
+	return s.summary, s.err
+}
+
+type stubLoginTicketStoreRestorer struct {
+	summary any
+	err     error
+	calls   int
+	srcDir  string
+}
+
+func (s *stubLoginTicketStoreRestorer) Restore(srcDir string) (any, error) {
+	s.calls++
+	s.srcDir = srcDir
+	return s.summary, s.err
+}
 
 type stubLoginTicketStoreCrashTempCleaner struct {
 	summary any

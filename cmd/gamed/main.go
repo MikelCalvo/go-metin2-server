@@ -90,6 +90,18 @@ func main() {
 			return gameRuntime.CleanupLoginTicketStoreIssuedBefore(issuedBefore)
 		},
 	)
+	opsHandler = ops.RegisterLocalLoginTicketStoreBackupEndpoint(
+		opsHandler,
+		func(dstDir string) (any, error) { return gameRuntime.BackupLoginTicketStore(dstDir) },
+	)
+	opsHandler = ops.RegisterLocalLoginTicketStoreBackupValidateEndpoint(
+		opsHandler,
+		func(srcDir string) (any, error) { return gameRuntime.ValidateLoginTicketStoreBackup(srcDir) },
+	)
+	opsHandler = ops.RegisterLocalLoginTicketStoreRestoreEndpoint(
+		opsHandler,
+		func(srcDir string) (any, error) { return gameRuntime.RestoreLoginTicketStore(srcDir) },
+	)
 	opsHandler = ops.RegisterLocalItemTemplateStoreValidateEndpoint(
 		opsHandler,
 		func() (any, error) { return gameRuntime.ValidateItemTemplateStore() },
