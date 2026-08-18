@@ -181,13 +181,41 @@ Preflight rules:
 Cleanup / fail-closed rules:
 - clear pending chase deadlines on owner disconnect/logout/close, phase-select leave, owner death floor, owner transfer/warp to a different map, actor death, successful return-home, content-bundle replacement that removes or replaces the actor, and any engagement release that drops the actor's `engaged_by` ownership
 - dead actors waiting on respawn do not arm chase; a respawn rebuild starts unengaged at authored home and therefore does not inherit a pre-death chase deadline
-- no new operator chase-step POST surface is required for this first executor freeze; read-only pending chase inspection endpoints may follow later once the pending-frame path is proven, mirroring return-step snapshots without blocking the first live consumer
+- no new operator chase-step POST surface is required for this first executor freeze
+
+## First owned pending chase-step inspection seam
+
+Question frozen here:
+
+**Once the pending-frame chase executor is live, what is the smallest read-only loopback inspection surface that can expose currently armed chase-step deadlines without inventing a chase POST trigger, chase packets, or a second scheduler?**
+
+The paired read-only pending-chase schedule surfaces mirror return-step inspection:
+- `GET /local/spawn-group-chase-steps`
+- `GET /local/spawn-group-chase-steps/{entity_id}`
+- `GET /local/maps/{map_index}/spawn-group-chase-steps`
+
+Rows are local/operator snapshots, not gameplay packets. Each row exposes:
+- `entity_id`
+- `ready_at`
+- `remaining_ms`
+- the current still-eligible spawn-group `actor`
+- the planned chase `step` that the fixed-`max_step = 100` / default-leash executor would apply on the next due flush (`home` / `current` / `radius` / `status` / `return_required` plus `next` and `complete`)
+
+Row rules:
+- rows are sorted by `entity_id`
+- already-due but unflushed schedules remain visible with `remaining_ms = 0`
+- stale schedules whose actor is gone, dead, no longer spawn-backed, `return_required`, no longer engaged by a live same-map owner, or no longer safely plannable are omitted and return `404` for exact lookup
+- the map-local endpoint returns the same row shape filtered by the pending actor's current effective `map_index`, returns an empty JSON array for a known map with no pending chase-step timers, rejects malformed or zero map indexes with `400`, and returns `404` when the runtime cannot resolve that map-scoped snapshot
+- `GET /local/spawn-group-chase-steps/{entity_id}` returns `400` for malformed entity IDs and `404` for absent/stale/ineligible pending chase-step schedules
+- these endpoints never mutate actor position, engagement, selected-target ownership, HP, death/respawn timers, return-step schedules, chase deadlines, or visible-world membership
+- no `POST` chase-step operator surface is owned by this inspection freeze
 
 Current implementation status:
 - the pending-frame chase executor is now live in `internal/minimal`
 - accepted non-lethal content practice-mob hits arm the `5s` chase deadline
 - due chase steps persist position, queue the ordinary delete/readd visibility refresh, preserve engagement / selected-target ownership, and re-arm while the actor remains eligible
 - return-step, respawn, remove, return-home, and content-bundle prune/restore paths clear or restore chase deadlines alongside the return-step schedule
+- the read-only pending chase inspection endpoints above are the next owned consumer of that already-live schedule
 
 Explicit non-goals for this chase-step executor freeze:
 - server-driven `MOVE` fanout or any dedicated chase packet family
@@ -195,3 +223,4 @@ Explicit non-goals for this chase-step executor freeze:
 - pathfinding, navmesh, patrol, or multi-actor flocking
 - chasing while `return_required` or across map boundaries
 - persisting a live mob position schema distinct from the current static-actor snapshot path
+- operator POST chase-step triggers
