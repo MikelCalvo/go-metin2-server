@@ -95,6 +95,7 @@ The gate must fail closed when:
 - the merchant actor is no longer visible or interactable
 - the bound interaction definition can no longer resolve
 - the bound catalog snapshot is stale or inconsistent with the current authored definition
+- an optional selected-character quest gate on that same `shop_preview` definition no longer matches the live quest-state flag value
 - the session leaves `GAME`, disconnects, transfers maps, or otherwise loses the current merchant interaction context
 
 This keeps the first real buy path tied to the existing authored merchant surface instead of inventing a second unrelated NPC economy entry seam.
@@ -237,6 +238,7 @@ Failure behavior in this bootstrap contract:
 - packet `SHOP SELL` / `SELL2` transfer/sell guard failures emit the same self-only `GC::SHOP INVALID_POS` companion and append one self-only `CHAT_TYPE_INFO` rejection when the template authors `sell_reject_message`; `anti_sell` keeps the deterministic fallback text `"The merchant refuses to buy this item."` when omitted, while `anti_get`, `anti_drop`, `anti_give`, and `anti_stack` stay on the bare invalid-position companion when no text is authored
 - packet `SHOP SELL` / `SELL2` selected-character job/sex/empire/level restriction failure emits the same self-only `GC::SHOP INVALID_POS` companion and appends one self-only `CHAT_TYPE_INFO` rejection only when the template authors `sell_reject_message`; otherwise it preserves the older bare `INVALID_POS` rejection
 - packet `SHOP BUY` against a still-open merchant window whose live actor/context or bound catalog snapshot has gone stale now emits one self-only `GC::SHOP END`, clears the active merchant context immediately, and still leaves gold/inventory unchanged
+- packet `SHOP BUY`, packet `SHOP SELL` / `SHOP SELL2`, and the local `/shop_buy` harness against a still-open merchant window whose authored optional quest gate no longer matches the selected character's live quest-state flag likewise emit one self-only `GC::SHOP END`, clear the active merchant context immediately, and leave gold/inventory unchanged
 - a successful warp interaction or exact-position transfer trigger while that merchant window is still open now prepends one self-only `GC::SHOP END` before the self transfer rebootstrap burst and clears the active merchant context immediately, so later `SHOP BUY` requests on the destination side fail closed until the player opens a fresh merchant window again
 - the local `/shop_buy <slot>` debug harness now reuses those same merchant-family insufficient-gold / no-valid-placement / unknown-slot visible failures (`GC::SHOP NOT_ENOUGH_MONEY` / `GC::SHOP INVENTORY_FULL` / `GC::SHOP INVALID_POS`) instead of keeping a second placeholder or silent unknown-slot surface
 

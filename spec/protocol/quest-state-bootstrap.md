@@ -168,10 +168,11 @@ Owned gate rules:
 - partial gate fields (`quest_ref` without `quest_flag`, or the reverse) and orphan `quest_from` on ungated non-mutating definitions fail store validation
 - when the live selected character's current flag value matches `quest_from`, the ordinary `info` / `talk` / `warp` / `shop_preview` outcome continues unchanged
 - when the current value mismatches, the client receives the same self-only `CHAT_TYPE_INFO` text already owned by `quest_flag` mismatch (`Quest requirements are not met.`) and no authored info/talk text, transfer, or merchant window is delivered
+- once a gated `shop_preview` merchant window is already open, later packet `SHOP BUY` / `SHOP SELL` / `SHOP SELL2` and the local `/shop_buy` harness must re-resolve that same merchant target through the ordinary interaction path before mutating gold or inventory; if the selected character's live quest flag no longer matches the authored gate, the session receives one self-only `GC::SHOP END`, the active merchant context clears immediately, and gold/inventory remain unchanged
 - loopback interaction-visibility previews for gated non-mutating interactions reuse that same mismatch text without mutating quest state
 - content-bundle warp destination/route summaries and shop-route summaries now surface the authored gate fields so operators can audit teleporter/merchant prerequisites without opening the live interaction path
 
-The checked-in QA example `docs/examples/bootstrap-npc-service-bundle.json` now gates `npc:qa_guide`, `lore:qa_square`, `npc:qa_teleporter`, and `npc:qa_merchant` on `quest:first_steps.met_guide = 1`, so the owned loop is: interact with `QuestGuide` once, then use the guide/signpost/teleporter/merchant.
+The checked-in QA example `docs/examples/bootstrap-npc-service-bundle.json` now gates `npc:qa_guide`, `lore:qa_square`, `npc:qa_teleporter`, and `npc:qa_merchant` on `quest:first_steps.met_guide = 1`, so the owned loop is: interact with `QuestGuide` once, then use the guide/signpost/teleporter/merchant. A later operator or `quest_flag` reset that clears `met_guide` while a previously opened QA merchant window is still open must therefore auto-close that stale window on the next buy/sell attempt instead of letting the transaction continue under a revoked prerequisite.
 
 ## Runtime configuration and local ops
 

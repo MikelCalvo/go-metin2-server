@@ -30654,6 +30654,199 @@ func TestGameSessionFlowStaticActorQuestGatedShopReturnsSelfOnlyMismatchWithoutO
 	}
 }
 
+func TestGameSessionFlowQuestGatedShopBuyClosesWhenRequirementClearedWhileOpen(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	buyer := merchantBuyerCharacter("QuestGateBuyer", 0x01040130, 0x02050130, 1000, nil)
+	issuePeerTicket(t, store, "quest-gate-buyer", 0x30303030, buyer)
+	if err := accounts.Save(accountstore.Account{Login: "quest-gate-buyer", Empire: buyer.Empire, Characters: cloneCharacters([]loginticket.Character{buyer})}); err != nil {
+		t.Fatalf("seed quest-gated merchant buyer account: %v", err)
+	}
+	before := queststate.Snapshot{Flags: []queststate.Flag{{Character: buyer.Name, QuestRef: "quest:first_steps", Name: "met_guide", Value: 1}}}
+	if err := queststate.NewFileStore(questStatePath).Save(before); err != nil {
+		t.Fatalf("seed quest-gated merchant quest state: %v", err)
+	}
+	catalog := defaultMerchantCatalogDefinition()
+	catalog.Ref = "npc:gated_merchant"
+	catalog.Title = "Gated Merchant"
+	catalog.QuestRef = "quest:first_steps"
+	catalog.QuestFlag = "met_guide"
+	catalog.QuestFrom = 1
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{catalog})
+	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected quest-gated merchant buy runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:gated_merchant")
+	if !ok {
+		t.Fatal("expected gated shop static actor registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "quest-gate-buyer", 0x30303030)
+	if len(enterOut) < 8 {
+		t.Fatalf("expected bootstrap frames with visible gated shop actor, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actor.EntityID)
+
+	cleared, err := runtime.ApplyQuestStateTransition(queststate.Transition{
+		Character: buyer.Name,
+		QuestRef:  "quest:first_steps",
+		Flag:      "met_guide",
+		From:      1,
+		To:        0,
+	})
+	if err != nil {
+		t.Fatalf("clear quest gate while merchant window open: %v", err)
+	}
+	if !cleared.Result.Applied {
+		t.Fatalf("expected quest gate clear to apply while merchant window open, got %+v", cleared)
+	}
+
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected packet shop buy error after quest gate cleared: %v", err)
+	}
+	if len(buyOut) != 1 {
+		t.Fatalf("expected packet shop buy to auto-close after quest gate cleared, got %d frames", len(buyOut))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, buyOut[0])); err != nil {
+		t.Fatalf("decode merchant shop end after quest gate cleared: %v", err)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after quest-gate stale merchant buy close, got %d", len(queued))
+	}
+
+	slashBuyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/shop_buy 0"})))
+	if err != nil {
+		t.Fatalf("unexpected slash shop buy error after quest-gate auto-close: %v", err)
+	}
+	if len(slashBuyOut) != 0 {
+		t.Fatalf("expected slash shop buy to fail closed after quest-gate auto-close, got %d frames", len(slashBuyOut))
+	}
+
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after quest-gate stale merchant buy attempt")
+	}
+	if currencySnapshot.Gold != 1000 {
+		t.Fatalf("expected gold to stay at 1000 after quest-gate stale merchant buy attempt, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after quest-gate stale merchant buy attempt")
+	}
+	if len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected inventory to stay empty after quest-gate stale merchant buy attempt, got %+v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load("quest-gate-buyer")
+	if err != nil {
+		t.Fatalf("load persisted quest-gate merchant buyer account: %v", err)
+	}
+	if account.Characters[0].Gold != 1000 || len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("unexpected persisted state after quest-gate stale merchant buy attempt: %+v", account.Characters[0])
+	}
+	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	if err != nil {
+		t.Fatalf("load quest state after quest-gate stale merchant buy attempt: %v", err)
+	}
+	if len(loaded.Flags) != 0 {
+		t.Fatalf("expected cleared quest gate to remain cleared after stale merchant buy close, got %#v", loaded)
+	}
+}
+
+func TestGameSessionFlowQuestGatedShopSellClosesWhenRequirementClearedWhileOpen(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	buyer := merchantBuyerCharacter("QuestGateSeller", 0x01040131, 0x02050131, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
+	issuePeerTicket(t, store, "quest-gate-seller", 0x31313131, buyer)
+	if err := accounts.Save(accountstore.Account{Login: "quest-gate-seller", Empire: buyer.Empire, Characters: cloneCharacters([]loginticket.Character{buyer})}); err != nil {
+		t.Fatalf("seed quest-gated merchant seller account: %v", err)
+	}
+	before := queststate.Snapshot{Flags: []queststate.Flag{{Character: buyer.Name, QuestRef: "quest:first_steps", Name: "met_guide", Value: 1}}}
+	if err := queststate.NewFileStore(questStatePath).Save(before); err != nil {
+		t.Fatalf("seed quest-gated merchant seller quest state: %v", err)
+	}
+	catalog := defaultMerchantCatalogDefinition()
+	catalog.Ref = "npc:gated_merchant"
+	catalog.Title = "Gated Merchant"
+	catalog.QuestRef = "quest:first_steps"
+	catalog.QuestFlag = "met_guide"
+	catalog.QuestFrom = 1
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{catalog})
+	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected quest-gated merchant sell runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:gated_merchant")
+	if !ok {
+		t.Fatal("expected gated shop static actor registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "quest-gate-seller", 0x31313131)
+	if len(enterOut) < 8 {
+		t.Fatalf("expected bootstrap frames with visible gated shop actor, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actor.EntityID)
+
+	cleared, err := runtime.ApplyQuestStateTransition(queststate.Transition{
+		Character: buyer.Name,
+		QuestRef:  "quest:first_steps",
+		Flag:      "met_guide",
+		From:      1,
+		To:        0,
+	})
+	if err != nil {
+		t.Fatalf("clear quest gate while merchant sell window open: %v", err)
+	}
+	if !cleared.Result.Applied {
+		t.Fatalf("expected quest gate clear to apply while merchant sell window open, got %+v", cleared)
+	}
+
+	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell2(shopproto.ClientSell2Packet{Slot: 5, Count: 2})))
+	if err != nil {
+		t.Fatalf("unexpected packet shop sell error after quest gate cleared: %v", err)
+	}
+	if len(sellOut) != 1 {
+		t.Fatalf("expected packet shop sell to auto-close after quest gate cleared, got %d frames", len(sellOut))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, sellOut[0])); err != nil {
+		t.Fatalf("decode merchant shop end after quest-gate sell close: %v", err)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after quest-gate stale merchant sell close, got %d", len(queued))
+	}
+
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after quest-gate stale merchant sell attempt")
+	}
+	if currencySnapshot.Gold != 125 {
+		t.Fatalf("expected gold to stay at 125 after quest-gate stale merchant sell attempt, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after quest-gate stale merchant sell attempt")
+	}
+	if len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].Count != 3 || inventorySnapshot.Inventory[0].Slot != 5 {
+		t.Fatalf("expected inventory to stay unchanged after quest-gate stale merchant sell attempt, got %+v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load("quest-gate-seller")
+	if err != nil {
+		t.Fatalf("load persisted quest-gate merchant seller account: %v", err)
+	}
+	if account.Characters[0].Gold != 125 || len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0].Count != 3 {
+		t.Fatalf("unexpected persisted state after quest-gate stale merchant sell attempt: %+v", account.Characters[0])
+	}
+}
+
 func TestGameSessionFlowItemMovePacketMovesCarriedInventory(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
