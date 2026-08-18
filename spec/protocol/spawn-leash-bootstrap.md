@@ -160,7 +160,7 @@ The first live chase executor deliberately mirrors the return-step pending-frame
 
 Arming rules:
 - arm one pending chase-step deadline only for a live spawn-backed practice mob that currently holds aggro-lite engagement ownership and still classifies `at_home` or `within_radius`
-- arm from the owned post-hit engagement gate (and from any later same-engagement accepted hit that keeps that ownership) using a bootstrap chase delay of `5s` and the same fixed `max_step = 100` / default leash radius family as return-step scheduling
+- arm from the owned post-hit engagement gate, from proximity aggro-radius acquisition that newly establishes that same engagement ownership, and from any later same-engagement accepted hit that keeps that ownership, using a bootstrap chase delay of `5s` and the same fixed `max_step = 100` / default leash radius family as return-step scheduling
 - the chase delay is intentionally longer than the owned `1s` delayed retaliation beat so multi-beat hostility cadence remains independently observable before the first chase step
 - never arm chase while the actor classifies `return_required`, is dead/waiting on respawn, lacks `spawn_group_ref`, or has no live same-map engaged owner
 - return-step ownership always wins: if an actor becomes `return_required`, clear any pending chase deadline and leave recovery to the already-owned return-step executor
@@ -213,6 +213,7 @@ Row rules:
 Current implementation status:
 - the pending-frame chase executor is now live in `internal/minimal`
 - accepted non-lethal content practice-mob hits arm the `5s` chase deadline
+- proximity aggro-radius acquisition that newly establishes engagement also arms that same `5s` chase deadline without inventing selected-target ownership; when the deadline becomes due, the executor applies the ordinary delete/readd chase step while still preserving engagement and still inventing no selected combat target
 - due chase steps persist position, queue the ordinary delete/readd visibility refresh, preserve engagement / selected-target ownership, and re-arm while the actor remains eligible
 - return-step, respawn, remove, return-home, and content-bundle prune/restore paths clear or restore chase deadlines alongside the return-step schedule
 - the read-only pending chase inspection endpoints above are now live over that already-owned schedule

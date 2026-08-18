@@ -2167,6 +2167,134 @@ func TestGameRuntimeFlushServerFramesSkipsProximityAggroOutsideDefaultRadius(t *
 	}
 }
 
+func TestGameRuntimeFlushServerFramesAppliesDueProximitySpawnGroupChaseStepWithoutHit(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ProximityChaseOwner", 0x01030193, 0x02040193, 1850, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "proximity-chase-owner", 0x43434343, owner)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700002200, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for proximity-armed chase-step: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.proximity_chase_auto",
+		Name:          "ProximityChaseMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import proximity-armed chase-step spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.proximity_chase_auto")
+	if !ok {
+		t.Fatal("expected proximity-armed chase-step spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "proximity-chase-owner", 0x43434343)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	ownerEntity, ok := runtime.sharedWorld.playerEntityByName("ProximityChaseOwner")
+	if !ok {
+		t.Fatal("expected proximity chase owner entity to remain registered")
+	}
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected proximity acquisition to engage owner for entity %d before chase delay", group.EntityID)
+	}
+	runtime.spawnChaseMu.Lock()
+	dueAt, chaseScheduled := runtime.spawnChaseStepDueAt[group.EntityID]
+	runtime.spawnChaseMu.Unlock()
+	if !chaseScheduled {
+		t.Fatalf("expected proximity acquisition to arm one pending chase-step deadline for entity %d", group.EntityID)
+	}
+	expectedDueAt := currentTime.Add(bootstrapSpawnGroupChaseStepDelay)
+	if !dueAt.Equal(expectedDueAt) {
+		t.Fatalf("expected proximity-armed chase-step deadline at %s, got %s", expectedDueAt, dueAt)
+	}
+	if snapshot, ok := runtime.CombatTargetSnapshot("ProximityChaseOwner"); ok {
+		t.Fatalf("expected proximity acquisition alone not to invent selected combat target ownership, got %+v", snapshot)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected proximity acquisition alone not to emit chase or retaliation frames before the delay, got %d frames", len(queued))
+	}
+
+	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay)
+	queued := flushServerFrames(t, flow)
+	if len(queued) < 4 {
+		t.Fatalf("expected due proximity-armed chase-step to queue retained owner refresh, got %d frames", len(queued))
+	}
+	if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0])); err != nil || deleted.VID != targetVID {
+		t.Fatalf("decode proximity-armed chase-step retained delete: packet=%+v err=%v", deleted, err)
+	}
+	add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	if err != nil {
+		t.Fatalf("decode proximity-armed chase-step add: %v", err)
+	}
+	if add.VID != targetVID || add.X != 1800 || add.Y != 2800 {
+		t.Fatalf("expected proximity-armed chase-step add at planned +100 toward owner, got %+v", add)
+	}
+	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, queued[2])); err != nil {
+		t.Fatalf("decode proximity-armed chase-step additional info: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, queued[3])); err != nil {
+		t.Fatalf("decode proximity-armed chase-step update: %v", err)
+	}
+	for _, raw := range queued[4:] {
+		if target, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, raw)); err == nil && target.TargetVID == 0 {
+			t.Fatalf("expected proximity-armed chase-step not to invent a selected-target clear, got clear frame %+v among %d queued frames", target, len(queued))
+		}
+		if _, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, raw)); err == nil {
+			t.Fatalf("expected proximity-armed chase-step not to invent selected combat target frames, got target packet among %d queued frames", len(queued))
+		}
+	}
+
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after proximity-armed chase-step: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != 1800 || persisted.StaticActors[0].Y != 2800 || persisted.StaticActors[0].SpawnHome == nil || persisted.StaticActors[0].SpawnHome.X != 1700 {
+		t.Fatalf("expected proximity-armed chase-step to persist planned position and preserve home, got %+v", persisted.StaticActors)
+	}
+	stepped, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || stepped.X != 1800 || stepped.Y != 2800 || stepped.Dead || stepped.SpawnLeash == nil || stepped.SpawnLeash.ReturnRequired {
+		t.Fatalf("expected runtime actor to move one proximity-armed chase step while remaining in leash, ok=%v snapshot=%+v", ok, stepped)
+	}
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected proximity-armed chase-step to preserve engagement ownership for entity %d", group.EntityID)
+	}
+	if snapshot, ok := runtime.CombatTargetSnapshot("ProximityChaseOwner"); ok {
+		t.Fatalf("expected proximity-armed chase-step still not to invent selected combat target ownership, got %+v", snapshot)
+	}
+
+	runtime.spawnChaseMu.Lock()
+	_, stillScheduled := runtime.spawnChaseStepDueAt[group.EntityID]
+	runtime.spawnChaseMu.Unlock()
+	if !stillScheduled {
+		t.Fatalf("expected still-engaged in-leash proximity chase actor to re-arm the next chase-step deadline")
+	}
+}
+
 func TestGameRuntimeTransferClearsPendingSpawnGroupChaseStepDeadline(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("ChaseStepTransferOwner", 0x01030185, 0x02040185, 1900, 2800, 0, 101, 201)
