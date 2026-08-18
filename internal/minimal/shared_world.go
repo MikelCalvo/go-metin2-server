@@ -3476,6 +3476,25 @@ func (r *sharedWorldRegistry) VisibleStaticActorFrames(subject loginticket.Chara
 	return frames
 }
 
+// VisibleStaticActorRefreshFrames rebuilds currently visible static actors for a
+// recovered live subject with delete-plus-state catch-up frames. This is the
+// same-socket /restart_here companion for zero-HP recipient skips that withheld
+// later practice-mob / static-actor lifecycle delivery while the owner was dead.
+func (r *sharedWorldRegistry) VisibleStaticActorRefreshFrames(subject loginticket.Character) [][]byte {
+	if r == nil || r.entities == nil || characterAtBootstrapHPFloor(subject) {
+		return nil
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	actors := r.scopesLocked().VisibleStaticActors(subject)
+	frames := make([][]byte, 0, len(actors)*5)
+	for _, actor := range actors {
+		frames = append(frames, r.buildStaticActorRefreshFramesLocked(actor, actor)...)
+	}
+	return frames
+}
+
 func (r *sharedWorldRegistry) VisibleGroundItemFrames(subject loginticket.Character) [][]byte {
 	if r == nil || len(r.groundItemsByVID) == 0 || characterAtBootstrapHPFloor(subject) {
 		return nil

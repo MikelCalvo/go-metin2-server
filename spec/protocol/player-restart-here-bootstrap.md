@@ -59,12 +59,22 @@ When accepted, `/restart_here` now:
    - `CHAR_ADDITIONAL_INFO`
    - `CHARACTER_UPDATE`
    - `PLAYER_POINT_CHANGE`
-5. keep the already-owned post-death rule that a fresh `TARGET` is required before later `ATTACK`
+5. preflights already-due server-owned non-player lifecycle timers before the recovered owner catches up on local static/mob visibility:
+   - ready static-actor respawns flush first
+   - due spawn-group return steps flush next
+6. appends one self-only catch-up refresh for every currently visible static actor / practice mob after that self burst:
+   - `CHARACTER_DEL(actor_vid)`
+   - ordinary add/info/update state frames for the post-preflight actor snapshot
+   - trailing `GC DEAD(actor_vid)` when that actor is still in the owned dead interval
+7. keep the already-owned post-death rule that a fresh `TARGET` is required before later `ATTACK`
+
+That catch-up exists because the already-owned zero-HP recipient skips intentionally withheld later practice-mob death/respawn and static-actor visibility frames from the still-connected dead owner. Same-socket `/restart_here` therefore has to resynchronize the recovered owner to the current server-owned non-player snapshot instead of leaving stale pre-death visuals while combat selection already observes the live runtime state.
 
 For this bootstrap slice, the self recovery rebuild is intentionally asymmetric with the engaged practice mob:
 - the player rebuilds from persisted player state
 - that persisted player state must be a usable live snapshot; if it is itself already at `0` HP, the restart fails closed instead of replaying a dead bootstrap as a recovery
 - a still-live practice mob keeps its current runtime-owned HP and engagement reset rules
+- if that practice mob died and its server-owned respawn became due while the owner was still at the zero-HP floor, the restart-here preflight rebuilds the mob first and the catch-up refresh shows the live post-respawn actor rather than a stale dead replay followed by a duplicate queued rebuild
 
 ## Peer-visible result
 

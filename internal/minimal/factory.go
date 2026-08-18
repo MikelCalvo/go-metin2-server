@@ -4122,6 +4122,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							if !ok {
 								return gameflow.ChatResult{Accepted: false}
 							}
+							runtime.flushReadyStaticActorRespawns()
+							runtime.flushDueSpawnGroupReturnSteps()
 							bootstrapFrames, err := worldentry.BuildBootstrapFramesWithTemplates(restartedSelected, runtime.itemTemplates)
 							if err != nil {
 								return gameflow.ChatResult{Accepted: false}
@@ -4139,7 +4141,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, restartedLive, peerRefreshFrames)
 							activeCharacterPosition = bootstrapCharacterPositionGeneral
 							clearActiveCombatTarget()
-							return gameflow.ChatResult{Accepted: true, Frames: bootstrapFrames}
+							staticRefreshFrames := sharedWorld.VisibleStaticActorRefreshFrames(restartedLive)
+							frames := append(append([][]byte(nil), bootstrapFrames...), staticRefreshFrames...)
+							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						case "restart_town":
 							selectedPlayer, ok := currentSelectedPlayer()
 							if !ok || !ownsLiveSharedWorldSession() || !selectedPlayerAtBootstrapHPFloor(selectedPlayer) {

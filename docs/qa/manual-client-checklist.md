@@ -932,12 +932,14 @@ If that custom profile authors a negative `retaliation_point_delta`, expect both
 - [ ] Confirm the owner remains dead and no recovery/peer frames are emitted
 - [ ] Issue exact `/restart_here` on the same socket
 - [ ] Confirm the character rebuilds in place with the ordinary self bootstrap burst and restored persisted HP
+- [ ] Confirm the same recovery also refreshes currently visible practice-mob / static-actor presence with delete-plus-readd catch-up frames after the self burst, so any lifecycle the dead owner skipped is resynchronized before combat resumes
 - [ ] Confirm a stale attack still fails until the practice mob is selected again
 - [ ] If loopback ops access is available, confirm the combat-target snapshot remains absent after `/restart_here` until the practice mob is freshly selected again
 - [ ] With a second living visible client, confirm that a practice mob left alive by the owner's zero-HP floor can be freshly targeted by that second client without waiting for mob death / respawn or owner disconnect
 - [ ] In a separate live-owner run, land one accepted hit on a practice mob, clear the selected target before the delayed retaliation timer expires, and confirm no delayed retaliation beat arrives for that cleared target
 - [ ] In that same clear-target run, confirm a second living visible client can freshly target the still-live practice mob after the owner clears it
 - [ ] Re-select the still-live practice mob and confirm its HP remains at the current runtime-owned value instead of resetting because of `/restart_here`
+- [ ] In a separate timing run, let a second living client kill the practice mob while the owner is still at `0` HP, wait until the owned respawn delay is already due, then issue `/restart_here` and confirm the recovery catch-up shows the live rebuilt mob (no stale `DEAD` replay and no duplicate queued respawn afterward)
 - [ ] Optional fixture/debug guard: if the selected character's persisted account snapshot is deliberately seeded at `0` HP, issue `/restart_here` and confirm it fails closed with no recovery burst
 
 ### 5.12.1 Practice-mob pending-retaliation cleanup on mob death
@@ -959,6 +961,7 @@ Expected result:
 - owner-side retaliation death uses `PLAYER_POINT_CHANGE(value=0)` -> `DEAD(owner_vid)` -> `TARGET(0, 0)`
 - `/restart_here` is accepted only after the zero-HP floor and keeps the session in `GAME`
 - player HP is rebuilt from persisted state, while a still-live practice mob keeps its runtime-owned HP and requires fresh target acquisition; a zero-HP owner does not keep that mob orphan-locked against fresh targeting from another living visible client
+- `/restart_here` also preflights due mob respawn / return-step timers and refreshes currently visible static actors for the recovered owner, so skipped zero-HP lifecycle frames do not leave stale local mob visuals
 - if persisted player HP is already `0`, `/restart_here` is not treated as a revival source and emits no recovery frames
 - post-floor `ITEM_MOVE` is silent and non-mutating until a restart/recovery seam is used
 - open bootstrap exchange windows are closed with `GC::EXCHANGE END` on the player-death edge and do not remain usable after the owner reaches the zero-HP floor

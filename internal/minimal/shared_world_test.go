@@ -12012,8 +12012,8 @@ func TestGameSessionFlowPracticeMobRestartHereRebuildsDeadOwnerOnSameSocket(t *t
 	if err != nil {
 		t.Fatalf("unexpected /restart_here error after retaliation-owned death: %v", err)
 	}
-	if len(restartOut) != 4 {
-		t.Fatalf("expected 4 self bootstrap frames from /restart_here recovery, got %d", len(restartOut))
+	if len(restartOut) != 8 {
+		t.Fatalf("expected 4 self bootstrap frames plus 4 visible practice-mob catch-up frames from /restart_here recovery, got %d", len(restartOut))
 	}
 	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[0]))
 	if err != nil {
@@ -12028,6 +12028,20 @@ func TestGameSessionFlowPracticeMobRestartHereRebuildsDeadOwnerOnSameSocket(t *t
 	}
 	if selfPoints.Value != owner.Points[bootstrapPlayerPointValueIndex] {
 		t.Fatalf("expected /restart_here to rebuild persisted owner HP %d, got %+v", owner.Points[bootstrapPlayerPointValueIndex], selfPoints)
+	}
+	mobDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, restartOut[4]))
+	if err != nil {
+		t.Fatalf("decode practice-mob catch-up delete after /restart_here: %v", err)
+	}
+	if mobDelete.VID != targetVID {
+		t.Fatalf("expected /restart_here practice-mob catch-up delete for vid %d, got %+v", targetVID, mobDelete)
+	}
+	mobAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[5]))
+	if err != nil {
+		t.Fatalf("decode practice-mob catch-up add after /restart_here: %v", err)
+	}
+	if mobAdd.VID != targetVID {
+		t.Fatalf("expected /restart_here practice-mob catch-up add for vid %d, got %+v", targetVID, mobAdd)
 	}
 
 	watcherQueued := flushServerFrames(t, watcherFlow)
@@ -12217,8 +12231,8 @@ func TestGameSessionFlowPracticeMobRestartHereLatePeerSeesRecoveredOwnerAlive(t 
 	if err != nil {
 		t.Fatalf("unexpected /restart_here error in late visibility test: %v", err)
 	}
-	if len(restartOut) != 4 {
-		t.Fatalf("expected 4 self frames from /restart_here late visibility setup, got %d", len(restartOut))
+	if len(restartOut) != 8 {
+		t.Fatalf("expected 4 self frames plus 4 visible practice-mob catch-up frames from /restart_here late visibility setup, got %d", len(restartOut))
 	}
 	if queued := flushServerFrames(t, watcherFlow); len(queued) != 4 {
 		t.Fatalf("expected watcher to receive 4 queued owner refresh frames after /restart_here late visibility setup, got %d", len(queued))
@@ -12275,8 +12289,8 @@ func TestGameSessionFlowPracticeMobRestartHereFreshTargetKeepsRuntimeOwnedMobHP(
 	if err != nil {
 		t.Fatalf("unexpected /restart_here error before fresh-target continuity check: %v", err)
 	}
-	if len(restartOut) != 4 {
-		t.Fatalf("expected 4 self bootstrap frames from /restart_here before fresh-target continuity check, got %d", len(restartOut))
+	if len(restartOut) != 8 {
+		t.Fatalf("expected 4 self bootstrap frames plus 4 visible practice-mob catch-up frames from /restart_here before fresh-target continuity check, got %d", len(restartOut))
 	}
 	if queued := flushServerFrames(t, watcherFlow); len(queued) != 4 {
 		t.Fatalf("expected /restart_here recovery to queue 4 peer refresh frames before fresh-target continuity check, got %d", len(queued))
@@ -12298,6 +12312,99 @@ func TestGameSessionFlowPracticeMobRestartHereFreshTargetKeepsRuntimeOwnedMobHP(
 	}
 	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
 		t.Fatalf("expected /restart_here retarget continuity check to avoid extra watcher fanout, got %d queued frames", len(queued))
+	}
+}
+
+func TestGameSessionFlowPracticeMobRestartHerePreflightsDueLocalRespawn(t *testing.T) {
+	_, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
+	defer closeSessionFlow(t, ownerFlow)
+	defer closeSessionFlow(t, watcherFlow)
+
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, watcherFlow, targetVID, owner.VID, advance)
+
+	watcherSelectOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher target before /restart_here due-respawn preflight: %v", err)
+	}
+	if len(watcherSelectOut) != 1 {
+		t.Fatalf("expected watcher to reacquire the still-live practice mob before /restart_here due-respawn preflight, got %d frames", len(watcherSelectOut))
+	}
+	for attackIndex := 0; attackIndex < 8; attackIndex++ {
+		if attackIndex > 0 {
+			advance(bootstrapNormalAttackCadenceWindow)
+		}
+		attackOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+			AttackType: combatproto.ClientAttackTypeNormal,
+			TargetVID:  targetVID,
+		})))
+		if err != nil {
+			t.Fatalf("unexpected watcher pre-death hit %d before /restart_here due-respawn preflight: %v", attackIndex+1, err)
+		}
+		if len(attackOut) != 3 {
+			t.Fatalf("expected target-refresh, self-only retaliation point-loss, and self damage-info frames on watcher pre-death hit %d before /restart_here due-respawn preflight, got %d", attackIndex+1, len(attackOut))
+		}
+	}
+	advance(bootstrapNormalAttackCadenceWindow)
+	watcherFinalAttack, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected watcher death-hit attack error before /restart_here due-respawn preflight: %v", err)
+	}
+	if len(watcherFinalAttack) != 2 {
+		t.Fatalf("expected 2 self-only death-transition frames for watcher kill hit before /restart_here due-respawn preflight, got %d", len(watcherFinalAttack))
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected already-dead owner to skip practice-mob death fanout before /restart_here due-respawn preflight, got %d", len(queued))
+	}
+	advance(worldruntime.TrainingDummyBootstrapRespawnDelay)
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_here"})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here error after local respawn became due: %v", err)
+	}
+	if len(restartOut) != 8 {
+		t.Fatalf("expected /restart_here to preflight due local respawn and return self bootstrap plus live practice-mob catch-up, got %d frames", len(restartOut))
+	}
+	mobDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, restartOut[4]))
+	if err != nil {
+		t.Fatalf("decode practice-mob catch-up delete after /restart_here due-respawn preflight: %v", err)
+	}
+	if mobDelete.VID != targetVID {
+		t.Fatalf("expected /restart_here due-respawn catch-up delete for vid %d, got %+v", targetVID, mobDelete)
+	}
+	mobAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[5]))
+	if err != nil {
+		t.Fatalf("decode live practice-mob catch-up add after /restart_here due-respawn preflight: %v", err)
+	}
+	if mobAdd.VID != targetVID || mobAdd.X != 1200 || mobAdd.Y != 2200 {
+		t.Fatalf("expected /restart_here due-respawn catch-up to show live practice mob at authored home, got %+v", mobAdd)
+	}
+	for idx := 4; idx < len(restartOut); idx++ {
+		if deadReplay, err := worldproto.DecodeDead(decodeSingleFrame(t, restartOut[idx])); err == nil {
+			t.Fatalf("expected /restart_here due-respawn preflight not to replay stale practice-mob DEAD, got %+v at frame %d", deadReplay, idx)
+		}
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected no duplicate queued practice-mob respawn rebuild after /restart_here due-respawn preflight, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) < 4 {
+		t.Fatalf("expected watcher to receive owner recovery refresh after /restart_here due-respawn preflight, got %d", len(queued))
+	}
+	reselectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected practice-mob target after /restart_here due-respawn preflight: %v", err)
+	}
+	if len(reselectOut) != 1 {
+		t.Fatalf("expected practice mob to be freshly targetable after /restart_here due-respawn preflight, got %d frames", len(reselectOut))
+	}
+	reselected, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, reselectOut[0]))
+	if err != nil {
+		t.Fatalf("decode practice-mob target after /restart_here due-respawn preflight: %v", err)
+	}
+	if reselected.TargetVID != targetVID || reselected.HPPercent != 100 {
+		t.Fatalf("expected practice mob target to be full HP after /restart_here due-respawn preflight, got %+v", reselected)
 	}
 }
 
@@ -42802,6 +42909,26 @@ func TestGameSessionFlowPracticeMobRestartHereOverPlainTCP(t *testing.T) {
 	}
 	if restartPoints.VID != 0x02040131 || restartPoints.Type != bootstrapPlayerPointValueIndex || restartPoints.Value != 1 {
 		t.Fatalf("expected tcp restart-here to rebuild persisted HP value 1, got %+v", restartPoints)
+	}
+	mobDelete, err := worldproto.DecodeCharacterDeleteNotice(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp restart-here practice-mob catch-up delete: %v", err)
+	}
+	if mobDelete.VID != h.targetID {
+		t.Fatalf("expected tcp restart-here practice-mob catch-up delete for vid %d, got %+v", h.targetID, mobDelete)
+	}
+	mobAdd, err := worldproto.DecodeCharacterAdd(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp restart-here practice-mob catch-up add: %v", err)
+	}
+	if mobAdd.VID != h.targetID {
+		t.Fatalf("expected tcp restart-here practice-mob catch-up add for vid %d, got %+v", h.targetID, mobAdd)
+	}
+	if _, err := worldproto.DecodeCharacterAdditionalInfo(h.client.readFrame(t)); err != nil {
+		t.Fatalf("decode tcp restart-here practice-mob catch-up info: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterUpdate(h.client.readFrame(t)); err != nil {
+		t.Fatalf("decode tcp restart-here practice-mob catch-up update: %v", err)
 	}
 
 	h.client.writeFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: h.targetID}))
