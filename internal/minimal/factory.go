@@ -412,6 +412,7 @@ type liveCharacterPersistedSnapshotApplier func(loginticket.Character) bool
 
 type liveCharacterRegistration struct {
 	id                     uint64
+	login                  string
 	snapshotter            liveCharacterStateSnapshotter
 	applyPersistedSnapshot liveCharacterPersistedSnapshotApplier
 }
@@ -2119,7 +2120,7 @@ func (r *gameRuntime) PointsSnapshot(name string) (CharacterPointsSnapshot, bool
 	return CharacterPointsSnapshot{Name: state.Name, Points: state.Points}, true
 }
 
-func (r *gameRuntime) registerLiveCharacterSnapshotter(name string, snapshotter liveCharacterStateSnapshotter, applyPersistedSnapshot liveCharacterPersistedSnapshotApplier) uint64 {
+func (r *gameRuntime) registerLiveCharacterSnapshotter(name string, login string, snapshotter liveCharacterStateSnapshotter, applyPersistedSnapshot liveCharacterPersistedSnapshotApplier) uint64 {
 	if r == nil || snapshotter == nil {
 		return 0
 	}
@@ -2134,7 +2135,12 @@ func (r *gameRuntime) registerLiveCharacterSnapshotter(name string, snapshotter 
 	}
 	r.liveCharacterNextID++
 	registrationID := r.liveCharacterNextID
-	r.liveCharactersByName[name] = liveCharacterRegistration{id: registrationID, snapshotter: snapshotter, applyPersistedSnapshot: applyPersistedSnapshot}
+	r.liveCharactersByName[name] = liveCharacterRegistration{
+		id:                     registrationID,
+		login:                  strings.TrimSpace(login),
+		snapshotter:            snapshotter,
+		applyPersistedSnapshot: applyPersistedSnapshot,
+	}
 	return registrationID
 }
 
@@ -2199,6 +2205,23 @@ func (r *gameRuntime) applyLiveCharacterPersistedSnapshot(name string, updated l
 		return false
 	}
 	return registration.applyPersistedSnapshot(updated)
+}
+
+func (r *gameRuntime) liveCharacterLogin(name string) (string, bool) {
+	if r == nil {
+		return "", false
+	}
+	name = normalizeLiveCharacterName(name)
+	if name == "" {
+		return "", false
+	}
+	r.liveCharacterMu.RLock()
+	registration, ok := r.liveCharactersByName[name]
+	r.liveCharacterMu.RUnlock()
+	if !ok || strings.TrimSpace(registration.login) == "" {
+		return "", false
+	}
+	return registration.login, true
 }
 
 func normalizeLiveCharacterName(name string) string {
@@ -2961,7 +2984,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return
 			}
 			liveCharacterRegistrationName = name
-			liveCharacterRegistrationID = runtime.registerLiveCharacterSnapshotter(name, func() (liveCharacterStateSnapshot, bool) {
+			liveCharacterRegistrationID = runtime.registerLiveCharacterSnapshotter(name, sessionTicket.Login, func() (liveCharacterStateSnapshot, bool) {
 				stateMu.Lock()
 				defer stateMu.Unlock()
 				if !hasSelected || selectedPlayer == nil {
@@ -4949,11 +4972,19 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !ownsLiveSharedWorldSession() {
 							return gameflow.ItemExchangeResult{Accepted: false}
 						}
-						frames, ok := sharedWorld.AcceptExchange(sharedWorldID, selectedPlayer.LiveGold(), selectedPlayer.LiveCharacter())
+						frames, finalizePlan, ok := sharedWorld.AcceptExchange(sharedWorldID, selectedPlayer.LiveGold(), selectedPlayer.LiveCharacter())
 						if !ok {
 							return gameflow.ItemExchangeResult{Accepted: false}
 						}
-						return gameflow.ItemExchangeResult{Accepted: true, Frames: frames}
+						if finalizePlan == nil {
+							return gameflow.ItemExchangeResult{Accepted: true, Frames: frames}
+						}
+						selfFrames, applied := applyExchangeFinalize(runtime, accounts, sharedWorld, selectedPlayer, &sessionTicket, finalizePlan)
+						if !applied {
+							return gameflow.ItemExchangeResult{Accepted: false}
+						}
+						refreshLiveCharacterRegistration()
+						return gameflow.ItemExchangeResult{Accepted: true, Frames: selfFrames}
 					}
 
 					if packet.Subheader != itemproto.ExchangeSubheaderItemAdd || packet.Arg2 >= itemproto.ExchangeItemMaxNum || packet.Position.WindowType != itemproto.WindowInventory || packet.Position.Cell >= itemproto.InventoryMaxCell {
@@ -5746,6 +5777,387 @@ func selectedCharacterSnapshotByIDUpdate(characters []loginticket.Character, cha
 
 func cloneCharacters(characters []loginticket.Character) []loginticket.Character {
 	return loginticket.CloneCharacters(characters)
+}
+
+func applyExchangeFinalize(runtime *gameRuntime, accounts accountstore.Store, sharedWorld *sharedWorldRegistry, selectedPlayer *player.Runtime, sessionTicket *loginticket.Ticket, plan *exchangeFinalizePlan) ([][]byte, bool) {
+	if runtime == nil || accounts == nil || sharedWorld == nil || selectedPlayer == nil || sessionTicket == nil || plan == nil {
+		return nil, false
+	}
+	selected := selectedPlayer.LiveCharacter()
+	if selected.ID == 0 {
+		return nil, false
+	}
+	originLogin, ok := runtime.liveCharacterLogin(plan.Origin.Name)
+	if !ok {
+		return nil, false
+	}
+	partnerLogin, ok := runtime.liveCharacterLogin(plan.Partner.Name)
+	if !ok {
+		return nil, false
+	}
+	templates := runtime.itemTemplates
+	updatedOrigin, originFrames, ok := buildExchangeFinalizeSide(plan.Origin, plan.OriginItems, plan.PartnerItems, plan.OriginGold, plan.PartnerGold, templates)
+	if !ok {
+		return nil, false
+	}
+	updatedPartner, partnerFrames, ok := buildExchangeFinalizeSide(plan.Partner, plan.PartnerItems, plan.OriginItems, plan.PartnerGold, plan.OriginGold, templates)
+	if !ok {
+		return nil, false
+	}
+
+	originAccount, err := accounts.Load(originLogin)
+	if err != nil {
+		return nil, false
+	}
+	partnerAccount, err := accounts.Load(partnerLogin)
+	if err != nil {
+		return nil, false
+	}
+	updatedOriginCharacters, ok := selectedCharacterSnapshotByIDUpdate(originAccount.Characters, plan.Origin.ID, updatedOrigin)
+	if !ok {
+		return nil, false
+	}
+	updatedPartnerCharacters, ok := selectedCharacterSnapshotByIDUpdate(partnerAccount.Characters, plan.Partner.ID, updatedPartner)
+	if !ok {
+		return nil, false
+	}
+	if !saveAccountSnapshot(accounts, originAccount.Login, originAccount.Empire, updatedOriginCharacters) {
+		return nil, false
+	}
+	if !saveAccountSnapshot(accounts, partnerAccount.Login, partnerAccount.Empire, updatedPartnerCharacters) {
+		_ = saveAccountSnapshot(accounts, originAccount.Login, originAccount.Empire, originAccount.Characters)
+		return nil, false
+	}
+
+	applyLocalSnapshot := func(updated loginticket.Character) bool {
+		current := selectedPlayer.LiveCharacter()
+		if current.ID == 0 || updated.ID == 0 || current.ID != updated.ID {
+			return false
+		}
+		updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, updated)
+		if !ok {
+			return false
+		}
+		sessionTicket.Characters = updatedCharacters
+		selectedPlayer.ApplyPersistedSnapshot(updated)
+		return true
+	}
+	rollbackAccounts := func() {
+		_ = saveAccountSnapshot(accounts, originAccount.Login, originAccount.Empire, originAccount.Characters)
+		_ = saveAccountSnapshot(accounts, partnerAccount.Login, partnerAccount.Empire, partnerAccount.Characters)
+	}
+
+	var selfFrames [][]byte
+	var peerFrames [][]byte
+	switch selected.ID {
+	case plan.Origin.ID:
+		if !applyLocalSnapshot(updatedOrigin) {
+			rollbackAccounts()
+			return nil, false
+		}
+		if !runtime.applyLiveCharacterPersistedSnapshot(plan.Partner.Name, updatedPartner) {
+			rollbackAccounts()
+			_ = applyLocalSnapshot(plan.Origin)
+			return nil, false
+		}
+		selfFrames = make([][]byte, 0, 2+len(originFrames))
+		selfFrames = append(selfFrames, encodeExchangeAcceptFrame(1))
+		selfFrames = append(selfFrames, originFrames...)
+		selfFrames = append(selfFrames, encodeExchangeEndFrame())
+		peerFrames = make([][]byte, 0, 2+len(partnerFrames))
+		peerFrames = append(peerFrames, encodeExchangeAcceptFrame(0))
+		peerFrames = append(peerFrames, partnerFrames...)
+		peerFrames = append(peerFrames, encodeExchangeEndFrame())
+	case plan.Partner.ID:
+		if !applyLocalSnapshot(updatedPartner) {
+			rollbackAccounts()
+			return nil, false
+		}
+		if !runtime.applyLiveCharacterPersistedSnapshot(plan.Origin.Name, updatedOrigin) {
+			rollbackAccounts()
+			_ = applyLocalSnapshot(plan.Partner)
+			return nil, false
+		}
+		selfFrames = make([][]byte, 0, 2+len(partnerFrames))
+		selfFrames = append(selfFrames, encodeExchangeAcceptFrame(1))
+		selfFrames = append(selfFrames, partnerFrames...)
+		selfFrames = append(selfFrames, encodeExchangeEndFrame())
+		peerFrames = make([][]byte, 0, 2+len(originFrames))
+		peerFrames = append(peerFrames, encodeExchangeAcceptFrame(0))
+		peerFrames = append(peerFrames, originFrames...)
+		peerFrames = append(peerFrames, encodeExchangeEndFrame())
+	default:
+		rollbackAccounts()
+		return nil, false
+	}
+
+	if !sharedWorld.CommitExchangeFinalize(plan, updatedOrigin, updatedPartner, peerFrames) {
+		rollbackAccounts()
+		switch selected.ID {
+		case plan.Origin.ID:
+			_ = applyLocalSnapshot(plan.Origin)
+			_ = runtime.applyLiveCharacterPersistedSnapshot(plan.Partner.Name, plan.Partner)
+		case plan.Partner.ID:
+			_ = applyLocalSnapshot(plan.Partner)
+			_ = runtime.applyLiveCharacterPersistedSnapshot(plan.Origin.Name, plan.Origin)
+		}
+		return nil, false
+	}
+	return selfFrames, true
+}
+
+func buildExchangeFinalizeSide(
+	self loginticket.Character,
+	outgoing map[uint8]exchangeDisplayedItem,
+	incoming map[uint8]exchangeDisplayedItem,
+	outgoingGold uint32,
+	incomingGold uint32,
+	templates map[uint32]itemcatalog.Template,
+) (loginticket.Character, [][]byte, bool) {
+	updated := cloneExchangeCharacter(self)
+	workingInventory := append([]inventory.ItemInstance(nil), updated.Inventory...)
+	removedSlots := make([]inventory.SlotIndex, 0, len(outgoing))
+
+	for _, displaySlot := range sortedExchangeDisplaySlots(outgoing) {
+		display := outgoing[displaySlot]
+		idx, ok := exchangeInventoryIndexForDisplayedItem(workingInventory, display)
+		if !ok {
+			return loginticket.Character{}, nil, false
+		}
+		removedSlots = append(removedSlots, workingInventory[idx].Slot)
+		workingInventory = append(workingInventory[:idx], workingInventory[idx+1:]...)
+	}
+
+	beforePlace := append([]inventory.ItemInstance(nil), workingInventory...)
+	for _, displaySlot := range sortedExchangeDisplaySlots(incoming) {
+		display := incoming[displaySlot]
+		template, ok := templates[display.Vnum]
+		if !ok || !itemcatalog.ValidTemplate(template) || template.Vnum != display.Vnum {
+			return loginticket.Character{}, nil, false
+		}
+		if !exchangePlaceIncomingDisplayedItemPreferringSlots(&workingInventory, display, template, removedSlots) {
+			return loginticket.Character{}, nil, false
+		}
+	}
+
+	netGoldDelta := int64(incomingGold) - int64(outgoingGold)
+	if netGoldDelta < 0 {
+		debit := uint64(-netGoldDelta)
+		if updated.Gold < debit {
+			return loginticket.Character{}, nil, false
+		}
+		updated.Gold -= debit
+	} else if netGoldDelta > 0 {
+		credit := uint64(netGoldDelta)
+		if credit > exchangeGoldPointChangeCarrierMax || updated.Gold > exchangeGoldPointChangeCarrierMax || updated.Gold > exchangeGoldPointChangeCarrierMax-credit {
+			return loginticket.Character{}, nil, false
+		}
+		updated.Gold += credit
+	}
+
+	updated.Inventory = workingInventory
+	updated.NormalizeItemState()
+
+	runtimeSide := player.NewRuntime(updated, player.SessionLink{})
+	quickslotFrames := make([][]byte, 0)
+	seenRemovedSlots := make(map[inventory.SlotIndex]struct{}, len(removedSlots))
+	for _, slot := range removedSlots {
+		if _, seen := seenRemovedSlots[slot]; seen {
+			continue
+		}
+		seenRemovedSlots[slot] = struct{}{}
+		frames, ok := itemRemovalQuickslotSyncFrames(runtimeSide, slot)
+		if !ok {
+			return loginticket.Character{}, nil, false
+		}
+		quickslotFrames = append(quickslotFrames, frames...)
+	}
+	updated = runtimeSide.LiveCharacter()
+
+	itemFrames, ok := exchangeFinalizeInventoryFrames(self.Inventory, beforePlace, updated.Inventory, templates)
+	if !ok {
+		return loginticket.Character{}, nil, false
+	}
+
+	frames := make([][]byte, 0, len(itemFrames)+len(quickslotFrames)+1)
+	frames = append(frames, itemFrames...)
+	frames = append(frames, quickslotFrames...)
+	if netGoldDelta != 0 {
+		frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+			VID:    updated.VID,
+			Type:   bootstrapGoldPointType,
+			Amount: int32(netGoldDelta),
+			Value:  int32(updated.Gold),
+		}))
+	}
+	return updated, frames, true
+}
+
+func exchangeInventoryIndexForDisplayedItem(items []inventory.ItemInstance, display exchangeDisplayedItem) (int, bool) {
+	matches := -1
+	for idx, item := range items {
+		if item.Equipped || item.Locked || item.ID != display.ItemID || item.Vnum != display.Vnum || item.Count != display.Count || item.Slot != display.Slot {
+			continue
+		}
+		if matches != -1 {
+			return -1, false
+		}
+		matches = idx
+	}
+	if matches < 0 {
+		return -1, false
+	}
+	return matches, true
+}
+
+func exchangePlaceIncomingDisplayedItemPreferringSlots(items *[]inventory.ItemInstance, display exchangeDisplayedItem, template itemcatalog.Template, preferredSlots []inventory.SlotIndex) bool {
+	if items == nil || display.Count == 0 || display.Count > template.MaxCount {
+		return false
+	}
+	remaining := display.Count
+	if template.Stackable {
+		for idx := range *items {
+			item := (*items)[idx]
+			if item.Vnum == display.Vnum && item.Count > template.MaxCount {
+				return false
+			}
+			if item.Equipped || item.Locked || item.Vnum != display.Vnum || item.Count >= template.MaxCount {
+				continue
+			}
+			room := template.MaxCount - item.Count
+			if room > remaining {
+				room = remaining
+			}
+			item.Count += room
+			if err := item.Validate(); err != nil {
+				return false
+			}
+			(*items)[idx] = item
+			remaining -= room
+			if remaining == 0 {
+				return true
+			}
+		}
+	}
+	if remaining == 0 {
+		return true
+	}
+	if !template.Stackable && remaining != 1 {
+		return false
+	}
+	slot, ok := exchangePreferredOrNextFreeInventorySlot(*items, preferredSlots)
+	if !ok {
+		return false
+	}
+	placed, err := (inventory.ItemInstance{ID: display.ItemID, Vnum: display.Vnum, Count: remaining}).WithInventorySlot(slot)
+	if err != nil {
+		return false
+	}
+	*items = append(*items, placed)
+	sort.Slice(*items, func(i int, j int) bool {
+		if (*items)[i].Slot != (*items)[j].Slot {
+			return (*items)[i].Slot < (*items)[j].Slot
+		}
+		return (*items)[i].ID < (*items)[j].ID
+	})
+	return true
+}
+
+func exchangePreferredOrNextFreeInventorySlot(items []inventory.ItemInstance, preferredSlots []inventory.SlotIndex) (inventory.SlotIndex, bool) {
+	occupied := make(map[inventory.SlotIndex]struct{}, len(items))
+	for _, item := range items {
+		if item.Equipped || item.Slot >= inventory.CarriedInventorySlotCount {
+			return 0, false
+		}
+		occupied[item.Slot] = struct{}{}
+	}
+	for _, slot := range preferredSlots {
+		if slot >= inventory.CarriedInventorySlotCount {
+			continue
+		}
+		if _, exists := occupied[slot]; !exists {
+			return slot, true
+		}
+	}
+	for slot := inventory.SlotIndex(0); slot < inventory.CarriedInventorySlotCount; slot++ {
+		if _, exists := occupied[slot]; !exists {
+			return slot, true
+		}
+	}
+	return 0, false
+}
+
+func exchangeFinalizeInventoryFrames(
+	previous []inventory.ItemInstance,
+	afterRemoval []inventory.ItemInstance,
+	final []inventory.ItemInstance,
+	templates map[uint32]itemcatalog.Template,
+) ([][]byte, bool) {
+	frames := make([][]byte, 0)
+	previousByID := make(map[uint64]inventory.ItemInstance, len(previous))
+	for _, item := range previous {
+		previousByID[item.ID] = item
+	}
+	afterRemovalByID := make(map[uint64]inventory.ItemInstance, len(afterRemoval))
+	for _, item := range afterRemoval {
+		afterRemovalByID[item.ID] = item
+	}
+
+	removedIDs := make([]uint64, 0)
+	for id := range previousByID {
+		if _, stillPresent := afterRemovalByID[id]; !stillPresent {
+			removedIDs = append(removedIDs, id)
+		}
+	}
+	sort.Slice(removedIDs, func(i, j int) bool { return removedIDs[i] < removedIDs[j] })
+	for _, id := range removedIDs {
+		item := previousByID[id]
+		frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: itemproto.InventoryPosition(uint16(item.Slot))}))
+	}
+
+	type placedChange struct {
+		before inventory.ItemInstance
+		after  inventory.ItemInstance
+		merged bool
+	}
+	changes := make([]placedChange, 0)
+	seen := make(map[uint64]struct{})
+	for _, item := range final {
+		if _, ok := seen[item.ID]; ok {
+			continue
+		}
+		seen[item.ID] = struct{}{}
+		before, existedBefore := afterRemovalByID[item.ID]
+		if !existedBefore {
+			changes = append(changes, placedChange{after: item, merged: false})
+			continue
+		}
+		if before.Count != item.Count || before.Slot != item.Slot || before.Vnum != item.Vnum {
+			changes = append(changes, placedChange{before: before, after: item, merged: true})
+		}
+	}
+	sort.Slice(changes, func(i, j int) bool {
+		if changes[i].after.Slot != changes[j].after.Slot {
+			return changes[i].after.Slot < changes[j].after.Slot
+		}
+		return changes[i].after.ID < changes[j].after.ID
+	})
+	for _, change := range changes {
+		if change.merged {
+			frame, err := encodeInventoryItemUpdateFrameWithTemplates(change.after, templates)
+			if err != nil {
+				return nil, false
+			}
+			frames = append(frames, frame)
+			continue
+		}
+		frame, err := encodeBootstrapInventoryItemFrameWithTemplates(change.after, templates)
+		if err != nil {
+			return nil, false
+		}
+		frames = append(frames, frame)
+	}
+	return frames, true
 }
 
 func randomLoginKey() (uint32, error) {

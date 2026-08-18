@@ -96,6 +96,20 @@ type exchangeDisplayedItem struct {
 	Slot   inventory.SlotIndex
 }
 
+// exchangeFinalizePlan captures a validated second-accept trade without mutating
+// the exchange shell yet. The factory applies inventory/gold/quickslot mutation
+// and persistence, then CommitExchangeFinalize closes the shell and emits frames.
+type exchangeFinalizePlan struct {
+	OriginID     uint64
+	PartnerID    uint64
+	Origin       loginticket.Character
+	Partner      loginticket.Character
+	OriginItems  map[uint8]exchangeDisplayedItem
+	PartnerItems map[uint8]exchangeDisplayedItem
+	OriginGold   uint32
+	PartnerGold  uint32
+}
+
 type sharedGroundItemVisibilityDiff struct {
 	Removed []sharedGroundItem
 	Added   []sharedGroundItem
@@ -627,9 +641,9 @@ func (r *sharedWorldRegistry) AddExchangeGold(originID uint64, amount uint32, av
 	return selfFrames, true
 }
 
-func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint64, live loginticket.Character) ([][]byte, bool) {
+func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint64, live loginticket.Character) ([][]byte, *exchangeFinalizePlan, bool) {
 	if r == nil || originID == 0 {
-		return nil, false
+		return nil, nil, false
 	}
 
 	r.mu.Lock()
@@ -637,50 +651,115 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 
 	partnerID, ok := r.exchangePartners[originID]
 	if !ok || partnerID == 0 {
-		return nil, false
+		return nil, nil, false
 	}
 	if _, ok := r.sessionEntryLocked(originID); !ok {
-		return nil, false
+		return nil, nil, false
 	}
 	if _, ok := r.sessionEntryLocked(partnerID); !ok {
-		return nil, false
+		return nil, nil, false
 	}
 	origin, ok := r.playerCharacter(originID)
 	if !ok || characterAtBootstrapHPFloor(origin) {
-		return nil, false
+		return nil, nil, false
 	}
 	partner, ok := r.playerCharacter(partnerID)
 	if !ok || characterAtBootstrapHPFloor(partner) {
-		return nil, false
+		return nil, nil, false
 	}
 	if live.ID == 0 || live.ID != origin.ID || live.VID != origin.VID || normalizeLiveCharacterName(live.Name) != normalizeLiveCharacterName(origin.Name) {
-		return nil, false
+		return nil, nil, false
 	}
 	if !exchangeDisplayedItemsStillLive(r.exchangeItems[originID], live, r.itemTemplates) {
-		return nil, false
+		return nil, nil, false
 	}
 	if displayedGold := r.exchangeGold[originID]; displayedGold != 0 && uint64(displayedGold) > availableGold {
-		return [][]byte{encodeExchangeLessGoldFrame()}, true
+		return [][]byte{encodeExchangeLessGoldFrame()}, nil, true
 	}
 	if r.exchangeAccepted[partnerID] {
 		if !exchangeDisplayedItemsStillLive(r.exchangeItems[partnerID], partner, r.itemTemplates) {
-			return nil, false
+			return nil, nil, false
 		}
 		if displayedGold := r.exchangeGold[partnerID]; displayedGold != 0 && uint64(displayedGold) > partner.Gold {
-			return nil, false
+			return nil, nil, false
 		}
 		if !r.exchangeFinalizationPreconditionsLocked(originID, partnerID, origin, partner) {
-			return nil, false
+			return nil, nil, false
 		}
+		return nil, &exchangeFinalizePlan{
+			OriginID:     originID,
+			PartnerID:    partnerID,
+			Origin:       cloneExchangeCharacter(origin),
+			Partner:      cloneExchangeCharacter(partner),
+			OriginItems:  cloneExchangeDisplayedItems(r.exchangeItems[originID]),
+			PartnerItems: cloneExchangeDisplayedItems(r.exchangeItems[partnerID]),
+			OriginGold:   r.exchangeGold[originID],
+			PartnerGold:  r.exchangeGold[partnerID],
+		}, true
 	}
 
 	selfFrame := encodeExchangeAcceptFrame(1)
 	peerFrame := encodeExchangeAcceptFrame(0)
 	if !r.enqueueToEntityLocked(partnerID, [][]byte{peerFrame}) {
-		return nil, false
+		return nil, nil, false
 	}
 	r.setExchangeAcceptedLocked(originID, true)
-	return [][]byte{selfFrame}, true
+	return [][]byte{selfFrame}, nil, true
+}
+
+// CommitExchangeFinalize updates both characters, clears the exchange shell without
+// partner-notify END (caller supplies END frames), and enqueues peer finalize frames.
+func (r *sharedWorldRegistry) CommitExchangeFinalize(plan *exchangeFinalizePlan, updatedOrigin loginticket.Character, updatedPartner loginticket.Character, peerFrames [][]byte) bool {
+	if r == nil || plan == nil || plan.OriginID == 0 || plan.PartnerID == 0 {
+		return false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	partnerID, ok := r.exchangePartners[plan.OriginID]
+	if !ok || partnerID != plan.PartnerID {
+		return false
+	}
+	if reverse, ok := r.exchangePartners[plan.PartnerID]; !ok || reverse != plan.OriginID {
+		return false
+	}
+	if _, ok := r.sessionEntryLocked(plan.OriginID); !ok {
+		return false
+	}
+	if _, ok := r.sessionEntryLocked(plan.PartnerID); !ok {
+		return false
+	}
+	if !r.enqueueToEntityLocked(plan.PartnerID, peerFrames) {
+		return false
+	}
+	_ = r.entities.UpdatePlayer(plan.OriginID, updatedOrigin)
+	r.lastKnownCharacters[plan.OriginID] = updatedOrigin
+	_ = r.entities.UpdatePlayer(plan.PartnerID, updatedPartner)
+	r.lastKnownCharacters[plan.PartnerID] = updatedPartner
+	if !r.clearExchangeLocked(plan.OriginID, false) {
+		return false
+	}
+	return true
+}
+
+func cloneExchangeCharacter(character loginticket.Character) loginticket.Character {
+	cloned := loginticket.CloneCharacters([]loginticket.Character{character})
+	if len(cloned) == 0 {
+		return loginticket.Character{}
+	}
+	return cloned[0]
+}
+
+func cloneExchangeDisplayedItems(displayed map[uint8]exchangeDisplayedItem) map[uint8]exchangeDisplayedItem {
+	if len(displayed) == 0 {
+		return nil
+	}
+	cloned := make(map[uint8]exchangeDisplayedItem, len(displayed))
+	for slot, item := range displayed {
+		cloned[slot] = item
+	}
+	return cloned
 }
 
 const exchangeGoldPointChangeCarrierMax = uint64(1<<31 - 1)
