@@ -118,6 +118,80 @@ func TestGameRuntimeItemExchangeStartRejectsOutOfRangeVisiblePeerWithoutMutation
 	assertExchangeAccountUnchanged(t, accounts, "item-exchange-range-target", peer, "range target exchange start")
 }
 
+func TestGameRuntimeItemExchangeStartRejectsActiveMerchantWindowWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeMerchantStartOwner", 0x010307e4, 0x020407e4, 1100, 2100, 0, 101, 201)
+	owner.Gold = 125
+	owner.Inventory = []inventory.ItemInstance{{ID: 784, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeMerchantStartPeer", 0x010307e5, 0x020407e5, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 785, Vnum: 27002, Count: 2, Slot: 6}}
+	ownerLogin := "exch-merch-start-owner"
+	peerLogin := "exch-merch-start-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070e4, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070e5, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed merchant-open exchange owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed merchant-open exchange peer account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27050, Name: "Merchant Start Guard Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	merchantDefinition := interactionstore.Definition{
+		Kind:  interactionstore.KindShopPreview,
+		Ref:   "npc:exchange_start_merchant_guard",
+		Title: "Exchange Start Merchant Guard",
+		Catalog: []interactionstore.MerchantCatalogEntry{
+			{Slot: 0, ItemVnum: 27050, Price: 50, Count: 1},
+		},
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{merchantDefinition})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected merchant-open exchange runtime error: %v", err)
+	}
+	merchant, ok := runtime.RegisterStaticActorWithInteraction("ExchangeStartMerchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, merchantDefinition.Ref)
+	if !ok {
+		t.Fatal("expected merchant-open exchange static actor registration to succeed")
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070e4)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070e5)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	merchantOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(merchant.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected merchant-open interaction error: %v", err)
+	}
+	if len(merchantOut) != 1 {
+		t.Fatalf("expected merchant-open interaction to emit one shop start frame, got %d", len(merchantOut))
+	}
+	if _, err := shopproto.DecodeServerStart(decodeSingleFrame(t, merchantOut[0])); err != nil {
+		t.Fatalf("decode merchant-open shop start: %v", err)
+	}
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected merchant-open exchange start error: %v", err)
+	}
+	if len(startOut) != 0 {
+		t.Fatalf("expected exchange start with open merchant window to emit no frames, got %d", len(startOut))
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected exchange start with open merchant window to queue no peer frames, got %d", len(queued))
+	}
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "merchant-open exchange start owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "merchant-open exchange start peer")
+}
+
 func TestGameRuntimeItemExchangeWalkAwayClosesShellWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -3483,6 +3557,20 @@ func TestGameRuntimeMerchantBuyClosesActiveExchangeShellBeforeBuyFrames(t *testi
 	_ = flushServerFrames(t, ownerFlow)
 	_ = flushServerFrames(t, peerFlow)
 
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected exchange merchant-buy start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected exchange merchant-buy start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "exchange merchant-buy owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected exchange merchant-buy peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "exchange merchant-buy peer start")
+
 	merchantOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(merchant.EntityID)})))
 	if err != nil {
 		t.Fatalf("unexpected active-exchange merchant-buy interaction error: %v", err)
@@ -3497,20 +3585,6 @@ func TestGameRuntimeMerchantBuyClosesActiveExchangeShellBeforeBuyFrames(t *testi
 	if shopStart.OwnerVID != uint32(merchant.EntityID) || shopStart.Items[0].Vnum != template.Vnum || shopStart.Items[0].DisplayPos != 0 {
 		t.Fatalf("unexpected active-exchange merchant-buy shop start: %+v", shopStart)
 	}
-
-	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
-	if err != nil {
-		t.Fatalf("unexpected exchange merchant-buy start error: %v", err)
-	}
-	if len(startOut) != 1 {
-		t.Fatalf("expected exchange merchant-buy start to emit one owner frame, got %d", len(startOut))
-	}
-	assertExchangeStartFrame(t, startOut[0], peer.VID, "exchange merchant-buy owner start")
-	queuedStart := flushServerFrames(t, peerFlow)
-	if len(queuedStart) != 1 {
-		t.Fatalf("expected exchange merchant-buy peer start frame, got %d", len(queuedStart))
-	}
-	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "exchange merchant-buy peer start")
 
 	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{CatalogSlot: 0})))
 	if err != nil {

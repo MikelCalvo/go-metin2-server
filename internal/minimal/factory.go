@@ -5028,7 +5028,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 
 					switch packet.Subheader {
 					case itemproto.ExchangeSubheaderStart:
-						if !ownsLiveSharedWorldSession() {
+						if !ownsLiveSharedWorldSession() || hasActiveMerchantBuy {
 							return gameflow.ItemExchangeResult{Accepted: false}
 						}
 						frames, ok := sharedWorld.StartExchange(sharedWorldID, packet.Arg1)
