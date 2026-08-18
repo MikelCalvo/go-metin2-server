@@ -444,8 +444,8 @@ The codec now owns the exact wire shape, but the gameplay contract is still inte
 
 This slice does **not** yet freeze:
 - the final gameplay meaning of every `attack_type` value
-- final damage formulas beyond registered bootstrap combat-profile defaults (`max_hp`, `damage_per_normal_attack`, `attack_value`, `defense_value`, `level`, `rank`, `respawn_delay`, optional `retaliation_point_delta`, and optional death reward)
-- broad authored combat-profile fields beyond the current runtime registry seam
+- full legacy damage formulas and wider attack types beyond the current compact registered bootstrap combat-profile defaults (`max_hp`, `damage_per_normal_attack`, `attack_value`, `defense_value`, `level`, `rank`, `respawn_delay`, optional `retaliation_point_delta`, and optional death reward); the playable authored formula seam is already owned through portable `combat_profiles` plus the repository example at `docs/examples/bootstrap-combat-profile-formula-bundle.json`
+- broad authored combat-profile fields beyond the current runtime registry / portable `combat_profiles` seam
 - broader attack-speed rules beyond the first fixed session-local `250ms` normal-attack cadence window
 - miss/crit/block results
 - ranged `SHOOT` gameplay beyond the current decode-and-fail-closed guard

@@ -182,7 +182,7 @@ Already present:
 
 Still missing:
 
-- real damage formulas and attack types,
+- full legacy damage formulas and wider attack types beyond the owned compact combat-profile attack/defense seam (`max(1, attack_value - defense_value)`), including the playable formula QA fixture at `docs/examples/bootstrap-combat-profile-formula-bundle.json`,
 - independent mob AI: aggro radius, chase/return packet choreography, patrol, target switching, and broader live use of the current leash/chase planners beyond the first pending-frame chase executor,
 - accepted `USE_SKILL`, ranged/projectile, PvP, and duel runtime policy,
 - broad loot/drop tables,

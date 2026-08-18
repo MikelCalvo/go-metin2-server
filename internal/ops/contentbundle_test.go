@@ -597,6 +597,39 @@ func TestLocalContentBundleValidateEndpointExpandsRegenAuthoringExample(t *testi
 	}
 }
 
+func TestLocalContentBundleValidateEndpointExpandsCombatProfileFormulaExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate ops contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-combat-profile-formula-bundle.json"))
+	if err != nil {
+		t.Fatalf("read combat-profile formula example bundle: %v", err)
+	}
+	mux := RegisterLocalContentBundleValidateEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/validate", bytes.NewReader(raw))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d for combat-profile formula example validation, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	var got contentbundle.Bundle
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode combat-profile formula validation response: %v", err)
+	}
+	if len(got.CombatProfiles) != 1 || got.CombatProfiles[0].Profile != "qa_formula_practice_mob" || got.CombatProfiles[0].DamagePerNormalAttack != 5 || got.CombatProfiles[0].AttackValue != 9 || got.CombatProfiles[0].DefenseValue != 4 || got.CombatProfiles[0].Level != 1 || got.CombatProfiles[0].MaxHP != 20 {
+		t.Fatalf("expected validation response to derive formula damage/default level, got %+v", got.CombatProfiles)
+	}
+	wantDrops := []uint32{27001}
+	if len(got.SpawnGroups) != 1 || got.SpawnGroups[0].Ref != "practice.qa_formula_mob" || got.SpawnGroups[0].CombatProfile != "qa_formula_practice_mob" || got.SpawnGroups[0].RewardExperience != 40 || got.SpawnGroups[0].RewardGold != 25 || !reflect.DeepEqual(got.SpawnGroups[0].RewardDropVnums, wantDrops) {
+		t.Fatalf("expected validation response to copy profile-default rewards onto the formula spawn group, got %+v", got.SpawnGroups)
+	}
+}
+
 func TestLocalContentBundleValidateEndpointRejectsInvalidBundle(t *testing.T) {
 	mux := RegisterLocalContentBundleValidateEndpoint(NewPprofMux("gamed"))
 

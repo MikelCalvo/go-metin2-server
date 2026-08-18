@@ -100,7 +100,7 @@ Likely areas:
 Next slices:
 
 1. Keep target-marker, fly-effect, stun, PvP/duel packet families codec-only until runtime policy is proven.
-2. Define one authored combat-profile formula seam for practice mobs without claiming full legacy math.
+2. ~~Define one authored combat-profile formula seam for practice mobs without claiming full legacy math.~~ Done for bootstrap scope: portable `combat_profiles` already drive `max(1, attack_value - defense_value)`, and `docs/examples/bootstrap-combat-profile-formula-bundle.json` is the first playable QA fixture (`qa_formula_practice_mob` / `practice.qa_formula_mob`). Full legacy math remains out of scope.
 3. Extend reward descriptors from fixed examples toward table-driven EXP/gold/drop data.
 4. Harden player-death floor and restart behavior around mob retaliation and reconnect.
 5. Add first accepted skill/ranged/projectile runtime only after packet evidence and tests are owned.

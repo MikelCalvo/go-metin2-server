@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -4859,6 +4860,185 @@ func TestGameRuntimeImportsContentBundleCombatProfilesBeforeSpawnGroups(t *testi
 	}
 	if len(imported.CombatProfiles) != 1 || imported.CombatProfiles[0].Profile != profile {
 		t.Fatalf("expected imported bundle to retain authored combat profile snapshot, got %#v", imported.CombatProfiles)
+	}
+}
+
+func TestGameRuntimeImportsExampleFormulaCombatProfileBundleBeforeSpawnGroups(t *testing.T) {
+	const profile = "qa_formula_practice_mob"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate shared_world test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-combat-profile-formula-bundle.json"))
+	if err != nil {
+		t.Fatalf("read combat-profile formula example bundle: %v", err)
+	}
+	var bundle contentbundle.Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode combat-profile formula example bundle: %v", err)
+	}
+
+	gameRuntime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	imported, err := gameRuntime.ImportContentBundle(bundle)
+	if err != nil {
+		t.Fatalf("import example formula combat-profile bundle: %v", err)
+	}
+	if !worldruntime.ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected example formula combat profile %q to register before spawn import", profile)
+	}
+	defaults, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(profile)
+	if !ok || defaults.MaxHP != 20 || defaults.DamagePerNormalAttack != 5 || defaults.AttackValue != 9 || defaults.DefenseValue != 4 || defaults.Level != worldruntime.TrainingDummyBootstrapLevel {
+		t.Fatalf("expected example formula profile defaults to derive damage 5 / level 1, got %+v ok=%v", defaults, ok)
+	}
+	actors := gameRuntime.StaticActors()
+	if len(actors) != 1 || actors[0].SpawnGroupRef != "practice.qa_formula_mob" || actors[0].CombatProfile != profile || actors[0].RewardExperience != 40 || actors[0].RewardGold != 25 || !reflect.DeepEqual(actors[0].RewardDropVnums, []uint32{27001}) {
+		t.Fatalf("unexpected imported example formula spawn actor: %+v", actors)
+	}
+	if len(imported.CombatProfiles) != 1 || imported.CombatProfiles[0].Profile != profile || imported.CombatProfiles[0].DamagePerNormalAttack != 5 || imported.CombatProfiles[0].Level != worldruntime.TrainingDummyBootstrapLevel {
+		t.Fatalf("expected imported example formula bundle to retain canonical profile snapshot, got %#v", imported.CombatProfiles)
+	}
+}
+
+func TestGameSessionFlowAuthoredFormulaCombatProfilePracticeMobUsesProfileMaxHPAndDamage(t *testing.T) {
+	const profile = "qa_formula_practice_mob"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate shared_world test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-combat-profile-formula-bundle.json"))
+	if err != nil {
+		t.Fatalf("read combat-profile formula example bundle: %v", err)
+	}
+	var bundle contentbundle.Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode combat-profile formula example bundle: %v", err)
+	}
+
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("FormulaPeer", 0x0103f101, 0x0204f101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "formula-peer", 0xf101f101, peer)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	gameRuntime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000400, 0)
+	gameRuntime.now = func() time.Time { return currentTime }
+
+	if len(bundle.SpawnGroups) != 1 {
+		t.Fatalf("expected example formula bundle to carry one spawn group, got %#v", bundle.SpawnGroups)
+	}
+	bundle.SpawnGroups[0].MapIndex = bootstrapMapIndex
+	bundle.SpawnGroups[0].X = 1200
+	bundle.SpawnGroups[0].Y = 2200
+	// Keep the portable formula profile + reward item templates from the example fixture.
+	if _, err := gameRuntime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import example formula combat-profile bundle for session smoke: %v", err)
+	}
+	actors := gameRuntime.StaticActors()
+	if len(actors) != 1 || actors[0].SpawnGroupRef != "practice.qa_formula_mob" {
+		t.Fatalf("expected one example formula spawn actor, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, gameRuntime.SessionFactory(), "formula-peer", 0xf101f101)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible formula practice mob, got %d", len(enterOut))
+	}
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected formula-profile target error: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only formula-profile target frame, got %d", len(selectOut))
+	}
+	selected, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, selectOut[0]))
+	if err != nil {
+		t.Fatalf("decode formula-profile target ack: %v", err)
+	}
+	if selected.TargetVID != targetVID || selected.HPPercent != 100 {
+		t.Fatalf("expected formula-profile select to start at full HP, got %+v", selected)
+	}
+
+	wantPercents := []uint8{75, 50, 25}
+	for i, wantPercent := range wantPercents {
+		if i > 0 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+			AttackType: combatproto.ClientAttackTypeNormal,
+			TargetVID:  targetVID,
+		})))
+		if err != nil {
+			t.Fatalf("unexpected formula-profile live hit %d error: %v", i+1, err)
+		}
+		if len(attackOut) != 3 {
+			t.Fatalf("expected target refresh, retaliation, and damage-info on formula-profile live hit %d, got %d frames", i+1, len(attackOut))
+		}
+		refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[0]))
+		if err != nil {
+			t.Fatalf("decode formula-profile live hit %d target refresh: %v", i+1, err)
+		}
+		if refresh.TargetVID != targetVID || refresh.HPPercent != wantPercent {
+			t.Fatalf("expected formula-profile live hit %d to reach %d%% HP, got %+v", i+1, wantPercent, refresh)
+		}
+		damage, err := combatproto.DecodeServerDamageInfo(decodeSingleFrame(t, attackOut[2]))
+		if err != nil {
+			t.Fatalf("decode formula-profile live hit %d damage-info: %v", i+1, err)
+		}
+		if damage.VID != targetVID || damage.Flag != 0 || damage.Damage != 5 {
+			t.Fatalf("expected formula-profile live hit %d damage-info of 5, got %+v", i+1, damage)
+		}
+	}
+
+	currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+	killingOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected formula-profile killing hit error: %v", err)
+	}
+	if len(killingOut) < 2 {
+		t.Fatalf("expected formula-profile killing hit to emit death/clear before rewards, got %d frames", len(killingOut))
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, killingOut[0]))
+	if err != nil {
+		t.Fatalf("decode formula-profile killing dead frame: %v", err)
+	}
+	if dead.VID != targetVID {
+		t.Fatalf("expected formula-profile killing hit dead for target %d, got %+v", targetVID, dead)
+	}
+	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killingOut[1]))
+	if err != nil {
+		t.Fatalf("decode formula-profile killing clear frame: %v", err)
+	}
+	if clear.TargetVID != 0 || clear.HPPercent != 0 {
+		t.Fatalf("expected formula-profile killing hit to clear target, got %+v", clear)
 	}
 }
 

@@ -1,0 +1,40 @@
+{
+  "combat_profiles": [
+    {
+      "profile": "qa_formula_practice_mob",
+      "max_hp": 20,
+      "attack_value": 9,
+      "defense_value": 4,
+      "respawn_delay_ms": 2000,
+      "death_reward": {
+        "experience": 40,
+        "gold": 25,
+        "drop_vnums": [
+          27001
+        ]
+      }
+    }
+  ],
+  "spawn_groups": [
+    {
+      "ref": "practice.qa_formula_mob",
+      "name": "QAFormulaMob",
+      "map_index": 1,
+      "x": 469950,
+      "y": 964200,
+      "race_num": 20350,
+      "combat_profile": "qa_formula_practice_mob"
+    }
+  ],
+  "item_templates": [
+    {
+      "vnum": 27001,
+      "name": "Small Red Potion",
+      "stackable": true,
+      "max_count": 200,
+      "shop_buy_price": 5,
+      "shop_sell_price": 2
+    }
+  ],
+  "interaction_definitions": []
+}

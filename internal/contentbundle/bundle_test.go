@@ -4219,6 +4219,62 @@ func TestCanonicalizeRegenSpawnsCanReferenceBundledCombatProfile(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeCombatProfileFormulaExampleDerivesDamageAndProfileReward(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-combat-profile-formula-bundle.json"))
+	if err != nil {
+		t.Fatalf("read combat-profile formula example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode combat-profile formula example bundle: %v", err)
+	}
+	canonical, err := Canonicalize(bundle)
+	if err != nil {
+		t.Fatalf("canonicalize combat-profile formula example bundle: %v", err)
+	}
+	wantProfile := worldruntime.StaticActorCombatProfileSnapshot{
+		Profile:               "qa_formula_practice_mob",
+		MaxHP:                 20,
+		DamagePerNormalAttack: 5,
+		AttackValue:           9,
+		DefenseValue:          4,
+		Level:                 worldruntime.TrainingDummyBootstrapLevel,
+		Rank:                  0,
+		RespawnDelayMs:        2000,
+		DeathReward: worldruntime.StaticActorDeathReward{
+			Experience: 40,
+			Gold:       25,
+			DropVnums:  []uint32{27001},
+		},
+	}
+	if len(canonical.CombatProfiles) != 1 || !reflect.DeepEqual(canonical.CombatProfiles[0], wantProfile) {
+		t.Fatalf("unexpected canonical formula combat profile:\n got: %#v\nwant: %#v", canonical.CombatProfiles, wantProfile)
+	}
+	wantSpawn := []SpawnGroup{{
+		Ref:              "practice.qa_formula_mob",
+		Name:             "QAFormulaMob",
+		MapIndex:         1,
+		X:                469950,
+		Y:                964200,
+		RaceNum:          20350,
+		CombatProfile:    "qa_formula_practice_mob",
+		RewardExperience: 40,
+		RewardGold:       25,
+		RewardDropVnums:  []uint32{27001},
+	}}
+	if !reflect.DeepEqual(canonical.SpawnGroups, wantSpawn) {
+		t.Fatalf("unexpected canonical formula spawn groups:\n got: %#v\nwant: %#v", canonical.SpawnGroups, wantSpawn)
+	}
+	if len(canonical.ItemTemplates) != 1 || canonical.ItemTemplates[0].Vnum != 27001 {
+		t.Fatalf("expected formula example to keep the reward drop item template, got %#v", canonical.ItemTemplates)
+	}
+}
+
 func TestExampleBootstrapNPCServiceBundleStaysValid(t *testing.T) {
 	raw, canonical := readCanonicalExampleBundle(t, "bootstrap-npc-service-bundle.json")
 	if len(canonical.ItemTemplates) == 0 || len(canonical.SpawnGroups) == 0 || len(canonical.InteractionDefinitions) == 0 {
