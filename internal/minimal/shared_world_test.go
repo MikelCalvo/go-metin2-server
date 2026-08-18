@@ -2296,6 +2296,130 @@ func TestGameRuntimeFlushServerFramesAppliesDueProximitySpawnGroupChaseStepWitho
 	}
 }
 
+func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupChaseStepWithMoveFanout(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ChaseStepMoveOwner", 0x01030194, 0x02040194, 1900, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "chase-step-move-owner", 0x44444444, owner)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700002300, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for chase-step MOVE fanout: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.chase_step_move",
+		Name:          "ChaseStepMoveMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import chase-step MOVE fanout spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.chase_step_move")
+	if !ok {
+		t.Fatal("expected chase-step MOVE fanout spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "chase-step-move-owner", 0x44444444)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected owner target error before chase-step MOVE arm: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected owner to select chase-step MOVE practice mob, got %d frames", len(selectOut))
+	}
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted hit before chase-step MOVE arm: %v", err)
+	}
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target refresh, immediate retaliation, and damage-info on first chase-arming hit, got %d frames", len(attackOut))
+	}
+	if pending, ok := runtime.SpawnGroupChaseStep(group.EntityID); !ok || pending.EntityID != group.EntityID {
+		t.Fatalf("expected engaged hit to arm a pending chase-step row before MOVE fanout, ok=%v snapshot=%+v", ok, pending)
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if queued := flushServerFrames(t, flow); len(queued) != 1 {
+		t.Fatalf("expected the owned delayed retaliation beat to fire before the later chase MOVE step, got %d frames", len(queued))
+	}
+
+	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay - bootstrapPracticeMobServerOriginRetaliationDelay)
+	queued := flushServerFrames(t, flow)
+	if len(queued) == 0 {
+		t.Fatal("expected due chase-step MOVE fanout to queue at least one retained-owner frame")
+	}
+	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("expected retained chase-step viewer to receive MOVE replication instead of delete/readd, first frame decode err=%v", err)
+	}
+	if moveAck.VID != targetVID || moveAck.X != 1800 || moveAck.Y != 2800 {
+		t.Fatalf("expected chase-step MOVE replication at planned +100 toward owner, got %+v", moveAck)
+	}
+	if moveAck.Duration == 0 {
+		t.Fatalf("expected chase-step MOVE replication to carry a non-zero bootstrap duration, got %+v", moveAck)
+	}
+	for _, raw := range queued[1:] {
+		if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, raw)); err == nil && deleted.VID == targetVID {
+			t.Fatalf("expected chase-step MOVE fanout not to emit retained-viewer CHARACTER_DEL, got %+v among %d queued frames", deleted, len(queued))
+		}
+		if add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, raw)); err == nil && add.VID == targetVID {
+			t.Fatalf("expected chase-step MOVE fanout not to emit retained-viewer CHARACTER_ADD, got %+v among %d queued frames", add, len(queued))
+		}
+		if target, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, raw)); err == nil && target.TargetVID == 0 {
+			t.Fatalf("expected chase-step MOVE fanout to preserve selected combat target, got clear frame %+v among %d queued frames", target, len(queued))
+		}
+	}
+
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after chase-step MOVE fanout: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != 1800 || persisted.StaticActors[0].Y != 2800 || persisted.StaticActors[0].SpawnHome == nil || persisted.StaticActors[0].SpawnHome.X != 1700 {
+		t.Fatalf("expected chase-step MOVE fanout to persist planned position and preserve home, got %+v", persisted.StaticActors)
+	}
+	stepped, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || stepped.X != 1800 || stepped.Y != 2800 || stepped.Dead || stepped.SpawnLeash == nil || stepped.SpawnLeash.ReturnRequired {
+		t.Fatalf("expected runtime actor to move one chase MOVE step while remaining in leash, ok=%v snapshot=%+v", ok, stepped)
+	}
+	ownerEntity, ok := runtime.sharedWorld.playerEntityByName("ChaseStepMoveOwner")
+	if !ok {
+		t.Fatal("expected chase MOVE owner entity to remain registered")
+	}
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected chase-step MOVE fanout to preserve engagement ownership for entity %d", group.EntityID)
+	}
+	if snapshot, ok := runtime.CombatTargetSnapshot("ChaseStepMoveOwner"); !ok || snapshot.TargetVID != targetVID {
+		t.Fatalf("expected chase-step MOVE fanout to preserve selected combat target, ok=%v snapshot=%+v", ok, snapshot)
+	}
+}
+
 func TestGameRuntimeTransferClearsPendingSpawnGroupChaseStepDeadline(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("ChaseStepTransferOwner", 0x01030185, 0x02040185, 1900, 2800, 0, 101, 201)
