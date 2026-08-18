@@ -135,7 +135,10 @@
           "price": 500,
           "count": 1
         }
-      ]
+      ],
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "met_guide",
+      "quest_from": 1
     },
     {
       "kind": "talk",

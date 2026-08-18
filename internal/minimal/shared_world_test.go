@@ -29223,6 +29223,146 @@ func TestGameSessionFlowStaticActorShopPreviewInteractionOpensMerchantWindow(t *
 	}
 }
 
+func TestGameRuntimeResolveStaticActorQuestGatedShopRejectsWhenRequirementMissing(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	catalog := defaultMerchantCatalogDefinition()
+	catalog.Ref = "npc:gated_merchant"
+	catalog.Title = "Gated Merchant"
+	catalog.QuestRef = "quest:first_steps"
+	catalog.QuestFlag = "met_guide"
+	catalog.QuestFrom = 1
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{catalog})
+	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:gated_merchant")
+	if !ok {
+		t.Fatal("expected gated shop static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	defer closeSessionFlow(t, flow)
+
+	subject, ok := runtime.sharedWorld.entities.PlayerByName(peer.Name)
+	if !ok {
+		t.Fatalf("expected live shared-world entity for %q after enter", peer.Name)
+	}
+	resolution := runtime.resolveStaticActorInteraction(subject.Entity.ID, uint32(actor.EntityID))
+	if resolution.Accepted || resolution.Failure != staticActorInteractionFailureQuestCurrentValueMismatch {
+		t.Fatalf("expected gated shop to fail closed on missing quest requirement, got %+v", resolution)
+	}
+	if resolution.Delivery == nil || resolution.Delivery.Message != "Quest requirements are not met." {
+		t.Fatalf("unexpected gated shop failure delivery: %+v", resolution.Delivery)
+	}
+}
+
+func TestGameSessionFlowStaticActorQuestGatedShopOpensMerchantWhenRequirementMet(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	before := queststate.Snapshot{Flags: []queststate.Flag{{Character: "PeerOne", QuestRef: "quest:first_steps", Name: "met_guide", Value: 1}}}
+	if err := queststate.NewFileStore(questStatePath).Save(before); err != nil {
+		t.Fatalf("seed quest state: %v", err)
+	}
+	catalog := defaultMerchantCatalogDefinition()
+	catalog.Ref = "npc:gated_merchant"
+	catalog.Title = "Gated Merchant"
+	catalog.QuestRef = "quest:first_steps"
+	catalog.QuestFlag = "met_guide"
+	catalog.QuestFrom = 1
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{catalog})
+	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:gated_merchant")
+	if !ok {
+		t.Fatal("expected gated shop static actor registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) < 8 {
+		t.Fatalf("expected bootstrap frames with visible gated shop actor, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected gated shop interaction error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 merchant shop-open frame for gated shop, got %d", len(out))
+	}
+	start, err := shopproto.DecodeServerStart(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode gated merchant shop start: %v", err)
+	}
+	if start.OwnerVID != uint32(actor.EntityID) {
+		t.Fatalf("expected gated merchant owner vid %d, got %d", actor.EntityID, start.OwnerVID)
+	}
+	if start.Items[0].Vnum != 27001 || start.Items[0].Price != 50 || start.Items[0].Count != 1 {
+		t.Fatalf("unexpected gated merchant slot 0 entry: %+v", start.Items[0])
+	}
+	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	if err != nil {
+		t.Fatalf("load quest state after gated shop open: %v", err)
+	}
+	if !reflect.DeepEqual(loaded, before) {
+		t.Fatalf("gated shop mutated quest-state:\n got: %#v\nwant: %#v", loaded, before)
+	}
+}
+
+func TestGameSessionFlowStaticActorQuestGatedShopReturnsSelfOnlyMismatchWithoutOpening(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	catalog := defaultMerchantCatalogDefinition()
+	catalog.Ref = "npc:gated_merchant"
+	catalog.Title = "Gated Merchant"
+	catalog.QuestRef = "quest:first_steps"
+	catalog.QuestFlag = "met_guide"
+	catalog.QuestFrom = 1
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{catalog})
+	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:gated_merchant")
+	if !ok {
+		t.Fatal("expected gated shop static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected gated shop mismatch interaction error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 self-only gated shop mismatch frame, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode gated shop mismatch delivery: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != "Quest requirements are not met." {
+		t.Fatalf("unexpected gated shop mismatch delivery: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for gated shop mismatch, got %d", len(queued))
+	}
+}
+
 func TestGameSessionFlowItemMovePacketMovesCarriedInventory(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

@@ -171,7 +171,7 @@ Owned gate rules:
 - loopback interaction-visibility previews for gated services reuse that same mismatch text without mutating quest state
 - content-bundle warp destination/route summaries and shop-route summaries now surface the authored gate fields so operators can audit teleporter/merchant prerequisites without opening the live interaction path
 
-The checked-in QA example `docs/examples/bootstrap-npc-service-bundle.json` now gates `npc:qa_teleporter` on `quest:first_steps.met_guide = 1`, so the owned guide → teleporter loop is: talk to `QuestGuide` once, then use the teleporter.
+The checked-in QA example `docs/examples/bootstrap-npc-service-bundle.json` now gates both `npc:qa_teleporter` and `npc:qa_merchant` on `quest:first_steps.met_guide = 1`, so the owned guide → teleporter/merchant loop is: talk to `QuestGuide` once, then use the teleporter or open the merchant.
 
 ## Runtime configuration and local ops
 

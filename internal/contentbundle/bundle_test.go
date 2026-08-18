@@ -2847,6 +2847,40 @@ func TestSummarizeReturnsDeterministicShopRoutesForInteractableActors(t *testing
 	}
 }
 
+func TestSummarizeReturnsQuestGateFieldsOnShopRoutes(t *testing.T) {
+	summary, err := Summarize(Bundle{
+		StaticActors: []StaticActor{
+			{Name: "GatedMerchant", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:gated_merchant"},
+		},
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		},
+		InteractionDefinitions: []interactionstore.Definition{
+			{
+				Kind:      interactionstore.KindShopPreview,
+				Ref:       "npc:gated_merchant",
+				Title:     "Gated Merchant",
+				Catalog:   []interactionstore.MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}},
+				QuestRef:  "quest:first_steps",
+				QuestFlag: "met_guide",
+				QuestFrom: 1,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("summarize gated shop routes: %v", err)
+	}
+	want := []ShopRouteSummary{
+		{ActorName: "GatedMerchant", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:gated_merchant", Title: "Gated Merchant", EntryCount: 1, QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1},
+	}
+	if summary.ShopRouteCount != len(want) {
+		t.Fatalf("expected %d shop routes, got %d", len(want), summary.ShopRouteCount)
+	}
+	if !reflect.DeepEqual(summary.ShopRoutes, want) {
+		t.Fatalf("unexpected gated shop route summaries:\n got: %#v\nwant: %#v", summary.ShopRoutes, want)
+	}
+}
+
 func TestCanonicalizeRejectsShopCatalogEntriesThatDoNotFitShopStartCarriers(t *testing.T) {
 	cases := []struct {
 		name  string
