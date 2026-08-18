@@ -1345,6 +1345,190 @@ func TestGameRuntimeRestoreStaticActorStoreRestoresManifestedBackup(t *testing.T
 	}
 }
 
+func TestGameRuntimeBackupInteractionStoreWritesManifestedBackup(t *testing.T) {
+	interactionPath := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	if err := interactionstore.NewFileStore(interactionPath).Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{
+		{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Welcome to the village."},
+		{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
+	}}); err != nil {
+		t.Fatalf("save interaction snapshot: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", InteractionStorePath: interactionPath},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		interactionstore.NewFileStore(interactionPath),
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "interaction-backup")
+
+	summary, err := runtime.BackupInteractionStore(backupDir)
+	if err != nil {
+		t.Fatalf("backup interaction store: %v", err)
+	}
+	want := interactionstore.SnapshotSummary{
+		DefinitionCount: 2,
+		DefinitionKeys:  []string{"info:lore:alchemist", "talk:npc:village_guard"},
+	}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected interaction backup summary: got %#v want %#v", summary, want)
+	}
+	if _, err := os.Stat(filepath.Join(backupDir, interactionstore.BackupManifestFilename)); err != nil {
+		t.Fatalf("expected interaction backup manifest: %v", err)
+	}
+}
+
+func TestGameRuntimeValidateInteractionStoreBackupDryRunsManifestedBackup(t *testing.T) {
+	sourcePath := filepath.Join(t.TempDir(), "source", "interaction-definitions.json")
+	source := interactionstore.NewFileStore(sourcePath)
+	if err := source.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{
+		{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
+	}}); err != nil {
+		t.Fatalf("save source interaction snapshot: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "interaction-backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated interaction backup: %v", err)
+	}
+	activePath := filepath.Join(t.TempDir(), "active", "interaction-definitions.json")
+	active := interactionstore.NewFileStore(activePath)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", InteractionStorePath: activePath},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		active,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.ValidateInteractionStoreBackup(backupDir)
+	if err != nil {
+		t.Fatalf("validate interaction store backup: %v", err)
+	}
+	want := interactionstore.SnapshotSummary{
+		DefinitionCount: 1,
+		DefinitionKeys:  []string{"info:lore:alchemist"},
+	}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected interaction backup validation summary: got %#v want %#v", summary, want)
+	}
+	if _, err := active.Load(); !errors.Is(err, interactionstore.ErrSnapshotNotFound) {
+		t.Fatalf("expected dry-run validate not to mutate active interaction store, got %v", err)
+	}
+}
+
+func TestGameRuntimeRestoreInteractionStoreRejectsLiveSessionsWithoutMutation(t *testing.T) {
+	sourcePath := filepath.Join(t.TempDir(), "source", "interaction-definitions.json")
+	source := interactionstore.NewFileStore(sourcePath)
+	if err := source.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{
+		{Kind: interactionstore.KindInfo, Ref: "lore:restored", Text: "Restored interaction text."},
+	}}); err != nil {
+		t.Fatalf("save source interaction snapshot: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "interaction-backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated interaction backup: %v", err)
+	}
+
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	targetPath := filepath.Join(t.TempDir(), "restore-target", "interaction-definitions.json")
+	target := interactionstore.NewFileStore(targetPath)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", InteractionStorePath: targetPath},
+		ticketStore,
+		accounts,
+		nil,
+		target,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	owner := peerVisibilityCharacter("LiveInteractionGuard", 0x01030715, 0x02040715, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, ticketStore, "interaction-live-restore", 0x70707015, owner)
+	if err := accounts.Save(accountstore.Account{Login: "interaction-live-restore", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed live-restore account: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "interaction-live-restore", 0x70707015)
+	defer closeSessionFlow(t, flow)
+
+	_, err = runtime.RestoreInteractionStore(backupDir)
+	if !errors.Is(err, ErrInteractionStoreRestoreLiveSessions) {
+		t.Fatalf("expected live-session interaction restore guard, got %v", err)
+	}
+	if _, err := target.Load(); !errors.Is(err, interactionstore.ErrSnapshotNotFound) {
+		t.Fatalf("expected live-session restore guard to leave target store untouched, got %v", err)
+	}
+}
+
+func TestGameRuntimeRestoreInteractionStoreRestoresManifestedBackup(t *testing.T) {
+	sourcePath := filepath.Join(t.TempDir(), "source", "interaction-definitions.json")
+	source := interactionstore.NewFileStore(sourcePath)
+	backupSnapshot := interactionstore.Snapshot{Definitions: []interactionstore.Definition{
+		{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Welcome to the village."},
+		{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
+	}}
+	if err := source.Save(backupSnapshot); err != nil {
+		t.Fatalf("save source interaction snapshot: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "interaction-backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated interaction backup: %v", err)
+	}
+	targetPath := filepath.Join(t.TempDir(), "restore-target", "interaction-definitions.json")
+	target := interactionstore.NewFileStore(targetPath)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", InteractionStorePath: targetPath},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		target,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.RestoreInteractionStore(backupDir)
+	if err != nil {
+		t.Fatalf("restore interaction store: %v", err)
+	}
+	wantSummary := interactionstore.SnapshotSummary{
+		DefinitionCount: 2,
+		DefinitionKeys:  []string{"info:lore:alchemist", "talk:npc:village_guard"},
+	}
+	if !reflect.DeepEqual(summary, wantSummary) {
+		t.Fatalf("unexpected interaction restore summary: got %#v want %#v", summary, wantSummary)
+	}
+	restored, err := target.Load()
+	if err != nil {
+		t.Fatalf("load restored interaction snapshot: %v", err)
+	}
+	wantSnapshot := interactionstore.Snapshot{Definitions: []interactionstore.Definition{
+		{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
+		{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Welcome to the village."},
+	}}
+	if !reflect.DeepEqual(restored, wantSnapshot) {
+		t.Fatalf("unexpected restored interaction snapshot:\n got: %#v\nwant: %#v", restored, wantSnapshot)
+	}
+	definition, ok := runtime.InteractionDefinition(interactionstore.KindInfo, "lore:alchemist")
+	if !ok || definition.Text != "The alchemist studies forgotten herbs." {
+		t.Fatalf("expected restored interaction definition to be loaded into runtime, got ok=%v definition=%#v", ok, definition)
+	}
+}
+
 func TestGameRuntimeRestoreStaticActorStoreRejectsLiveSessionsWithoutMutation(t *testing.T) {
 	sourcePath := filepath.Join(t.TempDir(), "source", "static-actors.json")
 	source := staticstore.NewFileStore(sourcePath)

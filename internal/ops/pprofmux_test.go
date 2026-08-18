@@ -2431,6 +2431,117 @@ func TestLocalQuestStateStoreRestoreEndpointRestoresFromLoopbackRequestedSource(
 	}
 }
 
+func TestLocalInteractionStoreBackupEndpointBacksUpToLoopbackRequestedDirectory(t *testing.T) {
+	backer := &stubInteractionStoreBacker{summary: map[string]any{
+		"definition_count": 2,
+		"definition_keys":  []string{"info:lore:alchemist", "talk:npc:village_guard"},
+	}}
+	mux := RegisterLocalInteractionStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interaction-store/backup", strings.NewReader(`{"dst_dir":"/tmp/interaction-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if backer.calls != 1 || backer.dstDir != "/tmp/interaction-backup" {
+		t.Fatalf("expected backup callback once with requested dst dir, calls=%d dst=%q", backer.calls, backer.dstDir)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`"definition_count":2`,
+		`"definition_keys":["info:lore:alchemist","talk:npc:village_guard"]`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+}
+
+func TestLocalInteractionStoreBackupEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	backer := &stubInteractionStoreBacker{summary: map[string]any{"definition_count": 1}}
+	mux := RegisterLocalInteractionStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interaction-store/backup", strings.NewReader(`{"dst_dir":"/tmp/interaction-backup"}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if backer.calls != 0 {
+		t.Fatalf("expected backup callback not to be called, got %d", backer.calls)
+	}
+}
+
+func TestLocalInteractionStoreBackupValidateEndpointDryRunsLoopbackRequestedSource(t *testing.T) {
+	validator := &stubInteractionStoreBackupValidator{summary: map[string]any{
+		"definition_count": 2,
+		"definition_keys":  []string{"info:lore:alchemist", "talk:npc:village_guard"},
+	}}
+	mux := RegisterLocalInteractionStoreBackupValidateEndpoint(NewPprofMux("gamed"), validator.ValidateBackup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interaction-store/backup/validate", strings.NewReader(`{"src_dir":"/tmp/interaction-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if validator.calls != 1 || validator.srcDir != "/tmp/interaction-backup" {
+		t.Fatalf("expected validate callback once with requested src dir, calls=%d src=%q", validator.calls, validator.srcDir)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`"definition_count":2`,
+		`"definition_keys":["info:lore:alchemist","talk:npc:village_guard"]`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+}
+
+func TestLocalInteractionStoreRestoreEndpointRestoresFromLoopbackRequestedSource(t *testing.T) {
+	restorer := &stubInteractionStoreRestorer{summary: map[string]any{
+		"definition_count": 2,
+		"definition_keys":  []string{"info:lore:alchemist", "talk:npc:village_guard"},
+	}}
+	mux := RegisterLocalInteractionStoreRestoreEndpoint(NewPprofMux("gamed"), restorer.Restore)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interaction-store/restore", strings.NewReader(`{"src_dir":"/tmp/interaction-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if restorer.calls != 1 || restorer.srcDir != "/tmp/interaction-backup" {
+		t.Fatalf("expected restore callback once with requested src dir, calls=%d src=%q", restorer.calls, restorer.srcDir)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`"definition_count":2`,
+		`"definition_keys":["info:lore:alchemist","talk:npc:village_guard"]`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+}
+
 func TestLocalQuestStateStoreRestoreEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
 	restorer := &stubQuestStateStoreRestorer{summary: map[string]any{"flag_count": 1}}
 	mux := RegisterLocalQuestStateStoreRestoreEndpoint(NewPprofMux("gamed"), restorer.Restore)
@@ -2999,6 +3110,45 @@ type stubQuestStateStoreRestorer struct {
 }
 
 func (s *stubQuestStateStoreRestorer) Restore(srcDir string) (any, error) {
+	s.calls++
+	s.srcDir = srcDir
+	return s.summary, s.err
+}
+
+type stubInteractionStoreBacker struct {
+	summary any
+	err     error
+	calls   int
+	dstDir  string
+}
+
+func (s *stubInteractionStoreBacker) Backup(dstDir string) (any, error) {
+	s.calls++
+	s.dstDir = dstDir
+	return s.summary, s.err
+}
+
+type stubInteractionStoreBackupValidator struct {
+	summary any
+	err     error
+	calls   int
+	srcDir  string
+}
+
+func (s *stubInteractionStoreBackupValidator) ValidateBackup(srcDir string) (any, error) {
+	s.calls++
+	s.srcDir = srcDir
+	return s.summary, s.err
+}
+
+type stubInteractionStoreRestorer struct {
+	summary any
+	err     error
+	calls   int
+	srcDir  string
+}
+
+func (s *stubInteractionStoreRestorer) Restore(srcDir string) (any, error) {
 	s.calls++
 	s.srcDir = srcDir
 	return s.summary, s.err

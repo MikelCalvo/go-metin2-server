@@ -23,6 +23,10 @@ func NewFileStore(path string) *FileStore {
 
 var durableSyncDisabledForTest bool
 
+// syncStoreDir is overridable in tests so backup/restore rollback coverage can
+// inject directory-sync failures without mocking the whole filesystem.
+var syncStoreDir = syncDir
+
 // DisableDurableSyncForTest skips fsync calls in this package until the
 // returned restore function is called. It is intended for high-volume tests
 // that assert runtime behavior, not crash durability.
@@ -43,7 +47,7 @@ func (s *FileStore) syncStoreDir(dir string) error {
 	if s == nil || durableSyncDisabledForTest {
 		return nil
 	}
-	return syncDir(dir)
+	return syncStoreDir(dir)
 }
 
 func (s *FileStore) syncFile(file *os.File) error {
@@ -126,6 +130,9 @@ func (s *FileStore) Validate() (SnapshotSummary, error) {
 	}
 	summary.CrashTempCount = len(crashTempFiles)
 	summary.CrashTempFiles = crashTempFiles
+	if err := s.validateActiveBackupManifest(); err != nil {
+		return SnapshotSummary{}, err
+	}
 	return summary, nil
 }
 
@@ -233,10 +240,14 @@ func (s *FileStore) Save(snapshot Snapshot) error {
 	if err := temp.Close(); err != nil {
 		return fmt.Errorf("close interaction temp file: %w", err)
 	}
+	storeDir := filepath.Dir(s.path)
 	if err := os.Rename(temp.Name(), s.path); err != nil {
 		return fmt.Errorf("commit interaction snapshot: %w", err)
 	}
-	if err := s.syncStoreDir(filepath.Dir(s.path)); err != nil {
+	if err := removeBackupManifest(storeDir); err != nil {
+		return fmt.Errorf("remove stale interaction backup manifest: %w", err)
+	}
+	if err := s.syncStoreDir(storeDir); err != nil {
 		return fmt.Errorf("sync interaction store dir: %w", err)
 	}
 	return nil

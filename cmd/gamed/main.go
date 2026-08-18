@@ -138,6 +138,18 @@ func main() {
 		opsHandler,
 		func() (any, error) { return gameRuntime.CleanupInteractionStoreCrashTempFiles() },
 	)
+	opsHandler = ops.RegisterLocalInteractionStoreBackupEndpoint(
+		opsHandler,
+		func(dstDir string) (any, error) { return gameRuntime.BackupInteractionStore(dstDir) },
+	)
+	opsHandler = ops.RegisterLocalInteractionStoreBackupValidateEndpoint(
+		opsHandler,
+		func(srcDir string) (any, error) { return gameRuntime.ValidateInteractionStoreBackup(srcDir) },
+	)
+	opsHandler = ops.RegisterLocalInteractionStoreRestoreEndpoint(
+		opsHandler,
+		func(srcDir string) (any, error) { return gameRuntime.RestoreInteractionStore(srcDir) },
+	)
 	opsHandler = ops.RegisterLocalQuestStateStoreValidateEndpoint(
 		opsHandler,
 		func() (any, error) { return gameRuntime.ValidateQuestStateStore() },

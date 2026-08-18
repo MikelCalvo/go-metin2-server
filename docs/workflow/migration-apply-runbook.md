@@ -68,7 +68,8 @@ Before applying, verify and retain deployment-specific backups outside the migra
 - account snapshots (`/local/account-store/validate`, `/local/account-store/backup/validate` when using a store backup);
 - login-ticket snapshots (`/local/login-tickets/validate`);
 - item-template snapshots (`/local/item-templates/validate`, `/local/item-templates/backup/validate` when using a store backup);
-- static actors, interactions, and quest state when authored content is part of the deployment.
+- interaction definitions (`/local/interaction-store/validate`, `/local/interaction-store/backup/validate` when using a store backup);
+- static actors and quest state when authored content is part of the deployment.
 
 Then run the mutating apply with an exclusive local lock and audit file:
 

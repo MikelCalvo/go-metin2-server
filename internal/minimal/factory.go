@@ -105,6 +105,7 @@ var (
 	ErrLoginTicketStoreRestoreLiveSessions  = errors.New("login ticket store restore requires no live sessions")
 	ErrQuestStateStoreRestoreLiveSessions   = errors.New("quest state store restore requires no live sessions")
 	ErrStaticActorStoreRestoreLiveSessions  = errors.New("static actor store restore requires no live sessions")
+	ErrInteractionStoreRestoreLiveSessions  = errors.New("interaction store restore requires no live sessions")
 )
 
 type loginKeyGenerator func() (uint32, error)
@@ -367,10 +368,12 @@ type StaticActorStoreStatus struct {
 }
 
 type InteractionStoreStatus struct {
-	Path    string                           `json:"path"`
-	Valid   bool                             `json:"valid"`
-	Summary interactionstore.SnapshotSummary `json:"summary"`
-	Error   string                           `json:"error,omitempty"`
+	Path                         string                           `json:"path"`
+	Valid                        bool                             `json:"valid"`
+	Summary                      interactionstore.SnapshotSummary `json:"summary"`
+	BackupManifest               BackupManifestStatus             `json:"backup_manifest"`
+	RestoreBlockedByLiveSessions bool                             `json:"restore_blocked_by_live_sessions"`
+	Error                        string                           `json:"error,omitempty"`
 }
 
 type QuestStateStoreStatus struct {
@@ -519,7 +522,7 @@ func (r *gameRuntime) PersistenceStatus() PersistenceStatusSnapshot {
 	loginTicketStatus := r.loginTicketStoreStatus(liveSelectedCharacterCount)
 	itemTemplateStatus := r.itemTemplateStoreStatus(liveSelectedCharacterCount)
 	staticActorStatus := r.staticActorStoreStatus(liveSelectedCharacterCount)
-	interactionStatus := r.interactionStoreStatus()
+	interactionStatus := r.interactionStoreStatus(liveSelectedCharacterCount)
 	questStateStatus := r.questStateStoreStatus(liveSelectedCharacterCount)
 	return PersistenceStatusSnapshot{
 		OK:                         accountStatus.Valid && loginTicketStatus.Valid && itemTemplateStatus.Valid && staticActorStatus.Valid && interactionStatus.Valid && questStateStatus.Valid,
@@ -601,11 +604,13 @@ func (r *gameRuntime) staticActorStoreStatus(liveSelectedCharacterCount int) Sta
 	return status
 }
 
-func (r *gameRuntime) interactionStoreStatus() InteractionStoreStatus {
+func (r *gameRuntime) interactionStoreStatus(liveSelectedCharacterCount int) InteractionStoreStatus {
 	status := InteractionStoreStatus{Path: interactionStorePath(nil)}
 	if r != nil {
 		status.Path = interactionStorePath(r.interactionStore)
 	}
+	status.BackupManifest = interactionBackupManifestStatus(status.Path)
+	status.RestoreBlockedByLiveSessions = liveSelectedCharacterCount != 0
 	summary, err := r.ValidateInteractionStore()
 	if err != nil {
 		status.Error = err.Error()
@@ -986,6 +991,86 @@ func (r *gameRuntime) reloadPersistedStaticActorsLocked() error {
 	}
 	r.pruneSpawnGroupReturnStepSchedules()
 	r.pruneSpawnGroupChaseStepSchedules()
+	return nil
+}
+
+func (r *gameRuntime) BackupInteractionStore(dstDir string) (interactionstore.SnapshotSummary, error) {
+	if r == nil || r.interactionStore == nil {
+		return interactionstore.SnapshotSummary{DefinitionKeys: []string{}}, nil
+	}
+	backer, ok := r.interactionStore.(interface {
+		BackupTo(string) error
+		ValidateBackupFrom(string) (interactionstore.SnapshotSummary, error)
+	})
+	if !ok {
+		return interactionstore.SnapshotSummary{}, fmt.Errorf("interaction store backup is not supported")
+	}
+	r.interactionDefinitionMu.Lock()
+	defer r.interactionDefinitionMu.Unlock()
+	if err := backer.BackupTo(dstDir); err != nil {
+		return interactionstore.SnapshotSummary{}, err
+	}
+	return backer.ValidateBackupFrom(dstDir)
+}
+
+func (r *gameRuntime) ValidateInteractionStoreBackup(srcDir string) (interactionstore.SnapshotSummary, error) {
+	if r == nil || r.interactionStore == nil {
+		return interactionstore.SnapshotSummary{DefinitionKeys: []string{}}, nil
+	}
+	validator, ok := r.interactionStore.(interface {
+		ValidateBackupFrom(string) (interactionstore.SnapshotSummary, error)
+	})
+	if !ok {
+		return interactionstore.SnapshotSummary{}, fmt.Errorf("interaction store backup validation is not supported")
+	}
+	r.interactionDefinitionMu.Lock()
+	defer r.interactionDefinitionMu.Unlock()
+	return validator.ValidateBackupFrom(srcDir)
+}
+
+func (r *gameRuntime) RestoreInteractionStore(srcDir string) (interactionstore.SnapshotSummary, error) {
+	if r == nil || r.interactionStore == nil {
+		return interactionstore.SnapshotSummary{DefinitionKeys: []string{}}, nil
+	}
+	restorer, ok := r.interactionStore.(interface {
+		RestoreFrom(string) error
+		Validate() (interactionstore.SnapshotSummary, error)
+	})
+	if !ok {
+		return interactionstore.SnapshotSummary{}, fmt.Errorf("interaction store restore is not supported")
+	}
+	r.liveCharacterMu.Lock()
+	defer r.liveCharacterMu.Unlock()
+	if len(r.liveCharactersByName) != 0 {
+		return interactionstore.SnapshotSummary{}, ErrInteractionStoreRestoreLiveSessions
+	}
+	r.interactionDefinitionMu.Lock()
+	defer r.interactionDefinitionMu.Unlock()
+	if err := restorer.RestoreFrom(srcDir); err != nil {
+		return interactionstore.SnapshotSummary{}, err
+	}
+	if err := r.reloadPersistedInteractionDefinitionsLocked(); err != nil {
+		return interactionstore.SnapshotSummary{}, err
+	}
+	return restorer.Validate()
+}
+
+func (r *gameRuntime) reloadPersistedInteractionDefinitionsLocked() error {
+	if r == nil || r.interactionStore == nil {
+		return nil
+	}
+	snapshot, err := r.interactionStore.Load()
+	if err != nil {
+		if errors.Is(err, interactionstore.ErrSnapshotNotFound) {
+			r.interactionDefinitions = nil
+			return nil
+		}
+		return err
+	}
+	if err := r.validateInteractionDefinitions(snapshot); err != nil {
+		return err
+	}
+	r.interactionDefinitions = buildInteractionDefinitionIndex(snapshot)
 	return nil
 }
 
@@ -2348,6 +2433,27 @@ func staticActorBackupManifestStatus(staticActorPath string) BackupManifestStatu
 		return status
 	}
 	var manifest staticstore.BackupManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return status
+	}
+	status.Format = manifest.Format
+	status.FileCount = len(manifest.Files)
+	for _, file := range manifest.Files {
+		status.SnapshotSizeBytes += file.SizeBytes
+	}
+	return status
+}
+
+func interactionBackupManifestStatus(interactionPath string) BackupManifestStatus {
+	if strings.TrimSpace(interactionPath) == "" {
+		return BackupManifestStatus{}
+	}
+	path := filepath.Join(filepath.Dir(interactionPath), interactionstore.BackupManifestFilename)
+	raw, status, ok := readBackupManifestStatusRaw(path)
+	if !ok {
+		return status
+	}
+	var manifest interactionstore.BackupManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		return status
 	}
