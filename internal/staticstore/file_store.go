@@ -8,8 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 	"unicode/utf8"
 )
 
@@ -43,7 +41,7 @@ func (s *FileStore) syncStoreDir(dir string) error {
 	if s == nil || durableSyncDisabledForTest {
 		return nil
 	}
-	return syncDir(dir)
+	return syncStoreDir(dir)
 }
 
 func (s *FileStore) syncFile(file *os.File) error {
@@ -153,6 +151,9 @@ func (s *FileStore) Validate() (SnapshotSummary, error) {
 	}
 	summary.CrashTempCount = len(crashTempFiles)
 	summary.CrashTempFiles = crashTempFiles
+	if err := s.validateActiveBackupManifest(); err != nil {
+		return SnapshotSummary{}, err
+	}
 	return summary, nil
 }
 
@@ -202,34 +203,7 @@ func summarizeSnapshot(snapshot Snapshot) SnapshotSummary {
 }
 
 func (s *FileStore) crashTempFiles() ([]string, error) {
-	entries, err := os.ReadDir(filepath.Dir(s.path))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read static actor store crash temp files: %w", err)
-	}
-	files := make([]string, 0)
-	for _, entry := range entries {
-		name := entry.Name()
-		if name == filepath.Base(s.path) {
-			continue
-		}
-		if strings.HasPrefix(name, ".static-actors-") && strings.HasSuffix(name, ".json") {
-			if entry.Type()&os.ModeSymlink != 0 {
-				return nil, fmt.Errorf("%w: static actor crash temp file %q is a symlink", ErrInvalidSnapshot, name)
-			}
-			if entry.IsDir() {
-				continue
-			}
-			files = append(files, name)
-		}
-	}
-	sort.Strings(files)
-	if len(files) == 0 {
-		return nil, nil
-	}
-	return files, nil
+	return crashTempFilesInDir(filepath.Dir(s.path), filepath.Base(s.path))
 }
 
 func (s *FileStore) Save(snapshot Snapshot) error {
@@ -271,10 +245,14 @@ func (s *FileStore) Save(snapshot Snapshot) error {
 	if err := temp.Close(); err != nil {
 		return fmt.Errorf("close static actor temp file: %w", err)
 	}
+	storeDir := filepath.Dir(s.path)
 	if err := os.Rename(temp.Name(), s.path); err != nil {
 		return fmt.Errorf("commit static actor snapshot: %w", err)
 	}
-	if err := s.syncStoreDir(filepath.Dir(s.path)); err != nil {
+	if err := removeBackupManifest(storeDir); err != nil {
+		return fmt.Errorf("remove stale static actor backup manifest: %w", err)
+	}
+	if err := s.syncStoreDir(storeDir); err != nil {
 		return fmt.Errorf("sync static actor store dir: %w", err)
 	}
 	return nil
@@ -294,7 +272,12 @@ func rejectCommittedSnapshotSymlink(path string) error {
 	return nil
 }
 
+var syncStoreDir = syncDir
+
 func syncDir(path string) error {
+	if durableSyncDisabledForTest {
+		return nil
+	}
 	dir, err := os.Open(path)
 	if err != nil {
 		return err

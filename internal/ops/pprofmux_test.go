@@ -2449,6 +2449,150 @@ func TestLocalQuestStateStoreRestoreEndpointRejectsNonLoopbackRemoteAddr(t *test
 	}
 }
 
+func TestLocalStaticActorStoreBackupEndpointBacksUpToLoopbackRequestedDirectory(t *testing.T) {
+	backer := &stubStaticActorStoreBacker{summary: map[string]any{
+		"actor_count":              2,
+		"interactable_actor_count": 1,
+		"actor_ids":                []uint64{2, 7},
+		"actor_names":              []string{"Alchemist", "TrainingDummy"},
+	}}
+	mux := RegisterLocalStaticActorStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors/backup", strings.NewReader(`{"dst_dir":"/tmp/static-actor-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if backer.calls != 1 || backer.dstDir != "/tmp/static-actor-backup" {
+		t.Fatalf("expected backup callback once with requested dst dir, calls=%d dst=%q", backer.calls, backer.dstDir)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`"actor_count":2`,
+		`"interactable_actor_count":1`,
+		`"actor_ids":[2,7]`,
+		`"actor_names":["Alchemist","TrainingDummy"]`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+}
+
+func TestLocalStaticActorStoreBackupEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	backer := &stubStaticActorStoreBacker{summary: map[string]any{"actor_count": 1}}
+	mux := RegisterLocalStaticActorStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors/backup", strings.NewReader(`{"dst_dir":"/tmp/static-actor-backup"}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if backer.calls != 0 {
+		t.Fatalf("expected backup callback not to be called, got %d", backer.calls)
+	}
+}
+
+func TestLocalStaticActorStoreBackupValidateEndpointDryRunsLoopbackRequestedSource(t *testing.T) {
+	validator := &stubStaticActorStoreBackupValidator{summary: map[string]any{
+		"actor_count":              2,
+		"interactable_actor_count": 1,
+		"actor_ids":                []uint64{2, 7},
+		"actor_names":              []string{"Alchemist", "TrainingDummy"},
+	}}
+	mux := RegisterLocalStaticActorStoreBackupValidateEndpoint(NewPprofMux("gamed"), validator.ValidateBackup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors/backup/validate", strings.NewReader(`{"src_dir":"/tmp/static-actor-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if validator.calls != 1 || validator.srcDir != "/tmp/static-actor-backup" {
+		t.Fatalf("expected validate callback once with requested src dir, calls=%d src=%q", validator.calls, validator.srcDir)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`"actor_count":2`,
+		`"interactable_actor_count":1`,
+		`"actor_ids":[2,7]`,
+		`"actor_names":["Alchemist","TrainingDummy"]`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+}
+
+func TestLocalStaticActorStoreRestoreEndpointRestoresFromLoopbackRequestedSource(t *testing.T) {
+	restorer := &stubStaticActorStoreRestorer{summary: map[string]any{
+		"actor_count":              2,
+		"interactable_actor_count": 1,
+		"actor_ids":                []uint64{2, 7},
+		"actor_names":              []string{"Alchemist", "TrainingDummy"},
+	}}
+	mux := RegisterLocalStaticActorStoreRestoreEndpoint(NewPprofMux("gamed"), restorer.Restore)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors/restore", strings.NewReader(`{"src_dir":"/tmp/static-actor-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if restorer.calls != 1 || restorer.srcDir != "/tmp/static-actor-backup" {
+		t.Fatalf("expected restore callback once with requested src dir, calls=%d src=%q", restorer.calls, restorer.srcDir)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`"actor_count":2`,
+		`"interactable_actor_count":1`,
+		`"actor_ids":[2,7]`,
+		`"actor_names":["Alchemist","TrainingDummy"]`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+}
+
+func TestLocalStaticActorStoreRestoreEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	restorer := &stubStaticActorStoreRestorer{summary: map[string]any{"actor_count": 1}}
+	mux := RegisterLocalStaticActorStoreRestoreEndpoint(NewPprofMux("gamed"), restorer.Restore)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors/restore", strings.NewReader(`{"src_dir":"/tmp/static-actor-backup"}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if restorer.calls != 0 {
+		t.Fatalf("expected restore callback not to be called, got %d", restorer.calls)
+	}
+}
+
 func TestLocalQuickslotsEndpointReturnsNamedSnapshotForLoopbackGet(t *testing.T) {
 	calledName := ""
 	mux := RegisterLocalQuickslotsEndpoint(NewPprofMux("gamed"), func(name string) (any, bool) {
@@ -2777,6 +2921,45 @@ type stubItemTemplateStoreRestorer struct {
 }
 
 func (s *stubItemTemplateStoreRestorer) Restore(srcDir string) (any, error) {
+	s.calls++
+	s.srcDir = srcDir
+	return s.summary, s.err
+}
+
+type stubStaticActorStoreBacker struct {
+	summary any
+	err     error
+	calls   int
+	dstDir  string
+}
+
+func (s *stubStaticActorStoreBacker) Backup(dstDir string) (any, error) {
+	s.calls++
+	s.dstDir = dstDir
+	return s.summary, s.err
+}
+
+type stubStaticActorStoreBackupValidator struct {
+	summary any
+	err     error
+	calls   int
+	srcDir  string
+}
+
+func (s *stubStaticActorStoreBackupValidator) ValidateBackup(srcDir string) (any, error) {
+	s.calls++
+	s.srcDir = srcDir
+	return s.summary, s.err
+}
+
+type stubStaticActorStoreRestorer struct {
+	summary any
+	err     error
+	calls   int
+	srcDir  string
+}
+
+func (s *stubStaticActorStoreRestorer) Restore(srcDir string) (any, error) {
 	s.calls++
 	s.srcDir = srcDir
 	return s.summary, s.err

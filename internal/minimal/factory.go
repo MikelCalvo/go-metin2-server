@@ -104,6 +104,7 @@ var (
 	ErrAccountStoreRestoreLiveSessions      = errors.New("account store restore requires no live sessions")
 	ErrLoginTicketStoreRestoreLiveSessions  = errors.New("login ticket store restore requires no live sessions")
 	ErrQuestStateStoreRestoreLiveSessions   = errors.New("quest state store restore requires no live sessions")
+	ErrStaticActorStoreRestoreLiveSessions  = errors.New("static actor store restore requires no live sessions")
 )
 
 type loginKeyGenerator func() (uint32, error)
@@ -357,10 +358,12 @@ type BackupManifestStatus struct {
 }
 
 type StaticActorStoreStatus struct {
-	Path    string                      `json:"path"`
-	Valid   bool                        `json:"valid"`
-	Summary staticstore.SnapshotSummary `json:"summary"`
-	Error   string                      `json:"error,omitempty"`
+	Path                         string                      `json:"path"`
+	Valid                        bool                        `json:"valid"`
+	Summary                      staticstore.SnapshotSummary `json:"summary"`
+	BackupManifest               BackupManifestStatus        `json:"backup_manifest"`
+	RestoreBlockedByLiveSessions bool                        `json:"restore_blocked_by_live_sessions"`
+	Error                        string                      `json:"error,omitempty"`
 }
 
 type InteractionStoreStatus struct {
@@ -515,7 +518,7 @@ func (r *gameRuntime) PersistenceStatus() PersistenceStatusSnapshot {
 	accountStatus := r.accountStoreStatus(liveSelectedCharacterCount)
 	loginTicketStatus := r.loginTicketStoreStatus(liveSelectedCharacterCount)
 	itemTemplateStatus := r.itemTemplateStoreStatus(liveSelectedCharacterCount)
-	staticActorStatus := r.staticActorStoreStatus()
+	staticActorStatus := r.staticActorStoreStatus(liveSelectedCharacterCount)
 	interactionStatus := r.interactionStoreStatus()
 	questStateStatus := r.questStateStoreStatus(liveSelectedCharacterCount)
 	return PersistenceStatusSnapshot{
@@ -581,11 +584,13 @@ func (r *gameRuntime) itemTemplateStoreStatus(liveSelectedCharacterCount int) It
 	return status
 }
 
-func (r *gameRuntime) staticActorStoreStatus() StaticActorStoreStatus {
+func (r *gameRuntime) staticActorStoreStatus(liveSelectedCharacterCount int) StaticActorStoreStatus {
 	status := StaticActorStoreStatus{Path: staticActorStorePath(nil)}
 	if r != nil {
 		status.Path = staticActorStorePath(r.staticStore)
 	}
+	status.BackupManifest = staticActorBackupManifestStatus(status.Path)
+	status.RestoreBlockedByLiveSessions = liveSelectedCharacterCount != 0
 	summary, err := r.ValidateStaticActorStore()
 	if err != nil {
 		status.Error = err.Error()
@@ -897,6 +902,91 @@ func (r *gameRuntime) ValidateStaticActorStore() (staticstore.SnapshotSummary, e
 		return staticstore.SnapshotSummary{}, fmt.Errorf("static actor store validation is not supported")
 	}
 	return validator.Validate()
+}
+
+func (r *gameRuntime) BackupStaticActorStore(dstDir string) (staticstore.SnapshotSummary, error) {
+	if r == nil || r.staticStore == nil {
+		return staticstore.SnapshotSummary{ActorIDs: []uint64{}, ActorNames: []string{}}, nil
+	}
+	backer, ok := r.staticStore.(interface {
+		BackupTo(string) error
+		ValidateBackupFrom(string) (staticstore.SnapshotSummary, error)
+	})
+	if !ok {
+		return staticstore.SnapshotSummary{}, fmt.Errorf("static actor store backup is not supported")
+	}
+	r.staticActorMu.Lock()
+	defer r.staticActorMu.Unlock()
+	if err := backer.BackupTo(dstDir); err != nil {
+		return staticstore.SnapshotSummary{}, err
+	}
+	return backer.ValidateBackupFrom(dstDir)
+}
+
+func (r *gameRuntime) ValidateStaticActorStoreBackup(srcDir string) (staticstore.SnapshotSummary, error) {
+	if r == nil || r.staticStore == nil {
+		return staticstore.SnapshotSummary{ActorIDs: []uint64{}, ActorNames: []string{}}, nil
+	}
+	validator, ok := r.staticStore.(interface {
+		ValidateBackupFrom(string) (staticstore.SnapshotSummary, error)
+	})
+	if !ok {
+		return staticstore.SnapshotSummary{}, fmt.Errorf("static actor store backup validation is not supported")
+	}
+	r.staticActorMu.Lock()
+	defer r.staticActorMu.Unlock()
+	return validator.ValidateBackupFrom(srcDir)
+}
+
+func (r *gameRuntime) RestoreStaticActorStore(srcDir string) (staticstore.SnapshotSummary, error) {
+	if r == nil || r.staticStore == nil {
+		return staticstore.SnapshotSummary{ActorIDs: []uint64{}, ActorNames: []string{}}, nil
+	}
+	restorer, ok := r.staticStore.(interface {
+		RestoreFrom(string) error
+		Validate() (staticstore.SnapshotSummary, error)
+		Load() (staticstore.Snapshot, error)
+	})
+	if !ok {
+		return staticstore.SnapshotSummary{}, fmt.Errorf("static actor store restore is not supported")
+	}
+	r.liveCharacterMu.Lock()
+	defer r.liveCharacterMu.Unlock()
+	if len(r.liveCharactersByName) != 0 {
+		return staticstore.SnapshotSummary{}, ErrStaticActorStoreRestoreLiveSessions
+	}
+	r.staticActorMu.Lock()
+	defer r.staticActorMu.Unlock()
+	if err := restorer.RestoreFrom(srcDir); err != nil {
+		return staticstore.SnapshotSummary{}, err
+	}
+	if err := r.reloadPersistedStaticActorsLocked(); err != nil {
+		return staticstore.SnapshotSummary{}, err
+	}
+	return restorer.Validate()
+}
+
+func (r *gameRuntime) reloadPersistedStaticActorsLocked() error {
+	if r == nil || r.sharedWorld == nil {
+		return nil
+	}
+	previousActors := r.StaticActors()
+	for _, actor := range previousActors {
+		if _, ok := r.sharedWorld.entities.RemoveStaticActor(actor.EntityID); !ok {
+			return fmt.Errorf("%w: clear live static actors before restore", ErrContentBundleUnavailable)
+		}
+		r.sharedWorld.mu.Lock()
+		r.sharedWorld.clearStaticActorCombatStateLocked(actor.EntityID)
+		r.sharedWorld.mu.Unlock()
+		r.clearSpawnGroupReturnStep(actor.EntityID)
+		r.clearSpawnGroupChaseStep(actor.EntityID)
+	}
+	if err := r.loadPersistedStaticActors(); err != nil {
+		return err
+	}
+	r.pruneSpawnGroupReturnStepSchedules()
+	r.pruneSpawnGroupChaseStepSchedules()
+	return nil
 }
 
 func (r *gameRuntime) ValidateInteractionStore() (interactionstore.SnapshotSummary, error) {
@@ -2237,6 +2327,27 @@ func questStateBackupManifestStatus(questStatePath string) BackupManifestStatus 
 		return status
 	}
 	var manifest queststate.BackupManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return status
+	}
+	status.Format = manifest.Format
+	status.FileCount = len(manifest.Files)
+	for _, file := range manifest.Files {
+		status.SnapshotSizeBytes += file.SizeBytes
+	}
+	return status
+}
+
+func staticActorBackupManifestStatus(staticActorPath string) BackupManifestStatus {
+	if strings.TrimSpace(staticActorPath) == "" {
+		return BackupManifestStatus{}
+	}
+	path := filepath.Join(filepath.Dir(staticActorPath), staticstore.BackupManifestFilename)
+	raw, status, ok := readBackupManifestStatusRaw(path)
+	if !ok {
+		return status
+	}
+	var manifest staticstore.BackupManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		return status
 	}

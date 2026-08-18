@@ -1,0 +1,588 @@
+package staticstore
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"unicode/utf8"
+)
+
+const (
+	BackupManifestFilename = "static-actor-backup-manifest.json"
+	BackupManifestFormat   = "go-metin2-static-actor-backup-v1"
+)
+
+var (
+	ErrBackupDirRequired      = errors.New("static actor backup dir is required")
+	ErrBackupDirNotEmpty      = errors.New("static actor backup dir is not empty")
+	ErrBackupDirInsideStore   = errors.New("static actor backup dir is inside static actor store")
+	ErrRestoreSourceRequired  = errors.New("static actor restore source dir is required")
+	ErrRestoreSourceNotFound  = errors.New("static actor restore source dir not found")
+	ErrRestoreDirNotEmpty     = errors.New("static actor restore dir is not empty")
+	ErrRestoreDirInsideSource = errors.New("static actor restore dir is inside static actor backup source")
+	ErrBackupManifestRequired = errors.New("static actor backup manifest is required")
+	ErrInvalidBackupManifest  = errors.New("invalid static actor backup manifest")
+)
+
+type BackupManifest struct {
+	Format  string               `json:"format"`
+	Summary SnapshotSummary      `json:"summary"`
+	Files   []BackupManifestFile `json:"files"`
+}
+
+type BackupManifestFile struct {
+	Filename  string `json:"filename"`
+	SizeBytes int64  `json:"size_bytes"`
+	SHA256    string `json:"sha256"`
+}
+
+func (s *FileStore) BackupTo(dstDir string) error {
+	if s == nil || s.path == "" {
+		return ErrStorePathRequired
+	}
+	if strings.TrimSpace(dstDir) == "" {
+		return ErrBackupDirRequired
+	}
+	if err := rejectBackupDestinationInsideStore(filepath.Dir(s.path), dstDir); err != nil {
+		return err
+	}
+	if err := ensureEmptyDir(dstDir, ErrBackupDirNotEmpty, "read static actor backup dir"); err != nil {
+		return err
+	}
+	if err := s.validateActiveBackupManifest(); err != nil {
+		return err
+	}
+	if _, err := s.crashTempFiles(); err != nil {
+		return err
+	}
+
+	summary, snapshot, hasSnapshot, err := s.backupSourceSnapshot()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dstDir, 0o755); err != nil {
+		return fmt.Errorf("create static actor backup dir: %w", err)
+	}
+	committedSnapshot := false
+	backupPath := filepath.Join(dstDir, filepath.Base(s.path))
+	if hasSnapshot {
+		backup := NewFileStore(backupPath)
+		committedSnapshot = true
+		if err := backup.Save(snapshot); err != nil {
+			return s.rollbackBackupFailure(dstDir, committedSnapshot, fmt.Errorf("backup static actor snapshot: %w", err))
+		}
+	}
+	if err := writeBackupManifest(dstDir, filepath.Base(s.path), summary, hasSnapshot); err != nil {
+		return s.rollbackBackupFailure(dstDir, committedSnapshot, err)
+	}
+	if err := s.syncStoreDir(dstDir); err != nil {
+		return s.rollbackBackupFailure(dstDir, committedSnapshot, fmt.Errorf("sync static actor backup dir: %w", err))
+	}
+	return nil
+}
+
+func (s *FileStore) backupSourceSnapshot() (SnapshotSummary, Snapshot, bool, error) {
+	summary := SnapshotSummary{ActorIDs: []uint64{}, ActorNames: []string{}}
+	snapshot, err := s.Load()
+	if err != nil {
+		if errors.Is(err, ErrSnapshotNotFound) {
+			return summary, Snapshot{}, false, nil
+		}
+		return SnapshotSummary{}, Snapshot{}, false, err
+	}
+	return summarizeSnapshot(snapshot), snapshot, true, nil
+}
+
+func (s *FileStore) rollbackBackupFailure(dstDir string, snapshotCommitted bool, backupErr error) error {
+	var rollbackErrs []error
+	if snapshotCommitted {
+		if err := os.Remove(filepath.Join(dstDir, filepath.Base(s.path))); err != nil && !errors.Is(err, os.ErrNotExist) {
+			rollbackErrs = append(rollbackErrs, fmt.Errorf("remove backup static actor snapshot: %w", err))
+		}
+	}
+	if err := os.Remove(filepath.Join(dstDir, BackupManifestFilename)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		rollbackErrs = append(rollbackErrs, fmt.Errorf("remove static actor backup manifest: %w", err))
+	}
+	if err := s.syncStoreDir(dstDir); err != nil {
+		rollbackErrs = append(rollbackErrs, fmt.Errorf("sync static actor backup rollback dir: %w", err))
+	}
+	if len(rollbackErrs) == 0 {
+		return backupErr
+	}
+	return errors.Join(append([]error{backupErr}, rollbackErrs...)...)
+}
+
+func writeBackupManifest(dir string, snapshotFilename string, summary SnapshotSummary, hasSnapshot bool) error {
+	manifest := BackupManifest{
+		Format:  BackupManifestFormat,
+		Summary: summaryWithoutCrashTemps(summary),
+		Files:   []BackupManifestFile{},
+	}
+	if hasSnapshot {
+		raw, err := os.ReadFile(filepath.Join(dir, snapshotFilename))
+		if err != nil {
+			return fmt.Errorf("read static actor backup snapshot for manifest: %w", err)
+		}
+		checksum := sha256.Sum256(raw)
+		manifest.Files = append(manifest.Files, BackupManifestFile{
+			Filename:  snapshotFilename,
+			SizeBytes: int64(len(raw)),
+			SHA256:    hex.EncodeToString(checksum[:]),
+		})
+	}
+	return writeJSONFileAtomically(dir, BackupManifestFilename, manifest, "static actor backup manifest")
+}
+
+func (s *FileStore) ValidateBackupFrom(srcDir string) (SnapshotSummary, error) {
+	if s == nil || s.path == "" {
+		return SnapshotSummary{}, ErrStorePathRequired
+	}
+	summary, _, _, err := s.loadBackupSnapshotForRestore(srcDir)
+	if err != nil {
+		return SnapshotSummary{}, err
+	}
+	crashTempFiles, err := crashTempFilesInDir(srcDir, filepath.Base(s.path))
+	if err != nil {
+		return SnapshotSummary{}, err
+	}
+	summary.CrashTempCount = len(crashTempFiles)
+	summary.CrashTempFiles = crashTempFiles
+	return summary, nil
+}
+
+func (s *FileStore) RestoreFrom(srcDir string) error {
+	if s == nil || s.path == "" {
+		return ErrStorePathRequired
+	}
+	if strings.TrimSpace(srcDir) == "" {
+		return ErrRestoreSourceRequired
+	}
+	storeDir := filepath.Dir(s.path)
+	if err := rejectRestoreDestinationInsideSource(srcDir, storeDir); err != nil {
+		return err
+	}
+	if err := ensureEmptyDir(storeDir, ErrRestoreDirNotEmpty, "read static actor restore dir"); err != nil {
+		return err
+	}
+	summary, snapshot, hasSnapshot, err := s.loadBackupSnapshotForRestore(srcDir)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(storeDir, 0o755); err != nil {
+		return fmt.Errorf("create static actor restore dir: %w", err)
+	}
+
+	committedSnapshot := false
+	if hasSnapshot {
+		if err := s.Save(snapshot); err != nil {
+			return s.rollbackRestoreFailure(true, fmt.Errorf("restore static actor snapshot: %w", err))
+		}
+		committedSnapshot = true
+	}
+	if err := writeBackupManifest(storeDir, filepath.Base(s.path), summary, hasSnapshot); err != nil {
+		return s.rollbackRestoreFailure(committedSnapshot, err)
+	}
+	if err := s.syncStoreDir(storeDir); err != nil {
+		return s.rollbackRestoreFailure(committedSnapshot, fmt.Errorf("sync static actor restore dir: %w", err))
+	}
+	return nil
+}
+
+func (s *FileStore) rollbackRestoreFailure(snapshotCommitted bool, restoreErr error) error {
+	storeDir := filepath.Dir(s.path)
+	var rollbackErrs []error
+	if snapshotCommitted {
+		if err := os.Remove(s.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			rollbackErrs = append(rollbackErrs, fmt.Errorf("remove restored static actor snapshot: %w", err))
+		}
+	}
+	if err := os.Remove(filepath.Join(storeDir, BackupManifestFilename)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		rollbackErrs = append(rollbackErrs, fmt.Errorf("remove restored static actor backup manifest: %w", err))
+	}
+	if err := s.syncStoreDir(storeDir); err != nil {
+		rollbackErrs = append(rollbackErrs, fmt.Errorf("sync static actor restore rollback dir: %w", err))
+	}
+	if len(rollbackErrs) == 0 {
+		return restoreErr
+	}
+	return errors.Join(append([]error{restoreErr}, rollbackErrs...)...)
+}
+
+func (s *FileStore) loadBackupSnapshotForRestore(srcDir string) (SnapshotSummary, Snapshot, bool, error) {
+	if strings.TrimSpace(srcDir) == "" {
+		return SnapshotSummary{}, Snapshot{}, false, ErrRestoreSourceRequired
+	}
+	if _, err := os.Stat(srcDir); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return SnapshotSummary{}, Snapshot{}, false, ErrRestoreSourceNotFound
+		}
+		return SnapshotSummary{}, Snapshot{}, false, fmt.Errorf("stat static actor restore source dir: %w", err)
+	}
+	return s.validateBackupManifest(srcDir)
+}
+
+func (s *FileStore) validateBackupManifest(srcDir string) (SnapshotSummary, Snapshot, bool, error) {
+	return s.validateBackupManifestWithCoverage(srcDir, true)
+}
+
+func (s *FileStore) validateActiveBackupManifest() error {
+	if s == nil || s.path == "" {
+		return ErrStorePathRequired
+	}
+	storeDir := filepath.Dir(s.path)
+	manifestPath := filepath.Join(storeDir, BackupManifestFilename)
+	if _, err := os.Lstat(manifestPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("stat active static actor backup manifest: %w", err)
+	}
+	_, _, hasSnapshot, err := s.validateBackupManifestWithCoverage(storeDir, false)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(s.path); err == nil && !hasSnapshot {
+		return fmt.Errorf("%w: active manifest omits committed static actor snapshot", ErrInvalidBackupManifest)
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("stat active static actor snapshot for backup manifest: %w", err)
+	}
+	return nil
+}
+
+func (s *FileStore) validateBackupManifestWithCoverage(srcDir string, requireClosedDirectory bool) (SnapshotSummary, Snapshot, bool, error) {
+	manifestPath := filepath.Join(srcDir, BackupManifestFilename)
+	if err := rejectBackupEntrySymlink(manifestPath, "static actor backup manifest"); err != nil {
+		return SnapshotSummary{}, Snapshot{}, false, err
+	}
+	raw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return SnapshotSummary{}, Snapshot{}, false, ErrBackupManifestRequired
+		}
+		return SnapshotSummary{}, Snapshot{}, false, fmt.Errorf("read static actor backup manifest: %w", err)
+	}
+	var manifest BackupManifest
+	if err := decodeBackupManifestStrict(raw, &manifest); err != nil {
+		return SnapshotSummary{}, Snapshot{}, false, fmt.Errorf("%w: decode manifest: %v", ErrInvalidBackupManifest, err)
+	}
+	if manifest.Format != BackupManifestFormat {
+		return SnapshotSummary{}, Snapshot{}, false, fmt.Errorf("%w: format %q", ErrInvalidBackupManifest, manifest.Format)
+	}
+	if len(manifest.Files) > 1 {
+		return SnapshotSummary{}, Snapshot{}, false, fmt.Errorf("%w: manifest lists %d snapshot files", ErrInvalidBackupManifest, len(manifest.Files))
+	}
+
+	committedFiles := make(map[string]struct{}, len(manifest.Files))
+	var summary SnapshotSummary
+	var snapshot Snapshot
+	hasSnapshot := false
+	if len(manifest.Files) == 0 {
+		summary = SnapshotSummary{ActorIDs: []uint64{}, ActorNames: []string{}}
+	} else {
+		file := manifest.Files[0]
+		if file.Filename == "" || filepath.Base(file.Filename) != file.Filename {
+			return SnapshotSummary{}, Snapshot{}, false, fmt.Errorf("%w: manifest filename %q is not a base name", ErrInvalidBackupManifest, file.Filename)
+		}
+		if file.Filename != filepath.Base(s.path) {
+			return SnapshotSummary{}, Snapshot{}, false, fmt.Errorf("%w: manifest filename %q does not match static actor snapshot filename", ErrInvalidBackupManifest, file.Filename)
+		}
+		committedFiles[file.Filename] = struct{}{}
+		snapshotPath := filepath.Join(srcDir, file.Filename)
+		if err := rejectBackupEntrySymlink(snapshotPath, fmt.Sprintf("static actor backup snapshot %q", file.Filename)); err != nil {
+			return SnapshotSummary{}, Snapshot{}, false, err
+		}
+		rawSnapshot, err := os.ReadFile(snapshotPath)
+		if err != nil {
+			return SnapshotSummary{}, Snapshot{}, false, fmt.Errorf("%w: read manifest static actor snapshot: %v", ErrInvalidBackupManifest, err)
+		}
+		if int64(len(rawSnapshot)) != file.SizeBytes {
+			return SnapshotSummary{}, Snapshot{}, false, fmt.Errorf("%w: static actor snapshot size mismatch", ErrInvalidBackupManifest)
+		}
+		checksum := sha256.Sum256(rawSnapshot)
+		if got := hex.EncodeToString(checksum[:]); got != file.SHA256 {
+			return SnapshotSummary{}, Snapshot{}, false, fmt.Errorf("%w: static actor snapshot checksum mismatch", ErrInvalidBackupManifest)
+		}
+		snapshot, err = NewFileStore(snapshotPath).Load()
+		if err != nil {
+			return SnapshotSummary{}, Snapshot{}, false, err
+		}
+		hasSnapshot = true
+		summary = summarizeSnapshot(snapshot)
+	}
+	if !snapshotSummariesEqual(manifest.Summary, summary) {
+		return SnapshotSummary{}, Snapshot{}, false, fmt.Errorf("%w: summary does not match committed snapshot", ErrInvalidBackupManifest)
+	}
+	if requireClosedDirectory {
+		if err := validateBackupDirectoryEntries(srcDir, committedFiles); err != nil {
+			return SnapshotSummary{}, Snapshot{}, false, err
+		}
+	}
+	return summary, snapshot, hasSnapshot, nil
+}
+
+func validateBackupDirectoryEntries(srcDir string, manifestFiles map[string]struct{}) error {
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return fmt.Errorf("read static actor backup dir for manifest coverage: %w", err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == BackupManifestFilename {
+			continue
+		}
+		if _, ok := manifestFiles[name]; ok {
+			continue
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%w: backup contains symlink entry %q", ErrInvalidBackupManifest, name)
+		}
+		if entry.IsDir() {
+			return fmt.Errorf("%w: backup contains untracked directory %q", ErrInvalidBackupManifest, name)
+		}
+		if strings.HasPrefix(name, ".static-actors-") && strings.HasSuffix(name, ".json") {
+			continue
+		}
+		return fmt.Errorf("%w: backup contains untracked entry %q", ErrInvalidBackupManifest, name)
+	}
+	return nil
+}
+
+func rejectBackupEntrySymlink(path string, context string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: %s is a symlink", ErrInvalidBackupManifest, context)
+	}
+	return nil
+}
+
+func decodeBackupManifestStrict(raw []byte, manifest *BackupManifest) error {
+	if !utf8.Valid(raw) {
+		return errors.New("invalid utf-8")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(manifest); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return errors.New("unexpected trailing JSON value")
+		}
+		return err
+	}
+	return nil
+}
+
+func summaryWithoutCrashTemps(summary SnapshotSummary) SnapshotSummary {
+	summary.CrashTempCount = 0
+	summary.CrashTempFiles = nil
+	if summary.ActorIDs == nil {
+		summary.ActorIDs = []uint64{}
+	}
+	if summary.ActorNames == nil {
+		summary.ActorNames = []string{}
+	}
+	return summary
+}
+
+func snapshotSummariesEqual(a, b SnapshotSummary) bool {
+	a = summaryWithoutCrashTemps(a)
+	b = summaryWithoutCrashTemps(b)
+	if a.ActorCount != b.ActorCount || a.InteractableActorCount != b.InteractableActorCount || a.SpawnGroupCount != b.SpawnGroupCount || len(a.ActorIDs) != len(b.ActorIDs) || len(a.ActorNames) != len(b.ActorNames) {
+		return false
+	}
+	for i := range a.ActorIDs {
+		if a.ActorIDs[i] != b.ActorIDs[i] {
+			return false
+		}
+	}
+	for i := range a.ActorNames {
+		if a.ActorNames[i] != b.ActorNames[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func writeJSONFileAtomically(dir, filename string, value any, context string) error {
+	temp, err := os.CreateTemp(dir, ".static-actors-*.json")
+	if err != nil {
+		return fmt.Errorf("create %s temp file: %w", context, err)
+	}
+	defer func() {
+		_ = temp.Close()
+		_ = os.Remove(temp.Name())
+	}()
+	encoder := json.NewEncoder(temp)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(value); err != nil {
+		return fmt.Errorf("encode %s: %w", context, err)
+	}
+	if !durableSyncDisabledForTest {
+		if err := temp.Sync(); err != nil {
+			return fmt.Errorf("sync %s temp file: %w", context, err)
+		}
+	}
+	if err := temp.Close(); err != nil {
+		return fmt.Errorf("close %s temp file: %w", context, err)
+	}
+	if err := os.Rename(temp.Name(), filepath.Join(dir, filename)); err != nil {
+		return fmt.Errorf("commit %s file: %w", context, err)
+	}
+	return nil
+}
+
+func ensureEmptyDir(path string, nonEmptyErr error, readContext string) error {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("%s: %w", readContext, err)
+	}
+	if len(entries) != 0 {
+		return nonEmptyErr
+	}
+	return nil
+}
+
+func rejectBackupDestinationInsideStore(storeDir string, dstDir string) error {
+	return rejectPathInsideOrEqual(storeDir, dstDir, ErrBackupDirInsideStore, "static actor store", "static actor backup")
+}
+
+func rejectRestoreDestinationInsideSource(srcDir string, storeDir string) error {
+	return rejectPathInsideOrEqual(srcDir, storeDir, ErrRestoreDirInsideSource, "static actor restore source", "static actor restore")
+}
+
+func rejectPathInsideOrEqual(root string, candidate string, rejectedErr error, rootContext string, candidateContext string) error {
+	rootPath, err := filepath.Abs(filepath.Clean(root))
+	if err != nil {
+		return fmt.Errorf("resolve %s dir: %w", rootContext, err)
+	}
+	candidatePath, err := filepath.Abs(filepath.Clean(candidate))
+	if err != nil {
+		return fmt.Errorf("resolve %s dir: %w", candidateContext, err)
+	}
+	inside, err := pathInsideOrEqual(rootPath, candidatePath)
+	if err != nil {
+		return fmt.Errorf("compare %s dir: %w", candidateContext, err)
+	}
+	if inside {
+		return rejectedErr
+	}
+
+	resolvedRootPath, err := resolveExistingPath(rootPath)
+	if err != nil {
+		return fmt.Errorf("resolve %s symlinks: %w", rootContext, err)
+	}
+	resolvedCandidatePath, err := resolveExistingPath(candidatePath)
+	if err != nil {
+		return fmt.Errorf("resolve %s symlinks: %w", candidateContext, err)
+	}
+	inside, err = pathInsideOrEqual(resolvedRootPath, resolvedCandidatePath)
+	if err != nil {
+		return fmt.Errorf("compare resolved %s dir: %w", candidateContext, err)
+	}
+	if inside {
+		return rejectedErr
+	}
+	return nil
+}
+
+func pathInsideOrEqual(root string, candidate string) (bool, error) {
+	rel, err := filepath.Rel(root, candidate)
+	if err != nil {
+		return false, err
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))), nil
+}
+
+func resolveExistingPath(path string) (string, error) {
+	path, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return "", err
+	}
+	for range 255 {
+		resolved, err := filepath.EvalSymlinks(path)
+		if err == nil {
+			return filepath.Abs(filepath.Clean(resolved))
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		info, lstatErr := os.Lstat(path)
+		if lstatErr == nil && info.Mode()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(path)
+			if err != nil {
+				return "", err
+			}
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(filepath.Dir(path), target)
+			}
+			path = filepath.Clean(target)
+			continue
+		}
+		if lstatErr != nil && !errors.Is(lstatErr, os.ErrNotExist) {
+			return "", lstatErr
+		}
+		parent := filepath.Dir(path)
+		if parent == path {
+			return filepath.Abs(filepath.Clean(path))
+		}
+		parentResolved, err := resolveExistingPath(parent)
+		if err != nil {
+			return "", err
+		}
+		return filepath.Abs(filepath.Clean(filepath.Join(parentResolved, filepath.Base(path))))
+	}
+	return "", errors.New("too many symlinks while resolving path")
+}
+
+func removeBackupManifest(dir string) error {
+	if err := os.Remove(filepath.Join(dir, BackupManifestFilename)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+func crashTempFilesInDir(dir string, committedFilename string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read static actor store crash temp files: %w", err)
+	}
+	files := make([]string, 0)
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == committedFilename {
+			continue
+		}
+		if strings.HasPrefix(name, ".static-actors-") && strings.HasSuffix(name, ".json") {
+			if entry.Type()&os.ModeSymlink != 0 {
+				return nil, fmt.Errorf("%w: static actor crash temp file %q is a symlink", ErrInvalidSnapshot, name)
+			}
+			if entry.IsDir() {
+				continue
+			}
+			files = append(files, name)
+		}
+	}
+	sort.Strings(files)
+	if len(files) == 0 {
+		return nil, nil
+	}
+	return files, nil
+}
