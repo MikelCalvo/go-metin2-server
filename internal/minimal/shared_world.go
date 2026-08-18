@@ -122,6 +122,11 @@ type combatRetaliationTimer struct {
 	ReadyAt         time.Time
 }
 
+type engagedSpawnGroupRetaliationArmTarget struct {
+	TargetVID       uint32
+	SnapshotVersion uint64
+}
+
 type staticActorCombatStateSnapshot struct {
 	HP                     map[uint64]uint8
 	RespawnAt              map[uint64]time.Time
@@ -1848,10 +1853,14 @@ func staticActorSpawnGroupAggroLiteCombatKind(combatKind string) bool {
 
 // AcquireProximitySpawnGroupAggro scans live unengaged spawn-backed practice
 // mobs and establishes aggro-lite engagement for the nearest eligible live
-// same-map session inside DefaultSpawnAggroRadius. Acquisition alone does not
-// arm delayed retaliation; chase scheduling is synced only after engagement is
-// newly established. After an explicit engagement release, the same candidate
-// stays suppressed until it leaves the aggro radius and re-enters.
+// same-map session inside DefaultSpawnAggroRadius. Acquisition itself stays
+// pure: it does not invent selected-target ownership, emit immediate
+// retaliation, or arm delayed retaliation. Chase scheduling is synced by the
+// runtime consumer after engagement is newly established, and the engaged
+// owner's session may separately arm the delayed server-origin retaliation
+// cadence from that same engagement. After an explicit engagement release, the
+// same candidate stays suppressed until it leaves the aggro radius and
+// re-enters.
 func (r *sharedWorldRegistry) AcquireProximitySpawnGroupAggro() []uint64 {
 	if r == nil || r.entities == nil || r.sessionDirectory == nil {
 		return nil
@@ -1912,6 +1921,49 @@ func (r *sharedWorldRegistry) AcquireProximitySpawnGroupAggro() []uint64 {
 	}
 	sort.Slice(acquired, func(i, j int) bool { return acquired[i] < acquired[j] })
 	return acquired
+}
+
+// EngagedSpawnGroupRetaliationArmTargets returns deterministic delayed-retaliation
+// arm descriptors for live spawn-backed practice mobs currently engaged by
+// subjectID. It does not invent selected-target ownership and does not mutate
+// retaliation timers; the session/runtime consumer decides whether to arm.
+func (r *sharedWorldRegistry) EngagedSpawnGroupRetaliationArmTargets(subjectID uint64) []engagedSpawnGroupRetaliationArmTarget {
+	if r == nil || subjectID == 0 || r.entities == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	targets := make([]engagedSpawnGroupRetaliationArmTarget, 0)
+	for _, actor := range r.entities.AllStaticActors() {
+		if actor.Entity.ID == 0 || actor.SpawnGroupRef == "" || !staticActorSpawnGroupAggroLiteCombatKind(actor.CombatKind) {
+			continue
+		}
+		if r.staticActorCombatEngagedBy[actor.Entity.ID] != subjectID {
+			continue
+		}
+		if currentHP, ok := r.staticActorCombatHP[actor.Entity.ID]; ok && currentHP == 0 {
+			continue
+		}
+		if _, waiting := r.staticActorCombatRespawnAt[actor.Entity.ID]; waiting {
+			continue
+		}
+		snapshotVersion := r.staticActorCombatSnapshotLocked(actor.Entity.ID)
+		if snapshotVersion == 0 {
+			continue
+		}
+		targets = append(targets, engagedSpawnGroupRetaliationArmTarget{
+			TargetVID:       uint32(actor.Entity.ID),
+			SnapshotVersion: snapshotVersion,
+		})
+	}
+	sort.Slice(targets, func(i, j int) bool {
+		if targets[i].TargetVID == targets[j].TargetVID {
+			return targets[i].SnapshotVersion < targets[j].SnapshotVersion
+		}
+		return targets[i].TargetVID < targets[j].TargetVID
+	})
+	return targets
 }
 
 func (r *sharedWorldRegistry) SetSessionCombatTarget(entityID uint64, targetVID uint32) bool {

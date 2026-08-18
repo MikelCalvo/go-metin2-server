@@ -2003,7 +2003,7 @@ func TestGameRuntimeFlushServerFramesAcquiresProximitySpawnGroupAggroWithoutHit(
 		t.Fatalf("expected proximity acquisition alone not to invent selected combat target ownership, got %+v", snapshot)
 	}
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
-		t.Fatalf("expected proximity acquisition alone not to arm delayed retaliation frames, got %d frames", len(queued))
+		t.Fatalf("expected proximity acquisition alone not to emit immediate retaliation frames, got %d frames", len(queued))
 	}
 
 	watcherSelect, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -2012,6 +2012,96 @@ func TestGameRuntimeFlushServerFramesAcquiresProximitySpawnGroupAggroWithoutHit(
 	}
 	if len(watcherSelect) != 0 {
 		t.Fatalf("expected third-party TARGET to fail closed after proximity acquisition, got %d frames", len(watcherSelect))
+	}
+}
+
+func TestGameRuntimeFlushServerFramesArmsDelayedRetaliationFromProximityAggroWithoutHitOrTarget(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("AggroRetaliationOwner", 0x01030193, 0x02040193, 1850, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "aggro-retaliation-owner", 0x43434343, owner)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700002200, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for proximity-armed delayed retaliation: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.aggro_retaliation_auto",
+		Name:          "AggroRetaliationMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import proximity-armed retaliation spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.aggro_retaliation_auto")
+	if !ok {
+		t.Fatal("expected proximity-armed retaliation spawn group to resolve by ref")
+	}
+
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "aggro-retaliation-owner", 0x43434343)
+	defer closeSessionFlow(t, ownerFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected proximity acquisition alone not to emit immediate retaliation frames, got %d frames", len(queued))
+	}
+
+	ownerEntity, ok := runtime.sharedWorld.playerEntityByName("AggroRetaliationOwner")
+	if !ok {
+		t.Fatal("expected proximity-armed retaliation owner entity to remain registered")
+	}
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected pending-frame proximity acquisition to engage owner for entity %d", group.EntityID)
+	}
+	if snapshot, ok := runtime.CombatTargetSnapshot("AggroRetaliationOwner"); ok {
+		t.Fatalf("expected proximity-armed delayed retaliation not to invent selected combat target ownership, got %+v", snapshot)
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	queued := flushServerFrames(t, ownerFlow)
+	if len(queued) != 1 {
+		t.Fatalf("expected one delayed self-only retaliation frame after proximity engagement, got %d frames", len(queued))
+	}
+	delayedRetaliation, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode proximity-armed delayed retaliation point change: %v", err)
+	}
+	if delayedRetaliation.VID != owner.VID || delayedRetaliation.Type != bootstrapPlayerPointType || delayedRetaliation.Amount != -1 || delayedRetaliation.Value != 49 {
+		t.Fatalf("expected proximity-armed delayed retaliation to lower owner HP to 49, got %+v", delayedRetaliation)
+	}
+	if snapshot, ok := runtime.CombatTargetSnapshot("AggroRetaliationOwner"); ok {
+		t.Fatalf("expected delayed retaliation from proximity engagement to keep inventing no selected target, got %+v", snapshot)
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	queued = flushServerFrames(t, ownerFlow)
+	if len(queued) != 1 {
+		t.Fatalf("expected proximity-armed delayed retaliation to re-arm without another hit, got %d frames", len(queued))
+	}
+	secondBeat, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode second proximity-armed delayed retaliation point change: %v", err)
+	}
+	if secondBeat.VID != owner.VID || secondBeat.Type != bootstrapPlayerPointType || secondBeat.Amount != -1 || secondBeat.Value != 48 {
+		t.Fatalf("expected second proximity-armed delayed retaliation to lower owner HP to 48, got %+v", secondBeat)
 	}
 }
 
@@ -3041,7 +3131,10 @@ func TestGameRuntimeRestoreReturnRequiredSpawnGroupSchedulesReturnStep(t *testin
 
 func TestGameRuntimeFlushServerFramesStopsSpawnGroupReturnStepWhenActorReentersLeashRadius(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
-	viewer := peerVisibilityCharacter("ReturnStepAutoStopViewer", 0x0103017a, 0x0204017a, 2101, 2800, 0, 101, 201)
+	// Keep the viewer visible to both the displaced and stepped positions, but outside
+	// DefaultSpawnAggroRadius of the post-step in-leash coordinate so proximity-armed
+	// delayed retaliation does not produce an extra self POINT_CHANGE on the next flush.
+	viewer := peerVisibilityCharacter("ReturnStepAutoStopViewer", 0x0103017a, 0x0204017a, 2250, 2800, 0, 101, 201)
 	viewer.MapIndex = 42
 	issuePeerTicket(t, store, "return-step-auto-stop-viewer", 0x7a7a7a7a, viewer)
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")

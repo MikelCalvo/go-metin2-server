@@ -3366,6 +3366,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				sharedWorld.SetSessionCombatRetaliation(sharedWorldID, targetVID, snapshotVersion, readyAt)
 			}
 		}
+		var armPracticeMobServerOriginRetaliationFromProximityEngagement func()
 		var flushPendingPracticeMobServerOriginRetaliation func(pending *pendingServerFrames)
 		enqueueCombatTargetClear := func() {
 			pending.Enqueue([][]byte{combatproto.EncodeServerClearTarget()})
@@ -3505,6 +3506,20 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		}
 		ownsLiveSharedWorldSession := func() bool {
 			return joinedSharedWorld && sharedWorldID != 0 && sharedWorld.HasLiveSession(sharedWorldID)
+		}
+		armPracticeMobServerOriginRetaliationFromProximityEngagement = func() {
+			if !ownsLiveSharedWorldSession() || sharedWorld == nil || sharedWorldID == 0 {
+				return
+			}
+			if pendingPracticeMobServerOriginRetaliation {
+				return
+			}
+			for _, target := range sharedWorld.EngagedSpawnGroupRetaliationArmTargets(sharedWorldID) {
+				scheduleFirstPracticeMobServerOriginRetaliation(target.TargetVID, target.SnapshotVersion)
+				if pendingPracticeMobServerOriginRetaliation {
+					return
+				}
+			}
 		}
 		applySelectedCharacterTransfer := func(mapIndex uint32, x int32, y int32, rebootstrap bool) (RelocationPreview, [][]byte, bool) {
 			selectedPlayer, ok := currentSelectedPlayer()
@@ -5709,7 +5724,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.TargetResult{Accepted: false}
 					}
 					if activeCombatTargetVID != resolution.Packet.TargetVID || activeCombatTargetSnapshotVersion != resolution.SnapshotVersion {
-						resetPracticeMobServerOriginRetaliationState()
+						preservingProximityArmedRetaliation := activeCombatTargetVID == 0 &&
+							pendingPracticeMobServerOriginRetaliation &&
+							pendingPracticeMobServerOriginRetaliationTargetVID == resolution.Packet.TargetVID &&
+							pendingPracticeMobServerOriginRetaliationSnapshotVersion == resolution.SnapshotVersion
+						if !preservingProximityArmedRetaliation {
+							resetPracticeMobServerOriginRetaliationState()
+						}
 					}
 					activeCombatTargetVID = resolution.Packet.TargetVID
 					activeCombatTargetSnapshotVersion = resolution.SnapshotVersion
@@ -5943,6 +5964,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			stateMu.Lock()
 			defer stateMu.Unlock()
+			armPracticeMobServerOriginRetaliationFromProximityEngagement()
 			flushPendingPracticeMobServerOriginRetaliation(pending)
 		}, func() {
 			stateMu.Lock()

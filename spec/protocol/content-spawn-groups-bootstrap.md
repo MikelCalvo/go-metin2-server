@@ -427,7 +427,7 @@ Question frozen here:
 
 **Given one live unengaged spawn-backed practice mob that still classifies `at_home` or `within_radius`, and one live same-map player candidate, what is the smallest deterministic server-owned acquisition rule that can establish the already-owned aggro-lite `engaged_by` ownership without requiring an accepted hit first?**
 
-This is the first honest step toward roadmap item “independent mob reaction timing that is not only piggybacked on player hits.” It freezes acquisition only. Delayed retaliation, chase arming, and movement remain separate consumers of the existing engagement ownership gate.
+This is the first honest step toward roadmap item “independent mob reaction timing that is not only piggybacked on player hits.” Acquisition itself stays pure. Chase arming and the owned delayed self-only server-origin retaliation cadence are separate session/runtime consumers of the resulting engagement ownership gate; movement/pathfinding still remain later work.
 
 Contract for the first pure helper `EvaluateStaticActorSpawnAggroAcquisition(actor, candidatePosition, radius)` in `internal/worldruntime`:
 - fail closed for invalid/non-spawn actors, non-positive aggro `radius`, or invalid candidate positions
@@ -444,14 +444,16 @@ First live consumer rules (now implemented on the pending-frame flush path):
 - scan from the existing pending-frame / movement-adjacent server path for live spawn-backed practice mobs that currently lack `engaged_by` ownership and still classify `at_home` / `within_radius`
 - when exactly one eligible live same-map candidate is inside the default aggro radius, acquire the already-owned aggro-lite engagement ownership for that candidate
 - if multiple candidates are inside radius, choose the nearest by Euclidean squared-distance and break ties by ascending player entity ID
-- acquisition alone does **not** arm the delayed retaliation cadence; the first accepted hit (or a later dedicated reaction slice) remains the arming gate for owner-side retaliation
+- acquisition alone still does **not** invent selected-target ownership and does **not** emit an immediate owner-side retaliation piggyback
+- once engagement exists, the session/runtime pending-frame consumer may arm the already-owned delayed self-only server-origin retaliation cadence for that engaged owner using the same fixed `1s` delay and one-pending-beat policy already used after accepted live hits; that delayed cadence still does not invent selected-target ownership
 - once engagement exists, the already-owned third-party `target_engaged` gate, chase arming (when present), and release boundaries continue to apply unchanged
 - never acquire for dead actors, actors waiting on respawn, zero-HP candidates, or candidates already at the bootstrap HP floor
-- the live consumer reuses `EvaluateStaticActorSpawnAggroAcquisition` / `SelectStaticActorSpawnAggroCandidate` and syncs the existing chase-step schedule after a newly established engagement without inventing selected-target ownership or retaliation frames
+- the live consumer reuses `EvaluateStaticActorSpawnAggroAcquisition` / `SelectStaticActorSpawnAggroCandidate`, syncs the existing chase-step schedule after a newly established engagement, and lets the engaged owner's session arm delayed retaliation without inventing selected-target ownership or immediate retaliation frames
 - after an explicit engagement release (owner clear-target, return-home/return-step, operator update, stale-owner cleanup, etc.), the same still-inside-radius candidate stays suppressed until it leaves `DefaultSpawnAggroRadius` and re-enters; death and respawn also seed that suppress set for every currently-inside live candidate so a rebuilt or just-killed life does not instantly re-lock nearby players without leave/re-enter
 
 Explicit non-goals for this proximity aggro freeze alone:
-- delayed retaliation that fires without any accepted hit
+- immediate owner-side retaliation piggyback without an accepted hit
+- inventing selected-target ownership from proximity acquisition alone
 - aggro hysteresis / drop radius distinct from the acquire radius
 - pack aggro, assist calls, or multi-mob linkage
 - chase packets, patrol, or pathfinding
