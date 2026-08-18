@@ -131,7 +131,7 @@ func (s *FileStore) syncStoreDir(dir string) error {
 	if s == nil || durableSyncDisabledForTest {
 		return nil
 	}
-	return syncDir(dir)
+	return syncStoreDir(dir)
 }
 
 func (s *FileStore) syncFile(file *os.File) error {
@@ -389,6 +389,9 @@ func (s *FileStore) Validate() (SnapshotSummary, error) {
 	}
 	summary.CrashTempCount = len(crashTempFiles)
 	summary.CrashTempFiles = crashTempFiles
+	if err := s.validateActiveBackupManifest(); err != nil {
+		return SnapshotSummary{}, err
+	}
 	return summary, nil
 }
 
@@ -511,34 +514,7 @@ func summarizeSnapshot(snapshot Snapshot) SnapshotSummary {
 }
 
 func (s *FileStore) crashTempFiles() ([]string, error) {
-	entries, err := os.ReadDir(filepath.Dir(s.path))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read quest state store crash temp files: %w", err)
-	}
-	files := make([]string, 0)
-	for _, entry := range entries {
-		name := entry.Name()
-		if name == filepath.Base(s.path) {
-			continue
-		}
-		if strings.HasPrefix(name, ".quest-state-") && strings.HasSuffix(name, ".json") {
-			if entry.Type()&os.ModeSymlink != 0 {
-				return nil, fmt.Errorf("%w: quest state crash temp file %q is a symlink", ErrInvalidSnapshot, name)
-			}
-			if entry.IsDir() {
-				continue
-			}
-			files = append(files, name)
-		}
-	}
-	sort.Strings(files)
-	if len(files) == 0 {
-		return nil, nil
-	}
-	return files, nil
+	return crashTempFilesInDir(filepath.Dir(s.path), filepath.Base(s.path))
 }
 
 func (s *FileStore) Save(snapshot Snapshot) error {
@@ -575,10 +551,14 @@ func (s *FileStore) Save(snapshot Snapshot) error {
 	if err := temp.Close(); err != nil {
 		return fmt.Errorf("close quest state temp file: %w", err)
 	}
+	storeDir := filepath.Dir(s.path)
 	if err := os.Rename(temp.Name(), s.path); err != nil {
 		return fmt.Errorf("commit quest state snapshot: %w", err)
 	}
-	if err := s.syncStoreDir(filepath.Dir(s.path)); err != nil {
+	if err := removeBackupManifest(storeDir); err != nil {
+		return fmt.Errorf("remove stale quest state backup manifest: %w", err)
+	}
+	if err := s.syncStoreDir(storeDir); err != nil {
 		return fmt.Errorf("sync quest state store dir: %w", err)
 	}
 	return nil
@@ -734,6 +714,8 @@ func rejectCommittedSnapshotSymlink(path string) error {
 	}
 	return nil
 }
+
+var syncStoreDir = syncDir
 
 func syncDir(path string) error {
 	if durableSyncDisabledForTest {

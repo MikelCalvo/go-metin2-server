@@ -182,6 +182,18 @@ func main() {
 			return flag, true, nil
 		},
 	)
+	opsHandler = ops.RegisterLocalQuestStateStoreBackupEndpoint(
+		opsHandler,
+		func(dstDir string) (any, error) { return gameRuntime.BackupQuestStateStore(dstDir) },
+	)
+	opsHandler = ops.RegisterLocalQuestStateStoreBackupValidateEndpoint(
+		opsHandler,
+		func(srcDir string) (any, error) { return gameRuntime.ValidateQuestStateStoreBackup(srcDir) },
+	)
+	opsHandler = ops.RegisterLocalQuestStateStoreRestoreEndpoint(
+		opsHandler,
+		func(srcDir string) (any, error) { return gameRuntime.RestoreQuestStateStore(srcDir) },
+	)
 	opsHandler = ops.RegisterLocalItemTemplateStoreBackupEndpoint(
 		opsHandler,
 		func(dstDir string) (any, error) { return gameRuntime.BackupItemTemplateStore(dstDir) },

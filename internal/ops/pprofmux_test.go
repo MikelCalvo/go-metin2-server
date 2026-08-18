@@ -2305,6 +2305,150 @@ func TestLocalItemTemplateStoreRestoreEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalQuestStateStoreBackupEndpointBacksUpToLoopbackRequestedDirectory(t *testing.T) {
+	backer := &stubQuestStateStoreBacker{summary: map[string]any{
+		"flag_count": 2,
+		"characters": []string{"OtherHero", "QuestHero"},
+		"quest_refs": []string{"quest:first_steps", "quest:side_quest"},
+		"flag_keys":  []string{"OtherHero:quest:side_quest:done", "QuestHero:quest:first_steps:step"},
+	}}
+	mux := RegisterLocalQuestStateStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/quest-state/backup", strings.NewReader(`{"dst_dir":"/tmp/quest-state-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if backer.calls != 1 || backer.dstDir != "/tmp/quest-state-backup" {
+		t.Fatalf("expected backup callback once with requested dst dir, calls=%d dst=%q", backer.calls, backer.dstDir)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`"flag_count":2`,
+		`"characters":["OtherHero","QuestHero"]`,
+		`"quest_refs":["quest:first_steps","quest:side_quest"]`,
+		`"flag_keys":["OtherHero:quest:side_quest:done","QuestHero:quest:first_steps:step"]`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+}
+
+func TestLocalQuestStateStoreBackupEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	backer := &stubQuestStateStoreBacker{summary: map[string]any{"flag_count": 1}}
+	mux := RegisterLocalQuestStateStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/quest-state/backup", strings.NewReader(`{"dst_dir":"/tmp/quest-state-backup"}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if backer.calls != 0 {
+		t.Fatalf("expected backup callback not to be called, got %d", backer.calls)
+	}
+}
+
+func TestLocalQuestStateStoreBackupValidateEndpointDryRunsLoopbackRequestedSource(t *testing.T) {
+	validator := &stubQuestStateStoreBackupValidator{summary: map[string]any{
+		"flag_count": 2,
+		"characters": []string{"OtherHero", "QuestHero"},
+		"quest_refs": []string{"quest:first_steps", "quest:side_quest"},
+		"flag_keys":  []string{"OtherHero:quest:side_quest:done", "QuestHero:quest:first_steps:step"},
+	}}
+	mux := RegisterLocalQuestStateStoreBackupValidateEndpoint(NewPprofMux("gamed"), validator.ValidateBackup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/quest-state/backup/validate", strings.NewReader(`{"src_dir":"/tmp/quest-state-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if validator.calls != 1 || validator.srcDir != "/tmp/quest-state-backup" {
+		t.Fatalf("expected validate callback once with requested src dir, calls=%d src=%q", validator.calls, validator.srcDir)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`"flag_count":2`,
+		`"characters":["OtherHero","QuestHero"]`,
+		`"quest_refs":["quest:first_steps","quest:side_quest"]`,
+		`"flag_keys":["OtherHero:quest:side_quest:done","QuestHero:quest:first_steps:step"]`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+}
+
+func TestLocalQuestStateStoreRestoreEndpointRestoresFromLoopbackRequestedSource(t *testing.T) {
+	restorer := &stubQuestStateStoreRestorer{summary: map[string]any{
+		"flag_count": 2,
+		"characters": []string{"OtherHero", "QuestHero"},
+		"quest_refs": []string{"quest:first_steps", "quest:side_quest"},
+		"flag_keys":  []string{"OtherHero:quest:side_quest:done", "QuestHero:quest:first_steps:step"},
+	}}
+	mux := RegisterLocalQuestStateStoreRestoreEndpoint(NewPprofMux("gamed"), restorer.Restore)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/quest-state/restore", strings.NewReader(`{"src_dir":"/tmp/quest-state-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if restorer.calls != 1 || restorer.srcDir != "/tmp/quest-state-backup" {
+		t.Fatalf("expected restore callback once with requested src dir, calls=%d src=%q", restorer.calls, restorer.srcDir)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`"flag_count":2`,
+		`"characters":["OtherHero","QuestHero"]`,
+		`"quest_refs":["quest:first_steps","quest:side_quest"]`,
+		`"flag_keys":["OtherHero:quest:side_quest:done","QuestHero:quest:first_steps:step"]`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+}
+
+func TestLocalQuestStateStoreRestoreEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	restorer := &stubQuestStateStoreRestorer{summary: map[string]any{"flag_count": 1}}
+	mux := RegisterLocalQuestStateStoreRestoreEndpoint(NewPprofMux("gamed"), restorer.Restore)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/quest-state/restore", strings.NewReader(`{"src_dir":"/tmp/quest-state-backup"}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if restorer.calls != 0 {
+		t.Fatalf("expected restore callback not to be called, got %d", restorer.calls)
+	}
+}
+
 func TestLocalQuickslotsEndpointReturnsNamedSnapshotForLoopbackGet(t *testing.T) {
 	calledName := ""
 	mux := RegisterLocalQuickslotsEndpoint(NewPprofMux("gamed"), func(name string) (any, bool) {
@@ -2633,6 +2777,45 @@ type stubItemTemplateStoreRestorer struct {
 }
 
 func (s *stubItemTemplateStoreRestorer) Restore(srcDir string) (any, error) {
+	s.calls++
+	s.srcDir = srcDir
+	return s.summary, s.err
+}
+
+type stubQuestStateStoreBacker struct {
+	summary any
+	err     error
+	calls   int
+	dstDir  string
+}
+
+func (s *stubQuestStateStoreBacker) Backup(dstDir string) (any, error) {
+	s.calls++
+	s.dstDir = dstDir
+	return s.summary, s.err
+}
+
+type stubQuestStateStoreBackupValidator struct {
+	summary any
+	err     error
+	calls   int
+	srcDir  string
+}
+
+func (s *stubQuestStateStoreBackupValidator) ValidateBackup(srcDir string) (any, error) {
+	s.calls++
+	s.srcDir = srcDir
+	return s.summary, s.err
+}
+
+type stubQuestStateStoreRestorer struct {
+	summary any
+	err     error
+	calls   int
+	srcDir  string
+}
+
+func (s *stubQuestStateStoreRestorer) Restore(srcDir string) (any, error) {
 	s.calls++
 	s.srcDir = srcDir
 	return s.summary, s.err

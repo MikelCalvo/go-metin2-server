@@ -1016,6 +1016,185 @@ func TestGameRuntimeCleanupQuestStateStoreCrashTemps(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeBackupQuestStateStoreWritesManifestedBackup(t *testing.T) {
+	questStatePath := filepath.Join(t.TempDir(), "state", "quest-state.json")
+	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},
+		{Character: "OtherHero", QuestRef: "quest:side_quest", Name: "done", Value: 1},
+	}}); err != nil {
+		t.Fatalf("save quest state snapshot: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "quest-state-backup")
+
+	summary, err := runtime.BackupQuestStateStore(backupDir)
+	if err != nil {
+		t.Fatalf("backup quest state store: %v", err)
+	}
+	want := queststate.SnapshotSummary{
+		FlagCount:  2,
+		Characters: []string{"OtherHero", "QuestHero"},
+		QuestRefs:  []string{"quest:first_steps", "quest:side_quest"},
+		FlagKeys:   []string{"OtherHero:quest:side_quest:done", "QuestHero:quest:first_steps:step"},
+	}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected quest state backup summary: got %#v want %#v", summary, want)
+	}
+	if _, err := os.Stat(filepath.Join(backupDir, queststate.BackupManifestFilename)); err != nil {
+		t.Fatalf("expected quest state backup manifest: %v", err)
+	}
+}
+
+func TestGameRuntimeValidateQuestStateStoreBackupDryRunsManifestedBackup(t *testing.T) {
+	sourcePath := filepath.Join(t.TempDir(), "source", "quest-state.json")
+	source := queststate.NewFileStore(sourcePath)
+	if err := source.Save(queststate.Snapshot{Flags: []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2}}}); err != nil {
+		t.Fatalf("save source quest state snapshot: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "quest-state-backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated quest state backup: %v", err)
+	}
+	activePath := filepath.Join(t.TempDir(), "active", "quest-state.json")
+	active := queststate.NewFileStore(activePath)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: activePath},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.ValidateQuestStateStoreBackup(backupDir)
+	if err != nil {
+		t.Fatalf("validate quest state store backup: %v", err)
+	}
+	want := queststate.SnapshotSummary{
+		FlagCount:  1,
+		Characters: []string{"QuestHero"},
+		QuestRefs:  []string{"quest:first_steps"},
+		FlagKeys:   []string{"QuestHero:quest:first_steps:step"},
+	}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected quest state backup validation summary: got %#v want %#v", summary, want)
+	}
+	if _, err := active.Load(); !errors.Is(err, queststate.ErrSnapshotNotFound) {
+		t.Fatalf("expected dry-run validate not to mutate active quest state store, got %v", err)
+	}
+}
+
+func TestGameRuntimeRestoreQuestStateStoreRestoresManifestedBackup(t *testing.T) {
+	sourcePath := filepath.Join(t.TempDir(), "source", "quest-state.json")
+	source := queststate.NewFileStore(sourcePath)
+	backupSnapshot := queststate.Snapshot{Flags: []queststate.Flag{
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},
+		{Character: "OtherHero", QuestRef: "quest:side_quest", Name: "done", Value: 1},
+	}}
+	if err := source.Save(backupSnapshot); err != nil {
+		t.Fatalf("save source quest state snapshot: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "quest-state-backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated quest state backup: %v", err)
+	}
+	targetPath := filepath.Join(t.TempDir(), "restore-target", "quest-state.json")
+	target := queststate.NewFileStore(targetPath)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: targetPath},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.RestoreQuestStateStore(backupDir)
+	if err != nil {
+		t.Fatalf("restore quest state store: %v", err)
+	}
+	wantSummary := queststate.SnapshotSummary{
+		FlagCount:  2,
+		Characters: []string{"OtherHero", "QuestHero"},
+		QuestRefs:  []string{"quest:first_steps", "quest:side_quest"},
+		FlagKeys:   []string{"OtherHero:quest:side_quest:done", "QuestHero:quest:first_steps:step"},
+	}
+	if !reflect.DeepEqual(summary, wantSummary) {
+		t.Fatalf("unexpected quest state restore summary: got %#v want %#v", summary, wantSummary)
+	}
+	restored, err := target.Load()
+	if err != nil {
+		t.Fatalf("load restored quest state: %v", err)
+	}
+	wantSnapshot := queststate.NormalizeSnapshot(backupSnapshot)
+	if !reflect.DeepEqual(restored, wantSnapshot) {
+		t.Fatalf("unexpected restored quest state:\n got: %#v\nwant: %#v", restored, wantSnapshot)
+	}
+}
+
+func TestGameRuntimeRestoreQuestStateStoreRejectsLiveSessionsWithoutMutation(t *testing.T) {
+	sourcePath := filepath.Join(t.TempDir(), "source", "quest-state.json")
+	source := queststate.NewFileStore(sourcePath)
+	if err := source.Save(queststate.Snapshot{Flags: []queststate.Flag{{Character: "RestoredHero", QuestRef: "quest:restored", Name: "step", Value: 9}}}); err != nil {
+		t.Fatalf("save source quest state snapshot: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "quest-state-backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated quest state backup: %v", err)
+	}
+
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	targetPath := filepath.Join(t.TempDir(), "restore-target", "quest-state.json")
+	target := queststate.NewFileStore(targetPath)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: targetPath},
+		ticketStore,
+		accounts,
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	owner := peerVisibilityCharacter("LiveQuestGuard", 0x01030705, 0x02040705, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, ticketStore, "quest-state-live-restore", 0x70707005, owner)
+	if err := accounts.Save(accountstore.Account{Login: "quest-state-live-restore", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed live-restore account: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "quest-state-live-restore", 0x70707005)
+	defer closeSessionFlow(t, flow)
+
+	_, err = runtime.RestoreQuestStateStore(backupDir)
+	if !errors.Is(err, ErrQuestStateStoreRestoreLiveSessions) {
+		t.Fatalf("expected live-session quest state restore guard, got %v", err)
+	}
+	if _, err := target.Load(); !errors.Is(err, queststate.ErrSnapshotNotFound) {
+		t.Fatalf("expected live-session restore guard to leave target store untouched, got %v", err)
+	}
+}
+
 func TestGameRuntimeApplyQuestStateTransitionPersistsSnapshot(t *testing.T) {
 	questStatePath := filepath.Join(t.TempDir(), "state", "quest-state.json")
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(

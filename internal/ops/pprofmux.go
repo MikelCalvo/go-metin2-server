@@ -777,6 +777,96 @@ func RegisterLocalQuestStateFlagEndpoint(mux *http.ServeMux, questState func(str
 	return mux
 }
 
+func RegisterLocalQuestStateStoreBackupEndpoint(mux *http.ServeMux, backup func(string) (any, error)) *http.ServeMux {
+	if mux == nil || backup == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/quest-state/backup", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		request, status, ok := decodeLocalAccountStoreBackupRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		summary, err := backup(request.DstDir)
+		if err != nil {
+			slog.Warn("local quest state store backup failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalQuestStateStoreBackupValidateEndpoint(mux *http.ServeMux, validate func(string) (any, error)) *http.ServeMux {
+	if mux == nil || validate == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/quest-state/backup/validate", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		request, status, ok := decodeLocalAccountStoreRestoreRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		summary, err := validate(request.SrcDir)
+		if err != nil {
+			slog.Warn("local quest state store backup validation failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalQuestStateStoreRestoreEndpoint(mux *http.ServeMux, restore func(string) (any, error)) *http.ServeMux {
+	if mux == nil || restore == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/quest-state/restore", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		request, status, ok := decodeLocalAccountStoreRestoreRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		summary, err := restore(request.SrcDir)
+		if err != nil {
+			slog.Warn("local quest state store restore failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalItemTemplateStoreBackupEndpoint(mux *http.ServeMux, backup func(string) (any, error)) *http.ServeMux {
 	if mux == nil || backup == nil {
 		return mux

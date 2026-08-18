@@ -304,6 +304,36 @@ Removes same-directory `.quest-state-*.json` crash-temp residue from the bootstr
 
 The endpoint does not accept a request body: empty or whitespace-only bodies are accepted, non-empty bodies are rejected with `400`, and bodies over 4 KiB are rejected with `413`. Successful responses are the post-cleanup quest-state JSON summary (`flag_count`, deterministic `characters`, deterministic `quest_refs`, and deterministic `flag_keys`). Because cleanup validates before removing anything, corrupt committed quest-state snapshots or crash-temp-shaped symlinks leave crash-temp files in place for manual recovery. Only hidden regular `.quest-state-*.json` temp files are removed; the committed snapshot, symlinks, and unrelated hidden files are preserved.
 
+### `POST /local/quest-state/backup`
+
+Copies the standalone bootstrap quest-state snapshot into an operator-supplied empty destination directory and returns the validation summary of the copied snapshot set. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the source snapshot is invalid, the destination is non-empty, the destination is equal to or nested under the active quest-state store directory, or the backup cannot be completed.
+
+Request body JSON fields:
+
+- `dst_dir` — destination directory for the backup; it must be non-empty after trimming and should point to a local path prepared by the operator
+
+A successful backup writes `quest-state-backup-manifest.json` with the backup format marker, deterministic quest-state summary, copied snapshot filename, byte size, and SHA-256 checksum. Missing committed `quest-state.json` snapshots are backed up as an empty store with no synthetic snapshot file. Hidden regular `.quest-state-*.json` crash leftovers are ignored as backup payload, while crash-temp-shaped symlinks fail closed before the requested destination is created. Before creating the requested destination, backup also validates any active restored quest-state backup manifest against the current committed snapshot bytes; stale, malformed, or symlinked active manifest state fails closed with `409` and leaves the requested destination uncreated. If an active quest-state store still has a restored backup manifest, normal validation and `/local/persistence/status` verify that manifest as an ordinary non-symlink file against the current committed snapshot bytes and fail closed on malformed manifests, dangling manifest symlinks, summary drift, size drift, checksum drift, filename drift, or a manifest that omits an existing committed snapshot. A later successful quest-state save or applied transition removes the restored manifest, so changed quest-flag state stops claiming to be the exact restored backup. If snapshot copying, manifest writing, or final directory sync fails after files were committed, backup removes the snapshot file and manifest it already wrote and syncs the destination again so operators are not left with a partial backup that looks usable.
+
+### `POST /local/quest-state/backup/validate`
+
+Dry-runs an operator-supplied quest-state backup source through the same strict manifest and snapshot checks used by backup, but does not create or mutate the active quest-state store. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the source backup is missing, lacks the required manifest, is corrupt, or has an invalid manifest.
+
+Request body JSON fields:
+
+- `src_dir` — source backup directory; it must be non-empty after trimming and contain `quest-state-backup-manifest.json` plus the committed quest-state snapshot when the manifest lists one
+
+Successful responses are the deterministic quest-state backup summary (`flag_count`, sorted `characters` / `quest_refs` / `flag_keys`, plus optional `crash_temp_count` / `crash_temp_files`) that was validated. Backup directories are required to be manifest-closed and symlink-free: every non-temp entry must be either `quest-state-backup-manifest.json` or a snapshot file named in that manifest, while hidden `.quest-state-*.json` crash leftovers remain visible in the preflight summary but are not backup payload. The backup manifest itself must also be an ordinary file with valid UTF-8 before JSON decoding. Symlinked manifests, manifested snapshots, or crash-temp-shaped entries fail closed with `409`. This is a local recovery/audit primitive, not an online restore or live quest reload API.
+
+### `POST /local/quest-state/restore`
+
+Restores the standalone bootstrap quest-state snapshot store from an operator-supplied source backup directory into the active quest-state store directory and returns the validation summary of the restored snapshot set. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the source backup is missing or invalid, the active quest-state store directory is non-empty, or the restore cannot be completed.
+
+Request body JSON fields:
+
+- `src_dir` — source backup directory; it must be non-empty after trimming and contain `quest-state-backup-manifest.json` plus `quest-state.json` when the manifest lists a committed snapshot
+
+The restore path is intentionally a replacement primitive, not an online merge or live gameplay reload API. It refuses to write into a non-empty active quest-state directory, refuses destinations that are equal to or nested under the backup source (including symlink-resolved paths), refuses to run while connected selected-character sessions are live, validates the backup manifest and symlink-free backup entries before creating target files, and writes a fresh `quest-state-backup-manifest.json` alongside the restored snapshot so the replacement store can be preflighted or backed up again. Symlinked manifests, manifested snapshots, or crash-temp-shaped entries fail closed with `409`. The next successful quest-state save or applied transition removes that restored manifest so a later mutation cannot leave the active store looking like the exact validated backup source. Missing committed snapshots restore as an empty store.
+
 ### `POST /local/item-templates/backup`
 
 Copies the authored bootstrap item-template snapshot into an operator-supplied empty destination directory and returns the validation summary of the copied snapshot set. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the source snapshot is invalid, the destination is non-empty, the destination is equal to or nested under the active item-template store directory, or the backup cannot be completed.

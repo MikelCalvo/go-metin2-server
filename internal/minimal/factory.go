@@ -103,6 +103,7 @@ var (
 	ErrItemTemplateStoreRestoreLiveSessions = errors.New("item template store restore requires no live sessions")
 	ErrAccountStoreRestoreLiveSessions      = errors.New("account store restore requires no live sessions")
 	ErrLoginTicketStoreRestoreLiveSessions  = errors.New("login ticket store restore requires no live sessions")
+	ErrQuestStateStoreRestoreLiveSessions   = errors.New("quest state store restore requires no live sessions")
 )
 
 type loginKeyGenerator func() (uint32, error)
@@ -362,10 +363,12 @@ type InteractionStoreStatus struct {
 }
 
 type QuestStateStoreStatus struct {
-	Path    string                     `json:"path"`
-	Valid   bool                       `json:"valid"`
-	Summary queststate.SnapshotSummary `json:"summary"`
-	Error   string                     `json:"error,omitempty"`
+	Path                         string                     `json:"path"`
+	Valid                        bool                       `json:"valid"`
+	Summary                      queststate.SnapshotSummary `json:"summary"`
+	BackupManifest               BackupManifestStatus       `json:"backup_manifest"`
+	RestoreBlockedByLiveSessions bool                       `json:"restore_blocked_by_live_sessions"`
+	Error                        string                     `json:"error,omitempty"`
 }
 
 type MapOccupancyChange = worldruntime.MapOccupancyChange
@@ -506,7 +509,7 @@ func (r *gameRuntime) PersistenceStatus() PersistenceStatusSnapshot {
 	itemTemplateStatus := r.itemTemplateStoreStatus(liveSelectedCharacterCount)
 	staticActorStatus := r.staticActorStoreStatus()
 	interactionStatus := r.interactionStoreStatus()
-	questStateStatus := r.questStateStoreStatus()
+	questStateStatus := r.questStateStoreStatus(liveSelectedCharacterCount)
 	return PersistenceStatusSnapshot{
 		OK:                         accountStatus.Valid && loginTicketStatus.Valid && itemTemplateStatus.Valid && staticActorStatus.Valid && interactionStatus.Valid && questStateStatus.Valid,
 		LiveSelectedCharacterCount: liveSelectedCharacterCount,
@@ -600,11 +603,13 @@ func (r *gameRuntime) interactionStoreStatus() InteractionStoreStatus {
 	return status
 }
 
-func (r *gameRuntime) questStateStoreStatus() QuestStateStoreStatus {
+func (r *gameRuntime) questStateStoreStatus(liveSelectedCharacterCount int) QuestStateStoreStatus {
 	status := QuestStateStoreStatus{Path: questStateStorePath(nil)}
 	if r != nil {
 		status.Path = questStateStorePath(r.questStateStore)
 	}
+	status.BackupManifest = questStateBackupManifestStatus(status.Path)
+	status.RestoreBlockedByLiveSessions = liveSelectedCharacterCount != 0
 	summary, err := r.ValidateQuestStateStore()
 	if err != nil {
 		status.Error = err.Error()
@@ -912,6 +917,64 @@ func (r *gameRuntime) ValidateQuestStateStore() (queststate.SnapshotSummary, err
 	r.questStateMu.Lock()
 	defer r.questStateMu.Unlock()
 	return validator.Validate()
+}
+
+func (r *gameRuntime) BackupQuestStateStore(dstDir string) (queststate.SnapshotSummary, error) {
+	if r == nil || r.questStateStore == nil {
+		return queststate.SnapshotSummary{Characters: []string{}, QuestRefs: []string{}, FlagKeys: []string{}}, nil
+	}
+	backer, ok := r.questStateStore.(interface {
+		BackupTo(string) error
+		ValidateBackupFrom(string) (queststate.SnapshotSummary, error)
+	})
+	if !ok {
+		return queststate.SnapshotSummary{}, fmt.Errorf("quest state store backup is not supported")
+	}
+	r.questStateMu.Lock()
+	defer r.questStateMu.Unlock()
+	if err := backer.BackupTo(dstDir); err != nil {
+		return queststate.SnapshotSummary{}, err
+	}
+	return backer.ValidateBackupFrom(dstDir)
+}
+
+func (r *gameRuntime) ValidateQuestStateStoreBackup(srcDir string) (queststate.SnapshotSummary, error) {
+	if r == nil || r.questStateStore == nil {
+		return queststate.SnapshotSummary{Characters: []string{}, QuestRefs: []string{}, FlagKeys: []string{}}, nil
+	}
+	validator, ok := r.questStateStore.(interface {
+		ValidateBackupFrom(string) (queststate.SnapshotSummary, error)
+	})
+	if !ok {
+		return queststate.SnapshotSummary{}, fmt.Errorf("quest state store backup validation is not supported")
+	}
+	r.questStateMu.Lock()
+	defer r.questStateMu.Unlock()
+	return validator.ValidateBackupFrom(srcDir)
+}
+
+func (r *gameRuntime) RestoreQuestStateStore(srcDir string) (queststate.SnapshotSummary, error) {
+	if r == nil || r.questStateStore == nil {
+		return queststate.SnapshotSummary{Characters: []string{}, QuestRefs: []string{}, FlagKeys: []string{}}, nil
+	}
+	restorer, ok := r.questStateStore.(interface {
+		RestoreFrom(string) error
+		Validate() (queststate.SnapshotSummary, error)
+	})
+	if !ok {
+		return queststate.SnapshotSummary{}, fmt.Errorf("quest state store restore is not supported")
+	}
+	r.liveCharacterMu.Lock()
+	defer r.liveCharacterMu.Unlock()
+	if len(r.liveCharactersByName) != 0 {
+		return queststate.SnapshotSummary{}, ErrQuestStateStoreRestoreLiveSessions
+	}
+	r.questStateMu.Lock()
+	defer r.questStateMu.Unlock()
+	if err := restorer.RestoreFrom(srcDir); err != nil {
+		return queststate.SnapshotSummary{}, err
+	}
+	return restorer.Validate()
 }
 
 func (r *gameRuntime) BackupItemTemplateStore(dstDir string) (itemcatalog.SnapshotSummary, error) {
@@ -2027,6 +2090,27 @@ func itemTemplateBackupManifestStatus(itemTemplatePath string) BackupManifestSta
 		return status
 	}
 	var manifest itemcatalog.BackupManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return status
+	}
+	status.Format = manifest.Format
+	status.FileCount = len(manifest.Files)
+	for _, file := range manifest.Files {
+		status.SnapshotSizeBytes += file.SizeBytes
+	}
+	return status
+}
+
+func questStateBackupManifestStatus(questStatePath string) BackupManifestStatus {
+	if strings.TrimSpace(questStatePath) == "" {
+		return BackupManifestStatus{}
+	}
+	path := filepath.Join(filepath.Dir(questStatePath), queststate.BackupManifestFilename)
+	raw, status, ok := readBackupManifestStatusRaw(path)
+	if !ok {
+		return status
+	}
+	var manifest queststate.BackupManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		return status
 	}
