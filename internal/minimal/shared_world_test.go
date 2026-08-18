@@ -5034,6 +5034,8 @@ func TestSharedWorldRegistryRegisterGroundItemRejectsCountAboveGetCarrier(t *tes
 
 func TestSharedWorldRegistryGroundItemPickupCanUseExplicitRange(t *testing.T) {
 	registry := newSharedWorldRegistry()
+	currentTime := time.Unix(1700003500, 0)
+	registry.now = func() time.Time { return currentTime }
 	owner := peerVisibilityCharacter("RangeDropOwner", 0x010301b0, 0x020401b0, 1200, 2200, 0, 101, 201)
 	collector := peerVisibilityCharacter("RangeCollector", 0x010301b1, 0x020401b1, 1600, 2200, 0, 102, 202)
 	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
@@ -5045,6 +5047,12 @@ func TestSharedWorldRegistryGroundItemPickupCanUseExplicitRange(t *testing.T) {
 	if !registry.RegisterGroundItem(ownerID, "range-drop-owner", owner, 0x07000021, item) {
 		t.Fatal("expected ranged ground item registration to succeed")
 	}
+
+	if _, ok := registry.GroundItemPickupFor(collectorID, collector, 0x07000021); ok {
+		t.Fatal("expected exclusive ownership to reject non-owner pickup before release")
+	}
+	currentTime = currentTime.Add(bootstrapGroundItemOwnershipDuration)
+	registry.FlushDueGroundItemOwnershipReleases()
 
 	if _, ok := registry.GroundItemPickupFor(collectorID, collector, 0x07000021); ok {
 		t.Fatal("expected default 300-unit ground pickup range to reject a 400-unit collector")
@@ -5631,6 +5639,8 @@ func TestSharedWorldRegistryRegisterGroundRewardsRejectsStaleOwnerPointSnapshot(
 
 func TestSharedWorldRegistryGroundRewardPickupWithholdsOwnerDeliveryAfterOwnerIdentityChanges(t *testing.T) {
 	registry := newSharedWorldRegistry()
+	currentTime := time.Unix(1700003000, 0)
+	registry.now = func() time.Time { return currentTime }
 	owner := peerVisibilityCharacter("IdentityPickupOwner", 0x010301aa, 0x020401aa, 1200, 2200, 0, 101, 201)
 	collector := peerVisibilityCharacter("OwnerIdentityCollector", 0x010301ab, 0x020401ab, 1220, 2220, 0, 102, 202)
 	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
@@ -5647,12 +5657,17 @@ func TestSharedWorldRegistryGroundRewardPickupWithholdsOwnerDeliveryAfterOwnerId
 	updatedOwner.VID = 0x020401ac
 	registry.UpdateCharacter(ownerID, updatedOwner)
 
+	if _, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID); ok {
+		t.Fatal("expected exclusive ownership to reject non-owner pickup before release")
+	}
+	currentTime = currentTime.Add(bootstrapGroundItemOwnershipDuration)
+	registry.FlushDueGroundItemOwnershipReleases()
 	pickup, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID)
 	if !ok {
-		t.Fatal("expected collector pickup resolution to remain available")
+		t.Fatal("expected collector pickup resolution after public ownership release")
 	}
 	if pickup.Owner.ID != 0 || pickup.Owner.Name != "" {
-		t.Fatalf("expected owner delivery to be withheld after owner identity changes, got %+v", pickup.Owner)
+		t.Fatalf("expected owner delivery to remain withheld after public release, got %+v", pickup.Owner)
 	}
 	if pickup.OwnerName != owner.Name {
 		t.Fatalf("expected display ownership name to remain %q, got %q", owner.Name, pickup.OwnerName)
@@ -5661,6 +5676,8 @@ func TestSharedWorldRegistryGroundRewardPickupWithholdsOwnerDeliveryAfterOwnerId
 
 func TestSharedWorldRegistryGroundGoldRewardPickupWithholdsOwnerDeliveryAfterOwnerIdentityChanges(t *testing.T) {
 	registry := newSharedWorldRegistry()
+	currentTime := time.Unix(1700003100, 0)
+	registry.now = func() time.Time { return currentTime }
 	owner := peerVisibilityCharacter("IdentityGoldPickupOwner", 0x010301ad, 0x020401ad, 1200, 2200, 0, 101, 201)
 	collector := peerVisibilityCharacter("OwnerIdentityGoldCollector", 0x010301ae, 0x020401ae, 1220, 2220, 0, 102, 202)
 	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
@@ -5677,23 +5694,27 @@ func TestSharedWorldRegistryGroundGoldRewardPickupWithholdsOwnerDeliveryAfterOwn
 	updatedOwner.VID = 0x020401af
 	registry.UpdateCharacter(ownerID, updatedOwner)
 
+	if _, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID); ok {
+		t.Fatal("expected exclusive ownership to reject non-owner gold pickup before release")
+	}
+	currentTime = currentTime.Add(bootstrapGroundItemOwnershipDuration)
+	registry.FlushDueGroundItemOwnershipReleases()
 	pickup, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID)
 	if !ok {
-		t.Fatal("expected collector gold pickup resolution to remain available")
+		t.Fatal("expected collector gold pickup resolution after public ownership release")
 	}
 	if pickup.GoldAmount != 250 {
 		t.Fatalf("expected original gold amount to remain available, got %+v", pickup)
 	}
 	if pickup.Owner.ID != 0 || pickup.Owner.Name != "" {
-		t.Fatalf("expected gold owner delivery to be withheld after owner identity changes, got %+v", pickup.Owner)
-	}
-	if pickup.OwnerName != owner.Name {
-		t.Fatalf("expected display ownership name to remain %q, got %q", owner.Name, pickup.OwnerName)
+		t.Fatalf("expected gold owner delivery to remain withheld after public release, got %+v", pickup.Owner)
 	}
 }
 
 func TestSharedWorldRegistryGroundRewardPickupWithholdsOwnerDeliveryAfterOwnerMoves(t *testing.T) {
 	registry := newSharedWorldRegistry()
+	currentTime := time.Unix(1700003110, 0)
+	registry.now = func() time.Time { return currentTime }
 	owner := peerVisibilityCharacter("LocationPickupOwner", 0x010301b3, 0x020401b3, 1200, 2200, 0, 101, 201)
 	collector := peerVisibilityCharacter("OwnerLocationCollector", 0x010301b4, 0x020401b4, 1220, 2220, 0, 102, 202)
 	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
@@ -5712,12 +5733,17 @@ func TestSharedWorldRegistryGroundRewardPickupWithholdsOwnerDeliveryAfterOwnerMo
 	movedOwner.Z = 7
 	registry.UpdateCharacter(ownerID, movedOwner)
 
+	if _, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID); ok {
+		t.Fatal("expected exclusive ownership to reject non-owner pickup before release")
+	}
+	currentTime = currentTime.Add(bootstrapGroundItemOwnershipDuration)
+	registry.FlushDueGroundItemOwnershipReleases()
 	pickup, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID)
 	if !ok {
-		t.Fatal("expected collector pickup resolution to remain available")
+		t.Fatal("expected collector pickup resolution after public ownership release")
 	}
 	if pickup.Owner.ID != 0 || pickup.Owner.Name != "" {
-		t.Fatalf("expected owner delivery to be withheld after owner moves, got %+v", pickup.Owner)
+		t.Fatalf("expected owner delivery to remain withheld after public release, got %+v", pickup.Owner)
 	}
 	if pickup.OwnerName != owner.Name {
 		t.Fatalf("expected display ownership name to remain %q, got %q", owner.Name, pickup.OwnerName)
@@ -5726,6 +5752,8 @@ func TestSharedWorldRegistryGroundRewardPickupWithholdsOwnerDeliveryAfterOwnerMo
 
 func TestSharedWorldRegistryGroundGoldRewardPickupWithholdsOwnerDeliveryAfterOwnerMoves(t *testing.T) {
 	registry := newSharedWorldRegistry()
+	currentTime := time.Unix(1700003120, 0)
+	registry.now = func() time.Time { return currentTime }
 	owner := peerVisibilityCharacter("LocationGoldPickupOwner", 0x010301b5, 0x020401b5, 1200, 2200, 0, 101, 201)
 	collector := peerVisibilityCharacter("OwnerLocationGoldCollector", 0x010301b6, 0x020401b6, 1220, 2220, 0, 102, 202)
 	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
@@ -5744,23 +5772,27 @@ func TestSharedWorldRegistryGroundGoldRewardPickupWithholdsOwnerDeliveryAfterOwn
 	movedOwner.Z = 7
 	registry.UpdateCharacter(ownerID, movedOwner)
 
+	if _, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID); ok {
+		t.Fatal("expected exclusive ownership to reject non-owner gold pickup before release")
+	}
+	currentTime = currentTime.Add(bootstrapGroundItemOwnershipDuration)
+	registry.FlushDueGroundItemOwnershipReleases()
 	pickup, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID)
 	if !ok {
-		t.Fatal("expected collector gold pickup resolution to remain available")
+		t.Fatal("expected collector gold pickup resolution after public ownership release")
 	}
 	if pickup.GoldAmount != 250 {
 		t.Fatalf("expected original gold amount to remain available, got %+v", pickup)
 	}
 	if pickup.Owner.ID != 0 || pickup.Owner.Name != "" {
-		t.Fatalf("expected gold owner delivery to be withheld after owner moves, got %+v", pickup.Owner)
-	}
-	if pickup.OwnerName != owner.Name {
-		t.Fatalf("expected display ownership name to remain %q, got %q", owner.Name, pickup.OwnerName)
+		t.Fatalf("expected gold owner delivery to remain withheld after public release, got %+v", pickup.Owner)
 	}
 }
 
 func TestSharedWorldRegistryGroundRewardPickupWithholdsOwnerDeliveryAfterOwnerPointChanges(t *testing.T) {
 	registry := newSharedWorldRegistry()
+	currentTime := time.Unix(1700003200, 0)
+	registry.now = func() time.Time { return currentTime }
 	owner := peerVisibilityCharacter("PointPickupOwner", 0x010301b8, 0x020401b8, 1200, 2200, 0, 101, 201)
 	owner.Points[bootstrapPlayerPointValueIndex] = 10
 	collector := peerVisibilityCharacter("OwnerPointCollector", 0x010301b9, 0x020401b9, 1220, 2220, 0, 102, 202)
@@ -5777,12 +5809,17 @@ func TestSharedWorldRegistryGroundRewardPickupWithholdsOwnerDeliveryAfterOwnerPo
 	updatedOwner.Points[bootstrapPlayerPointValueIndex] = 9
 	registry.UpdateCharacter(ownerID, updatedOwner)
 
+	if _, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID); ok {
+		t.Fatal("expected exclusive ownership to reject non-owner pickup before release")
+	}
+	currentTime = currentTime.Add(bootstrapGroundItemOwnershipDuration)
+	registry.FlushDueGroundItemOwnershipReleases()
 	pickup, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID)
 	if !ok {
-		t.Fatal("expected collector pickup resolution to remain available")
+		t.Fatal("expected collector pickup resolution after public ownership release")
 	}
 	if pickup.Owner.ID != 0 || pickup.Owner.Name != "" {
-		t.Fatalf("expected owner delivery to be withheld after owner point state changes, got %+v", pickup.Owner)
+		t.Fatalf("expected owner delivery to remain withheld after public release, got %+v", pickup.Owner)
 	}
 	if pickup.OwnerName != owner.Name {
 		t.Fatalf("expected display ownership name to remain %q, got %q", owner.Name, pickup.OwnerName)
@@ -5791,6 +5828,8 @@ func TestSharedWorldRegistryGroundRewardPickupWithholdsOwnerDeliveryAfterOwnerPo
 
 func TestSharedWorldRegistryGroundGoldRewardPickupWithholdsOwnerDeliveryAfterOwnerPointChanges(t *testing.T) {
 	registry := newSharedWorldRegistry()
+	currentTime := time.Unix(1700003210, 0)
+	registry.now = func() time.Time { return currentTime }
 	owner := peerVisibilityCharacter("PointGoldPickupOwner", 0x010301ba, 0x020401ba, 1200, 2200, 0, 101, 201)
 	owner.Points[bootstrapPlayerPointValueIndex] = 10
 	collector := peerVisibilityCharacter("OwnerPointGoldCollector", 0x010301bb, 0x020401bb, 1220, 2220, 0, 102, 202)
@@ -5807,18 +5846,20 @@ func TestSharedWorldRegistryGroundGoldRewardPickupWithholdsOwnerDeliveryAfterOwn
 	updatedOwner.Points[bootstrapPlayerPointValueIndex] = 9
 	registry.UpdateCharacter(ownerID, updatedOwner)
 
+	if _, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID); ok {
+		t.Fatal("expected exclusive ownership to reject non-owner gold pickup before release")
+	}
+	currentTime = currentTime.Add(bootstrapGroundItemOwnershipDuration)
+	registry.FlushDueGroundItemOwnershipReleases()
 	pickup, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID)
 	if !ok {
-		t.Fatal("expected collector gold pickup resolution to remain available")
+		t.Fatal("expected collector gold pickup resolution after public ownership release")
 	}
 	if pickup.GoldAmount != 250 {
 		t.Fatalf("expected original gold amount to remain available, got %+v", pickup)
 	}
 	if pickup.Owner.ID != 0 || pickup.Owner.Name != "" {
-		t.Fatalf("expected gold owner delivery to be withheld after owner point state changes, got %+v", pickup.Owner)
-	}
-	if pickup.OwnerName != owner.Name {
-		t.Fatalf("expected display ownership name to remain %q, got %q", owner.Name, pickup.OwnerName)
+		t.Fatalf("expected gold owner delivery to remain withheld after public release, got %+v", pickup.Owner)
 	}
 }
 
@@ -19085,6 +19126,7 @@ func TestGameRuntimeLivingCollectorTakesPracticeMobDropRewardWhenOwnerIsDead(t *
 		t.Fatalf("new game runtime: %v", err)
 	}
 	runtime.now = func() time.Time { return currentTime }
+	runtime.sharedWorld.now = func() time.Time { return currentTime }
 	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
 		t.Fatal("expected dead-owner reward mob registration to succeed")
 	}
@@ -19130,6 +19172,13 @@ func TestGameRuntimeLivingCollectorTakesPracticeMobDropRewardWhenOwnerIsDead(t *
 	deadKiller := killerEntity.Character
 	deadKiller.Points[bootstrapPlayerPointValueIndex] = 0
 	runtime.sharedWorld.UpdateCharacter(killerEntity.Entity.ID, deadKiller)
+
+	if pickupOut := pickupGroundItem(t, collectorFlow, ground.VID); len(pickupOut) != 0 {
+		t.Fatalf("expected exclusive ownership to reject living collector pickup before release, got %d", len(pickupOut))
+	}
+	currentTime = currentTime.Add(bootstrapGroundItemOwnershipDuration)
+	_ = flushServerFrames(t, collectorFlow)
+	_ = flushServerFrames(t, killerFlow)
 
 	pickupOut := pickupGroundItem(t, collectorFlow, ground.VID)
 	if len(pickupOut) != 3 {
@@ -25120,6 +25169,8 @@ func TestSharedWorldRegistryGroundItemRemovalRejectsOutOfRangeCollector(t *testi
 func TestSharedWorldRegistryGroundItemPickupSkipsDeadOwnerDelivery(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
+	currentTime := time.Unix(1700003300, 0)
+	registry.now = func() time.Time { return currentTime }
 	owner := peerVisibilityCharacter("DeadOwner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	collector := peerVisibilityCharacter("Collector", 0x01030102, 0x02040102, 1120, 2120, 1, 102, 202)
 	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
@@ -25135,9 +25186,15 @@ func TestSharedWorldRegistryGroundItemPickupSkipsDeadOwnerDelivery(t *testing.T)
 	owner.Points[bootstrapPlayerPointValueIndex] = 0
 	registry.UpdateCharacter(ownerID, owner)
 
+	if _, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID); ok {
+		t.Fatal("expected exclusive ownership to reject non-owner pickup while exclusive window is active")
+	}
+	currentTime = currentTime.Add(bootstrapGroundItemOwnershipDuration)
+	registry.FlushDueGroundItemOwnershipReleases()
+
 	pickup, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID)
 	if !ok {
-		t.Fatal("expected living collector to still resolve visible ground item after owner reached HP floor")
+		t.Fatal("expected living collector to resolve visible ground item after public ownership release")
 	}
 	if pickup.OwnerID != ownerID || pickup.OwnerName != owner.Name || pickup.OwnerLogin != "dead-owner-login" {
 		t.Fatalf("expected pickup to preserve ownership metadata for display, got %+v", pickup)
@@ -25275,6 +25332,8 @@ func TestSharedWorldRegistryGroundGoldPickupRejectsStaleFarCollectorSnapshotAfte
 func TestSharedWorldRegistryGroundGoldPickupSkipsDeadOwnerDelivery(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
+	currentTime := time.Unix(1700003310, 0)
+	registry.now = func() time.Time { return currentTime }
 	owner := peerVisibilityCharacter("DeadGoldOwner", 0x01030106, 0x02040106, 1100, 2100, 0, 101, 201)
 	collector := peerVisibilityCharacter("GoldCollector", 0x01030107, 0x02040107, 1120, 2120, 1, 102, 202)
 	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
@@ -25289,9 +25348,15 @@ func TestSharedWorldRegistryGroundGoldPickupSkipsDeadOwnerDelivery(t *testing.T)
 	owner.Points[bootstrapPlayerPointValueIndex] = 0
 	registry.UpdateCharacter(ownerID, owner)
 
+	if _, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID); ok {
+		t.Fatal("expected exclusive ownership to reject non-owner gold pickup while exclusive window is active")
+	}
+	currentTime = currentTime.Add(bootstrapGroundItemOwnershipDuration)
+	registry.FlushDueGroundItemOwnershipReleases()
+
 	pickup, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID)
 	if !ok {
-		t.Fatal("expected living collector to still resolve visible ground gold after owner reached HP floor")
+		t.Fatal("expected living collector to resolve visible ground gold after public ownership release")
 	}
 	if pickup.GoldAmount != 300 || pickup.Item.Vnum != 1 || pickup.OwnerID != ownerID || pickup.OwnerName != owner.Name || pickup.OwnerLogin != "dead-gold-owner-login" {
 		t.Fatalf("expected ground-gold pickup to preserve gold and ownership metadata for display, got %+v", pickup)

@@ -675,17 +675,19 @@ Run this when two QA clients can enter the same visible bootstrap world.
 - [ ] Confirm visible client B sees the same ground item plus ownership label
 - [ ] If QA data allows it, attempt to drop a locked or malformed/guarded carried test item and confirm the inventory, quickslots, and visible ground handles remain unchanged
 - [ ] If QA data allows it, drop and reclaim an `anti_stack` authored item while client A already carries another compatible stack; confirm pickup restores the dropped stack into a fresh carried slot instead of merging it into the existing stack
-- [ ] On client B, pick up client A's still-owned ground item
+- [ ] On client B, attempt to pick up client A's still-owned ground item during the first ~30 seconds after the drop and confirm the attempt fails closed: no inventory change, no ground delete, and no pickup notice for either client
+- [ ] Wait until the exclusive ownership window elapses (~30 seconds) and confirm both clients receive a blank ownership label for the same ground handle
+- [ ] On client B, pick up the now-public ground item after the blank ownership release
 
 Expected result:
-- client B receives a ground delete plus a party-shaped pickup notice naming client A
-- client A receives the ground delete plus a party-shaped pickup notice naming client B
-- the item is delivered back to client A's owned account/runtime rather than being added to client B
-- client A can immediately use another normal item action against the delivered/updated carried slot, proving the live owner runtime was refreshed and not only the account file
-- if the dropped item's loaded template becomes `anti_give` or job/sex-restricted for client A before client B picks it up, client B sees template-authored `pickup_reject_message` when present and otherwise the bootstrap inventory-full info rejection, neither inventory mutates, no owner notice is queued, and the ground handle remains available for a later valid retry
+- while exclusive ownership is still active, client B's pickup attempt produces no frames and leaves the ground handle pending for client A
+- after the exclusive ownership timer elapses, visible clients receive one blank `GC::ITEM_OWNERSHIP` and client B can reclaim the item as ordinary public pickup
+- client B then receives a ground delete plus a normal/self pickup notice (`arg = 0`, empty `from_name`), and client A receives only the peer ground delete
+- the item is added to client B's owned account/runtime rather than being delivered back to client A
+- if the dropped item's loaded template becomes `anti_give` or job/sex-restricted for client B after public release, client B sees template-authored `pickup_reject_message` when present and otherwise the bootstrap inventory-full info rejection, neither inventory mutates, no owner notice is queued, and the ground handle remains available for a later valid retry
 - `anti_drop` / `anti_give` / `anti_sell` template-flagged items fail closed when dropped through the normal client inventory path, show template-authored `drop_reject_message` when present and otherwise the bootstrap "You cannot drop this item." info rejection, and leave carried inventory plus quickslots unchanged; selected-character restricted drops show authored `drop_reject_message` when present and otherwise stay silent/no-frame
 - if debug/fixture tooling forces a deterministic ground-`VID` collision with an already-pending bootstrap handle, the colliding drop fails closed with no item refresh, no peer-visible ground add, and no live or persisted carried-inventory mutation
-- this remains a bootstrap party approximation; real party membership, ownership timers, and public ownership release are still not owned
+- exclusive ownership timers and public ownership release are now owned for the bootstrap in-memory path; real party membership and restart-restored ownership timer state remain deferred
 
 ### 5.6 Bootstrap equip / unequip appearance refresh
 

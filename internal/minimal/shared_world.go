@@ -62,20 +62,22 @@ type sharedWorldRegistry struct {
 }
 
 type sharedGroundItem struct {
-	VID              uint32
-	OwnerID          uint64
-	OwnerLogin       string
-	OwnerCharacterID uint32
-	OwnerVID         uint32
-	OwnerName        string
-	OwnerHPPoint     int32
-	Item             inventory.ItemInstance
-	GoldAmount       uint32
-	PickupRange      int64
-	MapIndex         uint32
-	X                int32
-	Y                int32
-	Z                int32
+	VID                uint32
+	OwnerID            uint64
+	OwnerLogin         string
+	OwnerCharacterID   uint32
+	OwnerVID           uint32
+	OwnerName          string
+	OwnerHPPoint       int32
+	Item               inventory.ItemInstance
+	GoldAmount         uint32
+	PickupRange        int64
+	MapIndex           uint32
+	X                  int32
+	Y                  int32
+	Z                  int32
+	OwnershipExclusive bool
+	OwnershipExpiresAt time.Time
 }
 
 type sharedGroundItemPickup struct {
@@ -145,7 +147,8 @@ const (
 	StaticActorCombatAttackFailureTargetDead             = "target_dead"
 	StaticActorCombatAttackFailureTargetSnapshotMismatch = "target_snapshot_mismatch"
 
-	bootstrapGroundItemPickupRange = int64(300)
+	bootstrapGroundItemPickupRange       = int64(300)
+	bootstrapGroundItemOwnershipDuration = 30 * time.Second
 )
 
 const (
@@ -2322,21 +2325,27 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 	if !r.canRegisterGroundItemLocked(ownerID, character, vid) {
 		return false
 	}
+	now := time.Now()
+	if r.now != nil {
+		now = r.now()
+	}
 	ground := sharedGroundItem{
-		VID:              vid,
-		OwnerID:          ownerID,
-		OwnerLogin:       ownerLogin,
-		OwnerCharacterID: character.ID,
-		OwnerVID:         character.VID,
-		OwnerName:        character.Name,
-		OwnerHPPoint:     character.Points[bootstrapPlayerPointValueIndex],
-		Item:             item,
-		GoldAmount:       goldAmount,
-		PickupRange:      pickupRange,
-		MapIndex:         r.topology.EffectiveMapIndex(character),
-		X:                character.X,
-		Y:                character.Y,
-		Z:                character.Z,
+		VID:                vid,
+		OwnerID:            ownerID,
+		OwnerLogin:         ownerLogin,
+		OwnerCharacterID:   character.ID,
+		OwnerVID:           character.VID,
+		OwnerName:          character.Name,
+		OwnerHPPoint:       character.Points[bootstrapPlayerPointValueIndex],
+		Item:               item,
+		GoldAmount:         goldAmount,
+		PickupRange:        pickupRange,
+		MapIndex:           r.topology.EffectiveMapIndex(character),
+		X:                  character.X,
+		Y:                  character.Y,
+		Z:                  character.Z,
+		OwnershipExclusive: true,
+		OwnershipExpiresAt: now.Add(bootstrapGroundItemOwnershipDuration),
 	}
 	r.groundItemsByVID[vid] = ground
 	frames := encodeGroundItemVisibleFrames(ground)
@@ -2494,7 +2503,11 @@ func sharedGroundItemOccupancy(ground sharedGroundItem) worldruntime.GroundItemO
 }
 
 func encodeGroundItemOwnershipFrame(ground sharedGroundItem) []byte {
-	return itemproto.EncodeOwnership(itemproto.OwnershipPacket{VID: ground.VID, OwnerName: ground.OwnerName})
+	ownerName := ground.OwnerName
+	if !ground.OwnershipExclusive {
+		ownerName = ""
+	}
+	return itemproto.EncodeOwnership(itemproto.OwnershipPacket{VID: ground.VID, OwnerName: ownerName})
 }
 
 func encodeGroundItemVisibleFrames(ground sharedGroundItem) [][]byte {
@@ -2503,6 +2516,58 @@ func encodeGroundItemVisibleFrames(ground sharedGroundItem) [][]byte {
 
 func encodeGroundItemDeleteFrame(ground sharedGroundItem) []byte {
 	return itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: ground.VID})
+}
+
+func encodeGroundItemPublicOwnershipFrame(ground sharedGroundItem) []byte {
+	return itemproto.EncodeOwnership(itemproto.OwnershipPacket{VID: ground.VID, OwnerName: ""})
+}
+
+func (r *sharedWorldRegistry) currentTimeLocked() time.Time {
+	if r != nil && r.now != nil {
+		return r.now()
+	}
+	return time.Now()
+}
+
+func (r *sharedWorldRegistry) FlushDueGroundItemOwnershipReleases() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.flushDueGroundItemOwnershipReleasesLocked()
+}
+
+func (r *sharedWorldRegistry) flushDueGroundItemOwnershipReleasesLocked() {
+	if r == nil || len(r.groundItemsByVID) == 0 {
+		return
+	}
+	now := r.currentTimeLocked()
+	released := make([]sharedGroundItem, 0)
+	for vid, ground := range r.groundItemsByVID {
+		if !ground.OwnershipExclusive || ground.OwnershipExpiresAt.IsZero() || now.Before(ground.OwnershipExpiresAt) {
+			continue
+		}
+		ground.OwnershipExclusive = false
+		ground.OwnershipExpiresAt = time.Time{}
+		r.groundItemsByVID[vid] = ground
+		released = append(released, ground)
+	}
+	sortSharedGroundItemsByVID(released)
+	for _, ground := range released {
+		frames := [][]byte{encodeGroundItemPublicOwnershipFrame(ground)}
+		groundCharacter := loginticket.Character{MapIndex: ground.MapIndex, X: ground.X, Y: ground.Y, Z: ground.Z}
+		for _, target := range r.scopesLocked().VisibleTargets(0, groundCharacter) {
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
+			r.enqueueToEntityLocked(target.Entity.ID, frames)
+		}
+	}
+}
+
+func groundItemExclusiveOwnershipBlocksCollector(ground sharedGroundItem, collectorID uint64) bool {
+	return ground.OwnershipExclusive && ground.OwnerID != 0 && ground.OwnerID != collectorID
 }
 
 func buildGroundItemVisibilityTransitionFrames(removed []sharedGroundItem, added []sharedGroundItem) [][]byte {
@@ -2566,12 +2631,17 @@ func (r *sharedWorldRegistry) groundItemPickupFor(collectorID uint64, collector 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	r.flushDueGroundItemOwnershipReleasesLocked()
+
 	registeredCollector, ok := r.playerCharacter(collectorID)
 	if !ok || characterAtBootstrapHPFloor(registeredCollector) || characterAtBootstrapHPFloor(collector) || !sameGroundRewardCollectorSnapshot(registeredCollector, collector) {
 		return sharedGroundItemPickup{}, false
 	}
 	ground, ok := r.groundItemsByVID[vid]
 	if !ok {
+		return sharedGroundItemPickup{}, false
+	}
+	if groundItemExclusiveOwnershipBlocksCollector(ground, collectorID) {
 		return sharedGroundItemPickup{}, false
 	}
 	if explicitRange {
@@ -2583,7 +2653,7 @@ func (r *sharedWorldRegistry) groundItemPickupFor(collectorID uint64, collector 
 	}
 	ownerName := ground.OwnerName
 	var ownerCharacter loginticket.Character
-	if ground.OwnerID != 0 && ground.OwnerID != collectorID {
+	if ground.OwnershipExclusive && ground.OwnerID != 0 && ground.OwnerID != collectorID {
 		owner, ok := r.entities.Player(ground.OwnerID)
 		if ok && !characterAtBootstrapHPFloor(owner.Character) && groundItemOwnerStillMatches(ground, owner.Character) && r.topology.SharesVisibleWorld(collector, owner.Character) {
 			ownerCharacter = owner.Character

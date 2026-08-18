@@ -45,7 +45,7 @@ Legend used below:
   - Multiple connected sessions can exist in the same in-process world, see each other, move, chat, transfer through bootstrap seams, reconnect, and rebuild visibility. This is still a single-process bootstrap runtime, not a production channel/shard architecture.
 
 - `[~]` **M2 — Character, inventory, equipment, and economy bootstrap**
-  - Inventory/equipment replay, item move/split/merge/use/drop/pickup, quickslots, merchant buy/sell, gold mutation, a first exchange open/cancel shell, refine fail-closed path, authored item-template guards, and persistence validation exist. Accepted trade finalization, storage, item sockets/bonuses, full restrictions, refine success, ownership timers, and DB-backed item persistence remain future work.
+  - Inventory/equipment replay, item move/split/merge/use/drop/pickup, quickslots, merchant buy/sell, gold mutation, a first exchange open/cancel shell, refine fail-closed path, authored item-template guards, and persistence validation exist. Bootstrap ground-item exclusive ownership timers (30s owner-only, then blank public ownership) are owned for the in-memory path. Accepted trade finalization, storage, item sockets/bonuses, full restrictions, refine success, restart-restored ownership timer state, and DB-backed item persistence remain future work.
 
 - `[~]` **M3 — Content and NPC authoring seam**
   - Static actors, interaction definitions, `info`/`talk`/`warp`/`shop_preview`, merchant catalogs, content bundle import/export, portable combat profiles, reward descriptors, authoring-only fixed reward tables for EXP/gold/drop descriptors, and spawn groups can drive current bootstrap content. This is useful content infrastructure, not a quest scripting system yet.

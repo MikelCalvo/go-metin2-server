@@ -3406,12 +3406,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return nil, false
 			}
 			if pickup.GoldAmount != 0 {
-				if pickup.OwnerID != 0 && pickup.OwnerID != sharedWorldID && pickup.Owner.ID != 0 {
+				if pickup.OwnerID != 0 && pickup.OwnerID != sharedWorldID {
 					if message, ok := runtimeTemplateGoldPeerPickupRejectText(runtime, pickup.Item); ok {
 						frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}
 						frames = prependExchangeCloseFrame(frames)
 						return frames, true
 					}
+				}
+				if pickup.OwnerID != 0 && pickup.OwnerID != sharedWorldID && pickup.Owner.ID != 0 {
 					ownerSelected := pickup.Owner
 					if ownerSelected.Gold > uint64(math.MaxInt32)-uint64(pickup.GoldAmount) {
 						return nil, false
@@ -5126,6 +5128,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		return newQueuedSessionFlow(inner, pending, func() {
 			runtime.flushReadyStaticActorRespawns()
 			runtime.flushDueSpawnGroupReturnSteps()
+			if runtime.sharedWorld != nil {
+				runtime.sharedWorld.FlushDueGroundItemOwnershipReleases()
+			}
 			stateMu.Lock()
 			defer stateMu.Unlock()
 			flushPendingPracticeMobServerOriginRetaliation(pending)
@@ -6223,12 +6228,13 @@ func itemDropResultFramesWithTemplates(character loginticket.Character, result i
 		return nil, fmt.Errorf("item drop source item not found for slot %d", result.From)
 	}
 	ground := sharedGroundItem{
-		VID:       bootstrapGroundItemVID(character, result.From),
-		OwnerName: character.Name,
-		Item:      droppedItem,
-		X:         character.X,
-		Y:         character.Y,
-		Z:         character.Z,
+		VID:                bootstrapGroundItemVID(character, result.From),
+		OwnerName:          character.Name,
+		Item:               droppedItem,
+		X:                  character.X,
+		Y:                  character.Y,
+		Z:                  character.Z,
+		OwnershipExclusive: true,
 	}
 	frames = append(frames, encodeGroundItemVisibleFrames(ground)...)
 	return frames, nil
