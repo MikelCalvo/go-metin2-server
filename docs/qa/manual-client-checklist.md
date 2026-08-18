@@ -475,6 +475,8 @@ Run this only if packet tooling or the client build can emit an exchange/trade a
 - [ ] Attempt one `EXCHANGE START` request against a visible connected player, then close it with `EXCHANGE CANCEL`
 - [ ] Attempt one `EXCHANGE START` request against a visible connected player that is already paired in an exchange shell
 - [ ] Attempt one `EXCHANGE START` request against a player that is not visible or not connected
+- [ ] Attempt one `EXCHANGE START` request against a same-map visible player that is outside the owned exchange-distance gate (`ApproxDistance >= 1000`)
+- [ ] Open a valid exchange shell, then walk one participant far enough that `ApproxDistance >= 1000` while the shell is still open
 - [ ] Attempt one `EXCHANGE ITEM_ADD` request for a disposable carried item slot
 - [ ] When the carried item is allowed by its template, inspect both exchange windows and packet logs for the display-only `GC::EXCHANGE ITEM_ADD` frames
 - [ ] Attempt one active-shell `EXCHANGE ELK_ADD` / gold-add request for an amount the requester currently has
@@ -509,7 +511,8 @@ Run this only if packet tooling or the client build can emit an exchange/trade a
 Expected result:
 - visible connected-player `EXCHANGE START` emits one self `GC::EXCHANGE START` naming the peer `VID` and queues one peer `GC::EXCHANGE START` naming the requester `VID`; `EXCHANGE CANCEL` emits one self `GC::EXCHANGE END` and queues one peer `GC::EXCHANGE END`
 - `EXCHANGE START` against a visible connected peer that is already paired returns one self-only `GC::EXCHANGE ALREADY` to the requester, queues no frames to the existing pair, and leaves the existing exchange shell intact
-- non-visible, disconnected, requester-already-paired, or zero-HP exchange starts fail closed with no exchange frames
+- non-visible, disconnected, requester-already-paired, out-of-range (`ApproxDistance >= 1000`), or zero-HP exchange starts fail closed with no exchange frames
+- walking either paired participant outside the owned exchange-distance gate closes the shell with self/peer `GC::EXCHANGE END` and leaves inventory/equipment/quickslots/gold/persistence unchanged
 - the current exchange shell is only a window/open-close/display proof: no carried inventory/equipment/quickslot/gold state changes, no ground actor appears, and reconnect/operator inspection shows selected-character snapshots unchanged
 - allowed active-shell `EXCHANGE ITEM_ADD` emits one self `GC::EXCHANGE ITEM_ADD` with `is_me = 1` and one queued peer `GC::EXCHANGE ITEM_ADD` with `is_me = 0`; both frames carry the carried item `vnum`, exchange display slot, count, and loaded template-authored `sockets` / `attributes`, but the item remains in carried inventory and is not locked, removed, or persisted as traded
 - duplicate display-slot `EXCHANGE ITEM_ADD` attempts from the same side fail closed with no additional frames and no mutation

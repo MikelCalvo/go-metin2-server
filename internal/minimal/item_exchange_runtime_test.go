@@ -14,6 +14,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
+	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
@@ -69,6 +70,136 @@ func TestGameRuntimeItemExchangeStartOpensVisiblePeerWindowsWithoutMutation(t *t
 
 	assertExchangeAccountUnchanged(t, accounts, "item-exchange-starter", owner, "starter exchange start")
 	assertExchangeAccountUnchanged(t, accounts, "item-exchange-target", peer, "target exchange start")
+}
+
+func TestGameRuntimeItemExchangeStartRejectsOutOfRangeVisiblePeerWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeRangeStarter", 0x010307e0, 0x020407e0, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 780, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeRangeTarget", 0x010307e1, 0x020407e1, 1100+1041, 2100, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 781, Vnum: 27002, Count: 2, Slot: 6}}
+	issuePeerTicket(t, ticketStore, "item-exchange-range-starter", 0x707070e0, owner)
+	issuePeerTicket(t, ticketStore, "item-exchange-range-target", 0x707070e1, peer)
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-range-starter", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed range exchange starter account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-range-target", Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed range exchange target account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected range exchange-start runtime error: %v", err)
+	}
+	starterFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-range-starter", 0x707070e0)
+	defer closeSessionFlow(t, starterFlow)
+	targetFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-range-target", 0x707070e1)
+	defer closeSessionFlow(t, targetFlow)
+	_ = flushServerFrames(t, starterFlow)
+	_ = flushServerFrames(t, targetFlow)
+
+	out, err := starterFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected range exchange-start packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected out-of-range exchange start to emit no starter frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, targetFlow); len(queued) != 0 {
+		t.Fatalf("expected out-of-range exchange start to queue no target frames, got %d", len(queued))
+	}
+
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-range-starter", owner, "range starter exchange start")
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-range-target", peer, "range target exchange start")
+}
+
+func TestGameRuntimeItemExchangeWalkAwayClosesShellWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeWalkOwner", 0x010307e2, 0x020407e2, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 782, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeWalkPeer", 0x010307e3, 0x020407e3, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 783, Vnum: 27002, Count: 2, Slot: 6}}
+	issuePeerTicket(t, ticketStore, "item-exchange-walk-owner", 0x707070e2, owner)
+	issuePeerTicket(t, ticketStore, "item-exchange-walk-peer", 0x707070e3, peer)
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-walk-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed walk-away exchange owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "item-exchange-walk-peer", Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed walk-away exchange peer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected walk-away exchange runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-walk-owner", 0x707070e2)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-exchange-walk-peer", 0x707070e3)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected walk-away exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected walk-away exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "walk-away owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected walk-away exchange peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "walk-away peer start")
+
+	moveOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+		Func: 1,
+		Arg:  0,
+		Rot:  12,
+		X:    peer.X + 1041,
+		Y:    peer.Y,
+		Time: 0x61626364,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected walk-away move error: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected walk-away move to emit one move ack, got %d frames", len(moveOut))
+	}
+	foundOwnerEnd := false
+	for _, frame := range flushServerFrames(t, ownerFlow) {
+		if exchangeFrameIsEnd(t, frame) {
+			foundOwnerEnd = true
+			break
+		}
+	}
+	if !foundOwnerEnd {
+		t.Fatal("expected walk-away move to deliver self GC::EXCHANGE END")
+	}
+	foundPeerEnd := false
+	for _, frame := range flushServerFrames(t, peerFlow) {
+		if exchangeFrameIsEnd(t, frame) {
+			foundPeerEnd = true
+			break
+		}
+	}
+	if !foundPeerEnd {
+		t.Fatal("expected walk-away move to queue peer GC::EXCHANGE END")
+	}
+
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-walk-owner", owner, "walk-away owner")
+	assertExchangeAccountUnchanged(t, accounts, "item-exchange-walk-peer", peer, "walk-away peer")
 }
 
 func TestGameRuntimeItemExchangeItemAddShowsTemplateBackedDisplayWithoutMutation(t *testing.T) {
@@ -4464,6 +4595,15 @@ func assertExchangeEndFrame(t *testing.T, raw []byte, context string) {
 	if packet != (itemproto.ServerExchangePacket{Subheader: itemproto.ExchangeServerSubheaderEnd}) {
 		t.Fatalf("unexpected exchange end frame %s: %+v", context, packet)
 	}
+}
+
+func exchangeFrameIsEnd(t *testing.T, raw []byte) bool {
+	t.Helper()
+	packet, err := itemproto.DecodeServerExchange(decodeSingleFrame(t, raw))
+	if err != nil {
+		return false
+	}
+	return packet == (itemproto.ServerExchangePacket{Subheader: itemproto.ExchangeServerSubheaderEnd})
 }
 
 func assertExchangeAlreadyFrame(t *testing.T, raw []byte, context string) {

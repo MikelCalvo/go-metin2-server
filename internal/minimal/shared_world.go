@@ -463,6 +463,9 @@ func (r *sharedWorldRegistry) StartExchange(originID uint64, targetVID uint32) (
 	if !found || target.Entity.ID == 0 || target.Entity.ID == originID || characterAtBootstrapHPFloor(target.Character) {
 		return nil, false
 	}
+	if !worldruntime.WithinExchangeDistance(origin, target.Character) {
+		return nil, false
+	}
 	if _, ok := r.sessionEntryLocked(target.Entity.ID); !ok {
 		return nil, false
 	}
@@ -1129,6 +1132,27 @@ func (r *sharedWorldRegistry) clearExchangeLocked(originID uint64, notifyPartner
 		r.enqueueToEntityLocked(partnerID, [][]byte{encodeExchangeEndFrame()})
 	}
 	return true
+}
+
+func (r *sharedWorldRegistry) closeExchangeIfOutOfRangeLocked(originID uint64) {
+	if r == nil || originID == 0 || len(r.exchangePartners) == 0 {
+		return
+	}
+	partnerID, ok := r.exchangePartners[originID]
+	if !ok || partnerID == 0 {
+		return
+	}
+	origin, ok := r.playerCharacter(originID)
+	if !ok {
+		_ = r.clearExchangeLocked(originID, true)
+		return
+	}
+	partner, ok := r.playerCharacter(partnerID)
+	if !ok || !worldruntime.WithinExchangeDistance(origin, partner) {
+		if r.clearExchangeLocked(originID, true) {
+			r.enqueueToEntityLocked(originID, [][]byte{encodeExchangeEndFrame()})
+		}
+	}
 }
 
 func (r *sharedWorldRegistry) playerEntityForCharacterLocked(character loginticket.Character) (worldruntime.PlayerEntity, bool) {
@@ -2994,6 +3018,7 @@ func (r *sharedWorldRegistry) UpdateCharacterWithVisibilityTransition(id uint64,
 	}
 	_ = r.entities.UpdatePlayer(id, current)
 	r.lastKnownCharacters[id] = current
+	r.closeExchangeIfOutOfRangeLocked(id)
 	var combatTargetClearFrames [][]byte
 	if len(stableFrames) == 0 {
 		combatTargetClearFrames = r.clearInvalidSessionCombatTargetLocked(id)
@@ -3129,6 +3154,7 @@ func (r *sharedWorldRegistry) transfer(id uint64, character loginticket.Characte
 
 	_ = r.entities.UpdatePlayer(id, character)
 	r.lastKnownCharacters[id] = character
+	r.closeExchangeIfOutOfRangeLocked(id)
 
 	movedDelete := encodeCharacterDeleteFrame(previous)
 	movedFrames := encodePeerVisibilityBootstrapFramesWithTemplates(character, r.itemTemplates)
