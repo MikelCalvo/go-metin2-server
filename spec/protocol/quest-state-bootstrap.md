@@ -142,9 +142,9 @@ Loopback interaction visibility now mirrors that player-facing branch without mu
 
 This is still a bootstrap quest-state trigger, not a client quest UI, reward system, branching dialog tree, or script runtime. The mismatch acknowledgement and its loopback preview exist only so authored-state failures are not silent; they do not expose a quest window, reward, objective tracker, or alternate branch.
 
-## Optional quest gates on service interactions
+## Optional quest gates on non-mutating interactions
 
-`warp` and `shop_preview` definitions may optionally carry a selected-character quest-flag prerequisite without becoming `quest_flag` mutators:
+`info`, `talk`, `warp`, and `shop_preview` definitions may optionally carry a selected-character quest-flag prerequisite without becoming `quest_flag` mutators:
 
 ```json
 {
@@ -164,14 +164,14 @@ Owned gate rules:
 
 - the gate is present only when both `quest_ref` and `quest_flag` are authored
 - `quest_from` defaults to `0` and is the exact required current flag value
-- `quest_to` must remain absent/`0`; gated services never mutate quest state
-- partial gate fields (`quest_ref` without `quest_flag`, or the reverse) and orphan `quest_from` on ungated service definitions fail store validation
-- when the live selected character's current flag value matches `quest_from`, the ordinary `warp` / `shop_preview` outcome continues unchanged
-- when the current value mismatches, the client receives the same self-only `CHAT_TYPE_INFO` text already owned by `quest_flag` mismatch (`Quest requirements are not met.`) and no transfer / merchant window opens
-- loopback interaction-visibility previews for gated services reuse that same mismatch text without mutating quest state
+- `quest_to` must remain absent/`0`; gated non-mutating interactions never mutate quest state
+- partial gate fields (`quest_ref` without `quest_flag`, or the reverse) and orphan `quest_from` on ungated non-mutating definitions fail store validation
+- when the live selected character's current flag value matches `quest_from`, the ordinary `info` / `talk` / `warp` / `shop_preview` outcome continues unchanged
+- when the current value mismatches, the client receives the same self-only `CHAT_TYPE_INFO` text already owned by `quest_flag` mismatch (`Quest requirements are not met.`) and no authored info/talk text, transfer, or merchant window is delivered
+- loopback interaction-visibility previews for gated non-mutating interactions reuse that same mismatch text without mutating quest state
 - content-bundle warp destination/route summaries and shop-route summaries now surface the authored gate fields so operators can audit teleporter/merchant prerequisites without opening the live interaction path
 
-The checked-in QA example `docs/examples/bootstrap-npc-service-bundle.json` now gates both `npc:qa_teleporter` and `npc:qa_merchant` on `quest:first_steps.met_guide = 1`, so the owned guide → teleporter/merchant loop is: talk to `QuestGuide` once, then use the teleporter or open the merchant.
+The checked-in QA example `docs/examples/bootstrap-npc-service-bundle.json` now gates `npc:qa_guide`, `lore:qa_square`, `npc:qa_teleporter`, and `npc:qa_merchant` on `quest:first_steps.met_guide = 1`, so the owned loop is: interact with `QuestGuide` once, then use the guide/signpost/teleporter/merchant.
 
 ## Runtime configuration and local ops
 

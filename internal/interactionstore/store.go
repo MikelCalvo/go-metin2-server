@@ -165,7 +165,7 @@ func validDefinition(definition Definition) bool {
 	}
 	switch definition.Kind {
 	case KindInfo, KindTalk:
-		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.QuestRef == "" && definition.QuestFlag == "" && definition.QuestFrom == 0 && definition.QuestTo == 0
+		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && validOptionalServiceQuestGate(definition)
 	case KindShopPreview:
 		if definition.Title == "" || !validDefinitionText(definition.Title) || definition.Text != "" || definition.MapIndex != 0 || definition.X != 0 || definition.Y != 0 || !validOptionalServiceQuestGate(definition) {
 			return false
@@ -180,10 +180,11 @@ func validDefinition(definition Definition) bool {
 	}
 }
 
-// HasServiceQuestGate reports whether a warp/shop_preview definition carries an
-// optional selected-character quest-flag prerequisite. The gate is present only
-// when both quest_ref and quest_flag are authored; quest_from defaults to 0 and
-// quest_to must remain 0 because gated services do not mutate quest state.
+// HasServiceQuestGate reports whether an info/talk/warp/shop_preview definition
+// carries an optional selected-character quest-flag prerequisite. The gate is
+// present only when both quest_ref and quest_flag are authored; quest_from
+// defaults to 0 and quest_to must remain 0 because gated non-mutating
+// interactions do not change quest state.
 func HasServiceQuestGate(definition Definition) bool {
 	definition = normalizeDefinition(definition)
 	return definition.QuestRef != "" && definition.QuestFlag != ""

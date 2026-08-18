@@ -158,7 +158,7 @@ No new client-originated packet family is frozen in this stage.
 ## Response rule
 
 The current owned response families stay intentionally conservative:
-- `info` and `talk` remain self-only chat-backed authored responses
+- `info` and `talk` remain self-only chat-backed authored responses; they may optionally carry the same non-mutating selected-character quest gate as `warp` / `shop_preview`, returning `Quest requirements are not met.` instead of the authored text when the gate mismatches
 - `warp` now reuses the already-owned transfer / rebootstrap contract rather than inventing a separate NPC warp packet; if authored `text` is present, the interacting player first receives one self-only informational chat delivery and then the transfer rebootstrap frames
 - `shop_preview` now reuses the current bootstrap merchant window open / buy / close contract, while preserving the deterministic preview render for QA/debug and lower-level resolution surfaces
 

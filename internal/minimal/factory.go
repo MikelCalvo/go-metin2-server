@@ -8744,6 +8744,22 @@ func (r *gameRuntime) resolveStaticActorInteraction(subjectID uint64, targetVID 
 			return resolution
 		}
 	}
+	if definition.Kind == interactionstore.KindInfo || definition.Kind == interactionstore.KindTalk {
+		if !interactionstore.ValidDefinition(definition) {
+			resolution.Failure = staticActorInteractionFailureUnsupportedKind
+			resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
+			return resolution
+		}
+		if ok, err := r.serviceQuestGateSatisfied(characterName, definition); err != nil {
+			resolution.Failure = staticActorInteractionFailureUnsupportedKind
+			resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
+			return resolution
+		} else if !ok {
+			resolution.Failure = staticActorInteractionFailureQuestCurrentValueMismatch
+			resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
+			return resolution
+		}
+	}
 	preview, ok := r.interactionDefinitionPreview(attempt.Actor.Name, definition)
 	if !ok {
 		resolution.Failure = staticActorInteractionFailureUnsupportedKind
@@ -8897,8 +8913,34 @@ func (r *gameRuntime) interactionDefinitionPreview(actorName string, definition 
 func (r *gameRuntime) interactionDefinitionVisibilityPreview(characterName string, actorName string, definition InteractionDefinition) (string, bool) {
 	switch definition.Kind {
 	case interactionstore.KindInfo:
+		if characterName != "" && interactionstore.HasServiceQuestGate(definition) {
+			ok, err := r.serviceQuestGateSatisfied(characterName, definition)
+			if err != nil {
+				return "", false
+			}
+			if !ok {
+				message, ok := staticActorInteractionFailureMessage(staticActorInteractionFailureQuestCurrentValueMismatch)
+				if !ok {
+					return "", false
+				}
+				return message, true
+			}
+		}
 		return definition.Text, true
 	case interactionstore.KindTalk:
+		if characterName != "" && interactionstore.HasServiceQuestGate(definition) {
+			ok, err := r.serviceQuestGateSatisfied(characterName, definition)
+			if err != nil {
+				return "", false
+			}
+			if !ok {
+				message, ok := staticActorInteractionFailureMessage(staticActorInteractionFailureQuestCurrentValueMismatch)
+				if !ok {
+					return "", false
+				}
+				return message, true
+			}
+		}
 		return fmt.Sprintf("%s:\n%s", actorName, definition.Text), true
 	case interactionstore.KindShopPreview:
 		if characterName != "" && interactionstore.HasServiceQuestGate(definition) {

@@ -177,10 +177,26 @@ func TestFileStoreSaveThenLoadQuestGatedWarpAndShopPreviewDefinitions(t *testing
 	store := NewFileStore(path)
 	want := Snapshot{Definitions: []Definition{
 		{
+			Kind:      KindInfo,
+			Ref:       "lore:gated_signpost",
+			Text:      "The gated signpost describes the square.",
+			QuestRef:  "quest:first_steps",
+			QuestFlag: "met_guide",
+			QuestFrom: 1,
+		},
+		{
 			Kind:      KindShopPreview,
 			Ref:       "npc:gated_merchant",
 			Title:     "Gated Merchant",
 			Catalog:   []MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}},
+			QuestRef:  "quest:first_steps",
+			QuestFlag: "met_guide",
+			QuestFrom: 1,
+		},
+		{
+			Kind:      KindTalk,
+			Ref:       "npc:gated_guide",
+			Text:      "Welcome to the gated square.",
 			QuestRef:  "quest:first_steps",
 			QuestFlag: "met_guide",
 			QuestFrom: 1,
@@ -208,8 +224,10 @@ func TestFileStoreSaveThenLoadQuestGatedWarpAndShopPreviewDefinitions(t *testing
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected quest-gated service definition snapshot:\n got: %#v\nwant: %#v", got, want)
 	}
-	if !HasServiceQuestGate(got.Definitions[0]) || !HasServiceQuestGate(got.Definitions[1]) {
-		t.Fatalf("expected loaded service definitions to report quest gates, got %#v", got.Definitions)
+	for _, definition := range got.Definitions {
+		if !HasServiceQuestGate(definition) {
+			t.Fatalf("expected loaded non-mutating definitions to report quest gates, got %#v", got.Definitions)
+		}
 	}
 }
 
@@ -240,8 +258,28 @@ func TestFileStoreRejectsInvalidQuestGatedServiceDefinitions(t *testing.T) {
 			definition: Definition{Kind: KindShopPreview, Ref: "npc:gated_merchant", Title: "Gated Merchant", Catalog: baseShop.Catalog, QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1, QuestTo: 2},
 		},
 		{
+			name:       "info quest ref without flag",
+			definition: Definition{Kind: KindInfo, Ref: "lore:gated_signpost", Text: "The gated signpost describes the square.", QuestRef: "quest:first_steps"},
+		},
+		{
+			name:       "talk quest flag without ref",
+			definition: Definition{Kind: KindTalk, Ref: "npc:gated_guide", Text: "Welcome to the gated square.", QuestFlag: "met_guide"},
+		},
+		{
+			name:       "info quest_to mutates",
+			definition: Definition{Kind: KindInfo, Ref: "lore:gated_signpost", Text: "The gated signpost describes the square.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1, QuestTo: 2},
+		},
+		{
+			name:       "talk quest_to mutates",
+			definition: Definition{Kind: KindTalk, Ref: "npc:gated_guide", Text: "Welcome to the gated square.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1, QuestTo: 2},
+		},
+		{
 			name:       "ungated warp with orphan quest_from",
 			definition: Definition{Kind: KindWarp, Ref: "npc:teleporter", Text: "Step through the gate.", MapIndex: 42, X: 1700, Y: 2800, QuestFrom: 1},
+		},
+		{
+			name:       "ungated talk with orphan quest_from",
+			definition: Definition{Kind: KindTalk, Ref: "npc:guide", Text: "Welcome.", QuestFrom: 1},
 		},
 	}
 	for _, tc := range cases {

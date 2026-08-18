@@ -35,10 +35,10 @@ Current rules:
 - bodies always use JSON `kind` and `ref`
 - `ref` is a canonical path-safe interaction key in the form `<namespace>:<name>`; both segments start with a lowercase ASCII letter and then contain only lowercase ASCII letters, digits, or `_`
 - refs without a namespace, refs containing `/`, whitespace, dots, hyphens, uppercase letters, blank segments, or extra `:` separators are rejected before persistence/import
-- `info` / `talk` currently use authored `text`
-- `shop_preview` currently uses authored `title + catalog[]`, and may optionally carry a non-mutating quest gate (`quest_ref` + `quest_flag` + optional `quest_from`) that must match the selected character's current quest-state before the merchant window opens
+- `info` / `talk` currently use authored `text`, and may optionally carry a non-mutating quest gate (`quest_ref` + `quest_flag` + optional `quest_from`) that must match the selected character's current quest-state before the self-only chat delivery is returned
+- `shop_preview` currently uses authored `title + catalog[]`, and may optionally carry the same non-mutating quest gate before the merchant window opens
 - `quest_flag` currently uses authored `text`, `quest_ref`, `quest_flag`, optional `quest_from`, and `quest_to`; it applies exactly one selected-character compare-and-set transition through the quest-state store when a visible actor resolves it, including `quest_to = 0` clears when the current value matches `quest_from`
-- `warp` currently uses authored `map_index`, `x`, `y`, with optional `text`, and may optionally carry the same non-mutating quest gate as `shop_preview` before transfer/rebootstrap runs
+- `warp` currently uses authored `map_index`, `x`, `y`, with optional `text`, and may optionally carry the same non-mutating quest gate before transfer/rebootstrap runs
 - create/update bodies must be valid UTF-8 before JSON decoding; malformed raw bytes are rejected before runtime mutation callbacks can see lossy replacement-character strings
 - exact lookup is read-only and loopback-only; it returns the authored definition JSON for one `kind + ref`, returns `404` when absent, and rejects blank or decoded slash-containing identities as path-ambiguous `400` requests
 - updates are full-identity upserts, not partial nested edits

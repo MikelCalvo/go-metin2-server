@@ -69,8 +69,8 @@ At this stage the repository owns a narrow but real first response vertical:
 - loopback-only `GET`/`POST /local/interactions` plus `PATCH`/`PUT`/`DELETE /local/interactions/{kind}/{ref}` now author that deterministic definition catalog without hand-editing the backing JSON file
 - update requests preserve stable `kind + ref` identity by requiring the full body identity to match the path exactly
 - delete requests now fail closed while a bootstrap static actor still references the targeted definition
-- when that definition resolves to `interaction_kind = "info"`, the interacting player now receives one self-only `GC_CHAT` delivery using `CHAT_TYPE_INFO` and the authored definition text
-- when that definition resolves to `interaction_kind = "talk"`, the interacting player now receives one self-only chat-backed delivery using a deterministic speaker-prefixed multi-line payload
+- when that definition resolves to `interaction_kind = "info"`, the interacting player now receives one self-only `GC_CHAT` delivery using `CHAT_TYPE_INFO` and the authored definition text, unless an optional non-mutating quest gate mismatches and returns `Quest requirements are not met.` instead
+- when that definition resolves to `interaction_kind = "talk"`, the interacting player now receives one self-only chat-backed delivery using a deterministic speaker-prefixed multi-line payload, unless an optional non-mutating quest gate mismatches and returns `Quest requirements are not met.` instead
 - when that definition resolves to `interaction_kind = "shop_preview"`, the live session flow now opens the current bootstrap merchant window with one self-only `GC::SHOP START` response built from the authored structured catalog, while lower-level resolution and QA/debug surfaces still keep a deterministic compact preview render of that same catalog
 - known bootstrap interaction failures now also resolve to one deterministic self-only `GC_CHAT` delivery instead of silently disappearing on the socket
 - the current service-style NPC gameplay families on top of this same ingress now include `warp` and `shop_preview`
