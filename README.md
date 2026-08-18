@@ -51,7 +51,7 @@ Legend used below:
   - Static actors, interaction definitions, `info`/`talk`/`warp`/`shop_preview`, merchant catalogs, content bundle import/export, portable combat profiles, reward descriptors, authoring-only fixed reward tables for EXP/gold/drop descriptors, and spawn groups can drive current bootstrap content. This is useful content infrastructure, not a quest scripting system yet.
 
 - `[~]` **M4 — PvE practice loop**
-  - Practice mobs can be targeted, attacked, killed, respawned, and can grant deterministic EXP/gold/fixed-drop descriptors through narrow owned contracts. Retaliation/player-death/restart seams, the spawn-position leash classifier, a pure capped return-step planner, a pure engaged chase-step planner, a loopback-only one-step return trigger, a pending-frame return-step executor, and local pending return-step inspection exist, with authored spawn home preserved separately from current placement for spawn-backed actors. Real autonomous mob AI movement, live chase/return packet choreography, attack formulas, skills, projectile/ranged combat, randomized loot tables, PvP/duels, and full death/revive/corpse choreography remain future work.
+  - Practice mobs can be targeted, attacked, killed, respawned, and can grant deterministic EXP/gold/fixed-drop descriptors through narrow owned contracts. Retaliation/player-death/restart seams, the spawn-position leash classifier, a pure capped return-step planner, a pure engaged chase-step planner, a loopback-only one-step return trigger, a pending-frame return-step executor, local pending return-step inspection, and the frozen pending-frame chase-step executor contract exist, with authored spawn home preserved separately from current placement for spawn-backed actors. Live chase execution, chase/return packet choreography, attack formulas, skills, projectile/ranged combat, randomized loot tables, PvP/duels, and full death/revive/corpse choreography remain future work.
 
 - `[~]` **M5 — Operations and developer workflow**
   - The repo has a Makefile, Dockerfile, CI, pprof/debug mux, health endpoint, local-only runtime/config/player/map/visibility/content/persistence endpoints, backup/restore preflights, crash-temp cleanup primitives, a validated migration catalog with dry-run planning, a migration CLI with explicit apply support, QA docs, and clean-room workflow docs. Release/versioning policy, production DB engine/driver selection, production deployment, metrics/logging policy, and production-safe admin tooling are still pending.
@@ -183,7 +183,7 @@ Already present:
 Still missing:
 
 - real damage formulas and attack types,
-- independent mob AI: aggro radius, live chase execution, autonomous return packet choreography, patrol, target switching, and broader live use of the current leash/chase planners,
+- independent mob AI: aggro radius, live chase execution of the frozen chase-step planner/executor contract, autonomous return/chase packet choreography, patrol, target switching, and broader live use of the current leash/chase planners,
 - accepted `USE_SKILL`, ranged/projectile, PvP, and duel runtime policy,
 - broad loot/drop tables,
 - full death/revive/corpse/menu choreography.
