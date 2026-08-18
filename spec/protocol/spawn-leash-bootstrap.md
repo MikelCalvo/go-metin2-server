@@ -148,4 +148,4 @@ Explicit non-goals for this chase-step planner freeze:
 - aggro-radius acquisition / target switching beyond the already-owned post-hit engagement gate
 - pathfinding, navmesh, or multi-actor flocking
 
-The first implementation slice after this freeze should therefore start RED on the pure planner helper in `internal/worldruntime`, then only later decide whether a tiny executor/preflight consumer is honest enough to own.
+The pure planner helper is now implemented as `PlanStaticActorSpawnChaseStep` in `internal/worldruntime` with focused unit coverage for same-map chase steps, already-on-owner / within-one-step completion, leash-boundary clamping, and fail-closed return-required / cross-map / invalid-input cases. Live automatic chase execution from `FlushServerFrames()`, chase packets, and broader AI remain later work.

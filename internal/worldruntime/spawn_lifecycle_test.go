@@ -331,3 +331,156 @@ func TestPlanStaticActorSpawnLeashReturnStepFailsClosedForInvalidInput(t *testin
 		t.Fatalf("expected non-positive max step return-step plan to fail closed, got ok=%v plan=%+v", ok, plan)
 	}
 }
+
+func TestPlanStaticActorSpawnChaseStepMovesTowardOwnerWithoutMutating(t *testing.T) {
+	home := NewPosition(42, 1700, 2800)
+	current := NewPosition(42, 1700, 2800)
+	owner := NewPosition(42, 1900, 2800)
+	actor := StaticEntity{
+		Entity:        Entity{ID: 40, Kind: EntityKindStaticActor, Name: "ChasePlannerMob"},
+		Position:      current,
+		SpawnHome:     home,
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.chase_planner",
+	}
+
+	plan, ok := PlanStaticActorSpawnChaseStep(actor, owner, DefaultSpawnLeashRadius, 100)
+	if !ok {
+		t.Fatal("expected at-home spawn actor to produce a chase-step plan toward owner")
+	}
+	if plan.Evaluation.Status != SpawnLeashStatusAtHome {
+		t.Fatalf("expected at-home evaluation in chase-step plan, got %+v", plan.Evaluation)
+	}
+	if plan.Next != NewPosition(42, 1800, 2800) || plan.Complete {
+		t.Fatalf("expected one 100-unit x-axis chase step toward owner, got %+v", plan)
+	}
+	if actor.Position != current || actor.SpawnHome != home {
+		t.Fatalf("expected chase-step planning not to mutate actor, got actor=%+v", actor)
+	}
+}
+
+func TestPlanStaticActorSpawnChaseStepCompletesWhenAlreadyOnOwner(t *testing.T) {
+	home := NewPosition(42, 1700, 2800)
+	owner := NewPosition(42, 1700, 2800)
+	actor := StaticEntity{
+		Entity:        Entity{ID: 41, Kind: EntityKindStaticActor, Name: "ChasePlannerOnOwnerMob"},
+		Position:      owner,
+		SpawnHome:     home,
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.chase_planner_on_owner",
+	}
+
+	plan, ok := PlanStaticActorSpawnChaseStep(actor, owner, DefaultSpawnLeashRadius, 100)
+	if !ok {
+		t.Fatal("expected chase-step plan when actor already occupies owner position")
+	}
+	if plan.Next != owner || !plan.Complete {
+		t.Fatalf("expected complete no-move chase plan on owner, got %+v", plan)
+	}
+}
+
+func TestPlanStaticActorSpawnChaseStepCompletesWhenWithinOneStep(t *testing.T) {
+	home := NewPosition(42, 1700, 2800)
+	current := NewPosition(42, 1750, 2800)
+	owner := NewPosition(42, 1800, 2800)
+	actor := StaticEntity{
+		Entity:        Entity{ID: 42, Kind: EntityKindStaticActor, Name: "ChasePlannerNearOwnerMob"},
+		Position:      current,
+		SpawnHome:     home,
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.chase_planner_near",
+	}
+
+	plan, ok := PlanStaticActorSpawnChaseStep(actor, owner, DefaultSpawnLeashRadius, 100)
+	if !ok {
+		t.Fatal("expected near-owner chase-step plan")
+	}
+	if plan.Next != owner || !plan.Complete {
+		t.Fatalf("expected one large chase step to land exactly on owner, got %+v", plan)
+	}
+}
+
+func TestPlanStaticActorSpawnChaseStepClampsToLeashBoundary(t *testing.T) {
+	home := NewPosition(42, 1700, 2800)
+	current := NewPosition(42, 2000, 2800) // within default radius 400
+	owner := NewPosition(42, 2300, 2800)   // would leave leash if chased uncapped
+	actor := StaticEntity{
+		Entity:        Entity{ID: 43, Kind: EntityKindStaticActor, Name: "ChasePlannerLeashClampMob"},
+		Position:      current,
+		SpawnHome:     home,
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.chase_planner_clamp",
+	}
+
+	plan, ok := PlanStaticActorSpawnChaseStep(actor, owner, DefaultSpawnLeashRadius, 500)
+	if !ok {
+		t.Fatal("expected leash-clamped chase-step plan")
+	}
+	if plan.Evaluation.Status != SpawnLeashStatusWithinRadius {
+		t.Fatalf("expected within-radius evaluation before chase clamp, got %+v", plan.Evaluation)
+	}
+	if plan.Next != NewPosition(42, 2100, 2800) || !plan.Complete {
+		t.Fatalf("expected chase step clamped to farthest on-segment point inside leash, got %+v", plan)
+	}
+	if evaluation, ok := EvaluateSpawnLeash(home, plan.Next, DefaultSpawnLeashRadius); !ok || evaluation.ReturnRequired {
+		t.Fatalf("expected clamped chase next to remain inside leash, got ok=%v evaluation=%+v", ok, evaluation)
+	}
+}
+
+func TestPlanStaticActorSpawnChaseStepFailsClosedForReturnRequiredOrCrossMap(t *testing.T) {
+	home := NewPosition(42, 1700, 2800)
+	returnRequired := StaticEntity{
+		Entity:        Entity{ID: 44, Kind: EntityKindStaticActor, Name: "ChasePlannerReturnRequiredMob"},
+		Position:      NewPosition(42, 2301, 2800),
+		SpawnHome:     home,
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.chase_planner_return_required",
+	}
+	if plan, ok := PlanStaticActorSpawnChaseStep(returnRequired, NewPosition(42, 2400, 2800), DefaultSpawnLeashRadius, 100); ok || plan.Next.Valid() {
+		t.Fatalf("expected return-required chase-step plan to fail closed, got ok=%v plan=%+v", ok, plan)
+	}
+
+	crossMap := StaticEntity{
+		Entity:        Entity{ID: 45, Kind: EntityKindStaticActor, Name: "ChasePlannerCrossMapMob"},
+		Position:      NewPosition(42, 1700, 2800),
+		SpawnHome:     home,
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.chase_planner_cross_map",
+	}
+	if plan, ok := PlanStaticActorSpawnChaseStep(crossMap, NewPosition(43, 1700, 2800), DefaultSpawnLeashRadius, 100); ok || plan.Next.Valid() {
+		t.Fatalf("expected cross-map chase-step plan to fail closed, got ok=%v plan=%+v", ok, plan)
+	}
+}
+
+func TestPlanStaticActorSpawnChaseStepFailsClosedForInvalidInput(t *testing.T) {
+	actor := StaticEntity{Entity: Entity{ID: 46, Kind: EntityKindStaticActor, Name: "ChasePlannerInvalidMob"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20350}
+	owner := NewPosition(42, 1800, 2800)
+	if plan, ok := PlanStaticActorSpawnChaseStep(actor, owner, DefaultSpawnLeashRadius, 100); ok || plan.Next.Valid() {
+		t.Fatalf("expected non-spawn actor chase-step plan to fail closed, got ok=%v plan=%+v", ok, plan)
+	}
+
+	actor.CombatProfile = StaticActorCombatProfilePracticeMob
+	actor.CombatKind = StaticActorCombatProfilePracticeMob
+	actor.SpawnGroupRef = "practice.chase_planner_invalid"
+	if plan, ok := PlanStaticActorSpawnChaseStep(actor, owner, 0, 100); ok || plan.Next.Valid() {
+		t.Fatalf("expected non-positive leash radius chase-step plan to fail closed, got ok=%v plan=%+v", ok, plan)
+	}
+	if plan, ok := PlanStaticActorSpawnChaseStep(actor, owner, DefaultSpawnLeashRadius, 0); ok || plan.Next.Valid() {
+		t.Fatalf("expected non-positive max step chase-step plan to fail closed, got ok=%v plan=%+v", ok, plan)
+	}
+	if plan, ok := PlanStaticActorSpawnChaseStep(actor, Position{}, DefaultSpawnLeashRadius, 100); ok || plan.Next.Valid() {
+		t.Fatalf("expected invalid owner position chase-step plan to fail closed, got ok=%v plan=%+v", ok, plan)
+	}
+}

@@ -33,6 +33,14 @@ type SpawnLeashReturnStepPlan struct {
 	Complete   bool
 }
 
+// SpawnChaseStepPlan is a pure planning result for the first engaged chase-step
+// seam. It does not mutate actor state or emit packets.
+type SpawnChaseStepPlan struct {
+	Evaluation SpawnLeashEvaluation
+	Next       Position
+	Complete   bool
+}
+
 type PositionSnapshot struct {
 	MapIndex uint32 `json:"map_index"`
 	X        int32  `json:"x"`
@@ -128,6 +136,37 @@ func PlanStaticActorSpawnLeashReturnStep(actor StaticEntity, radius int32, maxSt
 	return plan, true
 }
 
+// PlanStaticActorSpawnChaseStep computes one deterministic chase step toward an
+// engaged owner's current position for a live spawn-backed actor that still
+// classifies at_home or within_radius. Return-required actors, cross-map owners,
+// and invalid inputs fail closed; the planner never mutates actor state.
+func PlanStaticActorSpawnChaseStep(actor StaticEntity, owner Position, radius int32, maxStep int32) (SpawnChaseStepPlan, bool) {
+	if maxStep <= 0 || !owner.Valid() {
+		return SpawnChaseStepPlan{}, false
+	}
+	evaluation, ok := EvaluateStaticActorCurrentSpawnLeash(actor, radius)
+	if !ok {
+		return SpawnChaseStepPlan{}, false
+	}
+	if evaluation.ReturnRequired || !evaluation.Current.SameMap(owner) {
+		return SpawnChaseStepPlan{}, false
+	}
+	plan := SpawnChaseStepPlan{Evaluation: evaluation, Next: evaluation.Current}
+	if evaluation.Current.Equal(owner) {
+		plan.Complete = true
+		return plan, true
+	}
+	candidate, landedOnOwner := returnStepTowardHome(evaluation.Current, owner, maxStep)
+	if positionWithinRadius(evaluation.Home, candidate, radius) {
+		plan.Next = candidate
+		plan.Complete = landedOnOwner
+		return plan, true
+	}
+	plan.Next = farthestPointOnSegmentInsideLeash(evaluation.Home, evaluation.Current, candidate, radius)
+	plan.Complete = true
+	return plan, true
+}
+
 func SpawnLeashSnapshotFromEvaluation(evaluation SpawnLeashEvaluation) SpawnLeashSnapshot {
 	snapshot := SpawnLeashSnapshot{
 		Home:           PositionSnapshotFromPosition(evaluation.Home),
@@ -186,6 +225,42 @@ func returnStepTowardHome(current Position, home Position, maxStep int32) (Posit
 	nextY = clampStepCoordinate(nextY, int64(current.Y), int64(home.Y))
 	next := NewPosition(current.MapIndex, int32(nextX), int32(nextY))
 	return next, next.Equal(home)
+}
+
+func farthestPointOnSegmentInsideLeash(home Position, current Position, toward Position, radius int32) Position {
+	if !current.SameMap(toward) || !home.SameMap(current) || radius <= 0 {
+		return current
+	}
+	if positionWithinRadius(home, toward, radius) {
+		return toward
+	}
+	if !positionWithinRadius(home, current, radius) {
+		return current
+	}
+	dx := int64(toward.X) - int64(current.X)
+	dy := int64(toward.Y) - int64(current.Y)
+	distance := math.Hypot(float64(dx), float64(dy))
+	if distance == 0 {
+		return current
+	}
+	lo, hi := 0.0, distance
+	best := current
+	for i := 0; i < 48; i++ {
+		mid := (lo + hi) / 2
+		scale := mid / distance
+		nextX := int64(current.X) + int64(float64(dx)*scale)
+		nextY := int64(current.Y) + int64(float64(dy)*scale)
+		nextX = clampStepCoordinate(nextX, int64(current.X), int64(toward.X))
+		nextY = clampStepCoordinate(nextY, int64(current.Y), int64(toward.Y))
+		candidate := NewPosition(current.MapIndex, int32(nextX), int32(nextY))
+		if positionWithinRadius(home, candidate, radius) {
+			best = candidate
+			lo = mid
+			continue
+		}
+		hi = mid
+	}
+	return best
 }
 
 func clampStepCoordinate(value int64, current int64, home int64) int64 {
