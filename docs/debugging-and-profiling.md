@@ -601,6 +601,8 @@ Current response fields:
   - `path`
   - `valid`
   - `summary` with `definition_count`, deterministic `definition_keys` (`kind:ref`), and optional interaction crash-temp fields
+  - `backup_manifest` with `present`, `path`, `format`, `file_count`, total declared `snapshot_size_bytes`, actual `manifest_size_bytes`, and actual `manifest_sha256` when a restored/backup metadata file is currently present next to the active interaction-definition snapshot
+  - `restore_blocked_by_live_sessions` — `true` when a live selected-character session would make `/local/interaction-store/restore` fail closed
   - optional `error` when validation fails
 - `quest_state_store`
   - `path`

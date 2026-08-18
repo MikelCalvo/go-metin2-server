@@ -169,7 +169,7 @@ go run ./cmd/metin2-migrate apply \
   --audit-file migration-apply-audit.json
 ```
 
-For production runbooks, follow the detailed [migration apply runbook](workflow/migration-apply-runbook.md) and run the read-only `apply-preflight` command immediately before backup validation and the mutating `apply` command to prove the ledger snapshot, target, and reviewed plan artifact still match without touching the DB target:
+For production runbooks, follow the detailed [migration apply runbook](workflow/migration-apply-runbook.md). When the same window also needs manifested JSON-store preservation or a drained-session restore drill across accounts, login tickets, item templates, interactions, static actors, and quest state, follow the [file-store backup/restore drill](workflow/file-store-backup-restore-drill.md). Run the read-only `apply-preflight` command immediately before backup validation and the mutating `apply` command to prove the ledger snapshot, target, and reviewed plan artifact still match without touching the DB target:
 
 ```bash
 go run ./cmd/metin2-migrate apply-preflight \

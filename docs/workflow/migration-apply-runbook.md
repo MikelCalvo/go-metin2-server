@@ -66,10 +66,13 @@ metin2-migrate apply-preflight-status \
 Before applying, verify and retain deployment-specific backups outside the migration CLI. At minimum, validate that you can restore the target database from your backup system. For this bootstrap server, also validate any file-backed stores that matter to the deployment before running DB migrations:
 
 - account snapshots (`/local/account-store/validate`, `/local/account-store/backup/validate` when using a store backup);
-- login-ticket snapshots (`/local/login-tickets/validate`);
+- login-ticket snapshots (`/local/login-tickets/validate`, `/local/login-tickets/backup/validate` when using a store backup);
 - item-template snapshots (`/local/item-templates/validate`, `/local/item-templates/backup/validate` when using a store backup);
 - interaction definitions (`/local/interaction-store/validate`, `/local/interaction-store/backup/validate` when using a store backup);
-- static actors and quest state when authored content is part of the deployment.
+- static actors (`/local/static-actor-store/validate`, `/local/static-actors/backup/validate` when using a store backup);
+- quest state (`/local/quest-state/validate`, `/local/quest-state/backup/validate` when using a store backup).
+
+When the window needs a combined multi-store file backup or a drained-session restore drill, follow the detailed [file-store backup/restore drill](file-store-backup-restore-drill.md) instead of improvising per-store ordering.
 
 Then run the mutating apply with an exclusive local lock and audit file:
 

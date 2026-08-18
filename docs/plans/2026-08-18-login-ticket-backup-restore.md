@@ -46,5 +46,5 @@ Focused coverage:
 ## Follow-up options
 
 1. Add the same backup/restore posture for quest-state and authored static/interaction stores.
-2. Document a combined file-store backup drill that sequences account, login-ticket, and item-template restore under drained live sessions.
+2. Combined multi-store backup/restore sequencing is now documented in `docs/workflow/file-store-backup-restore-drill.md`.
 3. Keep DB ticket repositories deferred until the schema-shaped export/import quarantine path exists.
