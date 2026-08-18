@@ -891,6 +891,212 @@ func TestRunApplyPreflightStatusRejectsSymlinkPreflightFile(t *testing.T) {
 	}
 }
 
+func TestRunApplyUsesApplyPreflightArtifactBeforeMutation(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var preflightStdout bytes.Buffer
+	var preflightStderr bytes.Buffer
+	if code := Run([]string{"apply-preflight", "--ledger-snapshot", "-", "--target-version", "1"}, bytes.NewReader(rawSnapshot), &preflightStdout, &preflightStderr); code != 0 {
+		t.Fatalf("expected apply-preflight command to succeed, exit=%d stderr=%q", code, preflightStderr.String())
+	}
+	preflightPath := t.TempDir() + "/apply-preflight.json"
+	if err := os.WriteFile(preflightPath, preflightStdout.Bytes(), 0o600); err != nil {
+		t.Fatalf("write apply preflight: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://apply-preflight", "--ledger-snapshot", "-", "--target-version", "1", "--apply-preflight", preflightPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected apply with preflight artifact to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	var result dbmigrations.ApplyResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode apply-preflight apply result JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if result.PreviousVersion != 0 || result.CurrentVersion != 1 || len(result.Applied) != 1 {
+		t.Fatalf("unexpected apply-preflight result: %#v", result)
+	}
+	for _, forbidden := range []string{"CREATE TABLE", "DROP TABLE", "-- go-metin2 migration", "memory://apply-preflight"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("apply-preflight apply output must stay metadata-only and redacted, stdout=%q stderr=%q", stdout.String(), stderr.String())
+		}
+	}
+	got := currentMigrateCLITestDriver(t).eventsSnapshot()
+	for _, want := range []string{"open:memory://apply-preflight", "begin", "commit", "close"} {
+		if !containsMigrateCLITestEventPrefix(got, want) {
+			t.Fatalf("expected event prefix %q in events %#v", want, got)
+		}
+	}
+}
+
+func TestRunApplyWritesApplyPreflightPlanSHA256IntoAuditFile(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var preflightStdout bytes.Buffer
+	var preflightStderr bytes.Buffer
+	if code := Run([]string{"apply-preflight", "--ledger-snapshot", "-", "--target-version", "1"}, bytes.NewReader(rawSnapshot), &preflightStdout, &preflightStderr); code != 0 {
+		t.Fatalf("expected apply-preflight command to succeed, exit=%d stderr=%q", code, preflightStderr.String())
+	}
+	var preflight migrationApplyPreflight
+	if err := json.Unmarshal(preflightStdout.Bytes(), &preflight); err != nil {
+		t.Fatalf("decode apply preflight JSON: %v\nbody:\n%s", err, preflightStdout.String())
+	}
+	preflightPath := t.TempDir() + "/apply-preflight.json"
+	if err := os.WriteFile(preflightPath, preflightStdout.Bytes(), 0o600); err != nil {
+		t.Fatalf("write apply preflight: %v", err)
+	}
+	auditPath := t.TempDir() + "/apply-preflight-audit.json"
+	secretDSN := "memory://apply-preflight-audit"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", secretDSN, "--ledger-snapshot", "-", "--target-version", "1", "--apply-preflight", preflightPath, "--audit-file", auditPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected audited apply with preflight artifact to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	rawAudit, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("read apply-preflight audit file: %v", err)
+	}
+	var audit migrationApplyAudit
+	if err := json.Unmarshal(rawAudit, &audit); err != nil {
+		t.Fatalf("decode apply-preflight audit JSON: %v\nbody:\n%s", err, string(rawAudit))
+	}
+	if audit.ConfirmedPlanSHA256 != preflight.PlanSHA256 {
+		t.Fatalf("expected audit to carry apply preflight plan checksum %q, got %#v", preflight.PlanSHA256, audit)
+	}
+	body := string(rawAudit)
+	if strings.Contains(body, secretDSN) || strings.Contains(body, "CREATE TABLE") || strings.Contains(body, "DROP TABLE") {
+		t.Fatalf("apply-preflight audit file must stay metadata-only, got %s", body)
+	}
+}
+
+func TestRunApplyRejectsMismatchedApplyPreflightBeforeOpeningDatabase(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	var preflightStdout bytes.Buffer
+	var preflightStderr bytes.Buffer
+	if code := Run([]string{"apply-preflight", "--ledger-snapshot", "-", "--target-version", "0"}, bytes.NewReader(rawSnapshot), &preflightStdout, &preflightStderr); code != 0 {
+		t.Fatalf("expected mismatched apply-preflight command to succeed, exit=%d stderr=%q", code, preflightStderr.String())
+	}
+	preflightPath := t.TempDir() + "/mismatched-apply-preflight.json"
+	if err := os.WriteFile(preflightPath, preflightStdout.Bytes(), 0o600); err != nil {
+		t.Fatalf("write mismatched apply preflight: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://preflight-mismatch", "--ledger-snapshot", "-", "--target-version", "1", "--apply-preflight", preflightPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected mismatched apply preflight to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected mismatched apply preflight not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "migration apply preflight failed") || !strings.Contains(stderr.String(), "target_version") {
+		t.Fatalf("expected apply preflight target mismatch guidance, got %q", stderr.String())
+	}
+	if got := currentMigrateCLITestDriver(t).eventsSnapshot(); len(got) != 0 {
+		t.Fatalf("expected apply preflight mismatch guard before opening DB, got events %#v", got)
+	}
+}
+
+func TestRunApplyRejectsInvalidApplyPreflightBeforeOpeningDatabase(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	preflightPath := t.TempDir() + "/invalid-apply-preflight.json"
+	invalidPreflight := `{"format":"` + migrationApplyPreflightFormat + `","target_version":1,"target_latest":false,"ledger_snapshot_sha256":"` + strings.Repeat("0", 64) + `","plan_sha256":"` + strings.Repeat("1", 64) + `","plan":{"current_version":0,"latest_version":1,"up_to_date":false,"pending":[]},"extra":true}`
+	if err := os.WriteFile(preflightPath, []byte(invalidPreflight), 0o600); err != nil {
+		t.Fatalf("write invalid apply preflight: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://invalid-preflight", "--ledger-snapshot", "-", "--target-version", "1", "--apply-preflight", preflightPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected invalid apply preflight to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected invalid apply preflight not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "migration apply preflight failed") || !strings.Contains(stderr.String(), "unknown field") {
+		t.Fatalf("expected invalid preflight guidance, got %q", stderr.String())
+	}
+	if got := currentMigrateCLITestDriver(t).eventsSnapshot(); len(got) != 0 {
+		t.Fatalf("expected invalid apply preflight guard before opening DB, got events %#v", got)
+	}
+}
+
+func TestRunApplyUsesApplyPreflightForRollbackTarget(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	catalog, err := dbmigrations.Catalog()
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	applied := []dbmigrations.LedgerEntry{{Version: catalog[0].Version, Name: catalog[0].Name, UpSHA256: catalog[0].UpSHA256}}
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot(applied)
+	if err != nil {
+		t.Fatalf("marshal rollback ledger snapshot: %v", err)
+	}
+	var artifactStdout bytes.Buffer
+	var artifactStderr bytes.Buffer
+	if code := Run([]string{"plan-artifact", "--ledger-snapshot", "-", "--target-version", "0"}, bytes.NewReader(rawSnapshot), &artifactStdout, &artifactStderr); code != 0 {
+		t.Fatalf("expected rollback plan-artifact command, exit=%d stderr=%q", code, artifactStderr.String())
+	}
+	artifactPath := t.TempDir() + "/rollback-plan-artifact.json"
+	if err := os.WriteFile(artifactPath, artifactStdout.Bytes(), 0o600); err != nil {
+		t.Fatalf("write rollback plan artifact: %v", err)
+	}
+	var preflightStdout bytes.Buffer
+	var preflightStderr bytes.Buffer
+	if code := Run([]string{"apply-preflight", "--ledger-snapshot", "-", "--target-version", "0", "--plan-artifact", artifactPath, "--allow-rollback"}, bytes.NewReader(rawSnapshot), &preflightStdout, &preflightStderr); code != 0 {
+		t.Fatalf("expected rollback apply-preflight command, exit=%d stderr=%q", code, preflightStderr.String())
+	}
+	preflightPath := t.TempDir() + "/rollback-apply-preflight.json"
+	if err := os.WriteFile(preflightPath, preflightStdout.Bytes(), 0o600); err != nil {
+		t.Fatalf("write rollback apply preflight: %v", err)
+	}
+	driver := currentMigrateCLITestDriver(t)
+	driver.setLedger(applied)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply", "--driver", driverName, "--dsn", "memory://rollback-preflight", "--ledger-snapshot", "-", "--target-version", "0", "--allow-rollback", "--apply-preflight", preflightPath}, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected preflight-confirmed rollback apply, exit=%d stderr=%q", code, stderr.String())
+	}
+	var result dbmigrations.ApplyResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode preflight-confirmed rollback result JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if result.PreviousVersion != 1 || result.CurrentVersion != 0 || len(result.Applied) != 1 || result.Applied[0].Direction != dbmigrations.DirectionDown {
+		t.Fatalf("unexpected preflight-confirmed rollback result: %#v", result)
+	}
+	for _, want := range []string{"open:memory://rollback-preflight", "begin", "commit", "close"} {
+		if !containsMigrateCLITestEventPrefix(driver.eventsSnapshot(), want) {
+			t.Fatalf("expected event prefix %q in events %#v", want, driver.eventsSnapshot())
+		}
+	}
+}
+
 func TestRunApplyAcceptsPlanArtifactBeforeMutation(t *testing.T) {
 	driverName := registerMigrateCLITestSQLDriver(t)
 	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
@@ -1069,6 +1275,52 @@ func TestRunApplyRejectsPlanArtifactAndPlanSHA256TogetherAsUsageError(t *testing
 	}
 	if got := currentMigrateCLITestDriver(t).eventsSnapshot(); len(got) != 0 {
 		t.Fatalf("expected plan confirmation usage guard before opening DB, got events %#v", got)
+	}
+}
+
+func TestRunApplyRejectsApplyPreflightWithPlanConfirmationTogetherAsUsageError(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	preflightPath := t.TempDir() + "/unused-apply-preflight.json"
+	if err := os.WriteFile(preflightPath, []byte(`{"format":"unused"}`), 0o600); err != nil {
+		t.Fatalf("write unused apply preflight: %v", err)
+	}
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "plan-sha256",
+			args: []string{"apply", "--driver", driverName, "--dsn", "memory://preflight-and-sha", "--ledger-snapshot", "-", "--target-version", "1", "--plan-sha256", strings.Repeat("0", 64), "--apply-preflight", preflightPath},
+		},
+		{
+			name: "plan-artifact",
+			args: []string{"apply", "--driver", driverName, "--dsn", "memory://preflight-and-artifact", "--ledger-snapshot", "-", "--target-version", "1", "--plan-artifact", preflightPath, "--apply-preflight", preflightPath},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			code := Run(tc.args, bytes.NewReader(rawSnapshot), &stdout, &stderr)
+
+			if code != 2 {
+				t.Fatalf("expected apply-preflight plus %s to exit 2, got exit=%d stdout=%q stderr=%q", tc.name, code, stdout.String(), stderr.String())
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("expected usage error not to write stdout, got %q", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), "--apply-preflight cannot be used together with --plan-sha256 or --plan-artifact") {
+				t.Fatalf("expected mutually exclusive apply-preflight guidance, got %q", stderr.String())
+			}
+			if got := currentMigrateCLITestDriver(t).eventsSnapshot(); len(got) != 0 {
+				t.Fatalf("expected apply-preflight usage guard before opening DB, got events %#v", got)
+			}
+		})
 	}
 }
 
@@ -1920,7 +2172,7 @@ func TestRunApplyRejectsRollbackWithoutPlanConfirmationBeforeOpeningDatabase(t *
 	if stdout.Len() != 0 {
 		t.Fatalf("expected unconfirmed rollback not to write stdout, got %q", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "--plan-sha256") || !strings.Contains(stderr.String(), "--plan-artifact") {
+	if !strings.Contains(stderr.String(), "--plan-sha256") || !strings.Contains(stderr.String(), "--plan-artifact") || !strings.Contains(stderr.String(), "--apply-preflight") {
 		t.Fatalf("expected rollback plan confirmation guidance, got %q", stderr.String())
 	}
 	for _, path := range []string{lockPath, auditPath} {

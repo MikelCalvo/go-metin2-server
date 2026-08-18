@@ -16,24 +16,24 @@ metin2-migrate apply \
   --dsn <dsn> \
   --ledger-snapshot <path|-> \
   --target-version <version|latest> \
-  [--plan-sha256 <hex> | --plan-artifact <path>] \
+  [--plan-sha256 <hex> | --plan-artifact <path> | --apply-preflight <path>] \
   [--lock-file <path>] \
   [--audit-file <path>] \
   [--allow-rollback]
 ```
 
-When an audit file is written, the strict metadata-only `go-metin2-migration-apply-audit-v1` JSON now includes:
+When an audit file is written, the strict metadata-only `go-metin2-migration-apply-audit-v1` artifact now carries:
 
 - `ledger_snapshot_sha256` — checksum over the exact ledger-snapshot bytes supplied to `apply`;
 - `plan_sha256` — checksum over the exact dry-run plan recomputed from that ledger snapshot and resolved target;
-- optional `confirmed_plan_sha256` when the operator supplied `--plan-sha256` or a matching `--plan-artifact`;
+- optional `confirmed_plan_sha256` when the operator supplied `--plan-sha256`, a matching `--plan-artifact`, or a matching retained `--apply-preflight` artifact;
 - the existing resolved target, driver name, DSN-present boolean, timestamp, and metadata-only `ApplyResult`.
 
 This lets an operator compare:
 
 1. the reviewed `migration-plan-artifact.json` checksum;
 2. the immediate `apply-preflight.json` `plan_sha256` / `ledger_snapshot_sha256` pair;
-3. the post-run `migration-apply-audit.json` `plan_sha256` / `ledger_snapshot_sha256` pair.
+3. the post-run `migration-apply-audit.json` `plan_sha256` / `ledger_snapshot_sha256` pair, with `confirmed_plan_sha256` matching the retained preflight when `--apply-preflight` was used.
 
 All three artifacts remain free of executable SQL, DSNs, runtime store rows, and daemon mutation endpoints.
 

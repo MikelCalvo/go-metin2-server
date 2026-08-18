@@ -4,7 +4,7 @@
 
 Tighten the CLI-only migration rollback boundary so an operator cannot execute a down-migration plan with `--allow-rollback` alone.
 
-The previous slice already required `--allow-rollback` for any plan containing down steps. This slice keeps that acknowledgement and adds a second explicit guard: rollback plans must also be tied to a previously inspected metadata-only plan through either `--plan-sha256` or `--plan-artifact`.
+The previous slice already required `--allow-rollback` for any plan containing down steps. This slice kept that acknowledgement and added a second explicit guard: rollback plans had to be tied to a previously inspected metadata-only plan through either `--plan-sha256` or `--plan-artifact`. A later follow-up also allows a retained `--apply-preflight` artifact as that exact reviewed-plan confirmation source.
 
 ## Contract frozen by this slice
 

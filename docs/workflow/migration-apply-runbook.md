@@ -34,7 +34,7 @@ Keep these files together for each migration run:
 - `ledger_snapshot_sha256` — checksum over the exact offline ledger snapshot bytes;
 - `plan_sha256` — checksum over the exact reviewed dry-run plan bytes.
 
-Those two checksums let an operator correlate the preflight with the plan artifact and the later apply audit without storing executable SQL or DSNs in the audit trail. `migration-apply-audit.json` records `plan_sha256` for the exact plan applied, `ledger_snapshot_sha256` for the exact ledger snapshot supplied to `apply`, and `confirmed_plan_sha256` when the run used `--plan-sha256` or `--plan-artifact`.
+Those two checksums let an operator correlate the preflight with the plan artifact and the later apply audit without storing executable SQL or DSNs in the audit trail. `migration-apply-audit.json` records `plan_sha256` for the exact plan applied, `ledger_snapshot_sha256` for the exact ledger snapshot supplied to `apply`, and `confirmed_plan_sha256` when the run used `--plan-sha256`, `--plan-artifact`, or `--apply-preflight`.
 
 ## Forward apply workflow
 
@@ -78,7 +78,7 @@ metin2-migrate apply \
   --dsn <dsn> \
   --ledger-snapshot ledger-snapshot.json \
   --target-version latest \
-  --plan-artifact migration-plan-artifact.json \
+  --apply-preflight apply-preflight.json \
   --lock-file migration-apply.lock \
   --audit-file migration-apply-audit.json
 ```
@@ -126,7 +126,7 @@ metin2-migrate apply \
   --dsn <dsn> \
   --ledger-snapshot ledger-snapshot.json \
   --target-version <rollback-version> \
-  --plan-artifact rollback-plan-artifact.json \
+  --apply-preflight rollback-apply-preflight.json \
   --allow-rollback \
   --lock-file migration-rollback.lock \
   --audit-file migration-rollback-audit.json
@@ -137,10 +137,10 @@ Rollback to zero is allowed by the current primitive, but it drops the `schema_m
 ## Failure handling
 
 - If `ledger-snapshot`, `status`, or daemon-local migration status fails, stop before planning and inspect the configured driver/DSN and `schema_migrations` metadata.
-- If `plan-artifact`, `plan-artifact-status`, `apply-preflight`, or `apply-preflight-status` fails, do not run `apply`; regenerate or re-review the ledger snapshot, plan, and preflight artifact. `plan-artifact-status` is read-only: it validates the non-symlink regular plan artifact shape, returns `present: false` for an absent path, verifies the embedded plan checksum and contiguous pending-step sequence, and never opens the DB target, reserves lock/audit files, or exposes executable SQL / DSNs. `apply-preflight-status` is also read-only: it validates the non-symlink regular preflight artifact shape, returns `present: false` for an absent path, verifies the preflight plan checksum plus target/plan endpoint consistency, and never opens the DB target, reserves lock/audit files, deletes the preflight artifact, or exposes executable SQL / DSNs.
+- If `plan-artifact`, `plan-artifact-status`, `apply-preflight`, or `apply-preflight-status` fails, do not run `apply`; regenerate or re-review the ledger snapshot, plan, and preflight artifact. `plan-artifact-status` is read-only: it validates the non-symlink regular plan artifact shape, returns `present: false` for an absent path, verifies the embedded plan checksum and contiguous pending-step sequence, and never opens the DB target, reserves lock/audit files, or exposes executable SQL / DSNs. `apply-preflight-status` is also read-only: it validates the non-symlink regular preflight artifact shape, returns `present: false` for an absent path, verifies the preflight plan checksum plus target/plan endpoint consistency, and never opens the DB target, reserves lock/audit files, deletes the preflight artifact, or exposes executable SQL / DSNs. Passing `apply --apply-preflight <path>` revalidates the retained preflight and requires its ledger checksum, resolved target, plan checksum, and embedded plan to match the supplied `apply` ledger snapshot and target before any database open; prefer that handoff when a migration window retains `apply-preflight.json` as the reviewed final pre-mutation evidence.
 - If `--lock-file` already exists, assume another operator or interrupted run owns the migration window. Do not delete it blindly; first run `metin2-migrate apply-lock-status --lock-file <path> > apply-lock-status.json`, then inspect process ownership, the metadata-only lock JSON (`pid`, `target_version`, `plan_sha256`, `ledger_snapshot_sha256`), retained preflight/audit artifacts, and deployment notes. The status helper is read-only: it validates the non-symlink regular lock file shape, returns `present: false` for an absent path, and never removes the lock, opens the DB target, or exposes the DSN / executable SQL.
 - If a retained `migration-apply-audit.json` must be checked later, run `metin2-migrate apply-audit-status --audit-file <path> > apply-audit-status.json` before trusting it in release evidence. The helper is read-only: it validates the non-symlink regular audit file shape, returns `present: false` for an absent path, verifies metadata/result/checksum consistency, and never removes the audit, opens the DB target, or exposes the DSN / executable SQL.
-- If `apply` fails after reserving the lock or audit path, the CLI attempts to remove the reserved lock/audit files and roll back the SQL transaction. Keep stderr, the original ledger snapshot, and the failed plan artifact for diagnosis.
+- If `apply` fails after reserving the lock or audit path, the CLI attempts to remove the reserved lock/audit files and roll back the SQL transaction. Keep stderr, the original ledger snapshot, the failed plan artifact, and the failed apply-preflight artifact for diagnosis.
 - If the database reports an unknown or drifted ledger row, do not edit `schema_migrations` by hand. Compare `migration-catalog.json`, the deployed binary version, and the target database backup.
 
 ## Anti-goals
@@ -154,3 +154,4 @@ Do not use this runbook to justify:
 - stale-lock or stale-audit auto-removal without a deployment-specific policy.
 - treating `apply-lock-status` as authorization to delete an existing lock; it is an inspection helper only.
 - treating `apply-audit-status` as proof that a database is currently migrated; it validates a retained metadata artifact only.
+- treating `apply --apply-preflight` as a substitute for deployment-specific DB/file-store backup validation or transaction-local ledger verification.

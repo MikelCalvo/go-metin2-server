@@ -43,10 +43,11 @@ const (
 // target version, and it remains deliberately separate from daemon startup and
 // local ops endpoints.
 // Rollback/down plans must be explicitly confirmed with --allow-rollback plus
-// either --plan-sha256 or --plan-artifact. Operators can optionally require a
-// previously inspected plan checksum or plan artifact, reserve an exclusive local
-// lock file before opening the database, and request an exclusive metadata-only
-// audit file for non-empty apply plans.
+// --plan-sha256, --plan-artifact, or --apply-preflight. Operators can
+// optionally require a previously inspected plan checksum, plan artifact, or
+// preflight artifact, reserve an exclusive local lock file before opening the
+// database, and request an exclusive metadata-only audit file for non-empty apply
+// plans.
 func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	if stdout == nil {
 		stdout = io.Discard
@@ -535,6 +536,7 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 	var lockFilePath string
 	var planSHA256Text string
 	var planArtifactPath string
+	var applyPreflightPath string
 	var allowRollback bool
 	flags.StringVar(&driverName, "driver", "", "database/sql driver name for the migration target")
 	flags.StringVar(&dsn, "dsn", "", "database/sql DSN for the migration target")
@@ -544,6 +546,7 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 	flags.StringVar(&lockFilePath, "lock-file", "", "optional path for an exclusive local migration apply lock file")
 	flags.StringVar(&planSHA256Text, "plan-sha256", "", "optional SHA-256 of the metadata-only dry-run plan JSON that must match before applying")
 	flags.StringVar(&planArtifactPath, "plan-artifact", "", "optional path to a metadata-only migration plan artifact that must match before applying")
+	flags.StringVar(&applyPreflightPath, "apply-preflight", "", "optional path to a metadata-only migration apply preflight artifact that must match before applying")
 	flags.BoolVar(&allowRollback, "allow-rollback", false, "allow apply to execute down/rollback migration steps")
 	flags.Usage = func() { printApplyUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
@@ -582,8 +585,14 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 	confirmedPlanSHA256 := ""
 	trimmedPlanSHA256 := strings.TrimSpace(planSHA256Text)
 	trimmedPlanArtifactPath := strings.TrimSpace(planArtifactPath)
+	trimmedApplyPreflightPath := strings.TrimSpace(applyPreflightPath)
 	if trimmedPlanSHA256 != "" && trimmedPlanArtifactPath != "" {
 		fmt.Fprintln(stderr, "--plan-sha256 and --plan-artifact cannot be used together")
+		printApplyUsage(stderr)
+		return exitUsage
+	}
+	if trimmedApplyPreflightPath != "" && (trimmedPlanSHA256 != "" || trimmedPlanArtifactPath != "") {
+		fmt.Fprintln(stderr, "--apply-preflight cannot be used together with --plan-sha256 or --plan-artifact")
 		printApplyUsage(stderr)
 		return exitUsage
 	}
@@ -624,13 +633,10 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 		writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
 		return exitError
 	}
-	if planContainsRollbackStep(plan) {
+	containsRollback := planContainsRollbackStep(plan)
+	if containsRollback {
 		if !allowRollback {
 			writeMigrationCommandError(stderr, dsn, "migration apply: %v", fmt.Errorf("%w: rollback/down migration plan requires --allow-rollback", ErrMigrationApplyRollbackConfirmation))
-			return exitError
-		}
-		if confirmedPlanSHA256 == "" && trimmedPlanArtifactPath == "" {
-			writeMigrationCommandError(stderr, dsn, "migration apply: %v", fmt.Errorf("%w: rollback/down migration plan requires --plan-sha256 or --plan-artifact", ErrMigrationApplyPlanConfirmation))
 			return exitError
 		}
 	}
@@ -649,6 +655,22 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 			return exitError
 		}
 		confirmedPlanSHA256 = artifact.PlanSHA256
+	}
+	if trimmedApplyPreflightPath != "" {
+		preflight, _, err := readMigrationApplyPreflightPath(trimmedApplyPreflightPath, false)
+		if err != nil {
+			writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
+			return exitError
+		}
+		if err := validateMigrationApplyPreflightForApply(preflight, rawLedger, plan, resolvedTarget, targetLatest); err != nil {
+			writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
+			return exitError
+		}
+		confirmedPlanSHA256 = preflight.PlanSHA256
+	}
+	if containsRollback && confirmedPlanSHA256 == "" {
+		writeMigrationCommandError(stderr, dsn, "migration apply: %v", fmt.Errorf("%w: rollback/down migration plan requires --plan-sha256, --plan-artifact, or --apply-preflight", ErrMigrationApplyPlanConfirmation))
+		return exitError
 	}
 
 	var lockFile *migrationApplyLockFile
@@ -1500,6 +1522,27 @@ func normalizeMigrationApplyPreflight(preflight migrationApplyPreflight) (migrat
 	return preflight, nil
 }
 
+func validateMigrationApplyPreflightForApply(preflight migrationApplyPreflight, rawLedger []byte, plan dbmigrations.Plan, resolvedTarget int, targetLatest bool) error {
+	if preflight.TargetVersion != resolvedTarget {
+		return fmt.Errorf("%w: preflight target_version %d does not match requested target_version %d", ErrMigrationApplyPreflight, preflight.TargetVersion, resolvedTarget)
+	}
+	if preflight.TargetLatest != targetLatest {
+		return fmt.Errorf("%w: preflight target_latest %t does not match requested target_latest %t", ErrMigrationApplyPreflight, preflight.TargetLatest, targetLatest)
+	}
+	ledgerSHA256 := sha256Hex(rawLedger)
+	if preflight.LedgerSnapshotSHA256 != ledgerSHA256 {
+		return fmt.Errorf("%w: preflight ledger_snapshot_sha256 mismatch: got %s want %s", ErrMigrationApplyPreflight, preflight.LedgerSnapshotSHA256, ledgerSHA256)
+	}
+	planSHA256, err := planSHA256(plan)
+	if err != nil {
+		return fmt.Errorf("%w: validate requested plan checksum: %v", ErrMigrationApplyPreflight, err)
+	}
+	if preflight.PlanSHA256 != planSHA256 || !reflect.DeepEqual(preflight.Plan, plan) {
+		return fmt.Errorf("%w: apply preflight does not match requested ledger snapshot and target", ErrMigrationApplyPreflight)
+	}
+	return nil
+}
+
 func validateMigrationPlanArtifactPlan(plan dbmigrations.Plan) error {
 	_, err := validateMigrationPlanShape(plan, ErrMigrationApplyPlanConfirmation, "plan artifact")
 	return err
@@ -1732,5 +1775,5 @@ func printApplyAuditStatusUsage(w io.Writer) {
 
 func printApplyUsage(w io.Writer) {
 	fmt.Fprintln(w, "apply usage:")
-	fmt.Fprintln(w, "  metin2-migrate apply --driver <database/sql-driver> --dsn <dsn> --ledger-snapshot <path|-> --target-version <version|latest> [--plan-sha256 <hex> | --plan-artifact <path>] [--lock-file <path>] [--audit-file <path>] [--allow-rollback]")
+	fmt.Fprintln(w, "  metin2-migrate apply --driver <database/sql-driver> --dsn <dsn> --ledger-snapshot <path|-> --target-version <version|latest> [--plan-sha256 <hex> | --plan-artifact <path> | --apply-preflight <path>] [--lock-file <path>] [--audit-file <path>] [--allow-rollback]")
 }

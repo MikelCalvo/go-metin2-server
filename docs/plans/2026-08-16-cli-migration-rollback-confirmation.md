@@ -6,7 +6,7 @@ Harden the CLI-only migration apply boundary so rollback/down plans cannot be ex
 
 The repo already had strict ledger snapshots, metadata-only dry-run plans, plan artifacts, optional local lock files, optional audit files, and a CLI-only `metin2-migrate apply` command. This slice kept the mutating surface outside daemon ops endpoints while adding one explicit rollback acknowledgement before any database connection is opened.
 
-Follow-up note: `2026-08-16-cli-migration-rollback-plan-confirmation.md` tightened this further. Current rollback execution requires both `--allow-rollback` and exact reviewed-plan confirmation via `--plan-sha256` or `--plan-artifact`.
+Follow-up note: `2026-08-16-cli-migration-rollback-plan-confirmation.md` tightened this further, and the retained preflight handoff later added `--apply-preflight` as another exact confirmation source. Current rollback execution requires both `--allow-rollback` and exact reviewed-plan confirmation via `--plan-sha256`, `--plan-artifact`, or `--apply-preflight`.
 
 ## Contract frozen by this slice
 
@@ -47,7 +47,7 @@ The `--allow-rollback` flag is intentionally separate from:
 - `--lock-file`;
 - `--audit-file`.
 
-This slice made the dangerous direction explicit in the apply command line. The later plan-confirmation guard made `--plan-sha256` or `--plan-artifact` mandatory for rollback too, so current rollback runs require both an acknowledgement and a reviewed-plan match.
+This slice made the dangerous direction explicit in the apply command line. Later plan-confirmation guards made `--plan-sha256`, `--plan-artifact`, or a matching retained `--apply-preflight` artifact mandatory for rollback too, so current rollback runs require both an acknowledgement and a reviewed-plan match.
 
 ## What this is not yet
 
