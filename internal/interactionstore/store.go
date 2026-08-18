@@ -167,17 +167,38 @@ func validDefinition(definition Definition) bool {
 	case KindInfo, KindTalk:
 		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.QuestRef == "" && definition.QuestFlag == "" && definition.QuestFrom == 0 && definition.QuestTo == 0
 	case KindShopPreview:
-		if definition.Title == "" || !validDefinitionText(definition.Title) || definition.Text != "" || definition.MapIndex != 0 || definition.X != 0 || definition.Y != 0 || definition.QuestRef != "" || definition.QuestFlag != "" || definition.QuestFrom != 0 || definition.QuestTo != 0 {
+		if definition.Title == "" || !validDefinitionText(definition.Title) || definition.Text != "" || definition.MapIndex != 0 || definition.X != 0 || definition.Y != 0 || !validOptionalServiceQuestGate(definition) {
 			return false
 		}
 		return validMerchantCatalog(definition.Catalog)
 	case KindWarp:
-		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && definition.MapIndex != 0 && definition.X != 0 && definition.Y != 0 && definition.QuestRef == "" && definition.QuestFlag == "" && definition.QuestFrom == 0 && definition.QuestTo == 0
+		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && definition.MapIndex != 0 && definition.X != 0 && definition.Y != 0 && validOptionalServiceQuestGate(definition)
 	case KindQuestFlag:
 		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && queststate.ValidQuestRef(definition.QuestRef) && queststate.ValidFlagName(definition.QuestFlag) && definition.QuestFrom != definition.QuestTo
 	default:
 		return false
 	}
+}
+
+// HasServiceQuestGate reports whether a warp/shop_preview definition carries an
+// optional selected-character quest-flag prerequisite. The gate is present only
+// when both quest_ref and quest_flag are authored; quest_from defaults to 0 and
+// quest_to must remain 0 because gated services do not mutate quest state.
+func HasServiceQuestGate(definition Definition) bool {
+	definition = normalizeDefinition(definition)
+	return definition.QuestRef != "" && definition.QuestFlag != ""
+}
+
+func validOptionalServiceQuestGate(definition Definition) bool {
+	hasRef := definition.QuestRef != ""
+	hasFlag := definition.QuestFlag != ""
+	if !hasRef && !hasFlag {
+		return definition.QuestFrom == 0 && definition.QuestTo == 0
+	}
+	if !hasRef || !hasFlag {
+		return false
+	}
+	return queststate.ValidQuestRef(definition.QuestRef) && queststate.ValidFlagName(definition.QuestFlag) && definition.QuestTo == 0
 }
 
 func validDefinitionText(text string) bool {

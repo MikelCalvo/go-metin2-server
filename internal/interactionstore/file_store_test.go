@@ -172,6 +172,87 @@ func TestFileStoreRejectsInvalidQuestFlagInteractionDefinition(t *testing.T) {
 	}
 }
 
+func TestFileStoreSaveThenLoadQuestGatedWarpAndShopPreviewDefinitions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	want := Snapshot{Definitions: []Definition{
+		{
+			Kind:      KindShopPreview,
+			Ref:       "npc:gated_merchant",
+			Title:     "Gated Merchant",
+			Catalog:   []MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}},
+			QuestRef:  "quest:first_steps",
+			QuestFlag: "met_guide",
+			QuestFrom: 1,
+		},
+		{
+			Kind:      KindWarp,
+			Ref:       "npc:gated_teleporter",
+			Text:      "Step through the gate.",
+			MapIndex:  42,
+			X:         1700,
+			Y:         2800,
+			QuestRef:  "quest:first_steps",
+			QuestFlag: "met_guide",
+			QuestFrom: 1,
+		},
+	}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save quest-gated service definitions: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load quest-gated service definitions: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected quest-gated service definition snapshot:\n got: %#v\nwant: %#v", got, want)
+	}
+	if !HasServiceQuestGate(got.Definitions[0]) || !HasServiceQuestGate(got.Definitions[1]) {
+		t.Fatalf("expected loaded service definitions to report quest gates, got %#v", got.Definitions)
+	}
+}
+
+func TestFileStoreRejectsInvalidQuestGatedServiceDefinitions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	baseWarp := Definition{Kind: KindWarp, Ref: "npc:gated_teleporter", Text: "Step through the gate.", MapIndex: 42, X: 1700, Y: 2800}
+	baseShop := testMerchantCatalogDefinition()
+	baseShop.Ref = "npc:gated_merchant"
+	cases := []struct {
+		name       string
+		definition Definition
+	}{
+		{
+			name:       "warp quest ref without flag",
+			definition: Definition{Kind: KindWarp, Ref: "npc:gated_teleporter", Text: "Step through the gate.", MapIndex: 42, X: 1700, Y: 2800, QuestRef: "quest:first_steps"},
+		},
+		{
+			name:       "warp quest flag without ref",
+			definition: Definition{Kind: KindWarp, Ref: "npc:gated_teleporter", Text: "Step through the gate.", MapIndex: 42, X: 1700, Y: 2800, QuestFlag: "met_guide"},
+		},
+		{
+			name:       "warp quest_to mutates",
+			definition: Definition{Kind: KindWarp, Ref: "npc:gated_teleporter", Text: "Step through the gate.", MapIndex: 42, X: 1700, Y: 2800, QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1, QuestTo: 2},
+		},
+		{
+			name:       "shop quest_to mutates",
+			definition: Definition{Kind: KindShopPreview, Ref: "npc:gated_merchant", Title: "Gated Merchant", Catalog: baseShop.Catalog, QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1, QuestTo: 2},
+		},
+		{
+			name:       "ungated warp with orphan quest_from",
+			definition: Definition{Kind: KindWarp, Ref: "npc:teleporter", Text: "Step through the gate.", MapIndex: 42, X: 1700, Y: 2800, QuestFrom: 1},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := store.Save(Snapshot{Definitions: []Definition{tc.definition}}); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot for %s, got %v (base=%#v)", tc.name, err, baseWarp)
+			}
+		})
+	}
+}
+
 func TestFileStoreSaveWritesDeterministicSortedSnapshotAndReplacesPreviousContent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
 	store := NewFileStore(path)

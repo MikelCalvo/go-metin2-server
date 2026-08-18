@@ -7924,9 +7924,22 @@ func (r *gameRuntime) resolveStaticActorInteraction(subjectID uint64, targetVID 
 		return resolution
 	}
 	resolution.Definition = definition
+	characterName := ""
+	if subject, ok := r.sharedWorld.playerCharacter(subjectID); ok {
+		characterName = subject.Name
+	}
 	if definition.Kind == interactionstore.KindWarp {
 		if !interactionstore.ValidDefinition(definition) {
 			resolution.Failure = staticActorInteractionFailureWarpDestinationInvalid
+			resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
+			return resolution
+		}
+		if ok, err := r.serviceQuestGateSatisfied(characterName, definition); err != nil {
+			resolution.Failure = staticActorInteractionFailureUnsupportedKind
+			resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
+			return resolution
+		} else if !ok {
+			resolution.Failure = staticActorInteractionFailureQuestCurrentValueMismatch
 			resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
 			return resolution
 		}
@@ -7949,6 +7962,22 @@ func (r *gameRuntime) resolveStaticActorInteraction(subjectID uint64, targetVID 
 		resolution.Delivery = &delivery
 		return resolution
 	}
+	if definition.Kind == interactionstore.KindShopPreview {
+		if !interactionstore.ValidDefinition(definition) {
+			resolution.Failure = staticActorInteractionFailureUnsupportedKind
+			resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
+			return resolution
+		}
+		if ok, err := r.serviceQuestGateSatisfied(characterName, definition); err != nil {
+			resolution.Failure = staticActorInteractionFailureUnsupportedKind
+			resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
+			return resolution
+		} else if !ok {
+			resolution.Failure = staticActorInteractionFailureQuestCurrentValueMismatch
+			resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
+			return resolution
+		}
+	}
 	preview, ok := r.interactionDefinitionPreview(attempt.Actor.Name, definition)
 	if !ok {
 		resolution.Failure = staticActorInteractionFailureUnsupportedKind
@@ -7959,6 +7988,25 @@ func (r *gameRuntime) resolveStaticActorInteraction(subjectID uint64, targetVID 
 	resolution.Accepted = true
 	resolution.Delivery = &delivery
 	return resolution
+}
+
+func (r *gameRuntime) serviceQuestGateSatisfied(characterName string, definition InteractionDefinition) (bool, error) {
+	if !interactionstore.HasServiceQuestGate(definition) {
+		return true, nil
+	}
+	characterName = strings.TrimSpace(characterName)
+	if characterName == "" {
+		return false, fmt.Errorf("service quest gate requires a selected character")
+	}
+	flag, ok, err := r.QuestStateFlag(characterName, definition.QuestRef, definition.QuestFlag)
+	if err != nil {
+		return false, err
+	}
+	current := uint32(0)
+	if ok {
+		current = flag.Value
+	}
+	return current == definition.QuestFrom, nil
 }
 
 func (r *gameRuntime) resolveStaticActorCombatTarget(subjectID uint64, targetVID uint32) staticActorCombatTargetResolution {
@@ -8087,8 +8135,34 @@ func (r *gameRuntime) interactionDefinitionVisibilityPreview(characterName strin
 	case interactionstore.KindTalk:
 		return fmt.Sprintf("%s:\n%s", actorName, definition.Text), true
 	case interactionstore.KindShopPreview:
+		if characterName != "" && interactionstore.HasServiceQuestGate(definition) {
+			ok, err := r.serviceQuestGateSatisfied(characterName, definition)
+			if err != nil {
+				return "", false
+			}
+			if !ok {
+				message, ok := staticActorInteractionFailureMessage(staticActorInteractionFailureQuestCurrentValueMismatch)
+				if !ok {
+					return "", false
+				}
+				return message, true
+			}
+		}
 		return r.shopPreviewInteractionPreview(definition)
 	case interactionstore.KindWarp:
+		if characterName != "" && interactionstore.HasServiceQuestGate(definition) {
+			ok, err := r.serviceQuestGateSatisfied(characterName, definition)
+			if err != nil {
+				return "", false
+			}
+			if !ok {
+				message, ok := staticActorInteractionFailureMessage(staticActorInteractionFailureQuestCurrentValueMismatch)
+				if !ok {
+					return "", false
+				}
+				return message, true
+			}
+		}
 		summary := fmt.Sprintf("warp -> map %d @ %d,%d", definition.MapIndex, definition.X, definition.Y)
 		message := strings.TrimSpace(definition.Text)
 		if message == "" {

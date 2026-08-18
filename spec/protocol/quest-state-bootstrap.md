@@ -142,6 +142,37 @@ Loopback interaction visibility now mirrors that player-facing branch without mu
 
 This is still a bootstrap quest-state trigger, not a client quest UI, reward system, branching dialog tree, or script runtime. The mismatch acknowledgement and its loopback preview exist only so authored-state failures are not silent; they do not expose a quest window, reward, objective tracker, or alternate branch.
 
+## Optional quest gates on service interactions
+
+`warp` and `shop_preview` definitions may optionally carry a selected-character quest-flag prerequisite without becoming `quest_flag` mutators:
+
+```json
+{
+  "kind": "warp",
+  "ref": "npc:qa_teleporter",
+  "text": "Step through the gate.",
+  "map_index": 1,
+  "x": 470200,
+  "y": 964200,
+  "quest_ref": "quest:first_steps",
+  "quest_flag": "met_guide",
+  "quest_from": 1
+}
+```
+
+Owned gate rules:
+
+- the gate is present only when both `quest_ref` and `quest_flag` are authored
+- `quest_from` defaults to `0` and is the exact required current flag value
+- `quest_to` must remain absent/`0`; gated services never mutate quest state
+- partial gate fields (`quest_ref` without `quest_flag`, or the reverse) and orphan `quest_from` on ungated service definitions fail store validation
+- when the live selected character's current flag value matches `quest_from`, the ordinary `warp` / `shop_preview` outcome continues unchanged
+- when the current value mismatches, the client receives the same self-only `CHAT_TYPE_INFO` text already owned by `quest_flag` mismatch (`Quest requirements are not met.`) and no transfer / merchant window opens
+- loopback interaction-visibility previews for gated services reuse that same mismatch text without mutating quest state
+- content-bundle warp destination/route summaries and shop-route summaries now surface the authored gate fields so operators can audit teleporter/merchant prerequisites without opening the live interaction path
+
+The checked-in QA example `docs/examples/bootstrap-npc-service-bundle.json` now gates `npc:qa_teleporter` on `quest:first_steps.met_guide = 1`, so the owned guide → teleporter loop is: talk to `QuestGuide` once, then use the teleporter.
+
 ## Runtime configuration and local ops
 
 `gamed` now owns the quest-state store path as a normal bootstrap persistence selection:

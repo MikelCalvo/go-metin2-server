@@ -148,7 +148,10 @@
       "text": "Step through the gate.",
       "map_index": 1,
       "x": 470200,
-      "y": 964200
+      "y": 964200,
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "met_guide",
+      "quest_from": 1
     }
   ]
 }

@@ -716,15 +716,21 @@ type ShopRouteSummary struct {
 	Ref            string `json:"ref"`
 	Title          string `json:"title"`
 	EntryCount     int    `json:"entry_count"`
+	QuestRef       string `json:"quest_ref,omitempty"`
+	QuestFlag      string `json:"quest_flag,omitempty"`
+	QuestFrom      uint32 `json:"quest_from,omitempty"`
 }
 
 type WarpDestinationSummary struct {
-	Kind     string `json:"kind"`
-	Ref      string `json:"ref"`
-	Text     string `json:"text,omitempty"`
-	MapIndex uint32 `json:"map_index"`
-	X        int32  `json:"x"`
-	Y        int32  `json:"y"`
+	Kind      string `json:"kind"`
+	Ref       string `json:"ref"`
+	Text      string `json:"text,omitempty"`
+	MapIndex  uint32 `json:"map_index"`
+	X         int32  `json:"x"`
+	Y         int32  `json:"y"`
+	QuestRef  string `json:"quest_ref,omitempty"`
+	QuestFlag string `json:"quest_flag,omitempty"`
+	QuestFrom uint32 `json:"quest_from,omitempty"`
 }
 
 type WarpRouteSummary struct {
@@ -737,6 +743,9 @@ type WarpRouteSummary struct {
 	TargetMapIndex uint32 `json:"target_map_index"`
 	TargetX        int32  `json:"target_x"`
 	TargetY        int32  `json:"target_y"`
+	QuestRef       string `json:"quest_ref,omitempty"`
+	QuestFlag      string `json:"quest_flag,omitempty"`
+	QuestFrom      uint32 `json:"quest_from,omitempty"`
 }
 
 type MapContentSummary struct {
@@ -1974,6 +1983,8 @@ func normalizeWarpDestinationSummary(destination WarpDestinationSummary) WarpDes
 	destination.Kind = strings.TrimSpace(destination.Kind)
 	destination.Ref = strings.TrimSpace(destination.Ref)
 	destination.Text = strings.TrimSpace(destination.Text)
+	destination.QuestRef = strings.TrimSpace(destination.QuestRef)
+	destination.QuestFlag = strings.TrimSpace(destination.QuestFlag)
 	return destination
 }
 
@@ -2287,6 +2298,8 @@ func normalizeShopRouteSummary(route ShopRouteSummary) ShopRouteSummary {
 	route.ActorName = strings.TrimSpace(route.ActorName)
 	route.Ref = strings.TrimSpace(route.Ref)
 	route.Title = strings.TrimSpace(route.Title)
+	route.QuestRef = strings.TrimSpace(route.QuestRef)
+	route.QuestFlag = strings.TrimSpace(route.QuestFlag)
 	return route
 }
 
@@ -2294,6 +2307,8 @@ func normalizeWarpRouteSummary(route WarpRouteSummary) WarpRouteSummary {
 	route.ActorName = strings.TrimSpace(route.ActorName)
 	route.Ref = strings.TrimSpace(route.Ref)
 	route.Text = strings.TrimSpace(route.Text)
+	route.QuestRef = strings.TrimSpace(route.QuestRef)
+	route.QuestFlag = strings.TrimSpace(route.QuestFlag)
 	return route
 }
 
@@ -3157,12 +3172,15 @@ func shopCatalogSummary(definition interactionstore.Definition, itemTemplatesByV
 func warpDestinationSummary(definition interactionstore.Definition) WarpDestinationSummary {
 	definition = interactionstore.NormalizeDefinition(definition)
 	return WarpDestinationSummary{
-		Kind:     definition.Kind,
-		Ref:      definition.Ref,
-		Text:     definition.Text,
-		MapIndex: definition.MapIndex,
-		X:        definition.X,
-		Y:        definition.Y,
+		Kind:      definition.Kind,
+		Ref:       definition.Ref,
+		Text:      definition.Text,
+		MapIndex:  definition.MapIndex,
+		X:         definition.X,
+		Y:         definition.Y,
+		QuestRef:  definition.QuestRef,
+		QuestFlag: definition.QuestFlag,
+		QuestFrom: definition.QuestFrom,
 	}
 }
 
@@ -3194,6 +3212,9 @@ func shopRouteSummary(actor StaticActor, definition interactionstore.Definition)
 		Ref:            definition.Ref,
 		Title:          definition.Title,
 		EntryCount:     len(definition.Catalog),
+		QuestRef:       definition.QuestRef,
+		QuestFlag:      definition.QuestFlag,
+		QuestFrom:      definition.QuestFrom,
 	}
 }
 
@@ -3210,6 +3231,9 @@ func warpRouteSummary(actor StaticActor, definition interactionstore.Definition)
 		TargetMapIndex: definition.MapIndex,
 		TargetX:        definition.X,
 		TargetY:        definition.Y,
+		QuestRef:       definition.QuestRef,
+		QuestFlag:      definition.QuestFlag,
+		QuestFrom:      definition.QuestFrom,
 	}
 }
 

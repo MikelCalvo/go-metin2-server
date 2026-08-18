@@ -134,6 +134,54 @@ func TestGameRuntimeInteractionVisibilityReturnsServicePreviewsForVisibleWarpAnd
 	}
 }
 
+func TestGameRuntimeInteractionVisibilityReturnsQuestGatedWarpMismatchPreviewWithoutMutatingQuestState(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	before := queststate.Snapshot{Flags: []queststate.Flag{{Character: "PeerOne", QuestRef: "quest:first_steps", Name: "met_guide", Value: 1}}}
+	if err := queststate.NewFileStore(questStatePath).Save(before); err != nil {
+		t.Fatalf("seed quest state: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+		Kind:      interactionstore.KindWarp,
+		Ref:       "npc:gated_teleporter",
+		Text:      "Step through the gate.",
+		MapIndex:  42,
+		X:         1700,
+		Y:         2800,
+		QuestRef:  "quest:first_steps",
+		QuestFlag: "met_guide",
+		QuestFrom: 0,
+	}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	if _, ok := runtime.RegisterStaticActorWithInteraction("Teleporter", bootstrapMapIndex, 1250, 2250, 20301, interactionstore.KindWarp, "npc:gated_teleporter"); !ok {
+		t.Fatal("expected gated warp static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	defer closeSessionFlow(t, flow)
+
+	snapshots := runtime.InteractionVisibility()
+	if len(snapshots) != 1 || len(snapshots[0].VisibleInteractableStaticActors) != 1 {
+		t.Fatalf("expected one visible gated warp interactable, got %+v", snapshots)
+	}
+	entry := snapshots[0].VisibleInteractableStaticActors[0]
+	if entry.Name != "Teleporter" || entry.Preview != "Quest requirements are not met." || entry.ResolutionFailure != "" {
+		t.Fatalf("unexpected gated warp mismatch interaction visibility entry: %+v", entry)
+	}
+	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	if err != nil {
+		t.Fatalf("load quest state after gated warp visibility preview: %v", err)
+	}
+	if !reflect.DeepEqual(loaded, before) {
+		t.Fatalf("gated warp interaction visibility preview mutated quest-state:\n got: %#v\nwant: %#v", loaded, before)
+	}
+}
+
 func TestGameRuntimeInteractionVisibilityReturnsQuestFlagPreview(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

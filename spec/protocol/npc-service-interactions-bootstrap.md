@@ -60,6 +60,7 @@ Frozen target behavior:
 - the player sends the existing `INTERACT (0x0501)` request
 - the runtime resolves a deterministic authored `warp` definition behind that actor
 - that authored store-level definition is now expected to carry `map_index`, `x`, `y`, and optional informational text
+- the same definition may optionally carry a selected-character quest gate (`quest_ref` + `quest_flag` + optional `quest_from`) that must match before transfer; gated warps never mutate quest state (`quest_to` stays `0`)
 - the runtime may deliver one small self-facing informational message if the authored definition carries text
 - the runtime then reuses the existing gameplay transfer / self-session rebootstrap contract
 - no dialog state, option selection, or persistent conversation session is created
@@ -67,13 +68,14 @@ Frozen target behavior:
 Current owned warp failure semantics:
 - if the resolved warp definition is malformed inside live runtime state, the player receives one self-only `CHAT_TYPE_INFO` message: `Warp destination is invalid.`
 - if the runtime cannot apply the transfer after resolution, the player receives one self-only `CHAT_TYPE_INFO` message: `Warp unavailable right now.`
+- if an optional quest gate is present and the selected character's current flag value does not match `quest_from`, the player receives one self-only `CHAT_TYPE_INFO` message: `Quest requirements are not met.` and no transfer occurs
 
 Current owned warp operator-summary semantics:
 - `GET /local/content-bundle/summary` and dry-run `POST /local/content-bundle/summary` now report deterministic `warp_destinations` entries for every authored `warp` definition
-- each destination summary entry carries `kind`, `ref`, optional `text`, `map_index`, `x`, and `y`
+- each destination summary entry carries `kind`, `ref`, optional `text`, `map_index`, `x`, `y`, and any authored quest-gate fields
 - `GET /local/content-bundle/warp-destinations/{kind}/{ref}` now returns one exact `warp` destination row for loopback local QA without fetching the full bundle summary or triggering a transfer
 - the same summary now reports deterministic `warp_routes` entries for every interactable static actor that resolves to a `warp` definition
-- each route summary entry carries `actor_name`, source `map_index`/`x`/`y`, `ref`, optional `text`, and target `map_index`/`x`/`y`
+- each route summary entry carries `actor_name`, source `map_index`/`x`/`y`, `ref`, optional `text`, target `map_index`/`x`/`y`, and any authored quest-gate fields
 - `GET /local/content-bundle/warp-routes/{actor_name}` now returns every exact route row for one authored teleporter actor name, so duplicated placements remain inspectable without fetching the full bundle summary or triggering a transfer
 - `GET /local/content-bundle/maps/{map_index}/warp-routes` now returns every route row whose source actor is on one authored map, so local QA can audit all teleporters on a map without filtering the full summary or knowing actor names first
 - `GET /local/content-bundle/maps/{map_index}/static-actors` and `/interactable-static-actors` now return map-local authored static-actor rows and clickable/service-preview rows, so operators can audit one map's NPC content before narrowing to route-specific projections
