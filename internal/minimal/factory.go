@@ -72,6 +72,8 @@ const bootstrapNormalAttackCadenceWindow = 250 * time.Millisecond
 const bootstrapPracticeMobServerOriginRetaliationDelay = time.Second
 const bootstrapSpawnGroupReturnStepDelay = time.Second
 const bootstrapSpawnGroupReturnStepMaxStep int32 = 100
+const bootstrapSpawnGroupChaseStepDelay = 5 * time.Second
+const bootstrapSpawnGroupChaseStepMaxStep int32 = 100
 
 const bootstrapCharacterPositionGeneral uint8 = 0
 const bootstrapCharacterPositionSittingChair uint8 = 3
@@ -391,6 +393,8 @@ type gameRuntime struct {
 	staticActorMu           sync.Mutex
 	spawnReturnMu           sync.Mutex
 	spawnReturnStepDueAt    map[uint64]time.Time
+	spawnChaseMu            sync.Mutex
+	spawnChaseStepDueAt     map[uint64]time.Time
 	now                     func() time.Time
 }
 
@@ -1219,6 +1223,7 @@ func (r *gameRuntime) flushReadyStaticActorRespawns() {
 			continue
 		}
 		r.syncSpawnGroupReturnStepScheduleForEntity(respawn.EntityID)
+		r.clearSpawnGroupChaseStep(respawn.EntityID)
 	}
 }
 
@@ -1463,6 +1468,237 @@ func (r *gameRuntime) spawnGroupReturnStepStillRequired(entityID uint64) bool {
 	}
 	snapshot, ok := r.SpawnGroup(entityID)
 	return ok && !snapshot.Dead && snapshot.SpawnLeash != nil && snapshot.SpawnLeash.ReturnRequired
+}
+
+func (r *gameRuntime) scheduleSpawnGroupChaseStep(entityID uint64) {
+	if r == nil || entityID == 0 || bootstrapSpawnGroupChaseStepDelay <= 0 {
+		return
+	}
+	now := time.Now()
+	if r.now != nil {
+		now = r.now()
+	}
+	r.spawnChaseMu.Lock()
+	defer r.spawnChaseMu.Unlock()
+	if r.spawnChaseStepDueAt == nil {
+		r.spawnChaseStepDueAt = make(map[uint64]time.Time)
+	}
+	r.spawnChaseStepDueAt[entityID] = now.Add(bootstrapSpawnGroupChaseStepDelay)
+}
+
+func (r *gameRuntime) clearSpawnGroupChaseStep(entityID uint64) {
+	if r == nil || entityID == 0 {
+		return
+	}
+	r.spawnChaseMu.Lock()
+	defer r.spawnChaseMu.Unlock()
+	delete(r.spawnChaseStepDueAt, entityID)
+}
+
+func (r *gameRuntime) syncSpawnGroupChaseStepScheduleForEntity(entityID uint64) {
+	if r == nil || entityID == 0 || r.sharedWorld == nil {
+		return
+	}
+	actor, ok := r.SpawnGroup(entityID)
+	if !ok || actor.Dead || actor.SpawnGroupRef == "" || actor.SpawnLeash == nil || actor.SpawnLeash.ReturnRequired {
+		r.clearSpawnGroupChaseStep(entityID)
+		return
+	}
+	r.sharedWorld.mu.Lock()
+	engagedBy, engaged := r.sharedWorld.staticActorCombatEngagedBy[entityID]
+	r.sharedWorld.mu.Unlock()
+	if !engaged || engagedBy == 0 {
+		r.clearSpawnGroupChaseStep(entityID)
+		return
+	}
+	owner, ok := r.sharedWorld.playerCharacter(engagedBy)
+	if !ok || characterAtBootstrapHPFloor(owner) {
+		r.clearSpawnGroupChaseStep(entityID)
+		return
+	}
+	ownerPos := worldruntime.NewPosition(owner.MapIndex, owner.X, owner.Y)
+	if _, ok := r.sharedWorld.PlanSpawnGroupChaseStep(entityID, ownerPos, bootstrapSpawnGroupChaseStepMaxStep); !ok {
+		r.clearSpawnGroupChaseStep(entityID)
+		return
+	}
+	r.scheduleSpawnGroupChaseStep(entityID)
+}
+
+func (r *gameRuntime) dueSpawnGroupChaseStepIDs() []uint64 {
+	if r == nil {
+		return nil
+	}
+	now := time.Now()
+	if r.now != nil {
+		now = r.now()
+	}
+	r.spawnChaseMu.Lock()
+	defer r.spawnChaseMu.Unlock()
+	if len(r.spawnChaseStepDueAt) == 0 {
+		return nil
+	}
+	dueIDs := make([]uint64, 0, len(r.spawnChaseStepDueAt))
+	for entityID, dueAt := range r.spawnChaseStepDueAt {
+		if dueAt.IsZero() || now.Before(dueAt) {
+			continue
+		}
+		dueIDs = append(dueIDs, entityID)
+	}
+	sort.Slice(dueIDs, func(i, j int) bool { return dueIDs[i] < dueIDs[j] })
+	return dueIDs
+}
+
+func (r *gameRuntime) spawnGroupChaseStepDueAtSnapshot() map[uint64]time.Time {
+	if r == nil {
+		return nil
+	}
+	r.spawnChaseMu.Lock()
+	defer r.spawnChaseMu.Unlock()
+	if len(r.spawnChaseStepDueAt) == 0 {
+		return nil
+	}
+	snapshot := make(map[uint64]time.Time, len(r.spawnChaseStepDueAt))
+	for entityID, dueAt := range r.spawnChaseStepDueAt {
+		snapshot[entityID] = dueAt
+	}
+	return snapshot
+}
+
+func (r *gameRuntime) restoreSpawnGroupChaseStepDueAtSnapshot(snapshot map[uint64]time.Time) {
+	if r == nil {
+		return
+	}
+	restored := make(map[uint64]time.Time, len(snapshot))
+	for entityID, dueAt := range snapshot {
+		if entityID == 0 || dueAt.IsZero() || !r.spawnGroupChaseStepStillEligible(entityID) {
+			continue
+		}
+		restored[entityID] = dueAt
+	}
+	r.spawnChaseMu.Lock()
+	defer r.spawnChaseMu.Unlock()
+	if r.spawnChaseStepDueAt == nil {
+		r.spawnChaseStepDueAt = make(map[uint64]time.Time, len(restored))
+	}
+	for entityID := range r.spawnChaseStepDueAt {
+		delete(r.spawnChaseStepDueAt, entityID)
+	}
+	for entityID, dueAt := range restored {
+		r.spawnChaseStepDueAt[entityID] = dueAt
+	}
+}
+
+func (r *gameRuntime) pruneSpawnGroupChaseStepSchedules() {
+	r.restoreSpawnGroupChaseStepDueAtSnapshot(r.spawnGroupChaseStepDueAtSnapshot())
+}
+
+func (r *gameRuntime) spawnGroupChaseStepStillEligible(entityID uint64) bool {
+	if r == nil || entityID == 0 || r.sharedWorld == nil {
+		return false
+	}
+	snapshot, ok := r.SpawnGroup(entityID)
+	if !ok || snapshot.Dead || snapshot.SpawnGroupRef == "" || snapshot.SpawnLeash == nil || snapshot.SpawnLeash.ReturnRequired {
+		return false
+	}
+	r.sharedWorld.mu.Lock()
+	engagedBy, engaged := r.sharedWorld.staticActorCombatEngagedBy[entityID]
+	r.sharedWorld.mu.Unlock()
+	if !engaged || engagedBy == 0 {
+		return false
+	}
+	owner, ok := r.sharedWorld.playerCharacter(engagedBy)
+	if !ok || characterAtBootstrapHPFloor(owner) {
+		return false
+	}
+	ownerPos := worldruntime.NewPosition(owner.MapIndex, owner.X, owner.Y)
+	_, ok = r.sharedWorld.PlanSpawnGroupChaseStep(entityID, ownerPos, bootstrapSpawnGroupChaseStepMaxStep)
+	return ok
+}
+
+func (r *gameRuntime) flushDueSpawnGroupChaseSteps() {
+	if r == nil {
+		return
+	}
+	for _, entityID := range r.dueSpawnGroupChaseStepIDs() {
+		step, ok := r.stepSpawnGroupChase(entityID, bootstrapSpawnGroupChaseStepMaxStep, true)
+		if !ok {
+			r.clearSpawnGroupChaseStep(entityID)
+			continue
+		}
+		if step.Step.Complete || !r.spawnGroupChaseStepStillEligible(entityID) {
+			r.clearSpawnGroupChaseStep(entityID)
+			continue
+		}
+	}
+}
+
+func (r *gameRuntime) stepSpawnGroupChase(entityID uint64, maxStep int32, reschedule bool) (SpawnGroupReturnStepSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil || entityID == 0 || maxStep <= 0 {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+
+	r.staticActorMu.Lock()
+	defer r.staticActorMu.Unlock()
+
+	current := r.sharedWorld.StaticActors()
+	idx := staticActorSnapshotIndex(current, entityID)
+	if idx == -1 || current[idx].SpawnGroupRef == "" || current[idx].Dead {
+		r.clearSpawnGroupChaseStep(entityID)
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	if current[idx].SpawnLeash != nil && current[idx].SpawnLeash.ReturnRequired {
+		r.clearSpawnGroupChaseStep(entityID)
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+
+	r.sharedWorld.mu.Lock()
+	engagedBy, engaged := r.sharedWorld.staticActorCombatEngagedBy[entityID]
+	r.sharedWorld.mu.Unlock()
+	if !engaged || engagedBy == 0 {
+		r.clearSpawnGroupChaseStep(entityID)
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	owner, ok := r.sharedWorld.playerCharacter(engagedBy)
+	if !ok || characterAtBootstrapHPFloor(owner) {
+		r.clearSpawnGroupChaseStep(entityID)
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	ownerPos := worldruntime.NewPosition(owner.MapIndex, owner.X, owner.Y)
+	plan, ok := r.sharedWorld.PlanSpawnGroupChaseStep(entityID, ownerPos, maxStep)
+	if !ok {
+		r.clearSpawnGroupChaseStep(entityID)
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	if plan.Complete && plan.Next.Equal(worldruntime.NewPosition(current[idx].MapIndex, current[idx].X, current[idx].Y)) {
+		r.clearSpawnGroupChaseStep(entityID)
+		return SpawnGroupReturnStepSnapshot{
+			Actor: current[idx],
+			Step: SpawnLeashReturnStepSnapshot{
+				SpawnLeashSnapshot: worldruntime.SpawnLeashSnapshotFromEvaluation(plan.Evaluation),
+				Next:               worldruntime.PositionSnapshotFromPosition(plan.Next),
+				Complete:           true,
+			},
+		}, true
+	}
+
+	target := cloneStaticActorSnapshots(current)
+	target[idx].MapIndex = plan.Next.MapIndex
+	target[idx].X = plan.Next.X
+	target[idx].Y = plan.Next.Y
+	if !r.persistStaticActorSnapshot(target) {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	stepped, ok := r.sharedWorld.StepSpawnGroupChase(entityID, ownerPos, maxStep)
+	if !ok {
+		_ = r.persistStaticActorSnapshot(current)
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	if stepped.Step.Complete || stepped.Actor.SpawnLeash == nil || stepped.Actor.SpawnLeash.ReturnRequired || !r.spawnGroupChaseStepStillEligible(entityID) {
+		r.clearSpawnGroupChaseStep(entityID)
+	} else if reschedule {
+		r.scheduleSpawnGroupChaseStep(entityID)
+	}
+	return stepped, true
 }
 
 func (r *gameRuntime) RelocateCharacter(name string, mapIndex uint32, x int32, y int32) bool {
@@ -2217,6 +2453,7 @@ func (r *gameRuntime) ReturnSpawnGroupHome(entityID uint64) (SpawnGroupLeashSnap
 		return SpawnGroupLeashSnapshot{}, false
 	}
 	r.syncSpawnGroupReturnStepSchedule(returned.Actor)
+	r.clearSpawnGroupChaseStep(entityID)
 	return returned, true
 }
 
@@ -2267,6 +2504,7 @@ func (r *gameRuntime) stepSpawnGroupReturnHome(entityID uint64, maxStep int32, r
 		_ = r.persistStaticActorSnapshot(current)
 		return SpawnGroupReturnStepSnapshot{}, false
 	}
+	r.clearSpawnGroupChaseStep(entityID)
 	if stepped.Step.Complete || stepped.Actor.SpawnLeash == nil || !stepped.Actor.SpawnLeash.ReturnRequired {
 		r.clearSpawnGroupReturnStep(entityID)
 	} else if reschedule {
@@ -2305,6 +2543,7 @@ func (r *gameRuntime) RemoveStaticActor(entityID uint64) (StaticActorSnapshot, b
 		return StaticActorSnapshot{}, false
 	}
 	r.clearSpawnGroupReturnStep(entityID)
+	r.clearSpawnGroupChaseStep(entityID)
 	return removed, true
 }
 
@@ -2503,6 +2742,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		questStateStore:      queststate.NewFileStore(serviceQuestStateStorePath(cfg)),
 		liveCharactersByName: make(map[string]liveCharacterRegistration),
 		spawnReturnStepDueAt: make(map[uint64]time.Time),
+		spawnChaseStepDueAt:  make(map[uint64]time.Time),
 		now:                  time.Now,
 	}
 	sharedWorld.now = func() time.Time {
@@ -2616,6 +2856,19 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			return prependMerchantCloseFrame(frames)
 		}
 		clearActiveCombatTarget := func() {
+			if sharedWorld != nil && sharedWorldID != 0 {
+				sharedWorld.mu.Lock()
+				engagedEntityIDs := make([]uint64, 0)
+				for entityID, engagedBy := range sharedWorld.staticActorCombatEngagedBy {
+					if engagedBy == sharedWorldID {
+						engagedEntityIDs = append(engagedEntityIDs, entityID)
+					}
+				}
+				sharedWorld.mu.Unlock()
+				for _, entityID := range engagedEntityIDs {
+					runtime.clearSpawnGroupChaseStep(entityID)
+				}
+			}
 			activeCombatTargetVID = 0
 			activeCombatTargetSnapshotVersion = 0
 			nextAllowedNormalAttackAt = time.Time{}
@@ -2846,6 +3099,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if rebootstrap {
 						runtime.flushReadyStaticActorRespawns()
 						runtime.flushDueSpawnGroupReturnSteps()
+						runtime.flushDueSpawnGroupChaseSteps()
 						bootstrapFrames, err := worldentry.BuildBootstrapFramesWithTemplates(updatedLive, runtime.itemTemplates)
 						if err != nil {
 							return warp.Result{}, false
@@ -3061,6 +3315,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if clearTarget {
 				clearActiveCombatTarget()
 				sharedWorld.ClearStaticActorCombatEngagement(resolution.Actor.EntityID, sharedWorldID)
+				runtime.clearSpawnGroupChaseStep(resolution.Actor.EntityID)
 				deadRaw := worldproto.EncodeDead(worldproto.DeadPacket{VID: previousSelected.VID})
 				frames = append(frames, deadRaw)
 				frames = append(frames, combatproto.EncodeServerClearTarget())
@@ -3829,6 +4084,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				EnterGame: func(_ *player.Runtime) worldentry.EnterGameResult {
 					runtime.flushReadyStaticActorRespawns()
 					runtime.flushDueSpawnGroupReturnSteps()
+					runtime.flushDueSpawnGroupChaseSteps()
 
 					stateMu.Lock()
 					defer stateMu.Unlock()
@@ -4203,6 +4459,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							}
 							runtime.flushReadyStaticActorRespawns()
 							runtime.flushDueSpawnGroupReturnSteps()
+							runtime.flushDueSpawnGroupChaseSteps()
 							bootstrapFrames, err := worldentry.BuildBootstrapFramesWithTemplates(restartedSelected, runtime.itemTemplates)
 							if err != nil {
 								return gameflow.ChatResult{Accepted: false}
@@ -4247,6 +4504,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							}
 							runtime.flushReadyStaticActorRespawns()
 							runtime.flushDueSpawnGroupReturnSteps()
+							runtime.flushDueSpawnGroupChaseSteps()
 							bootstrapFrames, err := worldentry.BuildBootstrapFramesWithTemplates(restartedSelected, runtime.itemTemplates)
 							if err != nil {
 								rollbackPersistedTownRestart()
@@ -5118,6 +5376,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						}
 					}
 					attackFrames := append([][]byte(nil), frames...)
+					if resolution.ClearActiveTarget {
+						if resolution.Actor.EntityID != 0 {
+							runtime.clearSpawnGroupChaseStep(resolution.Actor.EntityID)
+						}
+					} else if resolution.Actor.EntityID != 0 {
+						runtime.syncSpawnGroupChaseStepScheduleForEntity(resolution.Actor.EntityID)
+					}
 					retaliation, ok, clearTarget := contentPracticeMobRetaliationPointChange(runtime, selectedPlayer, resolution.Actor, resolution.ClearActiveTarget)
 					if !ok {
 						return gameflow.AttackResult{Accepted: true, Frames: frames}
@@ -5127,6 +5392,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if clearTarget {
 						clearActiveCombatTarget()
 						sharedWorld.ClearStaticActorCombatEngagement(resolution.Actor.EntityID, sharedWorldID)
+						runtime.clearSpawnGroupChaseStep(resolution.Actor.EntityID)
 						deadRaw := worldproto.EncodeDead(worldproto.DeadPacket{VID: previousSelected.VID})
 						frames = append(frames, deadRaw)
 						frames = append(frames, combatproto.EncodeServerClearTarget())
@@ -5205,6 +5471,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		return newQueuedSessionFlow(inner, pending, func() {
 			runtime.flushReadyStaticActorRespawns()
 			runtime.flushDueSpawnGroupReturnSteps()
+			runtime.flushDueSpawnGroupChaseSteps()
 			if runtime.sharedWorld != nil {
 				runtime.sharedWorld.FlushDueGroundItemOwnershipReleases()
 			}
@@ -7605,10 +7872,12 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 	}
 	if reflect.DeepEqual(previousBundle, normalized) {
 		r.pruneSpawnGroupReturnStepSchedules()
+		r.pruneSpawnGroupChaseStepSchedules()
 		return normalized, nil
 	}
 	previousActors := r.StaticActors()
 	previousSpawnReturnStepDueAt := r.spawnGroupReturnStepDueAtSnapshot()
+	previousSpawnChaseStepDueAt := r.spawnGroupChaseStepDueAtSnapshot()
 	var previousCombatState staticActorCombatStateSnapshot
 	if r.sharedWorld != nil {
 		r.sharedWorld.mu.Lock()
@@ -7658,6 +7927,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 			rollbackErr = errors.Join(rollbackErr, ErrContentBundleUnavailable)
 		}
 		r.restoreSpawnGroupReturnStepDueAtSnapshot(previousSpawnReturnStepDueAt)
+		r.restoreSpawnGroupChaseStepDueAtSnapshot(previousSpawnChaseStepDueAt)
 		if r.sharedWorld != nil {
 			r.sharedWorld.discardStaticActorImportFanout()
 		}
@@ -7668,6 +7938,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		return contentbundle.Bundle{}, replaceErr
 	}
 	r.pruneSpawnGroupReturnStepSchedules()
+	r.pruneSpawnGroupChaseStepSchedules()
 	if r.sharedWorld != nil {
 		r.sharedWorld.flushStaticActorImportFanout()
 	}

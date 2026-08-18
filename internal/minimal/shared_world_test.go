@@ -1756,6 +1756,179 @@ func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupReturnStep(t *testing.T
 	}
 }
 
+func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupChaseStep(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ChaseStepAutoOwner", 0x01030180, 0x02040180, 1900, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "chase-step-auto-owner", 0x30303030, owner)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700001000, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for autonomous spawn-group chase-step: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.chase_step_auto",
+		Name:          "ChaseStepAutoMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import autonomous chase-step spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.chase_step_auto")
+	if !ok {
+		t.Fatal("expected autonomous chase-step spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "chase-step-auto-owner", 0x30303030)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected owner target error before chase-step arm: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected owner to select chase-step practice mob, got %d frames", len(selectOut))
+	}
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted hit before chase-step arm: %v", err)
+	}
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target refresh, immediate retaliation, and damage-info on first chase-arming hit, got %d frames", len(attackOut))
+	}
+
+	runtime.spawnChaseMu.Lock()
+	dueAt, scheduled := runtime.spawnChaseStepDueAt[group.EntityID]
+	runtime.spawnChaseMu.Unlock()
+	if !scheduled {
+		t.Fatalf("expected accepted engagement hit to arm one pending chase-step deadline for entity %d", group.EntityID)
+	}
+	expectedDueAt := currentTime.Add(bootstrapSpawnGroupChaseStepDelay)
+	if !dueAt.Equal(expectedDueAt) {
+		t.Fatalf("expected chase-step deadline at %s, got %s", expectedDueAt, dueAt)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no automatic chase-step before the server-owned delay, got %d frames", len(queued))
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if queued := flushServerFrames(t, flow); len(queued) != 1 {
+		t.Fatalf("expected the owned delayed retaliation beat to fire before the later chase step, got %d frames", len(queued))
+	}
+
+	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay - bootstrapPracticeMobServerOriginRetaliationDelay)
+	queued := flushServerFrames(t, flow)
+	if len(queued) < 4 {
+		t.Fatalf("expected due automatic chase-step to queue retained owner refresh, got %d frames", len(queued))
+	}
+	if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0])); err != nil || deleted.VID != targetVID {
+		t.Fatalf("decode automatic chase-step retained delete: packet=%+v err=%v", deleted, err)
+	}
+	add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	if err != nil {
+		t.Fatalf("decode automatic chase-step add: %v", err)
+	}
+	if add.VID != targetVID || add.X != 1800 || add.Y != 2800 {
+		t.Fatalf("expected automatic chase-step add at planned +100 toward owner, got %+v", add)
+	}
+	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, queued[2])); err != nil {
+		t.Fatalf("decode automatic chase-step additional info: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, queued[3])); err != nil {
+		t.Fatalf("decode automatic chase-step update: %v", err)
+	}
+	for _, raw := range queued[4:] {
+		if target, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, raw)); err == nil && target.TargetVID == 0 {
+			t.Fatalf("expected chase-step to preserve selected combat target, got clear frame %+v among %d queued frames", target, len(queued))
+		}
+	}
+
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after automatic chase-step: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != 1800 || persisted.StaticActors[0].Y != 2800 || persisted.StaticActors[0].SpawnHome == nil || persisted.StaticActors[0].SpawnHome.X != 1700 {
+		t.Fatalf("expected automatic chase-step to persist planned position and preserve home, got %+v", persisted.StaticActors)
+	}
+	stepped, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || stepped.X != 1800 || stepped.Y != 2800 || stepped.Dead || stepped.SpawnLeash == nil || stepped.SpawnLeash.ReturnRequired {
+		t.Fatalf("expected runtime actor to move one automatic chase step while remaining in leash, ok=%v snapshot=%+v", ok, stepped)
+	}
+	ownerEntity, ok := runtime.sharedWorld.playerEntityByName("ChaseStepAutoOwner")
+	if !ok {
+		t.Fatal("expected chase owner entity to remain registered")
+	}
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected chase-step to preserve engagement ownership for entity %d", group.EntityID)
+	}
+	if snapshot, ok := runtime.CombatTargetSnapshot("ChaseStepAutoOwner"); !ok || snapshot.TargetVID != targetVID {
+		t.Fatalf("expected chase-step to preserve selected combat target, ok=%v snapshot=%+v", ok, snapshot)
+	}
+
+	runtime.spawnChaseMu.Lock()
+	_, stillScheduled := runtime.spawnChaseStepDueAt[group.EntityID]
+	runtime.spawnChaseMu.Unlock()
+	if !stillScheduled {
+		t.Fatalf("expected still-engaged in-leash chase actor to re-arm the next chase-step deadline")
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if queued := flushServerFrames(t, flow); len(queued) != 1 {
+		t.Fatalf("expected re-armed delayed retaliation to fire before the second chase step, got %d frames", len(queued))
+	}
+
+	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay - bootstrapPracticeMobServerOriginRetaliationDelay)
+	secondQueued := flushServerFrames(t, flow)
+	if len(secondQueued) < 4 {
+		t.Fatalf("expected still-engaged chase actor to apply one follow-up chase step, got %d frames", len(secondQueued))
+	}
+	secondAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, secondQueued[1]))
+	if err != nil {
+		t.Fatalf("decode second automatic chase-step add: %v", err)
+	}
+	if secondAdd.VID != targetVID || secondAdd.X != 1900 || secondAdd.Y != 2800 {
+		t.Fatalf("expected second automatic chase-step add at owner position, got %+v", secondAdd)
+	}
+	persisted, err = staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after second automatic chase-step: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != 1900 || persisted.StaticActors[0].Y != 2800 {
+		t.Fatalf("expected second automatic chase-step to persist owner position, got %+v", persisted.StaticActors)
+	}
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected second chase-step to keep engagement ownership for entity %d", group.EntityID)
+	}
+	if snapshot, ok := runtime.CombatTargetSnapshot("ChaseStepAutoOwner"); !ok || snapshot.TargetVID != targetVID {
+		t.Fatalf("expected second chase-step to keep selected combat target, ok=%v snapshot=%+v", ok, snapshot)
+	}
+}
+
 func TestGameSessionFlowDueSpawnGroupReturnStepFlushesBeforeFreshEnterBootstrap(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	newcomer := peerVisibilityCharacter("ReturnStepFreshEnter", 0x0103016d, 0x0204016d, 2201, 2800, 0, 101, 201)
