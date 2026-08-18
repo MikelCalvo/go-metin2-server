@@ -3114,6 +3114,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				sharedWorld.ClearSessionCombatTarget(sharedWorldID)
 				sharedWorld.ClearStaticActorCombatEngagementsBySubject(sharedWorldID)
 			}
+			// Transfer/relocate may already have released engagement ownership before
+			// this helper runs; prune drops any chase deadlines that lost eligibility.
+			runtime.pruneSpawnGroupChaseStepSchedules()
 		}
 		clearPendingPracticeMobServerOriginRetaliation := func() {
 			pendingPracticeMobServerOriginRetaliation = false
