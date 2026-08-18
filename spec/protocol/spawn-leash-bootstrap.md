@@ -124,3 +124,28 @@ This slice does **not** yet implement:
 - persistence of live mob position distinct from authored spawn position
 
 Until a later slice wires this classifier/return-step planner into chase or path-aware live mob movement behavior, the existing content-loaded practice mobs remain stationary except for the current capped return-step recovery path and use the already-owned target -> attack -> death -> respawn lifecycle only while they classify `at_home` or `within_radius`. A materialized spawn-backed actor that already classifies `return_required` is kept visible/debuggable but is not accepted as a combat target again until an owned respawn, operator return-home, operator return-step, update, or server-owned return-step executor places it back inside leash; runtime attempt callers can now distinguish this specific gate as `target_return_required`. The exact and map-local `GET` leash endpoints are only read-only inspection bridges over that classifier, while the `POST` return-step and return-home endpoints are controlled local triggers for QA and lifecycle recovery, not final mob AI. The exact return-home trigger can also be used on a live `within_radius` mob to restore exact authored placement and reset selected-target/engagement ownership without changing HP or reward metadata; the one-step trigger leaves already-`within_radius` mobs untouched and selected, and the server-owned return-step executor stops re-arming as soon as a step brings the actor back inside that radius.
+
+## First owned chase-step planning seam
+
+The next tiny chase seam is deliberately planner-only before any live mob movement executor exists.
+
+Question frozen here:
+
+**Given one engaged owner's current position and one live spawn-backed practice mob that still classifies `at_home` or `within_radius`, what is the smallest deterministic one-step chase plan the runtime can compute without inventing pathfinding, chase packets, or a second AI scheduler?**
+
+Contract for `PlanStaticActorSpawnChaseStep(actor, ownerPosition, radius, max_step)`:
+- fail closed for invalid/non-spawn actors, non-positive leash radius, non-positive `max_step`, or invalid owner positions
+- if the actor currently classifies `return_required`, fail closed / do not plan chase; return-home ownership stays with the already-owned return-step seam
+- if the actor and owner are on different maps, fail closed; no cross-map chase/warp choreography is owned yet
+- if the actor is already exactly on the owner position, return that position with `complete = true` and no movement
+- otherwise return one deterministic same-map x/y step toward the owner position, capped by `max_step`, using the same step math family as return-step planning
+- the planned `next` must still classify `at_home` or `within_radius` against the actor's preserved authored home; if the uncapped step toward the owner would leave leash, clamp to the farthest on-segment point that remains inside leash and mark `complete = true` when that clamped point is reached
+- by itself the planner never mutates actor position, never updates the static-actor store, never changes HP/death/engagement state, and never queues visibility or chase packets
+
+Explicit non-goals for this chase-step planner freeze:
+- live automatic chase execution from `FlushServerFrames()`
+- server-driven `MOVE` fanout or chase packet families
+- aggro-radius acquisition / target switching beyond the already-owned post-hit engagement gate
+- pathfinding, navmesh, or multi-actor flocking
+
+The first implementation slice after this freeze should therefore start RED on the pure planner helper in `internal/worldruntime`, then only later decide whether a tiny executor/preflight consumer is honest enough to own.
