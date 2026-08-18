@@ -49,6 +49,7 @@ type sharedWorldRegistry struct {
 	staticActorDeathReward            map[uint64]worldruntime.StaticActorDeathReward
 	sessionCombatTargets              map[uint64]uint32
 	sessionCombatRetaliations         map[uint64]combatRetaliationTimer
+	sessionMerchantWindows            map[uint64]bool
 	exchangePartners                  map[uint64]uint64
 	exchangeItems                     map[uint64]map[uint8]exchangeDisplayedItem
 	exchangeGold                      map[uint64]uint32
@@ -473,6 +474,9 @@ func (r *sharedWorldRegistry) StartExchange(originID uint64, targetVID uint32) (
 	}
 	if _, ok := r.sessionEntryLocked(target.Entity.ID); !ok {
 		return nil, false
+	}
+	if r.hasMerchantWindowOpenLocked(target.Entity.ID) {
+		return [][]byte{encodeExchangePartnerMerchantBusyInfoFrame()}, true
 	}
 	if _, busy := r.exchangePartners[target.Entity.ID]; busy {
 		return [][]byte{encodeExchangeAlreadyFrame()}, true
@@ -1981,6 +1985,48 @@ func (r *sharedWorldRegistry) SetSessionCombatTarget(entityID uint64, targetVID 
 	return true
 }
 
+func (r *sharedWorldRegistry) SetMerchantWindowOpen(entityID uint64, open bool) bool {
+	if r == nil || entityID == 0 {
+		return false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.sessionEntryLocked(entityID); !ok {
+		return false
+	}
+	r.setMerchantWindowOpenLocked(entityID, open)
+	return true
+}
+
+func (r *sharedWorldRegistry) setMerchantWindowOpenLocked(entityID uint64, open bool) {
+	if r == nil || entityID == 0 {
+		return
+	}
+	if !open {
+		if r.sessionMerchantWindows != nil {
+			delete(r.sessionMerchantWindows, entityID)
+		}
+		return
+	}
+	if r.sessionMerchantWindows == nil {
+		r.sessionMerchantWindows = make(map[uint64]bool)
+	}
+	r.sessionMerchantWindows[entityID] = true
+}
+
+func (r *sharedWorldRegistry) hasMerchantWindowOpenLocked(entityID uint64) bool {
+	if r == nil || entityID == 0 || r.sessionMerchantWindows == nil {
+		return false
+	}
+	return r.sessionMerchantWindows[entityID]
+}
+
+func (r *sharedWorldRegistry) clearMerchantWindowOpenLocked(entityID uint64) {
+	r.setMerchantWindowOpenLocked(entityID, false)
+}
+
 func (r *sharedWorldRegistry) SetSessionCombatRetaliation(entityID uint64, targetVID uint32, snapshotVersion uint64, readyAt time.Time) bool {
 	if r == nil || entityID == 0 || targetVID == 0 || snapshotVersion == 0 || readyAt.IsZero() {
 		return false
@@ -2430,6 +2476,7 @@ func (r *sharedWorldRegistry) removeStaleOwnershipLocked(entityIDs []uint64) {
 			_, _ = r.sessionDirectory.Remove(entityID)
 		}
 		r.clearSessionCombatTargetLocked(entityID)
+		r.clearMerchantWindowOpenLocked(entityID)
 		r.clearStaticActorCombatEngagementsBySubjectLocked(entityID)
 		r.clearExchangeLocked(entityID, true)
 		_, _ = r.entities.Remove(entityID)
@@ -2502,6 +2549,7 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 		_, _ = r.sessionDirectory.Remove(id)
 	}
 	r.clearSessionCombatTargetLocked(id)
+	r.clearMerchantWindowOpenLocked(id)
 	r.clearStaticActorCombatEngagementsBySubjectLocked(id)
 	r.clearExchangeLocked(id, true)
 	_, _ = r.entities.Remove(id)
@@ -4837,6 +4885,15 @@ func encodeExchangeStartFrame(peerVID uint32) []byte {
 
 func encodeExchangeAlreadyFrame() []byte {
 	return itemproto.EncodeServerExchange(itemproto.ServerExchangePacket{Subheader: itemproto.ExchangeServerSubheaderAlready})
+}
+
+func encodeExchangePartnerMerchantBusyInfoFrame() []byte {
+	return chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+		Type:    chatproto.ChatTypeInfo,
+		VID:     0,
+		Empire:  0,
+		Message: exchangePartnerMerchantBusyInfoMessage,
+	})
 }
 
 func encodeExchangeEndFrame() []byte {

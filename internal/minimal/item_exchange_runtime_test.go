@@ -192,6 +192,87 @@ func TestGameRuntimeItemExchangeStartRejectsActiveMerchantWindowWithoutMutation(
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "merchant-open exchange start peer")
 }
 
+func TestGameRuntimeItemExchangeStartRejectsPartnerActiveMerchantWindowWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangePartnerMerchantOwner", 0x010307e6, 0x020407e6, 1100, 2100, 0, 101, 201)
+	owner.Gold = 125
+	owner.Inventory = []inventory.ItemInstance{{ID: 786, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangePartnerMerchantPeer", 0x010307e7, 0x020407e7, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 787, Vnum: 27002, Count: 2, Slot: 6}}
+	ownerLogin := "exch-partner-merch-owner"
+	peerLogin := "exch-partner-merch-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070e6, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070e7, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed partner-merchant exchange owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed partner-merchant exchange peer account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27051, Name: "Partner Merchant Guard Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	merchantDefinition := interactionstore.Definition{
+		Kind:  interactionstore.KindShopPreview,
+		Ref:   "npc:exchange_partner_merchant_guard",
+		Title: "Exchange Partner Merchant Guard",
+		Catalog: []interactionstore.MerchantCatalogEntry{
+			{Slot: 0, ItemVnum: 27051, Price: 50, Count: 1},
+		},
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{merchantDefinition})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected partner-merchant exchange runtime error: %v", err)
+	}
+	merchant, ok := runtime.RegisterStaticActorWithInteraction("ExchangePartnerMerchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, merchantDefinition.Ref)
+	if !ok {
+		t.Fatal("expected partner-merchant exchange static actor registration to succeed")
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070e6)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070e7)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	merchantOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(merchant.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected partner merchant-open interaction error: %v", err)
+	}
+	if len(merchantOut) != 1 {
+		t.Fatalf("expected partner merchant-open interaction to emit one shop start frame, got %d", len(merchantOut))
+	}
+	if _, err := shopproto.DecodeServerStart(decodeSingleFrame(t, merchantOut[0])); err != nil {
+		t.Fatalf("decode partner merchant-open shop start: %v", err)
+	}
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected partner-merchant exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected partner-merchant exchange start to emit one info chat frame, got %d", len(startOut))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, startOut[0]))
+	if err != nil {
+		t.Fatalf("decode partner-merchant exchange start info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangePartnerMerchantBusyInfoMessage {
+		t.Fatalf("unexpected partner-merchant exchange start info chat: %+v", infoChat)
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected partner-merchant exchange start to queue no peer frames, got %d", len(queued))
+	}
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "partner-merchant exchange start owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "partner-merchant exchange start peer")
+}
+
 func TestGameRuntimeItemExchangeWalkAwayClosesShellWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

@@ -83,6 +83,7 @@ const itemPickupInventoryFullInfoMessage = "You have too many items."
 const itemBuyRejectedInfoMessage = "The merchant will not sell this item to you."
 const itemSellRejectedInfoMessage = "The merchant refuses to buy this item."
 const itemUnequipRejectedInfoMessage = "You cannot remove this item."
+const exchangePartnerMerchantBusyInfoMessage = "That player cannot trade right now."
 const bootstrapMapIndex uint32 = 1
 const bootstrapShinsooYonganStartX int32 = 469300
 const bootstrapShinsooYonganStartY int32 = 964200
@@ -3259,6 +3260,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		clearActiveMerchantBuy := func() {
 			activeMerchantBuy = merchantBuyContext{}
 			hasActiveMerchantBuy = false
+			if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 {
+				sharedWorld.SetMerchantWindowOpen(sharedWorldID, false)
+			}
 		}
 		appendPostFloorMerchantCloseFrame := func(frames [][]byte, clearTarget bool) [][]byte {
 			if !clearTarget || !hasActiveMerchantBuy || activeMerchantBuy.TargetVID == 0 {
@@ -5697,6 +5701,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						}
 						activeMerchantBuy = merchantBuyContext{TargetVID: packet.TargetVID, Definition: resolution.Definition}
 						hasActiveMerchantBuy = true
+						if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 {
+							sharedWorld.SetMerchantWindowOpen(sharedWorldID, true)
+						}
 						markInteractionCooldown(packet.TargetVID)
 						return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{shopproto.EncodeServerStart(start)}}
 					}

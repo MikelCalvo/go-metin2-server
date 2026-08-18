@@ -480,6 +480,7 @@ Run this only if packet tooling or the client build can emit an exchange/trade a
 - [ ] Attempt one `EXCHANGE START` request against a same-map visible player that is outside the owned exchange-distance gate (`ApproxDistance >= 1000`)
 - [ ] Open a valid exchange shell, then walk one participant far enough that `ApproxDistance >= 1000` while the shell is still open
 - [ ] Open a merchant window first, then attempt `EXCHANGE START` against a visible connected player while that merchant window is still open
+- [ ] Have a visible connected peer open a merchant window first, then attempt `EXCHANGE START` against that peer while their merchant window is still open
 - [ ] Attempt one `EXCHANGE ITEM_ADD` request for a disposable carried item slot
 - [ ] When the carried item is allowed by its template, inspect both exchange windows and packet logs for the display-only `GC::EXCHANGE ITEM_ADD` frames
 - [ ] Attempt one active-shell `EXCHANGE ELK_ADD` / gold-add request for an amount the requester currently has
@@ -517,6 +518,7 @@ Expected result:
 - non-visible, disconnected, requester-already-paired, out-of-range (`ApproxDistance >= 1000`), or zero-HP exchange starts fail closed with no exchange frames
 - walking either paired participant outside the owned exchange-distance gate closes the shell with self/peer `GC::EXCHANGE END` and leaves inventory/equipment/quickslots/gold/persistence unchanged
 - `EXCHANGE START` while a same-socket merchant window is already open fails closed with no exchange frames, leaves the merchant window open, and leaves inventory/equipment/quickslots/gold/persistence unchanged
+- `EXCHANGE START` against a visible connected peer that currently has an open bootstrap merchant window returns one self-only `CHAT_TYPE_INFO` with `That player cannot trade right now.`, queues no peer frames, creates no exchange pairing/display state, leaves the partner merchant window open, and leaves inventory/equipment/quickslots/gold/persistence unchanged
 - the current exchange shell is only a window/open-close/display proof: no carried inventory/equipment/quickslot/gold state changes, no ground actor appears, and reconnect/operator inspection shows selected-character snapshots unchanged
 - allowed active-shell `EXCHANGE ITEM_ADD` emits one self `GC::EXCHANGE ITEM_ADD` with `is_me = 1` and one queued peer `GC::EXCHANGE ITEM_ADD` with `is_me = 0`; both frames carry the carried item `vnum`, exchange display slot, count, and loaded template-authored `sockets` / `attributes`, but the item remains in carried inventory and is not locked, removed, or persisted as traded
 - duplicate display-slot `EXCHANGE ITEM_ADD` attempts from the same side fail closed with no additional frames and no mutation
