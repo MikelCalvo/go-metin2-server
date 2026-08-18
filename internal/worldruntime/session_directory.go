@@ -1,6 +1,9 @@
 package worldruntime
 
-import "sync"
+import (
+	"sort"
+	"sync"
+)
 
 type SessionFrameSink interface {
 	Enqueue(frames [][]byte)
@@ -74,6 +77,26 @@ func (d *SessionDirectory) Remove(entityID uint64) (SessionEntry, bool) {
 	}
 	delete(d.byEntityID, entityID)
 	return entry, true
+}
+
+// EntityIDs returns the currently registered live session entity IDs in
+// ascending order. It is a read-only enumeration helper for pending-frame
+// consumers such as proximity aggro acquisition.
+func (d *SessionDirectory) EntityIDs() []uint64 {
+	if d == nil {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(d.byEntityID) == 0 {
+		return nil
+	}
+	ids := make([]uint64, 0, len(d.byEntityID))
+	for entityID := range d.byEntityID {
+		ids = append(ids, entityID)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return ids
 }
 
 func validSessionEntry(entry SessionEntry) bool {

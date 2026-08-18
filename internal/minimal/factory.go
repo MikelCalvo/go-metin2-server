@@ -1696,6 +1696,15 @@ func (r *gameRuntime) flushDueSpawnGroupChaseSteps() {
 	}
 }
 
+func (r *gameRuntime) flushProximitySpawnGroupAggroAcquisition() {
+	if r == nil || r.sharedWorld == nil {
+		return
+	}
+	for _, entityID := range r.sharedWorld.AcquireProximitySpawnGroupAggro() {
+		r.syncSpawnGroupChaseStepScheduleForEntity(entityID)
+	}
+}
+
 func (r *gameRuntime) stepSpawnGroupChase(entityID uint64, maxStep int32, reschedule bool) (SpawnGroupReturnStepSnapshot, bool) {
 	if r == nil || r.sharedWorld == nil || entityID == 0 || maxStep <= 0 {
 		return SpawnGroupReturnStepSnapshot{}, false
@@ -3207,6 +3216,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						runtime.flushReadyStaticActorRespawns()
 						runtime.flushDueSpawnGroupReturnSteps()
 						runtime.flushDueSpawnGroupChaseSteps()
+						runtime.flushProximitySpawnGroupAggroAcquisition()
 						bootstrapFrames, err := worldentry.BuildBootstrapFramesWithTemplates(updatedLive, runtime.itemTemplates)
 						if err != nil {
 							return warp.Result{}, false
@@ -4192,6 +4202,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					runtime.flushReadyStaticActorRespawns()
 					runtime.flushDueSpawnGroupReturnSteps()
 					runtime.flushDueSpawnGroupChaseSteps()
+					runtime.flushProximitySpawnGroupAggroAcquisition()
 
 					stateMu.Lock()
 					defer stateMu.Unlock()
@@ -4567,6 +4578,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							runtime.flushReadyStaticActorRespawns()
 							runtime.flushDueSpawnGroupReturnSteps()
 							runtime.flushDueSpawnGroupChaseSteps()
+							runtime.flushProximitySpawnGroupAggroAcquisition()
 							bootstrapFrames, err := worldentry.BuildBootstrapFramesWithTemplates(restartedSelected, runtime.itemTemplates)
 							if err != nil {
 								return gameflow.ChatResult{Accepted: false}
@@ -4612,6 +4624,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							runtime.flushReadyStaticActorRespawns()
 							runtime.flushDueSpawnGroupReturnSteps()
 							runtime.flushDueSpawnGroupChaseSteps()
+							runtime.flushProximitySpawnGroupAggroAcquisition()
 							bootstrapFrames, err := worldentry.BuildBootstrapFramesWithTemplates(restartedSelected, runtime.itemTemplates)
 							if err != nil {
 								rollbackPersistedTownRestart()
@@ -5587,6 +5600,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			runtime.flushReadyStaticActorRespawns()
 			runtime.flushDueSpawnGroupReturnSteps()
 			runtime.flushDueSpawnGroupChaseSteps()
+			runtime.flushProximitySpawnGroupAggroAcquisition()
 			if runtime.sharedWorld != nil {
 				runtime.sharedWorld.FlushDueGroundItemOwnershipReleases()
 			}

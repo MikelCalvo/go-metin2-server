@@ -1929,6 +1929,154 @@ func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupChaseStep(t *testing.T)
 	}
 }
 
+func TestGameRuntimeFlushServerFramesAcquiresProximitySpawnGroupAggroWithoutHit(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("AggroAcquireOwner", 0x01030190, 0x02040190, 1850, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "aggro-acquire-owner", 0x40404040, owner)
+	watcher := peerVisibilityCharacter("AggroAcquireWatcher", 0x01030191, 0x02040191, 1900, 2800, 0, 101, 201)
+	watcher.MapIndex = 42
+	watcher.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "aggro-acquire-watcher", 0x41414141, watcher)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700002000, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for proximity aggro acquisition: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.aggro_acquire_auto",
+		Name:          "AggroAcquireMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import proximity aggro spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.aggro_acquire_auto")
+	if !ok {
+		t.Fatal("expected proximity aggro spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "aggro-acquire-owner", 0x40404040)
+	defer closeSessionFlow(t, ownerFlow)
+	watcherFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "aggro-acquire-watcher", 0x41414141)
+	defer closeSessionFlow(t, watcherFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, watcherFlow)
+
+	ownerEntity, ok := runtime.sharedWorld.playerEntityByName("AggroAcquireOwner")
+	if !ok {
+		t.Fatal("expected proximity aggro owner entity to remain registered")
+	}
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected pending-frame proximity acquisition to engage nearest live owner for entity %d", group.EntityID)
+	}
+
+	runtime.spawnChaseMu.Lock()
+	_, chaseScheduled := runtime.spawnChaseStepDueAt[group.EntityID]
+	runtime.spawnChaseMu.Unlock()
+	if !chaseScheduled {
+		t.Fatalf("expected proximity acquisition to sync chase schedule for newly engaged entity %d", group.EntityID)
+	}
+
+	if snapshot, ok := runtime.CombatTargetSnapshot("AggroAcquireOwner"); ok {
+		t.Fatalf("expected proximity acquisition alone not to invent selected combat target ownership, got %+v", snapshot)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected proximity acquisition alone not to arm delayed retaliation frames, got %d frames", len(queued))
+	}
+
+	watcherSelect, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher target error after proximity acquisition: %v", err)
+	}
+	if len(watcherSelect) != 0 {
+		t.Fatalf("expected third-party TARGET to fail closed after proximity acquisition, got %d frames", len(watcherSelect))
+	}
+}
+
+func TestGameRuntimeFlushServerFramesSkipsProximityAggroOutsideDefaultRadius(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("AggroOutsideOwner", 0x01030192, 0x02040192, 1950, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "aggro-outside-owner", 0x42424242, owner)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700002100, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for outside-radius proximity aggro: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.aggro_outside_auto",
+		Name:          "AggroOutsideMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import outside-radius aggro spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.aggro_outside_auto")
+	if !ok {
+		t.Fatal("expected outside-radius aggro spawn group to resolve by ref")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "aggro-outside-owner", 0x42424242)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	ownerEntity, ok := runtime.sharedWorld.playerEntityByName("AggroOutsideOwner")
+	if !ok {
+		t.Fatal("expected outside-radius owner entity to remain registered")
+	}
+	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected player outside DefaultSpawnAggroRadius not to acquire engagement for entity %d", group.EntityID)
+	}
+	runtime.sharedWorld.mu.Lock()
+	engagedBy := runtime.sharedWorld.staticActorCombatEngagedBy[group.EntityID]
+	runtime.sharedWorld.mu.Unlock()
+	if engagedBy != 0 {
+		t.Fatalf("expected no proximity engagement outside radius, got engaged_by=%d", engagedBy)
+	}
+}
+
 func TestGameSessionFlowDueSpawnGroupReturnStepFlushesBeforeFreshEnterBootstrap(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	newcomer := peerVisibilityCharacter("ReturnStepFreshEnter", 0x0103016d, 0x0204016d, 2201, 2800, 0, 101, 201)
@@ -8662,7 +8810,7 @@ func TestNewGameSessionFactoryClientTargetZeroClearsPracticeMobDelayedRetaliatio
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("ClearTargetOwner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	owner.Points[bootstrapPlayerPointValueIndex] = 5
-	watcher := peerVisibilityCharacter("ClearTargetWatcher", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
+	watcher := peerVisibilityCharacter("ClearTargetWatcher", 0x01030102, 0x02040102, 1450, 2200, 0, 102, 202)
 	watcher.Points[bootstrapPlayerPointValueIndex] = 5
 	issuePeerTicket(t, store, "clear-target-owner", 0x11111111, owner)
 	issuePeerTicket(t, store, "clear-target-watcher", 0x22222222, watcher)
@@ -8755,7 +8903,7 @@ func TestNewGameSessionFactoryPracticeMobRetargetDoesNotReleaseEngagedMobToThird
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("RetargetOwner", 0x01030121, 0x02040121, 1100, 2100, 0, 101, 201)
 	owner.Points[bootstrapPlayerPointValueIndex] = 5
-	watcher := peerVisibilityCharacter("RetargetWatcher", 0x01030122, 0x02040122, 1300, 2300, 0, 102, 202)
+	watcher := peerVisibilityCharacter("RetargetWatcher", 0x01030122, 0x02040122, 1450, 2200, 0, 102, 202)
 	watcher.Points[bootstrapPlayerPointValueIndex] = 5
 	issuePeerTicket(t, store, "retarget-owner", 0x33333333, owner)
 	issuePeerTicket(t, store, "retarget-watcher", 0x44444444, watcher)
@@ -11727,9 +11875,9 @@ func TestGameRuntimePeerAppearanceUpdateSkipsZeroHPOwnerRecipientAfterDelayedRet
 
 func TestGameSessionFlowPracticeMobPeerDeadFanoutSkipsZeroHPOwnerRecipientAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
-	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1000, 2100, 0, 101, 201)
 	owner.Points[bootstrapPlayerPointValueIndex] = 2
-	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1450, 2200, 2, 102, 202)
 	watcher.Points[bootstrapPlayerPointValueIndex] = 2
 	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
 	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
@@ -12119,7 +12267,7 @@ func setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t *testing.T) (*gameRun
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	owner.Points[bootstrapPlayerPointValueIndex] = 2
-	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1450, 2200, 2, 102, 202)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
 	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
 
@@ -12731,7 +12879,7 @@ func TestGameSessionFlowPracticeMobRestartTownCoversOwnedEmpireCreatePositions(t
 			owner := peerVisibilityCharacter("RestartTownOwner", 0x01030191, 0x02040191, 1100, 2100, 0, 101, 201)
 			owner.Empire = tt.characterEmp
 			owner.Points[bootstrapPlayerPointValueIndex] = 2
-			watcher := peerVisibilityCharacter("RestartTownWatcher", 0x01030192, 0x02040192, 1300, 2300, 2, 102, 202)
+			watcher := peerVisibilityCharacter("RestartTownWatcher", 0x01030192, 0x02040192, 1450, 2200, 2, 102, 202)
 			if err := store.Issue(loginticket.Ticket{Login: "restart-town-owner", LoginKey: 0x91919191, Empire: tt.ticketEmpire, Characters: []loginticket.Character{owner}}); err != nil {
 				t.Fatalf("issue owner ticket for restart-town table test: %v", err)
 			}
@@ -13042,7 +13190,7 @@ func TestGameSessionFlowPracticeMobRestartTownFallsBackToTicketEmpireWhenCharact
 	owner := peerVisibilityCharacter("EmpireFallbackOwner", 0x01030181, 0x02040181, 1100, 2100, 0, 101, 201)
 	owner.Empire = 0
 	owner.Points[bootstrapPlayerPointValueIndex] = 2
-	watcher := peerVisibilityCharacter("EmpireFallbackWatcher", 0x01030182, 0x02040182, 1300, 2300, 2, 102, 202)
+	watcher := peerVisibilityCharacter("EmpireFallbackWatcher", 0x01030182, 0x02040182, 1450, 2200, 2, 102, 202)
 	if err := store.Issue(loginticket.Ticket{Login: "empire-fallback-owner", LoginKey: 0x81818181, Empire: 2, Characters: []loginticket.Character{owner}}); err != nil {
 		t.Fatalf("issue owner ticket with ticket-level empire fallback: %v", err)
 	}
@@ -18728,7 +18876,7 @@ func TestGameRuntimeDropRewardQueuesGroundVisibilityForLivePeers(t *testing.T) {
 		SpawnGroupRef: "practice.peer_visible_drop_reward_mob",
 	}
 	killer := peerVisibilityCharacter("PeerVisibleDropKiller", 0x0103011C, 0x0204011C, 1100, 2100, 0, 101, 201)
-	watcher := peerVisibilityCharacter("PeerVisibleDropWatcher", 0x0103011D, 0x0204011D, 1125, 2125, 1, 101, 201)
+	watcher := peerVisibilityCharacter("PeerVisibleDropWatcher", 0x0103011D, 0x0204011D, 1450, 2200, 1, 101, 201)
 	issuePeerTicket(t, store, "peer-visible-drop-killer", 0x1C1C1C1C, killer)
 	issuePeerTicket(t, store, "peer-visible-drop-watcher", 0x1D1D1D1D, watcher)
 
@@ -18894,7 +19042,7 @@ func TestGameRuntimeDropRewardOwnerCloseRemovesPendingGroundHandleForVisiblePeer
 		SpawnGroupRef: "practice.reward_owner_close_mob",
 	}
 	killer := peerVisibilityCharacter("RewardOwnerCloseKiller", 0x01030120, 0x02040120, 1100, 2100, 0, 101, 201)
-	watcher := peerVisibilityCharacter("RewardOwnerCloseWatcher", 0x01030121, 0x02040121, 1125, 2125, 1, 101, 201)
+	watcher := peerVisibilityCharacter("RewardOwnerCloseWatcher", 0x01030121, 0x02040121, 1450, 2200, 1, 101, 201)
 	issuePeerTicket(t, store, "reward-owner-close-killer", 0x20202020, killer)
 	issuePeerTicket(t, store, "reward-owner-close-watcher", 0x21212121, watcher)
 
@@ -44007,7 +44155,7 @@ func TestGameSessionFlowPracticeMobRespawnReleasesAggroForWatcherReselect(t *tes
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	owner.Points[bootstrapPlayerPointValueIndex] = 50
-	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1450, 2200, 0, 102, 202)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
 	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
 
@@ -44137,10 +44285,10 @@ func TestGameSessionFlowPracticeMobRespawnReleasesAggroForWatcherReselect(t *tes
 
 func TestGameSessionFlowPracticeMobRespawnWatcherRetargetKeepsSecondWatcherBlockedUntilExplicitClear(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
-	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1470, 2250, 0, 101, 201)
 	owner.Points[bootstrapPlayerPointValueIndex] = 50
-	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
-	blocker := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1350, 2350, 0, 103, 203)
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1450, 2200, 0, 102, 202)
+	blocker := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1500, 2400, 0, 103, 203)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
 	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
 	issuePeerTicket(t, store, "peer-three", 0x33333333, blocker)
@@ -44290,7 +44438,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherMovementClearReleasesSecondWatc
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	owner.Points[bootstrapPlayerPointValueIndex] = 50
-	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1450, 2200, 0, 102, 202)
 	blocker := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1350, 2350, 0, 103, 203)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
 	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
@@ -44432,7 +44580,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherLogoutReleasesSecondWatcher(t *
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	owner.Points[bootstrapPlayerPointValueIndex] = 50
-	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1450, 2200, 0, 102, 202)
 	blocker := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1350, 2350, 0, 103, 203)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
 	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
@@ -44588,7 +44736,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherQuitReleasesSecondWatcherLoop(t
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	owner.Points[bootstrapPlayerPointValueIndex] = 50
-	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1450, 2200, 0, 102, 202)
 	blocker := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1350, 2350, 0, 103, 203)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
 	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
@@ -44758,7 +44906,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherSyncClearReleasesSecondWatcher(
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	owner.Points[bootstrapPlayerPointValueIndex] = 50
-	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1450, 2200, 0, 102, 202)
 	blocker := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1350, 2350, 0, 103, 203)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
 	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
@@ -45273,8 +45421,8 @@ func TestGameSessionFlowPracticeMobMovementClearReleasesAggro(t *testing.T) {
 
 func TestGameSessionFlowPracticeMobOwnerHitClearsPreselectedThirdPartyTarget(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
-	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
-	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1000, 2100, 0, 101, 201)
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1450, 2200, 0, 102, 202)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
 	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
 
@@ -45390,7 +45538,7 @@ func TestGameSessionFlowPracticeMobOwnerHitClearsPreselectedThirdPartyTarget(t *
 func TestGameSessionFlowPracticeMobRetargetKeepsPreviousAggroUntilExplicitClear(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
-	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1450, 2200, 0, 102, 202)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
 	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
 

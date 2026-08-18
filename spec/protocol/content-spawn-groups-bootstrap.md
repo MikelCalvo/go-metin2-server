@@ -440,13 +440,15 @@ Bootstrap default radius for the first live consumer:
 - `DefaultSpawnAggroRadius = 200`
 - deliberately smaller than `DefaultSpawnLeashRadius = 400` so a player can enter aggro without immediately forcing leash/return pressure at the outer leash boundary
 
-First live consumer rules (implementation after this freeze, not part of the docs-only commit):
+First live consumer rules (now implemented on the pending-frame flush path):
 - scan from the existing pending-frame / movement-adjacent server path for live spawn-backed practice mobs that currently lack `engaged_by` ownership and still classify `at_home` / `within_radius`
 - when exactly one eligible live same-map candidate is inside the default aggro radius, acquire the already-owned aggro-lite engagement ownership for that candidate
 - if multiple candidates are inside radius, choose the nearest by Euclidean squared-distance and break ties by ascending player entity ID
 - acquisition alone does **not** arm the delayed retaliation cadence; the first accepted hit (or a later dedicated reaction slice) remains the arming gate for owner-side retaliation
 - once engagement exists, the already-owned third-party `target_engaged` gate, chase arming (when present), and release boundaries continue to apply unchanged
 - never acquire for dead actors, actors waiting on respawn, zero-HP candidates, or candidates already at the bootstrap HP floor
+- the live consumer reuses `EvaluateStaticActorSpawnAggroAcquisition` / `SelectStaticActorSpawnAggroCandidate` and syncs the existing chase-step schedule after a newly established engagement without inventing selected-target ownership or retaliation frames
+- after an explicit engagement release (owner clear-target, return-home/return-step, operator update, stale-owner cleanup, etc.), the same still-inside-radius candidate stays suppressed until it leaves `DefaultSpawnAggroRadius` and re-enters; death and respawn also seed that suppress set for every currently-inside live candidate so a rebuilt or just-killed life does not instantly re-lock nearby players without leave/re-enter
 
 Explicit non-goals for this proximity aggro freeze alone:
 - delayed retaliation that fires without any accepted hit

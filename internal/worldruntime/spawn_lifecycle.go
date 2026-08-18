@@ -12,6 +12,10 @@ const (
 	SpawnLeashStatusReturnRequired SpawnLeashStatus = "return_required"
 
 	DefaultSpawnLeashRadius int32 = 400
+	// DefaultSpawnAggroRadius is deliberately smaller than DefaultSpawnLeashRadius so a
+	// player can enter proximity acquisition without immediately forcing leash/return
+	// pressure at the outer leash boundary.
+	DefaultSpawnAggroRadius int32 = 200
 )
 
 // SpawnLeashEvaluation is a pure planning result for the first mob lifecycle
@@ -39,6 +43,23 @@ type SpawnChaseStepPlan struct {
 	Evaluation SpawnLeashEvaluation
 	Next       Position
 	Complete   bool
+}
+
+// SpawnAggroAcquisitionEvaluation is a pure planning result for the first
+// proximity aggro-radius acquisition seam. It does not mutate actor state,
+// set engagement, arm retaliation/chase timers, or emit packets.
+type SpawnAggroAcquisitionEvaluation struct {
+	Current   Position
+	Candidate Position
+	Radius    int32
+	Acquired  bool
+}
+
+// SpawnAggroCandidate is one live same-map player candidate for proximity
+// aggro-radius acquisition selection.
+type SpawnAggroCandidate struct {
+	EntityID uint64
+	Position Position
 }
 
 type PositionSnapshot struct {
@@ -165,6 +186,62 @@ func PlanStaticActorSpawnChaseStep(actor StaticEntity, owner Position, radius in
 	plan.Next = farthestPointOnSegmentInsideLeash(evaluation.Home, evaluation.Current, candidate, radius)
 	plan.Complete = true
 	return plan, true
+}
+
+// EvaluateStaticActorSpawnAggroAcquisition decides whether one candidate position
+// is inside the aggro radius of a live spawn-backed actor that still classifies
+// at_home or within_radius. Return-required actors, cross-map candidates, and
+// invalid inputs fail closed. The helper never mutates actor state.
+func EvaluateStaticActorSpawnAggroAcquisition(actor StaticEntity, candidate Position, radius int32) (SpawnAggroAcquisitionEvaluation, bool) {
+	if radius <= 0 || !candidate.Valid() {
+		return SpawnAggroAcquisitionEvaluation{}, false
+	}
+	evaluation, ok := EvaluateStaticActorCurrentSpawnLeash(actor, DefaultSpawnLeashRadius)
+	if !ok {
+		return SpawnAggroAcquisitionEvaluation{}, false
+	}
+	result := SpawnAggroAcquisitionEvaluation{
+		Current:   evaluation.Current,
+		Candidate: candidate,
+		Radius:    radius,
+	}
+	if evaluation.ReturnRequired || !evaluation.Current.SameMap(candidate) {
+		return result, true
+	}
+	result.Acquired = positionWithinRadius(evaluation.Current, candidate, radius)
+	return result, true
+}
+
+// SelectStaticActorSpawnAggroCandidate chooses the nearest eligible same-map
+// candidate inside the aggro radius, breaking ties by ascending entity ID.
+// Candidates with EntityID == 0 or invalid positions are ignored. The helper
+// never mutates actor state.
+func SelectStaticActorSpawnAggroCandidate(actor StaticEntity, candidates []SpawnAggroCandidate, radius int32) (SpawnAggroCandidate, bool) {
+	best := SpawnAggroCandidate{}
+	bestDistance := int64(-1)
+	found := false
+	for _, candidate := range candidates {
+		if candidate.EntityID == 0 || !candidate.Position.Valid() {
+			continue
+		}
+		evaluation, ok := EvaluateStaticActorSpawnAggroAcquisition(actor, candidate.Position, radius)
+		if !ok || !evaluation.Acquired {
+			continue
+		}
+		distance := squaredDistanceXY(evaluation.Current, candidate.Position)
+		if !found || distance < bestDistance || (distance == bestDistance && candidate.EntityID < best.EntityID) {
+			best = candidate
+			bestDistance = distance
+			found = true
+		}
+	}
+	return best, found
+}
+
+func squaredDistanceXY(left Position, right Position) int64 {
+	dx := int64(left.X) - int64(right.X)
+	dy := int64(left.Y) - int64(right.Y)
+	return dx*dx + dy*dy
 }
 
 func SpawnLeashSnapshotFromEvaluation(evaluation SpawnLeashEvaluation) SpawnLeashSnapshot {

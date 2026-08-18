@@ -37,28 +37,29 @@ type pendingServerFrames struct {
 }
 
 type sharedWorldRegistry struct {
-	mu                              sync.Mutex
-	topology                        worldruntime.BootstrapTopology
-	entities                        *worldruntime.EntityRegistry
-	sessionDirectory                *worldruntime.SessionDirectory
-	staticActorCombatHP             map[uint64]uint8
-	staticActorCombatRespawnAt      map[uint64]time.Time
-	staticActorCombatSnapshot       map[uint64]uint64
-	staticActorCombatEngagedBy      map[uint64]uint64
-	staticActorDeathReward          map[uint64]worldruntime.StaticActorDeathReward
-	sessionCombatTargets            map[uint64]uint32
-	sessionCombatRetaliations       map[uint64]combatRetaliationTimer
-	exchangePartners                map[uint64]uint64
-	exchangeItems                   map[uint64]map[uint8]exchangeDisplayedItem
-	exchangeGold                    map[uint64]uint32
-	exchangeAccepted                map[uint64]bool
-	nextStaticActorCombatSnapshotID uint64
-	lastKnownCharacters             map[uint64]loginticket.Character
-	groundItemsByVID                map[uint32]sharedGroundItem
-	itemTemplates                   map[uint32]itemcatalog.Template
-	suppressStaticActorFanout       bool
-	pendingStaticActorImportDeletes []worldruntime.StaticEntity
-	now                             func() time.Time
+	mu                                sync.Mutex
+	topology                          worldruntime.BootstrapTopology
+	entities                          *worldruntime.EntityRegistry
+	sessionDirectory                  *worldruntime.SessionDirectory
+	staticActorCombatHP               map[uint64]uint8
+	staticActorCombatRespawnAt        map[uint64]time.Time
+	staticActorCombatSnapshot         map[uint64]uint64
+	staticActorCombatEngagedBy        map[uint64]uint64
+	staticActorProximityAggroSuppress map[uint64]map[uint64]struct{}
+	staticActorDeathReward            map[uint64]worldruntime.StaticActorDeathReward
+	sessionCombatTargets              map[uint64]uint32
+	sessionCombatRetaliations         map[uint64]combatRetaliationTimer
+	exchangePartners                  map[uint64]uint64
+	exchangeItems                     map[uint64]map[uint8]exchangeDisplayedItem
+	exchangeGold                      map[uint64]uint32
+	exchangeAccepted                  map[uint64]bool
+	nextStaticActorCombatSnapshotID   uint64
+	lastKnownCharacters               map[uint64]loginticket.Character
+	groundItemsByVID                  map[uint32]sharedGroundItem
+	itemTemplates                     map[uint32]itemcatalog.Template
+	suppressStaticActorFanout         bool
+	pendingStaticActorImportDeletes   []worldruntime.StaticEntity
+	now                               func() time.Time
 }
 
 type sharedGroundItem struct {
@@ -122,14 +123,15 @@ type combatRetaliationTimer struct {
 }
 
 type staticActorCombatStateSnapshot struct {
-	HP                  map[uint64]uint8
-	RespawnAt           map[uint64]time.Time
-	Snapshot            map[uint64]uint64
-	EngagedBy           map[uint64]uint64
-	DeathReward         map[uint64]worldruntime.StaticActorDeathReward
-	SessionTargets      map[uint64]uint32
-	SessionRetaliations map[uint64]combatRetaliationTimer
-	NextSnapshotID      uint64
+	HP                     map[uint64]uint8
+	RespawnAt              map[uint64]time.Time
+	Snapshot               map[uint64]uint64
+	EngagedBy              map[uint64]uint64
+	ProximityAggroSuppress map[uint64]map[uint64]struct{}
+	DeathReward            map[uint64]worldruntime.StaticActorDeathReward
+	SessionTargets         map[uint64]uint32
+	SessionRetaliations    map[uint64]combatRetaliationTimer
+	NextSnapshotID         uint64
 }
 
 const (
@@ -318,21 +320,22 @@ func newSharedWorldRegistry() *sharedWorldRegistry {
 
 func newSharedWorldRegistryWithTopology(topology worldruntime.BootstrapTopology) *sharedWorldRegistry {
 	return &sharedWorldRegistry{
-		topology:                   topology,
-		entities:                   worldruntime.NewEntityRegistryWithTopology(topology),
-		sessionDirectory:           worldruntime.NewSessionDirectory(),
-		staticActorCombatHP:        make(map[uint64]uint8),
-		staticActorCombatRespawnAt: make(map[uint64]time.Time),
-		staticActorCombatSnapshot:  make(map[uint64]uint64),
-		staticActorCombatEngagedBy: make(map[uint64]uint64),
-		staticActorDeathReward:     make(map[uint64]worldruntime.StaticActorDeathReward),
-		sessionCombatRetaliations:  make(map[uint64]combatRetaliationTimer),
-		exchangePartners:           make(map[uint64]uint64),
-		exchangeAccepted:           make(map[uint64]bool),
-		exchangeGold:               make(map[uint64]uint32),
-		lastKnownCharacters:        make(map[uint64]loginticket.Character),
-		groundItemsByVID:           make(map[uint32]sharedGroundItem),
-		now:                        time.Now,
+		topology:                          topology,
+		entities:                          worldruntime.NewEntityRegistryWithTopology(topology),
+		sessionDirectory:                  worldruntime.NewSessionDirectory(),
+		staticActorCombatHP:               make(map[uint64]uint8),
+		staticActorCombatRespawnAt:        make(map[uint64]time.Time),
+		staticActorCombatSnapshot:         make(map[uint64]uint64),
+		staticActorCombatEngagedBy:        make(map[uint64]uint64),
+		staticActorProximityAggroSuppress: make(map[uint64]map[uint64]struct{}),
+		staticActorDeathReward:            make(map[uint64]worldruntime.StaticActorDeathReward),
+		sessionCombatRetaliations:         make(map[uint64]combatRetaliationTimer),
+		exchangePartners:                  make(map[uint64]uint64),
+		exchangeAccepted:                  make(map[uint64]bool),
+		exchangeGold:                      make(map[uint64]uint32),
+		lastKnownCharacters:               make(map[uint64]loginticket.Character),
+		groundItemsByVID:                  make(map[uint32]sharedGroundItem),
+		now:                               time.Now,
 	}
 }
 
@@ -1156,8 +1159,12 @@ func (r *sharedWorldRegistry) clearStaticActorCombatStateLocked(entityID uint64)
 	if r.staticActorCombatSnapshot != nil {
 		delete(r.staticActorCombatSnapshot, entityID)
 	}
-	if r.staticActorCombatEngagedBy != nil {
+	if engagedBy := r.staticActorCombatEngagedBy[entityID]; engagedBy != 0 {
 		delete(r.staticActorCombatEngagedBy, entityID)
+		r.clearProximityAggroSuppressForActorLocked(entityID)
+	}
+	if r.staticActorProximityAggroSuppress != nil {
+		delete(r.staticActorProximityAggroSuppress, entityID)
 	}
 	if r.staticActorDeathReward != nil {
 		delete(r.staticActorDeathReward, entityID)
@@ -1169,14 +1176,15 @@ func (r *sharedWorldRegistry) captureStaticActorCombatStateLocked() staticActorC
 		return staticActorCombatStateSnapshot{}
 	}
 	return staticActorCombatStateSnapshot{
-		HP:                  cloneUint64Uint8Map(r.staticActorCombatHP),
-		RespawnAt:           cloneUint64TimeMap(r.staticActorCombatRespawnAt),
-		Snapshot:            cloneUint64Uint64Map(r.staticActorCombatSnapshot),
-		EngagedBy:           cloneUint64Uint64Map(r.staticActorCombatEngagedBy),
-		DeathReward:         cloneStaticActorDeathRewardMap(r.staticActorDeathReward),
-		SessionTargets:      cloneUint64Uint32Map(r.sessionCombatTargets),
-		SessionRetaliations: cloneCombatRetaliationTimerMap(r.sessionCombatRetaliations),
-		NextSnapshotID:      r.nextStaticActorCombatSnapshotID,
+		HP:                     cloneUint64Uint8Map(r.staticActorCombatHP),
+		RespawnAt:              cloneUint64TimeMap(r.staticActorCombatRespawnAt),
+		Snapshot:               cloneUint64Uint64Map(r.staticActorCombatSnapshot),
+		EngagedBy:              cloneUint64Uint64Map(r.staticActorCombatEngagedBy),
+		ProximityAggroSuppress: cloneUint64Uint64SetMap(r.staticActorProximityAggroSuppress),
+		DeathReward:            cloneStaticActorDeathRewardMap(r.staticActorDeathReward),
+		SessionTargets:         cloneUint64Uint32Map(r.sessionCombatTargets),
+		SessionRetaliations:    cloneCombatRetaliationTimerMap(r.sessionCombatRetaliations),
+		NextSnapshotID:         r.nextStaticActorCombatSnapshotID,
 	}
 }
 
@@ -1188,6 +1196,7 @@ func (r *sharedWorldRegistry) restoreStaticActorCombatStateLocked(snapshot stati
 	r.staticActorCombatRespawnAt = cloneUint64TimeMap(snapshot.RespawnAt)
 	r.staticActorCombatSnapshot = cloneUint64Uint64Map(snapshot.Snapshot)
 	r.staticActorCombatEngagedBy = cloneUint64Uint64Map(snapshot.EngagedBy)
+	r.staticActorProximityAggroSuppress = cloneUint64Uint64SetMap(snapshot.ProximityAggroSuppress)
 	r.staticActorDeathReward = cloneStaticActorDeathRewardMap(snapshot.DeathReward)
 	r.sessionCombatTargets = cloneUint64Uint32Map(snapshot.SessionTargets)
 	r.sessionCombatRetaliations = cloneCombatRetaliationTimerMap(snapshot.SessionRetaliations)
@@ -1212,6 +1221,24 @@ func cloneUint64Uint64Map(in map[uint64]uint64) map[uint64]uint64 {
 	out := make(map[uint64]uint64, len(in))
 	for key, value := range in {
 		out[key] = value
+	}
+	return out
+}
+
+func cloneUint64Uint64SetMap(in map[uint64]map[uint64]struct{}) map[uint64]map[uint64]struct{} {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[uint64]map[uint64]struct{}, len(in))
+	for key, values := range in {
+		if len(values) == 0 {
+			continue
+		}
+		cloned := make(map[uint64]struct{}, len(values))
+		for value := range values {
+			cloned[value] = struct{}{}
+		}
+		out[key] = cloned
 	}
 	return out
 }
@@ -1271,6 +1298,7 @@ func (r *sharedWorldRegistry) setStaticActorCombatEngagementLocked(entityID uint
 		return
 	}
 	r.staticActorCombatEngagedBy[entityID] = subjectID
+	r.clearProximityAggroSuppressForActorLocked(entityID)
 }
 
 func (r *sharedWorldRegistry) StaticActorCombatEngagedBySubject(entityID uint64, subjectID uint64) bool {
@@ -1292,6 +1320,7 @@ func (r *sharedWorldRegistry) ClearStaticActorCombatEngagement(entityID uint64, 
 		return false
 	}
 	delete(r.staticActorCombatEngagedBy, entityID)
+	r.markProximityAggroSuppressLocked(entityID, subjectID)
 	return true
 }
 
@@ -1313,6 +1342,106 @@ func (r *sharedWorldRegistry) clearStaticActorCombatEngagementsBySubjectLocked(s
 			continue
 		}
 		delete(r.staticActorCombatEngagedBy, entityID)
+		actor, ok := r.entities.StaticActor(entityID)
+		if ok {
+			r.seedProximityAggroSuppressForInsideCandidatesLocked(actor)
+			continue
+		}
+		r.markProximityAggroSuppressLocked(entityID, subjectID)
+	}
+}
+
+func (r *sharedWorldRegistry) markProximityAggroSuppressLocked(entityID uint64, subjectID uint64) {
+	if r == nil || entityID == 0 || subjectID == 0 {
+		return
+	}
+	if r.staticActorProximityAggroSuppress == nil {
+		r.staticActorProximityAggroSuppress = make(map[uint64]map[uint64]struct{})
+	}
+	subjects := r.staticActorProximityAggroSuppress[entityID]
+	if subjects == nil {
+		subjects = make(map[uint64]struct{})
+		r.staticActorProximityAggroSuppress[entityID] = subjects
+	}
+	subjects[subjectID] = struct{}{}
+}
+
+func (r *sharedWorldRegistry) clearProximityAggroSuppressForActorLocked(entityID uint64) {
+	if r == nil || entityID == 0 || r.staticActorProximityAggroSuppress == nil {
+		return
+	}
+	delete(r.staticActorProximityAggroSuppress, entityID)
+}
+
+func (r *sharedWorldRegistry) proximityAggroSuppressActiveLocked(entityID uint64, subjectID uint64) bool {
+	if r == nil || entityID == 0 || subjectID == 0 || r.staticActorProximityAggroSuppress == nil {
+		return false
+	}
+	_, ok := r.staticActorProximityAggroSuppress[entityID][subjectID]
+	return ok
+}
+
+func (r *sharedWorldRegistry) clearProximityAggroSuppressIfOutsideRadiusLocked(actor worldruntime.StaticEntity, candidates []worldruntime.SpawnAggroCandidate) {
+	if r == nil || actor.Entity.ID == 0 || r.staticActorProximityAggroSuppress == nil {
+		return
+	}
+	subjects := r.staticActorProximityAggroSuppress[actor.Entity.ID]
+	if len(subjects) == 0 {
+		return
+	}
+	inside := make(map[uint64]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.EntityID == 0 {
+			continue
+		}
+		evaluation, ok := worldruntime.EvaluateStaticActorSpawnAggroAcquisition(actor, candidate.Position, worldruntime.DefaultSpawnAggroRadius)
+		if !ok || !evaluation.Acquired {
+			continue
+		}
+		inside[candidate.EntityID] = struct{}{}
+	}
+	for subjectID := range subjects {
+		if _, stillInside := inside[subjectID]; stillInside {
+			continue
+		}
+		delete(subjects, subjectID)
+	}
+	if len(subjects) == 0 {
+		delete(r.staticActorProximityAggroSuppress, actor.Entity.ID)
+	}
+}
+
+func (r *sharedWorldRegistry) seedProximityAggroSuppressForInsideCandidatesLocked(actor worldruntime.StaticEntity) {
+	if r == nil || actor.Entity.ID == 0 || r.sessionDirectory == nil {
+		return
+	}
+	for _, sessionID := range r.sessionDirectory.EntityIDs() {
+		player, ok := r.playerCharacter(sessionID)
+		if !ok || characterAtBootstrapHPFloor(player) {
+			continue
+		}
+		evaluation, ok := worldruntime.EvaluateStaticActorSpawnAggroAcquisition(actor, worldruntime.PositionFromCharacter(player), worldruntime.DefaultSpawnAggroRadius)
+		if !ok || !evaluation.Acquired {
+			continue
+		}
+		r.markProximityAggroSuppressLocked(actor.Entity.ID, sessionID)
+	}
+}
+
+func (r *sharedWorldRegistry) releaseStaticActorCombatEngagementLocked(actor worldruntime.StaticEntity, seedInsideSuppress bool) {
+	if r == nil || actor.Entity.ID == 0 {
+		return
+	}
+	engagedBy := r.staticActorCombatEngagedBy[actor.Entity.ID]
+	if engagedBy != 0 {
+		delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
+	}
+	if seedInsideSuppress {
+		r.seedProximityAggroSuppressForInsideCandidatesLocked(actor)
+		return
+	}
+	if engagedBy != 0 {
+		r.markProximityAggroSuppressLocked(actor.Entity.ID, engagedBy)
 	}
 }
 
@@ -1537,9 +1666,7 @@ func (r *sharedWorldRegistry) flushReadyStaticActorRespawnLocked(entityID uint64
 	}
 	r.staticActorCombatHP[entityID] = resetHP
 	r.assignStaticActorCombatSnapshotLocked(entityID)
-	if r.staticActorCombatEngagedBy != nil {
-		delete(r.staticActorCombatEngagedBy, entityID)
-	}
+	r.releaseStaticActorCombatEngagementLocked(respawnActor, true)
 	if targetVID, ok := worldruntime.StaticActorVisibilityVID(actor); ok {
 		r.clearSelectedCombatTargetsLocked(targetVID, 0)
 	}
@@ -1658,12 +1785,14 @@ func (r *sharedWorldRegistry) staticActorAggroLiteBlocksFreshTargetLocked(subjec
 	}
 	if _, ok := r.sessionEntryLocked(engagedBy); !ok {
 		delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
+		r.markProximityAggroSuppressLocked(actor.Entity.ID, engagedBy)
 		r.clearSessionCombatTargetLocked(engagedBy)
 		return false
 	}
 	engagedOwner, ok := r.playerCharacter(engagedBy)
 	if !ok || characterAtBootstrapHPFloor(engagedOwner) {
 		delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
+		r.markProximityAggroSuppressLocked(actor.Entity.ID, engagedBy)
 		r.clearSessionCombatTargetLocked(engagedBy)
 		return false
 	}
@@ -1691,6 +1820,74 @@ func (r *sharedWorldRegistry) staticActorAggroLiteBlocksFreshTargetReadOnlyLocke
 func staticActorSpawnGroupAggroLiteCombatKind(combatKind string) bool {
 	_, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(combatKind)
 	return ok
+}
+
+// AcquireProximitySpawnGroupAggro scans live unengaged spawn-backed practice
+// mobs and establishes aggro-lite engagement for the nearest eligible live
+// same-map session inside DefaultSpawnAggroRadius. Acquisition alone does not
+// arm delayed retaliation; chase scheduling is synced only after engagement is
+// newly established. After an explicit engagement release, the same candidate
+// stays suppressed until it leaves the aggro radius and re-enters.
+func (r *sharedWorldRegistry) AcquireProximitySpawnGroupAggro() []uint64 {
+	if r == nil || r.entities == nil || r.sessionDirectory == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	sessionIDs := r.sessionDirectory.EntityIDs()
+	if len(sessionIDs) == 0 {
+		return nil
+	}
+	candidates := make([]worldruntime.SpawnAggroCandidate, 0, len(sessionIDs))
+	for _, sessionID := range sessionIDs {
+		player, ok := r.playerCharacter(sessionID)
+		if !ok || characterAtBootstrapHPFloor(player) {
+			continue
+		}
+		candidates = append(candidates, worldruntime.SpawnAggroCandidate{
+			EntityID: sessionID,
+			Position: worldruntime.PositionFromCharacter(player),
+		})
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	acquired := make([]uint64, 0)
+	for _, actor := range r.entities.AllStaticActors() {
+		if actor.Entity.ID == 0 || actor.SpawnGroupRef == "" || !staticActorSpawnGroupAggroLiteCombatKind(actor.CombatKind) {
+			continue
+		}
+		r.clearProximityAggroSuppressIfOutsideRadiusLocked(actor, candidates)
+		if existing := r.staticActorCombatEngagedBy[actor.Entity.ID]; existing != 0 {
+			continue
+		}
+		if currentHP, ok := r.staticActorCombatHP[actor.Entity.ID]; ok && currentHP == 0 {
+			continue
+		}
+		if _, waiting := r.staticActorCombatRespawnAt[actor.Entity.ID]; waiting {
+			continue
+		}
+		eligible := make([]worldruntime.SpawnAggroCandidate, 0, len(candidates))
+		for _, candidate := range candidates {
+			if r.proximityAggroSuppressActiveLocked(actor.Entity.ID, candidate.EntityID) {
+				continue
+			}
+			eligible = append(eligible, candidate)
+		}
+		selected, ok := worldruntime.SelectStaticActorSpawnAggroCandidate(actor, eligible, worldruntime.DefaultSpawnAggroRadius)
+		if !ok {
+			continue
+		}
+		before := r.staticActorCombatEngagedBy[actor.Entity.ID]
+		r.setStaticActorCombatEngagementLocked(actor.Entity.ID, selected.EntityID)
+		if before == 0 && r.staticActorCombatEngagedBy[actor.Entity.ID] == selected.EntityID {
+			acquired = append(acquired, actor.Entity.ID)
+		}
+	}
+	sort.Slice(acquired, func(i, j int) bool { return acquired[i] < acquired[j] })
+	return acquired
 }
 
 func (r *sharedWorldRegistry) SetSessionCombatTarget(entityID uint64, targetVID uint32) bool {
@@ -3215,7 +3412,10 @@ func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, ma
 			r.enqueueToEntityLocked(target.Entity.ID, addFrames)
 		}
 	}
-	delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
+	if engagedBy := r.staticActorCombatEngagedBy[actor.Entity.ID]; engagedBy != 0 {
+		delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
+		r.markProximityAggroSuppressLocked(actor.Entity.ID, engagedBy)
+	}
 	if targetVID, ok := worldruntime.StaticActorVisibilityVID(previous); ok {
 		r.clearSelectedCombatTargetsLocked(targetVID, 0)
 	}
@@ -3486,7 +3686,10 @@ func (r *sharedWorldRegistry) StepSpawnGroupReturnHome(entityID uint64, maxStep 
 			r.enqueueToEntityLocked(target.Entity.ID, addFrames)
 		}
 	}
-	delete(r.staticActorCombatEngagedBy, updated.Entity.ID)
+	if engagedBy := r.staticActorCombatEngagedBy[updated.Entity.ID]; engagedBy != 0 {
+		delete(r.staticActorCombatEngagedBy, updated.Entity.ID)
+		r.markProximityAggroSuppressLocked(updated.Entity.ID, engagedBy)
+	}
 	if targetVID, ok := worldruntime.StaticActorVisibilityVID(actor); ok {
 		r.clearSelectedCombatTargetsLocked(targetVID, 0)
 	}
@@ -3623,7 +3826,10 @@ func (r *sharedWorldRegistry) ReturnSpawnGroupHome(entityID uint64) (SpawnGroupL
 	}
 	if !evaluation.ReturnRequired && evaluation.Status == worldruntime.SpawnLeashStatusAtHome {
 		r.syncStaticActorCombatStateLocked(actor)
-		delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
+		if engagedBy := r.staticActorCombatEngagedBy[actor.Entity.ID]; engagedBy != 0 {
+			delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
+			r.markProximityAggroSuppressLocked(actor.Entity.ID, engagedBy)
+		}
 		if targetVID, ok := worldruntime.StaticActorVisibilityVID(actor); ok {
 			r.clearSelectedCombatTargetsLocked(targetVID, 0)
 		}
@@ -3676,7 +3882,10 @@ func (r *sharedWorldRegistry) ReturnSpawnGroupHome(entityID uint64) (SpawnGroupL
 			r.enqueueToEntityLocked(target.Entity.ID, addFrames)
 		}
 	}
-	delete(r.staticActorCombatEngagedBy, updated.Entity.ID)
+	if engagedBy := r.staticActorCombatEngagedBy[updated.Entity.ID]; engagedBy != 0 {
+		delete(r.staticActorCombatEngagedBy, updated.Entity.ID)
+		r.markProximityAggroSuppressLocked(updated.Entity.ID, engagedBy)
+	}
 	if targetVID, ok := worldruntime.StaticActorVisibilityVID(actor); ok {
 		r.clearSelectedCombatTargetsLocked(targetVID, 0)
 	}
@@ -3930,9 +4139,7 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 	if nextHP == 0 {
 		attempt.Died = true
 		attempt.DeathReward = r.staticActorDeathRewardLocked(actor)
-		if r.staticActorCombatEngagedBy != nil {
-			delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
-		}
+		r.releaseStaticActorCombatEngagementLocked(actor, true)
 		deadRaw := worldproto.EncodeDead(worldproto.DeadPacket{VID: requestedTargetVID})
 		clearRaw := combatproto.EncodeServerClearTarget()
 		targetedSessionIDs := make(map[uint64]struct{})

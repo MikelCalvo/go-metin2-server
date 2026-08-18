@@ -484,3 +484,120 @@ func TestPlanStaticActorSpawnChaseStepFailsClosedForInvalidInput(t *testing.T) {
 		t.Fatalf("expected invalid owner position chase-step plan to fail closed, got ok=%v plan=%+v", ok, plan)
 	}
 }
+
+func TestEvaluateStaticActorSpawnAggroAcquisitionAcquiresInsideDefaultRadius(t *testing.T) {
+	actor := StaticEntity{
+		Entity:        Entity{ID: 50, Kind: EntityKindStaticActor, Name: "AggroPlannerHomeMob"},
+		Position:      NewPosition(42, 1700, 2800),
+		SpawnHome:     NewPosition(42, 1700, 2800),
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.aggro_planner_home",
+	}
+	evaluation, ok := EvaluateStaticActorSpawnAggroAcquisition(actor, NewPosition(42, 1850, 2800), DefaultSpawnAggroRadius)
+	if !ok {
+		t.Fatal("expected in-radius same-map candidate to evaluate")
+	}
+	if !evaluation.Acquired || evaluation.Radius != DefaultSpawnAggroRadius || evaluation.Current != actor.Position {
+		t.Fatalf("expected acquired aggro evaluation inside default radius, got %+v", evaluation)
+	}
+}
+
+func TestEvaluateStaticActorSpawnAggroAcquisitionRejectsOutsideRadius(t *testing.T) {
+	actor := StaticEntity{
+		Entity:        Entity{ID: 51, Kind: EntityKindStaticActor, Name: "AggroPlannerOutsideMob"},
+		Position:      NewPosition(42, 1700, 2800),
+		SpawnHome:     NewPosition(42, 1700, 2800),
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.aggro_planner_outside",
+	}
+	evaluation, ok := EvaluateStaticActorSpawnAggroAcquisition(actor, NewPosition(42, 1901, 2800), DefaultSpawnAggroRadius)
+	if !ok {
+		t.Fatal("expected outside-radius candidate to evaluate")
+	}
+	if evaluation.Acquired {
+		t.Fatalf("expected outside-radius candidate not to acquire, got %+v", evaluation)
+	}
+}
+
+func TestEvaluateStaticActorSpawnAggroAcquisitionFailsClosedForReturnRequiredOrCrossMap(t *testing.T) {
+	home := NewPosition(42, 1700, 2800)
+	returnRequired := StaticEntity{
+		Entity:        Entity{ID: 52, Kind: EntityKindStaticActor, Name: "AggroPlannerReturnRequiredMob"},
+		Position:      NewPosition(42, 2301, 2800),
+		SpawnHome:     home,
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.aggro_planner_return_required",
+	}
+	evaluation, ok := EvaluateStaticActorSpawnAggroAcquisition(returnRequired, NewPosition(42, 2301, 2800), DefaultSpawnAggroRadius)
+	if !ok {
+		t.Fatal("expected return-required actor to evaluate without mutating")
+	}
+	if evaluation.Acquired {
+		t.Fatalf("expected return-required actor not to acquire, got %+v", evaluation)
+	}
+
+	crossMap := StaticEntity{
+		Entity:        Entity{ID: 53, Kind: EntityKindStaticActor, Name: "AggroPlannerCrossMapMob"},
+		Position:      NewPosition(42, 1700, 2800),
+		SpawnHome:     home,
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.aggro_planner_cross_map",
+	}
+	evaluation, ok = EvaluateStaticActorSpawnAggroAcquisition(crossMap, NewPosition(43, 1700, 2800), DefaultSpawnAggroRadius)
+	if !ok {
+		t.Fatal("expected cross-map candidate to evaluate without mutating")
+	}
+	if evaluation.Acquired {
+		t.Fatalf("expected cross-map candidate not to acquire, got %+v", evaluation)
+	}
+}
+
+func TestEvaluateStaticActorSpawnAggroAcquisitionFailsClosedForInvalidInput(t *testing.T) {
+	actor := StaticEntity{Entity: Entity{ID: 54, Kind: EntityKindStaticActor, Name: "AggroPlannerInvalidMob"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20350}
+	if evaluation, ok := EvaluateStaticActorSpawnAggroAcquisition(actor, NewPosition(42, 1750, 2800), DefaultSpawnAggroRadius); ok || evaluation.Acquired {
+		t.Fatalf("expected non-spawn actor aggro evaluation to fail closed, got ok=%v evaluation=%+v", ok, evaluation)
+	}
+
+	actor.CombatProfile = StaticActorCombatProfilePracticeMob
+	actor.CombatKind = StaticActorCombatProfilePracticeMob
+	actor.SpawnGroupRef = "practice.aggro_planner_invalid"
+	if evaluation, ok := EvaluateStaticActorSpawnAggroAcquisition(actor, NewPosition(42, 1750, 2800), 0); ok || evaluation.Acquired {
+		t.Fatalf("expected non-positive aggro radius to fail closed, got ok=%v evaluation=%+v", ok, evaluation)
+	}
+	if evaluation, ok := EvaluateStaticActorSpawnAggroAcquisition(actor, Position{}, DefaultSpawnAggroRadius); ok || evaluation.Acquired {
+		t.Fatalf("expected invalid candidate position to fail closed, got ok=%v evaluation=%+v", ok, evaluation)
+	}
+}
+
+func TestSelectStaticActorSpawnAggroCandidateChoosesNearestThenLowestEntityID(t *testing.T) {
+	actor := StaticEntity{
+		Entity:        Entity{ID: 55, Kind: EntityKindStaticActor, Name: "AggroPlannerSelectMob"},
+		Position:      NewPosition(42, 1700, 2800),
+		SpawnHome:     NewPosition(42, 1700, 2800),
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.aggro_planner_select",
+	}
+	selected, ok := SelectStaticActorSpawnAggroCandidate(actor, []SpawnAggroCandidate{
+		{EntityID: 30, Position: NewPosition(42, 1850, 2800)},
+		{EntityID: 20, Position: NewPosition(42, 1800, 2800)},
+		{EntityID: 10, Position: NewPosition(42, 1800, 2800)},
+		{EntityID: 40, Position: NewPosition(42, 2100, 2800)},
+		{EntityID: 0, Position: NewPosition(42, 1750, 2800)},
+	}, DefaultSpawnAggroRadius)
+	if !ok {
+		t.Fatal("expected nearest in-radius candidate to be selected")
+	}
+	if selected.EntityID != 10 || selected.Position != NewPosition(42, 1800, 2800) {
+		t.Fatalf("expected ascending entity-id tie-break on nearest candidate, got %+v", selected)
+	}
+}
