@@ -84,6 +84,7 @@ const itemBuyRejectedInfoMessage = "The merchant will not sell this item to you.
 const itemSellRejectedInfoMessage = "The merchant refuses to buy this item."
 const itemUnequipRejectedInfoMessage = "You cannot remove this item."
 const exchangePartnerMerchantBusyInfoMessage = "That player cannot trade right now."
+const exchangeRequesterMerchantBusyInfoMessage = "You cannot trade while another trade window is open."
 const bootstrapMapIndex uint32 = 1
 const bootstrapShinsooYonganStartX int32 = 469300
 const bootstrapShinsooYonganStartY int32 = 964200
@@ -5384,8 +5385,19 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 
 					switch packet.Subheader {
 					case itemproto.ExchangeSubheaderStart:
-						if !ownsLiveSharedWorldSession() || hasActiveMerchantBuy {
+						if !ownsLiveSharedWorldSession() {
 							return gameflow.ItemExchangeResult{Accepted: false}
+						}
+						if hasActiveMerchantBuy {
+							return gameflow.ItemExchangeResult{
+								Accepted: true,
+								Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+									Type:    chatproto.ChatTypeInfo,
+									VID:     0,
+									Empire:  0,
+									Message: exchangeRequesterMerchantBusyInfoMessage,
+								})},
+							}
 						}
 						frames, ok := sharedWorld.StartExchange(sharedWorldID, packet.Arg1)
 						if !ok {

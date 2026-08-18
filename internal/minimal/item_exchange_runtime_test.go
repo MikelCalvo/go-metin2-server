@@ -181,8 +181,15 @@ func TestGameRuntimeItemExchangeStartRejectsActiveMerchantWindowWithoutMutation(
 	if err != nil {
 		t.Fatalf("unexpected merchant-open exchange start error: %v", err)
 	}
-	if len(startOut) != 0 {
-		t.Fatalf("expected exchange start with open merchant window to emit no frames, got %d", len(startOut))
+	if len(startOut) != 1 {
+		t.Fatalf("expected exchange start with open merchant window to emit one info chat frame, got %d", len(startOut))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, startOut[0]))
+	if err != nil {
+		t.Fatalf("decode merchant-open exchange start info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterMerchantBusyInfoMessage {
+		t.Fatalf("unexpected merchant-open exchange start info chat: %+v", infoChat)
 	}
 	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
 		t.Fatalf("expected exchange start with open merchant window to queue no peer frames, got %d", len(queued))
