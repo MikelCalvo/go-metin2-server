@@ -37,8 +37,8 @@ const (
 // Run executes the small migration preflight CLI and returns a process-style exit
 // code. The catalog, status, empty-ledger-snapshot, ledger-snapshot, plan,
 // plan-artifact, plan-artifact-status, apply-preflight,
-// apply-preflight-status, apply-lock-status, apply-audit-status, and
-// quarantine-export commands are read-only.
+// apply-preflight-status, apply-lock-status, apply-audit-status,
+// quarantine-export, and backup-restore-drill commands are read-only.
 // The apply command is an explicit CLI-only mutation surface: it requires an
 // operator-supplied database driver, DSN, strict offline ledger snapshot, and
 // target version, and it remains deliberately separate from daemon startup and
@@ -93,6 +93,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runApply(args[1:], stdin, stdout, stderr)
 	case "quarantine-export":
 		return runQuarantineExport(args[1:], stdin, stdout, stderr)
+	case "backup-restore-drill":
+		return runBackupRestoreDrill(args[1:], stdin, stdout, stderr)
 	case "version", "--version":
 		return runVersion(args[1:], stdout, stderr)
 	case "help", "-h", "--help":
@@ -1714,6 +1716,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  apply-audit-status     inspect a migration apply audit file without mutating it")
 	fmt.Fprintln(w, "  apply                  apply a target plan using a database/sql driver and offline ledger snapshot")
 	fmt.Fprintln(w, "  quarantine-export      validate and canonicalize a retained migration-shaped export offline")
+	fmt.Fprintln(w, "  backup-restore-drill   print path-aware file-store backup/restore drill commands from runtime-config")
 	fmt.Fprintln(w, "  version                print metadata-only binary build identity")
 	fmt.Fprintln(w, "")
 	printVersionUsage(w)
@@ -1741,6 +1744,8 @@ func printUsage(w io.Writer) {
 	printApplyUsage(w)
 	fmt.Fprintln(w, "")
 	printQuarantineExportUsage(w)
+	fmt.Fprintln(w, "")
+	printBackupRestoreDrillUsage(w)
 }
 
 func printVersionUsage(w io.Writer) {

@@ -65,6 +65,6 @@ Validation:
 
 ## Follow-up options
 
-1. Add a dry-run helper that prints backup/restore drill commands from `/local/runtime-config`.
+1. ~~Add a dry-run helper that prints backup/restore drill commands from `/local/runtime-config`.~~ Done: `metin2-migrate backup-restore-drill`.
 2. Extract repository seams only after offline quarantine + loopback quarantine both prove the export boundary.
 3. Keep ground-item restart durability deferred until a real world-state repository exists.

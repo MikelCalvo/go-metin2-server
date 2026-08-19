@@ -38,6 +38,12 @@ Related helpers:
 - `GET /local/runtime-config` — confirms active `persistence.*` paths before any backup/restore
 - `GET /local/persistence/status` — aggregate validity, `live_selected_character_count`, per-store `backup_manifest`, and `restore_blocked_by_live_sessions`
 - per-store `.../validate` and `.../crash-temps/cleanup` — optional triage before backup; static-actor validate/cleanup use the `/local/static-actor-store/...` prefix
+- `metin2-migrate backup-restore-drill --runtime-config <path|->` — read-only printer that turns a retained runtime-config snapshot into the path-aware curl / aside-rename script below without executing backup or restore
+
+```bash
+curl -sS http://127.0.0.1:6060/local/runtime-config \
+  | go run ./cmd/metin2-migrate backup-restore-drill --runtime-config -
+```
 
 Request bodies:
 

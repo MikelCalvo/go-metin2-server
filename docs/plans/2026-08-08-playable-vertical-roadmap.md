@@ -228,9 +228,9 @@ Likely areas:
 
 Next slices:
 
-1. Extend the new `db/migrations` catalog beyond the initial `schema_migrations` ledger only when a narrow repository/backfill contract is ready; export quarantine/preflight now exists for `0002`/`0003`/`0004`/`0007`/`0008`/`0009`/`0010`/`0011` migration-shaped exports.
+1. Extend the new `db/migrations` catalog beyond the initial `schema_migrations` ledger only when a narrow repository/backfill contract is ready; export quarantine/preflight now exists for `0002`/`0003`/`0004`/`0007`/`0008`/`0009`/`0010`/`0011` migration-shaped exports, and offline `metin2-migrate quarantine-export` / `backup-restore-drill` close the runbook gap beside the loopback surfaces.
 2. Extract narrow repository seams only where tests prove reduced coupling.
-3. Write backup/restore runbooks backed by local validation or preflight tests.
+3. ~~Write backup/restore runbooks backed by local validation or preflight tests.~~ Done for the six manifested JSON stores plus the read-only drill printer; ground-item durability remains deferred.
 4. Harden crash/restart recovery for item/gold/character state used by the PvE loop.
 5. Document release/deploy/versioning policy; the first release-identity stamp and loopback `/local/build-info` surface now exist, while deployment topology remains follow-on work.
 6. Add production-safe observability conventions before remote admin surfaces.

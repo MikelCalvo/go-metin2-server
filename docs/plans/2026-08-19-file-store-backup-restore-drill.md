@@ -45,6 +45,6 @@ Docs-only slice. Validation:
 
 ## Follow-up options
 
-1. Add a small operator script or hermetic dry-run helper that prints the drill commands from `/local/runtime-config` without performing restore.
+1. ~~Add a small operator script or hermetic dry-run helper that prints the drill commands from `/local/runtime-config` without performing restore.~~ Done: `metin2-migrate backup-restore-drill`.
 2. Keep ground-item / ground-gold restart durability deferred until a real world-state repository exists.
-3. Keep DB import/quarantine tooling deferred until schema-shaped export consumers need a closed restore path.
+3. Extract repository seams only after offline quarantine + loopback quarantine both prove the export boundary.
