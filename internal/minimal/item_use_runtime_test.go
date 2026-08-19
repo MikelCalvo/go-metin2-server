@@ -3404,3 +3404,169 @@ func TestGameSessionFlowItemUseSaveFailureRollsBackLiveMutation(t *testing.T) {
 		t.Fatalf("expected save-failed ITEM_USE to leave persisted quickslots unchanged, got %#v", persisted.Characters[0].Quickslots)
 	}
 }
+
+func TestGameSessionFlowItemUseToItemSaveFailureRollsBackLiveMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemSaveFail", 0x010305f2, 0x020405f2, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 902, Vnum: 27001, Count: 2, Slot: 5},
+		{ID: 903, Vnum: 27001, Count: 3, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 1, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	login := "item-use-to-item-save-fail"
+	issuePeerTicket(t, ticketStore, login, 0x505050f2, owner)
+	accounts := newDeferredFailingAccountStore(0, accountstore.Account{
+		Login:      login,
+		Empire:     owner.Empire,
+		Characters: cloneCharacters([]loginticket.Character{owner}),
+	})
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Save Fail Stack Potion",
+		Stackable: true,
+		MaxCount:  200,
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected use-to-item save-fail runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x505050f2)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+		Source: itemproto.InventoryPosition(5),
+		Target: itemproto.InventoryPosition(6),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected use-to-item save-fail packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected save-failed ITEM_USE_TO_ITEM to emit no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected save-failed ITEM_USE_TO_ITEM to queue no frames, got %d", len(queued))
+	}
+
+	inventorySnapshot, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after save-failed ITEM_USE_TO_ITEM")
+	}
+	wantInventory := []InventoryItemSnapshot{
+		{ID: 902, Vnum: 27001, Count: 2, Slot: 5},
+		{ID: 903, Vnum: 27001, Count: 3, Slot: 6},
+	}
+	if !reflect.DeepEqual(inventorySnapshot.Inventory, wantInventory) {
+		t.Fatalf("expected save-failed ITEM_USE_TO_ITEM to roll live inventory back, got %#v", inventorySnapshot.Inventory)
+	}
+	quickslotsSnapshot, ok := runtime.QuickslotsSnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected quickslots snapshot after save-failed ITEM_USE_TO_ITEM")
+	}
+	wantQuickslots := []QuickslotSnapshot{
+		{Position: 1, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	if !reflect.DeepEqual(quickslotsSnapshot.Quickslots, wantQuickslots) {
+		t.Fatalf("expected save-failed ITEM_USE_TO_ITEM to keep live quickslots unchanged, got %#v", quickslotsSnapshot.Quickslots)
+	}
+
+	persisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after save-failed ITEM_USE_TO_ITEM: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected save-failed ITEM_USE_TO_ITEM to leave persisted inventory unchanged, got %#v", persisted.Characters[0].Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("expected save-failed ITEM_USE_TO_ITEM to leave persisted quickslots unchanged, got %#v", persisted.Characters[0].Quickslots)
+	}
+}
+
+func TestGameSessionFlowItemUseToItemPartialMergeSaveFailureRollsBackLiveMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemPartSave", 0x010305f3, 0x020405f3, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 904, Vnum: 27001, Count: 5, Slot: 5},
+		{ID: 905, Vnum: 27001, Count: 198, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 1, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 6},
+	}
+	login := "use-to-item-part-save-fail"
+	issuePeerTicket(t, ticketStore, login, 0x505050f3, owner)
+	accounts := newDeferredFailingAccountStore(0, accountstore.Account{
+		Login:      login,
+		Empire:     owner.Empire,
+		Characters: cloneCharacters([]loginticket.Character{owner}),
+	})
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Save Fail Partial Stack Potion",
+		Stackable: true,
+		MaxCount:  200,
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected partial use-to-item save-fail runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x505050f3)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+		Source: itemproto.InventoryPosition(5),
+		Target: itemproto.InventoryPosition(6),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected partial use-to-item save-fail packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected save-failed partial ITEM_USE_TO_ITEM to emit no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected save-failed partial ITEM_USE_TO_ITEM to queue no frames, got %d", len(queued))
+	}
+
+	inventorySnapshot, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after save-failed partial ITEM_USE_TO_ITEM")
+	}
+	wantInventory := []InventoryItemSnapshot{
+		{ID: 904, Vnum: 27001, Count: 5, Slot: 5},
+		{ID: 905, Vnum: 27001, Count: 198, Slot: 6},
+	}
+	if !reflect.DeepEqual(inventorySnapshot.Inventory, wantInventory) {
+		t.Fatalf("expected save-failed partial ITEM_USE_TO_ITEM to roll live inventory back, got %#v", inventorySnapshot.Inventory)
+	}
+	quickslotsSnapshot, ok := runtime.QuickslotsSnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected quickslots snapshot after save-failed partial ITEM_USE_TO_ITEM")
+	}
+	wantQuickslots := []QuickslotSnapshot{
+		{Position: 1, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 6},
+	}
+	if !reflect.DeepEqual(quickslotsSnapshot.Quickslots, wantQuickslots) {
+		t.Fatalf("expected save-failed partial ITEM_USE_TO_ITEM to keep live quickslots unchanged, got %#v", quickslotsSnapshot.Quickslots)
+	}
+
+	persisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after save-failed partial ITEM_USE_TO_ITEM: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected save-failed partial ITEM_USE_TO_ITEM to leave persisted inventory unchanged, got %#v", persisted.Characters[0].Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("expected save-failed partial ITEM_USE_TO_ITEM to leave persisted quickslots unchanged, got %#v", persisted.Characters[0].Quickslots)
+	}
+}

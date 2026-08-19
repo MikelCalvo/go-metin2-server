@@ -270,6 +270,7 @@ Expected result:
 - if the stack consolidation succeeds while an exchange shell is open, the requester receives one self-only `GC::EXCHANGE END` before the item/quickslot merge refresh frames, the paired peer receives one queued `GC::EXCHANGE END`, and no exchange finalization/result frames appear
 - restricted or invalid states (`anti_stack`, transfer anti-flags, missing/non-stackable/malformed/mismatched templates, source/target `vnum` mismatches, locked source/target stacks, selected-character job/sex/empire/min-level restrictions, duplicate source/target item instance IDs, duplicate live occupancy of the source or target carried cell, already-full targets, source/target counts already above template `max_count`, or selected characters at the bootstrap zero-HP floor) fail closed with no visible mutation; for `anti_stack`, both carried stacks and item quickslots should remain unchanged
 - a `min_level` restriction above the selected character's level or a selected character at the bootstrap zero-HP floor leaves both carried stacks and any source-cell item quickslot unchanged even when the source and target are otherwise compatible
+- if operator/test fixtures can force account persistence failure during an otherwise-valid full or partial `ITEM_USE_TO_ITEM` stack consolidation, the merge fails closed: no item refresh, quickslot change, or exchange teardown is visible, and reconnect shows the pre-merge inventory/quickslots unchanged
 
 ### 4.5.3 Retarget a quickslot tuple (`QUICKSLOT_ADD`)
 
