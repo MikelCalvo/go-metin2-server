@@ -3044,7 +3044,7 @@ func TestRunRejectsUnknownCommandAsUsageError(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Fatalf("expected usage errors not to write stdout, got %q", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "unknown command") || !strings.Contains(stderr.String(), "catalog") || !strings.Contains(stderr.String(), "plan") || !strings.Contains(stderr.String(), "version") {
+	if !strings.Contains(stderr.String(), "unknown command") || !strings.Contains(stderr.String(), "catalog") || !strings.Contains(stderr.String(), "plan") || !strings.Contains(stderr.String(), "quarantine-export") || !strings.Contains(stderr.String(), "version") {
 		t.Fatalf("expected usage guidance for unknown command, got %q", stderr.String())
 	}
 }
