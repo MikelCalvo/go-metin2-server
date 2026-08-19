@@ -1622,7 +1622,7 @@ func TestGameRuntimeImportIdenticalContentBundlePreservesLivePracticeMobCombatSt
 	if err != nil {
 		t.Fatalf("unexpected first attack error before no-op reimport: %v", err)
 	}
-	if len(firstAttack) != 3 {
+	if len(firstAttack) != 4 {
 		t.Fatalf("expected target refresh, retaliation point change, and damage-info before no-op reimport, got %d frames", len(firstAttack))
 	}
 	firstRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, firstAttack[0]))
@@ -1647,7 +1647,7 @@ func TestGameRuntimeImportIdenticalContentBundlePreservesLivePracticeMobCombatSt
 	if err != nil {
 		t.Fatalf("unexpected second attack error after no-op reimport: %v", err)
 	}
-	if len(secondAttack) != 3 {
+	if len(secondAttack) != 4 {
 		t.Fatalf("expected no-op reimport to preserve selected combat target for the next accepted hit, got %d frames", len(secondAttack))
 	}
 	secondRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, secondAttack[0]))

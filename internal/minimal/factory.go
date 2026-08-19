@@ -3896,6 +3896,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return
 			}
 			frames := [][]byte{encodePlayerPointChangeFrame(previousSelected.VID, retaliation)}
+			if !clearTarget {
+				frames = append(frames, encodePracticeMobOwnerRetaliationDamageInfoFrame(previousSelected.VID, retaliation))
+			}
 			var stablePeerFrames [][]byte
 			if clearTarget {
 				clearActiveCombatTarget()
@@ -6146,6 +6149,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							sharedWorld.EnqueueStaticActorFramesToVisiblePeers(resolution.Actor.EntityID, sharedWorldID, resolution.PeerPostMutationFrames)
 						}
 					}
+					if !clearTarget {
+						persistedFrames = append(persistedFrames, encodePracticeMobOwnerRetaliationDamageInfoFrame(previousSelected.VID, retaliation))
+					}
 					persistedFrames = appendPostFloorContextCloseFrames(persistedFrames, clearTarget)
 					if !resolution.ClearActiveTarget && !clearTarget {
 						scheduleFirstPracticeMobServerOriginRetaliation(resolution.ActiveTargetVID, resolution.ActiveTargetSnapshotVersion)
@@ -7487,6 +7493,18 @@ func encodePlayerPointChangeFrame(vid uint32, result player.PointChangeResult) [
 		Type:   result.PointType,
 		Amount: result.PointAmount,
 		Value:  result.PointValue,
+	})
+}
+
+func encodePracticeMobOwnerRetaliationDamageInfoFrame(ownerVID uint32, result player.PointChangeResult) []byte {
+	damage := result.PointAmount
+	if damage < 0 {
+		damage = -damage
+	}
+	return combatproto.EncodeServerDamageInfo(combatproto.ServerDamageInfoPacket{
+		VID:    ownerVID,
+		Flag:   0,
+		Damage: damage,
 	})
 }
 
