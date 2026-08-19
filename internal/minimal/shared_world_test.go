@@ -964,6 +964,135 @@ func TestGameRuntimeReturnSpawnGroupHomeMovesWithinRadiusMobBackToAuthoredHome(t
 	}
 }
 
+func TestGameRuntimeReturnSpawnGroupHomeAcrossMapsLeavesNoDualMapOccupancy(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	homeViewer := peerVisibilityCharacter("CrossMapReturnHomeViewer", 0x01030171, 0x02040171, 1700, 2800, 0, 101, 201)
+	homeViewer.MapIndex = 42
+	awayViewer := peerVisibilityCharacter("CrossMapReturnAwayViewer", 0x01030172, 0x02040172, 1800, 2900, 0, 102, 202)
+	awayViewer.MapIndex = 43
+	issuePeerTicket(t, store, "cross-map-return-home-viewer", 0x17171717, homeViewer)
+	issuePeerTicket(t, store, "cross-map-return-away-viewer", 0x18181818, awayViewer)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for cross-map return-home: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_home_cross_map",
+		Name:          "ReturnHomeCrossMapMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import cross-map return-home spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_home_cross_map")
+	if !ok {
+		t.Fatal("expected cross-map return-home spawn group to resolve by ref")
+	}
+
+	factory := runtime.SessionFactory()
+	homeFlow, _ := enterGameWithLoginTicket(t, factory, "cross-map-return-home-viewer", 0x17171717)
+	defer closeSessionFlow(t, homeFlow)
+	awayFlow, _ := enterGameWithLoginTicket(t, factory, "cross-map-return-away-viewer", 0x18181818)
+	defer closeSessionFlow(t, awayFlow)
+	flushServerFrames(t, homeFlow)
+	flushServerFrames(t, awayFlow)
+
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "ReturnHomeCrossMapMob", 43, 1800, 2900, 20350); !ok {
+		t.Fatal("expected spawn-backed actor current-position update onto foreign map to succeed")
+	}
+	if homeDelete := flushServerFrames(t, homeFlow); len(homeDelete) != 1 {
+		t.Fatalf("expected home-map viewer to receive one delete when actor leaves map 42, got %d", len(homeDelete))
+	}
+	awayAddFrames := flushServerFrames(t, awayFlow)
+	if len(awayAddFrames) != 3 {
+		t.Fatalf("expected away-map viewer to receive add burst at displaced foreign-map position, got %d", len(awayAddFrames))
+	}
+	displaced, ok := runtime.SpawnGroupByRef("practice.return_home_cross_map")
+	if !ok || displaced.MapIndex != 43 || displaced.X != 1800 || displaced.Y != 2900 {
+		t.Fatalf("expected displaced actor on map 43 before cross-map return-home, got ok=%v snapshot=%+v", ok, displaced)
+	}
+	awayActors, ok := runtime.StaticActorsForMap(43)
+	if !ok || len(awayActors) != 1 || awayActors[0].SpawnGroupRef != "practice.return_home_cross_map" {
+		t.Fatalf("expected map 43 occupancy before return-home, got ok=%v actors=%+v", ok, awayActors)
+	}
+	homeActors, ok := runtime.StaticActorsForMap(42)
+	if !ok || len(homeActors) != 0 {
+		t.Fatalf("expected map 42 empty while actor is displaced cross-map, got ok=%v actors=%+v", ok, homeActors)
+	}
+
+	returned, ok := runtime.ReturnSpawnGroupHome(group.EntityID)
+	if !ok {
+		t.Fatalf("expected cross-map return-home trigger to accept entity %d", group.EntityID)
+	}
+	if returned.Status != worldruntime.SpawnLeashStatusAtHome || returned.ReturnRequired || returned.ReturnTarget != nil {
+		t.Fatalf("expected cross-map return-home to restore at-home leash state, got %+v", returned)
+	}
+	if returned.Actor.MapIndex != 42 || returned.Actor.X != 1700 || returned.Actor.Y != 2800 || returned.Actor.SpawnGroupRef != "practice.return_home_cross_map" {
+		t.Fatalf("expected returned actor at authored home map/position, got %+v", returned.Actor)
+	}
+
+	exact, ok := runtime.SpawnGroupByRef("practice.return_home_cross_map")
+	if !ok || exact.EntityID != group.EntityID || exact.MapIndex != 42 || exact.X != 1700 || exact.Y != 2800 {
+		t.Fatalf("expected exact by-ref lookup to keep one actor at authored home, got ok=%v snapshot=%+v", ok, exact)
+	}
+	homeActors, ok = runtime.StaticActorsForMap(42)
+	if !ok || len(homeActors) != 1 || homeActors[0].EntityID != group.EntityID || homeActors[0].SpawnGroupRef != "practice.return_home_cross_map" {
+		t.Fatalf("expected exactly one home-map occupancy after cross-map return-home, got ok=%v actors=%+v", ok, homeActors)
+	}
+	awayActors, ok = runtime.StaticActorsForMap(43)
+	if !ok || len(awayActors) != 0 {
+		t.Fatalf("expected no dual-map occupancy on foreign map after cross-map return-home, got ok=%v actors=%+v", ok, awayActors)
+	}
+	allActors := runtime.StaticActors()
+	if len(allActors) != 1 || allActors[0].EntityID != group.EntityID || allActors[0].SpawnGroupRef != "practice.return_home_cross_map" {
+		t.Fatalf("expected one live runtime actor for authored ref after cross-map return-home, got %+v", allActors)
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after cross-map return-home: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].MapIndex != 42 || persisted.StaticActors[0].X != 1700 || persisted.StaticActors[0].Y != 2800 || persisted.StaticActors[0].SpawnHome == nil || persisted.StaticActors[0].SpawnHome.MapIndex != 42 {
+		t.Fatalf("expected persisted spawn group to return to authored home map, got %+v", persisted.StaticActors)
+	}
+
+	awayDelete := flushServerFrames(t, awayFlow)
+	if len(awayDelete) != 1 {
+		t.Fatalf("expected away-map viewer to receive one delete on cross-map return-home, got %d frames", len(awayDelete))
+	}
+	if _, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, awayDelete[0])); err != nil {
+		t.Fatalf("decode away-map cross-map return-home delete: %v", err)
+	}
+	homeReturnFrames := flushServerFrames(t, homeFlow)
+	if len(homeReturnFrames) != 3 {
+		t.Fatalf("expected home-map viewer to receive delete/readd bootstrap burst on cross-map return-home, got %d frames", len(homeReturnFrames))
+	}
+	homeAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, homeReturnFrames[0]))
+	if err != nil {
+		t.Fatalf("decode cross-map return-home add: %v", err)
+	}
+	if homeAdd.VID != uint32(group.EntityID) || homeAdd.X != 1700 || homeAdd.Y != 2800 {
+		t.Fatalf("expected cross-map return-home add at authored home, got %+v", homeAdd)
+	}
+}
+
 func TestGameRuntimeStepSpawnGroupReturnHomeMovesOnePlannedStepAndQueuesRetainedRefresh(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	viewer := peerVisibilityCharacter("ReturnStepViewer", 0x0103016a, 0x0204016a, 2301, 2800, 0, 101, 201)

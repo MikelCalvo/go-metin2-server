@@ -412,11 +412,17 @@ Contract for Track A item 6:
    - owner Leave / logout / close, phase-select leave, owner death floor, and owner transfer/warp away clear engagement / selected-target / pending chase ownership without resurrecting dead combat state or inventing a second spawn instance
    - due return-step and due chase-step EnterGame / transfer preflights remain the owned anti-stale-position path and must not emit a later duplicate queued rebuild for the same due timer
 
+6. **Still-dead content-bundle replacement anti-resurrect**
+   - while a content-loaded spawn-group combatant is still inside its server-owned dead interval, a successful non-identical `ImportContentBundle` / authored replacement that keeps that same authored `spawn_group_ref` must **not** resurrect it early as a fresh live full-HP actor
+   - the replaced actor must remain dead / non-targetable through the ordinary pending respawn timer, and any add-style visibility presentation during that still-dead window still ends with one trailing `GC DEAD(vid)`
+   - identical no-op reimports may continue to short-circuit without mutating lifecycle state; this rule targets non-identical replacements that would otherwise remove and re-register the same authored ref as a new live instance
+
 Current implementation status:
 - due-respawn EnterGame / transfer preflight for content-loaded spawn groups is already owned
 - still-dead trailing `GC DEAD` replay is owned for both `training_dummy` and content-loaded `spawn_groups` EnterGame / reconnect add-style visibility, including fail-closed target/attack while the dead interval remains open and one-ref/one-actor lookup after that still-dead bootstrap
-- same-map return-step / return-home MOVE is live; cross-map return-home remains on delete/readd
-- reconnect rematerialization and dual-map occupancy guards above remain fail-closed contracts covered by the existing by-ref lookup and cross-map return-home rebuild paths
+- same-map return-step / return-home MOVE is live; cross-map return-home remains on delete/readd and now has focused dual-map occupancy coverage (foreign-map delete, home-map add/info/update, one-ref/one-actor, empty foreign-map occupancy, persisted authored home)
+- reconnect rematerialization remains a fail-closed contract for later focused coverage beside the existing by-ref lookup path
+- still-dead content-bundle replacement anti-resurrect above is frozen here as the next honest RED: a non-identical replacement that keeps the same authored ref while the actor is still dead must preserve the dead interval instead of re-registering a live full-HP instance
 
 Explicit non-goals for this anti-leak freeze alone:
 - cross-map return MOVE / warp packet choreography
