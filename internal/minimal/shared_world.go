@@ -89,6 +89,7 @@ type sharedGroundItem struct {
 	Z                  int32
 	OwnershipExclusive bool
 	OwnershipExpiresAt time.Time
+	DespawnAt          time.Time
 }
 
 type sharedGroundItemPickup struct {
@@ -219,6 +220,7 @@ const (
 
 	bootstrapGroundItemPickupRange       = int64(300)
 	bootstrapGroundItemOwnershipDuration = 30 * time.Second
+	bootstrapGroundItemDespawnDuration   = 300 * time.Second
 )
 
 const (
@@ -3011,6 +3013,7 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 		Z:                  character.Z,
 		OwnershipExclusive: true,
 		OwnershipExpiresAt: now.Add(bootstrapGroundItemOwnershipDuration),
+		DespawnAt:          now.Add(bootstrapGroundItemDespawnDuration),
 	}
 	r.groundItemsByVID[vid] = ground
 	frames := encodeGroundItemVisibleFrames(ground)
@@ -3201,6 +3204,7 @@ func (r *sharedWorldRegistry) FlushDueGroundItemOwnershipReleases() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.flushDueGroundItemOwnershipReleasesLocked()
+	r.flushDueGroundItemDespawnsLocked()
 }
 
 func (r *sharedWorldRegistry) flushDueGroundItemOwnershipReleasesLocked() {
@@ -3221,6 +3225,32 @@ func (r *sharedWorldRegistry) flushDueGroundItemOwnershipReleasesLocked() {
 	sortSharedGroundItemsByVID(released)
 	for _, ground := range released {
 		frames := [][]byte{encodeGroundItemPublicOwnershipFrame(ground)}
+		groundCharacter := loginticket.Character{MapIndex: ground.MapIndex, X: ground.X, Y: ground.Y, Z: ground.Z}
+		for _, target := range r.scopesLocked().VisibleTargets(0, groundCharacter) {
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
+			r.enqueueToEntityLocked(target.Entity.ID, frames)
+		}
+	}
+}
+
+func (r *sharedWorldRegistry) flushDueGroundItemDespawnsLocked() {
+	if r == nil || len(r.groundItemsByVID) == 0 {
+		return
+	}
+	now := r.currentTimeLocked()
+	despawned := make([]sharedGroundItem, 0)
+	for vid, ground := range r.groundItemsByVID {
+		if ground.DespawnAt.IsZero() || now.Before(ground.DespawnAt) {
+			continue
+		}
+		delete(r.groundItemsByVID, vid)
+		despawned = append(despawned, ground)
+	}
+	sortSharedGroundItemsByVID(despawned)
+	for _, ground := range despawned {
+		frames := [][]byte{encodeGroundItemDeleteFrame(ground)}
 		groundCharacter := loginticket.Character{MapIndex: ground.MapIndex, X: ground.X, Y: ground.Y, Z: ground.Z}
 		for _, target := range r.scopesLocked().VisibleTargets(0, groundCharacter) {
 			if characterAtBootstrapHPFloor(target.Character) {

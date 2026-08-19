@@ -5906,6 +5906,94 @@ func TestGameRuntimeItemPickupAllowsPublicCollectorAfterOwnershipRelease(t *test
 	}
 }
 
+func TestGameRuntimeGroundItemDespawnsAfterBootstrapDestroyDeadline(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("DespawnOwner", 0x01030220, 0x02040220, 1400, 2400, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 4020, Vnum: 27010, Count: 2, Slot: 6}}
+	watcher := peerVisibilityCharacter("DespawnWatcher", 0x01030221, 0x02040221, 1450, 2450, 0, 101, 201)
+	ownerLogin := "despawn-owner-login"
+	watcherLogin := "despawn-watcher-login"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0xa0a0a020, owner)
+	issuePeerTicket(t, ticketStore, watcherLogin, 0xa0a0a021, watcher)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed despawn owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: watcherLogin, Empire: watcher.Empire, Characters: cloneCharacters([]loginticket.Character{watcher})}); err != nil {
+		t.Fatalf("seed despawn watcher account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected despawn runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700003000, 0)
+	runtime.now = func() time.Time { return currentTime }
+	runtime.sharedWorld.now = func() time.Time { return currentTime }
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0xa0a0a020)
+	watcherFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), watcherLogin, 0xa0a0a021)
+	flushServerFrames(t, ownerFlow)
+	ground := dropAndDecodeGroundAdd(t, ownerFlow, itemproto.InventoryPosition(6))
+	flushServerFrames(t, watcherFlow)
+
+	currentTime = currentTime.Add(bootstrapGroundItemOwnershipDuration)
+	releaseQueued := flushServerFrames(t, watcherFlow)
+	if len(releaseQueued) != 1 {
+		t.Fatalf("expected one blank ownership release before despawn, got %d", len(releaseQueued))
+	}
+	ownerReleaseQueued := flushServerFrames(t, ownerFlow)
+	if len(ownerReleaseQueued) != 1 {
+		t.Fatalf("expected one blank ownership release for owner before despawn, got %d", len(ownerReleaseQueued))
+	}
+	if !runtime.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatalf("expected ground handle %08x to remain pending after ownership release", ground.VID)
+	}
+
+	currentTime = currentTime.Add(bootstrapGroundItemDespawnDuration - bootstrapGroundItemOwnershipDuration)
+	watcherDespawnQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherDespawnQueued) != 1 {
+		t.Fatalf("expected one ground delete for watcher on despawn, got %d", len(watcherDespawnQueued))
+	}
+	watcherDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, watcherDespawnQueued[0]))
+	if err != nil {
+		t.Fatalf("decode watcher despawn ground del: %v", err)
+	}
+	if watcherDel.VID != ground.VID {
+		t.Fatalf("unexpected watcher despawn ground del: %+v", watcherDel)
+	}
+	ownerDespawnQueued := flushServerFrames(t, ownerFlow)
+	if len(ownerDespawnQueued) != 1 {
+		t.Fatalf("expected one ground delete for owner on despawn, got %d", len(ownerDespawnQueued))
+	}
+	ownerDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, ownerDespawnQueued[0]))
+	if err != nil {
+		t.Fatalf("decode owner despawn ground del: %v", err)
+	}
+	if ownerDel.VID != ground.VID {
+		t.Fatalf("unexpected owner despawn ground del: %+v", ownerDel)
+	}
+	if runtime.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatalf("expected ground handle %08x to be removed after destroy deadline", ground.VID)
+	}
+	if pickupOut := pickupGroundItem(t, ownerFlow, ground.VID); len(pickupOut) != 0 {
+		t.Fatalf("expected pickup after despawn to fail closed with no frames, got %d", len(pickupOut))
+	}
+	ownerAccount, err := accounts.Load(ownerLogin)
+	if err != nil {
+		t.Fatalf("load despawn owner account: %v", err)
+	}
+	if len(ownerAccount.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected despawn to leave owner inventory empty after drop, got %#v", ownerAccount.Characters[0].Inventory)
+	}
+	watcherAccount, err := accounts.Load(watcherLogin)
+	if err != nil {
+		t.Fatalf("load despawn watcher account: %v", err)
+	}
+	if len(watcherAccount.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected despawn to leave watcher inventory empty, got %#v", watcherAccount.Characters[0].Inventory)
+	}
+}
+
 func TestGameRuntimeGoldPickupAllowsPublicCollectorAfterOwnershipRelease(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -5997,6 +6085,91 @@ func TestGameRuntimeGoldPickupAllowsPublicCollectorAfterOwnershipRelease(t *test
 	}
 	if ownerAccount.Characters[0].Gold != 5800 {
 		t.Fatalf("expected public gold pickup to leave owner at dropped total 5800, got %d", ownerAccount.Characters[0].Gold)
+	}
+}
+
+func TestGameRuntimeGoldMarkerDespawnsAfterBootstrapDestroyDeadline(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("DespawnGoldOwner", 0x01030222, 0x02040222, 1400, 2400, 0, 101, 201)
+	owner.Gold = 7000
+	owner.Inventory = []inventory.ItemInstance{{ID: 4021, Vnum: 27032, Count: 1, Slot: 5}}
+	watcher := peerVisibilityCharacter("DespawnGoldWatcher", 0x01030223, 0x02040223, 1450, 2450, 0, 101, 201)
+	watcher.Gold = 300
+	ownerLogin := "despawn-gold-owner-login"
+	watcherLogin := "despawn-gold-watcher-login"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0xa0a0a022, owner)
+	issuePeerTicket(t, ticketStore, watcherLogin, 0xa0a0a023, watcher)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed despawn gold owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: watcherLogin, Empire: watcher.Empire, Characters: cloneCharacters([]loginticket.Character{watcher})}); err != nil {
+		t.Fatalf("seed despawn gold watcher account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected gold despawn runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700003100, 0)
+	runtime.now = func() time.Time { return currentTime }
+	runtime.sharedWorld.now = func() time.Time { return currentTime }
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0xa0a0a022)
+	watcherFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), watcherLogin, 0xa0a0a023)
+	flushServerFrames(t, ownerFlow)
+
+	dropOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5), Elk: 1200})))
+	if err != nil {
+		t.Fatalf("drop gold for despawn: %v", err)
+	}
+	if len(dropOut) != 3 {
+		t.Fatalf("expected gold drop point/add/ownership frames, got %d", len(dropOut))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, dropOut[1]))
+	if err != nil {
+		t.Fatalf("decode gold despawn ground add: %v", err)
+	}
+	flushServerFrames(t, watcherFlow)
+
+	currentTime = currentTime.Add(bootstrapGroundItemOwnershipDuration)
+	_ = flushServerFrames(t, watcherFlow)
+	_ = flushServerFrames(t, ownerFlow)
+
+	currentTime = currentTime.Add(bootstrapGroundItemDespawnDuration - bootstrapGroundItemOwnershipDuration)
+	watcherDespawnQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherDespawnQueued) != 1 {
+		t.Fatalf("expected one ground delete for gold watcher on despawn, got %d", len(watcherDespawnQueued))
+	}
+	watcherDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, watcherDespawnQueued[0]))
+	if err != nil {
+		t.Fatalf("decode gold watcher despawn ground del: %v", err)
+	}
+	if watcherDel.VID != ground.VID {
+		t.Fatalf("unexpected gold watcher despawn ground del: %+v", watcherDel)
+	}
+	ownerDespawnQueued := flushServerFrames(t, ownerFlow)
+	if len(ownerDespawnQueued) != 1 {
+		t.Fatalf("expected one ground delete for gold owner on despawn, got %d", len(ownerDespawnQueued))
+	}
+	if runtime.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatalf("expected gold ground handle %08x to be removed after destroy deadline", ground.VID)
+	}
+	if pickupOut := pickupGroundItem(t, watcherFlow, ground.VID); len(pickupOut) != 0 {
+		t.Fatalf("expected gold pickup after despawn to fail closed with no frames, got %d", len(pickupOut))
+	}
+	ownerAccount, err := accounts.Load(ownerLogin)
+	if err != nil {
+		t.Fatalf("load gold despawn owner account: %v", err)
+	}
+	if ownerAccount.Characters[0].Gold != 5800 {
+		t.Fatalf("expected gold despawn to leave owner at dropped total 5800, got %d", ownerAccount.Characters[0].Gold)
+	}
+	watcherAccount, err := accounts.Load(watcherLogin)
+	if err != nil {
+		t.Fatalf("load gold despawn watcher account: %v", err)
+	}
+	if watcherAccount.Characters[0].Gold != 300 {
+		t.Fatalf("expected gold despawn to leave watcher gold unchanged, got %d", watcherAccount.Characters[0].Gold)
 	}
 }
 

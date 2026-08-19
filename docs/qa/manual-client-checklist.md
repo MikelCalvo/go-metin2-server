@@ -713,6 +713,7 @@ Run this when two QA clients can enter the same visible bootstrap world.
 - [ ] On client B, attempt to pick up client A's still-owned ground item during the first ~30 seconds after the drop and confirm the attempt fails closed: no inventory change, no ground delete, and no pickup notice for either client
 - [ ] Wait until the exclusive ownership window elapses (~30 seconds) and confirm both clients receive a blank ownership label for the same ground handle
 - [ ] On client B, pick up the now-public ground item after the blank ownership release
+- [ ] Optionally repeat the drop and leave the public handle unclaimed until the bootstrap destroy deadline (~300 seconds from drop); confirm both clients receive one `GC::ITEM_GROUND_DEL` and the ground actor disappears without inventory/gold mutation
 
 Expected result:
 - while exclusive ownership is still active, client B's pickup attempt produces no frames and leaves the ground handle pending for client A
@@ -722,7 +723,7 @@ Expected result:
 - if the dropped item's loaded template becomes `anti_give` or job/sex-restricted for client B after public release, client B sees template-authored `pickup_reject_message` when present and otherwise the bootstrap inventory-full info rejection, neither inventory mutates, no owner notice is queued, and the ground handle remains available for a later valid retry
 - `anti_drop` / `anti_give` / `anti_sell` template-flagged items fail closed when dropped through the normal client inventory path, show template-authored `drop_reject_message` when present and otherwise the bootstrap "You cannot drop this item." info rejection, and leave carried inventory plus quickslots unchanged; selected-character restricted drops show authored `drop_reject_message` when present and otherwise stay silent/no-frame
 - if debug/fixture tooling forces a deterministic ground-`VID` collision with an already-pending bootstrap handle, the colliding drop fails closed with no item refresh, no peer-visible ground add, and no live or persisted carried-inventory mutation
-- exclusive ownership timers and public ownership release are now owned for the bootstrap in-memory path; real party membership and restart-restored ownership timer state remain deferred
+- exclusive ownership timers, public ownership release, and the bootstrap `300`-second in-memory destroy deadline are now owned for the bootstrap path; real party membership and restart-restored ownership/despawn timer state remain deferred
 
 ### 5.6 Bootstrap equip / unequip appearance refresh
 
