@@ -3436,15 +3436,31 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			pending.Enqueue([][]byte{combatproto.EncodeServerClearTarget()})
 		}
 		clearInvalidActiveCombatTargetAfterMovement := func() {
-			if activeCombatTargetVID == 0 || runtime == nil || !joinedSharedWorld || sharedWorldID == 0 || sharedWorld == nil || !sharedWorld.HasLiveSession(sharedWorldID) {
+			if runtime == nil || !joinedSharedWorld || sharedWorldID == 0 || sharedWorld == nil || !sharedWorld.HasLiveSession(sharedWorldID) {
 				return
 			}
-			resolution := runtime.resolveStaticActorCombatTarget(sharedWorldID, activeCombatTargetVID)
-			if resolution.Accepted && resolution.Packet != nil && resolution.Packet.TargetVID == activeCombatTargetVID {
+			if activeCombatTargetVID != 0 {
+				resolution := runtime.resolveStaticActorCombatTarget(sharedWorldID, activeCombatTargetVID)
+				if resolution.Accepted && resolution.Packet != nil && resolution.Packet.TargetVID == activeCombatTargetVID {
+					return
+				}
+				clearActiveCombatTarget()
+				enqueueCombatTargetClear()
 				return
 			}
-			clearActiveCombatTarget()
-			enqueueCombatTargetClear()
+			// Proximity-only engagement has no selected target. Leaving the
+			// default aggro radius must still cancel delayed retaliation and
+			// release engaged_by without inventing TARGET(0, 0).
+			released := sharedWorld.ReleaseProximitySpawnGroupEngagementsOutsideAggroRadius(sharedWorldID)
+			if len(released) == 0 {
+				return
+			}
+			clearPendingPracticeMobServerOriginRetaliation()
+			issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
+			for _, entityID := range released {
+				runtime.clearSpawnGroupChaseStep(entityID)
+			}
+			runtime.pruneSpawnGroupChaseStepSchedules()
 		}
 		clearInvalidActiveMerchantBuyAfterMovement := func() {
 			if !hasActiveMerchantBuy || activeMerchantBuy.TargetVID == 0 || runtime == nil || !joinedSharedWorld || sharedWorldID == 0 || sharedWorld == nil || !sharedWorld.HasLiveSession(sharedWorldID) {

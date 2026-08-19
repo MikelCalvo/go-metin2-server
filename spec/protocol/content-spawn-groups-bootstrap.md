@@ -530,12 +530,13 @@ First live consumer rules (now implemented on the pending-frame flush path):
 - once engagement exists, the already-owned third-party `target_engaged` gate, chase arming (when present), and release boundaries continue to apply unchanged
 - never acquire for dead actors, actors waiting on respawn, zero-HP candidates, or candidates already at the bootstrap HP floor
 - the live consumer reuses `EvaluateStaticActorSpawnAggroAcquisition` / `SelectStaticActorSpawnAggroCandidate`, syncs the existing chase-step schedule after a newly established engagement, and lets the engaged owner's session arm delayed retaliation without inventing selected-target ownership or immediate retaliation frames; once that proximity-armed chase deadline becomes due, the pending-frame chase executor applies the ordinary delete/readd step while still inventing no selected combat target
-- after an explicit engagement release (owner clear-target, return-home/return-step, operator update, stale-owner cleanup, etc.), the same still-inside-radius candidate stays suppressed until it leaves `DefaultSpawnAggroRadius` and re-enters; death and respawn also seed that suppress set for every currently-inside live candidate so a rebuilt or just-killed life does not instantly re-lock nearby players without leave/re-enter
+- proximity-only engagement (no selected combat target) must also release when owner `MOVE` / `SYNC_POSITION` leaves `DefaultSpawnAggroRadius`: cancel any pending delayed retaliation beat for that engagement, clear chase schedules for the released actor, mark the ordinary leave/re-enter suppress for that owner, and keep the release silent (no invented self `TARGET(0, 0)` because proximity acquisition never owned selected-target state). Selected-target movement cleanup stays on the existing combat-band / visibility path and is unchanged
+- after an explicit engagement release (owner clear-target, proximity leave-radius walk-away, return-home/return-step, operator update, stale-owner cleanup, etc.), the same still-inside-radius candidate stays suppressed until it leaves `DefaultSpawnAggroRadius` and re-enters; death and respawn also seed that suppress set for every currently-inside live candidate so a rebuilt or just-killed life does not instantly re-lock nearby players without leave/re-enter
 
 Explicit non-goals for this proximity aggro freeze alone:
 - immediate owner-side retaliation piggyback without an accepted hit
 - inventing selected-target ownership from proximity acquisition alone
-- aggro hysteresis / drop radius distinct from the acquire radius
+- aggro hysteresis / a drop radius distinct from the acquire radius (leave-radius release reuses `DefaultSpawnAggroRadius`)
 - pack aggro, assist calls, or multi-mob linkage
 - chase packets, patrol, or pathfinding
 - profile-authored per-mob aggro radii beyond the first bootstrap default (later profiles may widen that)

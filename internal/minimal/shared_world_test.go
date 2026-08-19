@@ -2259,6 +2259,131 @@ func TestGameRuntimeFlushServerFramesArmsDelayedRetaliationFromProximityAggroWit
 	}
 }
 
+func TestGameRuntimeProximityAggroWalkAwayReleasesEngagementAndCancelsDelayedRetaliation(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("AggroWalkAwayOwner", 0x01030194, 0x02040194, 1850, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "aggro-walkaway-owner", 0x44444444, owner)
+	watcher := peerVisibilityCharacter("AggroWalkAwayWatcher", 0x01030195, 0x02040195, 1920, 2800, 0, 101, 201)
+	watcher.MapIndex = 42
+	watcher.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "aggro-walkaway-watcher", 0x45454545, watcher)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700002300, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for proximity walk-away release: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.aggro_walkaway_auto",
+		Name:          "AggroWalkAwayMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import proximity walk-away spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.aggro_walkaway_auto")
+	if !ok {
+		t.Fatal("expected proximity walk-away spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "aggro-walkaway-owner", 0x44444444)
+	defer closeSessionFlow(t, ownerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+
+	ownerEntity, ok := runtime.sharedWorld.playerEntityByName("AggroWalkAwayOwner")
+	if !ok {
+		t.Fatal("expected proximity walk-away owner entity to remain registered")
+	}
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected pending-frame proximity acquisition to engage owner for entity %d", group.EntityID)
+	}
+	if snapshot, ok := runtime.CombatTargetSnapshot("AggroWalkAwayOwner"); ok {
+		t.Fatalf("expected proximity walk-away fixture not to invent selected combat target ownership, got %+v", snapshot)
+	}
+
+	watcherFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "aggro-walkaway-watcher", 0x45454545)
+	defer closeSessionFlow(t, watcherFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, watcherFlow)
+
+	watcherBlocked, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher target error while proximity engagement remains live: %v", err)
+	}
+	if len(watcherBlocked) != 0 {
+		t.Fatalf("expected third-party TARGET to fail closed while proximity engagement remains live, got %d frames", len(watcherBlocked))
+	}
+
+	// Stay inside visibility/leash (radius 400) but leave DefaultSpawnAggroRadius (200).
+	moveOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+		Func: 1,
+		Arg:  0,
+		Rot:  12,
+		X:    1950,
+		Y:    2800,
+		Time: 0x51525354,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected owner move error while walking out of aggro radius: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 immediate self move ack after walking out of aggro radius, got %d frames", len(moveOut))
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected proximity walk-away release to stay silent without inventing TARGET(0,0), got %d queued frames", len(queued))
+	}
+	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected proximity walk-away to release engaged_by for entity %d", group.EntityID)
+	}
+	runtime.spawnChaseMu.Lock()
+	_, chaseScheduled := runtime.spawnChaseStepDueAt[group.EntityID]
+	runtime.spawnChaseMu.Unlock()
+	if chaseScheduled {
+		t.Fatalf("expected proximity walk-away to clear chase schedule for entity %d", group.EntityID)
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected delayed retaliation cadence to stop after proximity walk-away, got %d queued frames", len(queued))
+	}
+
+	watcherSelect, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher target error after proximity walk-away release: %v", err)
+	}
+	if len(watcherSelect) != 1 {
+		t.Fatalf("expected watcher TARGET to succeed after proximity walk-away release, got %d frames", len(watcherSelect))
+	}
+	releasedTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, watcherSelect[0]))
+	if err != nil {
+		t.Fatalf("decode watcher target after proximity walk-away release: %v", err)
+	}
+	if releasedTarget.TargetVID != targetVID || releasedTarget.HPPercent != 100 {
+		t.Fatalf("expected watcher to reacquire still-full live practice mob after proximity walk-away, got %+v", releasedTarget)
+	}
+}
+
 func TestGameRuntimeFlushServerFramesSkipsProximityAggroOutsideDefaultRadius(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("AggroOutsideOwner", 0x01030192, 0x02040192, 1950, 2800, 0, 101, 201)

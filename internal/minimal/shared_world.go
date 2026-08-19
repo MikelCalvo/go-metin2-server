@@ -1535,6 +1535,48 @@ func (r *sharedWorldRegistry) ClearStaticActorCombatEngagementsBySubject(subject
 	r.clearStaticActorCombatEngagementsBySubjectLocked(subjectID)
 }
 
+// ReleaseProximitySpawnGroupEngagementsOutsideAggroRadius releases proximity-only
+// aggro-lite engagements owned by subjectID when that owner is no longer inside
+// DefaultSpawnAggroRadius of the engaged spawn-backed actor. Selected-target
+// ownership is intentionally ignored here; callers use this after MOVE /
+// SYNC_POSITION when activeCombatTargetVID == 0. Released entity IDs are
+// returned so the session can cancel delayed retaliation and chase schedules.
+func (r *sharedWorldRegistry) ReleaseProximitySpawnGroupEngagementsOutsideAggroRadius(subjectID uint64) []uint64 {
+	if r == nil || subjectID == 0 || r.entities == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	subject, ok := r.playerCharacter(subjectID)
+	if !ok || characterAtBootstrapHPFloor(subject) {
+		return nil
+	}
+	subjectPos := worldruntime.PositionFromCharacter(subject)
+	if !subjectPos.Valid() {
+		return nil
+	}
+
+	released := make([]uint64, 0)
+	for entityID, engagedBy := range r.staticActorCombatEngagedBy {
+		if engagedBy != subjectID || entityID == 0 {
+			continue
+		}
+		actor, ok := r.entities.StaticActor(entityID)
+		if !ok || actor.SpawnGroupRef == "" || !staticActorSpawnGroupAggroLiteCombatKind(actor.CombatKind) {
+			continue
+		}
+		evaluation, ok := worldruntime.EvaluateStaticActorSpawnAggroAcquisition(actor, subjectPos, worldruntime.DefaultSpawnAggroRadius)
+		if ok && evaluation.Acquired {
+			continue
+		}
+		r.releaseStaticActorCombatEngagementLocked(actor, false)
+		released = append(released, entityID)
+	}
+	sort.Slice(released, func(i, j int) bool { return released[i] < released[j] })
+	return released
+}
+
 func (r *sharedWorldRegistry) clearStaticActorCombatEngagementsBySubjectLocked(subjectID uint64) {
 	if r == nil || subjectID == 0 || len(r.staticActorCombatEngagedBy) == 0 {
 		return
