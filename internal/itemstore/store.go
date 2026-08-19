@@ -623,7 +623,7 @@ func templateHasDropRejectGuard(template Template) bool {
 }
 
 func templateHasGiveRejectGuard(template Template) bool {
-	return template.AntiGive
+	return templateHasSelectedCharacterGuard(template) || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack
 }
 
 func templateHasSafeboxRejectGuard(template Template) bool {

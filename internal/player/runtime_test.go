@@ -3144,53 +3144,77 @@ func TestRuntimeSafeboxCheckinRejectTextRejectsMismatchedOrUnguardedTemplateWith
 	}
 }
 
-func TestRuntimeExchangeItemAddRejectTextComesFromTemplateAntiGiveGuardWithoutMutation(t *testing.T) {
-	persisted := loginticket.Character{
-		ID:    0x01030104,
-		VID:   0x02040104,
-		Name:  "PeerFour",
-		Level: 1,
-		Inventory: []inventory.ItemInstance{
-			{ID: 103, Vnum: 27043, Count: 3, Slot: 8},
-		},
-		Quickslots: []loginticket.Quickslot{{Position: 4, Type: quickslotproto.TypeItem, Slot: 8}},
+func TestRuntimeExchangeItemAddRejectTextComesFromTemplateGuardWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name    string
+		job     uint8
+		raceNum uint16
+		level   uint8
+		mutate  func(*itemcatalog.Template)
+	}{
+		{name: "anti_give", level: 10, mutate: func(template *itemcatalog.Template) { template.AntiGive = true }},
+		{name: "anti_stack", level: 10, mutate: func(template *itemcatalog.Template) { template.AntiStack = true }},
+		{name: "anti_get", level: 10, mutate: func(template *itemcatalog.Template) { template.AntiGet = true }},
+		{name: "anti_drop", level: 10, mutate: func(template *itemcatalog.Template) { template.AntiDrop = true }},
+		{name: "anti_sell", level: 10, mutate: func(template *itemcatalog.Template) { template.AntiSell = true }},
+		{name: "anti_warrior", job: 0, raceNum: 0, level: 10, mutate: func(template *itemcatalog.Template) { template.AntiWarrior = true }},
+		{name: "anti_male", job: 0, raceNum: 0, level: 10, mutate: func(template *itemcatalog.Template) { template.AntiMale = true }},
+		{name: "anti_empire_b", job: 0, raceNum: 0, level: 10, mutate: func(template *itemcatalog.Template) { template.AntiEmpireB = true }},
+		{name: "min_level", job: 0, raceNum: 0, level: 5, mutate: func(template *itemcatalog.Template) { template.MinLevel = 10 }},
 	}
-	runtime := NewRuntime(persisted, SessionLink{Login: "peer-four", CharacterIndex: 1})
-	template := itemcatalog.Template{
-		Vnum:           27043,
-		Name:           "Bound Exchange Potion",
-		Stackable:      true,
-		MaxCount:       200,
-		AntiGive:       true,
-		GiveRejectText: "You cannot trade this item.",
-	}
+	for index, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:      0x01030104 + uint32(index),
+				VID:     0x02040104 + uint32(index),
+				Name:    "PeerFour",
+				Job:     tc.job,
+				RaceNum: tc.raceNum,
+				Level:   tc.level,
+				Inventory: []inventory.ItemInstance{
+					{ID: 103 + uint64(index), Vnum: 27043, Count: 3, Slot: 8},
+				},
+				Quickslots: []loginticket.Quickslot{{Position: 4, Type: quickslotproto.TypeItem, Slot: 8}},
+			}
+			template := itemcatalog.Template{
+				Vnum:           27043,
+				Name:           "Guarded Exchange Potion",
+				Stackable:      true,
+				MaxCount:       200,
+				GiveRejectText: "You cannot trade this item.",
+			}
+			tc.mutate(&template)
+			persisted.Empire = antiFlagTestEmpire(template)
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-four", CharacterIndex: 1})
 
-	text, ok := runtime.ExchangeItemAddRejectText(8, template)
-	if !ok {
-		t.Fatal("expected anti-give template to provide item-exchange rejection text")
-	}
-	if text != template.GiveRejectText {
-		t.Fatalf("expected template-authored exchange reject text %q, got %q", template.GiveRejectText, text)
-	}
-	live := runtime.LiveCharacter()
-	if !reflect.DeepEqual(live.Inventory, persisted.Inventory) {
-		t.Fatalf("exchange reject text mutated live inventory: got %#v want %#v", live.Inventory, persisted.Inventory)
-	}
-	if !reflect.DeepEqual(live.Quickslots, persisted.Quickslots) {
-		t.Fatalf("exchange reject text mutated live quickslots: got %#v want %#v", live.Quickslots, persisted.Quickslots)
-	}
-	if live.Gold != persisted.Gold || live.Points != persisted.Points {
-		t.Fatalf("exchange reject text mutated live scalars: gold=%d points[1]=%d", live.Gold, live.Points[1])
-	}
-	persistedAfter := runtime.PersistedSnapshot()
-	if !reflect.DeepEqual(persistedAfter.Inventory, persisted.Inventory) {
-		t.Fatalf("exchange reject text mutated persisted inventory: got %#v want %#v", persistedAfter.Inventory, persisted.Inventory)
-	}
-	if !reflect.DeepEqual(persistedAfter.Quickslots, persisted.Quickslots) {
-		t.Fatalf("exchange reject text mutated persisted quickslots: got %#v want %#v", persistedAfter.Quickslots, persisted.Quickslots)
-	}
-	if persistedAfter.Gold != persisted.Gold || persistedAfter.Points != persisted.Points {
-		t.Fatalf("exchange reject text mutated persisted scalars: gold=%d points[1]=%d", persistedAfter.Gold, persistedAfter.Points[1])
+			text, ok := runtime.ExchangeItemAddRejectText(8, template)
+			if !ok {
+				t.Fatalf("expected %s template to provide item-exchange rejection text", tc.name)
+			}
+			if text != template.GiveRejectText {
+				t.Fatalf("expected template-authored exchange reject text %q, got %q", template.GiveRejectText, text)
+			}
+			live := runtime.LiveCharacter()
+			if !reflect.DeepEqual(live.Inventory, persisted.Inventory) {
+				t.Fatalf("%s exchange reject text mutated live inventory: got %#v want %#v", tc.name, live.Inventory, persisted.Inventory)
+			}
+			if !reflect.DeepEqual(live.Quickslots, persisted.Quickslots) {
+				t.Fatalf("%s exchange reject text mutated live quickslots: got %#v want %#v", tc.name, live.Quickslots, persisted.Quickslots)
+			}
+			if live.Gold != persisted.Gold || live.Points != persisted.Points {
+				t.Fatalf("%s exchange reject text mutated live scalars: gold=%d points[1]=%d", tc.name, live.Gold, live.Points[1])
+			}
+			persistedAfter := runtime.PersistedSnapshot()
+			if !reflect.DeepEqual(persistedAfter.Inventory, persisted.Inventory) {
+				t.Fatalf("%s exchange reject text mutated persisted inventory: got %#v want %#v", tc.name, persistedAfter.Inventory, persisted.Inventory)
+			}
+			if !reflect.DeepEqual(persistedAfter.Quickslots, persisted.Quickslots) {
+				t.Fatalf("%s exchange reject text mutated persisted quickslots: got %#v want %#v", tc.name, persistedAfter.Quickslots, persisted.Quickslots)
+			}
+			if persistedAfter.Gold != persisted.Gold || persistedAfter.Points != persisted.Points {
+				t.Fatalf("%s exchange reject text mutated persisted scalars: gold=%d points[1]=%d", tc.name, persistedAfter.Gold, persistedAfter.Points[1])
+			}
+		})
 	}
 }
 

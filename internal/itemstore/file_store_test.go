@@ -2271,35 +2271,74 @@ func TestFileStoreSaveThenLoadRoundTripPreservesUseRejectText(t *testing.T) {
 }
 
 func TestFileStoreSaveThenLoadRoundTripPreservesGiveRejectText(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
-	store := NewFileStore(path)
-	want := Snapshot{Templates: []Template{{
-		Vnum:           27042,
-		Name:           "Bound Gift Potion",
-		Stackable:      true,
-		MaxCount:       200,
-		AntiGive:       true,
-		GiveRejectText: "You cannot give this item.",
-	}}}
+	cases := []struct {
+		name     string
+		template Template
+		wantJSON string
+	}{
+		{
+			name: "anti_give",
+			template: Template{
+				Vnum:           27042,
+				Name:           "Bound Gift Potion",
+				Stackable:      true,
+				MaxCount:       200,
+				AntiGive:       true,
+				GiveRejectText: "You cannot give this item.",
+			},
+			wantJSON: "{\n  \"templates\": [\n    {\n      \"vnum\": 27042,\n      \"name\": \"Bound Gift Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"anti_give\": true,\n      \"give_reject_message\": \"You cannot give this item.\"\n    }\n  ]\n}\n",
+		},
+		{
+			name: "anti_drop exchange display guard",
+			template: Template{
+				Vnum:           27044,
+				Name:           "Undroppable Trade Potion",
+				Stackable:      true,
+				MaxCount:       200,
+				AntiDrop:       true,
+				GiveRejectText: "You cannot trade this item.",
+			},
+			wantJSON: "{\n  \"templates\": [\n    {\n      \"vnum\": 27044,\n      \"name\": \"Undroppable Trade Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"anti_drop\": true,\n      \"give_reject_message\": \"You cannot trade this item.\"\n    }\n  ]\n}\n",
+		},
+		{
+			name: "min_level exchange display guard",
+			template: Template{
+				Vnum:           27045,
+				Name:           "Level Locked Trade Potion",
+				Stackable:      true,
+				MaxCount:       200,
+				MinLevel:       10,
+				GiveRejectText: "You cannot trade this item yet.",
+			},
+			wantJSON: "{\n  \"templates\": [\n    {\n      \"vnum\": 27045,\n      \"name\": \"Level Locked Trade Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"give_reject_message\": \"You cannot trade this item yet.\",\n      \"min_level\": 10\n    }\n  ]\n}\n",
+		},
+	}
 
-	if err := store.Save(want); err != nil {
-		t.Fatalf("save snapshot with give reject message: %v", err)
-	}
-	got, err := store.Load()
-	if err != nil {
-		t.Fatalf("load snapshot with give reject message: %v", err)
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("unexpected snapshot with give reject message:\n got: %#v\nwant: %#v", got, want)
-	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+			store := NewFileStore(path)
+			want := Snapshot{Templates: []Template{tc.template}}
 
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read persisted snapshot with give reject message: %v", err)
-	}
-	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27042,\n      \"name\": \"Bound Gift Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"anti_give\": true,\n      \"give_reject_message\": \"You cannot give this item.\"\n    }\n  ]\n}\n"
-	if string(raw) != wantJSON {
-		t.Fatalf("unexpected deterministic snapshot with give reject message:\n got: %s\nwant: %s", string(raw), wantJSON)
+			if err := store.Save(want); err != nil {
+				t.Fatalf("save snapshot with give reject message: %v", err)
+			}
+			got, err := store.Load()
+			if err != nil {
+				t.Fatalf("load snapshot with give reject message: %v", err)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("unexpected snapshot with give reject message:\n got: %#v\nwant: %#v", got, want)
+			}
+
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read persisted snapshot with give reject message: %v", err)
+			}
+			if string(raw) != tc.wantJSON {
+				t.Fatalf("unexpected deterministic snapshot with give reject message:\n got: %s\nwant: %s", string(raw), tc.wantJSON)
+			}
+		})
 	}
 }
 
@@ -2602,7 +2641,7 @@ func TestFileStoreRejectsInvalidGiveRejectTextMetadata(t *testing.T) {
 			wantText: "NUL give reject message",
 		},
 		{
-			name: "without anti-give guard",
+			name: "without owned exchange/give reject guard",
 			invalid: Template{
 				Vnum:           27043,
 				Name:           "Unguarded Give Message Potion",
@@ -2611,7 +2650,7 @@ func TestFileStoreRejectsInvalidGiveRejectTextMetadata(t *testing.T) {
 				GiveRejectText: "This item has no owned give rejection guard.",
 			},
 			rawJSON:  `{"templates":[{"vnum":27043,"name":"Unguarded Give Message Potion","stackable":true,"max_count":200,"give_reject_message":"This item has no owned give rejection guard."}]}`,
-			wantText: "give reject message without anti-give guard",
+			wantText: "give reject message without owned exchange/give reject guard",
 		},
 	}
 

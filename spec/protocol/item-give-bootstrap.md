@@ -65,7 +65,7 @@ If the requester is paired in the current bootstrap exchange shell, the server f
 
 That response is deliberately not a transfer attempt. Apart from the optional active-merchant / active-exchange closes above, it still performs no inventory, equipment, quickslot, ground-handle, peer-transfer, merchant-buy/sell, or persistence mutation, and the named visible target receives no queued item-transfer or item-give rejection frames.
 
-Templates that author `give_reject_message` without `anti_give` are invalid at the item-template store boundary, and embedded NUL bytes in the message fail closed before runtime boot.
+Templates that author `give_reject_message` without one owned exchange-display / give rejection guard (`anti_stack`, `anti_get`, `anti_drop`, `anti_give`, `anti_sell`, job/sex/empire anti flags, or `min_level`) are invalid at the item-template store boundary, and embedded NUL bytes in the message fail closed before runtime boot. The `ITEM_GIVE` runtime feedback path still requires `anti_give` specifically; the broader guard set only authorizes store validation and the separately owned active-shell `EXCHANGE ITEM_ADD` feedback path.
 
 Zero-target, unknown/invisible-target, zero-count, or oversized-count give attempts remain ordinary no-frame/no-mutation rejections even when the item template authors `anti_give` plus `give_reject_message`. This keeps accidental client attempts fail-closed instead of falling into incomplete item-transfer behavior while allowing valid-target/valid-count authored `anti_give` items to explain the rejection.
 
@@ -88,6 +88,6 @@ Later slices must write a new contract before broadening this packet into real g
 
 - `internal/proto/item` freezes `ITEM_GIVE` encode/decode round trips plus unexpected-header and invalid-payload rejection.
 - `internal/game` freezes `GAME`-phase dispatch to a handler hook, with denied results returning no frames.
-- `internal/itemstore` freezes `give_reject_message` round-trip and fail-closed validation: it is valid only with `anti_give` and rejects embedded NUL bytes.
+- `internal/itemstore` freezes `give_reject_message` round-trip and fail-closed validation: it is valid with one owned exchange-display / give rejection guard (`anti_stack`, `anti_get`, `anti_drop`, `anti_give`, `anti_sell`, job/sex/empire anti flags, or `min_level`) and rejects embedded NUL bytes.
 - `internal/player` freezes the metadata-driven, no-mutation `anti_give` rejection lookup, including the non-zero / not-over-stack requested-count guard.
 - `internal/minimal` freezes the shipped runtime fail-closed behavior with persisted inventory and quickslots unchanged after an `ITEM_GIVE` packet, the self-only `CHAT_TYPE_INFO` rejection frame when the request names a currently visible player target, the carried item's template authors `anti_give` and `give_reject_message`, and the requested count is valid for the live stack, active same-socket merchant-window and exchange-shell teardown before that authored rejection feedback, plus the no-frame/no-mutation guard for missing/invisible targets and the post-floor dead-owner guard that denies `ITEM_GIVE` before that feedback path can run.

@@ -1105,7 +1105,24 @@ func (r *Runtime) GiveRejectText(slot inventory.SlotIndex, count uint16, templat
 }
 
 func (r *Runtime) ExchangeItemAddRejectText(slot inventory.SlotIndex, template itemcatalog.Template) (string, bool) {
-	if _, ok := r.templateBackedAntiGiveInventoryItem(slot, template); !ok {
+	if r == nil || template.GiveRejectText == "" || slot >= inventory.CarriedInventorySlotCount || !itemcatalog.ValidTemplate(template) {
+		return "", false
+	}
+	if countInventorySlotOccupancy(r.liveInventory, slot) != 1 {
+		return "", false
+	}
+	index := findInventorySlot(r.liveInventory, slot)
+	if index < 0 {
+		return "", false
+	}
+	item := r.liveInventory[index]
+	if item.Equipped || item.Locked || item.Vnum != template.Vnum || item.Count == 0 || item.Count > template.MaxCount {
+		return "", false
+	}
+	if err := item.Validate(); err != nil {
+		return "", false
+	}
+	if r.CanUseTemplate(template) && !template.AntiStack && !template.AntiGet && !template.AntiDrop && !template.AntiGive && !template.AntiSell {
 		return "", false
 	}
 	return template.GiveRejectText, true

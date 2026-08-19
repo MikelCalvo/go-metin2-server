@@ -4831,6 +4831,113 @@ func TestGameRuntimeSlashUnequipClosesActiveExchangeShellBeforeUnequipFrames(t *
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "peer active-exchange unequip")
 }
 
+func TestGameRuntimeItemExchangeTransferGuardItemAddReturnsAuthoredRejectTextInsideActiveShellWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name      string
+		login     string
+		peerLogin string
+		mutate    func(*itemcatalog.Template)
+		job       uint8
+		raceNum   uint16
+		level     uint8
+		empire    uint8
+	}{
+		{name: "anti-stack", login: "item-exchange-anti-stack", peerLogin: "item-exchange-anti-stack-peer", mutate: func(template *itemcatalog.Template) { template.AntiStack = true }},
+		{name: "anti-get", login: "item-exchange-anti-get", peerLogin: "item-exchange-anti-get-peer", mutate: func(template *itemcatalog.Template) { template.AntiGet = true }},
+		{name: "anti-drop", login: "item-exchange-anti-drop", peerLogin: "item-exchange-anti-drop-peer", mutate: func(template *itemcatalog.Template) { template.AntiDrop = true }},
+		{name: "anti-sell", login: "item-exchange-anti-sell", peerLogin: "item-exchange-anti-sell-peer", mutate: func(template *itemcatalog.Template) { template.AntiSell = true }},
+		{name: "anti-warrior", login: "item-exchange-anti-war", peerLogin: "item-exchange-anti-war-peer", job: 0, raceNum: 0, mutate: func(template *itemcatalog.Template) { template.AntiWarrior = true }},
+		{name: "anti-male", login: "item-exchange-anti-male", peerLogin: "item-exchange-anti-male-peer", job: 0, raceNum: 0, mutate: func(template *itemcatalog.Template) { template.AntiMale = true }},
+		{name: "anti-empire-b", login: "item-exchange-anti-emp", peerLogin: "item-exchange-anti-emp-peer", empire: 2, mutate: func(template *itemcatalog.Template) { template.AntiEmpireB = true }},
+		{name: "min-level", login: "item-exchange-min-level", peerLogin: "item-exchange-min-level-peer", level: 5, mutate: func(template *itemcatalog.Template) { template.MinLevel = 10 }},
+	}
+	for index, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("ExchangeGuard"+tc.name, 0x01030861+uint32(index), 0x02040861+uint32(index), 1100, 2100, tc.raceNum, 101, 201)
+			owner.Gold = 12345
+			owner.Job = tc.job
+			owner.RaceNum = tc.raceNum
+			if tc.level != 0 {
+				owner.Level = tc.level
+			}
+			if tc.empire != 0 {
+				owner.Empire = tc.empire
+			}
+			owner.Inventory = []inventory.ItemInstance{{ID: 802 + uint64(index), Vnum: 27044, Count: 3, Slot: 5}}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			peer := peerVisibilityCharacter("ExchangeGuardPeer"+tc.name, 0x01030891+uint32(index), 0x02040891+uint32(index), 1120, 2120, 0, 101, 201)
+			peer.Gold = 22222
+			issuePeerTicket(t, ticketStore, tc.login, 0x70707161+uint32(index), owner)
+			issuePeerTicket(t, ticketStore, tc.peerLogin, 0x70707191+uint32(index), peer)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed %s item-exchange account: %v", tc.name, err)
+			}
+			if err := accounts.Save(accountstore.Account{Login: tc.peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+				t.Fatalf("seed %s item-exchange peer account: %v", tc.name, err)
+			}
+			template := itemcatalog.Template{
+				Vnum:           27044,
+				Name:           "Guarded Exchange Potion",
+				Stackable:      true,
+				MaxCount:       200,
+				GiveRejectText: "You cannot trade this item.",
+			}
+			tc.mutate(&template)
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected %s item-exchange runtime error: %v", tc.name, err)
+			}
+			ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, 0x70707161+uint32(index))
+			defer closeSessionFlow(t, ownerFlow)
+			peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.peerLogin, 0x70707191+uint32(index))
+			defer closeSessionFlow(t, peerFlow)
+			_ = flushServerFrames(t, ownerFlow)
+			_ = flushServerFrames(t, peerFlow)
+
+			startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+			if err != nil {
+				t.Fatalf("unexpected %s exchange-start error: %v", tc.name, err)
+			}
+			if len(startOut) != 1 {
+				t.Fatalf("expected %s exchange start to emit one owner frame, got %d", tc.name, len(startOut))
+			}
+			assertExchangeStartFrame(t, startOut[0], peer.VID, tc.name+" owner start")
+			queuedStart := flushServerFrames(t, peerFlow)
+			if len(queuedStart) != 1 {
+				t.Fatalf("expected %s peer start frame, got %d", tc.name, len(queuedStart))
+			}
+			assertExchangeStartFrame(t, queuedStart[0], owner.VID, tc.name+" peer start")
+
+			out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+				Subheader: itemproto.ExchangeSubheaderItemAdd,
+				Arg2:      7,
+				Position:  itemproto.InventoryPosition(5),
+			})))
+			if err != nil {
+				t.Fatalf("unexpected %s item-exchange packet error: %v", tc.name, err)
+			}
+			if len(out) != 1 {
+				t.Fatalf("expected %s EXCHANGE item-add to emit one info-chat frame, got %d", tc.name, len(out))
+			}
+			delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+			if err != nil {
+				t.Fatalf("decode %s item-exchange rejection info chat: %v", tc.name, err)
+			}
+			if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != template.GiveRejectText {
+				t.Fatalf("unexpected %s item-exchange rejection chat: %+v", tc.name, delivery)
+			}
+			if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+				t.Fatalf("expected no queued peer frames after %s EXCHANGE rejection, got %d", tc.name, len(queued))
+			}
+			assertExchangeAccountUnchanged(t, accounts, tc.login, owner, tc.name+" EXCHANGE owner")
+			assertExchangeAccountUnchanged(t, accounts, tc.peerLogin, peer, tc.name+" EXCHANGE peer")
+		})
+	}
+}
+
 func TestGameRuntimeItemExchangeAntiGiveItemAddReturnsAuthoredRejectTextInsideActiveShellWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
