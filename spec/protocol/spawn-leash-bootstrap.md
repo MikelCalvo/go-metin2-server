@@ -304,7 +304,7 @@ Current implementation status:
 - this seam is now live for retained viewers of a successful same-map live spawn-backed operator/runtime position-only update
 - presentation/name/race refreshes, dead trailing-`DEAD` refreshes, respawn rebuild, content-bundle replacement, and cross-map updates remain on delete/readd
 - engagement release and selected-target clear still follow the already-owned operator/runtime update lifecycle
-- the next honest Track A follow-on after this MOVE seam and daemon-restart still-dead timer persistence is cross-map return MOVE / warp packet choreography; see `content-spawn-groups-bootstrap.md`
+- the next honest Track A follow-on after this MOVE seam and daemon-restart still-dead timer persistence is cross-map return MOVE / warp packet choreography; that seam is now explicitly deferred above until a client-facing packet boundary is owned (see also `content-spawn-groups-bootstrap.md`)
 
 Explicit non-goals for this operator/runtime position MOVE freeze alone:
 - converting presentation/name/race refreshes, dead trailing-`DEAD` refreshes, respawn rebuild, or content-bundle replacement to MOVE
@@ -313,3 +313,31 @@ Explicit non-goals for this operator/runtime position MOVE freeze alone:
 - pathfinding, navmesh, patrol, or continuous interpolation beyond one discrete operator/runtime coordinate write
 - a dedicated operator-move packet family distinct from `MOVE`
 - daemon-restart persistence of live damaged HP above the death floor; still-dead spawn-group timer persistence is owned separately by the Track A anti-leak follow-on
+
+## Deferred cross-map return MOVE / warp choreography seam
+
+Question frozen here:
+
+**Once same-map chase / return-step / return-home / operator position MOVE already reuse server `MOVE`, what is the smallest honest client-visible choreography for a successful cross-map return-home (or cross-map return-step) without inventing pathfinding, a second AI scheduler, or a guessed warp packet family?**
+
+Interim owned behavior (unchanged by this freeze):
+- cross-map return-home / return-step stay on delete/readd / direct-home rebuild
+- a successful cross-map return still restores exactly one entity to the authored home map and must leave no dual-map occupancy or duplicate `spawn_group_ref` membership behind
+- engagement release and selected-target clear continue to follow the already-owned return recovery lifecycle
+
+Why RED is deferred:
+- no client-facing return-warp / cross-map mob MOVE packet seam is owned yet
+- inventing a `GC WARP`, teleport burst, or speculative cross-map `MOVE` shape would invent wire contract rather than land an honest failing test against a frozen packet boundary
+- same-map MOVE choreography remains the owned retained-viewer path; this freeze only records the blocked cross-map follow-on
+
+Contract placeholders that must be decided before opening RED:
+- which already-owned or newly evidenced packet family carries the home-map reappearance for retained / newly visible viewers
+- whether origin-map viewers keep only `CHARACTER_DEL` or also need an explicit warp/teardown companion frame
+- whether the actor's visible `VID` is preserved across the map change or rebuilt through ordinary add/info/update identity
+- that engagement / selected-target / chase / return ownership still fail closed across the map change exactly as delete/readd does today
+
+Explicit non-goals until that wire shape is owned:
+- opening a speculative RED that asserts MOVE or WARP frames for cross-map return
+- converting same-map return MOVE back to delete/readd
+- pathfinding, patrol, or continuous interpolation
+- live damaged-HP daemon-restart durability (still out of scope)

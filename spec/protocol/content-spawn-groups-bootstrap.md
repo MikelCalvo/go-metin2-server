@@ -407,7 +407,7 @@ Contract for Track A item 6:
    - failed replacement / rollback paths still discard all staged visibility frames
 
 4. **Cross-map return-home / return-step membership**
-   - cross-map return-home / return-step stays outside MOVE choreography and keeps delete/readd / direct-home rebuild
+   - cross-map return-home / return-step stays outside MOVE choreography and keeps delete/readd / direct-home rebuild; the deferred cross-map return MOVE / warp choreography freeze lives in `spawn-leash-bootstrap.md` and intentionally blocks speculative RED until a client-facing packet boundary is owned
    - a successful cross-map return restores exactly one entity to the authored home map and must leave no dual-map occupancy or duplicate `spawn_group_ref` membership behind
 
 5. **Leave / transfer ownership cleanup**
@@ -422,7 +422,7 @@ Contract for Track A item 6:
 Current implementation status:
 - due-respawn EnterGame / transfer preflight for content-loaded spawn groups is already owned
 - still-dead trailing `GC DEAD` replay is owned for both `training_dummy` and content-loaded `spawn_groups` EnterGame / reconnect add-style visibility, including fail-closed target/attack while the dead interval remains open and one-ref/one-actor lookup after that still-dead bootstrap
-- same-map return-step / return-home MOVE is live; cross-map return-home remains on delete/readd and now has focused dual-map occupancy coverage (foreign-map delete, home-map add/info/update, one-ref/one-actor, empty foreign-map occupancy, persisted authored home)
+- same-map return-step / return-home MOVE is live; cross-map return-home remains on delete/readd and now has focused dual-map occupancy coverage (foreign-map delete, home-map add/info/update, one-ref/one-actor, empty foreign-map occupancy, persisted authored home); cross-map return MOVE / warp choreography stays deferred until the packet freeze in `spawn-leash-bootstrap.md` is satisfied
 - still-dead content-bundle replacement anti-resurrect is now owned: successful non-identical `ImportContentBundle` replacements that keep the same authored `spawn_group_ref` remap pending `HP=0` + absolute respawn deadline onto the newly registered actor before import fanout, so late EnterGame still ends with trailing `GC DEAD` and the actor stays non-targetable through the ordinary timer; engagement / proximity-suppress / selected-target ownership are not remapped across that replacement boundary
 - reconnect rematerialization remains a fail-closed contract for later focused coverage beside the existing by-ref lookup path
 - same-map live spawn-backed operator/runtime position updates now reuse retained-viewer `MOVE` instead of delete/readd; presentation/name/race refreshes stay on delete/readd (see `spawn-leash-bootstrap.md`)
