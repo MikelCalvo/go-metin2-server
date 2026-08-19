@@ -507,6 +507,19 @@ Returns a loopback-only, read-only JSON projection of committed bootstrap accoun
 
 Successful responses include `migration_version`, `migration_name`, and deterministic `points` rows. Each non-empty character emits all 255 fixed point-vector indices in ascending order, including zero and negative values, with `character_id`, `point_index`, and signed `value`. The response deliberately omits roster account rows, executable SQL, item-state rows, item-template definitions, quest state, login tickets, authored content, and runtime world state, and it does not apply migrations or mutate the account store. Use it as a point-state backfill preflight after the account/character roster export and before any future DB-backed selected-character repository work.
 
+### `POST /local/account-store/exports/character-point-state/quarantine`
+
+Validates and canonicalizes a retained `0011_character_point_state` export without opening a database or mutating account snapshots. This endpoint is registered only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects non-loopback callers with `403`, rejects oversized bodies over 1 MiB with `413`, rejects malformed/invalid-UTF-8/`null` JSON with `400`, and returns `409` when the payload fails the quarantine contract.
+
+Successful responses include:
+
+- `summary.character_count`
+- `summary.point_row_count`
+- deterministic sorted `summary.character_ids`
+- a canonicalized `export` whose rows are grouped by ascending `character_id` with complete `0..254` point vectors
+
+The quarantine contract requires `migration_version = 11`, `migration_name = "character_point_state"`, a present (possibly empty) `points` array, `character_id > 0`, no duplicate `(character_id, point_index)` pairs, and a complete contiguous point vector for every character. Use this after retaining an export artifact and before any future DB backfill/import tool. It is not a repository write path and never emits SQL or DSNs.
+
 ### `GET /local/login-tickets/exports/auth-login-ticket-handoff`
 
 Returns a loopback-only, read-only JSON projection of committed pending bootstrap login-ticket snapshots onto the `0007_auth_login_ticket_handoff` migration boundary. This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the login-ticket store cannot be listed or any committed pending ticket would violate the handoff schema shape.

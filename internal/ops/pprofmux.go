@@ -164,11 +164,12 @@ func (request localContentBundleRequest) bundle() (contentbundle.Bundle, bool) {
 }
 
 const (
-	maxLocalNoticeBodyBytes                   = 4096
-	maxLocalAccountStoreMutationBodyBytes     = 4096
-	maxLocalInteractionDefinitionBodyBytes    = 4096
-	maxLocalStaticActorCombatProfileBodyBytes = 4096
-	maxLocalMigrationLedgerSnapshotBodyBytes  = 64 * 1024
+	maxLocalNoticeBodyBytes                        = 4096
+	maxLocalAccountStoreMutationBodyBytes          = 4096
+	maxLocalInteractionDefinitionBodyBytes         = 4096
+	maxLocalStaticActorCombatProfileBodyBytes      = 4096
+	maxLocalMigrationLedgerSnapshotBodyBytes       = 64 * 1024
+	maxLocalCharacterPointStateQuarantineBodyBytes = 1 << 20
 )
 
 func NewPprofMux(serviceName string) *http.ServeMux {
@@ -1607,6 +1608,43 @@ func RegisterLocalCharacterPointStateExportEndpoint(mux *http.ServeMux, exportPo
 			return
 		}
 		writeLocalJSONMutationResponse(w, export, http.StatusOK)
+	})
+	return mux
+}
+
+// RegisterLocalCharacterPointStateQuarantineEndpoint exposes a loopback-only
+// POST quarantine/preflight for retained 0011 character point-state exports.
+// It validates and canonicalizes the payload without opening a database or
+// mutating account snapshots.
+func RegisterLocalCharacterPointStateQuarantineEndpoint(mux *http.ServeMux) *http.ServeMux {
+	if mux == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/account-store/exports/character-point-state/quarantine", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		export, status, ok := decodeLocalCharacterPointStateExportRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		quarantined, summary, err := accountstore.QuarantineCharacterPointStateExport(export)
+		if err != nil {
+			slog.Warn("local character point-state quarantine failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, accountstore.CharacterPointStateQuarantineResult{
+			Summary: summary,
+			Export:  quarantined,
+		}, http.StatusOK)
 	})
 	return mux
 }
@@ -5152,6 +5190,30 @@ func decodeLocalContentBundleRequest(r *http.Request) (contentbundle.Bundle, int
 		return contentbundle.Bundle{}, http.StatusBadRequest, false
 	}
 	return bundle, http.StatusOK, true
+}
+
+func decodeLocalCharacterPointStateExportRequest(r *http.Request) (accountstore.CharacterPointStateExport, int, bool) {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxLocalCharacterPointStateQuarantineBodyBytes+1))
+	if err != nil {
+		return accountstore.CharacterPointStateExport{}, http.StatusBadRequest, false
+	}
+	if len(raw) > maxLocalCharacterPointStateQuarantineBodyBytes {
+		return accountstore.CharacterPointStateExport{}, http.StatusRequestEntityTooLarge, false
+	}
+	if !utf8.Valid(raw) || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return accountstore.CharacterPointStateExport{}, http.StatusBadRequest, false
+	}
+	var export accountstore.CharacterPointStateExport
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&export); err != nil {
+		return accountstore.CharacterPointStateExport{}, http.StatusBadRequest, false
+	}
+	var trailing struct{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return accountstore.CharacterPointStateExport{}, http.StatusBadRequest, false
+	}
+	return export, http.StatusOK, true
 }
 
 func decodeLocalQuestStateTransitionRequest(r *http.Request) (queststate.Transition, int, bool) {

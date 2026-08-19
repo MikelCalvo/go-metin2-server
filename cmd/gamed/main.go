@@ -282,6 +282,7 @@ func main() {
 		opsHandler,
 		gameRuntime.ExportCharacterPointState,
 	)
+	opsHandler = ops.RegisterLocalCharacterPointStateQuarantineEndpoint(opsHandler)
 	opsHandler = ops.RegisterLocalAuthLoginTicketHandoffExportEndpoint(
 		opsHandler,
 		gameRuntime.ExportAuthLoginTicketHandoff,
