@@ -942,26 +942,20 @@ func TestGameRuntimeReturnSpawnGroupHomeMovesWithinRadiusMobBackToAuthoredHome(t
 		t.Fatalf("expected persisted within-radius spawn group to return to authored home, got %+v", persisted.StaticActors)
 	}
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 5 {
-		t.Fatalf("expected retained viewer to receive refresh plus target clear on within-radius return-home, got %d frames", len(queued))
+	if len(queued) != 2 {
+		t.Fatalf("expected retained viewer to receive MOVE plus target clear on within-radius return-home, got %d frames", len(queued))
 	}
-	if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0])); err != nil || deleted.VID != uint32(group.EntityID) {
-		t.Fatalf("decode within-radius return-home delete: packet=%+v err=%v", deleted, err)
-	}
-	add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, queued[0]))
 	if err != nil {
-		t.Fatalf("decode within-radius return-home add: %v", err)
+		t.Fatalf("expected retained within-radius return-home viewer to receive MOVE replication instead of delete/readd, first frame decode err=%v", err)
 	}
-	if add.VID != uint32(group.EntityID) || add.X != 1700 || add.Y != 2800 {
-		t.Fatalf("expected within-radius return-home add at authored home, got %+v", add)
+	if moveAck.VID != uint32(group.EntityID) || moveAck.X != 1700 || moveAck.Y != 2800 {
+		t.Fatalf("expected within-radius return-home MOVE at authored home, got %+v", moveAck)
 	}
-	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, queued[2])); err != nil {
-		t.Fatalf("decode within-radius return-home additional info: %v", err)
+	if moveAck.Duration == 0 {
+		t.Fatalf("expected within-radius return-home MOVE to carry a non-zero bootstrap duration, got %+v", moveAck)
 	}
-	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, queued[3])); err != nil {
-		t.Fatalf("decode within-radius return-home update: %v", err)
-	}
-	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queued[4]))
+	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queued[1]))
 	if err != nil {
 		t.Fatalf("decode within-radius return-home target clear: %v", err)
 	}
@@ -1039,24 +1033,26 @@ func TestGameRuntimeStepSpawnGroupReturnHomeMovesOnePlannedStepAndQueuesRetained
 		t.Fatalf("expected persisted spawn group to move one return step and preserve home, got %+v", persisted.StaticActors)
 	}
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 4 {
-		t.Fatalf("expected retained viewer to receive return-step refresh, got %d frames", len(queued))
+	if len(queued) == 0 {
+		t.Fatal("expected retained viewer to receive return-step MOVE replication")
 	}
-	if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0])); err != nil || deleted.VID != uint32(group.EntityID) {
-		t.Fatalf("decode return-step retained delete: packet=%+v err=%v", deleted, err)
-	}
-	add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, queued[0]))
 	if err != nil {
-		t.Fatalf("decode return-step add: %v", err)
+		t.Fatalf("expected retained return-step viewer to receive MOVE replication instead of delete/readd, first frame decode err=%v", err)
 	}
-	if add.VID != uint32(group.EntityID) || add.X != 2201 || add.Y != 2800 {
-		t.Fatalf("expected return-step add at planned next position, got %+v", add)
+	if moveAck.VID != uint32(group.EntityID) || moveAck.X != 2201 || moveAck.Y != 2800 {
+		t.Fatalf("expected return-step MOVE at planned next position, got %+v", moveAck)
 	}
-	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, queued[2])); err != nil {
-		t.Fatalf("decode return-step additional info: %v", err)
+	if moveAck.Duration == 0 {
+		t.Fatalf("expected return-step MOVE to carry a non-zero bootstrap duration, got %+v", moveAck)
 	}
-	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, queued[3])); err != nil {
-		t.Fatalf("decode return-step update: %v", err)
+	for _, raw := range queued[1:] {
+		if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, raw)); err == nil && deleted.VID == uint32(group.EntityID) {
+			t.Fatalf("expected return-step MOVE fanout not to emit retained-viewer CHARACTER_DEL, got %+v among %d queued frames", deleted, len(queued))
+		}
+		if add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, raw)); err == nil && add.VID == uint32(group.EntityID) {
+			t.Fatalf("expected return-step MOVE fanout not to emit retained-viewer CHARACTER_ADD, got %+v among %d queued frames", add, len(queued))
+		}
 	}
 }
 
@@ -1145,15 +1141,15 @@ func TestGameRuntimeManualReturnStepReschedulesAutomaticReturnStepFromManualStep
 
 	currentTime = expectedRescheduledDueAt.Add(time.Nanosecond)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 4 {
-		t.Fatalf("expected rescheduled automatic return-step refresh after manual step, got %d frames", len(queued))
+	if len(queued) == 0 {
+		t.Fatal("expected rescheduled automatic return-step MOVE after manual step")
 	}
-	add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, queued[0]))
 	if err != nil {
-		t.Fatalf("decode rescheduled automatic return-step add after manual step: %v", err)
+		t.Fatalf("decode rescheduled automatic return-step MOVE after manual step: %v", err)
 	}
-	if add.VID != uint32(group.EntityID) || add.X != 2201 || add.Y != 2800 {
-		t.Fatalf("expected rescheduled automatic return-step add at next planned position, got %+v", add)
+	if moveAck.VID != uint32(group.EntityID) || moveAck.X != 2201 || moveAck.Y != 2800 {
+		t.Fatalf("expected rescheduled automatic return-step MOVE at next planned position, got %+v", moveAck)
 	}
 }
 
@@ -1484,22 +1480,17 @@ func TestGameRuntimeStepSpawnGroupReturnHomeClearsStaleTargetAndEngagementWhenAc
 	}
 
 	ownerQueued := flushServerFrames(t, ownerFlow)
-	if len(ownerQueued) != 5 {
-		t.Fatalf("expected selected owner to receive return-step refresh plus target clear, got %d frames", len(ownerQueued))
+	if len(ownerQueued) != 2 {
+		t.Fatalf("expected selected owner to receive return-step MOVE plus target clear, got %d frames", len(ownerQueued))
 	}
-	if _, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, ownerQueued[0])); err != nil {
-		t.Fatalf("decode selected return-step owner delete: %v", err)
+	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, ownerQueued[0]))
+	if err != nil {
+		t.Fatalf("decode selected return-step owner MOVE: %v", err)
 	}
-	if _, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, ownerQueued[1])); err != nil {
-		t.Fatalf("decode selected return-step owner add: %v", err)
+	if moveAck.VID != targetVID || moveAck.X != 1700 || moveAck.Y != 2800 {
+		t.Fatalf("expected selected return-step owner MOVE at authored home, got %+v", moveAck)
 	}
-	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, ownerQueued[2])); err != nil {
-		t.Fatalf("decode selected return-step owner additional info: %v", err)
-	}
-	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, ownerQueued[3])); err != nil {
-		t.Fatalf("decode selected return-step owner update: %v", err)
-	}
-	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, ownerQueued[4]))
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, ownerQueued[1]))
 	if err != nil {
 		t.Fatalf("decode selected return-step target clear: %v", err)
 	}
@@ -1511,8 +1502,20 @@ func TestGameRuntimeStepSpawnGroupReturnHomeClearsStaleTargetAndEngagementWhenAc
 	}
 
 	peerRefresh := flushServerFrames(t, peerFlow)
-	if len(peerRefresh) != 4 {
-		t.Fatalf("expected peer to receive return-step refresh without target clear, got %d frames", len(peerRefresh))
+	if len(peerRefresh) == 0 {
+		t.Fatal("expected peer to receive return-step MOVE without target clear")
+	}
+	peerMove, err := movep.DecodeMoveAck(decodeSingleFrame(t, peerRefresh[0]))
+	if err != nil {
+		t.Fatalf("decode selected return-step peer MOVE: %v", err)
+	}
+	if peerMove.VID != targetVID || peerMove.X != 1700 || peerMove.Y != 2800 {
+		t.Fatalf("expected peer return-step MOVE at authored home, got %+v", peerMove)
+	}
+	for _, raw := range peerRefresh[1:] {
+		if target, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, raw)); err == nil && target.TargetVID == 0 {
+			t.Fatalf("expected peer return-step MOVE not to emit target clear, got %+v among %d frames", target, len(peerRefresh))
+		}
 	}
 	peerSelect, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
 	if err != nil {
@@ -1610,10 +1613,13 @@ func TestGameRuntimeAutomaticReturnStepClearsSelectedCombatState(t *testing.T) {
 	currentTime = currentTime.Add(bootstrapSpawnGroupReturnStepDelay)
 
 	ownerQueued := flushServerFrames(t, ownerFlow)
-	if len(ownerQueued) != 5 {
-		t.Fatalf("expected automatic return-step to queue refresh plus target clear for selected owner, got %d frames", len(ownerQueued))
+	if len(ownerQueued) != 2 {
+		t.Fatalf("expected automatic return-step to queue MOVE plus target clear for selected owner, got %d frames", len(ownerQueued))
 	}
-	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, ownerQueued[4]))
+	if _, err := movep.DecodeMoveAck(decodeSingleFrame(t, ownerQueued[0])); err != nil {
+		t.Fatalf("decode automatic return-step owner MOVE: %v", err)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, ownerQueued[1]))
 	if err != nil {
 		t.Fatalf("decode automatic return-step owner target clear: %v", err)
 	}
@@ -1638,8 +1644,16 @@ func TestGameRuntimeAutomaticReturnStepClearsSelectedCombatState(t *testing.T) {
 	}
 
 	peerRefresh := flushServerFrames(t, peerFlow)
-	if len(peerRefresh) != 4 {
-		t.Fatalf("expected peer to receive automatic return-step refresh without target clear, got %d frames", len(peerRefresh))
+	if len(peerRefresh) == 0 {
+		t.Fatal("expected peer to receive automatic return-step MOVE without target clear")
+	}
+	if _, err := movep.DecodeMoveAck(decodeSingleFrame(t, peerRefresh[0])); err != nil {
+		t.Fatalf("decode automatic return-step peer MOVE: %v", err)
+	}
+	for _, raw := range peerRefresh[1:] {
+		if target, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, raw)); err == nil && target.TargetVID == 0 {
+			t.Fatalf("expected peer automatic return-step MOVE not to emit target clear, got %+v among %d frames", target, len(peerRefresh))
+		}
 	}
 	peerSelect, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
 	if err != nil {
@@ -1705,24 +1719,26 @@ func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupReturnStep(t *testing.T
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 4 {
-		t.Fatalf("expected due automatic return-step to queue retained viewer refresh, got %d frames", len(queued))
+	if len(queued) == 0 {
+		t.Fatal("expected due automatic return-step to queue retained viewer MOVE replication")
 	}
-	if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0])); err != nil || deleted.VID != uint32(group.EntityID) {
-		t.Fatalf("decode automatic return-step retained delete: packet=%+v err=%v", deleted, err)
-	}
-	add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, queued[0]))
 	if err != nil {
-		t.Fatalf("decode automatic return-step add: %v", err)
+		t.Fatalf("expected retained automatic return-step viewer to receive MOVE replication instead of delete/readd, first frame decode err=%v", err)
 	}
-	if add.VID != uint32(group.EntityID) || add.X != 2201 || add.Y != 2800 {
-		t.Fatalf("expected automatic return-step add at planned next position, got %+v", add)
+	if moveAck.VID != uint32(group.EntityID) || moveAck.X != 2201 || moveAck.Y != 2800 {
+		t.Fatalf("expected automatic return-step MOVE at planned next position, got %+v", moveAck)
 	}
-	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, queued[2])); err != nil {
-		t.Fatalf("decode automatic return-step additional info: %v", err)
+	if moveAck.Duration == 0 {
+		t.Fatalf("expected automatic return-step MOVE to carry a non-zero bootstrap duration, got %+v", moveAck)
 	}
-	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, queued[3])); err != nil {
-		t.Fatalf("decode automatic return-step update: %v", err)
+	for _, raw := range queued[1:] {
+		if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, raw)); err == nil && deleted.VID == uint32(group.EntityID) {
+			t.Fatalf("expected automatic return-step MOVE fanout not to emit retained-viewer CHARACTER_DEL, got %+v among %d queued frames", deleted, len(queued))
+		}
+		if add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, raw)); err == nil && add.VID == uint32(group.EntityID) {
+			t.Fatalf("expected automatic return-step MOVE fanout not to emit retained-viewer CHARACTER_ADD, got %+v among %d queued frames", add, len(queued))
+		}
 	}
 	persisted, err := staticActorStore.Load()
 	if err != nil {
@@ -1738,15 +1754,15 @@ func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupReturnStep(t *testing.T
 
 	currentTime = currentTime.Add(time.Second)
 	secondQueued := flushServerFrames(t, flow)
-	if len(secondQueued) != 4 {
-		t.Fatalf("expected still-return-required actor to re-arm one follow-up return step, got %d frames", len(secondQueued))
+	if len(secondQueued) == 0 {
+		t.Fatal("expected still-return-required actor to re-arm one follow-up return MOVE step")
 	}
-	secondAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, secondQueued[1]))
+	secondMove, err := movep.DecodeMoveAck(decodeSingleFrame(t, secondQueued[0]))
 	if err != nil {
-		t.Fatalf("decode second automatic return-step add: %v", err)
+		t.Fatalf("decode second automatic return-step MOVE: %v", err)
 	}
-	if secondAdd.VID != uint32(group.EntityID) || secondAdd.X != 2101 || secondAdd.Y != 2800 {
-		t.Fatalf("expected second automatic return-step add at next planned position, got %+v", secondAdd)
+	if secondMove.VID != uint32(group.EntityID) || secondMove.X != 2101 || secondMove.Y != 2800 {
+		t.Fatalf("expected second automatic return-step MOVE at next planned position, got %+v", secondMove)
 	}
 	persisted, err = staticActorStore.Load()
 	if err != nil {
@@ -3281,15 +3297,15 @@ func TestGameRuntimeFlushServerFramesRetriesSpawnGroupReturnStepAfterPersistence
 	runtime.staticStore = staticActorStore
 	currentTime = currentTime.Add(time.Second)
 	retryQueued := flushServerFrames(t, flow)
-	if len(retryQueued) != 4 {
-		t.Fatalf("expected retried automatic return-step to queue retained viewer refresh, got %d frames", len(retryQueued))
+	if len(retryQueued) == 0 {
+		t.Fatal("expected retried automatic return-step to queue retained viewer MOVE replication")
 	}
-	retryAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, retryQueued[1]))
+	retryMove, err := movep.DecodeMoveAck(decodeSingleFrame(t, retryQueued[0]))
 	if err != nil {
-		t.Fatalf("decode retried return-step add: %v", err)
+		t.Fatalf("decode retried return-step MOVE: %v", err)
 	}
-	if retryAdd.VID != uint32(group.EntityID) || retryAdd.X != 2201 || retryAdd.Y != 2800 {
-		t.Fatalf("expected retried automatic return-step add at planned next position, got %+v", retryAdd)
+	if retryMove.VID != uint32(group.EntityID) || retryMove.X != 2201 || retryMove.Y != 2800 {
+		t.Fatalf("expected retried automatic return-step MOVE at planned next position, got %+v", retryMove)
 	}
 	persisted, err = staticActorStore.Load()
 	if err != nil {
@@ -3437,15 +3453,15 @@ func TestGameRuntimeFlushServerFramesStopsSpawnGroupReturnStepWhenActorReentersL
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 4 {
-		t.Fatalf("expected due automatic return-step into leash radius to queue retained viewer refresh, got %d frames", len(queued))
+	if len(queued) == 0 {
+		t.Fatal("expected due automatic return-step into leash radius to queue retained viewer MOVE replication")
 	}
-	add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, queued[0]))
 	if err != nil {
-		t.Fatalf("decode radius-stop return-step add: %v", err)
+		t.Fatalf("decode radius-stop return-step MOVE: %v", err)
 	}
-	if add.VID != uint32(group.EntityID) || add.X != 2001 || add.Y != 2800 {
-		t.Fatalf("expected return-step add at first in-radius position, got %+v", add)
+	if moveAck.VID != uint32(group.EntityID) || moveAck.X != 2001 || moveAck.Y != 2800 {
+		t.Fatalf("expected return-step MOVE at first in-radius position, got %+v", moveAck)
 	}
 	stepped, ok := runtime.SpawnGroup(group.EntityID)
 	if !ok || stepped.SpawnLeash == nil || stepped.SpawnLeash.Status != worldruntime.SpawnLeashStatusWithinRadius || stepped.SpawnLeash.ReturnRequired {
@@ -5769,24 +5785,23 @@ func TestGameRuntimeFailedContentBundleImportRestoresSpawnGroupReturnStepSchedul
 
 	currentTime = originalDueAt.Add(time.Nanosecond)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 4 {
-		t.Fatalf("expected restored return-step schedule to fire retained viewer refresh, got %d frames", len(queued))
+	if len(queued) == 0 {
+		t.Fatal("expected restored return-step schedule to fire retained viewer MOVE replication")
 	}
-	if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0])); err != nil || deleted.VID != uint32(group.EntityID) {
-		t.Fatalf("decode restored return-step delete: packet=%+v err=%v", deleted, err)
-	}
-	add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, queued[0]))
 	if err != nil {
-		t.Fatalf("decode restored return-step add: %v", err)
+		t.Fatalf("decode restored return-step MOVE: %v", err)
 	}
-	if add.VID != uint32(group.EntityID) || add.X != 2201 || add.Y != 2800 {
-		t.Fatalf("expected restored return-step add at planned next position, got %+v", add)
+	if moveAck.VID != uint32(group.EntityID) || moveAck.X != 2201 || moveAck.Y != 2800 {
+		t.Fatalf("expected restored return-step MOVE at planned next position, got %+v", moveAck)
 	}
-	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, queued[2])); err != nil {
-		t.Fatalf("decode restored return-step additional info: %v", err)
-	}
-	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, queued[3])); err != nil {
-		t.Fatalf("decode restored return-step update: %v", err)
+	for _, raw := range queued[1:] {
+		if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, raw)); err == nil && deleted.VID == uint32(group.EntityID) {
+			t.Fatalf("expected restored return-step MOVE fanout not to emit retained-viewer CHARACTER_DEL, got %+v among %d queued frames", deleted, len(queued))
+		}
+		if add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, raw)); err == nil && add.VID == uint32(group.EntityID) {
+			t.Fatalf("expected restored return-step MOVE fanout not to emit retained-viewer CHARACTER_ADD, got %+v among %d queued frames", add, len(queued))
+		}
 	}
 }
 
@@ -5870,15 +5885,15 @@ func TestGameRuntimeNoOpContentBundleImportPrunesStaleSpawnGroupReturnStepSchedu
 	}
 	currentTime = originalDueAt.Add(time.Nanosecond)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 4 {
-		t.Fatalf("expected preserved return-step schedule to fire after no-op import, got %d frames", len(queued))
+	if len(queued) == 0 {
+		t.Fatal("expected preserved return-step schedule to fire after no-op import")
 	}
-	add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, queued[0]))
 	if err != nil {
-		t.Fatalf("decode preserved no-op return-step add: %v", err)
+		t.Fatalf("decode preserved no-op return-step MOVE: %v", err)
 	}
-	if add.VID != uint32(group.EntityID) || add.X != 2201 || add.Y != 2800 {
-		t.Fatalf("expected preserved no-op return-step add at planned next position, got %+v", add)
+	if moveAck.VID != uint32(group.EntityID) || moveAck.X != 2201 || moveAck.Y != 2800 {
+		t.Fatalf("expected preserved no-op return-step MOVE at planned next position, got %+v", moveAck)
 	}
 }
 

@@ -3902,13 +3902,28 @@ func (r *sharedWorldRegistry) StepSpawnGroupReturnHome(entityID uint64, maxStep 
 	}
 	r.syncStaticActorCombatStateLocked(updated)
 
-	refreshFrames := r.buildStaticActorRefreshFramesLocked(actor, updated)
-	if len(refreshFrames) > 0 {
-		for _, target := range targetDiff.RetainedVisibleTargets {
-			if characterAtBootstrapHPFloor(target.Character) {
-				continue
+	// Same-map retained viewers reuse server MOVE replication; remove/add stay on
+	// delete/bootstrap. Cross-map return-step keeps delete/readd because no return
+	// warp packet seam is owned yet. Engagement / selected-target clear remain.
+	sameMapReturn := actor.Position.SameMap(updated.Position)
+	if sameMapReturn {
+		if moveRaw, moveEncodable := encodeStaticActorChaseMoveFrame(updated); moveEncodable {
+			for _, target := range targetDiff.RetainedVisibleTargets {
+				if characterAtBootstrapHPFloor(target.Character) {
+					continue
+				}
+				r.enqueueToEntityLocked(target.Entity.ID, [][]byte{moveRaw})
 			}
-			r.enqueueToEntityLocked(target.Entity.ID, refreshFrames)
+		}
+	} else {
+		refreshFrames := r.buildStaticActorRefreshFramesLocked(actor, updated)
+		if len(refreshFrames) > 0 {
+			for _, target := range targetDiff.RetainedVisibleTargets {
+				if characterAtBootstrapHPFloor(target.Character) {
+					continue
+				}
+				r.enqueueToEntityLocked(target.Entity.ID, refreshFrames)
+			}
 		}
 	}
 	deleteRaw, deleteEncodable := encodeStaticActorDeleteFrame(actor)
@@ -4099,13 +4114,27 @@ func (r *sharedWorldRegistry) ReturnSpawnGroupHome(entityID uint64) (SpawnGroupL
 	}
 	r.syncStaticActorCombatStateLocked(updated)
 
-	refreshFrames := r.buildStaticActorRefreshFramesLocked(actor, updated)
-	if len(refreshFrames) > 0 {
-		for _, target := range targetDiff.RetainedVisibleTargets {
-			if characterAtBootstrapHPFloor(target.Character) {
-				continue
+	// Same-map retained viewers reuse server MOVE replication for exact return-home;
+	// remove/add stay on delete/bootstrap. Cross-map return-home keeps delete/readd.
+	sameMapReturn := actor.Position.SameMap(updated.Position)
+	if sameMapReturn {
+		if moveRaw, moveEncodable := encodeStaticActorChaseMoveFrame(updated); moveEncodable {
+			for _, target := range targetDiff.RetainedVisibleTargets {
+				if characterAtBootstrapHPFloor(target.Character) {
+					continue
+				}
+				r.enqueueToEntityLocked(target.Entity.ID, [][]byte{moveRaw})
 			}
-			r.enqueueToEntityLocked(target.Entity.ID, refreshFrames)
+		}
+	} else {
+		refreshFrames := r.buildStaticActorRefreshFramesLocked(actor, updated)
+		if len(refreshFrames) > 0 {
+			for _, target := range targetDiff.RetainedVisibleTargets {
+				if characterAtBootstrapHPFloor(target.Character) {
+					continue
+				}
+				r.enqueueToEntityLocked(target.Entity.ID, refreshFrames)
+			}
 		}
 	}
 	deleteRaw, deleteEncodable := encodeStaticActorDeleteFrame(actor)
