@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
+	"github.com/MikelCalvo/go-metin2-server/internal/buildinfo"
 )
 
 const (
@@ -90,6 +91,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runLedgerSnapshot(args[1:], stdout, stderr)
 	case "apply":
 		return runApply(args[1:], stdin, stdout, stderr)
+	case "version", "--version":
+		return runVersion(args[1:], stdout, stderr)
 	case "help", "-h", "--help":
 		printUsage(stdout)
 		return exitOK
@@ -98,6 +101,15 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		printUsage(stderr)
 		return exitUsage
 	}
+}
+
+func runVersion(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) != 0 {
+		fmt.Fprintln(stderr, "version does not accept arguments")
+		printVersionUsage(stderr)
+		return exitUsage
+	}
+	return writeJSON(stdout, stderr, buildinfo.Current())
 }
 
 func runCatalog(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -1699,6 +1711,9 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  apply-lock-status      inspect a local migration apply lock file without mutating it")
 	fmt.Fprintln(w, "  apply-audit-status     inspect a migration apply audit file without mutating it")
 	fmt.Fprintln(w, "  apply                  apply a target plan using a database/sql driver and offline ledger snapshot")
+	fmt.Fprintln(w, "  version                print metadata-only binary build identity")
+	fmt.Fprintln(w, "")
+	printVersionUsage(w)
 	fmt.Fprintln(w, "")
 	printStatusUsage(w)
 	fmt.Fprintln(w, "")
@@ -1721,6 +1736,12 @@ func printUsage(w io.Writer) {
 	printApplyAuditStatusUsage(w)
 	fmt.Fprintln(w, "")
 	printApplyUsage(w)
+}
+
+func printVersionUsage(w io.Writer) {
+	fmt.Fprintln(w, "version usage:")
+	fmt.Fprintln(w, "  metin2-migrate version")
+	fmt.Fprintln(w, "  metin2-migrate --version")
 }
 
 func printEmptyLedgerSnapshotUsage(w io.Writer) {

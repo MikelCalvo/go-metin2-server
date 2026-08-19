@@ -537,6 +537,18 @@ Returns a loopback-only, read-only JSON projection of the currently pending live
 
 Successful responses include `migration_version`, `migration_name`, and deterministic `ground_items` rows sorted by visible ground `vid`. Item-shaped rows expose `item_count`; gold-shaped rows expose `gold_amount` and use the current bootstrap gold marker `vnum = 1`; both shapes expose owner identity, map position, and `pickup_range`. This projection reads live in-memory runtime state rather than a committed JSON store, deliberately omits executable SQL and database apply output, and does not make pending ground handles durable across restart. Use it as an operator/backfill preflight for the `0010` boundary before any future import, recovery, or DB-backed world-state repository work.
 
+### `GET /local/build-info`
+
+Returns JSON describing the process release identity stamped into the running binary. This endpoint is registered on the shared ops mux for both `authd` and `gamed`, is read-only, rejects non-`GET` methods with `405`, and rejects non-loopback callers with `403`.
+
+Successful responses contain only:
+
+- `version`
+- `commit`
+- `build_date`
+
+Unstamped local `go run` / plain `go build` binaries report the package defaults (`dev` / `none` / `unknown`). `make build*` and the Dockerfile stamp these fields via `-ldflags`. The response is intentionally metadata-only: it never includes DSNs, store paths, or other runtime configuration. Use it together with `/local/runtime-config` when correlating operator evidence across reconnect/restart or migration windows. See [release/versioning policy](workflow/release-versioning.md).
+
 ### `GET /local/runtime-config`
 
 Returns JSON describing the active bootstrap runtime selection. This endpoint is read-only, rejects non-`GET` methods with `405`, and exposes only the local runtime facts needed for AOI/debugging:
@@ -995,6 +1007,10 @@ Player snapshots in the same preview now also expose `dead: true` while a still-
 - the same static-actor `dead: true` flag is preserved in transfer results while a runtime-owned practice mob remains dead before respawn
 - the same player `dead: true` flag is preserved in transfer results while a still-connected owner remains at that retaliation-owned `0`-HP floor
 - if that same dead owner is moved into another live peer's visible world or into visibility of another static actor through this loopback path, live peers still receive the ordinary queued peer-entry burst plus trailing `GC DEAD(owner_vid)` for that owner, while the dead owner itself now skips both the queued destination peer-entry burst and any queued destination static-actor bootstrap burst and keeps only any old-world cleanup frames still needed locally
+
+### `GET /local/build-info`
+
+Returns the process release identity stamped into the running binary (`version`, `commit`, `build_date`). This endpoint is registered on the shared ops mux for both `authd` and `gamed`, is read-only, rejects non-`GET` methods with `405`, and rejects non-loopback callers with `403`. Unstamped local builds report `dev` / `none` / `unknown`. See [release/versioning policy](workflow/release-versioning.md).
 
 ### `GET /local/runtime-config`
 
@@ -1532,3 +1548,4 @@ curl -X POST http://127.0.0.1:6060/local/quest-state/transition-preview \
 
 The runtime image keeps debug information because builds are not stripped with `-ldflags="-s -w"`.
 That preserves DWARF/symbol data for better profiling and stack analysis while still using a lightweight final image.
+Release identity is stamped separately through `-X` overrides for `internal/buildinfo.Version`, `.Commit`, and `.BuildDate`; see [release/versioning policy](workflow/release-versioning.md).

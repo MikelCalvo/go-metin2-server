@@ -13,6 +13,7 @@ import (
 
 	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/buildinfo"
 	"github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
@@ -49,6 +50,70 @@ func TestHealthzEndpointIncludesServiceName(t *testing.T) {
 
 	if !strings.Contains(rec.Body.String(), "gamed ok") {
 		t.Fatalf("unexpected health body %q", rec.Body.String())
+	}
+}
+
+func TestLocalBuildInfoEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
+	originalVersion := buildinfo.Version
+	originalCommit := buildinfo.Commit
+	originalBuildDate := buildinfo.BuildDate
+	t.Cleanup(func() {
+		buildinfo.Version = originalVersion
+		buildinfo.Commit = originalCommit
+		buildinfo.BuildDate = originalBuildDate
+	})
+
+	buildinfo.Version = "v0.1.0-test"
+	buildinfo.Commit = "abc1234"
+	buildinfo.BuildDate = "2026-08-19T12:00:00Z"
+
+	mux := NewPprofMux("gamed")
+	req := httptest.NewRequest(http.MethodGet, "/local/build-info", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	for _, want := range []string{`"version":"v0.1.0-test"`, `"commit":"abc1234"`, `"build_date":"2026-08-19T12:00:00Z"`} {
+		if !strings.Contains(string(body), want) {
+			t.Fatalf("expected %s in body %q", want, string(body))
+		}
+	}
+}
+
+func TestLocalBuildInfoEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	mux := NewPprofMux("authd")
+	req := httptest.NewRequest(http.MethodGet, "/local/build-info", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+}
+
+func TestLocalBuildInfoEndpointRejectsWrongMethod(t *testing.T) {
+	mux := NewPprofMux("gamed")
+	req := httptest.NewRequest(http.MethodPost, "/local/build-info", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
 	}
 }
 

@@ -14,11 +14,20 @@ make test
 make build
 ```
 
+`make build` stamps `internal/buildinfo` via `-ldflags` using the current git describe/commit and a UTC RFC3339 build date. Unstamped `go run` / plain `go build` binaries keep the package defaults (`dev` / `none` / `unknown`). See [release/versioning policy](workflow/release-versioning.md).
+
 Run locally:
 
 ```bash
 go run ./cmd/authd
 go run ./cmd/gamed
+```
+
+Inspect stamped identity after `make build`:
+
+```bash
+curl -sS http://127.0.0.1:6060/local/build-info
+./bin/metin2-migrate version
 ```
 
 ## Docker
@@ -27,6 +36,12 @@ Build the default lightweight runtime image:
 
 ```bash
 docker build --target runtime -t go-metin2-server:latest .
+```
+
+Or use the Makefile helper, which forwards the same `VERSION` / `COMMIT` / `BUILD_DATE` args used by local builds:
+
+```bash
+make docker-build
 ```
 
 Build the debug-flavoured runtime image:
@@ -46,8 +61,10 @@ It currently validates:
 - `gofmt` cleanliness
 - `go test ./...`
 - `go vet ./...`
-- daemon builds for `authd` and `gamed`
+- daemon builds for `authd`, `gamed`, and `metin2-migrate`
 - Docker runtime and debug image builds
+
+Binary and image builds stamp `internal/buildinfo` when invoked through `make build` / `make docker-build`, and the public CI workflow now forwards the same `VERSION` / `COMMIT` / `BUILD_DATE` args for both Go and Docker builds.
 
 The intent is simple: every small slice should be pushable and publicly re-checkable.
 

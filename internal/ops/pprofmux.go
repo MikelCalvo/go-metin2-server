@@ -17,6 +17,7 @@ import (
 
 	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/buildinfo"
 	contentbundle "github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/itemstore"
@@ -1333,6 +1334,30 @@ func RegisterLocalRuntimeConfigEndpoint(mux *http.ServeMux, runtimeConfig func()
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		if err := json.NewEncoder(w).Encode(runtimeConfig()); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	})
+	return mux
+}
+
+// RegisterLocalBuildInfoEndpoint exposes the process release identity on the
+// shared ops mux. It is intentionally loopback-only and metadata-only.
+func RegisterLocalBuildInfoEndpoint(mux *http.ServeMux, buildInfo func() buildinfo.Snapshot) *http.ServeMux {
+	if mux == nil || buildInfo == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/build-info", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if err := json.NewEncoder(w).Encode(buildInfo()); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 	})
@@ -4667,6 +4692,8 @@ func NewPprofMuxWithLocalRuntimeIntrospection(serviceName string, broadcastNotic
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = fmt.Fprintf(w, "%s ok\n", serviceName)
 	})
+
+	RegisterLocalBuildInfoEndpoint(mux, buildinfo.Current)
 
 	mux.HandleFunc("/debug/pprof/", stdpprof.Index)
 	mux.HandleFunc("/debug/pprof/cmdline", stdpprof.Cmdline)

@@ -10,11 +10,21 @@ COPY . .
 
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
+ARG VERSION=dev
+ARG COMMIT=none
+ARG BUILD_DATE=unknown
 ENV CGO_ENABLED=0
+ENV BUILDINFO_PKG=github.com/MikelCalvo/go-metin2-server/internal/buildinfo
 
-RUN GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath=false -buildvcs=true -o /out/authd ./cmd/authd && \
-    GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath=false -buildvcs=true -o /out/gamed ./cmd/gamed && \
-    GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath=false -buildvcs=true -o /out/metin2-migrate ./cmd/metin2-migrate
+RUN GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath=false -buildvcs=true \
+    -ldflags="-X ${BUILDINFO_PKG}.Version=${VERSION} -X ${BUILDINFO_PKG}.Commit=${COMMIT} -X ${BUILDINFO_PKG}.BuildDate=${BUILD_DATE}" \
+    -o /out/authd ./cmd/authd && \
+    GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath=false -buildvcs=true \
+    -ldflags="-X ${BUILDINFO_PKG}.Version=${VERSION} -X ${BUILDINFO_PKG}.Commit=${COMMIT} -X ${BUILDINFO_PKG}.BuildDate=${BUILD_DATE}" \
+    -o /out/gamed ./cmd/gamed && \
+    GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath=false -buildvcs=true \
+    -ldflags="-X ${BUILDINFO_PKG}.Version=${VERSION} -X ${BUILDINFO_PKG}.Commit=${COMMIT} -X ${BUILDINFO_PKG}.BuildDate=${BUILD_DATE}" \
+    -o /out/metin2-migrate ./cmd/metin2-migrate
 
 FROM gcr.io/distroless/static-debian12:nonroot AS runtime
 WORKDIR /app

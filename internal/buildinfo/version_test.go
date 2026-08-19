@@ -15,3 +15,23 @@ func TestDefaultBuildInfoIsSet(t *testing.T) {
 		t.Fatal("BuildDate should not be empty")
 	}
 }
+
+func TestCurrentReturnsPackageIdentity(t *testing.T) {
+	originalVersion := Version
+	originalCommit := Commit
+	originalBuildDate := BuildDate
+	t.Cleanup(func() {
+		Version = originalVersion
+		Commit = originalCommit
+		BuildDate = originalBuildDate
+	})
+
+	Version = "v0.1.0-test"
+	Commit = "abc1234"
+	BuildDate = "2026-08-19T12:00:00Z"
+
+	got := Current()
+	if got.Version != Version || got.Commit != Commit || got.BuildDate != BuildDate {
+		t.Fatalf("unexpected snapshot %#v", got)
+	}
+}

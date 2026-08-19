@@ -230,7 +230,7 @@ Next slices:
 2. Extract narrow repository seams only where tests prove reduced coupling.
 3. Write backup/restore runbooks backed by local validation or preflight tests.
 4. Harden crash/restart recovery for item/gold/character state used by the PvE loop.
-5. Document release/deploy/versioning policy.
+5. Document release/deploy/versioning policy; the first release-identity stamp and loopback `/local/build-info` surface now exist, while deployment topology remains follow-on work.
 6. Add production-safe observability conventions before remote admin surfaces.
 
 Exit criteria:

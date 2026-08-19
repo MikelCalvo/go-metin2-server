@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
+	"github.com/MikelCalvo/go-metin2-server/internal/buildinfo"
 )
 
 func TestRunCatalogWritesMetadataOnlySummary(t *testing.T) {
@@ -3043,8 +3044,65 @@ func TestRunRejectsUnknownCommandAsUsageError(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Fatalf("expected usage errors not to write stdout, got %q", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "unknown command") || !strings.Contains(stderr.String(), "catalog") || !strings.Contains(stderr.String(), "plan") {
+	if !strings.Contains(stderr.String(), "unknown command") || !strings.Contains(stderr.String(), "catalog") || !strings.Contains(stderr.String(), "plan") || !strings.Contains(stderr.String(), "version") {
 		t.Fatalf("expected usage guidance for unknown command, got %q", stderr.String())
+	}
+}
+
+func TestRunVersionWritesBuildIdentityJSON(t *testing.T) {
+	originalVersion := buildinfo.Version
+	originalCommit := buildinfo.Commit
+	originalBuildDate := buildinfo.BuildDate
+	t.Cleanup(func() {
+		buildinfo.Version = originalVersion
+		buildinfo.Commit = originalCommit
+		buildinfo.BuildDate = originalBuildDate
+	})
+
+	buildinfo.Version = "v0.1.0-test"
+	buildinfo.Commit = "abc1234"
+	buildinfo.BuildDate = "2026-08-19T12:00:00Z"
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"version"}, nil, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected version exit 0, got %d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected version not to write stderr, got %q", stderr.String())
+	}
+	for _, want := range []string{`"version": "v0.1.0-test"`, `"commit": "abc1234"`, `"build_date": "2026-08-19T12:00:00Z"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("expected %s in stdout %q", want, stdout.String())
+		}
+	}
+}
+
+func TestRunVersionFlagAliasWritesBuildIdentityJSON(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"--version"}, nil, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected --version exit 0, got %d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"version"`) || !strings.Contains(stdout.String(), `"commit"`) || !strings.Contains(stdout.String(), `"build_date"`) {
+		t.Fatalf("unexpected --version output %q", stdout.String())
+	}
+}
+
+func TestRunVersionRejectsExtraArguments(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"version", "extra"}, nil, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("expected version usage exit 2, got %d", code)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected version usage errors not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "version does not accept arguments") {
+		t.Fatalf("expected version usage guidance, got %q", stderr.String())
 	}
 }
 
