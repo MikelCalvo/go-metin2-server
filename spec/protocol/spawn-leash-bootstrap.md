@@ -275,6 +275,7 @@ Current implementation status:
 - remove/add visibility membership across the same step / home return still uses the ordinary `CHARACTER_DEL` / add-info-update bootstrap path
 - cross-map return-home, respawn rebuild, generic operator actor updates, and content-bundle replacement remain on delete/readd
 - engagement release and selected-target clear still follow the already-owned return recovery lifecycle
+- cross-map return-home / return-step membership is also part of the Track A #6 anti-leak matrix in `content-spawn-groups-bootstrap.md`: a successful cross-map return must restore exactly one entity to authored home and leave no dual-map occupancy / duplicate `spawn_group_ref`
 
 Explicit non-goals for this return-step MOVE freeze alone:
 - pathfinding, navmesh, patrol, or continuous interpolation beyond one discrete planned return step / exact-home snap

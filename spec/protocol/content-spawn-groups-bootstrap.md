@@ -383,6 +383,47 @@ The intended separation is:
 
 A future actor might visually resemble a static actor, but attackable respawn-owned content should load through `spawn_groups`, not by treating every bootstrap static actor as a hidden mob.
 
+## First owned multi-map / reconnect anti-leak matrix
+
+Question frozen here:
+
+**Once same-map chase / return-step MOVE and due-respawn EnterGame preflight already exist, what is the smallest explicit anti-duplicate / anti-resurrect contract that keeps content-loaded spawn groups honest across reconnect, fresh EnterGame, and multi-map membership without inventing a second AI scheduler or cross-map return MOVE?**
+
+Contract for Track A item 6:
+
+1. **Still-dead EnterGame / reconnect bootstrap**
+   - if a content-loaded spawn-group combatant is still inside its server-owned dead interval when a nearby client enters or reconnects, that client receives the ordinary `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` burst followed by one trailing `GC DEAD(vid)` replay
+   - the still-dead actor stays non-targetable / non-attackable
+   - EnterGame must **not** flush that respawn early; only an already-due respawn timer may preflight into a live full-HP bootstrap without a stale `DEAD` replay
+
+2. **One authored ref, one live runtime actor**
+   - reconnect / reclaim / fresh EnterGame never rematerializes a second actor for the same authored `spawn_group_ref`
+   - if runtime state ever contains more than one materialized actor for the same authored ref, exact by-ref lookup continues to fail closed (`404`) instead of choosing an arbitrary duplicate
+
+3. **Map / AOI scoped content visibility**
+   - successful content-bundle import / replacement visibility remains map- and AOI-scoped: sessions on another map receive no spawn add/delete frames for that replacement
+   - failed replacement / rollback paths still discard all staged visibility frames
+
+4. **Cross-map return-home / return-step membership**
+   - cross-map return-home / return-step stays outside MOVE choreography and keeps delete/readd / direct-home rebuild
+   - a successful cross-map return restores exactly one entity to the authored home map and must leave no dual-map occupancy or duplicate `spawn_group_ref` membership behind
+
+5. **Leave / transfer ownership cleanup**
+   - owner Leave / logout / close, phase-select leave, owner death floor, and owner transfer/warp away clear engagement / selected-target / pending chase ownership without resurrecting dead combat state or inventing a second spawn instance
+   - due return-step and due chase-step EnterGame / transfer preflights remain the owned anti-stale-position path and must not emit a later duplicate queued rebuild for the same due timer
+
+Current implementation status:
+- due-respawn EnterGame / transfer preflight for content-loaded spawn groups is already owned
+- still-dead trailing `GC DEAD` replay is already owned for `training_dummy` add-style visibility; the content-loaded spawn-group EnterGame / reconnect still-dead bootstrap is frozen here as the next honest RED before claiming item 6 complete
+- same-map return-step / return-home MOVE is live; cross-map return-home remains on delete/readd
+- reconnect rematerialization and dual-map occupancy guards above are frozen as fail-closed contracts for the next focused coverage
+
+Explicit non-goals for this anti-leak freeze alone:
+- cross-map return MOVE / warp packet choreography
+- daemon-restart persistence of live HP / dead timers
+- multi-member spawn packs or pack-wide synchronized respawn
+- inventing a second spawn scheduler beyond the existing pending-frame flush path
+
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
