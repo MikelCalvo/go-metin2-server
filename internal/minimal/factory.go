@@ -1391,9 +1391,7 @@ func (r *gameRuntime) ExportCharacterQuestState() (queststate.CharacterQuestStat
 		characterIDsByName[character.NameNormalized] = character.ID
 	}
 
-	exporter, ok := r.questStateStore.(interface {
-		ExportCharacterQuestState(map[string]uint32) (queststate.CharacterQuestStateExport, error)
-	})
+	exporter, ok := r.questStateStore.(queststate.CharacterQuestStateExporter)
 	if !ok {
 		return queststate.CharacterQuestStateExport{}, fmt.Errorf("character quest-state export is not supported")
 	}

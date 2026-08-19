@@ -229,7 +229,7 @@ Likely areas:
 Next slices:
 
 1. Extend the new `db/migrations` catalog beyond the initial `schema_migrations` ledger only when a narrow repository/backfill contract is ready; export quarantine/preflight now exists for `0002`/`0003`/`0004`/`0007`/`0008`/`0009`/`0010`/`0011` migration-shaped exports, and offline `metin2-migrate quarantine-export` / `backup-restore-drill` close the runbook gap beside the loopback surfaces.
-2. ~~Extract narrow repository seams only where tests prove reduced coupling.~~ Done for the first account character-state seam (`0002` roster / `0003` item-state / `0011` point-state): named `AccountCharacterStateExporter` + hermetic `MemoryStore`; quest/login-ticket/item-template/static-content/ground-handle seams and SQL-backed repositories remain follow-on.
+2. ~~Extract narrow repository seams only where tests prove reduced coupling.~~ Done for the first account character-state seam (`0002` roster / `0003` item-state / `0011` point-state) and the matching quest-state seam (`0004`): named `AccountCharacterStateExporter` / `CharacterQuestStateExporter` plus hermetic `MemoryStore`s; login-ticket/item-template/static-content/ground-handle seams and SQL-backed repositories remain follow-on.
 3. ~~Write backup/restore runbooks backed by local validation or preflight tests.~~ Done for the six manifested JSON stores plus the read-only drill printer; ground-item durability remains deferred.
 4. Harden crash/restart recovery for item/gold/character state used by the PvE loop.
 5. Document release/deploy/versioning policy; the first release-identity stamp and loopback `/local/build-info` surface now exist, while deployment topology remains follow-on work.

@@ -357,6 +357,60 @@ func TestGameRuntimeExportsAccountCharacterStateThroughMemoryStoreSeam(t *testin
 	}
 }
 
+func TestGameRuntimeExportsCharacterQuestStateThroughMemoryStoreSeam(t *testing.T) {
+	accountStore := accountstore.NewMemoryStore()
+	if err := accountStore.Save(accountstore.Account{
+		Login:  "Alpha",
+		Empire: 1,
+		Characters: []loginticket.Character{{
+			ID:       7,
+			Name:     "QuestHero",
+			Level:    1,
+			MapIndex: 1,
+		}},
+	}); err != nil {
+		t.Fatalf("save memory account snapshot: %v", err)
+	}
+
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(queststate.Snapshot{Flags: []queststate.Flag{{
+		Character: "QuestHero",
+		QuestRef:  "quest:first_steps",
+		Name:      "step",
+		Value:     2,
+	}}}); err != nil {
+		t.Fatalf("save memory quest-state snapshot: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountStore,
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.questStateStore = questStore
+
+	export, err := runtime.ExportCharacterQuestState()
+	if err != nil {
+		t.Fatalf("runtime memory quest-state export: %v", err)
+	}
+	if export.MigrationVersion != queststate.CharacterQuestStateMigrationVersion || export.MigrationName != queststate.CharacterQuestStateMigrationName {
+		t.Fatalf("unexpected migration boundary: %#v", export)
+	}
+	if len(export.Flags) != 1 || export.Flags[0].CharacterID != 7 || export.Flags[0].Character != "QuestHero" || export.Flags[0].QuestRef != "quest:first_steps" || export.Flags[0].Flag != "step" || export.Flags[0].Value != 2 {
+		t.Fatalf("unexpected memory quest-state export rows: %#v", export.Flags)
+	}
+	if _, err := queststate.ValidateCharacterQuestStateExport(export); err != nil {
+		t.Fatalf("quarantine memory quest-state export: %v", err)
+	}
+}
+
 func TestGameRuntimeCharacterItemStateExportProjectsCommittedSnapshots(t *testing.T) {
 	accountStore := accountstore.NewFileStore(t.TempDir())
 	character := loginticket.Character{

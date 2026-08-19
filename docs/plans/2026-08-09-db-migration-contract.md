@@ -216,7 +216,7 @@ Those require separate slices because each one changes operator and data-safety 
 
 ## Likely next slices
 
-1. ~~Define a narrow account/character/item/quest-state/login-ticket/static-content repository interface backed by current tests before adding a DB implementation.~~ Done for the first account character-state seam (`0002`/`0003`/`0011`): named `AccountLister` + `AccountCharacterStateExporter` plus hermetic `MemoryStore`; quest/login-ticket/item-template/static-content/ground-handle seams remain follow-on.
+1. ~~Define a narrow account/character/item/quest-state/login-ticket/static-content repository interface backed by current tests before adding a DB implementation.~~ Done for the first account character-state seam (`0002`/`0003`/`0011`) and the matching quest-state seam (`0004`): named `AccountLister` + `AccountCharacterStateExporter` / `CharacterQuestStateExporter` plus hermetic `MemoryStore`s; login-ticket/item-template/static-content/ground-handle seams remain follow-on.
 2. Continue JSON-file-store import/quarantine tooling beyond the landed `0002`/`0003`/`0004`/`0007`/`0008`/`0009`/`0010`/`0011` quarantine preflights so optional offline ledger snapshots and any future migration-shaped exports can be validated without silently coercing bad snapshots.
 3. Add a driver-backed test harness or build-tagged integration test for `schema_migrations` status and ledger-snapshot generation before adding apply/rollback tooling.
 4. Add explicit migrations for richer item/economy domains, item ownership timers, combat-profile defaults, or broader world runtime state only after the account/character/item/item-template/login-ticket/static-content/ground-handle repository seams are stable.
