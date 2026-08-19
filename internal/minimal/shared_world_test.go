@@ -14604,6 +14604,178 @@ func TestGameSessionFlowPracticeMobRestartHerePreflightsDueLocalRespawn(t *testi
 	}
 }
 
+func TestGameSessionFlowPracticeMobRestartHerePreflightsDueLocalChaseStep(t *testing.T) {
+	// Mirror the owned return-step /restart_here preflight, but keep a separate live
+	// engager so the pending chase-step deadline stays eligible through the floored
+	// restarter's recovery. A single zero-HP owner cannot hold chase: owner death /
+	// HP-floor clears pending chase deadlines before /restart_here runs.
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	engager := peerVisibilityCharacter("ChaseRestartEngager", 0x010301b0, 0x020401b0, 1900, 2800, 0, 101, 201)
+	engager.MapIndex = 42
+	engager.Points[bootstrapPlayerPointValueIndex] = 50
+	restarter := peerVisibilityCharacter("ChaseRestartHere", 0x010301b1, 0x020401b1, 1850, 2800, 2, 102, 202)
+	restarter.MapIndex = 42
+	restarter.Points[bootstrapPlayerPointValueIndex] = 0
+	issuePeerTicket(t, store, "chase-restart-engager", 0xb0b0b0b0, engager)
+	issuePeerTicket(t, store, "chase-restart-here", 0xb1b1b1b1, restarter)
+	if err := accounts.Save(accountstore.Account{Login: "chase-restart-engager", Empire: engager.Empire, Characters: cloneCharacters([]loginticket.Character{engager})}); err != nil {
+		t.Fatalf("seed engager account before /restart_here due chase-step preflight: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "chase-restart-here", Empire: restarter.Empire, Characters: cloneCharacters([]loginticket.Character{restarter})}); err != nil {
+		t.Fatalf("seed floored restarter account before /restart_here due chase-step preflight: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700001250, 0)
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		accounts,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for /restart_here due chase-step preflight: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.chase_step_restart_here",
+		Name:          "ChaseStepRestartHereMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import /restart_here chase-step spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.chase_step_restart_here")
+	if !ok {
+		t.Fatal("expected /restart_here chase-step spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	engagerFlow, engagerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "chase-restart-engager", 0xb0b0b0b0)
+	defer closeSessionFlow(t, engagerFlow)
+	if len(engagerEnter) != 8 {
+		t.Fatalf("expected engager bootstrap with visible chase practice mob, got %d frames", len(engagerEnter))
+	}
+	flushServerFrames(t, engagerFlow)
+
+	if _, err := engagerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
+		t.Fatalf("unexpected engager target error before /restart_here due chase-step preflight: %v", err)
+	}
+	if _, err := engagerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	}))); err != nil {
+		t.Fatalf("unexpected accepted engager hit before /restart_here due chase-step preflight: %v", err)
+	}
+	runtime.spawnChaseMu.Lock()
+	dueAt, scheduled := runtime.spawnChaseStepDueAt[group.EntityID]
+	runtime.spawnChaseMu.Unlock()
+	if !scheduled {
+		t.Fatalf("expected engaged hit to arm one pending chase-step deadline for entity %d", group.EntityID)
+	}
+
+	restarterFlow, restarterEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "chase-restart-here", 0xb1b1b1b1)
+	defer closeSessionFlow(t, restarterFlow)
+	if len(restarterEnter) < 6 {
+		t.Fatalf("expected floored restarter bootstrap including self DEAD before /restart_here due chase-step preflight, got %d frames", len(restarterEnter))
+	}
+	foundDead := false
+	for _, raw := range restarterEnter {
+		if dead, err := worldproto.DecodeDead(decodeSingleFrame(t, raw)); err == nil && dead.VID == restarter.VID {
+			foundDead = true
+			break
+		}
+	}
+	if !foundDead {
+		t.Fatalf("expected floored restarter EnterGame to replay self DEAD before /restart_here due chase-step preflight, got %d frames", len(restarterEnter))
+	}
+	flushServerFrames(t, engagerFlow)
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if queued := flushServerFrames(t, engagerFlow); len(queued) != 2 {
+		t.Fatalf("expected the owned delayed retaliation beat to fire for the live engager before the later chase step, got %d frames", len(queued))
+	}
+
+	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay - bootstrapPracticeMobServerOriginRetaliationDelay)
+	if runtime.now().Before(dueAt) {
+		t.Fatalf("expected chase-step deadline to be due before /restart_here, due_at=%s now=%s", dueAt, runtime.now())
+	}
+
+	restartOut, err := restarterFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_here"})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here error after local chase-step became due: %v", err)
+	}
+	if len(restartOut) != 8 {
+		t.Fatalf("expected /restart_here to preflight due local chase-step and return self bootstrap plus stepped practice-mob catch-up, got %d frames", len(restartOut))
+	}
+	mobDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, restartOut[4]))
+	if err != nil {
+		t.Fatalf("decode practice-mob catch-up delete after /restart_here due chase-step preflight: %v", err)
+	}
+	if mobDelete.VID != targetVID {
+		t.Fatalf("expected /restart_here due chase-step catch-up delete for vid %d, got %+v", targetVID, mobDelete)
+	}
+	mobAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[5]))
+	if err != nil {
+		t.Fatalf("decode stepped practice-mob catch-up add after /restart_here due chase-step preflight: %v", err)
+	}
+	if mobAdd.VID != targetVID || mobAdd.X != 1800 || mobAdd.Y != 2800 {
+		t.Fatalf("expected /restart_here due chase-step catch-up to show stepped practice mob at 1800,2800, got %+v", mobAdd)
+	}
+	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, restartOut[6])); err != nil {
+		t.Fatalf("decode practice-mob catch-up additional info after /restart_here due chase-step preflight: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, restartOut[7])); err != nil {
+		t.Fatalf("decode practice-mob catch-up update after /restart_here due chase-step preflight: %v", err)
+	}
+	if queued := flushServerFrames(t, restarterFlow); len(queued) != 0 {
+		t.Fatalf("expected no duplicate queued practice-mob chase-step rebuild after /restart_here due chase-step preflight, got %d", len(queued))
+	}
+
+	stepped, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || stepped.X != 1800 || stepped.Y != 2800 || stepped.Dead {
+		t.Fatalf("expected runtime actor at due chase-step position after /restart_here preflight, ok=%v snapshot=%+v", ok, stepped)
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after /restart_here due chase-step preflight: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != 1800 || persisted.StaticActors[0].Y != 2800 {
+		t.Fatalf("expected /restart_here chase-step preflight to persist stepped position, got %+v", persisted.StaticActors)
+	}
+
+	engagerQueued := flushServerFrames(t, engagerFlow)
+	if len(engagerQueued) == 0 {
+		t.Fatal("expected live engager to receive retained-viewer chase MOVE (and/or restarter recovery refresh) after /restart_here due chase-step preflight")
+	}
+	foundChaseMove := false
+	for _, raw := range engagerQueued {
+		moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, raw))
+		if err != nil {
+			continue
+		}
+		if moveAck.VID == targetVID && moveAck.X == 1800 && moveAck.Y == 2800 && moveAck.Duration != 0 {
+			foundChaseMove = true
+			break
+		}
+	}
+	if !foundChaseMove {
+		t.Fatalf("expected live engager to observe retained chase-step MOVE at 1800,2800 after /restart_here preflight flush, got %d queued frames", len(engagerQueued))
+	}
+}
+
 func TestGameSessionFlowPracticeMobRestartHerePreflightsDueLocalReturnStep(t *testing.T) {
 	runtime, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
 	defer closeSessionFlow(t, ownerFlow)
@@ -15644,6 +15816,188 @@ func TestGameSessionFlowPracticeMobRestartTownPreflightsDueDestinationRespawn(t 
 	}
 	if reselected.TargetVID != destinationVID || reselected.HPPercent != 100 {
 		t.Fatalf("expected destination mob target to be full HP after /restart_town due-respawn preflight, got %+v", reselected)
+	}
+}
+
+func TestGameSessionFlowPracticeMobRestartTownPreflightsDueDestinationChaseStep(t *testing.T) {
+	// Mirror the owned /restart_here chase-step preflight onto /restart_town: keep a
+	// live destination engager so chase stays eligible, then let a floored source-map
+	// owner recover into empire-2 town after the destination chase deadline is due.
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("RTChaseOwner", 0x010301c1, 0x020401c1, 1100, 2100, 0, 101, 201)
+	owner.Empire = 2
+	owner.Points[bootstrapPlayerPointValueIndex] = 0
+	destinationEngager := peerVisibilityCharacter("RTChaseEngager", 0x010301c2, 0x020401c2, 52270, 166600, 0, 102, 202)
+	destinationEngager.MapIndex = 21
+	destinationEngager.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "rt-chase-owner", 0xc1c1c1c1, owner)
+	issuePeerTicket(t, store, "rt-chase-engager", 0xc2c2c2c2, destinationEngager)
+	if err := accounts.Save(accountstore.Account{Login: "rt-chase-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed floored /restart_town chase-preflight owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "rt-chase-engager", Empire: destinationEngager.Empire, Characters: cloneCharacters([]loginticket.Character{destinationEngager})}); err != nil {
+		t.Fatalf("seed destination engager account before /restart_town chase-step preflight: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	currentTime := time.Unix(1700001260, 0)
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		accounts,
+		staticActorStore,
+		interactionStore,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error in /restart_town due chase-step preflight test: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.restart_town_due_chase_destination",
+		Name:          "RestartTownDueChaseDestinationMob",
+		MapIndex:      21,
+		X:             52070,
+		Y:             166600,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import destination chase-step spawn-group bundle for /restart_town preflight: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.restart_town_due_chase_destination")
+	if !ok {
+		t.Fatal("expected destination chase-step spawn group to resolve by ref")
+	}
+	destinationVID := uint32(group.EntityID)
+
+	engagerFlow, engagerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "rt-chase-engager", 0xc2c2c2c2)
+	defer closeSessionFlow(t, engagerFlow)
+	if len(engagerEnter) != 8 {
+		t.Fatalf("expected destination engager bootstrap with visible chase practice mob, got %d frames", len(engagerEnter))
+	}
+	flushServerFrames(t, engagerFlow)
+	if _, err := engagerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: destinationVID}))); err != nil {
+		t.Fatalf("unexpected destination engager target before /restart_town due chase-step preflight: %v", err)
+	}
+	if _, err := engagerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  destinationVID,
+	}))); err != nil {
+		t.Fatalf("unexpected accepted destination engager hit before /restart_town due chase-step preflight: %v", err)
+	}
+	runtime.spawnChaseMu.Lock()
+	dueAt, scheduled := runtime.spawnChaseStepDueAt[group.EntityID]
+	runtime.spawnChaseMu.Unlock()
+	if !scheduled {
+		t.Fatalf("expected destination engagement to arm one pending chase-step deadline for entity %d", group.EntityID)
+	}
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "rt-chase-owner", 0xc1c1c1c1)
+	defer closeSessionFlow(t, ownerFlow)
+	if len(ownerEnter) < 6 {
+		t.Fatalf("expected floored source owner bootstrap including self DEAD before /restart_town due chase-step preflight, got %d frames", len(ownerEnter))
+	}
+	foundDead := false
+	for _, raw := range ownerEnter {
+		if dead, err := worldproto.DecodeDead(decodeSingleFrame(t, raw)); err == nil && dead.VID == owner.VID {
+			foundDead = true
+			break
+		}
+	}
+	if !foundDead {
+		t.Fatalf("expected floored source owner EnterGame to replay self DEAD before /restart_town due chase-step preflight, got %d frames", len(ownerEnter))
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if queued := flushServerFrames(t, engagerFlow); len(queued) != 2 {
+		t.Fatalf("expected the owned delayed retaliation beat to fire for the destination engager before the later chase step, got %d frames", len(queued))
+	}
+
+	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay - bootstrapPracticeMobServerOriginRetaliationDelay)
+	if runtime.now().Before(dueAt) {
+		t.Fatalf("expected destination chase-step deadline to be due before /restart_town, due_at=%s now=%s", dueAt, runtime.now())
+	}
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_town"})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_town error after destination chase-step became due: %v", err)
+	}
+	if len(restartOut) < 7 {
+		t.Fatalf("expected /restart_town to preflight due destination chase-step and return self bootstrap plus stepped destination mob burst, got %d frames", len(restartOut))
+	}
+	steppedAddIdx := -1
+	for idx := range restartOut {
+		add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[idx]))
+		if err != nil {
+			continue
+		}
+		if add.VID != destinationVID {
+			continue
+		}
+		if add.X != 52170 || add.Y != 166600 {
+			t.Fatalf("expected /restart_town to show due chase-step destination position 52170,166600 for actor %d, got %+v", group.EntityID, add)
+		}
+		steppedAddIdx = idx
+		break
+	}
+	if steppedAddIdx < 0 {
+		t.Fatalf("expected /restart_town after due destination chase-step to include stepped static-actor CHARACTER_ADD, got %d frames", len(restartOut))
+	}
+	if steppedAddIdx+2 >= len(restartOut) {
+		t.Fatalf("expected stepped destination chase actor info/update after CHARACTER_ADD at frame %d, got %d frames", steppedAddIdx, len(restartOut))
+	}
+	steppedInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, restartOut[steppedAddIdx+1]))
+	if err != nil {
+		t.Fatalf("decode /restart_town stepped destination chase actor info: %v", err)
+	}
+	if steppedInfo.VID != destinationVID || steppedInfo.Name != "RestartTownDueChaseDestinationMob" {
+		t.Fatalf("expected /restart_town to see stepped destination chase actor info for target %d, got %+v", group.EntityID, steppedInfo)
+	}
+	steppedUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, restartOut[steppedAddIdx+2]))
+	if err != nil {
+		t.Fatalf("decode /restart_town stepped destination chase actor update: %v", err)
+	}
+	if steppedUpdate.VID != destinationVID {
+		t.Fatalf("expected /restart_town to see stepped destination chase actor update for target %d, got %+v", group.EntityID, steppedUpdate)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected no duplicate queued destination chase-step rebuild after /restart_town due chase-step preflight, got %d", len(queued))
+	}
+
+	stepped, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || stepped.X != 52170 || stepped.Y != 166600 || stepped.Dead {
+		t.Fatalf("expected runtime destination actor at due chase-step position after /restart_town preflight, ok=%v snapshot=%+v", ok, stepped)
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after /restart_town due chase-step preflight: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != 52170 || persisted.StaticActors[0].Y != 166600 {
+		t.Fatalf("expected /restart_town chase-step preflight to persist stepped destination position, got %+v", persisted.StaticActors)
+	}
+
+	engagerQueued := flushServerFrames(t, engagerFlow)
+	foundChaseMove := false
+	for _, raw := range engagerQueued {
+		moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, raw))
+		if err != nil {
+			continue
+		}
+		if moveAck.VID == destinationVID && moveAck.X == 52170 && moveAck.Y == 166600 && moveAck.Duration != 0 {
+			foundChaseMove = true
+			break
+		}
+	}
+	if !foundChaseMove {
+		t.Fatalf("expected destination engager to observe retained chase-step MOVE at 52170,166600 after /restart_town preflight flush, got %d queued frames", len(engagerQueued))
 	}
 }
 

@@ -1013,6 +1013,7 @@ If that custom profile authors a negative `retaliation_point_delta`, expect both
 - [ ] Re-select the still-live practice mob and confirm its HP remains at the current runtime-owned value instead of resetting because of `/restart_here`
 - [ ] In a separate timing run, let a second living client kill the practice mob while the owner is still at `0` HP, wait until the owned respawn delay is already due, then issue `/restart_here` and confirm the recovery catch-up shows the live rebuilt mob (no stale `DEAD` replay and no duplicate queued respawn afterward)
 - [ ] In another timing run, while the owner is still at `0` HP, displace a still-live authored spawn-backed practice mob outside leash so it arms a server-owned return-step, wait until that return-step deadline is already due without flushing the dead owner's skipped lifecycle frames, then issue `/restart_here` and confirm the recovery catch-up shows the stepped post-return-step position (not the pre-step displaced coords), no duplicate queued return-step rebuild follows, and the mob remains non-targetable while it still classifies `return_required`
+- [ ] In a separate timing run with a second living engager still holding the practice mob, keep that engaged chase-step deadline already due, then issue `/restart_here` from a floored nearby client and confirm the recovery catch-up shows the stepped chase position instead of stale pre-chase coords followed by a duplicate queued chase-step rebuild; the live engager should observe the retained chase `MOVE`
 - [ ] Optional fixture/debug guard: if the selected character's persisted account snapshot is deliberately seeded at `0` HP, issue `/restart_here` and confirm it recovers with race create MaxHP persisted and a live self bootstrap burst
 
 ### 5.12.1 Practice-mob pending-retaliation cleanup on mob death
@@ -1036,7 +1037,7 @@ Expected result:
 - owner-side retaliation death uses `PLAYER_POINT_CHANGE(value=0)` -> `DEAD(owner_vid)` -> `TARGET(0, 0)`
 - `/restart_here` is accepted only after the zero-HP floor and keeps the session in `GAME`
 - player HP is rebuilt from race create MaxHP into the persisted snapshot on accepted restart, while a still-live practice mob keeps its runtime-owned HP and requires fresh target acquisition; a zero-HP owner does not keep that mob orphan-locked against fresh targeting from another living visible client
-- `/restart_here` also preflights due mob respawn / return-step timers and refreshes currently visible static actors for the recovered owner, so skipped zero-HP lifecycle frames do not leave stale local mob visuals
+- `/restart_here` also preflights due mob respawn / return-step / chase-step timers and refreshes currently visible static actors for the recovered owner, so skipped zero-HP lifecycle frames do not leave stale local mob visuals
 - if persisted player HP is already `0`, `/restart_here` recovers that dead snapshot by writing race create MaxHP and emitting the ordinary live recovery burst
 - post-floor `ITEM_MOVE` is silent and non-mutating until a restart/recovery seam is used
 - open bootstrap exchange windows are closed with `GC::EXCHANGE END` on the player-death edge and do not remain usable after the owner reaches the zero-HP floor
@@ -1052,12 +1053,14 @@ Run this when the QA character can safely exercise the bootstrap town-return rec
 - [ ] If the town-return crosses maps away from a visible practice mob, confirm the same socket also receives the ordinary source-map `CHARACTER_DEL` teardown for that mob after the self bootstrap burst
 - [ ] Confirm later movement/interaction works from the town-return position after recovery
 - [ ] Reconnect and confirm the town-return position plus recovered race create MaxHP persisted
+- [ ] In a separate timing run with a living destination engager still holding an authored practice mob near the owned empire town-return point, keep that engaged chase-step deadline already due, then issue `/restart_town` from a floored source-map client and confirm destination visibility in the recovery burst shows the stepped chase position instead of stale pre-chase coords followed by a duplicate queued chase-step rebuild
 - [ ] Optional fixture/debug guard: if the selected character's persisted account snapshot is deliberately seeded at `0` HP, issue `/restart_town` and confirm it recovers with race create MaxHP plus the town-return position persisted
 
 Expected result:
 - `/restart_town` is accepted only after the zero-HP floor
 - the selected player rebuilds with race create MaxHP and moves to the currently owned empire create-position fallback
 - if persisted player HP is already `0`, `/restart_town` recovers that dead snapshot by writing race create MaxHP and the town-return position
+- `/restart_town` also preflights due destination-map chase-step timers before encoding destination static-actor visibility, matching the EnterGame / transfer / `/restart_here` chase preflight contract
 - source-map non-player visibility is torn down through existing delete frames when the town restart leaves that map
 - the recovery does not invent a separate revive packet or claim final map-specific death-return rules
 

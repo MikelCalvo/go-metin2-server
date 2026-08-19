@@ -175,7 +175,7 @@ Execution rules:
 
 Preflight rules:
 - a fresh `EnterGame` / visibility bootstrap and a `MOVE` / `SYNC_POSITION` transfer rebootstrap that start after a pending chase-step deadline is already due must flush that due chase step before encoding static-actor visibility, matching the return-step preflight contract so clients do not first observe a stale pre-chase position followed by a redundant queued rebuild
-- the owned same-socket `/restart_here` and `/restart_town` recovery seams use the same due chase-step preflight before rebuilding visibility
+- the owned same-socket `/restart_here` and `/restart_town` recovery seams use the same due chase-step preflight before rebuilding visibility; focused coverage now owns both recovery paths with a separate live engager keeping chase eligible while a floored restarter recovers
 
 Cleanup / fail-closed rules:
 - clear pending chase deadlines on owner disconnect/logout/close, phase-select leave, EnterGame reclaim that drops stale engagement ownership, owner death floor, owner transfer/warp to a different map, client-originated `TARGET(0)` clear-target that releases the current engagement, actor death, successful return-home, content-bundle replacement that removes or replaces the actor, and any other engagement release that drops the actor's `engaged_by` ownership
