@@ -8988,6 +8988,9 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		}
 		return contentbundle.Bundle{}, replaceErr
 	}
+	if r.sharedWorld != nil {
+		r.sharedWorld.remapStillDeadSpawnGroupCombatState(previousActors, previousCombatState)
+	}
 	r.pruneSpawnGroupReturnStepSchedules()
 	r.pruneSpawnGroupChaseStepSchedules()
 	if r.sharedWorld != nil {

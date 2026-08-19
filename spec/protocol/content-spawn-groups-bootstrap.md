@@ -421,14 +421,15 @@ Current implementation status:
 - due-respawn EnterGame / transfer preflight for content-loaded spawn groups is already owned
 - still-dead trailing `GC DEAD` replay is owned for both `training_dummy` and content-loaded `spawn_groups` EnterGame / reconnect add-style visibility, including fail-closed target/attack while the dead interval remains open and one-ref/one-actor lookup after that still-dead bootstrap
 - same-map return-step / return-home MOVE is live; cross-map return-home remains on delete/readd and now has focused dual-map occupancy coverage (foreign-map delete, home-map add/info/update, one-ref/one-actor, empty foreign-map occupancy, persisted authored home)
-- reconnect rematerialization remains a fail-closed contract for later focused coverage beside the existing by-ref lookup path
-- still-dead content-bundle replacement anti-resurrect above is frozen here as the next honest RED: a non-identical replacement that keeps the same authored ref while the actor is still dead must preserve the dead interval instead of re-registering a live full-HP instance
+- still-dead content-bundle replacement anti-resurrect is now owned: successful non-identical `ImportContentBundle` replacements that keep the same authored `spawn_group_ref` remap pending `HP=0` + absolute respawn deadline onto the newly registered actor before import fanout, so late EnterGame still ends with trailing `GC DEAD` and the actor stays non-targetable through the ordinary timer; engagement / proximity-suppress / selected-target ownership are not remapped across that replacement boundary
+- reconnect rematerialization remains a fail-closed contract for later focused coverage beside the existing by-ref lookup path; that is the next honest RED after this still-dead replacement seam
 
 Explicit non-goals for this anti-leak freeze alone:
 - cross-map return MOVE / warp packet choreography
 - daemon-restart persistence of live HP / dead timers
 - multi-member spawn packs or pack-wide synchronized respawn
 - inventing a second spawn scheduler beyond the existing pending-frame flush path
+- remapping live damaged HP, engagement, or chase/return schedules across non-identical content-bundle replacement
 
 ## Explicit non-goals
 

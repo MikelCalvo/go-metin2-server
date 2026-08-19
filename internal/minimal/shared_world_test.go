@@ -37301,6 +37301,141 @@ func TestGameSessionFlowContentSpawnGroupStillDeadEnterGameReplaysTrailingDead(t
 	}
 }
 
+func TestGameRuntimeContentSpawnGroupStillDeadReplacementDoesNotResurrectEarly(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	killer := peerVisibilityCharacter("StillDeadReplaceKiller", 0x010301f1, 0x020401f1, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapPlayerPointValueIndex] = 50
+	lateViewer := peerVisibilityCharacter("StillDeadReplaceLateViewer", 0x010301f2, 0x020401f2, 1100, 2100, 0, 102, 202)
+	issuePeerTicket(t, store, "still-dead-replace-killer", 0xf1f1f1f1, killer)
+	issuePeerTicket(t, store, "still-dead-replace-late-viewer", 0xf2f2f2f2, lateViewer)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000363, 0)
+	runtime.now = func() time.Time { return currentTime }
+	initialBundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_still_dead_replace",
+		Name:          "PracticeMobStillDeadReplace",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(initialBundle); err != nil {
+		t.Fatalf("import initial still-dead replacement spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice mob after initial import, got %#v", actors)
+	}
+	originalEntityID := actors[0].EntityID
+	targetVID := uint32(originalEntityID)
+
+	killerFlow, killerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "still-dead-replace-killer", 0xf1f1f1f1)
+	if len(killerEnter) != 8 {
+		t.Fatalf("expected killer bootstrap with visible content practice mob, got %d frames", len(killerEnter))
+	}
+	killingAttack := drivePracticeMobOwnerKill(t, killerFlow, targetVID, "still-dead content-bundle replacement", func(duration time.Duration) {
+		currentTime = currentTime.Add(duration)
+	})
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, killingAttack[0]))
+	if err != nil {
+		t.Fatalf("decode mob-death frame before still-dead replacement: %v", err)
+	}
+	if dead.VID != targetVID {
+		t.Fatalf("expected killing hit to kill target vid %d, got %+v", targetVID, dead)
+	}
+	closeSessionFlow(t, killerFlow)
+
+	beforeReplace, ok := runtime.SpawnGroupByRef("practice.mob_still_dead_replace")
+	if !ok || !beforeReplace.Dead {
+		t.Fatalf("expected spawn group to be dead before non-identical replacement, ok=%v snapshot=%+v", ok, beforeReplace)
+	}
+	respawnsBefore := runtime.StaticActorRespawns()
+	if len(respawnsBefore) != 1 || respawnsBefore[0].EntityID != originalEntityID {
+		t.Fatalf("expected one pending respawn before still-dead replacement, got %+v", respawnsBefore)
+	}
+
+	replacementBundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_still_dead_replace",
+		Name:          "PracticeMobStillDeadReplaceRenamed",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(replacementBundle); err != nil {
+		t.Fatalf("import non-identical still-dead replacement spawn-group bundle: %v", err)
+	}
+
+	afterReplace, ok := runtime.SpawnGroupByRef("practice.mob_still_dead_replace")
+	if !ok {
+		t.Fatal("expected still-dead spawn group to remain resolvable by authored ref after replacement")
+	}
+	if !afterReplace.Dead {
+		t.Fatalf("expected still-dead content-bundle replacement to preserve dead interval, got snapshot=%+v", afterReplace)
+	}
+	if afterReplace.Name != "PracticeMobStillDeadReplaceRenamed" {
+		t.Fatalf("expected replacement presentation name to apply while remaining dead, got %+v", afterReplace)
+	}
+	respawnsAfter := runtime.StaticActorRespawns()
+	if len(respawnsAfter) != 1 || respawnsAfter[0].EntityID != afterReplace.EntityID {
+		t.Fatalf("expected one pending respawn to survive still-dead replacement, got %+v", respawnsAfter)
+	}
+	allActors := runtime.StaticActors()
+	if len(allActors) != 1 || allActors[0].SpawnGroupRef != "practice.mob_still_dead_replace" {
+		t.Fatalf("expected one authored-ref actor after still-dead replacement, got %+v", allActors)
+	}
+
+	lateFlow, lateEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "still-dead-replace-late-viewer", 0xf2f2f2f2)
+	defer closeSessionFlow(t, lateFlow)
+	if len(lateEnter) != 9 {
+		t.Fatalf("expected 9 bootstrap frames for late viewer with still-dead replaced spawn group, got %d", len(lateEnter))
+	}
+	staticAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, lateEnter[5]))
+	if err != nil {
+		t.Fatalf("decode still-dead replacement bootstrap add: %v", err)
+	}
+	if staticAdd.VID != uint32(afterReplace.EntityID) || staticAdd.X != 1200 || staticAdd.Y != 2200 || staticAdd.RaceNum != 101 {
+		t.Fatalf("unexpected still-dead replacement bootstrap add: %+v", staticAdd)
+	}
+	staticInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, lateEnter[6]))
+	if err != nil {
+		t.Fatalf("decode still-dead replacement bootstrap additional info: %v", err)
+	}
+	if staticInfo.VID != uint32(afterReplace.EntityID) || staticInfo.Name != "PracticeMobStillDeadReplaceRenamed" {
+		t.Fatalf("unexpected still-dead replacement bootstrap additional info: %+v", staticInfo)
+	}
+	staticUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, lateEnter[7]))
+	if err != nil {
+		t.Fatalf("decode still-dead replacement bootstrap update: %v", err)
+	}
+	if staticUpdate.VID != uint32(afterReplace.EntityID) {
+		t.Fatalf("unexpected still-dead replacement bootstrap update: %+v", staticUpdate)
+	}
+	deadReplay, err := worldproto.DecodeDead(decodeSingleFrame(t, lateEnter[8]))
+	if err != nil {
+		t.Fatalf("decode still-dead replacement bootstrap dead replay: %v", err)
+	}
+	if deadReplay.VID != uint32(afterReplace.EntityID) {
+		t.Fatalf("unexpected still-dead replacement bootstrap dead replay: %+v", deadReplay)
+	}
+
+	deniedTarget, err := lateFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(afterReplace.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected still-dead replacement target error: %v", err)
+	}
+	if len(deniedTarget) != 0 {
+		t.Fatalf("expected still-dead replaced spawn group to stay non-targetable, got %d frames", len(deniedTarget))
+	}
+}
+
 func TestGameSessionFlowPracticeMobDeathCancelsPendingDelayedRetaliationBeforeRespawn(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

@@ -1285,6 +1285,67 @@ func (r *sharedWorldRegistry) restoreStaticActorCombatStateLocked(snapshot stati
 	r.nextStaticActorCombatSnapshotID = snapshot.NextSnapshotID
 }
 
+// remapStillDeadSpawnGroupCombatState overlays pending dead/respawn combat state from a
+// previous content-bundle snapshot onto newly registered actors that keep the same authored
+// spawn_group_ref. Engagement, proximity suppress, and session combat ownership are intentionally
+// not remapped: replacement is a runtime-reset boundary for those seams.
+func (r *sharedWorldRegistry) remapStillDeadSpawnGroupCombatState(previousActors []StaticActorSnapshot, previous staticActorCombatStateSnapshot) {
+	if r == nil || r.entities == nil || len(previousActors) == 0 {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.remapStillDeadSpawnGroupCombatStateLocked(previousActors, previous)
+}
+
+func (r *sharedWorldRegistry) remapStillDeadSpawnGroupCombatStateLocked(previousActors []StaticActorSnapshot, previous staticActorCombatStateSnapshot) {
+	if r == nil || r.entities == nil || len(previousActors) == 0 {
+		return
+	}
+	stillDeadByRef := make(map[string]time.Time)
+	for _, actor := range previousActors {
+		ref := strings.TrimSpace(actor.SpawnGroupRef)
+		if ref == "" || actor.EntityID == 0 {
+			continue
+		}
+		currentHP, hpOK := previous.HP[actor.EntityID]
+		respawnAt, respawnOK := previous.RespawnAt[actor.EntityID]
+		if !hpOK || currentHP != 0 || !respawnOK || respawnAt.IsZero() {
+			continue
+		}
+		stillDeadByRef[ref] = respawnAt
+	}
+	if len(stillDeadByRef) == 0 {
+		return
+	}
+	for _, actor := range r.entities.AllStaticActors() {
+		ref := strings.TrimSpace(actor.SpawnGroupRef)
+		if ref == "" || actor.Entity.ID == 0 {
+			continue
+		}
+		respawnAt, ok := stillDeadByRef[ref]
+		if !ok {
+			continue
+		}
+		if r.staticActorCombatHP == nil {
+			r.staticActorCombatHP = make(map[uint64]uint8)
+		}
+		if r.staticActorCombatRespawnAt == nil {
+			r.staticActorCombatRespawnAt = make(map[uint64]time.Time)
+		}
+		r.staticActorCombatHP[actor.Entity.ID] = 0
+		r.staticActorCombatRespawnAt[actor.Entity.ID] = respawnAt
+		r.assignStaticActorCombatSnapshotLocked(actor.Entity.ID)
+		if engagedBy := r.staticActorCombatEngagedBy[actor.Entity.ID]; engagedBy != 0 {
+			delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
+			r.clearProximityAggroSuppressForActorLocked(actor.Entity.ID)
+		}
+		if r.staticActorProximityAggroSuppress != nil {
+			delete(r.staticActorProximityAggroSuppress, actor.Entity.ID)
+		}
+	}
+}
+
 func cloneUint64Uint8Map(in map[uint64]uint8) map[uint64]uint8 {
 	if len(in) == 0 {
 		return nil
