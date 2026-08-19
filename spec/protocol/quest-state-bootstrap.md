@@ -301,7 +301,7 @@ The content-bundle boundary is still authored-content plumbing only: it does not
 
 ## Spawn-group kill-quest credit
 
-Authored `spawn_groups` and authoring-only `regen_spawns` may optionally carry one kill-quest credit descriptor that reuses the same compare-and-set primitive after an accepted non-player death edge:
+Authored `spawn_groups`, authoring-only `regen_spawns`, and authoring-only `drop_tables` may optionally carry one kill-quest credit descriptor that reuses the same compare-and-set primitive after an accepted non-player death edge:
 
 ```json
 {
@@ -326,12 +326,14 @@ Owned rules:
 - when any kill-quest field is present, `reward_quest_ref`, `reward_quest_flag`, and non-blank `reward_quest_text` are all required
 - `reward_quest_ref` and `reward_quest_flag` use the same identity rules as the standalone quest-state store
 - `reward_quest_from` / `reward_quest_to` must differ when credit is present; omitted `reward_quest_from` means the ordinary absent-current-value / `0` transition case
-- kill-quest credit is spawn-group-only: standalone static actors without `spawn_group_ref` may not carry these fields
+- kill-quest credit is spawn-group-only at runtime: standalone static actors without `spawn_group_ref` may not carry these fields
+- authoring-only `drop_tables` may carry the same kill-quest fields; canonicalization expands them onto the referencing spawn group / regen spawn together with EXP/gold/drop-vnum channels, then strips `drop_tables` and `reward_drop_table_ref`
+- a spawn group that already authors any kill-quest field may not also expand a table that carries kill-quest credit; that conflict fails closed before import
 - the credit lives beside, not inside, the EXP/gold/drop death-reward descriptor; empty combat rewards may still apply kill-quest credit
 - on the accepted killing hit, after death/clear and any independent EXP/gold/drop reward handling, the selected killer session attempts one `ApplyTransition` for `(reward_quest_ref, reward_quest_flag, reward_quest_from, reward_quest_to)`
 - when the transition applies, the killer receives one self-only `CHAT_TYPE_INFO` frame with `reward_quest_text`
 - `current_value_mismatch` and other fail-closed transition results stay silent for this combat path: no quest chat is emitted and combat rewards are not rolled back
-- the narrow checked-in QA example remains `docs/examples/bootstrap-kill-quest-credit-bundle.json`; the combined NPC service fixture `docs/examples/bootstrap-npc-service-bundle.json` now also authors the same credit fields on `practice.qa_reward_mob` and closes that credit with `QuestHunter` / `quest:first_steps_kill_turnin`
+- the narrow checked-in QA example remains `docs/examples/bootstrap-kill-quest-credit-bundle.json`; the combined NPC service fixture `docs/examples/bootstrap-npc-service-bundle.json` now also authors the same credit fields on `practice.qa_reward_mob` and closes that credit with `QuestHunter` / `quest:first_steps_kill_turnin`; `docs/examples/bootstrap-drop-table-authoring-bundle.json` shows the same kill-quest fields authored once on a shared `drop_tables` row and expanded into the referencing spawn group before runtime import
 
 ## Current non-goals
 

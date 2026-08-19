@@ -75,6 +75,11 @@ type DropTable struct {
 	RewardExperience uint64   `json:"reward_experience,omitempty"`
 	RewardGold       uint64   `json:"reward_gold,omitempty"`
 	DropVnums        []uint32 `json:"drop_vnums,omitempty"`
+	RewardQuestRef   string   `json:"reward_quest_ref,omitempty"`
+	RewardQuestFlag  string   `json:"reward_quest_flag,omitempty"`
+	RewardQuestFrom  uint32   `json:"reward_quest_from,omitempty"`
+	RewardQuestTo    uint32   `json:"reward_quest_to,omitempty"`
+	RewardQuestText  string   `json:"reward_quest_text,omitempty"`
 }
 
 type Bundle struct {
@@ -3947,10 +3952,21 @@ func normalizeSpawnGroups(spawnGroups []SpawnGroup, profileSnapshots []worldrunt
 		}
 		if spawnGroup.RewardDropTableRef != "" && spawnGroup.RewardExperience == 0 && spawnGroup.RewardGold == 0 && len(spawnGroup.RewardDropVnums) == 0 {
 			if table, ok := dropTablesByRef[spawnGroup.RewardDropTableRef]; ok {
-				spawnGroup.RewardExperience = table.RewardExperience
-				spawnGroup.RewardGold = table.RewardGold
-				spawnGroup.RewardDropVnums = cloneUint32s(table.DropVnums)
-				spawnGroup.RewardDropTableRef = ""
+				if hasDropTableKillQuestCredit(table) && hasSpawnGroupKillQuestCredit(spawnGroup) {
+					// Leave the authoring ref uncleared so validation rejects conflicting kill-quest credit.
+				} else {
+					spawnGroup.RewardExperience = table.RewardExperience
+					spawnGroup.RewardGold = table.RewardGold
+					spawnGroup.RewardDropVnums = cloneUint32s(table.DropVnums)
+					if !hasSpawnGroupKillQuestCredit(spawnGroup) {
+						spawnGroup.RewardQuestRef = table.RewardQuestRef
+						spawnGroup.RewardQuestFlag = table.RewardQuestFlag
+						spawnGroup.RewardQuestFrom = table.RewardQuestFrom
+						spawnGroup.RewardQuestTo = table.RewardQuestTo
+						spawnGroup.RewardQuestText = table.RewardQuestText
+					}
+					spawnGroup.RewardDropTableRef = ""
+				}
 			}
 		}
 		if spawnGroup.RewardExperience == 0 && spawnGroup.RewardGold == 0 && len(spawnGroup.RewardDropVnums) == 0 {
@@ -3991,7 +4007,17 @@ func normalizeDropTables(dropTables []DropTable) []DropTable {
 	}
 	normalized := make([]DropTable, len(dropTables))
 	for i, table := range dropTables {
-		normalized[i] = DropTable{Ref: table.Ref, RewardExperience: table.RewardExperience, RewardGold: table.RewardGold, DropVnums: cloneUint32s(table.DropVnums)}
+		normalized[i] = DropTable{
+			Ref:              table.Ref,
+			RewardExperience: table.RewardExperience,
+			RewardGold:       table.RewardGold,
+			DropVnums:        cloneUint32s(table.DropVnums),
+			RewardQuestRef:   strings.TrimSpace(table.RewardQuestRef),
+			RewardQuestFlag:  strings.TrimSpace(table.RewardQuestFlag),
+			RewardQuestFrom:  table.RewardQuestFrom,
+			RewardQuestTo:    table.RewardQuestTo,
+			RewardQuestText:  strings.TrimSpace(table.RewardQuestText),
+		}
 	}
 	sort.Slice(normalized, func(i int, j int) bool {
 		return normalized[i].Ref < normalized[j].Ref
@@ -4009,12 +4035,38 @@ func validDropTables(dropTables []DropTable) bool {
 		if reward.Empty() || !worldruntime.ValidStaticActorDeathReward(reward) {
 			return false
 		}
+		if !validDropTableKillQuestCredit(table) {
+			return false
+		}
 		if _, ok := seen[table.Ref]; ok {
 			return false
 		}
 		seen[table.Ref] = struct{}{}
 	}
 	return true
+}
+
+func hasDropTableKillQuestCredit(table DropTable) bool {
+	return strings.TrimSpace(table.RewardQuestRef) != "" ||
+		strings.TrimSpace(table.RewardQuestFlag) != "" ||
+		table.RewardQuestFrom != 0 ||
+		table.RewardQuestTo != 0 ||
+		strings.TrimSpace(table.RewardQuestText) != ""
+}
+
+func validDropTableKillQuestCredit(table DropTable) bool {
+	ref := strings.TrimSpace(table.RewardQuestRef)
+	flag := strings.TrimSpace(table.RewardQuestFlag)
+	text := strings.TrimSpace(table.RewardQuestText)
+	hasAny := ref != "" || flag != "" || table.RewardQuestFrom != 0 || table.RewardQuestTo != 0 || text != ""
+	if !hasAny {
+		return true
+	}
+	return queststate.ValidQuestRef(ref) &&
+		queststate.ValidFlagName(flag) &&
+		table.RewardQuestFrom != table.RewardQuestTo &&
+		text != "" &&
+		validAuthoredContentString(text)
 }
 
 func allDropTablesAreReferenced(dropTables []DropTable, spawnGroups []SpawnGroup) bool {

@@ -75,6 +75,57 @@ func TestGameRuntimeImportsContentBundleKillQuestCredit(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeImportsDropTableKillQuestCredit(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
+		loginticket.NewFileStore(t.TempDir()),
+		nil,
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new drop-table kill quest runtime: %v", err)
+	}
+	imported, err := runtime.ImportContentBundle(contentbundle.Bundle{
+		DropTables: []contentbundle.DropTable{{
+			Ref:              "loot.qa_kill_quest_reward",
+			RewardExperience: 75,
+			RewardGold:       60,
+			DropVnums:        []uint32{27001},
+			RewardQuestRef:   "quest:first_steps",
+			RewardQuestFlag:  "killed_qa_mob",
+			RewardQuestTo:    1,
+			RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+		}},
+		ItemTemplates: rewardDropItemTemplates(27001),
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:                "practice.drop_table_kill_quest_mob",
+			Name:               "DropTableKillQuestMob",
+			MapIndex:           bootstrapMapIndex,
+			X:                  1200,
+			Y:                  2200,
+			RaceNum:            20350,
+			CombatProfile:      worldruntime.StaticActorCombatProfileTrainingDummy,
+			RewardDropTableRef: "loot.qa_kill_quest_reward",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("import drop-table kill quest credit bundle: %v", err)
+	}
+	if len(imported.DropTables) != 0 {
+		t.Fatalf("expected imported bundle to strip authoring-only drop tables, got %+v", imported.DropTables)
+	}
+	if len(imported.SpawnGroups) != 1 || imported.SpawnGroups[0].RewardDropTableRef != "" || imported.SpawnGroups[0].RewardExperience != 75 || imported.SpawnGroups[0].RewardGold != 60 || !reflect.DeepEqual(imported.SpawnGroups[0].RewardDropVnums, []uint32{27001}) || imported.SpawnGroups[0].RewardQuestRef != "quest:first_steps" || imported.SpawnGroups[0].RewardQuestFlag != "killed_qa_mob" || imported.SpawnGroups[0].RewardQuestTo != 1 || imported.SpawnGroups[0].RewardQuestText != "Quest updated: first_steps.killed_qa_mob = 1." {
+		t.Fatalf("unexpected imported drop-table kill quest spawn group: %+v", imported.SpawnGroups)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 || actors[0].RewardExperience != 75 || actors[0].RewardGold != 60 || !reflect.DeepEqual(actors[0].RewardDropVnums, []uint32{27001}) || actors[0].RewardQuestRef != "quest:first_steps" || actors[0].RewardQuestFlag != "killed_qa_mob" || actors[0].RewardQuestTo != 1 || actors[0].RewardQuestText != "Quest updated: first_steps.killed_qa_mob = 1." {
+		t.Fatalf("expected live actor to carry expanded drop-table kill quest credit, got %+v", actors)
+	}
+}
+
 func TestHandleAttackKillAppliesQuestFlagCreditAfterDeathReward(t *testing.T) {
 	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	ticketStore := loginticket.NewFileStore(t.TempDir())

@@ -4216,6 +4216,10 @@ func TestCanonicalizeDropTableAuthoringExampleExpandsToCanonicalRewardDescriptor
 		RewardExperience: 75,
 		RewardGold:       60,
 		RewardDropVnums:  []uint32{27001, 27002},
+		RewardQuestRef:   "quest:first_steps",
+		RewardQuestFlag:  "killed_qa_mob",
+		RewardQuestTo:    1,
+		RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
 	}}
 	if !reflect.DeepEqual(canonical.SpawnGroups, want) {
 		t.Fatalf("unexpected canonical drop-table authoring spawn groups:\n got: %#v\nwant: %#v", canonical.SpawnGroups, want)
