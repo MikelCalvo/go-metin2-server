@@ -37031,6 +37031,122 @@ func TestGameSessionFlowContentSpawnGroupDueRespawnFlushesBeforeFreshEnterBootst
 	}
 }
 
+func TestGameSessionFlowContentSpawnGroupStillDeadEnterGameReplaysTrailingDead(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	killer := peerVisibilityCharacter("StillDeadEnterKiller", 0x010301e1, 0x020401e1, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapPlayerPointValueIndex] = 50
+	lateViewer := peerVisibilityCharacter("StillDeadEnterViewer", 0x010301e2, 0x020401e2, 1100, 2100, 2, 102, 202)
+	issuePeerTicket(t, store, "still-dead-enter-killer", 0xe1e1e1e1, killer)
+	issuePeerTicket(t, store, "still-dead-enter-viewer", 0xe2e2e2e2, lateViewer)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000365, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_still_dead_enter",
+		Name:          "PracticeMobStillDeadEnter",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice mob after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	killerFlow, killerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "still-dead-enter-killer", 0xe1e1e1e1)
+	if len(killerEnter) != 8 {
+		t.Fatalf("expected killer bootstrap with visible content practice mob, got %d frames", len(killerEnter))
+	}
+	killingAttack := drivePracticeMobOwnerKill(t, killerFlow, targetVID, "still-dead fresh-enter bootstrap", func(duration time.Duration) {
+		currentTime = currentTime.Add(duration)
+	})
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, killingAttack[0]))
+	if err != nil {
+		t.Fatalf("decode mob-death frame before still-dead fresh enter: %v", err)
+	}
+	if dead.VID != targetVID {
+		t.Fatalf("expected killing hit to kill target vid %d, got %+v", targetVID, dead)
+	}
+	if queued := flushServerFrames(t, killerFlow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames before closing killer after mob death, got %d", len(queued))
+	}
+	closeSessionFlow(t, killerFlow)
+
+	// Stay inside the owned dead interval so EnterGame must replay DEAD instead of preflighting respawn.
+	currentTime = currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay / 2)
+	lateFlow, lateEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "still-dead-enter-viewer", 0xe2e2e2e2)
+	defer closeSessionFlow(t, lateFlow)
+	if len(lateEnter) != 9 {
+		t.Fatalf("expected 9 bootstrap frames for late viewer with still-dead content practice mob, got %d", len(lateEnter))
+	}
+	staticAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, lateEnter[5]))
+	if err != nil {
+		t.Fatalf("decode still-dead content-mob bootstrap add: %v", err)
+	}
+	if staticAdd.VID != targetVID || staticAdd.Type != 1 || staticAdd.X != 1200 || staticAdd.Y != 2200 || staticAdd.RaceNum != 101 {
+		t.Fatalf("unexpected still-dead content-mob bootstrap add: %+v", staticAdd)
+	}
+	staticInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, lateEnter[6]))
+	if err != nil {
+		t.Fatalf("decode still-dead content-mob bootstrap additional info: %v", err)
+	}
+	if staticInfo.VID != targetVID || staticInfo.Name != "PracticeMobStillDeadEnter" {
+		t.Fatalf("unexpected still-dead content-mob bootstrap additional info: %+v", staticInfo)
+	}
+	staticUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, lateEnter[7]))
+	if err != nil {
+		t.Fatalf("decode still-dead content-mob bootstrap update: %v", err)
+	}
+	if staticUpdate.VID != targetVID {
+		t.Fatalf("unexpected still-dead content-mob bootstrap update: %+v", staticUpdate)
+	}
+	replayedDead, err := worldproto.DecodeDead(decodeSingleFrame(t, lateEnter[8]))
+	if err != nil {
+		t.Fatalf("decode still-dead content-mob bootstrap dead replay: %v", err)
+	}
+	if replayedDead.VID != targetVID {
+		t.Fatalf("unexpected still-dead content-mob bootstrap dead replay: %+v", replayedDead)
+	}
+	if queued := flushServerFrames(t, lateFlow); len(queued) != 0 {
+		t.Fatalf("expected no early respawn rebuild after still-dead fresh enter, got %d frames", len(queued))
+	}
+
+	selectOut, err := lateFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected still-dead content-mob target error: %v", err)
+	}
+	if len(selectOut) != 0 {
+		t.Fatalf("expected still-dead content practice mob to stay non-targetable on fresh enter, got %d frames", len(selectOut))
+	}
+	attackOut, err := lateFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected still-dead content-mob attack error: %v", err)
+	}
+	if len(attackOut) != 0 {
+		t.Fatalf("expected still-dead content practice mob to stay non-attackable on fresh enter, got %d frames", len(attackOut))
+	}
+
+	byRef, ok := runtime.SpawnGroupByRef("practice.mob_still_dead_enter")
+	if !ok || byRef.EntityID != uint64(targetVID) {
+		t.Fatalf("expected still-dead EnterGame to keep one actor for authored spawn_group_ref, got ok=%v %#v", ok, byRef)
+	}
+}
+
 func TestGameSessionFlowPracticeMobDeathCancelsPendingDelayedRetaliationBeforeRespawn(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

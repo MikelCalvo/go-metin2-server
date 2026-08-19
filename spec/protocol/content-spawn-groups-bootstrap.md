@@ -414,9 +414,9 @@ Contract for Track A item 6:
 
 Current implementation status:
 - due-respawn EnterGame / transfer preflight for content-loaded spawn groups is already owned
-- still-dead trailing `GC DEAD` replay is already owned for `training_dummy` add-style visibility; the content-loaded spawn-group EnterGame / reconnect still-dead bootstrap is frozen here as the next honest RED before claiming item 6 complete
+- still-dead trailing `GC DEAD` replay is owned for both `training_dummy` and content-loaded `spawn_groups` EnterGame / reconnect add-style visibility, including fail-closed target/attack while the dead interval remains open and one-ref/one-actor lookup after that still-dead bootstrap
 - same-map return-step / return-home MOVE is live; cross-map return-home remains on delete/readd
-- reconnect rematerialization and dual-map occupancy guards above are frozen as fail-closed contracts for the next focused coverage
+- reconnect rematerialization and dual-map occupancy guards above remain fail-closed contracts covered by the existing by-ref lookup and cross-map return-home rebuild paths
 
 Explicit non-goals for this anti-leak freeze alone:
 - cross-map return MOVE / warp packet choreography
