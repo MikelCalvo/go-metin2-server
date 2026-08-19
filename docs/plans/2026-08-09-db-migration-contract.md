@@ -143,6 +143,10 @@ Rules frozen by tests:
   - the projection resolves quest-state character names through the committed account/character roster export, so flags for missing characters fail closed instead of becoming orphan rows,
   - missing quest-state snapshots produce an empty migration-shaped export, matching the existing validation semantics for an absent standalone quest-state file.
 - `gamed` exposes this projection through loopback-only read-only `GET /local/quest-state/exports/character-quest-state`; it reads committed bootstrap account and quest-state snapshots, returns JSON, and performs no SQL or store mutation.
+- `internal/queststate` now also exposes a fail-closed quarantine/preflight for retained `0004_character_quest_state` exports:
+  - `ValidateCharacterQuestStateExport` / `QuarantineCharacterQuestStateExport` accept only migration version/name `4` / `character_quest_state`, a present flags slice, `character_id > 0`, bootstrap-valid character/quest_ref/flag identities, `value > 0`, unique `(character_id, quest_ref, flag)` keys, and a stable character-id ↔ character-name mapping,
+  - successful quarantine returns metadata-only counts plus a canonicalized export ordered by ascending character id, then quest_ref, then flag,
+  - loopback-only `POST /local/quest-state/exports/character-quest-state/quarantine` on `gamed` validates and canonicalizes a retained artifact without opening a database, writing quest-state snapshots, or emitting SQL.
 - `internal/itemstore` now exposes a read-only item-template-state projection for the current item-template migration boundary (`0009_item_template_refine_info`, after the base `0005_item_template_state` schema and the additive `0006_item_template_safebox_reject_message` storage guard):
   - template rows are deterministic by `vnum` and include the owned item-template metadata already validated by the file-backed store,
   - socket and attribute rows include only non-zero authored display entries with fixed positions,
@@ -205,7 +209,7 @@ Those require separate slices because each one changes operator and data-safety 
 ## Likely next slices
 
 1. Define a narrow account/character/item/quest-state/login-ticket/static-content repository interface backed by current tests before adding a DB implementation.
-2. Continue JSON-file-store import/quarantine tooling beyond the landed `0003_character_item_state` and `0011_character_point_state` quarantine preflights so retained `0002_account_character_roster`, `0004_character_quest_state`, current item-template-state (`0009_item_template_refine_info`), `0007_auth_login_ticket_handoff`, and `0008_static_actor_content_state` shapes plus optional offline ledger snapshots can be validated without silently coercing bad snapshots.
+2. Continue JSON-file-store import/quarantine tooling beyond the landed `0003_character_item_state`, `0011_character_point_state`, and `0004_character_quest_state` quarantine preflights so retained `0002_account_character_roster`, current item-template-state (`0009_item_template_refine_info`), `0007_auth_login_ticket_handoff`, and `0008_static_actor_content_state` shapes plus optional offline ledger snapshots can be validated without silently coercing bad snapshots.
 3. Add a driver-backed test harness or build-tagged integration test for `schema_migrations` status and ledger-snapshot generation before adding apply/rollback tooling.
 4. Add explicit migrations for richer item/economy domains, item ownership timers, combat-profile defaults, or broader world runtime state only after the account/character/item/item-template/login-ticket/static-content/ground-handle repository seams are stable.
 5. Add a production apply/rollback command only after the dry-run status boundary, the programmatic apply primitive, and ledger validation behavior are exercised against an actual driver-backed test database, with explicit backup/restore policy.

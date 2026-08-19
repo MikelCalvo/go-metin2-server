@@ -547,6 +547,19 @@ Returns a loopback-only, read-only JSON projection of the standalone bootstrap q
 
 Successful responses include `migration_version`, `migration_name`, and deterministic `flags` rows. Each row exposes the resolved `character_id`, source `character` name, `quest_ref`, `flag`, and non-zero `value`. A missing quest-state snapshot returns an empty migration-shaped export, matching `/local/quest-state/validate`. The response deliberately omits executable SQL, quest scripts, account roster rows, item state, login tickets, authored content, and runtime world state, and it does not apply migrations or mutate the account or quest-state stores. Use it as a third-stage operator/backfill preflight after the roster export, because the quest-state projection depends on committed character ids from that roster boundary.
 
+### `POST /local/quest-state/exports/character-quest-state/quarantine`
+
+Validates and canonicalizes a retained `0004_character_quest_state` export without opening a database or mutating quest-state snapshots. This endpoint is registered only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects non-loopback callers with `403`, rejects oversized bodies over 1 MiB with `413`, rejects malformed/invalid-UTF-8/`null` JSON with `400`, and returns `409` when the payload fails the quarantine contract.
+
+Successful responses include:
+
+- `summary.character_count`
+- `summary.flag_count`
+- deterministic sorted `summary.character_ids`
+- a canonicalized `export` whose rows are ordered by ascending `character_id`, then `quest_ref`, then `flag`
+
+The quarantine contract requires `migration_version = 4`, `migration_name = "character_quest_state"`, a present (possibly empty) `flags` array, `character_id > 0`, bootstrap-valid character / quest_ref / flag identities, `value > 0`, unique `(character_id, quest_ref, flag)` keys, and a stable character-id ↔ character-name mapping within one export. Use this after retaining an export artifact and before any future DB backfill/import tool. It is not a repository write path and never emits SQL or DSNs.
+
 ### `GET /local/item-templates/exports/item-template-state`
 
 Returns a loopback-only, read-only JSON projection of the committed authored item-template snapshot onto the current item-template migration boundary (`0009_item_template_refine_info`, after the base `0005_item_template_state` schema and the additive `0006_item_template_safebox_reject_message` storage guard). This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the committed item-template snapshot is invalid or cannot be projected onto the schema shape.

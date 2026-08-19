@@ -171,6 +171,7 @@ const (
 	maxLocalMigrationLedgerSnapshotBodyBytes       = 64 * 1024
 	maxLocalCharacterItemStateQuarantineBodyBytes  = 1 << 20
 	maxLocalCharacterPointStateQuarantineBodyBytes = 1 << 20
+	maxLocalCharacterQuestStateQuarantineBodyBytes = 1 << 20
 )
 
 func NewPprofMux(serviceName string) *http.ServeMux {
@@ -1708,6 +1709,43 @@ func RegisterLocalAuthLoginTicketHandoffExportEndpoint(mux *http.ServeMux, expor
 			return
 		}
 		writeLocalJSONMutationResponse(w, export, http.StatusOK)
+	})
+	return mux
+}
+
+// RegisterLocalCharacterQuestStateQuarantineEndpoint exposes a loopback-only
+// POST quarantine/preflight for retained 0004 character quest-state exports.
+// It validates and canonicalizes the payload without opening a database or
+// mutating quest-state snapshots.
+func RegisterLocalCharacterQuestStateQuarantineEndpoint(mux *http.ServeMux) *http.ServeMux {
+	if mux == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/quest-state/exports/character-quest-state/quarantine", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		export, status, ok := decodeLocalCharacterQuestStateExportRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		quarantined, summary, err := queststate.QuarantineCharacterQuestStateExport(export)
+		if err != nil {
+			slog.Warn("local character quest-state quarantine failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, queststate.CharacterQuestStateQuarantineResult{
+			Summary: summary,
+			Export:  quarantined,
+		}, http.StatusOK)
 	})
 	return mux
 }
@@ -5274,6 +5312,30 @@ func decodeLocalCharacterPointStateExportRequest(r *http.Request) (accountstore.
 	var trailing struct{}
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return accountstore.CharacterPointStateExport{}, http.StatusBadRequest, false
+	}
+	return export, http.StatusOK, true
+}
+
+func decodeLocalCharacterQuestStateExportRequest(r *http.Request) (queststate.CharacterQuestStateExport, int, bool) {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxLocalCharacterQuestStateQuarantineBodyBytes+1))
+	if err != nil {
+		return queststate.CharacterQuestStateExport{}, http.StatusBadRequest, false
+	}
+	if len(raw) > maxLocalCharacterQuestStateQuarantineBodyBytes {
+		return queststate.CharacterQuestStateExport{}, http.StatusRequestEntityTooLarge, false
+	}
+	if !utf8.Valid(raw) || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return queststate.CharacterQuestStateExport{}, http.StatusBadRequest, false
+	}
+	var export queststate.CharacterQuestStateExport
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&export); err != nil {
+		return queststate.CharacterQuestStateExport{}, http.StatusBadRequest, false
+	}
+	var trailing struct{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return queststate.CharacterQuestStateExport{}, http.StatusBadRequest, false
 	}
 	return export, http.StatusOK, true
 }

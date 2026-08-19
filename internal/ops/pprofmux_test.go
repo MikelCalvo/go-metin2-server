@@ -16,6 +16,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/buildinfo"
 	"github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -8520,6 +8521,116 @@ func TestLocalCharacterPointStateQuarantineEndpointRejectsMalformedJSON(t *testi
 func TestNewPprofMuxDoesNotExposeLocalCharacterPointStateQuarantineByDefault(t *testing.T) {
 	mux := NewPprofMux("authd")
 	req := httptest.NewRequest(http.MethodPost, "/local/account-store/exports/character-point-state/quarantine", strings.NewReader(`{"migration_version":11,"migration_name":"character_point_state","points":[]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
+func TestLocalCharacterQuestStateQuarantineEndpointReturnsCanonicalJSON(t *testing.T) {
+	body, err := json.Marshal(queststate.CharacterQuestStateExport{
+		MigrationVersion: queststate.CharacterQuestStateMigrationVersion,
+		MigrationName:    queststate.CharacterQuestStateMigrationName,
+		Flags: []queststate.CharacterQuestFlagRow{
+			{CharacterID: 202, Character: "AnotherHero", QuestRef: "quest:second_arc", Flag: "zeta", Value: 3},
+			{CharacterID: 101, Character: "QuestHero", QuestRef: "quest:first_steps", Flag: "step", Value: 2},
+			{CharacterID: 202, Character: "AnotherHero", QuestRef: "quest:first_steps", Flag: "met_guard", Value: 1},
+			{CharacterID: 101, Character: "QuestHero", QuestRef: "quest:first_steps", Flag: "met_guide", Value: 1},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal quarantine body: %v", err)
+	}
+
+	mux := RegisterLocalCharacterQuestStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/quest-state/exports/character-quest-state/quarantine", bytes.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	responseBody := rec.Body.String()
+	for _, want := range []string{
+		`"character_count":2`,
+		`"flag_count":4`,
+		`"character_ids":[101,202]`,
+		`"migration_version":4`,
+		`"character_id":101`,
+		`"character_id":202`,
+		`"flag":"met_guide"`,
+		`"flag":"step"`,
+	} {
+		if !strings.Contains(responseBody, want) {
+			t.Fatalf("expected quarantine response to contain %s, got %s", want, responseBody)
+		}
+	}
+	if strings.Contains(responseBody, "CREATE TABLE") || strings.Contains(responseBody, "postgres://") {
+		t.Fatalf("quarantine endpoint must not expose SQL or DSNs, got %s", responseBody)
+	}
+}
+
+func TestLocalCharacterQuestStateQuarantineEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	mux := RegisterLocalCharacterQuestStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/quest-state/exports/character-quest-state/quarantine", strings.NewReader(`{"migration_version":4,"migration_name":"character_quest_state","flags":[]}`))
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+}
+
+func TestLocalCharacterQuestStateQuarantineEndpointRejectsWrongMethod(t *testing.T) {
+	mux := RegisterLocalCharacterQuestStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodGet, "/local/quest-state/exports/character-quest-state/quarantine", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+}
+
+func TestLocalCharacterQuestStateQuarantineEndpointRejectsInvalidExport(t *testing.T) {
+	mux := RegisterLocalCharacterQuestStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/quest-state/exports/character-quest-state/quarantine", strings.NewReader(`{"migration_version":3,"migration_name":"character_quest_state","flags":[]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+}
+
+func TestLocalCharacterQuestStateQuarantineEndpointRejectsMalformedJSON(t *testing.T) {
+	mux := RegisterLocalCharacterQuestStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/quest-state/exports/character-quest-state/quarantine", strings.NewReader(`{"migration_version":4`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestNewPprofMuxDoesNotExposeLocalCharacterQuestStateQuarantineByDefault(t *testing.T) {
+	mux := NewPprofMux("authd")
+	req := httptest.NewRequest(http.MethodPost, "/local/quest-state/exports/character-quest-state/quarantine", strings.NewReader(`{"migration_version":4,"migration_name":"character_quest_state","flags":[]}`))
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 

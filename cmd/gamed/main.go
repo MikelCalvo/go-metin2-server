@@ -292,6 +292,7 @@ func main() {
 		opsHandler,
 		gameRuntime.ExportCharacterQuestState,
 	)
+	opsHandler = ops.RegisterLocalCharacterQuestStateQuarantineEndpoint(opsHandler)
 	opsHandler = ops.RegisterLocalItemTemplateStateExportEndpoint(
 		opsHandler,
 		gameRuntime.ExportItemTemplateState,
