@@ -85,6 +85,8 @@ const itemSellRejectedInfoMessage = "The merchant refuses to buy this item."
 const itemUnequipRejectedInfoMessage = "You cannot remove this item."
 const exchangePartnerMerchantBusyInfoMessage = "That player cannot trade right now."
 const exchangeRequesterMerchantBusyInfoMessage = "You cannot trade while another trade window is open."
+const bootstrapSafeboxOpenMinSize uint8 = 1
+const bootstrapSafeboxOpenMaxSize uint8 = 3
 const bootstrapMapIndex uint32 = 1
 const bootstrapShinsooYonganStartX int32 = 469300
 const bootstrapShinsooYonganStartY int32 = 964200
@@ -3264,6 +3266,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		var issuedPracticeMobServerOriginRetaliationSnapshotVersion uint64
 		var activeMerchantBuy merchantBuyContext
 		var hasActiveMerchantBuy bool
+		var hasActiveSafeboxOpen bool
+		var activeSafeboxSize uint8
 		interactionCooldowns := make(map[uint32]time.Time)
 		sessionNow := func() time.Time {
 			if runtime != nil && runtime.now != nil {
@@ -3289,6 +3293,21 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			hasActiveMerchantBuy = false
 			if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 {
 				sharedWorld.SetMerchantWindowOpen(sharedWorldID, false)
+			}
+		}
+		setActiveSafeboxOpen := func(size uint8, open bool) {
+			if !open {
+				hasActiveSafeboxOpen = false
+				activeSafeboxSize = 0
+				if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 {
+					sharedWorld.SetSafeboxWindowOpen(sharedWorldID, false)
+				}
+				return
+			}
+			hasActiveSafeboxOpen = true
+			activeSafeboxSize = size
+			if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 {
+				sharedWorld.SetSafeboxWindowOpen(sharedWorldID, true)
 			}
 		}
 		appendPostFloorMerchantCloseFrame := func(frames [][]byte, clearTarget bool) [][]byte {
@@ -4924,6 +4943,24 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							}
 							return gameflow.ChatResult{Accepted: true, Frames: result.Frames}
 						}
+						if size, sizeExplicit, ok := slashOpenSafeboxCommand(packet.Message); ok {
+							selectedPlayer, selectedOK := currentSelectedPlayer()
+							if !selectedOK || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							if hasActiveSafeboxOpen && !sizeExplicit {
+								size = activeSafeboxSize
+							}
+							setActiveSafeboxOpen(size, true)
+							return gameflow.ChatResult{
+								Accepted: true,
+								Frames:   [][]byte{itemproto.EncodeSafeboxSize(itemproto.SafeboxSizePacket{Size: size})},
+							}
+						}
+						if slashCloseSafeboxCommand(packet.Message) {
+							setActiveSafeboxOpen(0, false)
+							return gameflow.ChatResult{Accepted: true}
+						}
 					}
 
 					if command, ok := slashGameCommand(packet.Message); ok {
@@ -4931,12 +4968,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ChatResult{Accepted: false}
 						}
 						leaveSharedWorld := func() {
-							if !joinedSharedWorld || sharedWorldID == 0 {
-								return
+							if joinedSharedWorld && sharedWorldID != 0 {
+								sharedWorld.Leave(sharedWorldID)
+								joinedSharedWorld = false
+								sharedWorldID = 0
 							}
-							sharedWorld.Leave(sharedWorldID)
-							joinedSharedWorld = false
-							sharedWorldID = 0
+							setActiveSafeboxOpen(0, false)
 						}
 						switch command {
 						case "quit":
@@ -5459,7 +5496,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if !ownsLiveSharedWorldSession() {
 							return gameflow.ItemExchangeResult{Accepted: false}
 						}
-						if hasActiveMerchantBuy {
+						if hasActiveMerchantBuy || hasActiveSafeboxOpen {
 							return gameflow.ItemExchangeResult{
 								Accepted: true,
 								Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
@@ -6081,6 +6118,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			shouldLeave := joinedSharedWorld
 			joinedSharedWorld = false
 			clearActiveMerchantBuy()
+			setActiveSafeboxOpen(0, false)
 			clearActiveCombatTarget()
 			clearLiveCharacterRegistration()
 			stateMu.Unlock()
@@ -6854,6 +6892,40 @@ func slashShopBuyCommand(message string) (uint16, bool) {
 		return 0, false
 	}
 	return uint16(slot), true
+}
+
+func slashOpenSafeboxCommand(message string) (uint8, bool, bool) {
+	if !strings.HasPrefix(message, "/") {
+		return 0, false, false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) == 0 || fields[0] != "open_safebox" {
+		return 0, false, false
+	}
+	switch len(fields) {
+	case 1:
+		return bootstrapSafeboxOpenMinSize, false, true
+	case 2:
+		parsed, err := strconv.ParseUint(fields[1], 10, 8)
+		if err != nil {
+			return 0, false, false
+		}
+		size := uint8(parsed)
+		if size < bootstrapSafeboxOpenMinSize || size > bootstrapSafeboxOpenMaxSize {
+			return 0, false, false
+		}
+		return size, true, true
+	default:
+		return 0, false, false
+	}
+}
+
+func slashCloseSafeboxCommand(message string) bool {
+	if !strings.HasPrefix(message, "/") {
+		return false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	return len(fields) == 1 && fields[0] == "close_safebox"
 }
 
 func ticketLoginSuccessPacket(ticket loginticket.Ticket, addr uint32, port uint16) loginproto.LoginSuccess4Packet {

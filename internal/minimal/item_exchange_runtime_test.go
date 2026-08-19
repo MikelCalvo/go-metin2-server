@@ -281,6 +281,144 @@ func TestGameRuntimeItemExchangeStartRejectsPartnerActiveMerchantWindowWithoutMu
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "partner-merchant exchange start peer")
 }
 
+func TestGameRuntimeItemExchangeStartRejectsActiveSafeboxWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchSafeboxStartOwner", 0x010307ea, 0x020407ea, 1100, 2100, 0, 101, 201)
+	owner.Gold = 125
+	owner.Inventory = []inventory.ItemInstance{{ID: 788, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchSafeboxStartPeer", 0x010307eb, 0x020407eb, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 789, Vnum: 27002, Count: 2, Slot: 6}}
+	ownerLogin := "exch-safe-start-owner"
+	peerLogin := "exch-safe-start-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070ea, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070eb, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed safebox-open exchange owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed safebox-open exchange peer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected safebox-open exchange runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070ea)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070eb)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	openOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected requester /open_safebox error: %v", err)
+	}
+	if len(openOut) != 1 {
+		t.Fatalf("expected requester /open_safebox to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
+	}
+	if _, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, openOut[0])); err != nil {
+		t.Fatalf("decode requester /open_safebox SAFEBOX_SIZE: %v", err)
+	}
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected safebox-open exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected exchange start with open safebox to emit one info chat frame, got %d", len(startOut))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, startOut[0]))
+	if err != nil {
+		t.Fatalf("decode safebox-open exchange start info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterMerchantBusyInfoMessage {
+		t.Fatalf("unexpected safebox-open exchange start info chat: %+v", infoChat)
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected exchange start with open safebox to queue no peer frames, got %d", len(queued))
+	}
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "safebox-open exchange start owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "safebox-open exchange start peer")
+}
+
+func TestGameRuntimeItemExchangeStartRejectsPartnerActiveSafeboxWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchPartnerSafeOwner", 0x010307ec, 0x020407ec, 1100, 2100, 0, 101, 201)
+	owner.Gold = 125
+	owner.Inventory = []inventory.ItemInstance{{ID: 790, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchPartnerSafePeer", 0x010307ed, 0x020407ed, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 791, Vnum: 27002, Count: 2, Slot: 6}}
+	ownerLogin := "exch-partner-safe-owner"
+	peerLogin := "exch-partner-safe-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070ec, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070ed, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed partner-safebox exchange owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed partner-safebox exchange peer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected partner-safebox exchange runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070ec)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070ed)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	openOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected partner /open_safebox error: %v", err)
+	}
+	if len(openOut) != 1 {
+		t.Fatalf("expected partner /open_safebox to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
+	}
+	if _, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, openOut[0])); err != nil {
+		t.Fatalf("decode partner /open_safebox SAFEBOX_SIZE: %v", err)
+	}
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected partner-safebox exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected partner-safebox exchange start to emit one info chat frame, got %d", len(startOut))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, startOut[0]))
+	if err != nil {
+		t.Fatalf("decode partner-safebox exchange start info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangePartnerMerchantBusyInfoMessage {
+		t.Fatalf("unexpected partner-safebox exchange start info chat: %+v", infoChat)
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected partner-safebox exchange start to queue no peer frames, got %d", len(queued))
+	}
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "partner-safebox exchange start owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "partner-safebox exchange start peer")
+}
+
 func TestGameRuntimeItemExchangeWalkAwayClosesShellWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

@@ -218,3 +218,94 @@ func TestGameRuntimeSafeboxCheckinAntiSafeboxTemplateClosesActiveMerchantWindowW
 	}
 	assertExchangeAccountUnchanged(t, accounts, "storage-merchant-bound", owner, "storage merchant close")
 }
+
+func TestGameRuntimeOpenSafeboxEmitsSizeWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("OpenSafeboxOwner", 0x010307c8, 0x020407c8, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4242
+	owner.Inventory = []inventory.ItemInstance{{ID: 768, Vnum: 27001, Count: 2, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 1, Type: quickslotproto.TypeItem, Slot: 5}}
+	login := "open-safebox-owner"
+	issuePeerTicket(t, ticketStore, login, 0x707070c8, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed open-safebox owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected open-safebox runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707070c8)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_safebox error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected /open_safebox to emit one SAFEBOX_SIZE frame, got %d", len(out))
+	}
+	size, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode /open_safebox SAFEBOX_SIZE: %v", err)
+	}
+	if size != (itemproto.SafeboxSizePacket{Size: 1}) {
+		t.Fatalf("unexpected /open_safebox SAFEBOX_SIZE: %+v", size)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected /open_safebox to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "open-safebox owner")
+}
+
+func TestGameRuntimeCloseSafeboxClearsOpenPresentationWithoutFrames(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("CloseSafeboxOwner", 0x010307c9, 0x020407c9, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4242
+	owner.Inventory = []inventory.ItemInstance{{ID: 769, Vnum: 27001, Count: 2, Slot: 5}}
+	login := "close-safebox-owner"
+	issuePeerTicket(t, ticketStore, login, 0x707070c9, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed close-safebox owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected close-safebox runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707070c9)
+	defer closeSessionFlow(t, flow)
+
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox 2",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_safebox before close error: %v", err)
+	}
+	if len(openOut) != 1 {
+		t.Fatalf("expected /open_safebox before close to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
+	}
+	size, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, openOut[0]))
+	if err != nil {
+		t.Fatalf("decode /open_safebox before close: %v", err)
+	}
+	if size != (itemproto.SafeboxSizePacket{Size: 2}) {
+		t.Fatalf("unexpected /open_safebox size before close: %+v", size)
+	}
+
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/close_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /close_safebox error: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected /close_safebox to emit no frames, got %d", len(closeOut))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "close-safebox owner")
+}

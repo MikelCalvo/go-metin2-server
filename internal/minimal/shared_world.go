@@ -58,6 +58,7 @@ type sharedWorldRegistry struct {
 	sessionCombatTargets              map[uint64]uint32
 	sessionCombatRetaliations         map[uint64]combatRetaliationTimer
 	sessionMerchantWindows            map[uint64]bool
+	sessionSafeboxWindows             map[uint64]bool
 	exchangePartners                  map[uint64]uint64
 	exchangeItems                     map[uint64]map[uint8]exchangeDisplayedItem
 	exchangeGold                      map[uint64]uint32
@@ -523,7 +524,7 @@ func (r *sharedWorldRegistry) StartExchange(originID uint64, targetVID uint32) (
 	if _, ok := r.sessionEntryLocked(target.Entity.ID); !ok {
 		return nil, false
 	}
-	if r.hasMerchantWindowOpenLocked(target.Entity.ID) {
+	if r.hasMerchantWindowOpenLocked(target.Entity.ID) || r.hasSafeboxWindowOpenLocked(target.Entity.ID) {
 		return [][]byte{encodeExchangePartnerMerchantBusyInfoFrame()}, true
 	}
 	if _, busy := r.exchangePartners[target.Entity.ID]; busy {
@@ -2129,6 +2130,48 @@ func (r *sharedWorldRegistry) clearMerchantWindowOpenLocked(entityID uint64) {
 	r.setMerchantWindowOpenLocked(entityID, false)
 }
 
+func (r *sharedWorldRegistry) SetSafeboxWindowOpen(entityID uint64, open bool) bool {
+	if r == nil || entityID == 0 {
+		return false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.sessionEntryLocked(entityID); !ok {
+		return false
+	}
+	r.setSafeboxWindowOpenLocked(entityID, open)
+	return true
+}
+
+func (r *sharedWorldRegistry) setSafeboxWindowOpenLocked(entityID uint64, open bool) {
+	if r == nil || entityID == 0 {
+		return
+	}
+	if !open {
+		if r.sessionSafeboxWindows != nil {
+			delete(r.sessionSafeboxWindows, entityID)
+		}
+		return
+	}
+	if r.sessionSafeboxWindows == nil {
+		r.sessionSafeboxWindows = make(map[uint64]bool)
+	}
+	r.sessionSafeboxWindows[entityID] = true
+}
+
+func (r *sharedWorldRegistry) hasSafeboxWindowOpenLocked(entityID uint64) bool {
+	if r == nil || entityID == 0 || r.sessionSafeboxWindows == nil {
+		return false
+	}
+	return r.sessionSafeboxWindows[entityID]
+}
+
+func (r *sharedWorldRegistry) clearSafeboxWindowOpenLocked(entityID uint64) {
+	r.setSafeboxWindowOpenLocked(entityID, false)
+}
+
 func (r *sharedWorldRegistry) SetSessionCombatRetaliation(entityID uint64, targetVID uint32, snapshotVersion uint64, readyAt time.Time) bool {
 	if r == nil || entityID == 0 || targetVID == 0 || snapshotVersion == 0 || readyAt.IsZero() {
 		return false
@@ -2579,6 +2622,7 @@ func (r *sharedWorldRegistry) removeStaleOwnershipLocked(entityIDs []uint64) {
 		}
 		r.clearSessionCombatTargetLocked(entityID)
 		r.clearMerchantWindowOpenLocked(entityID)
+		r.clearSafeboxWindowOpenLocked(entityID)
 		r.clearStaticActorCombatEngagementsBySubjectLocked(entityID)
 		r.clearExchangeLocked(entityID, true)
 		_, _ = r.entities.Remove(entityID)
@@ -2652,6 +2696,7 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 	}
 	r.clearSessionCombatTargetLocked(id)
 	r.clearMerchantWindowOpenLocked(id)
+	r.clearSafeboxWindowOpenLocked(id)
 	r.clearStaticActorCombatEngagementsBySubjectLocked(id)
 	r.clearExchangeLocked(id, true)
 	_, _ = r.entities.Remove(id)
