@@ -4702,6 +4702,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if !joinedSharedWorld {
 							return worldentry.EnterGameResult{Rejected: true}
 						}
+						// EnterGame reclaim / Join can drop stale practice-mob engagement
+						// without running the live session leave helper, so prune chase
+						// deadlines that lost eligibility before encoding visibility.
+						runtime.pruneSpawnGroupChaseStepSchedules()
 						for _, peer := range existingPeers {
 							trailingFrames = append(trailingFrames, encodePeerVisibilityBootstrapFramesWithTemplates(peer, runtime.itemTemplates)...)
 						}

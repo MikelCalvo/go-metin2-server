@@ -411,7 +411,7 @@ Contract for Track A item 6:
    - a successful cross-map return restores exactly one entity to the authored home map and must leave no dual-map occupancy or duplicate `spawn_group_ref` membership behind
 
 5. **Leave / transfer ownership cleanup**
-   - owner Leave / logout / close, phase-select leave, owner death floor, and owner transfer/warp away clear engagement / selected-target / pending chase ownership without resurrecting dead combat state or inventing a second spawn instance
+   - owner Leave / logout / close, phase-select leave, EnterGame reclaim that drops stale engagement ownership, owner death floor, and owner transfer/warp away clear engagement / selected-target / pending chase ownership without resurrecting dead combat state or inventing a second spawn instance
    - due return-step and due chase-step EnterGame / transfer preflights remain the owned anti-stale-position path and must not emit a later duplicate queued rebuild for the same due timer
 
 6. **Still-dead content-bundle replacement anti-resurrect**
@@ -426,6 +426,7 @@ Current implementation status:
 - still-dead content-bundle replacement anti-resurrect is now owned: successful non-identical `ImportContentBundle` replacements that keep the same authored `spawn_group_ref` remap pending `HP=0` + absolute respawn deadline onto the newly registered actor before import fanout, so late EnterGame still ends with trailing `GC DEAD` and the actor stays non-targetable through the ordinary timer; engagement / proximity-suppress / selected-target ownership are not remapped across that replacement boundary
 - reconnect rematerialization remains a fail-closed contract for later focused coverage beside the existing by-ref lookup path
 - same-map live spawn-backed operator/runtime position updates now reuse retained-viewer `MOVE` instead of delete/readd; presentation/name/race refreshes stay on delete/readd (see `spawn-leash-bootstrap.md`)
+- EnterGame reclaim chase-deadline cleanup is now owned: when Join reclaims a stale owner that still held practice-mob engagement, pending chase-step deadlines for those released actors are pruned before visibility bootstrap, matching leave/transfer cleanup and preventing a delayed chase MOVE after ownership was dropped
 - daemon-restart still-dead spawn-group timer persistence is now owned: the static-actor snapshot carries optional spawn-backed `combat_current_hp=0` plus absolute `respawn_ready_at`, death persists those fields, process restart rematerializes the same authored `spawn_group_ref` as still-dead / non-targetable through the remaining deadline with trailing `GC DEAD` on add-style visibility, due timers still preflight into ordinary live rebuild, and successful respawn clears the still-dead persistence fields; engagement / proximity-suppress / selected-target / chase / return ownership stay fail-closed across restart
 
 ## First owned daemon-restart still-dead spawn-group timer persistence seam

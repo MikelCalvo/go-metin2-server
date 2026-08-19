@@ -2788,13 +2788,14 @@ func TestGameRuntimeTransferClearsPendingSpawnGroupChaseStepDeadline(t *testing.
 }
 
 func TestGameRuntimeEnterGameReclaimClearsPendingSpawnGroupChaseStepDeadline(t *testing.T) {
-	// RED: EnterGame reclaim that drops practice-mob engagement must also clear the
+	// EnterGame reclaim that drops practice-mob engagement must also clear the
 	// pending chase-step deadline, matching owner disconnect/transfer release and the
-	// Track A leave/reclaim cleanup contract. Today reclaim clears engaged_by but leaves
-	// spawnChaseStepDueAt armed.
+	// Track A leave/reclaim cleanup contract.
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
-	owner := peerVisibilityCharacter("ChaseReclaimOwner", 0x01030186, 0x02040186, 1900, 2800, 0, 101, 201)
+	// Stay outside the default spawn aggro radius (200) so EnterGame reclaim cleanup
+	// is not immediately re-armed by proximity acquisition for the replacement owner.
+	owner := peerVisibilityCharacter("ChaseReclaimOwner", 0x01030186, 0x02040186, 1901, 2800, 0, 101, 201)
 	owner.MapIndex = 42
 	owner.Points[bootstrapPlayerPointValueIndex] = 50
 	issuePeerTicket(t, store, "chase-reclaim-a", 0x30303036, owner)
