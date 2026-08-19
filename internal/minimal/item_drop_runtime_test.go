@@ -6018,6 +6018,113 @@ func dropAndDecodeGroundAdd(t *testing.T, flow interface {
 	return ground
 }
 
+func TestGameRuntimeItemDropSaveFailureRollsBackLiveMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("DropSaveFailOwner", 0x010301f1, 0x020401f1, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1901, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	login := "drop-save-fail-owner"
+	issuePeerTicket(t, ticketStore, login, 0x171717f1, owner)
+	accounts := newDeferredFailingAccountStore(0, accountstore.Account{
+		Login:      login,
+		Empire:     owner.Empire,
+		Characters: cloneCharacters([]loginticket.Character{owner}),
+	})
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected drop save-fail runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x171717f1)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected drop save-fail error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected save-failed item drop to emit no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected save-failed item drop to queue no frames, got %d", len(queued))
+	}
+	if grounds := runtime.GroundItems(); len(grounds) != 0 {
+		t.Fatalf("expected save-failed item drop not to register a ground handle, got %#v", grounds)
+	}
+
+	inventorySnapshot, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after save-failed drop")
+	}
+	if len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0] != (InventoryItemSnapshot{ID: 1901, Vnum: 27001, Count: 3, Slot: 5}) {
+		t.Fatalf("expected save-failed drop to roll live inventory back, got %#v", inventorySnapshot.Inventory)
+	}
+	quickslotsSnapshot, ok := runtime.QuickslotsSnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected quickslots snapshot after save-failed drop")
+	}
+	if len(quickslotsSnapshot.Quickslots) != 1 || quickslotsSnapshot.Quickslots[0] != (QuickslotSnapshot{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}) {
+		t.Fatalf("expected save-failed drop to keep live quickslots unchanged, got %#v", quickslotsSnapshot.Quickslots)
+	}
+
+	persisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after save-failed drop: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected save-failed drop to leave persisted inventory unchanged, got %#v", persisted.Characters[0].Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("expected save-failed drop to leave persisted quickslots unchanged, got %#v", persisted.Characters[0].Quickslots)
+	}
+}
+
+func TestGameRuntimeItemPickupSaveFailureRollsBackLiveMutationAndKeepsHandle(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PickupSaveFailOwner", 0x010301f3, 0x020401f3, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1903, Vnum: 27002, Count: 4, Slot: 5}}
+	login := "pickup-save-fail-owner"
+	issuePeerTicket(t, ticketStore, login, 0x373737f3, owner)
+	accounts := newDeferredFailingAccountStore(1, accountstore.Account{
+		Login:      login,
+		Empire:     owner.Empire,
+		Characters: cloneCharacters([]loginticket.Character{owner}),
+	})
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected pickup save-fail runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x373737f3)
+	defer closeSessionFlow(t, flow)
+	ground := dropAndDecodeGroundAdd(t, flow, itemproto.InventoryPosition(5))
+
+	pickupOut := pickupGroundItem(t, flow, ground.VID)
+	if len(pickupOut) != 0 {
+		t.Fatalf("expected save-failed pickup to emit no frames, got %d", len(pickupOut))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected save-failed pickup to queue no frames, got %d", len(queued))
+	}
+	if _, ok := runtime.GroundItem(ground.VID); !ok {
+		t.Fatal("expected save-failed pickup to leave the temporary ground handle pending")
+	}
+
+	inventorySnapshot, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after save-failed pickup")
+	}
+	if len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected save-failed pickup to keep live inventory empty after the prior drop, got %#v", inventorySnapshot.Inventory)
+	}
+
+	persisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after save-failed pickup: %v", err)
+	}
+	if len(persisted.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected save-failed pickup to leave persisted inventory empty after the prior drop, got %#v", persisted.Characters[0].Inventory)
+	}
+}
+
 func pickupGroundItem(t *testing.T, flow interface {
 	HandleClientFrame(frame.Frame) ([][]byte, error)
 }, vid uint32) [][]byte {

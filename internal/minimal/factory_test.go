@@ -4663,6 +4663,34 @@ func TestNewGameSessionFactoryQuickslotAddRejectsInvalidInputWithoutPersisting(t
 	}
 }
 
+func TestNewGameSessionFactoryQuickslotAddSaveFailureRollsBackLiveMutation(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Inventory = append(characters[1].Inventory, inventory.ItemInstance{ID: 1001, Vnum: 0x11223344, Count: 1, Slot: 7})
+	characters[1].Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeSkill, Slot: 1}}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	accounts := newDeferredFailingAccountStore(0, accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)})
+
+	flow := newStartedGameFlow(t, store, accounts)
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, quickslotproto.EncodeClientAdd(quickslotproto.ClientAddPacket{Position: 5, Slot: quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 7}})))
+	if err != nil {
+		t.Fatalf("unexpected quickslot add save-fail error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected save-failed quickslot add to emit no frames, got %d", len(out))
+	}
+
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load account after save-failed quickslot add: %v", err)
+	}
+	if got := account.Characters[1].Quickslots; !reflect.DeepEqual(got, characters[1].Quickslots) {
+		t.Fatalf("expected save-failed quickslot add to leave persisted quickslots unchanged, got %#v", got)
+	}
+}
+
 func TestNewGameSessionFactoryItemMoveSyncsMatchingItemQuickslot(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -7855,6 +7883,49 @@ func (f *preloadedFailingAccountStore) Load(login string) (accountstore.Account,
 
 func (f *preloadedFailingAccountStore) Save(accountstore.Account) error {
 	return errors.New("save failed")
+}
+
+// deferredFailingAccountStore allows the first failAfterSuccessfulSaves writes to
+// succeed (so enterGame / prior mutations can complete), then fails closed.
+type deferredFailingAccountStore struct {
+	accounts                 map[string]accountstore.Account
+	failAfterSuccessfulSaves int
+	successfulSaves          int
+}
+
+func newDeferredFailingAccountStore(failAfterSuccessfulSaves int, accounts ...accountstore.Account) *deferredFailingAccountStore {
+	cloned := make(map[string]accountstore.Account, len(accounts))
+	for _, account := range accounts {
+		copyAccount := account
+		copyAccount.Characters = cloneCharacters(account.Characters)
+		cloned[account.Login] = copyAccount
+	}
+	return &deferredFailingAccountStore{
+		accounts:                 cloned,
+		failAfterSuccessfulSaves: failAfterSuccessfulSaves,
+	}
+}
+
+func (s *deferredFailingAccountStore) Load(login string) (accountstore.Account, error) {
+	account, ok := s.accounts[login]
+	if !ok {
+		return accountstore.Account{}, accountstore.ErrAccountNotFound
+	}
+	account.Characters = cloneCharacters(account.Characters)
+	return account, nil
+}
+
+func (s *deferredFailingAccountStore) Save(account accountstore.Account) error {
+	if s.successfulSaves >= s.failAfterSuccessfulSaves {
+		return errors.New("account save failed")
+	}
+	s.successfulSaves++
+	s.accounts[account.Login] = accountstore.Account{
+		Login:      account.Login,
+		Empire:     account.Empire,
+		Characters: cloneCharacters(account.Characters),
+	}
+	return nil
 }
 
 func sampleMovePacket() movep.MovePacket {

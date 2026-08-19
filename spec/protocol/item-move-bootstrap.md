@@ -89,7 +89,7 @@ The bootstrap runtime emits only self-facing item refresh frames for the mutated
 - packet equip from carried inventory to an owned equipment cell: `GC_ITEM_DEL(source)` then `GC_ITEM_SET(equipment position)`, followed by any template-backed `GC_POINT_CHANGE`, then self `GC_CHARACTER_UPDATE` for the projected appearance refresh, and then `GC_QUICKSLOT_DEL` for any item quickslot that referenced the carried source cell;
 - packet unequip from an owned equipment cell to an empty carried-inventory slot: `GC_ITEM_DEL(equipment position)` then `GC_ITEM_SET(destination carried slot)`, followed by any template-backed `GC_POINT_CHANGE`, then self `GC_CHARACTER_UPDATE` for the projected appearance refresh.
 
-The same mutation is persisted to the account snapshot after the response frames are built. If frame generation fails, the selected player runtime rolls back to the previous persisted snapshot before reporting rejection.
+The same mutation is persisted to the account snapshot after the response frames are built. If frame generation fails, the selected player runtime rolls back to the previous persisted snapshot before reporting rejection. If the account-store write itself fails, the same fail-closed boundary applies: live inventory/equipment/quickslot/point state rolls back, no success frames are emitted, and the persisted account snapshot remains unchanged.
 
 ## Tests
 

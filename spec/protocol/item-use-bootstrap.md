@@ -198,6 +198,7 @@ The first consumable path extends the existing M3 selected-character save-back b
 - `quickslots` must reflect any item quickslot deletion caused by a last-stack removal
 - `points` must reflect the updated `Points[template.use_effect.point_index]` (currently `Points[1]` for the seeded bootstrap consumable)
 - the save/commit path remains atomic from the perspective of the selected runtime
+- if that account-store write fails, live inventory/quickslot/point state rolls back, no success frames are emitted, and the persisted account snapshot remains unchanged
 
 This slice still does **not** introduce separate buff-state stores, quest-state stores, or cooldown persistence.
 

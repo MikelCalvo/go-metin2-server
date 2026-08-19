@@ -3337,3 +3337,90 @@ func TestGameSessionFlowPracticeMobItemMoveFailsClosedAfterImmediateRetaliationR
 		t.Fatalf("expected immediate zero-HP item-move denial to keep persisted inventory unchanged, got %#v want %#v", persisted.Characters[0].Inventory, owner.Inventory)
 	}
 }
+
+func TestGameRuntimeItemMoveEquipSaveFailureRollsBackLiveMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	template := itemcatalog.Template{
+		Vnum:        11500,
+		Name:        "Save Fail Armor",
+		Stackable:   false,
+		MaxCount:    1,
+		EquipSlot:   inventory.EquipmentSlotBody.String(),
+		EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 50},
+	}
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{template}}); err != nil {
+		t.Fatalf("seed save-fail equip template: %v", err)
+	}
+	owner := peerVisibilityCharacter("EquipSaveFailOwner", 0x010302f2, 0x020402f2, 1300, 2300, 2, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 5202, Vnum: template.Vnum, Count: 1, Slot: 5}}
+	owner.Equipment = nil
+	owner.Points[1] = 750
+	login := "equip-save-fail-owner"
+	issuePeerTicket(t, ticketStore, login, 0x525252f2, owner)
+	accounts := newDeferredFailingAccountStore(0, accountstore.Account{
+		Login:      login,
+		Empire:     owner.Empire,
+		Characters: cloneCharacters([]loginticket.Character{owner}),
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected save-fail equip runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x525252f2)
+	defer closeSessionFlow(t, flow)
+	bodyPosition, err := itemproto.EquipmentPosition(0)
+	if err != nil {
+		t.Fatalf("build body equipment position: %v", err)
+	}
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(5),
+		Destination: bodyPosition,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected save-fail equip error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected save-failed equip to emit no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected save-failed equip to queue no frames, got %d", len(queued))
+	}
+
+	inventorySnapshot, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after save-failed equip")
+	}
+	if len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0] != (InventoryItemSnapshot{ID: 5202, Vnum: template.Vnum, Count: 1, Slot: 5}) {
+		t.Fatalf("expected save-failed equip to roll live inventory back, got %#v", inventorySnapshot.Inventory)
+	}
+	equipmentSnapshot, ok := runtime.EquipmentSnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected equipment snapshot after save-failed equip")
+	}
+	if len(equipmentSnapshot.Equipment) != 0 {
+		t.Fatalf("expected save-failed equip to keep live equipment empty, got %#v", equipmentSnapshot.Equipment)
+	}
+	pointsSnapshot, ok := runtime.PointsSnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected points snapshot after save-failed equip")
+	}
+	if pointsSnapshot.Points[1] != 750 {
+		t.Fatalf("expected save-failed equip to roll live points back to 750, got %d", pointsSnapshot.Points[1])
+	}
+
+	persisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after save-failed equip: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected save-failed equip to leave persisted inventory unchanged, got %#v", persisted.Characters[0].Inventory)
+	}
+	if len(persisted.Characters[0].Equipment) != 0 {
+		t.Fatalf("expected save-failed equip to leave persisted equipment empty, got %#v", persisted.Characters[0].Equipment)
+	}
+	if persisted.Characters[0].Points[1] != 750 {
+		t.Fatalf("expected save-failed equip to leave persisted points unchanged, got %d", persisted.Characters[0].Points[1])
+	}
+}

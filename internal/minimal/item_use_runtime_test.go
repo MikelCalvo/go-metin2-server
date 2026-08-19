@@ -3329,3 +3329,78 @@ func TestGameSessionFlowItemUseLastStackDeletesOnlyItemQuickslot(t *testing.T) {
 		t.Fatalf("expected consumed last stack to delete only item quickslots, got %+v", persisted.Characters[0].Quickslots)
 	}
 }
+
+func TestGameSessionFlowItemUseSaveFailureRollsBackLiveMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseSaveFail", 0x010305f1, 0x020405f1, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 901, Vnum: 27001, Count: 4, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	login := "item-use-save-fail"
+	issuePeerTicket(t, ticketStore, login, 0x505050f1, owner)
+	accounts := newDeferredFailingAccountStore(0, accountstore.Account{
+		Login:      login,
+		Empire:     owner.Empire,
+		Characters: cloneCharacters([]loginticket.Character{owner}),
+	})
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Save Fail Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume"},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-use save-fail runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x505050f1)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected item-use save-fail packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected save-failed ITEM_USE to emit no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected save-failed ITEM_USE to queue no frames, got %d", len(queued))
+	}
+
+	inventorySnapshot, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after save-failed ITEM_USE")
+	}
+	if len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0] != (InventoryItemSnapshot{ID: 901, Vnum: 27001, Count: 4, Slot: 5}) {
+		t.Fatalf("expected save-failed ITEM_USE to roll live inventory back, got %#v", inventorySnapshot.Inventory)
+	}
+	pointsSnapshot, ok := runtime.PointsSnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected points snapshot after save-failed ITEM_USE")
+	}
+	if pointsSnapshot.Points[bootstrapPlayerPointValueIndex] != 25 {
+		t.Fatalf("expected save-failed ITEM_USE to roll live points back to 25, got %d", pointsSnapshot.Points[bootstrapPlayerPointValueIndex])
+	}
+	quickslotsSnapshot, ok := runtime.QuickslotsSnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected quickslots snapshot after save-failed ITEM_USE")
+	}
+	if len(quickslotsSnapshot.Quickslots) != 1 || quickslotsSnapshot.Quickslots[0] != (QuickslotSnapshot{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}) {
+		t.Fatalf("expected save-failed ITEM_USE to keep live quickslots unchanged, got %#v", quickslotsSnapshot.Quickslots)
+	}
+
+	persisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after save-failed ITEM_USE: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected save-failed ITEM_USE to leave persisted inventory unchanged, got %#v", persisted.Characters[0].Inventory)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 25 {
+		t.Fatalf("expected save-failed ITEM_USE to leave persisted points unchanged, got %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("expected save-failed ITEM_USE to leave persisted quickslots unchanged, got %#v", persisted.Characters[0].Quickslots)
+	}
+}

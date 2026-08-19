@@ -156,6 +156,7 @@ When validation succeeds:
 2. exactly the requested entry count of that template is granted into carried inventory according to `item-stack-bootstrap.md`
 3. the updated selected-character snapshot is persisted before the new live state is committed
 4. the transaction commits atomically from the perspective of the selected runtime
+5. if that account-store write fails, the buy fails closed: live gold/inventory roll back, no success frames are emitted, and the persisted account snapshot remains unchanged
 
 This slice freezes the success path primarily at the **state** level.
 It does **not** yet claim the final client-visible merchant-window choreography.

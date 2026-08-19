@@ -252,6 +252,7 @@ Expected result:
 - a consumable whose resolved template `max_count` cannot fit the current one-byte item refresh count range fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
 - a consumable whose template-authored point delta would overflow the bootstrap signed 32-bit point value fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
 - a consumable whose template-authored negative point delta would underflow the bootstrap signed 32-bit point value fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
+- if operator/test fixtures can force account persistence failure during an otherwise-valid `ITEM_USE`, the consume fails closed: no point change, item refresh, quickslot change, or placeholder chat is visible, and reconnect shows the pre-use inventory/points/quickslots unchanged
 - the placeholder `CHAT_TYPE_INFO` message uses template-authored `use_effect.info_message` when non-empty, otherwise it falls back to `use_effect.message` for older templates and the built-in bootstrap fallback; authored snapshots with embedded NUL bytes in either field should fail item-template validation/runtime startup rather than reaching the client as truncated chat text
 
 ### 4.5.2 Drag stack onto stack (`ITEM_USE_TO_ITEM`)
@@ -281,6 +282,7 @@ Expected result:
 - the older same-type quickslot tuple is cleared before the new binding is added
 - if a bootstrap exchange shell is open on the same socket, an accepted quickslot add closes it first: the requester receives `GC::EXCHANGE END`, the paired peer receives one queued `GC::EXCHANGE END`, then the requester sees the quickslot delete/add refresh frames, with no exchange finalization/result frames
 - the new item/skill/command quickslot binding persists after reconnect
+- if operator/test fixtures can force account persistence failure during an otherwise-valid `QUICKSLOT_ADD`, the binding fails closed: no quickslot refresh frame is visible, existing quickslots remain unchanged, and reconnect shows no persisted quickslot mutation
 - binding an item quickslot to a locked, malformed, authored-missing-template, mismatched-template, or over-template-max carried item fails closed: no `QUICKSLOT_ADD` is visible, existing quickslots remain unchanged, and reconnect shows no persisted quickslot mutation. Missing-file/empty-store fallback template boot still permits older ad-hoc item `vnum` smoke fixtures under the live-item validation path.
 - account/login-ticket snapshots that somehow contain the same non-item skill/command `{type, slot}` tuple at two different bar positions are now invalid and fail closed on save/load instead of replaying duplicate skill/command bindings; duplicate item-cell quickslot fixtures remain loadable for current item-removal cleanup tests
 - unrelated quickslots of a different type with the same byte slot value remain unchanged
@@ -333,6 +335,8 @@ Expected result:
 - if stale/reclaimed-socket QA tooling is available, an old reclaimed socket may see its own self-local carried-slot deletion/update and source quickslot delete frames for a valid item drop, but it must not create a ground actor, ownership label, delayed peer ground visibility, or persisted account mutation; the fresh authoritative session should still be able to drop the original item afterward.
 - if a corrupt/disposable fixture reaches the shared-world ground-handle seam with stale equipment-slot metadata on an otherwise unequipped ground snapshot, registration fails closed and no temporary ground actor becomes available
 - if a corrupt/disposable fixture has duplicate live items in the same carried cell, `ITEM_DROP` / `ITEM_DROP2` fails closed with no ground actor, no carried-slot deletion/update, no quickslot mutation, and no persisted-state mutation
+- if operator/test fixtures can force account persistence failure during an otherwise-valid drop, the drop fails closed with no ground actor, no carried-slot deletion/update, no quickslot mutation, and reconnect shows the pre-drop inventory/quickslots unchanged
+- if operator/test fixtures can force account persistence failure during an otherwise-valid pickup after a successful drop, the pickup fails closed with no inventory/gold refresh and the temporary ground handle remains available for a later valid retry
 - missing, malformed, mismatched, or ground-count-over-template-`max_count` authored pickup template metadata fails closed: no item pickup notice, no inventory mutation, and the ground handle remains available for a later valid retry; a valid authored equipment template is accepted into carried inventory and must not auto-equip
 - fallback/no-template pickup fixtures whose ground stack count exceeds the current one-byte item refresh range (`255`) fail closed before item pickup notice, inventory mutation, or ground-handle removal
 - loaded pickup template metadata marked `anti_get` / `anti_give` / `anti_stack` or restricted by the selected character's job/sex/min-level metadata also fails closed, emits guarded template-authored `pickup_reject_message` as self-only info chat when present and otherwise the bootstrap inventory-full info message, closes any active same-socket exchange shell before that info chat, and leaves the ground handle available for a later valid retry; `pickup_reject_message` authored without an owned pickup guard is an invalid template snapshot rather than a runtime pickup policy
@@ -374,6 +378,7 @@ Expected result:
 - corrupt/disposable fixtures that try to apply an equipment point effect without a matching valid equipped item in the authored equipment cell fail closed with no point mutation
 - equipment whose template-authored `equip_effect` point delta would overflow the bootstrap signed 32-bit point value also fails closed before item, quickslot, point, or persistence mutation
 - corrupt/disposable equipment fixtures whose live carried source count exceeds the authored template `max_count` fail closed before item refresh, quickslot cleanup, point, appearance, or persisted-state mutation
+- if operator/test fixtures can force account persistence failure during an otherwise-valid equip, the equip fails closed: no item refresh, quickslot change, point change, appearance update, or persisted inventory/equipment mutation is visible
 
 ### 4.5.9 Unequip a template-backed equipment item (`ITEM_MOVE` from equipment cell)
 
@@ -409,6 +414,7 @@ Expected result:
 - authored interaction text/title fields reject embedded NUL bytes at operator decode / content-bundle validation / runtime startup, so they cannot reach client chat, merchant-window titles, or compact preview strings as truncated content
 - carried sell-back stacks whose live count already exceeds the resolved template-authored `max_count` fail with the same invalid-position companion before inventory, item quickslot, gold, or persisted account mutation
 - partial-stack `SHOP SELL2` success refreshes the remaining stack with `ITEM_UPDATE`, preserves the authored display socket/attribute arrays while changing only the count, credits gold, and keeps item quickslots for the still-occupied cell unchanged
+- if operator/test fixtures can force account persistence failure during an otherwise-valid `SHOP BUY`, the buy fails closed: no inventory refresh or gold debit is visible, and reconnect shows the pre-buy inventory/gold unchanged
 
 ### 4.5.11 Unsupported item give guard (`ITEM_GIVE`)
 
