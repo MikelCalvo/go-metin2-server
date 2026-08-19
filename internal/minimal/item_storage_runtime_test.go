@@ -309,3 +309,60 @@ func TestGameRuntimeCloseSafeboxClearsOpenPresentationWithoutFrames(t *testing.T
 	}
 	assertExchangeAccountUnchanged(t, accounts, login, owner, "close-safebox owner")
 }
+
+func TestGameRuntimeOpenSafeboxOutOfRangeFailsClosedWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("OpenSafeboxOOR", 0x010307ca, 0x020407ca, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4242
+	owner.Inventory = []inventory.ItemInstance{{ID: 770, Vnum: 27001, Count: 2, Slot: 5}}
+	login := "open-safebox-oor"
+	issuePeerTicket(t, ticketStore, login, 0x707070ca, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed out-of-range open-safebox owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected out-of-range open-safebox runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707070ca)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox 4",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected out-of-range /open_safebox error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected out-of-range /open_safebox to emit no frames (no SAFEBOX_SIZE and no ordinary chat fallthrough), got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected out-of-range /open_safebox to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "out-of-range open-safebox owner")
+
+	// Prove the same-socket open/busy presentation flag stayed closed: a later
+	// in-range open must still emit the default size instead of refreshing a
+	// phantom out-of-range presentation, and exchange busy policy must not have
+	// observed an open safebox from the rejected command.
+	validOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected in-range /open_safebox after out-of-range reject error: %v", err)
+	}
+	if len(validOut) != 1 {
+		t.Fatalf("expected in-range /open_safebox after out-of-range reject to emit one SAFEBOX_SIZE frame, got %d", len(validOut))
+	}
+	size, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, validOut[0]))
+	if err != nil {
+		t.Fatalf("decode in-range /open_safebox after out-of-range reject: %v", err)
+	}
+	if size != (itemproto.SafeboxSizePacket{Size: 1}) {
+		t.Fatalf("unexpected in-range /open_safebox size after out-of-range reject: %+v", size)
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "in-range open-safebox after out-of-range reject")
+}

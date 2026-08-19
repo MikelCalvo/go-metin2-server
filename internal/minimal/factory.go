@@ -4948,6 +4948,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							if !selectedOK || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
 								return gameflow.ChatResult{Accepted: false}
 							}
+							if size < bootstrapSafeboxOpenMinSize || size > bootstrapSafeboxOpenMaxSize {
+								// Recognized /open_safebox with an out-of-range or otherwise invalid
+								// size must stay fail-closed: consume the slash so it does not fall
+								// through as ordinary talking chat, emit no SAFEBOX_SIZE, and leave
+								// the same-socket open/busy presentation flag untouched.
+								return gameflow.ChatResult{Accepted: true}
+							}
 							if hasActiveSafeboxOpen && !sizeExplicit {
 								size = activeSafeboxSize
 							}
@@ -6908,15 +6915,15 @@ func slashOpenSafeboxCommand(message string) (uint8, bool, bool) {
 	case 2:
 		parsed, err := strconv.ParseUint(fields[1], 10, 8)
 		if err != nil {
-			return 0, false, false
+			// Recognized command with a non-uint8 size token: keep ok=true so the
+			// chat handler can fail closed instead of broadcasting ordinary talk.
+			return 0, true, true
 		}
-		size := uint8(parsed)
-		if size < bootstrapSafeboxOpenMinSize || size > bootstrapSafeboxOpenMaxSize {
-			return 0, false, false
-		}
-		return size, true, true
+		return uint8(parsed), true, true
 	default:
-		return 0, false, false
+		// Extra args are still a recognized /open_safebox attempt; fail closed in
+		// the handler rather than falling through as ordinary talking chat.
+		return 0, false, true
 	}
 }
 

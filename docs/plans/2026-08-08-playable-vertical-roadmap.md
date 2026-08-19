@@ -141,12 +141,12 @@ Likely areas:
 
 Next slices:
 
-1. Finish integrating pending exchange anti-give/display-slot guards on `lane/items`.
-2. Turn `EXCHANGE` from fail-closed packet ownership into a staged two-party trade plan with RED tests before any mutation.
-3. Add ownership timers and pickup permission transitions for player/mob drops.
-4. Extend item-template restrictions: class, sex, level, anti-flags, equipment slot policy, and edge-case feedback.
+1. ~~Harden the bootstrap `/open_safebox` fail-closed edge for out-of-range size (`/open_safebox 4`) so it emits no frames, does not open the busy flag, and does not fall through as ordinary chat.~~ Done: recognized out-of-range / invalid `/open_safebox` attempts are consumed fail-closed with no `SAFEBOX_SIZE`, no talking-chat fallthrough, and no same-socket open/busy mutation.
+2. Continue refine as fail-closed until material/cost/result semantics are frozen; then add a tiny accepted refine success path.
+3. Extend remaining item-template restriction/feedback edges only where a client-visible gap remains after the owned class/sex/level/anti-flag/equip-slot guards.
+4. Keep partner-side open player-shop / cube busy-window rejection text deferred until those presentation seams exist.
 5. ~~Land the frozen bootstrap safebox-open presentation seam (`/open_safebox` / `/close_safebox` + `SAFEBOX_SIZE`) and wire exchange START requester/partner busy rejects to that open flag; keep password/load/placement/money deferred.~~ Done for bootstrap scope: `/open_safebox [1..3]` emits self-only `SAFEBOX_SIZE`, `/close_safebox` clears the open flag, and exchange START reuses the merchant busy-window chat strings for requester/partner open-safebox rejects without inventing storage mutation.
-6. Continue refine as fail-closed until material/cost/result semantics are frozen; then add a tiny accepted refine success path.
+6. ~~Finish integrating pending exchange anti-give/display-slot guards / mutual-accept finalization / ownership timers~~ Done for bootstrap scope on `lane/items`; do not reopen those as if they were still pending.
 
 Exit criteria:
 

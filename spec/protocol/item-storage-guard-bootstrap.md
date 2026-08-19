@@ -175,7 +175,7 @@ The shipped minimal runtime intentionally rejects ordinary storage requests with
 A later storage/safebox slice still owns password load, item placement, money, and persistence. This contract freezes only the smallest presentation seam needed so exchange busy-window policy can observe an open safebox without inventing fake transfer semantics:
 
 - the local slash harness `/open_safebox [size]` may mark the selected character's same-socket bootstrap safebox presentation as open while the session is already in `GAME` and above the bootstrap zero-HP floor;
-- optional `size` is a page count in the owned bootstrap range `1..3`; omitted size defaults to `1`; values outside that range fail closed with no frames and no open-state mutation;
+- optional `size` is a page count in the owned bootstrap range `1..3`; omitted size defaults to `1`; values outside that range (for example `/open_safebox 4`), non-uint8 size tokens, and extra arguments fail closed with no frames, no ordinary talking-chat fallthrough, and no open-state mutation;
 - on success the runtime emits exactly one self-only `GC::SAFEBOX_SIZE` with that page count and remembers an in-memory same-socket `open safebox` presentation flag;
 - repeating `/open_safebox` while already open is idempotent presentation refresh: it re-emits `GC::SAFEBOX_SIZE` for the currently remembered size (or the newly requested in-range size) and leaves inventory/equipment/quickslot/gold/persistence unchanged;
 - the local slash harness `/close_safebox` clears that same-socket open flag when present and emits no storage frames in this bootstrap seam; a later slice may own the legacy `CloseSafebox` command-chat companion;
