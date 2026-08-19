@@ -469,13 +469,16 @@ Run this only if packet tooling or the client build can emit safebox/mall item-t
 - [ ] Attempt one `SAFEBOX_ITEM_MOVE` request between two safebox slot positions
 - [ ] Attempt one `MALL_CHECKOUT` request into a disposable carried destination slot
 - [ ] If packet tooling allows it, repeat one malformed payload-size case
+- [ ] If slash harness tooling is available, run `/open_safebox` and confirm one self-only `GC::SAFEBOX_SIZE` appears without inventory/gold mutation
+- [ ] If slash harness tooling is available, run `/close_safebox` after that open and confirm later exchange `START` is no longer blocked by the safebox busy guard
 
 Expected result:
-- ordinary storage-facing packets are parsed by the game socket but remain unsupported in the shipped bootstrap runtime: no storage response frames (`SAFEBOX_SET`, `SAFEBOX_DEL`, `SAFEBOX_WRONG_PASSWORD`, `SAFEBOX_SIZE`, `SAFEBOX_MONEY_CHANGE`, `MALL_OPEN`, `MALL_SET`, or `MALL_DEL`) are visible, no carried inventory/equipment/quickslot/point/gold state changes, no ground actor appears, no exchange/merchant peer frames are queued, and reconnect/operator inspection shows the selected-character snapshot unchanged
+- ordinary storage-facing packets are parsed by the game socket but remain unsupported in the shipped bootstrap runtime: no storage-transfer response frames (`SAFEBOX_SET`, `SAFEBOX_DEL`, `SAFEBOX_WRONG_PASSWORD`, `SAFEBOX_MONEY_CHANGE`, `MALL_OPEN`, `MALL_SET`, or `MALL_DEL`) are visible, no carried inventory/equipment/quickslot/point/gold state changes, no ground actor appears, no exchange/merchant peer frames are queued, and reconnect/operator inspection shows the selected-character snapshot unchanged
 - an `anti_safebox` carried item with template-authored `safebox_reject_message` returns exactly one self-only `CHAT_TYPE_INFO` message with that authored text on `SAFEBOX_CHECKIN`, while still leaving inventory, equipment, quickslots, points, gold, ground handles, and persistence unchanged; if a bootstrap merchant window is open on that same socket, the client first sees self `GC::SHOP END` and later `SHOP END` / `SHOP BUY` attempts fail closed until the merchant is reopened; if a bootstrap exchange shell is open on that same socket, the client first sees self `GC::EXCHANGE END`, the visible peer receives queued `GC::EXCHANGE END`, and no exchange item/gold display is finalized or mutated
+- once `/open_safebox` lands, the client may see one self-only `GC::SAFEBOX_SIZE` presentation frame and the same-socket character becomes busy for exchange `START` under the owned requester/partner busy-window chat strings; `/close_safebox` clears that busy presentation without storage mutation
 - item-template validation rejects `safebox_reject_message` if it contains embedded NUL bytes or is authored without `anti_safebox`, so contradictory storage feedback should fail before gameplay testing starts
 - malformed storage payload sizes fail at the codec/dispatcher boundary rather than mutating runtime state
-- this is a fail-closed guard, not a completed safebox, mall, or storage feature
+- this is a fail-closed guard plus a presentation-only open seam, not a completed safebox, mall, or storage feature
 
 ### 4.5.13 Unsupported item exchange guard (`EXCHANGE`)
 
@@ -488,6 +491,8 @@ Run this only if packet tooling or the client build can emit an exchange/trade a
 - [ ] Open a valid exchange shell, then walk one participant far enough that `ApproxDistance >= 1000` while the shell is still open
 - [ ] Open a merchant window first, then attempt `EXCHANGE START` against a visible connected player while that merchant window is still open
 - [ ] Have a visible connected peer open a merchant window first, then attempt `EXCHANGE START` against that peer while their merchant window is still open
+- [ ] Once `/open_safebox` is available, open the safebox presentation first, then attempt `EXCHANGE START` against a visible connected player while that safebox presentation is still open
+- [ ] Once `/open_safebox` is available, have a visible connected peer open their safebox presentation first, then attempt `EXCHANGE START` against that peer while their safebox presentation is still open
 - [ ] Attempt one `EXCHANGE ITEM_ADD` request for a disposable carried item slot
 - [ ] When the carried item is allowed by its template, inspect both exchange windows and packet logs for the display-only `GC::EXCHANGE ITEM_ADD` frames
 - [ ] Attempt one active-shell `EXCHANGE ELK_ADD` / gold-add request for an amount the requester currently has

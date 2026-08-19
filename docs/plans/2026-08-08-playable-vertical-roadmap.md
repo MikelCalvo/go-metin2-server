@@ -145,7 +145,7 @@ Next slices:
 2. Turn `EXCHANGE` from fail-closed packet ownership into a staged two-party trade plan with RED tests before any mutation.
 3. Add ownership timers and pickup permission transitions for player/mob drops.
 4. Extend item-template restrictions: class, sex, level, anti-flags, equipment slot policy, and edge-case feedback.
-5. Add storage/safebox planning and the smallest fail-closed packet/runtime seam.
+5. Land the frozen bootstrap safebox-open presentation seam (`/open_safebox` / `/close_safebox` + `SAFEBOX_SIZE`) and wire exchange START requester/partner busy rejects to that open flag; keep password/load/placement/money deferred.
 6. Continue refine as fail-closed until material/cost/result semantics are frozen; then add a tiny accepted refine success path.
 
 Exit criteria:
