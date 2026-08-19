@@ -2924,6 +2924,100 @@ func TestGameRuntimeTransferClearsPendingSpawnGroupChaseStepDeadline(t *testing.
 	}
 }
 
+func TestGameRuntimeClientTargetZeroClearsPendingSpawnGroupChaseStepDeadline(t *testing.T) {
+	// Client TARGET(0) already releases engagement and cancels delayed retaliation.
+	// It must also clear the pending chase-step deadline so the abandoned mob cannot
+	// still fire a delayed chase MOVE after the owner cleared the target.
+	store := loginticket.NewFileStore(t.TempDir())
+	// Stay outside the default spawn aggro radius (200) so TARGET(0) cleanup is not
+	// immediately re-armed by proximity acquisition on the next pending-frame flush.
+	owner := peerVisibilityCharacter("ChaseStepClearTargetOwner", 0x01030187, 0x02040187, 1901, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "chase-step-clear-target-owner", 0x30303038, owner)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700001220, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for chase-step TARGET(0) cleanup: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.chase_step_clear_target",
+		Name:          "ChaseStepClearTargetMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import chase-step TARGET(0) cleanup spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.chase_step_clear_target")
+	if !ok {
+		t.Fatal("expected chase-step TARGET(0) cleanup spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "chase-step-clear-target-owner", 0x30303038)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
+		t.Fatalf("unexpected owner target error before chase-step TARGET(0) cleanup: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	}))); err != nil {
+		t.Fatalf("unexpected accepted hit before chase-step TARGET(0) cleanup: %v", err)
+	}
+	if pending, ok := runtime.SpawnGroupChaseStep(group.EntityID); !ok || pending.EntityID != group.EntityID {
+		t.Fatalf("expected engaged hit to arm a pending chase-step row before TARGET(0), ok=%v snapshot=%+v", ok, pending)
+	}
+
+	clearOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: 0})))
+	if err != nil {
+		t.Fatalf("unexpected owner TARGET(0) clear dispatch error for chase cleanup: %v", err)
+	}
+	if len(clearOut) != 0 {
+		t.Fatalf("expected owner TARGET(0) clear to emit no frames, got %d", len(clearOut))
+	}
+
+	runtime.spawnChaseMu.Lock()
+	_, stillScheduled := runtime.spawnChaseStepDueAt[group.EntityID]
+	runtime.spawnChaseMu.Unlock()
+	if stillScheduled {
+		t.Fatalf("expected owner TARGET(0) to clear pending chase-step deadline for entity %d", group.EntityID)
+	}
+	if pending, ok := runtime.SpawnGroupChaseStep(group.EntityID); ok || pending.EntityID != 0 {
+		t.Fatalf("expected chase-step inspection to omit actor after TARGET(0) release, ok=%v snapshot=%+v", ok, pending)
+	}
+
+	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay)
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no delayed chase-step visibility after TARGET(0) cleared the deadline, got %d frames", len(queued))
+	}
+	actor, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || actor.X != 1700 || actor.Y != 2800 {
+		t.Fatalf("expected abandoned chase actor to remain at pre-chase home after TARGET(0) cleanup, ok=%v snapshot=%+v", ok, actor)
+	}
+}
+
 func TestGameRuntimeEnterGameReclaimClearsPendingSpawnGroupChaseStepDeadline(t *testing.T) {
 	// EnterGame reclaim that drops practice-mob engagement must also clear the
 	// pending chase-step deadline, matching owner disconnect/transfer release and the

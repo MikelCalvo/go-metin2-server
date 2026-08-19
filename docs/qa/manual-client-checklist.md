@@ -1006,6 +1006,7 @@ If that custom profile authors a negative `retaliation_point_delta`, expect both
 - [ ] If loopback ops access is available, confirm the combat-target snapshot remains absent after `/restart_here` until the practice mob is freshly selected again
 - [ ] With a second living visible client, confirm that a practice mob left alive by the owner's zero-HP floor can be freshly targeted by that second client without waiting for mob death / respawn or owner disconnect
 - [ ] In a separate live-owner run, land one accepted hit on a practice mob, clear the selected target before the delayed retaliation timer expires, and confirm no delayed retaliation beat arrives for that cleared target
+- [ ] In that same clear-target run, wait through the owned `5s` chase delay and confirm no delayed chase `MOVE` arrives for the abandoned engagement after client `TARGET(0)`
 - [ ] In that same clear-target run, confirm a second living visible client can freshly target the still-live practice mob after the owner clears it
 - [ ] Re-select the still-live practice mob and confirm its HP remains at the current runtime-owned value instead of resetting because of `/restart_here`
 - [ ] In a separate timing run, let a second living client kill the practice mob while the owner is still at `0` HP, wait until the owned respawn delay is already due, then issue `/restart_here` and confirm the recovery catch-up shows the live rebuilt mob (no stale `DEAD` replay and no duplicate queued respawn afterward)

@@ -412,7 +412,7 @@ Contract for Track A item 6:
    - a successful cross-map return restores exactly one entity to the authored home map and must leave no dual-map occupancy or duplicate `spawn_group_ref` membership behind
 
 5. **Leave / transfer ownership cleanup**
-   - owner Leave / logout / close, phase-select leave, EnterGame reclaim that drops stale engagement ownership, owner death floor, and owner transfer/warp away clear engagement / selected-target / pending chase ownership without resurrecting dead combat state or inventing a second spawn instance
+   - owner Leave / logout / close, phase-select leave, EnterGame reclaim that drops stale engagement ownership, owner death floor, client-originated `TARGET(0)` clear-target, and owner transfer/warp away clear engagement / selected-target / pending chase ownership without resurrecting dead combat state or inventing a second spawn instance
    - due return-step and due chase-step EnterGame / transfer preflights remain the owned anti-stale-position path and must not emit a later duplicate queued rebuild for the same due timer
 
 6. **Still-dead content-bundle replacement anti-resurrect**

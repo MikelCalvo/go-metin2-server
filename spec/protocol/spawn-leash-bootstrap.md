@@ -178,7 +178,7 @@ Preflight rules:
 - the owned same-socket `/restart_here` and `/restart_town` recovery seams use the same due chase-step preflight before rebuilding visibility
 
 Cleanup / fail-closed rules:
-- clear pending chase deadlines on owner disconnect/logout/close, phase-select leave, EnterGame reclaim that drops stale engagement ownership, owner death floor, owner transfer/warp to a different map, actor death, successful return-home, content-bundle replacement that removes or replaces the actor, and any engagement release that drops the actor's `engaged_by` ownership
+- clear pending chase deadlines on owner disconnect/logout/close, phase-select leave, EnterGame reclaim that drops stale engagement ownership, owner death floor, owner transfer/warp to a different map, client-originated `TARGET(0)` clear-target that releases the current engagement, actor death, successful return-home, content-bundle replacement that removes or replaces the actor, and any other engagement release that drops the actor's `engaged_by` ownership
 - dead actors waiting on respawn do not arm chase; a respawn rebuild starts unengaged at authored home and therefore does not inherit a pre-death chase deadline
 - no new operator chase-step POST surface is required for this first executor freeze
 
