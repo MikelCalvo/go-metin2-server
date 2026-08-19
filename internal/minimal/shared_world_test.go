@@ -37452,6 +37452,166 @@ func TestGameRuntimeContentSpawnGroupStillDeadReplacementDoesNotResurrectEarly(t
 	}
 }
 
+func TestGameRuntimeContentSpawnGroupStillDeadPersistsAcrossDaemonRestart(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	killer := peerVisibilityCharacter("StillDeadRestartKiller", 0x010301f3, 0x020401f3, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapPlayerPointValueIndex] = 50
+	lateViewer := peerVisibilityCharacter("StillDeadRestartViewer", 0x010301f4, 0x020401f4, 1100, 2100, 0, 102, 202)
+	issuePeerTicket(t, store, "still-dead-restart-killer", 0xf3f3f3f3, killer)
+	issuePeerTicket(t, store, "still-dead-restart-viewer", 0xf4f4f4f4, lateViewer)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000460, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_still_dead_restart",
+		Name:          "PracticeMobStillDeadRestart",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import still-dead restart spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice mob after import, got %#v", actors)
+	}
+	originalEntityID := actors[0].EntityID
+	targetVID := uint32(originalEntityID)
+
+	killerFlow, killerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "still-dead-restart-killer", 0xf3f3f3f3)
+	if len(killerEnter) != 8 {
+		t.Fatalf("expected killer bootstrap with visible content practice mob, got %d frames", len(killerEnter))
+	}
+	killingAttack := drivePracticeMobOwnerKill(t, killerFlow, targetVID, "still-dead daemon restart", func(duration time.Duration) {
+		currentTime = currentTime.Add(duration)
+	})
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, killingAttack[0]))
+	if err != nil {
+		t.Fatalf("decode mob-death frame before still-dead restart: %v", err)
+	}
+	if dead.VID != targetVID {
+		t.Fatalf("expected killing hit to kill target vid %d, got %+v", targetVID, dead)
+	}
+	closeSessionFlow(t, killerFlow)
+
+	beforeRestart, ok := runtime.SpawnGroupByRef("practice.mob_still_dead_restart")
+	if !ok || !beforeRestart.Dead {
+		t.Fatalf("expected spawn group to be dead before daemon restart, ok=%v snapshot=%+v", ok, beforeRestart)
+	}
+	respawnsBefore := runtime.StaticActorRespawns()
+	if len(respawnsBefore) != 1 || respawnsBefore[0].EntityID != originalEntityID {
+		t.Fatalf("expected one pending respawn before daemon restart, got %+v", respawnsBefore)
+	}
+	wantReadyAt := respawnsBefore[0].ReadyAt.UTC()
+
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted still-dead spawn-group snapshot: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 {
+		t.Fatalf("expected one persisted spawn-group actor after death, got %+v", persisted.StaticActors)
+	}
+	if persisted.StaticActors[0].CombatCurrentHP == nil || *persisted.StaticActors[0].CombatCurrentHP != 0 {
+		t.Fatalf("expected persisted still-dead combat_current_hp=0, got %+v", persisted.StaticActors[0])
+	}
+	if persisted.StaticActors[0].RespawnReadyAt == nil || !persisted.StaticActors[0].RespawnReadyAt.Equal(wantReadyAt) {
+		t.Fatalf("expected persisted respawn_ready_at=%s, got %+v", wantReadyAt, persisted.StaticActors[0])
+	}
+
+	reloaded, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		accountstore.NewFileStore(t.TempDir()),
+		staticActorStore,
+		interactionStore,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("reload runtime with persisted still-dead spawn group: %v", err)
+	}
+	reloaded.now = func() time.Time { return currentTime }
+
+	afterRestart, ok := reloaded.SpawnGroupByRef("practice.mob_still_dead_restart")
+	if !ok {
+		t.Fatal("expected still-dead spawn group to remain resolvable by authored ref after daemon restart")
+	}
+	if !afterRestart.Dead {
+		t.Fatalf("expected daemon restart to preserve still-dead interval, got snapshot=%+v", afterRestart)
+	}
+	respawnsAfter := reloaded.StaticActorRespawns()
+	if len(respawnsAfter) != 1 || respawnsAfter[0].EntityID != afterRestart.EntityID || !respawnsAfter[0].ReadyAt.Equal(wantReadyAt) {
+		t.Fatalf("expected pending respawn deadline to survive daemon restart, got %+v want ready_at=%s", respawnsAfter, wantReadyAt)
+	}
+
+	lateFlow, lateEnter := enterGameWithLoginTicket(t, reloaded.SessionFactory(), "still-dead-restart-viewer", 0xf4f4f4f4)
+	defer closeSessionFlow(t, lateFlow)
+	if len(lateEnter) != 9 {
+		t.Fatalf("expected 9 bootstrap frames for late viewer with still-dead restarted spawn group, got %d frames", len(lateEnter))
+	}
+	staticAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, lateEnter[5]))
+	if err != nil {
+		t.Fatalf("decode still-dead restart bootstrap add: %v", err)
+	}
+	if staticAdd.VID != uint32(afterRestart.EntityID) || staticAdd.X != 1200 || staticAdd.Y != 2200 || staticAdd.RaceNum != 101 {
+		t.Fatalf("unexpected still-dead restart bootstrap add: %+v", staticAdd)
+	}
+	staticInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, lateEnter[6]))
+	if err != nil {
+		t.Fatalf("decode still-dead restart bootstrap additional info: %v", err)
+	}
+	if staticInfo.VID != uint32(afterRestart.EntityID) || staticInfo.Name != "PracticeMobStillDeadRestart" {
+		t.Fatalf("unexpected still-dead restart bootstrap additional info: %+v", staticInfo)
+	}
+	staticUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, lateEnter[7]))
+	if err != nil {
+		t.Fatalf("decode still-dead restart bootstrap update: %v", err)
+	}
+	if staticUpdate.VID != uint32(afterRestart.EntityID) {
+		t.Fatalf("unexpected still-dead restart bootstrap update: %+v", staticUpdate)
+	}
+	deadReplay, err := worldproto.DecodeDead(decodeSingleFrame(t, lateEnter[8]))
+	if err != nil {
+		t.Fatalf("decode still-dead restart bootstrap dead replay: %v", err)
+	}
+	if deadReplay.VID != uint32(afterRestart.EntityID) {
+		t.Fatalf("unexpected still-dead restart bootstrap dead replay: %+v", deadReplay)
+	}
+
+	deniedTarget, err := lateFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(afterRestart.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected still-dead restart target error: %v", err)
+	}
+	if len(deniedTarget) != 0 {
+		t.Fatalf("expected still-dead restarted spawn group to stay non-targetable, got %d frames", len(deniedTarget))
+	}
+
+	currentTime = wantReadyAt.Add(25 * time.Millisecond)
+	reloaded.flushReadyStaticActorRespawns()
+	respawned, ok := reloaded.SpawnGroupByRef("practice.mob_still_dead_restart")
+	if !ok || respawned.Dead || respawned.CombatHPPercent != 100 {
+		t.Fatalf("expected due respawn after restart to rebuild live full-HP actor, ok=%v snapshot=%+v", ok, respawned)
+	}
+	if respawns := reloaded.StaticActorRespawns(); len(respawns) != 0 {
+		t.Fatalf("expected no pending respawn after due rebuild, got %+v", respawns)
+	}
+	cleared, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted snapshot after due respawn: %v", err)
+	}
+	if len(cleared.StaticActors) != 1 || cleared.StaticActors[0].CombatCurrentHP != nil || cleared.StaticActors[0].RespawnReadyAt != nil {
+		t.Fatalf("expected due respawn to clear still-dead persistence fields, got %+v", cleared.StaticActors)
+	}
+}
+
 func TestGameSessionFlowPracticeMobDeathCancelsPendingDelayedRetaliationBeforeRespawn(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

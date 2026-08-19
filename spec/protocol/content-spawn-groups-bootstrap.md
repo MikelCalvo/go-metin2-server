@@ -426,7 +426,7 @@ Current implementation status:
 - still-dead content-bundle replacement anti-resurrect is now owned: successful non-identical `ImportContentBundle` replacements that keep the same authored `spawn_group_ref` remap pending `HP=0` + absolute respawn deadline onto the newly registered actor before import fanout, so late EnterGame still ends with trailing `GC DEAD` and the actor stays non-targetable through the ordinary timer; engagement / proximity-suppress / selected-target ownership are not remapped across that replacement boundary
 - reconnect rematerialization remains a fail-closed contract for later focused coverage beside the existing by-ref lookup path
 - same-map live spawn-backed operator/runtime position updates now reuse retained-viewer `MOVE` instead of delete/readd; presentation/name/race refreshes stay on delete/readd (see `spawn-leash-bootstrap.md`)
-- the next honest RED after the operator position MOVE seam is daemon-restart persistence of still-dead spawn-group HP / absolute respawn deadlines so a process restart cannot resurrect a mid-dead practice mob early
+- daemon-restart still-dead spawn-group timer persistence is now owned: the static-actor snapshot carries optional spawn-backed `combat_current_hp=0` plus absolute `respawn_ready_at`, death persists those fields, process restart rematerializes the same authored `spawn_group_ref` as still-dead / non-targetable through the remaining deadline with trailing `GC DEAD` on add-style visibility, due timers still preflight into ordinary live rebuild, and successful respawn clears the still-dead persistence fields; engagement / proximity-suppress / selected-target / chase / return ownership stay fail-closed across restart
 
 ## First owned daemon-restart still-dead spawn-group timer persistence seam
 
@@ -443,9 +443,10 @@ Contract for the first daemon-restart still-dead timer persistence seam:
 - live damaged HP above the death floor, mid-chase / mid-return displacement that is not already persisted as current static-actor position, and non-spawn `training_dummy` daemon-restart durability remain out of scope for this first freeze
 
 Current implementation status:
-- this seam is frozen here as the next honest RED after same-map live operator/runtime position MOVE
-- still-dead EnterGame trailing `DEAD`, still-dead content-bundle replacement anti-resurrect, and same-map operator position MOVE are already live
-- a clean process restart that rematerializes a mid-dead spawn-group actor still reconstructs it as a fresh live full-HP combatant today
+- this seam is now live for content-loaded spawn groups through the static-actor snapshot fields `combat_current_hp` and `respawn_ready_at`
+- still-dead EnterGame trailing `DEAD`, still-dead content-bundle replacement anti-resurrect, and same-map operator position MOVE remain owned
+- a clean process restart that rematerializes a mid-dead spawn-group actor now restores `HP=0` plus the absolute respawn deadline instead of reconstructing a fresh live full-HP combatant
+- malformed still-dead persistence (non-zero HP, missing absolute deadline, or still-dead fields on non-spawn actors) fails closed at static-actor snapshot validation
 
 Explicit non-goals for this daemon-restart still-dead freeze alone:
 - persisting live damaged HP above the death floor across process restart
@@ -460,7 +461,7 @@ Explicit non-goals for this anti-leak freeze alone:
 - inventing a second spawn scheduler beyond the existing pending-frame flush path
 - remapping live damaged HP, engagement, or chase/return schedules across non-identical content-bundle replacement
 - converting generic operator actor presentation updates or respawn rebuild to MOVE
-- the daemon-restart still-dead timer persistence seam above (frozen separately as the next RED)
+- broader live damaged-HP daemon-restart durability beyond the still-dead timer persistence seam above
 
 ## Explicit non-goals
 

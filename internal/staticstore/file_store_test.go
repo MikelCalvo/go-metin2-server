@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
@@ -205,6 +206,75 @@ func TestFileStoreRoundTripsSpawnGroupAuthoredHome(t *testing.T) {
 	}
 	if !reflect.DeepEqual(loaded, input) {
 		t.Fatalf("expected authored spawn home to round-trip:\n got: %#v\nwant: %#v", loaded, input)
+	}
+}
+
+func TestFileStoreRoundTripsStillDeadSpawnGroupCombatState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
+	store := NewFileStore(path)
+	currentHP := uint8(0)
+	readyAt := time.Unix(1700000400, 0).UTC()
+	input := Snapshot{StaticActors: []StaticActor{{
+		EntityID:        33,
+		Name:            "StillDeadPersistMob",
+		MapIndex:        42,
+		X:               1200,
+		Y:               2200,
+		RaceNum:         101,
+		CombatProfile:   worldruntime.StaticActorCombatProfileTrainingDummy,
+		SpawnGroupRef:   "practice.still_dead_persist",
+		SpawnHome:       &worldruntime.PositionSnapshot{MapIndex: 42, X: 1200, Y: 2200},
+		CombatCurrentHP: &currentHP,
+		RespawnReadyAt:  &readyAt,
+	}}}
+
+	if err := store.Save(input); err != nil {
+		t.Fatalf("save still-dead spawn-group snapshot: %v", err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("load still-dead spawn-group snapshot: %v", err)
+	}
+	if !reflect.DeepEqual(loaded, input) {
+		t.Fatalf("expected still-dead combat state to round-trip:\n got: %#v\nwant: %#v", loaded, input)
+	}
+}
+
+func TestFileStoreRejectsMalformedStillDeadSpawnGroupCombatState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
+	store := NewFileStore(path)
+	currentHP := uint8(5)
+	readyAt := time.Unix(1700000400, 0).UTC()
+	err := store.Save(Snapshot{StaticActors: []StaticActor{{
+		EntityID:        34,
+		Name:            "MalformedStillDeadMob",
+		MapIndex:        42,
+		X:               1200,
+		Y:               2200,
+		RaceNum:         101,
+		CombatProfile:   worldruntime.StaticActorCombatProfileTrainingDummy,
+		SpawnGroupRef:   "practice.malformed_still_dead",
+		CombatCurrentHP: &currentHP,
+		RespawnReadyAt:  &readyAt,
+	}}})
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for damaged HP still-dead state, got %v", err)
+	}
+
+	zeroHP := uint8(0)
+	err = store.Save(Snapshot{StaticActors: []StaticActor{{
+		EntityID:        7,
+		Name:            "TrainingDummy",
+		MapIndex:        42,
+		X:               1800,
+		Y:               2900,
+		RaceNum:         20350,
+		CombatProfile:   worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatCurrentHP: &zeroHP,
+		RespawnReadyAt:  &readyAt,
+	}}})
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for non-spawn still-dead state, got %v", err)
 	}
 }
 

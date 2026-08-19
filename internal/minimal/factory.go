@@ -1484,6 +1484,9 @@ func (r *gameRuntime) flushReadyStaticActorRespawns() {
 		}
 		r.syncSpawnGroupReturnStepScheduleForEntity(respawn.EntityID)
 		r.clearSpawnGroupChaseStep(respawn.EntityID)
+		// Persist again after the live rebuild so still-dead HP / absolute deadline
+		// fields are cleared from the static-actor snapshot before the next restart.
+		_ = r.persistStaticActorSnapshot(r.sharedWorld.StaticActors())
 	}
 }
 
@@ -8672,6 +8675,11 @@ func (r *gameRuntime) loadPersistedStaticActors() error {
 		if !ok {
 			return fmt.Errorf("%w: apply static actor snapshot", staticstore.ErrInvalidSnapshot)
 		}
+		if actor.SpawnGroupRef != "" && actor.CombatCurrentHP != nil && actor.RespawnReadyAt != nil && *actor.CombatCurrentHP == 0 && !actor.RespawnReadyAt.IsZero() {
+			if !r.sharedWorld.restoreStillDeadSpawnGroupCombatState(registered.EntityID, actor.RespawnReadyAt.UTC()) {
+				return fmt.Errorf("%w: restore still-dead spawn-group combat state", staticstore.ErrInvalidSnapshot)
+			}
+		}
 		r.syncSpawnGroupReturnStepSchedule(registered)
 	}
 	loaded = true
@@ -9120,6 +9128,9 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 	r.pruneSpawnGroupChaseStepSchedules()
 	if r.sharedWorld != nil {
 		r.sharedWorld.flushStaticActorImportFanout()
+	}
+	if !r.persistStaticActorSnapshot(r.StaticActors()) {
+		return contentbundle.Bundle{}, ErrContentBundleUnavailable
 	}
 	return normalized, nil
 }
@@ -9599,6 +9610,9 @@ func (r *gameRuntime) resolveSelectedStaticActorNormalAttack(subjectID uint64, a
 			worldproto.EncodeDead(worldproto.DeadPacket{VID: activeTargetVID}),
 			combatproto.EncodeServerClearTarget(),
 		}
+		if attempt.Actor.SpawnGroupRef != "" {
+			_ = r.persistStillDeadSpawnGroupCombatState(attempt.Actor.EntityID)
+		}
 		return resolution
 	}
 	packet := combatproto.ServerTargetPacket{TargetVID: activeTargetVID, HPPercent: attempt.HPPercent}
@@ -9842,10 +9856,27 @@ func (r *gameRuntime) persistStaticActorSnapshot(snapshot []StaticActorSnapshot)
 	if r == nil || r.staticStore == nil {
 		return true
 	}
-	return r.staticStore.Save(buildStaticActorStoreSnapshot(snapshot)) == nil
+	var stillDead map[uint64]stillDeadSpawnGroupPersistenceState
+	if r.sharedWorld != nil {
+		stillDead = r.sharedWorld.stillDeadSpawnGroupPersistenceState()
+	}
+	return r.staticStore.Save(buildStaticActorStoreSnapshotWithStillDeadState(snapshot, stillDead)) == nil
+}
+
+func (r *gameRuntime) persistStillDeadSpawnGroupCombatState(entityID uint64) bool {
+	if r == nil || r.sharedWorld == nil || entityID == 0 || r.staticStore == nil {
+		return true
+	}
+	r.staticActorMu.Lock()
+	defer r.staticActorMu.Unlock()
+	return r.persistStaticActorSnapshot(r.sharedWorld.StaticActors())
 }
 
 func buildStaticActorStoreSnapshot(snapshot []StaticActorSnapshot) staticstore.Snapshot {
+	return buildStaticActorStoreSnapshotWithStillDeadState(snapshot, nil)
+}
+
+func buildStaticActorStoreSnapshotWithStillDeadState(snapshot []StaticActorSnapshot, stillDead map[uint64]stillDeadSpawnGroupPersistenceState) staticstore.Snapshot {
 	actors := make([]staticstore.StaticActor, 0, len(snapshot))
 	for _, actor := range snapshot {
 		actors = append(actors, staticstore.StaticActor{
@@ -9871,6 +9902,12 @@ func buildStaticActorStoreSnapshot(snapshot []StaticActorSnapshot) staticstore.S
 		if actor.SpawnHome != nil && actor.SpawnGroupRef != "" {
 			spawnHome := *actor.SpawnHome
 			actors[len(actors)-1].SpawnHome = &spawnHome
+		}
+		if state, ok := stillDead[actor.EntityID]; ok && actor.SpawnGroupRef != "" && state.HP == 0 && !state.RespawnAt.IsZero() {
+			currentHP := uint8(0)
+			readyAt := state.RespawnAt.UTC()
+			actors[len(actors)-1].CombatCurrentHP = &currentHP
+			actors[len(actors)-1].RespawnReadyAt = &readyAt
 		}
 	}
 	return staticstore.Snapshot{StaticActors: actors, CombatProfiles: staticActorStoreCombatProfiles(snapshot)}

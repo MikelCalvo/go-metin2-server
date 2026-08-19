@@ -1327,23 +1327,80 @@ func (r *sharedWorldRegistry) remapStillDeadSpawnGroupCombatStateLocked(previous
 		if !ok {
 			continue
 		}
-		if r.staticActorCombatHP == nil {
-			r.staticActorCombatHP = make(map[uint64]uint8)
-		}
-		if r.staticActorCombatRespawnAt == nil {
-			r.staticActorCombatRespawnAt = make(map[uint64]time.Time)
-		}
-		r.staticActorCombatHP[actor.Entity.ID] = 0
-		r.staticActorCombatRespawnAt[actor.Entity.ID] = respawnAt
-		r.assignStaticActorCombatSnapshotLocked(actor.Entity.ID)
-		if engagedBy := r.staticActorCombatEngagedBy[actor.Entity.ID]; engagedBy != 0 {
-			delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
-			r.clearProximityAggroSuppressForActorLocked(actor.Entity.ID)
-		}
-		if r.staticActorProximityAggroSuppress != nil {
-			delete(r.staticActorProximityAggroSuppress, actor.Entity.ID)
-		}
+		r.restoreStillDeadSpawnGroupCombatStateLocked(actor.Entity.ID, respawnAt)
 	}
+}
+
+func (r *sharedWorldRegistry) restoreStillDeadSpawnGroupCombatState(entityID uint64, respawnAt time.Time) bool {
+	if r == nil || entityID == 0 || respawnAt.IsZero() {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.restoreStillDeadSpawnGroupCombatStateLocked(entityID, respawnAt)
+}
+
+func (r *sharedWorldRegistry) restoreStillDeadSpawnGroupCombatStateLocked(entityID uint64, respawnAt time.Time) bool {
+	if r == nil || entityID == 0 || respawnAt.IsZero() {
+		return false
+	}
+	actor, ok := r.entities.StaticActor(entityID)
+	if !ok || strings.TrimSpace(actor.SpawnGroupRef) == "" {
+		return false
+	}
+	if r.staticActorCombatHP == nil {
+		r.staticActorCombatHP = make(map[uint64]uint8)
+	}
+	if r.staticActorCombatRespawnAt == nil {
+		r.staticActorCombatRespawnAt = make(map[uint64]time.Time)
+	}
+	r.staticActorCombatHP[entityID] = 0
+	r.staticActorCombatRespawnAt[entityID] = respawnAt
+	r.assignStaticActorCombatSnapshotLocked(entityID)
+	if engagedBy := r.staticActorCombatEngagedBy[entityID]; engagedBy != 0 {
+		delete(r.staticActorCombatEngagedBy, entityID)
+		r.clearProximityAggroSuppressForActorLocked(entityID)
+	}
+	if r.staticActorProximityAggroSuppress != nil {
+		delete(r.staticActorProximityAggroSuppress, entityID)
+	}
+	return true
+}
+
+type stillDeadSpawnGroupPersistenceState struct {
+	HP        uint8
+	RespawnAt time.Time
+}
+
+func (r *sharedWorldRegistry) stillDeadSpawnGroupPersistenceState() map[uint64]stillDeadSpawnGroupPersistenceState {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.stillDeadSpawnGroupPersistenceStateLocked()
+}
+
+func (r *sharedWorldRegistry) stillDeadSpawnGroupPersistenceStateLocked() map[uint64]stillDeadSpawnGroupPersistenceState {
+	if r == nil || r.entities == nil || len(r.staticActorCombatHP) == 0 || len(r.staticActorCombatRespawnAt) == 0 {
+		return nil
+	}
+	out := make(map[uint64]stillDeadSpawnGroupPersistenceState)
+	for _, actor := range r.entities.AllStaticActors() {
+		if strings.TrimSpace(actor.SpawnGroupRef) == "" || actor.Entity.ID == 0 {
+			continue
+		}
+		currentHP, hpOK := r.staticActorCombatHP[actor.Entity.ID]
+		respawnAt, respawnOK := r.staticActorCombatRespawnAt[actor.Entity.ID]
+		if !hpOK || currentHP != 0 || !respawnOK || respawnAt.IsZero() {
+			continue
+		}
+		out[actor.Entity.ID] = stillDeadSpawnGroupPersistenceState{HP: 0, RespawnAt: respawnAt}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func cloneUint64Uint8Map(in map[uint64]uint8) map[uint64]uint8 {

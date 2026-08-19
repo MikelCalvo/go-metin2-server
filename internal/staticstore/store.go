@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
@@ -29,6 +30,8 @@ type StaticActor struct {
 	InteractionKind  string                         `json:"interaction_kind,omitempty"`
 	InteractionRef   string                         `json:"interaction_ref,omitempty"`
 	SpawnGroupRef    string                         `json:"spawn_group_ref,omitempty"`
+	CombatCurrentHP  *uint8                         `json:"combat_current_hp,omitempty"`
+	RespawnReadyAt   *time.Time                     `json:"respawn_ready_at,omitempty"`
 	RewardExperience uint64                         `json:"reward_experience,omitempty"`
 	RewardGold       uint64                         `json:"reward_gold,omitempty"`
 	RewardDropVnums  []uint32                       `json:"reward_drop_vnums,omitempty"`
@@ -110,10 +113,16 @@ func validateSnapshot(snapshot Snapshot) error {
 			if actor.SpawnHome != nil && actor.SpawnHome.MapIndex == 0 {
 				return ErrInvalidSnapshot
 			}
+			if !validStillDeadCombatState(actor) {
+				return ErrInvalidSnapshot
+			}
 			if _, ok := spawnGroupRefs[actor.SpawnGroupRef]; ok {
 				return ErrInvalidSnapshot
 			}
 			spawnGroupRefs[actor.SpawnGroupRef] = struct{}{}
+		}
+		if actor.SpawnGroupRef == "" && !stillDeadCombatStateEmpty(actor) {
+			return ErrInvalidSnapshot
 		}
 		if _, ok := seen[actor.EntityID]; ok {
 			return ErrInvalidSnapshot
@@ -278,6 +287,23 @@ func hasRewardDescriptor(actor StaticActor) bool {
 	return actor.RewardExperience != 0 || actor.RewardGold != 0 || len(actor.RewardDropVnums) != 0 || hasKillQuestCredit(actor)
 }
 
+func stillDeadCombatStateEmpty(actor StaticActor) bool {
+	return actor.CombatCurrentHP == nil && (actor.RespawnReadyAt == nil || actor.RespawnReadyAt.IsZero())
+}
+
+func validStillDeadCombatState(actor StaticActor) bool {
+	if stillDeadCombatStateEmpty(actor) {
+		return true
+	}
+	if actor.SpawnGroupRef == "" || actor.CombatCurrentHP == nil || actor.RespawnReadyAt == nil {
+		return false
+	}
+	if *actor.CombatCurrentHP != 0 || actor.RespawnReadyAt.IsZero() {
+		return false
+	}
+	return true
+}
+
 func validRewardDescriptor(actor StaticActor) bool {
 	return worldruntime.ValidStaticActorDeathReward(worldruntime.StaticActorDeathReward{Experience: actor.RewardExperience, Gold: actor.RewardGold, DropVnums: actor.RewardDropVnums})
 }
@@ -315,6 +341,22 @@ func normalizeStaticActor(actor StaticActor) StaticActor {
 	actor.RewardQuestRef = strings.TrimSpace(actor.RewardQuestRef)
 	actor.RewardQuestFlag = strings.TrimSpace(actor.RewardQuestFlag)
 	actor.RewardQuestText = strings.TrimSpace(actor.RewardQuestText)
+	if actor.CombatCurrentHP != nil {
+		currentHP := *actor.CombatCurrentHP
+		actor.CombatCurrentHP = &currentHP
+	}
+	if actor.RespawnReadyAt != nil {
+		readyAt := actor.RespawnReadyAt.UTC()
+		if readyAt.IsZero() {
+			actor.RespawnReadyAt = nil
+		} else {
+			actor.RespawnReadyAt = &readyAt
+		}
+	}
+	if stillDeadCombatStateEmpty(actor) {
+		actor.CombatCurrentHP = nil
+		actor.RespawnReadyAt = nil
+	}
 	return actor
 }
 
@@ -389,6 +431,14 @@ func cloneStaticActors(actors []StaticActor) []StaticActor {
 		if actor.SpawnHome != nil {
 			spawnHome := *actor.SpawnHome
 			actor.SpawnHome = &spawnHome
+		}
+		if actor.CombatCurrentHP != nil {
+			currentHP := *actor.CombatCurrentHP
+			actor.CombatCurrentHP = &currentHP
+		}
+		if actor.RespawnReadyAt != nil {
+			readyAt := *actor.RespawnReadyAt
+			actor.RespawnReadyAt = &readyAt
 		}
 		cloned[i] = actor
 	}
