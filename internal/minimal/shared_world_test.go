@@ -1844,26 +1844,26 @@ func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupChaseStep(t *testing.T)
 
 	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay - bootstrapPracticeMobServerOriginRetaliationDelay)
 	queued := flushServerFrames(t, flow)
-	if len(queued) < 4 {
-		t.Fatalf("expected due automatic chase-step to queue retained owner refresh, got %d frames", len(queued))
+	if len(queued) == 0 {
+		t.Fatal("expected due automatic chase-step to queue retained owner MOVE replication")
 	}
-	if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0])); err != nil || deleted.VID != targetVID {
-		t.Fatalf("decode automatic chase-step retained delete: packet=%+v err=%v", deleted, err)
-	}
-	add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, queued[0]))
 	if err != nil {
-		t.Fatalf("decode automatic chase-step add: %v", err)
+		t.Fatalf("expected retained chase-step viewer to receive MOVE replication instead of delete/readd, first frame decode err=%v", err)
 	}
-	if add.VID != targetVID || add.X != 1800 || add.Y != 2800 {
-		t.Fatalf("expected automatic chase-step add at planned +100 toward owner, got %+v", add)
+	if moveAck.VID != targetVID || moveAck.X != 1800 || moveAck.Y != 2800 {
+		t.Fatalf("expected automatic chase-step MOVE replication at planned +100 toward owner, got %+v", moveAck)
 	}
-	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, queued[2])); err != nil {
-		t.Fatalf("decode automatic chase-step additional info: %v", err)
+	if moveAck.Duration == 0 {
+		t.Fatalf("expected automatic chase-step MOVE replication to carry a non-zero bootstrap duration, got %+v", moveAck)
 	}
-	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, queued[3])); err != nil {
-		t.Fatalf("decode automatic chase-step update: %v", err)
-	}
-	for _, raw := range queued[4:] {
+	for _, raw := range queued[1:] {
+		if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, raw)); err == nil && deleted.VID == targetVID {
+			t.Fatalf("expected automatic chase-step MOVE fanout not to emit retained-viewer CHARACTER_DEL, got %+v among %d queued frames", deleted, len(queued))
+		}
+		if add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, raw)); err == nil && add.VID == targetVID {
+			t.Fatalf("expected automatic chase-step MOVE fanout not to emit retained-viewer CHARACTER_ADD, got %+v among %d queued frames", add, len(queued))
+		}
 		if target, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, raw)); err == nil && target.TargetVID == 0 {
 			t.Fatalf("expected chase-step to preserve selected combat target, got clear frame %+v among %d queued frames", target, len(queued))
 		}
@@ -1905,15 +1905,15 @@ func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupChaseStep(t *testing.T)
 
 	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay - bootstrapPracticeMobServerOriginRetaliationDelay)
 	secondQueued := flushServerFrames(t, flow)
-	if len(secondQueued) < 4 {
-		t.Fatalf("expected still-engaged chase actor to apply one follow-up chase step, got %d frames", len(secondQueued))
+	if len(secondQueued) == 0 {
+		t.Fatal("expected still-engaged chase actor to apply one follow-up chase MOVE step")
 	}
-	secondAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, secondQueued[1]))
+	secondMove, err := movep.DecodeMoveAck(decodeSingleFrame(t, secondQueued[0]))
 	if err != nil {
-		t.Fatalf("decode second automatic chase-step add: %v", err)
+		t.Fatalf("decode second automatic chase-step MOVE: %v", err)
 	}
-	if secondAdd.VID != targetVID || secondAdd.X != 1900 || secondAdd.Y != 2800 {
-		t.Fatalf("expected second automatic chase-step add at owner position, got %+v", secondAdd)
+	if secondMove.VID != targetVID || secondMove.X != 1900 || secondMove.Y != 2800 {
+		t.Fatalf("expected second automatic chase-step MOVE at owner position, got %+v", secondMove)
 	}
 	persisted, err = staticActorStore.Load()
 	if err != nil {
@@ -2242,26 +2242,26 @@ func TestGameRuntimeFlushServerFramesAppliesDueProximitySpawnGroupChaseStepWitho
 
 	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay)
 	queued := flushServerFrames(t, flow)
-	if len(queued) < 4 {
-		t.Fatalf("expected due proximity-armed chase-step to queue retained owner refresh, got %d frames", len(queued))
+	if len(queued) == 0 {
+		t.Fatal("expected due proximity-armed chase-step to queue retained owner MOVE replication")
 	}
-	if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0])); err != nil || deleted.VID != targetVID {
-		t.Fatalf("decode proximity-armed chase-step retained delete: packet=%+v err=%v", deleted, err)
-	}
-	add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, queued[0]))
 	if err != nil {
-		t.Fatalf("decode proximity-armed chase-step add: %v", err)
+		t.Fatalf("expected retained proximity-armed chase-step viewer to receive MOVE replication instead of delete/readd, first frame decode err=%v", err)
 	}
-	if add.VID != targetVID || add.X != 1800 || add.Y != 2800 {
-		t.Fatalf("expected proximity-armed chase-step add at planned +100 toward owner, got %+v", add)
+	if moveAck.VID != targetVID || moveAck.X != 1800 || moveAck.Y != 2800 {
+		t.Fatalf("expected proximity-armed chase-step MOVE replication at planned +100 toward owner, got %+v", moveAck)
 	}
-	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, queued[2])); err != nil {
-		t.Fatalf("decode proximity-armed chase-step additional info: %v", err)
+	if moveAck.Duration == 0 {
+		t.Fatalf("expected proximity-armed chase-step MOVE replication to carry a non-zero bootstrap duration, got %+v", moveAck)
 	}
-	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, queued[3])); err != nil {
-		t.Fatalf("decode proximity-armed chase-step update: %v", err)
-	}
-	for _, raw := range queued[4:] {
+	for _, raw := range queued[1:] {
+		if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, raw)); err == nil && deleted.VID == targetVID {
+			t.Fatalf("expected proximity-armed chase-step MOVE fanout not to emit retained-viewer CHARACTER_DEL, got %+v among %d queued frames", deleted, len(queued))
+		}
+		if add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, raw)); err == nil && add.VID == targetVID {
+			t.Fatalf("expected proximity-armed chase-step MOVE fanout not to emit retained-viewer CHARACTER_ADD, got %+v among %d queued frames", add, len(queued))
+		}
 		if target, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, raw)); err == nil && target.TargetVID == 0 {
 			t.Fatalf("expected proximity-armed chase-step not to invent a selected-target clear, got clear frame %+v among %d queued frames", target, len(queued))
 		}

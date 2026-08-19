@@ -123,7 +123,7 @@ This slice does **not** yet implement:
 - aggro radius acquisition or target switching
 - persistence of live mob position distinct from authored spawn position
 
-Until a later slice lands chase/return packet choreography beyond the current delete/readd visibility path, the existing content-loaded practice mobs use the already-owned target -> attack -> death -> respawn lifecycle while they classify `at_home` or `within_radius`, plus the current capped return-step recovery path and the first pending-frame chase-step executor for already-engaged owners. A materialized spawn-backed actor that already classifies `return_required` is kept visible/debuggable but is not accepted as a combat target again until an owned respawn, operator return-home, operator return-step, update, or server-owned return-step executor places it back inside leash; runtime attempt callers can now distinguish this specific gate as `target_return_required`. The exact and map-local `GET` leash endpoints are only read-only inspection bridges over that classifier, while the `POST` return-step and return-home endpoints are controlled local triggers for QA and lifecycle recovery, not final mob AI. The exact return-home trigger can also be used on a live `within_radius` mob to restore exact authored placement and reset selected-target/engagement ownership without changing HP or reward metadata; the one-step trigger leaves already-`within_radius` mobs untouched and selected, and the server-owned return-step executor stops re-arming as soon as a step brings the actor back inside that radius.
+The existing content-loaded practice mobs use the already-owned target -> attack -> death -> respawn lifecycle while they classify `at_home` or `within_radius`, plus the current capped return-step recovery path and the first pending-frame chase-step executor for already-engaged owners. Successful same-map chase steps now replicate retained-viewer movement with server `MOVE`, while return-step / return-home / respawn / operator updates still use delete/readd visibility. A materialized spawn-backed actor that already classifies `return_required` is kept visible/debuggable but is not accepted as a combat target again until an owned respawn, operator return-home, operator return-step, update, or server-owned return-step executor places it back inside leash; runtime attempt callers can now distinguish this specific gate as `target_return_required`. The exact and map-local `GET` leash endpoints are only read-only inspection bridges over that classifier, while the `POST` return-step and return-home endpoints are controlled local triggers for QA and lifecycle recovery, not final mob AI. The exact return-home trigger can also be used on a live `within_radius` mob to restore exact authored placement and reset selected-target/engagement ownership without changing HP or reward metadata; the one-step trigger leaves already-`within_radius` mobs untouched and selected, and the server-owned return-step executor stops re-arming as soon as a step brings the actor back inside that radius.
 
 ## First owned chase-step planning seam
 
@@ -167,7 +167,7 @@ Arming rules:
 
 Execution rules:
 - each `FlushServerFrames()` pass keeps the existing order of due respawns, then due return steps, then applies any due chase steps, then session-local delayed retaliation
-- a due chase step resolves the current engaged owner's live position, plans with fixed bootstrap `max_step = 100` and the default leash radius, persists the stepped materialized position before mutating runtime, and rebuilds visibility through the same static-actor delete/readd transition helpers used by return-step
+- a due chase step resolves the current engaged owner's live position, plans with fixed bootstrap `max_step = 100` and the default leash radius, persists the stepped materialized position before mutating runtime, and fans visibility with retained-viewer `MOVE` replication while remove/add membership still uses the ordinary static-actor delete/bootstrap helpers
 - unlike return-step recovery, a successful chase step preserves current practice-mob engagement and does not clear selected combat targets solely because the actor moved; stale delayed retaliation remains governed by the already-owned engagement/reset seams
 - if planning fails closed (lost owner, cross-map owner, return-required, dead, invalid actor), clear the pending chase deadline without mutating position
 - if the planned step is a complete no-move because the actor already occupies the owner position, clear the pending chase deadline without persisting or queueing visibility frames
@@ -213,8 +213,8 @@ Row rules:
 Current implementation status:
 - the pending-frame chase executor is now live in `internal/minimal`
 - accepted non-lethal content practice-mob hits arm the `5s` chase deadline
-- proximity aggro-radius acquisition that newly establishes engagement also arms that same `5s` chase deadline without inventing selected-target ownership; when the deadline becomes due, the executor applies the ordinary delete/readd chase step while still preserving engagement and still inventing no selected combat target
-- due chase steps persist position, queue the ordinary delete/readd visibility refresh, preserve engagement / selected-target ownership, and re-arm while the actor remains eligible
+- proximity aggro-radius acquisition that newly establishes engagement also arms that same `5s` chase deadline without inventing selected-target ownership; when the deadline becomes due, the executor applies the owned chase MOVE choreography for retained viewers while still preserving engagement and still inventing no selected combat target
+- due chase steps persist position, queue retained-viewer `MOVE` replication (with remove/add visibility still using delete/bootstrap), preserve engagement / selected-target ownership, and re-arm while the actor remains eligible
 - return-step, respawn, remove, return-home, and content-bundle prune/restore paths clear or restore chase deadlines alongside the return-step schedule
 - the read-only pending chase inspection endpoints above are now live over that already-owned schedule
 
@@ -242,8 +242,9 @@ Contract for the first chase MOVE choreography:
 - no chase-specific duration/interpolation policy is owned beyond reusing the existing `MOVE` payload fields with a deterministic bootstrap duration suitable for the fixed `max_step = 100` step
 
 Current implementation status:
-- this chase MOVE choreography is frozen here as the next honest packet seam
-- the pending-frame chase executor still currently emits delete/readd for retained viewers until the runtime consumer lands
+- this chase MOVE choreography is now live for retained viewers of a successful pending-frame chase step
+- remove/add visibility membership across the same step still uses the ordinary `CHARACTER_DEL` / add-info-update bootstrap path
+- return-step recovery, return-home, respawn rebuild, operator actor updates, and content-bundle replacement remain on delete/readd
 
 Explicit non-goals for this chase MOVE freeze alone:
 - return-step / return-home MOVE fanout

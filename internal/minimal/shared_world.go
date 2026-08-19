@@ -16,10 +16,16 @@ import (
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
+	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
+)
+
+const (
+	bootstrapSpawnGroupChaseMoveFunc     uint8  = 1
+	bootstrapSpawnGroupChaseMoveDuration uint32 = 250
 )
 
 type queuedSessionFlow struct {
@@ -3893,14 +3899,15 @@ func (r *sharedWorldRegistry) StepSpawnGroupChase(entityID uint64, owner worldru
 	}
 	// Preserve live combat snapshot ownership across chase movement so selected
 	// attacks and delayed retaliation timers stay valid for the same engagement.
+	// Retained viewers reuse server MOVE replication instead of delete/readd;
+	// remove/add visibility membership still uses the ordinary delete/bootstrap path.
 
-	refreshFrames := r.buildStaticActorRefreshFramesLocked(actor, updated)
-	if len(refreshFrames) > 0 {
+	if moveRaw, moveEncodable := encodeStaticActorChaseMoveFrame(updated); moveEncodable {
 		for _, target := range targetDiff.RetainedVisibleTargets {
 			if characterAtBootstrapHPFloor(target.Character) {
 				continue
 			}
-			r.enqueueToEntityLocked(target.Entity.ID, refreshFrames)
+			r.enqueueToEntityLocked(target.Entity.ID, [][]byte{moveRaw})
 		}
 	}
 	deleteRaw, deleteEncodable := encodeStaticActorDeleteFrame(actor)
@@ -5020,6 +5027,23 @@ func encodeStaticActorDeleteFrame(actor worldruntime.StaticEntity) ([]byte, bool
 		return nil, false
 	}
 	return worldproto.EncodeCharacterDeleteNotice(worldproto.CharacterDeleteNoticePacket{VID: vid}), true
+}
+
+func encodeStaticActorChaseMoveFrame(actor worldruntime.StaticEntity) ([]byte, bool) {
+	vid, ok := staticActorVisibilityVID(actor)
+	if !ok {
+		return nil, false
+	}
+	return movep.EncodeMoveAck(movep.MoveAckPacket{
+		Func:     bootstrapSpawnGroupChaseMoveFunc,
+		Arg:      0,
+		Rot:      0,
+		VID:      vid,
+		X:        actor.Position.X,
+		Y:        actor.Position.Y,
+		Time:     0,
+		Duration: bootstrapSpawnGroupChaseMoveDuration,
+	}), true
 }
 
 func staticActorVisibilityVID(actor worldruntime.StaticEntity) (uint32, bool) {
