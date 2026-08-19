@@ -8641,6 +8641,120 @@ func TestNewPprofMuxDoesNotExposeLocalCharacterQuestStateQuarantineByDefault(t *
 	}
 }
 
+func TestLocalAccountCharacterRosterQuarantineEndpointReturnsCanonicalJSON(t *testing.T) {
+	body, err := json.Marshal(accountstore.AccountCharacterRosterExport{
+		MigrationVersion: accountstore.AccountCharacterRosterMigrationVersion,
+		MigrationName:    accountstore.AccountCharacterRosterMigrationName,
+		Accounts: []accountstore.AccountCharacterRosterAccountRow{
+			{ID: 200, Login: "Bravo", LoginNormalized: "bravo", Empire: 2},
+			{ID: 100, Login: "Alpha", LoginNormalized: "alpha", Empire: 1},
+		},
+		Characters: []accountstore.AccountCharacterRosterCharacterRow{
+			{ID: 22, AccountID: 200, Slot: 1, Name: "BravoNinja", NameNormalized: "bravoninja", Level: 7, MapIndex: 42, Gold: 500},
+			{ID: 12, AccountID: 100, Slot: 3, Name: "AlphaSura", NameNormalized: "alphasura", Level: 4, MapIndex: 1},
+			{ID: 11, AccountID: 100, Slot: 0, Name: "AlphaWar", NameNormalized: "alphawar", Level: 5, MapIndex: 1, Gold: 1234},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal quarantine body: %v", err)
+	}
+
+	mux := RegisterLocalAccountCharacterRosterQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/exports/account-character-roster/quarantine", bytes.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	responseBody := rec.Body.String()
+	for _, want := range []string{
+		`"account_count":2`,
+		`"character_count":3`,
+		`"account_ids":[100,200]`,
+		`"character_ids":[11,12,22]`,
+		`"migration_version":2`,
+		`"login":"Alpha"`,
+		`"login":"Bravo"`,
+		`"name":"AlphaWar"`,
+		`"name":"BravoNinja"`,
+	} {
+		if !strings.Contains(responseBody, want) {
+			t.Fatalf("expected quarantine response to contain %s, got %s", want, responseBody)
+		}
+	}
+	if strings.Contains(responseBody, "CREATE TABLE") || strings.Contains(responseBody, "postgres://") {
+		t.Fatalf("quarantine endpoint must not expose SQL or DSNs, got %s", responseBody)
+	}
+}
+
+func TestLocalAccountCharacterRosterQuarantineEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	mux := RegisterLocalAccountCharacterRosterQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/exports/account-character-roster/quarantine", strings.NewReader(`{"migration_version":2,"migration_name":"account_character_roster","accounts":[],"characters":[]}`))
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+}
+
+func TestLocalAccountCharacterRosterQuarantineEndpointRejectsWrongMethod(t *testing.T) {
+	mux := RegisterLocalAccountCharacterRosterQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodGet, "/local/account-store/exports/account-character-roster/quarantine", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+}
+
+func TestLocalAccountCharacterRosterQuarantineEndpointRejectsInvalidExport(t *testing.T) {
+	mux := RegisterLocalAccountCharacterRosterQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/exports/account-character-roster/quarantine", strings.NewReader(`{"migration_version":3,"migration_name":"account_character_roster","accounts":[],"characters":[]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+}
+
+func TestLocalAccountCharacterRosterQuarantineEndpointRejectsMalformedJSON(t *testing.T) {
+	mux := RegisterLocalAccountCharacterRosterQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/exports/account-character-roster/quarantine", strings.NewReader(`{"migration_version":2`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestNewPprofMuxDoesNotExposeLocalAccountCharacterRosterQuarantineByDefault(t *testing.T) {
+	mux := NewPprofMux("authd")
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/exports/account-character-roster/quarantine", strings.NewReader(`{"migration_version":2,"migration_name":"account_character_roster","accounts":[],"characters":[]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
 func TestLocalAuthLoginTicketHandoffExportEndpointReturnsLoopbackJSON(t *testing.T) {
 	issuedAt := time.Date(2026, 8, 12, 9, 30, 0, 0, time.UTC)
 	exporter := &stubAuthLoginTicketHandoffExporter{export: loginticket.AuthLoginTicketHandoffExport{

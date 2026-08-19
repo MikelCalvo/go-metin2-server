@@ -495,6 +495,20 @@ Returns a loopback-only, read-only JSON projection of the committed bootstrap ac
 
 Successful responses include `migration_version`, `migration_name`, deterministic `accounts`, and deterministic `characters`. Account rows expose stable project-owned ids, original login, normalized login, and empire. Character rows expose only non-empty select-screen slots and the account/slot/name/appearance/stat/location/guild/gold fields frozen by the roster migration. The response deliberately omits inventory, equipment, quickslots, quest state, login tickets, authored content, and runtime world state, and it does not open a database, emit SQL, apply migrations, or mutate the account store. Use it as an operator/backfill preflight before future import or repository work; it is not a DB-backed runtime path.
 
+### `POST /local/account-store/exports/account-character-roster/quarantine`
+
+Validates and canonicalizes a retained `0002_account_character_roster` export without opening a database or mutating account snapshots. This endpoint is registered only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects non-loopback callers with `403`, rejects oversized bodies over 1 MiB with `413`, rejects malformed/invalid-UTF-8/`null` JSON with `400`, and returns `409` when the payload fails the quarantine contract.
+
+Successful responses include:
+
+- `summary.account_count`
+- `summary.character_count`
+- deterministic sorted `summary.account_ids`
+- deterministic sorted `summary.character_ids`
+- a canonicalized `export` whose accounts are ordered by ascending `login_normalized` / `login` / `id`, and characters by ascending `account_id` / `slot` / `id`
+
+The quarantine contract requires `migration_version = 2`, `migration_name = "account_character_roster"`, present (possibly empty) `accounts` / `characters` arrays, positive account and character ids, unique normalized logins and character names, unique `(account_id, slot)` pairs, character `account_id` references that exist in the same export, `level >= 1`, `map_index > 0`, and gold within signed BIGINT. Use this after retaining a roster export artifact and before any future DB backfill/import tool. It is not a repository write path and never emits SQL or DSNs.
+
 ### `GET /local/account-store/exports/character-item-state`
 
 Returns a loopback-only, read-only JSON projection of committed bootstrap account snapshots onto the `0003_character_item_state` migration boundary. This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the account store cannot be listed or any committed snapshot would violate the roster or item-state schema shape.

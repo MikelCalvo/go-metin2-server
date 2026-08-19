@@ -274,6 +274,7 @@ func main() {
 		opsHandler,
 		gameRuntime.ExportAccountCharacterRoster,
 	)
+	opsHandler = ops.RegisterLocalAccountCharacterRosterQuarantineEndpoint(opsHandler)
 	opsHandler = ops.RegisterLocalCharacterItemStateExportEndpoint(
 		opsHandler,
 		gameRuntime.ExportCharacterItemState,

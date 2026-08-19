@@ -164,14 +164,15 @@ func (request localContentBundleRequest) bundle() (contentbundle.Bundle, bool) {
 }
 
 const (
-	maxLocalNoticeBodyBytes                        = 4096
-	maxLocalAccountStoreMutationBodyBytes          = 4096
-	maxLocalInteractionDefinitionBodyBytes         = 4096
-	maxLocalStaticActorCombatProfileBodyBytes      = 4096
-	maxLocalMigrationLedgerSnapshotBodyBytes       = 64 * 1024
-	maxLocalCharacterItemStateQuarantineBodyBytes  = 1 << 20
-	maxLocalCharacterPointStateQuarantineBodyBytes = 1 << 20
-	maxLocalCharacterQuestStateQuarantineBodyBytes = 1 << 20
+	maxLocalNoticeBodyBytes                           = 4096
+	maxLocalAccountStoreMutationBodyBytes             = 4096
+	maxLocalInteractionDefinitionBodyBytes            = 4096
+	maxLocalStaticActorCombatProfileBodyBytes         = 4096
+	maxLocalMigrationLedgerSnapshotBodyBytes          = 64 * 1024
+	maxLocalCharacterItemStateQuarantineBodyBytes     = 1 << 20
+	maxLocalCharacterPointStateQuarantineBodyBytes    = 1 << 20
+	maxLocalCharacterQuestStateQuarantineBodyBytes    = 1 << 20
+	maxLocalAccountCharacterRosterQuarantineBodyBytes = 1 << 20
 )
 
 func NewPprofMux(serviceName string) *http.ServeMux {
@@ -1681,6 +1682,43 @@ func RegisterLocalCharacterPointStateQuarantineEndpoint(mux *http.ServeMux) *htt
 			return
 		}
 		writeLocalJSONMutationResponse(w, accountstore.CharacterPointStateQuarantineResult{
+			Summary: summary,
+			Export:  quarantined,
+		}, http.StatusOK)
+	})
+	return mux
+}
+
+// RegisterLocalAccountCharacterRosterQuarantineEndpoint exposes a loopback-only
+// POST quarantine/preflight for retained 0002 account/character roster exports.
+// It validates and canonicalizes the payload without opening a database or
+// mutating account snapshots.
+func RegisterLocalAccountCharacterRosterQuarantineEndpoint(mux *http.ServeMux) *http.ServeMux {
+	if mux == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/account-store/exports/account-character-roster/quarantine", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		export, status, ok := decodeLocalAccountCharacterRosterExportRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		quarantined, summary, err := accountstore.QuarantineAccountCharacterRosterExport(export)
+		if err != nil {
+			slog.Warn("local account character roster quarantine failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, accountstore.AccountCharacterRosterQuarantineResult{
 			Summary: summary,
 			Export:  quarantined,
 		}, http.StatusOK)
@@ -5336,6 +5374,30 @@ func decodeLocalCharacterQuestStateExportRequest(r *http.Request) (queststate.Ch
 	var trailing struct{}
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return queststate.CharacterQuestStateExport{}, http.StatusBadRequest, false
+	}
+	return export, http.StatusOK, true
+}
+
+func decodeLocalAccountCharacterRosterExportRequest(r *http.Request) (accountstore.AccountCharacterRosterExport, int, bool) {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxLocalAccountCharacterRosterQuarantineBodyBytes+1))
+	if err != nil {
+		return accountstore.AccountCharacterRosterExport{}, http.StatusBadRequest, false
+	}
+	if len(raw) > maxLocalAccountCharacterRosterQuarantineBodyBytes {
+		return accountstore.AccountCharacterRosterExport{}, http.StatusRequestEntityTooLarge, false
+	}
+	if !utf8.Valid(raw) || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return accountstore.AccountCharacterRosterExport{}, http.StatusBadRequest, false
+	}
+	var export accountstore.AccountCharacterRosterExport
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&export); err != nil {
+		return accountstore.AccountCharacterRosterExport{}, http.StatusBadRequest, false
+	}
+	var trailing struct{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return accountstore.AccountCharacterRosterExport{}, http.StatusBadRequest, false
 	}
 	return export, http.StatusOK, true
 }
