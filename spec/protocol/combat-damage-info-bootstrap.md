@@ -52,7 +52,7 @@ Delayed server-origin retaliation beats that leave the owner above the bootstrap
 1. `GC PLAYER_POINT_CHANGE(owner_vid, HP, retaliation_delta, updated_owner_hp)`
 2. `GC DAMAGE_INFO(vid = owner_vid, flag = 0, damage = abs(retaliation_delta))`
 
-That delayed owner companion applies to both hit-armed and proximity-armed delayed beats. Peers still do not receive the owner's delayed `PLAYER_POINT_CHANGE`; they receive only the owner retaliation `DAMAGE_INFO` companion.
+That delayed owner companion applies to both hit-armed and proximity-armed delayed beats. Peers still do not receive the owner's delayed `PLAYER_POINT_CHANGE`; they receive only the owner retaliation `DAMAGE_INFO` companion. Focused shared-world coverage now freezes that proximity-armed peer path explicitly: walking into aggro radius without selecting or hitting still arms the delayed cadence, the engaged owner keeps no selected combat target, and a currently visible live peer receives only the owner `DAMAGE_INFO` companion when each non-floor delayed beat fires.
 
 Killing hits and owner-floor retaliation beats deliberately do **not** append `DAMAGE_INFO` in this slice. Mob killing hits keep the existing death-first choreography:
 1. `GC DEAD(vid)`
@@ -93,5 +93,5 @@ After this slice:
 - accepted standalone bootstrap combat-profile non-lethal normal attacks append one self plain-flag `DAMAGE_INFO` frame after the `TARGET` HP refresh, using the authoritative attack/defense-derived damage descriptor for registered formula profiles,
 - currently visible live peers receive that same standalone plain-flag `DAMAGE_INFO` through the queued server-frame path without receiving the attacker's self-only target refresh,
 - accepted spawn-backed practice-mob non-lethal normal attacks now append one owner self plain-flag mob `DAMAGE_INFO` after the existing immediate retaliation point-change when that owner remains alive, then one owner self plain-flag retaliation `DAMAGE_INFO(owner_vid, abs(delta))`, queue both the mob and owner retaliation plain-flag hit effects to currently visible live peers, and preserve that owner-side frame order over the plain legacy TCP listener,
-- non-floor delayed server-origin retaliation beats now append the same owner self plain-flag retaliation `DAMAGE_INFO` after their point-change and queue that same owner companion to currently visible live peers,
+- non-floor delayed server-origin retaliation beats now append the same owner self plain-flag retaliation `DAMAGE_INFO` after their point-change and queue that same owner companion to currently visible live peers for both hit-armed and proximity-armed delayed cadences,
 - later runtime slices can broaden flag meanings, killing-hit or floor presentation, or other hit-effect policy without re-discovering the packet layout or recomputing damage outside the authoritative attack seam.

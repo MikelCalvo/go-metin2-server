@@ -2273,6 +2273,129 @@ func TestGameRuntimeFlushServerFramesArmsDelayedRetaliationFromProximityAggroWit
 	}
 }
 
+func TestGameRuntimeFlushServerFramesArmsDelayedRetaliationFromProximityAggroWithoutHitOrTargetQueuesVisiblePeerDamageInfo(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("AggroRetaliationPeerOwner", 0x01030196, 0x02040196, 1850, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "aggro-retaliation-peer-owner", 0x46464646, owner)
+	watcher := peerVisibilityCharacter("AggroRetaliationPeerWatcher", 0x01030197, 0x02040197, 1920, 2800, 0, 101, 201)
+	watcher.MapIndex = 42
+	watcher.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "aggro-retaliation-peer-watcher", 0x47474747, watcher)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700002250, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for proximity-armed delayed retaliation peer fanout: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.aggro_retaliation_peer",
+		Name:          "AggroRetaliationPeerMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import proximity-armed retaliation peer spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.aggro_retaliation_peer")
+	if !ok {
+		t.Fatal("expected proximity-armed retaliation peer spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "aggro-retaliation-peer-owner", 0x46464646)
+	defer closeSessionFlow(t, ownerFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected proximity acquisition alone not to emit immediate retaliation frames, got %d frames", len(queued))
+	}
+
+	ownerEntity, ok := runtime.sharedWorld.playerEntityByName("AggroRetaliationPeerOwner")
+	if !ok {
+		t.Fatal("expected proximity-armed retaliation peer owner entity to remain registered")
+	}
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected pending-frame proximity acquisition to engage owner for entity %d", group.EntityID)
+	}
+	if snapshot, ok := runtime.CombatTargetSnapshot("AggroRetaliationPeerOwner"); ok {
+		t.Fatalf("expected proximity-armed delayed retaliation peer fixture not to invent selected combat target ownership, got %+v", snapshot)
+	}
+
+	watcherFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "aggro-retaliation-peer-watcher", 0x47474747)
+	defer closeSessionFlow(t, watcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) == 0 {
+		t.Fatal("expected owner to receive watcher peer-entry frames before proximity-armed delayed retaliation fanout")
+	}
+	_ = flushServerFrames(t, watcherFlow)
+
+	watcherBlocked, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher target error while proximity engagement remains live: %v", err)
+	}
+	if len(watcherBlocked) != 0 {
+		t.Fatalf("expected third-party TARGET to fail closed while proximity engagement remains live, got %d frames", len(watcherBlocked))
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	_, ownerDamage := flushNonFloorDelayedRetaliationFrames(
+		t,
+		ownerFlow,
+		owner.VID,
+		bootstrapPracticeMobRetaliationPointDelta,
+		owner.Points[bootstrapPlayerPointValueIndex]+bootstrapPracticeMobRetaliationPointDelta,
+		"after proximity-armed delayed non-floor retaliation",
+	)
+	watcherDelayed := flushServerFrames(t, watcherFlow)
+	if len(watcherDelayed) != 1 {
+		t.Fatalf("expected visible watcher to receive 1 queued owner retaliation damage-info after proximity-armed delayed non-floor beat, got %d", len(watcherDelayed))
+	}
+	peerOwnerDamage := assertDamageInfoFrame(t, watcherDelayed[0], owner.VID, -bootstrapPracticeMobRetaliationPointDelta, "proximity-armed delayed peer owner retaliation")
+	if peerOwnerDamage != ownerDamage {
+		t.Fatalf("expected proximity-armed delayed peer owner retaliation damage-info to match owner self packet, got peer=%+v self=%+v", peerOwnerDamage, ownerDamage)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected proximity-armed delayed retaliation peer fanout not to queue duplicate frames to owner, got %d", len(queued))
+	}
+	if snapshot, ok := runtime.CombatTargetSnapshot("AggroRetaliationPeerOwner"); ok {
+		t.Fatalf("expected proximity-armed delayed retaliation peer fanout to keep inventing no selected target, got %+v", snapshot)
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	_, secondOwnerDamage := flushNonFloorDelayedRetaliationFrames(
+		t,
+		ownerFlow,
+		owner.VID,
+		bootstrapPracticeMobRetaliationPointDelta,
+		owner.Points[bootstrapPlayerPointValueIndex]+(2*bootstrapPracticeMobRetaliationPointDelta),
+		"after second proximity-armed delayed non-floor retaliation",
+	)
+	secondWatcherDelayed := flushServerFrames(t, watcherFlow)
+	if len(secondWatcherDelayed) != 1 {
+		t.Fatalf("expected visible watcher to receive 1 queued owner retaliation damage-info after second proximity-armed delayed beat, got %d", len(secondWatcherDelayed))
+	}
+	secondPeerOwnerDamage := assertDamageInfoFrame(t, secondWatcherDelayed[0], owner.VID, -bootstrapPracticeMobRetaliationPointDelta, "second proximity-armed delayed peer owner retaliation")
+	if secondPeerOwnerDamage != secondOwnerDamage {
+		t.Fatalf("expected second proximity-armed delayed peer owner retaliation damage-info to match owner self packet, got peer=%+v self=%+v", secondPeerOwnerDamage, secondOwnerDamage)
+	}
+}
+
 func TestGameRuntimeProximityAggroWalkAwayReleasesEngagementAndCancelsDelayedRetaliation(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("AggroWalkAwayOwner", 0x01030194, 0x02040194, 1850, 2800, 0, 101, 201)
