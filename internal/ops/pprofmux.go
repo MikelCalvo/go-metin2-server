@@ -173,6 +173,7 @@ const (
 	maxLocalCharacterPointStateQuarantineBodyBytes    = 1 << 20
 	maxLocalCharacterQuestStateQuarantineBodyBytes    = 1 << 20
 	maxLocalAccountCharacterRosterQuarantineBodyBytes = 1 << 20
+	maxLocalAuthLoginTicketHandoffQuarantineBodyBytes = 1 << 20
 )
 
 func NewPprofMux(serviceName string) *http.ServeMux {
@@ -1747,6 +1748,43 @@ func RegisterLocalAuthLoginTicketHandoffExportEndpoint(mux *http.ServeMux, expor
 			return
 		}
 		writeLocalJSONMutationResponse(w, export, http.StatusOK)
+	})
+	return mux
+}
+
+// RegisterLocalAuthLoginTicketHandoffQuarantineEndpoint exposes a loopback-only
+// POST quarantine/preflight for retained 0007 auth login-ticket handoff exports.
+// It validates and canonicalizes the payload without opening a database,
+// writing login-ticket snapshots, or consuming tickets.
+func RegisterLocalAuthLoginTicketHandoffQuarantineEndpoint(mux *http.ServeMux) *http.ServeMux {
+	if mux == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/login-tickets/exports/auth-login-ticket-handoff/quarantine", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		export, status, ok := decodeLocalAuthLoginTicketHandoffExportRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		quarantined, summary, err := loginticket.QuarantineAuthLoginTicketHandoffExport(export)
+		if err != nil {
+			slog.Warn("local auth login-ticket handoff quarantine failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, loginticket.AuthLoginTicketHandoffQuarantineResult{
+			Summary: summary,
+			Export:  quarantined,
+		}, http.StatusOK)
 	})
 	return mux
 }
@@ -5374,6 +5412,30 @@ func decodeLocalCharacterQuestStateExportRequest(r *http.Request) (queststate.Ch
 	var trailing struct{}
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return queststate.CharacterQuestStateExport{}, http.StatusBadRequest, false
+	}
+	return export, http.StatusOK, true
+}
+
+func decodeLocalAuthLoginTicketHandoffExportRequest(r *http.Request) (loginticket.AuthLoginTicketHandoffExport, int, bool) {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxLocalAuthLoginTicketHandoffQuarantineBodyBytes+1))
+	if err != nil {
+		return loginticket.AuthLoginTicketHandoffExport{}, http.StatusBadRequest, false
+	}
+	if len(raw) > maxLocalAuthLoginTicketHandoffQuarantineBodyBytes {
+		return loginticket.AuthLoginTicketHandoffExport{}, http.StatusRequestEntityTooLarge, false
+	}
+	if !utf8.Valid(raw) || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return loginticket.AuthLoginTicketHandoffExport{}, http.StatusBadRequest, false
+	}
+	var export loginticket.AuthLoginTicketHandoffExport
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&export); err != nil {
+		return loginticket.AuthLoginTicketHandoffExport{}, http.StatusBadRequest, false
+	}
+	var trailing struct{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return loginticket.AuthLoginTicketHandoffExport{}, http.StatusBadRequest, false
 	}
 	return export, http.StatusOK, true
 }

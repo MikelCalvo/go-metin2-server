@@ -8641,6 +8641,129 @@ func TestNewPprofMuxDoesNotExposeLocalCharacterQuestStateQuarantineByDefault(t *
 	}
 }
 
+func TestLocalAuthLoginTicketHandoffQuarantineEndpointReturnsCanonicalJSON(t *testing.T) {
+	issuedAlpha := time.Date(2026, 8, 19, 9, 30, 0, 0, time.UTC)
+	issuedZeta := time.Date(2026, 8, 19, 10, 45, 0, 0, time.UTC)
+	body, err := json.Marshal(loginticket.AuthLoginTicketHandoffExport{
+		MigrationVersion: loginticket.AuthLoginTicketHandoffMigrationVersion,
+		MigrationName:    loginticket.AuthLoginTicketHandoffMigrationName,
+		Tickets: []loginticket.AuthLoginTicketHandoffRow{
+			{
+				LoginKey:               0x02000000,
+				IssuedAt:               issuedZeta,
+				Login:                  "zeta",
+				LoginNormalized:        "zeta",
+				Empire:                 3,
+				CharactersSnapshotJSON: `[]`,
+			},
+			{
+				LoginKey:               0x01020304,
+				IssuedAt:               issuedAlpha,
+				Login:                  "Alpha",
+				LoginNormalized:        "alpha",
+				Empire:                 1,
+				CharactersSnapshotJSON: `[{"id":7,"name":"AlphaWar","level":1,"map_index":1,"inventory":[],"equipment":[],"quickslots":[]}]`,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal quarantine body: %v", err)
+	}
+
+	mux := RegisterLocalAuthLoginTicketHandoffQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/exports/auth-login-ticket-handoff/quarantine", bytes.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	responseBody := rec.Body.String()
+	for _, want := range []string{
+		`"ticket_count":2`,
+		`"active_ticket_count":2`,
+		`"login_keys":[16909060,33554432]`,
+		`"migration_version":7`,
+		`"login":"Alpha"`,
+		`"login":"zeta"`,
+		`"login_normalized":"alpha"`,
+	} {
+		if !strings.Contains(responseBody, want) {
+			t.Fatalf("expected quarantine response to contain %s, got %s", want, responseBody)
+		}
+	}
+	if strings.Contains(responseBody, "CREATE TABLE") || strings.Contains(responseBody, "postgres://") {
+		t.Fatalf("quarantine endpoint must not expose SQL or DSNs, got %s", responseBody)
+	}
+}
+
+func TestLocalAuthLoginTicketHandoffQuarantineEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	mux := RegisterLocalAuthLoginTicketHandoffQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/exports/auth-login-ticket-handoff/quarantine", strings.NewReader(`{"migration_version":7,"migration_name":"auth_login_ticket_handoff","tickets":[]}`))
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+}
+
+func TestLocalAuthLoginTicketHandoffQuarantineEndpointRejectsWrongMethod(t *testing.T) {
+	mux := RegisterLocalAuthLoginTicketHandoffQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodGet, "/local/login-tickets/exports/auth-login-ticket-handoff/quarantine", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+}
+
+func TestLocalAuthLoginTicketHandoffQuarantineEndpointRejectsInvalidExport(t *testing.T) {
+	mux := RegisterLocalAuthLoginTicketHandoffQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/exports/auth-login-ticket-handoff/quarantine", strings.NewReader(`{"migration_version":4,"migration_name":"auth_login_ticket_handoff","tickets":[]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+}
+
+func TestLocalAuthLoginTicketHandoffQuarantineEndpointRejectsMalformedJSON(t *testing.T) {
+	mux := RegisterLocalAuthLoginTicketHandoffQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/exports/auth-login-ticket-handoff/quarantine", strings.NewReader(`{"migration_version":7`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestNewPprofMuxDoesNotExposeLocalAuthLoginTicketHandoffQuarantineByDefault(t *testing.T) {
+	mux := NewPprofMux("authd")
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/exports/auth-login-ticket-handoff/quarantine", strings.NewReader(`{"migration_version":7,"migration_name":"auth_login_ticket_handoff","tickets":[]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
 func TestLocalAccountCharacterRosterQuarantineEndpointReturnsCanonicalJSON(t *testing.T) {
 	body, err := json.Marshal(accountstore.AccountCharacterRosterExport{
 		MigrationVersion: accountstore.AccountCharacterRosterMigrationVersion,

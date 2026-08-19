@@ -555,6 +555,19 @@ Returns a loopback-only, read-only JSON projection of committed pending bootstra
 
 Successful responses include `migration_version`, `migration_name`, and deterministic `tickets` rows ordered by normalized login and login key. Rows expose the active non-zero `login_key`, `issued_at`, original and normalized login, empire, nullable `consumed_at` (currently omitted because file-backed tickets are deleted on consume), and a transitional `characters_snapshot_json` payload containing only the select-screen character snapshot carried by the ticket. The response deliberately omits executable SQL, account passwords, account roster rows, item-template definitions, quest state, authored content, and runtime world state, and it does not consume tickets, apply migrations, or mutate the login-ticket store. Use it as an operator/backfill preflight for the current authd-to-gamed handoff boundary, not as a DB-backed ticket repository.
 
+### `POST /local/login-tickets/exports/auth-login-ticket-handoff/quarantine`
+
+Validates and canonicalizes a retained `0007_auth_login_ticket_handoff` export without opening a database, writing login-ticket snapshots, or consuming tickets. This endpoint is registered only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects non-loopback callers with `403`, rejects oversized bodies over 1 MiB with `413`, rejects malformed/invalid-UTF-8/`null` JSON with `400`, and returns `409` when the payload fails the quarantine contract.
+
+Successful responses include:
+
+- `summary.ticket_count`
+- `summary.active_ticket_count`
+- deterministic sorted `summary.login_keys`
+- a canonicalized `export` whose rows are ordered by ascending `login_normalized`, then `login`, then `login_key`
+
+The quarantine contract requires `migration_version = 7`, `migration_name = "auth_login_ticket_handoff"`, a present (possibly empty) `tickets` array, `login_key > 0`, non-zero `issued_at`, non-empty trimmed `login` / `login_normalized` with `login_normalized == lower(login)`, unique `(login_key, issued_at)` pairs, unique active `login_key` values when `consumed_at` is nil, optional `consumed_at` that is non-zero and `>= issued_at`, and non-empty valid UTF-8 `characters_snapshot_json` that decodes as a JSON array of bootstrap-valid character snapshots. Use this after retaining an export artifact and before any future DB backfill/import tool. It is not a repository write path and never emits SQL or DSNs.
+
 ### `GET /local/quest-state/exports/character-quest-state`
 
 Returns a loopback-only, read-only JSON projection of the standalone bootstrap quest-state snapshot onto the `0004_character_quest_state` migration boundary. This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the account roster cannot be exported, the quest-state snapshot is invalid, or any quest flag references a character name that is not present in the committed roster projection.
