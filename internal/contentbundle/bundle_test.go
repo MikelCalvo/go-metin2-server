@@ -4147,6 +4147,45 @@ func TestCanonicalizeRejectsUnsupportedMultiCountRegenSpawn(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeKillQuestCreditAuthoringExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-kill-quest-credit-bundle.json"))
+	if err != nil {
+		t.Fatalf("read kill quest credit example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode kill quest credit example bundle: %v", err)
+	}
+	canonical, err := Canonicalize(bundle)
+	if err != nil {
+		t.Fatalf("canonicalize kill quest credit example bundle: %v", err)
+	}
+	want := []SpawnGroup{{
+		Ref:              "practice.qa_kill_quest_mob",
+		Name:             "QAKillQuestMob",
+		MapIndex:         1,
+		X:                469800,
+		Y:                964200,
+		RaceNum:          20350,
+		CombatProfile:    worldruntime.StaticActorCombatProfileTrainingDummy,
+		RewardExperience: 25,
+		RewardGold:       10,
+		RewardDropVnums:  []uint32{27001},
+		RewardQuestRef:   "quest:first_steps",
+		RewardQuestFlag:  "killed_qa_mob",
+		RewardQuestTo:    1,
+		RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+	}}
+	if !reflect.DeepEqual(canonical.SpawnGroups, want) {
+		t.Fatalf("unexpected canonical kill quest credit spawn groups:\n got: %#v\nwant: %#v", canonical.SpawnGroups, want)
+	}
+}
+
 func TestCanonicalizeRegenAuthoringExampleExpandsToCanonicalSpawnGroup(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {

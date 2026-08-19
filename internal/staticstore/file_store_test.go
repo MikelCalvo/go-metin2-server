@@ -536,6 +536,25 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	if err := store.Save(invalidStaticActorWithReward); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for non-spawn static actor carrying reward metadata, got %v", err)
 	}
+	invalidStaticActorWithKillQuest := Snapshot{StaticActors: []StaticActor{{EntityID: 27, Name: "QuestStandaloneDummy", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20350, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, RewardQuestRef: "quest:first_steps", RewardQuestFlag: "killed_qa_mob", RewardQuestTo: 1, RewardQuestText: "Quest updated."}}}
+	if err := store.Save(invalidStaticActorWithKillQuest); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for non-spawn static actor carrying kill quest credit, got %v", err)
+	}
+	validKillQuestCredit := Snapshot{StaticActors: []StaticActor{{EntityID: 28, Name: "KillQuestMob", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.kill_quest_mob", RewardQuestRef: "quest:first_steps", RewardQuestFlag: "killed_qa_mob", RewardQuestTo: 1, RewardQuestText: "Quest updated: first_steps.killed_qa_mob = 1."}}}
+	if err := store.Save(validKillQuestCredit); err != nil {
+		t.Fatalf("expected valid spawn-group kill quest credit to save, got %v", err)
+	}
+	loadedKillQuestCredit, err := store.Load()
+	if err != nil {
+		t.Fatalf("load kill quest credit snapshot: %v", err)
+	}
+	if !reflect.DeepEqual(loadedKillQuestCredit, validKillQuestCredit) {
+		t.Fatalf("expected kill quest credit snapshot to round-trip, got %#v want %#v", loadedKillQuestCredit, validKillQuestCredit)
+	}
+	partialKillQuestCredit := Snapshot{StaticActors: []StaticActor{{EntityID: 29, Name: "PartialKillQuestMob", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.partial_kill_quest_mob", RewardQuestRef: "quest:first_steps", RewardQuestFlag: "killed_qa_mob", RewardQuestTo: 1}}}
+	if err := store.Save(partialKillQuestCredit); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for partial spawn-group kill quest credit, got %v", err)
+	}
 	validMultiDropReward := Snapshot{StaticActors: []StaticActor{{EntityID: 22, Name: "RewardMultiDrop", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.reward_multi_drop", RewardDropVnums: []uint32{27001, 27002, 27003}}}}
 	if err := store.Save(validMultiDropReward); err != nil {
 		t.Fatalf("expected valid spawn-group reward descriptor with multiple distinct drop vnums to save, got %v", err)

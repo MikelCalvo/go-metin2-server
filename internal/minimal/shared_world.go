@@ -18,6 +18,7 @@ import (
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
+	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
@@ -53,6 +54,7 @@ type sharedWorldRegistry struct {
 	staticActorCombatEngagedBy        map[uint64]uint64
 	staticActorProximityAggroSuppress map[uint64]map[uint64]struct{}
 	staticActorDeathReward            map[uint64]worldruntime.StaticActorDeathReward
+	staticActorKillQuestCredit        map[uint64]staticActorKillQuestCredit
 	sessionCombatTargets              map[uint64]uint32
 	sessionCombatRetaliations         map[uint64]combatRetaliationTimer
 	sessionMerchantWindows            map[uint64]bool
@@ -127,6 +129,45 @@ type combatRetaliationTimer struct {
 	TargetVID       uint32
 	SnapshotVersion uint64
 	ReadyAt         time.Time
+}
+
+type staticActorKillQuestCredit struct {
+	QuestRef  string
+	QuestFlag string
+	QuestFrom uint32
+	QuestTo   uint32
+	Text      string
+}
+
+func (c staticActorKillQuestCredit) Empty() bool {
+	return strings.TrimSpace(c.QuestRef) == "" &&
+		strings.TrimSpace(c.QuestFlag) == "" &&
+		c.QuestFrom == 0 &&
+		c.QuestTo == 0 &&
+		strings.TrimSpace(c.Text) == ""
+}
+
+func (c staticActorKillQuestCredit) Clone() staticActorKillQuestCredit {
+	return staticActorKillQuestCredit{
+		QuestRef:  strings.TrimSpace(c.QuestRef),
+		QuestFlag: strings.TrimSpace(c.QuestFlag),
+		QuestFrom: c.QuestFrom,
+		QuestTo:   c.QuestTo,
+		Text:      strings.TrimSpace(c.Text),
+	}
+}
+
+func validStaticActorKillQuestCredit(credit staticActorKillQuestCredit) bool {
+	credit = credit.Clone()
+	if credit.Empty() {
+		return true
+	}
+	return queststate.ValidQuestRef(credit.QuestRef) &&
+		queststate.ValidFlagName(credit.QuestFlag) &&
+		credit.QuestFrom != credit.QuestTo &&
+		credit.Text != "" &&
+		utf8.ValidString(credit.Text) &&
+		!strings.ContainsRune(credit.Text, '\x00')
 }
 
 type engagedSpawnGroupRetaliationArmTarget struct {
@@ -341,6 +382,7 @@ func newSharedWorldRegistryWithTopology(topology worldruntime.BootstrapTopology)
 		staticActorCombatEngagedBy:        make(map[uint64]uint64),
 		staticActorProximityAggroSuppress: make(map[uint64]map[uint64]struct{}),
 		staticActorDeathReward:            make(map[uint64]worldruntime.StaticActorDeathReward),
+		staticActorKillQuestCredit:        make(map[uint64]staticActorKillQuestCredit),
 		sessionCombatRetaliations:         make(map[uint64]combatRetaliationTimer),
 		exchangePartners:                  make(map[uint64]uint64),
 		exchangeAccepted:                  make(map[uint64]bool),
@@ -1560,6 +1602,60 @@ func (r *sharedWorldRegistry) overrideStaticActorDeathReward(entityID uint64, re
 	}
 	r.staticActorDeathReward[entityID] = reward.Clone()
 	return true
+}
+
+func (r *sharedWorldRegistry) setStaticActorKillQuestCreditLocked(entityID uint64, credit staticActorKillQuestCredit) bool {
+	if r == nil || entityID == 0 || !validStaticActorKillQuestCredit(credit) {
+		return false
+	}
+	credit = credit.Clone()
+	if credit.Empty() {
+		if r.staticActorKillQuestCredit != nil {
+			delete(r.staticActorKillQuestCredit, entityID)
+		}
+		return true
+	}
+	if r.staticActorKillQuestCredit == nil {
+		r.staticActorKillQuestCredit = make(map[uint64]staticActorKillQuestCredit)
+	}
+	r.staticActorKillQuestCredit[entityID] = credit
+	return true
+}
+
+func (r *sharedWorldRegistry) staticActorKillQuestCreditLocked(entityID uint64) staticActorKillQuestCredit {
+	if r == nil || entityID == 0 || r.staticActorKillQuestCredit == nil {
+		return staticActorKillQuestCredit{}
+	}
+	credit, ok := r.staticActorKillQuestCredit[entityID]
+	if !ok {
+		return staticActorKillQuestCredit{}
+	}
+	return credit.Clone()
+}
+
+func (r *sharedWorldRegistry) StaticActorKillQuestCredit(entityID uint64) (staticActorKillQuestCredit, bool) {
+	if r == nil || entityID == 0 {
+		return staticActorKillQuestCredit{}, false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	credit := r.staticActorKillQuestCreditLocked(entityID)
+	if credit.Empty() {
+		return staticActorKillQuestCredit{}, false
+	}
+	return credit, true
+}
+
+func (r *sharedWorldRegistry) setStaticActorKillQuestCredit(entityID uint64, credit staticActorKillQuestCredit) bool {
+	if r == nil || entityID == 0 {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.entities.StaticActor(entityID); !ok {
+		return false
+	}
+	return r.setStaticActorKillQuestCreditLocked(entityID, credit)
 }
 
 func (r *sharedWorldRegistry) ensureStaticActorCombatCurrentHPLocked(actor worldruntime.StaticEntity) (uint8, bool) {
@@ -3395,11 +3491,18 @@ func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, 
 }
 
 func (r *sharedWorldRegistry) registerStaticActorWithSpawnHome(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatKind string, spawnGroupRef string, spawnHome *worldruntime.PositionSnapshot, deathReward worldruntime.StaticActorDeathReward) (StaticActorSnapshot, bool) {
+	return r.registerStaticActorWithSpawnHomeAndKillQuestCredit(entityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef, combatKind, spawnGroupRef, spawnHome, deathReward, staticActorKillQuestCredit{})
+}
+
+func (r *sharedWorldRegistry) registerStaticActorWithSpawnHomeAndKillQuestCredit(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatKind string, spawnGroupRef string, spawnHome *worldruntime.PositionSnapshot, deathReward worldruntime.StaticActorDeathReward, killQuestCredit staticActorKillQuestCredit) (StaticActorSnapshot, bool) {
 	spawnGroupRef = strings.TrimSpace(spawnGroupRef)
-	if r == nil || r.entities == nil || !validStaticActorRuntimeName(name) || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatKind(combatKind) || !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroupRef) || !worldruntime.ValidStaticActorDeathReward(deathReward) {
+	if r == nil || r.entities == nil || !validStaticActorRuntimeName(name) || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatKind(combatKind) || !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroupRef) || !worldruntime.ValidStaticActorDeathReward(deathReward) || !validStaticActorKillQuestCredit(killQuestCredit) {
 		return StaticActorSnapshot{}, false
 	}
 	if spawnGroupRef != "" && (combatKind == "" || interactionKind != "" || interactionRef != "") {
+		return StaticActorSnapshot{}, false
+	}
+	if spawnGroupRef == "" && !killQuestCredit.Empty() {
 		return StaticActorSnapshot{}, false
 	}
 	position := worldruntime.NewPosition(mapIndex, x, y)
@@ -3441,6 +3544,11 @@ func (r *sharedWorldRegistry) registerStaticActorWithSpawnHome(entityID uint64, 
 		return StaticActorSnapshot{}, false
 	}
 	r.syncStaticActorCombatStateLocked(registered)
+	if !r.setStaticActorKillQuestCreditLocked(registered.Entity.ID, killQuestCredit) {
+		_, _ = r.entities.RemoveStaticActor(registered.Entity.ID)
+		r.clearStaticActorCombatStateLocked(registered.Entity.ID)
+		return StaticActorSnapshot{}, false
+	}
 	if !r.suppressStaticActorFanout {
 		frames := encodeStaticActorVisibilityFrames(registered)
 		if len(frames) > 0 {
@@ -3566,6 +3674,9 @@ func (r *sharedWorldRegistry) clearStaticActorsForContentImportRollback() {
 	defer r.mu.Unlock()
 	for _, actor := range removed {
 		r.clearStaticActorCombatStateLocked(actor.Entity.ID)
+		if r.staticActorKillQuestCredit != nil {
+			delete(r.staticActorKillQuestCredit, actor.Entity.ID)
+		}
 	}
 	r.pendingStaticActorImportDeletes = nil
 }
@@ -4377,6 +4488,9 @@ func (r *sharedWorldRegistry) RemoveStaticActor(entityID uint64) (StaticActorSna
 	}
 	removedSnapshot := r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor))
 	r.clearStaticActorCombatStateLocked(entityID)
+	if r.staticActorKillQuestCredit != nil {
+		delete(r.staticActorKillQuestCredit, entityID)
+	}
 	if r.suppressStaticActorFanout {
 		r.pendingStaticActorImportDeletes = append(r.pendingStaticActorImportDeletes, actor)
 	} else {
@@ -4767,6 +4881,13 @@ func (r *sharedWorldRegistry) staticActorDeadLocked(entityID uint64) bool {
 func (r *sharedWorldRegistry) markStaticActorSnapshotStateLocked(snapshot StaticActorSnapshot) StaticActorSnapshot {
 	if snapshot.EntityID == 0 {
 		return snapshot
+	}
+	if credit := r.staticActorKillQuestCreditLocked(snapshot.EntityID); !credit.Empty() {
+		snapshot.RewardQuestRef = credit.QuestRef
+		snapshot.RewardQuestFlag = credit.QuestFlag
+		snapshot.RewardQuestFrom = credit.QuestFrom
+		snapshot.RewardQuestTo = credit.QuestTo
+		snapshot.RewardQuestText = credit.Text
 	}
 	if r == nil || r.staticActorCombatHP == nil {
 		return snapshot

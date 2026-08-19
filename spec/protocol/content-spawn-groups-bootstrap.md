@@ -191,6 +191,7 @@ This slice freezes a narrow ownership model:
 - visual/template selection (`race_num`, optional `name`)
 - combat-profile selection (`combat_profile`), defaulting to the bootstrap `practice_mob` profile when omitted
 - optional death-reward descriptor (`reward_experience`, `reward_gold`, `reward_drop_vnums`) for the deterministic EXP/gold/drop seam documented in `non-player-reward-bootstrap.md`
+- optional kill-quest credit descriptor (`reward_quest_ref`, `reward_quest_flag`, `reward_quest_from`, `reward_quest_to`, `reward_quest_text`) for one fail-closed selected-killer quest-flag transition after the accepted death edge; see `quest-state-bootstrap.md`
 
 ### Combat profile owns
 - combat defaults and rules shared by authored actors using that profile

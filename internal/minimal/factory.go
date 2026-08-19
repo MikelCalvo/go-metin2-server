@@ -2715,6 +2715,10 @@ func (r *gameRuntime) registerStaticActorWithInteractionCombatProfileSpawnGroupR
 }
 
 func (r *gameRuntime) registerStaticActorWithInteractionCombatProfileSpawnGroupRefHomeAndReward(name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatProfile string, spawnGroupRef string, spawnHome *worldruntime.PositionSnapshot, deathReward worldruntime.StaticActorDeathReward) (StaticActorSnapshot, bool) {
+	return r.registerStaticActorWithInteractionCombatProfileSpawnGroupRefHomeRewardAndKillQuestCredit(name, mapIndex, x, y, raceNum, interactionKind, interactionRef, combatProfile, spawnGroupRef, spawnHome, deathReward, staticActorKillQuestCredit{})
+}
+
+func (r *gameRuntime) registerStaticActorWithInteractionCombatProfileSpawnGroupRefHomeRewardAndKillQuestCredit(name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatProfile string, spawnGroupRef string, spawnHome *worldruntime.PositionSnapshot, deathReward worldruntime.StaticActorDeathReward, killQuestCredit staticActorKillQuestCredit) (StaticActorSnapshot, bool) {
 	if r == nil || r.sharedWorld == nil {
 		return StaticActorSnapshot{}, false
 	}
@@ -2723,10 +2727,14 @@ func (r *gameRuntime) registerStaticActorWithInteractionCombatProfileSpawnGroupR
 	interactionRef = strings.TrimSpace(interactionRef)
 	combatProfile = strings.TrimSpace(combatProfile)
 	spawnGroupRef = strings.TrimSpace(spawnGroupRef)
-	if !validStaticActorRuntimeName(name) || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !r.interactionDefinitionExists(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatProfile(combatProfile) || !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroupRef) {
+	killQuestCredit = killQuestCredit.Clone()
+	if !validStaticActorRuntimeName(name) || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !r.interactionDefinitionExists(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatProfile(combatProfile) || !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroupRef) || !validStaticActorKillQuestCredit(killQuestCredit) {
 		return StaticActorSnapshot{}, false
 	}
 	if spawnGroupRef != "" && (combatProfile == "" || interactionKind != "" || interactionRef != "") {
+		return StaticActorSnapshot{}, false
+	}
+	if spawnGroupRef == "" && !killQuestCredit.Empty() {
 		return StaticActorSnapshot{}, false
 	}
 
@@ -2738,7 +2746,7 @@ func (r *gameRuntime) registerStaticActorWithInteractionCombatProfileSpawnGroupR
 	if nextEntityID == 0 {
 		return StaticActorSnapshot{}, false
 	}
-	staticActorSnapshot := StaticActorSnapshot{EntityID: nextEntityID, Name: name, MapIndex: mapIndex, X: x, Y: y, RaceNum: raceNum, CombatProfile: combatProfile, InteractionKind: interactionKind, InteractionRef: interactionRef, SpawnGroupRef: spawnGroupRef, RewardExperience: deathReward.Experience, RewardGold: deathReward.Gold, RewardDropVnums: append([]uint32(nil), deathReward.DropVnums...)}
+	staticActorSnapshot := StaticActorSnapshot{EntityID: nextEntityID, Name: name, MapIndex: mapIndex, X: x, Y: y, RaceNum: raceNum, CombatProfile: combatProfile, InteractionKind: interactionKind, InteractionRef: interactionRef, SpawnGroupRef: spawnGroupRef, RewardExperience: deathReward.Experience, RewardGold: deathReward.Gold, RewardDropVnums: append([]uint32(nil), deathReward.DropVnums...), RewardQuestRef: killQuestCredit.QuestRef, RewardQuestFlag: killQuestCredit.QuestFlag, RewardQuestFrom: killQuestCredit.QuestFrom, RewardQuestTo: killQuestCredit.QuestTo, RewardQuestText: killQuestCredit.Text}
 	if spawnHome != nil {
 		clonedSpawnHome := *spawnHome
 		staticActorSnapshot.SpawnHome = &clonedSpawnHome
@@ -2747,7 +2755,7 @@ func (r *gameRuntime) registerStaticActorWithInteractionCombatProfileSpawnGroupR
 	if !r.persistStaticActorSnapshot(target) {
 		return StaticActorSnapshot{}, false
 	}
-	registered, ok := r.sharedWorld.registerStaticActorWithSpawnHome(nextEntityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef, combatProfile, spawnGroupRef, spawnHome, deathReward)
+	registered, ok := r.sharedWorld.registerStaticActorWithSpawnHomeAndKillQuestCredit(nextEntityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef, combatProfile, spawnGroupRef, spawnHome, deathReward, killQuestCredit)
 	if !ok {
 		_ = r.persistStaticActorSnapshot(current)
 		return StaticActorSnapshot{}, false
@@ -2794,13 +2802,14 @@ func (r *gameRuntime) updateStaticActorWithInteractionCombatProfileAndSpawnGroup
 	}
 	target := cloneStaticActorSnapshots(current)
 	deathReward := worldruntime.StaticActorDeathReward{Experience: current[idx].RewardExperience, Gold: current[idx].RewardGold, DropVnums: append([]uint32(nil), current[idx].RewardDropVnums...)}
+	killQuestCredit := staticActorKillQuestCredit{QuestRef: current[idx].RewardQuestRef, QuestFlag: current[idx].RewardQuestFlag, QuestFrom: current[idx].RewardQuestFrom, QuestTo: current[idx].RewardQuestTo, Text: current[idx].RewardQuestText}
 	if combatProfile == "" && current[idx].SpawnGroupRef != "" {
 		combatProfile = current[idx].CombatProfile
 	}
 	if spawnGroupRef == "" {
 		spawnGroupRef = current[idx].SpawnGroupRef
 	}
-	target[idx] = StaticActorSnapshot{EntityID: entityID, Name: name, MapIndex: mapIndex, X: x, Y: y, RaceNum: raceNum, CombatProfile: combatProfile, InteractionKind: interactionKind, InteractionRef: interactionRef, SpawnGroupRef: spawnGroupRef, RewardExperience: deathReward.Experience, RewardGold: deathReward.Gold, RewardDropVnums: append([]uint32(nil), deathReward.DropVnums...)}
+	target[idx] = StaticActorSnapshot{EntityID: entityID, Name: name, MapIndex: mapIndex, X: x, Y: y, RaceNum: raceNum, CombatProfile: combatProfile, InteractionKind: interactionKind, InteractionRef: interactionRef, SpawnGroupRef: spawnGroupRef, RewardExperience: deathReward.Experience, RewardGold: deathReward.Gold, RewardDropVnums: append([]uint32(nil), deathReward.DropVnums...), RewardQuestRef: killQuestCredit.QuestRef, RewardQuestFlag: killQuestCredit.QuestFlag, RewardQuestFrom: killQuestCredit.QuestFrom, RewardQuestTo: killQuestCredit.QuestTo, RewardQuestText: killQuestCredit.Text}
 	if current[idx].SpawnHome != nil {
 		spawnHome := *current[idx].SpawnHome
 		target[idx].SpawnHome = &spawnHome
@@ -2813,7 +2822,24 @@ func (r *gameRuntime) updateStaticActorWithInteractionCombatProfileAndSpawnGroup
 		_ = r.persistStaticActorSnapshot(current)
 		return StaticActorSnapshot{}, false
 	}
+	if !r.sharedWorld.setStaticActorKillQuestCredit(entityID, killQuestCredit) {
+		_ = r.persistStaticActorSnapshot(current)
+		return StaticActorSnapshot{}, false
+	}
 	r.syncSpawnGroupReturnStepSchedule(updated)
+	if credit, ok := r.sharedWorld.StaticActorKillQuestCredit(entityID); ok {
+		updated.RewardQuestRef = credit.QuestRef
+		updated.RewardQuestFlag = credit.QuestFlag
+		updated.RewardQuestFrom = credit.QuestFrom
+		updated.RewardQuestTo = credit.QuestTo
+		updated.RewardQuestText = credit.Text
+	} else {
+		updated.RewardQuestRef = ""
+		updated.RewardQuestFlag = ""
+		updated.RewardQuestFrom = 0
+		updated.RewardQuestTo = 0
+		updated.RewardQuestText = ""
+	}
 	return updated, true
 }
 
@@ -5880,6 +5906,25 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							}
 						}
 					}
+					if resolution.ClearActiveTarget {
+						if credit, ok := runtime.sharedWorld.StaticActorKillQuestCredit(resolution.Actor.EntityID); ok {
+							transitionResult, err := runtime.ApplyQuestStateTransition(queststate.Transition{
+								Character: previousSelected.Name,
+								QuestRef:  credit.QuestRef,
+								Flag:      credit.QuestFlag,
+								From:      credit.QuestFrom,
+								To:        credit.QuestTo,
+							})
+							if err == nil && transitionResult.Result.Applied {
+								frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+									Type:    chatproto.ChatTypeInfo,
+									VID:     0,
+									Empire:  0,
+									Message: credit.Text,
+								}))
+							}
+						}
+					}
 					attackFrames := append([][]byte(nil), frames...)
 					if resolution.ClearActiveTarget {
 						if resolution.Actor.EntityID != 0 {
@@ -8380,7 +8425,8 @@ func (r *gameRuntime) loadPersistedStaticActors() error {
 			return fmt.Errorf("%w: validate static actor interaction refs", staticstore.ErrInvalidSnapshot)
 		}
 		deathReward := worldruntime.StaticActorDeathReward{Experience: actor.RewardExperience, Gold: actor.RewardGold, DropVnums: append([]uint32(nil), actor.RewardDropVnums...)}
-		registered, ok := r.sharedWorld.registerStaticActorWithSpawnHome(actor.EntityID, actor.Name, actor.MapIndex, actor.X, actor.Y, actor.RaceNum, actor.InteractionKind, actor.InteractionRef, actor.CombatProfile, actor.SpawnGroupRef, actor.SpawnHome, deathReward)
+		killQuestCredit := staticActorKillQuestCredit{QuestRef: actor.RewardQuestRef, QuestFlag: actor.RewardQuestFlag, QuestFrom: actor.RewardQuestFrom, QuestTo: actor.RewardQuestTo, Text: actor.RewardQuestText}
+		registered, ok := r.sharedWorld.registerStaticActorWithSpawnHomeAndKillQuestCredit(actor.EntityID, actor.Name, actor.MapIndex, actor.X, actor.Y, actor.RaceNum, actor.InteractionKind, actor.InteractionRef, actor.CombatProfile, actor.SpawnGroupRef, actor.SpawnHome, deathReward, killQuestCredit)
 		if !ok {
 			return fmt.Errorf("%w: apply static actor snapshot", staticstore.ErrInvalidSnapshot)
 		}
@@ -8801,7 +8847,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		rollbackErr = errors.Join(rollbackErr, r.replaceQuestStateFromBundle(queststate.Snapshot{Flags: previousBundle.QuestState}))
 		if r.sharedWorld != nil {
 			for _, actor := range previousActors {
-				_, ok := r.sharedWorld.registerStaticActorWithSpawnHome(actor.EntityID, actor.Name, actor.MapIndex, actor.X, actor.Y, actor.RaceNum, actor.InteractionKind, actor.InteractionRef, actor.CombatProfile, actor.SpawnGroupRef, actor.SpawnHome, worldruntime.StaticActorDeathReward{Experience: actor.RewardExperience, Gold: actor.RewardGold, DropVnums: append([]uint32(nil), actor.RewardDropVnums...)})
+				_, ok := r.sharedWorld.registerStaticActorWithSpawnHomeAndKillQuestCredit(actor.EntityID, actor.Name, actor.MapIndex, actor.X, actor.Y, actor.RaceNum, actor.InteractionKind, actor.InteractionRef, actor.CombatProfile, actor.SpawnGroupRef, actor.SpawnHome, worldruntime.StaticActorDeathReward{Experience: actor.RewardExperience, Gold: actor.RewardGold, DropVnums: append([]uint32(nil), actor.RewardDropVnums...)}, staticActorKillQuestCredit{QuestRef: actor.RewardQuestRef, QuestFlag: actor.RewardQuestFlag, QuestFrom: actor.RewardQuestFrom, QuestTo: actor.RewardQuestTo, Text: actor.RewardQuestText})
 				if !ok {
 					rollbackErr = errors.Join(rollbackErr, ErrContentBundleUnavailable)
 				}
@@ -9111,8 +9157,9 @@ func (r *gameRuntime) replaceStaticActorsFromBundle(bundle contentbundle.Bundle)
 	}
 	for _, spawnGroup := range bundle.SpawnGroups {
 		deathReward := worldruntime.StaticActorDeathReward{Experience: spawnGroup.RewardExperience, Gold: spawnGroup.RewardGold, DropVnums: append([]uint32(nil), spawnGroup.RewardDropVnums...)}
+		killQuestCredit := staticActorKillQuestCredit{QuestRef: spawnGroup.RewardQuestRef, QuestFlag: spawnGroup.RewardQuestFlag, QuestFrom: spawnGroup.RewardQuestFrom, QuestTo: spawnGroup.RewardQuestTo, Text: spawnGroup.RewardQuestText}
 		spawnHome := worldruntime.PositionSnapshot{MapIndex: spawnGroup.MapIndex, X: spawnGroup.X, Y: spawnGroup.Y}
-		if _, ok := r.registerStaticActorWithInteractionCombatProfileSpawnGroupRefHomeAndReward(spawnGroup.Name, spawnGroup.MapIndex, spawnGroup.X, spawnGroup.Y, spawnGroup.RaceNum, "", "", spawnGroup.CombatProfile, spawnGroup.Ref, &spawnHome, deathReward); !ok {
+		if _, ok := r.registerStaticActorWithInteractionCombatProfileSpawnGroupRefHomeRewardAndKillQuestCredit(spawnGroup.Name, spawnGroup.MapIndex, spawnGroup.X, spawnGroup.Y, spawnGroup.RaceNum, "", "", spawnGroup.CombatProfile, spawnGroup.Ref, &spawnHome, deathReward, killQuestCredit); !ok {
 			return ErrContentBundleUnavailable
 		}
 	}
@@ -9570,6 +9617,11 @@ func buildStaticActorStoreSnapshot(snapshot []StaticActorSnapshot) staticstore.S
 			RewardExperience: actor.RewardExperience,
 			RewardGold:       actor.RewardGold,
 			RewardDropVnums:  append([]uint32(nil), actor.RewardDropVnums...),
+			RewardQuestRef:   actor.RewardQuestRef,
+			RewardQuestFlag:  actor.RewardQuestFlag,
+			RewardQuestFrom:  actor.RewardQuestFrom,
+			RewardQuestTo:    actor.RewardQuestTo,
+			RewardQuestText:  actor.RewardQuestText,
 		})
 		if actor.SpawnHome != nil && actor.SpawnGroupRef != "" {
 			spawnHome := *actor.SpawnHome

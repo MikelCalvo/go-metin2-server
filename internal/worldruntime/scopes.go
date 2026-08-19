@@ -85,6 +85,11 @@ type StaticActorSnapshot struct {
 	RewardExperience      uint64              `json:"reward_experience,omitempty"`
 	RewardGold            uint64              `json:"reward_gold,omitempty"`
 	RewardDropVnums       []uint32            `json:"reward_drop_vnums,omitempty"`
+	RewardQuestRef        string              `json:"reward_quest_ref,omitempty"`
+	RewardQuestFlag       string              `json:"reward_quest_flag,omitempty"`
+	RewardQuestFrom       uint32              `json:"reward_quest_from,omitempty"`
+	RewardQuestTo         uint32              `json:"reward_quest_to,omitempty"`
+	RewardQuestText       string              `json:"reward_quest_text,omitempty"`
 }
 
 type GroundItemSnapshot struct {

@@ -1,0 +1,33 @@
+{
+  "spawn_groups": [
+    {
+      "ref": "practice.qa_kill_quest_mob",
+      "name": "QAKillQuestMob",
+      "map_index": 1,
+      "x": 469800,
+      "y": 964200,
+      "race_num": 20350,
+      "combat_profile": "training_dummy",
+      "reward_experience": 25,
+      "reward_gold": 10,
+      "reward_drop_vnums": [
+        27001
+      ],
+      "reward_quest_ref": "quest:first_steps",
+      "reward_quest_flag": "killed_qa_mob",
+      "reward_quest_to": 1,
+      "reward_quest_text": "Quest updated: first_steps.killed_qa_mob = 1."
+    }
+  ],
+  "item_templates": [
+    {
+      "vnum": 27001,
+      "name": "Small Red Potion",
+      "stackable": true,
+      "max_count": 200,
+      "shop_buy_price": 5,
+      "shop_sell_price": 2
+    }
+  ],
+  "interaction_definitions": []
+}

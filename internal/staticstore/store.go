@@ -4,8 +4,10 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
@@ -30,6 +32,11 @@ type StaticActor struct {
 	RewardExperience uint64                         `json:"reward_experience,omitempty"`
 	RewardGold       uint64                         `json:"reward_gold,omitempty"`
 	RewardDropVnums  []uint32                       `json:"reward_drop_vnums,omitempty"`
+	RewardQuestRef   string                         `json:"reward_quest_ref,omitempty"`
+	RewardQuestFlag  string                         `json:"reward_quest_flag,omitempty"`
+	RewardQuestFrom  uint32                         `json:"reward_quest_from,omitempty"`
+	RewardQuestTo    uint32                         `json:"reward_quest_to,omitempty"`
+	RewardQuestText  string                         `json:"reward_quest_text,omitempty"`
 }
 
 type Snapshot struct {
@@ -97,7 +104,7 @@ func validateSnapshot(snapshot Snapshot) error {
 			if actor.CombatProfile == "" || actor.InteractionKind != "" || actor.InteractionRef != "" {
 				return ErrInvalidSnapshot
 			}
-			if !validRewardDescriptor(actor) {
+			if !validRewardDescriptor(actor) || !validKillQuestCredit(actor) {
 				return ErrInvalidSnapshot
 			}
 			if actor.SpawnHome != nil && actor.SpawnHome.MapIndex == 0 {
@@ -268,11 +275,35 @@ func validBootstrapRaceNum(raceNum uint32) bool {
 }
 
 func hasRewardDescriptor(actor StaticActor) bool {
-	return actor.RewardExperience != 0 || actor.RewardGold != 0 || len(actor.RewardDropVnums) != 0
+	return actor.RewardExperience != 0 || actor.RewardGold != 0 || len(actor.RewardDropVnums) != 0 || hasKillQuestCredit(actor)
 }
 
 func validRewardDescriptor(actor StaticActor) bool {
 	return worldruntime.ValidStaticActorDeathReward(worldruntime.StaticActorDeathReward{Experience: actor.RewardExperience, Gold: actor.RewardGold, DropVnums: actor.RewardDropVnums})
+}
+
+func hasKillQuestCredit(actor StaticActor) bool {
+	return strings.TrimSpace(actor.RewardQuestRef) != "" ||
+		strings.TrimSpace(actor.RewardQuestFlag) != "" ||
+		actor.RewardQuestFrom != 0 ||
+		actor.RewardQuestTo != 0 ||
+		strings.TrimSpace(actor.RewardQuestText) != ""
+}
+
+func validKillQuestCredit(actor StaticActor) bool {
+	ref := strings.TrimSpace(actor.RewardQuestRef)
+	flag := strings.TrimSpace(actor.RewardQuestFlag)
+	text := strings.TrimSpace(actor.RewardQuestText)
+	hasAny := ref != "" || flag != "" || actor.RewardQuestFrom != 0 || actor.RewardQuestTo != 0 || text != ""
+	if !hasAny {
+		return true
+	}
+	return queststate.ValidQuestRef(ref) &&
+		queststate.ValidFlagName(flag) &&
+		actor.RewardQuestFrom != actor.RewardQuestTo &&
+		text != "" &&
+		utf8.ValidString(text) &&
+		!strings.ContainsRune(text, '\x00')
 }
 
 func normalizeStaticActor(actor StaticActor) StaticActor {
@@ -281,6 +312,9 @@ func normalizeStaticActor(actor StaticActor) StaticActor {
 	actor.InteractionKind = strings.TrimSpace(actor.InteractionKind)
 	actor.InteractionRef = strings.TrimSpace(actor.InteractionRef)
 	actor.SpawnGroupRef = strings.TrimSpace(actor.SpawnGroupRef)
+	actor.RewardQuestRef = strings.TrimSpace(actor.RewardQuestRef)
+	actor.RewardQuestFlag = strings.TrimSpace(actor.RewardQuestFlag)
+	actor.RewardQuestText = strings.TrimSpace(actor.RewardQuestText)
 	return actor
 }
 

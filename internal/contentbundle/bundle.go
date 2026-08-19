@@ -43,6 +43,11 @@ type SpawnGroup struct {
 	RewardGold         uint64   `json:"reward_gold,omitempty"`
 	RewardDropVnums    []uint32 `json:"reward_drop_vnums,omitempty"`
 	RewardDropTableRef string   `json:"reward_drop_table_ref,omitempty"`
+	RewardQuestRef     string   `json:"reward_quest_ref,omitempty"`
+	RewardQuestFlag    string   `json:"reward_quest_flag,omitempty"`
+	RewardQuestFrom    uint32   `json:"reward_quest_from,omitempty"`
+	RewardQuestTo      uint32   `json:"reward_quest_to,omitempty"`
+	RewardQuestText    string   `json:"reward_quest_text,omitempty"`
 }
 
 type RegenSpawn struct {
@@ -58,6 +63,11 @@ type RegenSpawn struct {
 	RewardGold         uint64   `json:"reward_gold,omitempty"`
 	RewardDropVnums    []uint32 `json:"reward_drop_vnums,omitempty"`
 	RewardDropTableRef string   `json:"reward_drop_table_ref,omitempty"`
+	RewardQuestRef     string   `json:"reward_quest_ref,omitempty"`
+	RewardQuestFlag    string   `json:"reward_quest_flag,omitempty"`
+	RewardQuestFrom    uint32   `json:"reward_quest_from,omitempty"`
+	RewardQuestTo      uint32   `json:"reward_quest_to,omitempty"`
+	RewardQuestText    string   `json:"reward_quest_text,omitempty"`
 }
 
 type DropTable struct {
@@ -795,6 +805,11 @@ func FromSnapshotsWithItems(staticActors staticstore.Snapshot, interactions inte
 				RewardExperience: actor.RewardExperience,
 				RewardGold:       actor.RewardGold,
 				RewardDropVnums:  cloneUint32s(actor.RewardDropVnums),
+				RewardQuestRef:   actor.RewardQuestRef,
+				RewardQuestFlag:  actor.RewardQuestFlag,
+				RewardQuestFrom:  actor.RewardQuestFrom,
+				RewardQuestTo:    actor.RewardQuestTo,
+				RewardQuestText:  actor.RewardQuestText,
 			})
 			continue
 		}
@@ -3715,7 +3730,7 @@ func validSpawnGroup(spawnGroup SpawnGroup, profileSnapshots map[string]worldrun
 	if strings.TrimSpace(spawnGroup.CombatProfile) == "" || !validAuthoredCombatProfile(spawnGroup.CombatProfile, profileSnapshots) {
 		return false
 	}
-	return validRewardDescriptor(spawnGroup)
+	return validRewardDescriptor(spawnGroup) && validSpawnGroupKillQuestCredit(spawnGroup)
 }
 
 func validAuthoredCombatProfile(profile string, profileSnapshots map[string]worldruntime.StaticActorCombatProfileSnapshot) bool {
@@ -3822,6 +3837,29 @@ func validRewardDescriptor(spawnGroup SpawnGroup) bool {
 	return worldruntime.ValidStaticActorDeathReward(worldruntime.StaticActorDeathReward{Experience: spawnGroup.RewardExperience, Gold: spawnGroup.RewardGold, DropVnums: spawnGroup.RewardDropVnums})
 }
 
+func hasSpawnGroupKillQuestCredit(spawnGroup SpawnGroup) bool {
+	return strings.TrimSpace(spawnGroup.RewardQuestRef) != "" ||
+		strings.TrimSpace(spawnGroup.RewardQuestFlag) != "" ||
+		spawnGroup.RewardQuestFrom != 0 ||
+		spawnGroup.RewardQuestTo != 0 ||
+		strings.TrimSpace(spawnGroup.RewardQuestText) != ""
+}
+
+func validSpawnGroupKillQuestCredit(spawnGroup SpawnGroup) bool {
+	ref := strings.TrimSpace(spawnGroup.RewardQuestRef)
+	flag := strings.TrimSpace(spawnGroup.RewardQuestFlag)
+	text := strings.TrimSpace(spawnGroup.RewardQuestText)
+	hasAny := ref != "" || flag != "" || spawnGroup.RewardQuestFrom != 0 || spawnGroup.RewardQuestTo != 0 || text != ""
+	if !hasAny {
+		return true
+	}
+	return queststate.ValidQuestRef(ref) &&
+		queststate.ValidFlagName(flag) &&
+		spawnGroup.RewardQuestFrom != spawnGroup.RewardQuestTo &&
+		text != "" &&
+		validAuthoredContentString(text)
+}
+
 func spawnGroupsFromRegenSpawns(regenSpawns []RegenSpawn) ([]SpawnGroup, bool) {
 	if len(regenSpawns) == 0 {
 		return nil, true
@@ -3843,6 +3881,11 @@ func spawnGroupsFromRegenSpawns(regenSpawns []RegenSpawn) ([]SpawnGroup, bool) {
 			RewardGold:         regenSpawn.RewardGold,
 			RewardDropVnums:    cloneUint32s(regenSpawn.RewardDropVnums),
 			RewardDropTableRef: regenSpawn.RewardDropTableRef,
+			RewardQuestRef:     regenSpawn.RewardQuestRef,
+			RewardQuestFlag:    regenSpawn.RewardQuestFlag,
+			RewardQuestFrom:    regenSpawn.RewardQuestFrom,
+			RewardQuestTo:      regenSpawn.RewardQuestTo,
+			RewardQuestText:    regenSpawn.RewardQuestText,
 		})
 	}
 	return spawnGroups, true
@@ -3909,6 +3952,9 @@ func normalizeSpawnGroups(spawnGroups []SpawnGroup, profileSnapshots []worldrunt
 			}
 		}
 		spawnGroup.RewardDropVnums = cloneUint32s(spawnGroup.RewardDropVnums)
+		spawnGroup.RewardQuestRef = strings.TrimSpace(spawnGroup.RewardQuestRef)
+		spawnGroup.RewardQuestFlag = strings.TrimSpace(spawnGroup.RewardQuestFlag)
+		spawnGroup.RewardQuestText = strings.TrimSpace(spawnGroup.RewardQuestText)
 		normalized[i] = spawnGroup
 	}
 	return normalized

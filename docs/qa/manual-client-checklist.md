@@ -924,7 +924,7 @@ Expected result:
 
 ### 5.11 Practice-mob reward smoke
 
-Run this when the target build has authored QA `spawn_groups` practice-mob content loaded with a non-zero bootstrap death-reward descriptor. The repository example bundle at `docs/examples/bootstrap-npc-service-bundle.json` now includes `practice.qa_reward_mob` with EXP, gold, and one fixed drop-vnum reward descriptor for this smoke. Separate authoring-only fixtures at `docs/examples/bootstrap-drop-table-authoring-bundle.json` and `docs/examples/bootstrap-regen-authoring-bundle.json` can be used to validate fixed `drop_tables` expansion and one-count `regen_spawns` expansion for EXP, gold, and drop-vnum channels before importing the canonicalized spawn-group reward descriptor. The formula-profile fixture in 5.10.1 also carries profile-default reward metadata and may be reused when validating reward frames after a formula kill.
+Run this when the target build has authored QA `spawn_groups` practice-mob content loaded with a non-zero bootstrap death-reward descriptor. The repository example bundle at `docs/examples/bootstrap-npc-service-bundle.json` now includes `practice.qa_reward_mob` with EXP, gold, and one fixed drop-vnum reward descriptor for this smoke. Separate authoring-only fixtures at `docs/examples/bootstrap-drop-table-authoring-bundle.json` and `docs/examples/bootstrap-regen-authoring-bundle.json` can be used to validate fixed `drop_tables` expansion and one-count `regen_spawns` expansion for EXP, gold, and drop-vnum channels before importing the canonicalized spawn-group reward descriptor. The formula-profile fixture in 5.10.1 also carries profile-default reward metadata and may be reused when validating reward frames after a formula kill. The kill-quest credit fixture at `docs/examples/bootstrap-kill-quest-credit-bundle.json` can be used when QA also needs one selected-killer quest-flag advance after the accepted death edge.
 
 - [ ] Approach and select the visible practice mob
 - [ ] Land accepted normal attacks until the mob reaches the owned zero-HP death edge
@@ -932,6 +932,7 @@ Run this when the target build has authored QA `spawn_groups` practice-mob conte
 - [ ] If the QA mob grants EXP, confirm one self-only `PLAYER_POINT_CHANGE(POINT_EXP)` arrives after death/clear and that reconnect keeps the updated EXP value
 - [ ] If the QA mob grants gold, confirm one self-only `PLAYER_POINT_CHANGE(POINT_GOLD)` arrives after death/clear and that reconnect keeps the updated gold value
 - [ ] If the QA mob drops items, confirm one self-visible `GROUND_ADD` + `OWNERSHIP` pair appears per configured drop, at the killer's current position
+- [ ] If the QA mob authors kill-quest credit fields, confirm one self-only info chat with the authored `reward_quest_text` arrives after death/clear (and after any independent EXP/gold/drop frames), then inspect `GET /local/quest-state/characters/{character}` and confirm the selected killer's authored flag advanced; a second kill while the current value no longer matches must stay silent for quest chat and leave the persisted quest-state snapshot unchanged
 - [ ] If the mob was authored through `drop_tables`, confirm the actual imported/runtime `spawn_groups` row carries direct `reward_experience`, `reward_gold`, and `reward_drop_vnums` values; there should be no gameplay-visible table lookup or random roll at kill time
 - [ ] Pick up one reward drop and confirm the normal bootstrap pickup path removes the ground item, adds it to carried inventory, persists it, and rejects a replayed pickup
 - [ ] If the reward drop's authored item template sets `pickup_range`, move outside the default 300-unit reach but inside that authored reach and confirm pickup succeeds; repeat with a shorter authored reach and confirm the visible-but-out-of-range pickup fails closed while the ground handle remains pending
@@ -943,13 +944,15 @@ Expected result:
 - reward frames are ordered after `DEAD` and `TARGET(0, 0)`
 - scalar EXP/gold rewards persist to the selected character before their point-change frame is emitted
 - item drops are runtime ground items first; they do not mutate inventory until an explicit pickup succeeds
+- kill-quest credit, when authored, applies one selected-killer compare-and-set quest-flag transition after the accepted death edge and returns one self-only info chat only when that transition applies
 - reward drop pickup uses the same template-authored reach override as ordinary dropped handles when loaded item-template metadata is present
 - invalid or unsupported reward descriptors preserve the accepted death/clear edge while omitting reward mutation and reward frames
 - a live ground-drop `VID` collision suppresses only that colliding drop; it does not roll back death/clear, scalar rewards, or independent non-colliding drops
 
 Important note:
 - default `training_dummy` / `practice_mob` content remains rewardless unless the QA setup deliberately overrides or authors a non-zero descriptor
-- level progression, party distribution, loot ownership expiry, quest credit, and corpse gameplay are still out of scope for this bootstrap smoke
+- level progression, party distribution, loot ownership expiry, broader quest scripting, and corpse gameplay are still out of scope for this bootstrap smoke
+- kill-quest credit is a separate spawn-group content seam from the EXP/gold/drop descriptor; see `docs/examples/bootstrap-kill-quest-credit-bundle.json` and `quest-state-bootstrap.md`
 
 ### 5.12 Practice-mob retaliation death and restart-here smoke
 

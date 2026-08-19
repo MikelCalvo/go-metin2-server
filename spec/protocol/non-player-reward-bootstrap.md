@@ -28,7 +28,7 @@ It does **not** yet claim:
 - party reward sharing or contribution splits
 - randomized loot tables or probabilities
 - corpse interaction, pickup ownership expiry, or public loot release
-- quest credit, achievements, or scripted on-death hooks
+- quest credit, achievements, or scripted on-death hooks beyond the narrow spawn-group kill-quest credit fields documented in `quest-state-bootstrap.md`
 - persisted non-player reward state across process restart
 
 ## Descriptor ownership
@@ -204,4 +204,5 @@ The repository can now say:
 - item-shaped reward drops use the same template-authored pickup reach as ordinary dropped handles, so authored long-range rewards can be collected farther away while authored short-range rewards stay pending when the collector is outside that reach
 - timed respawn rebuild preserves authored reward descriptor metadata so later kills continue to use the same content contract
 
-Broader reward, loot-table, party, quest, and level-up systems remain future work.
+Broader reward, loot-table, party, and level-up systems remain future work.
+Authored spawn groups may now also carry the separate kill-quest credit fields documented in `quest-state-bootstrap.md`; that quest-flag apply path is intentionally outside this EXP/gold/drop reward descriptor.

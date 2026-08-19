@@ -15,9 +15,10 @@ The current owned surface is limited to `internal/queststate`:
 - one read-only transition preview plus store validation summary and crash-temp cleanup for the same snapshot format,
 - one read-only exact-character quest-state snapshot for local operator QA,
 - content-bundle import/export/summary inclusion for the same standalone quest-state snapshot,
-- the first static-actor `quest_flag` interaction kind that applies one authored compare-and-set transition for the selected character.
+- the first static-actor `quest_flag` interaction kind that applies one authored compare-and-set transition for the selected character,
+- the first spawn-group kill-quest credit descriptor that applies one authored compare-and-set transition for the selected killer after an accepted non-player death edge.
 
-This seam supports the first content/NPC path of “interact with an actor once and advance or clear a flag”. The current local operator endpoints can validate, dry-run or mutate through one compare-and-set transition, read back one character's quest flags, and inspect/import/export quest-state rows through authored content bundles. A visible static actor can now call the same primitive through `INTERACT` when its authored definition uses `interaction_kind = "quest_flag"`, but no client quest packet, reward, branching dialog runtime, or quest script exists yet.
+This seam supports the first content/NPC path of “interact with an actor once and advance or clear a flag”, plus the first combat-adjacent content path of “kill an authored spawn-backed combatant and advance one selected-killer quest flag”. The current local operator endpoints can validate, dry-run or mutate through one compare-and-set transition, read back one character's quest flags, and inspect/import/export quest-state rows through authored content bundles. A visible static actor can now call the same primitive through `INTERACT` when its authored definition uses `interaction_kind = "quest_flag"`, and an authored spawn group may also call the same primitive after the accepted killing hit when it carries kill-quest credit fields. No client quest packet, reward UI, branching dialog runtime, or quest script exists yet.
 
 ## Snapshot shape
 
@@ -298,6 +299,40 @@ The focused import-preview readers are no-mutation projections over the existing
 
 The content-bundle boundary is still authored-content plumbing only: it does not define quest objectives, transition triggers, NPC dialogs, rewards, or client quest packets.
 
+## Spawn-group kill-quest credit
+
+Authored `spawn_groups` and authoring-only `regen_spawns` may optionally carry one kill-quest credit descriptor that reuses the same compare-and-set primitive after an accepted non-player death edge:
+
+```json
+{
+  "ref": "practice.qa_kill_quest_mob",
+  "name": "QAKillQuestMob",
+  "map_index": 1,
+  "x": 469800,
+  "y": 964200,
+  "race_num": 20350,
+  "combat_profile": "training_dummy",
+  "reward_quest_ref": "quest:first_steps",
+  "reward_quest_flag": "killed_qa_mob",
+  "reward_quest_from": 0,
+  "reward_quest_to": 1,
+  "reward_quest_text": "Quest updated: first_steps.killed_qa_mob = 1."
+}
+```
+
+Owned rules:
+
+- absent / all-empty kill-quest fields remain valid and are a no-op
+- when any kill-quest field is present, `reward_quest_ref`, `reward_quest_flag`, and non-blank `reward_quest_text` are all required
+- `reward_quest_ref` and `reward_quest_flag` use the same identity rules as the standalone quest-state store
+- `reward_quest_from` / `reward_quest_to` must differ when credit is present; omitted `reward_quest_from` means the ordinary absent-current-value / `0` transition case
+- kill-quest credit is spawn-group-only: standalone static actors without `spawn_group_ref` may not carry these fields
+- the credit lives beside, not inside, the EXP/gold/drop death-reward descriptor; empty combat rewards may still apply kill-quest credit
+- on the accepted killing hit, after death/clear and any independent EXP/gold/drop reward handling, the selected killer session attempts one `ApplyTransition` for `(reward_quest_ref, reward_quest_flag, reward_quest_from, reward_quest_to)`
+- when the transition applies, the killer receives one self-only `CHAT_TYPE_INFO` frame with `reward_quest_text`
+- `current_value_mismatch` and other fail-closed transition results stay silent for this combat path: no quest chat is emitted and combat rewards are not rolled back
+- the checked-in QA example is `docs/examples/bootstrap-kill-quest-credit-bundle.json`
+
 ## Current non-goals
 
 This seam does **not** yet freeze:
@@ -311,7 +346,7 @@ This seam does **not** yet freeze:
 - timers or daily reset policy,
 - script VM compatibility,
 - content-bundle quest definitions beyond portable flag rows,
-- static-actor/NPC interaction hooks that call `/local/quest-state/transition` or the store transition primitive automatically.
+- static-actor/NPC interaction hooks that call `/local/quest-state/transition` or the store transition primitive automatically beyond the owned `quest_flag` interaction kind and spawn-group kill-quest credit seam.
 
 ## Success definition
 
@@ -325,4 +360,5 @@ The current repository can now say:
 - content-bundle import/export now includes the configured quest-state snapshot and exposes focused `GET /local/content-bundle/quest-state`, `GET /local/content-bundle/quest-state/characters/{character}`, `GET /local/content-bundle/quest-state/quests/{quest_ref}`, `GET /local/content-bundle/quest-state/flags/{character}/{quest_ref}/{flag}`, `GET /local/content-bundle/quest-flag-triggers/{kind}/{ref}`, `POST /local/content-bundle/import-preview/quest-flag-triggers/{kind}/{ref}`, `POST /local/content-bundle/import-preview/quest-state/characters/{character}`, `POST /local/content-bundle/import-preview/quest-state/quests/{quest_ref}`, and `POST /local/content-bundle/import-preview/quest-state/flags/{character}/{quest_ref}/{flag}` readers for bundle-summary rows and scoped import-preview quest/quest-trigger deltas,
 - the same store can be validated and cleaned of owned crash-temp files without mutating committed quest flags,
 - bad identities, duplicate rows, malformed JSON, symlinked committed snapshots, symlinked crash-temp candidates, and mismatched current values fail closed,
+- the first owned combat-adjacent content trigger can apply that same primitive for the selected killer after an accepted spawn-backed death edge when the spawn group authors kill-quest credit fields,
 - broader client-visible quest runtime remains future work.
