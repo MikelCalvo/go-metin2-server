@@ -158,6 +158,10 @@ Rules frozen by tests:
   - refine-info and refine-material rows include optional template-authored refine-dialog preview metadata with deterministic material positions,
   - missing item-template snapshots produce an empty migration-shaped export rather than forcing built-in bootstrap fallback rows into a future DB import.
 - `gamed` exposes this projection through loopback-only read-only `GET /local/item-templates/exports/item-template-state`; it reads the committed authored item-template snapshot, returns JSON, and performs no SQL or store mutation.
+- `internal/itemstore` now also exposes a fail-closed quarantine/preflight for retained `0009_item_template_refine_info` exports:
+  - `ValidateItemTemplateStateExport` / `QuarantineItemTemplateStateExport` accept only migration version/name `9` / `item_template_refine_info`, present templates/sockets/attributes/use_effects/equip_effects/refine_infos/refine_materials slices, unique template vnums, child rows that reference exported templates with migration-valid positions/bounds, contiguous refine-material positions from `0`, and reconstructed templates that satisfy authored bootstrap validation including the safebox-reject guard,
+  - successful quarantine returns metadata-only counts plus a canonicalized export ordered by ascending vnum and stable child-row keys,
+  - loopback-only `POST /local/item-templates/exports/item-template-state/quarantine` on `gamed` validates and canonicalizes a retained artifact without opening a database, writing item-template snapshots, or emitting SQL.
 - `internal/loginticket` now exposes a read-only auth login-ticket handoff projection for the `0007_auth_login_ticket_handoff` migration boundary:
   - ticket rows are deterministic by normalized login, original login, and login key,
   - rows include active non-zero login key, UTC issued timestamp, login/original-normalized identity, empire, nil consumed timestamp for the current pending-ticket store, and a transitional character snapshot JSON payload,
@@ -213,7 +217,7 @@ Those require separate slices because each one changes operator and data-safety 
 ## Likely next slices
 
 1. Define a narrow account/character/item/quest-state/login-ticket/static-content repository interface backed by current tests before adding a DB implementation.
-2. Continue JSON-file-store import/quarantine tooling beyond the landed `0002_account_character_roster`, `0003_character_item_state`, `0011_character_point_state`, and `0004_character_quest_state` quarantine preflights so retained current item-template-state (`0009_item_template_refine_info`), `0007_auth_login_ticket_handoff`, and `0008_static_actor_content_state` shapes plus optional offline ledger snapshots can be validated without silently coercing bad snapshots.
+2. Continue JSON-file-store import/quarantine tooling beyond the landed `0002_account_character_roster`, `0003_character_item_state`, `0011_character_point_state`, and `0004_character_quest_state` quarantine preflights so retained `0008_static_actor_content_state` and bootstrap ground-item shapes plus optional offline ledger snapshots can be validated without silently coercing bad snapshots.
 3. Add a driver-backed test harness or build-tagged integration test for `schema_migrations` status and ledger-snapshot generation before adding apply/rollback tooling.
 4. Add explicit migrations for richer item/economy domains, item ownership timers, combat-profile defaults, or broader world runtime state only after the account/character/item/item-template/login-ticket/static-content/ground-handle repository seams are stable.
 5. Add a production apply/rollback command only after the dry-run status boundary, the programmatic apply primitive, and ledger validation behavior are exercised against an actual driver-backed test database, with explicit backup/restore policy.

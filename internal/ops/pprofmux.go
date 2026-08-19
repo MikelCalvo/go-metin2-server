@@ -175,6 +175,7 @@ const (
 	maxLocalAccountCharacterRosterQuarantineBodyBytes  = 1 << 20
 	maxLocalAuthLoginTicketHandoffQuarantineBodyBytes  = 1 << 20
 	maxLocalStaticActorContentStateQuarantineBodyBytes = 1 << 20
+	maxLocalItemTemplateStateQuarantineBodyBytes       = 1 << 20
 )
 
 func NewPprofMux(serviceName string) *http.ServeMux {
@@ -1873,6 +1874,43 @@ func RegisterLocalItemTemplateStateExportEndpoint(mux *http.ServeMux, exportItem
 			return
 		}
 		writeLocalJSONMutationResponse(w, export, http.StatusOK)
+	})
+	return mux
+}
+
+// RegisterLocalItemTemplateStateQuarantineEndpoint exposes a loopback-only
+// POST quarantine/preflight for retained 0009 item-template-state exports.
+// It validates and canonicalizes the payload without opening a database or
+// mutating item-template snapshots.
+func RegisterLocalItemTemplateStateQuarantineEndpoint(mux *http.ServeMux) *http.ServeMux {
+	if mux == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/item-templates/exports/item-template-state/quarantine", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		export, status, ok := decodeLocalItemTemplateStateExportRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		quarantined, summary, err := itemstore.QuarantineItemTemplateStateExport(export)
+		if err != nil {
+			slog.Warn("local item-template-state quarantine failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, itemstore.ItemTemplateStateQuarantineResult{
+			Summary: summary,
+			Export:  quarantined,
+		}, http.StatusOK)
 	})
 	return mux
 }
@@ -5498,6 +5536,30 @@ func decodeLocalAuthLoginTicketHandoffExportRequest(r *http.Request) (loginticke
 	var trailing struct{}
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return loginticket.AuthLoginTicketHandoffExport{}, http.StatusBadRequest, false
+	}
+	return export, http.StatusOK, true
+}
+
+func decodeLocalItemTemplateStateExportRequest(r *http.Request) (itemstore.ItemTemplateStateExport, int, bool) {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxLocalItemTemplateStateQuarantineBodyBytes+1))
+	if err != nil {
+		return itemstore.ItemTemplateStateExport{}, http.StatusBadRequest, false
+	}
+	if len(raw) > maxLocalItemTemplateStateQuarantineBodyBytes {
+		return itemstore.ItemTemplateStateExport{}, http.StatusRequestEntityTooLarge, false
+	}
+	if !utf8.Valid(raw) || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return itemstore.ItemTemplateStateExport{}, http.StatusBadRequest, false
+	}
+	var export itemstore.ItemTemplateStateExport
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&export); err != nil {
+		return itemstore.ItemTemplateStateExport{}, http.StatusBadRequest, false
+	}
+	var trailing struct{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return itemstore.ItemTemplateStateExport{}, http.StatusBadRequest, false
 	}
 	return export, http.StatusOK, true
 }

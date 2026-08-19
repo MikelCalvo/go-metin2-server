@@ -299,6 +299,7 @@ func main() {
 		opsHandler,
 		gameRuntime.ExportItemTemplateState,
 	)
+	opsHandler = ops.RegisterLocalItemTemplateStateQuarantineEndpoint(opsHandler)
 	opsHandler = ops.RegisterLocalStaticActorContentStateExportEndpoint(
 		opsHandler,
 		gameRuntime.ExportStaticActorContentState,

@@ -9198,6 +9198,137 @@ func TestLocalItemTemplateStateExportEndpointReportsExporterFailure(t *testing.T
 	}
 }
 
+func TestLocalItemTemplateStateQuarantineEndpointReturnsCanonicalJSON(t *testing.T) {
+	body, err := json.Marshal(itemstore.ItemTemplateStateExport{
+		MigrationVersion: itemstore.ItemTemplateStateMigrationVersion,
+		MigrationName:    itemstore.ItemTemplateStateMigrationName,
+		Templates: []itemstore.ItemTemplateRow{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, AntiSafebox: true, SafeboxRejectText: "blocked"},
+			{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, Refineable: true, EquipSlot: "weapon"},
+		},
+		Sockets: []itemstore.ItemTemplateSocketRow{
+			{Vnum: 27001, Position: 2, Value: 3},
+			{Vnum: 27001, Position: 0, Value: 1},
+		},
+		Attributes: []itemstore.ItemTemplateAttributeRow{
+			{Vnum: 27001, Position: 0, Type: 1, Value: 10},
+		},
+		UseEffects: []itemstore.ItemTemplateUseEffectRow{
+			{Vnum: 27001, PointType: 7, PointIndex: 1, PointDelta: 25, ConsumeCount: 1, Message: "Recovered HP"},
+		},
+		EquipEffects: []itemstore.ItemTemplateEquipEffectRow{
+			{Vnum: 11200, PointType: 1, PointIndex: 0, PointDelta: 4},
+		},
+		RefineInfos: []itemstore.ItemTemplateRefineInfoRow{
+			{Vnum: 11200, ResultVnum: 11201, Cost: 2500, Probability: 75},
+		},
+		RefineMaterials: []itemstore.ItemTemplateRefineMaterialRow{
+			{Vnum: 11200, Position: 1, ItemVnum: 27002, Count: 3},
+			{Vnum: 11200, Position: 0, ItemVnum: 27001, Count: 2},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal quarantine body: %v", err)
+	}
+
+	mux := RegisterLocalItemTemplateStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/item-templates/exports/item-template-state/quarantine", bytes.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	responseBody := rec.Body.String()
+	for _, want := range []string{
+		`"template_count":2`,
+		`"socket_count":2`,
+		`"attribute_count":1`,
+		`"use_effect_count":1`,
+		`"equip_effect_count":1`,
+		`"refine_info_count":1`,
+		`"refine_material_count":2`,
+		`"vnums":[11200,27001]`,
+		`"migration_version":9`,
+		`"vnum":11200`,
+		`"vnum":27001`,
+	} {
+		if !strings.Contains(responseBody, want) {
+			t.Fatalf("expected quarantine response to contain %s, got %s", want, responseBody)
+		}
+	}
+	if strings.Contains(responseBody, "CREATE TABLE") || strings.Contains(responseBody, "postgres://") {
+		t.Fatalf("quarantine endpoint must not expose SQL or DSNs, got %s", responseBody)
+	}
+}
+
+func TestLocalItemTemplateStateQuarantineEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	mux := RegisterLocalItemTemplateStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/item-templates/exports/item-template-state/quarantine", strings.NewReader(`{"migration_version":9,"migration_name":"item_template_refine_info","templates":[],"sockets":[],"attributes":[],"use_effects":[],"equip_effects":[],"refine_infos":[],"refine_materials":[]}`))
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+}
+
+func TestLocalItemTemplateStateQuarantineEndpointRejectsWrongMethod(t *testing.T) {
+	mux := RegisterLocalItemTemplateStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodGet, "/local/item-templates/exports/item-template-state/quarantine", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+}
+
+func TestLocalItemTemplateStateQuarantineEndpointRejectsInvalidExport(t *testing.T) {
+	mux := RegisterLocalItemTemplateStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/item-templates/exports/item-template-state/quarantine", strings.NewReader(`{"migration_version":5,"migration_name":"item_template_refine_info","templates":[],"sockets":[],"attributes":[],"use_effects":[],"equip_effects":[],"refine_infos":[],"refine_materials":[]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+}
+
+func TestLocalItemTemplateStateQuarantineEndpointRejectsMalformedJSON(t *testing.T) {
+	mux := RegisterLocalItemTemplateStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/item-templates/exports/item-template-state/quarantine", strings.NewReader(`{"migration_version":9`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestNewPprofMuxDoesNotExposeLocalItemTemplateStateQuarantineByDefault(t *testing.T) {
+	mux := NewPprofMux("authd")
+	req := httptest.NewRequest(http.MethodPost, "/local/item-templates/exports/item-template-state/quarantine", strings.NewReader(`{"migration_version":9,"migration_name":"item_template_refine_info","templates":[],"sockets":[],"attributes":[],"use_effects":[],"equip_effects":[],"refine_infos":[],"refine_materials":[]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
 func TestLocalStaticActorContentStateExportEndpointReturnsLoopbackJSON(t *testing.T) {
 	exporter := &stubStaticActorContentStateExporter{export: staticstore.StaticActorContentStateExport{
 		MigrationVersion: staticstore.StaticActorContentStateMigrationVersion,

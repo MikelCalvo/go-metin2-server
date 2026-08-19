@@ -593,6 +593,24 @@ Returns a loopback-only, read-only JSON projection of the committed authored ite
 
 Successful responses include `migration_version`, `migration_name`, deterministic `templates`, and deterministic child rows for non-zero `sockets`, non-zero `attributes`, `use_effects`, `equip_effects`, `refine_infos`, and `refine_materials`. A missing committed `item-templates.json` returns an empty migration-shaped export instead of exporting built-in fallback bootstrap templates. The response deliberately omits executable SQL, content bundles, account/item-instance rows, login tickets, authored actor state, runtime world state, and accepted refine result execution, and it does not apply migrations or mutate the item-template store. Use it as an operator/backfill preflight for authored item metadata before future import or repository work.
 
+### `POST /local/item-templates/exports/item-template-state/quarantine`
+
+Validates and canonicalizes a retained `0009_item_template_refine_info` export without opening a database or mutating item-template snapshots. This endpoint is registered only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects non-loopback callers with `403`, rejects oversized bodies over 1 MiB with `413`, rejects malformed/invalid-UTF-8/`null` JSON with `400`, and returns `409` when the payload fails the quarantine contract.
+
+Successful responses include:
+
+- `summary.template_count`
+- `summary.socket_count`
+- `summary.attribute_count`
+- `summary.use_effect_count`
+- `summary.equip_effect_count`
+- `summary.refine_info_count`
+- `summary.refine_material_count`
+- deterministic sorted `summary.vnums`
+- a canonicalized `export` whose templates are ordered by ascending `vnum` and whose child rows keep stable vnum/position ordering
+
+The quarantine contract requires `migration_version = 9`, `migration_name = "item_template_refine_info"`, present (possibly empty) `templates` / `sockets` / `attributes` / `use_effects` / `equip_effects` / `refine_infos` / `refine_materials` arrays, unique template vnums, child rows that reference exported templates, migration-valid positions/bounds, contiguous refine-material positions from `0`, and reconstructed templates that satisfy the authored bootstrap validation rules (including safebox-reject requiring `anti_safebox`). Use this after retaining an export artifact and before any future DB backfill/import tool. It is not a repository write path and never emits SQL or DSNs.
+
 ### `GET /local/static-actors/exports/static-actor-content-state`
 
 Returns a loopback-only, read-only JSON projection of the committed authored static-actor and interaction-definition snapshots onto the `0008_static_actor_content_state` migration boundary. This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if either committed content store cannot be loaded, if any actor/definition/catalog/reward row would violate the schema shape, or if a newer file-backed interaction kind such as `quest_flag` has no owned columns/kind in migration `0008` yet.
