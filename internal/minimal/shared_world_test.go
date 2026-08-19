@@ -3225,6 +3225,140 @@ func TestGameSessionFlowDueSpawnGroupReturnStepFlushesBeforeFreshEnterBootstrap(
 	}
 }
 
+func TestGameSessionFlowDueSpawnGroupChaseStepFlushesBeforeFreshEnterBootstrap(t *testing.T) {
+	// Mirror the owned return-step EnterGame preflight: once a pending chase-step
+	// deadline is already due, a fresh nearby EnterGame must flush that step before
+	// encoding static-actor visibility so the newcomer sees the stepped position
+	// instead of stale pre-chase coordinates followed by a redundant queued rebuild.
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ChaseStepFreshEnterOwner", 0x01030188, 0x02040188, 1900, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "chase-step-fresh-enter-owner", 0x30303039, owner)
+	newcomer := peerVisibilityCharacter("ChaseStepFreshEnter", 0x01030189, 0x02040189, 1850, 2800, 0, 102, 202)
+	newcomer.MapIndex = 42
+	issuePeerTicket(t, store, "chase-step-fresh-enter", 0x3030303a, newcomer)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700001230, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for fresh-enter chase-step flush: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.chase_step_fresh_enter",
+		Name:          "ChaseStepFreshEnterMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import fresh-enter chase-step spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.chase_step_fresh_enter")
+	if !ok {
+		t.Fatal("expected fresh-enter chase-step spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "chase-step-fresh-enter-owner", 0x30303039)
+	defer closeSessionFlow(t, ownerFlow)
+	flushServerFrames(t, ownerFlow)
+
+	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
+		t.Fatalf("unexpected owner target error before fresh-enter chase-step flush: %v", err)
+	}
+	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	}))); err != nil {
+		t.Fatalf("unexpected accepted hit before fresh-enter chase-step flush: %v", err)
+	}
+	runtime.spawnChaseMu.Lock()
+	dueAt, scheduled := runtime.spawnChaseStepDueAt[group.EntityID]
+	runtime.spawnChaseMu.Unlock()
+	if !scheduled {
+		t.Fatalf("expected engaged hit to arm one pending chase-step deadline for entity %d", group.EntityID)
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 2 {
+		t.Fatalf("expected the owned delayed retaliation beat to fire before the later chase step, got %d frames", len(queued))
+	}
+
+	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay - bootstrapPracticeMobServerOriginRetaliationDelay)
+	if runtime.now().Before(dueAt) {
+		t.Fatalf("expected chase-step deadline to be due before fresh enter, due_at=%s now=%s", dueAt, runtime.now())
+	}
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "chase-step-fresh-enter", 0x3030303a)
+	defer closeSessionFlow(t, flow)
+	steppedAddIdx := -1
+	for idx := range enterOut {
+		add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, enterOut[idx]))
+		if err != nil {
+			continue
+		}
+		if add.VID != targetVID {
+			continue
+		}
+		if add.X != 1800 || add.Y != 2800 {
+			t.Fatalf("expected fresh enter to see due chase-step position 1800,2800 for actor %d, got %+v", group.EntityID, add)
+		}
+		steppedAddIdx = idx
+		break
+	}
+	if steppedAddIdx < 0 {
+		t.Fatalf("expected fresh enter after due chase-step to include stepped static-actor CHARACTER_ADD, got %d frames", len(enterOut))
+	}
+	if steppedAddIdx+2 >= len(enterOut) {
+		t.Fatalf("expected stepped chase actor info/update after CHARACTER_ADD at frame %d, got %d frames", steppedAddIdx, len(enterOut))
+	}
+	steppedInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, enterOut[steppedAddIdx+1]))
+	if err != nil {
+		t.Fatalf("decode fresh-enter stepped chase actor info: %v", err)
+	}
+	if steppedInfo.VID != targetVID || steppedInfo.Name != "ChaseStepFreshEnterMob" {
+		t.Fatalf("expected fresh enter to see stepped chase actor info for target %d, got %+v", group.EntityID, steppedInfo)
+	}
+	steppedUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, enterOut[steppedAddIdx+2]))
+	if err != nil {
+		t.Fatalf("decode fresh-enter stepped chase actor update: %v", err)
+	}
+	if steppedUpdate.VID != targetVID {
+		t.Fatalf("expected fresh enter to see stepped chase actor update for target %d, got %+v", group.EntityID, steppedUpdate)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no duplicate queued chase-step rebuild after fresh enter bootstrap, got %d frames", len(queued))
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after fresh-enter chase-step flush: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != 1800 || persisted.StaticActors[0].Y != 2800 {
+		t.Fatalf("expected fresh-enter chase-step flush to persist stepped position, got %+v", persisted.StaticActors)
+	}
+	actor, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || actor.X != 1800 || actor.Y != 2800 {
+		t.Fatalf("expected runtime actor at due chase-step position after fresh enter preflight, ok=%v snapshot=%+v", ok, actor)
+	}
+}
+
 func TestGameRuntimeSpawnGroupReturnStepSnapshotsReportPendingSchedules(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
@@ -11822,6 +11956,146 @@ func TestNewGameSessionFactoryDueSpawnGroupReturnStepFlushesBeforeMoveTransferRe
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no duplicate queued return-step rebuild after transfer rebootstrap, got %d", len(queued))
+	}
+}
+
+func TestNewGameSessionFactoryDueSpawnGroupChaseStepFlushesBeforeMoveTransferRebootstrap(t *testing.T) {
+	// Mirror the owned return-step transfer preflight: once a pending chase-step
+	// deadline is already due, a MOVE transfer rebootstrap onto that map must flush
+	// the due chase step before encoding destination static-actor visibility.
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ChaseXferOwner", 0x0103018a, 0x0204018a, 1900, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "chase-xfer-owner", 0x3030303b, owner)
+	mover := peerVisibilityCharacter("ChaseXferMover", 0x0103018b, 0x0204018b, 1300, 2300, 0, 102, 202)
+	issuePeerTicket(t, store, "chase-xfer-mover", 0x3030303c, mover)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700001240, 0)
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		[]bootstrapTransferTrigger{{
+			SourceMapIndex: bootstrapMapIndex,
+			SourceX:        1500,
+			SourceY:        2600,
+			TargetMapIndex: 42,
+			TargetX:        1850,
+			TargetY:        2800,
+		}},
+	)
+	if err != nil {
+		t.Fatalf("unexpected chase-step transfer runtime error: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.chase_step_transfer_preflight",
+		Name:          "ChaseStepTransferPreflightMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import transfer chase-step spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.chase_step_transfer_preflight")
+	if !ok {
+		t.Fatal("expected transfer chase-step spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "chase-xfer-owner", 0x3030303b)
+	defer closeSessionFlow(t, ownerFlow)
+	flushServerFrames(t, ownerFlow)
+	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
+		t.Fatalf("unexpected owner target error before chase-step transfer preflight: %v", err)
+	}
+	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	}))); err != nil {
+		t.Fatalf("unexpected accepted hit before chase-step transfer preflight: %v", err)
+	}
+	runtime.spawnChaseMu.Lock()
+	dueAt, scheduled := runtime.spawnChaseStepDueAt[group.EntityID]
+	runtime.spawnChaseMu.Unlock()
+	if !scheduled {
+		t.Fatalf("expected engaged hit to arm one pending chase-step deadline for entity %d", group.EntityID)
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 2 {
+		t.Fatalf("expected the owned delayed retaliation beat to fire before the later chase step, got %d frames", len(queued))
+	}
+
+	moverFlow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "chase-xfer-mover", 0x3030303c)
+	defer closeSessionFlow(t, moverFlow)
+	if len(enterOut) != 5 {
+		t.Fatalf("expected source-map enter before chase-step transfer to avoid destination actor visibility, got %d frames", len(enterOut))
+	}
+
+	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay - bootstrapPracticeMobServerOriginRetaliationDelay)
+	if runtime.now().Before(dueAt) {
+		t.Fatalf("expected chase-step deadline to be due before transfer, due_at=%s now=%s", dueAt, runtime.now())
+	}
+
+	moveOut, err := moverFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x21222324})))
+	if err != nil {
+		t.Fatalf("unexpected move transfer error before due chase-step rebootstrap: %v", err)
+	}
+	steppedAddIdx := -1
+	for idx := range moveOut {
+		add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moveOut[idx]))
+		if err != nil {
+			continue
+		}
+		if add.VID != targetVID {
+			continue
+		}
+		if add.X != 1800 || add.Y != 2800 {
+			t.Fatalf("expected transfer rebootstrap to see due chase-step position 1800,2800 for actor %d, got %+v", group.EntityID, add)
+		}
+		steppedAddIdx = idx
+		break
+	}
+	if steppedAddIdx < 0 {
+		t.Fatalf("expected transfer rebootstrap after due chase-step to include stepped static-actor CHARACTER_ADD, got %d frames", len(moveOut))
+	}
+	if steppedAddIdx+2 >= len(moveOut) {
+		t.Fatalf("expected stepped chase actor info/update after CHARACTER_ADD at frame %d, got %d frames", steppedAddIdx, len(moveOut))
+	}
+	steppedInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, moveOut[steppedAddIdx+1]))
+	if err != nil {
+		t.Fatalf("decode transfer stepped chase actor info: %v", err)
+	}
+	if steppedInfo.VID != targetVID || steppedInfo.Name != "ChaseStepTransferPreflightMob" {
+		t.Fatalf("expected transfer rebootstrap to see stepped chase actor info for target %d, got %+v", group.EntityID, steppedInfo)
+	}
+	steppedUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, moveOut[steppedAddIdx+2]))
+	if err != nil {
+		t.Fatalf("decode transfer stepped chase actor update: %v", err)
+	}
+	if steppedUpdate.VID != targetVID {
+		t.Fatalf("expected transfer rebootstrap to see stepped chase actor update for target %d, got %+v", group.EntityID, steppedUpdate)
+	}
+	if queued := flushServerFrames(t, moverFlow); len(queued) != 0 {
+		t.Fatalf("expected no duplicate queued chase-step rebuild after transfer rebootstrap, got %d", len(queued))
+	}
+	actor, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || actor.X != 1800 || actor.Y != 2800 {
+		t.Fatalf("expected runtime actor at due chase-step position after transfer preflight, ok=%v snapshot=%+v", ok, actor)
 	}
 }
 
