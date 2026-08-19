@@ -377,7 +377,7 @@ After this document lands, the repository should be able to say:
 - owner-side retaliation-driven `0` HP is no longer only an implicit point floor; the repo now owns one visible zero-HP death signal family for that edge
 - the current bootstrap player-death packet is `GC DEAD(owner_vid)` with header `0x0217`
 - that owner death signal is emitted on both immediate and delayed retaliation beats when they drive the engaged owner to `0` HP
-- those immediate and delayed retaliation point-loss beats stay runtime-only for the selected live session today, so fresh `/phase_select` re-entry or reconnect still rebuild from the pre-retaliation persisted point value until broader player-death persistence / respawn semantics are owned
+- those immediate and delayed retaliation point-loss beats stay runtime-only for the selected live session today, so fresh `/phase_select` re-entry or reconnect still rebuild from the pre-retaliation persisted point value; the next owned death-persistence slice freezes the reconnect rule that persists the `0`-HP floor and keeps restart recovery honest once that lands
 - the current ordered owner-side floor transition is `GC PLAYER_POINT_CHANGE(value=0)` -> `GC DEAD(owner_vid)` -> `GC TARGET(0, 0)`
 - once that same floor is reached, later owner-side `MOVE` / `SYNC_POSITION` attempts also fail closed before self ack, shared-world relocation mutation, or transfer-trigger rebootstrap work can run
 - once that same floor is reached, later owner-side static-actor `INTERACT` attempts also fail closed before talk/info delivery, merchant preview open, or warp transfer / rebootstrap work can run
