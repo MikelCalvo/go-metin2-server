@@ -3896,8 +3896,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return
 			}
 			frames := [][]byte{encodePlayerPointChangeFrame(previousSelected.VID, retaliation)}
+			var ownerRetaliationDamageInfo []byte
 			if !clearTarget {
-				frames = append(frames, encodePracticeMobOwnerRetaliationDamageInfoFrame(previousSelected.VID, retaliation))
+				ownerRetaliationDamageInfo = encodePracticeMobOwnerRetaliationDamageInfoFrame(previousSelected.VID, retaliation)
+				frames = append(frames, ownerRetaliationDamageInfo)
 			}
 			var stablePeerFrames [][]byte
 			if clearTarget {
@@ -3920,6 +3922,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return
 			}
 			pending.Enqueue(frames)
+			if !clearTarget && len(ownerRetaliationDamageInfo) != 0 && ownsLiveSharedWorldSession() {
+				sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selectedPlayer.LiveCharacter(), [][]byte{ownerRetaliationDamageInfo})
+			}
 			issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
 			if !clearTarget {
 				scheduleFirstPracticeMobServerOriginRetaliation(targetVID, snapshotVersion)
@@ -6150,7 +6155,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						}
 					}
 					if !clearTarget {
-						persistedFrames = append(persistedFrames, encodePracticeMobOwnerRetaliationDamageInfoFrame(previousSelected.VID, retaliation))
+						ownerRetaliationDamageInfo := encodePracticeMobOwnerRetaliationDamageInfoFrame(previousSelected.VID, retaliation)
+						persistedFrames = append(persistedFrames, ownerRetaliationDamageInfo)
+						if ownsLiveSharedWorldSession() {
+							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selectedPlayer.LiveCharacter(), [][]byte{ownerRetaliationDamageInfo})
+						}
 					}
 					persistedFrames = appendPostFloorContextCloseFrames(persistedFrames, clearTarget)
 					if !resolution.ClearActiveTarget && !clearTarget {
