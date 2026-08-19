@@ -167,16 +167,19 @@ Already present:
 - retaliation ticks and player death floor,
 - restart-here/restart-town bootstrap recovery,
 - deterministic EXP/gold/fixed-drop reward descriptors,
+- authored combat-profile formula seam (`attack_value` / `defense_value` -> `damage_per_normal_attack`) for practice mobs,
+- authoring-only fixed `drop_tables` expansion into spawn-group reward descriptors,
+- persisted bootstrap `0`-HP floor across reconnect / `/phase_select` / fresh `ENTERGAME`,
 - codec-owned but non-emitted presentation packet families for future combat surfaces.
 
 Still missing:
 
-- formulas,
+- compatibility-grade formulas beyond the current bootstrap combat-profile defaults,
 - attack types and animations beyond the current normal path,
 - accepted skill/ranged/projectile runtime behavior,
 - PvP/duel policy,
-- mob AI: aggro radius, chase, leash, return, patrol, target switching,
-- broad loot/drop tables,
+- broader mob AI beyond the owned proximity aggro, chase-step, leash, and return seams (patrol, target switching, independent attack cadence packets),
+- weighted/random loot tables and pickup mutation beyond fixed descriptors,
 - full death/revive/corpse/menu behavior.
 
 ### Social systems

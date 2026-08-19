@@ -10,7 +10,7 @@ It sits on top of:
 Those documents already freeze:
 - the selected player's current self-only `GC PLAYER_POINT_CHANGE` carrier
 - the first hostile content-loaded practice-mob retaliation loop, including immediate hit-triggered point loss and the delayed server-origin cadence
-- that same retaliation point-loss is currently live-runtime only for the engaged selected session, so it does not yet persist across fresh `/phase_select` re-entry or reconnect
+- that same retaliation point-loss stays live-runtime only for the engaged selected session until the bootstrap `0`-HP floor; once either immediate or delayed practice-mob retaliation reaches that floor, the selected-character bootstrap HP point is persisted as `0` so fresh `/phase_select` re-entry, reconnect, and `ENTERGAME` replay the dead snapshot
 - fail-closed owner-side `TARGET` / `ATTACK` rejection once that retaliation floor has already reached `0` HP
 - fail-closed owner-side `MOVE` / `SYNC_POSITION` rejection at that same retaliation floor before relocation or transfer-trigger rebootstrap can run
 - fail-closed owner-side static-actor `INTERACT` rejection at that same retaliation floor before talk/info, merchant preview, or warp-side effects can run
@@ -377,7 +377,7 @@ After this document lands, the repository should be able to say:
 - owner-side retaliation-driven `0` HP is no longer only an implicit point floor; the repo now owns one visible zero-HP death signal family for that edge
 - the current bootstrap player-death packet is `GC DEAD(owner_vid)` with header `0x0217`
 - that owner death signal is emitted on both immediate and delayed retaliation beats when they drive the engaged owner to `0` HP
-- those immediate and delayed retaliation point-loss beats stay runtime-only for the selected live session today, so fresh `/phase_select` re-entry or reconnect still rebuild from the pre-retaliation persisted point value; the next owned death-persistence slice freezes the reconnect rule that persists the `0`-HP floor and keeps restart recovery honest once that lands
+- those immediate and delayed retaliation point-loss beats stay runtime-only for the selected live session until the bootstrap `0`-HP floor; once that floor is reached, the selected-character bootstrap HP point is persisted as `0` with the owned death/clear frames so fresh `/phase_select` re-entry, reconnect, and `ENTERGAME` replay `PLAYER_POINT_CHANGE` at `0` plus self `GC DEAD(owner_vid)`, while accepted `/restart_here` / `/restart_town` restore race create MaxHP into that persisted snapshot
 - the current ordered owner-side floor transition is `GC PLAYER_POINT_CHANGE(value=0)` -> `GC DEAD(owner_vid)` -> `GC TARGET(0, 0)`
 - once that same floor is reached, later owner-side `MOVE` / `SYNC_POSITION` attempts also fail closed before self ack, shared-world relocation mutation, or transfer-trigger rebootstrap work can run
 - once that same floor is reached, later owner-side static-actor `INTERACT` attempts also fail closed before talk/info delivery, merchant preview open, or warp transfer / rebootstrap work can run
