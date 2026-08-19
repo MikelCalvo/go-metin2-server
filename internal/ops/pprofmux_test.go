@@ -9532,6 +9532,117 @@ func TestLocalBootstrapGroundItemStateExportEndpointReportsExporterFailure(t *te
 	}
 }
 
+func TestLocalBootstrapGroundItemStateQuarantineEndpointReturnsCanonicalJSON(t *testing.T) {
+	count := uint16(2)
+	gold := uint32(250)
+	body, err := json.Marshal(worldruntime.BootstrapGroundItemStateExport{
+		MigrationVersion: worldruntime.BootstrapGroundItemStateMigrationVersion,
+		MigrationName:    worldruntime.BootstrapGroundItemStateMigrationName,
+		GroundItems: []worldruntime.BootstrapGroundItemStateRow{
+			{VID: 0x0700002d, Vnum: 1, GoldAmount: &gold, OwnerLogin: "ground-gold-owner", OwnerCharacterID: 0x0103019d, OwnerVID: 0x0204019d, OwnerName: "GroundGoldOwner", MapIndex: 42, X: 1200, Y: 2200, Z: 3, PickupRange: 750},
+			{VID: 0x0700002c, Vnum: 3001, ItemCount: &count, OwnerLogin: "ground-item-owner", OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c, OwnerName: "GroundItemOwner", MapIndex: 1, X: 1100, Y: 2100, Z: 2, PickupRange: 450},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal quarantine body: %v", err)
+	}
+
+	mux := RegisterLocalBootstrapGroundItemStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/ground-items/exports/bootstrap-ground-item-state/quarantine", bytes.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	responseBody := rec.Body.String()
+	for _, want := range []string{
+		`"ground_item_count":2`,
+		`"item_shaped_count":1`,
+		`"gold_shaped_count":1`,
+		`"vids":[117440556,117440557]`,
+		`"migration_version":10`,
+		`"migration_name":"bootstrap_ground_item_state"`,
+		`"vid":117440556`,
+		`"item_count":2`,
+		`"gold_amount":250`,
+	} {
+		if !strings.Contains(responseBody, want) {
+			t.Fatalf("expected quarantine response to contain %s, got %s", want, responseBody)
+		}
+	}
+	if strings.Contains(responseBody, "CREATE TABLE") || strings.Contains(responseBody, "postgres://") {
+		t.Fatalf("quarantine endpoint must not expose SQL or DSNs, got %s", responseBody)
+	}
+}
+
+func TestLocalBootstrapGroundItemStateQuarantineEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	mux := RegisterLocalBootstrapGroundItemStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/ground-items/exports/bootstrap-ground-item-state/quarantine", strings.NewReader(`{"migration_version":10,"migration_name":"bootstrap_ground_item_state","ground_items":[]}`))
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+}
+
+func TestLocalBootstrapGroundItemStateQuarantineEndpointRejectsWrongMethod(t *testing.T) {
+	mux := RegisterLocalBootstrapGroundItemStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodGet, "/local/ground-items/exports/bootstrap-ground-item-state/quarantine", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+}
+
+func TestLocalBootstrapGroundItemStateQuarantineEndpointRejectsInvalidExport(t *testing.T) {
+	mux := RegisterLocalBootstrapGroundItemStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/ground-items/exports/bootstrap-ground-item-state/quarantine", strings.NewReader(`{"migration_version":9,"migration_name":"bootstrap_ground_item_state","ground_items":[]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+}
+
+func TestLocalBootstrapGroundItemStateQuarantineEndpointRejectsMalformedJSON(t *testing.T) {
+	mux := RegisterLocalBootstrapGroundItemStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/ground-items/exports/bootstrap-ground-item-state/quarantine", strings.NewReader(`{"migration_version":10`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestNewPprofMuxDoesNotExposeLocalBootstrapGroundItemStateQuarantineByDefault(t *testing.T) {
+	mux := NewPprofMux("authd")
+	req := httptest.NewRequest(http.MethodPost, "/local/ground-items/exports/bootstrap-ground-item-state/quarantine", strings.NewReader(`{"migration_version":10,"migration_name":"bootstrap_ground_item_state","ground_items":[]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
 func TestNewPprofMuxDoesNotExposeLocalMigrationStatusByDefault(t *testing.T) {
 	mux := NewPprofMux("authd")
 
@@ -9551,6 +9662,7 @@ func TestNewPprofMuxDoesNotExposeLocalMigrationStatusByDefault(t *testing.T) {
 		{method: http.MethodGet, path: "/local/item-templates/exports/item-template-state"},
 		{method: http.MethodGet, path: "/local/static-actors/exports/static-actor-content-state"},
 		{method: http.MethodGet, path: "/local/ground-items/exports/bootstrap-ground-item-state"},
+		{method: http.MethodPost, path: "/local/ground-items/exports/bootstrap-ground-item-state/quarantine"},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			req := httptest.NewRequest(tc.method, tc.path, nil)

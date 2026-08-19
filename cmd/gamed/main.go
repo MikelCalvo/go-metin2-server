@@ -309,6 +309,7 @@ func main() {
 		opsHandler,
 		gameRuntime.ExportBootstrapGroundItemState,
 	)
+	opsHandler = ops.RegisterLocalBootstrapGroundItemStateQuarantineEndpoint(opsHandler)
 	opsHandler = ops.RegisterLocalStaticActorRespawnsEndpoint(
 		opsHandler,
 		func() any { return gameRuntime.StaticActorRespawns() },

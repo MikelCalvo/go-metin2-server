@@ -80,9 +80,17 @@ Validation for this slice:
 - `go test ./internal/ops -run TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet -count=1`
 - broader repo validation is recorded in the run summary.
 
+## Quarantine/preflight follow-up
+
+A later persistence-lane slice added loopback-only quarantine for retained `0010` artifacts:
+
+- `POST /local/ground-items/exports/bootstrap-ground-item-state/quarantine`
+
+It validates and canonicalizes retained export JSON without opening a database, mutating live ground handles, or emitting SQL. See `docs/plans/2026-08-19-bootstrap-ground-item-state-quarantine.md`.
+
 ## Follow-up options
 
 1. Add crash/restart recovery for pending ground entries only after deciding whether in-memory bootstrap handles should survive process restart at all.
-2. Add import/backfill execution tooling only after the live export has a quarantine/validation policy.
+2. Add import/backfill execution tooling only after operators have a closed quarantine/validation policy for retained exports.
 3. Add ownership timer/public-release columns in a separate migration once timer semantics are owned.
 4. Keep DB apply/rollback surfaces CLI-only and daemon ops endpoints read-only unless a future production-admin design explicitly changes that boundary.

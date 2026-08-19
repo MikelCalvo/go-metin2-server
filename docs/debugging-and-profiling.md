@@ -623,6 +623,20 @@ Returns a loopback-only, read-only JSON projection of the currently pending live
 
 Successful responses include `migration_version`, `migration_name`, and deterministic `ground_items` rows sorted by visible ground `vid`. Item-shaped rows expose `item_count`; gold-shaped rows expose `gold_amount` and use the current bootstrap gold marker `vnum = 1`; both shapes expose owner identity, map position, and `pickup_range`. This projection reads live in-memory runtime state rather than a committed JSON store, deliberately omits executable SQL and database apply output, and does not make pending ground handles durable across restart. Use it as an operator/backfill preflight for the `0010` boundary before any future import, recovery, or DB-backed world-state repository work.
 
+### `POST /local/ground-items/exports/bootstrap-ground-item-state/quarantine`
+
+Validates and canonicalizes a retained `0010_bootstrap_ground_item_state` export without opening a database or mutating live ground handles. This endpoint is registered only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects non-loopback callers with `403`, rejects oversized bodies over 1 MiB with `413`, rejects malformed/invalid-UTF-8/`null` JSON with `400`, and returns `409` when the payload fails the quarantine contract.
+
+Successful responses include:
+
+- `summary.ground_item_count`
+- `summary.item_shaped_count`
+- `summary.gold_shaped_count`
+- deterministic sorted `summary.vids`
+- a canonicalized `export` whose rows are ordered by ascending visible ground `vid`
+
+The quarantine contract requires `migration_version = 10`, `migration_name = "bootstrap_ground_item_state"`, a present (possibly empty) `ground_items` array, and rows that satisfy the same fail-closed `0010` projection rules already owned by the live export path (unique positive `vid`, owner identity bounds, map/pickup bounds, and exclusive item-count vs gold-amount shapes with gold using `vnum = 1`). Use this after retaining an export artifact and before any future DB backfill/import or crash-recovery tool. It is not a repository write path and never emits SQL or DSNs.
+
 ### `GET /local/build-info`
 
 Returns JSON describing the process release identity stamped into the running binary. This endpoint is registered on the shared ops mux for both `authd` and `gamed`, is read-only, rejects non-`GET` methods with `405`, and rejects non-loopback callers with `403`.
