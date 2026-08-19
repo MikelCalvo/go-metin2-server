@@ -3397,6 +3397,93 @@ func TestBootstrapNPCServiceExampleBundleCarriesQuestStateSeed(t *testing.T) {
 	}
 }
 
+func TestBootstrapNPCServiceExampleBundleClosesKillQuestTurnIn(t *testing.T) {
+	decoded := loadBootstrapNPCServiceExampleBundle(t)
+
+	var hunter *StaticActor
+	for i := range decoded.StaticActors {
+		actor := &decoded.StaticActors[i]
+		if actor.Name == "QuestHunter" {
+			hunter = actor
+			break
+		}
+	}
+	if hunter == nil {
+		t.Fatal("bootstrap NPC service example lacks QuestHunter turn-in actor")
+	}
+	if hunter.InteractionKind != interactionstore.KindQuestFlag || hunter.InteractionRef != "quest:first_steps_kill_turnin" {
+		t.Fatalf("unexpected QuestHunter interaction metadata: %+v", hunter)
+	}
+
+	var turnIn *interactionstore.Definition
+	for i := range decoded.InteractionDefinitions {
+		definition := &decoded.InteractionDefinitions[i]
+		if definition.Kind == interactionstore.KindQuestFlag && definition.Ref == "quest:first_steps_kill_turnin" {
+			turnIn = definition
+			break
+		}
+	}
+	if turnIn == nil {
+		t.Fatal("bootstrap NPC service example lacks quest:first_steps_kill_turnin definition")
+	}
+	wantDefinition := interactionstore.Definition{
+		Kind:      interactionstore.KindQuestFlag,
+		Ref:       "quest:first_steps_kill_turnin",
+		Text:      "Quest updated: first_steps.killed_qa_mob = 0.",
+		QuestRef:  "quest:first_steps",
+		QuestFlag: "killed_qa_mob",
+		QuestFrom: 1,
+	}
+	if !reflect.DeepEqual(*turnIn, wantDefinition) {
+		t.Fatalf("unexpected kill-quest turn-in definition:\n got: %#v\nwant: %#v", *turnIn, wantDefinition)
+	}
+
+	var rewardMob *SpawnGroup
+	for i := range decoded.SpawnGroups {
+		group := &decoded.SpawnGroups[i]
+		if group.Ref == "practice.qa_reward_mob" {
+			rewardMob = group
+			break
+		}
+	}
+	if rewardMob == nil {
+		t.Fatal("bootstrap NPC service example lacks practice.qa_reward_mob spawn group")
+	}
+	if rewardMob.RewardQuestRef != "quest:first_steps" || rewardMob.RewardQuestFlag != "killed_qa_mob" || rewardMob.RewardQuestTo != 1 {
+		t.Fatalf("unexpected practice.qa_reward_mob kill-quest credit: %+v", rewardMob)
+	}
+
+	summary, err := Summarize(decoded)
+	if err != nil {
+		t.Fatalf("summarize bootstrap NPC service example bundle: %v", err)
+	}
+	if summary.QuestFlagTriggerCount != 3 {
+		t.Fatalf("expected 3 quest-flag triggers including kill turn-in, got %d", summary.QuestFlagTriggerCount)
+	}
+	foundTurnInTrigger := false
+	for _, trigger := range summary.QuestFlagTriggers {
+		if trigger.Ref == "quest:first_steps_kill_turnin" {
+			foundTurnInTrigger = true
+			if trigger.QuestFlag != "killed_qa_mob" || trigger.QuestFrom != 1 || trigger.QuestTo != 0 || trigger.Text != "Quest updated: first_steps.killed_qa_mob = 0." {
+				t.Fatalf("unexpected kill-quest turn-in trigger summary: %+v", trigger)
+			}
+		}
+	}
+	if !foundTurnInTrigger {
+		t.Fatalf("quest-flag trigger summary missing kill turn-in: %+v", summary.QuestFlagTriggers)
+	}
+	foundTurnInRoute := false
+	for _, route := range summary.QuestFlagRoutes {
+		if route.ActorName == "QuestHunter" && route.Ref == "quest:first_steps_kill_turnin" {
+			foundTurnInRoute = true
+			break
+		}
+	}
+	if !foundTurnInRoute {
+		t.Fatalf("quest-flag route summary missing QuestHunter turn-in: %+v", summary.QuestFlagRoutes)
+	}
+}
+
 func TestQuestStateImportPreviewFromImportPreviewReturnsCompactOverviewAndDeltas(t *testing.T) {
 	preview, err := BuildImportPreview(
 		Bundle{QuestState: []queststate.Flag{

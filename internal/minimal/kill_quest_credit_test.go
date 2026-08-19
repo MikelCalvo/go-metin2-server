@@ -14,6 +14,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
+	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
@@ -310,5 +311,200 @@ func TestHandleAttackKillQuestCreditAppliesWhenDeathRewardEmpty(t *testing.T) {
 	want := queststate.Snapshot{Flags: []queststate.Flag{{Character: killer.Name, QuestRef: "quest:first_steps", Name: "killed_qa_mob", Value: 1}}}
 	if !reflect.DeepEqual(loaded, want) {
 		t.Fatalf("unexpected quest-state after empty-reward kill:\n got: %#v\nwant: %#v", loaded, want)
+	}
+}
+
+func TestKillQuestCreditThenTurnInClearsKilledQAMob(t *testing.T) {
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	killer := peerVisibilityCharacter("KillQuestTurnIn", 0x01030152, 0x02040152, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, ticketStore, "kill-quest-turnin", 0x52525252, killer)
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "kill-quest-turnin", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed turn-in killer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		ticketStore,
+		accounts,
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new kill quest turn-in runtime: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_800, 0)
+	runtime.now = func() time.Time { return currentTime }
+	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:             "practice.kill_quest_turnin_mob",
+			Name:            "KillQuestTurnInMob",
+			MapIndex:        bootstrapMapIndex,
+			X:               1200,
+			Y:               2200,
+			RaceNum:         20350,
+			CombatProfile:   worldruntime.StaticActorCombatProfileTrainingDummy,
+			RewardQuestRef:  "quest:first_steps",
+			RewardQuestFlag: "killed_qa_mob",
+			RewardQuestTo:   1,
+			RewardQuestText: "Quest updated: first_steps.killed_qa_mob = 1.",
+		}},
+		StaticActors: []contentbundle.StaticActor{{
+			Name:            "QuestHunter",
+			MapIndex:        bootstrapMapIndex,
+			X:               1250,
+			Y:               2200,
+			RaceNum:         20302,
+			InteractionKind: interactionstore.KindQuestFlag,
+			InteractionRef:  "quest:first_steps_kill_turnin",
+		}},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:      interactionstore.KindQuestFlag,
+			Ref:       "quest:first_steps_kill_turnin",
+			Text:      "Quest updated: first_steps.killed_qa_mob = 0.",
+			QuestRef:  "quest:first_steps",
+			QuestFlag: "killed_qa_mob",
+			QuestFrom: 1,
+			QuestTo:   0,
+		}},
+	}); err != nil {
+		t.Fatalf("import kill quest turn-in bundle: %v", err)
+	}
+
+	var mobVID, hunterVID uint32
+	for _, actor := range runtime.StaticActors() {
+		switch actor.Name {
+		case "KillQuestTurnInMob":
+			mobVID = uint32(actor.EntityID)
+		case "QuestHunter":
+			hunterVID = uint32(actor.EntityID)
+		}
+	}
+	if mobVID == 0 || hunterVID == 0 {
+		t.Fatalf("expected imported mob and hunter actors, got %+v", runtime.StaticActors())
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "kill-quest-turnin", 0x52525252)
+	defer closeSessionFlow(t, flow)
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: mobVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected turn-in target selection to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: mobVID})))
+		if err != nil {
+			t.Fatalf("unexpected turn-in kill attack error on hit %d: %v", hit, err)
+		}
+	}
+	chat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, killOut[len(killOut)-1]))
+	if err != nil || chat.Message != "Quest updated: first_steps.killed_qa_mob = 1." {
+		t.Fatalf("unexpected kill credit chat before turn-in: %+v err=%v", chat, err)
+	}
+	loaded, err := runtime.questStateStore.Load()
+	if err != nil {
+		t.Fatalf("load quest-state after kill credit before turn-in: %v", err)
+	}
+	wantAfterKill := queststate.Snapshot{Flags: []queststate.Flag{{Character: killer.Name, QuestRef: "quest:first_steps", Name: "killed_qa_mob", Value: 1}}}
+	if !reflect.DeepEqual(loaded, wantAfterKill) {
+		t.Fatalf("unexpected quest-state after kill credit before turn-in:\n got: %#v\nwant: %#v", loaded, wantAfterKill)
+	}
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	turnInOut, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: hunterVID})))
+	if err != nil {
+		t.Fatalf("unexpected kill quest turn-in interaction error: %v", err)
+	}
+	if len(turnInOut) != 1 {
+		t.Fatalf("expected 1 self-only kill quest turn-in frame, got %d", len(turnInOut))
+	}
+	turnInChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, turnInOut[0]))
+	if err != nil || turnInChat.Type != chatproto.ChatTypeInfo || turnInChat.VID != 0 || turnInChat.Empire != 0 || turnInChat.Message != "Quest updated: first_steps.killed_qa_mob = 0." {
+		t.Fatalf("unexpected kill quest turn-in chat delivery: %+v err=%v", turnInChat, err)
+	}
+	loaded, err = runtime.questStateStore.Load()
+	if err != nil {
+		t.Fatalf("load quest-state after kill quest turn-in: %v", err)
+	}
+	wantAfterTurnIn := queststate.Snapshot{Flags: []queststate.Flag{}}
+	if !reflect.DeepEqual(loaded, wantAfterTurnIn) {
+		t.Fatalf("unexpected quest-state after kill quest turn-in:\n got: %#v\nwant: %#v", loaded, wantAfterTurnIn)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for self-only kill quest turn-in, got %d", len(queued))
+	}
+}
+
+func TestKillQuestTurnInMismatchWithoutKillCredit(t *testing.T) {
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("KillQuestTurnInMismatch", 0x01030153, 0x02040153, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, ticketStore, "kill-quest-turnin-mismatch", 0x53535353, peer)
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "kill-quest-turnin-mismatch", Empire: peer.Empire, Characters: []loginticket.Character{peer}}); err != nil {
+		t.Fatalf("seed turn-in mismatch account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		ticketStore,
+		accounts,
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new kill quest turn-in mismatch runtime: %v", err)
+	}
+	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{
+		StaticActors: []contentbundle.StaticActor{{
+			Name:            "QuestHunter",
+			MapIndex:        bootstrapMapIndex,
+			X:               1200,
+			Y:               2200,
+			RaceNum:         20302,
+			InteractionKind: interactionstore.KindQuestFlag,
+			InteractionRef:  "quest:first_steps_kill_turnin",
+		}},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:      interactionstore.KindQuestFlag,
+			Ref:       "quest:first_steps_kill_turnin",
+			Text:      "Quest updated: first_steps.killed_qa_mob = 0.",
+			QuestRef:  "quest:first_steps",
+			QuestFlag: "killed_qa_mob",
+			QuestFrom: 1,
+			QuestTo:   0,
+		}},
+	}); err != nil {
+		t.Fatalf("import kill quest turn-in mismatch bundle: %v", err)
+	}
+	hunterVID := uint32(runtime.StaticActors()[0].EntityID)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "kill-quest-turnin-mismatch", 0x53535353)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: hunterVID})))
+	if err != nil {
+		t.Fatalf("unexpected kill quest turn-in mismatch interaction error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 self-only mismatch frame for kill quest turn-in, got %d", len(out))
+	}
+	chat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil || chat.Type != chatproto.ChatTypeInfo || chat.VID != 0 || chat.Empire != 0 || chat.Message != "Quest requirements are not met." {
+		t.Fatalf("unexpected kill quest turn-in mismatch chat delivery: %+v err=%v", chat, err)
+	}
+	loaded, err := runtime.questStateStore.Load()
+	if err != nil {
+		t.Fatalf("load quest-state after mismatch turn-in: %v", err)
+	}
+	if !reflect.DeepEqual(loaded, queststate.Snapshot{Flags: []queststate.Flag{}}) {
+		t.Fatalf("mismatch turn-in mutated quest-state:\n got: %#v\nwant empty snapshot", loaded)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for mismatch kill quest turn-in, got %d", len(queued))
 	}
 }

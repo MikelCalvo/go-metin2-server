@@ -173,7 +173,7 @@ Owned gate rules:
 - loopback interaction-visibility previews for gated non-mutating interactions reuse that same mismatch text without mutating quest state
 - content-bundle warp destination/route summaries and shop-route summaries now surface the authored gate fields so operators can audit teleporter/merchant prerequisites without opening the live interaction path
 
-The checked-in QA example `docs/examples/bootstrap-npc-service-bundle.json` now gates `npc:qa_guide`, `lore:qa_square`, `npc:qa_teleporter`, and `npc:qa_merchant` on `quest:first_steps.met_guide = 1`, so the owned loop is: interact with `QuestGuide` once, then use the guide/signpost/teleporter/merchant. A later operator or `quest_flag` reset that clears `met_guide` while a previously opened QA merchant window is still open must therefore auto-close that stale window on the next buy/sell attempt instead of letting the transaction continue under a revoked prerequisite.
+The checked-in QA example `docs/examples/bootstrap-npc-service-bundle.json` now gates `npc:qa_guide`, `lore:qa_square`, `npc:qa_teleporter`, and `npc:qa_merchant` on `quest:first_steps.met_guide = 1`, so the owned service unlock loop is: interact with `QuestGuide` once, then use the guide/signpost/teleporter/merchant. The same fixture also closes the first combat-adjacent quest loop: kill `QARewardMob` to advance `quest:first_steps.killed_qa_mob`, then interact with `QuestHunter` (`quest:first_steps_kill_turnin`) to clear that flag through an ordinary `quest_flag` compare-and-set turn-in. A later operator or `quest_flag` reset that clears `met_guide` while a previously opened QA merchant window is still open must therefore auto-close that stale window on the next buy/sell attempt instead of letting the transaction continue under a revoked prerequisite.
 
 ## Runtime configuration and local ops
 
@@ -331,7 +331,7 @@ Owned rules:
 - on the accepted killing hit, after death/clear and any independent EXP/gold/drop reward handling, the selected killer session attempts one `ApplyTransition` for `(reward_quest_ref, reward_quest_flag, reward_quest_from, reward_quest_to)`
 - when the transition applies, the killer receives one self-only `CHAT_TYPE_INFO` frame with `reward_quest_text`
 - `current_value_mismatch` and other fail-closed transition results stay silent for this combat path: no quest chat is emitted and combat rewards are not rolled back
-- the narrow checked-in QA example remains `docs/examples/bootstrap-kill-quest-credit-bundle.json`; the combined NPC service fixture `docs/examples/bootstrap-npc-service-bundle.json` now also authors the same credit fields on `practice.qa_reward_mob`
+- the narrow checked-in QA example remains `docs/examples/bootstrap-kill-quest-credit-bundle.json`; the combined NPC service fixture `docs/examples/bootstrap-npc-service-bundle.json` now also authors the same credit fields on `practice.qa_reward_mob` and closes that credit with `QuestHunter` / `quest:first_steps_kill_turnin`
 
 ## Current non-goals
 
@@ -361,4 +361,5 @@ The current repository can now say:
 - the same store can be validated and cleaned of owned crash-temp files without mutating committed quest flags,
 - bad identities, duplicate rows, malformed JSON, symlinked committed snapshots, symlinked crash-temp candidates, and mismatched current values fail closed,
 - the first owned combat-adjacent content trigger can apply that same primitive for the selected killer after an accepted spawn-backed death edge when the spawn group authors kill-quest credit fields,
+- the combined QA fixture can close that kill credit through an authored `quest_flag` turn-in NPC without inventing a second quest runtime,
 - broader client-visible quest runtime remains future work.
