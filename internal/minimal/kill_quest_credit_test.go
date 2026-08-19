@@ -201,6 +201,81 @@ func TestGameRuntimeImportsDropTableKillQuestRequireGate(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeImportsRegenSpawnKillQuestRequireGate(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
+		loginticket.NewFileStore(t.TempDir()),
+		nil,
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new regen gated kill quest runtime: %v", err)
+	}
+	imported, err := runtime.ImportContentBundle(contentbundle.Bundle{
+		DropTables: []contentbundle.DropTable{{
+			Ref:              "loot.qa_regen_gated_kill_quest_reward",
+			RewardExperience: 90,
+			RewardGold:       45,
+			DropVnums:        []uint32{27002, 27001},
+			RewardQuestRef:   "quest:first_steps",
+			RewardQuestFlag:  "killed_qa_mob",
+			RewardQuestTo:    1,
+			RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+			RequireQuestRef:  "quest:first_steps",
+			RequireQuestFlag: "met_guide",
+			RequireQuestFrom: 1,
+		}},
+		ItemTemplates: rewardDropItemTemplates(27001, 27002),
+		RegenSpawns: []contentbundle.RegenSpawn{{
+			Ref:                "practice.regen_gated_kill_quest_mob",
+			Name:               "RegenGatedKillQuestMob",
+			MapIndex:           bootstrapMapIndex,
+			X:                  469900,
+			Y:                  964200,
+			RaceNum:            20350,
+			Count:              1,
+			RewardDropTableRef: "loot.qa_regen_gated_kill_quest_reward",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("import regen gated kill quest credit bundle: %v", err)
+	}
+	if len(imported.DropTables) != 0 || len(imported.RegenSpawns) != 0 {
+		t.Fatalf("expected imported bundle to strip authoring-only regen/drop-table fields, got drop_tables=%+v regen_spawns=%+v", imported.DropTables, imported.RegenSpawns)
+	}
+	if len(imported.SpawnGroups) != 1 ||
+		imported.SpawnGroups[0].RewardDropTableRef != "" ||
+		imported.SpawnGroups[0].RewardExperience != 90 ||
+		imported.SpawnGroups[0].RewardGold != 45 ||
+		!reflect.DeepEqual(imported.SpawnGroups[0].RewardDropVnums, []uint32{27001, 27002}) ||
+		imported.SpawnGroups[0].RewardQuestRef != "quest:first_steps" ||
+		imported.SpawnGroups[0].RewardQuestFlag != "killed_qa_mob" ||
+		imported.SpawnGroups[0].RewardQuestTo != 1 ||
+		imported.SpawnGroups[0].RewardQuestText != "Quest updated: first_steps.killed_qa_mob = 1." ||
+		imported.SpawnGroups[0].RequireQuestRef != "quest:first_steps" ||
+		imported.SpawnGroups[0].RequireQuestFlag != "met_guide" ||
+		imported.SpawnGroups[0].RequireQuestFrom != 1 {
+		t.Fatalf("unexpected imported regen gated kill quest spawn group: %+v", imported.SpawnGroups)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 ||
+		actors[0].RewardExperience != 90 ||
+		actors[0].RewardGold != 45 ||
+		!reflect.DeepEqual(actors[0].RewardDropVnums, []uint32{27001, 27002}) ||
+		actors[0].RewardQuestRef != "quest:first_steps" ||
+		actors[0].RewardQuestFlag != "killed_qa_mob" ||
+		actors[0].RewardQuestTo != 1 ||
+		actors[0].RewardQuestText != "Quest updated: first_steps.killed_qa_mob = 1." ||
+		actors[0].RequireQuestRef != "quest:first_steps" ||
+		actors[0].RequireQuestFlag != "met_guide" ||
+		actors[0].RequireQuestFrom != 1 {
+		t.Fatalf("expected live actor to carry expanded regen kill quest require gate, got %+v", actors)
+	}
+}
+
 func TestHandleAttackKillAppliesQuestFlagCreditAfterDeathReward(t *testing.T) {
 	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	ticketStore := loginticket.NewFileStore(t.TempDir())

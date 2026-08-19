@@ -624,8 +624,19 @@ func TestLocalContentBundleValidateEndpointExpandsRegenAuthoringExample(t *testi
 		t.Fatalf("decode regen validation response: %v", err)
 	}
 	wantDrops := []uint32{27001, 27002}
-	if len(got.SpawnGroups) != 1 || got.SpawnGroups[0].Ref != "practice.qa_regen_mob" || got.SpawnGroups[0].RewardExperience != 90 || got.SpawnGroups[0].RewardGold != 45 || !reflect.DeepEqual(got.SpawnGroups[0].RewardDropVnums, wantDrops) {
-		t.Fatalf("expected validation response to expand regen authoring into spawn-group descriptor, got %+v", got.SpawnGroups)
+	if len(got.SpawnGroups) != 1 ||
+		got.SpawnGroups[0].Ref != "practice.qa_regen_mob" ||
+		got.SpawnGroups[0].RewardExperience != 90 ||
+		got.SpawnGroups[0].RewardGold != 45 ||
+		!reflect.DeepEqual(got.SpawnGroups[0].RewardDropVnums, wantDrops) ||
+		got.SpawnGroups[0].RewardQuestRef != "quest:first_steps" ||
+		got.SpawnGroups[0].RewardQuestFlag != "killed_qa_mob" ||
+		got.SpawnGroups[0].RewardQuestTo != 1 ||
+		got.SpawnGroups[0].RewardQuestText != "Quest updated: first_steps.killed_qa_mob = 1." ||
+		got.SpawnGroups[0].RequireQuestRef != "quest:first_steps" ||
+		got.SpawnGroups[0].RequireQuestFlag != "met_guide" ||
+		got.SpawnGroups[0].RequireQuestFrom != 1 {
+		t.Fatalf("expected validation response to expand regen authoring plus kill-quest require gate into spawn-group descriptor, got %+v", got.SpawnGroups)
 	}
 }
 

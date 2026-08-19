@@ -419,3 +419,60 @@ func TestCanonicalizeExpandsDropTableKillQuestRequireGate(t *testing.T) {
 		t.Fatalf("unexpected gated drop-table expansion:\n got: %#v\nwant: %#v", bundle.SpawnGroups, want)
 	}
 }
+
+func TestCanonicalizeExpandsRegenSpawnDropTableKillQuestRequireGate(t *testing.T) {
+	bundle, err := Canonicalize(Bundle{
+		DropTables: []DropTable{{
+			Ref:              "loot.qa_regen_gated_kill_quest_reward",
+			RewardExperience: 90,
+			RewardGold:       45,
+			DropVnums:        []uint32{27002, 27001},
+			RewardQuestRef:   "quest:first_steps",
+			RewardQuestFlag:  "killed_qa_mob",
+			RewardQuestTo:    1,
+			RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+			RequireQuestRef:  "quest:first_steps",
+			RequireQuestFlag: "met_guide",
+			RequireQuestFrom: 1,
+		}},
+		RegenSpawns: []RegenSpawn{{
+			Ref:                "practice.regen_gated_table_kill_quest_mob",
+			Name:               "RegenGatedTableKillQuestMob",
+			MapIndex:           1,
+			X:                  469900,
+			Y:                  964200,
+			RaceNum:            20350,
+			Count:              1,
+			RewardDropTableRef: "loot.qa_regen_gated_kill_quest_reward",
+		}},
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize regen drop-table gated kill quest credit: %v", err)
+	}
+	want := []SpawnGroup{{
+		Ref:              "practice.regen_gated_table_kill_quest_mob",
+		Name:             "RegenGatedTableKillQuestMob",
+		MapIndex:         1,
+		X:                469900,
+		Y:                964200,
+		RaceNum:          20350,
+		CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+		RewardExperience: 90,
+		RewardGold:       45,
+		RewardDropVnums:  []uint32{27001, 27002},
+		RewardQuestRef:   "quest:first_steps",
+		RewardQuestFlag:  "killed_qa_mob",
+		RewardQuestTo:    1,
+		RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+		RequireQuestRef:  "quest:first_steps",
+		RequireQuestFlag: "met_guide",
+		RequireQuestFrom: 1,
+	}}
+	if len(bundle.DropTables) != 0 || len(bundle.RegenSpawns) != 0 || !reflect.DeepEqual(bundle.SpawnGroups, want) {
+		t.Fatalf("unexpected regen gated drop-table expansion:\n got: %#v\nwant: %#v", bundle.SpawnGroups, want)
+	}
+}

@@ -4358,6 +4358,13 @@ func TestCanonicalizeRegenAuthoringExampleExpandsToCanonicalSpawnGroup(t *testin
 		RewardExperience: 90,
 		RewardGold:       45,
 		RewardDropVnums:  []uint32{27001, 27002},
+		RewardQuestRef:   "quest:first_steps",
+		RewardQuestFlag:  "killed_qa_mob",
+		RewardQuestTo:    1,
+		RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+		RequireQuestRef:  "quest:first_steps",
+		RequireQuestFlag: "met_guide",
+		RequireQuestFrom: 1,
 	}}
 	if !reflect.DeepEqual(canonical.SpawnGroups, want) {
 		t.Fatalf("unexpected canonical regen authoring spawn groups:\n got: %#v\nwant: %#v", canonical.SpawnGroups, want)
