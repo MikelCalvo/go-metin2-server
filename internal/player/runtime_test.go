@@ -941,40 +941,68 @@ func TestRuntimeUseItemRejectsConfirmWhenUseTemplateWithoutMutation(t *testing.T
 }
 
 func TestRuntimeUseItemRejectTextComesFromTemplateGuardWithoutMutation(t *testing.T) {
-	persisted := loginticket.Character{
-		ID:        0x0103010f,
-		VID:       0x0204010f,
-		Name:      "UseRejectTextPeer",
-		Level:     10,
-		Points:    [255]int32{1: 700},
-		Inventory: []inventory.ItemInstance{{ID: 15, Vnum: 27012, Count: 3, Slot: 5}},
-		Quickslots: []loginticket.Quickslot{
-			{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
-		},
+	cases := []struct {
+		name    string
+		job     uint8
+		raceNum uint16
+		level   uint8
+		mutate  func(*itemcatalog.Template)
+	}{
+		{name: "confirm_when_use", level: 10, mutate: func(template *itemcatalog.Template) { template.ConfirmWhenUse = true }},
+		{name: "quest_use", level: 10, mutate: func(template *itemcatalog.Template) { template.QuestUse = true }},
+		{name: "quest_use_multiple", level: 10, mutate: func(template *itemcatalog.Template) { template.QuestUseMultiple = true }},
+		{name: "applicable", level: 10, mutate: func(template *itemcatalog.Template) { template.Applicable = true }},
+		{name: "anti_stack", level: 10, mutate: func(template *itemcatalog.Template) { template.AntiStack = true }},
+		{name: "anti_get", level: 10, mutate: func(template *itemcatalog.Template) { template.AntiGet = true }},
+		{name: "anti_drop", level: 10, mutate: func(template *itemcatalog.Template) { template.AntiDrop = true }},
+		{name: "anti_give", level: 10, mutate: func(template *itemcatalog.Template) { template.AntiGive = true }},
+		{name: "anti_sell", level: 10, mutate: func(template *itemcatalog.Template) { template.AntiSell = true }},
+		{name: "anti_warrior", job: 0, raceNum: 0, level: 10, mutate: func(template *itemcatalog.Template) { template.AntiWarrior = true }},
+		{name: "anti_male", job: 0, raceNum: 0, level: 10, mutate: func(template *itemcatalog.Template) { template.AntiMale = true }},
+		{name: "anti_empire_b", job: 0, raceNum: 0, level: 10, mutate: func(template *itemcatalog.Template) { template.AntiEmpireB = true }},
+		{name: "min_level", job: 0, raceNum: 0, level: 5, mutate: func(template *itemcatalog.Template) { template.MinLevel = 10 }},
 	}
-	runtime := NewRuntime(persisted, SessionLink{Login: "use-reject-text-peer", CharacterIndex: 0})
-	template := bootstrapConsumableTemplate(27012, 1, 1, 50, "confirm:27012:+50")
-	template.ConfirmWhenUse = true
-	template.UseRejectText = "You must confirm this item before using it."
+	for index, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:        0x0103010f + uint32(index),
+				VID:       0x0204010f + uint32(index),
+				Name:      "UseRejectTextPeer",
+				Job:       tc.job,
+				RaceNum:   tc.raceNum,
+				Level:     tc.level,
+				Points:    [255]int32{1: 700},
+				Inventory: []inventory.ItemInstance{{ID: 15 + uint64(index), Vnum: 27012, Count: 3, Slot: 5}},
+				Quickslots: []loginticket.Quickslot{
+					{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+				},
+			}
+			template := bootstrapConsumableTemplate(27012, 1, 1, 50, "guard:27012:+50")
+			tc.mutate(&template)
+			template.UseRejectText = "You cannot use this item right now."
+			persisted.Empire = antiFlagTestEmpire(template)
+			runtime := NewRuntime(persisted, SessionLink{Login: "use-reject-text-peer", CharacterIndex: 0})
 
-	message, ok := runtime.UseItemRejectText(5, template)
-	if !ok || message != template.UseRejectText {
-		t.Fatalf("expected authored use rejection text %q, got %q ok=%v", template.UseRejectText, message, ok)
-	}
-	if result, ok := runtime.UseItem(5, template); ok {
-		t.Fatalf("expected confirm_when_use item use to stay fail-closed even with reject text, got %+v", result)
-	}
-	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, persisted.Inventory) {
-		t.Fatalf("use-reject-message guard mutated live inventory: got %#v want %#v", got, persisted.Inventory)
-	}
-	if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, persisted.Quickslots) {
-		t.Fatalf("use-reject-message guard mutated live quickslots: got %#v want %#v", got, persisted.Quickslots)
-	}
-	if got := runtime.LiveCharacter().Points[1]; got != persisted.Points[1] {
-		t.Fatalf("use-reject-message guard mutated live point: got %d want %d", got, persisted.Points[1])
-	}
-	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) || got.Points[1] != persisted.Points[1] {
-		t.Fatalf("use-reject-message guard mutated persisted state: inventory=%#v quickslots=%#v points[1]=%d", got.Inventory, got.Quickslots, got.Points[1])
+			message, ok := runtime.UseItemRejectText(5, template)
+			if !ok || message != template.UseRejectText {
+				t.Fatalf("expected authored use rejection text %q, got %q ok=%v", template.UseRejectText, message, ok)
+			}
+			if result, ok := runtime.UseItem(5, template); ok {
+				t.Fatalf("expected %s item use to stay fail-closed even with reject text, got %+v", tc.name, result)
+			}
+			if got := runtime.LiveInventory(); !reflect.DeepEqual(got, persisted.Inventory) {
+				t.Fatalf("%s use-reject-message guard mutated live inventory: got %#v want %#v", tc.name, got, persisted.Inventory)
+			}
+			if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, persisted.Quickslots) {
+				t.Fatalf("%s use-reject-message guard mutated live quickslots: got %#v want %#v", tc.name, got, persisted.Quickslots)
+			}
+			if got := runtime.LiveCharacter().Points[1]; got != persisted.Points[1] {
+				t.Fatalf("%s use-reject-message guard mutated live point: got %d want %d", tc.name, got, persisted.Points[1])
+			}
+			if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) || got.Points[1] != persisted.Points[1] {
+				t.Fatalf("%s use-reject-message guard mutated persisted state: inventory=%#v quickslots=%#v points[1]=%d", tc.name, got.Inventory, got.Quickslots, got.Points[1])
+			}
+		})
 	}
 }
 

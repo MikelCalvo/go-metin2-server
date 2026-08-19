@@ -601,6 +601,97 @@ func TestGameSessionFlowItemUseRejectsQuestUseTemplateFlagsWithoutMutation(t *te
 	}
 }
 
+func TestGameSessionFlowItemUseRejectsQuestUseTemplateFlagsWithTemplateText(t *testing.T) {
+	cases := []struct {
+		name   string
+		login  string
+		mutate func(*itemcatalog.Template)
+	}{
+		{
+			name:  "quest_use",
+			login: "item-use-quest-text",
+			mutate: func(template *itemcatalog.Template) {
+				template.QuestUse = true
+			},
+		},
+		{
+			name:  "quest_use_multiple",
+			login: "item-use-quse-m-text",
+			mutate: func(template *itemcatalog.Template) {
+				template.QuestUseMultiple = true
+			},
+		},
+		{
+			name:  "applicable",
+			login: "item-use-appl-text",
+			mutate: func(template *itemcatalog.Template) {
+				template.Applicable = true
+			},
+		},
+	}
+	for index, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("UseQuestFlagText", 0x01030560+uint32(index), 0x02040560+uint32(index), 1100, 2100, 0, 101, 201)
+			owner.Points[bootstrapPlayerPointValueIndex] = 25
+			owner.Inventory = []inventory.ItemInstance{{ID: 220 + uint64(index), Vnum: 27020, Count: 2, Slot: 5}}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			issuePeerTicket(t, ticketStore, tc.login, 0x50505060+uint32(index), owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed %s item-use account: %v", tc.name, err)
+			}
+			template := itemcatalog.Template{
+				Vnum:          27020,
+				Name:          "Quest Flag Text Potion",
+				Stackable:     true,
+				MaxCount:      200,
+				UseEffect:     &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume quest/applicable"},
+				UseRejectText: "This quest item cannot be used yet.",
+			}
+			tc.mutate(&template)
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected %s item-use runtime error: %v", tc.name, err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, 0x50505060+uint32(index))
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+			if err != nil {
+				t.Fatalf("unexpected %s item-use packet error: %v", tc.name, err)
+			}
+			if len(out) != 1 {
+				t.Fatalf("expected %s ITEM_USE to emit one template-authored info-chat frame, got %d", tc.name, len(out))
+			}
+			delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+			if err != nil {
+				t.Fatalf("decode %s rejection info chat: %v", tc.name, err)
+			}
+			if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != template.UseRejectText {
+				t.Fatalf("unexpected %s rejection chat: %+v", tc.name, delivery)
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected no queued frames after %s ITEM_USE rejection, got %d", tc.name, len(queued))
+			}
+			persisted, err := accounts.Load(tc.login)
+			if err != nil {
+				t.Fatalf("load persisted %s item-use account: %v", tc.name, err)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("%s ITEM_USE mutated inventory: got %+v want %+v", tc.name, persisted.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("%s ITEM_USE mutated quickslots: got %+v want %+v", tc.name, persisted.Characters[0].Quickslots, owner.Quickslots)
+			}
+			if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+				t.Fatalf("%s ITEM_USE mutated point value: got %d want %d", tc.name, persisted.Characters[0].Points[bootstrapPlayerPointValueIndex], owner.Points[bootstrapPlayerPointValueIndex])
+			}
+		})
+	}
+}
+
 func TestGameSessionFlowProjectsTemplateHighlightOnSelectedCharacterItemSet(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -1349,6 +1440,113 @@ func TestGameSessionFlowItemUseRejectsTransferGuardTemplatesWithoutMutation(t *t
 	}
 }
 
+func TestGameSessionFlowItemUseRejectsTransferGuardTemplatesWithTemplateText(t *testing.T) {
+	cases := []struct {
+		name     string
+		login    string
+		template itemcatalog.Template
+	}{
+		{
+			name:  "anti-stack",
+			login: "item-use-anti-stack-text",
+			template: itemcatalog.Template{
+				Vnum: 27021, Name: "Anti Stack Text Potion", Stackable: true, MaxCount: 200, AntiStack: true,
+				UseEffect:     &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume"},
+				UseRejectText: "You cannot use a bound stackable item.",
+			},
+		},
+		{
+			name:  "anti-get",
+			login: "item-use-anti-get-text",
+			template: itemcatalog.Template{
+				Vnum: 27021, Name: "Anti Get Text Potion", Stackable: true, MaxCount: 200, AntiGet: true,
+				UseEffect:     &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume"},
+				UseRejectText: "You cannot use an ungettable item.",
+			},
+		},
+		{
+			name:  "anti-drop",
+			login: "item-use-anti-drop-text",
+			template: itemcatalog.Template{
+				Vnum: 27021, Name: "Anti Drop Text Potion", Stackable: true, MaxCount: 200, AntiDrop: true,
+				UseEffect:     &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume"},
+				UseRejectText: "You cannot use an undroppable item.",
+			},
+		},
+		{
+			name:  "anti-give",
+			login: "item-use-anti-give-text",
+			template: itemcatalog.Template{
+				Vnum: 27021, Name: "Anti Give Text Potion", Stackable: true, MaxCount: 200, AntiGive: true,
+				UseEffect:     &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume"},
+				UseRejectText: "You cannot use an untradeable item.",
+			},
+		},
+		{
+			name:  "anti-sell",
+			login: "item-use-anti-sell-text",
+			template: itemcatalog.Template{
+				Vnum: 27021, Name: "Anti Sell Text Potion", Stackable: true, MaxCount: 200, AntiSell: true,
+				UseEffect:     &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume"},
+				UseRejectText: "You cannot use an unsellable item.",
+			},
+		},
+	}
+
+	for index, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("UseTransferGuardText", 0x0103061e+uint32(index), 0x0204061e+uint32(index), 1100, 2100, 0, 101, 201)
+			owner.Inventory = []inventory.ItemInstance{{ID: uint64(551 + index), Vnum: 27021, Count: 2, Slot: 5}}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			owner.Points[bootstrapPlayerPointValueIndex] = 25
+			issuePeerTicket(t, ticketStore, tc.login, 0x5050511e+uint32(index), owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed %s item-use account: %v", tc.name, err)
+			}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{tc.template})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected %s item-use runtime error: %v", tc.name, err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, 0x5050511e+uint32(index))
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+			if err != nil {
+				t.Fatalf("unexpected %s item-use packet error: %v", tc.name, err)
+			}
+			if len(out) != 1 {
+				t.Fatalf("expected %s item-use to emit one template-authored info-chat frame, got %d", tc.name, len(out))
+			}
+			delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+			if err != nil {
+				t.Fatalf("decode %s rejection info chat: %v", tc.name, err)
+			}
+			if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != tc.template.UseRejectText {
+				t.Fatalf("unexpected %s rejection chat: %+v", tc.name, delivery)
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected no queued frames after %s item-use rejection, got %d", tc.name, len(queued))
+			}
+			persisted, err := accounts.Load(tc.login)
+			if err != nil {
+				t.Fatalf("load persisted %s item-use account: %v", tc.name, err)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("%s item-use mutated inventory: got %+v want %+v", tc.name, persisted.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("%s item-use mutated quickslots: got %+v want %+v", tc.name, persisted.Characters[0].Quickslots, owner.Quickslots)
+			}
+			if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+				t.Fatalf("%s item-use mutated point value: got %d want %d", tc.name, persisted.Characters[0].Points[bootstrapPlayerPointValueIndex], owner.Points[bootstrapPlayerPointValueIndex])
+			}
+		})
+	}
+}
+
 func TestGameSessionFlowItemUseRejectsMinLevelTemplateWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -1395,6 +1593,128 @@ func TestGameSessionFlowItemUseRejectsMinLevelTemplateWithoutMutation(t *testing
 	}
 	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
 		t.Fatalf("min-level item-use mutated point value: got %d want %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex], owner.Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
+func TestGameSessionFlowItemUseRejectsSelectedCharacterGuardsWithTemplateText(t *testing.T) {
+	cases := []struct {
+		name     string
+		login    string
+		job      uint8
+		raceNum  uint16
+		level    uint8
+		empire   uint8
+		template itemcatalog.Template
+	}{
+		{
+			name:    "min-level",
+			login:   "item-use-low-level-text",
+			job:     0,
+			raceNum: 0,
+			level:   5,
+			empire:  1,
+			template: itemcatalog.Template{
+				Vnum: 27022, Name: "Veteran Text Potion", Stackable: true, MaxCount: 200, MinLevel: 10,
+				UseEffect:     &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume"},
+				UseRejectText: "You are not high enough level to use this item.",
+			},
+		},
+		{
+			name:    "anti-warrior",
+			login:   "item-use-anti-warrior-text",
+			job:     0,
+			raceNum: 0,
+			level:   10,
+			empire:  1,
+			template: itemcatalog.Template{
+				Vnum: 27022, Name: "Warrior Restricted Text Potion", Stackable: true, MaxCount: 200, AntiWarrior: true,
+				UseEffect:     &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume"},
+				UseRejectText: "Warriors cannot use this item.",
+			},
+		},
+		{
+			name:    "anti-male",
+			login:   "item-use-anti-male-text",
+			job:     0,
+			raceNum: 0,
+			level:   10,
+			empire:  1,
+			template: itemcatalog.Template{
+				Vnum: 27022, Name: "Male Restricted Text Potion", Stackable: true, MaxCount: 200, AntiMale: true,
+				UseEffect:     &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume"},
+				UseRejectText: "Male characters cannot use this item.",
+			},
+		},
+		{
+			name:    "anti-empire-b",
+			login:   "item-use-anti-empire-b-text",
+			job:     0,
+			raceNum: 0,
+			level:   10,
+			empire:  2,
+			template: itemcatalog.Template{
+				Vnum: 27022, Name: "Empire B Restricted Text Potion", Stackable: true, MaxCount: 200, AntiEmpireB: true,
+				UseEffect:     &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume"},
+				UseRejectText: "Your empire cannot use this item.",
+			},
+		},
+	}
+
+	for index, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("UseSelectedGuardText", 0x0103062e+uint32(index), 0x0204062e+uint32(index), 1100, 2100, 0, 101, 201)
+			owner.Job = tc.job
+			owner.RaceNum = tc.raceNum
+			owner.Level = tc.level
+			owner.Empire = tc.empire
+			owner.Inventory = []inventory.ItemInstance{{ID: uint64(651 + index), Vnum: 27022, Count: 2, Slot: 5}}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			owner.Points[bootstrapPlayerPointValueIndex] = 25
+			issuePeerTicket(t, ticketStore, tc.login, 0x5050512e+uint32(index), owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed %s item-use account: %v", tc.name, err)
+			}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{tc.template})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected %s item-use runtime error: %v", tc.name, err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, 0x5050512e+uint32(index))
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+			if err != nil {
+				t.Fatalf("unexpected %s item-use packet error: %v", tc.name, err)
+			}
+			if len(out) != 1 {
+				t.Fatalf("expected %s item-use to emit one template-authored info-chat frame, got %d", tc.name, len(out))
+			}
+			delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+			if err != nil {
+				t.Fatalf("decode %s rejection info chat: %v", tc.name, err)
+			}
+			if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != tc.template.UseRejectText {
+				t.Fatalf("unexpected %s rejection chat: %+v", tc.name, delivery)
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected no queued frames after %s item-use rejection, got %d", tc.name, len(queued))
+			}
+			persisted, err := accounts.Load(tc.login)
+			if err != nil {
+				t.Fatalf("load persisted %s item-use account: %v", tc.name, err)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("%s item-use mutated inventory: got %+v want %+v", tc.name, persisted.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("%s item-use mutated quickslots: got %+v want %+v", tc.name, persisted.Characters[0].Quickslots, owner.Quickslots)
+			}
+			if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+				t.Fatalf("%s item-use mutated point value: got %d want %d", tc.name, persisted.Characters[0].Points[bootstrapPlayerPointValueIndex], owner.Points[bootstrapPlayerPointValueIndex])
+			}
+		})
 	}
 }
 
