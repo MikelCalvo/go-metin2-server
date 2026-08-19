@@ -6,7 +6,7 @@ The goal is intentionally conservative:
 
 - own the client packet layout before broader refine gameplay is implemented
 - route the packet through the `GAME` phase without treating it as an unknown-header disconnect edge
-- keep the shipped runtime fail-closed for result semantics with no inventory, equipment, quickslot, point, ground-item, peer, or persistence mutation until a later refine-system slice owns success/failure/result behavior, while allowing one template-authored self-only rejection text for non-refineable carried items and one template-authored self-only refine-information frame for refineable carried items, both of which close an active same-socket bootstrap exchange shell before their refine feedback frame
+- keep ordinary result semantics fail-closed except for the owned template-authored rejection/preview feedback paths, while freezing one narrow confirm-after-preview success seam (`probability = 100` only) for the next runtime slice
 
 This is not a completed refine, upgrade, scroll, metin-stone, bonus-changer, or dragon-soul refine system.
 
@@ -98,17 +98,43 @@ This preview frame is deliberately not a success/failure/result action. It only 
 
 Once the selected owner has reached the retaliation-owned bootstrap zero-HP floor frozen in `player-death-bootstrap.md`, `REFINE` fails closed before this template-authored feedback path. The dead-owner attempt emits no self chat, queues no peer frames, and still performs no inventory, equipment, quickslot, point, ground-item, or persistence mutation.
 
+## First accepted refine success seam (confirm after preview)
+
+The next runtime slice may own one tiny accepted success path only after a same-socket refine-dialog presentation has already been opened by the preview path above. This contract freezes that confirm boundary without claiming failure/destroy/scroll-catalyst gameplay:
+
+- a successful template-backed `REFINE_INFORMATION_NEW` preview remembers an in-memory same-socket refine-dialog presentation keyed by the request `pos`, request `type`, and the live source item identity (`id` / `vnum` / carried cell);
+- `REFINE` with `type = 255` while that presentation is open cancels it with no frames and no inventory/gold/quickslot/persistence mutation;
+- a later `REFINE` with the same `pos` and `type` while that presentation is still open may execute the first accepted success path only when all of the following hold:
+  - the selected character is above the bootstrap zero-HP floor;
+  - no same-socket bootstrap merchant window, exchange shell, or safebox presentation is open (busy windows stay fail-closed for confirm; they do not auto-close into a mutation);
+  - the live carried source item still exactly matches the remembered identity and cell;
+  - the currently loaded source template is still valid, `refineable`, passes the owned selected-character / transfer-guard policy, and still authors the same `refine_info` snapshot used for the open dialog;
+  - `refine_info.probability` is exactly `100` so the first success path stays deterministic (any lower probability remains fail-closed until failure/destroy outcomes are owned);
+  - `refine_info.cost` is non-negative and the live character gold is at least that cost;
+  - every authored material row is satisfiable from carried inventory by summing counts across matching unlocked stacks;
+  - `refine_info.result_vnum` resolves to a valid loaded item template;
+- on success the runtime atomically:
+  - deducts `refine_info.cost` from live gold;
+  - consumes the authored material counts from carried inventory (preferring ordinary stack decrements / slot clears already owned by the item lane);
+  - replaces the source carried item `vnum` with `result_vnum` in the same cell while preserving the existing item instance `id` and leaving count at the bootstrap non-stackable `1` unless a later slice owns stackable refine sources;
+  - clears the same-socket refine-dialog presentation;
+  - persists the selected-character account snapshot;
+  - emits self-only frames in this order: material `ITEM_UPDATE` / `ITEM_DEL` refreshes as needed, one result-cell `ITEM_SET`, then `PLAYER_POINT_CHANGE` for `POINT_GOLD` with the negative cost amount and resulting gold value;
+- mismatched confirm `pos` / `type`, stale source identity, insufficient gold/materials, missing/invalid result template, probability below `100`, zero-HP owners, and busy merchant/exchange/safebox windows fail closed with no frames and no mutation, and they leave any still-valid open refine-dialog presentation untouched unless the confirm request itself was `type = 255`;
+- repeating preview `REFINE` while a dialog is already open for a different live source may replace the remembered presentation with the newer preview; it must not mutate inventory/gold;
+- scroll / hyuniron / musin / black-dragon catalyst consumption, money-only / guild fee variants, socket/attribute copy policy beyond preserving the existing instance id, downgrade/destroy failure outcomes, and peer-facing refine notifications remain deferred.
+
 ## Deferred behavior
 
-Later slices must write a new contract before broadening this packet into real gameplay. In particular, this slice does not freeze:
+Later slices must write a new contract before broadening this packet beyond the confirm-after-preview success seam above. In particular, this note still does not freeze:
 
 - refine catalyst semantics beyond the authored dialog-preview material/cost fields above
-- success, failure, downgrade, destroy, or safe-refine outcomes
-- item socket, metin-stone, attribute, or bonus-changing behavior
-- broader runtime refine window/open/close choreography beyond the single self-only `REFINE_INFORMATION_NEW` preview frame and the currently owned same-socket merchant/exchange presentation teardowns before authored refine feedback
+- failure, downgrade, destroy, or safe-refine outcomes, including any probability below `100`
+- item socket, metin-stone, attribute, or bonus-changing behavior beyond preserving the existing carried instance id on success
+- broader runtime refine window/open/close choreography beyond the single self-only `REFINE_INFORMATION_NEW` preview frame, the same-socket dialog presentation / `type = 255` cancel seam, and the currently owned same-socket merchant/exchange presentation teardowns before authored refine feedback
 - dragon-soul refine packets
-- inventory/equipment refresh ordering for accepted refine results
-- audit, rollback, or durable economic policy for refine attempts
+- richer inventory/equipment refresh ordering or peer notifications for accepted refine results beyond the self-only material / result / gold burst above
+- audit, rollback, or durable economic policy beyond the atomic persist-or-fail-closed account snapshot used by the first success path
 
 ## Current coverage
 
@@ -118,3 +144,4 @@ Later slices must write a new contract before broadening this packet into real g
 - `internal/contentbundle` and `internal/ops` freeze loopback content-bundle summaries that project `refineable` and `refine_reject_message` into top-level item-template, merchant-catalog entry, spawn reward-drop, and aggregate reward-drop rows so QA can inspect refine-gated authored items before import.
 - `internal/player` freezes the no-mutation helper boundary that extracts template-authored refine rejection text or refine-information metadata from the currently carried item, including fail-closed transfer-guard and selected-character restriction checks before emitting refine-information previews.
 - `internal/minimal` freezes the shipped no-frame fail-closed behavior, the template-authored self-only info-chat rejection path, the self-only `REFINE_INFORMATION_NEW` preview path with persisted inventory, quickslots, and points unchanged after a `REFINE` packet, the active same-socket merchant-window close and active same-socket exchange-shell close that precede either template-authored refine feedback path without mutating merchant/exchange/item/gold state, guarded-template no-frame/no-mutation suppression for that preview path, and the post-floor dead-owner guard that denies `REFINE` before those feedback paths can run.
+- The first accepted confirm-after-preview success path is contract-frozen above but not yet implemented; runtime tests should stay red for that mutation until the next GREEN slice lands.

@@ -142,11 +142,12 @@ Likely areas:
 Next slices:
 
 1. ~~Harden the bootstrap `/open_safebox` fail-closed edge for out-of-range size (`/open_safebox 4`) so it emits no frames, does not open the busy flag, and does not fall through as ordinary chat.~~ Done: recognized out-of-range / invalid `/open_safebox` attempts are consumed fail-closed with no `SAFEBOX_SIZE`, no talking-chat fallthrough, and no same-socket open/busy mutation.
-2. Continue refine as fail-closed until material/cost/result semantics are frozen; then add a tiny accepted refine success path.
+2. Implement the contract-frozen confirm-after-preview refine success path for `probability = 100` only (preview opens same-socket dialog; matching confirm consumes gold/materials, replaces source `vnum`, persists, emits self-only refreshes; `type = 255` cancels; busy windows / lower probability stay fail-closed).
 3. Extend remaining item-template restriction/feedback edges only where a client-visible gap remains after the owned class/sex/level/anti-flag/equip-slot guards.
 4. Keep partner-side open player-shop / cube busy-window rejection text deferred until those presentation seams exist.
 5. ~~Land the frozen bootstrap safebox-open presentation seam (`/open_safebox` / `/close_safebox` + `SAFEBOX_SIZE`) and wire exchange START requester/partner busy rejects to that open flag; keep password/load/placement/money deferred.~~ Done for bootstrap scope: `/open_safebox [1..3]` emits self-only `SAFEBOX_SIZE`, `/close_safebox` clears the open flag, and exchange START reuses the merchant busy-window chat strings for requester/partner open-safebox rejects without inventing storage mutation.
 6. ~~Finish integrating pending exchange anti-give/display-slot guards / mutual-accept finalization / ownership timers~~ Done for bootstrap scope on `lane/items`; do not reopen those as if they were still pending.
+7. ~~Freeze the first accepted refine success seam in docs/spec before opening RED.~~ Done: `item-refine-bootstrap.md` now owns confirm-after-preview (`probability = 100`, `type = 255` cancel, busy-window fail-closed confirm).
 
 Exit criteria:
 
