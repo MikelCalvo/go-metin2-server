@@ -122,7 +122,7 @@ This slice does **not** yet implement:
 - aggro radius acquisition or target switching
 - persistence of live mob position distinct from authored spawn position
 
-The existing content-loaded practice mobs use the already-owned target -> attack -> death -> respawn lifecycle while they classify `at_home` or `within_radius`, plus the current capped return-step recovery path and the first pending-frame chase-step executor for already-engaged owners. Successful same-map chase steps and same-map return-step / return-home recovery now replicate retained-viewer movement with server `MOVE`, while respawn rebuild, generic operator actor updates, content-bundle replacement, and cross-map return-home still use delete/readd visibility. A materialized spawn-backed actor that already classifies `return_required` is kept visible/debuggable but is not accepted as a combat target again until an owned respawn, operator return-home, operator return-step, update, or server-owned return-step executor places it back inside leash; runtime attempt callers can now distinguish this specific gate as `target_return_required`. The exact and map-local `GET` leash endpoints are only read-only inspection bridges over that classifier, while the `POST` return-step and return-home endpoints are controlled local triggers for QA and lifecycle recovery, not final mob AI. The exact return-home trigger can also be used on a live `within_radius` mob to restore exact authored placement and reset selected-target/engagement ownership without changing HP or reward metadata; the one-step trigger leaves already-`within_radius` mobs untouched and selected, and the server-owned return-step executor stops re-arming as soon as a step brings the actor back inside that radius.
+The existing content-loaded practice mobs use the already-owned target -> attack -> death -> respawn lifecycle while they classify `at_home` or `within_radius`, plus the current capped return-step recovery path and the first pending-frame chase-step executor for already-engaged owners. Successful same-map chase steps, same-map return-step / return-home recovery, and same-map live spawn-backed operator/runtime position-only updates now replicate retained-viewer movement with server `MOVE`, while presentation/name/race refreshes, respawn rebuild, content-bundle replacement, and cross-map return-home still use delete/readd visibility. A materialized spawn-backed actor that already classifies `return_required` is kept visible/debuggable but is not accepted as a combat target again until an owned respawn, operator return-home, operator return-step, update, or server-owned return-step executor places it back inside leash; runtime attempt callers can now distinguish this specific gate as `target_return_required`. The exact and map-local `GET` leash endpoints are only read-only inspection bridges over that classifier, while the `POST` return-step and return-home endpoints are controlled local triggers for QA and lifecycle recovery, not final mob AI. The exact return-home trigger can also be used on a live `within_radius` mob to restore exact authored placement and reset selected-target/engagement ownership without changing HP or reward metadata; the one-step trigger leaves already-`within_radius` mobs untouched and selected, and the server-owned return-step executor stops re-arming as soon as a step brings the actor back inside that radius.
 
 ## First owned chase-step planning seam
 
@@ -236,14 +236,14 @@ Contract for the first chase MOVE choreography:
 - viewers that lose visibility across the step still receive `CHARACTER_DEL`
 - viewers that newly gain visibility across the step still receive the ordinary `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` bootstrap burst
 - chase MOVE fanout does **not** clear selected combat targets, does **not** release aggro-lite engagement, and does **not** invent selected-target ownership for proximity-armed chase
-- at the time of the chase MOVE freeze, return-step recovery, return-home, respawn rebuild, operator actor updates, and content-bundle replacement kept using their already-owned delete/readd visibility paths; the later return-step / return-home MOVE seam now covers same-map retained viewers while respawn / generic operator updates / content-bundle replacement / cross-map return-home remain on delete/readd
+- at the time of the chase MOVE freeze, return-step recovery, return-home, respawn rebuild, operator actor updates, and content-bundle replacement kept using their already-owned delete/readd visibility paths; the later return-step / return-home MOVE seam and the later same-map live operator/runtime position MOVE seam now cover same-map retained viewers while presentation refreshes / respawn / content-bundle replacement / cross-map return-home remain on delete/readd
 - no client-originated mob MOVE ingress is owned; this is server-origin replication only
 - no chase-specific duration/interpolation policy is owned beyond reusing the existing `MOVE` payload fields with a deterministic bootstrap duration suitable for the fixed `max_step = 100` step
 
 Current implementation status:
 - this chase MOVE choreography is now live for retained viewers of a successful pending-frame chase step
 - remove/add visibility membership across the same step still uses the ordinary `CHARACTER_DEL` / add-info-update bootstrap path
-- same-map return-step / return-home retained-viewer MOVE later landed as a separate seam; respawn rebuild, operator actor updates, content-bundle replacement, and cross-map return-home remain on delete/readd
+- same-map return-step / return-home retained-viewer MOVE and same-map live operator/runtime position MOVE later landed as separate seams; presentation refreshes, respawn rebuild, content-bundle replacement, and cross-map return-home remain on delete/readd
 
 Explicit non-goals for this chase MOVE freeze alone:
 - pathfinding beyond one discrete planned chase step (return-step / return-home MOVE fanout later landed separately)
@@ -266,20 +266,20 @@ Contract for the first return-step / return-home MOVE choreography:
 - viewers that newly gain visibility across the step / home return still receive the ordinary `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` bootstrap burst
 - return-step / return-home MOVE fanout still releases practice-mob engagement and still clears selected combat targets bound to that actor's visible `VID`, matching the already-owned return recovery lifecycle (this is intentionally different from chase MOVE, which preserves engagement / selected-target ownership)
 - cross-map return-home remains outside MOVE choreography for now and keeps the existing delete/readd / direct-home rebuild path because no client-facing return warp packet seam is owned yet
-- respawn rebuild, generic operator actor updates, and content-bundle replacement keep using their already-owned delete/readd visibility paths; this freeze does not convert those seams to MOVE
+- respawn rebuild, presentation/name/race operator refreshes, and content-bundle replacement keep using their already-owned delete/readd visibility paths; this freeze does not convert those seams to MOVE (the later same-map live operator/runtime position MOVE seam covers position-only updates separately)
 - no client-originated mob MOVE ingress is owned; this is server-origin replication only
 - no return-specific duration/interpolation policy is owned beyond reusing the existing `MOVE` payload fields with a deterministic bootstrap duration suitable for the fixed `max_step = 100` return-step and the exact-home return trigger
 
 Current implementation status:
 - this return-step / return-home MOVE choreography is now live for retained viewers of a successful same-map pending-frame / operator return-step and same-map return-home
 - remove/add visibility membership across the same step / home return still uses the ordinary `CHARACTER_DEL` / add-info-update bootstrap path
-- cross-map return-home, respawn rebuild, generic operator actor updates, and content-bundle replacement remain on delete/readd
+- cross-map return-home, respawn rebuild, presentation/name/race operator refreshes, and content-bundle replacement remain on delete/readd
 - engagement release and selected-target clear still follow the already-owned return recovery lifecycle
 - cross-map return-home / return-step membership is also part of the Track A #6 anti-leak matrix in `content-spawn-groups-bootstrap.md`: a successful cross-map return must restore exactly one entity to authored home and leave no dual-map occupancy / duplicate `spawn_group_ref`
 
 Explicit non-goals for this return-step MOVE freeze alone:
 - pathfinding, navmesh, patrol, or continuous interpolation beyond one discrete planned return step / exact-home snap
-- converting respawn rebuild or generic operator actor updates to MOVE
+- converting respawn rebuild or presentation/name/race operator refreshes to MOVE
 - cross-map return MOVE / warp choreography
 - a dedicated return packet family distinct from `MOVE`
 - changing the already-owned engagement-release / selected-target-clear semantics of return recovery
@@ -301,9 +301,10 @@ Contract for the first live operator/runtime position MOVE choreography:
 - no client-originated mob MOVE ingress is owned; this is server-origin replication only
 
 Current implementation status:
-- this seam is frozen here as the next honest RED after still-dead content-bundle replacement anti-resurrect
-- same-map chase MOVE and same-map return-step / return-home MOVE are already live
-- live same-map spawn-backed operator/runtime position updates still emit retained-viewer delete/readd today
+- this seam is now live for retained viewers of a successful same-map live spawn-backed operator/runtime position-only update
+- presentation/name/race refreshes, dead trailing-`DEAD` refreshes, respawn rebuild, content-bundle replacement, and cross-map updates remain on delete/readd
+- engagement release and selected-target clear still follow the already-owned operator/runtime update lifecycle
+- the next honest Track A follow-on after this MOVE seam is daemon-restart persistence of still-dead spawn-group HP / respawn deadlines; see `content-spawn-groups-bootstrap.md`
 
 Explicit non-goals for this operator/runtime position MOVE freeze alone:
 - converting presentation/name/race refreshes, dead trailing-`DEAD` refreshes, respawn rebuild, or content-bundle replacement to MOVE
@@ -311,3 +312,4 @@ Explicit non-goals for this operator/runtime position MOVE freeze alone:
 - preserving engagement / selected-target ownership across operator position updates
 - pathfinding, navmesh, patrol, or continuous interpolation beyond one discrete operator/runtime coordinate write
 - a dedicated operator-move packet family distinct from `MOVE`
+- daemon-restart persistence of live HP / dead timers (owned separately by the Track A anti-leak follow-on)

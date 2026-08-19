@@ -3731,13 +3731,35 @@ func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, ma
 	}
 	r.syncStaticActorCombatStateLocked(actor)
 
-	refreshFrames := r.buildStaticActorRefreshFramesLocked(previous, actor)
-	if len(refreshFrames) > 0 {
-		for _, target := range targetDiff.RetainedVisibleTargets {
-			if characterAtBootstrapHPFloor(target.Character) {
-				continue
+	// Same-map live spawn-backed position-only updates reuse retained-viewer MOVE.
+	// Presentation/name/race/combat-profile refreshes, dead actors, cross-map
+	// updates, and non-spawn static actors stay on delete/readd. Engagement /
+	// selected-target clear remain on the already-owned update lifecycle.
+	sameMapPositionOnlyMove := actor.SpawnGroupRef != "" &&
+		previous.Position.SameMap(actor.Position) &&
+		previous.Entity.Name == actor.Entity.Name &&
+		previous.RaceNum == actor.RaceNum &&
+		previous.CombatKind == actor.CombatKind &&
+		!previous.Position.Equal(actor.Position) &&
+		!r.staticActorDeadLocked(actor.Entity.ID)
+	if sameMapPositionOnlyMove {
+		if moveRaw, moveEncodable := encodeStaticActorChaseMoveFrame(actor); moveEncodable {
+			for _, target := range targetDiff.RetainedVisibleTargets {
+				if characterAtBootstrapHPFloor(target.Character) {
+					continue
+				}
+				r.enqueueToEntityLocked(target.Entity.ID, [][]byte{moveRaw})
 			}
-			r.enqueueToEntityLocked(target.Entity.ID, refreshFrames)
+		}
+	} else {
+		refreshFrames := r.buildStaticActorRefreshFramesLocked(previous, actor)
+		if len(refreshFrames) > 0 {
+			for _, target := range targetDiff.RetainedVisibleTargets {
+				if characterAtBootstrapHPFloor(target.Character) {
+					continue
+				}
+				r.enqueueToEntityLocked(target.Entity.ID, refreshFrames)
+			}
 		}
 	}
 	deleteRaw, deleteEncodable := encodeStaticActorDeleteFrame(previous)

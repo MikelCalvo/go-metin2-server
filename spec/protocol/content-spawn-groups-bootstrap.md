@@ -423,15 +423,42 @@ Current implementation status:
 - same-map return-step / return-home MOVE is live; cross-map return-home remains on delete/readd and now has focused dual-map occupancy coverage (foreign-map delete, home-map add/info/update, one-ref/one-actor, empty foreign-map occupancy, persisted authored home)
 - still-dead content-bundle replacement anti-resurrect is now owned: successful non-identical `ImportContentBundle` replacements that keep the same authored `spawn_group_ref` remap pending `HP=0` + absolute respawn deadline onto the newly registered actor before import fanout, so late EnterGame still ends with trailing `GC DEAD` and the actor stays non-targetable through the ordinary timer; engagement / proximity-suppress / selected-target ownership are not remapped across that replacement boundary
 - reconnect rematerialization remains a fail-closed contract for later focused coverage beside the existing by-ref lookup path
-- the next honest RED after this still-dead replacement seam is same-map live spawn-backed operator/runtime position updates using retained-viewer `MOVE` instead of delete/readd; see `spawn-leash-bootstrap.md`
+- same-map live spawn-backed operator/runtime position updates now reuse retained-viewer `MOVE` instead of delete/readd; presentation/name/race refreshes stay on delete/readd (see `spawn-leash-bootstrap.md`)
+- the next honest RED after the operator position MOVE seam is daemon-restart persistence of still-dead spawn-group HP / absolute respawn deadlines so a process restart cannot resurrect a mid-dead practice mob early
+
+## First owned daemon-restart still-dead spawn-group timer persistence seam
+
+Question frozen here:
+
+**Once still-dead EnterGame trailing `DEAD`, still-dead content-bundle replacement anti-resurrect, and same-map operator position MOVE already exist, what is the smallest honest persistence contract that keeps a content-loaded spawn-group combatant dead across a `gamed` process restart without inventing live damaged-HP restart durability, engagement remapping, or a second spawn scheduler?**
+
+Contract for the first daemon-restart still-dead timer persistence seam:
+- while a content-loaded spawn-group combatant is inside its server-owned dead interval (`HP=0` + absolute respawn deadline), a clean `gamed` restart that rematerializes the same authored `spawn_group_ref` from the persisted static-actor snapshot must restore that actor as still-dead rather than as a fresh live full-HP combatant
+- the restored actor must remain non-targetable / non-attackable through the remaining absolute deadline, and any add-style visibility presentation after restart (fresh EnterGame, visibility re-entry, retained delete-plus-rebootstrap) must still end with one trailing `GC DEAD(vid)` until that deadline expires
+- persistence stores only the still-dead bootstrap facts needed for that rematerialization: `HP=0` plus the absolute respawn ready-at instant keyed by authored `spawn_group_ref` / entity identity already owned by the static-actor snapshot path; it does not invent a second spawn scheduler or a separate dead-timer store family
+- once the restored absolute deadline is already due at process start, the ordinary due-respawn EnterGame / pending-frame preflight rebuilds the actor live at authored home before composing static-actor visibility, matching the already-owned due-respawn contract
+- engagement / proximity-suppress / selected-target / pending chase / pending return ownership are intentionally **not** restored across process restart; those remain fail-closed session-local ownership that re-arms only after fresh post-restart target / hit / proximity acquisition
+- live damaged HP above the death floor, mid-chase / mid-return displacement that is not already persisted as current static-actor position, and non-spawn `training_dummy` daemon-restart durability remain out of scope for this first freeze
+
+Current implementation status:
+- this seam is frozen here as the next honest RED after same-map live operator/runtime position MOVE
+- still-dead EnterGame trailing `DEAD`, still-dead content-bundle replacement anti-resurrect, and same-map operator position MOVE are already live
+- a clean process restart that rematerializes a mid-dead spawn-group actor still reconstructs it as a fresh live full-HP combatant today
+
+Explicit non-goals for this daemon-restart still-dead freeze alone:
+- persisting live damaged HP above the death floor across process restart
+- remapping engagement, selected-target, proximity-suppress, chase, or return schedules across restart
+- cross-map return MOVE / warp packet choreography
+- inventing a second spawn scheduler beyond the existing pending-frame flush path
+- converting presentation refreshes or respawn rebuild away from delete/readd
 
 Explicit non-goals for this anti-leak freeze alone:
 - cross-map return MOVE / warp packet choreography
-- daemon-restart persistence of live HP / dead timers
 - multi-member spawn packs or pack-wide synchronized respawn
 - inventing a second spawn scheduler beyond the existing pending-frame flush path
 - remapping live damaged HP, engagement, or chase/return schedules across non-identical content-bundle replacement
 - converting generic operator actor presentation updates or respawn rebuild to MOVE
+- the daemon-restart still-dead timer persistence seam above (frozen separately as the next RED)
 
 ## Explicit non-goals
 
