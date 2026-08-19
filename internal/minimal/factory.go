@@ -1334,9 +1334,7 @@ func (r *gameRuntime) ExportAccountCharacterRoster() (accountstore.AccountCharac
 	if r == nil || r.accountStore == nil {
 		return accountstore.ExportAccountCharacterRoster(nil)
 	}
-	exporter, ok := r.accountStore.(interface {
-		ExportAccountCharacterRoster() (accountstore.AccountCharacterRosterExport, error)
-	})
+	exporter, ok := r.accountStore.(accountstore.AccountCharacterStateExporter)
 	if !ok {
 		return accountstore.AccountCharacterRosterExport{}, fmt.Errorf("account/character roster export is not supported")
 	}
@@ -1347,9 +1345,7 @@ func (r *gameRuntime) ExportCharacterItemState() (accountstore.CharacterItemStat
 	if r == nil || r.accountStore == nil {
 		return accountstore.ExportCharacterItemState(nil)
 	}
-	exporter, ok := r.accountStore.(interface {
-		ExportCharacterItemState() (accountstore.CharacterItemStateExport, error)
-	})
+	exporter, ok := r.accountStore.(accountstore.AccountCharacterStateExporter)
 	if !ok {
 		return accountstore.CharacterItemStateExport{}, fmt.Errorf("character item-state export is not supported")
 	}
@@ -1360,9 +1356,7 @@ func (r *gameRuntime) ExportCharacterPointState() (accountstore.CharacterPointSt
 	if r == nil || r.accountStore == nil {
 		return accountstore.ExportCharacterPointState(nil)
 	}
-	exporter, ok := r.accountStore.(interface {
-		ExportCharacterPointState() (accountstore.CharacterPointStateExport, error)
-	})
+	exporter, ok := r.accountStore.(accountstore.AccountCharacterStateExporter)
 	if !ok {
 		return accountstore.CharacterPointStateExport{}, fmt.Errorf("character point-state export is not supported")
 	}

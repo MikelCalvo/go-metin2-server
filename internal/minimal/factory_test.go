@@ -296,6 +296,67 @@ func TestGameRuntimeAccountCharacterRosterExportProjectsCommittedSnapshots(t *te
 	}
 }
 
+func TestGameRuntimeExportsAccountCharacterStateThroughMemoryStoreSeam(t *testing.T) {
+	accountStore := accountstore.NewMemoryStore()
+	character := loginticket.Character{
+		ID:       7,
+		Name:     "AlphaWar",
+		Level:    1,
+		MapIndex: 1,
+		Inventory: []inventory.ItemInstance{
+			{ID: 1001, Vnum: 27001, Count: 2, Slot: 8},
+		},
+		Equipment: []inventory.ItemInstance{
+			{ID: 2001, Vnum: 19, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+		},
+		Quickslots: []loginticket.Quickslot{
+			{Position: 2, Type: quickslotproto.TypeItem, Slot: 8},
+		},
+	}
+	character.Points[0] = 12
+	character.Points[254] = 99
+	if err := accountStore.Save(accountstore.Account{Login: "Alpha", Empire: 1, Characters: []loginticket.Character{character}}); err != nil {
+		t.Fatalf("save memory account snapshot: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountStore,
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	roster, err := runtime.ExportAccountCharacterRoster()
+	if err != nil {
+		t.Fatalf("runtime memory roster export: %v", err)
+	}
+	if len(roster.Accounts) != 1 || roster.Accounts[0].Login != "Alpha" || len(roster.Characters) != 1 || roster.Characters[0].Name != "AlphaWar" {
+		t.Fatalf("unexpected memory roster export: %#v", roster)
+	}
+
+	items, err := runtime.ExportCharacterItemState()
+	if err != nil {
+		t.Fatalf("runtime memory item-state export: %v", err)
+	}
+	if len(items.InventoryItems) != 1 || items.InventoryItems[0].ID != 1001 || len(items.EquipmentItems) != 1 || len(items.Quickslots) != 1 {
+		t.Fatalf("unexpected memory item-state export: %#v", items)
+	}
+
+	points, err := runtime.ExportCharacterPointState()
+	if err != nil {
+		t.Fatalf("runtime memory point-state export: %v", err)
+	}
+	if len(points.Points) != 255 || points.Points[0].Value != 12 || points.Points[254].Value != 99 {
+		t.Fatalf("unexpected memory point-state export: %#v", points)
+	}
+}
+
 func TestGameRuntimeCharacterItemStateExportProjectsCommittedSnapshots(t *testing.T) {
 	accountStore := accountstore.NewFileStore(t.TempDir())
 	character := loginticket.Character{
