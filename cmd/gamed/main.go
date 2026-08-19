@@ -303,6 +303,7 @@ func main() {
 		opsHandler,
 		gameRuntime.ExportStaticActorContentState,
 	)
+	opsHandler = ops.RegisterLocalStaticActorContentStateQuarantineEndpoint(opsHandler)
 	opsHandler = ops.RegisterLocalBootstrapGroundItemStateExportEndpoint(
 		opsHandler,
 		gameRuntime.ExportBootstrapGroundItemState,

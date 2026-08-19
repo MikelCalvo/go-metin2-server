@@ -14,6 +14,7 @@ import (
 	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/buildinfo"
+	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
@@ -8631,6 +8632,135 @@ func TestLocalCharacterQuestStateQuarantineEndpointRejectsMalformedJSON(t *testi
 func TestNewPprofMuxDoesNotExposeLocalCharacterQuestStateQuarantineByDefault(t *testing.T) {
 	mux := NewPprofMux("authd")
 	req := httptest.NewRequest(http.MethodPost, "/local/quest-state/exports/character-quest-state/quarantine", strings.NewReader(`{"migration_version":4,"migration_name":"character_quest_state","flags":[]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
+func TestLocalStaticActorContentStateQuarantineEndpointReturnsCanonicalJSON(t *testing.T) {
+	mapIndex := uint32(42)
+	x := int32(1700)
+	y := int32(2800)
+	body, err := json.Marshal(staticstore.StaticActorContentStateExport{
+		MigrationVersion: staticstore.StaticActorContentStateMigrationVersion,
+		MigrationName:    staticstore.StaticActorContentStateMigrationName,
+		InteractionDefinitions: []staticstore.InteractionDefinitionRow{
+			{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "VillageGuard : Keep your blade sharp."},
+			{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
+			{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", Text: "Step through the gate.", MapIndex: &mapIndex, X: &x, Y: &y},
+			{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Title: "Village Merchant"},
+		},
+		MerchantCatalogEntries: []staticstore.InteractionMerchantCatalogEntryRow{
+			{DefinitionKind: interactionstore.KindShopPreview, DefinitionRef: "npc:merchant", Slot: 1, ItemVnum: 11200, Price: 500, Count: 1},
+			{DefinitionKind: interactionstore.KindShopPreview, DefinitionRef: "npc:merchant", Slot: 0, ItemVnum: 27001, Price: 50, Count: 2},
+		},
+		StaticActors: []staticstore.StaticActorContentStateRow{
+			{EntityID: 2, Name: "VillageMerchant", MapIndex: 1, X: 469500, Y: 964300, RaceNum: 20001, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"},
+			{EntityID: 9, Name: "VillageGuard", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"},
+			{EntityID: 7, Name: "PracticeMob", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, SpawnHomeMapIndex: &mapIndex, SpawnHomeX: &x, SpawnHomeY: &y, CombatProfile: "practice_mob", SpawnGroupRef: "practice.reward_mob", RewardExperience: 25, RewardGold: 12},
+		},
+		RewardDrops: []staticstore.StaticActorRewardDropRow{
+			{EntityID: 7, Position: 1, ItemVnum: 27002},
+			{EntityID: 7, Position: 0, ItemVnum: 27001},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal quarantine body: %v", err)
+	}
+
+	mux := RegisterLocalStaticActorContentStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors/exports/static-actor-content-state/quarantine", bytes.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	responseBody := rec.Body.String()
+	for _, want := range []string{
+		`"interaction_definition_count":4`,
+		`"merchant_catalog_entry_count":2`,
+		`"static_actor_count":3`,
+		`"reward_drop_count":2`,
+		`"entity_ids":[7,9,2]`,
+		`"migration_version":8`,
+		`"kind":"info"`,
+		`"kind":"shop_preview"`,
+		`"kind":"talk"`,
+		`"kind":"warp"`,
+		`"ref":"npc:village_guard"`,
+	} {
+		if !strings.Contains(responseBody, want) {
+			t.Fatalf("expected quarantine response to contain %s, got %s", want, responseBody)
+		}
+	}
+	if strings.Contains(responseBody, "CREATE TABLE") || strings.Contains(responseBody, "postgres://") {
+		t.Fatalf("quarantine endpoint must not expose SQL or DSNs, got %s", responseBody)
+	}
+}
+
+func TestLocalStaticActorContentStateQuarantineEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	mux := RegisterLocalStaticActorContentStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors/exports/static-actor-content-state/quarantine", strings.NewReader(`{"migration_version":8,"migration_name":"static_actor_content_state","interaction_definitions":[],"merchant_catalog_entries":[],"static_actors":[],"reward_drops":[]}`))
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+}
+
+func TestLocalStaticActorContentStateQuarantineEndpointRejectsWrongMethod(t *testing.T) {
+	mux := RegisterLocalStaticActorContentStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actors/exports/static-actor-content-state/quarantine", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+}
+
+func TestLocalStaticActorContentStateQuarantineEndpointRejectsInvalidExport(t *testing.T) {
+	mux := RegisterLocalStaticActorContentStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors/exports/static-actor-content-state/quarantine", strings.NewReader(`{"migration_version":4,"migration_name":"static_actor_content_state","interaction_definitions":[],"merchant_catalog_entries":[],"static_actors":[],"reward_drops":[]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+}
+
+func TestLocalStaticActorContentStateQuarantineEndpointRejectsMalformedJSON(t *testing.T) {
+	mux := RegisterLocalStaticActorContentStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors/exports/static-actor-content-state/quarantine", strings.NewReader(`{"migration_version":8`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestNewPprofMuxDoesNotExposeLocalStaticActorContentStateQuarantineByDefault(t *testing.T) {
+	mux := NewPprofMux("authd")
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors/exports/static-actor-content-state/quarantine", strings.NewReader(`{"migration_version":8,"migration_name":"static_actor_content_state","interaction_definitions":[],"merchant_catalog_entries":[],"static_actors":[],"reward_drops":[]}`))
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 

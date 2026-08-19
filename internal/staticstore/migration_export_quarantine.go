@@ -1,0 +1,272 @@
+package staticstore
+
+import (
+	"errors"
+	"fmt"
+	"sort"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
+)
+
+// ErrInvalidStaticActorContentStateExport reports that a retained static-actor
+// content-state export failed the 0008 migration-shaped quarantine contract.
+var ErrInvalidStaticActorContentStateExport = errors.New("invalid static actor content-state export")
+
+// StaticActorContentStateQuarantineSummary is the metadata-only result of
+// validating or quarantining a retained static-actor content-state export. It
+// never includes SQL, DSNs, or raw JSON store bytes.
+type StaticActorContentStateQuarantineSummary struct {
+	InteractionDefinitionCount int      `json:"interaction_definition_count"`
+	MerchantCatalogEntryCount  int      `json:"merchant_catalog_entry_count"`
+	StaticActorCount           int      `json:"static_actor_count"`
+	RewardDropCount            int      `json:"reward_drop_count"`
+	EntityIDs                  []uint64 `json:"entity_ids"`
+	InteractionKinds           []string `json:"interaction_kinds"`
+}
+
+// StaticActorContentStateQuarantineResult pairs the metadata-only quarantine
+// summary with a canonicalized export ready for later offline review or
+// backfill tools.
+type StaticActorContentStateQuarantineResult struct {
+	Summary StaticActorContentStateQuarantineSummary `json:"summary"`
+	Export  StaticActorContentStateExport            `json:"export"`
+}
+
+// ValidateStaticActorContentStateExport fails closed when a retained export
+// does not match the 0008_static_actor_content_state shape. It does not open a
+// database, write static-actor/interaction snapshots, or mutate the supplied
+// export.
+func ValidateStaticActorContentStateExport(export StaticActorContentStateExport) (StaticActorContentStateQuarantineSummary, error) {
+	canonical, summary, err := canonicalizeStaticActorContentStateExport(export)
+	if err != nil {
+		return StaticActorContentStateQuarantineSummary{}, err
+	}
+	_ = canonical
+	return summary, nil
+}
+
+// QuarantineStaticActorContentStateExport validates a retained export and
+// returns a canonicalized copy ordered exactly like ExportStaticActorContentState.
+// It never opens a database or mutates static-actor/interaction snapshots.
+func QuarantineStaticActorContentStateExport(export StaticActorContentStateExport) (StaticActorContentStateExport, StaticActorContentStateQuarantineSummary, error) {
+	return canonicalizeStaticActorContentStateExport(export)
+}
+
+func canonicalizeStaticActorContentStateExport(export StaticActorContentStateExport) (StaticActorContentStateExport, StaticActorContentStateQuarantineSummary, error) {
+	if export.MigrationVersion != StaticActorContentStateMigrationVersion {
+		return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: migration_version %d", ErrInvalidStaticActorContentStateExport, export.MigrationVersion)
+	}
+	if export.MigrationName != StaticActorContentStateMigrationName {
+		return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: migration_name %q", ErrInvalidStaticActorContentStateExport, export.MigrationName)
+	}
+	if export.InteractionDefinitions == nil {
+		return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: interaction_definitions must be present", ErrInvalidStaticActorContentStateExport)
+	}
+	if export.MerchantCatalogEntries == nil {
+		return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: merchant_catalog_entries must be present", ErrInvalidStaticActorContentStateExport)
+	}
+	if export.StaticActors == nil {
+		return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: static_actors must be present", ErrInvalidStaticActorContentStateExport)
+	}
+	if export.RewardDrops == nil {
+		return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: reward_drops must be present", ErrInvalidStaticActorContentStateExport)
+	}
+
+	staticSnapshot, interactionSnapshot, err := snapshotsFromStaticActorContentStateExport(export)
+	if err != nil {
+		return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, err
+	}
+	canonical, err := ExportStaticActorContentState(staticSnapshot, interactionSnapshot)
+	if err != nil {
+		return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: %v", ErrInvalidStaticActorContentStateExport, err)
+	}
+
+	entityIDs := make([]uint64, 0, len(canonical.StaticActors))
+	for _, actor := range canonical.StaticActors {
+		entityIDs = append(entityIDs, actor.EntityID)
+	}
+	kindSet := make(map[string]struct{}, len(canonical.InteractionDefinitions))
+	for _, definition := range canonical.InteractionDefinitions {
+		kindSet[definition.Kind] = struct{}{}
+	}
+	kinds := make([]string, 0, len(kindSet))
+	for kind := range kindSet {
+		kinds = append(kinds, kind)
+	}
+	sort.Strings(kinds)
+
+	summary := StaticActorContentStateQuarantineSummary{
+		InteractionDefinitionCount: len(canonical.InteractionDefinitions),
+		MerchantCatalogEntryCount:  len(canonical.MerchantCatalogEntries),
+		StaticActorCount:           len(canonical.StaticActors),
+		RewardDropCount:            len(canonical.RewardDrops),
+		EntityIDs:                  entityIDs,
+		InteractionKinds:           kinds,
+	}
+	if summary.EntityIDs == nil {
+		summary.EntityIDs = []uint64{}
+	}
+	if summary.InteractionKinds == nil {
+		summary.InteractionKinds = []string{}
+	}
+	return canonical, summary, nil
+}
+
+func snapshotsFromStaticActorContentStateExport(export StaticActorContentStateExport) (Snapshot, interactionstore.Snapshot, error) {
+	definitionsByKey := make(map[string]interactionstore.Definition, len(export.InteractionDefinitions))
+	definitions := make([]interactionstore.Definition, 0, len(export.InteractionDefinitions))
+	for _, row := range export.InteractionDefinitions {
+		definition, err := interactionDefinitionFromContentStateRow(row)
+		if err != nil {
+			return Snapshot{}, interactionstore.Snapshot{}, err
+		}
+		key := interactionDefinitionExportKey(definition.Kind, definition.Ref)
+		if _, exists := definitionsByKey[key]; exists {
+			return Snapshot{}, interactionstore.Snapshot{}, fmt.Errorf("%w: duplicate interaction definition %s:%s", ErrInvalidStaticActorContentStateExport, definition.Kind, definition.Ref)
+		}
+		definitionsByKey[key] = definition
+		definitions = append(definitions, definition)
+	}
+
+	for _, entry := range export.MerchantCatalogEntries {
+		key := interactionDefinitionExportKey(entry.DefinitionKind, entry.DefinitionRef)
+		definition, ok := definitionsByKey[key]
+		if !ok {
+			return Snapshot{}, interactionstore.Snapshot{}, fmt.Errorf("%w: merchant catalog entry references missing interaction definition %s:%s", ErrInvalidStaticActorContentStateExport, entry.DefinitionKind, entry.DefinitionRef)
+		}
+		if entry.DefinitionKind != interactionstore.KindShopPreview {
+			return Snapshot{}, interactionstore.Snapshot{}, fmt.Errorf("%w: merchant catalog entry requires shop_preview definition", ErrInvalidStaticActorContentStateExport)
+		}
+		if entry.Slot >= 40 || entry.ItemVnum == 0 || entry.Price == 0 || entry.Price > 4294967295 || entry.Count == 0 || entry.Count > 255 {
+			return Snapshot{}, interactionstore.Snapshot{}, fmt.Errorf("%w: invalid merchant catalog entry slot=%d item_vnum=%d", ErrInvalidStaticActorContentStateExport, entry.Slot, entry.ItemVnum)
+		}
+		for _, existing := range definition.Catalog {
+			if existing.Slot == entry.Slot {
+				return Snapshot{}, interactionstore.Snapshot{}, fmt.Errorf("%w: duplicate merchant catalog slot %d for %s:%s", ErrInvalidStaticActorContentStateExport, entry.Slot, entry.DefinitionKind, entry.DefinitionRef)
+			}
+		}
+		definition.Catalog = append(definition.Catalog, interactionstore.MerchantCatalogEntry{
+			Slot:     entry.Slot,
+			ItemVnum: entry.ItemVnum,
+			Price:    entry.Price,
+			Count:    entry.Count,
+		})
+		definitionsByKey[key] = definition
+	}
+
+	for i := range definitions {
+		key := interactionDefinitionExportKey(definitions[i].Kind, definitions[i].Ref)
+		definitions[i] = definitionsByKey[key]
+	}
+
+	actorsByID := make(map[uint64]StaticActor, len(export.StaticActors))
+	actors := make([]StaticActor, 0, len(export.StaticActors))
+	for _, row := range export.StaticActors {
+		actor, err := staticActorFromContentStateRow(row)
+		if err != nil {
+			return Snapshot{}, interactionstore.Snapshot{}, err
+		}
+		if _, exists := actorsByID[actor.EntityID]; exists {
+			return Snapshot{}, interactionstore.Snapshot{}, fmt.Errorf("%w: duplicate static actor entity_id %d", ErrInvalidStaticActorContentStateExport, actor.EntityID)
+		}
+		actorsByID[actor.EntityID] = actor
+		actors = append(actors, actor)
+	}
+
+	dropsByEntity := make(map[uint64][]StaticActorRewardDropRow, len(export.RewardDrops))
+	for _, drop := range export.RewardDrops {
+		if _, ok := actorsByID[drop.EntityID]; !ok {
+			return Snapshot{}, interactionstore.Snapshot{}, fmt.Errorf("%w: reward drop references missing entity_id %d", ErrInvalidStaticActorContentStateExport, drop.EntityID)
+		}
+		if drop.ItemVnum == 0 {
+			return Snapshot{}, interactionstore.Snapshot{}, fmt.Errorf("%w: reward drop for entity_id %d requires item_vnum > 0", ErrInvalidStaticActorContentStateExport, drop.EntityID)
+		}
+		dropsByEntity[drop.EntityID] = append(dropsByEntity[drop.EntityID], drop)
+	}
+	for entityID, drops := range dropsByEntity {
+		sort.Slice(drops, func(i, j int) bool { return drops[i].Position < drops[j].Position })
+		seenPositions := make(map[uint8]struct{}, len(drops))
+		vnums := make([]uint32, 0, len(drops))
+		for i, drop := range drops {
+			if _, exists := seenPositions[drop.Position]; exists {
+				return Snapshot{}, interactionstore.Snapshot{}, fmt.Errorf("%w: duplicate reward drop position %d for entity_id %d", ErrInvalidStaticActorContentStateExport, drop.Position, entityID)
+			}
+			if int(drop.Position) != i {
+				return Snapshot{}, interactionstore.Snapshot{}, fmt.Errorf("%w: reward drop positions for entity_id %d must be contiguous from 0", ErrInvalidStaticActorContentStateExport, entityID)
+			}
+			seenPositions[drop.Position] = struct{}{}
+			vnums = append(vnums, drop.ItemVnum)
+		}
+		actor := actorsByID[entityID]
+		actor.RewardDropVnums = vnums
+		actorsByID[entityID] = actor
+	}
+
+	for i := range actors {
+		actors[i] = actorsByID[actors[i].EntityID]
+	}
+
+	return Snapshot{StaticActors: actors}, interactionstore.Snapshot{Definitions: definitions}, nil
+}
+
+func interactionDefinitionFromContentStateRow(row InteractionDefinitionRow) (interactionstore.Definition, error) {
+	definition := interactionstore.Definition{
+		Kind:  row.Kind,
+		Ref:   row.Ref,
+		Text:  row.Text,
+		Title: row.Title,
+	}
+	switch row.Kind {
+	case interactionstore.KindInfo, interactionstore.KindTalk:
+		if row.MapIndex != nil || row.X != nil || row.Y != nil || row.Title != "" {
+			return interactionstore.Definition{}, fmt.Errorf("%w: %s definition %q carries unsupported warp/title fields", ErrInvalidStaticActorContentStateExport, row.Kind, row.Ref)
+		}
+	case interactionstore.KindShopPreview:
+		if row.MapIndex != nil || row.X != nil || row.Y != nil || row.Text != "" {
+			return interactionstore.Definition{}, fmt.Errorf("%w: shop_preview definition %q carries unsupported text/warp fields", ErrInvalidStaticActorContentStateExport, row.Ref)
+		}
+	case interactionstore.KindWarp:
+		if row.Title != "" {
+			return interactionstore.Definition{}, fmt.Errorf("%w: warp definition %q carries unsupported title", ErrInvalidStaticActorContentStateExport, row.Ref)
+		}
+		if row.MapIndex == nil || row.X == nil || row.Y == nil {
+			return interactionstore.Definition{}, fmt.Errorf("%w: warp definition %q requires map_index/x/y", ErrInvalidStaticActorContentStateExport, row.Ref)
+		}
+		definition.MapIndex = *row.MapIndex
+		definition.X = *row.X
+		definition.Y = *row.Y
+	default:
+		return interactionstore.Definition{}, fmt.Errorf("%w: unsupported interaction kind %q", ErrInvalidStaticActorContentStateExport, row.Kind)
+	}
+	return definition, nil
+}
+
+func staticActorFromContentStateRow(row StaticActorContentStateRow) (StaticActor, error) {
+	actor := StaticActor{
+		EntityID:         row.EntityID,
+		Name:             row.Name,
+		MapIndex:         row.MapIndex,
+		X:                row.X,
+		Y:                row.Y,
+		RaceNum:          row.RaceNum,
+		CombatProfile:    row.CombatProfile,
+		InteractionKind:  row.InteractionKind,
+		InteractionRef:   row.InteractionRef,
+		SpawnGroupRef:    row.SpawnGroupRef,
+		RewardExperience: row.RewardExperience,
+		RewardGold:       row.RewardGold,
+	}
+	homePresent := row.SpawnHomeMapIndex != nil || row.SpawnHomeX != nil || row.SpawnHomeY != nil
+	if homePresent {
+		if row.SpawnHomeMapIndex == nil || row.SpawnHomeX == nil || row.SpawnHomeY == nil {
+			return StaticActor{}, fmt.Errorf("%w: static actor %d has partial spawn home fields", ErrInvalidStaticActorContentStateExport, row.EntityID)
+		}
+		actor.SpawnHome = &worldruntime.PositionSnapshot{
+			MapIndex: *row.SpawnHomeMapIndex,
+			X:        *row.SpawnHomeX,
+			Y:        *row.SpawnHomeY,
+		}
+	}
+	return actor, nil
+}

@@ -164,16 +164,17 @@ func (request localContentBundleRequest) bundle() (contentbundle.Bundle, bool) {
 }
 
 const (
-	maxLocalNoticeBodyBytes                           = 4096
-	maxLocalAccountStoreMutationBodyBytes             = 4096
-	maxLocalInteractionDefinitionBodyBytes            = 4096
-	maxLocalStaticActorCombatProfileBodyBytes         = 4096
-	maxLocalMigrationLedgerSnapshotBodyBytes          = 64 * 1024
-	maxLocalCharacterItemStateQuarantineBodyBytes     = 1 << 20
-	maxLocalCharacterPointStateQuarantineBodyBytes    = 1 << 20
-	maxLocalCharacterQuestStateQuarantineBodyBytes    = 1 << 20
-	maxLocalAccountCharacterRosterQuarantineBodyBytes = 1 << 20
-	maxLocalAuthLoginTicketHandoffQuarantineBodyBytes = 1 << 20
+	maxLocalNoticeBodyBytes                            = 4096
+	maxLocalAccountStoreMutationBodyBytes              = 4096
+	maxLocalInteractionDefinitionBodyBytes             = 4096
+	maxLocalStaticActorCombatProfileBodyBytes          = 4096
+	maxLocalMigrationLedgerSnapshotBodyBytes           = 64 * 1024
+	maxLocalCharacterItemStateQuarantineBodyBytes      = 1 << 20
+	maxLocalCharacterPointStateQuarantineBodyBytes     = 1 << 20
+	maxLocalCharacterQuestStateQuarantineBodyBytes     = 1 << 20
+	maxLocalAccountCharacterRosterQuarantineBodyBytes  = 1 << 20
+	maxLocalAuthLoginTicketHandoffQuarantineBodyBytes  = 1 << 20
+	maxLocalStaticActorContentStateQuarantineBodyBytes = 1 << 20
 )
 
 func NewPprofMux(serviceName string) *http.ServeMux {
@@ -1893,6 +1894,43 @@ func RegisterLocalStaticActorContentStateExportEndpoint(mux *http.ServeMux, expo
 			return
 		}
 		writeLocalJSONMutationResponse(w, export, http.StatusOK)
+	})
+	return mux
+}
+
+// RegisterLocalStaticActorContentStateQuarantineEndpoint exposes loopback-only
+// POST /local/static-actors/exports/static-actor-content-state/quarantine for
+// validating retained 0008 migration-shaped static-actor content-state exports
+// without opening a database or mutating authored JSON stores.
+func RegisterLocalStaticActorContentStateQuarantineEndpoint(mux *http.ServeMux) *http.ServeMux {
+	if mux == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/static-actors/exports/static-actor-content-state/quarantine", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		export, status, ok := decodeLocalStaticActorContentStateExportRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		quarantined, summary, err := staticstore.QuarantineStaticActorContentStateExport(export)
+		if err != nil {
+			slog.Warn("local static actor content-state quarantine failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, staticstore.StaticActorContentStateQuarantineResult{
+			Summary: summary,
+			Export:  quarantined,
+		}, http.StatusOK)
 	})
 	return mux
 }
@@ -5412,6 +5450,30 @@ func decodeLocalCharacterQuestStateExportRequest(r *http.Request) (queststate.Ch
 	var trailing struct{}
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return queststate.CharacterQuestStateExport{}, http.StatusBadRequest, false
+	}
+	return export, http.StatusOK, true
+}
+
+func decodeLocalStaticActorContentStateExportRequest(r *http.Request) (staticstore.StaticActorContentStateExport, int, bool) {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxLocalStaticActorContentStateQuarantineBodyBytes+1))
+	if err != nil {
+		return staticstore.StaticActorContentStateExport{}, http.StatusBadRequest, false
+	}
+	if len(raw) > maxLocalStaticActorContentStateQuarantineBodyBytes {
+		return staticstore.StaticActorContentStateExport{}, http.StatusRequestEntityTooLarge, false
+	}
+	if !utf8.Valid(raw) || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return staticstore.StaticActorContentStateExport{}, http.StatusBadRequest, false
+	}
+	var export staticstore.StaticActorContentStateExport
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&export); err != nil {
+		return staticstore.StaticActorContentStateExport{}, http.StatusBadRequest, false
+	}
+	var trailing struct{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return staticstore.StaticActorContentStateExport{}, http.StatusBadRequest, false
 	}
 	return export, http.StatusOK, true
 }

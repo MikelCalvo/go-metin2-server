@@ -77,6 +77,8 @@ Full validation before commit:
 
 ## Follow-up options
 
-1. Add JSON-file-store import/quarantine tooling that consumes this export plus the existing account/item/quest/login-ticket migration-shaped exports without applying rows.
-2. Extract a narrow static actor / interaction repository seam only after an export/import test proves it reduces file-state coupling.
-3. Add combat-profile migration/export boundaries separately; do not overload this content-state export with runtime combat state.
+1. Add JSON-file-store import/quarantine tooling that consumes this export plus the existing account/item/quest/login-ticket migration-shaped exports without applying rows. The static-actor content-state quarantine preflight is now landed in `docs/plans/2026-08-19-static-actor-content-state-quarantine.md`.
+2. Add a later migration/export slice that widens the schema for `quest_flag` interaction definitions and kill-quest credit fields once those columns are owned by the DB boundary.
+3. Extract a narrow static actor / interaction repository seam only after an export/import test proves it reduces file-state coupling.
+4. Add combat-profile migration/export boundaries separately; do not overload this content-state export with runtime combat state.
+5. Keep runtime content file-backed until a repository/backfill consumer exists.
