@@ -266,8 +266,8 @@ func assertPostFloorItemGuardAccountUnchanged(t *testing.T, accounts accountstor
 	if got.Gold != want.Gold {
 		t.Fatalf("%s mutated gold: got %d want %d", context, got.Gold, want.Gold)
 	}
-	if got.Points[bootstrapPlayerPointValueIndex] != want.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("%s mutated persisted HP point: got %d want %d", context, got.Points[bootstrapPlayerPointValueIndex], want.Points[bootstrapPlayerPointValueIndex])
+	if got.Points[bootstrapPlayerPointValueIndex] != 0 {
+		t.Fatalf("%s expected persisted death-floor HP 0, got %d", context, got.Points[bootstrapPlayerPointValueIndex])
 	}
 }
 

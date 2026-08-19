@@ -71,8 +71,8 @@ When accepted, `/restart_here` now:
 That catch-up exists because the already-owned zero-HP recipient skips intentionally withheld later practice-mob death/respawn and static-actor visibility frames from the still-connected dead owner. Same-socket `/restart_here` therefore has to resynchronize the recovered owner to the current server-owned non-player snapshot instead of leaving stale pre-death visuals while combat selection already observes the live runtime state.
 
 For this bootstrap slice, the self recovery rebuild is intentionally asymmetric with the engaged practice mob:
-- the player rebuilds from persisted player state
-- that persisted player state must be a usable live snapshot; if it is itself already at `0` HP, the restart fails closed instead of replaying a dead bootstrap as a recovery
+- the player rebuilds from persisted player state plus an owned race create MaxHP restore for the bootstrap HP point
+- that recovery writes the restored live HP back into the selected-character account snapshot as part of the accepted restart
 - a still-live practice mob keeps its current runtime-owned HP and engagement reset rules
 - if that practice mob died and its server-owned respawn became due while the owner was still at the zero-HP floor, the restart-here preflight rebuilds the mob first and the catch-up refresh shows the live post-respawn actor rather than a stale dead replay followed by a duplicate queued rebuild
 - if a still-live spawn-backed practice mob became `return_required` and its server-owned return-step deadline became due while the owner was still at the zero-HP floor, the restart-here preflight applies that due return step before catch-up so the recovered owner sees the stepped server-owned position rather than the pre-step displaced snapshot followed by a duplicate queued rebuild; actors that remain `return_required` after the stepped preflight stay non-targetable under the already-owned leash gate
@@ -96,13 +96,13 @@ Later peers that enter the same visible world after accepted `/restart_here` tre
 
 ## Persistence rule
 
-For this first slice, `/restart_here` does not invent new persistence semantics.
+For this bootstrap slice, `/restart_here` keeps recovery restart-owned and honest once the retaliation floor is persisted.
 
 The narrow bootstrap rule is:
-- retaliation-owned HP loss is still runtime-only
-- `/restart_here` rebuilds from the persisted account snapshot for points/inventory/equipment
-- therefore `/restart_here` implicitly clears the runtime-only retaliation loss instead of persisting it
-- if the persisted account snapshot is already at the bootstrap HP floor, `/restart_here` emits no recovery frames and leaves the connected runtime dead until a later, explicitly owned revival source exists
+- partial (above-floor) retaliation-owned HP loss stays runtime-only
+- when retaliation reaches the bootstrap `0`-HP floor, that floor is persisted into the selected-character account snapshot with the owned death/clear frames
+- `/restart_here` restores race create MaxHP into the selected-character bootstrap HP point, persists that recovered live snapshot, and rebuilds self bootstrap from it while keeping inventory/equipment otherwise from the persisted account snapshot
+- restart still fails closed while the owner is alive and when no usable live rebuild snapshot can be produced
 
 ## Post-restart combat rule
 

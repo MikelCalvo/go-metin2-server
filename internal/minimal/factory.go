@@ -3764,6 +3764,36 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			return frames, true
 		}
+		commitSelectedDeathFloorPersistenceFrames := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte, stablePeerFrames [][]byte) ([][]byte, bool) {
+			if selectedPlayer == nil {
+				return nil, false
+			}
+			persistedSelected := selectedPlayer.PersistedSnapshot()
+			updatedSelected := selectedPlayer.LiveCharacter()
+			if persistedSelected.ID == 0 || updatedSelected.ID == 0 || previousSelected.ID == 0 {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return nil, false
+			}
+			if updatedSelected.Points[bootstrapPlayerPointValueIndex] > 0 {
+				return commitSelectedRuntimeOnlyMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
+			}
+			if !ownsLiveSharedWorldSession() {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return frames, true
+			}
+			persistedSelected.Points[bootstrapPlayerPointValueIndex] = updatedSelected.Points[bootstrapPlayerPointValueIndex]
+			updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, persistedSelected)
+			if ok && saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
+				sessionTicket.Characters = updatedCharacters
+				selectedPlayer.SetPersistedSnapshot(persistedSelected)
+			}
+			// Live death/clear frames already advanced; keep them even if account persistence fails.
+			refreshLiveCharacterRegistration()
+			sharedWorld.UpdateCharacterWithVisibilityTransition(sharedWorldID, previousSelected, updatedSelected, stablePeerFrames)
+			return frames, true
+		}
 		commitSelectedNonPointItemMutation := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte) gameflow.ChatResult {
 			frames, ok := commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 			if !ok {
@@ -3821,7 +3851,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				frames = append(frames, combatproto.EncodeServerClearTarget())
 				stablePeerFrames = [][]byte{deadRaw}
 			}
-			frames, ok = commitSelectedRuntimeOnlyMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
+			frames, ok = commitSelectedDeathFloorPersistenceFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 			if !ok {
 				issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
 				return
@@ -4947,16 +4977,24 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 								return gameflow.ChatResult{Accepted: false}
 							}
 							restartedSelected := selectedPlayer.PersistedSnapshot()
-							if restartedSelected.ID == 0 || characterAtBootstrapHPFloor(restartedSelected) {
+							if restartedSelected.ID == 0 {
 								return gameflow.ChatResult{Accepted: false}
 							}
+							recoveredHP := initialStatsForRace(restartedSelected.RaceNum).MaxHP
+							if recoveredHP <= 0 {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							restartedSelected.Points[bootstrapPlayerPointValueIndex] = recoveredHP
 							restartedSelected.MapIndex = previousSelected.MapIndex
 							restartedSelected.X = previousSelected.X
 							restartedSelected.Y = previousSelected.Y
 							restartedSelected.Z = previousSelected.Z
 							updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, restartedSelected)
-							if !ok {
+							if !ok || !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
 								return gameflow.ChatResult{Accepted: false}
+							}
+							rollbackPersistedRestartHere := func() {
+								_ = saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters)
 							}
 							runtime.flushReadyStaticActorRespawns()
 							runtime.flushDueSpawnGroupReturnSteps()
@@ -4964,10 +5002,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							runtime.flushProximitySpawnGroupAggroAcquisition()
 							bootstrapFrames, err := worldentry.BuildBootstrapFramesWithTemplates(restartedSelected, runtime.itemTemplates)
 							if err != nil {
+								rollbackPersistedRestartHere()
 								return gameflow.ChatResult{Accepted: false}
 							}
 							peerRefreshFrames := encodePeerVisibilityFramesWithTemplates(restartedSelected, runtime.itemTemplates)
 							if len(peerRefreshFrames) == 0 {
+								rollbackPersistedRestartHere()
 								return gameflow.ChatResult{Accepted: false}
 							}
 							sessionTicket.Characters = updatedCharacters
@@ -4988,9 +5028,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 								return gameflow.ChatResult{Accepted: false}
 							}
 							restartedSelected := selectedPlayer.PersistedSnapshot()
-							if restartedSelected.ID == 0 || characterAtBootstrapHPFloor(restartedSelected) {
+							if restartedSelected.ID == 0 {
 								return gameflow.ChatResult{Accepted: false}
 							}
+							recoveredHP := initialStatsForRace(restartedSelected.RaceNum).MaxHP
+							if recoveredHP <= 0 {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							restartedSelected.Points[bootstrapPlayerPointValueIndex] = recoveredHP
 							restartEmpire := restartedSelected.Empire
 							if restartEmpire == 0 {
 								restartEmpire = ticketEmpire(sessionTicket)
@@ -5948,7 +5993,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						frames = append(frames, combatproto.EncodeServerClearTarget())
 						stablePeerFrames = [][]byte{deadRaw}
 					}
-					persistedFrames, ok := commitSelectedRuntimeOnlyMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
+					persistedFrames, ok := commitSelectedDeathFloorPersistenceFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 					if !ok {
 						return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
 					}

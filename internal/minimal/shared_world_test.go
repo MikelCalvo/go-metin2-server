@@ -13317,8 +13317,8 @@ func TestGameSessionFlowPracticeMobRestartHereRebuildsDeadOwnerOnSameSocket(t *t
 	if err != nil {
 		t.Fatalf("decode self point change after /restart_here: %v", err)
 	}
-	if selfPoints.Value != owner.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected /restart_here to rebuild persisted owner HP %d, got %+v", owner.Points[bootstrapPlayerPointValueIndex], selfPoints)
+	if selfPoints.Value != initialStatsForRace(owner.RaceNum).MaxHP {
+		t.Fatalf("expected /restart_here to rebuild recovered owner HP %d, got %+v", initialStatsForRace(owner.RaceNum).MaxHP, selfPoints)
 	}
 	mobDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, restartOut[4]))
 	if err != nil {
@@ -13432,7 +13432,7 @@ func TestGameSessionFlowPersistedDeadEnterGameReplaysSelfDead(t *testing.T) {
 	}
 }
 
-func TestGameSessionFlowPracticeMobRestartHereFailsClosedWhenPersistedSnapshotIsAtHPFloor(t *testing.T) {
+func TestGameSessionFlowPracticeMobRestartHereRecoversPersistedZeroHPFloor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PersistedDeadHere", 0x0103019f, 0x0204019f, 1100, 2100, 0, 101, 201)
@@ -13444,24 +13444,39 @@ func TestGameSessionFlowPracticeMobRestartHereFailsClosedWhenPersistedSnapshotIs
 
 	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
 	if err != nil {
-		t.Fatalf("unexpected game runtime error for persisted-dead /restart_here guard: %v", err)
+		t.Fatalf("unexpected game runtime error for persisted-dead /restart_here recovery: %v", err)
 	}
 	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "persisted-dead-here", 0x91919199)
 	defer closeSessionFlow(t, flow)
 	if len(enterOut) != 6 {
-		t.Fatalf("expected 6 bootstrap frames including self DEAD for persisted-dead /restart_here guard, got %d", len(enterOut))
+		t.Fatalf("expected 6 bootstrap frames including self DEAD for persisted-dead /restart_here recovery, got %d", len(enterOut))
 	}
 
 	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_here"})))
 	if err != nil {
 		t.Fatalf("unexpected persisted-dead /restart_here error: %v", err)
 	}
-	if len(restartOut) != 0 {
-		t.Fatalf("expected /restart_here to fail closed when the persisted rebuild snapshot is still at the HP floor, got %d frames", len(restartOut))
+	if len(restartOut) != 4 {
+		t.Fatalf("expected /restart_here to recover a persisted zero-HP owner with 4 self bootstrap frames, got %d", len(restartOut))
+	}
+	selfPoints, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, restartOut[3]))
+	if err != nil {
+		t.Fatalf("decode recovered self point change after /restart_here: %v", err)
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if selfPoints.Value != wantHP {
+		t.Fatalf("expected /restart_here to persist recovered owner HP %d, got %+v", wantHP, selfPoints)
 	}
 	connected := runtime.ConnectedCharacters()
-	if len(connected) != 1 || !connected[0].Dead {
-		t.Fatalf("expected rejected persisted-dead /restart_here to leave owner connected and dead, got %+v", connected)
+	if len(connected) != 1 || connected[0].Dead {
+		t.Fatalf("expected recovered persisted-dead /restart_here to leave owner connected and alive, got %+v", connected)
+	}
+	persisted, err := accounts.Load("persisted-dead-here")
+	if err != nil {
+		t.Fatalf("load persisted account after /restart_here recovery: %v", err)
+	}
+	if len(persisted.Characters) != 1 || persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_here recovery to persist points[%d]=%d, got %+v", bootstrapPlayerPointValueIndex, wantHP, persisted.Characters)
 	}
 }
 
@@ -14002,8 +14017,9 @@ func TestGameSessionFlowPracticeMobRestartTownTransfersDeadOwnerToEmpireCreatePo
 	if err != nil {
 		t.Fatalf("decode self point change after /restart_town: %v", err)
 	}
-	if selfPoints.Value != owner.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected /restart_town to rebuild persisted owner HP %d, got %+v", owner.Points[bootstrapPlayerPointValueIndex], selfPoints)
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if selfPoints.Value != wantHP {
+		t.Fatalf("expected /restart_town to rebuild recovered owner HP %d, got %+v", wantHP, selfPoints)
 	}
 	originPeerDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, restartOut[4]))
 	if err != nil {
@@ -14091,8 +14107,8 @@ func TestGameSessionFlowPracticeMobRestartTownTransfersDeadOwnerToEmpireCreatePo
 	if persisted.Characters[0].MapIndex != 21 || persisted.Characters[0].X != 52070 || persisted.Characters[0].Y != 166600 {
 		t.Fatalf("expected /restart_town to persist empire town position map=21 x=52070 y=166600, got %+v", persisted.Characters[0])
 	}
-	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected /restart_town to keep retaliation loss runtime-only with persisted owner HP %d, got %+v", owner.Points[bootstrapPlayerPointValueIndex], persisted.Characters[0])
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_town to persist recovered owner HP %d, got %+v", wantHP, persisted.Characters[0])
 	}
 	connected := runtime.ConnectedCharacters()
 	var ownerSnapshot *ConnectedCharacterSnapshot
@@ -14954,7 +14970,7 @@ func TestGameSessionFlowPracticeMobRestartTownFailsClosedWhileAlive(t *testing.T
 	}
 }
 
-func TestGameSessionFlowPracticeMobRestartTownFailsClosedWhenPersistedSnapshotIsAtHPFloor(t *testing.T) {
+func TestGameSessionFlowPracticeMobRestartTownRecoversPersistedZeroHPFloor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PersistedDeadTown", 0x010301a0, 0x020401a0, 1100, 2100, 0, 101, 201)
@@ -14967,31 +14983,40 @@ func TestGameSessionFlowPracticeMobRestartTownFailsClosedWhenPersistedSnapshotIs
 
 	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
 	if err != nil {
-		t.Fatalf("unexpected game runtime error for persisted-dead /restart_town guard: %v", err)
+		t.Fatalf("unexpected game runtime error for persisted-dead /restart_town recovery: %v", err)
 	}
 	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "persisted-dead-town", 0x92929299)
 	defer closeSessionFlow(t, flow)
 	if len(enterOut) != 6 {
-		t.Fatalf("expected 6 bootstrap frames including self DEAD for persisted-dead /restart_town guard, got %d", len(enterOut))
+		t.Fatalf("expected 6 bootstrap frames including self DEAD for persisted-dead /restart_town recovery, got %d", len(enterOut))
 	}
 
 	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_town"})))
 	if err != nil {
 		t.Fatalf("unexpected persisted-dead /restart_town error: %v", err)
 	}
-	if len(restartOut) != 0 {
-		t.Fatalf("expected /restart_town to fail closed when the persisted rebuild snapshot is still at the HP floor, got %d frames", len(restartOut))
+	if len(restartOut) < 4 {
+		t.Fatalf("expected /restart_town to recover a persisted zero-HP owner with at least 4 self bootstrap frames, got %d", len(restartOut))
 	}
+	selfPoints, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, restartOut[3]))
+	if err != nil {
+		t.Fatalf("decode recovered self point change after /restart_town: %v", err)
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if selfPoints.Value != wantHP {
+		t.Fatalf("expected /restart_town to persist recovered owner HP %d, got %+v", wantHP, selfPoints)
+	}
+	wantMap, wantX, wantY := legacyCreatePositionForEmpire(owner.Empire)
 	connected := runtime.ConnectedCharacters()
-	if len(connected) != 1 || !connected[0].Dead {
-		t.Fatalf("expected rejected persisted-dead /restart_town to leave owner connected and dead, got %+v", connected)
+	if len(connected) != 1 || connected[0].Dead || connected[0].MapIndex != wantMap || connected[0].X != wantX || connected[0].Y != wantY {
+		t.Fatalf("expected recovered persisted-dead /restart_town to leave owner alive at empire create position, got %+v", connected)
 	}
 	persisted, err := accounts.Load("persisted-dead-town")
 	if err != nil {
-		t.Fatalf("load persisted-dead /restart_town account after rejection: %v", err)
+		t.Fatalf("load persisted-dead /restart_town account after recovery: %v", err)
 	}
-	if len(persisted.Characters) != 1 || persisted.Characters[0].MapIndex != owner.MapIndex || persisted.Characters[0].X != owner.X || persisted.Characters[0].Y != owner.Y || persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 0 {
-		t.Fatalf("expected rejected persisted-dead /restart_town to leave persisted snapshot unchanged, got %+v", persisted.Characters)
+	if len(persisted.Characters) != 1 || persisted.Characters[0].MapIndex != wantMap || persisted.Characters[0].X != wantX || persisted.Characters[0].Y != wantY || persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_town recovery to persist town position and HP %d, got %+v", wantHP, persisted.Characters)
 	}
 }
 
@@ -38353,8 +38378,8 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationPointLossStaysRuntimeOnly
 	if len(persisted.Characters) != 1 {
 		t.Fatalf("expected exactly 1 persisted owner after immediate retaliation floor, got %+v", persisted)
 	}
-	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected immediate retaliation point-loss to stay runtime-only with persisted points[%d] still %d, got %d", bootstrapPlayerPointValueIndex, owner.Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 0 {
+		t.Fatalf("expected immediate retaliation floor to persist points[%d]=0, got %d", bootstrapPlayerPointValueIndex, persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 }
 
@@ -38452,15 +38477,22 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationPhaseSelectReentryRebuildsP
 	if err != nil {
 		t.Fatalf("unexpected enter-game error after delayed retaliation /phase_select recovery: %v", err)
 	}
-	if len(reenterOut) != 8 {
-		t.Fatalf("expected 8 bootstrap frames after delayed retaliation /phase_select recovery, got %d", len(reenterOut))
+	if len(reenterOut) != 6 {
+		t.Fatalf("expected 6 bootstrap frames including self DEAD after delayed retaliation /phase_select recovery, got %d", len(reenterOut))
 	}
 	reenterPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, reenterOut[4]))
 	if err != nil {
 		t.Fatalf("decode bootstrap point-change after delayed retaliation /phase_select recovery: %v", err)
 	}
-	if reenterPointChange.Value != owner.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected /phase_select re-entry bootstrap to rebuild persisted points[%d] value %d after delayed retaliation floor, got %+v", bootstrapPlayerPointValueIndex, owner.Points[bootstrapPlayerPointValueIndex], reenterPointChange)
+	if reenterPointChange.Value != 0 {
+		t.Fatalf("expected /phase_select re-entry bootstrap to rebuild persisted floor points[%d]=0 after delayed retaliation, got %+v", bootstrapPlayerPointValueIndex, reenterPointChange)
+	}
+	reenterDead, err := worldproto.DecodeDead(decodeSingleFrame(t, reenterOut[5]))
+	if err != nil {
+		t.Fatalf("decode bootstrap dead after delayed retaliation /phase_select recovery: %v", err)
+	}
+	if reenterDead.VID != owner.VID {
+		t.Fatalf("expected /phase_select re-entry dead replay for owner vid %d, got %+v", owner.VID, reenterDead)
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued frames immediately after delayed retaliation /phase_select re-entry, got %d", len(queued))
@@ -38470,15 +38502,8 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationPhaseSelectReentryRebuildsP
 	if err != nil {
 		t.Fatalf("unexpected target-selection error after delayed retaliation /phase_select recovery: %v", err)
 	}
-	if len(reselectOut) != 1 {
-		t.Fatalf("expected 1 self-only target frame after delayed retaliation /phase_select recovery, got %d", len(reselectOut))
-	}
-	reselectedTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, reselectOut[0]))
-	if err != nil {
-		t.Fatalf("decode target ack after delayed retaliation /phase_select recovery: %v", err)
-	}
-	if reselectedTarget.TargetVID != targetVID || reselectedTarget.HPPercent != 90 {
-		t.Fatalf("expected /phase_select recovery to keep the same live practice mob at runtime-owned HP 90, got %+v", reselectedTarget)
+	if len(reselectOut) != 0 {
+		t.Fatalf("expected zero-HP /phase_select re-entry to keep combat target fail-closed, got %d frames", len(reselectOut))
 	}
 
 	attackAfterRecovery, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
@@ -38488,30 +38513,32 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationPhaseSelectReentryRebuildsP
 	if err != nil {
 		t.Fatalf("unexpected attack error after delayed retaliation /phase_select recovery: %v", err)
 	}
-	if len(attackAfterRecovery) != 3 {
-		t.Fatalf("expected target-refresh, self-only retaliation, and self damage-info point-loss after delayed retaliation /phase_select recovery, got %d frames", len(attackAfterRecovery))
+	if len(attackAfterRecovery) != 0 {
+		t.Fatalf("expected zero-HP /phase_select re-entry to keep attack fail-closed, got %d frames", len(attackAfterRecovery))
 	}
-	recoveryTargetRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackAfterRecovery[0]))
+
+	persisted, err := accounts.Load("peer-one")
 	if err != nil {
-		t.Fatalf("decode target-refresh after delayed retaliation /phase_select recovery: %v", err)
+		t.Fatalf("load persisted account after delayed retaliation /phase_select recovery: %v", err)
 	}
-	if recoveryTargetRefresh.TargetVID != targetVID || recoveryTargetRefresh.HPPercent != 80 {
-		t.Fatalf("expected first accepted attack after delayed retaliation /phase_select recovery to keep stepping live mob HP to 80, got %+v", recoveryTargetRefresh)
+	if len(persisted.Characters) != 1 || persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 0 {
+		t.Fatalf("expected delayed retaliation floor to remain persisted at points[%d]=0 after /phase_select recovery, got %+v", bootstrapPlayerPointValueIndex, persisted.Characters)
 	}
-	recoveryPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackAfterRecovery[1]))
-	if err != nil {
-		t.Fatalf("decode retaliation point-change after delayed retaliation /phase_select recovery: %v", err)
+
+	actors = runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected practice mob to remain after /phase_select recovery, got %#v", actors)
 	}
-	if recoveryPointChange.VID != owner.VID || recoveryPointChange.Type != bootstrapPlayerPointType || recoveryPointChange.Amount != -1 || recoveryPointChange.Value != 1 {
-		t.Fatalf("unexpected self-only retaliation point-loss after delayed retaliation /phase_select recovery: %+v", recoveryPointChange)
+	if actors[0].CombatHPPercent != 90 {
+		t.Fatalf("expected /phase_select recovery to keep the same live practice mob at runtime-owned HP 90, got %#v", actors[0])
 	}
 }
 
-func TestGameSessionFlowPracticeMobDelayedRetaliationPointLossStaysRuntimeOnlyAcrossReconnect(t *testing.T) {
+func TestGameSessionFlowPracticeMobDelayedRetaliationPartialPointLossStaysRuntimeOnlyAcrossReconnect(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
-	owner.Points[bootstrapPlayerPointValueIndex] = 2
+	owner.Points[bootstrapPlayerPointValueIndex] = 3
 	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
 	if err := accounts.Save(accountstore.Account{Login: "peer-one", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed owner account before delayed retaliation reconnect test: %v", err)
@@ -38570,15 +38597,15 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationPointLossStaysRuntimeOnlyAc
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 3 {
-		t.Fatalf("expected delayed retaliation beat plus self dead and clear-target frames before reconnect test, got %d queued frames", len(queued))
+	if len(queued) != 1 {
+		t.Fatalf("expected one delayed retaliation point-change before reconnect without floor transition, got %d queued frames", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
 		t.Fatalf("decode delayed retaliation point-change before reconnect test: %v", err)
 	}
-	if pointChange.Value != 0 {
-		t.Fatalf("expected delayed retaliation beat to reach owner HP floor before reconnect test, got %+v", pointChange)
+	if pointChange.Value != 1 {
+		t.Fatalf("expected delayed retaliation beat to leave owner above floor before reconnect test, got %+v", pointChange)
 	}
 
 	closeSessionFlow(t, flow)
@@ -38591,10 +38618,10 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationPointLossStaysRuntimeOnlyAc
 	}
 	reconnectPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, reconnectEnter[4]))
 	if err != nil {
-		t.Fatalf("decode reconnect bootstrap point-change after delayed retaliation floor: %v", err)
+		t.Fatalf("decode reconnect bootstrap point-change after delayed retaliation partial loss: %v", err)
 	}
 	if reconnectPointChange.Value != owner.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected reconnect bootstrap to rebuild persisted points[%d] value %d after delayed retaliation floor, got %+v", bootstrapPlayerPointValueIndex, owner.Points[bootstrapPlayerPointValueIndex], reconnectPointChange)
+		t.Fatalf("expected reconnect bootstrap to rebuild persisted points[%d] value %d after partial delayed retaliation, got %+v", bootstrapPlayerPointValueIndex, owner.Points[bootstrapPlayerPointValueIndex], reconnectPointChange)
 	}
 
 	persisted, err := accounts.Load("peer-one")
@@ -38605,7 +38632,123 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationPointLossStaysRuntimeOnlyAc
 		t.Fatalf("expected exactly 1 persisted owner after delayed retaliation reconnect test, got %+v", persisted)
 	}
 	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected delayed retaliation point-loss to stay runtime-only with persisted points[%d] still %d, got %d", bootstrapPlayerPointValueIndex, owner.Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+		t.Fatalf("expected partial delayed retaliation point-loss to stay runtime-only with persisted points[%d] still %d, got %d", bootstrapPlayerPointValueIndex, owner.Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
+func TestGameSessionFlowPracticeMobDelayedRetaliationPersistsZeroHPFloorAcrossReconnect(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PersistFloorPeer", 0x010301f1, 0x020401f1, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 2
+	issuePeerTicket(t, store, "persist-floor-peer", 0xf1f1f1f1, owner)
+	if err := accounts.Save(accountstore.Account{Login: "persist-floor-peer", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed owner account before delayed retaliation death-persistence reconnect test: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000475, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_persist_floor",
+		Name:          "PracticeMobPersistFloor",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	factory := runtime.SessionFactory()
+	flow, enterOut := enterGameWithLoginTicket(t, factory, "persist-floor-peer", 0xf1f1f1f1)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(enterOut))
+	}
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before delayed retaliation death-persistence reconnect test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before delayed retaliation death-persistence reconnect test, got %d", len(selectOut))
+	}
+
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first attack error before delayed retaliation death-persistence reconnect test: %v", err)
+	}
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before delayed retaliation death-persistence reconnect test, got %d frames", len(attackOut))
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 3 {
+		t.Fatalf("expected delayed retaliation beat plus self dead and clear-target frames before death-persistence reconnect test, got %d queued frames", len(queued))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode delayed retaliation point-change before death-persistence reconnect test: %v", err)
+	}
+	if pointChange.Value != 0 {
+		t.Fatalf("expected delayed retaliation beat to reach owner HP floor before death-persistence reconnect test, got %+v", pointChange)
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, queued[1]))
+	if err != nil {
+		t.Fatalf("decode delayed retaliation self dead before death-persistence reconnect test: %v", err)
+	}
+	if dead.VID != owner.VID {
+		t.Fatalf("expected delayed retaliation self dead for owner vid %d, got %+v", owner.VID, dead)
+	}
+
+	persistedBeforeReconnect, err := accounts.Load("persist-floor-peer")
+	if err != nil {
+		t.Fatalf("load persisted account after delayed retaliation floor: %v", err)
+	}
+	if len(persistedBeforeReconnect.Characters) != 1 {
+		t.Fatalf("expected exactly 1 persisted owner after delayed retaliation floor, got %+v", persistedBeforeReconnect)
+	}
+	if persistedBeforeReconnect.Characters[0].Points[bootstrapPlayerPointValueIndex] != 0 {
+		t.Fatalf("expected delayed retaliation floor to persist points[%d]=0 before reconnect, got %d", bootstrapPlayerPointValueIndex, persistedBeforeReconnect.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+
+	closeSessionFlow(t, flow)
+	issuePeerTicket(t, store, "persist-floor-peer", 0xf2f2f2f2, persistedBeforeReconnect.Characters[0])
+
+	reconnectFlow, reconnectEnter := enterGameWithLoginTicket(t, factory, "persist-floor-peer", 0xf2f2f2f2)
+	defer closeSessionFlow(t, reconnectFlow)
+	if len(reconnectEnter) != 6 {
+		t.Fatalf("expected 6 bootstrap frames including self DEAD for reconnecting owner persisted at HP floor, got %d", len(reconnectEnter))
+	}
+	reconnectPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, reconnectEnter[4]))
+	if err != nil {
+		t.Fatalf("decode reconnect bootstrap point-change after persisted delayed retaliation floor: %v", err)
+	}
+	if reconnectPointChange.Value != 0 || reconnectPointChange.Amount != 0 {
+		t.Fatalf("expected reconnect bootstrap to rebuild persisted points[%d] at floor 0, got %+v", bootstrapPlayerPointValueIndex, reconnectPointChange)
+	}
+	reconnectDead, err := worldproto.DecodeDead(decodeSingleFrame(t, reconnectEnter[5]))
+	if err != nil {
+		t.Fatalf("decode reconnect bootstrap dead replay after persisted delayed retaliation floor: %v", err)
+	}
+	if reconnectDead.VID != owner.VID {
+		t.Fatalf("expected reconnect bootstrap dead replay for owner vid %d, got %+v", owner.VID, reconnectDead)
 	}
 }
 
@@ -41285,8 +41428,8 @@ func TestGameSessionFlowPracticeMobUseItemFailsClosedAfterImmediateRetaliationRe
 	if err != nil {
 		t.Fatalf("load persisted immediate zero-HP item-use owner account: %v", err)
 	}
-	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected persisted immediate zero-HP item-use owner points to stay at pre-retaliation value %d, got %d", owner.Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 0 {
+		t.Fatalf("expected persisted immediate zero-HP item-use owner points to stay at death floor 0, got %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 	if !reflect.DeepEqual(persisted.Characters[0].Inventory, []inventory.ItemInstance{{ID: 1001, Vnum: 27002, Count: 3, Slot: 5}}) {
 		t.Fatalf("expected persisted immediate zero-HP item-use owner inventory to stay unchanged, got %#v", persisted.Characters[0].Inventory)
@@ -41375,8 +41518,8 @@ func TestGameSessionFlowPracticeMobGoldDropFailsClosedAfterImmediateRetaliationR
 	if persisted.Characters[0].Gold != owner.Gold {
 		t.Fatalf("expected immediate zero-HP gold-drop denial to keep persisted gold at %d, got %d", owner.Gold, persisted.Characters[0].Gold)
 	}
-	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected immediate zero-HP gold-drop owner points to stay at pre-retaliation value %d, got %d", owner.Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 0 {
+		t.Fatalf("expected immediate zero-HP gold-drop owner points to stay at death floor 0, got %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 }
 
@@ -41466,8 +41609,8 @@ func TestGameSessionFlowPracticeMobItemDropFailsClosedAfterImmediateRetaliationR
 	if err != nil {
 		t.Fatalf("load persisted immediate zero-HP item-drop owner account: %v", err)
 	}
-	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected immediate zero-HP item-drop owner points to stay at pre-retaliation value %d, got %d", owner.Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 0 {
+		t.Fatalf("expected immediate zero-HP item-drop owner points to stay at death floor 0, got %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
 		t.Fatalf("expected immediate zero-HP item-drop denial to keep persisted inventory unchanged, got %#v", persisted.Characters[0].Inventory)
@@ -41573,8 +41716,8 @@ func TestGameSessionFlowPracticeMobItemUsePacketFailsClosedAfterImmediateRetalia
 	if err != nil {
 		t.Fatalf("load persisted immediate zero-HP packet item-use owner account: %v", err)
 	}
-	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected persisted immediate zero-HP packet item-use owner points to stay at pre-retaliation value %d, got %d", owner.Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 0 {
+		t.Fatalf("expected persisted immediate zero-HP packet item-use owner points to stay at death floor 0, got %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 	if !reflect.DeepEqual(persisted.Characters[0].Inventory, []inventory.ItemInstance{{ID: 1001, Vnum: 27002, Count: 3, Slot: 5}}) {
 		t.Fatalf("expected persisted immediate zero-HP packet item-use owner inventory to stay unchanged, got %#v", persisted.Characters[0].Inventory)
@@ -41688,8 +41831,8 @@ func TestGameSessionFlowPracticeMobUseItemFailsClosedAfterDelayedRetaliationReac
 	if err != nil {
 		t.Fatalf("load persisted delayed zero-HP item-use owner account: %v", err)
 	}
-	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected persisted delayed zero-HP item-use owner points to stay at pre-retaliation value %d, got %d", owner.Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 0 {
+		t.Fatalf("expected persisted delayed zero-HP item-use owner points to stay at death floor 0, got %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 	if !reflect.DeepEqual(persisted.Characters[0].Inventory, []inventory.ItemInstance{{ID: 1001, Vnum: 27002, Count: 3, Slot: 5}}) {
 		t.Fatalf("expected persisted delayed zero-HP item-use owner inventory to stay unchanged, got %#v", persisted.Characters[0].Inventory)
@@ -41791,8 +41934,8 @@ func TestGameSessionFlowPracticeMobUseToItemFailsClosedAfterImmediateRetaliation
 	if err != nil {
 		t.Fatalf("load persisted immediate zero-HP use-to-item owner account: %v", err)
 	}
-	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected immediate zero-HP use-to-item owner points to stay at pre-retaliation value %d, got %d", owner.Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 0 {
+		t.Fatalf("expected immediate zero-HP use-to-item owner points to stay at death floor 0, got %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
 		t.Fatalf("expected immediate zero-HP use-to-item denial to keep persisted inventory unchanged, got %#v", persisted.Characters[0].Inventory)
@@ -45229,8 +45372,8 @@ func TestGameSessionFlowPracticeMobRestartHereOverPlainTCP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode tcp restart-here self point refresh: %v", err)
 	}
-	if restartPoints.VID != 0x02040131 || restartPoints.Type != bootstrapPlayerPointValueIndex || restartPoints.Value != 1 {
-		t.Fatalf("expected tcp restart-here to rebuild persisted HP value 1, got %+v", restartPoints)
+	if restartPoints.VID != 0x02040131 || restartPoints.Type != bootstrapPlayerPointValueIndex || restartPoints.Value != 600 {
+		t.Fatalf("expected tcp restart-here to rebuild recovered HP value 600, got %+v", restartPoints)
 	}
 	mobDelete, err := worldproto.DecodeCharacterDeleteNotice(h.client.readFrame(t))
 	if err != nil {
@@ -45293,8 +45436,8 @@ func TestGameSessionFlowPracticeMobRestartTownOverPlainTCP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode tcp restart-town self point refresh: %v", err)
 	}
-	if restartPoints.VID != 0x02040131 || restartPoints.Type != bootstrapPlayerPointValueIndex || restartPoints.Value != 1 {
-		t.Fatalf("expected tcp restart-town to rebuild persisted HP value 1, got %+v", restartPoints)
+	if restartPoints.VID != 0x02040131 || restartPoints.Type != bootstrapPlayerPointValueIndex || restartPoints.Value != 600 {
+		t.Fatalf("expected tcp restart-town to rebuild recovered HP value 600, got %+v", restartPoints)
 	}
 	sourceMobDelete, err := worldproto.DecodeCharacterDeleteNotice(h.client.readFrame(t))
 	if err != nil {
@@ -45314,8 +45457,8 @@ func TestGameSessionFlowPracticeMobRestartTownOverPlainTCP(t *testing.T) {
 	if persisted.Characters[0].MapIndex != 21 || persisted.Characters[0].X != 52070 || persisted.Characters[0].Y != 166600 {
 		t.Fatalf("expected tcp restart-town to persist empire-2 town position, got %+v", persisted.Characters[0])
 	}
-	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 1 {
-		t.Fatalf("expected tcp restart-town to keep retaliation HP loss runtime-only in persisted snapshot, got %+v", persisted.Characters[0])
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 600 {
+		t.Fatalf("expected tcp restart-town to persist recovered HP 600, got %+v", persisted.Characters[0])
 	}
 
 	h.client.writeFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: h.targetID}))
@@ -45371,8 +45514,8 @@ func TestGameSessionFlowPracticeMobRestartTownOwnedEmpireRowsOverPlainTCP(t *tes
 			if err != nil {
 				t.Fatalf("decode tcp %s restart-town self point refresh: %v", tt.name, err)
 			}
-			if restartPoints.VID != 0x02040131 || restartPoints.Type != bootstrapPlayerPointValueIndex || restartPoints.Value != 1 {
-				t.Fatalf("expected tcp %s restart-town to rebuild persisted HP value 1, got %+v", tt.name, restartPoints)
+			if restartPoints.VID != 0x02040131 || restartPoints.Type != bootstrapPlayerPointValueIndex || restartPoints.Value != 600 {
+				t.Fatalf("expected tcp %s restart-town to rebuild recovered HP value 600, got %+v", tt.name, restartPoints)
 			}
 			if tt.wantSourceMobDelete {
 				sourceMobDelete, err := worldproto.DecodeCharacterDeleteNotice(h.client.readFrame(t))
@@ -45396,8 +45539,8 @@ func TestGameSessionFlowPracticeMobRestartTownOwnedEmpireRowsOverPlainTCP(t *tes
 			if persisted.Characters[0].MapIndex != tt.wantMapIndex || persisted.Characters[0].X != tt.wantX || persisted.Characters[0].Y != tt.wantY {
 				t.Fatalf("expected tcp %s restart-town to persist map=%d x=%d y=%d, got %+v", tt.name, tt.wantMapIndex, tt.wantX, tt.wantY, persisted.Characters[0])
 			}
-			if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 1 {
-				t.Fatalf("expected tcp %s restart-town to keep retaliation HP loss runtime-only in persisted snapshot, got %+v", tt.name, persisted.Characters[0])
+			if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 600 {
+				t.Fatalf("expected tcp %s restart-town to persist recovered HP 600, got %+v", tt.name, persisted.Characters[0])
 			}
 
 			h.client.writeFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: h.targetID}))

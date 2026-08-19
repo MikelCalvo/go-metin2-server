@@ -111,14 +111,13 @@ No dedicated revive packet is invented yet.
 
 ## Persistence rule
 
-For this first slice, `/restart_town` still keeps retaliation-owned HP loss runtime-only.
+For this bootstrap slice, `/restart_town` keeps recovery restart-owned and honest once the retaliation floor is persisted.
 
 The narrow bootstrap rule is:
-- retaliation-owned HP loss is still runtime-only
-- `/restart_town` rebuilds points/inventory/equipment from the persisted account snapshot
-- `/restart_town` does persist the owned town-return position before runtime commit, reusing the existing bootstrap transfer ordering
-- therefore `/restart_town` clears the runtime-only retaliation loss while still saving the owned town-return coordinates
-- if the persisted account snapshot is already at the bootstrap HP floor, `/restart_town` emits no recovery frames, queues no peer-visible transfer/rebuild deltas, and leaves the persisted coordinates unchanged until a later, explicitly owned revival source exists
+- partial (above-floor) retaliation-owned HP loss stays runtime-only
+- when retaliation reaches the bootstrap `0`-HP floor, that floor is persisted into the selected-character account snapshot with the owned death/clear frames
+- `/restart_town` restores race create MaxHP into the selected-character bootstrap HP point, persists that recovered live snapshot together with the owned town-return position, and rebuilds self bootstrap from it while keeping inventory/equipment otherwise from the persisted account snapshot
+- restart still fails closed while the owner is alive and when no usable live rebuild snapshot can be produced
 
 ## Post-restart combat rule
 
