@@ -1,0 +1,196 @@
+{
+  "static_actors": [
+    {
+      "name": "Merchant",
+      "map_index": 1,
+      "x": 469500,
+      "y": 964200,
+      "race_num": 20301,
+      "interaction_kind": "shop_preview",
+      "interaction_ref": "npc:qa_merchant"
+    },
+    {
+      "name": "QuestGuide",
+      "map_index": 1,
+      "x": 469350,
+      "y": 964200,
+      "race_num": 20302,
+      "interaction_kind": "quest_flag",
+      "interaction_ref": "quest:first_steps"
+    },
+    {
+      "name": "QuestHunter",
+      "map_index": 1,
+      "x": 469400,
+      "y": 964200,
+      "race_num": 20302,
+      "interaction_kind": "quest_flag",
+      "interaction_ref": "quest:first_steps_kill_turnin"
+    },
+    {
+      "name": "QuestResetGuide",
+      "map_index": 1,
+      "x": 469375,
+      "y": 964200,
+      "race_num": 20302,
+      "interaction_kind": "quest_flag",
+      "interaction_ref": "quest:first_steps_reset"
+    },
+    {
+      "name": "Teleporter",
+      "map_index": 1,
+      "x": 469650,
+      "y": 964200,
+      "race_num": 20300,
+      "interaction_kind": "warp",
+      "interaction_ref": "npc:qa_teleporter"
+    },
+    {
+      "name": "VillageGuide",
+      "map_index": 1,
+      "x": 469425,
+      "y": 964200,
+      "race_num": 20302,
+      "interaction_kind": "talk",
+      "interaction_ref": "npc:qa_guide"
+    },
+    {
+      "name": "VillageSignpost",
+      "map_index": 1,
+      "x": 469200,
+      "y": 964200,
+      "race_num": 20303,
+      "interaction_kind": "info",
+      "interaction_ref": "lore:qa_square"
+    }
+  ],
+  "regen_spawns": [
+    {
+      "ref": "practice.qa_pve_vertical_mob",
+      "name": "QAPveVerticalMob",
+      "map_index": 1,
+      "x": 469550,
+      "y": 964200,
+      "race_num": 20350,
+      "count": 1,
+      "reward_drop_table_ref": "loot.qa_pve_vertical_reward"
+    }
+  ],
+  "drop_tables": [
+    {
+      "ref": "loot.qa_pve_vertical_reward",
+      "reward_experience": 75,
+      "reward_gold": 60,
+      "drop_vnums": [
+        27001
+      ],
+      "reward_quest_ref": "quest:first_steps",
+      "reward_quest_flag": "killed_qa_mob",
+      "reward_quest_to": 1,
+      "reward_quest_text": "Quest updated: first_steps.killed_qa_mob = 1.",
+      "require_quest_ref": "quest:first_steps",
+      "require_quest_flag": "met_guide",
+      "require_quest_from": 1
+    }
+  ],
+  "item_templates": [
+    {
+      "vnum": 11200,
+      "name": "Wooden Sword",
+      "stackable": false,
+      "max_count": 1,
+      "shop_sell_price": 100
+    },
+    {
+      "vnum": 27001,
+      "name": "Small Red Potion",
+      "stackable": true,
+      "max_count": 200,
+      "shop_buy_price": 5,
+      "shop_sell_price": 2
+    }
+  ],
+  "quest_state": [
+    {
+      "character": "QuestHero",
+      "quest_ref": "quest:first_steps",
+      "name": "step",
+      "value": 1
+    }
+  ],
+  "interaction_definitions": [
+    {
+      "kind": "info",
+      "ref": "lore:qa_square",
+      "text": "The QA square contains a merchant, teleporter, guide, hunter, and reward mob.",
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "met_guide",
+      "quest_from": 1
+    },
+    {
+      "kind": "quest_flag",
+      "ref": "quest:first_steps",
+      "text": "Quest updated: first_steps.met_guide = 1.",
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "met_guide",
+      "quest_to": 1
+    },
+    {
+      "kind": "quest_flag",
+      "ref": "quest:first_steps_kill_turnin",
+      "text": "Quest updated: first_steps.killed_qa_mob = 0.",
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "killed_qa_mob",
+      "quest_from": 1
+    },
+    {
+      "kind": "quest_flag",
+      "ref": "quest:first_steps_reset",
+      "text": "Quest cleared: first_steps.met_guide = 0.",
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "met_guide",
+      "quest_from": 1
+    },
+    {
+      "kind": "shop_preview",
+      "ref": "npc:qa_merchant",
+      "title": "QA Merchant",
+      "catalog": [
+        {
+          "slot": 0,
+          "item_vnum": 27001,
+          "price": 50,
+          "count": 1
+        },
+        {
+          "slot": 1,
+          "item_vnum": 11200,
+          "price": 500,
+          "count": 1
+        }
+      ],
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "met_guide",
+      "quest_from": 1
+    },
+    {
+      "kind": "talk",
+      "ref": "npc:qa_guide",
+      "text": "Welcome to the QA square.",
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "met_guide",
+      "quest_from": 1
+    },
+    {
+      "kind": "warp",
+      "ref": "npc:qa_teleporter",
+      "text": "Step through the gate.",
+      "map_index": 1,
+      "x": 470200,
+      "y": 964200,
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "met_guide",
+      "quest_from": 1
+    }
+  ]
+}

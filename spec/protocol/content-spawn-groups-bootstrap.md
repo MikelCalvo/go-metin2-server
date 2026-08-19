@@ -168,6 +168,7 @@ The first bootstrap spawn-group contract freezes these fields:
   - `reward_drop_table_ref` can reference the same fixed authoring-only `drop_tables[]` entries as direct spawn groups, and is expanded before validation/import
   - canonicalization appends each valid regen entry to the canonical `spawn_groups[]` collection, then strips `regen_spawns`, `drop_tables`, and `reward_drop_table_ref`
   - runtime import/export and live respawn still see only the canonical one-actor `spawn_groups[]` descriptor; this shape does not add pack size, radius, direction, random placement, timers, or autonomous AI
+  - the composed QA fixture `docs/examples/bootstrap-pve-vertical-authoring-bundle.json` authors one-count `regen_spawns` + gated kill-quest `drop_tables` together with the NPC quest loop so operators can validate/import the authoring form end-to-end; `docs/examples/bootstrap-npc-service-bundle.json` remains the byte-canonical runtime form of that same owned loop
 - operator/runtime edits that preserve the same `spawn_group_ref` must preserve the authored `combat_profile`, reward descriptor, and spawn-home position while changing mutable actor presentation/current-placement fields; delete/recreate or bundle replacement remains the explicit way to replace reward metadata or authored home ownership
 - when a spawn-backed actor is updated through the generic static-actor edit path without specifying a new combat profile, the runtime keeps the existing spawn-group combat profile instead of downgrading the actor to non-combat static content
 

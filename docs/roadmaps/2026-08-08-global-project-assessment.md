@@ -148,9 +148,10 @@ Still missing:
 
 - client-visible quest UI/runtime,
 - branching quest scripts and rewards,
-- regen/drop table ingestion,
 - richer NPC service kinds,
 - live reload/update policy.
+
+Bootstrap note: one-count `regen_spawns` / fixed `drop_tables` ingestion and the composed authoring-form PvE vertical fixture (`docs/examples/bootstrap-pve-vertical-authoring-bundle.json`) are now owned; weighted/random loot and multi-count packs remain out of scope.
 
 ### Combat, mobs, death, restart, and rewards
 

@@ -640,6 +640,60 @@ func TestLocalContentBundleValidateEndpointExpandsRegenAuthoringExample(t *testi
 	}
 }
 
+func TestLocalContentBundleValidateEndpointExpandsPveVerticalAuthoringExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate ops contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-pve-vertical-authoring-bundle.json"))
+	if err != nil {
+		t.Fatalf("read PvE vertical authoring example bundle: %v", err)
+	}
+	mux := RegisterLocalContentBundleValidateEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/validate", bytes.NewReader(raw))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d for PvE vertical authoring example validation, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte(`"regen_spawns"`)) || bytes.Contains(rec.Body.Bytes(), []byte(`"drop_tables"`)) || bytes.Contains(rec.Body.Bytes(), []byte(`"reward_drop_table_ref"`)) {
+		t.Fatalf("expected validation response to strip authoring-only regen/drop-table fields, got %s", rec.Body.String())
+	}
+	var got contentbundle.Bundle
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode PvE vertical validation response: %v", err)
+	}
+	wantSpawn := contentbundle.SpawnGroup{
+		Ref:              "practice.qa_pve_vertical_mob",
+		Name:             "QAPveVerticalMob",
+		MapIndex:         1,
+		X:                469550,
+		Y:                964200,
+		RaceNum:          20350,
+		CombatProfile:    "practice_mob",
+		RewardExperience: 75,
+		RewardGold:       60,
+		RewardDropVnums:  []uint32{27001},
+		RewardQuestRef:   "quest:first_steps",
+		RewardQuestFlag:  "killed_qa_mob",
+		RewardQuestTo:    1,
+		RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+		RequireQuestRef:  "quest:first_steps",
+		RequireQuestFlag: "met_guide",
+		RequireQuestFrom: 1,
+	}
+	if len(got.SpawnGroups) != 1 || !reflect.DeepEqual(got.SpawnGroups[0], wantSpawn) {
+		t.Fatalf("expected validation response to expand PvE vertical authoring into gated kill-quest spawn group, got %+v", got.SpawnGroups)
+	}
+	if len(got.StaticActors) != 7 || len(got.InteractionDefinitions) != 7 || len(got.QuestState) != 1 {
+		t.Fatalf("unexpected PvE vertical authoring validation counts: actors=%d defs=%d quest_state=%d", len(got.StaticActors), len(got.InteractionDefinitions), len(got.QuestState))
+	}
+}
+
 func TestLocalContentBundleValidateEndpointExpandsCombatProfileFormulaExample(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {

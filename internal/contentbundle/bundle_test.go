@@ -4371,6 +4371,71 @@ func TestCanonicalizeRegenAuthoringExampleExpandsToCanonicalSpawnGroup(t *testin
 	}
 }
 
+func TestCanonicalizePveVerticalAuthoringExampleExpandsQuestLoop(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-pve-vertical-authoring-bundle.json"))
+	if err != nil {
+		t.Fatalf("read PvE vertical authoring example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode PvE vertical authoring example bundle: %v", err)
+	}
+	canonical, err := Canonicalize(bundle)
+	if err != nil {
+		t.Fatalf("canonicalize PvE vertical authoring example bundle: %v", err)
+	}
+	if len(canonical.RegenSpawns) != 0 || len(canonical.DropTables) != 0 {
+		t.Fatalf("expected PvE vertical authoring example to strip regen_spawns and drop_tables, got regen=%+v drop_tables=%+v", canonical.RegenSpawns, canonical.DropTables)
+	}
+	wantSpawn := []SpawnGroup{{
+		Ref:              "practice.qa_pve_vertical_mob",
+		Name:             "QAPveVerticalMob",
+		MapIndex:         1,
+		X:                469550,
+		Y:                964200,
+		RaceNum:          20350,
+		CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+		RewardExperience: 75,
+		RewardGold:       60,
+		RewardDropVnums:  []uint32{27001},
+		RewardQuestRef:   "quest:first_steps",
+		RewardQuestFlag:  "killed_qa_mob",
+		RewardQuestTo:    1,
+		RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+		RequireQuestRef:  "quest:first_steps",
+		RequireQuestFlag: "met_guide",
+		RequireQuestFrom: 1,
+	}}
+	if !reflect.DeepEqual(canonical.SpawnGroups, wantSpawn) {
+		t.Fatalf("unexpected canonical PvE vertical spawn groups:\n got: %#v\nwant: %#v", canonical.SpawnGroups, wantSpawn)
+	}
+	summary, err := Summarize(canonical)
+	if err != nil {
+		t.Fatalf("summarize canonical PvE vertical authoring example: %v", err)
+	}
+	if summary.QuestFlagTriggerCount != 3 {
+		t.Fatalf("expected 3 quest-flag triggers in PvE vertical authoring example, got %d", summary.QuestFlagTriggerCount)
+	}
+	foundGuide := false
+	foundHunter := false
+	for _, route := range summary.QuestFlagRoutes {
+		switch {
+		case route.ActorName == "QuestGuide" && route.Ref == "quest:first_steps":
+			foundGuide = true
+		case route.ActorName == "QuestHunter" && route.Ref == "quest:first_steps_kill_turnin":
+			foundHunter = true
+		}
+	}
+	if !foundGuide || !foundHunter {
+		t.Fatalf("expected QuestGuide and QuestHunter quest-flag routes, got %+v", summary.QuestFlagRoutes)
+	}
+}
+
 func TestCanonicalizeRegenSpawnsCanReferenceBundledCombatProfile(t *testing.T) {
 	const profile = "regen_profile"
 	bundle, err := Canonicalize(Bundle{

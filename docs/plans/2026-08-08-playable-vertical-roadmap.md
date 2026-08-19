@@ -186,17 +186,17 @@ Likely areas:
 Next slices:
 
 1. Keep content summaries useful, but stop prioritizing endpoint-only work unless it unblocks QA or migration.
-2. Add first quest-state seam: quest flags, NPC dialog state, and one simple persisted trigger/result contract.
-3. Add regen/drop table ingestion in a deliberately small authored format.
+2. ~~Add first quest-state seam: quest flags, NPC dialog state, and one simple persisted trigger/result contract.~~ Done for bootstrap scope: `quest_flag` interact CAS, optional service gates, kill-quest credit + require gates, and turn-in NPC close the persisted flag loop.
+3. ~~Add regen/drop table ingestion in a deliberately small authored format.~~ Done for bootstrap scope: one-count `regen_spawns` + fixed `drop_tables` expand before import; `docs/examples/bootstrap-pve-vertical-authoring-bundle.json` now composes that authoring form with the quest NPC loop.
 4. Expand NPC service kinds only when client-visible behavior is owned.
 5. Add content validation/canonicalization that catches bad bundles before runtime mutation.
 6. Keep deterministic example bundles updated for manual QA.
 
 Exit criteria:
 
-- the PvE vertical can be authored with bundle data,
-- one quest-style state can persist and resume,
-- spawn/regen/drop definitions are validated before runtime use,
+- ~~the PvE vertical can be authored with bundle data,~~ done for bootstrap scope via the composed authoring fixture plus the byte-canonical NPC service fixture,
+- ~~one quest-style state can persist and resume,~~ done for bootstrap scope (`met_guide` / `killed_qa_mob` survive reconnect and gate services / kill credit),
+- ~~spawn/regen/drop definitions are validated before runtime use,~~ done for the owned one-count / fixed-table authoring path,
 - unsupported service kinds fail early and clearly.
 
 Anti-goals:
