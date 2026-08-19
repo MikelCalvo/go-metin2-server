@@ -283,3 +283,31 @@ Explicit non-goals for this return-step MOVE freeze alone:
 - cross-map return MOVE / warp choreography
 - a dedicated return packet family distinct from `MOVE`
 - changing the already-owned engagement-release / selected-target-clear semantics of return recovery
+
+## First owned same-map live operator/runtime position MOVE seam
+
+Question frozen here:
+
+**Once chase and same-map return-step / return-home already reuse server `MOVE` for retained viewers, what is the smallest honest packet change that can also replace retained-viewer delete/readd for a live same-map spawn-backed operator/runtime position update without inventing pathfinding, a second AI scheduler, or converting presentation refreshes / respawn rebuild to MOVE?**
+
+Contract for the first live operator/runtime position MOVE choreography:
+- reuse the already-owned server `MOVE` / `MOVE_ACK` wire shape (`0x0302`) and the same bootstrap duration family already used by chase / return MOVE
+- apply only when a live spawn-backed practice mob (`spawn_group_ref` present, current HP > 0) receives an operator/runtime update that keeps the same map, same presentation identity (`name` / `race_num` / combat profile), and only changes the materialized current coordinates
+- retained viewers that already had the actor visible before and after the position update receive one queued `MOVE` replication for the actor's visible `VID` at the updated coordinates instead of the current delete-plus-readd refresh
+- viewers that lose visibility across the update still receive `CHARACTER_DEL`
+- viewers that newly gain visibility across the update still receive the ordinary `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` bootstrap burst
+- presentation changes (name / race / combat profile), dead-actor refreshes that must replay trailing `GC DEAD`, cross-map updates, non-spawn static actors, respawn rebuild, and content-bundle replacement keep using their already-owned delete/readd paths
+- engagement release and selected-target clear for this operator/runtime update seam continue to follow the already-owned update lifecycle (they are released/cleared today and this freeze does not invent chase-like ownership preservation)
+- no client-originated mob MOVE ingress is owned; this is server-origin replication only
+
+Current implementation status:
+- this seam is frozen here as the next honest RED after still-dead content-bundle replacement anti-resurrect
+- same-map chase MOVE and same-map return-step / return-home MOVE are already live
+- live same-map spawn-backed operator/runtime position updates still emit retained-viewer delete/readd today
+
+Explicit non-goals for this operator/runtime position MOVE freeze alone:
+- converting presentation/name/race refreshes, dead trailing-`DEAD` refreshes, respawn rebuild, or content-bundle replacement to MOVE
+- cross-map operator MOVE / warp choreography
+- preserving engagement / selected-target ownership across operator position updates
+- pathfinding, navmesh, patrol, or continuous interpolation beyond one discrete operator/runtime coordinate write
+- a dedicated operator-move packet family distinct from `MOVE`
