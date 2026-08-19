@@ -2787,6 +2787,128 @@ func TestGameRuntimeTransferClearsPendingSpawnGroupChaseStepDeadline(t *testing.
 	}
 }
 
+func TestGameRuntimeEnterGameReclaimClearsPendingSpawnGroupChaseStepDeadline(t *testing.T) {
+	// RED: EnterGame reclaim that drops practice-mob engagement must also clear the
+	// pending chase-step deadline, matching owner disconnect/transfer release and the
+	// Track A leave/reclaim cleanup contract. Today reclaim clears engaged_by but leaves
+	// spawnChaseStepDueAt armed.
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ChaseReclaimOwner", 0x01030186, 0x02040186, 1900, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "chase-reclaim-a", 0x30303036, owner)
+	issuePeerTicket(t, store, "chase-reclaim-b", 0x30303037, owner)
+	if err := accounts.Save(accountstore.Account{Login: "chase-reclaim-a", Empire: owner.Empire, Characters: []loginticket.Character{owner}}); err != nil {
+		t.Fatalf("seed first chase reclaim owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "chase-reclaim-b", Empire: owner.Empire, Characters: []loginticket.Character{owner}}); err != nil {
+		t.Fatalf("seed second chase reclaim owner account: %v", err)
+	}
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700001210, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		accounts,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for chase-step reclaim cleanup: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.chase_step_reclaim_clear",
+		Name:          "ChaseStepReclaimClearMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import chase-step reclaim cleanup spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.chase_step_reclaim_clear")
+	if !ok {
+		t.Fatal("expected chase-step reclaim cleanup spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+	factory := runtime.SessionFactory()
+
+	staleFlow, _ := enterGameWithLoginTicket(t, factory, "chase-reclaim-a", 0x30303036)
+	defer closeSessionFlow(t, staleFlow)
+	flushServerFrames(t, staleFlow)
+
+	if _, err := staleFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
+		t.Fatalf("unexpected owner target error before chase-step reclaim cleanup: %v", err)
+	}
+	if _, err := staleFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	}))); err != nil {
+		t.Fatalf("unexpected accepted hit before chase-step reclaim cleanup: %v", err)
+	}
+	if pending, ok := runtime.SpawnGroupChaseStep(group.EntityID); !ok || pending.EntityID != group.EntityID {
+		t.Fatalf("expected engaged hit to arm a pending chase-step row before reclaim, ok=%v snapshot=%+v", ok, pending)
+	}
+	ownerEntity, ok := runtime.sharedWorld.entities.PlayerByName(owner.Name)
+	if !ok {
+		t.Fatal("expected live chase owner entity before simulated reclaim")
+	}
+	staleOwnerID := ownerEntity.Entity.ID
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, staleOwnerID) {
+		t.Fatalf("expected practice mob to stay engaged by stale owner %d before reclaim", staleOwnerID)
+	}
+	if _, ok := runtime.sharedWorld.sessionDirectory.Remove(staleOwnerID); !ok {
+		t.Fatal("expected simulated reclaim to remove stale owner session hook")
+	}
+
+	replacementFlow, _ := enterGameWithLoginTicket(t, factory, "chase-reclaim-b", 0x30303037)
+	defer closeSessionFlow(t, replacementFlow)
+	flushServerFrames(t, replacementFlow)
+
+	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, staleOwnerID) {
+		t.Fatalf("expected EnterGame reclaim to release stale engagement ownership for entity %d", group.EntityID)
+	}
+	runtime.spawnChaseMu.Lock()
+	_, stillScheduled := runtime.spawnChaseStepDueAt[group.EntityID]
+	runtime.spawnChaseMu.Unlock()
+	if stillScheduled {
+		t.Fatalf("expected EnterGame reclaim to clear pending chase-step deadline for entity %d", group.EntityID)
+	}
+	if pending, ok := runtime.SpawnGroupChaseStep(group.EntityID); ok || pending.EntityID != 0 {
+		t.Fatalf("expected chase-step inspection to omit actor after EnterGame reclaim release, ok=%v snapshot=%+v", ok, pending)
+	}
+	exact, ok := runtime.SpawnGroupByRef("practice.chase_step_reclaim_clear")
+	if !ok || exact.EntityID != group.EntityID {
+		t.Fatalf("expected reclaim cleanup to keep one actor for authored spawn_group_ref, ok=%v snapshot=%+v", ok, exact)
+	}
+	if actors := runtime.StaticActors(); len(actors) != 1 || actors[0].EntityID != group.EntityID {
+		t.Fatalf("expected reclaim cleanup not to rematerialize a second spawn actor, got %+v", actors)
+	}
+
+	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay)
+	if queued := flushServerFrames(t, replacementFlow); len(queued) != 0 {
+		t.Fatalf("expected no delayed chase-step visibility after reclaim cleared the deadline, got %d frames", len(queued))
+	}
+	if queued := flushServerFrames(t, staleFlow); len(queued) != 0 {
+		t.Fatalf("expected reclaimed stale session not to receive delayed chase-step frames, got %d", len(queued))
+	}
+	actor, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || actor.X != 1700 || actor.Y != 2800 {
+		t.Fatalf("expected abandoned chase actor to remain at pre-chase home after reclaim cleanup, ok=%v snapshot=%+v", ok, actor)
+	}
+}
+
 func TestGameSessionFlowDueSpawnGroupReturnStepFlushesBeforeFreshEnterBootstrap(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	newcomer := peerVisibilityCharacter("ReturnStepFreshEnter", 0x0103016d, 0x0204016d, 2201, 2800, 0, 101, 201)
