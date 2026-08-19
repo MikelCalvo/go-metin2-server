@@ -290,6 +290,15 @@ type merchantBuyContext struct {
 	Definition InteractionDefinition
 }
 
+type refineDialogPresentation struct {
+	Pos        uint8
+	Type       uint8
+	SourceID   uint64
+	SourceVnum uint32
+	Cell       inventory.SlotIndex
+	RefineInfo itemcatalog.RefineInfo
+}
+
 type RuntimeConfigSnapshot struct {
 	LocalChannelID       uint8                     `json:"local_channel_id"`
 	VisibilityMode       string                    `json:"visibility_mode"`
@@ -3268,6 +3277,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		var hasActiveMerchantBuy bool
 		var hasActiveSafeboxOpen bool
 		var activeSafeboxSize uint8
+		var activeRefineDialog refineDialogPresentation
+		var hasActiveRefineDialog bool
 		interactionCooldowns := make(map[uint32]time.Time)
 		sessionNow := func() time.Time {
 			if runtime != nil && runtime.now != nil {
@@ -5187,6 +5198,45 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || packet.Position >= uint8(inventory.CarriedInventorySlotCount) {
 						return gameflow.ItemRefineResult{Accepted: false}
 					}
+					if packet.Type == 255 {
+						if !hasActiveRefineDialog {
+							return gameflow.ItemRefineResult{Accepted: false}
+						}
+						hasActiveRefineDialog = false
+						activeRefineDialog = refineDialogPresentation{}
+						return gameflow.ItemRefineResult{Accepted: true}
+					}
+					if hasActiveRefineDialog && packet.Position == activeRefineDialog.Pos && packet.Type == activeRefineDialog.Type {
+						busy := hasActiveMerchantBuy || hasActiveSafeboxOpen || (ownsLiveSharedWorldSession() && sharedWorld != nil && sharedWorld.hasActiveExchange(sharedWorldID))
+						if busy {
+							return gameflow.ItemRefineResult{Accepted: false}
+						}
+						sourceTemplate, ok := runtime.resolveRuntimeItemTemplate(selectedPlayer, inventory.SlotIndex(packet.Position))
+						if !ok {
+							return gameflow.ItemRefineResult{Accepted: false}
+						}
+						resultTemplate, ok := runtime.itemTemplates[activeRefineDialog.RefineInfo.ResultVnum]
+						if !ok || !itemcatalog.ValidTemplate(resultTemplate) {
+							return gameflow.ItemRefineResult{Accepted: false}
+						}
+						previousSelected := selectedPlayer.LiveCharacter()
+						result, ok := selectedPlayer.ApplyRefineSuccess(inventory.SlotIndex(packet.Position), packet.Type, activeRefineDialog.SourceID, activeRefineDialog.RefineInfo, sourceTemplate, resultTemplate)
+						if !ok {
+							return gameflow.ItemRefineResult{Accepted: false}
+						}
+						frames, err := refineSuccessResultFrames(previousSelected, result, runtime.itemTemplates)
+						if err != nil {
+							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+							return gameflow.ItemRefineResult{Accepted: false}
+						}
+						committed, ok := commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+						if !ok {
+							return gameflow.ItemRefineResult{Accepted: false}
+						}
+						hasActiveRefineDialog = false
+						activeRefineDialog = refineDialogPresentation{}
+						return gameflow.ItemRefineResult{Accepted: true, Frames: committed}
+					}
 					template, ok := runtime.resolveRuntimeItemTemplate(selectedPlayer, inventory.SlotIndex(packet.Position))
 					if !ok {
 						return gameflow.ItemRefineResult{Accepted: false}
@@ -5201,6 +5251,24 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if err != nil {
 							return gameflow.ItemRefineResult{Accepted: false}
 						}
+						sourceItem, ok := refineDialogSourceItem(selectedPlayer, inventory.SlotIndex(packet.Position), info.SourceVnum)
+						if !ok {
+							return gameflow.ItemRefineResult{Accepted: false}
+						}
+						activeRefineDialog = refineDialogPresentation{
+							Pos:        packet.Position,
+							Type:       packet.Type,
+							SourceID:   sourceItem.ID,
+							SourceVnum: sourceItem.Vnum,
+							Cell:       inventory.SlotIndex(packet.Position),
+							RefineInfo: itemcatalog.RefineInfo{
+								ResultVnum:  info.ResultVnum,
+								Cost:        info.Cost,
+								Probability: info.Probability,
+								Materials:   append([]itemcatalog.RefineMaterial(nil), info.Materials...),
+							},
+						}
+						hasActiveRefineDialog = true
 						frames := prependMerchantCloseFrame(prependExchangeCloseFrame([][]byte{frame}))
 						return gameflow.ItemRefineResult{Accepted: true, Frames: frames}
 					}
@@ -7576,6 +7644,56 @@ func merchantSellResultFrames(character loginticket.Character, result player.Mer
 		VID:    character.VID,
 		Type:   bootstrapGoldPointType,
 		Amount: int32(result.Gold - result.GoldBefore),
+		Value:  int32(result.Gold),
+	}))
+	return frames, nil
+}
+
+func refineDialogSourceItem(selectedPlayer *player.Runtime, slot inventory.SlotIndex, sourceVnum uint32) (inventory.ItemInstance, bool) {
+	if selectedPlayer == nil {
+		return inventory.ItemInstance{}, false
+	}
+	for _, item := range selectedPlayer.LiveInventory() {
+		if item.Equipped || item.Slot != slot || item.Vnum != sourceVnum || item.ID == 0 || item.Count != 1 || item.Locked {
+			continue
+		}
+		if err := item.Validate(); err != nil {
+			return inventory.ItemInstance{}, false
+		}
+		return item, true
+	}
+	return inventory.ItemInstance{}, false
+}
+
+func refineSuccessResultFrames(character loginticket.Character, result player.RefineSuccessResult, templates map[uint32]itemcatalog.Template) ([][]byte, error) {
+	frames := make([][]byte, 0, len(result.MaterialChanges)+2)
+	for _, change := range result.MaterialChanges {
+		position, err := itemproto.CarriedInventoryPosition(uint16(change.Slot))
+		if err != nil {
+			return nil, err
+		}
+		if change.ItemRemoved {
+			frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: position}))
+			continue
+		}
+		updateFrame, err := encodeBootstrapItemUpdateFrameWithTemplates(position, change.Item, templates)
+		if err != nil {
+			return nil, err
+		}
+		frames = append(frames, updateFrame)
+	}
+	resultFrame, err := encodeBootstrapInventoryItemFrameWithTemplates(result.ResultItem, templates)
+	if err != nil {
+		return nil, err
+	}
+	frames = append(frames, resultFrame)
+	if result.GoldBefore < result.Gold || result.GoldBefore-result.Gold != uint64(result.Cost) || result.Gold > uint64(math.MaxInt32) || result.Cost < 0 {
+		return nil, fmt.Errorf("refine success gold point-change out of range")
+	}
+	frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+		VID:    character.VID,
+		Type:   bootstrapGoldPointType,
+		Amount: -result.Cost,
 		Value:  int32(result.Gold),
 	}))
 	return frames, nil

@@ -96,6 +96,21 @@ type RefineInformation struct {
 	Materials   []itemcatalog.RefineMaterial
 }
 
+type RefineMaterialChange struct {
+	Slot        inventory.SlotIndex
+	ItemRemoved bool
+	Item        inventory.ItemInstance
+}
+
+type RefineSuccessResult struct {
+	SourceSlot      inventory.SlotIndex
+	ResultItem      inventory.ItemInstance
+	MaterialChanges []RefineMaterialChange
+	GoldBefore      uint64
+	Gold            uint64
+	Cost            int32
+}
+
 type GroundItemPickupResult struct {
 	Item         inventory.ItemInstance
 	Merged       bool
@@ -1218,6 +1233,174 @@ func (r *Runtime) RefineInformation(slot inventory.SlotIndex, refineType uint8, 
 		Probability: template.RefineInfo.Probability,
 		Materials:   append([]itemcatalog.RefineMaterial(nil), template.RefineInfo.Materials...),
 	}, true
+}
+
+func (r *Runtime) ApplyRefineSuccess(slot inventory.SlotIndex, refineType uint8, sourceID uint64, remembered itemcatalog.RefineInfo, sourceTemplate itemcatalog.Template, resultTemplate itemcatalog.Template) (RefineSuccessResult, bool) {
+	if r == nil || sourceID == 0 || remembered.Probability != 100 || remembered.Cost < 0 || remembered.ResultVnum == 0 || len(remembered.Materials) > itemcatalog.MaxRefineMaterialCount {
+		return RefineSuccessResult{}, false
+	}
+	info, ok := r.RefineInformation(slot, refineType, sourceTemplate)
+	if !ok || info.SourceVnum == 0 || sourceTemplate.RefineInfo == nil {
+		return RefineSuccessResult{}, false
+	}
+	if !refineInfoEqual(remembered, *sourceTemplate.RefineInfo) || !refineInfoEqual(remembered, itemcatalog.RefineInfo{
+		ResultVnum:  info.ResultVnum,
+		Cost:        info.Cost,
+		Probability: info.Probability,
+		Materials:   info.Materials,
+	}) {
+		return RefineSuccessResult{}, false
+	}
+	if !itemcatalog.ValidTemplate(resultTemplate) || resultTemplate.Vnum != remembered.ResultVnum {
+		return RefineSuccessResult{}, false
+	}
+	index := findInventorySlot(r.liveInventory, slot)
+	if index < 0 {
+		return RefineSuccessResult{}, false
+	}
+	sourceItem := r.liveInventory[index]
+	if sourceItem.ID != sourceID || sourceItem.Vnum != info.SourceVnum || sourceItem.Equipped || sourceItem.Locked || sourceItem.Count != 1 {
+		return RefineSuccessResult{}, false
+	}
+	cost := uint64(remembered.Cost)
+	const maxPointChangeCarrier = uint64(1<<31 - 1)
+	if cost > maxPointChangeCarrier || r.liveGold < cost || r.liveGold > maxPointChangeCarrier {
+		return RefineSuccessResult{}, false
+	}
+	nextGold := r.liveGold - cost
+	materialPlan, ok := planRefineMaterialChanges(r.liveInventory, slot, remembered.Materials)
+	if !ok {
+		return RefineSuccessResult{}, false
+	}
+
+	inventoryItems := cloneItemInstances(r.liveInventory)
+	materialChanges := make([]RefineMaterialChange, 0, len(materialPlan))
+	for _, planned := range materialPlan {
+		currentIndex := findInventorySlot(inventoryItems, planned.Slot)
+		if currentIndex < 0 {
+			return RefineSuccessResult{}, false
+		}
+		item := inventoryItems[currentIndex]
+		if item.Equipped || item.Locked || item.Vnum != planned.Vnum || item.Count < planned.Consume {
+			return RefineSuccessResult{}, false
+		}
+		change := RefineMaterialChange{Slot: planned.Slot}
+		if item.Count == planned.Consume {
+			inventoryItems = removeInventoryIndex(inventoryItems, currentIndex)
+			change.ItemRemoved = true
+		} else {
+			item.Count -= planned.Consume
+			if err := item.Validate(); err != nil {
+				return RefineSuccessResult{}, false
+			}
+			inventoryItems[currentIndex] = item
+			change.Item = item
+		}
+		materialChanges = append(materialChanges, change)
+	}
+	sourceIndex := findInventorySlot(inventoryItems, slot)
+	if sourceIndex < 0 {
+		return RefineSuccessResult{}, false
+	}
+	resultItem := inventoryItems[sourceIndex]
+	if resultItem.ID != sourceID || resultItem.Vnum != info.SourceVnum || resultItem.Count != 1 || resultItem.Equipped || resultItem.Locked {
+		return RefineSuccessResult{}, false
+	}
+	resultItem.Vnum = remembered.ResultVnum
+	if err := resultItem.Validate(); err != nil {
+		return RefineSuccessResult{}, false
+	}
+	inventoryItems[sourceIndex] = resultItem
+	sortInventoryItems(inventoryItems)
+
+	result := RefineSuccessResult{
+		SourceSlot:      slot,
+		ResultItem:      resultItem,
+		MaterialChanges: materialChanges,
+		GoldBefore:      r.liveGold,
+		Gold:            nextGold,
+		Cost:            remembered.Cost,
+	}
+	r.liveGold = nextGold
+	r.liveInventory = inventoryItems
+	return result, true
+}
+
+type refineMaterialPlanEntry struct {
+	Slot    inventory.SlotIndex
+	Vnum    uint32
+	Consume uint16
+}
+
+func planRefineMaterialChanges(items []inventory.ItemInstance, sourceSlot inventory.SlotIndex, materials []itemcatalog.RefineMaterial) ([]refineMaterialPlanEntry, bool) {
+	remainingByVnum := make(map[uint32]uint64, len(materials))
+	order := make([]uint32, 0, len(materials))
+	for _, material := range materials {
+		if material.Vnum == 0 || material.Count <= 0 {
+			return nil, false
+		}
+		needed := uint64(material.Count)
+		if _, seen := remainingByVnum[material.Vnum]; !seen {
+			order = append(order, material.Vnum)
+		}
+		remainingByVnum[material.Vnum] += needed
+	}
+
+	indices := make([]int, 0, len(items))
+	for i, item := range items {
+		if item.Equipped || item.Locked || item.Slot == sourceSlot || item.Count == 0 {
+			continue
+		}
+		if _, needed := remainingByVnum[item.Vnum]; !needed {
+			continue
+		}
+		if err := item.Validate(); err != nil {
+			continue
+		}
+		indices = append(indices, i)
+	}
+	sort.Slice(indices, func(i, j int) bool {
+		return items[indices[i]].Slot < items[indices[j]].Slot
+	})
+
+	plan := make([]refineMaterialPlanEntry, 0)
+	for _, index := range indices {
+		item := items[index]
+		needed := remainingByVnum[item.Vnum]
+		if needed == 0 {
+			continue
+		}
+		consume := uint64(item.Count)
+		if consume > needed {
+			consume = needed
+		}
+		if consume == 0 || consume > uint64(^uint16(0)) {
+			return nil, false
+		}
+		plan = append(plan, refineMaterialPlanEntry{Slot: item.Slot, Vnum: item.Vnum, Consume: uint16(consume)})
+		remainingByVnum[item.Vnum] -= consume
+	}
+	for _, vnum := range order {
+		if remainingByVnum[vnum] != 0 {
+			return nil, false
+		}
+	}
+	sort.Slice(plan, func(i, j int) bool {
+		return plan[i].Slot < plan[j].Slot
+	})
+	return plan, true
+}
+
+func refineInfoEqual(left, right itemcatalog.RefineInfo) bool {
+	if left.ResultVnum != right.ResultVnum || left.Cost != right.Cost || left.Probability != right.Probability || len(left.Materials) != len(right.Materials) {
+		return false
+	}
+	for i := range left.Materials {
+		if left.Materials[i] != right.Materials[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func useEffectInfoMessage(effect *itemcatalog.UseEffect) string {

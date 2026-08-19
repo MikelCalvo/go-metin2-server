@@ -6,7 +6,7 @@ The goal is intentionally conservative:
 
 - own the client packet layout before broader refine gameplay is implemented
 - route the packet through the `GAME` phase without treating it as an unknown-header disconnect edge
-- keep ordinary result semantics fail-closed except for the owned template-authored rejection/preview feedback paths, while freezing one narrow confirm-after-preview success seam (`probability = 100` only) for the next runtime slice
+- keep ordinary result semantics fail-closed except for the owned template-authored rejection/preview feedback paths and the narrow confirm-after-preview success seam (`probability = 100` only)
 
 This is not a completed refine, upgrade, scroll, metin-stone, bonus-changer, or dragon-soul refine system.
 
@@ -56,7 +56,7 @@ The repository now owns the codecs for both server headers, including exact byte
 
 `internal/game` decodes `REFINE` while the session is already in `GAME` and routes it to a dedicated handler hook. The default handler denies the request with no response.
 
-The shipped minimal runtime intentionally leaves accepted `REFINE` gameplay results unsupported for now. Ordinary packets still fail closed with no response unless one of the two authored metadata paths below applies.
+The shipped minimal runtime owns one narrow accepted confirm-after-preview success path for `probability = 100` only. Ordinary packets still fail closed with no response unless one of the authored metadata paths below applies, a remembered dialog is cancelled with `type = 255`, or that confirm path succeeds.
 
 The only authored feedback exception is a non-refineable carried item template that provides `refine_reject_message`:
 
@@ -100,7 +100,7 @@ Once the selected owner has reached the retaliation-owned bootstrap zero-HP floo
 
 ## First accepted refine success seam (confirm after preview)
 
-The next runtime slice may own one tiny accepted success path only after a same-socket refine-dialog presentation has already been opened by the preview path above. This contract freezes that confirm boundary without claiming failure/destroy/scroll-catalyst gameplay:
+The runtime now owns one tiny accepted success path only after a same-socket refine-dialog presentation has already been opened by the preview path above. This contract freezes that confirm boundary without claiming failure/destroy/scroll-catalyst gameplay:
 
 - a successful template-backed `REFINE_INFORMATION_NEW` preview remembers an in-memory same-socket refine-dialog presentation keyed by the request `pos`, request `type`, and the live source item identity (`id` / `vnum` / carried cell);
 - `REFINE` with `type = 255` while that presentation is open cancels it with no frames and no inventory/gold/quickslot/persistence mutation;
@@ -142,6 +142,6 @@ Later slices must write a new contract before broadening this packet beyond the 
 - `internal/game` freezes `GAME`-phase dispatch to a handler hook, with denied results returning no frames.
 - `internal/itemstore` freezes deterministic `refine_reject_message` and `refine_info` persistence, rejects contradictory `refineable` templates that also author rejection text, and rejects malformed `refine_info` metadata before runtime boot.
 - `internal/contentbundle` and `internal/ops` freeze loopback content-bundle summaries that project `refineable` and `refine_reject_message` into top-level item-template, merchant-catalog entry, spawn reward-drop, and aggregate reward-drop rows so QA can inspect refine-gated authored items before import.
-- `internal/player` freezes the no-mutation helper boundary that extracts template-authored refine rejection text or refine-information metadata from the currently carried item, including fail-closed transfer-guard and selected-character restriction checks before emitting refine-information previews.
-- `internal/minimal` freezes the shipped no-frame fail-closed behavior, the template-authored self-only info-chat rejection path, the self-only `REFINE_INFORMATION_NEW` preview path with persisted inventory, quickslots, and points unchanged after a `REFINE` packet, the active same-socket merchant-window close and active same-socket exchange-shell close that precede either template-authored refine feedback path without mutating merchant/exchange/item/gold state, guarded-template no-frame/no-mutation suppression for that preview path, and the post-floor dead-owner guard that denies `REFINE` before those feedback paths can run.
-- The first accepted confirm-after-preview success path is contract-frozen above but not yet implemented; runtime tests should stay red for that mutation until the next GREEN slice lands.
+- `internal/player` freezes the no-mutation helper boundary that extracts template-authored refine rejection text or refine-information metadata from the currently carried item, including fail-closed transfer-guard and selected-character restriction checks before emitting refine-information previews, plus the first `ApplyRefineSuccess` mutation for remembered `probability = 100` dialogs (gold/material consume, in-place source `vnum` replace preserving instance id, live-vs-persisted boundary until the caller commits).
+- `internal/minimal` freezes the shipped no-frame fail-closed behavior, the template-authored self-only info-chat rejection path, the self-only `REFINE_INFORMATION_NEW` preview path that remembers a same-socket refine-dialog presentation, `type = 255` cancel with no frames/mutation, the first accepted confirm-after-preview success path for `probability = 100` (self-only material `ITEM_UPDATE`/`ITEM_DEL` + result `ITEM_SET` + gold `PLAYER_POINT_CHANGE`, then account persist), busy merchant/exchange/safebox confirm fail-closed without auto-close into mutation, the active same-socket merchant-window close and active same-socket exchange-shell close that precede either template-authored refine feedback path without mutating merchant/exchange/item/gold state, guarded-template no-frame/no-mutation suppression for that preview path, and the post-floor dead-owner guard that denies `REFINE` before those feedback paths can run.
+- Lower-probability failure/destroy outcomes, catalysts, and broader refine-window choreography remain deferred.

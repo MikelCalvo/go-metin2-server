@@ -3480,6 +3480,217 @@ func guardedRefinePreviewTemplate(mutate func(*itemcatalog.Template)) itemcatalo
 	return template
 }
 
+func TestRuntimeApplyRefineSuccessProbability100ConsumesGoldMaterialsAndReplacesVnum(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:    0x01030170,
+		VID:   0x02040170,
+		Name:  "RefineSuccess",
+		Level: 1,
+		Gold:  5000,
+		Inventory: []inventory.ItemInstance{
+			{ID: 701, Vnum: 11200, Count: 1, Slot: 5},
+			{ID: 702, Vnum: 27001, Count: 2, Slot: 6},
+			{ID: 703, Vnum: 27002, Count: 1, Slot: 7},
+			{ID: 704, Vnum: 27002, Count: 4, Slot: 8},
+		},
+		Quickslots: []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "refine-success", CharacterIndex: 1})
+	sourceTemplate := itemcatalog.Template{
+		Vnum:       11200,
+		Name:       "Practice Blade",
+		Stackable:  false,
+		MaxCount:   1,
+		Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{
+			ResultVnum:  11201,
+			Cost:        2500,
+			Probability: 100,
+			Materials:   []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}, {Vnum: 27002, Count: 3}},
+		},
+	}
+	resultTemplate := itemcatalog.Template{Vnum: 11201, Name: "Refined Practice Blade", Stackable: false, MaxCount: 1}
+	remembered := *sourceTemplate.RefineInfo
+
+	result, ok := runtime.ApplyRefineSuccess(5, 3, 701, remembered, sourceTemplate, resultTemplate)
+	if !ok {
+		t.Fatal("expected probability-100 refine success to apply")
+	}
+	wantResultItem := inventory.ItemInstance{ID: 701, Vnum: 11201, Count: 1, Slot: 5}
+	if result.ResultItem != wantResultItem || result.SourceSlot != 5 || result.GoldBefore != 5000 || result.Gold != 2500 || result.Cost != 2500 {
+		t.Fatalf("unexpected refine success scalars: %+v", result)
+	}
+	wantMaterials := []RefineMaterialChange{
+		{Slot: 6, ItemRemoved: true},
+		{Slot: 7, ItemRemoved: true},
+		{Slot: 8, Item: inventory.ItemInstance{ID: 704, Vnum: 27002, Count: 2, Slot: 8}},
+	}
+	if !reflect.DeepEqual(result.MaterialChanges, wantMaterials) {
+		t.Fatalf("unexpected refine material changes:\n got: %#v\nwant: %#v", result.MaterialChanges, wantMaterials)
+	}
+	live := runtime.LiveCharacter()
+	wantInventory := []inventory.ItemInstance{
+		{ID: 701, Vnum: 11201, Count: 1, Slot: 5},
+		{ID: 704, Vnum: 27002, Count: 2, Slot: 8},
+	}
+	if !reflect.DeepEqual(live.Inventory, wantInventory) {
+		t.Fatalf("unexpected live inventory after refine success:\n got: %#v\nwant: %#v", live.Inventory, wantInventory)
+	}
+	if live.Gold != 2500 || !reflect.DeepEqual(live.Quickslots, persisted.Quickslots) {
+		t.Fatalf("unexpected live scalars after refine success: gold=%d quickslots=%#v", live.Gold, live.Quickslots)
+	}
+	persistedAfter := runtime.PersistedSnapshot()
+	if !reflect.DeepEqual(persistedAfter.Inventory, persisted.Inventory) || persistedAfter.Gold != persisted.Gold {
+		t.Fatalf("refine success mutated persisted snapshot before commit: got %#v want %#v", persistedAfter, persisted)
+	}
+}
+
+func TestRuntimeApplyRefineSuccessRejectsProbabilityBelow100WithoutMutation(t *testing.T) {
+	persisted := refineSuccessSeedCharacter(4500)
+	runtime := NewRuntime(persisted, SessionLink{Login: "refine-prob", CharacterIndex: 1})
+	sourceTemplate, resultTemplate, remembered := refineSuccessTemplates(75)
+
+	if result, ok := runtime.ApplyRefineSuccess(5, 3, 701, remembered, sourceTemplate, resultTemplate); ok {
+		t.Fatalf("expected probability-below-100 refine to fail closed, got %+v", result)
+	}
+	assertRefineSuccessUnchanged(t, runtime, persisted)
+}
+
+func TestRuntimeApplyRefineSuccessRejectsInsufficientGoldOrMaterialsWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name  string
+		gold  uint64
+		items []inventory.ItemInstance
+	}{
+		{
+			name: "insufficient gold",
+			gold: 2499,
+			items: []inventory.ItemInstance{
+				{ID: 701, Vnum: 11200, Count: 1, Slot: 5},
+				{ID: 702, Vnum: 27001, Count: 2, Slot: 6},
+				{ID: 703, Vnum: 27002, Count: 3, Slot: 7},
+			},
+		},
+		{
+			name: "insufficient materials",
+			gold: 5000,
+			items: []inventory.ItemInstance{
+				{ID: 701, Vnum: 11200, Count: 1, Slot: 5},
+				{ID: 702, Vnum: 27001, Count: 1, Slot: 6},
+				{ID: 703, Vnum: 27002, Count: 3, Slot: 7},
+			},
+		},
+		{
+			name: "locked material ignored",
+			gold: 5000,
+			items: []inventory.ItemInstance{
+				{ID: 701, Vnum: 11200, Count: 1, Slot: 5},
+				{ID: 702, Vnum: 27001, Count: 2, Slot: 6, Locked: true},
+				{ID: 703, Vnum: 27002, Count: 3, Slot: 7},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:        0x01030171,
+				VID:       0x02040171,
+				Name:      "RefineGuard",
+				Level:     1,
+				Gold:      tc.gold,
+				Inventory: tc.items,
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "refine-guard", CharacterIndex: 1})
+			sourceTemplate, resultTemplate, remembered := refineSuccessTemplates(100)
+			if result, ok := runtime.ApplyRefineSuccess(5, 3, 701, remembered, sourceTemplate, resultTemplate); ok {
+				t.Fatalf("expected %s refine to fail closed, got %+v", tc.name, result)
+			}
+			assertRefineSuccessUnchanged(t, runtime, persisted)
+		})
+	}
+}
+
+func TestRuntimeApplyRefineSuccessRejectsStaleSourceIdentityOrRefineInfoMismatchWithoutMutation(t *testing.T) {
+	persisted := refineSuccessSeedCharacter(5000)
+	runtime := NewRuntime(persisted, SessionLink{Login: "refine-stale", CharacterIndex: 1})
+	sourceTemplate, resultTemplate, remembered := refineSuccessTemplates(100)
+
+	if result, ok := runtime.ApplyRefineSuccess(5, 3, 999, remembered, sourceTemplate, resultTemplate); ok {
+		t.Fatalf("expected stale source id refine to fail closed, got %+v", result)
+	}
+	assertRefineSuccessUnchanged(t, runtime, persisted)
+
+	mismatched := remembered
+	mismatched.Cost = 1000
+	if result, ok := runtime.ApplyRefineSuccess(5, 3, 701, mismatched, sourceTemplate, resultTemplate); ok {
+		t.Fatalf("expected refine_info mismatch to fail closed, got %+v", result)
+	}
+	assertRefineSuccessUnchanged(t, runtime, persisted)
+}
+
+func TestRuntimeApplyRefineSuccessRejectsMissingResultTemplateWithoutMutation(t *testing.T) {
+	persisted := refineSuccessSeedCharacter(5000)
+	runtime := NewRuntime(persisted, SessionLink{Login: "refine-result", CharacterIndex: 1})
+	sourceTemplate, _, remembered := refineSuccessTemplates(100)
+	badResult := itemcatalog.Template{Vnum: 11202, Name: "Wrong Result", Stackable: false, MaxCount: 1}
+	if result, ok := runtime.ApplyRefineSuccess(5, 3, 701, remembered, sourceTemplate, badResult); ok {
+		t.Fatalf("expected missing/mismatched result template to fail closed, got %+v", result)
+	}
+	assertRefineSuccessUnchanged(t, runtime, persisted)
+}
+
+func refineSuccessSeedCharacter(gold uint64) loginticket.Character {
+	return loginticket.Character{
+		ID:    0x01030172,
+		VID:   0x02040172,
+		Name:  "RefineSeed",
+		Level: 1,
+		Gold:  gold,
+		Inventory: []inventory.ItemInstance{
+			{ID: 701, Vnum: 11200, Count: 1, Slot: 5},
+			{ID: 702, Vnum: 27001, Count: 2, Slot: 6},
+			{ID: 703, Vnum: 27002, Count: 3, Slot: 7},
+		},
+		Quickslots: []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}},
+	}
+}
+
+func refineSuccessTemplates(probability int32) (itemcatalog.Template, itemcatalog.Template, itemcatalog.RefineInfo) {
+	source := itemcatalog.Template{
+		Vnum:       11200,
+		Name:       "Practice Blade",
+		Stackable:  false,
+		MaxCount:   1,
+		Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{
+			ResultVnum:  11201,
+			Cost:        2500,
+			Probability: probability,
+			Materials:   []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}, {Vnum: 27002, Count: 3}},
+		},
+	}
+	result := itemcatalog.Template{Vnum: 11201, Name: "Refined Practice Blade", Stackable: false, MaxCount: 1}
+	return source, result, *source.RefineInfo
+}
+
+func assertRefineSuccessUnchanged(t *testing.T, runtime *Runtime, persisted loginticket.Character) {
+	t.Helper()
+	live := runtime.LiveCharacter()
+	if !reflect.DeepEqual(live.Inventory, persisted.Inventory) || live.Gold != persisted.Gold {
+		t.Fatalf("refine guard mutated live inventory/gold:\n got inventory=%#v gold=%d\nwant inventory=%#v gold=%d", live.Inventory, live.Gold, persisted.Inventory, persisted.Gold)
+	}
+	if len(live.Quickslots) != len(persisted.Quickslots) || (len(persisted.Quickslots) > 0 && !reflect.DeepEqual(live.Quickslots, persisted.Quickslots)) {
+		t.Fatalf("refine guard mutated live quickslots: got %#v want %#v", live.Quickslots, persisted.Quickslots)
+	}
+	persistedAfter := runtime.PersistedSnapshot()
+	if !reflect.DeepEqual(persistedAfter.Inventory, persisted.Inventory) || persistedAfter.Gold != persisted.Gold {
+		t.Fatalf("refine guard mutated persisted inventory/gold:\n got inventory=%#v gold=%d\nwant inventory=%#v gold=%d", persistedAfter.Inventory, persistedAfter.Gold, persisted.Inventory, persisted.Gold)
+	}
+	if len(persistedAfter.Quickslots) != len(persisted.Quickslots) || (len(persisted.Quickslots) > 0 && !reflect.DeepEqual(persistedAfter.Quickslots, persisted.Quickslots)) {
+		t.Fatalf("refine guard mutated persisted quickslots: got %#v want %#v", persistedAfter.Quickslots, persisted.Quickslots)
+	}
+}
+
 func TestRuntimeEquipItemWithTemplateRejectsAntiGetWithoutMutation(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030102,

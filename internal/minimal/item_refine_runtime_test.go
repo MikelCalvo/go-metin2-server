@@ -14,6 +14,7 @@ import (
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
+	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 )
 
 func TestGameRuntimeItemRefineFailsClosedWithoutMutation(t *testing.T) {
@@ -604,4 +605,300 @@ func guardedRefineRuntimeTemplate(vnum uint32, mutate func(*itemcatalog.Template
 	}
 	mutate(&template)
 	return template
+}
+
+func TestGameRuntimeItemRefineConfirmAfterPreviewProbability100PersistsAndEmitsBurst(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("RefineConfirm", 0x01030760, 0x02040760, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 630, Vnum: 11230, Count: 1, Slot: 5},
+		{ID: 631, Vnum: 27001, Count: 2, Slot: 6},
+		{ID: 632, Vnum: 27002, Count: 1, Slot: 7},
+		{ID: 633, Vnum: 27002, Count: 4, Slot: 8},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "item-refine-confirm", 0x70707060, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-refine-confirm", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-refine confirm account: %v", err)
+	}
+	sourceTemplate := itemcatalog.Template{
+		Vnum:       11230,
+		Name:       "Confirmable Practice Blade",
+		Stackable:  false,
+		MaxCount:   1,
+		Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{
+			ResultVnum:  11231,
+			Cost:        2500,
+			Probability: 100,
+			Materials:   []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}, {Vnum: 27002, Count: 3}},
+		},
+	}
+	resultTemplate := itemcatalog.Template{Vnum: 11231, Name: "Confirmed Practice Blade", Stackable: false, MaxCount: 1}
+	materialA := itemcatalog.Template{Vnum: 27001, Name: "Refine Material A", Stackable: true, MaxCount: 200}
+	materialB := itemcatalog.Template{Vnum: 27002, Name: "Refine Material B", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{sourceTemplate, resultTemplate, materialA, materialB})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-refine confirm runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-refine-confirm", 0x70707060)
+	defer closeSessionFlow(t, flow)
+
+	previewOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
+	if err != nil {
+		t.Fatalf("unexpected refine preview packet error: %v", err)
+	}
+	if len(previewOut) != 1 {
+		t.Fatalf("expected refine preview to emit one frame, got %d", len(previewOut))
+	}
+	if _, err := itemproto.DecodeRefineInformationNew(decodeSingleFrame(t, previewOut[0])); err != nil {
+		t.Fatalf("decode refine preview frame: %v", err)
+	}
+
+	confirmOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
+	if err != nil {
+		t.Fatalf("unexpected refine confirm packet error: %v", err)
+	}
+	if len(confirmOut) != 5 {
+		t.Fatalf("expected refine confirm burst of 5 frames, got %d", len(confirmOut))
+	}
+	delA, err := itemproto.DecodeDel(decodeSingleFrame(t, confirmOut[0]))
+	if err != nil {
+		t.Fatalf("decode material A ITEM_DEL: %v", err)
+	}
+	if delA.Position.WindowType != itemproto.WindowInventory || delA.Position.Cell != 6 {
+		t.Fatalf("unexpected material A delete position: %+v", delA.Position)
+	}
+	delB, err := itemproto.DecodeDel(decodeSingleFrame(t, confirmOut[1]))
+	if err != nil {
+		t.Fatalf("decode material B first ITEM_DEL: %v", err)
+	}
+	if delB.Position.WindowType != itemproto.WindowInventory || delB.Position.Cell != 7 {
+		t.Fatalf("unexpected material B delete position: %+v", delB.Position)
+	}
+	updateB, err := itemproto.DecodeUpdate(decodeSingleFrame(t, confirmOut[2]))
+	if err != nil {
+		t.Fatalf("decode material B ITEM_UPDATE: %v", err)
+	}
+	if updateB.Position.WindowType != itemproto.WindowInventory || updateB.Position.Cell != 8 || updateB.Count != 2 {
+		t.Fatalf("unexpected material B update: %+v", updateB)
+	}
+	resultSet, err := itemproto.DecodeSet(decodeSingleFrame(t, confirmOut[3]))
+	if err != nil {
+		t.Fatalf("decode result ITEM_SET: %v", err)
+	}
+	if resultSet.Position.WindowType != itemproto.WindowInventory || resultSet.Position.Cell != 5 || resultSet.Vnum != 11231 || resultSet.Count != 1 {
+		t.Fatalf("unexpected result ITEM_SET: %+v", resultSet)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, confirmOut[4]))
+	if err != nil {
+		t.Fatalf("decode gold PLAYER_POINT_CHANGE: %v", err)
+	}
+	if goldChange.VID != owner.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != -2500 || goldChange.Value != 2500 {
+		t.Fatalf("unexpected gold point change: %+v", goldChange)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after refine confirm, got %d", len(queued))
+	}
+
+	persisted, err := accounts.Load("item-refine-confirm")
+	if err != nil {
+		t.Fatalf("load persisted item-refine confirm account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{
+		{ID: 630, Vnum: 11231, Count: 1, Slot: 5},
+		{ID: 633, Vnum: 27002, Count: 2, Slot: 8},
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("unexpected persisted inventory after refine confirm:\n got: %+v\nwant: %+v", persisted.Characters[0].Inventory, wantInventory)
+	}
+	if persisted.Characters[0].Gold != 2500 || !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("unexpected persisted scalars after refine confirm: gold=%d quickslots=%+v", persisted.Characters[0].Gold, persisted.Characters[0].Quickslots)
+	}
+
+	repeatOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
+	if err != nil {
+		t.Fatalf("unexpected post-success refine packet error: %v", err)
+	}
+	if len(repeatOut) != 0 {
+		t.Fatalf("expected cleared refine dialog to fail closed on repeat confirm, got %d frames", len(repeatOut))
+	}
+}
+
+func TestGameRuntimeItemRefineConfirmCancelType255LeavesStateUnchanged(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("RefineCancel", 0x01030761, 0x02040761, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 640, Vnum: 11232, Count: 1, Slot: 5},
+		{ID: 641, Vnum: 27001, Count: 2, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "item-refine-cancel", 0x70707061, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-refine-cancel", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-refine cancel account: %v", err)
+	}
+	sourceTemplate := itemcatalog.Template{
+		Vnum:       11232,
+		Name:       "Cancelable Practice Blade",
+		Stackable:  false,
+		MaxCount:   1,
+		Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{ResultVnum: 11233, Cost: 1000, Probability: 100, Materials: []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}}},
+	}
+	resultTemplate := itemcatalog.Template{Vnum: 11233, Name: "Canceled Result Blade", Stackable: false, MaxCount: 1}
+	material := itemcatalog.Template{Vnum: 27001, Name: "Refine Material A", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{sourceTemplate, resultTemplate, material})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-refine cancel runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-refine-cancel", 0x70707061)
+	defer closeSessionFlow(t, flow)
+
+	previewOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 4})))
+	if err != nil || len(previewOut) != 1 {
+		t.Fatalf("expected refine cancel preview to emit one frame, got %d err=%v", len(previewOut), err)
+	}
+	cancelOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 255})))
+	if err != nil {
+		t.Fatalf("unexpected refine cancel packet error: %v", err)
+	}
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected refine cancel to emit no frames, got %d", len(cancelOut))
+	}
+	confirmOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 4})))
+	if err != nil {
+		t.Fatalf("unexpected post-cancel confirm packet error: %v", err)
+	}
+	if len(confirmOut) != 1 {
+		t.Fatalf("expected post-cancel matching refine to reopen preview only, got %d", len(confirmOut))
+	}
+	if _, err := itemproto.DecodeRefineInformationNew(decodeSingleFrame(t, confirmOut[0])); err != nil {
+		t.Fatalf("decode post-cancel refine preview: %v", err)
+	}
+	assertExchangeAccountUnchanged(t, accounts, "item-refine-cancel", owner, "refine cancel")
+}
+
+func TestGameRuntimeItemRefineConfirmBusyWindowsFailClosedWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := merchantBuyerCharacter("RefineBusy", 0x01030762, 0x02040762, 5000, []inventory.ItemInstance{
+		{ID: 650, Vnum: 11234, Count: 1, Slot: 5},
+		{ID: 651, Vnum: 27001, Count: 2, Slot: 6},
+	})
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "item-refine-busy", 0x70707062, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-refine-busy", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-refine busy account: %v", err)
+	}
+	sourceTemplate := itemcatalog.Template{
+		Vnum:       11234,
+		Name:       "Busy Practice Blade",
+		Stackable:  false,
+		MaxCount:   1,
+		Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{ResultVnum: 11235, Cost: 1000, Probability: 100, Materials: []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}}},
+	}
+	resultTemplate := itemcatalog.Template{Vnum: 11235, Name: "Busy Result Blade", Stackable: false, MaxCount: 1}
+	templates := append(defaultMerchantItemTemplates(), sourceTemplate, resultTemplate)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{defaultMerchantCatalogDefinition()})
+	itemStore := newItemTemplateStore(t, templates)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected item-refine busy runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:merchant")
+	if !ok {
+		t.Fatal("expected merchant static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-refine-busy", 0x70707062)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	previewOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
+	if err != nil || len(previewOut) != 1 {
+		t.Fatalf("expected refine busy preview to emit one frame, got %d err=%v", len(previewOut), err)
+	}
+	interactWithMerchantForBuy(t, flow, actor.EntityID)
+	busyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
+	if err != nil {
+		t.Fatalf("unexpected busy refine confirm packet error: %v", err)
+	}
+	if len(busyOut) != 0 {
+		t.Fatalf("expected busy refine confirm to fail closed, got %d frames", len(busyOut))
+	}
+	assertExchangeAccountUnchanged(t, accounts, "item-refine-busy", owner, "busy refine confirm")
+
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected merchant close after busy refine: %v", err)
+	}
+	if len(closeOut) != 1 {
+		t.Fatalf("expected merchant close after busy refine to emit SHOP END, got %d", len(closeOut))
+	}
+	cancelOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 255})))
+	if err != nil {
+		t.Fatalf("unexpected busy refine cancel packet error: %v", err)
+	}
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected busy refine cancel to emit no frames, got %d", len(cancelOut))
+	}
+	assertExchangeAccountUnchanged(t, accounts, "item-refine-busy", owner, "busy refine cancel")
+}
+
+func TestGameRuntimeItemRefineConfirmProbabilityBelow100FailsClosedWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("RefineLowProb", 0x01030763, 0x02040763, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 660, Vnum: 11236, Count: 1, Slot: 5},
+		{ID: 661, Vnum: 27001, Count: 2, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "item-refine-lowprob", 0x70707063, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-refine-lowprob", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-refine low-prob account: %v", err)
+	}
+	sourceTemplate := itemcatalog.Template{
+		Vnum:       11236,
+		Name:       "Low Prob Practice Blade",
+		Stackable:  false,
+		MaxCount:   1,
+		Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{ResultVnum: 11237, Cost: 1000, Probability: 75, Materials: []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}}},
+	}
+	resultTemplate := itemcatalog.Template{Vnum: 11237, Name: "Low Prob Result Blade", Stackable: false, MaxCount: 1}
+	material := itemcatalog.Template{Vnum: 27001, Name: "Refine Material A", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{sourceTemplate, resultTemplate, material})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-refine low-prob runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-refine-lowprob", 0x70707063)
+	defer closeSessionFlow(t, flow)
+
+	previewOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
+	if err != nil || len(previewOut) != 1 {
+		t.Fatalf("expected low-prob refine preview to emit one frame, got %d err=%v", len(previewOut), err)
+	}
+	confirmOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
+	if err != nil {
+		t.Fatalf("unexpected low-prob refine confirm packet error: %v", err)
+	}
+	if len(confirmOut) != 0 {
+		t.Fatalf("expected low-prob refine confirm to fail closed, got %d frames", len(confirmOut))
+	}
+	assertExchangeAccountUnchanged(t, accounts, "item-refine-lowprob", owner, "low-prob refine confirm")
+	cancelOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 255})))
+	if err != nil || len(cancelOut) != 0 {
+		t.Fatalf("expected low-prob refine cancel to emit no frames, got %d err=%v", len(cancelOut), err)
+	}
+	assertExchangeAccountUnchanged(t, accounts, "item-refine-lowprob", owner, "low-prob refine cancel")
 }
