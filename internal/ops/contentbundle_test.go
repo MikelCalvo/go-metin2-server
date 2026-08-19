@@ -522,6 +522,25 @@ func TestLocalContentBundleValidateEndpointAcceptsExampleBundle(t *testing.T) {
 	if len(got.StaticActors) != 6 || len(got.SpawnGroups) != 1 || len(got.ItemTemplates) != 2 || len(got.QuestState) != 1 || len(got.InteractionDefinitions) != 6 {
 		t.Fatalf("unexpected canonical example validation response: %+v", got)
 	}
+	wantSpawn := contentbundle.SpawnGroup{
+		Ref:              "practice.qa_reward_mob",
+		Name:             "QARewardMob",
+		MapIndex:         1,
+		X:                469800,
+		Y:                964200,
+		RaceNum:          20350,
+		CombatProfile:    "practice_mob",
+		RewardExperience: 75,
+		RewardGold:       60,
+		RewardDropVnums:  []uint32{27001},
+		RewardQuestRef:   "quest:first_steps",
+		RewardQuestFlag:  "killed_qa_mob",
+		RewardQuestTo:    1,
+		RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+	}
+	if !reflect.DeepEqual(got.SpawnGroups[0], wantSpawn) {
+		t.Fatalf("unexpected canonical example spawn group:\n got: %#v\nwant: %#v", got.SpawnGroups[0], wantSpawn)
+	}
 	wantQuestState := []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1}}
 	if !reflect.DeepEqual(got.QuestState, wantQuestState) {
 		t.Fatalf("unexpected canonical example quest-state rows:\n got: %#v\nwant: %#v", got.QuestState, wantQuestState)

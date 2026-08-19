@@ -3114,7 +3114,7 @@ func TestSummarizeCompactsLongInteractableStaticActorPreviews(t *testing.T) {
 func TestSummarizeReturnsDeterministicSpawnGroupReferences(t *testing.T) {
 	summary, err := Summarize(Bundle{
 		SpawnGroups: []SpawnGroup{
-			{Ref: "practice.beta", Name: "Beta Mob", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 102, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 25, RewardGold: 5, RewardDropVnums: []uint32{27002, 27001}},
+			{Ref: "practice.beta", Name: "Beta Mob", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 102, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 25, RewardGold: 5, RewardDropVnums: []uint32{27002, 27001}, RewardQuestRef: "quest:first_steps", RewardQuestFlag: "killed_qa_mob", RewardQuestTo: 1, RewardQuestText: "Quest updated: first_steps.killed_qa_mob = 1."},
 			{Ref: "practice.alpha", Name: "Alpha Mob", MapIndex: 3, X: 1200, Y: 2200, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy},
 		},
 		ItemTemplates: []itemcatalog.Template{
@@ -3130,10 +3130,56 @@ func TestSummarizeReturnsDeterministicSpawnGroupReferences(t *testing.T) {
 		{Ref: "practice.beta", Name: "Beta Mob", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 102, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 25, RewardGold: 5, RewardDropVnums: []uint32{27001, 27002}, RewardDropItems: []RewardDropItemSummary{
 			{ItemVnum: 27001, ItemName: "Small Red Potion", Stackable: true, MaxCount: 200},
 			{ItemVnum: 27002, ItemName: "Small Blue Potion", Stackable: true, MaxCount: 200},
-		}},
+		}, RewardQuestRef: "quest:first_steps", RewardQuestFlag: "killed_qa_mob", RewardQuestTo: 1, RewardQuestText: "Quest updated: first_steps.killed_qa_mob = 1."},
 	}
 	if !reflect.DeepEqual(summary.SpawnGroups, want) {
 		t.Fatalf("unexpected spawn-group summaries:\n got: %#v\nwant: %#v", summary.SpawnGroups, want)
+	}
+}
+
+func TestSummarizeReturnsSpawnGroupKillQuestCredit(t *testing.T) {
+	summary, err := Summarize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:              "practice.kill_quest_mob",
+			Name:             "KillQuestMob",
+			MapIndex:         1,
+			X:                469800,
+			Y:                964200,
+			RaceNum:          20350,
+			CombatProfile:    worldruntime.StaticActorCombatProfileTrainingDummy,
+			RewardExperience: 25,
+			RewardGold:       10,
+			RewardDropVnums:  []uint32{27001},
+			RewardQuestRef:   "quest:first_steps",
+			RewardQuestFlag:  "killed_qa_mob",
+			RewardQuestFrom:  0,
+			RewardQuestTo:    1,
+			RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+		}},
+		ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}},
+	})
+	if err != nil {
+		t.Fatalf("summarize kill-quest credit spawn group: %v", err)
+	}
+	want := []SpawnGroupReferenceSummary{{
+		Ref:              "practice.kill_quest_mob",
+		Name:             "KillQuestMob",
+		MapIndex:         1,
+		X:                469800,
+		Y:                964200,
+		RaceNum:          20350,
+		CombatProfile:    worldruntime.StaticActorCombatProfileTrainingDummy,
+		RewardExperience: 25,
+		RewardGold:       10,
+		RewardDropVnums:  []uint32{27001},
+		RewardDropItems:  []RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Small Red Potion", Stackable: true, MaxCount: 200}},
+		RewardQuestRef:   "quest:first_steps",
+		RewardQuestFlag:  "killed_qa_mob",
+		RewardQuestTo:    1,
+		RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+	}}
+	if !reflect.DeepEqual(summary.SpawnGroups, want) {
+		t.Fatalf("unexpected kill-quest credit spawn-group summary:\n got: %#v\nwant: %#v", summary.SpawnGroups, want)
 	}
 }
 

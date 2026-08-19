@@ -507,6 +507,11 @@ type SpawnGroupReferenceSummary struct {
 	RewardGold       uint64                  `json:"reward_gold,omitempty"`
 	RewardDropVnums  []uint32                `json:"reward_drop_vnums,omitempty"`
 	RewardDropItems  []RewardDropItemSummary `json:"reward_drop_items,omitempty"`
+	RewardQuestRef   string                  `json:"reward_quest_ref,omitempty"`
+	RewardQuestFlag  string                  `json:"reward_quest_flag,omitempty"`
+	RewardQuestFrom  uint32                  `json:"reward_quest_from,omitempty"`
+	RewardQuestTo    uint32                  `json:"reward_quest_to,omitempty"`
+	RewardQuestText  string                  `json:"reward_quest_text,omitempty"`
 }
 
 type RewardDropItemSummary struct {
@@ -1722,6 +1727,9 @@ func cloneSpawnGroupReferenceSummary(spawnGroup SpawnGroupReferenceSummary) Spaw
 	spawnGroup.CombatProfile = strings.TrimSpace(spawnGroup.CombatProfile)
 	spawnGroup.RewardDropVnums = cloneUint32s(spawnGroup.RewardDropVnums)
 	spawnGroup.RewardDropItems = cloneRewardDropItemSummaries(spawnGroup.RewardDropItems)
+	spawnGroup.RewardQuestRef = strings.TrimSpace(spawnGroup.RewardQuestRef)
+	spawnGroup.RewardQuestFlag = strings.TrimSpace(spawnGroup.RewardQuestFlag)
+	spawnGroup.RewardQuestText = strings.TrimSpace(spawnGroup.RewardQuestText)
 	return spawnGroup
 }
 
@@ -2724,6 +2732,11 @@ func Summarize(bundle Bundle) (Summary, error) {
 			RewardGold:       spawnGroup.RewardGold,
 			RewardDropVnums:  cloneUint32s(spawnGroup.RewardDropVnums),
 			RewardDropItems:  rewardDropItemSummaries(spawnGroup.RewardDropVnums, itemTemplatesByVnum),
+			RewardQuestRef:   spawnGroup.RewardQuestRef,
+			RewardQuestFlag:  spawnGroup.RewardQuestFlag,
+			RewardQuestFrom:  spawnGroup.RewardQuestFrom,
+			RewardQuestTo:    spawnGroup.RewardQuestTo,
+			RewardQuestText:  spawnGroup.RewardQuestText,
 		})
 	}
 	summary.RewardDrops = rewardDropAggregateSummaries(rewardDropCountsByVnum, itemTemplatesByVnum)

@@ -331,7 +331,7 @@ Owned rules:
 - on the accepted killing hit, after death/clear and any independent EXP/gold/drop reward handling, the selected killer session attempts one `ApplyTransition` for `(reward_quest_ref, reward_quest_flag, reward_quest_from, reward_quest_to)`
 - when the transition applies, the killer receives one self-only `CHAT_TYPE_INFO` frame with `reward_quest_text`
 - `current_value_mismatch` and other fail-closed transition results stay silent for this combat path: no quest chat is emitted and combat rewards are not rolled back
-- the checked-in QA example is `docs/examples/bootstrap-kill-quest-credit-bundle.json`
+- the narrow checked-in QA example remains `docs/examples/bootstrap-kill-quest-credit-bundle.json`; the combined NPC service fixture `docs/examples/bootstrap-npc-service-bundle.json` now also authors the same credit fields on `practice.qa_reward_mob`
 
 ## Current non-goals
 

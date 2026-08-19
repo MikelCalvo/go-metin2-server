@@ -68,7 +68,11 @@
       "reward_gold": 60,
       "reward_drop_vnums": [
         27001
-      ]
+      ],
+      "reward_quest_ref": "quest:first_steps",
+      "reward_quest_flag": "killed_qa_mob",
+      "reward_quest_to": 1,
+      "reward_quest_text": "Quest updated: first_steps.killed_qa_mob = 1."
     }
   ],
   "item_templates": [
