@@ -252,3 +252,32 @@ Explicit non-goals for this chase MOVE freeze alone:
 - cross-map chase or chase while `return_required`
 - a dedicated chase packet family distinct from `MOVE`
 - operator POST chase-step triggers
+
+## First owned return-step MOVE packet choreography seam
+
+Question frozen here:
+
+**Once retained-viewer chase steps already reuse server `MOVE` replication, what is the smallest honest packet change that can also replace retained-viewer delete/readd for a successful same-map return-step (and exact return-home) without inventing pathfinding, chase/return packet families, or a second AI scheduler?**
+
+Contract for the first return-step / return-home MOVE choreography:
+- reuse the already-owned server `MOVE` / `MOVE_ACK` wire shape (`0x0302`) from `move-peer-fanout.md` and the same bootstrap duration family already used by chase MOVE, rather than inventing a dedicated return packet family
+- apply to a successful pending-frame / operator return-step that actually changes the materialized actor position while the actor remains live and still on the same map as its authored home, and to a successful same-map `return-home` that actually changes coordinates
+- retained viewers that already had the actor visible before and after the step / home return receive one queued `MOVE` replication for the actor's visible `VID` at the planned `next` / authored home coordinates instead of the current delete-plus-readd refresh
+- viewers that lose visibility across the step / home return still receive `CHARACTER_DEL`
+- viewers that newly gain visibility across the step / home return still receive the ordinary `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` bootstrap burst
+- return-step / return-home MOVE fanout still releases practice-mob engagement and still clears selected combat targets bound to that actor's visible `VID`, matching the already-owned return recovery lifecycle (this is intentionally different from chase MOVE, which preserves engagement / selected-target ownership)
+- cross-map return-home remains outside MOVE choreography for now and keeps the existing delete/readd / direct-home rebuild path because no client-facing return warp packet seam is owned yet
+- respawn rebuild, generic operator actor updates, and content-bundle replacement keep using their already-owned delete/readd visibility paths; this freeze does not convert those seams to MOVE
+- no client-originated mob MOVE ingress is owned; this is server-origin replication only
+- no return-specific duration/interpolation policy is owned beyond reusing the existing `MOVE` payload fields with a deterministic bootstrap duration suitable for the fixed `max_step = 100` return-step and the exact-home return trigger
+
+Current implementation status:
+- this return-step / return-home MOVE choreography is frozen here as the next honest packet seam
+- pending-frame / operator return-step and return-home still currently emit delete/readd for retained viewers until the runtime consumer lands
+
+Explicit non-goals for this return-step MOVE freeze alone:
+- pathfinding, navmesh, patrol, or continuous interpolation beyond one discrete planned return step / exact-home snap
+- converting respawn rebuild or generic operator actor updates to MOVE
+- cross-map return MOVE / warp choreography
+- a dedicated return packet family distinct from `MOVE`
+- changing the already-owned engagement-release / selected-target-clear semantics of return recovery
