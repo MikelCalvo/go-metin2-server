@@ -559,3 +559,161 @@ func TestKillQuestTurnInMismatchWithoutKillCredit(t *testing.T) {
 		t.Fatalf("expected no queued peer frames for mismatch kill quest turn-in, got %d", len(queued))
 	}
 }
+
+func TestHandleAttackKillQuestRequireGateSilentWhenUnmet(t *testing.T) {
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	killer := peerVisibilityCharacter("KillQuestGateMiss", 0x01030154, 0x02040154, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, ticketStore, "kill-quest-gate-miss", 0x54545454, killer)
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "kill-quest-gate-miss", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed gated miss killer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		ticketStore,
+		accounts,
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new gated miss kill quest runtime: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_600, 0)
+	runtime.now = func() time.Time { return currentTime }
+	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:              "practice.gated_kill_quest_miss_mob",
+			Name:             "GatedKillQuestMissMob",
+			MapIndex:         bootstrapMapIndex,
+			X:                1200,
+			Y:                2200,
+			RaceNum:          20350,
+			CombatProfile:    worldruntime.StaticActorCombatProfileTrainingDummy,
+			RewardQuestRef:   "quest:first_steps",
+			RewardQuestFlag:  "killed_qa_mob",
+			RewardQuestTo:    1,
+			RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+			RequireQuestRef:  "quest:first_steps",
+			RequireQuestFlag: "met_guide",
+			RequireQuestFrom: 1,
+		}},
+	}); err != nil {
+		t.Fatalf("import gated miss kill quest bundle: %v", err)
+	}
+	targetVID := uint32(runtime.StaticActors()[0].EntityID)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "kill-quest-gate-miss", 0x54545454)
+	defer closeSessionFlow(t, flow)
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected gated miss target selection to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected gated miss kill attack error on hit %d: %v", hit, err)
+		}
+	}
+	for _, frame := range killOut {
+		if chat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, frame)); err == nil {
+			t.Fatalf("expected no quest chat when require gate is unmet, got %+v", chat)
+		}
+	}
+	loaded, err := runtime.questStateStore.Load()
+	if err != nil {
+		t.Fatalf("load quest-state after gated miss kill: %v", err)
+	}
+	if !reflect.DeepEqual(loaded, queststate.Snapshot{Flags: []queststate.Flag{}}) {
+		t.Fatalf("gated miss kill mutated quest-state:\n got: %#v\nwant empty snapshot", loaded)
+	}
+}
+
+func TestHandleAttackKillQuestRequireGateAppliesWhenMet(t *testing.T) {
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	killer := peerVisibilityCharacter("KillQuestGateHit", 0x01030155, 0x02040155, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, ticketStore, "kill-quest-gate-hit", 0x55555555, killer)
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "kill-quest-gate-hit", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed gated hit killer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		ticketStore,
+		accounts,
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new gated hit kill quest runtime: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_700, 0)
+	runtime.now = func() time.Time { return currentTime }
+	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:              "practice.gated_kill_quest_hit_mob",
+			Name:             "GatedKillQuestHitMob",
+			MapIndex:         bootstrapMapIndex,
+			X:                1200,
+			Y:                2200,
+			RaceNum:          20350,
+			CombatProfile:    worldruntime.StaticActorCombatProfileTrainingDummy,
+			RewardQuestRef:   "quest:first_steps",
+			RewardQuestFlag:  "killed_qa_mob",
+			RewardQuestTo:    1,
+			RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+			RequireQuestRef:  "quest:first_steps",
+			RequireQuestFlag: "met_guide",
+			RequireQuestFrom: 1,
+		}},
+	}); err != nil {
+		t.Fatalf("import gated hit kill quest bundle: %v", err)
+	}
+	if _, err := runtime.ApplyQuestStateTransition(queststate.Transition{
+		Character: killer.Name,
+		QuestRef:  "quest:first_steps",
+		Flag:      "met_guide",
+		From:      0,
+		To:        1,
+	}); err != nil {
+		t.Fatalf("seed met_guide prerequisite: %v", err)
+	}
+	targetVID := uint32(runtime.StaticActors()[0].EntityID)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "kill-quest-gate-hit", 0x55555555)
+	defer closeSessionFlow(t, flow)
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected gated hit target selection to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected gated hit kill attack error on hit %d: %v", hit, err)
+		}
+	}
+	chat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, killOut[len(killOut)-1]))
+	if err != nil || chat.Type != chatproto.ChatTypeInfo || chat.VID != 0 || chat.Empire != 0 || chat.Message != "Quest updated: first_steps.killed_qa_mob = 1." {
+		t.Fatalf("unexpected gated hit kill quest chat delivery: %+v err=%v", chat, err)
+	}
+	loaded, err := runtime.questStateStore.Load()
+	if err != nil {
+		t.Fatalf("load quest-state after gated hit kill: %v", err)
+	}
+	want := queststate.Snapshot{Flags: []queststate.Flag{
+		{Character: killer.Name, QuestRef: "quest:first_steps", Name: "killed_qa_mob", Value: 1},
+		{Character: killer.Name, QuestRef: "quest:first_steps", Name: "met_guide", Value: 1},
+	}}
+	if !reflect.DeepEqual(loaded, want) {
+		t.Fatalf("unexpected quest-state after gated hit kill:\n got: %#v\nwant: %#v", loaded, want)
+	}
+}

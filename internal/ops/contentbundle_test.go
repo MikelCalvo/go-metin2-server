@@ -537,6 +537,9 @@ func TestLocalContentBundleValidateEndpointAcceptsExampleBundle(t *testing.T) {
 		RewardQuestFlag:  "killed_qa_mob",
 		RewardQuestTo:    1,
 		RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+		RequireQuestRef:  "quest:first_steps",
+		RequireQuestFlag: "met_guide",
+		RequireQuestFrom: 1,
 	}
 	if !reflect.DeepEqual(got.SpawnGroups[0], wantSpawn) {
 		t.Fatalf("unexpected canonical example spawn group:\n got: %#v\nwant: %#v", got.SpawnGroups[0], wantSpawn)

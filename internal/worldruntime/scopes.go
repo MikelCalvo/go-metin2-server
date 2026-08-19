@@ -90,6 +90,9 @@ type StaticActorSnapshot struct {
 	RewardQuestFrom       uint32              `json:"reward_quest_from,omitempty"`
 	RewardQuestTo         uint32              `json:"reward_quest_to,omitempty"`
 	RewardQuestText       string              `json:"reward_quest_text,omitempty"`
+	RequireQuestRef       string              `json:"require_quest_ref,omitempty"`
+	RequireQuestFlag      string              `json:"require_quest_flag,omitempty"`
+	RequireQuestFrom      uint32              `json:"require_quest_from,omitempty"`
 }
 
 type GroundItemSnapshot struct {

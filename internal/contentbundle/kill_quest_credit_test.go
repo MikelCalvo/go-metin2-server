@@ -276,3 +276,146 @@ func TestCanonicalizeExpandsRegenSpawnDropTableKillQuestCredit(t *testing.T) {
 		t.Fatalf("unexpected regen drop-table kill quest expansion:\n got: %#v\nwant: %#v", bundle.SpawnGroups, want)
 	}
 }
+
+func TestCanonicalizeAcceptsSpawnGroupKillQuestRequireGate(t *testing.T) {
+	bundle, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:              "practice.gated_kill_quest_mob",
+			Name:             "GatedKillQuestMob",
+			MapIndex:         42,
+			X:                1800,
+			Y:                2900,
+			RaceNum:          101,
+			CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardQuestRef:   "quest:first_steps",
+			RewardQuestFlag:  "killed_qa_mob",
+			RewardQuestTo:    1,
+			RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+			RequireQuestRef:  "quest:first_steps",
+			RequireQuestFlag: "met_guide",
+			RequireQuestFrom: 1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize gated kill quest credit: %v", err)
+	}
+	want := SpawnGroup{
+		Ref:              "practice.gated_kill_quest_mob",
+		Name:             "GatedKillQuestMob",
+		MapIndex:         42,
+		X:                1800,
+		Y:                2900,
+		RaceNum:          101,
+		CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+		RewardQuestRef:   "quest:first_steps",
+		RewardQuestFlag:  "killed_qa_mob",
+		RewardQuestTo:    1,
+		RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+		RequireQuestRef:  "quest:first_steps",
+		RequireQuestFlag: "met_guide",
+		RequireQuestFrom: 1,
+	}
+	if len(bundle.SpawnGroups) != 1 || !reflect.DeepEqual(bundle.SpawnGroups[0], want) {
+		t.Fatalf("unexpected gated kill quest credit:\n got: %#v\nwant: %#v", bundle.SpawnGroups, want)
+	}
+}
+
+func TestCanonicalizeRejectsPartialSpawnGroupKillQuestRequireGate(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:             "practice.partial_gated_kill_quest_mob",
+			Name:            "PartialGatedKillQuestMob",
+			MapIndex:        42,
+			X:               1800,
+			Y:               2900,
+			RaceNum:         101,
+			CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardQuestRef:  "quest:first_steps",
+			RewardQuestFlag: "killed_qa_mob",
+			RewardQuestTo:   1,
+			RewardQuestText: "Quest updated: first_steps.killed_qa_mob = 1.",
+			RequireQuestRef: "quest:first_steps",
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for partial require gate, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsOrphanRequireQuestFromWithoutGate(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:              "practice.orphan_require_from_mob",
+			Name:             "OrphanRequireFromMob",
+			MapIndex:         42,
+			X:                1800,
+			Y:                2900,
+			RaceNum:          101,
+			CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardQuestRef:   "quest:first_steps",
+			RewardQuestFlag:  "killed_qa_mob",
+			RewardQuestTo:    1,
+			RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+			RequireQuestFrom: 1,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for orphan require_quest_from, got %v", err)
+	}
+}
+
+func TestCanonicalizeExpandsDropTableKillQuestRequireGate(t *testing.T) {
+	bundle, err := Canonicalize(Bundle{
+		DropTables: []DropTable{{
+			Ref:              "loot.qa_gated_kill_quest_reward",
+			RewardExperience: 75,
+			RewardGold:       60,
+			DropVnums:        []uint32{27001},
+			RewardQuestRef:   "quest:first_steps",
+			RewardQuestFlag:  "killed_qa_mob",
+			RewardQuestTo:    1,
+			RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+			RequireQuestRef:  "quest:first_steps",
+			RequireQuestFlag: "met_guide",
+			RequireQuestFrom: 1,
+		}},
+		SpawnGroups: []SpawnGroup{{
+			Ref:                "practice.gated_table_kill_quest_mob",
+			Name:               "GatedTableKillQuestMob",
+			MapIndex:           1,
+			X:                  469850,
+			Y:                  964200,
+			RaceNum:            20350,
+			CombatProfile:      worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropTableRef: "loot.qa_gated_kill_quest_reward",
+		}},
+		ItemTemplates: []itemcatalog.Template{{
+			Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize drop-table gated kill quest credit: %v", err)
+	}
+	want := SpawnGroup{
+		Ref:              "practice.gated_table_kill_quest_mob",
+		Name:             "GatedTableKillQuestMob",
+		MapIndex:         1,
+		X:                469850,
+		Y:                964200,
+		RaceNum:          20350,
+		CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+		RewardExperience: 75,
+		RewardGold:       60,
+		RewardDropVnums:  []uint32{27001},
+		RewardQuestRef:   "quest:first_steps",
+		RewardQuestFlag:  "killed_qa_mob",
+		RewardQuestTo:    1,
+		RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+		RequireQuestRef:  "quest:first_steps",
+		RequireQuestFlag: "met_guide",
+		RequireQuestFrom: 1,
+	}
+	if len(bundle.DropTables) != 0 || len(bundle.SpawnGroups) != 1 || !reflect.DeepEqual(bundle.SpawnGroups[0], want) {
+		t.Fatalf("unexpected gated drop-table expansion:\n got: %#v\nwant: %#v", bundle.SpawnGroups, want)
+	}
+}

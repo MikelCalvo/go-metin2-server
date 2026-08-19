@@ -16,9 +16,9 @@ The current owned surface is limited to `internal/queststate`:
 - one read-only exact-character quest-state snapshot for local operator QA,
 - content-bundle import/export/summary inclusion for the same standalone quest-state snapshot,
 - the first static-actor `quest_flag` interaction kind that applies one authored compare-and-set transition for the selected character,
-- the first spawn-group kill-quest credit descriptor that applies one authored compare-and-set transition for the selected killer after an accepted non-player death edge.
+- the first spawn-group kill-quest credit descriptor that applies one authored compare-and-set transition for the selected killer after an accepted non-player death edge, optionally gated by a selected-character quest-flag prerequisite.
 
-This seam supports the first content/NPC path of “interact with an actor once and advance or clear a flag”, plus the first combat-adjacent content path of “kill an authored spawn-backed combatant and advance one selected-killer quest flag”. The current local operator endpoints can validate, dry-run or mutate through one compare-and-set transition, read back one character's quest flags, and inspect/import/export quest-state rows through authored content bundles. A visible static actor can now call the same primitive through `INTERACT` when its authored definition uses `interaction_kind = "quest_flag"`, and an authored spawn group may also call the same primitive after the accepted killing hit when it carries kill-quest credit fields. No client quest packet, reward UI, branching dialog runtime, or quest script exists yet.
+This seam supports the first content/NPC path of “interact with an actor once and advance or clear a flag”, plus the first combat-adjacent content path of “kill an authored spawn-backed combatant and advance one selected-killer quest flag”. The current local operator endpoints can validate, dry-run or mutate through one compare-and-set transition, read back one character's quest flags, and inspect/import/export quest-state rows through authored content bundles. A visible static actor can now call the same primitive through `INTERACT` when its authored definition uses `interaction_kind = "quest_flag"`, and an authored spawn group may also call the same primitive after the accepted killing hit when it carries kill-quest credit fields (including an optional require gate that keeps unmet prerequisites silent). No client quest packet, reward UI, branching dialog runtime, or quest script exists yet.
 
 ## Snapshot shape
 
@@ -316,24 +316,32 @@ Authored `spawn_groups`, authoring-only `regen_spawns`, and authoring-only `drop
   "reward_quest_flag": "killed_qa_mob",
   "reward_quest_from": 0,
   "reward_quest_to": 1,
-  "reward_quest_text": "Quest updated: first_steps.killed_qa_mob = 1."
+  "reward_quest_text": "Quest updated: first_steps.killed_qa_mob = 1.",
+  "require_quest_ref": "quest:first_steps",
+  "require_quest_flag": "met_guide",
+  "require_quest_from": 1
 }
 ```
 
 Owned rules:
 
 - absent / all-empty kill-quest fields remain valid and are a no-op
-- when any kill-quest field is present, `reward_quest_ref`, `reward_quest_flag`, and non-blank `reward_quest_text` are all required
+- when any kill-quest field is present (including optional require-gate fields), `reward_quest_ref`, `reward_quest_flag`, and non-blank `reward_quest_text` are all required
 - `reward_quest_ref` and `reward_quest_flag` use the same identity rules as the standalone quest-state store
 - `reward_quest_from` / `reward_quest_to` must differ when credit is present; omitted `reward_quest_from` means the ordinary absent-current-value / `0` transition case
+- kill-quest credit may optionally carry one selected-character prerequisite gate with `require_quest_ref` + `require_quest_flag` (+ optional `require_quest_from`, default `0`)
+- the require gate uses the same identity rules as service quest gates; partial require fields and orphan `require_quest_from` without both require identities fail store/bundle validation
+- require-gate fields are part of the same kill-quest descriptor and must be authored with that credit on the spawn group, regen spawn, or drop table; they may not be split across a spawn row and an expanded table
 - kill-quest credit is spawn-group-only at runtime: standalone static actors without `spawn_group_ref` may not carry these fields
-- authoring-only `drop_tables` may carry the same kill-quest fields; canonicalization expands them onto the referencing spawn group / regen spawn together with EXP/gold/drop-vnum channels, then strips `drop_tables` and `reward_drop_table_ref`
+- authoring-only `drop_tables` may carry the same kill-quest fields including the optional require gate; canonicalization expands them onto the referencing spawn group / regen spawn together with EXP/gold/drop-vnum channels, then strips `drop_tables` and `reward_drop_table_ref`
 - a spawn group that already authors any kill-quest field may not also expand a table that carries kill-quest credit; that conflict fails closed before import
 - the credit lives beside, not inside, the EXP/gold/drop death-reward descriptor; empty combat rewards may still apply kill-quest credit
-- on the accepted killing hit, after death/clear and any independent EXP/gold/drop reward handling, the selected killer session attempts one `ApplyTransition` for `(reward_quest_ref, reward_quest_flag, reward_quest_from, reward_quest_to)`
+- on the accepted killing hit, after death/clear and any independent EXP/gold/drop reward handling, the selected killer session first evaluates the optional require gate against the live selected-character quest-state snapshot
+- when a require gate is present and the current flag value does not match `require_quest_from`, the kill-quest path stays silent: no `ApplyTransition`, no quest chat, and combat rewards are not rolled back
+- when the require gate is absent or matches, the selected killer session attempts one `ApplyTransition` for `(reward_quest_ref, reward_quest_flag, reward_quest_from, reward_quest_to)`
 - when the transition applies, the killer receives one self-only `CHAT_TYPE_INFO` frame with `reward_quest_text`
 - `current_value_mismatch` and other fail-closed transition results stay silent for this combat path: no quest chat is emitted and combat rewards are not rolled back
-- the narrow checked-in QA example remains `docs/examples/bootstrap-kill-quest-credit-bundle.json`; the combined NPC service fixture `docs/examples/bootstrap-npc-service-bundle.json` now also authors the same credit fields on `practice.qa_reward_mob` and closes that credit with `QuestHunter` / `quest:first_steps_kill_turnin`; `docs/examples/bootstrap-drop-table-authoring-bundle.json` shows the same kill-quest fields authored once on a shared `drop_tables` row and expanded into the referencing spawn group before runtime import
+- the narrow checked-in QA example remains `docs/examples/bootstrap-kill-quest-credit-bundle.json`; the combined NPC service fixture `docs/examples/bootstrap-npc-service-bundle.json` now gates `practice.qa_reward_mob` kill credit on `quest:first_steps.met_guide = 1` and closes that credit with `QuestHunter` / `quest:first_steps_kill_turnin`; `docs/examples/bootstrap-drop-table-authoring-bundle.json` shows the same kill-quest fields authored once on a shared `drop_tables` row and expanded into the referencing spawn group before runtime import
 
 ## Current non-goals
 

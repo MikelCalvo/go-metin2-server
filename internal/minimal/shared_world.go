@@ -134,11 +134,14 @@ type combatRetaliationTimer struct {
 }
 
 type staticActorKillQuestCredit struct {
-	QuestRef  string
-	QuestFlag string
-	QuestFrom uint32
-	QuestTo   uint32
-	Text      string
+	QuestRef         string
+	QuestFlag        string
+	QuestFrom        uint32
+	QuestTo          uint32
+	Text             string
+	RequireQuestRef  string
+	RequireQuestFlag string
+	RequireQuestFrom uint32
 }
 
 func (c staticActorKillQuestCredit) Empty() bool {
@@ -146,17 +149,41 @@ func (c staticActorKillQuestCredit) Empty() bool {
 		strings.TrimSpace(c.QuestFlag) == "" &&
 		c.QuestFrom == 0 &&
 		c.QuestTo == 0 &&
-		strings.TrimSpace(c.Text) == ""
+		strings.TrimSpace(c.Text) == "" &&
+		strings.TrimSpace(c.RequireQuestRef) == "" &&
+		strings.TrimSpace(c.RequireQuestFlag) == "" &&
+		c.RequireQuestFrom == 0
 }
 
 func (c staticActorKillQuestCredit) Clone() staticActorKillQuestCredit {
 	return staticActorKillQuestCredit{
-		QuestRef:  strings.TrimSpace(c.QuestRef),
-		QuestFlag: strings.TrimSpace(c.QuestFlag),
-		QuestFrom: c.QuestFrom,
-		QuestTo:   c.QuestTo,
-		Text:      strings.TrimSpace(c.Text),
+		QuestRef:         strings.TrimSpace(c.QuestRef),
+		QuestFlag:        strings.TrimSpace(c.QuestFlag),
+		QuestFrom:        c.QuestFrom,
+		QuestTo:          c.QuestTo,
+		Text:             strings.TrimSpace(c.Text),
+		RequireQuestRef:  strings.TrimSpace(c.RequireQuestRef),
+		RequireQuestFlag: strings.TrimSpace(c.RequireQuestFlag),
+		RequireQuestFrom: c.RequireQuestFrom,
 	}
+}
+
+func (c staticActorKillQuestCredit) HasRequireGate() bool {
+	credit := c.Clone()
+	return credit.RequireQuestRef != "" && credit.RequireQuestFlag != ""
+}
+
+func validStaticActorKillQuestRequireGate(credit staticActorKillQuestCredit) bool {
+	credit = credit.Clone()
+	hasRef := credit.RequireQuestRef != ""
+	hasFlag := credit.RequireQuestFlag != ""
+	if !hasRef && !hasFlag {
+		return credit.RequireQuestFrom == 0
+	}
+	if !hasRef || !hasFlag {
+		return false
+	}
+	return queststate.ValidQuestRef(credit.RequireQuestRef) && queststate.ValidFlagName(credit.RequireQuestFlag)
 }
 
 func validStaticActorKillQuestCredit(credit staticActorKillQuestCredit) bool {
@@ -169,7 +196,8 @@ func validStaticActorKillQuestCredit(credit staticActorKillQuestCredit) bool {
 		credit.QuestFrom != credit.QuestTo &&
 		credit.Text != "" &&
 		utf8.ValidString(credit.Text) &&
-		!strings.ContainsRune(credit.Text, '\x00')
+		!strings.ContainsRune(credit.Text, '\x00') &&
+		validStaticActorKillQuestRequireGate(credit)
 }
 
 type engagedSpawnGroupRetaliationArmTarget struct {
@@ -5174,6 +5202,9 @@ func (r *sharedWorldRegistry) markStaticActorSnapshotStateLocked(snapshot Static
 		snapshot.RewardQuestFrom = credit.QuestFrom
 		snapshot.RewardQuestTo = credit.QuestTo
 		snapshot.RewardQuestText = credit.Text
+		snapshot.RequireQuestRef = credit.RequireQuestRef
+		snapshot.RequireQuestFlag = credit.RequireQuestFlag
+		snapshot.RequireQuestFrom = credit.RequireQuestFrom
 	}
 	if r == nil || r.staticActorCombatHP == nil {
 		return snapshot

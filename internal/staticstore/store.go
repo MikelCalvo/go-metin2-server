@@ -40,6 +40,9 @@ type StaticActor struct {
 	RewardQuestFrom  uint32                         `json:"reward_quest_from,omitempty"`
 	RewardQuestTo    uint32                         `json:"reward_quest_to,omitempty"`
 	RewardQuestText  string                         `json:"reward_quest_text,omitempty"`
+	RequireQuestRef  string                         `json:"require_quest_ref,omitempty"`
+	RequireQuestFlag string                         `json:"require_quest_flag,omitempty"`
+	RequireQuestFrom uint32                         `json:"require_quest_from,omitempty"`
 }
 
 type Snapshot struct {
@@ -313,14 +316,32 @@ func hasKillQuestCredit(actor StaticActor) bool {
 		strings.TrimSpace(actor.RewardQuestFlag) != "" ||
 		actor.RewardQuestFrom != 0 ||
 		actor.RewardQuestTo != 0 ||
-		strings.TrimSpace(actor.RewardQuestText) != ""
+		strings.TrimSpace(actor.RewardQuestText) != "" ||
+		strings.TrimSpace(actor.RequireQuestRef) != "" ||
+		strings.TrimSpace(actor.RequireQuestFlag) != "" ||
+		actor.RequireQuestFrom != 0
+}
+
+func validKillQuestRequireGate(actor StaticActor) bool {
+	ref := strings.TrimSpace(actor.RequireQuestRef)
+	flag := strings.TrimSpace(actor.RequireQuestFlag)
+	hasRef := ref != ""
+	hasFlag := flag != ""
+	if !hasRef && !hasFlag {
+		return actor.RequireQuestFrom == 0
+	}
+	if !hasRef || !hasFlag {
+		return false
+	}
+	return queststate.ValidQuestRef(ref) && queststate.ValidFlagName(flag)
 }
 
 func validKillQuestCredit(actor StaticActor) bool {
 	ref := strings.TrimSpace(actor.RewardQuestRef)
 	flag := strings.TrimSpace(actor.RewardQuestFlag)
 	text := strings.TrimSpace(actor.RewardQuestText)
-	hasAny := ref != "" || flag != "" || actor.RewardQuestFrom != 0 || actor.RewardQuestTo != 0 || text != ""
+	hasAny := ref != "" || flag != "" || actor.RewardQuestFrom != 0 || actor.RewardQuestTo != 0 || text != "" ||
+		strings.TrimSpace(actor.RequireQuestRef) != "" || strings.TrimSpace(actor.RequireQuestFlag) != "" || actor.RequireQuestFrom != 0
 	if !hasAny {
 		return true
 	}
@@ -329,7 +350,8 @@ func validKillQuestCredit(actor StaticActor) bool {
 		actor.RewardQuestFrom != actor.RewardQuestTo &&
 		text != "" &&
 		utf8.ValidString(text) &&
-		!strings.ContainsRune(text, '\x00')
+		!strings.ContainsRune(text, '\x00') &&
+		validKillQuestRequireGate(actor)
 }
 
 func normalizeStaticActor(actor StaticActor) StaticActor {
@@ -341,6 +363,8 @@ func normalizeStaticActor(actor StaticActor) StaticActor {
 	actor.RewardQuestRef = strings.TrimSpace(actor.RewardQuestRef)
 	actor.RewardQuestFlag = strings.TrimSpace(actor.RewardQuestFlag)
 	actor.RewardQuestText = strings.TrimSpace(actor.RewardQuestText)
+	actor.RequireQuestRef = strings.TrimSpace(actor.RequireQuestRef)
+	actor.RequireQuestFlag = strings.TrimSpace(actor.RequireQuestFlag)
 	if actor.CombatCurrentHP != nil {
 		currentHP := *actor.CombatCurrentHP
 		actor.CombatCurrentHP = &currentHP

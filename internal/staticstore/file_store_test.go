@@ -625,6 +625,21 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	if err := store.Save(partialKillQuestCredit); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for partial spawn-group kill quest credit, got %v", err)
 	}
+	validGatedKillQuestCredit := Snapshot{StaticActors: []StaticActor{{EntityID: 30, Name: "GatedKillQuestMob", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.gated_kill_quest_mob", RewardQuestRef: "quest:first_steps", RewardQuestFlag: "killed_qa_mob", RewardQuestTo: 1, RewardQuestText: "Quest updated: first_steps.killed_qa_mob = 1.", RequireQuestRef: "quest:first_steps", RequireQuestFlag: "met_guide", RequireQuestFrom: 1}}}
+	if err := store.Save(validGatedKillQuestCredit); err != nil {
+		t.Fatalf("expected valid gated spawn-group kill quest credit to save, got %v", err)
+	}
+	loadedGatedKillQuestCredit, err := store.Load()
+	if err != nil {
+		t.Fatalf("load gated kill quest credit snapshot: %v", err)
+	}
+	if !reflect.DeepEqual(loadedGatedKillQuestCredit, validGatedKillQuestCredit) {
+		t.Fatalf("expected gated kill quest credit snapshot to round-trip, got %#v want %#v", loadedGatedKillQuestCredit, validGatedKillQuestCredit)
+	}
+	partialRequireGate := Snapshot{StaticActors: []StaticActor{{EntityID: 31, Name: "PartialRequireGateMob", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.partial_require_gate_mob", RewardQuestRef: "quest:first_steps", RewardQuestFlag: "killed_qa_mob", RewardQuestTo: 1, RewardQuestText: "Quest updated.", RequireQuestRef: "quest:first_steps"}}}
+	if err := store.Save(partialRequireGate); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for partial kill-quest require gate, got %v", err)
+	}
 	validMultiDropReward := Snapshot{StaticActors: []StaticActor{{EntityID: 22, Name: "RewardMultiDrop", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.reward_multi_drop", RewardDropVnums: []uint32{27001, 27002, 27003}}}}
 	if err := store.Save(validMultiDropReward); err != nil {
 		t.Fatalf("expected valid spawn-group reward descriptor with multiple distinct drop vnums to save, got %v", err)

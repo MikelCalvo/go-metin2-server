@@ -48,6 +48,9 @@ type SpawnGroup struct {
 	RewardQuestFrom    uint32   `json:"reward_quest_from,omitempty"`
 	RewardQuestTo      uint32   `json:"reward_quest_to,omitempty"`
 	RewardQuestText    string   `json:"reward_quest_text,omitempty"`
+	RequireQuestRef    string   `json:"require_quest_ref,omitempty"`
+	RequireQuestFlag   string   `json:"require_quest_flag,omitempty"`
+	RequireQuestFrom   uint32   `json:"require_quest_from,omitempty"`
 }
 
 type RegenSpawn struct {
@@ -68,6 +71,9 @@ type RegenSpawn struct {
 	RewardQuestFrom    uint32   `json:"reward_quest_from,omitempty"`
 	RewardQuestTo      uint32   `json:"reward_quest_to,omitempty"`
 	RewardQuestText    string   `json:"reward_quest_text,omitempty"`
+	RequireQuestRef    string   `json:"require_quest_ref,omitempty"`
+	RequireQuestFlag   string   `json:"require_quest_flag,omitempty"`
+	RequireQuestFrom   uint32   `json:"require_quest_from,omitempty"`
 }
 
 type DropTable struct {
@@ -80,6 +86,9 @@ type DropTable struct {
 	RewardQuestFrom  uint32   `json:"reward_quest_from,omitempty"`
 	RewardQuestTo    uint32   `json:"reward_quest_to,omitempty"`
 	RewardQuestText  string   `json:"reward_quest_text,omitempty"`
+	RequireQuestRef  string   `json:"require_quest_ref,omitempty"`
+	RequireQuestFlag string   `json:"require_quest_flag,omitempty"`
+	RequireQuestFrom uint32   `json:"require_quest_from,omitempty"`
 }
 
 type Bundle struct {
@@ -517,6 +526,9 @@ type SpawnGroupReferenceSummary struct {
 	RewardQuestFrom  uint32                  `json:"reward_quest_from,omitempty"`
 	RewardQuestTo    uint32                  `json:"reward_quest_to,omitempty"`
 	RewardQuestText  string                  `json:"reward_quest_text,omitempty"`
+	RequireQuestRef  string                  `json:"require_quest_ref,omitempty"`
+	RequireQuestFlag string                  `json:"require_quest_flag,omitempty"`
+	RequireQuestFrom uint32                  `json:"require_quest_from,omitempty"`
 }
 
 type RewardDropItemSummary struct {
@@ -820,6 +832,9 @@ func FromSnapshotsWithItems(staticActors staticstore.Snapshot, interactions inte
 				RewardQuestFrom:  actor.RewardQuestFrom,
 				RewardQuestTo:    actor.RewardQuestTo,
 				RewardQuestText:  actor.RewardQuestText,
+				RequireQuestRef:  actor.RequireQuestRef,
+				RequireQuestFlag: actor.RequireQuestFlag,
+				RequireQuestFrom: actor.RequireQuestFrom,
 			})
 			continue
 		}
@@ -1735,6 +1750,8 @@ func cloneSpawnGroupReferenceSummary(spawnGroup SpawnGroupReferenceSummary) Spaw
 	spawnGroup.RewardQuestRef = strings.TrimSpace(spawnGroup.RewardQuestRef)
 	spawnGroup.RewardQuestFlag = strings.TrimSpace(spawnGroup.RewardQuestFlag)
 	spawnGroup.RewardQuestText = strings.TrimSpace(spawnGroup.RewardQuestText)
+	spawnGroup.RequireQuestRef = strings.TrimSpace(spawnGroup.RequireQuestRef)
+	spawnGroup.RequireQuestFlag = strings.TrimSpace(spawnGroup.RequireQuestFlag)
 	return spawnGroup
 }
 
@@ -2742,6 +2759,9 @@ func Summarize(bundle Bundle) (Summary, error) {
 			RewardQuestFrom:  spawnGroup.RewardQuestFrom,
 			RewardQuestTo:    spawnGroup.RewardQuestTo,
 			RewardQuestText:  spawnGroup.RewardQuestText,
+			RequireQuestRef:  spawnGroup.RequireQuestRef,
+			RequireQuestFlag: spawnGroup.RequireQuestFlag,
+			RequireQuestFrom: spawnGroup.RequireQuestFrom,
 		})
 	}
 	summary.RewardDrops = rewardDropAggregateSummaries(rewardDropCountsByVnum, itemTemplatesByVnum)
@@ -3860,14 +3880,32 @@ func hasSpawnGroupKillQuestCredit(spawnGroup SpawnGroup) bool {
 		strings.TrimSpace(spawnGroup.RewardQuestFlag) != "" ||
 		spawnGroup.RewardQuestFrom != 0 ||
 		spawnGroup.RewardQuestTo != 0 ||
-		strings.TrimSpace(spawnGroup.RewardQuestText) != ""
+		strings.TrimSpace(spawnGroup.RewardQuestText) != "" ||
+		strings.TrimSpace(spawnGroup.RequireQuestRef) != "" ||
+		strings.TrimSpace(spawnGroup.RequireQuestFlag) != "" ||
+		spawnGroup.RequireQuestFrom != 0
+}
+
+func validSpawnGroupKillQuestRequireGate(spawnGroup SpawnGroup) bool {
+	ref := strings.TrimSpace(spawnGroup.RequireQuestRef)
+	flag := strings.TrimSpace(spawnGroup.RequireQuestFlag)
+	hasRef := ref != ""
+	hasFlag := flag != ""
+	if !hasRef && !hasFlag {
+		return spawnGroup.RequireQuestFrom == 0
+	}
+	if !hasRef || !hasFlag {
+		return false
+	}
+	return queststate.ValidQuestRef(ref) && queststate.ValidFlagName(flag)
 }
 
 func validSpawnGroupKillQuestCredit(spawnGroup SpawnGroup) bool {
 	ref := strings.TrimSpace(spawnGroup.RewardQuestRef)
 	flag := strings.TrimSpace(spawnGroup.RewardQuestFlag)
 	text := strings.TrimSpace(spawnGroup.RewardQuestText)
-	hasAny := ref != "" || flag != "" || spawnGroup.RewardQuestFrom != 0 || spawnGroup.RewardQuestTo != 0 || text != ""
+	hasAny := ref != "" || flag != "" || spawnGroup.RewardQuestFrom != 0 || spawnGroup.RewardQuestTo != 0 || text != "" ||
+		strings.TrimSpace(spawnGroup.RequireQuestRef) != "" || strings.TrimSpace(spawnGroup.RequireQuestFlag) != "" || spawnGroup.RequireQuestFrom != 0
 	if !hasAny {
 		return true
 	}
@@ -3875,7 +3913,8 @@ func validSpawnGroupKillQuestCredit(spawnGroup SpawnGroup) bool {
 		queststate.ValidFlagName(flag) &&
 		spawnGroup.RewardQuestFrom != spawnGroup.RewardQuestTo &&
 		text != "" &&
-		validAuthoredContentString(text)
+		validAuthoredContentString(text) &&
+		validSpawnGroupKillQuestRequireGate(spawnGroup)
 }
 
 func spawnGroupsFromRegenSpawns(regenSpawns []RegenSpawn) ([]SpawnGroup, bool) {
@@ -3904,6 +3943,9 @@ func spawnGroupsFromRegenSpawns(regenSpawns []RegenSpawn) ([]SpawnGroup, bool) {
 			RewardQuestFrom:    regenSpawn.RewardQuestFrom,
 			RewardQuestTo:      regenSpawn.RewardQuestTo,
 			RewardQuestText:    regenSpawn.RewardQuestText,
+			RequireQuestRef:    regenSpawn.RequireQuestRef,
+			RequireQuestFlag:   regenSpawn.RequireQuestFlag,
+			RequireQuestFrom:   regenSpawn.RequireQuestFrom,
 		})
 	}
 	return spawnGroups, true
@@ -3964,6 +4006,9 @@ func normalizeSpawnGroups(spawnGroups []SpawnGroup, profileSnapshots []worldrunt
 						spawnGroup.RewardQuestFrom = table.RewardQuestFrom
 						spawnGroup.RewardQuestTo = table.RewardQuestTo
 						spawnGroup.RewardQuestText = table.RewardQuestText
+						spawnGroup.RequireQuestRef = table.RequireQuestRef
+						spawnGroup.RequireQuestFlag = table.RequireQuestFlag
+						spawnGroup.RequireQuestFrom = table.RequireQuestFrom
 					}
 					spawnGroup.RewardDropTableRef = ""
 				}
@@ -3984,6 +4029,8 @@ func normalizeSpawnGroups(spawnGroups []SpawnGroup, profileSnapshots []worldrunt
 		spawnGroup.RewardQuestRef = strings.TrimSpace(spawnGroup.RewardQuestRef)
 		spawnGroup.RewardQuestFlag = strings.TrimSpace(spawnGroup.RewardQuestFlag)
 		spawnGroup.RewardQuestText = strings.TrimSpace(spawnGroup.RewardQuestText)
+		spawnGroup.RequireQuestRef = strings.TrimSpace(spawnGroup.RequireQuestRef)
+		spawnGroup.RequireQuestFlag = strings.TrimSpace(spawnGroup.RequireQuestFlag)
 		normalized[i] = spawnGroup
 	}
 	return normalized
@@ -4017,6 +4064,9 @@ func normalizeDropTables(dropTables []DropTable) []DropTable {
 			RewardQuestFrom:  table.RewardQuestFrom,
 			RewardQuestTo:    table.RewardQuestTo,
 			RewardQuestText:  strings.TrimSpace(table.RewardQuestText),
+			RequireQuestRef:  strings.TrimSpace(table.RequireQuestRef),
+			RequireQuestFlag: strings.TrimSpace(table.RequireQuestFlag),
+			RequireQuestFrom: table.RequireQuestFrom,
 		}
 	}
 	sort.Slice(normalized, func(i int, j int) bool {
@@ -4051,14 +4101,32 @@ func hasDropTableKillQuestCredit(table DropTable) bool {
 		strings.TrimSpace(table.RewardQuestFlag) != "" ||
 		table.RewardQuestFrom != 0 ||
 		table.RewardQuestTo != 0 ||
-		strings.TrimSpace(table.RewardQuestText) != ""
+		strings.TrimSpace(table.RewardQuestText) != "" ||
+		strings.TrimSpace(table.RequireQuestRef) != "" ||
+		strings.TrimSpace(table.RequireQuestFlag) != "" ||
+		table.RequireQuestFrom != 0
+}
+
+func validDropTableKillQuestRequireGate(table DropTable) bool {
+	ref := strings.TrimSpace(table.RequireQuestRef)
+	flag := strings.TrimSpace(table.RequireQuestFlag)
+	hasRef := ref != ""
+	hasFlag := flag != ""
+	if !hasRef && !hasFlag {
+		return table.RequireQuestFrom == 0
+	}
+	if !hasRef || !hasFlag {
+		return false
+	}
+	return queststate.ValidQuestRef(ref) && queststate.ValidFlagName(flag)
 }
 
 func validDropTableKillQuestCredit(table DropTable) bool {
 	ref := strings.TrimSpace(table.RewardQuestRef)
 	flag := strings.TrimSpace(table.RewardQuestFlag)
 	text := strings.TrimSpace(table.RewardQuestText)
-	hasAny := ref != "" || flag != "" || table.RewardQuestFrom != 0 || table.RewardQuestTo != 0 || text != ""
+	hasAny := ref != "" || flag != "" || table.RewardQuestFrom != 0 || table.RewardQuestTo != 0 || text != "" ||
+		strings.TrimSpace(table.RequireQuestRef) != "" || strings.TrimSpace(table.RequireQuestFlag) != "" || table.RequireQuestFrom != 0
 	if !hasAny {
 		return true
 	}
@@ -4066,7 +4134,8 @@ func validDropTableKillQuestCredit(table DropTable) bool {
 		queststate.ValidFlagName(flag) &&
 		table.RewardQuestFrom != table.RewardQuestTo &&
 		text != "" &&
-		validAuthoredContentString(text)
+		validAuthoredContentString(text) &&
+		validDropTableKillQuestRequireGate(table)
 }
 
 func allDropTablesAreReferenced(dropTables []DropTable, spawnGroups []SpawnGroup) bool {
