@@ -8301,6 +8301,125 @@ func TestLocalCharacterPointStateExportEndpointReportsExporterFailure(t *testing
 	}
 }
 
+func TestLocalCharacterItemStateQuarantineEndpointReturnsCanonicalJSON(t *testing.T) {
+	body, err := json.Marshal(accountstore.CharacterItemStateExport{
+		MigrationVersion: accountstore.CharacterItemStateMigrationVersion,
+		MigrationName:    accountstore.CharacterItemStateMigrationName,
+		InventoryItems: []accountstore.CharacterInventoryItemRow{
+			{ID: 3001, CharacterID: 22, Slot: 0, Vnum: 50011, Count: 1},
+			{ID: 1002, CharacterID: 11, Slot: 9, Vnum: 27002, Count: 2},
+			{ID: 1001, CharacterID: 11, Slot: 5, Vnum: 27001, Count: 3, Locked: true},
+		},
+		EquipmentItems: []accountstore.CharacterEquipmentItemRow{
+			{ID: 2001, CharacterID: 11, EquipSlot: "weapon", Vnum: 19, Count: 1},
+			{ID: 2002, CharacterID: 11, EquipSlot: "body", Vnum: 12200, Count: 1, Locked: true},
+		},
+		Quickslots: []accountstore.CharacterQuickslotRow{
+			{CharacterID: 22, Position: 1, Type: 3, Slot: 7},
+			{CharacterID: 11, Position: 4, Type: 2, Slot: 9},
+			{CharacterID: 11, Position: 2, Type: 1, Slot: 5},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal quarantine body: %v", err)
+	}
+
+	mux := RegisterLocalCharacterItemStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/exports/character-item-state/quarantine", bytes.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	responseBody := rec.Body.String()
+	for _, want := range []string{
+		`"character_count":2`,
+		`"inventory_item_count":3`,
+		`"equipment_item_count":2`,
+		`"quickslot_count":3`,
+		`"character_ids":[11,22]`,
+		`"migration_version":3`,
+		`"character_id":11`,
+		`"character_id":22`,
+		`"equip_slot":"body"`,
+	} {
+		if !strings.Contains(responseBody, want) {
+			t.Fatalf("expected quarantine response to contain %s, got %s", want, responseBody)
+		}
+	}
+	if strings.Contains(responseBody, "CREATE TABLE") || strings.Contains(responseBody, "postgres://") {
+		t.Fatalf("quarantine endpoint must not expose SQL or DSNs, got %s", responseBody)
+	}
+}
+
+func TestLocalCharacterItemStateQuarantineEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	mux := RegisterLocalCharacterItemStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/exports/character-item-state/quarantine", strings.NewReader(`{"migration_version":3,"migration_name":"character_item_state","inventory_items":[],"equipment_items":[],"quickslots":[]}`))
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+}
+
+func TestLocalCharacterItemStateQuarantineEndpointRejectsWrongMethod(t *testing.T) {
+	mux := RegisterLocalCharacterItemStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodGet, "/local/account-store/exports/character-item-state/quarantine", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+}
+
+func TestLocalCharacterItemStateQuarantineEndpointRejectsInvalidExport(t *testing.T) {
+	mux := RegisterLocalCharacterItemStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/exports/character-item-state/quarantine", strings.NewReader(`{"migration_version":11,"migration_name":"character_item_state","inventory_items":[],"equipment_items":[],"quickslots":[]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+}
+
+func TestLocalCharacterItemStateQuarantineEndpointRejectsMalformedJSON(t *testing.T) {
+	mux := RegisterLocalCharacterItemStateQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/exports/character-item-state/quarantine", strings.NewReader(`{"migration_version":3`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestNewPprofMuxDoesNotExposeLocalCharacterItemStateQuarantineByDefault(t *testing.T) {
+	mux := NewPprofMux("authd")
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/exports/character-item-state/quarantine", strings.NewReader(`{"migration_version":3,"migration_name":"character_item_state","inventory_items":[],"equipment_items":[],"quickslots":[]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
 func TestLocalCharacterPointStateQuarantineEndpointReturnsCanonicalJSON(t *testing.T) {
 	rows := make([]accountstore.CharacterPointRow, 0, 510)
 	for index := 0; index < 255; index++ {
