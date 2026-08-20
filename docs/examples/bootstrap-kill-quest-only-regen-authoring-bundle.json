@@ -1,0 +1,36 @@
+{
+  "regen_spawns": [
+    {
+      "ref": "practice.qa_kill_quest_only_regen_mob",
+      "name": "QAKillQuestOnlyRegenMob",
+      "map_index": 1,
+      "x": 469775,
+      "y": 964200,
+      "race_num": 20350,
+      "count": 1,
+      "reward_drop_table_ref": "loot.qa_kill_quest_only_regen"
+    }
+  ],
+  "drop_tables": [
+    {
+      "ref": "loot.qa_kill_quest_only_regen",
+      "reward_quest_ref": "quest:first_steps",
+      "reward_quest_flag": "killed_qa_mob",
+      "reward_quest_to": 1,
+      "reward_quest_text": "Quest updated: first_steps.killed_qa_mob = 1.",
+      "require_quest_ref": "quest:first_steps",
+      "require_quest_flag": "met_guide",
+      "require_quest_from": 1
+    }
+  ],
+  "interaction_definitions": [
+    {
+      "kind": "quest_flag",
+      "ref": "quest:first_steps",
+      "text": "Quest updated: first_steps.met_guide = 1.",
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "met_guide",
+      "quest_to": 1
+    }
+  ]
+}

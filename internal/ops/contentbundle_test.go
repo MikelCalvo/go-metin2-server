@@ -654,6 +654,64 @@ func TestLocalContentBundleValidateEndpointExpandsKillQuestOnlyDropTableAuthorin
 	}
 }
 
+func TestLocalContentBundleValidateEndpointExpandsKillQuestOnlyRegenAuthoringExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate ops contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-kill-quest-only-regen-authoring-bundle.json"))
+	if err != nil {
+		t.Fatalf("read kill-quest-only regen authoring example bundle: %v", err)
+	}
+	mux := RegisterLocalContentBundleValidateEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/validate", bytes.NewReader(raw))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d for kill-quest-only regen authoring example validation, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte(`"regen_spawns"`)) || bytes.Contains(rec.Body.Bytes(), []byte(`"drop_tables"`)) || bytes.Contains(rec.Body.Bytes(), []byte(`"reward_drop_table_ref"`)) {
+		t.Fatalf("expected validation response to strip authoring-only regen/drop-table fields, got %s", rec.Body.String())
+	}
+	var got contentbundle.Bundle
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode kill-quest-only regen validation response: %v", err)
+	}
+	wantSpawn := contentbundle.SpawnGroup{
+		Ref:              "practice.qa_kill_quest_only_regen_mob",
+		Name:             "QAKillQuestOnlyRegenMob",
+		MapIndex:         1,
+		X:                469775,
+		Y:                964200,
+		RaceNum:          20350,
+		CombatProfile:    "practice_mob",
+		RewardQuestRef:   "quest:first_steps",
+		RewardQuestFlag:  "killed_qa_mob",
+		RewardQuestTo:    1,
+		RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+		RequireQuestRef:  "quest:first_steps",
+		RequireQuestFlag: "met_guide",
+		RequireQuestFrom: 1,
+	}
+	if len(got.SpawnGroups) != 1 || !reflect.DeepEqual(got.SpawnGroups[0], wantSpawn) {
+		t.Fatalf("expected validation response to expand kill-quest-only regen authoring plus require gate without combat channels, got %+v", got.SpawnGroups)
+	}
+	if len(got.ItemTemplates) != 0 {
+		t.Fatalf("expected kill-quest-only regen authoring example to carry no item templates, got %+v", got.ItemTemplates)
+	}
+	if len(got.InteractionDefinitions) != 1 ||
+		got.InteractionDefinitions[0].Kind != interactionstore.KindQuestFlag ||
+		got.InteractionDefinitions[0].QuestRef != "quest:first_steps" ||
+		got.InteractionDefinitions[0].QuestFlag != "met_guide" ||
+		got.InteractionDefinitions[0].QuestTo != 1 {
+		t.Fatalf("expected validation response to retain the met_guide quest_flag writer, got %+v", got.InteractionDefinitions)
+	}
+}
+
 func TestLocalContentBundleValidateEndpointExpandsRegenAuthoringExample(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {

@@ -35,5 +35,6 @@ Focused coverage:
 
 ## Follow-up options
 
-1. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
-2. Optionally migrate selected content-bundle / NPC gameplay tests onto hermetic MemoryStores once callers want less temp-dir coupling.
+1. ~~Add a matching one-count `regen_spawns` kill-quest-only authoring fixture beside this spawn-group example.~~ Done in `2026-08-20-kill-quest-only-regen-authoring-example.md`.
+2. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
+3. Optionally migrate selected content-bundle / NPC gameplay tests onto hermetic MemoryStores once callers want less temp-dir coupling.
