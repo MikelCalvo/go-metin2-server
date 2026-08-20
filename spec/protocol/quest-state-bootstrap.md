@@ -116,6 +116,7 @@ The first authored NPC/content trigger is `interaction_kind = "quest_flag"` on t
   "quest_flag": "met_guide",
   "quest_from": 0,
   "quest_to": 1,
+  "reward_experience": 0,
   "reward_gold": 0,
   "reward_item_vnum": 0,
   "reward_item_count": 0
@@ -131,10 +132,11 @@ Owned rules:
 - `quest_flag` must satisfy the lower-snake flag-name rule.
 - `quest_from` defaults to `0` when omitted and is the compare-and-set expected value.
 - `quest_to` must differ from `quest_from`; `quest_to = 0` clears the flag through the same compare-and-set primitive when the current value matches `quest_from`.
+- optional `reward_experience` may be omitted or `0`; when present and non-zero it must fit the bootstrap experience `PLAYER_POINT_CHANGE` carrier (`<= 1<<31-1`) and is granted only after the transition applies.
 - optional `reward_gold` may be omitted or `0`; when present and non-zero it must fit the bootstrap gold `PLAYER_POINT_CHANGE` carrier (`<= 1<<31-1`) and is granted only after the transition applies.
 - optional `reward_item_vnum` / `reward_item_count` may be omitted or zeroed together; when `reward_item_vnum != 0`, `reward_item_count` must be in `1..255`, content bundles must include a matching item template, and the count must fit that template (`<= max_count`; non-stackable templates require `count == 1`).
 - `title`, merchant `catalog`, warp `map_index`, `x`, and `y` are not valid for `quest_flag` definitions.
-- non-`quest_flag` interaction kinds must keep `reward_gold` and reward-item fields absent/`0`.
+- non-`quest_flag` interaction kinds must keep `reward_experience`, `reward_gold`, and reward-item fields absent/`0`.
 
 Runtime behavior:
 
@@ -142,14 +144,15 @@ Runtime behavior:
 2. the actor's metadata must resolve to a valid `quest_flag` definition,
 3. `gamed` applies the transition to the selected character name through the same quest-state store primitive used by `/local/quest-state/transition`,
 4. if and only if the transition applies, the client receives one self-only `GC_CHAT` with `type = INFO`, `vid = 0`, `empire = 0`, and `message = definition.text`,
-5. when that successful transition also authors `reward_gold > 0`, the same response appends one self-only `PLAYER_POINT_CHANGE` gold frame for the granted amount and persists the updated selected-character gold into the account snapshot; overflow / unavailable selected character / account-save failure fail closed (no frames; live gold and quest transition are rolled back when needed),
-6. when that successful transition also authors `reward_item_vnum > 0`, the same response appends the ordinary carried-inventory SET/UPDATE frames for the granted placement (after any gold frame) and persists the updated selected-character inventory into the account snapshot; missing template / AntiGet / inventory-full / account-save failure fail closed with the same rollback posture as gold overflow,
-7. when the compare-and-set result is `current_value_mismatch`, the quest-state snapshot remains unchanged, no gold/item is granted, and the client now receives one self-only `GC_CHAT` with `type = INFO`, `vid = 0`, `empire = 0`, and `message = "Quest requirements are not met."`,
-8. invalid transition definitions, store errors, unsupported content, and other non-CAS failures still fail closed with no frames and no peer fanout.
+5. when that successful transition also authors `reward_gold > 0`, the same response appends one self-only `PLAYER_POINT_CHANGE` gold frame for the granted amount and persists the updated selected-character gold into the account snapshot; overflow / unavailable selected character / account-save failure fail closed (no frames; live gold/experience/inventory and quest transition are rolled back when needed),
+6. when that successful transition also authors `reward_experience > 0`, the same response appends one self-only `PLAYER_POINT_CHANGE` experience frame for the granted amount (after any gold frame) and persists the updated selected-character experience point into the account snapshot; overflow / account-save failure fail closed with the same rollback posture as gold,
+7. when that successful transition also authors `reward_item_vnum > 0`, the same response appends the ordinary carried-inventory SET/UPDATE frames for the granted placement (after any gold/experience frames) and persists the updated selected-character inventory into the account snapshot; missing template / AntiGet / inventory-full / account-save failure fail closed with the same rollback posture as gold overflow,
+8. when the compare-and-set result is `current_value_mismatch`, the quest-state snapshot remains unchanged, no gold/experience/item is granted, and the client now receives one self-only `GC_CHAT` with `type = INFO`, `vid = 0`, `empire = 0`, and `message = "Quest requirements are not met."`,
+9. invalid transition definitions, store errors, unsupported content, and other non-CAS failures still fail closed with no frames and no peer fanout.
 
-Loopback interaction visibility now mirrors that player-facing branch without mutation: `GET /local/interaction-visibility` and `GET /local/interaction-visibility/{character}` preview a `quest_flag` actor by dry-running the selected character's compare-and-set transition. A transition that would apply previews `definition.text`, optionally annotated with `[reward_gold N]` and/or `[reward_item <name|vnum> x<count>]` when those rewards are authored; a `current_value_mismatch` previews `Quest requirements are not met.`. Other dry-run failures surface as a fail-closed `resolution_failure` marker rather than mutating the quest-state store.
+Loopback interaction visibility now mirrors that player-facing branch without mutation: `GET /local/interaction-visibility` and `GET /local/interaction-visibility/{character}` preview a `quest_flag` actor by dry-running the selected character's compare-and-set transition. A transition that would apply previews `definition.text`, optionally annotated with `[reward_gold N]`, `[reward_experience N]`, and/or `[reward_item <name|vnum> x<count>]` when those rewards are authored; a `current_value_mismatch` previews `Quest requirements are not met.`. Other dry-run failures surface as a fail-closed `resolution_failure` marker rather than mutating the quest-state store.
 
-This is still a bootstrap quest-state trigger, not a client quest UI, branching dialog tree, or script runtime. The optional gold and carried-item grants reuse already-owned economy / inventory packet paths so the kill -> turn-in loop can deliver client-visible payoffs without inventing quest mail, ground-drop turn-in rewards, or a second reward runtime. The mismatch acknowledgement and its loopback preview exist only so authored-state failures are not silent; they do not expose a quest window, objective tracker, or alternate branch.
+This is still a bootstrap quest-state trigger, not a client quest UI, branching dialog tree, or script runtime. The optional experience, gold, and carried-item grants reuse already-owned economy / inventory packet paths so the kill -> turn-in loop can deliver client-visible payoffs without inventing quest mail, ground-drop turn-in rewards, or a second reward runtime. The mismatch acknowledgement and its loopback preview exist only so authored-state failures are not silent; they do not expose a quest window, objective tracker, or alternate branch.
 
 ## Optional quest gates on non-mutating interactions
 

@@ -236,12 +236,16 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if !ok {
 		t.Fatal("expected currency snapshot before QuestHunter turn-in")
 	}
+	beforeTurnInPoints, ok := runtime.PointsSnapshot(hero.Name)
+	if !ok {
+		t.Fatal("expected points snapshot before QuestHunter turn-in")
+	}
 	turnInOut, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: hunterVID})))
 	if err != nil {
 		t.Fatalf("unexpected QuestHunter turn-in interaction error: %v", err)
 	}
-	if len(turnInOut) != 3 {
-		t.Fatalf("expected chat + gold point-change + item frames for QuestHunter turn-in, got %d", len(turnInOut))
+	if len(turnInOut) != 4 {
+		t.Fatalf("expected chat + gold + experience + item frames for QuestHunter turn-in, got %d", len(turnInOut))
 	}
 	turnInChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, turnInOut[0]))
 	if err != nil || turnInChat.Message != "Quest updated: first_steps.killed_qa_mob = 0." {
@@ -255,7 +259,15 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if turnInGold.VID != hero.VID || turnInGold.Type != bootstrapGoldPointType || turnInGold.Amount != 100 || uint64(turnInGold.Value) != wantGoldAfter {
 		t.Fatalf("unexpected QuestHunter turn-in gold point change: %+v want value=%d before=%d", turnInGold, wantGoldAfter, beforeTurnInCurrency.Gold)
 	}
-	itemSet, err := itemproto.DecodeSet(decodeSingleFrame(t, turnInOut[2]))
+	wantExperienceAfter := beforeTurnInPoints.Points[bootstrapExperiencePointType] + 50
+	turnInExperience, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, turnInOut[2]))
+	if err != nil {
+		t.Fatalf("decode QuestHunter turn-in experience point change: %v", err)
+	}
+	if turnInExperience.VID != hero.VID || turnInExperience.Type != bootstrapExperiencePointType || turnInExperience.Amount != 50 || turnInExperience.Value != wantExperienceAfter {
+		t.Fatalf("unexpected QuestHunter turn-in experience point change: %+v want value=%d before=%d", turnInExperience, wantExperienceAfter, beforeTurnInPoints.Points[bootstrapExperiencePointType])
+	}
+	itemSet, err := itemproto.DecodeSet(decodeSingleFrame(t, turnInOut[3]))
 	if err != nil {
 		t.Fatalf("decode QuestHunter turn-in item set: %v", err)
 	}
@@ -265,6 +277,10 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	currencySnapshot, ok := runtime.CurrencySnapshot(hero.Name)
 	if !ok || currencySnapshot.Gold != wantGoldAfter {
 		t.Fatalf("expected live gold %d after QuestHunter turn-in, got ok=%v snapshot=%+v", wantGoldAfter, ok, currencySnapshot)
+	}
+	pointsSnapshot, ok := runtime.PointsSnapshot(hero.Name)
+	if !ok || pointsSnapshot.Points[bootstrapExperiencePointType] != wantExperienceAfter {
+		t.Fatalf("expected live experience %d after QuestHunter turn-in, got ok=%v snapshot=%+v", wantExperienceAfter, ok, pointsSnapshot)
 	}
 	inventorySnapshot, ok := runtime.InventorySnapshot(hero.Name)
 	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].Vnum != 27001 || inventorySnapshot.Inventory[0].Count != 1 || inventorySnapshot.Inventory[0].Slot != 0 {
@@ -276,6 +292,9 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	}
 	if account.Characters[0].Gold != wantGoldAfter {
 		t.Fatalf("expected persisted gold %d after QuestHunter turn-in, got %d", wantGoldAfter, account.Characters[0].Gold)
+	}
+	if account.Characters[0].Points[bootstrapExperiencePointType] != wantExperienceAfter {
+		t.Fatalf("expected persisted experience %d after QuestHunter turn-in, got %d", wantExperienceAfter, account.Characters[0].Points[bootstrapExperiencePointType])
 	}
 	if len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0].Vnum != 27001 || account.Characters[0].Inventory[0].Count != 1 {
 		t.Fatalf("expected persisted inventory grant after QuestHunter turn-in, got %+v", account.Characters[0].Inventory)

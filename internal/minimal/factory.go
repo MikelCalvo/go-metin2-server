@@ -5955,6 +5955,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if rewardGold > interactionstore.QuestFlagRewardGoldMax {
 							return gameflow.InteractionResult{Accepted: false}
 						}
+						rewardExperience := resolution.Definition.RewardExperience
+						if rewardExperience > interactionstore.QuestFlagRewardExperienceMax {
+							return gameflow.InteractionResult{Accepted: false}
+						}
 						rewardItemVnum := resolution.Definition.RewardItemVnum
 						rewardItemCount := resolution.Definition.RewardItemCount
 						var rewardItemTemplate itemcatalog.Template
@@ -5968,6 +5972,16 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						previousSelected := selected
 						if rewardGold != 0 {
 							if previousSelected.Gold > uint64(math.MaxInt32) || previousSelected.Gold > uint64(math.MaxInt32)-rewardGold {
+								return gameflow.InteractionResult{Accepted: false}
+							}
+						}
+						if rewardExperience != 0 {
+							experienceBefore := previousSelected.Points[bootstrapExperiencePointType]
+							if rewardExperience > uint64(math.MaxInt32) {
+								return gameflow.InteractionResult{Accepted: false}
+							}
+							nextExperience := int64(experienceBefore) + int64(rewardExperience)
+							if nextExperience > math.MaxInt32 {
 								return gameflow.InteractionResult{Accepted: false}
 							}
 						}
@@ -5993,14 +6007,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							refreshLiveCharacterRegistration()
 							_, _ = runtime.ApplyQuestStateTransition(queststate.Transition{Character: previousSelected.Name, QuestRef: resolution.Definition.QuestRef, Flag: resolution.Definition.QuestFlag, From: resolution.Definition.QuestTo, To: resolution.Definition.QuestFrom})
 						}
-						var goldReward player.DeathRewardResult
-						if rewardGold != 0 {
-							reward, rewardOK := selectedPlayer.ApplyStaticActorDeathReward(worldruntime.StaticActorDeathReward{Gold: rewardGold})
-							if !rewardOK || reward.GoldAfter > uint64(math.MaxInt32) || reward.GoldAfter < reward.GoldBefore || reward.Gold != rewardGold {
+						var scalarReward player.DeathRewardResult
+						if rewardGold != 0 || rewardExperience != 0 {
+							reward, rewardOK := selectedPlayer.ApplyStaticActorDeathReward(worldruntime.StaticActorDeathReward{Experience: rewardExperience, Gold: rewardGold})
+							if !rewardOK || reward.GoldAfter > uint64(math.MaxInt32) || reward.GoldAfter < reward.GoldBefore || reward.Gold != rewardGold || reward.Experience != rewardExperience || reward.ExperienceAfter < reward.ExperienceBefore {
 								rollbackQuestFlagRewards()
 								return gameflow.InteractionResult{Accepted: false}
 							}
-							goldReward = reward
+							scalarReward = reward
 						}
 						var itemFrames [][]byte
 						if rewardItemVnum != 0 {
@@ -6016,11 +6030,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							}
 							itemFrames = encodedItemFrames
 						}
-						if rewardGold != 0 || rewardItemVnum != 0 {
+						if rewardGold != 0 || rewardExperience != 0 || rewardItemVnum != 0 {
 							updatedSelected := selectedPlayer.LiveCharacter()
 							persistedSelected := selectedPlayer.PersistedSnapshot()
 							persistedSelected.Gold = updatedSelected.Gold
 							persistedSelected.Inventory = updatedSelected.Inventory
+							persistedSelected.Points[bootstrapExperiencePointType] = updatedSelected.Points[bootstrapExperiencePointType]
 							updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, persistedSelected)
 							if !ok || !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
 								rollbackQuestFlagRewards()
@@ -6036,8 +6051,16 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 								frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
 									VID:    previousSelected.VID,
 									Type:   bootstrapGoldPointType,
-									Amount: int32(goldReward.Gold),
-									Value:  int32(goldReward.GoldAfter),
+									Amount: int32(scalarReward.Gold),
+									Value:  int32(scalarReward.GoldAfter),
+								}))
+							}
+							if rewardExperience != 0 {
+								frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+									VID:    previousSelected.VID,
+									Type:   bootstrapExperiencePointType,
+									Amount: int32(scalarReward.Experience),
+									Value:  scalarReward.ExperienceAfter,
 								}))
 							}
 							frames = append(frames, itemFrames...)
@@ -9995,6 +10018,9 @@ func questFlagRewardPreview(text string, definition InteractionDefinition, itemT
 	preview := text
 	if definition.RewardGold != 0 {
 		preview = fmt.Sprintf("%s [reward_gold %d]", preview, definition.RewardGold)
+	}
+	if definition.RewardExperience != 0 {
+		preview = fmt.Sprintf("%s [reward_experience %d]", preview, definition.RewardExperience)
 	}
 	if definition.RewardItemVnum == 0 {
 		return preview

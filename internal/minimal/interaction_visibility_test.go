@@ -356,16 +356,17 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardGoldPreview(t *te
 	peer := peerVisibilityCharacter("PeerOne", 0x01030121, 0x02040121, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one-reward-gold", 0x15151515, peer)
 	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
-		Kind:            interactionstore.KindQuestFlag,
-		Ref:             "quest:first_steps_kill_turnin",
-		Text:            "Quest updated: first_steps.killed_qa_mob = 0.",
-		QuestRef:        "quest:first_steps",
-		QuestFlag:       "killed_qa_mob",
-		QuestFrom:       1,
-		QuestTo:         0,
-		RewardGold:      100,
-		RewardItemVnum:  27001,
-		RewardItemCount: 1,
+		Kind:             interactionstore.KindQuestFlag,
+		Ref:              "quest:first_steps_kill_turnin",
+		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
+		QuestRef:         "quest:first_steps",
+		QuestFlag:        "killed_qa_mob",
+		QuestFrom:        1,
+		QuestTo:          0,
+		RewardExperience: 50,
+		RewardGold:       100,
+		RewardItemVnum:   27001,
+		RewardItemCount:  1,
 	}})
 	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
@@ -398,7 +399,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardGoldPreview(t *te
 		t.Fatalf("expected one visible quest-flag reward-gold interactable, got %+v", snapshots)
 	}
 	entry := snapshots[0].VisibleInteractableStaticActors[0]
-	if entry.Name != "QuestHunter" || entry.Preview != "Quest updated: first_steps.killed_qa_mob = 0. [reward_gold 100] [reward_item Small Red Potion x1]" || entry.ResolutionFailure != "" {
+	if entry.Name != "QuestHunter" || entry.Preview != "Quest updated: first_steps.killed_qa_mob = 0. [reward_gold 100] [reward_experience 50] [reward_item Small Red Potion x1]" || entry.ResolutionFailure != "" {
 		t.Fatalf("unexpected quest-flag reward-gold interaction visibility entry: %+v", entry)
 	}
 }

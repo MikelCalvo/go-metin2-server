@@ -339,16 +339,17 @@ type QuestStateDelta struct {
 }
 
 type QuestFlagTriggerSummary struct {
-	Kind            string `json:"kind"`
-	Ref             string `json:"ref"`
-	Text            string `json:"text"`
-	QuestRef        string `json:"quest_ref"`
-	QuestFlag       string `json:"quest_flag"`
-	QuestFrom       uint32 `json:"quest_from,omitempty"`
-	QuestTo         uint32 `json:"quest_to,omitempty"`
-	RewardGold      uint64 `json:"reward_gold,omitempty"`
-	RewardItemVnum  uint32 `json:"reward_item_vnum,omitempty"`
-	RewardItemCount uint16 `json:"reward_item_count,omitempty"`
+	Kind             string `json:"kind"`
+	Ref              string `json:"ref"`
+	Text             string `json:"text"`
+	QuestRef         string `json:"quest_ref"`
+	QuestFlag        string `json:"quest_flag"`
+	QuestFrom        uint32 `json:"quest_from,omitempty"`
+	QuestTo          uint32 `json:"quest_to,omitempty"`
+	RewardExperience uint64 `json:"reward_experience,omitempty"`
+	RewardGold       uint64 `json:"reward_gold,omitempty"`
+	RewardItemVnum   uint32 `json:"reward_item_vnum,omitempty"`
+	RewardItemCount  uint16 `json:"reward_item_count,omitempty"`
 }
 
 type QuestFlagTriggerDelta struct {
@@ -731,19 +732,20 @@ type ShopCatalogEntrySummary struct {
 }
 
 type QuestFlagRouteSummary struct {
-	ActorName       string `json:"actor_name"`
-	SourceMapIndex  uint32 `json:"source_map_index"`
-	SourceX         int32  `json:"source_x"`
-	SourceY         int32  `json:"source_y"`
-	Ref             string `json:"ref"`
-	Text            string `json:"text"`
-	QuestRef        string `json:"quest_ref"`
-	QuestFlag       string `json:"quest_flag"`
-	QuestFrom       uint32 `json:"quest_from,omitempty"`
-	QuestTo         uint32 `json:"quest_to,omitempty"`
-	RewardGold      uint64 `json:"reward_gold,omitempty"`
-	RewardItemVnum  uint32 `json:"reward_item_vnum,omitempty"`
-	RewardItemCount uint16 `json:"reward_item_count,omitempty"`
+	ActorName        string `json:"actor_name"`
+	SourceMapIndex   uint32 `json:"source_map_index"`
+	SourceX          int32  `json:"source_x"`
+	SourceY          int32  `json:"source_y"`
+	Ref              string `json:"ref"`
+	Text             string `json:"text"`
+	QuestRef         string `json:"quest_ref"`
+	QuestFlag        string `json:"quest_flag"`
+	QuestFrom        uint32 `json:"quest_from,omitempty"`
+	QuestTo          uint32 `json:"quest_to,omitempty"`
+	RewardExperience uint64 `json:"reward_experience,omitempty"`
+	RewardGold       uint64 `json:"reward_gold,omitempty"`
+	RewardItemVnum   uint32 `json:"reward_item_vnum,omitempty"`
+	RewardItemCount  uint16 `json:"reward_item_count,omitempty"`
 }
 
 type ShopRouteSummary struct {
@@ -2957,16 +2959,17 @@ func cloneQuestFlagTriggerDelta(delta QuestFlagTriggerDelta) QuestFlagTriggerDel
 func questFlagTriggerSummary(definition interactionstore.Definition) QuestFlagTriggerSummary {
 	definition = interactionstore.NormalizeDefinition(definition)
 	return QuestFlagTriggerSummary{
-		Kind:            definition.Kind,
-		Ref:             definition.Ref,
-		Text:            definition.Text,
-		QuestRef:        definition.QuestRef,
-		QuestFlag:       definition.QuestFlag,
-		QuestFrom:       definition.QuestFrom,
-		QuestTo:         definition.QuestTo,
-		RewardGold:      definition.RewardGold,
-		RewardItemVnum:  definition.RewardItemVnum,
-		RewardItemCount: definition.RewardItemCount,
+		Kind:             definition.Kind,
+		Ref:              definition.Ref,
+		Text:             definition.Text,
+		QuestRef:         definition.QuestRef,
+		QuestFlag:        definition.QuestFlag,
+		QuestFrom:        definition.QuestFrom,
+		QuestTo:          definition.QuestTo,
+		RewardExperience: definition.RewardExperience,
+		RewardGold:       definition.RewardGold,
+		RewardItemVnum:   definition.RewardItemVnum,
+		RewardItemCount:  definition.RewardItemCount,
 	}
 }
 
@@ -3138,6 +3141,9 @@ func questFlagRewardPreview(text string, definition interactionstore.Definition,
 	if definition.RewardGold != 0 {
 		preview = fmt.Sprintf("%s [reward_gold %d]", preview, definition.RewardGold)
 	}
+	if definition.RewardExperience != 0 {
+		preview = fmt.Sprintf("%s [reward_experience %d]", preview, definition.RewardExperience)
+	}
 	if definition.RewardItemVnum == 0 {
 		return preview
 	}
@@ -3274,19 +3280,20 @@ func questFlagRouteSummary(actor StaticActor, definition interactionstore.Defini
 	actor = normalizeStaticActors([]StaticActor{actor})[0]
 	definition = interactionstore.NormalizeDefinition(definition)
 	return QuestFlagRouteSummary{
-		ActorName:       actor.Name,
-		SourceMapIndex:  actor.MapIndex,
-		SourceX:         actor.X,
-		SourceY:         actor.Y,
-		Ref:             definition.Ref,
-		Text:            definition.Text,
-		QuestRef:        definition.QuestRef,
-		QuestFlag:       definition.QuestFlag,
-		QuestFrom:       definition.QuestFrom,
-		QuestTo:         definition.QuestTo,
-		RewardGold:      definition.RewardGold,
-		RewardItemVnum:  definition.RewardItemVnum,
-		RewardItemCount: definition.RewardItemCount,
+		ActorName:        actor.Name,
+		SourceMapIndex:   actor.MapIndex,
+		SourceX:          actor.X,
+		SourceY:          actor.Y,
+		Ref:              definition.Ref,
+		Text:             definition.Text,
+		QuestRef:         definition.QuestRef,
+		QuestFlag:        definition.QuestFlag,
+		QuestFrom:        definition.QuestFrom,
+		QuestTo:          definition.QuestTo,
+		RewardExperience: definition.RewardExperience,
+		RewardGold:       definition.RewardGold,
+		RewardItemVnum:   definition.RewardItemVnum,
+		RewardItemCount:  definition.RewardItemCount,
 	}
 }
 

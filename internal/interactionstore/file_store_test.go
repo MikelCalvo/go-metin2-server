@@ -131,6 +131,33 @@ func TestFileStoreSaveThenLoadQuestFlagClearDefinition(t *testing.T) {
 	}
 }
 
+func TestFileStoreSaveThenLoadQuestFlagDefinitionWithRewardExperience(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	want := Snapshot{Definitions: []Definition{{
+		Kind:             KindQuestFlag,
+		Ref:              "quest:first_steps_kill_turnin",
+		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
+		QuestRef:         "quest:first_steps",
+		QuestFlag:        "killed_qa_mob",
+		QuestFrom:        1,
+		QuestTo:          0,
+		RewardExperience: 50,
+		RewardGold:       100,
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save quest flag reward-experience definition: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load quest flag reward-experience definition: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected quest flag reward-experience definition snapshot:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
 func TestFileStoreSaveThenLoadQuestFlagDefinitionWithRewardGold(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
 	store := NewFileStore(path)
@@ -221,6 +248,10 @@ func TestFileStoreRejectsInvalidQuestFlagInteractionDefinition(t *testing.T) {
 			definition: Definition{Kind: KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1, RewardGold: QuestFlagRewardGoldMax + 1},
 		},
 		{
+			name:       "reward experience exceeds point-change carrier",
+			definition: Definition{Kind: KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1, RewardExperience: QuestFlagRewardExperienceMax + 1},
+		},
+		{
 			name:       "reward item count without vnum",
 			definition: Definition{Kind: KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1, RewardItemCount: 1},
 		},
@@ -231,6 +262,39 @@ func TestFileStoreRejectsInvalidQuestFlagInteractionDefinition(t *testing.T) {
 		{
 			name:       "reward item count exceeds bootstrap max",
 			definition: Definition{Kind: KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1, RewardItemVnum: 27001, RewardItemCount: 256},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := store.Save(Snapshot{Definitions: []Definition{tc.definition}}); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot, got %v", err)
+			}
+		})
+	}
+}
+
+func TestFileStoreRejectsRewardExperienceOnNonQuestFlagDefinitions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	cases := []struct {
+		name       string
+		definition Definition
+	}{
+		{
+			name:       "info",
+			definition: Definition{Kind: KindInfo, Ref: "lore:square", Text: "Welcome.", RewardExperience: 10},
+		},
+		{
+			name:       "talk",
+			definition: Definition{Kind: KindTalk, Ref: "npc:guide", Text: "Welcome.", RewardExperience: 10},
+		},
+		{
+			name:       "warp",
+			definition: Definition{Kind: KindWarp, Ref: "npc:teleporter", Text: "Step through the gate.", MapIndex: 42, X: 1700, Y: 2800, RewardExperience: 10},
+		},
+		{
+			name:       "shop_preview",
+			definition: Definition{Kind: KindShopPreview, Ref: "npc:merchant", Title: "Merchant", Catalog: []MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}}, RewardExperience: 10},
 		},
 	}
 	for _, tc := range cases {

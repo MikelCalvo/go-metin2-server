@@ -32070,6 +32070,198 @@ func TestGameSessionFlowStaticActorQuestFlagRewardGoldGrantsCurrencyAndPersistsA
 	}
 }
 
+func TestGameSessionFlowStaticActorQuestFlagRewardExperienceGrantsPointsAndPersistsAccount(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	peer := peerVisibilityCharacter("QuestHero", 0x01030114, 0x02040114, 1100, 2100, 0, 101, 201)
+	peer.Gold = 25
+	peer.Points[bootstrapExperiencePointType] = 40
+	issuePeerTicket(t, ticketStore, "quest-hero-reward-experience", 0x18181818, peer)
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "quest-hero-reward-experience", Empire: peer.Empire, Characters: []loginticket.Character{peer}}); err != nil {
+		t.Fatalf("seed quest-flag reward-experience account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+		Kind:             interactionstore.KindQuestFlag,
+		Ref:              "quest:first_steps_kill_turnin",
+		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
+		QuestRef:         "quest:first_steps",
+		QuestFlag:        "killed_qa_mob",
+		QuestFrom:        1,
+		QuestTo:          0,
+		RewardExperience: 50,
+		RewardGold:       100,
+	}})
+	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{
+		Character: "QuestHero",
+		QuestRef:  "quest:first_steps",
+		Name:      "killed_qa_mob",
+		Value:     1,
+	}}}); err != nil {
+		t.Fatalf("seed quest-state for reward-experience turn-in: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, ticketStore, accounts, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected quest-flag reward-experience runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("QuestHunter", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindQuestFlag, "quest:first_steps_kill_turnin")
+	if !ok {
+		t.Fatal("expected quest-flag reward-experience static actor registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "quest-hero-reward-experience", 0x18181818)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible quest-flag reward-experience actor, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected quest-flag reward-experience interaction error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected chat + gold + experience frames for quest-flag reward-experience interaction, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode quest-flag reward-experience chat delivery: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != "Quest updated: first_steps.killed_qa_mob = 0." {
+		t.Fatalf("unexpected quest-flag reward-experience chat delivery: %+v", delivery)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode quest-flag reward-experience gold change: %v", err)
+	}
+	if goldChange.VID != peer.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != 100 || goldChange.Value != 125 {
+		t.Fatalf("unexpected quest-flag reward-experience gold change: %+v", goldChange)
+	}
+	expChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode quest-flag reward-experience point change: %v", err)
+	}
+	if expChange.VID != peer.VID || expChange.Type != bootstrapExperiencePointType || expChange.Amount != 50 || expChange.Value != 90 {
+		t.Fatalf("unexpected quest-flag reward-experience point change: %+v", expChange)
+	}
+	pointsSnapshot, ok := runtime.PointsSnapshot(peer.Name)
+	if !ok {
+		t.Fatal("expected points snapshot after quest-flag reward-experience interaction")
+	}
+	if pointsSnapshot.Points[bootstrapExperiencePointType] != 90 {
+		t.Fatalf("expected live experience 90 after quest-flag reward-experience interaction, got %+v", pointsSnapshot)
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(peer.Name)
+	if !ok || currencySnapshot.Gold != 125 {
+		t.Fatalf("expected live gold 125 after quest-flag reward-experience interaction, got ok=%v snapshot=%+v", ok, currencySnapshot)
+	}
+	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	if err != nil {
+		t.Fatalf("load quest-state after quest-flag reward-experience interaction: %v", err)
+	}
+	if want := (queststate.Snapshot{Flags: []queststate.Flag{}}); !reflect.DeepEqual(loaded, want) {
+		t.Fatalf("unexpected persisted quest-state after quest-flag reward-experience interaction:\n got: %#v\nwant: %#v", loaded, want)
+	}
+	account, err := accounts.Load("quest-hero-reward-experience")
+	if err != nil {
+		t.Fatalf("load persisted quest-flag reward-experience account: %v", err)
+	}
+	if account.Characters[0].Gold != 125 {
+		t.Fatalf("expected persisted gold 125 after quest-flag reward-experience interaction, got %d", account.Characters[0].Gold)
+	}
+	if account.Characters[0].Points[bootstrapExperiencePointType] != 90 {
+		t.Fatalf("expected persisted experience 90 after quest-flag reward-experience interaction, got %d", account.Characters[0].Points[bootstrapExperiencePointType])
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for self-only quest-flag reward-experience interaction, got %d", len(queued))
+	}
+}
+
+func TestGameSessionFlowStaticActorQuestFlagRewardScalarsRollBackWhenAccountSaveFails(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	peer := peerVisibilityCharacter("QuestHero", 0x01030115, 0x02040115, 1100, 2100, 0, 101, 201)
+	peer.Gold = 25
+	peer.Points[bootstrapExperiencePointType] = 40
+	issuePeerTicket(t, ticketStore, "quest-hero-reward-save-fail", 0x19191919, peer)
+	accounts := newDeferredFailingAccountStore(0, accountstore.Account{Login: "quest-hero-reward-save-fail", Empire: peer.Empire, Characters: []loginticket.Character{peer}})
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+		Kind:             interactionstore.KindQuestFlag,
+		Ref:              "quest:first_steps_kill_turnin",
+		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
+		QuestRef:         "quest:first_steps",
+		QuestFlag:        "killed_qa_mob",
+		QuestFrom:        1,
+		QuestTo:          0,
+		RewardExperience: 50,
+		RewardGold:       100,
+	}})
+	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{
+		Character: "QuestHero",
+		QuestRef:  "quest:first_steps",
+		Name:      "killed_qa_mob",
+		Value:     1,
+	}}}); err != nil {
+		t.Fatalf("seed quest-state for reward save-failure turn-in: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, ticketStore, accounts, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected quest-flag reward save-failure runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("QuestHunter", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindQuestFlag, "quest:first_steps_kill_turnin")
+	if !ok {
+		t.Fatal("expected quest-flag reward save-failure static actor registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "quest-hero-reward-save-fail", 0x19191919)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible quest-flag reward save-failure actor, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected quest-flag reward save-failure interaction error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected account-save failure to emit no quest-flag reward frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected account-save failure to queue no peer frames, got %d", len(queued))
+	}
+
+	currencySnapshot, ok := runtime.CurrencySnapshot(peer.Name)
+	if !ok || currencySnapshot.Gold != 25 {
+		t.Fatalf("expected live gold to roll back to 25 after quest-flag reward save failure, got ok=%v snapshot=%+v", ok, currencySnapshot)
+	}
+	pointsSnapshot, ok := runtime.PointsSnapshot(peer.Name)
+	if !ok || pointsSnapshot.Points[bootstrapExperiencePointType] != 40 {
+		t.Fatalf("expected live experience to roll back to 40 after quest-flag reward save failure, got ok=%v snapshot=%+v", ok, pointsSnapshot)
+	}
+	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	if err != nil {
+		t.Fatalf("load quest-state after quest-flag reward save failure: %v", err)
+	}
+	want := queststate.Snapshot{Flags: []queststate.Flag{{
+		Character: "QuestHero",
+		QuestRef:  "quest:first_steps",
+		Name:      "killed_qa_mob",
+		Value:     1,
+	}}}
+	if !reflect.DeepEqual(loaded, want) {
+		t.Fatalf("expected quest transition to reverse after account-save failure:\n got: %#v\nwant: %#v", loaded, want)
+	}
+	account, err := accounts.Load("quest-hero-reward-save-fail")
+	if err != nil {
+		t.Fatalf("load account after quest-flag reward save failure: %v", err)
+	}
+	if account.Characters[0].Gold != 25 {
+		t.Fatalf("expected persisted gold to stay 25 after quest-flag reward save failure, got %d", account.Characters[0].Gold)
+	}
+	if account.Characters[0].Points[bootstrapExperiencePointType] != 40 {
+		t.Fatalf("expected persisted experience to stay 40 after quest-flag reward save failure, got %d", account.Characters[0].Points[bootstrapExperiencePointType])
+	}
+}
+
 func TestGameSessionFlowStaticActorQuestFlagRewardItemGrantsInventoryAndPersistsAccount(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
