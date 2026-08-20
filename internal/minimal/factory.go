@@ -1402,9 +1402,7 @@ func (r *gameRuntime) ExportItemTemplateState() (itemcatalog.ItemTemplateStateEx
 	if r == nil || r.itemStore == nil {
 		return itemcatalog.ExportItemTemplateState(itemcatalog.Snapshot{})
 	}
-	exporter, ok := r.itemStore.(interface {
-		ExportItemTemplateState() (itemcatalog.ItemTemplateStateExport, error)
-	})
+	exporter, ok := r.itemStore.(itemcatalog.ItemTemplateStateExporter)
 	if !ok {
 		return itemcatalog.ItemTemplateStateExport{}, fmt.Errorf("item-template-state export is not supported")
 	}

@@ -676,6 +676,56 @@ func TestGameRuntimeItemTemplateStateExportProjectsCommittedSnapshot(t *testing.
 	}
 }
 
+func TestGameRuntimeExportsItemTemplateStateThroughMemoryStoreSeam(t *testing.T) {
+	itemStore := itemcatalog.NewMemoryStore()
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 50},
+		{
+			Vnum:       11200,
+			Name:       "Wooden Sword",
+			Stackable:  false,
+			MaxCount:   1,
+			EquipSlot:  "weapon",
+			Refineable: true,
+			RefineInfo: &itemcatalog.RefineInfo{ResultVnum: 11201, Cost: 2500, Probability: 75, Materials: []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}}},
+		},
+	}}); err != nil {
+		t.Fatalf("save memory item-template snapshot: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewMemoryStore(),
+		nil,
+		nil,
+		itemStore,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	export, err := runtime.ExportItemTemplateState()
+	if err != nil {
+		t.Fatalf("runtime memory item-template-state export: %v", err)
+	}
+	if export.MigrationVersion != itemcatalog.ItemTemplateStateMigrationVersion || export.MigrationName != itemcatalog.ItemTemplateStateMigrationName {
+		t.Fatalf("unexpected migration boundary: %#v", export)
+	}
+	if len(export.Templates) != 2 || export.Templates[0].Vnum != 11200 || export.Templates[1].Vnum != 27001 {
+		t.Fatalf("unexpected memory item-template export rows: %#v", export.Templates)
+	}
+	if len(export.RefineInfos) != 1 || export.RefineInfos[0].Vnum != 11200 || export.RefineInfos[0].ResultVnum != 11201 {
+		t.Fatalf("unexpected memory refine-info export rows: %#v", export.RefineInfos)
+	}
+	if len(export.RefineMaterials) != 1 || export.RefineMaterials[0].ItemVnum != 27001 || export.RefineMaterials[0].Count != 2 {
+		t.Fatalf("unexpected memory refine-material export rows: %#v", export.RefineMaterials)
+	}
+	if _, err := itemcatalog.ValidateItemTemplateStateExport(export); err != nil {
+		t.Fatalf("quarantine memory item-template-state export: %v", err)
+	}
+}
+
 func TestGameRuntimeBootstrapGroundItemStateExportProjectsPendingGroundHandles(t *testing.T) {
 	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), accountstore.NewFileStore(t.TempDir()))
 	if err != nil {

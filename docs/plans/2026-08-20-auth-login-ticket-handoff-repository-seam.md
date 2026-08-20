@@ -40,6 +40,6 @@ Focused coverage:
 
 ## Follow-up options
 
-1. Add matching hermetic seams for item-template / static-content exports once callers need the same coupling reduction.
+1. Add matching hermetic seams for static-content exports once callers need the same coupling reduction. Item-template state now has its own `ItemTemplateStateExporter` + hermetic `MemoryStore`.
 2. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
 3. Keep ground-item restart durability deferred until a world-state repository exists.

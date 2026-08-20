@@ -54,4 +54,4 @@ Focused coverage:
 
 1. Extend the same quarantine pattern to static-actor content-state / bootstrap ground-item exports.
 2. Add CLI-only quarantine inspection beside `metin2-migrate`.
-3. Extract a repository seam only after quarantine preflight proves the boundary.
+3. ~~Extract a repository seam only after quarantine preflight proves the boundary.~~ Done: `ItemTemplateStateExporter` + hermetic `MemoryStore` now land beside the quarantine preflight.
