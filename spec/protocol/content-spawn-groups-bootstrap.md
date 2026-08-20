@@ -541,10 +541,42 @@ First live consumer rules (now implemented on the pending-frame flush path):
 Explicit non-goals for this proximity aggro freeze alone:
 - immediate owner-side retaliation piggyback without an accepted hit
 - inventing selected-target ownership from proximity acquisition alone
-- aggro hysteresis / a drop radius distinct from the acquire radius (leave-radius release reuses `DefaultSpawnAggroRadius`)
+- aggro hysteresis / a drop radius distinct from the acquire radius (leave-radius release reuses the actor's effective acquire radius)
 - pack aggro, assist calls, or multi-mob linkage
 - chase packets, patrol, or pathfinding
-- profile-authored per-mob aggro radii beyond the first bootstrap default (later profiles may widen that)
+- profile-authored per-mob aggro radii beyond the first bootstrap default (frozen separately below as the next Track A follow-on)
+
+## First owned profile-authored aggro-radius seam
+
+Question frozen here:
+
+**Once proximity acquisition already uses one bootstrap `DefaultSpawnAggroRadius = 200`, what is the smallest honest authored combat-profile extension that can widen or narrow that acquire radius per registered profile without inventing hysteresis, pack aggro, or a second AI scheduler?**
+
+This is the next Track A follow-on after the owned proximity / chase / leash / anti-leak bootstrap matrix. Cross-map return MOVE / warp choreography remains deferred behind the packet freeze in `spawn-leash-bootstrap.md` and must not be opened as speculative RED.
+
+Contract for optional authored `aggro_radius` on portable `combat_profiles` / `StaticActorCombatProfileDefaults`:
+- field name: `aggro_radius` (JSON) / `AggroRadius` (Go)
+- type: positive `int32` distance using the same Euclidean squared-distance family as leash / aggro classification
+- omitempty / zero means "use bootstrap default": effective radius = `DefaultSpawnAggroRadius` (`200`)
+- when present and positive, the effective acquire radius for that registered profile is exactly the authored value
+- validation fails closed when `aggro_radius < 0`
+- validation fails closed when `aggro_radius > DefaultSpawnLeashRadius` (`400`), so authored acquisition cannot silently stretch past the owned leash / return-required combat gate
+- built-in `practice_mob` / `training_dummy` profiles keep effective radius `200` and do not require an authored field
+- the pure resolver is `EffectiveStaticActorSpawnAggroRadius(profile)` (or equivalent profile-defaults helper) in `internal/worldruntime`: it returns the effective radius without mutating actor state, engagement, timers, or packets
+- live proximity acquisition, leave-radius release, and death/respawn suppress seeding for a spawn-backed actor must reuse that same effective radius for the actor's current combat profile; they must not keep hard-coding `DefaultSpawnAggroRadius` once a profile authors a different value
+- leave/re-enter suppress continues to use one radius (no separate drop radius); the suppress boundary is the actor's effective acquire radius
+- content-bundle import/export must round-trip a non-default authored `aggro_radius` through `combat_profiles` the same way `respawn_delay_ms` already round-trips
+
+Current implementation status:
+- this seam is frozen here as the next honest RED/GREEN boundary; runtime still uses bootstrap `DefaultSpawnAggroRadius = 200` for every practice mob until the focused failing coverage and GREEN land
+
+Explicit non-goals for this profile-authored aggro-radius freeze alone:
+- aggro hysteresis / a drop radius distinct from the acquire radius
+- pack aggro, assist calls, or multi-mob linkage
+- patrol, pathfinding, or target switching
+- cross-map aggro / warp choreography
+- inventing a second proximity scanner or scheduler beyond the existing pending-frame consumer
+- changing the already-owned engagement / chase / retaliation consumers beyond substituting the effective radius
 
 ## Success definition
 
