@@ -765,6 +765,12 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 	if live.ID == 0 || live.ID != origin.ID || live.VID != origin.VID || normalizeLiveCharacterName(live.Name) != normalizeLiveCharacterName(origin.Name) {
 		return nil, nil, false
 	}
+	// Fail closed before accept markers or mutual-accept finalize when either paired
+	// side currently has an open merchant / safebox / refine busy presentation.
+	if r.hasMerchantWindowOpenLocked(originID) || r.hasSafeboxWindowOpenLocked(originID) || r.hasRefineWindowOpenLocked(originID) ||
+		r.hasMerchantWindowOpenLocked(partnerID) || r.hasSafeboxWindowOpenLocked(partnerID) || r.hasRefineWindowOpenLocked(partnerID) {
+		return nil, nil, false
+	}
 	if !exchangeDisplayedItemsStillLive(r.exchangeItems[originID], live, r.itemTemplates) {
 		return nil, nil, false
 	}

@@ -5706,6 +5706,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !ownsLiveSharedWorldSession() {
 							return gameflow.ItemExchangeResult{Accepted: false}
 						}
+						// Same-socket busy presentations already published into shared-world
+						// START eligibility must also fail closed for ACCEPT / mutual-accept
+						// finalize so a later-opened merchant/safebox/refine window cannot
+						// sneak past the frozen busy-window trade policy.
+						if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog {
+							return gameflow.ItemExchangeResult{Accepted: false}
+						}
 						frames, finalizePlan, ok := sharedWorld.AcceptExchange(sharedWorldID, selectedPlayer.LiveGold(), selectedPlayer.LiveCharacter())
 						if !ok {
 							return gameflow.ItemExchangeResult{Accepted: false}
