@@ -350,6 +350,50 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagPreview(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardGoldPreview(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030121, 0x02040121, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one-reward-gold", 0x15151515, peer)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+		Kind:       interactionstore.KindQuestFlag,
+		Ref:        "quest:first_steps_kill_turnin",
+		Text:       "Quest updated: first_steps.killed_qa_mob = 0.",
+		QuestRef:   "quest:first_steps",
+		QuestFlag:  "killed_qa_mob",
+		QuestFrom:  1,
+		QuestTo:    0,
+		RewardGold: 100,
+	}})
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{
+		Character: "PeerOne",
+		QuestRef:  "quest:first_steps",
+		Name:      "killed_qa_mob",
+		Value:     1,
+	}}}); err != nil {
+		t.Fatalf("seed quest-state for reward-gold preview: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	if _, ok := runtime.RegisterStaticActorWithInteraction("QuestHunter", bootstrapMapIndex, 1250, 2250, 20301, interactionstore.KindQuestFlag, "quest:first_steps_kill_turnin"); !ok {
+		t.Fatal("expected quest-flag reward-gold static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one-reward-gold", 0x15151515)
+	defer closeSessionFlow(t, flow)
+
+	snapshots := runtime.InteractionVisibility()
+	if len(snapshots) != 1 || len(snapshots[0].VisibleInteractableStaticActors) != 1 {
+		t.Fatalf("expected one visible quest-flag reward-gold interactable, got %+v", snapshots)
+	}
+	entry := snapshots[0].VisibleInteractableStaticActors[0]
+	if entry.Name != "QuestHunter" || entry.Preview != "Quest updated: first_steps.killed_qa_mob = 0. [reward_gold 100]" || entry.ResolutionFailure != "" {
+		t.Fatalf("unexpected quest-flag reward-gold interaction visibility entry: %+v", entry)
+	}
+}
+
 func TestGameRuntimeInteractionVisibilityReturnsQuestFlagMismatchPreviewWithoutMutatingQuestState(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")

@@ -339,13 +339,14 @@ type QuestStateDelta struct {
 }
 
 type QuestFlagTriggerSummary struct {
-	Kind      string `json:"kind"`
-	Ref       string `json:"ref"`
-	Text      string `json:"text"`
-	QuestRef  string `json:"quest_ref"`
-	QuestFlag string `json:"quest_flag"`
-	QuestFrom uint32 `json:"quest_from,omitempty"`
-	QuestTo   uint32 `json:"quest_to,omitempty"`
+	Kind       string `json:"kind"`
+	Ref        string `json:"ref"`
+	Text       string `json:"text"`
+	QuestRef   string `json:"quest_ref"`
+	QuestFlag  string `json:"quest_flag"`
+	QuestFrom  uint32 `json:"quest_from,omitempty"`
+	QuestTo    uint32 `json:"quest_to,omitempty"`
+	RewardGold uint64 `json:"reward_gold,omitempty"`
 }
 
 type QuestFlagTriggerDelta struct {
@@ -738,6 +739,7 @@ type QuestFlagRouteSummary struct {
 	QuestFlag      string `json:"quest_flag"`
 	QuestFrom      uint32 `json:"quest_from,omitempty"`
 	QuestTo        uint32 `json:"quest_to,omitempty"`
+	RewardGold     uint64 `json:"reward_gold,omitempty"`
 }
 
 type ShopRouteSummary struct {
@@ -2951,13 +2953,14 @@ func cloneQuestFlagTriggerDelta(delta QuestFlagTriggerDelta) QuestFlagTriggerDel
 func questFlagTriggerSummary(definition interactionstore.Definition) QuestFlagTriggerSummary {
 	definition = interactionstore.NormalizeDefinition(definition)
 	return QuestFlagTriggerSummary{
-		Kind:      definition.Kind,
-		Ref:       definition.Ref,
-		Text:      definition.Text,
-		QuestRef:  definition.QuestRef,
-		QuestFlag: definition.QuestFlag,
-		QuestFrom: definition.QuestFrom,
-		QuestTo:   definition.QuestTo,
+		Kind:       definition.Kind,
+		Ref:        definition.Ref,
+		Text:       definition.Text,
+		QuestRef:   definition.QuestRef,
+		QuestFlag:  definition.QuestFlag,
+		QuestFrom:  definition.QuestFrom,
+		QuestTo:    definition.QuestTo,
+		RewardGold: definition.RewardGold,
 	}
 }
 
@@ -3090,7 +3093,10 @@ func interactionDefinitionPreview(actorName string, definition interactionstore.
 	case interactionstore.KindTalk:
 		return fmt.Sprintf("%s:\n%s", actorName, definition.Text)
 	case interactionstore.KindQuestFlag:
-		return definition.Text
+		if definition.RewardGold == 0 {
+			return definition.Text
+		}
+		return fmt.Sprintf("%s [reward_gold %d]", definition.Text, definition.RewardGold)
 	case interactionstore.KindShopPreview:
 		return shopCatalogPreview(definition, itemTemplatesByVnum)
 	case interactionstore.KindWarp:
@@ -3111,8 +3117,13 @@ func interactionDefinitionPreviewSummary(definition interactionstore.Definition,
 
 func interactionDefinitionCatalogPreview(definition interactionstore.Definition, itemTemplatesByVnum map[uint32]itemcatalog.Template) string {
 	switch definition.Kind {
-	case interactionstore.KindInfo, interactionstore.KindTalk, interactionstore.KindQuestFlag:
+	case interactionstore.KindInfo, interactionstore.KindTalk:
 		return definition.Text
+	case interactionstore.KindQuestFlag:
+		if definition.RewardGold == 0 {
+			return definition.Text
+		}
+		return fmt.Sprintf("%s [reward_gold %d]", definition.Text, definition.RewardGold)
 	case interactionstore.KindShopPreview:
 		return shopCatalogPreview(definition, itemTemplatesByVnum)
 	case interactionstore.KindWarp:
@@ -3251,6 +3262,7 @@ func questFlagRouteSummary(actor StaticActor, definition interactionstore.Defini
 		QuestFlag:      definition.QuestFlag,
 		QuestFrom:      definition.QuestFrom,
 		QuestTo:        definition.QuestTo,
+		RewardGold:     definition.RewardGold,
 	}
 }
 

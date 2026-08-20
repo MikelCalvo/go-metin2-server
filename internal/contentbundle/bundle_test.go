@@ -3428,12 +3428,13 @@ func TestBootstrapNPCServiceExampleBundleClosesKillQuestTurnIn(t *testing.T) {
 		t.Fatal("bootstrap NPC service example lacks quest:first_steps_kill_turnin definition")
 	}
 	wantDefinition := interactionstore.Definition{
-		Kind:      interactionstore.KindQuestFlag,
-		Ref:       "quest:first_steps_kill_turnin",
-		Text:      "Quest updated: first_steps.killed_qa_mob = 0.",
-		QuestRef:  "quest:first_steps",
-		QuestFlag: "killed_qa_mob",
-		QuestFrom: 1,
+		Kind:       interactionstore.KindQuestFlag,
+		Ref:        "quest:first_steps_kill_turnin",
+		Text:       "Quest updated: first_steps.killed_qa_mob = 0.",
+		QuestRef:   "quest:first_steps",
+		QuestFlag:  "killed_qa_mob",
+		QuestFrom:  1,
+		RewardGold: 100,
 	}
 	if !reflect.DeepEqual(*turnIn, wantDefinition) {
 		t.Fatalf("unexpected kill-quest turn-in definition:\n got: %#v\nwant: %#v", *turnIn, wantDefinition)
@@ -3465,7 +3466,7 @@ func TestBootstrapNPCServiceExampleBundleClosesKillQuestTurnIn(t *testing.T) {
 	for _, trigger := range summary.QuestFlagTriggers {
 		if trigger.Ref == "quest:first_steps_kill_turnin" {
 			foundTurnInTrigger = true
-			if trigger.QuestFlag != "killed_qa_mob" || trigger.QuestFrom != 1 || trigger.QuestTo != 0 || trigger.Text != "Quest updated: first_steps.killed_qa_mob = 0." {
+			if trigger.QuestFlag != "killed_qa_mob" || trigger.QuestFrom != 1 || trigger.QuestTo != 0 || trigger.Text != "Quest updated: first_steps.killed_qa_mob = 0." || trigger.RewardGold != 100 {
 				t.Fatalf("unexpected kill-quest turn-in trigger summary: %+v", trigger)
 			}
 		}
@@ -3477,6 +3478,9 @@ func TestBootstrapNPCServiceExampleBundleClosesKillQuestTurnIn(t *testing.T) {
 	for _, route := range summary.QuestFlagRoutes {
 		if route.ActorName == "QuestHunter" && route.Ref == "quest:first_steps_kill_turnin" {
 			foundTurnInRoute = true
+			if route.RewardGold != 100 {
+				t.Fatalf("unexpected QuestHunter turn-in route reward gold: %+v", route)
+			}
 			break
 		}
 	}

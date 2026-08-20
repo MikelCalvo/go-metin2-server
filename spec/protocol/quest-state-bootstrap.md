@@ -115,7 +115,8 @@ The first authored NPC/content trigger is `interaction_kind = "quest_flag"` on t
   "quest_ref": "quest:first_steps",
   "quest_flag": "met_guide",
   "quest_from": 0,
-  "quest_to": 1
+  "quest_to": 1,
+  "reward_gold": 0
 }
 ```
 
@@ -128,7 +129,9 @@ Owned rules:
 - `quest_flag` must satisfy the lower-snake flag-name rule.
 - `quest_from` defaults to `0` when omitted and is the compare-and-set expected value.
 - `quest_to` must differ from `quest_from`; `quest_to = 0` clears the flag through the same compare-and-set primitive when the current value matches `quest_from`.
+- optional `reward_gold` may be omitted or `0`; when present and non-zero it must fit the bootstrap gold `PLAYER_POINT_CHANGE` carrier (`<= 1<<31-1`) and is granted only after the transition applies.
 - `title`, merchant `catalog`, warp `map_index`, `x`, and `y` are not valid for `quest_flag` definitions.
+- non-`quest_flag` interaction kinds must keep `reward_gold` absent/`0`.
 
 Runtime behavior:
 
@@ -136,12 +139,13 @@ Runtime behavior:
 2. the actor's metadata must resolve to a valid `quest_flag` definition,
 3. `gamed` applies the transition to the selected character name through the same quest-state store primitive used by `/local/quest-state/transition`,
 4. if and only if the transition applies, the client receives one self-only `GC_CHAT` with `type = INFO`, `vid = 0`, `empire = 0`, and `message = definition.text`,
-5. when the compare-and-set result is `current_value_mismatch`, the quest-state snapshot remains unchanged and the client now receives one self-only `GC_CHAT` with `type = INFO`, `vid = 0`, `empire = 0`, and `message = "Quest requirements are not met."`,
-6. invalid transition definitions, store errors, unsupported content, and other non-CAS failures still fail closed with no frames and no peer fanout.
+5. when that successful transition also authors `reward_gold > 0`, the same response appends one self-only `PLAYER_POINT_CHANGE` gold frame for the granted amount and persists the updated selected-character gold into the account snapshot; overflow / unavailable selected character / account-save failure fail closed (no frames; live gold and quest transition are rolled back when needed),
+6. when the compare-and-set result is `current_value_mismatch`, the quest-state snapshot remains unchanged, no gold is granted, and the client now receives one self-only `GC_CHAT` with `type = INFO`, `vid = 0`, `empire = 0`, and `message = "Quest requirements are not met."`,
+7. invalid transition definitions, store errors, unsupported content, and other non-CAS failures still fail closed with no frames and no peer fanout.
 
-Loopback interaction visibility now mirrors that player-facing branch without mutation: `GET /local/interaction-visibility` and `GET /local/interaction-visibility/{character}` preview a `quest_flag` actor by dry-running the selected character's compare-and-set transition. A transition that would apply previews `definition.text`; a `current_value_mismatch` previews `Quest requirements are not met.`. Other dry-run failures surface as a fail-closed `resolution_failure` marker rather than mutating the quest-state store.
+Loopback interaction visibility now mirrors that player-facing branch without mutation: `GET /local/interaction-visibility` and `GET /local/interaction-visibility/{character}` preview a `quest_flag` actor by dry-running the selected character's compare-and-set transition. A transition that would apply previews `definition.text`, or `definition.text [reward_gold N]` when a non-zero `reward_gold` is authored; a `current_value_mismatch` previews `Quest requirements are not met.`. Other dry-run failures surface as a fail-closed `resolution_failure` marker rather than mutating the quest-state store.
 
-This is still a bootstrap quest-state trigger, not a client quest UI, reward system, branching dialog tree, or script runtime. The mismatch acknowledgement and its loopback preview exist only so authored-state failures are not silent; they do not expose a quest window, reward, objective tracker, or alternate branch.
+This is still a bootstrap quest-state trigger, not a client quest UI, inventory reward system, branching dialog tree, or script runtime. The optional gold grant reuses the already-owned death-reward / `POINT_CHANGE` gold path so the kill -> turn-in loop can deliver a client-visible economy payoff without inventing quest item grants yet. The mismatch acknowledgement and its loopback preview exist only so authored-state failures are not silent; they do not expose a quest window, objective tracker, or alternate branch.
 
 ## Optional quest gates on non-mutating interactions
 
@@ -174,7 +178,7 @@ Owned gate rules:
 - loopback interaction-visibility previews for gated non-mutating interactions reuse that same mismatch text without mutating quest state
 - content-bundle warp destination/route summaries and shop-route summaries now surface the authored gate fields so operators can audit teleporter/merchant prerequisites without opening the live interaction path
 
-The checked-in QA example `docs/examples/bootstrap-npc-service-bundle.json` now gates `npc:qa_guide`, `lore:qa_square`, `npc:qa_teleporter`, and `npc:qa_merchant` on `quest:first_steps.met_guide = 1`, so the owned service unlock loop is: interact with `QuestGuide` once, then use the guide/signpost/teleporter/merchant. The same fixture also closes the first combat-adjacent quest loop: kill `QARewardMob` to advance `quest:first_steps.killed_qa_mob`, then interact with `QuestHunter` (`quest:first_steps_kill_turnin`) to clear that flag through an ordinary `quest_flag` compare-and-set turn-in. A later operator or `quest_flag` reset that clears `met_guide` while a previously opened QA merchant window is still open must therefore auto-close that stale window on the next buy/sell attempt instead of letting the transaction continue under a revoked prerequisite.
+The checked-in QA example `docs/examples/bootstrap-npc-service-bundle.json` now gates `npc:qa_guide`, `lore:qa_square`, `npc:qa_teleporter`, and `npc:qa_merchant` on `quest:first_steps.met_guide = 1`, so the owned service unlock loop is: interact with `QuestGuide` once, then use the guide/signpost/teleporter/merchant. The same fixture also closes the first combat-adjacent quest loop: kill `QARewardMob` to advance `quest:first_steps.killed_qa_mob`, then interact with `QuestHunter` (`quest:first_steps_kill_turnin`) to clear that flag through an ordinary `quest_flag` compare-and-set turn-in that also grants authored `reward_gold = 100`. A later operator or `quest_flag` reset that clears `met_guide` while a previously opened QA merchant window is still open must therefore auto-close that stale window on the next buy/sell attempt instead of letting the transaction continue under a revoked prerequisite.
 
 ## Runtime configuration and local ops
 
