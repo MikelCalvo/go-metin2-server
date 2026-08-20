@@ -57,6 +57,7 @@ This contract currently applies only to:
 - one loopback runtime/operator player-snapshot dead-state rule across `/local/players`, `/local/visibility`, `/local/interaction-visibility`, `/local/maps`, `/local/relocate-preview`, and `/local/transfer` while that same zero-HP owner remains connected
 - one selected-character `ENTERGAME` replay rule for account/ticket snapshots that are already at or below the bootstrap `0`-HP floor before world entry: the self bootstrap remains ordered normally, then appends one self-only `GC DEAD(owner_vid)` before any trailing world visibility frames
 - one open exchange-window close rule when the death edge occurs while the owner is paired in the current bootstrap `EXCHANGE` shell: the owner receives one self-only `GC::EXCHANGE END`, the paired live peer receives one queued `GC::EXCHANGE END`, and the in-memory exchange pairing/display state is cleared
+- one silent same-socket busy-window teardown for an already-open bootstrap `/open_safebox` presentation and an already-open refine-dialog presentation on that same floor transition: the session clears those busy flags (and their shared-world busy publication) with no extra safebox/refine frames, matching the already-owned silent `/close_safebox` and `REFINE type = 255` cancel seams, so later `/restart_here` / `/restart_town` recovery does not keep orphan exchange-busy rejects
 
 This contract does **not** yet claim:
 - corpse state, knockdown animations, or corpse interaction
@@ -91,6 +92,7 @@ The repository now implements this narrow bootstrap contract:
 - once this floor is reached, later owner-side packet quickslot add/delete/swap attempts also fail closed with no quickslot refresh frames and no runtime or persisted quickslot or inventory mutation
 - once this floor is reached, later owner-side client `CHARACTER_POSITION` stance attempts also fail closed with no self `GC CHARACTER_POSITION` response, no queued peer stance frame, and no selected-target, combat cadence, retaliation, point, inventory, or persistence side effect
 - if this floor is reached while the owner is paired in the bootstrap exchange-window shell, the same floor transition now also appends one self-only `GC::EXCHANGE END` after the death/clear sequence, queues one `GC::EXCHANGE END` to the paired live peer, and clears the in-memory exchange pairing/display state so later `EXCHANGE CANCEL` / display requests fail closed instead of operating on stale trade UI state
+- if this floor is reached while the owner already had an open `/open_safebox` presentation or open refine-dialog presentation, the same floor transition now also silently clears those same-socket busy flags and their shared-world busy publication with no extra safebox/refine frames, so later `/restart_here` / `/restart_town` recovery does not keep orphan exchange-busy rejects
 - once this floor is reached, later owner-side peer-facing `CHAT` requests with `type = TALKING`, `PARTY`, `GUILD`, or `SHOUT` plus later owner-side `WHISPER` requests also fail closed before sender echo, queued peer delivery, or exact-name target lookup can run
 - once this floor is reached, later peer-originated `WHISPER` requests targeting that same exact owner name also fail closed before queued target delivery or a synthetic `WHISPER_TYPE_NOT_EXIST` fallback can run
 - once this floor is reached, later peer-originated local `CHAT` requests with `type = TALKING` from still-visible sessions continue to return the live sender's ordinary self echo, but queued peer delivery skips that zero-HP owner recipient entirely
@@ -259,6 +261,20 @@ Why this is the current owned boundary:
 - once post-floor merchant buys already failed closed, an already-open merchant window became the next smallest stale UI/runtime context still surviving the same retaliation-owned death edge
 - reusing the existing `GC::SHOP END` close companion keeps the teardown honest without inventing a second death-specific merchant packet family
 
+## First owned safebox / refine busy-window clear at the retaliation floor
+
+The current bootstrap player-death contract now also owns one narrow busy-window teardown rule for the same selected live owner session:
+- if that session already opened the bootstrap `/open_safebox` presentation before immediate or delayed practice-mob retaliation reached `0` HP, the same owned floor transition clears that same-socket safebox busy flag and its shared-world busy publication
+- if that session already opened a refine-dialog preview before that same floor transition, the floor clears that same-socket refine-dialog presentation and its shared-world busy publication too
+- those teardowns stay intentionally silent: no extra `SAFEBOX_SIZE`, no synthetic refine cancel/result frame, and no inventory/gold/quickslot/persistence mutation
+- after `/restart_here` or `/restart_town` recovers from that floor, a later same-socket `EXCHANGE START` against a living visible peer must no longer be rejected by the orphaned safebox/refine busy-window policy; the recovered owner may open a fresh trade shell normally
+- accepted `/restart_here` / `/restart_town` also clear any still-open same-socket safebox/refine busy presentation as part of recovery so a revived owner does not keep a pre-death busy lock
+- leave / `/logout` / `/quit` / `/phase_select` already clear the safebox busy presentation; the same leave teardown now also clears an open refine-dialog busy presentation so session exit does not leave a shared-world refine busy orphan either
+
+Why this is the current owned boundary:
+- merchant and exchange already had explicit close companions on the death edge, but the quieter safebox/refine busy presentations could still survive into `/restart_here` and incorrectly block later exchange `START`
+- reusing the already-owned silent `/close_safebox` and `REFINE type = 255` cancel semantics keeps the teardown honest without inventing death-specific safebox/refine packet families
+
 ## First owned post-floor item-family denial
 
 The current bootstrap player-death contract now also owns narrow post-floor item-family rules for that same selected live owner session:
@@ -384,6 +400,7 @@ After this document lands, the repository should be able to say:
 - once that same floor is reached, later owner-side merchant-buy attempts also fail closed before runtime/persisted inventory or gold mutation can run through packet `SHOP BUY` or the local `/shop_buy` harness path
 - if that same floor is reached while the owner already had a merchant preview open, the same floor transition now also appends one self-only `GC::SHOP END` after self `GC DEAD(owner_vid)` plus self `GC TARGET(0, 0)` and clears the active merchant context so later client `SHOP END` fails closed too
 - if that same floor is reached while the owner already had a bootstrap exchange shell open, the same floor transition now also appends one self-only `GC::EXCHANGE END` after self `GC DEAD(owner_vid)` plus self `GC TARGET(0, 0)`, queues one `GC::EXCHANGE END` to the paired live peer, and clears the exchange state so later exchange-display or cancel requests fail closed too
+- if that same floor is reached while the owner already had an open `/open_safebox` presentation or open refine-dialog presentation, the same floor transition now also silently clears those same-socket busy flags and their shared-world busy publication with no extra safebox/refine frames
 - once that same floor is reached, later owner-side slash `/use_item` and carried-slot `ITEM_USE` attempts also fail closed before runtime/persisted inventory consumption or point restoration can run
 - once that same floor is reached, later owner-side packet `ITEM_MOVE` attempts also fail closed before runtime/persisted carried-inventory slot mutation or item-set success frames can run
 - once that same floor is reached, later owner-side packet `ITEM_GIVE` attempts also fail closed before anti-give feedback, peer delivery, inventory, quickslot, ground-handle, or persistence side effects can run

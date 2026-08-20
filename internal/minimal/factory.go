@@ -3376,6 +3376,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		appendPostFloorContextCloseFrames := func(frames [][]byte, clearTarget bool) [][]byte {
 			frames = appendPostFloorMerchantCloseFrame(frames, clearTarget)
 			frames = appendPostFloorExchangeCloseFrame(frames, clearTarget)
+			if clearTarget {
+				setActiveSafeboxOpen(0, false)
+				setActiveRefineDialog(refineDialogPresentation{}, false)
+			}
 			return frames
 		}
 		prependMerchantCloseFrame := func(frames [][]byte) [][]byte {
@@ -5082,6 +5086,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 								sharedWorldID = 0
 							}
 							setActiveSafeboxOpen(0, false)
+							setActiveRefineDialog(refineDialogPresentation{}, false)
 						}
 						switch command {
 						case "quit":
@@ -5164,6 +5169,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, restartedLive, peerRefreshFrames)
 							activeCharacterPosition = bootstrapCharacterPositionGeneral
 							clearActiveCombatTarget()
+							setActiveSafeboxOpen(0, false)
+							setActiveRefineDialog(refineDialogPresentation{}, false)
 							staticRefreshFrames := sharedWorld.VisibleStaticActorRefreshFrames(restartedLive)
 							frames := append(append([][]byte(nil), bootstrapFrames...), staticRefreshFrames...)
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
@@ -5213,6 +5220,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							refreshLiveCharacterRegistration()
 							activeCharacterPosition = bootstrapCharacterPositionGeneral
 							clearActiveCombatTarget()
+							setActiveSafeboxOpen(0, false)
+							setActiveRefineDialog(refineDialogPresentation{}, false)
 							frames := append(append([][]byte(nil), bootstrapFrames...), transferFrames...)
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
@@ -6481,6 +6490,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			joinedSharedWorld = false
 			clearActiveMerchantBuy()
 			setActiveSafeboxOpen(0, false)
+			setActiveRefineDialog(refineDialogPresentation{}, false)
 			clearActiveCombatTarget()
 			clearLiveCharacterRegistration()
 			stateMu.Unlock()
