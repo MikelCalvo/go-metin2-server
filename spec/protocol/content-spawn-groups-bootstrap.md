@@ -472,7 +472,7 @@ Contract for the first daemon-restart live damaged HP persistence seam:
 - still-dead and live-damaged overlays stay mutually exclusive: non-zero HP may not carry a respawn deadline, and `HP=0` still requires the absolute deadline
 - MaxHP for validation resolves through the actor's built-in or portable `combat_profiles` defaults already owned by the snapshot; unknown/unresolved max HP fails closed
 - engagement / proximity-suppress / selected-target / pending chase / pending return ownership remain fail-closed across restart and re-arm only after fresh post-restart target / hit / proximity acquisition
-- non-spawn standalone `training_dummy` actors, remapping live damaged HP across non-identical content-bundle replacement, and mid-chase / mid-return displacement beyond already-persisted static-actor position remain out of scope
+- non-spawn standalone `training_dummy` actors and mid-chase / mid-return displacement beyond already-persisted static-actor position remain out of scope; remapping live damaged HP across non-identical content-bundle replacement is frozen by the sibling seam below
 
 Current implementation status:
 - accepted non-lethal spawn-group hits persist the damaged `combat_current_hp` overlay through the same static-actor snapshot Save path used by still-dead death
@@ -481,8 +481,34 @@ Current implementation status:
 
 Explicit non-goals for this daemon-restart live damaged HP freeze alone:
 - remapping engagement, selected-target, proximity-suppress, chase, or return schedules across restart
-- remapping live damaged HP across non-identical content-bundle replacement
+- remapping live damaged HP across non-identical content-bundle replacement (frozen separately below)
 - non-spawn `training_dummy` daemon-restart durability
+- cross-map return MOVE / warp packet choreography
+- inventing a second spawn/combat scheduler beyond the existing pending-frame flush path
+
+## First frozen live damaged spawn-group HP remapping across non-identical content-bundle replacement
+
+Question frozen here:
+
+**Once still-dead content-bundle replacement already remaps `HP=0` + absolute respawn deadline by authored `spawn_group_ref`, and daemon restart already restores live damaged HP for the same ref, what is the smallest honest extension that keeps a mid-fight content-loaded spawn-group combatant at its live damaged HP across a successful non-identical `ImportContentBundle` replacement of that same authored ref without restoring engagement or inventing a second combat store?**
+
+Contract for the first live damaged HP content-bundle replacement remapping seam:
+- while a content-loaded spawn-group combatant is live with runtime-owned HP in `1..max_hp-1`, a successful non-identical `ImportContentBundle` / authored replacement that keeps that same authored `spawn_group_ref` must remap that damaged HP onto the newly registered actor before import fanout
+- post-replacement `SpawnGroupByRef` / fresh `TARGET` / attack math must continue from that remapped damaged HP / matching `hp_percent` instead of silently resetting to full max HP
+- still-dead remapping stays owned and unchanged: `HP=0` + absolute respawn deadline continue to remap through the existing still-dead replacement path
+- full max HP remains the omit form and does not invent a damaged overlay during replacement
+- engagement / proximity-suppress / selected-target / pending chase / pending return ownership remain fail-closed across that replacement boundary and re-arm only after fresh post-replacement target / hit / proximity acquisition
+- identical no-op reimports may continue to short-circuit without mutating lifecycle state; this rule targets non-identical replacements that would otherwise remove and re-register the same authored ref as a fresh live full-HP instance
+- non-spawn standalone `training_dummy` actors, remapping engagement across replacement, and mid-chase / mid-return displacement beyond already-persisted static-actor position remain out of scope
+
+Current implementation status:
+- still-dead content-bundle replacement anti-resurrect is owned
+- daemon-restart live damaged HP persistence is owned
+- live damaged HP remapping across non-identical content-bundle replacement is frozen here and not yet implemented
+
+Explicit non-goals for this live damaged replacement remapping freeze alone:
+- remapping engagement, selected-target, proximity-suppress, chase, or return schedules across replacement
+- non-spawn `training_dummy` replacement durability
 - cross-map return MOVE / warp packet choreography
 - inventing a second spawn/combat scheduler beyond the existing pending-frame flush path
 
@@ -490,7 +516,7 @@ Explicit non-goals for this anti-leak freeze alone:
 - cross-map return MOVE / warp packet choreography
 - multi-member spawn packs or pack-wide synchronized respawn
 - inventing a second spawn scheduler beyond the existing pending-frame flush path
-- remapping live damaged HP, engagement, or chase/return schedules across non-identical content-bundle replacement
+- remapping engagement or chase/return schedules across non-identical content-bundle replacement (live damaged HP remapping across that replacement is frozen above)
 - converting generic operator actor presentation updates or respawn rebuild to MOVE
 
 ## Explicit non-goals
@@ -643,7 +669,7 @@ Explicit non-goals for this profile-authored leash-radius freeze alone:
 - cross-map return MOVE / warp choreography
 - inventing a second return/chase scheduler beyond the existing pending-frame consumers
 - changing the already-owned engagement / chase / retaliation consumers beyond substituting the effective leash radius
-- remapping live damaged HP / engagement across non-identical content-bundle replacement (live damaged HP across clean daemon restart is owned above)
+- remapping engagement across non-identical content-bundle replacement (live damaged HP remapping across that replacement is frozen above; live damaged HP across clean daemon restart remains owned)
 
 ## Success definition
 
