@@ -9,18 +9,21 @@ Fail closed for active-shell `EXCHANGE ACCEPT` (including second-accept mutual-a
 1. Requester-side open merchant / safebox / refine presentation rejects `ACCEPT` silently with no accept marker, no finalize frames, no mutation, and a still-cancellable shell.
 2. Partner-side open merchant / safebox / refine presentation likewise rejects first-side or second-side `ACCEPT` silently before mutual-accept finalize.
 3. Spec/QA wording names those busy-window accept rejects beside the already-owned START busy rejects and other second-accept finalization preconditions.
+4. Session/runtime proofs cover requester open-merchant and partner first-accept open-merchant / open-safebox rejects, plus the already-owned requester open-safebox and partner second-accept merchant/safebox rejects.
+5. Shared-world unit coverage freezes the refine busy-window `AcceptExchange` reject because mid-shell refine preview closes the exchange shell before a session-level refine ACCEPT path can stay open.
 
 ## What this is not yet
 
 - partner-side open player-shop / cube busy-window rejection text
 - richer trade-target eligibility beyond the owned distance + merchant/safebox/refine busy gate
 - stronger rollback/audit policy beyond the current fail-closed mutual-accept finalize
+- optional authored reject-chat feedback for busy-window accept rejects
 
 ## TDD and validation
 
 Focused coverage:
 
-- `go test ./internal/minimal -run 'ItemExchangeAcceptRejectsRequesterOpenSafebox|ItemExchangeSecondAcceptRejectsPartnerOpenSafebox|ItemExchangeSecondAcceptRejectsPartnerOpenMerchant' -count=1`
+- `go test ./internal/minimal -run 'ItemExchangeAcceptRejectsRequesterOpenSafebox|ItemExchangeAcceptRejectsRequesterOpenMerchant|ItemExchangeAcceptRejectsPartnerOpenSafebox|ItemExchangeAcceptRejectsPartnerOpenMerchant|ItemExchangeSecondAcceptRejectsPartnerOpenSafebox|ItemExchangeSecondAcceptRejectsPartnerOpenMerchant|SharedWorldAcceptExchangeRejectsOpenRefineWindow' -count=1`
 - `gofmt` on touched Go files
 - `git diff --check`
 

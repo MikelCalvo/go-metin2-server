@@ -2932,6 +2932,404 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsPartnerOpenMerchantWithoutMut
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "partner open-merchant second accept peer")
 }
 
+func TestGameRuntimeItemExchangeAcceptRejectsRequesterOpenMerchantWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchAcceptMerchOwner", 0x010307d7, 0x020407d7, 1100, 2100, 0, 101, 201)
+	owner.Gold = 500
+	owner.Inventory = []inventory.ItemInstance{{ID: 804, Vnum: 27052, Count: 1, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchAcceptMerchPeer", 0x010307d8, 0x020407d8, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerLogin := "ex-accept-merch-a"
+	peerLogin := "ex-accept-merch-b"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070d7, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070d8, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange accept-merchant owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange accept-merchant peer account: %v", err)
+	}
+	displayTemplate := itemcatalog.Template{Vnum: 27052, Name: "Accept Merchant Potion", Stackable: true, MaxCount: 200}
+	merchantTemplate := itemcatalog.Template{Vnum: 27053, Name: "Accept Merchant Guard Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{displayTemplate, merchantTemplate})
+	merchantDefinition := interactionstore.Definition{
+		Kind:  interactionstore.KindShopPreview,
+		Ref:   "npc:exchange_accept_requester_merchant_guard",
+		Title: "Exchange Accept Requester Merchant Guard",
+		Catalog: []interactionstore.MerchantCatalogEntry{
+			{Slot: 0, ItemVnum: 27053, Price: 50, Count: 1},
+		},
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{merchantDefinition})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange accept-merchant runtime error: %v", err)
+	}
+	merchant, ok := runtime.RegisterStaticActorWithInteraction("ExchangeAcceptRequesterMerchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, merchantDefinition.Ref)
+	if !ok {
+		t.Fatal("expected exchange accept-merchant static actor registration to succeed")
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070d7)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070d8)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected accept-merchant exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected accept-merchant exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "accept-merchant owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected accept-merchant exchange start to queue one peer frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "accept-merchant peer start")
+
+	itemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 7, Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected accept-merchant item-add error: %v", err)
+	}
+	if len(itemAddOut) != 1 {
+		t.Fatalf("expected accept-merchant item-add to emit one owner frame, got %d", len(itemAddOut))
+	}
+	assertExchangeItemAddFrame(t, itemAddOut[0], 1, 7, owner.Inventory[0], displayTemplate, "accept-merchant owner item-add")
+	queuedItemAdd := flushServerFrames(t, peerFlow)
+	if len(queuedItemAdd) != 1 {
+		t.Fatalf("expected accept-merchant item-add to queue one peer frame, got %d", len(queuedItemAdd))
+	}
+	assertExchangeItemAddFrame(t, queuedItemAdd[0], 0, 7, owner.Inventory[0], displayTemplate, "accept-merchant peer item-add")
+
+	merchantOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(merchant.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected accept-merchant requester merchant-open error: %v", err)
+	}
+	if len(merchantOut) != 1 {
+		t.Fatalf("expected accept-merchant requester merchant-open to emit one shop start frame, got %d", len(merchantOut))
+	}
+	if _, err := shopproto.DecodeServerStart(decodeSingleFrame(t, merchantOut[0])); err != nil {
+		t.Fatalf("decode accept-merchant requester shop start: %v", err)
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected accept-merchant requester merchant-open to queue no peer frames, got %d", len(queued))
+	}
+
+	acceptOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected accept-merchant owner accept error: %v", err)
+	}
+	if len(acceptOut) != 0 {
+		t.Fatalf("expected requester open-merchant accept to fail closed with no frames, got %d", len(acceptOut))
+	}
+	if queuedAccept := flushServerFrames(t, peerFlow); len(queuedAccept) != 0 {
+		t.Fatalf("expected requester open-merchant accept to queue no peer frames, got %d", len(queuedAccept))
+	}
+
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected accept-merchant cancel after rejected accept: %v", err)
+	}
+	if len(cancelOut) != 1 {
+		t.Fatalf("expected accept-merchant shell to remain cancellable, got %d frames", len(cancelOut))
+	}
+	assertExchangeEndFrame(t, cancelOut[0], "accept-merchant owner cancel")
+	queuedCancel := flushServerFrames(t, peerFlow)
+	if len(queuedCancel) != 1 {
+		t.Fatalf("expected accept-merchant owner cancel to queue one peer END, got %d", len(queuedCancel))
+	}
+	assertExchangeEndFrame(t, queuedCancel[0], "accept-merchant peer queued cancel")
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "requester open-merchant accept owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "requester open-merchant accept peer")
+}
+
+func TestGameRuntimeItemExchangeAcceptRejectsPartnerOpenMerchantWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchPMerch1stOwner", 0x010307d9, 0x020407d9, 1100, 2100, 0, 101, 201)
+	owner.Gold = 500
+	owner.Inventory = []inventory.ItemInstance{{ID: 805, Vnum: 27054, Count: 1, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchPMerch1stPeer", 0x010307da, 0x020407da, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerLogin := "ex-p-merch-1st-a"
+	peerLogin := "ex-p-merch-1st-b"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070d9, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070da, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed partner-merchant first-accept owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed partner-merchant first-accept peer account: %v", err)
+	}
+	displayTemplate := itemcatalog.Template{Vnum: 27054, Name: "Partner Merchant First Accept Potion", Stackable: true, MaxCount: 200}
+	merchantTemplate := itemcatalog.Template{Vnum: 27055, Name: "Partner Merchant First Accept Guard", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{displayTemplate, merchantTemplate})
+	merchantDefinition := interactionstore.Definition{
+		Kind:  interactionstore.KindShopPreview,
+		Ref:   "npc:exchange_accept_partner_merchant_first",
+		Title: "Exchange Accept Partner Merchant First",
+		Catalog: []interactionstore.MerchantCatalogEntry{
+			{Slot: 0, ItemVnum: 27055, Price: 50, Count: 1},
+		},
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{merchantDefinition})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected partner-merchant first-accept runtime error: %v", err)
+	}
+	merchant, ok := runtime.RegisterStaticActorWithInteraction("ExchangeAcceptPartnerMerchantFirst", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, merchantDefinition.Ref)
+	if !ok {
+		t.Fatal("expected partner-merchant first-accept static actor registration to succeed")
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070d9)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070da)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected partner-merchant first-accept exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected partner-merchant first-accept exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "partner-merchant first-accept owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected partner-merchant first-accept exchange start to queue one peer frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "partner-merchant first-accept peer start")
+
+	itemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 7, Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected partner-merchant first-accept item-add error: %v", err)
+	}
+	if len(itemAddOut) != 1 {
+		t.Fatalf("expected partner-merchant first-accept item-add to emit one owner frame, got %d", len(itemAddOut))
+	}
+	assertExchangeItemAddFrame(t, itemAddOut[0], 1, 7, owner.Inventory[0], displayTemplate, "partner-merchant first-accept owner item-add")
+	queuedItemAdd := flushServerFrames(t, peerFlow)
+	if len(queuedItemAdd) != 1 {
+		t.Fatalf("expected partner-merchant first-accept item-add to queue one peer frame, got %d", len(queuedItemAdd))
+	}
+	assertExchangeItemAddFrame(t, queuedItemAdd[0], 0, 7, owner.Inventory[0], displayTemplate, "partner-merchant first-accept peer item-add")
+
+	merchantOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(merchant.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected partner merchant-open before first accept error: %v", err)
+	}
+	if len(merchantOut) != 1 {
+		t.Fatalf("expected partner merchant-open before first accept to emit one shop start frame, got %d", len(merchantOut))
+	}
+	if _, err := shopproto.DecodeServerStart(decodeSingleFrame(t, merchantOut[0])); err != nil {
+		t.Fatalf("decode partner merchant-open before first accept shop start: %v", err)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected partner merchant-open before first accept to queue no owner frames, got %d", len(queued))
+	}
+
+	acceptOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected partner-merchant first-accept owner accept error: %v", err)
+	}
+	if len(acceptOut) != 0 {
+		t.Fatalf("expected first accept to reject partner open-merchant with no frames, got %d", len(acceptOut))
+	}
+	if queuedAccept := flushServerFrames(t, peerFlow); len(queuedAccept) != 0 {
+		t.Fatalf("expected partner open-merchant first accept to queue no peer frames, got %d", len(queuedAccept))
+	}
+
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected partner-merchant first-accept cancel after rejected accept: %v", err)
+	}
+	if len(cancelOut) != 1 {
+		t.Fatalf("expected partner-merchant first-accept shell to remain cancellable, got %d frames", len(cancelOut))
+	}
+	assertExchangeEndFrame(t, cancelOut[0], "partner-merchant first-accept owner cancel")
+	queuedCancel := flushServerFrames(t, peerFlow)
+	if len(queuedCancel) != 1 {
+		t.Fatalf("expected partner-merchant first-accept owner cancel to queue one peer END, got %d", len(queuedCancel))
+	}
+	assertExchangeEndFrame(t, queuedCancel[0], "partner-merchant first-accept peer queued cancel")
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "partner open-merchant first accept owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "partner open-merchant first accept peer")
+}
+
+func TestGameRuntimeItemExchangeAcceptRejectsPartnerOpenSafeboxWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchPSafe1stOwner", 0x010307db, 0x020407db, 1100, 2100, 0, 101, 201)
+	owner.Gold = 500
+	owner.Inventory = []inventory.ItemInstance{{ID: 806, Vnum: 27056, Count: 1, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchPSafe1stPeer", 0x010307dc, 0x020407dc, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerLogin := "ex-p-safe-1st-a"
+	peerLogin := "ex-p-safe-1st-b"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070db, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070dc, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed partner-safebox first-accept owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed partner-safebox first-accept peer account: %v", err)
+	}
+	displayTemplate := itemcatalog.Template{Vnum: 27056, Name: "Partner Safebox First Accept Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{displayTemplate})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected partner-safebox first-accept runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070db)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070dc)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected partner-safebox first-accept exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected partner-safebox first-accept exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "partner-safebox first-accept owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected partner-safebox first-accept exchange start to queue one peer frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "partner-safebox first-accept peer start")
+
+	itemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 7, Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected partner-safebox first-accept item-add error: %v", err)
+	}
+	if len(itemAddOut) != 1 {
+		t.Fatalf("expected partner-safebox first-accept item-add to emit one owner frame, got %d", len(itemAddOut))
+	}
+	assertExchangeItemAddFrame(t, itemAddOut[0], 1, 7, owner.Inventory[0], displayTemplate, "partner-safebox first-accept owner item-add")
+	queuedItemAdd := flushServerFrames(t, peerFlow)
+	if len(queuedItemAdd) != 1 {
+		t.Fatalf("expected partner-safebox first-accept item-add to queue one peer frame, got %d", len(queuedItemAdd))
+	}
+	assertExchangeItemAddFrame(t, queuedItemAdd[0], 0, 7, owner.Inventory[0], displayTemplate, "partner-safebox first-accept peer item-add")
+
+	openOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected partner /open_safebox before first accept error: %v", err)
+	}
+	if len(openOut) != 1 {
+		t.Fatalf("expected partner /open_safebox before first accept to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
+	}
+	if _, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, openOut[0])); err != nil {
+		t.Fatalf("decode partner /open_safebox before first accept SAFEBOX_SIZE: %v", err)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected partner /open_safebox before first accept to queue no owner frames, got %d", len(queued))
+	}
+
+	acceptOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected partner-safebox first-accept owner accept error: %v", err)
+	}
+	if len(acceptOut) != 0 {
+		t.Fatalf("expected first accept to reject partner open-safebox with no frames, got %d", len(acceptOut))
+	}
+	if queuedAccept := flushServerFrames(t, peerFlow); len(queuedAccept) != 0 {
+		t.Fatalf("expected partner open-safebox first accept to queue no peer frames, got %d", len(queuedAccept))
+	}
+
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected partner-safebox first-accept cancel after rejected accept: %v", err)
+	}
+	if len(cancelOut) != 1 {
+		t.Fatalf("expected partner-safebox first-accept shell to remain cancellable, got %d frames", len(cancelOut))
+	}
+	assertExchangeEndFrame(t, cancelOut[0], "partner-safebox first-accept owner cancel")
+	queuedCancel := flushServerFrames(t, peerFlow)
+	if len(queuedCancel) != 1 {
+		t.Fatalf("expected partner-safebox first-accept owner cancel to queue one peer END, got %d", len(queuedCancel))
+	}
+	assertExchangeEndFrame(t, queuedCancel[0], "partner-safebox first-accept peer queued cancel")
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "partner open-safebox first accept owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "partner open-safebox first accept peer")
+}
+
+func TestSharedWorldAcceptExchangeRejectsOpenRefineWindowWithoutMutation(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("ExchAcceptRefineOwner", 0x010307dd, 0x020407dd, 1100, 2100, 0, 101, 201)
+	owner.Gold = 500
+	peer := peerVisibilityCharacter("ExchAcceptRefinePeer", 0x010307de, 0x020407de, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerPending := newPendingServerFrames()
+	peerPending := newPendingServerFrames()
+	ownerID, _ := registry.Join(owner, ownerPending, nil)
+	peerID, _ := registry.Join(peer, peerPending, nil)
+	if ownerID == 0 || peerID == 0 {
+		t.Fatalf("expected shared-world join to allocate owner/peer ids, got owner=%d peer=%d", ownerID, peerID)
+	}
+	_ = ownerPending.flush()
+	_ = peerPending.flush()
+
+	startFrames, ok := registry.StartExchange(ownerID, peer.VID)
+	if !ok || len(startFrames) != 1 {
+		t.Fatalf("expected exchange start to succeed with one owner frame, ok=%v frames=%d", ok, len(startFrames))
+	}
+	if queued := peerPending.flush(); len(queued) != 1 {
+		t.Fatalf("expected exchange start to queue one peer frame, got %d", len(queued))
+	}
+
+	if !registry.SetRefineWindowOpen(ownerID, true) {
+		t.Fatal("expected SetRefineWindowOpen(owner) to succeed")
+	}
+	acceptFrames, finalizePlan, ok := registry.AcceptExchange(ownerID, owner.Gold, owner)
+	if ok || finalizePlan != nil || len(acceptFrames) != 0 {
+		t.Fatalf("expected requester open-refine AcceptExchange to fail closed, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
+	}
+	if queued := peerPending.flush(); len(queued) != 0 {
+		t.Fatalf("expected requester open-refine AcceptExchange to queue no peer frames, got %d", len(queued))
+	}
+
+	if !registry.SetRefineWindowOpen(ownerID, false) {
+		t.Fatal("expected SetRefineWindowOpen(owner,false) to succeed")
+	}
+	if !registry.SetRefineWindowOpen(peerID, true) {
+		t.Fatal("expected SetRefineWindowOpen(peer) to succeed")
+	}
+	acceptFrames, finalizePlan, ok = registry.AcceptExchange(ownerID, owner.Gold, owner)
+	if ok || finalizePlan != nil || len(acceptFrames) != 0 {
+		t.Fatalf("expected partner open-refine AcceptExchange to fail closed, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
+	}
+	if queued := peerPending.flush(); len(queued) != 0 {
+		t.Fatalf("expected partner open-refine AcceptExchange to queue no peer frames, got %d", len(queued))
+	}
+
+	cancelFrames, ok := registry.CancelExchange(ownerID)
+	if !ok || len(cancelFrames) != 1 {
+		t.Fatalf("expected exchange shell to remain cancellable after refine busy rejects, ok=%v frames=%d", ok, len(cancelFrames))
+	}
+	if queued := peerPending.flush(); len(queued) != 1 {
+		t.Fatalf("expected cancel to queue one peer END, got %d", len(queued))
+	}
+}
+
 func TestGameRuntimeStoragePacketsFailClosedWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
