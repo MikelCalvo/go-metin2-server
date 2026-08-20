@@ -35,7 +35,9 @@ func (s *MemoryStore) Load() (Snapshot, error) {
 	if !s.committed {
 		return Snapshot{}, ErrSnapshotNotFound
 	}
-	return cloneSnapshot(s.snapshot), nil
+	// Re-normalize so empty committed snapshots return Flags: []Flag{} rather
+	// than a nil slice, matching FileStore Load/Save canonicalization.
+	return normalizeSnapshot(s.snapshot), nil
 }
 
 func (s *MemoryStore) Save(snapshot Snapshot) error {

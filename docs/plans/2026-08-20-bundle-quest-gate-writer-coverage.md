@@ -35,5 +35,5 @@ Focused coverage:
 
 ## Follow-up options
 
-1. Wire hermetic `queststate.MemoryStore` into kill-quest / PvE gameplay tests that still use `FileStore`.
-2. Add matching hermetic repository seams for static-content / item-template exports when callers need the same coupling reduction.
+1. Wire hermetic `queststate.MemoryStore` into kill-quest / PvE gameplay tests that still use `FileStore`. Done in `2026-08-20-hermetic-queststate-memorystore-gameplay-tests.md`.
+2. Add matching hermetic repository seams for static-content exports when callers need the same coupling reduction. Item-template state now has its own exporter + hermetic `MemoryStore`.

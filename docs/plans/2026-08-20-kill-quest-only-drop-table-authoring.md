@@ -29,5 +29,5 @@ Focused coverage:
 
 ## Follow-up options
 
-1. Wire hermetic `queststate.MemoryStore` into kill-quest / PvE gameplay tests that still use `FileStore`.
+1. Wire hermetic `queststate.MemoryStore` into kill-quest / PvE gameplay tests that still use `FileStore`. Done in `2026-08-20-hermetic-queststate-memorystore-gameplay-tests.md`.
 2. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.

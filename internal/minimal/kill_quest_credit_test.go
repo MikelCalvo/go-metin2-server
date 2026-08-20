@@ -49,6 +49,7 @@ func TestGameRuntimeImportsContentBundleKillQuestCredit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new kill quest runtime: %v", err)
 	}
+	runtime.questStateStore = queststate.NewMemoryStore()
 	imported, err := runtime.ImportContentBundle(contentbundle.Bundle{
 		SpawnGroups: []contentbundle.SpawnGroup{{
 			Ref:             "practice.kill_quest_mob",
@@ -103,6 +104,7 @@ func TestGameRuntimeImportsDropTableKillQuestCredit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new drop-table kill quest runtime: %v", err)
 	}
+	runtime.questStateStore = queststate.NewMemoryStore()
 	imported, err := runtime.ImportContentBundle(contentbundle.Bundle{
 		DropTables: []contentbundle.DropTable{{
 			Ref:              "loot.qa_kill_quest_reward",
@@ -154,6 +156,7 @@ func TestGameRuntimeImportsDropTableKillQuestRequireGate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new drop-table gated kill quest runtime: %v", err)
 	}
+	runtime.questStateStore = queststate.NewMemoryStore()
 	imported, err := runtime.ImportContentBundle(contentbundle.Bundle{
 		DropTables: []contentbundle.DropTable{{
 			Ref:              "loot.qa_gated_kill_quest_reward",
@@ -230,6 +233,7 @@ func TestGameRuntimeImportsRegenSpawnKillQuestRequireGate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new regen gated kill quest runtime: %v", err)
 	}
+	runtime.questStateStore = queststate.NewMemoryStore()
 	imported, err := runtime.ImportContentBundle(contentbundle.Bundle{
 		DropTables: []contentbundle.DropTable{{
 			Ref:              "loot.qa_regen_gated_kill_quest_reward",
@@ -294,7 +298,6 @@ func TestGameRuntimeImportsRegenSpawnKillQuestRequireGate(t *testing.T) {
 }
 
 func TestHandleAttackKillAppliesQuestFlagCreditAfterDeathReward(t *testing.T) {
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	killer := peerVisibilityCharacter("KillQuestKiller", 0x0103014F, 0x0204014F, 1100, 2100, 0, 101, 201)
 	killer.Points[bootstrapExperiencePointType] = 25
@@ -306,7 +309,7 @@ func TestHandleAttackKillAppliesQuestFlagCreditAfterDeathReward(t *testing.T) {
 		t.Fatalf("seed kill quest killer account: %v", err)
 	}
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
 		ticketStore,
 		accounts,
 		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
@@ -317,6 +320,7 @@ func TestHandleAttackKillAppliesQuestFlagCreditAfterDeathReward(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new kill quest credit runtime: %v", err)
 	}
+	runtime.questStateStore = queststate.NewMemoryStore()
 	currentTime := time.Unix(1_700_000_500, 0)
 	runtime.now = func() time.Time { return currentTime }
 	imported, err := runtime.ImportContentBundle(contentbundle.Bundle{
@@ -384,7 +388,6 @@ func TestHandleAttackKillAppliesQuestFlagCreditAfterDeathReward(t *testing.T) {
 }
 
 func TestHandleAttackKillQuestCreditSilentOnCurrentValueMismatch(t *testing.T) {
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	killer := peerVisibilityCharacter("KillQuestMismatch", 0x01030150, 0x02040150, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, ticketStore, "kill-quest-mismatch", 0x50505050, killer)
@@ -393,7 +396,7 @@ func TestHandleAttackKillQuestCreditSilentOnCurrentValueMismatch(t *testing.T) {
 		t.Fatalf("seed mismatch killer account: %v", err)
 	}
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
 		ticketStore,
 		accounts,
 		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
@@ -404,6 +407,7 @@ func TestHandleAttackKillQuestCreditSilentOnCurrentValueMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new mismatch kill quest runtime: %v", err)
 	}
+	runtime.questStateStore = queststate.NewMemoryStore()
 	currentTime := time.Unix(1_700_000_600, 0)
 	runtime.now = func() time.Time { return currentTime }
 	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{
@@ -460,7 +464,6 @@ func TestHandleAttackKillQuestCreditSilentOnCurrentValueMismatch(t *testing.T) {
 }
 
 func TestHandleAttackKillQuestCreditAppliesWhenDeathRewardEmpty(t *testing.T) {
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	killer := peerVisibilityCharacter("KillQuestEmptyReward", 0x01030151, 0x02040151, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, ticketStore, "kill-quest-empty", 0x51515151, killer)
@@ -469,7 +472,7 @@ func TestHandleAttackKillQuestCreditAppliesWhenDeathRewardEmpty(t *testing.T) {
 		t.Fatalf("seed empty-reward killer account: %v", err)
 	}
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
 		ticketStore,
 		accounts,
 		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
@@ -480,6 +483,7 @@ func TestHandleAttackKillQuestCreditAppliesWhenDeathRewardEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new empty-reward kill quest runtime: %v", err)
 	}
+	runtime.questStateStore = queststate.NewMemoryStore()
 	currentTime := time.Unix(1_700_000_700, 0)
 	runtime.now = func() time.Time { return currentTime }
 	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{
@@ -533,7 +537,6 @@ func TestHandleAttackKillQuestCreditAppliesWhenDeathRewardEmpty(t *testing.T) {
 }
 
 func TestKillQuestCreditThenTurnInClearsKilledQAMob(t *testing.T) {
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	killer := peerVisibilityCharacter("KillQuestTurnIn", 0x01030152, 0x02040152, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, ticketStore, "kill-quest-turnin", 0x52525252, killer)
@@ -542,7 +545,7 @@ func TestKillQuestCreditThenTurnInClearsKilledQAMob(t *testing.T) {
 		t.Fatalf("seed turn-in killer account: %v", err)
 	}
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
 		ticketStore,
 		accounts,
 		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
@@ -553,6 +556,7 @@ func TestKillQuestCreditThenTurnInClearsKilledQAMob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new kill quest turn-in runtime: %v", err)
 	}
+	runtime.questStateStore = queststate.NewMemoryStore()
 	currentTime := time.Unix(1_700_000_800, 0)
 	runtime.now = func() time.Time { return currentTime }
 	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{
@@ -658,7 +662,6 @@ func TestKillQuestCreditThenTurnInClearsKilledQAMob(t *testing.T) {
 }
 
 func TestKillQuestTurnInMismatchWithoutKillCredit(t *testing.T) {
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("KillQuestTurnInMismatch", 0x01030153, 0x02040153, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, ticketStore, "kill-quest-turnin-mismatch", 0x53535353, peer)
@@ -667,7 +670,7 @@ func TestKillQuestTurnInMismatchWithoutKillCredit(t *testing.T) {
 		t.Fatalf("seed turn-in mismatch account: %v", err)
 	}
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
 		ticketStore,
 		accounts,
 		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
@@ -678,6 +681,7 @@ func TestKillQuestTurnInMismatchWithoutKillCredit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new kill quest turn-in mismatch runtime: %v", err)
 	}
+	runtime.questStateStore = queststate.NewMemoryStore()
 	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{
 		StaticActors: []contentbundle.StaticActor{{
 			Name:            "QuestHunter",
@@ -728,7 +732,6 @@ func TestKillQuestTurnInMismatchWithoutKillCredit(t *testing.T) {
 }
 
 func TestHandleAttackKillQuestRequireGateSilentWhenUnmet(t *testing.T) {
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	killer := peerVisibilityCharacter("KillQuestGateMiss", 0x01030154, 0x02040154, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, ticketStore, "kill-quest-gate-miss", 0x54545454, killer)
@@ -737,7 +740,7 @@ func TestHandleAttackKillQuestRequireGateSilentWhenUnmet(t *testing.T) {
 		t.Fatalf("seed gated miss killer account: %v", err)
 	}
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
 		ticketStore,
 		accounts,
 		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
@@ -748,6 +751,7 @@ func TestHandleAttackKillQuestRequireGateSilentWhenUnmet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new gated miss kill quest runtime: %v", err)
 	}
+	runtime.questStateStore = queststate.NewMemoryStore()
 	currentTime := time.Unix(1_700_000_600, 0)
 	runtime.now = func() time.Time { return currentTime }
 	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{
@@ -802,7 +806,6 @@ func TestHandleAttackKillQuestRequireGateSilentWhenUnmet(t *testing.T) {
 }
 
 func TestHandleAttackKillQuestRequireGateAppliesWhenMet(t *testing.T) {
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	killer := peerVisibilityCharacter("KillQuestGateHit", 0x01030155, 0x02040155, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, ticketStore, "kill-quest-gate-hit", 0x55555555, killer)
@@ -811,7 +814,7 @@ func TestHandleAttackKillQuestRequireGateAppliesWhenMet(t *testing.T) {
 		t.Fatalf("seed gated hit killer account: %v", err)
 	}
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
 		ticketStore,
 		accounts,
 		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
@@ -822,6 +825,7 @@ func TestHandleAttackKillQuestRequireGateAppliesWhenMet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new gated hit kill quest runtime: %v", err)
 	}
+	runtime.questStateStore = queststate.NewMemoryStore()
 	currentTime := time.Unix(1_700_000_700, 0)
 	runtime.now = func() time.Time { return currentTime }
 	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{

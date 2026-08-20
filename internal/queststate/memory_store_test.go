@@ -76,6 +76,21 @@ func TestMemoryStoreRejectsInvalidSave(t *testing.T) {
 	}
 }
 
+func TestMemoryStoreLoadEmptySnapshotReturnsNonNilFlags(t *testing.T) {
+	store := NewMemoryStore()
+	if err := store.Save(Snapshot{}); err != nil {
+		t.Fatalf("save empty memory quest state: %v", err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("load empty memory quest state: %v", err)
+	}
+	want := Snapshot{Flags: []Flag{}}
+	if !reflect.DeepEqual(loaded, want) {
+		t.Fatalf("empty memory load must canonicalize Flags to []Flag{}:\n got: %#v\nwant: %#v", loaded, want)
+	}
+}
+
 func TestMemoryStoreExportsMatchFileStoreAndPassQuarantine(t *testing.T) {
 	seed := Snapshot{Flags: []Flag{
 		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},

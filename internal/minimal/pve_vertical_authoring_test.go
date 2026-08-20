@@ -43,7 +43,6 @@ func loadBootstrapPveVerticalAuthoringBundle(t *testing.T) contentbundle.Bundle 
 }
 
 func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testing.T) {
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	hero := peerVisibilityCharacter("PveVerticalHero", 0x01030160, 0x02040160, 469500, 964200, 0, 101, 201)
 	issuePeerTicket(t, ticketStore, "pve-vertical", 0x60606060, hero)
@@ -52,7 +51,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("seed PvE vertical account: %v", err)
 	}
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath},
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
 		ticketStore,
 		accounts,
 		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
@@ -63,6 +62,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if err != nil {
 		t.Fatalf("new PvE vertical runtime: %v", err)
 	}
+	runtime.questStateStore = queststate.NewMemoryStore()
 	currentTime := time.Unix(1_700_001_000, 0)
 	runtime.now = func() time.Time { return currentTime }
 
