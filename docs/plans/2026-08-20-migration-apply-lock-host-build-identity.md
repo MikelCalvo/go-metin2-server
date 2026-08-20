@@ -63,4 +63,5 @@ Validation for this slice:
 
 1. Keep automatic stale-lock removal deferred until a deployment-specific recovery policy exists.
 2. Add DB-engine-specific advisory lock coverage once a production driver is selected.
-3. Keep ground-item restart durability deferred until operators decide that quarantined `0010` exports should drive recovery.
+3. ~~Add advisory hostname locality on `apply-lock-status`.~~ Done: see [migration apply lock holder hostname locality](2026-08-21-migration-apply-lock-holder-hostname-locality.md).
+4. Keep ground-item restart durability deferred until operators decide that quarantined `0010` exports should drive recovery.

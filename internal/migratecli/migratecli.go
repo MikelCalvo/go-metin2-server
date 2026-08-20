@@ -870,6 +870,13 @@ func runApplyLockStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 		}
 		status.HolderPIDAlive = &alive
 		status.HolderPIDCheck = migrationApplyLockHolderPIDCheck
+		hostnameLocal, err := localHostnameMatches(lock.Hostname)
+		if err != nil {
+			fmt.Fprintf(stderr, "migration apply lock status: %v\n", err)
+			return exitError
+		}
+		status.HolderHostnameLocal = &hostnameLocal
+		status.HolderHostnameCheck = migrationApplyLockHolderHostnameCheck
 	}
 	return writeJSON(stdout, stderr, status)
 }
@@ -917,6 +924,8 @@ const migrationApplyLockStatusFormat = "go-metin2-migration-apply-lock-status-v1
 
 const migrationApplyLockHolderPIDCheck = "local_signal_0"
 
+const migrationApplyLockHolderHostnameCheck = "local_os_hostname"
+
 const migrationApplyAuditStatusFormat = "go-metin2-migration-apply-audit-status-v1"
 
 var ErrMigrationApplyAudit = errors.New("migration apply audit failed")
@@ -960,11 +969,13 @@ type migrationApplyLock struct {
 }
 
 type migrationApplyLockStatus struct {
-	Format         string              `json:"format"`
-	Present        bool                `json:"present"`
-	Lock           *migrationApplyLock `json:"lock,omitempty"`
-	HolderPIDAlive *bool               `json:"holder_pid_alive,omitempty"`
-	HolderPIDCheck string              `json:"holder_pid_check,omitempty"`
+	Format              string              `json:"format"`
+	Present             bool                `json:"present"`
+	Lock                *migrationApplyLock `json:"lock,omitempty"`
+	HolderPIDAlive      *bool               `json:"holder_pid_alive,omitempty"`
+	HolderPIDCheck      string              `json:"holder_pid_check,omitempty"`
+	HolderHostnameLocal *bool               `json:"holder_hostname_local,omitempty"`
+	HolderHostnameCheck string              `json:"holder_hostname_check,omitempty"`
 }
 
 // localProcessExists reports whether pid appears in the local process table.
@@ -985,6 +996,21 @@ func localProcessExists(pid int) (bool, error) {
 		return true, nil
 	}
 	return false, fmt.Errorf("%w: probe lock holder pid %d: %v", ErrMigrationApplyLock, pid, err)
+}
+
+// localHostnameMatches reports whether lockHostname equals the current host's
+// os.Hostname() value after trimming. Lookup failures fail closed so operators
+// never treat an inconclusive probe as authorization to delete a lock.
+func localHostnameMatches(lockHostname string) (bool, error) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return false, fmt.Errorf("%w: resolve local hostname: %v", ErrMigrationApplyLock, err)
+	}
+	hostname = strings.TrimSpace(hostname)
+	if hostname == "" {
+		return false, fmt.Errorf("%w: local hostname is empty", ErrMigrationApplyLock)
+	}
+	return hostname == strings.TrimSpace(lockHostname), nil
 }
 
 type migrationApplyAuditStatus struct {

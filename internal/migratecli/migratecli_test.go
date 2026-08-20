@@ -1565,6 +1565,9 @@ func TestRunApplyLockStatusReportsMissingLockWithoutOpeningDatabase(t *testing.T
 	if got.HolderPIDAlive != nil || got.HolderPIDCheck != "" {
 		t.Fatalf("missing lock status must omit holder liveness fields: %#v", got)
 	}
+	if got.HolderHostnameLocal != nil || got.HolderHostnameCheck != "" {
+		t.Fatalf("missing lock status must omit holder hostname fields: %#v", got)
+	}
 	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
 		t.Fatalf("apply-lock-status must not open a database target, got events %#v", events)
 	}
@@ -1643,6 +1646,9 @@ func TestRunApplyLockStatusReadsMetadataOnlyLockFile(t *testing.T) {
 	if got.HolderPIDAlive == nil || !*got.HolderPIDAlive || got.HolderPIDCheck != migrationApplyLockHolderPIDCheck {
 		t.Fatalf("unexpected lock holder liveness: alive=%v check=%q", got.HolderPIDAlive, got.HolderPIDCheck)
 	}
+	if got.HolderHostnameLocal == nil || !*got.HolderHostnameLocal || got.HolderHostnameCheck != migrationApplyLockHolderHostnameCheck {
+		t.Fatalf("unexpected lock holder hostname locality: local=%v check=%q", got.HolderHostnameLocal, got.HolderHostnameCheck)
+	}
 	if got.Lock.Driver != driverName || !got.Lock.DSNConfigured {
 		t.Fatalf("unexpected lock database metadata: %#v", got.Lock)
 	}
@@ -1716,6 +1722,69 @@ func TestRunApplyLockStatusReportsAbsentHolderPID(t *testing.T) {
 	}
 	if got.HolderPIDAlive == nil || *got.HolderPIDAlive || got.HolderPIDCheck != migrationApplyLockHolderPIDCheck {
 		t.Fatalf("expected absent holder liveness false, got alive=%v check=%q", got.HolderPIDAlive, got.HolderPIDCheck)
+	}
+	if got.HolderHostnameLocal == nil || !*got.HolderHostnameLocal || got.HolderHostnameCheck != migrationApplyLockHolderHostnameCheck {
+		t.Fatalf("expected local hostname match for absent-PID lock, got local=%v check=%q", got.HolderHostnameLocal, got.HolderHostnameCheck)
+	}
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("apply-lock-status must not remove the inspected lock file: %v", err)
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("apply-lock-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunApplyLockStatusReportsForeignHostname(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	localHostname := mustLocalHostname(t)
+	foreignHostname := localHostname + "-foreign"
+	lockPath := t.TempDir() + "/migration-apply.lock"
+	lock := migrationApplyLock{
+		Format:               migrationApplyLockFormat,
+		CreatedAt:            "2026-08-17T00:00:00Z",
+		PID:                  os.Getpid(),
+		Hostname:             foreignHostname,
+		BuildVersion:         "dev",
+		BuildCommit:          "none",
+		BuildDate:            "unknown",
+		Driver:               "example-driver",
+		DSNConfigured:        true,
+		TargetVersion:        1,
+		TargetLatest:         false,
+		PlanSHA256:           strings.Repeat("a", 64),
+		LedgerSnapshotSHA256: strings.Repeat("b", 64),
+	}
+	rawLock, err := json.MarshalIndent(lock, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal lock JSON: %v", err)
+	}
+	rawLock = append(rawLock, '\n')
+	if err := os.WriteFile(lockPath, rawLock, 0o600); err != nil {
+		t.Fatalf("write lock JSON: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-lock-status", "--lock-file", lockPath}, nil, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected apply-lock-status to succeed for foreign hostname, exit=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr on apply-lock-status success, got %q", stderr.String())
+	}
+	var got migrationApplyLockStatus
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode lock status JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if !got.Present || got.Lock == nil || got.Lock.Hostname != foreignHostname {
+		t.Fatalf("unexpected lock status envelope: %#v", got)
+	}
+	if got.HolderHostnameLocal == nil || *got.HolderHostnameLocal || got.HolderHostnameCheck != migrationApplyLockHolderHostnameCheck {
+		t.Fatalf("expected foreign hostname locality false, got local=%v check=%q", got.HolderHostnameLocal, got.HolderHostnameCheck)
+	}
+	if got.HolderPIDAlive == nil || !*got.HolderPIDAlive || got.HolderPIDCheck != migrationApplyLockHolderPIDCheck {
+		t.Fatalf("expected current-process PID still alive for foreign-host lock, got alive=%v check=%q", got.HolderPIDAlive, got.HolderPIDCheck)
 	}
 	if _, err := os.Stat(lockPath); err != nil {
 		t.Fatalf("apply-lock-status must not remove the inspected lock file: %v", err)
