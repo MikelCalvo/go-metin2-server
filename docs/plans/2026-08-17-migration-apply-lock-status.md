@@ -67,6 +67,6 @@ Validation for this slice:
 
 ## Follow-up options
 
-1. Add deployment-specific stale-lock policy only after the project defines host/process ownership and retention expectations.
+1. ~~Add deployment-specific stale-lock policy only after the project defines host/process ownership and retention expectations.~~ Partial: holder PID liveness reporting landed in [migration apply lock holder liveness](2026-08-20-migration-apply-lock-holder-liveness.md); automatic removal remains deferred.
 2. Add DB-engine-specific advisory lock coverage once a production driver is selected.
 3. Keep daemon-local migration endpoints read-only unless a future production-admin threat model intentionally changes that boundary.

@@ -15,6 +15,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -847,6 +848,13 @@ func runApplyLockStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 	if present {
 		status.Lock = &lock
+		alive, err := localProcessExists(lock.PID)
+		if err != nil {
+			fmt.Fprintf(stderr, "migration apply lock status: %v\n", err)
+			return exitError
+		}
+		status.HolderPIDAlive = &alive
+		status.HolderPIDCheck = migrationApplyLockHolderPIDCheck
 	}
 	return writeJSON(stdout, stderr, status)
 }
@@ -892,6 +900,8 @@ const migrationApplyLockFormat = "go-metin2-migration-apply-lock-v1"
 
 const migrationApplyLockStatusFormat = "go-metin2-migration-apply-lock-status-v1"
 
+const migrationApplyLockHolderPIDCheck = "local_signal_0"
+
 const migrationApplyAuditStatusFormat = "go-metin2-migration-apply-audit-status-v1"
 
 var ErrMigrationApplyAudit = errors.New("migration apply audit failed")
@@ -931,9 +941,31 @@ type migrationApplyLock struct {
 }
 
 type migrationApplyLockStatus struct {
-	Format  string              `json:"format"`
-	Present bool                `json:"present"`
-	Lock    *migrationApplyLock `json:"lock,omitempty"`
+	Format         string              `json:"format"`
+	Present        bool                `json:"present"`
+	Lock           *migrationApplyLock `json:"lock,omitempty"`
+	HolderPIDAlive *bool               `json:"holder_pid_alive,omitempty"`
+	HolderPIDCheck string              `json:"holder_pid_check,omitempty"`
+}
+
+// localProcessExists reports whether pid appears in the local process table.
+// Signal 0 is used as a non-mutating existence probe. ESRCH means absent;
+// success or EPERM means the pid still exists. Other probe errors fail closed.
+func localProcessExists(pid int) (bool, error) {
+	if pid <= 0 {
+		return false, fmt.Errorf("%w: lock pid must be positive", ErrMigrationApplyLock)
+	}
+	err := syscall.Kill(pid, 0)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, syscall.ESRCH) {
+		return false, nil
+	}
+	if errors.Is(err, syscall.EPERM) {
+		return true, nil
+	}
+	return false, fmt.Errorf("%w: probe lock holder pid %d: %v", ErrMigrationApplyLock, pid, err)
 }
 
 type migrationApplyAuditStatus struct {

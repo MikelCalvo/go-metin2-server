@@ -14,6 +14,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 
 	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
@@ -1561,6 +1562,9 @@ func TestRunApplyLockStatusReportsMissingLockWithoutOpeningDatabase(t *testing.T
 	if got.Format != migrationApplyLockStatusFormat || got.Present || got.Lock != nil {
 		t.Fatalf("unexpected missing lock status: %#v", got)
 	}
+	if got.HolderPIDAlive != nil || got.HolderPIDCheck != "" {
+		t.Fatalf("missing lock status must omit holder liveness fields: %#v", got)
+	}
 	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
 		t.Fatalf("apply-lock-status must not open a database target, got events %#v", events)
 	}
@@ -1585,7 +1589,7 @@ func TestRunApplyLockStatusReadsMetadataOnlyLockFile(t *testing.T) {
 	lock := migrationApplyLock{
 		Format:               migrationApplyLockFormat,
 		CreatedAt:            "2026-08-17T00:00:00Z",
-		PID:                  1234,
+		PID:                  os.Getpid(),
 		Driver:               driverName,
 		DSNConfigured:        true,
 		TargetVersion:        1,
@@ -1621,8 +1625,11 @@ func TestRunApplyLockStatusReadsMetadataOnlyLockFile(t *testing.T) {
 	if got.Format != migrationApplyLockStatusFormat || !got.Present || got.Lock == nil {
 		t.Fatalf("unexpected lock status envelope: %#v", got)
 	}
-	if got.Lock.Format != migrationApplyLockFormat || got.Lock.CreatedAt == "" || got.Lock.PID <= 0 {
+	if got.Lock.Format != migrationApplyLockFormat || got.Lock.CreatedAt == "" || got.Lock.PID != os.Getpid() {
 		t.Fatalf("unexpected lock process metadata: %#v", got.Lock)
+	}
+	if got.HolderPIDAlive == nil || !*got.HolderPIDAlive || got.HolderPIDCheck != migrationApplyLockHolderPIDCheck {
+		t.Fatalf("unexpected lock holder liveness: alive=%v check=%q", got.HolderPIDAlive, got.HolderPIDCheck)
 	}
 	if got.Lock.Driver != driverName || !got.Lock.DSNConfigured {
 		t.Fatalf("unexpected lock database metadata: %#v", got.Lock)
@@ -1641,6 +1648,58 @@ func TestRunApplyLockStatusReadsMetadataOnlyLockFile(t *testing.T) {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("lock status output must not expose %q, got %s", forbidden, body)
 		}
+	}
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("apply-lock-status must not remove the inspected lock file: %v", err)
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("apply-lock-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunApplyLockStatusReportsAbsentHolderPID(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	absentPID := findAbsentLocalPID(t)
+	lockPath := t.TempDir() + "/migration-apply.lock"
+	lock := migrationApplyLock{
+		Format:               migrationApplyLockFormat,
+		CreatedAt:            "2026-08-17T00:00:00Z",
+		PID:                  absentPID,
+		Driver:               "example-driver",
+		DSNConfigured:        true,
+		TargetVersion:        1,
+		TargetLatest:         false,
+		PlanSHA256:           strings.Repeat("a", 64),
+		LedgerSnapshotSHA256: strings.Repeat("b", 64),
+	}
+	rawLock, err := json.MarshalIndent(lock, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal lock JSON: %v", err)
+	}
+	rawLock = append(rawLock, '\n')
+	if err := os.WriteFile(lockPath, rawLock, 0o600); err != nil {
+		t.Fatalf("write lock JSON: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-lock-status", "--lock-file", lockPath}, nil, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected apply-lock-status to succeed for absent holder, exit=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr on apply-lock-status success, got %q", stderr.String())
+	}
+	var got migrationApplyLockStatus
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode lock status JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if !got.Present || got.Lock == nil || got.Lock.PID != absentPID {
+		t.Fatalf("unexpected lock status envelope: %#v", got)
+	}
+	if got.HolderPIDAlive == nil || *got.HolderPIDAlive || got.HolderPIDCheck != migrationApplyLockHolderPIDCheck {
+		t.Fatalf("expected absent holder liveness false, got alive=%v check=%q", got.HolderPIDAlive, got.HolderPIDCheck)
 	}
 	if _, err := os.Stat(lockPath); err != nil {
 		t.Fatalf("apply-lock-status must not remove the inspected lock file: %v", err)
@@ -3630,4 +3689,16 @@ func strconvAtoiForTest(value string) (int, error) {
 func testSHA256HexBytes(raw []byte) string {
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
+}
+
+func findAbsentLocalPID(t *testing.T) int {
+	t.Helper()
+	for pid := int(^uint32(0) >> 1); pid > 1; pid-- {
+		err := syscall.Kill(pid, 0)
+		if errors.Is(err, syscall.ESRCH) {
+			return pid
+		}
+	}
+	t.Fatal("could not find an absent local PID for lock-status coverage")
+	return 0
 }
