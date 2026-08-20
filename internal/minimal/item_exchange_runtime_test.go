@@ -2470,6 +2470,111 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverOverTemplateMaxCompat
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "receiver over-template-max peer")
 }
 
+func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverSelectedCharacterRestrictionBeforeFinalizationWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeReceiverRestrictOwner", 0x010307bf, 0x020407bf, 1100, 2100, 0, 101, 201)
+	owner.Gold = 500
+	owner.Level = 20
+	owner.Inventory = []inventory.ItemInstance{{ID: 787, Vnum: 27046, Count: 1, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeReceiverRestrictPeer", 0x010307cf, 0x020407cf, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Level = 5
+	ownerLogin := "ex-receiver-restrict-a"
+	peerLogin := "ex-receiver-restrict-b"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070bf, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070cf, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange receiver-restriction owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange receiver-restriction peer account: %v", err)
+	}
+	displayTemplate := itemcatalog.Template{Vnum: 27046, Name: "High-Level Exchange Potion", Stackable: true, MaxCount: 200, MinLevel: 10, Sockets: itemcatalog.SocketValues{1, 3, 5}}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{displayTemplate})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange receiver-restriction runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070bf)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070cf)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected receiver-restriction exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected receiver-restriction exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "receiver-restriction owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected receiver-restriction exchange start to queue one peer frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "receiver-restriction peer start")
+
+	itemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 7, Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected receiver-restriction item-add error: %v", err)
+	}
+	if len(itemAddOut) != 1 {
+		t.Fatalf("expected receiver-restriction item-add to emit one owner frame, got %d", len(itemAddOut))
+	}
+	assertExchangeItemAddFrame(t, itemAddOut[0], 1, 7, owner.Inventory[0], displayTemplate, "receiver-restriction owner item-add")
+	queuedItemAdd := flushServerFrames(t, peerFlow)
+	if len(queuedItemAdd) != 1 {
+		t.Fatalf("expected receiver-restriction item-add to queue one peer frame, got %d", len(queuedItemAdd))
+	}
+	assertExchangeItemAddFrame(t, queuedItemAdd[0], 0, 7, owner.Inventory[0], displayTemplate, "receiver-restriction peer item-add")
+
+	ownerAcceptOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected receiver-restriction owner accept error: %v", err)
+	}
+	if len(ownerAcceptOut) != 1 {
+		t.Fatalf("expected receiver-restriction owner accept to emit one frame, got %d", len(ownerAcceptOut))
+	}
+	assertExchangeAcceptFrame(t, ownerAcceptOut[0], 1, "receiver-restriction owner accept")
+	queuedOwnerAccept := flushServerFrames(t, peerFlow)
+	if len(queuedOwnerAccept) != 1 {
+		t.Fatalf("expected receiver-restriction owner accept to queue one peer frame, got %d", len(queuedOwnerAccept))
+	}
+	assertExchangeAcceptFrame(t, queuedOwnerAccept[0], 0, "receiver-restriction owner accept peer")
+
+	peerAcceptOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected receiver-restriction peer accept error: %v", err)
+	}
+	if len(peerAcceptOut) != 0 {
+		t.Fatalf("expected second accept to reject receiver selected-character restriction with no frames, got %d", len(peerAcceptOut))
+	}
+	if queuedAccept := flushServerFrames(t, ownerFlow); len(queuedAccept) != 0 {
+		t.Fatalf("expected receiver selected-character restriction precondition to queue no owner frames, got %d", len(queuedAccept))
+	}
+
+	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected receiver-restriction cancel after rejected peer accept: %v", err)
+	}
+	if len(cancelOut) != 1 {
+		t.Fatalf("expected receiver-restriction shell to remain cancellable, got %d frames", len(cancelOut))
+	}
+	assertExchangeEndFrame(t, cancelOut[0], "receiver-restriction peer cancel")
+	queuedCancel := flushServerFrames(t, ownerFlow)
+	if len(queuedCancel) != 1 {
+		t.Fatalf("expected receiver-restriction peer cancel to queue one owner END, got %d", len(queuedCancel))
+	}
+	assertExchangeEndFrame(t, queuedCancel[0], "receiver-restriction owner queued cancel")
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "receiver selected-character restriction owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "receiver selected-character restriction peer")
+}
+
 func TestGameRuntimeStoragePacketsFailClosedWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
