@@ -20,6 +20,7 @@ The current boundary is deliberately narrow:
 - restore refuses live selected-character sessions;
 - restore is a replacement into an empty destination, not an online merge;
 - ground-item / ground-gold handles remain live runtime state and are **not** covered by this drill;
+- committed account gold/inventory and quest flags rematerialize across `gamed` process restart from the same FileStore paths (see [character-state process-restart recovery](../plans/2026-08-20-character-state-process-restart-recovery.md)); this drill still covers backup/restore, not that rematerialization proof;
 - SQL migration apply remains CLI-only through `metin2-migrate` — see [migration apply runbook](migration-apply-runbook.md).
 
 ## Endpoint inventory
