@@ -16,7 +16,7 @@ Align authoring-only `drop_tables` validation with the already-owned spawn-group
 - randomized / weighted loot tables
 - quest item rewards or turn-in item grants
 - changing runtime death-reward execution beyond the already-owned empty-combat + kill-quest path
-- new example fixtures (existing drop-table / regen / PvE authoring bundles remain combat+kill-quest examples)
+- ~~new example fixtures (existing drop-table / regen / PvE authoring bundles remain combat+kill-quest examples)~~ Done: `docs/examples/bootstrap-kill-quest-only-drop-table-authoring-bundle.json` now covers the gated kill-quest-only `drop_tables` authoring form.
 
 ## TDD and validation
 
@@ -30,4 +30,5 @@ Focused coverage:
 ## Follow-up options
 
 1. Wire hermetic `queststate.MemoryStore` into kill-quest / PvE gameplay tests that still use `FileStore`. Done in `2026-08-20-hermetic-queststate-memorystore-gameplay-tests.md`.
-2. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
+2. ~~Add a checked-in kill-quest-only `drop_tables` authoring fixture beside the combat+kill-quest examples.~~ Done: `docs/examples/bootstrap-kill-quest-only-drop-table-authoring-bundle.json` plus focused canonicalize/ops validate coverage.
+3. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.

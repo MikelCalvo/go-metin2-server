@@ -4230,6 +4230,62 @@ func TestCanonicalizeDropTableAuthoringExampleExpandsToCanonicalRewardDescriptor
 	}
 }
 
+func TestCanonicalizeKillQuestOnlyDropTableAuthoringExampleExpandsWithoutCombatChannels(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-kill-quest-only-drop-table-authoring-bundle.json"))
+	if err != nil {
+		t.Fatalf("read kill-quest-only drop-table authoring example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode kill-quest-only drop-table authoring example bundle: %v", err)
+	}
+	canonical, err := Canonicalize(bundle)
+	if err != nil {
+		t.Fatalf("canonicalize kill-quest-only drop-table authoring example bundle: %v", err)
+	}
+	if len(canonical.DropTables) != 0 {
+		t.Fatalf("expected kill-quest-only drop-table authoring example to canonicalize without top-level drop_tables, got %+v", canonical.DropTables)
+	}
+	if len(canonical.ItemTemplates) != 0 {
+		t.Fatalf("expected kill-quest-only drop-table authoring example to carry no item templates, got %+v", canonical.ItemTemplates)
+	}
+	want := []SpawnGroup{{
+		Ref:              "practice.qa_kill_quest_only_table_mob",
+		Name:             "QAKillQuestOnlyTableMob",
+		MapIndex:         1,
+		X:                469750,
+		Y:                964200,
+		RaceNum:          20350,
+		CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+		RewardQuestRef:   "quest:first_steps",
+		RewardQuestFlag:  "killed_qa_mob",
+		RewardQuestTo:    1,
+		RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+		RequireQuestRef:  "quest:first_steps",
+		RequireQuestFlag: "met_guide",
+		RequireQuestFrom: 1,
+	}}
+	if !reflect.DeepEqual(canonical.SpawnGroups, want) {
+		t.Fatalf("unexpected canonical kill-quest-only drop-table authoring spawn groups:\n got: %#v\nwant: %#v", canonical.SpawnGroups, want)
+	}
+	wantWriter := []interactionstore.Definition{{
+		Kind:      interactionstore.KindQuestFlag,
+		Ref:       "quest:first_steps",
+		Text:      "Quest updated: first_steps.met_guide = 1.",
+		QuestRef:  "quest:first_steps",
+		QuestFlag: "met_guide",
+		QuestTo:   1,
+	}}
+	if !reflect.DeepEqual(canonical.InteractionDefinitions, wantWriter) {
+		t.Fatalf("unexpected canonical kill-quest-only drop-table authoring interaction definitions:\n got: %#v\nwant: %#v", canonical.InteractionDefinitions, wantWriter)
+	}
+}
+
 func TestCanonicalizeExpandsAuthoringRegenSpawnsIntoSpawnGroups(t *testing.T) {
 	bundle, err := Canonicalize(Bundle{
 		DropTables: []DropTable{{Ref: "loot.qa_regen_reward", RewardExperience: 90, RewardGold: 45, DropVnums: []uint32{27002, 27001}}},
