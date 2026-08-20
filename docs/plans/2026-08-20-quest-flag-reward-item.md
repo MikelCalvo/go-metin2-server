@@ -49,3 +49,4 @@ Focused coverage:
 1. Keep branching quest scripts deferred.
 2. Multi-entry structured turn-in reward tables (`reward_items[]`) are now owned; keep weighted/random turn-in loot deferred.
 3. Keep new NPC service kinds deferred until accepted safebox/storage mutations exist.
+4. Player-facing inventory-full / restricted reward-grant reject chat is now owned; keep interaction-definition-authored reject text deferred unless template `buy_reject_message` proves insufficient for QA.

@@ -31,4 +31,4 @@ Focused coverage:
 
 1. Keep partner-side open player-shop / cube busy-window exchange `START` rejects deferred until those presentation seams exist.
 2. Keep ground-item restart durability deferred until operators decide quarantined `0010` exports should drive recovery.
-3. Optional authored reject text for restricted turn-in grants remains a later feedback seam.
+3. Player-facing restricted turn-in grant reject chat is now owned (`buy_reject_message` / `You cannot receive this quest reward.`); keep interaction-definition-authored reject text deferred.

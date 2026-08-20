@@ -83,6 +83,7 @@ const itemPickupInventoryFullInfoMessage = "You have too many items."
 const itemBuyRejectedInfoMessage = "The merchant will not sell this item to you."
 const itemSellRejectedInfoMessage = "The merchant refuses to buy this item."
 const itemUnequipRejectedInfoMessage = "You cannot remove this item."
+const questFlagRewardRestrictedInfoMessage = "You cannot receive this quest reward."
 const exchangePartnerMerchantBusyInfoMessage = "That player cannot trade right now."
 const exchangeRequesterMerchantBusyInfoMessage = "You cannot trade while another trade window is open."
 const bootstrapSafeboxOpenMinSize uint8 = 1
@@ -248,6 +249,8 @@ const (
 	staticActorInteractionFailureWarpDestinationInvalid    = "warp_destination_invalid"
 	staticActorInteractionFailureWarpNotApplied            = "warp_not_applied"
 	staticActorInteractionFailureQuestCurrentValueMismatch = "quest_current_value_mismatch"
+	staticActorInteractionFailureQuestRewardInventoryFull  = "quest_reward_inventory_full"
+	staticActorInteractionFailureQuestRewardRestricted     = "quest_reward_restricted"
 	staticActorInteractionCooldown                         = time.Second
 )
 
@@ -431,6 +434,10 @@ type gameRuntime struct {
 
 type liveCharacterStateSnapshot struct {
 	Name       string
+	Level      uint8
+	Job        uint8
+	RaceNum    uint16
+	Empire     uint8
 	Gold       uint64
 	Points     [255]int32
 	Inventory  []InventoryItemSnapshot
@@ -2670,6 +2677,10 @@ func normalizeLiveCharacterName(name string) string {
 func buildLiveCharacterStateSnapshot(character loginticket.Character) liveCharacterStateSnapshot {
 	state := liveCharacterStateSnapshot{
 		Name:       character.Name,
+		Level:      character.Level,
+		Job:        character.Job,
+		RaceNum:    character.RaceNum,
+		Empire:     character.Empire,
 		Gold:       character.Gold,
 		Points:     character.Points,
 		Inventory:  make([]InventoryItemSnapshot, 0, len(character.Inventory)),
@@ -6019,6 +6030,24 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 								}
 							}
 							for i, entry := range rewardItems {
+								failure := scratch.ValidateCarriedItemGrant(rewardItemTemplates[i], entry.Count)
+								if failure != "" {
+									var failureDelivery *chatproto.ChatDeliveryPacket
+									switch failure {
+									case player.CarriedItemGrantFailureNoValidPlacement:
+										failureDelivery = staticActorInteractionFailureDelivery(staticActorInteractionFailureQuestRewardInventoryFull)
+									case player.CarriedItemGrantFailureInvalid:
+										failureDelivery = questFlagRewardRestrictedDelivery(rewardItemTemplates[i])
+									default:
+										return gameflow.InteractionResult{Accepted: false}
+									}
+									if failureDelivery == nil {
+										return gameflow.InteractionResult{Accepted: false}
+									}
+									markInteractionCooldown(packet.TargetVID)
+									frames := prependMerchantCloseFrame([][]byte{chatproto.EncodeChatDelivery(*failureDelivery)})
+									return gameflow.InteractionResult{Accepted: true, Frames: frames}
+								}
 								if _, ok := scratch.GrantCarriedItem(rewardItemTemplates[i], entry.Count); !ok {
 									return gameflow.InteractionResult{Accepted: false}
 								}
@@ -9994,6 +10023,15 @@ func staticActorInteractionFailureDelivery(failure string) *chatproto.ChatDelive
 	return &delivery
 }
 
+func questFlagRewardRestrictedDelivery(template itemcatalog.Template) *chatproto.ChatDeliveryPacket {
+	message := questFlagRewardRestrictedInfoMessage
+	if text := strings.TrimSpace(template.BuyRejectText); text != "" {
+		message = text
+	}
+	delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message}
+	return &delivery
+}
+
 func staticActorInteractionFailureMessage(failure string) (string, bool) {
 	switch failure {
 	case StaticActorInteractionFailureSubjectNotFound, StaticActorInteractionFailureSubjectDead:
@@ -10016,6 +10054,10 @@ func staticActorInteractionFailureMessage(failure string) (string, bool) {
 		return "Warp unavailable right now.", true
 	case staticActorInteractionFailureQuestCurrentValueMismatch:
 		return "Quest requirements are not met.", true
+	case staticActorInteractionFailureQuestRewardInventoryFull:
+		return itemPickupInventoryFullInfoMessage, true
+	case staticActorInteractionFailureQuestRewardRestricted:
+		return questFlagRewardRestrictedInfoMessage, true
 	default:
 		return "", false
 	}
@@ -10124,6 +10166,9 @@ func (r *gameRuntime) previewQuestFlagInteraction(characterName string, definiti
 				return message, nil
 			}
 		}
+		if message, ok := r.questFlagRewardGrantPreviewFailure(characterName, definition); ok {
+			return message, nil
+		}
 		return questFlagRewardPreview(definition.Text, definition, r.itemTemplates), nil
 	}
 	if result.Result.Reason == queststate.TransitionReasonCurrentValueMismatch {
@@ -10134,6 +10179,61 @@ func (r *gameRuntime) previewQuestFlagInteraction(characterName string, definiti
 		return message, nil
 	}
 	return "", fmt.Errorf("quest flag transition preview failed: %s", result.Result.Reason)
+}
+
+func (r *gameRuntime) questFlagRewardGrantPreviewFailure(characterName string, definition InteractionDefinition) (string, bool) {
+	rewardItems := interactionstore.EffectiveRewardItems(definition)
+	if len(rewardItems) == 0 {
+		return "", false
+	}
+	state, ok := r.liveCharacterState(characterName)
+	if !ok {
+		return "", false
+	}
+	items := make([]inventory.ItemInstance, 0, len(state.Inventory))
+	for _, item := range state.Inventory {
+		items = append(items, inventory.ItemInstance{ID: item.ID, Vnum: item.Vnum, Count: item.Count, Slot: inventory.SlotIndex(item.Slot), Locked: item.Locked})
+	}
+	scratch := player.NewRuntime(loginticket.Character{
+		Name:      characterName,
+		Level:     state.Level,
+		Job:       state.Job,
+		RaceNum:   state.RaceNum,
+		Empire:    state.Empire,
+		Inventory: items,
+	}, player.SessionLink{})
+	if consumeRequirements := questFlagConsumeRequirements(definition); len(consumeRequirements) > 0 {
+		if _, ok := scratch.ConsumeCarriedItems(consumeRequirements); !ok {
+			return "", false
+		}
+	}
+	for _, entry := range rewardItems {
+		template, ok := r.itemTemplates[entry.ItemVnum]
+		if !ok {
+			return "", false
+		}
+		failure := scratch.ValidateCarriedItemGrant(template, entry.Count)
+		if failure == "" {
+			if _, ok := scratch.GrantCarriedItem(template, entry.Count); !ok {
+				return "", false
+			}
+			continue
+		}
+		switch failure {
+		case player.CarriedItemGrantFailureNoValidPlacement:
+			message, ok := staticActorInteractionFailureMessage(staticActorInteractionFailureQuestRewardInventoryFull)
+			return message, ok
+		case player.CarriedItemGrantFailureInvalid:
+			delivery := questFlagRewardRestrictedDelivery(template)
+			if delivery == nil {
+				return "", false
+			}
+			return delivery.Message, true
+		default:
+			return "", false
+		}
+	}
+	return "", false
 }
 
 func questFlagConsumeRequirements(definition InteractionDefinition) []player.CarriedItemConsumeRequirement {

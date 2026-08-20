@@ -185,8 +185,12 @@ func TestGameSessionFlowStaticActorQuestFlagRewardItemsRejectsWhenSecondGrantWou
 	if err != nil {
 		t.Fatalf("unexpected quest-flag reward-items overflow interaction error: %v", err)
 	}
-	if len(out) != 0 {
-		t.Fatalf("expected second-grant overflow quest-flag reward-items turn-in to emit no frames, got %d", len(out))
+	if len(out) != 1 {
+		t.Fatalf("expected one inventory-full reject chat for quest-flag reward-items turn-in, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil || delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != itemPickupInventoryFullInfoMessage {
+		t.Fatalf("unexpected quest-flag reward-items overflow chat delivery: %+v err=%v", delivery, err)
 	}
 	currencySnapshot, ok := runtime.CurrencySnapshot(peer.Name)
 	if !ok || currencySnapshot.Gold != 25 {
@@ -236,6 +240,7 @@ func TestGameSessionFlowStaticActorQuestFlagRewardItemRejectsAntiGetWithoutMutat
 	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
 		Vnum: 27001, Name: "Bound Reward Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiGet: true,
+		BuyRejectText: "This reward is sealed against you.",
 	}}}); err != nil {
 		t.Fatalf("seed quest-flag anti_get reward templates: %v", err)
 	}
@@ -266,8 +271,12 @@ func TestGameSessionFlowStaticActorQuestFlagRewardItemRejectsAntiGetWithoutMutat
 	if err != nil {
 		t.Fatalf("unexpected quest-flag anti_get reward interaction error: %v", err)
 	}
-	if len(out) != 0 {
-		t.Fatalf("expected anti_get quest-flag reward turn-in to emit no frames, got %d", len(out))
+	if len(out) != 1 {
+		t.Fatalf("expected one restricted-reward reject chat for anti_get quest-flag turn-in, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil || delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != "This reward is sealed against you." {
+		t.Fatalf("unexpected quest-flag anti_get reward chat delivery: %+v err=%v", delivery, err)
 	}
 	currencySnapshot, ok := runtime.CurrencySnapshot(peer.Name)
 	if !ok || currencySnapshot.Gold != 25 {
@@ -355,8 +364,12 @@ func TestGameSessionFlowStaticActorQuestFlagRewardItemRejectsSelectedCharacterRe
 	if err != nil {
 		t.Fatalf("unexpected quest-flag min_level reward interaction error: %v", err)
 	}
-	if len(out) != 0 {
-		t.Fatalf("expected min_level quest-flag reward turn-in to emit no frames, got %d", len(out))
+	if len(out) != 1 {
+		t.Fatalf("expected one restricted-reward reject chat for min_level quest-flag turn-in, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil || delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != questFlagRewardRestrictedInfoMessage {
+		t.Fatalf("unexpected quest-flag min_level reward chat delivery: %+v err=%v", delivery, err)
 	}
 	currencySnapshot, ok := runtime.CurrencySnapshot(peer.Name)
 	if !ok || currencySnapshot.Gold != 25 {

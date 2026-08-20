@@ -32580,8 +32580,12 @@ func TestGameSessionFlowStaticActorQuestFlagRewardItemRejectsFullInventoryWithou
 	if err != nil {
 		t.Fatalf("unexpected quest-flag reward-item full-inventory interaction error: %v", err)
 	}
-	if len(out) != 0 {
-		t.Fatalf("expected full inventory quest-flag reward-item turn-in to emit no frames, got %d", len(out))
+	if len(out) != 1 {
+		t.Fatalf("expected one inventory-full reject chat for full inventory quest-flag reward-item turn-in, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil || delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != itemPickupInventoryFullInfoMessage {
+		t.Fatalf("unexpected quest-flag reward-item full-inventory chat delivery: %+v err=%v", delivery, err)
 	}
 	currencySnapshot, ok := runtime.CurrencySnapshot(peer.Name)
 	if !ok || currencySnapshot.Gold != 25 {
