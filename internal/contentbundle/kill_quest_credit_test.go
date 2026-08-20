@@ -177,6 +177,117 @@ func TestCanonicalizeExpandsAuthoringDropTableKillQuestCredit(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeExpandsKillQuestOnlyDropTable(t *testing.T) {
+	bundle, err := Canonicalize(Bundle{
+		DropTables: []DropTable{{
+			Ref:             "loot.qa_kill_quest_only",
+			RewardQuestRef:  "quest:first_steps",
+			RewardQuestFlag: "killed_qa_mob",
+			RewardQuestTo:   1,
+			RewardQuestText: "Quest updated: first_steps.killed_qa_mob = 1.",
+		}},
+		SpawnGroups: []SpawnGroup{{
+			Ref:                "practice.kill_quest_only_drop_table_mob",
+			Name:               "KillQuestOnlyDropTableMob",
+			MapIndex:           42,
+			X:                  1785,
+			Y:                  2885,
+			RaceNum:            101,
+			CombatProfile:      worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropTableRef: "loot.qa_kill_quest_only",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize kill-quest-only drop table: %v", err)
+	}
+	want := SpawnGroup{
+		Ref:             "practice.kill_quest_only_drop_table_mob",
+		Name:            "KillQuestOnlyDropTableMob",
+		MapIndex:        42,
+		X:               1785,
+		Y:               2885,
+		RaceNum:         101,
+		CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+		RewardQuestRef:  "quest:first_steps",
+		RewardQuestFlag: "killed_qa_mob",
+		RewardQuestTo:   1,
+		RewardQuestText: "Quest updated: first_steps.killed_qa_mob = 1.",
+	}
+	if len(bundle.DropTables) != 0 || len(bundle.SpawnGroups) != 1 || !reflect.DeepEqual(bundle.SpawnGroups[0], want) {
+		t.Fatalf("unexpected kill-quest-only drop-table expansion:\n got: %#v\nwant: %#v", bundle.SpawnGroups, want)
+	}
+}
+
+func TestCanonicalizeExpandsRegenSpawnKillQuestOnlyDropTable(t *testing.T) {
+	bundle, err := Canonicalize(Bundle{
+		DropTables: []DropTable{{
+			Ref:              "loot.qa_regen_kill_quest_only",
+			RewardQuestRef:   "quest:first_steps",
+			RewardQuestFlag:  "killed_qa_mob",
+			RewardQuestFrom:  0,
+			RewardQuestTo:    1,
+			RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+			RequireQuestRef:  "quest:first_steps",
+			RequireQuestFlag: "met_guide",
+			RequireQuestFrom: 1,
+		}},
+		RegenSpawns: []RegenSpawn{{
+			Ref:                "practice.regen_kill_quest_only_mob",
+			Name:               "RegenKillQuestOnlyMob",
+			MapIndex:           1,
+			X:                  469900,
+			Y:                  964200,
+			RaceNum:            20350,
+			CombatProfile:      worldruntime.StaticActorCombatProfilePracticeMob,
+			Count:              1,
+			RewardDropTableRef: "loot.qa_regen_kill_quest_only",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize regen kill-quest-only drop table: %v", err)
+	}
+	want := []SpawnGroup{{
+		Ref:              "practice.regen_kill_quest_only_mob",
+		Name:             "RegenKillQuestOnlyMob",
+		MapIndex:         1,
+		X:                469900,
+		Y:                964200,
+		RaceNum:          20350,
+		CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+		RewardQuestRef:   "quest:first_steps",
+		RewardQuestFlag:  "killed_qa_mob",
+		RewardQuestTo:    1,
+		RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+		RequireQuestRef:  "quest:first_steps",
+		RequireQuestFlag: "met_guide",
+		RequireQuestFrom: 1,
+	}}
+	if len(bundle.DropTables) != 0 || len(bundle.RegenSpawns) != 0 || !reflect.DeepEqual(bundle.SpawnGroups, want) {
+		t.Fatalf("unexpected regen kill-quest-only drop-table expansion:\n got: %#v\nwant: %#v", bundle.SpawnGroups, want)
+	}
+}
+
+func TestCanonicalizeRejectsEmptyDropTableWithoutKillQuestCredit(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		DropTables: []DropTable{{
+			Ref: "loot.qa_empty_reward",
+		}},
+		SpawnGroups: []SpawnGroup{{
+			Ref:                "practice.empty_drop_table_mob",
+			Name:               "EmptyDropTableMob",
+			MapIndex:           42,
+			X:                  1785,
+			Y:                  2885,
+			RaceNum:            101,
+			CombatProfile:      worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropTableRef: "loot.qa_empty_reward",
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for empty drop table without kill-quest credit, got %v", err)
+	}
+}
+
 func TestCanonicalizeRejectsConflictingSpawnGroupDropTableKillQuestCredit(t *testing.T) {
 	_, err := Canonicalize(Bundle{
 		DropTables: []DropTable{{

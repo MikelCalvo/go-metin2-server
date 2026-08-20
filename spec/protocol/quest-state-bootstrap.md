@@ -333,7 +333,8 @@ Owned rules:
 - the require gate uses the same identity rules as service quest gates; partial require fields and orphan `require_quest_from` without both require identities fail store/bundle validation
 - require-gate fields are part of the same kill-quest descriptor and must be authored with that credit on the spawn group, regen spawn, or drop table; they may not be split across a spawn row and an expanded table
 - kill-quest credit is spawn-group-only at runtime: standalone static actors without `spawn_group_ref` may not carry these fields
-- authoring-only `drop_tables` may carry the same kill-quest fields including the optional require gate; canonicalization expands them onto the referencing spawn group / regen spawn together with EXP/gold/drop-vnum channels, then strips `drop_tables` and `reward_drop_table_ref`
+- authoring-only `drop_tables` may carry the same kill-quest fields including the optional require gate; canonicalization expands them onto the referencing spawn group / regen spawn together with any authored EXP/gold/drop-vnum channels, then strips `drop_tables` and `reward_drop_table_ref`
+- a kill-quest-only `drop_tables` row (complete kill-quest credit with empty EXP/gold/drop channels) is valid and expands the same way as a direct kill-quest-only spawn group; a completely empty table with neither combat channels nor kill-quest credit remains invalid
 - a spawn group that already authors any kill-quest field may not also expand a table that carries kill-quest credit; that conflict fails closed before import
 - the credit lives beside, not inside, the EXP/gold/drop death-reward descriptor; empty combat rewards may still apply kill-quest credit
 - on the accepted killing hit, after death/clear and any independent EXP/gold/drop reward handling, the selected killer session first evaluates the optional require gate against the live selected-character quest-state snapshot

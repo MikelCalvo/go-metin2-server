@@ -4082,10 +4082,16 @@ func validDropTables(dropTables []DropTable) bool {
 			return false
 		}
 		reward := worldruntime.StaticActorDeathReward{Experience: table.RewardExperience, Gold: table.RewardGold, DropVnums: table.DropVnums}
-		if reward.Empty() || !worldruntime.ValidStaticActorDeathReward(reward) {
+		if !worldruntime.ValidStaticActorDeathReward(reward) {
 			return false
 		}
 		if !validDropTableKillQuestCredit(table) {
+			return false
+		}
+		// Match spawn-group kill-quest ownership: empty combat rewards are allowed
+		// when the table carries a complete kill-quest credit descriptor. Completely
+		// empty tables (no combat channels and no kill-quest credit) stay rejected.
+		if reward.Empty() && !hasDropTableKillQuestCredit(table) {
 			return false
 		}
 		if _, ok := seen[table.Ref]; ok {

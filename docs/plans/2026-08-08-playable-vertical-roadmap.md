@@ -189,7 +189,7 @@ Next slices:
 2. ~~Add first quest-state seam: quest flags, NPC dialog state, and one simple persisted trigger/result contract.~~ Done for bootstrap scope: `quest_flag` interact CAS, optional service gates, kill-quest credit + require gates, and turn-in NPC close the persisted flag loop.
 3. ~~Add regen/drop table ingestion in a deliberately small authored format.~~ Done for bootstrap scope: one-count `regen_spawns` + fixed `drop_tables` expand before import; `docs/examples/bootstrap-pve-vertical-authoring-bundle.json` now composes that authoring form with the quest NPC loop.
 4. Expand NPC service kinds only when client-visible behavior is owned.
-5. Add content validation/canonicalization that catches bad bundles before runtime mutation.
+5. Add content validation/canonicalization that catches bad bundles before runtime mutation. Partial progress: authoring-only `drop_tables` now accept kill-quest-only rows (empty EXP/gold/drop channels with complete kill-quest credit) matching the spawn-group rule; completely empty tables still fail closed.
 6. Keep deterministic example bundles updated for manual QA.
 
 Exit criteria:
