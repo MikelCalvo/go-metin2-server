@@ -352,6 +352,7 @@ type QuestFlagTriggerSummary struct {
 	RewardItemCount  uint16                             `json:"reward_item_count,omitempty"`
 	RewardItems      []interactionstore.RewardItemEntry `json:"reward_items,omitempty"`
 	ConsumeItems     []interactionstore.RewardItemEntry `json:"consume_items,omitempty"`
+	ConsumeGold      uint64                             `json:"consume_gold,omitempty"`
 }
 
 type QuestFlagTriggerDelta struct {
@@ -750,6 +751,7 @@ type QuestFlagRouteSummary struct {
 	RewardItemCount  uint16                             `json:"reward_item_count,omitempty"`
 	RewardItems      []interactionstore.RewardItemEntry `json:"reward_items,omitempty"`
 	ConsumeItems     []interactionstore.RewardItemEntry `json:"consume_items,omitempty"`
+	ConsumeGold      uint64                             `json:"consume_gold,omitempty"`
 }
 
 type ShopRouteSummary struct {
@@ -2987,6 +2989,7 @@ func questFlagTriggerSummary(definition interactionstore.Definition) QuestFlagTr
 		RewardGold:       definition.RewardGold,
 		RewardItems:      rewardItems,
 		ConsumeItems:     interactionstore.EffectiveConsumeItems(definition),
+		ConsumeGold:      definition.ConsumeGold,
 	}
 	if len(rewardItems) > 0 {
 		summary.RewardItemVnum = rewardItems[0].ItemVnum
@@ -3180,6 +3183,9 @@ func questFlagRewardPreview(text string, definition interactionstore.Definition,
 		}
 		preview = fmt.Sprintf("%s [reward_item %s x%d]", preview, itemLabel, count)
 	}
+	if definition.ConsumeGold != 0 {
+		preview = fmt.Sprintf("%s [consume_gold %d]", preview, definition.ConsumeGold)
+	}
 	for _, entry := range interactionstore.EffectiveConsumeItems(definition) {
 		itemLabel := fmt.Sprintf("vnum %d", entry.ItemVnum)
 		if template, ok := itemTemplatesByVnum[entry.ItemVnum]; ok {
@@ -3331,6 +3337,7 @@ func questFlagRouteSummary(actor StaticActor, definition interactionstore.Defini
 		RewardGold:       definition.RewardGold,
 		RewardItems:      rewardItems,
 		ConsumeItems:     interactionstore.EffectiveConsumeItems(definition),
+		ConsumeGold:      definition.ConsumeGold,
 	}
 	if len(rewardItems) > 0 {
 		summary.RewardItemVnum = rewardItems[0].ItemVnum

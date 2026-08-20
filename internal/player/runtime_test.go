@@ -250,6 +250,45 @@ func TestRuntimeAppliesExperienceOnlyDeathRewardToLiveState(t *testing.T) {
 	}
 }
 
+func TestRuntimeDeductLiveGoldRemovesBalance(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030112,
+		VID:  0x02040112,
+		Name: "PeerDeduct",
+		Gold: 40,
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-deduct", CharacterIndex: 0})
+
+	got, ok := runtime.DeductLiveGold(25)
+	if !ok || got != 15 {
+		t.Fatalf("unexpected deduct-live-gold result: ok=%v gold=%d", ok, got)
+	}
+	if runtime.LiveGold() != 15 {
+		t.Fatalf("expected live gold 15 after deduct, got %d", runtime.LiveGold())
+	}
+	if runtime.PersistedSnapshot().Gold != 40 {
+		t.Fatalf("expected persisted gold unchanged before explicit save, got %d", runtime.PersistedSnapshot().Gold)
+	}
+}
+
+func TestRuntimeDeductLiveGoldRejectsInsufficientBalanceWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030113,
+		VID:  0x02040113,
+		Name: "PeerDeductMiss",
+		Gold: 10,
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-deduct-miss", CharacterIndex: 0})
+
+	got, ok := runtime.DeductLiveGold(25)
+	if ok || got != 0 {
+		t.Fatalf("expected insufficient deduct-live-gold to fail closed, got ok=%v gold=%d", ok, got)
+	}
+	if runtime.LiveGold() != 10 {
+		t.Fatalf("expected live gold unchanged after insufficient deduct, got %d", runtime.LiveGold())
+	}
+}
+
 func TestRuntimeAppliesGoldOnlyDeathRewardToLiveState(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030102,

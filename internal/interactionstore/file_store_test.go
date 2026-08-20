@@ -272,6 +272,7 @@ func TestFileStoreSaveThenLoadQuestFlagDefinitionWithConsumeItems(t *testing.T) 
 		ConsumeItems: []RewardItemEntry{
 			{ItemVnum: 27001, Count: 1},
 		},
+		ConsumeGold: 25,
 	}}}
 
 	if err := store.Save(want); err != nil {
@@ -283,6 +284,33 @@ func TestFileStoreSaveThenLoadQuestFlagDefinitionWithConsumeItems(t *testing.T) 
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected quest flag consume-items definition snapshot:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestFileStoreSaveThenLoadQuestFlagDefinitionWithConsumeGold(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	want := Snapshot{Definitions: []Definition{{
+		Kind:        KindQuestFlag,
+		Ref:         "quest:first_steps_kill_turnin",
+		Text:        "Quest updated: first_steps.killed_qa_mob = 0.",
+		QuestRef:    "quest:first_steps",
+		QuestFlag:   "killed_qa_mob",
+		QuestFrom:   1,
+		QuestTo:     0,
+		RewardGold:  100,
+		ConsumeGold: 25,
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save quest flag consume-gold definition: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load quest flag consume-gold definition: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected quest flag consume-gold definition snapshot:\n got: %#v\nwant: %#v", got, want)
 	}
 }
 
@@ -324,6 +352,10 @@ func TestFileStoreRejectsInvalidQuestFlagInteractionDefinition(t *testing.T) {
 		{
 			name:       "reward experience exceeds point-change carrier",
 			definition: Definition{Kind: KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1, RewardExperience: QuestFlagRewardExperienceMax + 1},
+		},
+		{
+			name:       "consume gold exceeds point-change carrier",
+			definition: Definition{Kind: KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1, ConsumeGold: QuestFlagConsumeGoldMax + 1},
 		},
 		{
 			name:       "reward item count without vnum",
@@ -526,6 +558,39 @@ func TestFileStoreRejectsConsumeItemsOnNonQuestFlagDefinitions(t *testing.T) {
 		{
 			name:       "shop_preview",
 			definition: Definition{Kind: KindShopPreview, Ref: "npc:merchant", Title: "Merchant", Catalog: []MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}}, ConsumeItems: []RewardItemEntry{{ItemVnum: 27001, Count: 1}}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := store.Save(Snapshot{Definitions: []Definition{tc.definition}}); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot, got %v", err)
+			}
+		})
+	}
+}
+
+func TestFileStoreRejectsConsumeGoldOnNonQuestFlagDefinitions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	cases := []struct {
+		name       string
+		definition Definition
+	}{
+		{
+			name:       "info",
+			definition: Definition{Kind: KindInfo, Ref: "lore:square", Text: "Welcome.", ConsumeGold: 25},
+		},
+		{
+			name:       "talk",
+			definition: Definition{Kind: KindTalk, Ref: "npc:guide", Text: "Welcome.", ConsumeGold: 25},
+		},
+		{
+			name:       "warp",
+			definition: Definition{Kind: KindWarp, Ref: "npc:teleporter", Text: "Step through the gate.", MapIndex: 42, X: 1700, Y: 2800, ConsumeGold: 25},
+		},
+		{
+			name:       "shop_preview",
+			definition: Definition{Kind: KindShopPreview, Ref: "npc:merchant", Title: "Merchant", Catalog: []MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}}, ConsumeGold: 25},
 		},
 	}
 	for _, tc := range cases {

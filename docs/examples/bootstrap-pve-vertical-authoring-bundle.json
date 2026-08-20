@@ -155,7 +155,8 @@
           "item_vnum": 27001,
           "count": 1
         }
-      ]
+      ],
+      "consume_gold": 25
     },
     {
       "kind": "quest_flag",

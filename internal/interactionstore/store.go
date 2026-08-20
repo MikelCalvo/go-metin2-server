@@ -31,6 +31,10 @@ const (
 	// QuestFlagConsumeItemsMax is the maximum number of carried-item consume
 	// entries a single quest_flag turn-in may author.
 	QuestFlagConsumeItemsMax = 8
+	// QuestFlagConsumeGoldMax is the maximum authored gold debit that still fits
+	// the bootstrap PLAYER_POINT_CHANGE gold carrier used by death rewards and
+	// reward_gold grants.
+	QuestFlagConsumeGoldMax uint64 = 1<<31 - 1
 )
 
 var (
@@ -71,6 +75,7 @@ type Definition struct {
 	RewardItemCount  uint16                 `json:"reward_item_count,omitempty"`
 	RewardItems      []RewardItemEntry      `json:"reward_items,omitempty"`
 	ConsumeItems     []RewardItemEntry      `json:"consume_items,omitempty"`
+	ConsumeGold      uint64                 `json:"consume_gold,omitempty"`
 }
 
 type Snapshot struct {
@@ -208,16 +213,16 @@ func validDefinition(definition Definition) bool {
 	}
 	switch definition.Kind {
 	case KindInfo, KindTalk:
-		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
+		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
 	case KindShopPreview:
-		if definition.Title == "" || !validDefinitionText(definition.Title) || definition.Text != "" || definition.MapIndex != 0 || definition.X != 0 || definition.Y != 0 || definition.RewardExperience != 0 || definition.RewardGold != 0 || hasRewardItems(definition) || hasConsumeItems(definition) || !validOptionalServiceQuestGate(definition) {
+		if definition.Title == "" || !validDefinitionText(definition.Title) || definition.Text != "" || definition.MapIndex != 0 || definition.X != 0 || definition.Y != 0 || definition.RewardExperience != 0 || definition.RewardGold != 0 || definition.ConsumeGold != 0 || hasRewardItems(definition) || hasConsumeItems(definition) || !validOptionalServiceQuestGate(definition) {
 			return false
 		}
 		return validMerchantCatalog(definition.Catalog)
 	case KindWarp:
-		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && definition.MapIndex != 0 && definition.X != 0 && definition.Y != 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
+		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && definition.MapIndex != 0 && definition.X != 0 && definition.Y != 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
 	case KindQuestFlag:
-		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && queststate.ValidQuestRef(definition.QuestRef) && queststate.ValidFlagName(definition.QuestFlag) && definition.QuestFrom != definition.QuestTo && definition.RewardExperience <= QuestFlagRewardExperienceMax && definition.RewardGold <= QuestFlagRewardGoldMax && validOptionalRewardItems(definition) && validOptionalConsumeItems(definition)
+		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && queststate.ValidQuestRef(definition.QuestRef) && queststate.ValidFlagName(definition.QuestFlag) && definition.QuestFrom != definition.QuestTo && definition.RewardExperience <= QuestFlagRewardExperienceMax && definition.RewardGold <= QuestFlagRewardGoldMax && definition.ConsumeGold <= QuestFlagConsumeGoldMax && validOptionalRewardItems(definition) && validOptionalConsumeItems(definition)
 	default:
 		return false
 	}

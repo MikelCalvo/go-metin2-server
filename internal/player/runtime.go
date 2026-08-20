@@ -258,6 +258,22 @@ func (r *Runtime) AddLiveGold(amount uint64) (uint64, bool) {
 	return nextGold, true
 }
 
+// DeductLiveGold removes amount from live gold when the carrier and balance allow it.
+// amount == 0 is treated as a no-op success that returns the current balance.
+func (r *Runtime) DeductLiveGold(amount uint64) (uint64, bool) {
+	if r == nil {
+		return 0, false
+	}
+	if amount == 0 {
+		return r.liveGold, true
+	}
+	if amount > uint64(1<<31-1) || amount > r.liveGold || r.liveGold > uint64(1<<31-1) {
+		return 0, false
+	}
+	r.liveGold -= amount
+	return r.liveGold, true
+}
+
 func (r *Runtime) SetLivePoint(pointIndex uint8, value int32) bool {
 	if r == nil || int(pointIndex) >= len(r.livePoints) {
 		return false

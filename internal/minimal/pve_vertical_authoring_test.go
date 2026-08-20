@@ -48,6 +48,7 @@ func loadBootstrapPveVerticalAuthoringBundle(t *testing.T) contentbundle.Bundle 
 func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	hero := peerVisibilityCharacter("PveVerticalHero", 0x01030160, 0x02040160, 469500, 964200, 0, 101, 201)
+	hero.Gold = 40
 	hero.Inventory = []inventory.ItemInstance{{ID: 9001, Vnum: 27001, Count: 1, Slot: 0}}
 	issuePeerTicket(t, ticketStore, "pve-vertical", 0x60606060, hero)
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -253,37 +254,45 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if err != nil {
 		t.Fatalf("unexpected QuestHunter turn-in interaction error: %v", err)
 	}
-	if len(turnInOut) != 5 {
-		t.Fatalf("expected chat + gold + experience + consume + reward frames for QuestHunter turn-in, got %d", len(turnInOut))
+	if len(turnInOut) != 6 {
+		t.Fatalf("expected chat + consume-gold + reward-gold + experience + consume + reward frames for QuestHunter turn-in, got %d", len(turnInOut))
 	}
 	turnInChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, turnInOut[0]))
 	if err != nil || turnInChat.Message != "Quest updated: first_steps.killed_qa_mob = 0." {
 		t.Fatalf("unexpected QuestHunter turn-in chat: %+v err=%v", turnInChat, err)
 	}
-	wantGoldAfter := beforeTurnInCurrency.Gold + 100
-	turnInGold, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, turnInOut[1]))
+	wantGoldAfterConsume := beforeTurnInCurrency.Gold - 25
+	wantGoldAfter := wantGoldAfterConsume + 100
+	turnInConsumeGold, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, turnInOut[1]))
+	if err != nil {
+		t.Fatalf("decode QuestHunter turn-in consume-gold point change: %v", err)
+	}
+	if turnInConsumeGold.VID != hero.VID || turnInConsumeGold.Type != bootstrapGoldPointType || turnInConsumeGold.Amount != -25 || uint64(turnInConsumeGold.Value) != wantGoldAfterConsume {
+		t.Fatalf("unexpected QuestHunter turn-in consume-gold point change: %+v want value=%d before=%d", turnInConsumeGold, wantGoldAfterConsume, beforeTurnInCurrency.Gold)
+	}
+	turnInGold, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, turnInOut[2]))
 	if err != nil {
 		t.Fatalf("decode QuestHunter turn-in gold point change: %v", err)
 	}
 	if turnInGold.VID != hero.VID || turnInGold.Type != bootstrapGoldPointType || turnInGold.Amount != 100 || uint64(turnInGold.Value) != wantGoldAfter {
 		t.Fatalf("unexpected QuestHunter turn-in gold point change: %+v want value=%d before=%d", turnInGold, wantGoldAfter, beforeTurnInCurrency.Gold)
 	}
-	wantExperienceAfter := beforeTurnInPoints.Points[bootstrapExperiencePointType] + 50
-	turnInExperience, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, turnInOut[2]))
+	turnInExperience, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, turnInOut[3]))
 	if err != nil {
 		t.Fatalf("decode QuestHunter turn-in experience point change: %v", err)
 	}
+	wantExperienceAfter := beforeTurnInPoints.Points[bootstrapExperiencePointType] + 50
 	if turnInExperience.VID != hero.VID || turnInExperience.Type != bootstrapExperiencePointType || turnInExperience.Amount != 50 || turnInExperience.Value != wantExperienceAfter {
 		t.Fatalf("unexpected QuestHunter turn-in experience point change: %+v want value=%d before=%d", turnInExperience, wantExperienceAfter, beforeTurnInPoints.Points[bootstrapExperiencePointType])
 	}
-	consumeDel, err := itemproto.DecodeDel(decodeSingleFrame(t, turnInOut[3]))
+	consumeDel, err := itemproto.DecodeDel(decodeSingleFrame(t, turnInOut[4]))
 	if err != nil {
 		t.Fatalf("decode QuestHunter turn-in consume delete: %v", err)
 	}
 	if consumeDel.Position != itemproto.InventoryPosition(0) {
 		t.Fatalf("unexpected QuestHunter turn-in consume delete: %+v", consumeDel)
 	}
-	itemSet0, err := itemproto.DecodeSet(decodeSingleFrame(t, turnInOut[4]))
+	itemSet0, err := itemproto.DecodeSet(decodeSingleFrame(t, turnInOut[5]))
 	if err != nil {
 		t.Fatalf("decode QuestHunter turn-in reward set: %v", err)
 	}
