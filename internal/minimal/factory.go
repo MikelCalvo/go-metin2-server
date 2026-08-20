@@ -1367,9 +1367,7 @@ func (r *gameRuntime) ExportAuthLoginTicketHandoff() (loginticket.AuthLoginTicke
 	if r == nil || r.loginTicketStore == nil {
 		return loginticket.ExportAuthLoginTicketHandoff(nil)
 	}
-	exporter, ok := r.loginTicketStore.(interface {
-		ExportAuthLoginTicketHandoff() (loginticket.AuthLoginTicketHandoffExport, error)
-	})
+	exporter, ok := r.loginTicketStore.(loginticket.AuthLoginTicketHandoffExporter)
 	if !ok {
 		return loginticket.AuthLoginTicketHandoffExport{}, fmt.Errorf("auth login-ticket handoff export is not supported")
 	}

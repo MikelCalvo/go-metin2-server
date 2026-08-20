@@ -544,6 +544,43 @@ func TestGameRuntimeAuthLoginTicketHandoffExportProjectsCommittedTickets(t *test
 	}
 }
 
+func TestGameRuntimeExportsAuthLoginTicketHandoffThroughMemoryStoreSeam(t *testing.T) {
+	ticketStore := loginticket.NewMemoryStore()
+	issuedAt := time.Date(2026, 8, 20, 9, 30, 0, 0, time.UTC)
+	if err := ticketStore.Issue(loginticket.Ticket{Login: "Alpha", LoginKey: 0x01020304, Empire: 1, IssuedAt: issuedAt, Characters: []loginticket.Character{{ID: 7, Name: "AlphaWar", Level: 1, MapIndex: 1}}}); err != nil {
+		t.Fatalf("issue memory login ticket: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		ticketStore,
+		accountstore.NewMemoryStore(),
+		nil,
+		nil,
+		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	export, err := runtime.ExportAuthLoginTicketHandoff()
+	if err != nil {
+		t.Fatalf("runtime memory auth login-ticket handoff export: %v", err)
+	}
+	if export.MigrationVersion != loginticket.AuthLoginTicketHandoffMigrationVersion || export.MigrationName != loginticket.AuthLoginTicketHandoffMigrationName {
+		t.Fatalf("unexpected migration boundary: %#v", export)
+	}
+	if len(export.Tickets) != 1 || export.Tickets[0].Login != "Alpha" || export.Tickets[0].LoginKey != 0x01020304 || export.Tickets[0].LoginNormalized != "alpha" || !export.Tickets[0].IssuedAt.Equal(issuedAt) {
+		t.Fatalf("unexpected memory ticket export rows: %#v", export.Tickets)
+	}
+	if !strings.Contains(export.Tickets[0].CharactersSnapshotJSON, `"name":"AlphaWar"`) {
+		t.Fatalf("expected characters snapshot JSON to preserve selected character payload, got %s", export.Tickets[0].CharactersSnapshotJSON)
+	}
+	if _, err := loginticket.ValidateAuthLoginTicketHandoffExport(export); err != nil {
+		t.Fatalf("quarantine memory auth login-ticket handoff export: %v", err)
+	}
+}
+
 func TestGameRuntimeCharacterQuestStateExportProjectsCommittedSnapshots(t *testing.T) {
 	accountStore := accountstore.NewFileStore(t.TempDir())
 	if err := accountStore.Save(accountstore.Account{Login: "Alpha", Empire: 1, Characters: []loginticket.Character{{ID: 7, Name: "QuestHero", Level: 1, MapIndex: 1}}}); err != nil {
