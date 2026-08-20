@@ -16170,6 +16170,165 @@ func TestGameSessionFlowPracticeMobRestartTownPreflightsDueDestinationChaseStep(
 	}
 }
 
+func TestGameSessionFlowPracticeMobRestartTownPreflightsDueDestinationReturnStep(t *testing.T) {
+	// Mirror the owned /restart_here return-step preflight onto /restart_town: displace a
+	// destination-map spawn-backed practice mob outside leash so return-step arms, wait until
+	// that deadline is due, then let a floored source-map owner recover into empire-2 town and
+	// observe the stepped destination position in the transfer visibility burst.
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("RTReturnOwner", 0x010301d1, 0x020401d1, 1100, 2100, 0, 101, 201)
+	owner.Empire = 2
+	owner.Points[bootstrapPlayerPointValueIndex] = 0
+	issuePeerTicket(t, store, "rt-return-owner", 0xd1d1d1d1, owner)
+	if err := accounts.Save(accountstore.Account{Login: "rt-return-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed floored /restart_town return-step preflight owner account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	currentTime := time.Unix(1700001360, 0)
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr: ":13000",
+			PublicAddr: "127.0.0.1",
+		},
+		store,
+		accounts,
+		staticActorStore,
+		interactionStore,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error in /restart_town due return-step preflight test: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.restart_town_due_return_destination",
+		Name:          "RestartTownDueReturnDestinationMob",
+		MapIndex:      21,
+		X:             52070,
+		Y:             166600,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}})
+	if err != nil {
+		t.Fatalf("import destination return-step spawn-group bundle for /restart_town preflight: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.restart_town_due_return_destination")
+	if !ok {
+		t.Fatal("expected destination return-step spawn group to resolve by ref")
+	}
+	destinationVID := uint32(group.EntityID)
+
+	const displacedX int32 = 52571
+	const displacedY int32 = 166600
+	const steppedX int32 = 52471
+	const steppedY int32 = 166600
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "RestartTownDueReturnDestinationMob", 21, displacedX, displacedY, 101); !ok {
+		t.Fatal("expected destination spawn-backed displace to succeed before /restart_town due return-step preflight")
+	}
+	if leash, ok := runtime.SpawnGroupLeash(group.EntityID, worldruntime.DefaultSpawnLeashRadius); !ok || !leash.ReturnRequired || leash.Current.X != displacedX || leash.Current.Y != displacedY {
+		t.Fatalf("expected displaced destination practice mob to classify return_required before /restart_town due return-step preflight, ok=%v leash=%+v", ok, leash)
+	}
+	runtime.spawnReturnMu.Lock()
+	dueAt, scheduled := runtime.spawnReturnStepDueAt[group.EntityID]
+	runtime.spawnReturnMu.Unlock()
+	if !scheduled {
+		t.Fatalf("expected return_required displace to arm one pending return-step deadline for entity %d", group.EntityID)
+	}
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "rt-return-owner", 0xd1d1d1d1)
+	defer closeSessionFlow(t, ownerFlow)
+	if len(ownerEnter) < 6 {
+		t.Fatalf("expected floored source owner bootstrap including self DEAD before /restart_town due return-step preflight, got %d frames", len(ownerEnter))
+	}
+	foundDead := false
+	for _, raw := range ownerEnter {
+		if dead, err := worldproto.DecodeDead(decodeSingleFrame(t, raw)); err == nil && dead.VID == owner.VID {
+			foundDead = true
+			break
+		}
+	}
+	if !foundDead {
+		t.Fatalf("expected floored source owner EnterGame to replay self DEAD before /restart_town due return-step preflight, got %d frames", len(ownerEnter))
+	}
+
+	currentTime = currentTime.Add(bootstrapSpawnGroupReturnStepDelay)
+	if runtime.now().Before(dueAt) {
+		t.Fatalf("expected destination return-step deadline to be due before /restart_town, due_at=%s now=%s", dueAt, runtime.now())
+	}
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_town"})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_town error after destination return-step became due: %v", err)
+	}
+	if len(restartOut) < 7 {
+		t.Fatalf("expected /restart_town to preflight due destination return-step and return self bootstrap plus stepped destination mob burst, got %d frames", len(restartOut))
+	}
+	steppedAddIdx := -1
+	for idx := range restartOut {
+		add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[idx]))
+		if err != nil {
+			continue
+		}
+		if add.VID != destinationVID {
+			continue
+		}
+		if add.X != steppedX || add.Y != steppedY {
+			t.Fatalf("expected /restart_town to show due return-step destination position %d,%d for actor %d, got %+v", steppedX, steppedY, group.EntityID, add)
+		}
+		steppedAddIdx = idx
+		break
+	}
+	if steppedAddIdx < 0 {
+		t.Fatalf("expected /restart_town after due destination return-step to include stepped static-actor CHARACTER_ADD, got %d frames", len(restartOut))
+	}
+	if steppedAddIdx+2 >= len(restartOut) {
+		t.Fatalf("expected stepped destination return actor info/update after CHARACTER_ADD at frame %d, got %d frames", steppedAddIdx, len(restartOut))
+	}
+	steppedInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, restartOut[steppedAddIdx+1]))
+	if err != nil {
+		t.Fatalf("decode /restart_town stepped destination return actor info: %v", err)
+	}
+	if steppedInfo.VID != destinationVID || steppedInfo.Name != "RestartTownDueReturnDestinationMob" {
+		t.Fatalf("expected /restart_town to see stepped destination return actor info for target %d, got %+v", group.EntityID, steppedInfo)
+	}
+	steppedUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, restartOut[steppedAddIdx+2]))
+	if err != nil {
+		t.Fatalf("decode /restart_town stepped destination return actor update: %v", err)
+	}
+	if steppedUpdate.VID != destinationVID {
+		t.Fatalf("expected /restart_town to see stepped destination return actor update for target %d, got %+v", group.EntityID, steppedUpdate)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected no duplicate queued destination return-step rebuild after /restart_town due return-step preflight, got %d", len(queued))
+	}
+
+	stepped, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || stepped.X != steppedX || stepped.Y != steppedY || stepped.Dead || stepped.SpawnLeash == nil || !stepped.SpawnLeash.ReturnRequired {
+		t.Fatalf("expected runtime destination actor to remain live at stepped return-required position after /restart_town preflight, ok=%v snapshot=%+v", ok, stepped)
+	}
+	pending, ok := runtime.SpawnGroupReturnStep(group.EntityID)
+	if !ok || pending.EntityID != group.EntityID || pending.Actor.X != steppedX || pending.Step.Next.X != steppedX-bootstrapSpawnGroupReturnStepMaxStep {
+		t.Fatalf("expected still-return-required destination actor to re-arm pending return-step after /restart_town preflight, ok=%v snapshot=%+v", ok, pending)
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after /restart_town due return-step preflight: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != steppedX || persisted.StaticActors[0].Y != steppedY {
+		t.Fatalf("expected /restart_town return-step preflight to persist stepped destination position, got %+v", persisted.StaticActors)
+	}
+
+	reselectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: destinationVID})))
+	if err != nil {
+		t.Fatalf("unexpected destination target after /restart_town due return-step preflight: %v", err)
+	}
+	if len(reselectOut) != 0 {
+		t.Fatalf("expected stepped return_required destination practice mob to remain non-targetable after /restart_town due return-step preflight, got %d frames", len(reselectOut))
+	}
+}
+
 func TestGameSessionFlowPracticeMobRestartTownFreshTargetKeepsRuntimeOwnedMobHP(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

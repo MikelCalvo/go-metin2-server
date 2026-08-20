@@ -51,7 +51,7 @@ These four frames reuse the same owned self-bootstrap family documented by `load
 
 ## Trailing visibility frames
 
-Before those destination visibility deltas are computed, the runtime preflights any already-due server-owned non-player lifecycle timers that affect visible static actors: ready respawns are flushed first, then due spawn-group return steps are flushed. This keeps transfer/rebootstrap snapshots aligned with server-owned mob lifecycle state instead of replaying a stale dead or displaced actor and then queueing a duplicate rebuild immediately afterward.
+Before those destination visibility deltas are computed, the runtime preflights any already-due server-owned non-player lifecycle timers that affect visible static actors: ready respawns are flushed first, then due spawn-group return steps, then due spawn-group chase steps. This keeps transfer/rebootstrap snapshots aligned with server-owned mob lifecycle state instead of replaying a stale dead, displaced, or pre-chase actor and then queueing a duplicate rebuild immediately afterward.
 
 After the relocated self burst, the moved player currently receives the transfer visibility deltas in this order:
 

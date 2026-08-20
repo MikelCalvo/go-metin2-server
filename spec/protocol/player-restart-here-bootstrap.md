@@ -62,6 +62,7 @@ When accepted, `/restart_here` now:
 5. preflights already-due server-owned non-player lifecycle timers before the recovered owner catches up on local static/mob visibility:
    - ready static-actor respawns flush first
    - due spawn-group return steps flush next
+   - due spawn-group chase steps flush after return steps
 6. appends one self-only catch-up refresh for every currently visible static actor / practice mob after that self burst:
    - `CHARACTER_DEL(actor_vid)`
    - ordinary add/info/update state frames for the post-preflight actor snapshot

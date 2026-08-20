@@ -1059,13 +1059,14 @@ Run this when the QA character can safely exercise the bootstrap town-return rec
 - [ ] Confirm later movement/interaction works from the town-return position after recovery
 - [ ] Reconnect and confirm the town-return position plus recovered race create MaxHP persisted
 - [ ] In a separate timing run with a living destination engager still holding an authored practice mob near the owned empire town-return point, keep that engaged chase-step deadline already due, then issue `/restart_town` from a floored source-map client and confirm destination visibility in the recovery burst shows the stepped chase position instead of stale pre-chase coords followed by a duplicate queued chase-step rebuild
+- [ ] In another timing run, while a destination-map authored spawn-backed practice mob is displaced outside leash so a server-owned return-step is already due, issue `/restart_town` from a floored source-map client and confirm destination visibility in the recovery burst shows the stepped post-return-step position instead of the pre-step displaced coords, with no duplicate queued return-step rebuild afterward; the stepped mob must remain non-targetable while it still classifies `return_required`
 - [ ] Optional fixture/debug guard: if the selected character's persisted account snapshot is deliberately seeded at `0` HP, issue `/restart_town` and confirm it recovers with race create MaxHP plus the town-return position persisted
 
 Expected result:
 - `/restart_town` is accepted only after the zero-HP floor
 - the selected player rebuilds with race create MaxHP and moves to the currently owned empire create-position fallback
 - if persisted player HP is already `0`, `/restart_town` recovers that dead snapshot by writing race create MaxHP and the town-return position
-- `/restart_town` also preflights due destination-map chase-step timers before encoding destination static-actor visibility, matching the EnterGame / transfer / `/restart_here` chase preflight contract
+- `/restart_town` also preflights due destination-map respawn / return-step / chase-step timers before encoding destination static-actor visibility, matching the EnterGame / transfer / `/restart_here` lifecycle preflight contract
 - source-map non-player visibility is torn down through existing delete frames when the town restart leaves that map
 - the recovery does not invent a separate revive packet or claim final map-specific death-return rules
 
