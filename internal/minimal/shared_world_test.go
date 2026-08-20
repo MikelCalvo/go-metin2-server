@@ -3141,6 +3141,175 @@ func TestGameRuntimeEnterGameReclaimClearsPendingSpawnGroupChaseStepDeadline(t *
 	}
 }
 
+func TestGameRuntimeEnterGameReclaimStopsPendingRetaliationAndReleasesAggroForVisiblePeer(t *testing.T) {
+	// EnterGame reclaim that drops practice-mob engagement must also cancel the
+	// pending delayed server-origin retaliation beat and reopen aggro-lite
+	// targeting for a still-visible peer, matching close/transfer/session-loss
+	// cleanup already owned by Track B.
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	// Stay outside the default spawn aggro radius (200) so EnterGame reclaim
+	// cleanup is not immediately re-armed by proximity acquisition for the
+	// replacement owner.
+	owner := peerVisibilityCharacter("RetaliationReclaimOwner", 0x01030187, 0x02040187, 1901, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	// Keep the watcher outside DefaultSpawnAggroRadius so proximity acquisition
+	// cannot engage the mob before the owner lands the first accepted hit, while
+	// remaining inside combat-target range (300) and visibility radius (400).
+	watcher := peerVisibilityCharacter("RetaliationReclaimWatcher", 0x01030188, 0x02040188, 1901, 3010, 0, 102, 202)
+	watcher.MapIndex = 42
+	issuePeerTicket(t, store, "retaliation-reclaim-a", 0x30303038, owner)
+	issuePeerTicket(t, store, "retaliation-reclaim-b", 0x30303039, owner)
+	issuePeerTicket(t, store, "retaliation-reclaim-watcher", 0x3030303a, watcher)
+	if err := accounts.Save(accountstore.Account{Login: "retaliation-reclaim-a", Empire: owner.Empire, Characters: []loginticket.Character{owner}}); err != nil {
+		t.Fatalf("seed first retaliation reclaim owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "retaliation-reclaim-b", Empire: owner.Empire, Characters: []loginticket.Character{owner}}); err != nil {
+		t.Fatalf("seed second retaliation reclaim owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "retaliation-reclaim-watcher", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}}); err != nil {
+		t.Fatalf("seed retaliation reclaim watcher account: %v", err)
+	}
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700001220, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		accounts,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for retaliation reclaim cleanup: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.retaliation_reclaim_clear",
+		Name:          "RetaliationReclaimClearMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import retaliation reclaim cleanup spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.retaliation_reclaim_clear")
+	if !ok {
+		t.Fatal("expected retaliation reclaim cleanup spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+	factory := runtime.SessionFactory()
+
+	staleFlow, staleEnter := enterGameWithLoginTicket(t, factory, "retaliation-reclaim-a", 0x30303038)
+	defer closeSessionFlow(t, staleFlow)
+	if len(staleEnter) < 8 {
+		t.Fatalf("expected owner bootstrap with visible practice mob before reclaim, got %d frames", len(staleEnter))
+	}
+	flushServerFrames(t, staleFlow)
+
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, factory, "retaliation-reclaim-watcher", 0x3030303a)
+	defer closeSessionFlow(t, watcherFlow)
+	if len(watcherEnter) < 11 {
+		t.Fatalf("expected watcher bootstrap with visible owner and practice mob before reclaim, got %d frames", len(watcherEnter))
+	}
+	if queued := flushServerFrames(t, staleFlow); len(queued) == 0 {
+		t.Fatal("expected owner to receive peer-visibility frames after watcher joins before reclaim")
+	}
+
+	selectOut, err := staleFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected owner target error before retaliation reclaim cleanup: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before retaliation reclaim cleanup, got %d", len(selectOut))
+	}
+	attackOut, err := staleFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted hit before retaliation reclaim cleanup: %v", err)
+	}
+	if len(attackOut) != 4 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before reclaim, got %d frames", len(attackOut))
+	}
+	flushSpawnBackedAttackPeerDamageInfoFrames(t, watcherFlow, targetVID, int32(worldruntime.PracticeMobBootstrapDamagePerNormalAttack), owner.VID, -bootstrapPracticeMobRetaliationPointDelta, "before EnterGame reclaim mid-engagement")
+
+	ownerEntity, ok := runtime.sharedWorld.entities.PlayerByName(owner.Name)
+	if !ok {
+		t.Fatal("expected live retaliation owner entity before simulated reclaim")
+	}
+	staleOwnerID := ownerEntity.Entity.ID
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, staleOwnerID) {
+		t.Fatalf("expected practice mob to stay engaged by stale owner %d before reclaim", staleOwnerID)
+	}
+	if _, pending := runtime.sharedWorld.sessionCombatRetaliations[staleOwnerID]; !pending {
+		t.Fatal("expected accepted hit to arm shared-world pending delayed retaliation before reclaim")
+	}
+
+	blockedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher target-selection error while owner still holds practice-mob aggro-lite gate: %v", err)
+	}
+	if len(blockedTargetOut) != 0 {
+		t.Fatalf("expected watcher target-selection to fail closed while owner still holds practice-mob aggro-lite gate, got %d frames", len(blockedTargetOut))
+	}
+
+	if _, ok := runtime.sharedWorld.sessionDirectory.Remove(staleOwnerID); !ok {
+		t.Fatal("expected simulated reclaim to remove stale owner session hook")
+	}
+
+	replacementFlow, _ := enterGameWithLoginTicket(t, factory, "retaliation-reclaim-b", 0x30303039)
+	defer closeSessionFlow(t, replacementFlow)
+	flushServerFrames(t, replacementFlow)
+	if queued := flushServerFrames(t, watcherFlow); len(queued) == 0 {
+		t.Fatal("expected watcher to receive reclaim ownership teardown/re-entry frames")
+	}
+
+	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, staleOwnerID) {
+		t.Fatalf("expected EnterGame reclaim to release stale engagement ownership for entity %d", group.EntityID)
+	}
+	if _, pending := runtime.sharedWorld.sessionCombatRetaliations[staleOwnerID]; pending {
+		t.Fatal("expected EnterGame reclaim to clear shared-world pending delayed retaliation for the stale owner")
+	}
+
+	releasedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher target-selection error after EnterGame reclaim should release practice-mob aggro-lite gate: %v", err)
+	}
+	if len(releasedTargetOut) != 1 {
+		t.Fatalf("expected watcher target-selection to succeed after EnterGame reclaim released practice-mob aggro-lite gate, got %d frames", len(releasedTargetOut))
+	}
+	releasedTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, releasedTargetOut[0]))
+	if err != nil {
+		t.Fatalf("decode watcher target-selection frame after EnterGame reclaim: %v", err)
+	}
+	if releasedTarget.TargetVID != targetVID || releasedTarget.HPPercent != 90 {
+		t.Fatalf("expected watcher to reacquire same live practice mob at its current runtime-owned HP after EnterGame reclaim released aggro-lite gate, got %+v", releasedTarget)
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if queued := flushServerFrames(t, staleFlow); len(queued) != 0 {
+		t.Fatalf("expected pending delayed retaliation cadence to stop after EnterGame reclaim, got %d queued frames", len(queued))
+	}
+	if queued := flushServerFrames(t, replacementFlow); len(queued) != 0 {
+		t.Fatalf("expected replacement owner not to inherit stale delayed retaliation frames after reclaim, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
+		t.Fatalf("expected no extra watcher frames after EnterGame reclaim cancelled pending retaliation, got %d", len(queued))
+	}
+}
+
 func TestGameSessionFlowDueSpawnGroupReturnStepFlushesBeforeFreshEnterBootstrap(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	newcomer := peerVisibilityCharacter("ReturnStepFreshEnter", 0x0103016d, 0x0204016d, 2201, 2800, 0, 101, 201)

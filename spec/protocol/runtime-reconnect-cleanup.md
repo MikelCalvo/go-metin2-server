@@ -129,6 +129,7 @@ When debugging bootstrap combat-ownership bugs, keep the current boundaries expl
   - if an attack still succeeds without a fresh `TARGET` after one of those seams, treat it as an ownership bug first, not as a client quirk
 - stale reclaim:
   - after a second session reclaims live ownership, later stale `TARGET` / `ATTACK` traffic may stay self-local or silent, but it must not mutate runtime dummy HP or replace the live owner's selected target
+  - if the stale owner had already armed a pending delayed practice-mob retaliation beat, reclaim must clear that shared-world pending timer and release aggro-lite engagement so a still-visible peer can freshly `TARGET` the same damaged mob without waiting for death/respawn, and neither the stale nor replacement session should receive a late delayed retaliation beat after reclaim
   - compare the authoritative replacement session with `/local/players` / `/local/visibility` plus normal packet traces instead of trusting stale-socket local output
 - dead / replaced dummy snapshots:
   - dummy HP is runtime-owned only; it is not persisted character state
