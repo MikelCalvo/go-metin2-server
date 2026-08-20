@@ -11,6 +11,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	"github.com/MikelCalvo/go-metin2-server/internal/player"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
@@ -3680,6 +3681,81 @@ func TestSharedWorldAcceptExchangeRejectsOpenRefineWindowWithoutMutation(t *test
 	}
 	if queued := peerPending.flush(); len(queued) != 1 {
 		t.Fatalf("expected cancel to queue one peer END, got %d", len(queued))
+	}
+}
+
+func TestSharedWorldCommitExchangeFinalizeRejectsBusyWindowOpenedAfterAcceptPlan(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	registry.SetItemTemplates(map[uint32]itemcatalog.Template{
+		27060: {Vnum: 27060, Name: "Commit Busy Display Potion", Stackable: true, MaxCount: 200},
+	})
+	owner := peerVisibilityCharacter("ExchCommitBusyOwner", 0x010307df, 0x020407df, 1100, 2100, 0, 101, 201)
+	owner.Gold = 500
+	owner.Inventory = []inventory.ItemInstance{{ID: 910, Vnum: 27060, Count: 1, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchCommitBusyPeer", 0x010307e0, 0x020407e0, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerPending := newPendingServerFrames()
+	peerPending := newPendingServerFrames()
+	ownerID, _ := registry.Join(owner, ownerPending, nil)
+	peerID, _ := registry.Join(peer, peerPending, nil)
+	if ownerID == 0 || peerID == 0 {
+		t.Fatalf("expected shared-world join to allocate owner/peer ids, got owner=%d peer=%d", ownerID, peerID)
+	}
+	_ = ownerPending.flush()
+	_ = peerPending.flush()
+
+	startFrames, ok := registry.StartExchange(ownerID, peer.VID)
+	if !ok || len(startFrames) != 1 {
+		t.Fatalf("expected exchange start to succeed with one owner frame, ok=%v frames=%d", ok, len(startFrames))
+	}
+	if queued := peerPending.flush(); len(queued) != 1 {
+		t.Fatalf("expected exchange start to queue one peer frame, got %d", len(queued))
+	}
+
+	display := player.ExchangeItemAddDisplay{Item: owner.Inventory[0]}
+	itemAddFrames, ok := registry.AddExchangeItem(ownerID, 3, display)
+	if !ok || len(itemAddFrames) != 1 {
+		t.Fatalf("expected exchange item-add to succeed with one owner frame, ok=%v frames=%d", ok, len(itemAddFrames))
+	}
+	if queued := peerPending.flush(); len(queued) != 1 {
+		t.Fatalf("expected exchange item-add to queue one peer frame, got %d", len(queued))
+	}
+
+	firstAcceptFrames, finalizePlan, ok := registry.AcceptExchange(ownerID, owner.Gold, owner)
+	if !ok || finalizePlan != nil || len(firstAcceptFrames) != 1 {
+		t.Fatalf("expected first AcceptExchange to emit accept marker without finalize plan, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(firstAcceptFrames))
+	}
+	if queued := peerPending.flush(); len(queued) != 1 {
+		t.Fatalf("expected first AcceptExchange to queue one peer accept frame, got %d", len(queued))
+	}
+
+	secondAcceptFrames, finalizePlan, ok := registry.AcceptExchange(peerID, peer.Gold, peer)
+	if !ok || finalizePlan == nil || len(secondAcceptFrames) != 0 {
+		t.Fatalf("expected second AcceptExchange to return finalize plan with no frames, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(secondAcceptFrames))
+	}
+	if queued := peerPending.flush(); len(queued) != 0 {
+		t.Fatalf("expected second AcceptExchange to queue no frames before commit, got %d", len(queued))
+	}
+
+	if !registry.SetSafeboxWindowOpen(ownerID, true) {
+		t.Fatal("expected SetSafeboxWindowOpen(owner) after accept plan to succeed")
+	}
+
+	updatedOrigin := cloneExchangeCharacter(owner)
+	updatedPartner := cloneExchangeCharacter(peer)
+	if registry.CommitExchangeFinalize(finalizePlan, updatedOrigin, updatedPartner, [][]byte{encodeExchangeEndFrame()}) {
+		t.Fatal("expected CommitExchangeFinalize to fail closed after post-plan busy-window open")
+	}
+	if queued := peerPending.flush(); len(queued) != 0 {
+		t.Fatalf("expected failed CommitExchangeFinalize to queue no peer frames, got %d", len(queued))
+	}
+
+	cancelFrames, ok := registry.CancelExchange(peerID)
+	if !ok || len(cancelFrames) != 1 {
+		t.Fatalf("expected exchange shell to remain cancellable after commit-time busy reject, ok=%v frames=%d", ok, len(cancelFrames))
+	}
+	if queued := ownerPending.flush(); len(queued) != 1 {
+		t.Fatalf("expected cancel after commit-time busy reject to queue one owner END, got %d", len(queued))
 	}
 }
 

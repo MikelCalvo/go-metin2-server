@@ -767,8 +767,7 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 	}
 	// Fail closed before accept markers or mutual-accept finalize when either paired
 	// side currently has an open merchant / safebox / refine busy presentation.
-	if r.hasMerchantWindowOpenLocked(originID) || r.hasSafeboxWindowOpenLocked(originID) || r.hasRefineWindowOpenLocked(originID) ||
-		r.hasMerchantWindowOpenLocked(partnerID) || r.hasSafeboxWindowOpenLocked(partnerID) || r.hasRefineWindowOpenLocked(partnerID) {
+	if r.exchangePairBusyWindowOpenLocked(originID, partnerID) {
 		return nil, nil, false
 	}
 	if !exchangeDisplayedItemsStillLive(r.exchangeItems[originID], live, r.itemTemplates) {
@@ -831,6 +830,11 @@ func (r *sharedWorldRegistry) CommitExchangeFinalize(plan *exchangeFinalizePlan,
 	if _, ok := r.sessionEntryLocked(plan.PartnerID); !ok {
 		return false
 	}
+	// Revalidate busy windows / displayed item-gold / receiver preconditions at
+	// commit time so post-AcceptExchange drift cannot finalize a stale plan.
+	if !r.exchangeFinalizeCommitStillValidLocked(plan) {
+		return false
+	}
 	if !r.enqueueToEntityLocked(plan.PartnerID, peerFrames) {
 		return false
 	}
@@ -839,6 +843,47 @@ func (r *sharedWorldRegistry) CommitExchangeFinalize(plan *exchangeFinalizePlan,
 	_ = r.entities.UpdatePlayer(plan.PartnerID, updatedPartner)
 	r.lastKnownCharacters[plan.PartnerID] = updatedPartner
 	if !r.clearExchangeLocked(plan.OriginID, false) {
+		return false
+	}
+	return true
+}
+
+func (r *sharedWorldRegistry) exchangePairBusyWindowOpenLocked(originID uint64, partnerID uint64) bool {
+	return r.hasMerchantWindowOpenLocked(originID) || r.hasSafeboxWindowOpenLocked(originID) || r.hasRefineWindowOpenLocked(originID) ||
+		r.hasMerchantWindowOpenLocked(partnerID) || r.hasSafeboxWindowOpenLocked(partnerID) || r.hasRefineWindowOpenLocked(partnerID)
+}
+
+func (r *sharedWorldRegistry) exchangeFinalizeCommitStillValidLocked(plan *exchangeFinalizePlan) bool {
+	if r == nil || plan == nil || plan.OriginID == 0 || plan.PartnerID == 0 {
+		return false
+	}
+	if r.exchangePairBusyWindowOpenLocked(plan.OriginID, plan.PartnerID) {
+		return false
+	}
+	origin, ok := r.playerCharacter(plan.OriginID)
+	if !ok || characterAtBootstrapHPFloor(origin) {
+		return false
+	}
+	partner, ok := r.playerCharacter(plan.PartnerID)
+	if !ok || characterAtBootstrapHPFloor(partner) {
+		return false
+	}
+	if !exchangeDisplayedItemsStillLive(plan.OriginItems, origin, r.itemTemplates) {
+		return false
+	}
+	if !exchangeDisplayedItemsStillLive(plan.PartnerItems, partner, r.itemTemplates) {
+		return false
+	}
+	if plan.OriginGold != 0 && uint64(plan.OriginGold) > origin.Gold {
+		return false
+	}
+	if plan.PartnerGold != 0 && uint64(plan.PartnerGold) > partner.Gold {
+		return false
+	}
+	if !r.exchangeRecipientCanAcceptLocked(origin, plan.PartnerItems, plan.PartnerGold) {
+		return false
+	}
+	if !r.exchangeRecipientCanAcceptLocked(partner, plan.OriginItems, plan.OriginGold) {
 		return false
 	}
 	return true
