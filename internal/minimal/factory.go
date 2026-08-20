@@ -3405,9 +3405,22 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			return sharedWorld.HasExchangeDisplayedCarriedSlot(sharedWorldID, slot)
 		}
-		prependTransferMerchantCloseFrame := func(frames [][]byte, rebootstrap bool) [][]byte {
+		closeTransferExchangeShell := func() [][]byte {
+			if sharedWorld == nil || !joinedSharedWorld || sharedWorldID == 0 || !sharedWorld.HasLiveSession(sharedWorldID) {
+				return nil
+			}
+			closeFrames, ok := sharedWorld.CloseExchange(sharedWorldID)
+			if !ok || len(closeFrames) == 0 {
+				return nil
+			}
+			return closeFrames
+		}
+		prependTransferBusyCloseFrames := func(frames [][]byte, exchangeCloseFrames [][]byte, rebootstrap bool) [][]byte {
 			if !rebootstrap {
 				return frames
+			}
+			if len(exchangeCloseFrames) > 0 {
+				frames = append(append([][]byte{}, exchangeCloseFrames...), frames...)
 			}
 			return prependMerchantCloseFrame(frames)
 		}
@@ -3670,6 +3683,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			var transferResult RelocationPreview
 			var transferFrames [][]byte
+			var transferExchangeCloseFrames [][]byte
 			transferFlow := warp.NewFlow(warp.Config{
 				Persist: func(updated loginticket.Character) bool {
 					updatedCharacters, _, _, ok := buildUpdatedSelection(updated)
@@ -3687,6 +3701,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return warp.Result{}, false
 					}
 					if rebootstrap {
+						// Close the exchange shell before Transfer so out-of-range
+						// teardown cannot enqueue a late END after the burst, and so
+						// same-map in-range destinations still tear the shell down.
+						transferExchangeCloseFrames = closeTransferExchangeShell()
 						runtime.flushReadyStaticActorRespawns()
 						runtime.flushDueSpawnGroupReturnSteps()
 						runtime.flushDueSpawnGroupChaseSteps()
@@ -3717,7 +3735,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if _, ok := transferFlow.Apply(selected, warp.Target{MapIndex: mapIndex, X: x, Y: y}); !ok {
 				return RelocationPreview{}, nil, false
 			}
-			transferFrames = prependTransferMerchantCloseFrame(transferFrames, rebootstrap)
+			transferFrames = prependTransferBusyCloseFrames(transferFrames, transferExchangeCloseFrames, rebootstrap)
 			clearActiveCombatTarget()
 			return transferResult, transferFrames, true
 		}

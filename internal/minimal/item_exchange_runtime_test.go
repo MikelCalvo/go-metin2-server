@@ -663,6 +663,359 @@ func TestGameRuntimeItemExchangeWalkAwayClosesShellWithoutMutation(t *testing.T)
 	assertExchangeAccountUnchanged(t, accounts, "item-exchange-walk-peer", peer, "walk-away peer")
 }
 
+func TestGameRuntimeItemExchangeTransferTriggerClosesShellWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeXferOwner", 0x010308a1, 0x020408a1, 1100, 2100, 0, 101, 201)
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 841, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeXferPeer", 0x010308a2, 0x020408a2, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 842, Vnum: 27002, Count: 2, Slot: 6}}
+	ownerLogin := "item-exchange-xfer-owner"
+	peerLogin := "item-exchange-xfer-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070a1, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070a2, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed transfer exchange owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed transfer exchange peer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, []bootstrapTransferTrigger{{
+		SourceMapIndex: bootstrapMapIndex,
+		SourceX:        1500,
+		SourceY:        2600,
+		TargetMapIndex: 42,
+		TargetX:        1700,
+		TargetY:        2800,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected transfer exchange runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070a1)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070a2)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected transfer exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected transfer exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "transfer owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected transfer exchange peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "transfer peer start")
+
+	moveOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+		Func: 1,
+		Arg:  0,
+		Rot:  12,
+		X:    1500,
+		Y:    2600,
+		Time: 0x61626370,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected transfer-trigger move error with open exchange shell: %v", err)
+	}
+	if len(moveOut) < 2 {
+		t.Fatalf("expected transfer-triggered exchange close to prepend END before transfer frames, got %d", len(moveOut))
+	}
+	assertExchangeEndFrame(t, moveOut[0], "transfer owner self END")
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moveOut[1]))
+	if err != nil {
+		t.Fatalf("decode self transfer add after exchange close: %v", err)
+	}
+	if selfAdd.VID != owner.VID || selfAdd.X != 1700 || selfAdd.Y != 2800 {
+		t.Fatalf("unexpected self transfer add after exchange close: %+v", selfAdd)
+	}
+	queuedPeer := flushServerFrames(t, peerFlow)
+	foundPeerEnd := false
+	for _, frame := range queuedPeer {
+		if exchangeFrameIsEnd(t, frame) {
+			foundPeerEnd = true
+			break
+		}
+	}
+	if !foundPeerEnd {
+		t.Fatalf("expected transfer-triggered exchange close to queue peer END, got %d frames", len(queuedPeer))
+	}
+
+	acceptOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderAccept,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-transfer accept error: %v", err)
+	}
+	if len(acceptOut) != 0 {
+		t.Fatalf("expected post-transfer accept to fail closed with no frames, got %d", len(acceptOut))
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected post-transfer accept to queue no peer frames, got %d", len(queued))
+	}
+
+	account, err := accounts.Load(ownerLogin)
+	if err != nil {
+		t.Fatalf("load persisted transfer exchange owner account: %v", err)
+	}
+	if account.Characters[0].MapIndex != 42 || account.Characters[0].X != 1700 || account.Characters[0].Y != 2800 {
+		t.Fatalf("expected persisted transfer destination, got %#v", account.Characters[0])
+	}
+	if account.Characters[0].Gold != owner.Gold || !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected transfer teardown to leave inventory/gold unchanged, got %#v", account.Characters[0])
+	}
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "transfer peer")
+}
+
+func TestGameRuntimeItemExchangeSameMapInRangeTransferClosesShellWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeSameMapOwner", 0x010308a3, 0x020408a3, 1100, 2100, 0, 101, 201)
+	owner.Gold = 11111
+	owner.Inventory = []inventory.ItemInstance{{ID: 843, Vnum: 27001, Count: 1, Slot: 4}}
+	peer := peerVisibilityCharacter("ExchangeSameMapPeer", 0x010308a4, 0x020408a4, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 844, Vnum: 27002, Count: 1, Slot: 5}}
+	ownerLogin := "item-exchange-samemap-owner"
+	peerLogin := "item-exchange-samemap-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070a3, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070a4, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed same-map transfer exchange owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed same-map transfer exchange peer account: %v", err)
+	}
+	// Destination stays well inside the exchange-distance gate relative to the peer.
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, []bootstrapTransferTrigger{{
+		SourceMapIndex: bootstrapMapIndex,
+		SourceX:        1500,
+		SourceY:        2600,
+		TargetMapIndex: bootstrapMapIndex,
+		TargetX:        1130,
+		TargetY:        2130,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected same-map transfer exchange runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070a3)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070a4)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected same-map transfer exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected same-map transfer exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "same-map owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected same-map transfer exchange peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "same-map peer start")
+
+	moveOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+		Func: 1,
+		Arg:  0,
+		Rot:  12,
+		X:    1500,
+		Y:    2600,
+		Time: 0x61626371,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected same-map transfer-trigger move error: %v", err)
+	}
+	if len(moveOut) < 2 {
+		t.Fatalf("expected same-map transfer to prepend END before transfer frames, got %d", len(moveOut))
+	}
+	assertExchangeEndFrame(t, moveOut[0], "same-map owner self END")
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moveOut[1]))
+	if err != nil {
+		t.Fatalf("decode same-map self transfer add after exchange close: %v", err)
+	}
+	if selfAdd.VID != owner.VID || selfAdd.X != 1130 || selfAdd.Y != 2130 {
+		t.Fatalf("unexpected same-map self transfer add after exchange close: %+v", selfAdd)
+	}
+	queuedPeer := flushServerFrames(t, peerFlow)
+	foundPeerEnd := false
+	for _, frame := range queuedPeer {
+		if exchangeFrameIsEnd(t, frame) {
+			foundPeerEnd = true
+			break
+		}
+	}
+	if !foundPeerEnd {
+		t.Fatalf("expected same-map transfer to queue peer END even while still in-range, got %d frames", len(queuedPeer))
+	}
+
+	acceptOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderAccept,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-same-map-transfer accept error: %v", err)
+	}
+	if len(acceptOut) != 0 {
+		t.Fatalf("expected post-same-map-transfer accept to fail closed with no frames, got %d", len(acceptOut))
+	}
+
+	account, err := accounts.Load(ownerLogin)
+	if err != nil {
+		t.Fatalf("load persisted same-map transfer exchange owner account: %v", err)
+	}
+	if account.Characters[0].MapIndex != bootstrapMapIndex || account.Characters[0].X != 1130 || account.Characters[0].Y != 2130 {
+		t.Fatalf("expected persisted same-map transfer destination, got %#v", account.Characters[0])
+	}
+	if account.Characters[0].Gold != owner.Gold || !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected same-map transfer teardown to leave inventory/gold unchanged, got %#v", account.Characters[0])
+	}
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "same-map transfer peer")
+}
+
+func TestGameRuntimeItemExchangeTransferClosesAcceptedShellBeforeSecondAccept(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExXferAccOwner", 0x010308a5, 0x020408a5, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 845, Vnum: 27045, Count: 1, Slot: 3}}
+	peer := peerVisibilityCharacter("ExXferAccPeer", 0x010308a6, 0x020408a6, 1120, 2120, 0, 101, 201)
+	peer.Gold = 6000
+	peer.Inventory = []inventory.ItemInstance{{ID: 846, Vnum: 27002, Count: 1, Slot: 7}}
+	ownerLogin := "ex-xfer-acc-owner"
+	peerLogin := "ex-xfer-acc-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070a5, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070a6, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed accepted-shell transfer owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed accepted-shell transfer peer account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27045, Name: "Transfer Accept Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, []bootstrapTransferTrigger{{
+		SourceMapIndex: bootstrapMapIndex,
+		SourceX:        1500,
+		SourceY:        2600,
+		TargetMapIndex: 42,
+		TargetX:        1700,
+		TargetY:        2800,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected accepted-shell transfer runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070a5)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070a6)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted-shell transfer start error: %v", err)
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "accepted-shell owner start")
+	assertExchangeStartFrame(t, flushServerFrames(t, peerFlow)[0], owner.VID, "accepted-shell peer start")
+
+	itemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderItemAdd,
+		Arg2:      2,
+		Position:  itemproto.InventoryPosition(3),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted-shell item-add error: %v", err)
+	}
+	if len(itemAddOut) != 1 {
+		t.Fatalf("expected accepted-shell item-add to emit one frame, got %d", len(itemAddOut))
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	acceptOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderAccept,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first accept before transfer error: %v", err)
+	}
+	if len(acceptOut) != 1 {
+		t.Fatalf("expected first accept before transfer to emit one frame, got %d", len(acceptOut))
+	}
+	assertExchangeAcceptFrame(t, acceptOut[0], 1, "first accept before transfer")
+	_ = flushServerFrames(t, peerFlow)
+
+	moveOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+		Func: 1,
+		Arg:  0,
+		Rot:  12,
+		X:    1500,
+		Y:    2600,
+		Time: 0x61626372,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted-shell peer transfer-trigger move error: %v", err)
+	}
+	if len(moveOut) < 2 {
+		t.Fatalf("expected accepted-shell peer transfer to prepend END before transfer frames, got %d", len(moveOut))
+	}
+	assertExchangeEndFrame(t, moveOut[0], "accepted-shell peer self END")
+	queuedOwner := flushServerFrames(t, ownerFlow)
+	foundOwnerEnd := false
+	for _, frame := range queuedOwner {
+		if exchangeFrameIsEnd(t, frame) {
+			foundOwnerEnd = true
+			break
+		}
+	}
+	if !foundOwnerEnd {
+		t.Fatalf("expected accepted-shell peer transfer to queue owner END, got %d frames", len(queuedOwner))
+	}
+
+	secondAcceptOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderAccept,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected second accept after transfer teardown error: %v", err)
+	}
+	if len(secondAcceptOut) != 0 {
+		t.Fatalf("expected second accept after transfer teardown to fail closed with no frames, got %d", len(secondAcceptOut))
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected second accept after transfer teardown to queue no peer frames, got %d", len(queued))
+	}
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "accepted-shell transfer owner")
+	peerAccount, err := accounts.Load(peerLogin)
+	if err != nil {
+		t.Fatalf("load persisted accepted-shell transfer peer account: %v", err)
+	}
+	if peerAccount.Characters[0].MapIndex != 42 || peerAccount.Characters[0].X != 1700 || peerAccount.Characters[0].Y != 2800 {
+		t.Fatalf("expected peer transfer destination persistence, got %#v", peerAccount.Characters[0])
+	}
+	if peerAccount.Characters[0].Gold != peer.Gold || !reflect.DeepEqual(peerAccount.Characters[0].Inventory, peer.Inventory) {
+		t.Fatalf("expected accepted-shell transfer teardown to leave peer inventory/gold unchanged, got %#v", peerAccount.Characters[0])
+	}
+}
+
 func TestGameRuntimeItemExchangeItemAddShowsTemplateBackedDisplayWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
