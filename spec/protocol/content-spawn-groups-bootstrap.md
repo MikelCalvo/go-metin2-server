@@ -581,6 +581,40 @@ Explicit non-goals for this profile-authored aggro-radius freeze alone:
 - inventing a second proximity scanner or scheduler beyond the existing pending-frame consumer
 - changing the already-owned engagement / chase / retaliation consumers beyond substituting the effective radius
 
+## First owned profile-authored leash-radius seam
+
+Question frozen here:
+
+**Once proximity acquisition already honors optional authored `aggro_radius` and leash / chase / return consumers still hard-code `DefaultSpawnLeashRadius = 400`, what is the smallest honest authored combat-profile extension that can widen or narrow that leash radius per registered profile without inventing pathfinding, hysteresis, or cross-map return MOVE?**
+
+This is the next Track A follow-on after owned profile-authored `aggro_radius`. Cross-map return MOVE / warp choreography remains deferred behind the packet freeze in `spawn-leash-bootstrap.md` and must not be opened as speculative RED.
+
+Contract for optional authored `leash_radius` on portable `combat_profiles` / `StaticActorCombatProfileDefaults`:
+- field name: `leash_radius` (JSON) / `LeashRadius` (Go)
+- type: positive `int32` distance using the same Euclidean squared-distance family as leash / aggro classification
+- omitempty / zero means "use bootstrap default": effective radius = `DefaultSpawnLeashRadius` (`400`)
+- when present and positive, the effective leash radius for that registered profile is exactly the authored value
+- validation fails closed when `leash_radius < 0`
+- validation fails closed when a positive authored `leash_radius` is strictly less than the profile's effective aggro radius (`authored aggro_radius` when positive, otherwise `DefaultSpawnAggroRadius`), so authored acquisition cannot silently stretch past the owned leash / return-required combat gate
+- once this seam is live, authored `aggro_radius` validation tightens the same way: a positive authored aggro must not exceed the profile's effective leash radius (authored `leash_radius` when positive, otherwise `DefaultSpawnLeashRadius`)
+- built-in `practice_mob` / `training_dummy` profiles keep effective leash radius `400` and do not require an authored field
+- the pure resolver is `EffectiveStaticActorSpawnLeashRadius(profile)` (plus `EffectiveStaticActorSpawnLeashRadiusForActor(actor)`) in `internal/worldruntime`: it returns the effective radius without mutating actor state, engagement, timers, or packets
+- live leash classification, return-step / return-home planning and execution, chase-step planning and execution, and `target_return_required` gating for a spawn-backed actor must reuse that same effective radius for the actor's current combat profile; they must not keep hard-coding `DefaultSpawnLeashRadius` once a profile authors a different value
+- read-only operator leash endpoints may still accept an explicit query `radius` override for inspection; omitting that override should resolve through the actor's effective leash radius rather than inventing a second hard-coded default
+- content-bundle import/export must round-trip a non-default authored `leash_radius` through `combat_profiles` the same way `aggro_radius` / `respawn_delay_ms` already round-trip
+
+Current implementation status:
+- this seam is frozen here as the next honest RED/GREEN boundary; runtime still uses bootstrap `DefaultSpawnLeashRadius = 400` for every practice mob until the focused failing coverage and GREEN land
+
+Explicit non-goals for this profile-authored leash-radius freeze alone:
+- pathfinding, navmesh, patrol, or continuous interpolation
+- aggro hysteresis / a drop radius distinct from the acquire radius
+- pack aggro, assist calls, or multi-mob linkage
+- cross-map return MOVE / warp choreography
+- inventing a second return/chase scheduler beyond the existing pending-frame consumers
+- changing the already-owned engagement / chase / retaliation consumers beyond substituting the effective leash radius
+- live damaged-HP daemon-restart durability
+
 ## Success definition
 
 After this document lands, the repository should be able to say:
