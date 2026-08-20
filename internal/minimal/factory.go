@@ -3318,6 +3318,21 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				sharedWorld.SetSafeboxWindowOpen(sharedWorldID, true)
 			}
 		}
+		setActiveRefineDialog := func(dialog refineDialogPresentation, open bool) {
+			if !open {
+				hasActiveRefineDialog = false
+				activeRefineDialog = refineDialogPresentation{}
+				if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 {
+					sharedWorld.SetRefineWindowOpen(sharedWorldID, false)
+				}
+				return
+			}
+			activeRefineDialog = dialog
+			hasActiveRefineDialog = true
+			if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 {
+				sharedWorld.SetRefineWindowOpen(sharedWorldID, true)
+			}
+		}
 		appendPostFloorMerchantCloseFrame := func(frames [][]byte, clearTarget bool) [][]byte {
 			if !clearTarget || !hasActiveMerchantBuy || activeMerchantBuy.TargetVID == 0 {
 				return frames
@@ -5227,8 +5242,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if !hasActiveRefineDialog {
 							return gameflow.ItemRefineResult{Accepted: false}
 						}
-						hasActiveRefineDialog = false
-						activeRefineDialog = refineDialogPresentation{}
+						setActiveRefineDialog(refineDialogPresentation{}, false)
 						return gameflow.ItemRefineResult{Accepted: true}
 					}
 					if hasActiveRefineDialog && packet.Position == activeRefineDialog.Pos && packet.Type == activeRefineDialog.Type {
@@ -5258,8 +5272,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if !ok {
 							return gameflow.ItemRefineResult{Accepted: false}
 						}
-						hasActiveRefineDialog = false
-						activeRefineDialog = refineDialogPresentation{}
+						setActiveRefineDialog(refineDialogPresentation{}, false)
 						return gameflow.ItemRefineResult{Accepted: true, Frames: committed}
 					}
 					template, ok := runtime.resolveRuntimeItemTemplate(selectedPlayer, inventory.SlotIndex(packet.Position))
@@ -5280,7 +5293,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if !ok {
 							return gameflow.ItemRefineResult{Accepted: false}
 						}
-						activeRefineDialog = refineDialogPresentation{
+						activeRefineDialogPresentation := refineDialogPresentation{
 							Pos:        packet.Position,
 							Type:       packet.Type,
 							SourceID:   sourceItem.ID,
@@ -5293,7 +5306,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 								Materials:   append([]itemcatalog.RefineMaterial(nil), info.Materials...),
 							},
 						}
-						hasActiveRefineDialog = true
+						setActiveRefineDialog(activeRefineDialogPresentation, true)
 						frames := prependMerchantCloseFrame(prependExchangeCloseFrame([][]byte{frame}))
 						return gameflow.ItemRefineResult{Accepted: true, Frames: frames}
 					}
@@ -5596,7 +5609,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if !ownsLiveSharedWorldSession() {
 							return gameflow.ItemExchangeResult{Accepted: false}
 						}
-						if hasActiveMerchantBuy || hasActiveSafeboxOpen {
+						if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog {
 							return gameflow.ItemExchangeResult{
 								Accepted: true,
 								Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{

@@ -419,6 +419,166 @@ func TestGameRuntimeItemExchangeStartRejectsPartnerActiveSafeboxWithoutMutation(
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "partner-safebox exchange start peer")
 }
 
+func TestGameRuntimeItemExchangeStartRejectsActiveRefineDialogWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchRefineStartOwner", 0x010307ee, 0x020407ee, 1100, 2100, 0, 101, 201)
+	owner.Gold = 125
+	owner.Inventory = []inventory.ItemInstance{{ID: 792, Vnum: 11260, Count: 1, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchRefineStartPeer", 0x010307ef, 0x020407ef, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 793, Vnum: 27002, Count: 2, Slot: 6}}
+	ownerLogin := "exch-refine-start-owner"
+	peerLogin := "exch-refine-start-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070ee, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070ef, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed refine-open exchange owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed refine-open exchange peer account: %v", err)
+	}
+	template := itemcatalog.Template{
+		Vnum:       11260,
+		Name:       "Exchange Busy Refine Blade",
+		Stackable:  false,
+		MaxCount:   1,
+		Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{
+			ResultVnum:  11261,
+			Cost:        1000,
+			Probability: 100,
+			Materials:   []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 1}},
+		},
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected refine-open exchange runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070ee)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070ef)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	previewOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
+	if err != nil {
+		t.Fatalf("unexpected requester refine preview error: %v", err)
+	}
+	if len(previewOut) != 1 {
+		t.Fatalf("expected requester refine preview to emit one frame, got %d", len(previewOut))
+	}
+	if _, err := itemproto.DecodeRefineInformationNew(decodeSingleFrame(t, previewOut[0])); err != nil {
+		t.Fatalf("decode requester refine preview: %v", err)
+	}
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected refine-open exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected exchange start with open refine dialog to emit one info chat frame, got %d", len(startOut))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, startOut[0]))
+	if err != nil {
+		t.Fatalf("decode refine-open exchange start info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterMerchantBusyInfoMessage {
+		t.Fatalf("unexpected refine-open exchange start info chat: %+v", infoChat)
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected exchange start with open refine dialog to queue no peer frames, got %d", len(queued))
+	}
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "refine-open exchange start owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "refine-open exchange start peer")
+}
+
+func TestGameRuntimeItemExchangeStartRejectsPartnerActiveRefineDialogWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchPartnerRefineOwner", 0x010307f0, 0x020407f0, 1100, 2100, 0, 101, 201)
+	owner.Gold = 125
+	owner.Inventory = []inventory.ItemInstance{{ID: 794, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchPartnerRefinePeer", 0x010307f1, 0x020407f1, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 795, Vnum: 11262, Count: 1, Slot: 6}}
+	ownerLogin := "exch-partner-refine-owner"
+	peerLogin := "exch-partner-refine-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070f0, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070f1, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed partner-refine exchange owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed partner-refine exchange peer account: %v", err)
+	}
+	template := itemcatalog.Template{
+		Vnum:       11262,
+		Name:       "Partner Busy Refine Blade",
+		Stackable:  false,
+		MaxCount:   1,
+		Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{
+			ResultVnum:  11263,
+			Cost:        1000,
+			Probability: 100,
+			Materials:   []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 1}},
+		},
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected partner-refine exchange runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070f0)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070f1)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	previewOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 6, Type: 3})))
+	if err != nil {
+		t.Fatalf("unexpected partner refine preview error: %v", err)
+	}
+	if len(previewOut) != 1 {
+		t.Fatalf("expected partner refine preview to emit one frame, got %d", len(previewOut))
+	}
+	if _, err := itemproto.DecodeRefineInformationNew(decodeSingleFrame(t, previewOut[0])); err != nil {
+		t.Fatalf("decode partner refine preview: %v", err)
+	}
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected partner-refine exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected partner-refine exchange start to emit one info chat frame, got %d", len(startOut))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, startOut[0]))
+	if err != nil {
+		t.Fatalf("decode partner-refine exchange start info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangePartnerMerchantBusyInfoMessage {
+		t.Fatalf("unexpected partner-refine exchange start info chat: %+v", infoChat)
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected partner-refine exchange start to queue no peer frames, got %d", len(queued))
+	}
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "partner-refine exchange start owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "partner-refine exchange start peer")
+}
+
 func TestGameRuntimeItemExchangeWalkAwayClosesShellWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
