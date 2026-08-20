@@ -2835,6 +2835,99 @@ func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupChaseStepWithMoveFanout
 	}
 }
 
+func TestGameRuntimeUpdateStaticActorClearsPendingSpawnGroupChaseStepDeadline(t *testing.T) {
+	// Operator/runtime UpdateStaticActor already releases engagement and clears
+	// selected-target ownership. It must also clear any pending chase-step deadline
+	// so a stale 5s chase MOVE cannot fire after the owned update reset boundary.
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ChaseStepUpdateClearOwner", 0x01030195, 0x02040195, 1900, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "chase-step-update-clear-owner", 0x30303045, owner)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700001210, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for chase-step update cleanup: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.chase_step_update_clear",
+		Name:          "ChaseStepUpdateClearMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import chase-step update cleanup spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.chase_step_update_clear")
+	if !ok {
+		t.Fatal("expected chase-step update cleanup spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "chase-step-update-clear-owner", 0x30303045)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
+		t.Fatalf("unexpected owner target error before chase-step update cleanup: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	}))); err != nil {
+		t.Fatalf("unexpected accepted hit before chase-step update cleanup: %v", err)
+	}
+	if pending, ok := runtime.SpawnGroupChaseStep(group.EntityID); !ok || pending.EntityID != group.EntityID {
+		t.Fatalf("expected engaged hit to arm a pending chase-step row before update, ok=%v snapshot=%+v", ok, pending)
+	}
+
+	updated, ok := runtime.UpdateStaticActor(group.EntityID, "ChaseStepUpdateClearMob", 42, 1750, 2800, 20350)
+	if !ok || updated.EntityID != group.EntityID || updated.X != 1750 || updated.Y != 2800 {
+		t.Fatalf("expected same-map position-only UpdateStaticActor to succeed, ok=%v snapshot=%+v", ok, updated)
+	}
+
+	runtime.spawnChaseMu.Lock()
+	_, stillScheduled := runtime.spawnChaseStepDueAt[group.EntityID]
+	runtime.spawnChaseMu.Unlock()
+	if stillScheduled {
+		t.Fatalf("expected UpdateStaticActor engagement release to clear pending chase-step deadline for entity %d", group.EntityID)
+	}
+	if pending, ok := runtime.SpawnGroupChaseStep(group.EntityID); ok || pending.EntityID != 0 {
+		t.Fatalf("expected chase-step inspection to omit actor after UpdateStaticActor release, ok=%v snapshot=%+v", ok, pending)
+	}
+
+	// Drain immediate update cleanup (MOVE / selected-target clear) before proving
+	// the old chase deadline cannot still fire a delayed chase MOVE.
+	_ = flushServerFrames(t, flow)
+
+	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay)
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no delayed chase-step visibility after UpdateStaticActor cleared the deadline, got %d frames", len(queued))
+	}
+	actor, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || actor.X != 1750 || actor.Y != 2800 {
+		t.Fatalf("expected actor to remain at operator-updated position without a late chase step, ok=%v snapshot=%+v", ok, actor)
+	}
+}
+
 func TestGameRuntimeTransferClearsPendingSpawnGroupChaseStepDeadline(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("ChaseStepTransferOwner", 0x01030185, 0x02040185, 1900, 2800, 0, 101, 201)

@@ -2837,6 +2837,10 @@ func (r *gameRuntime) updateStaticActorWithInteractionCombatProfileAndSpawnGroup
 		return StaticActorSnapshot{}, false
 	}
 	r.syncSpawnGroupReturnStepSchedule(updated)
+	// Operator/runtime update releases engagement / selected-target ownership in
+	// shared-world; clear any pending chase deadline so a stale 5s chase MOVE
+	// cannot fire after that owned reset boundary (matches return-home / remove).
+	r.clearSpawnGroupChaseStep(entityID)
 	if credit, ok := r.sharedWorld.StaticActorKillQuestCredit(entityID); ok {
 		updated.RewardQuestRef = credit.QuestRef
 		updated.RewardQuestFlag = credit.QuestFlag

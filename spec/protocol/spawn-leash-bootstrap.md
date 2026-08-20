@@ -178,7 +178,7 @@ Preflight rules:
 - the owned same-socket `/restart_here` and `/restart_town` recovery seams use the same due chase-step preflight before rebuilding visibility; focused coverage now owns both recovery paths with a separate live engager keeping chase eligible while a floored restarter recovers
 
 Cleanup / fail-closed rules:
-- clear pending chase deadlines on owner disconnect/logout/close, phase-select leave, EnterGame reclaim that drops stale engagement ownership, owner death floor, owner transfer/warp to a different map, client-originated `TARGET(0)` clear-target that releases the current engagement, actor death, successful return-home, content-bundle replacement that removes or replaces the actor, and any other engagement release that drops the actor's `engaged_by` ownership
+- clear pending chase deadlines on owner disconnect/logout/close, phase-select leave, EnterGame reclaim that drops stale engagement ownership, owner death floor, owner transfer/warp to a different map, client-originated `TARGET(0)` clear-target that releases the current engagement, actor death, successful return-home / return-step, operator/runtime `UpdateStaticActor` (including same-map position-only MOVE updates that release engagement), content-bundle replacement that removes or replaces the actor, and any other engagement release that drops the actor's `engaged_by` ownership
 - dead actors waiting on respawn do not arm chase; a respawn rebuild starts unengaged at authored home and therefore does not inherit a pre-death chase deadline
 - no new operator chase-step POST surface is required for this first executor freeze
 
@@ -214,7 +214,7 @@ Current implementation status:
 - accepted non-lethal content practice-mob hits arm the `5s` chase deadline
 - proximity aggro-radius acquisition that newly establishes engagement also arms that same `5s` chase deadline without inventing selected-target ownership; when the deadline becomes due, the executor applies the owned chase MOVE choreography for retained viewers while still preserving engagement and still inventing no selected combat target
 - due chase steps persist position, queue retained-viewer `MOVE` replication (with remove/add visibility still using delete/bootstrap), preserve engagement / selected-target ownership, and re-arm while the actor remains eligible
-- return-step, respawn, remove, return-home, and content-bundle prune/restore paths clear or restore chase deadlines alongside the return-step schedule
+- return-step, respawn, remove, return-home, operator/runtime `UpdateStaticActor`, and content-bundle prune/restore paths clear or restore chase deadlines alongside the return-step schedule; focused coverage now also proves that a same-map position-only `UpdateStaticActor` clears any armed chase deadline so a stale `5s` chase MOVE cannot fire after that engagement-release boundary
 - the read-only pending chase inspection endpoints above are now live over that already-owned schedule
 
 Explicit non-goals for this chase-step executor freeze:
@@ -297,13 +297,13 @@ Contract for the first live operator/runtime position MOVE choreography:
 - viewers that lose visibility across the update still receive `CHARACTER_DEL`
 - viewers that newly gain visibility across the update still receive the ordinary `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` bootstrap burst
 - presentation changes (name / race / combat profile), dead-actor refreshes that must replay trailing `GC DEAD`, cross-map updates, non-spawn static actors, respawn rebuild, and content-bundle replacement keep using their already-owned delete/readd paths
-- engagement release and selected-target clear for this operator/runtime update seam continue to follow the already-owned update lifecycle (they are released/cleared today and this freeze does not invent chase-like ownership preservation)
+- engagement release, selected-target clear, and pending chase-deadline clear for this operator/runtime update seam continue to follow the already-owned update lifecycle (they are released/cleared today and this freeze does not invent chase-like ownership preservation)
 - no client-originated mob MOVE ingress is owned; this is server-origin replication only
 
 Current implementation status:
 - this seam is now live for retained viewers of a successful same-map live spawn-backed operator/runtime position-only update
 - presentation/name/race refreshes, dead trailing-`DEAD` refreshes, respawn rebuild, content-bundle replacement, and cross-map updates remain on delete/readd
-- engagement release and selected-target clear still follow the already-owned operator/runtime update lifecycle
+- engagement release, selected-target clear, and pending chase-deadline clear still follow the already-owned operator/runtime update lifecycle
 - the next honest Track A follow-on after this MOVE seam and daemon-restart still-dead timer persistence is cross-map return MOVE / warp packet choreography; that seam is now explicitly deferred above until a client-facing packet boundary is owned (see also `content-spawn-groups-bootstrap.md`)
 
 Explicit non-goals for this operator/runtime position MOVE freeze alone:
