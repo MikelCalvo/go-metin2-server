@@ -3380,6 +3380,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			return append(closeFrames, frames...)
 		}
+		exchangeDisplaysCarriedSlot := func(slot inventory.SlotIndex) bool {
+			if sharedWorld == nil || !joinedSharedWorld || sharedWorldID == 0 || !sharedWorld.HasLiveSession(sharedWorldID) {
+				return false
+			}
+			return sharedWorld.HasExchangeDisplayedCarriedSlot(sharedWorldID, slot)
+		}
 		prependTransferMerchantCloseFrame := func(frames [][]byte, rebootstrap bool) [][]byte {
 			if !rebootstrap {
 				return frames
@@ -4014,6 +4020,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if selectedPlayer == nil || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveMerchantBuy || activeMerchantBuy.Definition.Kind != interactionstore.KindShopPreview || activeMerchantBuy.TargetVID == 0 {
 				return nil, false
 			}
+			if exchangeDisplaysCarriedSlot(slot) {
+				return nil, false
+			}
 			if ok, frames := activeMerchantBuyContextStillValid(packetShopFrames); !ok {
 				if len(frames) != 0 {
 					return frames, true
@@ -4109,6 +4118,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return gameflow.ItemUseResult{Accepted: false}
 			}
 			slot := inventory.SlotIndex(position.Cell)
+			if exchangeDisplaysCarriedSlot(slot) {
+				return gameflow.ItemUseResult{Accepted: false}
+			}
 			previousSelected := selectedPlayer.LiveCharacter()
 			template, ok := runtime.resolveRuntimeUseTemplate(selectedPlayer, slot)
 			if !ok {
@@ -4167,6 +4179,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			sourceSlot := inventory.SlotIndex(source.Cell)
 			targetSlot := inventory.SlotIndex(target.Cell)
+			if exchangeDisplaysCarriedSlot(sourceSlot) || exchangeDisplaysCarriedSlot(targetSlot) {
+				return gameflow.ItemUseToItemResult{Accepted: false}
+			}
 			previousSelected := selectedPlayer.LiveCharacter()
 			template, ok := runtime.resolveRuntimeItemTemplate(selectedPlayer, sourceSlot)
 			if !ok || !template.Stackable || template.MaxCount == 0 {
@@ -4247,6 +4262,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			selectedPlayer, ok := currentSelectedPlayer()
 			if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+				return nil, false
+			}
+			if exchangeDisplaysCarriedSlot(slot) {
 				return nil, false
 			}
 			previousSelected := selectedPlayer.LiveCharacter()
@@ -4827,6 +4845,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
 							return gameflow.ChatResult{Accepted: false}
 						}
+						if exchangeDisplaysCarriedSlot(fromSlot) || exchangeDisplaysCarriedSlot(toSlot) {
+							return gameflow.ChatResult{Accepted: false}
+						}
 						previousSelected := selectedPlayer.LiveCharacter()
 						liveInventory := selectedPlayer.LiveInventory()
 						if !runtime.authoredInventoryMoveSlotCountsFitTemplates(liveInventory, fromSlot, toSlot) {
@@ -4866,6 +4887,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if fromSlot, equipSlot, ok := slashEquipItemCommand(packet.Message); ok {
 						selectedPlayer, ok := currentSelectedPlayer()
 						if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+							return gameflow.ChatResult{Accepted: false}
+						}
+						if exchangeDisplaysCarriedSlot(fromSlot) {
 							return gameflow.ChatResult{Accepted: false}
 						}
 						previousSelected := selectedPlayer.LiveCharacter()
@@ -4931,6 +4955,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if equipSlot, toSlot, ok := slashUnequipItemCommand(packet.Message); ok {
 						selectedPlayer, ok := currentSelectedPlayer()
 						if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+							return gameflow.ChatResult{Accepted: false}
+						}
+						if exchangeDisplaysCarriedSlot(toSlot) {
 							return gameflow.ChatResult{Accepted: false}
 						}
 						previousSelected := selectedPlayer.LiveCharacter()
@@ -5386,6 +5413,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if !ok {
 							return gameflow.ItemMoveResult{Accepted: false}
 						}
+						if exchangeDisplaysCarriedSlot(inventory.SlotIndex(packet.Destination.Cell)) {
+							return gameflow.ItemMoveResult{Accepted: false}
+						}
 						template, hasUnequipTemplate, ok := runtime.resolveRuntimeUnequipTemplate(selectedPlayer, equipSlot)
 						if !ok {
 							return gameflow.ItemMoveResult{Accepted: false}
@@ -5432,6 +5462,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.ItemMoveResult{Accepted: true, Frames: frames}
 					}
 					if inventory.SlotIndex(packet.Source.Cell) >= inventory.CarriedInventorySlotCount {
+						return gameflow.ItemMoveResult{Accepted: false}
+					}
+					if exchangeDisplaysCarriedSlot(inventory.SlotIndex(packet.Source.Cell)) {
 						return gameflow.ItemMoveResult{Accepted: false}
 					}
 					if packet.Destination.WindowType == itemproto.WindowInventory && packet.Destination.Cell >= itemproto.InventoryMaxCell {
@@ -5499,12 +5532,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if packet.Destination.WindowType != itemproto.WindowInventory || inventory.SlotIndex(packet.Destination.Cell) >= inventory.CarriedInventorySlotCount {
 						return gameflow.ItemMoveResult{Accepted: false}
 					}
+					fromSlot := inventory.SlotIndex(packet.Source.Cell)
+					toSlot := inventory.SlotIndex(packet.Destination.Cell)
+					if exchangeDisplaysCarriedSlot(toSlot) {
+						return gameflow.ItemMoveResult{Accepted: false}
+					}
 					var moveResult inventory.MoveResult
 					maxCount := ^uint16(0)
 					forceSameVnumSwap := false
 					liveInventory := selectedPlayer.LiveInventory()
-					fromSlot := inventory.SlotIndex(packet.Source.Cell)
-					toSlot := inventory.SlotIndex(packet.Destination.Cell)
 					if !runtime.authoredInventoryMoveSlotCountsFitTemplates(liveInventory, fromSlot, toSlot) {
 						return gameflow.ItemMoveResult{Accepted: false}
 					}

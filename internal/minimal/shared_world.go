@@ -1101,6 +1101,28 @@ func exchangeEquipmentSnapshotInvalidForIncomingItems(items []inventory.ItemInst
 	return false
 }
 
+// HasExchangeDisplayedCarriedSlot reports whether the requester currently shows a
+// carried inventory cell in the active exchange display shell. Displayed cells are
+// fail-closed for same-socket mutations that would change that live item identity.
+func (r *sharedWorldRegistry) HasExchangeDisplayedCarriedSlot(originID uint64, slot inventory.SlotIndex) bool {
+	if r == nil || originID == 0 {
+		return false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.exchangePartners[originID]; !ok {
+		return false
+	}
+	for _, displayed := range r.exchangeItems[originID] {
+		if displayed.Slot == slot && displayed.ItemID != 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *sharedWorldRegistry) RemoveExchangeItem(originID uint64, displaySlot uint8) ([][]byte, bool) {
 	if r == nil || originID == 0 || displaySlot >= itemproto.ExchangeItemMaxNum {
 		return nil, false
