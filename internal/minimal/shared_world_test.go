@@ -39965,6 +39965,163 @@ func TestGameRuntimeContentSpawnGroupDamagedHPPersistsAcrossDaemonRestart(t *tes
 	}
 }
 
+func TestGameRuntimeContentSpawnGroupDamagedHPReplacementDoesNotResetToFullHP(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	attacker := peerVisibilityCharacter("DamagedReplaceAttacker", 0x010301f7, 0x020401f7, 1100, 2100, 0, 101, 201)
+	attacker.Points[bootstrapPlayerPointValueIndex] = 50
+	lateViewer := peerVisibilityCharacter("DamagedReplaceViewer", 0x010301f8, 0x020401f8, 1100, 2100, 0, 102, 202)
+	issuePeerTicket(t, store, "damaged-replace-attacker", 0xf7f7f7f7, attacker)
+	issuePeerTicket(t, store, "damaged-replace-viewer", 0xf8f8f8f8, lateViewer)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000480, 0)
+	runtime.now = func() time.Time { return currentTime }
+	initialBundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_damaged_replace",
+		Name:          "PracticeMobDamagedReplace",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(initialBundle); err != nil {
+		t.Fatalf("import initial damaged replacement spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice mob after initial import, got %#v", actors)
+	}
+	originalEntityID := actors[0].EntityID
+	targetVID := uint32(originalEntityID)
+
+	attackerFlow, attackerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "damaged-replace-attacker", 0xf7f7f7f7)
+	if len(attackerEnter) != 8 {
+		t.Fatalf("expected attacker bootstrap with visible content practice mob, got %d frames", len(attackerEnter))
+	}
+	selectOut, err := attackerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected damaged-replace target error: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected one target ack before damaged hit, got %d frames", len(selectOut))
+	}
+	attackOut, err := attackerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType:   0,
+		TargetVID:    targetVID,
+		CRCProcPiece: 0,
+		CRCFilePiece: 0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected damaged-replace attack error: %v", err)
+	}
+	if len(attackOut) < 1 {
+		t.Fatalf("expected accepted damaged-replace attack frames, got %d", len(attackOut))
+	}
+	refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[0]))
+	if err != nil {
+		t.Fatalf("decode damaged-replace target refresh: %v", err)
+	}
+	wantHP := worldruntime.TrainingDummyBootstrapMaxHP - worldruntime.TrainingDummyBootstrapDamagePerNormalAttack
+	wantPercent, ok := worldruntime.BootstrapStaticActorHPPercent(worldruntime.StaticActorCombatProfileTrainingDummy, wantHP)
+	if !ok {
+		t.Fatalf("expected bootstrap HP percent for damaged HP %d", wantHP)
+	}
+	if refresh.TargetVID != targetVID || refresh.HPPercent != wantPercent {
+		t.Fatalf("unexpected damaged-replace target refresh: %+v want hp_percent=%d", refresh, wantPercent)
+	}
+	beforeReplace, ok := runtime.SpawnGroupByRef("practice.mob_damaged_replace")
+	if !ok || beforeReplace.Dead || beforeReplace.CombatHPPercent != wantPercent {
+		t.Fatalf("expected live damaged spawn group before replacement, ok=%v snapshot=%+v", ok, beforeReplace)
+	}
+	targets := runtime.sharedWorld.CombatTargetSnapshots()
+	engagedBeforeReplace := false
+	for _, target := range targets {
+		if target.TargetVID == targetVID && target.EngagedByEntityID != 0 {
+			engagedBeforeReplace = true
+			break
+		}
+	}
+	if !engagedBeforeReplace {
+		t.Fatalf("expected engagement before replacement, got combat targets=%+v", targets)
+	}
+	closeSessionFlow(t, attackerFlow)
+
+	replacementBundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_damaged_replace",
+		Name:          "PracticeMobDamagedReplaceRenamed",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(replacementBundle); err != nil {
+		t.Fatalf("import non-identical damaged replacement spawn-group bundle: %v", err)
+	}
+
+	afterReplace, ok := runtime.SpawnGroupByRef("practice.mob_damaged_replace")
+	if !ok {
+		t.Fatal("expected damaged spawn group to remain resolvable by authored ref after replacement")
+	}
+	if afterReplace.Dead || afterReplace.CombatHPPercent != wantPercent {
+		t.Fatalf("expected damaged content-bundle replacement to preserve hp_percent=%d, got snapshot=%+v", wantPercent, afterReplace)
+	}
+	if afterReplace.Name != "PracticeMobDamagedReplaceRenamed" {
+		t.Fatalf("expected replacement presentation name to apply while remaining damaged, got %+v", afterReplace)
+	}
+	if len(runtime.sharedWorld.CombatTargetSnapshots()) != 0 {
+		t.Fatalf("expected engagement/selected-target ownership to stay fail-closed across replacement, got %+v", runtime.sharedWorld.CombatTargetSnapshots())
+	}
+	if respawns := runtime.StaticActorRespawns(); len(respawns) != 0 {
+		t.Fatalf("expected no pending respawn for live damaged actor after replacement, got %+v", respawns)
+	}
+	allActors := runtime.StaticActors()
+	if len(allActors) != 1 || allActors[0].SpawnGroupRef != "practice.mob_damaged_replace" {
+		t.Fatalf("expected one authored-ref actor after damaged replacement, got %+v", allActors)
+	}
+	_ = originalEntityID
+
+	lateFlow, lateEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "damaged-replace-viewer", 0xf8f8f8f8)
+	defer closeSessionFlow(t, lateFlow)
+	if len(lateEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for late viewer with live damaged replaced spawn group, got %d frames", len(lateEnter))
+	}
+	staticAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, lateEnter[5]))
+	if err != nil {
+		t.Fatalf("decode damaged replacement bootstrap add: %v", err)
+	}
+	if staticAdd.VID != uint32(afterReplace.EntityID) {
+		t.Fatalf("expected late viewer bootstrap to show remapped entity %d, got %+v", afterReplace.EntityID, staticAdd)
+	}
+	staticInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, lateEnter[6]))
+	if err != nil {
+		t.Fatalf("decode damaged replacement bootstrap additional info: %v", err)
+	}
+	if staticInfo.VID != uint32(afterReplace.EntityID) || staticInfo.Name != "PracticeMobDamagedReplaceRenamed" {
+		t.Fatalf("unexpected damaged replacement bootstrap additional info: %+v", staticInfo)
+	}
+	selectOut, err = lateFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(afterReplace.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected post-replacement target error: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected fresh post-replacement target ack, got %d frames; connected=%+v spawn=%+v", len(selectOut), runtime.sharedWorld.ConnectedCharacters(), afterReplace)
+	}
+	reselect, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, selectOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-replacement target ack: %v", err)
+	}
+	if reselect.TargetVID != uint32(afterReplace.EntityID) || reselect.HPPercent != wantPercent {
+		t.Fatalf("expected post-replacement target ack to keep damaged hp_percent=%d, got %+v", wantPercent, reselect)
+	}
+}
+
 func TestGameSessionFlowPracticeMobDeathCancelsPendingDelayedRetaliationBeforeRespawn(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

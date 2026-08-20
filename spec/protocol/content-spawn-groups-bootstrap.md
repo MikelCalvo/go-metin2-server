@@ -504,7 +504,7 @@ Contract for the first live damaged HP content-bundle replacement remapping seam
 Current implementation status:
 - still-dead content-bundle replacement anti-resurrect is owned
 - daemon-restart live damaged HP persistence is owned
-- live damaged HP remapping across non-identical content-bundle replacement is frozen here and not yet implemented
+- live damaged HP remapping across non-identical content-bundle replacement is now owned beside that still-dead remapper: successful non-identical same-`spawn_group_ref` imports restore `1..max_hp-1` onto the newly registered actor before import fanout, while engagement / selected-target ownership stay fail-closed
 
 Explicit non-goals for this live damaged replacement remapping freeze alone:
 - remapping engagement, selected-target, proximity-suppress, chase, or return schedules across replacement

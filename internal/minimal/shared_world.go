@@ -1338,24 +1338,31 @@ func (r *sharedWorldRegistry) restoreStaticActorCombatStateLocked(snapshot stati
 	r.nextStaticActorCombatSnapshotID = snapshot.NextSnapshotID
 }
 
-// remapStillDeadSpawnGroupCombatState overlays pending dead/respawn combat state from a
+// remapSpawnGroupCombatState overlays pending still-dead / live-damaged combat state from a
 // previous content-bundle snapshot onto newly registered actors that keep the same authored
 // spawn_group_ref. Engagement, proximity suppress, and session combat ownership are intentionally
 // not remapped: replacement is a runtime-reset boundary for those seams.
-func (r *sharedWorldRegistry) remapStillDeadSpawnGroupCombatState(previousActors []StaticActorSnapshot, previous staticActorCombatStateSnapshot) {
+func (r *sharedWorldRegistry) remapSpawnGroupCombatState(previousActors []StaticActorSnapshot, previous staticActorCombatStateSnapshot) {
 	if r == nil || r.entities == nil || len(previousActors) == 0 {
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.remapStillDeadSpawnGroupCombatStateLocked(previousActors, previous)
+	r.remapSpawnGroupCombatStateLocked(previousActors, previous)
 }
 
-func (r *sharedWorldRegistry) remapStillDeadSpawnGroupCombatStateLocked(previousActors []StaticActorSnapshot, previous staticActorCombatStateSnapshot) {
+// remapStillDeadSpawnGroupCombatState keeps the historical still-dead-only call site name as an
+// alias while content-bundle replacement remaps both still-dead and live-damaged HP.
+func (r *sharedWorldRegistry) remapStillDeadSpawnGroupCombatState(previousActors []StaticActorSnapshot, previous staticActorCombatStateSnapshot) {
+	r.remapSpawnGroupCombatState(previousActors, previous)
+}
+
+func (r *sharedWorldRegistry) remapSpawnGroupCombatStateLocked(previousActors []StaticActorSnapshot, previous staticActorCombatStateSnapshot) {
 	if r == nil || r.entities == nil || len(previousActors) == 0 {
 		return
 	}
 	stillDeadByRef := make(map[string]time.Time)
+	damagedByRef := make(map[string]uint8)
 	for _, actor := range previousActors {
 		ref := strings.TrimSpace(actor.SpawnGroupRef)
 		if ref == "" || actor.EntityID == 0 {
@@ -1363,12 +1370,29 @@ func (r *sharedWorldRegistry) remapStillDeadSpawnGroupCombatStateLocked(previous
 		}
 		currentHP, hpOK := previous.HP[actor.EntityID]
 		respawnAt, respawnOK := previous.RespawnAt[actor.EntityID]
-		if !hpOK || currentHP != 0 || !respawnOK || respawnAt.IsZero() {
+		if !hpOK {
 			continue
 		}
-		stillDeadByRef[ref] = respawnAt
+		if currentHP == 0 {
+			if !respawnOK || respawnAt.IsZero() {
+				continue
+			}
+			stillDeadByRef[ref] = respawnAt
+			continue
+		}
+		if respawnOK && !respawnAt.IsZero() {
+			continue
+		}
+		maxHP, ok := worldruntime.BootstrapStaticActorCurrentHP(actor.CombatProfile)
+		if !ok || currentHP >= maxHP {
+			continue
+		}
+		if _, percentOK := worldruntime.BootstrapStaticActorHPPercent(actor.CombatProfile, currentHP); !percentOK {
+			continue
+		}
+		damagedByRef[ref] = currentHP
 	}
-	if len(stillDeadByRef) == 0 {
+	if len(stillDeadByRef) == 0 && len(damagedByRef) == 0 {
 		return
 	}
 	for _, actor := range r.entities.AllStaticActors() {
@@ -1376,11 +1400,13 @@ func (r *sharedWorldRegistry) remapStillDeadSpawnGroupCombatStateLocked(previous
 		if ref == "" || actor.Entity.ID == 0 {
 			continue
 		}
-		respawnAt, ok := stillDeadByRef[ref]
-		if !ok {
+		if respawnAt, ok := stillDeadByRef[ref]; ok {
+			r.restoreStillDeadSpawnGroupCombatStateLocked(actor.Entity.ID, respawnAt)
 			continue
 		}
-		r.restoreStillDeadSpawnGroupCombatStateLocked(actor.Entity.ID, respawnAt)
+		if currentHP, ok := damagedByRef[ref]; ok {
+			r.restoreDamagedSpawnGroupCombatStateLocked(actor.Entity.ID, currentHP)
+		}
 	}
 }
 
