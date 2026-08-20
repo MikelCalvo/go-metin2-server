@@ -6242,6 +6242,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if consumeGold > interactionstore.QuestFlagConsumeGoldMax {
 							return gameflow.InteractionResult{Accepted: false}
 						}
+						consumeExperience := resolution.Definition.ConsumeExperience
+						if consumeExperience > interactionstore.QuestFlagConsumeExperienceMax {
+							return gameflow.InteractionResult{Accepted: false}
+						}
 						rewardItems := interactionstore.EffectiveRewardItems(resolution.Definition)
 						rewardItemTemplates := make([]itemcatalog.Template, 0, len(rewardItems))
 						for _, entry := range rewardItems {
@@ -6269,6 +6273,18 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 								return gameflow.InteractionResult{Accepted: true, Frames: frames}
 							}
 						}
+						experienceBefore := previousSelected.Points[bootstrapExperiencePointType]
+						if consumeExperience != 0 {
+							if experienceBefore < 0 || uint64(experienceBefore) < consumeExperience {
+								failureDelivery := staticActorInteractionFailureDelivery(staticActorInteractionFailureQuestCurrentValueMismatch)
+								if failureDelivery == nil {
+									return gameflow.InteractionResult{Accepted: false}
+								}
+								markInteractionCooldown(packet.TargetVID)
+								frames := prependMerchantCloseFrame([][]byte{chatproto.EncodeChatDelivery(*failureDelivery)})
+								return gameflow.InteractionResult{Accepted: true, Frames: frames}
+							}
+						}
 						if rewardGold != 0 {
 							goldAfterConsume := previousSelected.Gold - consumeGold
 							if goldAfterConsume > uint64(math.MaxInt32) || goldAfterConsume > uint64(math.MaxInt32)-rewardGold {
@@ -6276,11 +6292,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							}
 						}
 						if rewardExperience != 0 {
-							experienceBefore := previousSelected.Points[bootstrapExperiencePointType]
 							if rewardExperience > uint64(math.MaxInt32) {
 								return gameflow.InteractionResult{Accepted: false}
 							}
-							nextExperience := int64(experienceBefore) + int64(rewardExperience)
+							experienceAfterConsume := int64(experienceBefore) - int64(consumeExperience)
+							nextExperience := experienceAfterConsume + int64(rewardExperience)
 							if nextExperience > math.MaxInt32 {
 								return gameflow.InteractionResult{Accepted: false}
 							}
@@ -6361,6 +6377,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							}
 							consumeGoldAfter = updatedGold
 						}
+						var consumeExperienceAfter int32
+						if consumeExperience != 0 {
+							updatedExperience, ok := selectedPlayer.DeductLiveExperience(consumeExperience)
+							if !ok {
+								rollbackQuestFlagRewards()
+								return gameflow.InteractionResult{Accepted: false}
+							}
+							consumeExperienceAfter = updatedExperience
+						}
 						var scalarReward player.DeathRewardResult
 						if rewardGold != 0 || rewardExperience != 0 {
 							reward, rewardOK := selectedPlayer.ApplyStaticActorDeathReward(worldruntime.StaticActorDeathReward{Experience: rewardExperience, Gold: rewardGold})
@@ -6409,7 +6434,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							}
 							itemFrames = append(itemFrames, encodedItemFrames...)
 						}
-						if rewardGold != 0 || rewardExperience != 0 || consumeGold != 0 || len(rewardItems) > 0 || len(consumeRequirements) > 0 {
+						if rewardGold != 0 || rewardExperience != 0 || consumeGold != 0 || consumeExperience != 0 || len(rewardItems) > 0 || len(consumeRequirements) > 0 {
 							updatedSelected := selectedPlayer.LiveCharacter()
 							persistedSelected := selectedPlayer.PersistedSnapshot()
 							persistedSelected.Gold = updatedSelected.Gold
@@ -6433,6 +6458,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 									Type:   bootstrapGoldPointType,
 									Amount: -int32(consumeGold),
 									Value:  int32(consumeGoldAfter),
+								}))
+							}
+							if consumeExperience != 0 {
+								frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+									VID:    previousSelected.VID,
+									Type:   bootstrapExperiencePointType,
+									Amount: -int32(consumeExperience),
+									Value:  consumeExperienceAfter,
 								}))
 							}
 							if rewardGold != 0 {
@@ -10465,6 +10498,16 @@ func (r *gameRuntime) previewQuestFlagInteraction(characterName string, definiti
 				return message, nil
 			}
 		}
+		if definition.ConsumeExperience != 0 {
+			state, ok := r.liveCharacterState(characterName)
+			if !ok || state.Points[bootstrapExperiencePointType] < 0 || uint64(state.Points[bootstrapExperiencePointType]) < definition.ConsumeExperience {
+				message, ok := staticActorInteractionFailureMessage(staticActorInteractionFailureQuestCurrentValueMismatch)
+				if !ok {
+					return "", fmt.Errorf("quest flag mismatch preview is unsupported")
+				}
+				return message, nil
+			}
+		}
 		if consumeRequirements := questFlagConsumeRequirements(definition); len(consumeRequirements) > 0 {
 			if !r.characterCanSupplyQuestFlagConsumeItems(characterName, consumeRequirements) {
 				message, ok := staticActorInteractionFailureMessage(staticActorInteractionFailureQuestCurrentValueMismatch)
@@ -10596,6 +10639,9 @@ func questFlagRewardPreview(text string, definition InteractionDefinition, itemT
 	}
 	if definition.ConsumeGold != 0 {
 		preview = fmt.Sprintf("%s [consume_gold %d]", preview, definition.ConsumeGold)
+	}
+	if definition.ConsumeExperience != 0 {
+		preview = fmt.Sprintf("%s [consume_experience %d]", preview, definition.ConsumeExperience)
 	}
 	for _, entry := range interactionstore.EffectiveConsumeItems(definition) {
 		itemLabel := fmt.Sprintf("vnum %d", entry.ItemVnum)

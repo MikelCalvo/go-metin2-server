@@ -339,20 +339,21 @@ type QuestStateDelta struct {
 }
 
 type QuestFlagTriggerSummary struct {
-	Kind             string                             `json:"kind"`
-	Ref              string                             `json:"ref"`
-	Text             string                             `json:"text"`
-	QuestRef         string                             `json:"quest_ref"`
-	QuestFlag        string                             `json:"quest_flag"`
-	QuestFrom        uint32                             `json:"quest_from,omitempty"`
-	QuestTo          uint32                             `json:"quest_to,omitempty"`
-	RewardExperience uint64                             `json:"reward_experience,omitempty"`
-	RewardGold       uint64                             `json:"reward_gold,omitempty"`
-	RewardItemVnum   uint32                             `json:"reward_item_vnum,omitempty"`
-	RewardItemCount  uint16                             `json:"reward_item_count,omitempty"`
-	RewardItems      []interactionstore.RewardItemEntry `json:"reward_items,omitempty"`
-	ConsumeItems     []interactionstore.RewardItemEntry `json:"consume_items,omitempty"`
-	ConsumeGold      uint64                             `json:"consume_gold,omitempty"`
+	Kind              string                             `json:"kind"`
+	Ref               string                             `json:"ref"`
+	Text              string                             `json:"text"`
+	QuestRef          string                             `json:"quest_ref"`
+	QuestFlag         string                             `json:"quest_flag"`
+	QuestFrom         uint32                             `json:"quest_from,omitempty"`
+	QuestTo           uint32                             `json:"quest_to,omitempty"`
+	RewardExperience  uint64                             `json:"reward_experience,omitempty"`
+	RewardGold        uint64                             `json:"reward_gold,omitempty"`
+	RewardItemVnum    uint32                             `json:"reward_item_vnum,omitempty"`
+	RewardItemCount   uint16                             `json:"reward_item_count,omitempty"`
+	RewardItems       []interactionstore.RewardItemEntry `json:"reward_items,omitempty"`
+	ConsumeItems      []interactionstore.RewardItemEntry `json:"consume_items,omitempty"`
+	ConsumeGold       uint64                             `json:"consume_gold,omitempty"`
+	ConsumeExperience uint64                             `json:"consume_experience,omitempty"`
 }
 
 type QuestFlagTriggerDelta struct {
@@ -735,23 +736,24 @@ type ShopCatalogEntrySummary struct {
 }
 
 type QuestFlagRouteSummary struct {
-	ActorName        string                             `json:"actor_name"`
-	SourceMapIndex   uint32                             `json:"source_map_index"`
-	SourceX          int32                              `json:"source_x"`
-	SourceY          int32                              `json:"source_y"`
-	Ref              string                             `json:"ref"`
-	Text             string                             `json:"text"`
-	QuestRef         string                             `json:"quest_ref"`
-	QuestFlag        string                             `json:"quest_flag"`
-	QuestFrom        uint32                             `json:"quest_from,omitempty"`
-	QuestTo          uint32                             `json:"quest_to,omitempty"`
-	RewardExperience uint64                             `json:"reward_experience,omitempty"`
-	RewardGold       uint64                             `json:"reward_gold,omitempty"`
-	RewardItemVnum   uint32                             `json:"reward_item_vnum,omitempty"`
-	RewardItemCount  uint16                             `json:"reward_item_count,omitempty"`
-	RewardItems      []interactionstore.RewardItemEntry `json:"reward_items,omitempty"`
-	ConsumeItems     []interactionstore.RewardItemEntry `json:"consume_items,omitempty"`
-	ConsumeGold      uint64                             `json:"consume_gold,omitempty"`
+	ActorName         string                             `json:"actor_name"`
+	SourceMapIndex    uint32                             `json:"source_map_index"`
+	SourceX           int32                              `json:"source_x"`
+	SourceY           int32                              `json:"source_y"`
+	Ref               string                             `json:"ref"`
+	Text              string                             `json:"text"`
+	QuestRef          string                             `json:"quest_ref"`
+	QuestFlag         string                             `json:"quest_flag"`
+	QuestFrom         uint32                             `json:"quest_from,omitempty"`
+	QuestTo           uint32                             `json:"quest_to,omitempty"`
+	RewardExperience  uint64                             `json:"reward_experience,omitempty"`
+	RewardGold        uint64                             `json:"reward_gold,omitempty"`
+	RewardItemVnum    uint32                             `json:"reward_item_vnum,omitempty"`
+	RewardItemCount   uint16                             `json:"reward_item_count,omitempty"`
+	RewardItems       []interactionstore.RewardItemEntry `json:"reward_items,omitempty"`
+	ConsumeItems      []interactionstore.RewardItemEntry `json:"consume_items,omitempty"`
+	ConsumeGold       uint64                             `json:"consume_gold,omitempty"`
+	ConsumeExperience uint64                             `json:"consume_experience,omitempty"`
 }
 
 type ShopRouteSummary struct {
@@ -2978,18 +2980,19 @@ func questFlagTriggerSummary(definition interactionstore.Definition) QuestFlagTr
 	definition = interactionstore.NormalizeDefinition(definition)
 	rewardItems := interactionstore.EffectiveRewardItems(definition)
 	summary := QuestFlagTriggerSummary{
-		Kind:             definition.Kind,
-		Ref:              definition.Ref,
-		Text:             definition.Text,
-		QuestRef:         definition.QuestRef,
-		QuestFlag:        definition.QuestFlag,
-		QuestFrom:        definition.QuestFrom,
-		QuestTo:          definition.QuestTo,
-		RewardExperience: definition.RewardExperience,
-		RewardGold:       definition.RewardGold,
-		RewardItems:      rewardItems,
-		ConsumeItems:     interactionstore.EffectiveConsumeItems(definition),
-		ConsumeGold:      definition.ConsumeGold,
+		Kind:              definition.Kind,
+		Ref:               definition.Ref,
+		Text:              definition.Text,
+		QuestRef:          definition.QuestRef,
+		QuestFlag:         definition.QuestFlag,
+		QuestFrom:         definition.QuestFrom,
+		QuestTo:           definition.QuestTo,
+		RewardExperience:  definition.RewardExperience,
+		RewardGold:        definition.RewardGold,
+		RewardItems:       rewardItems,
+		ConsumeItems:      interactionstore.EffectiveConsumeItems(definition),
+		ConsumeGold:       definition.ConsumeGold,
+		ConsumeExperience: definition.ConsumeExperience,
 	}
 	if len(rewardItems) > 0 {
 		summary.RewardItemVnum = rewardItems[0].ItemVnum
@@ -3186,6 +3189,9 @@ func questFlagRewardPreview(text string, definition interactionstore.Definition,
 	if definition.ConsumeGold != 0 {
 		preview = fmt.Sprintf("%s [consume_gold %d]", preview, definition.ConsumeGold)
 	}
+	if definition.ConsumeExperience != 0 {
+		preview = fmt.Sprintf("%s [consume_experience %d]", preview, definition.ConsumeExperience)
+	}
 	for _, entry := range interactionstore.EffectiveConsumeItems(definition) {
 		itemLabel := fmt.Sprintf("vnum %d", entry.ItemVnum)
 		if template, ok := itemTemplatesByVnum[entry.ItemVnum]; ok {
@@ -3323,21 +3329,22 @@ func questFlagRouteSummary(actor StaticActor, definition interactionstore.Defini
 	definition = interactionstore.NormalizeDefinition(definition)
 	rewardItems := interactionstore.EffectiveRewardItems(definition)
 	summary := QuestFlagRouteSummary{
-		ActorName:        actor.Name,
-		SourceMapIndex:   actor.MapIndex,
-		SourceX:          actor.X,
-		SourceY:          actor.Y,
-		Ref:              definition.Ref,
-		Text:             definition.Text,
-		QuestRef:         definition.QuestRef,
-		QuestFlag:        definition.QuestFlag,
-		QuestFrom:        definition.QuestFrom,
-		QuestTo:          definition.QuestTo,
-		RewardExperience: definition.RewardExperience,
-		RewardGold:       definition.RewardGold,
-		RewardItems:      rewardItems,
-		ConsumeItems:     interactionstore.EffectiveConsumeItems(definition),
-		ConsumeGold:      definition.ConsumeGold,
+		ActorName:         actor.Name,
+		SourceMapIndex:    actor.MapIndex,
+		SourceX:           actor.X,
+		SourceY:           actor.Y,
+		Ref:               definition.Ref,
+		Text:              definition.Text,
+		QuestRef:          definition.QuestRef,
+		QuestFlag:         definition.QuestFlag,
+		QuestFrom:         definition.QuestFrom,
+		QuestTo:           definition.QuestTo,
+		RewardExperience:  definition.RewardExperience,
+		RewardGold:        definition.RewardGold,
+		RewardItems:       rewardItems,
+		ConsumeItems:      interactionstore.EffectiveConsumeItems(definition),
+		ConsumeGold:       definition.ConsumeGold,
+		ConsumeExperience: definition.ConsumeExperience,
 	}
 	if len(rewardItems) > 0 {
 		summary.RewardItemVnum = rewardItems[0].ItemVnum

@@ -35,6 +35,10 @@ const (
 	// the bootstrap PLAYER_POINT_CHANGE gold carrier used by death rewards and
 	// reward_gold grants.
 	QuestFlagConsumeGoldMax uint64 = 1<<31 - 1
+	// QuestFlagConsumeExperienceMax is the maximum authored experience debit that
+	// still fits the bootstrap PLAYER_POINT_CHANGE experience carrier used by
+	// death rewards and reward_experience grants.
+	QuestFlagConsumeExperienceMax uint64 = 1<<31 - 1
 )
 
 var (
@@ -57,25 +61,26 @@ type RewardItemEntry struct {
 }
 
 type Definition struct {
-	Kind             string                 `json:"kind"`
-	Ref              string                 `json:"ref"`
-	Text             string                 `json:"text,omitempty"`
-	Title            string                 `json:"title,omitempty"`
-	Catalog          []MerchantCatalogEntry `json:"catalog,omitempty"`
-	MapIndex         uint32                 `json:"map_index,omitempty"`
-	X                int32                  `json:"x,omitempty"`
-	Y                int32                  `json:"y,omitempty"`
-	QuestRef         string                 `json:"quest_ref,omitempty"`
-	QuestFlag        string                 `json:"quest_flag,omitempty"`
-	QuestFrom        uint32                 `json:"quest_from,omitempty"`
-	QuestTo          uint32                 `json:"quest_to,omitempty"`
-	RewardExperience uint64                 `json:"reward_experience,omitempty"`
-	RewardGold       uint64                 `json:"reward_gold,omitempty"`
-	RewardItemVnum   uint32                 `json:"reward_item_vnum,omitempty"`
-	RewardItemCount  uint16                 `json:"reward_item_count,omitempty"`
-	RewardItems      []RewardItemEntry      `json:"reward_items,omitempty"`
-	ConsumeItems     []RewardItemEntry      `json:"consume_items,omitempty"`
-	ConsumeGold      uint64                 `json:"consume_gold,omitempty"`
+	Kind              string                 `json:"kind"`
+	Ref               string                 `json:"ref"`
+	Text              string                 `json:"text,omitempty"`
+	Title             string                 `json:"title,omitempty"`
+	Catalog           []MerchantCatalogEntry `json:"catalog,omitempty"`
+	MapIndex          uint32                 `json:"map_index,omitempty"`
+	X                 int32                  `json:"x,omitempty"`
+	Y                 int32                  `json:"y,omitempty"`
+	QuestRef          string                 `json:"quest_ref,omitempty"`
+	QuestFlag         string                 `json:"quest_flag,omitempty"`
+	QuestFrom         uint32                 `json:"quest_from,omitempty"`
+	QuestTo           uint32                 `json:"quest_to,omitempty"`
+	RewardExperience  uint64                 `json:"reward_experience,omitempty"`
+	RewardGold        uint64                 `json:"reward_gold,omitempty"`
+	RewardItemVnum    uint32                 `json:"reward_item_vnum,omitempty"`
+	RewardItemCount   uint16                 `json:"reward_item_count,omitempty"`
+	RewardItems       []RewardItemEntry      `json:"reward_items,omitempty"`
+	ConsumeItems      []RewardItemEntry      `json:"consume_items,omitempty"`
+	ConsumeGold       uint64                 `json:"consume_gold,omitempty"`
+	ConsumeExperience uint64                 `json:"consume_experience,omitempty"`
 }
 
 type Snapshot struct {
@@ -213,16 +218,16 @@ func validDefinition(definition Definition) bool {
 	}
 	switch definition.Kind {
 	case KindInfo, KindTalk:
-		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
+		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && definition.ConsumeExperience == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
 	case KindShopPreview:
-		if definition.Title == "" || !validDefinitionText(definition.Title) || definition.Text != "" || definition.MapIndex != 0 || definition.X != 0 || definition.Y != 0 || definition.RewardExperience != 0 || definition.RewardGold != 0 || definition.ConsumeGold != 0 || hasRewardItems(definition) || hasConsumeItems(definition) || !validOptionalServiceQuestGate(definition) {
+		if definition.Title == "" || !validDefinitionText(definition.Title) || definition.Text != "" || definition.MapIndex != 0 || definition.X != 0 || definition.Y != 0 || definition.RewardExperience != 0 || definition.RewardGold != 0 || definition.ConsumeGold != 0 || definition.ConsumeExperience != 0 || hasRewardItems(definition) || hasConsumeItems(definition) || !validOptionalServiceQuestGate(definition) {
 			return false
 		}
 		return validMerchantCatalog(definition.Catalog)
 	case KindWarp:
-		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && definition.MapIndex != 0 && definition.X != 0 && definition.Y != 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
+		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && definition.MapIndex != 0 && definition.X != 0 && definition.Y != 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && definition.ConsumeExperience == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
 	case KindQuestFlag:
-		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && queststate.ValidQuestRef(definition.QuestRef) && queststate.ValidFlagName(definition.QuestFlag) && definition.QuestFrom != definition.QuestTo && definition.RewardExperience <= QuestFlagRewardExperienceMax && definition.RewardGold <= QuestFlagRewardGoldMax && definition.ConsumeGold <= QuestFlagConsumeGoldMax && validOptionalRewardItems(definition) && validOptionalConsumeItems(definition)
+		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && queststate.ValidQuestRef(definition.QuestRef) && queststate.ValidFlagName(definition.QuestFlag) && definition.QuestFrom != definition.QuestTo && definition.RewardExperience <= QuestFlagRewardExperienceMax && definition.RewardGold <= QuestFlagRewardGoldMax && definition.ConsumeGold <= QuestFlagConsumeGoldMax && definition.ConsumeExperience <= QuestFlagConsumeExperienceMax && validOptionalRewardItems(definition) && validOptionalConsumeItems(definition)
 	default:
 		return false
 	}

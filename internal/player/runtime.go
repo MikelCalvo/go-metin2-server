@@ -274,6 +274,25 @@ func (r *Runtime) DeductLiveGold(amount uint64) (uint64, bool) {
 	return r.liveGold, true
 }
 
+// DeductLiveExperience removes amount from the live experience point when the
+// carrier and balance allow it. amount == 0 is treated as a no-op success that
+// returns the current experience value.
+func (r *Runtime) DeductLiveExperience(amount uint64) (int32, bool) {
+	if r == nil {
+		return 0, false
+	}
+	current := r.livePoints[ExperiencePointIndex]
+	if amount == 0 {
+		return current, true
+	}
+	if amount > uint64(1<<31-1) || current < 0 || uint64(current) < amount {
+		return 0, false
+	}
+	updated := current - int32(amount)
+	r.livePoints[ExperiencePointIndex] = updated
+	return updated, true
+}
+
 func (r *Runtime) SetLivePoint(pointIndex uint8, value int32) bool {
 	if r == nil || int(pointIndex) >= len(r.livePoints) {
 		return false

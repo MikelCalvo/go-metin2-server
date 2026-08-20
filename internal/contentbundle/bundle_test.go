@@ -3442,7 +3442,8 @@ func TestBootstrapNPCServiceExampleBundleClosesKillQuestTurnIn(t *testing.T) {
 		ConsumeItems: []interactionstore.RewardItemEntry{
 			{ItemVnum: 27001, Count: 1},
 		},
-		ConsumeGold: 25,
+		ConsumeGold:       25,
+		ConsumeExperience: 10,
 	}
 	if !reflect.DeepEqual(*turnIn, wantDefinition) {
 		t.Fatalf("unexpected kill-quest turn-in definition:\n got: %#v\nwant: %#v", *turnIn, wantDefinition)
@@ -3474,7 +3475,7 @@ func TestBootstrapNPCServiceExampleBundleClosesKillQuestTurnIn(t *testing.T) {
 	for _, trigger := range summary.QuestFlagTriggers {
 		if trigger.Ref == "quest:first_steps_kill_turnin" {
 			foundTurnInTrigger = true
-			if trigger.QuestFlag != "killed_qa_mob" || trigger.QuestFrom != 1 || trigger.QuestTo != 0 || trigger.Text != "Quest updated: first_steps.killed_qa_mob = 0." || trigger.RewardExperience != 50 || trigger.RewardGold != 100 || trigger.ConsumeGold != 25 || trigger.RewardItemVnum != 11200 || trigger.RewardItemCount != 1 || !reflect.DeepEqual(trigger.RewardItems, []interactionstore.RewardItemEntry{{ItemVnum: 11200, Count: 1}}) || !reflect.DeepEqual(trigger.ConsumeItems, []interactionstore.RewardItemEntry{{ItemVnum: 27001, Count: 1}}) {
+			if trigger.QuestFlag != "killed_qa_mob" || trigger.QuestFrom != 1 || trigger.QuestTo != 0 || trigger.Text != "Quest updated: first_steps.killed_qa_mob = 0." || trigger.RewardExperience != 50 || trigger.RewardGold != 100 || trigger.ConsumeGold != 25 || trigger.ConsumeExperience != 10 || trigger.RewardItemVnum != 11200 || trigger.RewardItemCount != 1 || !reflect.DeepEqual(trigger.RewardItems, []interactionstore.RewardItemEntry{{ItemVnum: 11200, Count: 1}}) || !reflect.DeepEqual(trigger.ConsumeItems, []interactionstore.RewardItemEntry{{ItemVnum: 27001, Count: 1}}) {
 				t.Fatalf("unexpected kill-quest turn-in trigger summary: %+v", trigger)
 			}
 		}
@@ -3486,7 +3487,7 @@ func TestBootstrapNPCServiceExampleBundleClosesKillQuestTurnIn(t *testing.T) {
 	for _, route := range summary.QuestFlagRoutes {
 		if route.ActorName == "QuestHunter" && route.Ref == "quest:first_steps_kill_turnin" {
 			foundTurnInRoute = true
-			if route.RewardExperience != 50 || route.RewardGold != 100 || route.ConsumeGold != 25 || route.RewardItemVnum != 11200 || route.RewardItemCount != 1 || !reflect.DeepEqual(route.RewardItems, []interactionstore.RewardItemEntry{{ItemVnum: 11200, Count: 1}}) || !reflect.DeepEqual(route.ConsumeItems, []interactionstore.RewardItemEntry{{ItemVnum: 27001, Count: 1}}) {
+			if route.RewardExperience != 50 || route.RewardGold != 100 || route.ConsumeGold != 25 || route.ConsumeExperience != 10 || route.RewardItemVnum != 11200 || route.RewardItemCount != 1 || !reflect.DeepEqual(route.RewardItems, []interactionstore.RewardItemEntry{{ItemVnum: 11200, Count: 1}}) || !reflect.DeepEqual(route.ConsumeItems, []interactionstore.RewardItemEntry{{ItemVnum: 27001, Count: 1}}) {
 				t.Fatalf("unexpected kill-quest turn-in route summary: %+v", route)
 			}
 			break

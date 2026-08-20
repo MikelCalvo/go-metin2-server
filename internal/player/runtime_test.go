@@ -289,6 +289,49 @@ func TestRuntimeDeductLiveGoldRejectsInsufficientBalanceWithoutMutation(t *testi
 	}
 }
 
+func TestRuntimeDeductLiveExperienceRemovesBalance(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030114,
+		VID:  0x02040114,
+		Name: "PeerDeductExp",
+		Points: [255]int32{
+			ExperiencePointIndex: 40,
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-deduct-exp", CharacterIndex: 0})
+
+	got, ok := runtime.DeductLiveExperience(10)
+	if !ok || got != 30 {
+		t.Fatalf("unexpected deduct-live-experience result: ok=%v experience=%d", ok, got)
+	}
+	if runtime.LiveCharacter().Points[ExperiencePointIndex] != 30 {
+		t.Fatalf("expected live experience 30 after deduct, got %d", runtime.LiveCharacter().Points[ExperiencePointIndex])
+	}
+	if runtime.PersistedSnapshot().Points[ExperiencePointIndex] != 40 {
+		t.Fatalf("expected persisted experience unchanged before explicit save, got %d", runtime.PersistedSnapshot().Points[ExperiencePointIndex])
+	}
+}
+
+func TestRuntimeDeductLiveExperienceRejectsInsufficientBalanceWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030115,
+		VID:  0x02040115,
+		Name: "PeerDeductExpMiss",
+		Points: [255]int32{
+			ExperiencePointIndex: 5,
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-deduct-exp-miss", CharacterIndex: 0})
+
+	got, ok := runtime.DeductLiveExperience(10)
+	if ok || got != 0 {
+		t.Fatalf("expected insufficient deduct-live-experience to fail closed, got ok=%v experience=%d", ok, got)
+	}
+	if runtime.LiveCharacter().Points[ExperiencePointIndex] != 5 {
+		t.Fatalf("expected live experience unchanged after insufficient deduct, got %d", runtime.LiveCharacter().Points[ExperiencePointIndex])
+	}
+}
+
 func TestRuntimeAppliesGoldOnlyDeathRewardToLiveState(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030102,
