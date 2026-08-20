@@ -25,6 +25,9 @@ const (
 	// still fits the bootstrap PLAYER_POINT_CHANGE experience carrier used by
 	// death rewards.
 	QuestFlagRewardExperienceMax uint64 = 1<<31 - 1
+	// QuestFlagRewardItemsMax is the maximum number of carried-item entries a
+	// single quest_flag turn-in may author.
+	QuestFlagRewardItemsMax = 8
 )
 
 var (
@@ -37,6 +40,12 @@ type MerchantCatalogEntry struct {
 	Slot     uint16 `json:"slot"`
 	ItemVnum uint32 `json:"item_vnum"`
 	Price    uint64 `json:"price"`
+	Count    uint16 `json:"count"`
+}
+
+// RewardItemEntry is one carried-inventory grant authored on a quest_flag turn-in.
+type RewardItemEntry struct {
+	ItemVnum uint32 `json:"item_vnum"`
 	Count    uint16 `json:"count"`
 }
 
@@ -57,6 +66,7 @@ type Definition struct {
 	RewardGold       uint64                 `json:"reward_gold,omitempty"`
 	RewardItemVnum   uint32                 `json:"reward_item_vnum,omitempty"`
 	RewardItemCount  uint16                 `json:"reward_item_count,omitempty"`
+	RewardItems      []RewardItemEntry      `json:"reward_items,omitempty"`
 }
 
 type Snapshot struct {
@@ -103,6 +113,23 @@ func normalizeDefinition(definition Definition) Definition {
 	sort.Slice(definition.Catalog, func(i int, j int) bool {
 		return definition.Catalog[i].Slot < definition.Catalog[j].Slot
 	})
+	definition.RewardItems = cloneRewardItems(definition.RewardItems)
+	hasScalar := definition.RewardItemVnum != 0 || definition.RewardItemCount != 0
+	hasTable := len(definition.RewardItems) > 0
+	if hasTable && hasScalar {
+		// Leave both forms present so ValidDefinition rejects the mixed authoring.
+		return definition
+	}
+	if !hasTable && definition.RewardItemVnum != 0 {
+		definition.RewardItems = []RewardItemEntry{{
+			ItemVnum: definition.RewardItemVnum,
+			Count:    definition.RewardItemCount,
+		}}
+	}
+	if len(definition.RewardItems) > 0 {
+		definition.RewardItemVnum = 0
+		definition.RewardItemCount = 0
+	}
 	return definition
 }
 
@@ -176,30 +203,48 @@ func validDefinition(definition Definition) bool {
 	}
 	switch definition.Kind {
 	case KindInfo, KindTalk:
-		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && !hasRewardItem(definition) && validOptionalServiceQuestGate(definition)
+		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && !hasRewardItems(definition) && validOptionalServiceQuestGate(definition)
 	case KindShopPreview:
-		if definition.Title == "" || !validDefinitionText(definition.Title) || definition.Text != "" || definition.MapIndex != 0 || definition.X != 0 || definition.Y != 0 || definition.RewardExperience != 0 || definition.RewardGold != 0 || hasRewardItem(definition) || !validOptionalServiceQuestGate(definition) {
+		if definition.Title == "" || !validDefinitionText(definition.Title) || definition.Text != "" || definition.MapIndex != 0 || definition.X != 0 || definition.Y != 0 || definition.RewardExperience != 0 || definition.RewardGold != 0 || hasRewardItems(definition) || !validOptionalServiceQuestGate(definition) {
 			return false
 		}
 		return validMerchantCatalog(definition.Catalog)
 	case KindWarp:
-		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && definition.MapIndex != 0 && definition.X != 0 && definition.Y != 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && !hasRewardItem(definition) && validOptionalServiceQuestGate(definition)
+		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && definition.MapIndex != 0 && definition.X != 0 && definition.Y != 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && !hasRewardItems(definition) && validOptionalServiceQuestGate(definition)
 	case KindQuestFlag:
-		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && queststate.ValidQuestRef(definition.QuestRef) && queststate.ValidFlagName(definition.QuestFlag) && definition.QuestFrom != definition.QuestTo && definition.RewardExperience <= QuestFlagRewardExperienceMax && definition.RewardGold <= QuestFlagRewardGoldMax && validOptionalRewardItem(definition)
+		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && queststate.ValidQuestRef(definition.QuestRef) && queststate.ValidFlagName(definition.QuestFlag) && definition.QuestFrom != definition.QuestTo && definition.RewardExperience <= QuestFlagRewardExperienceMax && definition.RewardGold <= QuestFlagRewardGoldMax && validOptionalRewardItems(definition)
 	default:
 		return false
 	}
 }
 
-func hasRewardItem(definition Definition) bool {
-	return definition.RewardItemVnum != 0 || definition.RewardItemCount != 0
+func hasRewardItems(definition Definition) bool {
+	return definition.RewardItemVnum != 0 || definition.RewardItemCount != 0 || len(definition.RewardItems) > 0
 }
 
-func validOptionalRewardItem(definition Definition) bool {
-	if definition.RewardItemVnum == 0 {
-		return definition.RewardItemCount == 0
+// EffectiveRewardItems returns the canonical carried-item grant table for a
+// quest_flag definition. Scalar reward_item_vnum/count remains a one-entry
+// authoring shorthand that expands into this table during normalize.
+func EffectiveRewardItems(definition Definition) []RewardItemEntry {
+	definition = normalizeDefinition(definition)
+	return cloneRewardItems(definition.RewardItems)
+}
+
+func validOptionalRewardItems(definition Definition) bool {
+	if definition.RewardItemVnum != 0 || definition.RewardItemCount != 0 {
+		// Normalize expands scalars into RewardItems and clears them. Seeing
+		// both forms after normalize means the author mixed scalar + table.
+		return false
 	}
-	return definition.RewardItemCount >= 1 && definition.RewardItemCount <= 255
+	if len(definition.RewardItems) > QuestFlagRewardItemsMax {
+		return false
+	}
+	for _, entry := range definition.RewardItems {
+		if entry.ItemVnum == 0 || entry.Count < 1 || entry.Count > 255 {
+			return false
+		}
+	}
+	return true
 }
 
 // HasServiceQuestGate reports whether an info/talk/warp/shop_preview definition
@@ -255,6 +300,7 @@ func cloneDefinitions(definitions []Definition) []Definition {
 	for i, definition := range definitions {
 		cloned[i] = definition
 		cloned[i].Catalog = cloneCatalog(definition.Catalog)
+		cloned[i].RewardItems = cloneRewardItems(definition.RewardItems)
 	}
 	return cloned
 }
@@ -265,5 +311,14 @@ func cloneCatalog(catalog []MerchantCatalogEntry) []MerchantCatalogEntry {
 	}
 	cloned := make([]MerchantCatalogEntry, len(catalog))
 	copy(cloned, catalog)
+	return cloned
+}
+
+func cloneRewardItems(entries []RewardItemEntry) []RewardItemEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	cloned := make([]RewardItemEntry, len(entries))
+	copy(cloned, entries)
 	return cloned
 }

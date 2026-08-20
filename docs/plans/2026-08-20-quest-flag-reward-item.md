@@ -46,6 +46,6 @@ Focused coverage:
 
 ## Follow-up options
 
-1. Optional `reward_experience` beside gold/item.
-2. Multi-entry structured turn-in reward tables.
-3. Keep branching quest scripts deferred.
+1. Keep branching quest scripts deferred.
+2. Multi-entry structured turn-in reward tables (`reward_items[]`) are now owned; keep weighted/random turn-in loot deferred.
+3. Keep new NPC service kinds deferred until accepted safebox/storage mutations exist.

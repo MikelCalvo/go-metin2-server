@@ -5959,15 +5959,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if rewardExperience > interactionstore.QuestFlagRewardExperienceMax {
 							return gameflow.InteractionResult{Accepted: false}
 						}
-						rewardItemVnum := resolution.Definition.RewardItemVnum
-						rewardItemCount := resolution.Definition.RewardItemCount
-						var rewardItemTemplate itemcatalog.Template
-						if rewardItemVnum != 0 {
-							template, ok := runtime.itemTemplates[rewardItemVnum]
-							if !ok || selectedPlayer.ValidateCarriedItemGrant(template, rewardItemCount) != "" {
+						rewardItems := interactionstore.EffectiveRewardItems(resolution.Definition)
+						rewardItemTemplates := make([]itemcatalog.Template, 0, len(rewardItems))
+						for _, entry := range rewardItems {
+							template, ok := runtime.itemTemplates[entry.ItemVnum]
+							if !ok {
 								return gameflow.InteractionResult{Accepted: false}
 							}
-							rewardItemTemplate = template
+							rewardItemTemplates = append(rewardItemTemplates, template)
 						}
 						previousSelected := selected
 						if rewardGold != 0 {
@@ -5983,6 +5982,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							nextExperience := int64(experienceBefore) + int64(rewardExperience)
 							if nextExperience > math.MaxInt32 {
 								return gameflow.InteractionResult{Accepted: false}
+							}
+						}
+						if len(rewardItems) > 0 {
+							scratch := player.NewRuntime(previousSelected, selectedPlayer.SessionLink())
+							for i, entry := range rewardItems {
+								if _, ok := scratch.GrantCarriedItem(rewardItemTemplates[i], entry.Count); !ok {
+									return gameflow.InteractionResult{Accepted: false}
+								}
 							}
 						}
 						transitionResult, err := runtime.ApplyQuestStateTransition(queststate.Transition{Character: selected.Name, QuestRef: resolution.Definition.QuestRef, Flag: resolution.Definition.QuestFlag, From: resolution.Definition.QuestFrom, To: resolution.Definition.QuestTo})
@@ -6017,8 +6024,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							scalarReward = reward
 						}
 						var itemFrames [][]byte
-						if rewardItemVnum != 0 {
-							grant, ok := selectedPlayer.GrantCarriedItem(rewardItemTemplate, rewardItemCount)
+						for i, entry := range rewardItems {
+							grant, ok := selectedPlayer.GrantCarriedItem(rewardItemTemplates[i], entry.Count)
 							if !ok {
 								rollbackQuestFlagRewards()
 								return gameflow.InteractionResult{Accepted: false}
@@ -6028,9 +6035,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 								rollbackQuestFlagRewards()
 								return gameflow.InteractionResult{Accepted: false}
 							}
-							itemFrames = encodedItemFrames
+							itemFrames = append(itemFrames, encodedItemFrames...)
 						}
-						if rewardGold != 0 || rewardExperience != 0 || rewardItemVnum != 0 {
+						if rewardGold != 0 || rewardExperience != 0 || len(rewardItems) > 0 {
 							updatedSelected := selectedPlayer.LiveCharacter()
 							persistedSelected := selectedPlayer.PersistedSnapshot()
 							persistedSelected.Gold = updatedSelected.Gold
@@ -10042,21 +10049,21 @@ func questFlagRewardPreview(text string, definition InteractionDefinition, itemT
 	if definition.RewardExperience != 0 {
 		preview = fmt.Sprintf("%s [reward_experience %d]", preview, definition.RewardExperience)
 	}
-	if definition.RewardItemVnum == 0 {
-		return preview
-	}
-	itemLabel := fmt.Sprintf("vnum %d", definition.RewardItemVnum)
-	if template, ok := itemTemplates[definition.RewardItemVnum]; ok {
-		name := strings.TrimSpace(template.Name)
-		if name != "" {
-			itemLabel = name
+	for _, entry := range interactionstore.EffectiveRewardItems(definition) {
+		itemLabel := fmt.Sprintf("vnum %d", entry.ItemVnum)
+		if template, ok := itemTemplates[entry.ItemVnum]; ok {
+			name := strings.TrimSpace(template.Name)
+			if name != "" {
+				itemLabel = name
+			}
 		}
+		count := entry.Count
+		if count == 0 {
+			count = 1
+		}
+		preview = fmt.Sprintf("%s [reward_item %s x%d]", preview, itemLabel, count)
 	}
-	count := definition.RewardItemCount
-	if count == 0 {
-		count = 1
-	}
-	return fmt.Sprintf("%s [reward_item %s x%d]", preview, itemLabel, count)
+	return preview
 }
 
 func (r *gameRuntime) shopPreviewInteractionPreview(definition InteractionDefinition) (string, bool) {

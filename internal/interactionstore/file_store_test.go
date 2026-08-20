@@ -188,6 +188,20 @@ func TestFileStoreSaveThenLoadQuestFlagDefinitionWithRewardItem(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
 	store := NewFileStore(path)
 	want := Snapshot{Definitions: []Definition{{
+		Kind:       KindQuestFlag,
+		Ref:        "quest:first_steps_kill_turnin",
+		Text:       "Quest updated: first_steps.killed_qa_mob = 0.",
+		QuestRef:   "quest:first_steps",
+		QuestFlag:  "killed_qa_mob",
+		QuestFrom:  1,
+		QuestTo:    0,
+		RewardGold: 100,
+		RewardItems: []RewardItemEntry{
+			{ItemVnum: 27001, Count: 1},
+		},
+	}}}
+
+	if err := store.Save(Snapshot{Definitions: []Definition{{
 		Kind:            KindQuestFlag,
 		Ref:             "quest:first_steps_kill_turnin",
 		Text:            "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -198,9 +212,7 @@ func TestFileStoreSaveThenLoadQuestFlagDefinitionWithRewardItem(t *testing.T) {
 		RewardGold:      100,
 		RewardItemVnum:  27001,
 		RewardItemCount: 1,
-	}}}
-
-	if err := store.Save(want); err != nil {
+	}}}); err != nil {
 		t.Fatalf("save quest flag reward-item definition: %v", err)
 	}
 	got, err := store.Load()
@@ -209,6 +221,36 @@ func TestFileStoreSaveThenLoadQuestFlagDefinitionWithRewardItem(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected quest flag reward-item definition snapshot:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestFileStoreSaveThenLoadQuestFlagDefinitionWithRewardItems(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	want := Snapshot{Definitions: []Definition{{
+		Kind:       KindQuestFlag,
+		Ref:        "quest:first_steps_kill_turnin",
+		Text:       "Quest updated: first_steps.killed_qa_mob = 0.",
+		QuestRef:   "quest:first_steps",
+		QuestFlag:  "killed_qa_mob",
+		QuestFrom:  1,
+		QuestTo:    0,
+		RewardGold: 100,
+		RewardItems: []RewardItemEntry{
+			{ItemVnum: 27001, Count: 1},
+			{ItemVnum: 11200, Count: 1},
+		},
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save quest flag reward-items definition: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load quest flag reward-items definition: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected quest flag reward-items definition snapshot:\n got: %#v\nwant: %#v", got, want)
 	}
 }
 
@@ -262,6 +304,38 @@ func TestFileStoreRejectsInvalidQuestFlagInteractionDefinition(t *testing.T) {
 		{
 			name:       "reward item count exceeds bootstrap max",
 			definition: Definition{Kind: KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1, RewardItemVnum: 27001, RewardItemCount: 256},
+		},
+		{
+			name: "reward items entry missing vnum",
+			definition: Definition{Kind: KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1, RewardItems: []RewardItemEntry{
+				{ItemVnum: 0, Count: 1},
+			}},
+		},
+		{
+			name: "reward items entry missing count",
+			definition: Definition{Kind: KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1, RewardItems: []RewardItemEntry{
+				{ItemVnum: 27001, Count: 0},
+			}},
+		},
+		{
+			name: "reward items mixed with scalar shorthand",
+			definition: Definition{Kind: KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1, RewardItemVnum: 27001, RewardItemCount: 1, RewardItems: []RewardItemEntry{
+				{ItemVnum: 11200, Count: 1},
+			}},
+		},
+		{
+			name: "reward items exceed max entries",
+			definition: Definition{Kind: KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1, RewardItems: []RewardItemEntry{
+				{ItemVnum: 27001, Count: 1},
+				{ItemVnum: 27001, Count: 1},
+				{ItemVnum: 27001, Count: 1},
+				{ItemVnum: 27001, Count: 1},
+				{ItemVnum: 27001, Count: 1},
+				{ItemVnum: 27001, Count: 1},
+				{ItemVnum: 27001, Count: 1},
+				{ItemVnum: 27001, Count: 1},
+				{ItemVnum: 27001, Count: 1},
+			}},
 		},
 	}
 	for _, tc := range cases {
@@ -339,7 +413,7 @@ func TestFileStoreRejectsRewardGoldOnNonQuestFlagDefinitions(t *testing.T) {
 	}
 }
 
-func TestFileStoreRejectsRewardItemOnNonQuestFlagDefinitions(t *testing.T) {
+func TestFileStoreRejectsRewardItemsOnNonQuestFlagDefinitions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
 	store := NewFileStore(path)
 	cases := []struct {
@@ -348,19 +422,19 @@ func TestFileStoreRejectsRewardItemOnNonQuestFlagDefinitions(t *testing.T) {
 	}{
 		{
 			name:       "info",
-			definition: Definition{Kind: KindInfo, Ref: "lore:square", Text: "Welcome.", RewardItemVnum: 27001, RewardItemCount: 1},
+			definition: Definition{Kind: KindInfo, Ref: "lore:square", Text: "Welcome.", RewardItems: []RewardItemEntry{{ItemVnum: 27001, Count: 1}}},
 		},
 		{
 			name:       "talk",
-			definition: Definition{Kind: KindTalk, Ref: "npc:guide", Text: "Welcome.", RewardItemVnum: 27001, RewardItemCount: 1},
+			definition: Definition{Kind: KindTalk, Ref: "npc:guide", Text: "Welcome.", RewardItems: []RewardItemEntry{{ItemVnum: 27001, Count: 1}}},
 		},
 		{
 			name:       "warp",
-			definition: Definition{Kind: KindWarp, Ref: "npc:teleporter", Text: "Step through the gate.", MapIndex: 42, X: 1700, Y: 2800, RewardItemVnum: 27001, RewardItemCount: 1},
+			definition: Definition{Kind: KindWarp, Ref: "npc:teleporter", Text: "Step through the gate.", MapIndex: 42, X: 1700, Y: 2800, RewardItems: []RewardItemEntry{{ItemVnum: 27001, Count: 1}}},
 		},
 		{
 			name:       "shop_preview",
-			definition: Definition{Kind: KindShopPreview, Ref: "npc:merchant", Title: "Merchant", Catalog: []MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}}, RewardItemVnum: 27001, RewardItemCount: 1},
+			definition: Definition{Kind: KindShopPreview, Ref: "npc:merchant", Title: "Merchant", Catalog: []MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}}, RewardItems: []RewardItemEntry{{ItemVnum: 27001, Count: 1}}},
 		},
 	}
 	for _, tc := range cases {

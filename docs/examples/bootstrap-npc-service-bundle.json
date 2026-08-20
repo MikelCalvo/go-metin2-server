@@ -138,8 +138,16 @@
       "quest_from": 1,
       "reward_experience": 50,
       "reward_gold": 100,
-      "reward_item_vnum": 27001,
-      "reward_item_count": 1
+      "reward_items": [
+        {
+          "item_vnum": 27001,
+          "count": 1
+        },
+        {
+          "item_vnum": 11200,
+          "count": 1
+        }
+      ]
     },
     {
       "kind": "quest_flag",

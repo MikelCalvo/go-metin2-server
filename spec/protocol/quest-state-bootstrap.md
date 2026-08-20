@@ -118,8 +118,7 @@ The first authored NPC/content trigger is `interaction_kind = "quest_flag"` on t
   "quest_to": 1,
   "reward_experience": 0,
   "reward_gold": 0,
-  "reward_item_vnum": 0,
-  "reward_item_count": 0
+  "reward_items": []
 }
 ```
 
@@ -134,7 +133,8 @@ Owned rules:
 - `quest_to` must differ from `quest_from`; `quest_to = 0` clears the flag through the same compare-and-set primitive when the current value matches `quest_from`.
 - optional `reward_experience` may be omitted or `0`; when present and non-zero it must fit the bootstrap experience `PLAYER_POINT_CHANGE` carrier (`<= 1<<31-1`) and is granted only after the transition applies.
 - optional `reward_gold` may be omitted or `0`; when present and non-zero it must fit the bootstrap gold `PLAYER_POINT_CHANGE` carrier (`<= 1<<31-1`) and is granted only after the transition applies.
-- optional `reward_item_vnum` / `reward_item_count` may be omitted or zeroed together; when `reward_item_vnum != 0`, `reward_item_count` must be in `1..255`, content bundles must include a matching item template, and the count must fit that template (`<= max_count`; non-stackable templates require `count == 1`).
+- optional `reward_items` is the structured carried-item grant table for successful turn-ins (`0..8` entries). Each entry requires non-zero `item_vnum` and `count` in `1..255`. Content bundles must include a matching item template for every entry, and each count must fit that template (`<= max_count`; non-stackable templates require `count == 1`).
+- scalar `reward_item_vnum` / `reward_item_count` remain a one-entry authoring shorthand that canonicalize expands into `reward_items` and clears; authoring both a non-empty table and non-zero scalars together is invalid.
 - `title`, merchant `catalog`, warp `map_index`, `x`, and `y` are not valid for `quest_flag` definitions.
 - non-`quest_flag` interaction kinds must keep `reward_experience`, `reward_gold`, and reward-item fields absent/`0`.
 
@@ -146,11 +146,11 @@ Runtime behavior:
 4. if and only if the transition applies, the client receives one self-only `GC_CHAT` with `type = INFO`, `vid = 0`, `empire = 0`, and `message = definition.text`,
 5. when that successful transition also authors `reward_gold > 0`, the same response appends one self-only `PLAYER_POINT_CHANGE` gold frame for the granted amount and persists the updated selected-character gold into the account snapshot; overflow / unavailable selected character / account-save failure fail closed (no frames; live gold/experience/inventory and quest transition are rolled back when needed),
 6. when that successful transition also authors `reward_experience > 0`, the same response appends one self-only `PLAYER_POINT_CHANGE` experience frame for the granted amount (after any gold frame) and persists the updated selected-character experience point into the account snapshot; overflow / account-save failure fail closed with the same rollback posture as gold,
-7. when that successful transition also authors `reward_item_vnum > 0`, the same response appends the ordinary carried-inventory SET/UPDATE frames for the granted placement (after any gold/experience frames) and persists the updated selected-character inventory into the account snapshot; missing template / AntiGet / inventory-full / account-save failure fail closed with the same rollback posture as gold overflow,
+7. when that successful transition also authors one or more `reward_items` entries, the same response appends the ordinary carried-inventory SET/UPDATE frames for each granted placement in authored table order (after any gold/experience frames) and persists the updated selected-character inventory into the account snapshot; missing template / AntiGet / inventory-full / account-save failure fail closed with the same rollback posture as gold overflow, and sequential placement capacity for every entry is preflighted before the quest transition applies,
 8. when the compare-and-set result is `current_value_mismatch`, the quest-state snapshot remains unchanged, no gold/experience/item is granted, and the client now receives one self-only `GC_CHAT` with `type = INFO`, `vid = 0`, `empire = 0`, and `message = "Quest requirements are not met."`,
 9. invalid transition definitions, store errors, unsupported content, and other non-CAS failures still fail closed with no frames and no peer fanout.
 
-Loopback interaction visibility now mirrors that player-facing branch without mutation: `GET /local/interaction-visibility` and `GET /local/interaction-visibility/{character}` preview a `quest_flag` actor by dry-running the selected character's compare-and-set transition. A transition that would apply previews `definition.text`, optionally annotated with `[reward_gold N]`, `[reward_experience N]`, and/or `[reward_item <name|vnum> x<count>]` when those rewards are authored; a `current_value_mismatch` previews `Quest requirements are not met.`. Other dry-run failures surface as a fail-closed `resolution_failure` marker rather than mutating the quest-state store.
+Loopback interaction visibility now mirrors that player-facing branch without mutation: `GET /local/interaction-visibility` and `GET /local/interaction-visibility/{character}` preview a `quest_flag` actor by dry-running the selected character's compare-and-set transition. A transition that would apply previews `definition.text`, optionally annotated with `[reward_gold N]`, `[reward_experience N]`, and one `[reward_item <name|vnum> x<count>]` marker per authored table entry when those rewards are present; a `current_value_mismatch` previews `Quest requirements are not met.`. Other dry-run failures surface as a fail-closed `resolution_failure` marker rather than mutating the quest-state store.
 
 This is still a bootstrap quest-state trigger, not a client quest UI, branching dialog tree, or script runtime. The optional experience, gold, and carried-item grants reuse already-owned economy / inventory packet paths so the kill -> turn-in loop can deliver client-visible payoffs without inventing quest mail, ground-drop turn-in rewards, or a second reward runtime. The mismatch acknowledgement and its loopback preview exist only so authored-state failures are not silent; they do not expose a quest window, objective tracker, or alternate branch.
 
@@ -185,7 +185,7 @@ Owned gate rules:
 - loopback interaction-visibility previews for gated non-mutating interactions reuse that same mismatch text without mutating quest state
 - content-bundle warp destination/route summaries and shop-route summaries now surface the authored gate fields so operators can audit teleporter/merchant prerequisites without opening the live interaction path
 
-The checked-in QA example `docs/examples/bootstrap-npc-service-bundle.json` now gates `npc:qa_guide`, `lore:qa_square`, `npc:qa_teleporter`, and `npc:qa_merchant` on `quest:first_steps.met_guide = 1`, so the owned service unlock loop is: interact with `QuestGuide` once, then use the guide/signpost/teleporter/merchant. The same fixture also closes the first combat-adjacent quest loop: kill `QARewardMob` to advance `quest:first_steps.killed_qa_mob`, then interact with `QuestHunter` (`quest:first_steps_kill_turnin`) to clear that flag through an ordinary `quest_flag` compare-and-set turn-in that also grants authored `reward_gold = 100` plus one carried `Small Red Potion` (`reward_item_vnum = 27001`, `reward_item_count = 1`). A later operator or `quest_flag` reset that clears `met_guide` while a previously opened QA merchant window is still open must therefore auto-close that stale window on the next buy/sell attempt instead of letting the transaction continue under a revoked prerequisite.
+The checked-in QA example `docs/examples/bootstrap-npc-service-bundle.json` now gates `npc:qa_guide`, `lore:qa_square`, `npc:qa_teleporter`, and `npc:qa_merchant` on `quest:first_steps.met_guide = 1`, so the owned service unlock loop is: interact with `QuestGuide` once, then use the guide/signpost/teleporter/merchant. The same fixture also closes the first combat-adjacent quest loop: kill `QARewardMob` to advance `quest:first_steps.killed_qa_mob`, then interact with `QuestHunter` (`quest:first_steps_kill_turnin`) to clear that flag through an ordinary `quest_flag` compare-and-set turn-in that also grants authored `reward_gold = 100`, `reward_experience = 50`, and two carried items via `reward_items` (`Small Red Potion` `27001` x1 then `Wooden Sword` `11200` x1). A later operator or `quest_flag` reset that clears `met_guide` while a previously opened QA merchant window is still open must therefore auto-close that stale window on the next buy/sell attempt instead of letting the transaction continue under a revoked prerequisite.
 
 ## Runtime configuration and local ops
 
@@ -364,8 +364,8 @@ This seam does **not** yet freeze:
 - client quest packets,
 - NPC dialog windows or option selection,
 - quest acceptance/completion UI,
-- quest rewards,
-- quest item hooks,
+- weighted/random turn-in loot or multi-entry gold/experience tables,
+- quest item consume hooks beyond the owned flag CAS,
 - party/guild/account-wide quest state,
 - timers or daily reset policy,
 - script VM compatibility,

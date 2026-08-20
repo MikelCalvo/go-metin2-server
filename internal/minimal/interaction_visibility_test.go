@@ -365,13 +365,16 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardGoldPreview(t *te
 		QuestTo:          0,
 		RewardExperience: 50,
 		RewardGold:       100,
-		RewardItemVnum:   27001,
-		RewardItemCount:  1,
+		RewardItems: []interactionstore.RewardItemEntry{
+			{ItemVnum: 27001, Count: 1},
+			{ItemVnum: 11200, Count: 1},
+		},
 	}})
 	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
-	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
-		Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5,
-	}}}); err != nil {
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopBuyPrice: 50},
+	}}); err != nil {
 		t.Fatalf("seed quest-flag reward-item preview templates: %v", err)
 	}
 	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
@@ -399,7 +402,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardGoldPreview(t *te
 		t.Fatalf("expected one visible quest-flag reward-gold interactable, got %+v", snapshots)
 	}
 	entry := snapshots[0].VisibleInteractableStaticActors[0]
-	if entry.Name != "QuestHunter" || entry.Preview != "Quest updated: first_steps.killed_qa_mob = 0. [reward_gold 100] [reward_experience 50] [reward_item Small Red Potion x1]" || entry.ResolutionFailure != "" {
+	if entry.Name != "QuestHunter" || entry.Preview != "Quest updated: first_steps.killed_qa_mob = 0. [reward_gold 100] [reward_experience 50] [reward_item Small Red Potion x1] [reward_item Wooden Sword x1]" || entry.ResolutionFailure != "" {
 		t.Fatalf("unexpected quest-flag reward-gold interaction visibility entry: %+v", entry)
 	}
 }

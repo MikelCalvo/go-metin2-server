@@ -339,17 +339,18 @@ type QuestStateDelta struct {
 }
 
 type QuestFlagTriggerSummary struct {
-	Kind             string `json:"kind"`
-	Ref              string `json:"ref"`
-	Text             string `json:"text"`
-	QuestRef         string `json:"quest_ref"`
-	QuestFlag        string `json:"quest_flag"`
-	QuestFrom        uint32 `json:"quest_from,omitempty"`
-	QuestTo          uint32 `json:"quest_to,omitempty"`
-	RewardExperience uint64 `json:"reward_experience,omitempty"`
-	RewardGold       uint64 `json:"reward_gold,omitempty"`
-	RewardItemVnum   uint32 `json:"reward_item_vnum,omitempty"`
-	RewardItemCount  uint16 `json:"reward_item_count,omitempty"`
+	Kind             string                             `json:"kind"`
+	Ref              string                             `json:"ref"`
+	Text             string                             `json:"text"`
+	QuestRef         string                             `json:"quest_ref"`
+	QuestFlag        string                             `json:"quest_flag"`
+	QuestFrom        uint32                             `json:"quest_from,omitempty"`
+	QuestTo          uint32                             `json:"quest_to,omitempty"`
+	RewardExperience uint64                             `json:"reward_experience,omitempty"`
+	RewardGold       uint64                             `json:"reward_gold,omitempty"`
+	RewardItemVnum   uint32                             `json:"reward_item_vnum,omitempty"`
+	RewardItemCount  uint16                             `json:"reward_item_count,omitempty"`
+	RewardItems      []interactionstore.RewardItemEntry `json:"reward_items,omitempty"`
 }
 
 type QuestFlagTriggerDelta struct {
@@ -732,20 +733,21 @@ type ShopCatalogEntrySummary struct {
 }
 
 type QuestFlagRouteSummary struct {
-	ActorName        string `json:"actor_name"`
-	SourceMapIndex   uint32 `json:"source_map_index"`
-	SourceX          int32  `json:"source_x"`
-	SourceY          int32  `json:"source_y"`
-	Ref              string `json:"ref"`
-	Text             string `json:"text"`
-	QuestRef         string `json:"quest_ref"`
-	QuestFlag        string `json:"quest_flag"`
-	QuestFrom        uint32 `json:"quest_from,omitempty"`
-	QuestTo          uint32 `json:"quest_to,omitempty"`
-	RewardExperience uint64 `json:"reward_experience,omitempty"`
-	RewardGold       uint64 `json:"reward_gold,omitempty"`
-	RewardItemVnum   uint32 `json:"reward_item_vnum,omitempty"`
-	RewardItemCount  uint16 `json:"reward_item_count,omitempty"`
+	ActorName        string                             `json:"actor_name"`
+	SourceMapIndex   uint32                             `json:"source_map_index"`
+	SourceX          int32                              `json:"source_x"`
+	SourceY          int32                              `json:"source_y"`
+	Ref              string                             `json:"ref"`
+	Text             string                             `json:"text"`
+	QuestRef         string                             `json:"quest_ref"`
+	QuestFlag        string                             `json:"quest_flag"`
+	QuestFrom        uint32                             `json:"quest_from,omitempty"`
+	QuestTo          uint32                             `json:"quest_to,omitempty"`
+	RewardExperience uint64                             `json:"reward_experience,omitempty"`
+	RewardGold       uint64                             `json:"reward_gold,omitempty"`
+	RewardItemVnum   uint32                             `json:"reward_item_vnum,omitempty"`
+	RewardItemCount  uint16                             `json:"reward_item_count,omitempty"`
+	RewardItems      []interactionstore.RewardItemEntry `json:"reward_items,omitempty"`
 }
 
 type ShopRouteSummary struct {
@@ -2344,6 +2346,11 @@ func normalizeQuestFlagRouteSummary(route QuestFlagRouteSummary) QuestFlagRouteS
 	route.Text = strings.TrimSpace(route.Text)
 	route.QuestRef = strings.TrimSpace(route.QuestRef)
 	route.QuestFlag = strings.TrimSpace(route.QuestFlag)
+	route.RewardItems = cloneRewardItemEntries(route.RewardItems)
+	if len(route.RewardItems) > 0 {
+		route.RewardItemVnum = route.RewardItems[0].ItemVnum
+		route.RewardItemCount = route.RewardItems[0].Count
+	}
 	return route
 }
 
@@ -2902,6 +2909,11 @@ func normalizeQuestFlagTriggerSummary(trigger QuestFlagTriggerSummary) QuestFlag
 	trigger.Text = strings.TrimSpace(trigger.Text)
 	trigger.QuestRef = strings.TrimSpace(trigger.QuestRef)
 	trigger.QuestFlag = strings.TrimSpace(trigger.QuestFlag)
+	trigger.RewardItems = cloneRewardItemEntries(trigger.RewardItems)
+	if len(trigger.RewardItems) > 0 {
+		trigger.RewardItemVnum = trigger.RewardItems[0].ItemVnum
+		trigger.RewardItemCount = trigger.RewardItems[0].Count
+	}
 	return trigger
 }
 
@@ -2958,7 +2970,8 @@ func cloneQuestFlagTriggerDelta(delta QuestFlagTriggerDelta) QuestFlagTriggerDel
 
 func questFlagTriggerSummary(definition interactionstore.Definition) QuestFlagTriggerSummary {
 	definition = interactionstore.NormalizeDefinition(definition)
-	return QuestFlagTriggerSummary{
+	rewardItems := interactionstore.EffectiveRewardItems(definition)
+	summary := QuestFlagTriggerSummary{
 		Kind:             definition.Kind,
 		Ref:              definition.Ref,
 		Text:             definition.Text,
@@ -2968,9 +2981,13 @@ func questFlagTriggerSummary(definition interactionstore.Definition) QuestFlagTr
 		QuestTo:          definition.QuestTo,
 		RewardExperience: definition.RewardExperience,
 		RewardGold:       definition.RewardGold,
-		RewardItemVnum:   definition.RewardItemVnum,
-		RewardItemCount:  definition.RewardItemCount,
+		RewardItems:      rewardItems,
 	}
+	if len(rewardItems) > 0 {
+		summary.RewardItemVnum = rewardItems[0].ItemVnum
+		summary.RewardItemCount = rewardItems[0].Count
+	}
+	return summary
 }
 
 func questStateQuestSummaries(flags []queststate.Flag) []QuestStateQuestSummary {
@@ -3144,21 +3161,21 @@ func questFlagRewardPreview(text string, definition interactionstore.Definition,
 	if definition.RewardExperience != 0 {
 		preview = fmt.Sprintf("%s [reward_experience %d]", preview, definition.RewardExperience)
 	}
-	if definition.RewardItemVnum == 0 {
-		return preview
-	}
-	itemLabel := fmt.Sprintf("vnum %d", definition.RewardItemVnum)
-	if template, ok := itemTemplatesByVnum[definition.RewardItemVnum]; ok {
-		name := strings.TrimSpace(template.Name)
-		if name != "" {
-			itemLabel = name
+	for _, entry := range interactionstore.EffectiveRewardItems(definition) {
+		itemLabel := fmt.Sprintf("vnum %d", entry.ItemVnum)
+		if template, ok := itemTemplatesByVnum[entry.ItemVnum]; ok {
+			name := strings.TrimSpace(template.Name)
+			if name != "" {
+				itemLabel = name
+			}
 		}
+		count := entry.Count
+		if count == 0 {
+			count = 1
+		}
+		preview = fmt.Sprintf("%s [reward_item %s x%d]", preview, itemLabel, count)
 	}
-	count := definition.RewardItemCount
-	if count == 0 {
-		count = 1
-	}
-	return fmt.Sprintf("%s [reward_item %s x%d]", preview, itemLabel, count)
+	return preview
 }
 
 func shopCatalogPreview(definition interactionstore.Definition, itemTemplatesByVnum map[uint32]itemcatalog.Template) string {
@@ -3279,7 +3296,8 @@ func warpDestinationSummary(definition interactionstore.Definition) WarpDestinat
 func questFlagRouteSummary(actor StaticActor, definition interactionstore.Definition) QuestFlagRouteSummary {
 	actor = normalizeStaticActors([]StaticActor{actor})[0]
 	definition = interactionstore.NormalizeDefinition(definition)
-	return QuestFlagRouteSummary{
+	rewardItems := interactionstore.EffectiveRewardItems(definition)
+	summary := QuestFlagRouteSummary{
 		ActorName:        actor.Name,
 		SourceMapIndex:   actor.MapIndex,
 		SourceX:          actor.X,
@@ -3292,9 +3310,13 @@ func questFlagRouteSummary(actor StaticActor, definition interactionstore.Defini
 		QuestTo:          definition.QuestTo,
 		RewardExperience: definition.RewardExperience,
 		RewardGold:       definition.RewardGold,
-		RewardItemVnum:   definition.RewardItemVnum,
-		RewardItemCount:  definition.RewardItemCount,
+		RewardItems:      rewardItems,
 	}
+	if len(rewardItems) > 0 {
+		summary.RewardItemVnum = rewardItems[0].ItemVnum
+		summary.RewardItemCount = rewardItems[0].Count
+	}
+	return summary
 }
 
 func shopRouteSummary(actor StaticActor, definition interactionstore.Definition) ShopRouteSummary {
@@ -3707,13 +3729,15 @@ func validateBundle(bundle Bundle) error {
 				}
 			}
 		}
-		if definition.Kind == interactionstore.KindQuestFlag && definition.RewardItemVnum != 0 {
-			template, ok := itemTemplatesByVnum[definition.RewardItemVnum]
-			if !ok {
-				return ErrInvalidBundle
-			}
-			if !validQuestFlagRewardItemCountForTemplate(definition, template) {
-				return ErrInvalidBundle
+		if definition.Kind == interactionstore.KindQuestFlag {
+			for _, entry := range interactionstore.EffectiveRewardItems(definition) {
+				template, ok := itemTemplatesByVnum[entry.ItemVnum]
+				if !ok {
+					return ErrInvalidBundle
+				}
+				if !validQuestFlagRewardItemCountForTemplate(entry, template) {
+					return ErrInvalidBundle
+				}
 			}
 		}
 		key := interactionDefinitionKey(definition.Kind, definition.Ref)
@@ -4090,14 +4114,14 @@ func validMerchantCatalogCountForTemplate(entry interactionstore.MerchantCatalog
 	return entry.Count <= template.MaxCount
 }
 
-func validQuestFlagRewardItemCountForTemplate(definition interactionstore.Definition, template itemcatalog.Template) bool {
-	if definition.RewardItemVnum == 0 || definition.RewardItemCount == 0 || template.MaxCount == 0 || definition.RewardItemVnum != template.Vnum {
+func validQuestFlagRewardItemCountForTemplate(entry interactionstore.RewardItemEntry, template itemcatalog.Template) bool {
+	if entry.ItemVnum == 0 || entry.Count == 0 || template.MaxCount == 0 || entry.ItemVnum != template.Vnum {
 		return false
 	}
 	if !template.Stackable {
-		return definition.RewardItemCount == 1
+		return entry.Count == 1
 	}
-	return definition.RewardItemCount <= template.MaxCount
+	return entry.Count <= template.MaxCount
 }
 
 func validRewardDropRefs(dropVnums []uint32, itemTemplatesByVnum map[uint32]itemcatalog.Template) bool {
@@ -4574,6 +4598,15 @@ func questStateFlagKey(flag queststate.Flag) string {
 	return strings.TrimSpace(flag.Character) + "\x00" + strings.TrimSpace(flag.QuestRef) + "\x00" + strings.TrimSpace(flag.Name)
 }
 
+func cloneRewardItemEntries(entries []interactionstore.RewardItemEntry) []interactionstore.RewardItemEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	cloned := make([]interactionstore.RewardItemEntry, len(entries))
+	copy(cloned, entries)
+	return cloned
+}
+
 func referencedItemTemplateVnums(definitions []interactionstore.Definition, spawnGroups []SpawnGroup, combatProfiles []worldruntime.StaticActorCombatProfileSnapshot) map[uint32]struct{} {
 	referenced := make(map[uint32]struct{})
 	for _, definition := range definitions {
@@ -4586,8 +4619,10 @@ func referencedItemTemplateVnums(definitions []interactionstore.Definition, spaw
 				}
 			}
 		case interactionstore.KindQuestFlag:
-			if definition.RewardItemVnum != 0 {
-				referenced[definition.RewardItemVnum] = struct{}{}
+			for _, entry := range interactionstore.EffectiveRewardItems(definition) {
+				if entry.ItemVnum != 0 {
+					referenced[entry.ItemVnum] = struct{}{}
+				}
 			}
 		}
 	}
