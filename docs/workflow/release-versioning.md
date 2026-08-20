@@ -42,6 +42,11 @@ curl -sS http://127.0.0.1:6061/local/build-info   # authd
 
 Non-loopback callers of `/local/build-info` receive `403`. Wrong methods receive `405`.
 
+## Related production-ops docs
+
+- [lab deployment topology + artifact retention](lab-deployment-topology.md)
+- [production observability conventions](production-observability.md)
+
 ## What this is not yet
 
 This is not:
@@ -49,12 +54,12 @@ This is not:
 - GitHub Releases / signed artifacts
 - a SemVer tagging automation bot
 - SBOM / provenance attestation
-- production deployment topology docs
-- metrics/logging policy
+- multi-host / orchestrated deployment automation
+- metrics exporters or distributed tracing
 - a remote version API
 
 ## Follow-up options
 
-1. Add a short deployment topology + artifact retention note once a concrete host layout is chosen.
+1. ~~Add a short deployment topology + artifact retention note once a concrete host layout is chosen.~~ Done: see [lab deployment topology](lab-deployment-topology.md) and [production observability](production-observability.md).
 2. Wire CI to stamp `GITHUB_SHA` / workflow run metadata into Docker build args.
 3. Keep import/quarantine tooling deferred until schema-shaped export consumers need a closed restore path.

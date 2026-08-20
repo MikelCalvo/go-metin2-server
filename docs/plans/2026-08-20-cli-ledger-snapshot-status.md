@@ -73,7 +73,7 @@ Validation for this slice:
 
 ## Follow-up options
 
-1. Add deployment-specific artifact naming / retention policy once deployment topology is known.
+1. ~~Add deployment-specific artifact naming / retention policy once deployment topology is known.~~ Done: see [lab deployment topology](../workflow/lab-deployment-topology.md).
 2. Add DB-engine-specific advisory lock coverage once a production driver is selected.
 3. Keep daemon-local migration endpoints read-only unless a future production-admin threat model intentionally changes that boundary.
 4. Keep ground-item restart durability deferred until operators decide that quarantined `0010` exports should drive recovery.

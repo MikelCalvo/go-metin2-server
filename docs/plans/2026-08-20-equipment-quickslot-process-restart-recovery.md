@@ -49,4 +49,5 @@ Focused coverage:
 2. Add character point-state (HP/EXP from `0011`) rematerialization proofs.
 3. Keep ground-item restart durability deferred until operators decide that
    quarantined `0010` exports should drive recovery.
-4. Add production-safe observability conventions before remote admin surfaces.
+4. ~~Add production-safe observability conventions before remote admin surfaces.~~
+   Done: `internal/observability` + `docs/workflow/production-observability.md`.

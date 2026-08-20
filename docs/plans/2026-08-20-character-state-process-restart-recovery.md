@@ -52,6 +52,7 @@ Focused coverage:
    Done (`TestGameRuntimePositionAndPointsRematerializeAcrossDaemonRestart`).
 3. Keep ground-item restart durability deferred until operators decide that
    quarantined `0010` exports should drive recovery.
-4. Add production-safe observability conventions before remote admin surfaces.
-5. Add deployment topology / artifact retention docs once production hosts are
-   known.
+4. ~~Add production-safe observability conventions before remote admin surfaces.~~
+   Done: `internal/observability` + `docs/workflow/production-observability.md`.
+5. ~~Add deployment topology / artifact retention docs once production hosts are
+   known.~~ Done: `docs/workflow/lab-deployment-topology.md`.

@@ -14,7 +14,7 @@ make test
 make build
 ```
 
-`make build` stamps `internal/buildinfo` via `-ldflags` using the current git describe/commit and a UTC RFC3339 build date. Unstamped `go run` / plain `go build` binaries keep the package defaults (`dev` / `none` / `unknown`). See [release/versioning policy](workflow/release-versioning.md).
+`make build` stamps `internal/buildinfo` via `-ldflags` using the current git describe/commit and a UTC RFC3339 build date. Unstamped `go run` / plain `go build` binaries keep the package defaults (`dev` / `none` / `unknown`). See [release/versioning policy](workflow/release-versioning.md). For the first lab host layout, timestamped artifact trees, and daemon JSON logging / secret-redaction conventions, see [lab deployment topology](workflow/lab-deployment-topology.md) and [production observability](workflow/production-observability.md).
 
 Run locally:
 

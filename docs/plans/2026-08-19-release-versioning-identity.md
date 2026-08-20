@@ -29,5 +29,5 @@ Broader validation is recorded in the run summary.
 ## Follow-up options
 
 1. Stamp CI `GITHUB_SHA` into Docker build args.
-2. Add deployment topology / artifact retention once production hosts are known.
-3. Keep DB import/quarantine tooling deferred until schema-shaped export consumers need a closed restore path.
+2. ~~Add deployment topology / artifact retention once production hosts are known.~~ Done: see [lab deployment topology](../workflow/lab-deployment-topology.md) and [production observability](../workflow/production-observability.md).
+3. Keep import/quarantine tooling deferred until schema-shaped export consumers need a closed restore path.

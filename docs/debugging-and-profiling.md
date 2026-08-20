@@ -647,7 +647,7 @@ Successful responses contain only:
 - `commit`
 - `build_date`
 
-Unstamped local `go run` / plain `go build` binaries report the package defaults (`dev` / `none` / `unknown`). `make build*` and the Dockerfile stamp these fields via `-ldflags`. The response is intentionally metadata-only: it never includes DSNs, store paths, or other runtime configuration. Use it together with `/local/runtime-config` when correlating operator evidence across reconnect/restart or migration windows. See [release/versioning policy](workflow/release-versioning.md).
+Unstamped local `go run` / plain `go build` binaries report the package defaults (`dev` / `none` / `unknown`). `make build*` and the Dockerfile stamp these fields via `-ldflags`. The response is intentionally metadata-only: it never includes DSNs, store paths, or other runtime configuration. Use it together with `/local/runtime-config` when correlating operator evidence across reconnect/restart or migration windows. Daemon stdout JSON logs carry the same `service` / `version` / `commit` / `build_date` attrs through `internal/observability.NewServiceLogger` and redact sensitive attribute keys such as `dsn`, `password`, `ticket`, and `login_key`. See [release/versioning policy](workflow/release-versioning.md), [lab deployment topology](workflow/lab-deployment-topology.md), and [production observability](workflow/production-observability.md).
 
 ### `GET /local/runtime-config`
 

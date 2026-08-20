@@ -3,24 +3,18 @@ package main
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/MikelCalvo/go-metin2-server/internal/buildinfo"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/minimal"
+	"github.com/MikelCalvo/go-metin2-server/internal/observability"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With(
-		"service", "authd",
-		"version", buildinfo.Version,
-		"commit", buildinfo.Commit,
-		"build_date", buildinfo.BuildDate,
-	)
+	logger := observability.NewServiceLogger("authd", os.Stdout)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

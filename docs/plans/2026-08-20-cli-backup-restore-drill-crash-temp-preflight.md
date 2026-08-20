@@ -55,5 +55,5 @@ Focused coverage:
 ## Follow-up options
 
 1. Keep ground-item restart durability deferred until operators decide that quarantined `0010` exports should drive recovery.
-2. Add deployment topology / artifact retention docs once production hosts are known.
+2. ~~Add deployment topology / artifact retention docs once production hosts are known.~~ Done: see [lab deployment topology](../workflow/lab-deployment-topology.md) and [production observability](../workflow/production-observability.md).
 3. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
