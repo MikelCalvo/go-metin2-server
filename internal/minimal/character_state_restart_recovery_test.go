@@ -4,20 +4,25 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	"github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
+	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
+	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
 // TestGameRuntimeQuestFlagRewardStateRematerializesAcrossDaemonRestart proves the
@@ -595,5 +600,194 @@ func TestGameRuntimePositionAndPointsRematerializeAcrossDaemonRestart(t *testing
 	livePoints, ok := reloaded.PointsSnapshot(peer.Name)
 	if !ok || livePoints.Points[bootstrapPlayerPointValueIndex] != 800 {
 		t.Fatalf("expected live points[1]=800 after post-restart item use, ok=%v snapshot=%+v", ok, livePoints)
+	}
+}
+
+// TestGameRuntimePlayerDeathFloorRematerializesAcrossDaemonRestart proves the
+// Track E.4 crash/restart rematerialization contract for the retaliation-owned
+// player death floor: after immediate practice-mob retaliation persists
+// points[1]=0, a fresh gameRuntime rebuilt from the same FileStore paths
+// rematerializes that dead snapshot on EnterGame even when the post-restart
+// login ticket still carries the pre-death live HP value.
+//
+// This deliberately does not cover pending ground-item / ground-gold restart
+// durability.
+func TestGameRuntimePlayerDeathFloorRematerializesAcrossDaemonRestart(t *testing.T) {
+	ticketDir := t.TempDir()
+	accountDir := t.TempDir()
+	staticActorPath := filepath.Join(t.TempDir(), "static-actors.json")
+	interactionPath := filepath.Join(t.TempDir(), "interaction-definitions.json")
+
+	ticketStore := loginticket.NewFileStore(ticketDir)
+	accounts := accountstore.NewFileStore(accountDir)
+	staticActorStore := staticstore.NewFileStore(staticActorPath)
+	interactionStore := interactionstore.NewFileStore(interactionPath)
+
+	owner := peerVisibilityCharacter("DeathFloorHero", 0x01030151, 0x02040151, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	const (
+		login    = "death-floor-hero-restart"
+		loginKey = uint32(0x51515151)
+	)
+	issuePeerTicket(t, ticketStore, login, loginKey, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed death-floor restart account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{
+		LegacyAddr: ":13000",
+		PublicAddr: "127.0.0.1",
+	}, ticketStore, accounts, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected death-floor restart runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000485, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_death_floor_restart",
+		Name:          "PracticeMobDeathFloorRestart",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import death-floor restart spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice mob after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible practice mob before death floor, got %d", len(enterOut))
+	}
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before death-floor daemon restart: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before death-floor daemon restart, got %d", len(selectOut))
+	}
+
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before death-floor daemon restart: %v", err)
+	}
+	if len(attackOut) != 4 {
+		t.Fatalf("expected immediate target-refresh, point-loss, self dead, and clear-target frames before death-floor daemon restart, got %d", len(attackOut))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode immediate retaliation point-change before death-floor daemon restart: %v", err)
+	}
+	if pointChange.Value != 0 {
+		t.Fatalf("expected immediate retaliation to reach owner HP floor before daemon restart, got %+v", pointChange)
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, attackOut[2]))
+	if err != nil {
+		t.Fatalf("decode immediate retaliation self dead before death-floor daemon restart: %v", err)
+	}
+	if dead.VID != owner.VID {
+		t.Fatalf("expected immediate retaliation self dead for owner vid %d, got %+v", owner.VID, dead)
+	}
+
+	persisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted death-floor account before daemon restart: %v", err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected exactly 1 persisted owner before daemon restart, got %+v", persisted)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 0 {
+		t.Fatalf("expected immediate retaliation floor to persist points[%d]=0 before daemon restart, got %d", bootstrapPlayerPointValueIndex, persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+	closeSessionFlow(t, flow)
+
+	// Simulate process restart: rebuild runtime from the same FileStore paths.
+	// Issue a fresh ticket that still carries the pre-death live HP so the
+	// account-store rematerialization path is exercised instead of ticket state.
+	staleTicketStore := loginticket.NewFileStore(ticketDir)
+	const postRestartLoginKey = uint32(0x52525252)
+	issuePeerTicket(t, staleTicketStore, login, postRestartLoginKey, owner)
+	staleTicket, err := staleTicketStore.Load(login, postRestartLoginKey)
+	if err != nil {
+		t.Fatalf("load stale post-restart ticket: %v", err)
+	}
+	if len(staleTicket.Characters) != 1 || staleTicket.Characters[0].Points[bootstrapPlayerPointValueIndex] != 1 {
+		t.Fatalf("expected stale post-restart ticket to keep pre-death points[1]=1, got %+v", staleTicket.Characters)
+	}
+
+	reloadedAccounts := accountstore.NewFileStore(accountDir)
+	reloadedStaticActors := staticstore.NewFileStore(staticActorPath)
+	reloadedInteractions := interactionstore.NewFileStore(interactionPath)
+	reloaded, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{
+		LegacyAddr: ":13000",
+		PublicAddr: "127.0.0.1",
+	}, staleTicketStore, reloadedAccounts, reloadedStaticActors, reloadedInteractions)
+	if err != nil {
+		t.Fatalf("reload runtime after death-floor daemon restart: %v", err)
+	}
+	reloaded.now = func() time.Time { return currentTime }
+
+	restartFlow, restartEnter := enterGameWithLoginTicket(t, reloaded.SessionFactory(), login, postRestartLoginKey)
+	defer closeSessionFlow(t, restartFlow)
+	// Dead-owner EnterGame matches the already-owned reconnect contract: ordinary
+	// selected-character bootstrap plus self DEAD, with non-player visibility
+	// skipped for the still-dead recipient (6 frames total).
+	if len(restartEnter) != 6 {
+		t.Fatalf("expected 6 bootstrap frames including rematerialized self DEAD after daemon restart, got %d", len(restartEnter))
+	}
+	restartPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, restartEnter[4]))
+	if err != nil {
+		t.Fatalf("decode rematerialized bootstrap point-change after death-floor daemon restart: %v", err)
+	}
+	if restartPointChange.Value != 0 || restartPointChange.Amount != 0 {
+		t.Fatalf("expected rematerialized points[%d] floor 0 after daemon restart, got %+v", bootstrapPlayerPointValueIndex, restartPointChange)
+	}
+	restartDead, err := worldproto.DecodeDead(decodeSingleFrame(t, restartEnter[5]))
+	if err != nil {
+		t.Fatalf("decode rematerialized bootstrap dead replay after death-floor daemon restart: %v", err)
+	}
+	if restartDead.VID != owner.VID {
+		t.Fatalf("expected rematerialized dead replay for owner vid %d after daemon restart, got %+v", owner.VID, restartDead)
+	}
+
+	connected, ok := reloaded.ConnectedCharacterSnapshot(owner.Name)
+	if !ok || !connected.Dead {
+		t.Fatalf("expected connected character snapshot dead=true after daemon restart rematerialization, ok=%v snapshot=%+v", ok, connected)
+	}
+	pointsSnapshot, ok := reloaded.PointsSnapshot(owner.Name)
+	if !ok || pointsSnapshot.Points[bootstrapPlayerPointValueIndex] != 0 {
+		t.Fatalf("expected rematerialized points[1]=0 after daemon restart, ok=%v snapshot=%+v", ok, pointsSnapshot)
+	}
+
+	accountAfterRestart, err := reloadedAccounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after death-floor daemon restart rematerialization: %v", err)
+	}
+	if accountAfterRestart.Characters[0].Points[bootstrapPlayerPointValueIndex] != 0 {
+		t.Fatalf("expected persisted death floor to survive rematerialization, got %d", accountAfterRestart.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+
+	actorsAfterRestart := reloaded.StaticActors()
+	if len(actorsAfterRestart) != 1 {
+		t.Fatalf("expected rematerialized practice mob after daemon restart, got %#v", actorsAfterRestart)
+	}
+	denyOut, err := restartFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{
+		TargetVID: uint32(actorsAfterRestart[0].EntityID),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart dead-owner target error: %v", err)
+	}
+	if len(denyOut) != 0 {
+		t.Fatalf("expected rematerialized dead owner combat TARGET to fail closed, got %d frames", len(denyOut))
 	}
 }

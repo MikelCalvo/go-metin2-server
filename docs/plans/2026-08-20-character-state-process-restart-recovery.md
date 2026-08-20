@@ -50,9 +50,12 @@ Focused coverage:
    (`TestGameRuntimeEquipmentAndQuickslotsRematerializeAcrossDaemonRestart`).
 2. ~~Add position (map/x/y) and character point-state rematerialization proofs.~~
    Done (`TestGameRuntimePositionAndPointsRematerializeAcrossDaemonRestart`).
-3. Keep ground-item restart durability deferred until operators decide that
+3. ~~Prove retaliation-owned player death-floor rematerialization across daemon
+   restart with a stale live ticket.~~ Done
+   (`TestGameRuntimePlayerDeathFloorRematerializesAcrossDaemonRestart`).
+4. Keep ground-item restart durability deferred until operators decide that
    quarantined `0010` exports should drive recovery.
-4. ~~Add production-safe observability conventions before remote admin surfaces.~~
+5. ~~Add production-safe observability conventions before remote admin surfaces.~~
    Done: `internal/observability` + `docs/workflow/production-observability.md`.
-5. ~~Add deployment topology / artifact retention docs once production hosts are
+6. ~~Add deployment topology / artifact retention docs once production hosts are
    known.~~ Done: `docs/workflow/lab-deployment-topology.md`.
