@@ -412,6 +412,7 @@ type gameRuntime struct {
 	itemStore               itemcatalog.Store
 	interactionStore        interactionstore.Store
 	questStateStore         queststate.Store
+	groundItemExporter      worldruntime.BootstrapGroundItemStateExporter
 	itemTemplates           map[uint32]itemcatalog.Template
 	itemTemplatesAuthored   bool
 	liveCharacterMu         sync.RWMutex
@@ -1423,6 +1424,9 @@ func (r *gameRuntime) ExportStaticActorContentState() (staticstore.StaticActorCo
 func (r *gameRuntime) ExportBootstrapGroundItemState() (worldruntime.BootstrapGroundItemStateExport, error) {
 	if r == nil {
 		return worldruntime.ExportBootstrapGroundItemState(nil)
+	}
+	if r.groundItemExporter != nil {
+		return r.groundItemExporter.ExportBootstrapGroundItemState()
 	}
 	return worldruntime.ExportBootstrapGroundItemState(r.GroundItems())
 }

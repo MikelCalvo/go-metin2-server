@@ -25,7 +25,7 @@ Land the fifth narrow repository-style seam for durable authored static-actor + 
 - DB connection pool / driver selection for runtime stores
 - INSERT / backfill / restore-from-export tooling
 - broadening `Store` into backup/restore/crash-temp
-- ground-item repository / restart-durability seams
+- ground-item restart durability
 - remote admin API
 
 ## TDD and validation
@@ -41,5 +41,6 @@ Focused coverage:
 ## Follow-up options
 
 1. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
-2. Keep ground-item restart durability deferred until a world-state repository exists.
-3. Optionally migrate selected content-bundle / NPC gameplay tests onto hermetic MemoryStores once callers want less temp-dir coupling.
+2. ~~Extract the bootstrap ground-handle repository seam once quarantine + live export both prove the `0010` boundary.~~ Done: `BootstrapGroundItemStateExporter` + hermetic `MemoryGroundItemStore` / `SnapshotGroundItemExporter` now land beside the account/quest/login-ticket/item-template/static-content seams.
+3. Keep ground-item restart durability deferred until operators decide that quarantined `0010` exports should drive recovery.
+4. Optionally migrate selected content-bundle / NPC gameplay tests onto hermetic MemoryStores once callers want less temp-dir coupling.

@@ -763,6 +763,47 @@ func TestGameRuntimeBootstrapGroundItemStateExportProjectsPendingGroundHandles(t
 	}
 }
 
+func TestGameRuntimeExportsBootstrapGroundItemStateThroughMemoryStoreSeam(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), accountstore.NewMemoryStore())
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	count := uint16(2)
+	gold := uint32(250)
+	groundStore := worldruntime.NewMemoryGroundItemStore()
+	groundStore.Replace([]worldruntime.GroundItemSnapshot{
+		{VID: 0x0700003d, Vnum: 1, GoldAmount: gold, OwnerName: "MemoryGoldOwner", OwnerLogin: "memory-gold-owner", OwnerCharacterID: 0x010301ae, OwnerVID: 0x020401ae, PickupRange: 750, MapIndex: 42, X: 1300, Y: 2300, Z: 4},
+		{VID: 0x0700003c, Vnum: 3001, Count: count, OwnerName: "MemoryItemOwner", OwnerLogin: "memory-item-owner", OwnerCharacterID: 0x010301ad, OwnerVID: 0x020401ad, PickupRange: 450, MapIndex: 1, X: 1200, Y: 2200, Z: 3},
+	})
+	runtime.groundItemExporter = groundStore
+
+	export, err := runtime.ExportBootstrapGroundItemState()
+	if err != nil {
+		t.Fatalf("runtime memory bootstrap ground-item-state export: %v", err)
+	}
+	if export.MigrationVersion != worldruntime.BootstrapGroundItemStateMigrationVersion || export.MigrationName != worldruntime.BootstrapGroundItemStateMigrationName {
+		t.Fatalf("unexpected migration boundary: %#v", export)
+	}
+	if len(export.GroundItems) != 2 {
+		t.Fatalf("expected two memory ground rows, got %#v", export.GroundItems)
+	}
+	itemRow := export.GroundItems[0]
+	if itemRow.VID != 0x0700003c || itemRow.Vnum != 3001 || itemRow.ItemCount == nil || *itemRow.ItemCount != 2 || itemRow.GoldAmount != nil || itemRow.OwnerLogin != "memory-item-owner" || itemRow.OwnerName != "MemoryItemOwner" || itemRow.PickupRange != 450 {
+		t.Fatalf("unexpected memory item-shaped ground export row: %#v", itemRow)
+	}
+	goldRow := export.GroundItems[1]
+	if goldRow.VID != 0x0700003d || goldRow.Vnum != 1 || goldRow.GoldAmount == nil || *goldRow.GoldAmount != 250 || goldRow.ItemCount != nil || goldRow.OwnerLogin != "memory-gold-owner" || goldRow.OwnerName != "MemoryGoldOwner" || goldRow.PickupRange != 750 {
+		t.Fatalf("unexpected memory gold-shaped ground export row: %#v", goldRow)
+	}
+	if _, err := worldruntime.ValidateBootstrapGroundItemStateExport(export); err != nil {
+		t.Fatalf("quarantine memory bootstrap ground-item-state export: %v", err)
+	}
+	if live := runtime.GroundItems(); len(live) != 0 {
+		t.Fatalf("memory seam must not register live shared-world ground handles, got %#v", live)
+	}
+}
+
 func TestGameRuntimeStaticActorContentStateExportProjectsCommittedSnapshots(t *testing.T) {
 	staticActors := staticstore.NewFileStore(filepath.Join(t.TempDir(), "state", "static-actors.json"))
 	interactions := interactionstore.NewFileStore(filepath.Join(t.TempDir(), "state", "interaction-definitions.json"))
