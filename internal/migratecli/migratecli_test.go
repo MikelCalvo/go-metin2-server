@@ -1586,10 +1586,16 @@ func TestRunApplyLockStatusReadsMetadataOnlyLockFile(t *testing.T) {
 		t.Fatalf("decode plan artifact JSON: %v\nbody:\n%s", err, artifactStdout.String())
 	}
 	lockPath := t.TempDir() + "/migration-apply.lock"
+	wantHostname := mustLocalHostname(t)
+	wantIdentity := buildinfo.Current()
 	lock := migrationApplyLock{
 		Format:               migrationApplyLockFormat,
 		CreatedAt:            "2026-08-17T00:00:00Z",
 		PID:                  os.Getpid(),
+		Hostname:             wantHostname,
+		BuildVersion:         wantIdentity.Version,
+		BuildCommit:          wantIdentity.Commit,
+		BuildDate:            wantIdentity.BuildDate,
 		Driver:               driverName,
 		DSNConfigured:        true,
 		TargetVersion:        1,
@@ -1628,6 +1634,12 @@ func TestRunApplyLockStatusReadsMetadataOnlyLockFile(t *testing.T) {
 	if got.Lock.Format != migrationApplyLockFormat || got.Lock.CreatedAt == "" || got.Lock.PID != os.Getpid() {
 		t.Fatalf("unexpected lock process metadata: %#v", got.Lock)
 	}
+	if got.Lock.Hostname != wantHostname {
+		t.Fatalf("unexpected lock hostname: got %q want %q", got.Lock.Hostname, wantHostname)
+	}
+	if got.Lock.BuildVersion != wantIdentity.Version || got.Lock.BuildCommit != wantIdentity.Commit || got.Lock.BuildDate != wantIdentity.BuildDate {
+		t.Fatalf("unexpected lock build identity: %#v", got.Lock)
+	}
 	if got.HolderPIDAlive == nil || !*got.HolderPIDAlive || got.HolderPIDCheck != migrationApplyLockHolderPIDCheck {
 		t.Fatalf("unexpected lock holder liveness: alive=%v check=%q", got.HolderPIDAlive, got.HolderPIDCheck)
 	}
@@ -1665,6 +1677,10 @@ func TestRunApplyLockStatusReportsAbsentHolderPID(t *testing.T) {
 		Format:               migrationApplyLockFormat,
 		CreatedAt:            "2026-08-17T00:00:00Z",
 		PID:                  absentPID,
+		Hostname:             mustLocalHostname(t),
+		BuildVersion:         "dev",
+		BuildCommit:          "none",
+		BuildDate:            "unknown",
 		Driver:               "example-driver",
 		DSNConfigured:        true,
 		TargetVersion:        1,
@@ -1712,7 +1728,7 @@ func TestRunApplyLockStatusReportsAbsentHolderPID(t *testing.T) {
 func TestRunApplyLockStatusRejectsMalformedLockFile(t *testing.T) {
 	_ = registerMigrateCLITestSQLDriver(t)
 	lockPath := t.TempDir() + "/migration-apply.lock"
-	malformedLock := `{"format":"go-metin2-migration-apply-lock-v1","created_at":"2026-08-17T00:00:00Z","pid":1,"driver":"driver","dsn_configured":true,"target_version":1,"target_latest":false,"plan_sha256":"` + strings.Repeat("0", 64) + `","ledger_snapshot_sha256":"` + strings.Repeat("1", 64) + `","extra":true}`
+	malformedLock := `{"format":"go-metin2-migration-apply-lock-v1","created_at":"2026-08-17T00:00:00Z","pid":1,"hostname":"lab-host","build_version":"dev","build_commit":"none","build_date":"unknown","driver":"driver","dsn_configured":true,"target_version":1,"target_latest":false,"plan_sha256":"` + strings.Repeat("0", 64) + `","ledger_snapshot_sha256":"` + strings.Repeat("1", 64) + `","extra":true}`
 	if err := os.WriteFile(lockPath, []byte(malformedLock), 0o600); err != nil {
 		t.Fatalf("write malformed lock file: %v", err)
 	}
@@ -1732,6 +1748,80 @@ func TestRunApplyLockStatusRejectsMalformedLockFile(t *testing.T) {
 	}
 	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
 		t.Fatalf("malformed apply-lock-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunApplyLockStatusRejectsEmptyHostOrBuildIdentity(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	cases := []struct {
+		name string
+		lock migrationApplyLock
+		want string
+	}{
+		{
+			name: "empty hostname",
+			lock: migrationApplyLock{
+				Format:               migrationApplyLockFormat,
+				CreatedAt:            "2026-08-17T00:00:00Z",
+				PID:                  1,
+				Hostname:             "   ",
+				BuildVersion:         "dev",
+				BuildCommit:          "none",
+				BuildDate:            "unknown",
+				Driver:               "driver",
+				DSNConfigured:        true,
+				TargetVersion:        1,
+				PlanSHA256:           strings.Repeat("0", 64),
+				LedgerSnapshotSHA256: strings.Repeat("1", 64),
+			},
+			want: "lock hostname is required",
+		},
+		{
+			name: "empty build_commit",
+			lock: migrationApplyLock{
+				Format:               migrationApplyLockFormat,
+				CreatedAt:            "2026-08-17T00:00:00Z",
+				PID:                  1,
+				Hostname:             "lab-host",
+				BuildVersion:         "dev",
+				BuildCommit:          " ",
+				BuildDate:            "unknown",
+				Driver:               "driver",
+				DSNConfigured:        true,
+				TargetVersion:        1,
+				PlanSHA256:           strings.Repeat("0", 64),
+				LedgerSnapshotSHA256: strings.Repeat("1", 64),
+			},
+			want: "lock build_commit is required",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			lockPath := t.TempDir() + "/migration-apply.lock"
+			rawLock, err := json.MarshalIndent(tc.lock, "", "  ")
+			if err != nil {
+				t.Fatalf("marshal lock JSON: %v", err)
+			}
+			rawLock = append(rawLock, '\n')
+			if err := os.WriteFile(lockPath, rawLock, 0o600); err != nil {
+				t.Fatalf("write lock JSON: %v", err)
+			}
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			code := Run([]string{"apply-lock-status", "--lock-file", lockPath}, nil, &stdout, &stderr)
+			if code != 1 {
+				t.Fatalf("expected apply-lock-status to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("expected no stdout on reject, got %q", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), tc.want) {
+				t.Fatalf("expected %q in stderr, got %q", tc.want, stderr.String())
+			}
+			if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+				t.Fatalf("apply-lock-status must not open a database target, got events %#v", events)
+			}
+		})
 	}
 }
 
@@ -2085,6 +2175,10 @@ func TestRunApplyWritesMetadataOnlyLockFileBeforeOpeningDatabase(t *testing.T) {
 			Format               string `json:"format"`
 			CreatedAt            string `json:"created_at"`
 			PID                  int    `json:"pid"`
+			Hostname             string `json:"hostname"`
+			BuildVersion         string `json:"build_version"`
+			BuildCommit          string `json:"build_commit"`
+			BuildDate            string `json:"build_date"`
 			Driver               string `json:"driver"`
 			DSNConfigured        bool   `json:"dsn_configured"`
 			TargetVersion        int    `json:"target_version"`
@@ -2101,6 +2195,14 @@ func TestRunApplyWritesMetadataOnlyLockFileBeforeOpeningDatabase(t *testing.T) {
 		}
 		if got.CreatedAt == "" || got.PID <= 0 {
 			return fmt.Errorf("expected lock to include local process metadata: %#v", got)
+		}
+		wantHostname := mustLocalHostname(t)
+		wantIdentity := buildinfo.Current()
+		if got.Hostname != wantHostname {
+			return fmt.Errorf("unexpected lock hostname: got %q want %q", got.Hostname, wantHostname)
+		}
+		if got.BuildVersion != wantIdentity.Version || got.BuildCommit != wantIdentity.Commit || got.BuildDate != wantIdentity.BuildDate {
+			return fmt.Errorf("unexpected lock build identity: %#v", got)
 		}
 		if got.Driver != driverName || !got.DSNConfigured {
 			return fmt.Errorf("unexpected lock database metadata: %#v", got)
@@ -3701,4 +3803,17 @@ func findAbsentLocalPID(t *testing.T) int {
 	}
 	t.Fatal("could not find an absent local PID for lock-status coverage")
 	return 0
+}
+
+func mustLocalHostname(t *testing.T) string {
+	t.Helper()
+	hostname, err := os.Hostname()
+	if err != nil {
+		t.Fatalf("resolve local hostname: %v", err)
+	}
+	hostname = strings.TrimSpace(hostname)
+	if hostname == "" {
+		t.Fatal("local hostname is empty")
+	}
+	return hostname
 }

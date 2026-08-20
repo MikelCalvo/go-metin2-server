@@ -54,7 +54,7 @@ Focused coverage:
 
 1. Keep ground-item restart durability deferred until operators decide that
    quarantined `0010` exports should drive recovery.
-2. Add hostname / build-identity fields to migration apply-lock artifacts only if
-   multi-host leftover locks become a real lab failure mode.
+2. ~~Add hostname / build-identity fields to migration apply-lock artifacts.~~
+   Done: see [migration apply lock host / build identity](2026-08-20-migration-apply-lock-host-build-identity.md).
 3. Keep SQL import/backfill deferred until a driver-backed harness and backup
    policy exist.

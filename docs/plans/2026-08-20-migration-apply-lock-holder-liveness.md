@@ -62,5 +62,5 @@ Validation for this slice:
 ## Follow-up options
 
 1. Keep automatic stale-lock removal deferred until a deployment-specific recovery policy exists.
-2. Add hostname / build-identity fields to the lock artifact only if multi-host leftover locks become a real lab failure mode.
+2. ~~Add hostname / build-identity fields to the lock artifact.~~ Done: see [migration apply lock host / build identity](2026-08-20-migration-apply-lock-host-build-identity.md).
 3. Add DB-engine-specific advisory lock coverage once a production driver is selected.

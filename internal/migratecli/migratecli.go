@@ -752,10 +752,25 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 
 	var lockFile *migrationApplyLockFile
 	if strings.TrimSpace(lockFilePath) != "" {
+		hostname, hostErr := os.Hostname()
+		if hostErr != nil {
+			writeMigrationCommandError(stderr, dsn, "migration apply: %v", fmt.Errorf("%w: resolve local hostname: %v", ErrMigrationApplyLock, hostErr))
+			return exitError
+		}
+		hostname = strings.TrimSpace(hostname)
+		if hostname == "" {
+			writeMigrationCommandError(stderr, dsn, "migration apply: %v", fmt.Errorf("%w: local hostname is empty", ErrMigrationApplyLock))
+			return exitError
+		}
+		identity := buildinfo.Current()
 		lockFile, err = createMigrationApplyLockFile(lockFilePath, migrationApplyLock{
 			Format:               migrationApplyLockFormat,
 			CreatedAt:            time.Now().UTC().Format(time.RFC3339Nano),
 			PID:                  os.Getpid(),
+			Hostname:             hostname,
+			BuildVersion:         identity.Version,
+			BuildCommit:          identity.Commit,
+			BuildDate:            identity.BuildDate,
 			Driver:               strings.TrimSpace(driverName),
 			DSNConfigured:        strings.TrimSpace(dsn) != "",
 			TargetVersion:        resolvedTarget,
@@ -931,6 +946,10 @@ type migrationApplyLock struct {
 	Format               string `json:"format"`
 	CreatedAt            string `json:"created_at"`
 	PID                  int    `json:"pid"`
+	Hostname             string `json:"hostname"`
+	BuildVersion         string `json:"build_version"`
+	BuildCommit          string `json:"build_commit"`
+	BuildDate            string `json:"build_date"`
 	Driver               string `json:"driver"`
 	DSNConfigured        bool   `json:"dsn_configured"`
 	TargetVersion        int    `json:"target_version"`
@@ -1101,6 +1120,26 @@ func normalizeMigrationApplyLock(lock migrationApplyLock) (migrationApplyLock, e
 	if lock.PID <= 0 {
 		return migrationApplyLock{}, fmt.Errorf("%w: lock pid must be positive", ErrMigrationApplyLock)
 	}
+	hostname := strings.TrimSpace(lock.Hostname)
+	if hostname == "" {
+		return migrationApplyLock{}, fmt.Errorf("%w: lock hostname is required", ErrMigrationApplyLock)
+	}
+	lock.Hostname = hostname
+	buildVersion := strings.TrimSpace(lock.BuildVersion)
+	if buildVersion == "" {
+		return migrationApplyLock{}, fmt.Errorf("%w: lock build_version is required", ErrMigrationApplyLock)
+	}
+	lock.BuildVersion = buildVersion
+	buildCommit := strings.TrimSpace(lock.BuildCommit)
+	if buildCommit == "" {
+		return migrationApplyLock{}, fmt.Errorf("%w: lock build_commit is required", ErrMigrationApplyLock)
+	}
+	lock.BuildCommit = buildCommit
+	buildDate := strings.TrimSpace(lock.BuildDate)
+	if buildDate == "" {
+		return migrationApplyLock{}, fmt.Errorf("%w: lock build_date is required", ErrMigrationApplyLock)
+	}
+	lock.BuildDate = buildDate
 	lock.Driver = strings.TrimSpace(lock.Driver)
 	if lock.Driver == "" {
 		return migrationApplyLock{}, fmt.Errorf("%w: lock driver is required", ErrMigrationApplyLock)
