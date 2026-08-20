@@ -43,8 +43,11 @@ Focused coverage:
 
 ## Follow-up options
 
-1. Keep ground-item restart durability deferred until operators decide that
+1. ~~Prove equipment + quickslot rematerialization across daemon restart.~~ Done
+   (`TestGameRuntimeEquipmentAndQuickslotsRematerializeAcrossDaemonRestart`).
+2. Add position (map/x/y) and character point-state rematerialization proofs.
+3. Keep ground-item restart durability deferred until operators decide that
    quarantined `0010` exports should drive recovery.
-2. Add production-safe observability conventions before remote admin surfaces.
-3. Add deployment topology / artifact retention docs once production hosts are
+4. Add production-safe observability conventions before remote admin surfaces.
+5. Add deployment topology / artifact retention docs once production hosts are
    known.
