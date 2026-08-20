@@ -35,9 +35,9 @@ const (
 )
 
 // Run executes the small migration preflight CLI and returns a process-style exit
-// code. The catalog, status, empty-ledger-snapshot, ledger-snapshot, plan,
-// plan-artifact, plan-artifact-status, apply-preflight,
-// apply-preflight-status, apply-lock-status, apply-audit-status,
+// code. The catalog, status, empty-ledger-snapshot, ledger-snapshot,
+// ledger-snapshot-status, plan, plan-artifact, plan-artifact-status,
+// apply-preflight, apply-preflight-status, apply-lock-status, apply-audit-status,
 // quarantine-export, and backup-restore-drill commands are read-only.
 // The apply command is an explicit CLI-only mutation surface: it requires an
 // operator-supplied database driver, DSN, strict offline ledger snapshot, and
@@ -89,6 +89,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runEmptyLedgerSnapshot(args[1:], stdout, stderr)
 	case "ledger-snapshot":
 		return runLedgerSnapshot(args[1:], stdout, stderr)
+	case "ledger-snapshot-status":
+		return runLedgerSnapshotStatus(args[1:], stdout, stderr)
 	case "apply":
 		return runApply(args[1:], stdin, stdout, stderr)
 	case "quarantine-export":
@@ -246,9 +248,13 @@ const migrationPlanArtifactFormat = "go-metin2-migration-plan-artifact-v1"
 
 const migrationPlanArtifactStatusFormat = "go-metin2-migration-plan-artifact-status-v1"
 
+const migrationLedgerSnapshotStatusFormat = "go-metin2-schema-migrations-ledger-snapshot-status-v1"
+
 const migrationApplyPreflightFormat = "go-metin2-migration-apply-preflight-v1"
 
 const migrationApplyPreflightStatusFormat = "go-metin2-migration-apply-preflight-status-v1"
+
+var ErrMigrationLedgerSnapshot = errors.New("migration ledger snapshot failed")
 
 type migrationPlanArtifact struct {
 	Format     string            `json:"format"`
@@ -260,6 +266,16 @@ type migrationPlanArtifactStatus struct {
 	Format   string                 `json:"format"`
 	Present  bool                   `json:"present"`
 	Artifact *migrationPlanArtifact `json:"artifact,omitempty"`
+}
+
+type migrationLedgerSnapshotStatus struct {
+	Format               string                       `json:"format"`
+	Present              bool                         `json:"present"`
+	LedgerSnapshotSHA256 string                       `json:"ledger_snapshot_sha256,omitempty"`
+	CurrentVersion       int                          `json:"current_version,omitempty"`
+	LatestVersion        int                          `json:"latest_version,omitempty"`
+	UpToDate             bool                         `json:"up_to_date,omitempty"`
+	Snapshot             *dbmigrations.LedgerSnapshot `json:"snapshot,omitempty"`
 }
 
 type migrationApplyPreflight struct {
@@ -325,6 +341,50 @@ func runPlanArtifactStatus(args []string, stdout io.Writer, stderr io.Writer) in
 	}
 	if present {
 		status.Artifact = &artifact
+	}
+	return writeJSON(stdout, stderr, status)
+}
+
+func runLedgerSnapshotStatus(args []string, stdout io.Writer, stderr io.Writer) int {
+	flags := flag.NewFlagSet("ledger-snapshot-status", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	var snapshotPath string
+	flags.StringVar(&snapshotPath, "ledger-snapshot", "", "path to a metadata-only schema_migrations ledger snapshot")
+	flags.Usage = func() { printLedgerSnapshotStatusUsage(stderr) }
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintf(stderr, "unexpected ledger-snapshot-status argument %q\n", flags.Arg(0))
+		printLedgerSnapshotStatusUsage(stderr)
+		return exitUsage
+	}
+	if strings.TrimSpace(snapshotPath) == "" {
+		fmt.Fprintln(stderr, "--ledger-snapshot is required for ledger-snapshot-status")
+		printLedgerSnapshotStatusUsage(stderr)
+		return exitUsage
+	}
+
+	snapshot, present, raw, err := readMigrationLedgerSnapshotStatusFile(snapshotPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "migration ledger snapshot status: %v\n", err)
+		return exitError
+	}
+	status := migrationLedgerSnapshotStatus{
+		Format:  migrationLedgerSnapshotStatusFormat,
+		Present: present,
+	}
+	if present {
+		plan, err := dbmigrations.PlanUpToLatest(snapshot.Entries)
+		if err != nil {
+			fmt.Fprintf(stderr, "migration ledger snapshot status: %v\n", fmt.Errorf("%w: %v", ErrMigrationLedgerSnapshot, err))
+			return exitError
+		}
+		status.LedgerSnapshotSHA256 = sha256Hex(raw)
+		status.CurrentVersion = plan.CurrentVersion
+		status.LatestVersion = plan.LatestVersion
+		status.UpToDate = plan.UpToDate
+		status.Snapshot = &snapshot
 	}
 	return writeJSON(stdout, stderr, status)
 }
@@ -1335,6 +1395,51 @@ func readBoundedLedgerSnapshot(reader io.Reader) ([]byte, error) {
 	return raw, nil
 }
 
+func readMigrationLedgerSnapshotStatusFile(path string) (dbmigrations.LedgerSnapshot, bool, []byte, error) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return dbmigrations.LedgerSnapshot{}, false, nil, fmt.Errorf("%w: ledger snapshot path is required", ErrMigrationLedgerSnapshot)
+	}
+	info, err := os.Lstat(trimmed)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return dbmigrations.LedgerSnapshot{}, false, nil, nil
+		}
+		return dbmigrations.LedgerSnapshot{}, false, nil, fmt.Errorf("%w: stat ledger snapshot: %v", ErrMigrationLedgerSnapshot, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return dbmigrations.LedgerSnapshot{}, false, nil, fmt.Errorf("%w: ledger snapshot must not be a symlink: %s", ErrMigrationLedgerSnapshot, trimmed)
+	}
+	if !info.Mode().IsRegular() {
+		return dbmigrations.LedgerSnapshot{}, false, nil, fmt.Errorf("%w: ledger snapshot must be a regular file: %s", ErrMigrationLedgerSnapshot, trimmed)
+	}
+	file, err := os.Open(trimmed)
+	if err != nil {
+		return dbmigrations.LedgerSnapshot{}, false, nil, fmt.Errorf("%w: read ledger snapshot: %v", ErrMigrationLedgerSnapshot, err)
+	}
+	defer file.Close()
+	openedInfo, err := file.Stat()
+	if err != nil {
+		return dbmigrations.LedgerSnapshot{}, false, nil, fmt.Errorf("%w: stat opened ledger snapshot: %v", ErrMigrationLedgerSnapshot, err)
+	}
+	if !openedInfo.Mode().IsRegular() {
+		return dbmigrations.LedgerSnapshot{}, false, nil, fmt.Errorf("%w: opened ledger snapshot must be a regular file: %s", ErrMigrationLedgerSnapshot, trimmed)
+	}
+
+	raw, err := io.ReadAll(io.LimitReader(file, maxLedgerSnapshotBytes+1))
+	if err != nil {
+		return dbmigrations.LedgerSnapshot{}, false, nil, fmt.Errorf("%w: read ledger snapshot: %v", ErrMigrationLedgerSnapshot, err)
+	}
+	if len(raw) > maxLedgerSnapshotBytes {
+		return dbmigrations.LedgerSnapshot{}, false, nil, fmt.Errorf("%w: ledger snapshot exceeds %d bytes", ErrMigrationLedgerSnapshot, maxLedgerSnapshotBytes)
+	}
+	entries, err := dbmigrations.ReadJSONLedgerSnapshot(bytes.NewReader(raw))
+	if err != nil {
+		return dbmigrations.LedgerSnapshot{}, false, nil, fmt.Errorf("%w: %v", ErrMigrationLedgerSnapshot, err)
+	}
+	return dbmigrations.LedgerSnapshot{Format: dbmigrations.LedgerSnapshotFormat, Entries: entries}, true, raw, nil
+}
+
 func readMigrationPlanArtifactFile(path string) (migrationPlanArtifact, error) {
 	artifact, _, err := readMigrationPlanArtifactPath(path, false)
 	return artifact, err
@@ -1707,6 +1812,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  status                 read database schema_migrations metadata and print a dry-run plan")
 	fmt.Fprintln(w, "  empty-ledger-snapshot  print an explicit empty schema_migrations ledger snapshot")
 	fmt.Fprintln(w, "  ledger-snapshot        export metadata-only schema_migrations ledger snapshot from a database/sql target")
+	fmt.Fprintln(w, "  ledger-snapshot-status inspect a retained schema_migrations ledger snapshot without mutating it")
 	fmt.Fprintln(w, "  plan                   print metadata-only dry-run plan from an offline ledger snapshot")
 	fmt.Fprintln(w, "  plan-artifact          print dry-run plan plus checksum for apply confirmation")
 	fmt.Fprintln(w, "  plan-artifact-status   inspect a migration plan artifact without mutating it")
@@ -1726,6 +1832,8 @@ func printUsage(w io.Writer) {
 	printEmptyLedgerSnapshotUsage(w)
 	fmt.Fprintln(w, "")
 	printLedgerSnapshotUsage(w)
+	fmt.Fprintln(w, "")
+	printLedgerSnapshotStatusUsage(w)
 	fmt.Fprintln(w, "")
 	printPlanUsage(w)
 	fmt.Fprintln(w, "")
@@ -1762,6 +1870,11 @@ func printEmptyLedgerSnapshotUsage(w io.Writer) {
 func printLedgerSnapshotUsage(w io.Writer) {
 	fmt.Fprintln(w, "ledger-snapshot usage:")
 	fmt.Fprintln(w, "  metin2-migrate ledger-snapshot --driver <database/sql-driver> --dsn <dsn>")
+}
+
+func printLedgerSnapshotStatusUsage(w io.Writer) {
+	fmt.Fprintln(w, "ledger-snapshot-status usage:")
+	fmt.Fprintln(w, "  metin2-migrate ledger-snapshot-status --ledger-snapshot <path>")
 }
 
 func printStatusUsage(w io.Writer) {

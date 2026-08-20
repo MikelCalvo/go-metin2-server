@@ -395,6 +395,192 @@ func TestRunPlanArtifactStatusRejectsSymlinkArtifactFile(t *testing.T) {
 	}
 }
 
+func TestRunLedgerSnapshotStatusReportsMissingSnapshotWithoutOpeningDatabase(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	snapshotPath := t.TempDir() + "/missing-ledger-snapshot.json"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"ledger-snapshot-status", "--ledger-snapshot", snapshotPath}, nil, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected missing ledger-snapshot-status to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected missing ledger-snapshot-status not to write stderr, got %q", stderr.String())
+	}
+	var got migrationLedgerSnapshotStatus
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode missing ledger snapshot status JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if got.Format != migrationLedgerSnapshotStatusFormat || got.Present || got.Snapshot != nil || got.LedgerSnapshotSHA256 != "" {
+		t.Fatalf("unexpected missing ledger snapshot status: %#v", got)
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("ledger-snapshot-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunLedgerSnapshotStatusReadsMetadataOnlySnapshotFile(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	catalog, err := dbmigrations.Catalog()
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{
+		{Version: catalog[0].Version, Name: catalog[0].Name, UpSHA256: catalog[0].UpSHA256},
+	})
+	if err != nil {
+		t.Fatalf("marshal ledger snapshot: %v", err)
+	}
+	snapshotPath := t.TempDir() + "/ledger-snapshot.json"
+	if err := os.WriteFile(snapshotPath, rawSnapshot, 0o600); err != nil {
+		t.Fatalf("write ledger snapshot: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"ledger-snapshot-status", "--ledger-snapshot", snapshotPath}, nil, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected ledger-snapshot-status to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr on ledger-snapshot-status success, got %q", stderr.String())
+	}
+	var got migrationLedgerSnapshotStatus
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode ledger snapshot status JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if got.Format != migrationLedgerSnapshotStatusFormat || !got.Present || got.Snapshot == nil {
+		t.Fatalf("unexpected ledger snapshot status envelope: %#v", got)
+	}
+	if got.LedgerSnapshotSHA256 != testSHA256HexBytes(rawSnapshot) {
+		t.Fatalf("unexpected ledger snapshot checksum: got %s want %s", got.LedgerSnapshotSHA256, testSHA256HexBytes(rawSnapshot))
+	}
+	if got.Snapshot.Format != dbmigrations.LedgerSnapshotFormat || len(got.Snapshot.Entries) != 1 || got.Snapshot.Entries[0].Version != 1 {
+		t.Fatalf("unexpected ledger snapshot payload: %#v", got.Snapshot)
+	}
+	if got.CurrentVersion != 1 || got.LatestVersion != len(catalog) || got.UpToDate {
+		t.Fatalf("unexpected catalog-relative ledger status: %#v", got)
+	}
+	body := stdout.String()
+	for _, forbidden := range []string{"CREATE TABLE", "DROP TABLE", "-- go-metin2 migration", "memory://"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("ledger snapshot status output must stay metadata-only, exposed %q in %s", forbidden, body)
+		}
+	}
+	if _, err := os.Stat(snapshotPath); err != nil {
+		t.Fatalf("ledger-snapshot-status must not remove the inspected snapshot file: %v", err)
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("ledger-snapshot-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunLedgerSnapshotStatusRejectsMalformedSnapshotFile(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	snapshotPath := t.TempDir() + "/ledger-snapshot.json"
+	malformedSnapshot := `{"format":"` + dbmigrations.LedgerSnapshotFormat + `","entries":[],"extra":true}`
+	if err := os.WriteFile(snapshotPath, []byte(malformedSnapshot), 0o600); err != nil {
+		t.Fatalf("write malformed ledger snapshot: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"ledger-snapshot-status", "--ledger-snapshot", snapshotPath}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected malformed ledger-snapshot-status to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected malformed ledger-snapshot-status not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "migration ledger snapshot failed") || !strings.Contains(stderr.String(), "unknown field") {
+		t.Fatalf("expected strict malformed-ledger-snapshot guidance, got %q", stderr.String())
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("malformed ledger-snapshot-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunLedgerSnapshotStatusRejectsCatalogChecksumDrift(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	catalog, err := dbmigrations.Catalog()
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{
+		{Version: catalog[0].Version, Name: catalog[0].Name, UpSHA256: strings.Repeat("a", 64)},
+	})
+	if err != nil {
+		t.Fatalf("marshal drifted ledger snapshot: %v", err)
+	}
+	snapshotPath := t.TempDir() + "/ledger-snapshot.json"
+	if err := os.WriteFile(snapshotPath, rawSnapshot, 0o600); err != nil {
+		t.Fatalf("write drifted ledger snapshot: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"ledger-snapshot-status", "--ledger-snapshot", snapshotPath}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected drifted ledger-snapshot-status to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected drifted ledger-snapshot-status not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "migration ledger snapshot failed") || !strings.Contains(stderr.String(), "checksum") {
+		t.Fatalf("expected catalog checksum-drift guidance, got %q", stderr.String())
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("drifted ledger-snapshot-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunLedgerSnapshotStatusRejectsSymlinkSnapshotFile(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	dir := t.TempDir()
+	targetPath := dir + "/target-ledger-snapshot.json"
+	if err := os.WriteFile(targetPath, []byte("{}\n"), 0o600); err != nil {
+		t.Fatalf("write symlink ledger snapshot target: %v", err)
+	}
+	snapshotPath := dir + "/ledger-snapshot.json"
+	if err := os.Symlink(targetPath, snapshotPath); err != nil {
+		t.Fatalf("create symlink ledger snapshot: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"ledger-snapshot-status", "--ledger-snapshot", snapshotPath}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected symlink ledger-snapshot-status to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected symlink ledger-snapshot-status not to write stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "ledger snapshot must not be a symlink") {
+		t.Fatalf("expected symlink rejection guidance, got %q", stderr.String())
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("symlink ledger-snapshot-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunRejectsUnknownCommandMentionsLedgerSnapshotStatus(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"frobnicate"}, nil, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("expected usage exit 2, got %d", code)
+	}
+	if !strings.Contains(stderr.String(), "ledger-snapshot-status") {
+		t.Fatalf("expected usage to list ledger-snapshot-status, got %q", stderr.String())
+	}
+}
+
 func TestRunPlanArtifactOutputCanFeedApplyPlanConfirmation(t *testing.T) {
 	driverName := registerMigrateCLITestSQLDriver(t)
 	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
