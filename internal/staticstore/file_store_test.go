@@ -240,7 +240,36 @@ func TestFileStoreRoundTripsStillDeadSpawnGroupCombatState(t *testing.T) {
 	}
 }
 
-func TestFileStoreRejectsMalformedStillDeadSpawnGroupCombatState(t *testing.T) {
+func TestFileStoreRoundTripsDamagedSpawnGroupCombatState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
+	store := NewFileStore(path)
+	currentHP := uint8(5)
+	input := Snapshot{StaticActors: []StaticActor{{
+		EntityID:        35,
+		Name:            "DamagedPersistMob",
+		MapIndex:        42,
+		X:               1200,
+		Y:               2200,
+		RaceNum:         101,
+		CombatProfile:   worldruntime.StaticActorCombatProfileTrainingDummy,
+		SpawnGroupRef:   "practice.damaged_persist",
+		SpawnHome:       &worldruntime.PositionSnapshot{MapIndex: 42, X: 1200, Y: 2200},
+		CombatCurrentHP: &currentHP,
+	}}}
+
+	if err := store.Save(input); err != nil {
+		t.Fatalf("save damaged spawn-group snapshot: %v", err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("load damaged spawn-group snapshot: %v", err)
+	}
+	if !reflect.DeepEqual(loaded, input) {
+		t.Fatalf("expected damaged combat state to round-trip:\n got: %#v\nwant: %#v", loaded, input)
+	}
+}
+
+func TestFileStoreRejectsMalformedSpawnGroupCombatPersistenceState(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
 	store := NewFileStore(path)
 	currentHP := uint8(5)
@@ -258,7 +287,7 @@ func TestFileStoreRejectsMalformedStillDeadSpawnGroupCombatState(t *testing.T) {
 		RespawnReadyAt:  &readyAt,
 	}}})
 	if !errors.Is(err, ErrInvalidSnapshot) {
-		t.Fatalf("expected ErrInvalidSnapshot for damaged HP still-dead state, got %v", err)
+		t.Fatalf("expected ErrInvalidSnapshot for damaged HP with respawn deadline, got %v", err)
 	}
 
 	zeroHP := uint8(0)
@@ -275,6 +304,51 @@ func TestFileStoreRejectsMalformedStillDeadSpawnGroupCombatState(t *testing.T) {
 	}}})
 	if !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for non-spawn still-dead state, got %v", err)
+	}
+
+	err = store.Save(Snapshot{StaticActors: []StaticActor{{
+		EntityID:        36,
+		Name:            "ZeroHPWithoutDeadline",
+		MapIndex:        42,
+		X:               1200,
+		Y:               2200,
+		RaceNum:         101,
+		CombatProfile:   worldruntime.StaticActorCombatProfileTrainingDummy,
+		SpawnGroupRef:   "practice.zero_hp_no_deadline",
+		CombatCurrentHP: &zeroHP,
+	}}})
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for zero HP without respawn deadline, got %v", err)
+	}
+
+	fullHP := worldruntime.TrainingDummyBootstrapMaxHP
+	err = store.Save(Snapshot{StaticActors: []StaticActor{{
+		EntityID:        37,
+		Name:            "FullHPPersistMob",
+		MapIndex:        42,
+		X:               1200,
+		Y:               2200,
+		RaceNum:         101,
+		CombatProfile:   worldruntime.StaticActorCombatProfileTrainingDummy,
+		SpawnGroupRef:   "practice.full_hp_persist",
+		CombatCurrentHP: &fullHP,
+	}}})
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for full-HP combat_current_hp overlay, got %v", err)
+	}
+
+	err = store.Save(Snapshot{StaticActors: []StaticActor{{
+		EntityID:        38,
+		Name:            "NonSpawnDamagedMob",
+		MapIndex:        42,
+		X:               1800,
+		Y:               2900,
+		RaceNum:         20350,
+		CombatProfile:   worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatCurrentHP: &currentHP,
+	}}})
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for non-spawn damaged HP state, got %v", err)
 	}
 }
 

@@ -8959,6 +8959,10 @@ func (r *gameRuntime) loadPersistedStaticActors() error {
 			if !r.sharedWorld.restoreStillDeadSpawnGroupCombatState(registered.EntityID, actor.RespawnReadyAt.UTC()) {
 				return fmt.Errorf("%w: restore still-dead spawn-group combat state", staticstore.ErrInvalidSnapshot)
 			}
+		} else if actor.SpawnGroupRef != "" && actor.CombatCurrentHP != nil && *actor.CombatCurrentHP > 0 && (actor.RespawnReadyAt == nil || actor.RespawnReadyAt.IsZero()) {
+			if !r.sharedWorld.restoreDamagedSpawnGroupCombatState(registered.EntityID, *actor.CombatCurrentHP) {
+				return fmt.Errorf("%w: restore damaged spawn-group combat state", staticstore.ErrInvalidSnapshot)
+			}
 		}
 		r.syncSpawnGroupReturnStepSchedule(registered)
 	}
@@ -9930,9 +9934,12 @@ func (r *gameRuntime) resolveSelectedStaticActorNormalAttack(subjectID uint64, a
 			combatproto.EncodeServerClearTarget(),
 		}
 		if attempt.Actor.SpawnGroupRef != "" {
-			_ = r.persistStillDeadSpawnGroupCombatState(attempt.Actor.EntityID)
+			_ = r.persistSpawnGroupCombatState(attempt.Actor.EntityID)
 		}
 		return resolution
+	}
+	if attempt.Actor.SpawnGroupRef != "" {
+		_ = r.persistSpawnGroupCombatState(attempt.Actor.EntityID)
 	}
 	packet := combatproto.ServerTargetPacket{TargetVID: activeTargetVID, HPPercent: attempt.HPPercent}
 	resolution.Packet = &packet
@@ -10251,14 +10258,14 @@ func (r *gameRuntime) persistStaticActorSnapshot(snapshot []StaticActorSnapshot)
 	if r == nil || r.staticStore == nil {
 		return true
 	}
-	var stillDead map[uint64]stillDeadSpawnGroupPersistenceState
+	var combatState map[uint64]spawnGroupCombatPersistenceState
 	if r.sharedWorld != nil {
-		stillDead = r.sharedWorld.stillDeadSpawnGroupPersistenceState()
+		combatState = r.sharedWorld.spawnGroupCombatPersistenceState()
 	}
-	return r.staticStore.Save(buildStaticActorStoreSnapshotWithStillDeadState(snapshot, stillDead)) == nil
+	return r.staticStore.Save(buildStaticActorStoreSnapshotWithSpawnGroupCombatState(snapshot, combatState)) == nil
 }
 
-func (r *gameRuntime) persistStillDeadSpawnGroupCombatState(entityID uint64) bool {
+func (r *gameRuntime) persistSpawnGroupCombatState(entityID uint64) bool {
 	if r == nil || r.sharedWorld == nil || entityID == 0 || r.staticStore == nil {
 		return true
 	}
@@ -10268,10 +10275,10 @@ func (r *gameRuntime) persistStillDeadSpawnGroupCombatState(entityID uint64) boo
 }
 
 func buildStaticActorStoreSnapshot(snapshot []StaticActorSnapshot) staticstore.Snapshot {
-	return buildStaticActorStoreSnapshotWithStillDeadState(snapshot, nil)
+	return buildStaticActorStoreSnapshotWithSpawnGroupCombatState(snapshot, nil)
 }
 
-func buildStaticActorStoreSnapshotWithStillDeadState(snapshot []StaticActorSnapshot, stillDead map[uint64]stillDeadSpawnGroupPersistenceState) staticstore.Snapshot {
+func buildStaticActorStoreSnapshotWithSpawnGroupCombatState(snapshot []StaticActorSnapshot, combatState map[uint64]spawnGroupCombatPersistenceState) staticstore.Snapshot {
 	actors := make([]staticstore.StaticActor, 0, len(snapshot))
 	for _, actor := range snapshot {
 		actors = append(actors, staticstore.StaticActor{
@@ -10301,11 +10308,16 @@ func buildStaticActorStoreSnapshotWithStillDeadState(snapshot []StaticActorSnaps
 			spawnHome := *actor.SpawnHome
 			actors[len(actors)-1].SpawnHome = &spawnHome
 		}
-		if state, ok := stillDead[actor.EntityID]; ok && actor.SpawnGroupRef != "" && state.HP == 0 && !state.RespawnAt.IsZero() {
-			currentHP := uint8(0)
-			readyAt := state.RespawnAt.UTC()
-			actors[len(actors)-1].CombatCurrentHP = &currentHP
-			actors[len(actors)-1].RespawnReadyAt = &readyAt
+		if state, ok := combatState[actor.EntityID]; ok && actor.SpawnGroupRef != "" {
+			if state.HP == 0 && !state.RespawnAt.IsZero() {
+				currentHP := uint8(0)
+				readyAt := state.RespawnAt.UTC()
+				actors[len(actors)-1].CombatCurrentHP = &currentHP
+				actors[len(actors)-1].RespawnReadyAt = &readyAt
+			} else if state.HP > 0 && state.RespawnAt.IsZero() {
+				currentHP := state.HP
+				actors[len(actors)-1].CombatCurrentHP = &currentHP
+			}
 		}
 	}
 	return staticstore.Snapshot{StaticActors: actors, CombatProfiles: staticActorStoreCombatProfiles(snapshot)}

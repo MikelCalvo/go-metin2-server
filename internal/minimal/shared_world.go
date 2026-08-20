@@ -1420,40 +1420,92 @@ func (r *sharedWorldRegistry) restoreStillDeadSpawnGroupCombatStateLocked(entity
 	return true
 }
 
-type stillDeadSpawnGroupPersistenceState struct {
+type spawnGroupCombatPersistenceState struct {
 	HP        uint8
 	RespawnAt time.Time
 }
 
-func (r *sharedWorldRegistry) stillDeadSpawnGroupPersistenceState() map[uint64]stillDeadSpawnGroupPersistenceState {
+func (r *sharedWorldRegistry) spawnGroupCombatPersistenceState() map[uint64]spawnGroupCombatPersistenceState {
 	if r == nil {
 		return nil
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.stillDeadSpawnGroupPersistenceStateLocked()
+	return r.spawnGroupCombatPersistenceStateLocked()
 }
 
-func (r *sharedWorldRegistry) stillDeadSpawnGroupPersistenceStateLocked() map[uint64]stillDeadSpawnGroupPersistenceState {
-	if r == nil || r.entities == nil || len(r.staticActorCombatHP) == 0 || len(r.staticActorCombatRespawnAt) == 0 {
+func (r *sharedWorldRegistry) spawnGroupCombatPersistenceStateLocked() map[uint64]spawnGroupCombatPersistenceState {
+	if r == nil || r.entities == nil || len(r.staticActorCombatHP) == 0 {
 		return nil
 	}
-	out := make(map[uint64]stillDeadSpawnGroupPersistenceState)
+	out := make(map[uint64]spawnGroupCombatPersistenceState)
 	for _, actor := range r.entities.AllStaticActors() {
 		if strings.TrimSpace(actor.SpawnGroupRef) == "" || actor.Entity.ID == 0 {
 			continue
 		}
 		currentHP, hpOK := r.staticActorCombatHP[actor.Entity.ID]
-		respawnAt, respawnOK := r.staticActorCombatRespawnAt[actor.Entity.ID]
-		if !hpOK || currentHP != 0 || !respawnOK || respawnAt.IsZero() {
+		if !hpOK {
 			continue
 		}
-		out[actor.Entity.ID] = stillDeadSpawnGroupPersistenceState{HP: 0, RespawnAt: respawnAt}
+		respawnAt, respawnOK := r.staticActorCombatRespawnAt[actor.Entity.ID]
+		if currentHP == 0 {
+			if !respawnOK || respawnAt.IsZero() {
+				continue
+			}
+			out[actor.Entity.ID] = spawnGroupCombatPersistenceState{HP: 0, RespawnAt: respawnAt}
+			continue
+		}
+		if respawnOK && !respawnAt.IsZero() {
+			continue
+		}
+		maxHP, ok := worldruntime.BootstrapStaticActorCurrentHP(actor.CombatKind)
+		if !ok || currentHP >= maxHP {
+			continue
+		}
+		if _, percentOK := worldruntime.BootstrapStaticActorHPPercent(actor.CombatKind, currentHP); !percentOK {
+			continue
+		}
+		out[actor.Entity.ID] = spawnGroupCombatPersistenceState{HP: currentHP}
 	}
 	if len(out) == 0 {
 		return nil
 	}
 	return out
+}
+
+func (r *sharedWorldRegistry) restoreDamagedSpawnGroupCombatState(entityID uint64, currentHP uint8) bool {
+	if r == nil || entityID == 0 || currentHP == 0 {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.restoreDamagedSpawnGroupCombatStateLocked(entityID, currentHP)
+}
+
+func (r *sharedWorldRegistry) restoreDamagedSpawnGroupCombatStateLocked(entityID uint64, currentHP uint8) bool {
+	if r == nil || entityID == 0 || currentHP == 0 {
+		return false
+	}
+	actor, ok := r.entities.StaticActor(entityID)
+	if !ok || strings.TrimSpace(actor.SpawnGroupRef) == "" {
+		return false
+	}
+	maxHP, ok := worldruntime.BootstrapStaticActorCurrentHP(actor.CombatKind)
+	if !ok || currentHP >= maxHP {
+		return false
+	}
+	if _, percentOK := worldruntime.BootstrapStaticActorHPPercent(actor.CombatKind, currentHP); !percentOK {
+		return false
+	}
+	if r.staticActorCombatHP == nil {
+		r.staticActorCombatHP = make(map[uint64]uint8)
+	}
+	r.staticActorCombatHP[entityID] = currentHP
+	if r.staticActorCombatRespawnAt != nil {
+		delete(r.staticActorCombatRespawnAt, entityID)
+	}
+	r.assignStaticActorCombatSnapshotLocked(entityID)
+	return true
 }
 
 func cloneUint64Uint8Map(in map[uint64]uint8) map[uint64]uint8 {

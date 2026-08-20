@@ -39810,6 +39810,161 @@ func TestGameRuntimeContentSpawnGroupStillDeadPersistsAcrossDaemonRestart(t *tes
 	}
 }
 
+func TestGameRuntimeContentSpawnGroupDamagedHPPersistsAcrossDaemonRestart(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	attacker := peerVisibilityCharacter("DamagedRestartAttacker", 0x010301f5, 0x020401f5, 1100, 2100, 0, 101, 201)
+	attacker.Points[bootstrapPlayerPointValueIndex] = 50
+	lateViewer := peerVisibilityCharacter("DamagedRestartViewer", 0x010301f6, 0x020401f6, 1100, 2100, 0, 102, 202)
+	issuePeerTicket(t, store, "damaged-restart-attacker", 0xf5f5f5f5, attacker)
+	issuePeerTicket(t, store, "damaged-restart-viewer", 0xf6f6f6f6, lateViewer)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000470, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_damaged_restart",
+		Name:          "PracticeMobDamagedRestart",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import damaged restart spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice mob after import, got %#v", actors)
+	}
+	originalEntityID := actors[0].EntityID
+	targetVID := uint32(originalEntityID)
+
+	attackerFlow, attackerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "damaged-restart-attacker", 0xf5f5f5f5)
+	if len(attackerEnter) != 8 {
+		t.Fatalf("expected attacker bootstrap with visible content practice mob, got %d frames", len(attackerEnter))
+	}
+	selectOut, err := attackerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected damaged-restart target error: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected one target ack before damaged hit, got %d frames", len(selectOut))
+	}
+	attackOut, err := attackerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType:   0,
+		TargetVID:    targetVID,
+		CRCProcPiece: 0,
+		CRCFilePiece: 0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected damaged-restart attack error: %v", err)
+	}
+	if len(attackOut) < 1 {
+		t.Fatalf("expected accepted damaged-restart attack frames, got %d", len(attackOut))
+	}
+	refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[0]))
+	if err != nil {
+		t.Fatalf("decode damaged-restart target refresh: %v", err)
+	}
+	wantHP := worldruntime.TrainingDummyBootstrapMaxHP - worldruntime.TrainingDummyBootstrapDamagePerNormalAttack
+	wantPercent, ok := worldruntime.BootstrapStaticActorHPPercent(worldruntime.StaticActorCombatProfileTrainingDummy, wantHP)
+	if !ok {
+		t.Fatalf("expected bootstrap HP percent for damaged HP %d", wantHP)
+	}
+	if refresh.TargetVID != targetVID || refresh.HPPercent != wantPercent {
+		t.Fatalf("unexpected damaged-restart target refresh: %+v want hp_percent=%d", refresh, wantPercent)
+	}
+	beforeRestart, ok := runtime.SpawnGroupByRef("practice.mob_damaged_restart")
+	if !ok || beforeRestart.Dead || beforeRestart.CombatHPPercent != wantPercent {
+		t.Fatalf("expected live damaged spawn group before daemon restart, ok=%v snapshot=%+v", ok, beforeRestart)
+	}
+	targets := runtime.sharedWorld.CombatTargetSnapshots()
+	engagedBeforeRestart := false
+	for _, target := range targets {
+		if target.TargetVID == targetVID && target.EngagedByEntityID != 0 {
+			engagedBeforeRestart = true
+			break
+		}
+	}
+	if !engagedBeforeRestart {
+		t.Fatalf("expected engagement before daemon restart, got combat targets=%+v", targets)
+	}
+	closeSessionFlow(t, attackerFlow)
+
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted damaged spawn-group snapshot: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 {
+		t.Fatalf("expected one persisted spawn-group actor after damaged hit, got %+v", persisted.StaticActors)
+	}
+	if persisted.StaticActors[0].CombatCurrentHP == nil || *persisted.StaticActors[0].CombatCurrentHP != wantHP {
+		t.Fatalf("expected persisted damaged combat_current_hp=%d, got %+v", wantHP, persisted.StaticActors[0])
+	}
+	if persisted.StaticActors[0].RespawnReadyAt != nil {
+		t.Fatalf("expected no respawn_ready_at for live damaged persistence, got %+v", persisted.StaticActors[0])
+	}
+
+	reloaded, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticActorStore,
+		interactionStore,
+	)
+	if err != nil {
+		t.Fatalf("reload runtime with persisted damaged spawn group: %v", err)
+	}
+	reloaded.now = func() time.Time { return currentTime }
+
+	afterRestart, ok := reloaded.SpawnGroupByRef("practice.mob_damaged_restart")
+	if !ok {
+		t.Fatal("expected damaged spawn group to remain resolvable by authored ref after daemon restart")
+	}
+	if afterRestart.Dead || afterRestart.CombatHPPercent != wantPercent {
+		t.Fatalf("expected daemon restart to preserve live damaged HP percent=%d, got snapshot=%+v", wantPercent, afterRestart)
+	}
+	if len(reloaded.sharedWorld.CombatTargetSnapshots()) != 0 {
+		t.Fatalf("expected no selected combat targets after daemon restart, got %+v", reloaded.sharedWorld.CombatTargetSnapshots())
+	}
+	if respawns := reloaded.StaticActorRespawns(); len(respawns) != 0 {
+		t.Fatalf("expected no pending respawn for live damaged actor, got %+v", respawns)
+	}
+
+	lateFlow, lateEnter := enterGameWithLoginTicket(t, reloaded.SessionFactory(), "damaged-restart-viewer", 0xf6f6f6f6)
+	defer closeSessionFlow(t, lateFlow)
+	if len(lateEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for late viewer with live damaged restarted spawn group, got %d frames", len(lateEnter))
+	}
+	staticAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, lateEnter[5]))
+	if err != nil {
+		t.Fatalf("decode damaged restart bootstrap add: %v", err)
+	}
+	if staticAdd.VID != uint32(afterRestart.EntityID) {
+		t.Fatalf("expected late viewer bootstrap to show rematerialized entity %d, got %+v", afterRestart.EntityID, staticAdd)
+	}
+	selectOut, err = lateFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(afterRestart.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart target error: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected fresh post-restart target ack, got %d frames; connected=%+v spawn=%+v", len(selectOut), reloaded.sharedWorld.ConnectedCharacters(), afterRestart)
+	}
+	reselect, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, selectOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-restart target ack: %v", err)
+	}
+	if reselect.TargetVID != uint32(afterRestart.EntityID) || reselect.HPPercent != wantPercent {
+		t.Fatalf("expected post-restart target ack to keep damaged hp_percent=%d, got %+v", wantPercent, reselect)
+	}
+}
+
 func TestGameSessionFlowPracticeMobDeathCancelsPendingDelayedRetaliationBeforeRespawn(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

@@ -116,7 +116,7 @@ func validateSnapshot(snapshot Snapshot) error {
 			if actor.SpawnHome != nil && actor.SpawnHome.MapIndex == 0 {
 				return ErrInvalidSnapshot
 			}
-			if !validStillDeadCombatState(actor) {
+			if !validSpawnGroupCombatPersistenceState(actor, profileSnapshots) {
 				return ErrInvalidSnapshot
 			}
 			if _, ok := spawnGroupRefs[actor.SpawnGroupRef]; ok {
@@ -310,17 +310,37 @@ func stillDeadCombatStateEmpty(actor StaticActor) bool {
 	return actor.CombatCurrentHP == nil && (actor.RespawnReadyAt == nil || actor.RespawnReadyAt.IsZero())
 }
 
-func validStillDeadCombatState(actor StaticActor) bool {
+func validSpawnGroupCombatPersistenceState(actor StaticActor, profileSnapshots map[string]worldruntime.StaticActorCombatProfileSnapshot) bool {
 	if stillDeadCombatStateEmpty(actor) {
 		return true
 	}
-	if actor.SpawnGroupRef == "" || actor.CombatCurrentHP == nil || actor.RespawnReadyAt == nil {
+	if actor.SpawnGroupRef == "" || actor.CombatCurrentHP == nil {
 		return false
 	}
-	if *actor.CombatCurrentHP != 0 || actor.RespawnReadyAt.IsZero() {
+	readyAtEmpty := actor.RespawnReadyAt == nil || actor.RespawnReadyAt.IsZero()
+	currentHP := *actor.CombatCurrentHP
+	if currentHP == 0 {
+		return !readyAtEmpty
+	}
+	if !readyAtEmpty {
+		return false
+	}
+	maxHP, ok := spawnGroupCombatPersistenceMaxHP(actor.CombatProfile, profileSnapshots)
+	if !ok || currentHP >= maxHP {
 		return false
 	}
 	return true
+}
+
+func spawnGroupCombatPersistenceMaxHP(combatProfile string, profileSnapshots map[string]worldruntime.StaticActorCombatProfileSnapshot) (uint8, bool) {
+	combatProfile = strings.TrimSpace(combatProfile)
+	if defaults, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(combatProfile); ok {
+		return defaults.MaxHP, defaults.MaxHP > 0
+	}
+	if snapshot, ok := profileSnapshots[combatProfile]; ok && snapshot.MaxHP > 0 {
+		return snapshot.MaxHP, true
+	}
+	return 0, false
 }
 
 func validRewardDescriptor(actor StaticActor) bool {

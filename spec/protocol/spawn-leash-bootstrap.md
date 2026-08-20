@@ -304,7 +304,7 @@ Current implementation status:
 - this seam is now live for retained viewers of a successful same-map live spawn-backed operator/runtime position-only update
 - presentation/name/race refreshes, dead trailing-`DEAD` refreshes, respawn rebuild, content-bundle replacement, and cross-map updates remain on delete/readd
 - engagement release, selected-target clear, and pending chase-deadline clear still follow the already-owned operator/runtime update lifecycle
-- the next honest Track A follow-on after owned profile-authored `leash_radius` is deferred cross-map return MOVE / warp packet choreography (still blocked until a client-facing packet boundary is owned); live damaged-HP daemon-restart durability remains out of scope
+- the next honest Track A follow-on after owned profile-authored `leash_radius` is deferred cross-map return MOVE / warp packet choreography (still blocked until a client-facing packet boundary is owned); live damaged-HP daemon-restart durability is owned separately by the content-spawn-groups daemon-restart seam
 
 Explicit non-goals for this operator/runtime position MOVE freeze alone:
 - converting presentation/name/race refreshes, dead trailing-`DEAD` refreshes, respawn rebuild, or content-bundle replacement to MOVE
@@ -312,7 +312,7 @@ Explicit non-goals for this operator/runtime position MOVE freeze alone:
 - preserving engagement / selected-target ownership across operator position updates
 - pathfinding, navmesh, patrol, or continuous interpolation beyond one discrete operator/runtime coordinate write
 - a dedicated operator-move packet family distinct from `MOVE`
-- daemon-restart persistence of live damaged HP above the death floor; still-dead spawn-group timer persistence is owned separately by the Track A anti-leak follow-on
+- daemon-restart persistence of live damaged HP above the death floor; that seam is owned separately by the content-spawn-groups daemon-restart follow-on beside still-dead timer persistence
 
 ## First owned profile-authored leash-radius seam
 
@@ -361,4 +361,4 @@ Explicit non-goals until that wire shape is owned:
 - opening a speculative RED that asserts MOVE or WARP frames for cross-map return
 - converting same-map return MOVE back to delete/readd
 - pathfinding, patrol, or continuous interpolation
-- live damaged-HP daemon-restart durability (still out of scope)
+- live damaged-HP daemon-restart durability (owned separately by `content-spawn-groups-bootstrap.md`)

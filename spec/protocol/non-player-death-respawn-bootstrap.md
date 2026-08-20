@@ -34,7 +34,7 @@ This contract does **not** yet claim:
 - corpse interaction, corpse timers, revive menus, or corpse-specific UI
 - hostile retaliation, aggro, patrol, pathing, or spawn-group AI beyond the later authored seam frozen in `content-spawn-groups-bootstrap.md`
 - player death / respawn semantics
-- persistence of dummy HP, dead state, or respawn timers across reconnect or process restart for standalone `training_dummy` actors; content-loaded `spawn_groups` now persist still-dead `HP=0` plus absolute respawn deadlines across daemon restart through the static-actor snapshot path documented in `content-spawn-groups-bootstrap.md`
+- persistence of dummy HP, dead state, or respawn timers across reconnect or process restart for standalone `training_dummy` actors; content-loaded `spawn_groups` now persist still-dead `HP=0` plus absolute respawn deadlines, and live damaged `combat_current_hp` in `1..max_hp-1`, across daemon restart through the static-actor snapshot path documented in `content-spawn-groups-bootstrap.md`
 - skill-based or animation-rich death choreography beyond the narrow packet families frozen here
 
 ## Current implementation status
