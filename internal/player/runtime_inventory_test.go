@@ -2772,6 +2772,61 @@ func TestRuntimeBuyMerchantItemDoesNotMergeIntoLockedCompatibleStack(t *testing.
 	}
 }
 
+func TestRuntimeConsumeCarriedItemsRemovesAscendingStacksAndSkipsLocked(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = []inventory.ItemInstance{
+		{ID: 1, Vnum: 27001, Count: 2, Slot: 1},
+		{ID: 2, Vnum: 27001, Count: 3, Slot: 4, Locked: true},
+		{ID: 3, Vnum: 27001, Count: 2, Slot: 7},
+		{ID: 4, Vnum: 11200, Count: 1, Slot: 8},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	requirements := []CarriedItemConsumeRequirement{{ItemVnum: 27001, Count: 3}}
+	if failure := runtime.ValidateCarriedItemConsume(requirements); failure != "" {
+		t.Fatalf("expected consume validation to succeed, got %q", failure)
+	}
+	result, ok := runtime.ConsumeCarriedItems(requirements)
+	if !ok {
+		t.Fatal("expected consume to succeed")
+	}
+	if len(result.Changes) != 2 {
+		t.Fatalf("expected two consume changes, got %+v", result.Changes)
+	}
+	if !result.Changes[0].ItemRemoved || result.Changes[0].Slot != 1 {
+		t.Fatalf("unexpected first consume change: %+v", result.Changes[0])
+	}
+	if result.Changes[1].ItemRemoved || result.Changes[1].Slot != 7 || result.Changes[1].Item.Count != 1 {
+		t.Fatalf("unexpected second consume change: %+v", result.Changes[1])
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), []inventory.ItemInstance{
+		{ID: 2, Vnum: 27001, Count: 3, Slot: 4, Locked: true},
+		{ID: 3, Vnum: 27001, Count: 1, Slot: 7},
+		{ID: 4, Vnum: 11200, Count: 1, Slot: 8},
+	}) {
+		t.Fatalf("unexpected live inventory after consume: %#v", runtime.LiveInventory())
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("expected persisted inventory unchanged after consume")
+	}
+}
+
+func TestRuntimeConsumeCarriedItemsRejectsInsufficientMaterialsWithoutMutation(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = []inventory.ItemInstance{{ID: 1, Vnum: 27001, Count: 1, Slot: 0}}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	before := runtime.LiveInventory()
+	requirements := []CarriedItemConsumeRequirement{{ItemVnum: 27001, Count: 2}}
+	if failure := runtime.ValidateCarriedItemConsume(requirements); failure != CarriedItemConsumeFailureInsufficientMaterials {
+		t.Fatalf("expected insufficient_materials, got %q", failure)
+	}
+	if _, ok := runtime.ConsumeCarriedItems(requirements); ok {
+		t.Fatal("expected insufficient consume to fail closed")
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), before) {
+		t.Fatalf("insufficient consume mutated inventory: got %#v want %#v", runtime.LiveInventory(), before)
+	}
+}
+
 func TestRuntimeGrantCarriedItemPlacesIntoFirstFreeSlotWithoutGoldMutation(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	persisted.Inventory = nil

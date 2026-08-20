@@ -9,6 +9,7 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
@@ -404,6 +405,65 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardGoldPreview(t *te
 	entry := snapshots[0].VisibleInteractableStaticActors[0]
 	if entry.Name != "QuestHunter" || entry.Preview != "Quest updated: first_steps.killed_qa_mob = 0. [reward_gold 100] [reward_experience 50] [reward_item Small Red Potion x1] [reward_item Wooden Sword x1]" || entry.ResolutionFailure != "" {
 		t.Fatalf("unexpected quest-flag reward-gold interaction visibility entry: %+v", entry)
+	}
+}
+
+func TestGameRuntimeInteractionVisibilityReturnsQuestFlagConsumeItemPreview(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030122, 0x02040122, 1100, 2100, 0, 101, 201)
+	peer.Inventory = []inventory.ItemInstance{{ID: 51, Vnum: 27001, Count: 1, Slot: 0}}
+	issuePeerTicket(t, store, "peer-one-consume-items", 0x16161616, peer)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+		Kind:             interactionstore.KindQuestFlag,
+		Ref:              "quest:first_steps_kill_turnin",
+		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
+		QuestRef:         "quest:first_steps",
+		QuestFlag:        "killed_qa_mob",
+		QuestFrom:        1,
+		QuestTo:          0,
+		RewardExperience: 50,
+		RewardGold:       100,
+		RewardItems: []interactionstore.RewardItemEntry{
+			{ItemVnum: 11200, Count: 1},
+		},
+		ConsumeItems: []interactionstore.RewardItemEntry{
+			{ItemVnum: 27001, Count: 1},
+		},
+	}})
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopBuyPrice: 50},
+	}}); err != nil {
+		t.Fatalf("seed quest-flag consume-item preview templates: %v", err)
+	}
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{
+		Character: "PeerOne",
+		QuestRef:  "quest:first_steps",
+		Name:      "killed_qa_mob",
+		Value:     1,
+	}}}); err != nil {
+		t.Fatalf("seed quest-state for consume-item preview: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	if _, ok := runtime.RegisterStaticActorWithInteraction("QuestHunter", bootstrapMapIndex, 1250, 2250, 20301, interactionstore.KindQuestFlag, "quest:first_steps_kill_turnin"); !ok {
+		t.Fatal("expected quest-flag consume-item static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one-consume-items", 0x16161616)
+	defer closeSessionFlow(t, flow)
+
+	snapshots := runtime.InteractionVisibility()
+	if len(snapshots) != 1 || len(snapshots[0].VisibleInteractableStaticActors) != 1 {
+		t.Fatalf("expected one visible quest-flag consume-item interactable, got %+v", snapshots)
+	}
+	entry := snapshots[0].VisibleInteractableStaticActors[0]
+	if entry.Name != "QuestHunter" || entry.Preview != "Quest updated: first_steps.killed_qa_mob = 0. [reward_gold 100] [reward_experience 50] [reward_item Wooden Sword x1] [consume_item Small Red Potion x1]" || entry.ResolutionFailure != "" {
+		t.Fatalf("unexpected quest-flag consume-item interaction visibility entry: %+v", entry)
 	}
 }
 

@@ -53,4 +53,4 @@ Focused coverage:
 
 1. Keep branching quest scripts deferred.
 2. Keep new NPC service kinds deferred until accepted safebox/storage mutations exist.
-3. Optional required-item consume gates on turn-in remain a later content seam.
+3. ~~Optional required-item consume gates on turn-in remain a later content seam.~~ Landed in `docs/plans/2026-08-20-quest-flag-consume-items.md`.

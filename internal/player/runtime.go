@@ -123,6 +123,29 @@ type RefineSuccessResult struct {
 	Cost            int32
 }
 
+// CarriedItemConsumeRequirement is one by-vnum carried-inventory debit request.
+type CarriedItemConsumeRequirement struct {
+	ItemVnum uint32
+	Count    uint16
+}
+
+type CarriedItemConsumeChange struct {
+	Slot        inventory.SlotIndex
+	ItemRemoved bool
+	Item        inventory.ItemInstance
+}
+
+type CarriedItemConsumeResult struct {
+	Changes []CarriedItemConsumeChange
+}
+
+type CarriedItemConsumeFailure string
+
+const (
+	CarriedItemConsumeFailureInvalid               CarriedItemConsumeFailure = "invalid"
+	CarriedItemConsumeFailureInsufficientMaterials CarriedItemConsumeFailure = "insufficient_materials"
+)
+
 type GroundItemPickupResult struct {
 	Item         inventory.ItemInstance
 	Merged       bool
@@ -1642,6 +1665,84 @@ func (r *Runtime) grantCarriedItem(template itemcatalog.Template, count uint16) 
 	}
 	r.liveInventory = inventoryItems
 	return CarriedItemGrantResult{Items: changedItems, ItemChanges: itemChanges}, true
+}
+
+func (r *Runtime) ValidateCarriedItemConsume(requirements []CarriedItemConsumeRequirement) CarriedItemConsumeFailure {
+	if r == nil {
+		return CarriedItemConsumeFailureInvalid
+	}
+	if _, ok := planCarriedItemConsumeChanges(r.liveInventory, requirements); !ok {
+		if len(requirements) == 0 {
+			return ""
+		}
+		for _, requirement := range requirements {
+			if requirement.ItemVnum == 0 || requirement.Count == 0 {
+				return CarriedItemConsumeFailureInvalid
+			}
+		}
+		return CarriedItemConsumeFailureInsufficientMaterials
+	}
+	return ""
+}
+
+func (r *Runtime) ConsumeCarriedItems(requirements []CarriedItemConsumeRequirement) (CarriedItemConsumeResult, bool) {
+	if failure := r.ValidateCarriedItemConsume(requirements); failure != "" {
+		return CarriedItemConsumeResult{}, false
+	}
+	return r.consumeCarriedItems(requirements)
+}
+
+func (r *Runtime) consumeCarriedItems(requirements []CarriedItemConsumeRequirement) (CarriedItemConsumeResult, bool) {
+	plan, ok := planCarriedItemConsumeChanges(r.liveInventory, requirements)
+	if !ok {
+		return CarriedItemConsumeResult{}, false
+	}
+	if len(plan) == 0 {
+		return CarriedItemConsumeResult{}, true
+	}
+	inventoryItems := cloneItemInstances(r.liveInventory)
+	changes := make([]CarriedItemConsumeChange, 0, len(plan))
+	for _, planned := range plan {
+		currentIndex := findInventorySlot(inventoryItems, planned.Slot)
+		if currentIndex < 0 {
+			return CarriedItemConsumeResult{}, false
+		}
+		item := inventoryItems[currentIndex]
+		if item.Equipped || item.Locked || item.Vnum != planned.Vnum || item.Count < planned.Consume {
+			return CarriedItemConsumeResult{}, false
+		}
+		change := CarriedItemConsumeChange{Slot: planned.Slot}
+		if item.Count == planned.Consume {
+			inventoryItems = removeInventoryIndex(inventoryItems, currentIndex)
+			change.ItemRemoved = true
+		} else {
+			item.Count -= planned.Consume
+			if err := item.Validate(); err != nil {
+				return CarriedItemConsumeResult{}, false
+			}
+			inventoryItems[currentIndex] = item
+			change.Item = item
+		}
+		changes = append(changes, change)
+	}
+	sortInventoryItems(inventoryItems)
+	r.liveInventory = inventoryItems
+	return CarriedItemConsumeResult{Changes: changes}, true
+}
+
+func planCarriedItemConsumeChanges(items []inventory.ItemInstance, requirements []CarriedItemConsumeRequirement) ([]refineMaterialPlanEntry, bool) {
+	if len(requirements) == 0 {
+		return nil, true
+	}
+	materials := make([]itemcatalog.RefineMaterial, 0, len(requirements))
+	for _, requirement := range requirements {
+		if requirement.ItemVnum == 0 || requirement.Count == 0 {
+			return nil, false
+		}
+		materials = append(materials, itemcatalog.RefineMaterial{Vnum: requirement.ItemVnum, Count: int32(requirement.Count)})
+	}
+	// Reuse refine planning with an impossible source slot so every carried stack remains eligible.
+	return planRefineMaterialChanges(items, inventory.CarriedInventorySlotCount, materials)
 }
 
 func (r *Runtime) SellMerchantItem(slot inventory.SlotIndex, count uint16, unitPrice uint64) (MerchantSellResult, bool) {

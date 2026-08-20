@@ -5968,6 +5968,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							}
 							rewardItemTemplates = append(rewardItemTemplates, template)
 						}
+						consumeRequirements := questFlagConsumeRequirements(resolution.Definition)
+						for _, requirement := range consumeRequirements {
+							if _, ok := runtime.itemTemplates[requirement.ItemVnum]; !ok {
+								return gameflow.InteractionResult{Accepted: false}
+							}
+						}
 						previousSelected := selected
 						if rewardGold != 0 {
 							if previousSelected.Gold > uint64(math.MaxInt32) || previousSelected.Gold > uint64(math.MaxInt32)-rewardGold {
@@ -5984,8 +5990,27 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 								return gameflow.InteractionResult{Accepted: false}
 							}
 						}
-						if len(rewardItems) > 0 {
+						if len(consumeRequirements) > 0 {
+							if failure := selectedPlayer.ValidateCarriedItemConsume(consumeRequirements); failure != "" {
+								if failure != player.CarriedItemConsumeFailureInsufficientMaterials {
+									return gameflow.InteractionResult{Accepted: false}
+								}
+								failureDelivery := staticActorInteractionFailureDelivery(staticActorInteractionFailureQuestCurrentValueMismatch)
+								if failureDelivery == nil {
+									return gameflow.InteractionResult{Accepted: false}
+								}
+								markInteractionCooldown(packet.TargetVID)
+								frames := prependMerchantCloseFrame([][]byte{chatproto.EncodeChatDelivery(*failureDelivery)})
+								return gameflow.InteractionResult{Accepted: true, Frames: frames}
+							}
+						}
+						if len(rewardItems) > 0 || len(consumeRequirements) > 0 {
 							scratch := player.NewRuntime(previousSelected, selectedPlayer.SessionLink())
+							if len(consumeRequirements) > 0 {
+								if _, ok := scratch.ConsumeCarriedItems(consumeRequirements); !ok {
+									return gameflow.InteractionResult{Accepted: false}
+								}
+							}
 							for i, entry := range rewardItems {
 								if _, ok := scratch.GrantCarriedItem(rewardItemTemplates[i], entry.Count); !ok {
 									return gameflow.InteractionResult{Accepted: false}
@@ -6023,6 +6048,31 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							}
 							scalarReward = reward
 						}
+						var consumeFrames [][]byte
+						if len(consumeRequirements) > 0 {
+							consumeResult, ok := selectedPlayer.ConsumeCarriedItems(consumeRequirements)
+							if !ok {
+								rollbackQuestFlagRewards()
+								return gameflow.InteractionResult{Accepted: false}
+							}
+							encodedConsumeFrames, err := carriedItemConsumeResultFrames(consumeResult, runtime.itemTemplates)
+							if err != nil {
+								rollbackQuestFlagRewards()
+								return gameflow.InteractionResult{Accepted: false}
+							}
+							consumeFrames = append(consumeFrames, encodedConsumeFrames...)
+							for _, change := range consumeResult.Changes {
+								if !change.ItemRemoved {
+									continue
+								}
+								quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, change.Slot)
+								if !ok {
+									rollbackQuestFlagRewards()
+									return gameflow.InteractionResult{Accepted: false}
+								}
+								consumeFrames = append(consumeFrames, quickslotFrames...)
+							}
+						}
 						var itemFrames [][]byte
 						for i, entry := range rewardItems {
 							grant, ok := selectedPlayer.GrantCarriedItem(rewardItemTemplates[i], entry.Count)
@@ -6037,11 +6087,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							}
 							itemFrames = append(itemFrames, encodedItemFrames...)
 						}
-						if rewardGold != 0 || rewardExperience != 0 || len(rewardItems) > 0 {
+						if rewardGold != 0 || rewardExperience != 0 || len(rewardItems) > 0 || len(consumeRequirements) > 0 {
 							updatedSelected := selectedPlayer.LiveCharacter()
 							persistedSelected := selectedPlayer.PersistedSnapshot()
 							persistedSelected.Gold = updatedSelected.Gold
 							persistedSelected.Inventory = updatedSelected.Inventory
+							persistedSelected.Quickslots = updatedSelected.Quickslots
 							persistedSelected.Points[bootstrapExperiencePointType] = updatedSelected.Points[bootstrapExperiencePointType]
 							updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, persistedSelected)
 							if !ok || !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
@@ -6070,6 +6121,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 									Value:  scalarReward.ExperienceAfter,
 								}))
 							}
+							frames = append(frames, consumeFrames...)
 							frames = append(frames, itemFrames...)
 						}
 						markInteractionCooldown(packet.TargetVID)
@@ -7874,6 +7926,26 @@ func refineDialogSourceItem(selectedPlayer *player.Runtime, slot inventory.SlotI
 		return item, true
 	}
 	return inventory.ItemInstance{}, false
+}
+
+func carriedItemConsumeResultFrames(result player.CarriedItemConsumeResult, templates map[uint32]itemcatalog.Template) ([][]byte, error) {
+	frames := make([][]byte, 0, len(result.Changes))
+	for _, change := range result.Changes {
+		position, err := itemproto.CarriedInventoryPosition(uint16(change.Slot))
+		if err != nil {
+			return nil, err
+		}
+		if change.ItemRemoved {
+			frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: position}))
+			continue
+		}
+		updateFrame, err := encodeBootstrapItemUpdateFrameWithTemplates(position, change.Item, templates)
+		if err != nil {
+			return nil, err
+		}
+		frames = append(frames, updateFrame)
+	}
+	return frames, nil
 }
 
 func refineSuccessResultFrames(character loginticket.Character, result player.RefineSuccessResult, templates map[uint32]itemcatalog.Template) ([][]byte, error) {
@@ -10029,6 +10101,15 @@ func (r *gameRuntime) previewQuestFlagInteraction(characterName string, definiti
 		return "", err
 	}
 	if result.Result.Applied {
+		if consumeRequirements := questFlagConsumeRequirements(definition); len(consumeRequirements) > 0 {
+			if !r.characterCanSupplyQuestFlagConsumeItems(characterName, consumeRequirements) {
+				message, ok := staticActorInteractionFailureMessage(staticActorInteractionFailureQuestCurrentValueMismatch)
+				if !ok {
+					return "", fmt.Errorf("quest flag mismatch preview is unsupported")
+				}
+				return message, nil
+			}
+		}
 		return questFlagRewardPreview(definition.Text, definition, r.itemTemplates), nil
 	}
 	if result.Result.Reason == queststate.TransitionReasonCurrentValueMismatch {
@@ -10039,6 +10120,34 @@ func (r *gameRuntime) previewQuestFlagInteraction(characterName string, definiti
 		return message, nil
 	}
 	return "", fmt.Errorf("quest flag transition preview failed: %s", result.Result.Reason)
+}
+
+func questFlagConsumeRequirements(definition InteractionDefinition) []player.CarriedItemConsumeRequirement {
+	entries := interactionstore.EffectiveConsumeItems(definition)
+	if len(entries) == 0 {
+		return nil
+	}
+	requirements := make([]player.CarriedItemConsumeRequirement, 0, len(entries))
+	for _, entry := range entries {
+		requirements = append(requirements, player.CarriedItemConsumeRequirement{ItemVnum: entry.ItemVnum, Count: entry.Count})
+	}
+	return requirements
+}
+
+func (r *gameRuntime) characterCanSupplyQuestFlagConsumeItems(characterName string, requirements []player.CarriedItemConsumeRequirement) bool {
+	if r == nil || characterName == "" {
+		return false
+	}
+	state, ok := r.liveCharacterState(characterName)
+	if !ok {
+		return false
+	}
+	items := make([]inventory.ItemInstance, 0, len(state.Inventory))
+	for _, item := range state.Inventory {
+		items = append(items, inventory.ItemInstance{ID: item.ID, Vnum: item.Vnum, Count: item.Count, Slot: inventory.SlotIndex(item.Slot), Locked: item.Locked})
+	}
+	scratch := player.NewRuntime(loginticket.Character{Name: characterName, Inventory: items}, player.SessionLink{})
+	return scratch.ValidateCarriedItemConsume(requirements) == ""
 }
 
 func questFlagRewardPreview(text string, definition InteractionDefinition, itemTemplates map[uint32]itemcatalog.Template) string {
@@ -10062,6 +10171,20 @@ func questFlagRewardPreview(text string, definition InteractionDefinition, itemT
 			count = 1
 		}
 		preview = fmt.Sprintf("%s [reward_item %s x%d]", preview, itemLabel, count)
+	}
+	for _, entry := range interactionstore.EffectiveConsumeItems(definition) {
+		itemLabel := fmt.Sprintf("vnum %d", entry.ItemVnum)
+		if template, ok := itemTemplates[entry.ItemVnum]; ok {
+			name := strings.TrimSpace(template.Name)
+			if name != "" {
+				itemLabel = name
+			}
+		}
+		count := entry.Count
+		if count == 0 {
+			count = 1
+		}
+		preview = fmt.Sprintf("%s [consume_item %s x%d]", preview, itemLabel, count)
 	}
 	return preview
 }

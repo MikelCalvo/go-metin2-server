@@ -13,6 +13,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
@@ -47,6 +48,7 @@ func loadBootstrapPveVerticalAuthoringBundle(t *testing.T) contentbundle.Bundle 
 func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	hero := peerVisibilityCharacter("PveVerticalHero", 0x01030160, 0x02040160, 469500, 964200, 0, 101, 201)
+	hero.Inventory = []inventory.ItemInstance{{ID: 9001, Vnum: 27001, Count: 1, Slot: 0}}
 	issuePeerTicket(t, ticketStore, "pve-vertical", 0x60606060, hero)
 	accounts := accountstore.NewFileStore(t.TempDir())
 	if err := accounts.Save(accountstore.Account{Login: "pve-vertical", Empire: hero.Empire, Characters: []loginticket.Character{hero}}); err != nil {
@@ -245,7 +247,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("unexpected QuestHunter turn-in interaction error: %v", err)
 	}
 	if len(turnInOut) != 5 {
-		t.Fatalf("expected chat + gold + experience + two item frames for QuestHunter turn-in, got %d", len(turnInOut))
+		t.Fatalf("expected chat + gold + experience + consume + reward frames for QuestHunter turn-in, got %d", len(turnInOut))
 	}
 	turnInChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, turnInOut[0]))
 	if err != nil || turnInChat.Message != "Quest updated: first_steps.killed_qa_mob = 0." {
@@ -267,19 +269,19 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if turnInExperience.VID != hero.VID || turnInExperience.Type != bootstrapExperiencePointType || turnInExperience.Amount != 50 || turnInExperience.Value != wantExperienceAfter {
 		t.Fatalf("unexpected QuestHunter turn-in experience point change: %+v want value=%d before=%d", turnInExperience, wantExperienceAfter, beforeTurnInPoints.Points[bootstrapExperiencePointType])
 	}
-	itemSet0, err := itemproto.DecodeSet(decodeSingleFrame(t, turnInOut[3]))
+	consumeDel, err := itemproto.DecodeDel(decodeSingleFrame(t, turnInOut[3]))
 	if err != nil {
-		t.Fatalf("decode QuestHunter turn-in first item set: %v", err)
+		t.Fatalf("decode QuestHunter turn-in consume delete: %v", err)
 	}
-	if itemSet0.Position != itemproto.InventoryPosition(0) || itemSet0.Vnum != 27001 || itemSet0.Count != 1 {
-		t.Fatalf("unexpected QuestHunter turn-in first item set: %+v", itemSet0)
+	if consumeDel.Position != itemproto.InventoryPosition(0) {
+		t.Fatalf("unexpected QuestHunter turn-in consume delete: %+v", consumeDel)
 	}
-	itemSet1, err := itemproto.DecodeSet(decodeSingleFrame(t, turnInOut[4]))
+	itemSet0, err := itemproto.DecodeSet(decodeSingleFrame(t, turnInOut[4]))
 	if err != nil {
-		t.Fatalf("decode QuestHunter turn-in second item set: %v", err)
+		t.Fatalf("decode QuestHunter turn-in reward set: %v", err)
 	}
-	if itemSet1.Position != itemproto.InventoryPosition(1) || itemSet1.Vnum != 11200 || itemSet1.Count != 1 {
-		t.Fatalf("unexpected QuestHunter turn-in second item set: %+v", itemSet1)
+	if itemSet0.Position != itemproto.InventoryPosition(0) || itemSet0.Vnum != 11200 || itemSet0.Count != 1 {
+		t.Fatalf("unexpected QuestHunter turn-in reward set: %+v", itemSet0)
 	}
 	currencySnapshot, ok := runtime.CurrencySnapshot(hero.Name)
 	if !ok || currencySnapshot.Gold != wantGoldAfter {
@@ -290,8 +292,8 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("expected live experience %d after QuestHunter turn-in, got ok=%v snapshot=%+v", wantExperienceAfter, ok, pointsSnapshot)
 	}
 	inventorySnapshot, ok := runtime.InventorySnapshot(hero.Name)
-	if !ok || len(inventorySnapshot.Inventory) != 2 || inventorySnapshot.Inventory[0].Vnum != 27001 || inventorySnapshot.Inventory[0].Count != 1 || inventorySnapshot.Inventory[0].Slot != 0 || inventorySnapshot.Inventory[1].Vnum != 11200 || inventorySnapshot.Inventory[1].Count != 1 || inventorySnapshot.Inventory[1].Slot != 1 {
-		t.Fatalf("expected live inventory grant after QuestHunter turn-in, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].Vnum != 11200 || inventorySnapshot.Inventory[0].Count != 1 || inventorySnapshot.Inventory[0].Slot != 0 {
+		t.Fatalf("expected live inventory after QuestHunter consume+reward turn-in, got ok=%v snapshot=%+v", ok, inventorySnapshot)
 	}
 	account, err := accounts.Load("pve-vertical")
 	if err != nil {
@@ -303,8 +305,8 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if account.Characters[0].Points[bootstrapExperiencePointType] != wantExperienceAfter {
 		t.Fatalf("expected persisted experience %d after QuestHunter turn-in, got %d", wantExperienceAfter, account.Characters[0].Points[bootstrapExperiencePointType])
 	}
-	if len(account.Characters[0].Inventory) != 2 || account.Characters[0].Inventory[0].Vnum != 27001 || account.Characters[0].Inventory[0].Count != 1 || account.Characters[0].Inventory[1].Vnum != 11200 || account.Characters[0].Inventory[1].Count != 1 {
-		t.Fatalf("expected persisted inventory grant after QuestHunter turn-in, got %+v", account.Characters[0].Inventory)
+	if len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0].Vnum != 11200 || account.Characters[0].Inventory[0].Count != 1 {
+		t.Fatalf("expected persisted inventory after QuestHunter consume+reward turn-in, got %+v", account.Characters[0].Inventory)
 	}
 	loaded, err = runtime.questStateStore.Load()
 	if err != nil {

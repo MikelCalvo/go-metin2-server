@@ -351,6 +351,7 @@ type QuestFlagTriggerSummary struct {
 	RewardItemVnum   uint32                             `json:"reward_item_vnum,omitempty"`
 	RewardItemCount  uint16                             `json:"reward_item_count,omitempty"`
 	RewardItems      []interactionstore.RewardItemEntry `json:"reward_items,omitempty"`
+	ConsumeItems     []interactionstore.RewardItemEntry `json:"consume_items,omitempty"`
 }
 
 type QuestFlagTriggerDelta struct {
@@ -748,6 +749,7 @@ type QuestFlagRouteSummary struct {
 	RewardItemVnum   uint32                             `json:"reward_item_vnum,omitempty"`
 	RewardItemCount  uint16                             `json:"reward_item_count,omitempty"`
 	RewardItems      []interactionstore.RewardItemEntry `json:"reward_items,omitempty"`
+	ConsumeItems     []interactionstore.RewardItemEntry `json:"consume_items,omitempty"`
 }
 
 type ShopRouteSummary struct {
@@ -2347,6 +2349,7 @@ func normalizeQuestFlagRouteSummary(route QuestFlagRouteSummary) QuestFlagRouteS
 	route.QuestRef = strings.TrimSpace(route.QuestRef)
 	route.QuestFlag = strings.TrimSpace(route.QuestFlag)
 	route.RewardItems = cloneRewardItemEntries(route.RewardItems)
+	route.ConsumeItems = cloneRewardItemEntries(route.ConsumeItems)
 	if len(route.RewardItems) > 0 {
 		route.RewardItemVnum = route.RewardItems[0].ItemVnum
 		route.RewardItemCount = route.RewardItems[0].Count
@@ -2910,6 +2913,7 @@ func normalizeQuestFlagTriggerSummary(trigger QuestFlagTriggerSummary) QuestFlag
 	trigger.QuestRef = strings.TrimSpace(trigger.QuestRef)
 	trigger.QuestFlag = strings.TrimSpace(trigger.QuestFlag)
 	trigger.RewardItems = cloneRewardItemEntries(trigger.RewardItems)
+	trigger.ConsumeItems = cloneRewardItemEntries(trigger.ConsumeItems)
 	if len(trigger.RewardItems) > 0 {
 		trigger.RewardItemVnum = trigger.RewardItems[0].ItemVnum
 		trigger.RewardItemCount = trigger.RewardItems[0].Count
@@ -2982,6 +2986,7 @@ func questFlagTriggerSummary(definition interactionstore.Definition) QuestFlagTr
 		RewardExperience: definition.RewardExperience,
 		RewardGold:       definition.RewardGold,
 		RewardItems:      rewardItems,
+		ConsumeItems:     interactionstore.EffectiveConsumeItems(definition),
 	}
 	if len(rewardItems) > 0 {
 		summary.RewardItemVnum = rewardItems[0].ItemVnum
@@ -3175,6 +3180,20 @@ func questFlagRewardPreview(text string, definition interactionstore.Definition,
 		}
 		preview = fmt.Sprintf("%s [reward_item %s x%d]", preview, itemLabel, count)
 	}
+	for _, entry := range interactionstore.EffectiveConsumeItems(definition) {
+		itemLabel := fmt.Sprintf("vnum %d", entry.ItemVnum)
+		if template, ok := itemTemplatesByVnum[entry.ItemVnum]; ok {
+			name := strings.TrimSpace(template.Name)
+			if name != "" {
+				itemLabel = name
+			}
+		}
+		count := entry.Count
+		if count == 0 {
+			count = 1
+		}
+		preview = fmt.Sprintf("%s [consume_item %s x%d]", preview, itemLabel, count)
+	}
 	return preview
 }
 
@@ -3311,6 +3330,7 @@ func questFlagRouteSummary(actor StaticActor, definition interactionstore.Defini
 		RewardExperience: definition.RewardExperience,
 		RewardGold:       definition.RewardGold,
 		RewardItems:      rewardItems,
+		ConsumeItems:     interactionstore.EffectiveConsumeItems(definition),
 	}
 	if len(rewardItems) > 0 {
 		summary.RewardItemVnum = rewardItems[0].ItemVnum
@@ -3731,6 +3751,15 @@ func validateBundle(bundle Bundle) error {
 		}
 		if definition.Kind == interactionstore.KindQuestFlag {
 			for _, entry := range interactionstore.EffectiveRewardItems(definition) {
+				template, ok := itemTemplatesByVnum[entry.ItemVnum]
+				if !ok {
+					return ErrInvalidBundle
+				}
+				if !validQuestFlagRewardItemCountForTemplate(entry, template) {
+					return ErrInvalidBundle
+				}
+			}
+			for _, entry := range interactionstore.EffectiveConsumeItems(definition) {
 				template, ok := itemTemplatesByVnum[entry.ItemVnum]
 				if !ok {
 					return ErrInvalidBundle
@@ -4620,6 +4649,11 @@ func referencedItemTemplateVnums(definitions []interactionstore.Definition, spaw
 			}
 		case interactionstore.KindQuestFlag:
 			for _, entry := range interactionstore.EffectiveRewardItems(definition) {
+				if entry.ItemVnum != 0 {
+					referenced[entry.ItemVnum] = struct{}{}
+				}
+			}
+			for _, entry := range interactionstore.EffectiveConsumeItems(definition) {
 				if entry.ItemVnum != 0 {
 					referenced[entry.ItemVnum] = struct{}{}
 				}
