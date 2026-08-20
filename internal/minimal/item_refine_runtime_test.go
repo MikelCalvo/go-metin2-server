@@ -852,6 +852,123 @@ func TestGameRuntimeItemRefineConfirmBusyWindowsFailClosedWithoutMutation(t *tes
 	assertExchangeAccountUnchanged(t, accounts, "item-refine-busy", owner, "busy refine cancel")
 }
 
+func TestGameRuntimeItemRefineConfirmBusySafeboxFailsClosedWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("RefineBusySafebox", 0x010307d0, 0x020407d0, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 652, Vnum: 11238, Count: 1, Slot: 5},
+		{ID: 653, Vnum: 27001, Count: 2, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	ownerLogin := "item-refine-busy-sb"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070d0, owner)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-refine busy-safebox account: %v", err)
+	}
+	sourceTemplate := itemcatalog.Template{
+		Vnum:       11238,
+		Name:       "Busy Safebox Practice Blade",
+		Stackable:  false,
+		MaxCount:   1,
+		Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{ResultVnum: 11239, Cost: 1000, Probability: 100, Materials: []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}}},
+	}
+	resultTemplate := itemcatalog.Template{Vnum: 11239, Name: "Busy Safebox Result Blade", Stackable: false, MaxCount: 1}
+	material := itemcatalog.Template{Vnum: 27001, Name: "Refine Material A", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{sourceTemplate, resultTemplate, material})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-refine busy-safebox runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070d0)
+	defer closeSessionFlow(t, flow)
+
+	previewOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
+	if err != nil || len(previewOut) != 1 {
+		t.Fatalf("expected refine busy-safebox preview to emit one frame, got %d err=%v", len(previewOut), err)
+	}
+	if _, err := itemproto.DecodeRefineInformationNew(decodeSingleFrame(t, previewOut[0])); err != nil {
+		t.Fatalf("decode refine busy-safebox preview: %v", err)
+	}
+
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected busy-safebox /open_safebox error: %v", err)
+	}
+	if len(openOut) != 1 {
+		t.Fatalf("expected busy-safebox /open_safebox to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
+	}
+	if _, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, openOut[0])); err != nil {
+		t.Fatalf("decode busy-safebox /open_safebox SAFEBOX_SIZE: %v", err)
+	}
+
+	busyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
+	if err != nil {
+		t.Fatalf("unexpected busy-safebox refine confirm packet error: %v", err)
+	}
+	if len(busyOut) != 0 {
+		t.Fatalf("expected busy-safebox refine confirm to fail closed with no frames, got %d", len(busyOut))
+	}
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "busy-safebox refine confirm")
+
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/close_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected busy-safebox /close_safebox error: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected busy-safebox /close_safebox to emit no frames, got %d", len(closeOut))
+	}
+
+	confirmOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
+	if err != nil {
+		t.Fatalf("unexpected post-safebox-close refine confirm packet error: %v", err)
+	}
+	if len(confirmOut) != 3 {
+		t.Fatalf("expected post-safebox-close refine confirm burst of 3 frames, got %d", len(confirmOut))
+	}
+	materialDel, err := itemproto.DecodeDel(decodeSingleFrame(t, confirmOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-safebox-close material ITEM_DEL: %v", err)
+	}
+	if materialDel.Position.WindowType != itemproto.WindowInventory || materialDel.Position.Cell != 6 {
+		t.Fatalf("unexpected post-safebox-close material delete position: %+v", materialDel.Position)
+	}
+	resultSet, err := itemproto.DecodeSet(decodeSingleFrame(t, confirmOut[1]))
+	if err != nil {
+		t.Fatalf("decode post-safebox-close result ITEM_SET: %v", err)
+	}
+	if resultSet.Position.WindowType != itemproto.WindowInventory || resultSet.Position.Cell != 5 || resultSet.Vnum != 11239 || resultSet.Count != 1 {
+		t.Fatalf("unexpected post-safebox-close result ITEM_SET: %+v", resultSet)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, confirmOut[2]))
+	if err != nil {
+		t.Fatalf("decode post-safebox-close gold PLAYER_POINT_CHANGE: %v", err)
+	}
+	if goldChange.VID != owner.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != -1000 || goldChange.Value != 4000 {
+		t.Fatalf("unexpected post-safebox-close gold point change: %+v", goldChange)
+	}
+
+	persisted, err := accounts.Load(ownerLogin)
+	if err != nil {
+		t.Fatalf("load persisted busy-safebox refine account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{{ID: 652, Vnum: 11239, Count: 1, Slot: 5}}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("unexpected persisted inventory after busy-safebox refine confirm:\n got: %+v\nwant: %+v", persisted.Characters[0].Inventory, wantInventory)
+	}
+	if persisted.Characters[0].Gold != 4000 || !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("unexpected persisted scalars after busy-safebox refine confirm: gold=%d quickslots=%+v", persisted.Characters[0].Gold, persisted.Characters[0].Quickslots)
+	}
+}
+
 func TestGameRuntimeItemRefineConfirmProbabilityBelow100FailsClosedWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
