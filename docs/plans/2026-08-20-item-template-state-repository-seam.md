@@ -40,6 +40,6 @@ Focused coverage:
 
 ## Follow-up options
 
-1. Add matching hermetic seams for static-content exports once callers need the same coupling reduction. Account/quest/login-ticket/item-template seams are now landed.
+1. ~~Add matching hermetic seams for static-content exports once callers need the same coupling reduction.~~ Done: `StaticActorContentStateExporter` + hermetic `staticstore`/`interactionstore` `MemoryStore`s now land beside the account/quest/login-ticket/item-template seams.
 2. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
 3. Keep ground-item restart durability deferred until a world-state repository exists.

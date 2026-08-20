@@ -159,6 +159,13 @@ func ExportStaticActorContentStateFromStores(staticActors Store, interactions in
 	return ExportStaticActorContentState(staticSnapshot, interactionSnapshot)
 }
 
+// ExportStaticActorContentState projects this FileStore's committed snapshot
+// onto the 0008 static-actor content-state migration shape, reading the paired
+// interaction store through the shared FromStores helper.
+func (s *FileStore) ExportStaticActorContentState(interactions interactionstore.Store) (StaticActorContentStateExport, error) {
+	return ExportStaticActorContentStateFromStores(s, interactions)
+}
+
 func loadStaticActorSnapshotForExport(store Store) (Snapshot, error) {
 	if store == nil {
 		return Snapshot{}, nil

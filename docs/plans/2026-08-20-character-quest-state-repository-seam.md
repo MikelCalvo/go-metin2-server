@@ -40,6 +40,6 @@ Focused coverage:
 
 ## Follow-up options
 
-1. Add matching hermetic seams for static-content exports once callers need the same coupling reduction. Login-ticket handoff and item-template state now have their own exporters + hermetic `MemoryStore`s.
+1. ~~Add matching hermetic seams for static-content exports once callers need the same coupling reduction.~~ Done: login-ticket handoff, item-template state, and static-content now each have exporters + hermetic `MemoryStore`s.
 2. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
 3. Keep ground-item restart durability deferred until a world-state repository exists.

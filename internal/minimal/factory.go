@@ -1410,10 +1410,14 @@ func (r *gameRuntime) ExportItemTemplateState() (itemcatalog.ItemTemplateStateEx
 }
 
 func (r *gameRuntime) ExportStaticActorContentState() (staticstore.StaticActorContentStateExport, error) {
-	if r == nil {
+	if r == nil || r.staticStore == nil {
 		return staticstore.ExportStaticActorContentState(staticstore.Snapshot{}, interactionstore.Snapshot{})
 	}
-	return staticstore.ExportStaticActorContentStateFromStores(r.staticStore, r.interactionStore)
+	exporter, ok := r.staticStore.(staticstore.StaticActorContentStateExporter)
+	if !ok {
+		return staticstore.StaticActorContentStateExport{}, fmt.Errorf("static-actor content-state export is not supported")
+	}
+	return exporter.ExportStaticActorContentState(r.interactionStore)
 }
 
 func (r *gameRuntime) ExportBootstrapGroundItemState() (worldruntime.BootstrapGroundItemStateExport, error) {

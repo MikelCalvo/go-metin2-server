@@ -800,6 +800,63 @@ func TestGameRuntimeStaticActorContentStateExportProjectsCommittedSnapshots(t *t
 	}
 }
 
+func TestGameRuntimeExportsStaticActorContentStateThroughMemoryStoreSeam(t *testing.T) {
+	staticActors := staticstore.NewMemoryStore()
+	interactions := interactionstore.NewMemoryStore()
+	if err := interactions.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{
+		{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "VillageGuard : Keep your blade sharp."},
+		{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Title: "Village Merchant", Catalog: []interactionstore.MerchantCatalogEntry{
+			{Slot: 0, ItemVnum: 27001, Price: 50, Count: 2},
+			{Slot: 1, ItemVnum: 11200, Price: 500, Count: 1},
+		}},
+	}}); err != nil {
+		t.Fatalf("save memory interaction definitions: %v", err)
+	}
+	if err := staticActors.Save(staticstore.Snapshot{StaticActors: []staticstore.StaticActor{
+		{EntityID: 9, Name: "VillageGuard", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"},
+		{EntityID: 7, Name: "PracticeMob", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.reward_mob", SpawnHome: &worldruntime.PositionSnapshot{MapIndex: 42, X: 1700, Y: 2800}, RewardExperience: 25, RewardGold: 12, RewardDropVnums: []uint32{27002, 27001}},
+		{EntityID: 2, Name: "VillageMerchant", MapIndex: 1, X: 469500, Y: 964300, RaceNum: 20001, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"},
+	}}); err != nil {
+		t.Fatalf("save memory static actors: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewMemoryStore(),
+		staticActors,
+		interactions,
+		itemcatalog.NewMemoryStore(),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	export, err := runtime.ExportStaticActorContentState()
+	if err != nil {
+		t.Fatalf("runtime memory static-actor content-state export: %v", err)
+	}
+	if export.MigrationVersion != staticstore.StaticActorContentStateMigrationVersion || export.MigrationName != staticstore.StaticActorContentStateMigrationName {
+		t.Fatalf("unexpected migration boundary: %#v", export)
+	}
+	if len(export.InteractionDefinitions) != 2 || export.InteractionDefinitions[0].Ref != "npc:merchant" || export.InteractionDefinitions[1].Ref != "npc:village_guard" {
+		t.Fatalf("unexpected memory interaction definition export rows: %#v", export.InteractionDefinitions)
+	}
+	if len(export.MerchantCatalogEntries) != 2 || export.MerchantCatalogEntries[0].ItemVnum != 27001 || export.MerchantCatalogEntries[1].ItemVnum != 11200 {
+		t.Fatalf("unexpected memory merchant catalog export rows: %#v", export.MerchantCatalogEntries)
+	}
+	if len(export.StaticActors) != 3 || export.StaticActors[0].EntityID != 7 || export.StaticActors[1].EntityID != 9 || export.StaticActors[2].EntityID != 2 {
+		t.Fatalf("unexpected memory static actor export rows: %#v", export.StaticActors)
+	}
+	if len(export.RewardDrops) != 2 || export.RewardDrops[0].ItemVnum != 27001 || export.RewardDrops[1].ItemVnum != 27002 {
+		t.Fatalf("unexpected memory reward drop export rows: %#v", export.RewardDrops)
+	}
+	if _, err := staticstore.ValidateStaticActorContentStateExport(export); err != nil {
+		t.Fatalf("quarantine memory static-actor content-state export: %v", err)
+	}
+}
+
 func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},

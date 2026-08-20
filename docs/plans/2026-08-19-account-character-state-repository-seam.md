@@ -41,6 +41,6 @@ Focused coverage:
 
 ## Follow-up options
 
-1. Add matching hermetic seams for quest-state / login-ticket / item-template / static-content exports once callers need the same coupling reduction.
+1. ~~Add matching hermetic seams for quest-state / login-ticket / item-template / static-content exports once callers need the same coupling reduction.~~ Done for quest-state (`0004`), login-ticket handoff (`0007`), item-template (`0009`), and static-content (`0008`).
 2. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
 3. Keep ground-item restart durability deferred until a world-state repository exists.
