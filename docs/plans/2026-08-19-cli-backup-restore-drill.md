@@ -73,3 +73,4 @@ Validation:
 1. Extract the first narrow repository seam only after offline quarantine + loopback quarantine both prove the export boundary.
 2. Keep ground-item restart durability deferred until a real world-state repository exists.
 3. Add deployment topology docs once production hosts are known.
+4. ~~Include the optional per-store validate + crash-temp cleanup triage in the printed drill script.~~ Done: see [CLI Backup/Restore Drill Crash-Temp Preflight](2026-08-20-cli-backup-restore-drill-crash-temp-preflight.md).

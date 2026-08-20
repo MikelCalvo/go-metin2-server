@@ -38,7 +38,7 @@ Related helpers:
 - `GET /local/runtime-config` — confirms active `persistence.*` paths before any backup/restore
 - `GET /local/persistence/status` — aggregate validity, `live_selected_character_count`, per-store `backup_manifest`, and `restore_blocked_by_live_sessions`
 - per-store `.../validate` and `.../crash-temps/cleanup` — optional triage before backup; static-actor validate/cleanup use the `/local/static-actor-store/...` prefix
-- `metin2-migrate backup-restore-drill --runtime-config <path|->` — read-only printer that turns a retained runtime-config snapshot into the path-aware curl / aside-rename script below without executing backup or restore
+- `metin2-migrate backup-restore-drill --runtime-config <path|->` — read-only printer that turns a retained runtime-config snapshot into the path-aware curl / aside-rename script below without executing backup or restore. The printed script now includes the optional store validate + crash-temp cleanup triage before backup; if an operator runs that printed section, `crash-temps/cleanup` mutates only hidden crash-temp residue after validate.
 
 ```bash
 curl -sS http://127.0.0.1:6060/local/runtime-config \
@@ -89,6 +89,24 @@ curl -sS http://127.0.0.1:6060/local/persistence/status
 - every included store has `valid: true` and `restore_blocked_by_live_sessions: false`
 
 If crash-temp residue is the only complaint, clean with the matching `.../crash-temps/cleanup` endpoint before backup. Do not treat crash-temp cleanup as enough preparation for restore: committed snapshots and any active `*-backup-manifest.json` also make destinations non-empty.
+
+Optional explicit triage sequence (also emitted by `metin2-migrate backup-restore-drill` after the aggregate status check):
+
+```bash
+curl -sS -X POST http://127.0.0.1:6060/local/account-store/validate
+curl -sS -X POST http://127.0.0.1:6060/local/account-store/crash-temps/cleanup
+curl -sS -X POST http://127.0.0.1:6060/local/login-tickets/validate
+curl -sS -X POST http://127.0.0.1:6060/local/login-tickets/crash-temps/cleanup
+curl -sS -X POST http://127.0.0.1:6060/local/item-templates/validate
+curl -sS -X POST http://127.0.0.1:6060/local/item-templates/crash-temps/cleanup
+curl -sS -X POST http://127.0.0.1:6060/local/interaction-store/validate
+curl -sS -X POST http://127.0.0.1:6060/local/interaction-store/crash-temps/cleanup
+curl -sS -X POST http://127.0.0.1:6060/local/static-actor-store/validate
+curl -sS -X POST http://127.0.0.1:6060/local/static-actor-store/crash-temps/cleanup
+curl -sS -X POST http://127.0.0.1:6060/local/quest-state/validate
+curl -sS -X POST http://127.0.0.1:6060/local/quest-state/crash-temps/cleanup
+curl -sS http://127.0.0.1:6060/local/persistence/status
+```
 
 ## Backup
 

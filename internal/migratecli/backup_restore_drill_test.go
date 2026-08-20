@@ -61,6 +61,19 @@ func TestRunBackupRestoreDrillPrintsPathAwareCommands(t *testing.T) {
 		`curl -sS "$OPS/healthz"`,
 		`curl -sS "$OPS/local/runtime-config"`,
 		`curl -sS "$OPS/local/persistence/status"`,
+		`echo '== store validate / crash-temp triage =='`,
+		`"$OPS/local/account-store/validate"`,
+		`"$OPS/local/account-store/crash-temps/cleanup"`,
+		`"$OPS/local/login-tickets/validate"`,
+		`"$OPS/local/login-tickets/crash-temps/cleanup"`,
+		`"$OPS/local/item-templates/validate"`,
+		`"$OPS/local/item-templates/crash-temps/cleanup"`,
+		`"$OPS/local/interaction-store/validate"`,
+		`"$OPS/local/interaction-store/crash-temps/cleanup"`,
+		`"$OPS/local/static-actor-store/validate"`,
+		`"$OPS/local/static-actor-store/crash-temps/cleanup"`,
+		`"$OPS/local/quest-state/validate"`,
+		`"$OPS/local/quest-state/crash-temps/cleanup"`,
 		`"$OPS/local/account-store/backup"`,
 		`"$OPS/local/login-tickets/backup"`,
 		`"$OPS/local/item-templates/backup"`,
@@ -73,6 +86,7 @@ func TestRunBackupRestoreDrillPrintsPathAwareCommands(t *testing.T) {
 		`mv "$ACCOUNT_STORE_DIR"`,
 		`mv "$(dirname "$ITEM_TEMPLATE_STORE_PATH")"`,
 		`# read-only printer: does not execute backup/restore`,
+		`# crash-temps/cleanup mutates only hidden crash-temp residue after validate`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in stdout:\n%s", want, body)
@@ -81,12 +95,26 @@ func TestRunBackupRestoreDrillPrintsPathAwareCommands(t *testing.T) {
 	if strings.Contains(body, "CREATE TABLE") || strings.Contains(body, "DROP TABLE") || strings.Contains(body, "memory://") {
 		t.Fatalf("backup-restore-drill must not expose SQL or DSN text, got %s", body)
 	}
-	if idxBackup := strings.Index(body, `"$OPS/local/account-store/backup"`); idxBackup < 0 {
-		t.Fatalf("missing account backup command")
-	} else if idxValidate := strings.Index(body, `"$OPS/local/account-store/backup/validate"`); idxValidate < idxBackup {
-		t.Fatalf("expected backup before validate")
-	} else if idxRestore := strings.Index(body, `"$OPS/local/item-templates/restore"`); idxRestore < idxValidate {
-		t.Fatalf("expected validate before restore")
+	idxStatus := strings.Index(body, `curl -sS "$OPS/local/persistence/status"`)
+	idxStoreValidate := strings.Index(body, `"$OPS/local/account-store/validate"`)
+	idxCrashCleanup := strings.Index(body, `"$OPS/local/account-store/crash-temps/cleanup"`)
+	idxBackup := strings.Index(body, `"$OPS/local/account-store/backup"`)
+	idxBackupValidate := strings.Index(body, `"$OPS/local/account-store/backup/validate"`)
+	idxRestore := strings.Index(body, `"$OPS/local/item-templates/restore"`)
+	if idxStatus < 0 || idxStoreValidate < 0 || idxCrashCleanup < 0 || idxBackup < 0 || idxBackupValidate < 0 || idxRestore < 0 {
+		t.Fatalf("missing expected ordering markers in stdout:\n%s", body)
+	}
+	if !(idxStatus < idxStoreValidate && idxStoreValidate < idxCrashCleanup && idxCrashCleanup < idxBackup && idxBackup < idxBackupValidate && idxBackupValidate < idxRestore) {
+		t.Fatalf("expected status -> store validate -> crash-temp cleanup -> backup -> backup validate -> restore ordering, got idxs status=%d validate=%d cleanup=%d backup=%d backupValidate=%d restore=%d\n%s",
+			idxStatus, idxStoreValidate, idxCrashCleanup, idxBackup, idxBackupValidate, idxRestore, body)
+	}
+	idxStaticActorValidate := strings.Index(body, `"$OPS/local/static-actor-store/validate"`)
+	idxStaticActorsBackup := strings.Index(body, `"$OPS/local/static-actors/backup"`)
+	if idxStaticActorValidate < 0 || idxStaticActorsBackup < 0 {
+		t.Fatalf("missing static-actor validate/backup markers in stdout:\n%s", body)
+	}
+	if idxStaticActorValidate >= idxStaticActorsBackup {
+		t.Fatalf("expected static-actor-store validate before static-actors backup")
 	}
 }
 
