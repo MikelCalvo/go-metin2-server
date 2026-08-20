@@ -21,6 +21,21 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
+// metGuideQuestFlagWriterDefinition is a minimal in-bundle writer for fixtures that
+// gate on quest:first_steps.met_guide. Bundle canonicalization requires every
+// service / kill-quest require gate to have a matching quest_flag or kill-quest
+// credit writer in the same bundle.
+func metGuideQuestFlagWriterDefinition() interactionstore.Definition {
+	return interactionstore.Definition{
+		Kind:      interactionstore.KindQuestFlag,
+		Ref:       "quest:first_steps",
+		Text:      "Quest updated: first_steps.met_guide = 1.",
+		QuestRef:  "quest:first_steps",
+		QuestFlag: "met_guide",
+		QuestTo:   1,
+	}
+}
+
 func TestGameRuntimeImportsContentBundleKillQuestCredit(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
@@ -164,6 +179,7 @@ func TestGameRuntimeImportsDropTableKillQuestRequireGate(t *testing.T) {
 			CombatProfile:      worldruntime.StaticActorCombatProfileTrainingDummy,
 			RewardDropTableRef: "loot.qa_gated_kill_quest_reward",
 		}},
+		InteractionDefinitions: []interactionstore.Definition{metGuideQuestFlagWriterDefinition()},
 	})
 	if err != nil {
 		t.Fatalf("import drop-table gated kill quest credit bundle: %v", err)
@@ -239,6 +255,7 @@ func TestGameRuntimeImportsRegenSpawnKillQuestRequireGate(t *testing.T) {
 			Count:              1,
 			RewardDropTableRef: "loot.qa_regen_gated_kill_quest_reward",
 		}},
+		InteractionDefinitions: []interactionstore.Definition{metGuideQuestFlagWriterDefinition()},
 	})
 	if err != nil {
 		t.Fatalf("import regen gated kill quest credit bundle: %v", err)
@@ -750,6 +767,7 @@ func TestHandleAttackKillQuestRequireGateSilentWhenUnmet(t *testing.T) {
 			RequireQuestFlag: "met_guide",
 			RequireQuestFrom: 1,
 		}},
+		InteractionDefinitions: []interactionstore.Definition{metGuideQuestFlagWriterDefinition()},
 	}); err != nil {
 		t.Fatalf("import gated miss kill quest bundle: %v", err)
 	}
@@ -823,6 +841,7 @@ func TestHandleAttackKillQuestRequireGateAppliesWhenMet(t *testing.T) {
 			RequireQuestFlag: "met_guide",
 			RequireQuestFrom: 1,
 		}},
+		InteractionDefinitions: []interactionstore.Definition{metGuideQuestFlagWriterDefinition()},
 	}); err != nil {
 		t.Fatalf("import gated hit kill quest bundle: %v", err)
 	}

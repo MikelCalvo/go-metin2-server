@@ -2856,6 +2856,7 @@ func TestSummarizeReturnsQuestGateFieldsOnShopRoutes(t *testing.T) {
 			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
 		},
 		InteractionDefinitions: []interactionstore.Definition{
+			metGuideQuestFlagWriterDefinition(),
 			{
 				Kind:      interactionstore.KindShopPreview,
 				Ref:       "npc:gated_merchant",

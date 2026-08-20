@@ -3712,7 +3712,68 @@ func validateBundle(bundle Bundle) error {
 			return ErrInvalidBundle
 		}
 	}
+	if !questGateWritersCoverRequiredGates(bundle) {
+		return ErrInvalidBundle
+	}
 	return nil
+}
+
+// questGateWritersCoverRequiredGates fails closed when an authored service or
+// kill-quest require gate references a (quest_ref, quest_flag) pair that this
+// same bundle cannot write. Portable seeds in quest_state are not writers;
+// only quest_flag interactions and kill-quest credit descriptors count.
+func questGateWritersCoverRequiredGates(bundle Bundle) bool {
+	writers := authoredQuestFlagWriters(bundle)
+	for _, definition := range bundle.InteractionDefinitions {
+		definition = interactionstore.NormalizeDefinition(definition)
+		if definition.Kind == interactionstore.KindQuestFlag {
+			continue
+		}
+		if !interactionstore.HasServiceQuestGate(definition) {
+			continue
+		}
+		if !writers[questFlagWriterKey(definition.QuestRef, definition.QuestFlag)] {
+			return false
+		}
+	}
+	for _, spawnGroup := range bundle.SpawnGroups {
+		ref := strings.TrimSpace(spawnGroup.RequireQuestRef)
+		flag := strings.TrimSpace(spawnGroup.RequireQuestFlag)
+		if ref == "" && flag == "" {
+			continue
+		}
+		if !writers[questFlagWriterKey(ref, flag)] {
+			return false
+		}
+	}
+	return true
+}
+
+func authoredQuestFlagWriters(bundle Bundle) map[string]bool {
+	writers := make(map[string]bool)
+	for _, definition := range bundle.InteractionDefinitions {
+		definition = interactionstore.NormalizeDefinition(definition)
+		if definition.Kind != interactionstore.KindQuestFlag {
+			continue
+		}
+		writers[questFlagWriterKey(definition.QuestRef, definition.QuestFlag)] = true
+	}
+	for _, spawnGroup := range bundle.SpawnGroups {
+		if !hasSpawnGroupKillQuestCredit(spawnGroup) {
+			continue
+		}
+		ref := strings.TrimSpace(spawnGroup.RewardQuestRef)
+		flag := strings.TrimSpace(spawnGroup.RewardQuestFlag)
+		if ref == "" || flag == "" {
+			continue
+		}
+		writers[questFlagWriterKey(ref, flag)] = true
+	}
+	return writers
+}
+
+func questFlagWriterKey(questRef string, questFlag string) string {
+	return strings.TrimSpace(questRef) + "\x00" + strings.TrimSpace(questFlag)
 }
 
 func validInteractionDefinitionStrings(definition interactionstore.Definition) bool {

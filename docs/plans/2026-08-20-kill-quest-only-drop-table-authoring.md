@@ -30,4 +30,4 @@ Focused coverage:
 ## Follow-up options
 
 1. Wire hermetic `queststate.MemoryStore` into kill-quest / PvE gameplay tests that still use `FileStore`.
-2. Add bundle-level cross-field checks that gated quest refs have an in-bundle writer (`quest_flag` or kill-quest credit).
+2. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.

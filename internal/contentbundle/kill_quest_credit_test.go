@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -242,6 +243,7 @@ func TestCanonicalizeExpandsRegenSpawnKillQuestOnlyDropTable(t *testing.T) {
 			Count:              1,
 			RewardDropTableRef: "loot.qa_regen_kill_quest_only",
 		}},
+		InteractionDefinitions: []interactionstore.Definition{metGuideQuestFlagWriterDefinition()},
 	})
 	if err != nil {
 		t.Fatalf("canonicalize regen kill-quest-only drop table: %v", err)
@@ -406,6 +408,7 @@ func TestCanonicalizeAcceptsSpawnGroupKillQuestRequireGate(t *testing.T) {
 			RequireQuestFlag: "met_guide",
 			RequireQuestFrom: 1,
 		}},
+		InteractionDefinitions: []interactionstore.Definition{metGuideQuestFlagWriterDefinition()},
 	})
 	if err != nil {
 		t.Fatalf("canonicalize gated kill quest credit: %v", err)
@@ -503,6 +506,7 @@ func TestCanonicalizeExpandsDropTableKillQuestRequireGate(t *testing.T) {
 		ItemTemplates: []itemcatalog.Template{{
 			Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200,
 		}},
+		InteractionDefinitions: []interactionstore.Definition{metGuideQuestFlagWriterDefinition()},
 	})
 	if err != nil {
 		t.Fatalf("canonicalize drop-table gated kill quest credit: %v", err)
@@ -560,6 +564,7 @@ func TestCanonicalizeExpandsRegenSpawnDropTableKillQuestRequireGate(t *testing.T
 			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
 			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
 		},
+		InteractionDefinitions: []interactionstore.Definition{metGuideQuestFlagWriterDefinition()},
 	})
 	if err != nil {
 		t.Fatalf("canonicalize regen drop-table gated kill quest credit: %v", err)

@@ -159,6 +159,8 @@ The first bootstrap spawn-group contract freezes these fields:
   - scalar-only reward tables are valid and do not require `item_templates`; table entries with non-empty `drop_vnums` must still be backed by bundled `item_templates` for every referenced vnum
   - kill-quest credit on a drop table uses the same identity/validation rules as spawn-group kill-quest credit, including optional require-gate completeness; partial kill-quest fields fail closed before expansion
   - a spawn group that already authors any kill-quest field may not also expand a table that carries kill-quest credit; that conflict fails closed instead of silently preferring one source
+  - when a require gate is present on a spawn group (directly or after drop-table/regen expansion), the same bundle must also author a writer for that `(require_quest_ref, require_quest_flag)` pair: either a `quest_flag` interaction definition or a kill-quest credit descriptor that writes the same flag; portable `quest_state` seed rows alone are not writers and fail closed
+  - focused authoring fixtures such as `docs/examples/bootstrap-drop-table-authoring-bundle.json` and `docs/examples/bootstrap-regen-authoring-bundle.json` therefore carry a minimal `quest:first_steps.met_guide` `quest_flag` writer alongside their gated kill-quest tables so validation can prove the require-gate loop without importing the full NPC service fixture
   - table expansion is a no-random-roll authoring convenience only; the live runtime still sees the existing fixed reward descriptor and kill-quest credit on the materialized spawn-backed actor
 - `regen_spawns[]`
   - authoring-only bootstrap ingestion shape for candidate bundles that are easier to write in regen-like terms before the runtime owns real pack semantics

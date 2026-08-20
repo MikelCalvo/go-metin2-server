@@ -45,5 +45,14 @@
       "max_count": 200
     }
   ],
-  "interaction_definitions": []
+  "interaction_definitions": [
+    {
+      "kind": "quest_flag",
+      "ref": "quest:first_steps",
+      "text": "Quest updated: first_steps.met_guide = 1.",
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "met_guide",
+      "quest_to": 1
+    }
+  ]
 }
