@@ -123,6 +123,7 @@ type StaticActorCombatProfileDefaults struct {
 	Level                 uint16
 	Rank                  uint8
 	RespawnDelay          time.Duration
+	AggroRadius           int32
 	RetaliationPointDelta int32
 	DeathReward           StaticActorDeathReward
 }
@@ -136,6 +137,7 @@ type StaticActorCombatProfileSnapshot struct {
 	Level                 uint16                 `json:"level"`
 	Rank                  uint8                  `json:"rank"`
 	RespawnDelayMs        int64                  `json:"respawn_delay_ms"`
+	AggroRadius           int32                  `json:"aggro_radius,omitempty"`
 	RetaliationPointDelta int32                  `json:"retaliation_point_delta,omitempty"`
 	DeathReward           StaticActorDeathReward `json:"death_reward"`
 }
@@ -153,6 +155,9 @@ func RegisterStaticActorCombatProfile(profile string, defaults StaticActorCombat
 		return false
 	}
 	if defaults.RetaliationPointDelta > 0 {
+		return false
+	}
+	if !ValidStaticActorCombatProfileAggroRadius(defaults.AggroRadius) {
 		return false
 	}
 	hasLegacyDamage := defaults.DamagePerNormalAttack != 0
@@ -234,6 +239,7 @@ func staticActorCombatProfileSnapshot(profile string, defaults StaticActorCombat
 		Level:                 defaults.Level,
 		Rank:                  defaults.Rank,
 		RespawnDelayMs:        defaults.RespawnDelay.Milliseconds(),
+		AggroRadius:           defaults.AggroRadius,
 		DeathReward:           defaults.DeathReward.Clone(),
 	}
 	if defaults.RetaliationPointDelta != PracticeMobBootstrapRetaliationPointDelta {
@@ -260,6 +266,29 @@ func StaticActorCombatProfileRespawnDelay(delayMs int64) (time.Duration, bool) {
 		return 0, false
 	}
 	return time.Duration(delayMs) * time.Millisecond, true
+}
+
+// ValidStaticActorCombatProfileAggroRadius accepts omitted/zero (bootstrap default)
+// and positive authored radii that do not stretch past DefaultSpawnLeashRadius.
+func ValidStaticActorCombatProfileAggroRadius(radius int32) bool {
+	return radius >= 0 && radius <= DefaultSpawnLeashRadius
+}
+
+// EffectiveStaticActorSpawnAggroRadius returns the acquire / leave-radius /
+// suppress-seeding distance for one combat profile. Omitted or unknown profiles
+// keep the bootstrap DefaultSpawnAggroRadius.
+func EffectiveStaticActorSpawnAggroRadius(profile string) int32 {
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(strings.TrimSpace(profile))
+	if !ok || defaults.AggroRadius <= 0 {
+		return DefaultSpawnAggroRadius
+	}
+	return defaults.AggroRadius
+}
+
+// EffectiveStaticActorSpawnAggroRadiusForActor resolves the actor's combat
+// profile and returns its effective spawn aggro radius.
+func EffectiveStaticActorSpawnAggroRadiusForActor(actor StaticEntity) int32 {
+	return EffectiveStaticActorSpawnAggroRadius(staticActorCombatProfile(actor.CombatProfile, actor.CombatKind))
 }
 
 func validStaticActorCombatProfileName(profile string) bool {

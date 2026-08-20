@@ -334,6 +334,82 @@ func TestRegisterStaticActorCombatProfileRejectsPositiveRetaliationPointDelta(t 
 	}
 }
 
+func TestEffectiveStaticActorSpawnAggroRadiusDefaultsToBootstrap(t *testing.T) {
+	if got := EffectiveStaticActorSpawnAggroRadius(StaticActorCombatProfilePracticeMob); got != DefaultSpawnAggroRadius {
+		t.Fatalf("expected practice_mob effective aggro radius %d, got %d", DefaultSpawnAggroRadius, got)
+	}
+	if got := EffectiveStaticActorSpawnAggroRadius(StaticActorCombatProfileTrainingDummy); got != DefaultSpawnAggroRadius {
+		t.Fatalf("expected training_dummy effective aggro radius %d, got %d", DefaultSpawnAggroRadius, got)
+	}
+	if got := EffectiveStaticActorSpawnAggroRadius("missing_profile"); got != DefaultSpawnAggroRadius {
+		t.Fatalf("expected unknown profile effective aggro radius %d, got %d", DefaultSpawnAggroRadius, got)
+	}
+}
+
+func TestRegisterStaticActorCombatProfileHonorsAuthoredAggroRadius(t *testing.T) {
+	const profile = "practice_aggro_radius_wolf"
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:        24,
+		AttackValue:  8,
+		DefenseValue: 2,
+		RespawnDelay: PracticeMobBootstrapRespawnDelay,
+		AggroRadius:  320,
+	}) {
+		t.Fatalf("expected %q profile registration with authored aggro radius to succeed", profile)
+	}
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(profile)
+	if !ok {
+		t.Fatalf("expected registered profile defaults to resolve")
+	}
+	if defaults.AggroRadius != 320 {
+		t.Fatalf("expected registered aggro radius 320, got %+v", defaults)
+	}
+	if got := EffectiveStaticActorSpawnAggroRadius(profile); got != 320 {
+		t.Fatalf("expected effective aggro radius 320, got %d", got)
+	}
+	snapshot, ok := staticActorCombatProfileSnapshotByName(StaticActorCombatProfileSnapshots(), profile)
+	if !ok {
+		t.Fatalf("expected registered profile snapshot for %q", profile)
+	}
+	if snapshot.AggroRadius != 320 {
+		t.Fatalf("expected snapshot to expose authored aggro radius 320, got %+v", snapshot)
+	}
+}
+
+func TestRegisterStaticActorCombatProfileRejectsAggroRadiusAboveLeash(t *testing.T) {
+	const profile = "practice_overleash_aggro_wolf"
+	if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:        24,
+		AttackValue:  8,
+		DefenseValue: 2,
+		RespawnDelay: PracticeMobBootstrapRespawnDelay,
+		AggroRadius:  DefaultSpawnLeashRadius + 1,
+	}) {
+		t.Fatalf("expected %q profile registration with aggro radius above leash to fail closed", profile)
+	}
+	if ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected over-leash aggro profile %q not to become valid", profile)
+	}
+}
+
+func TestRegisterStaticActorCombatProfileRejectsNegativeAggroRadius(t *testing.T) {
+	const profile = "practice_negative_aggro_wolf"
+	if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:        24,
+		AttackValue:  8,
+		DefenseValue: 2,
+		RespawnDelay: PracticeMobBootstrapRespawnDelay,
+		AggroRadius:  -1,
+	}) {
+		t.Fatalf("expected %q profile registration with negative aggro radius to fail closed", profile)
+	}
+	if ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected negative-aggro profile %q not to become valid", profile)
+	}
+}
+
 func TestStaticActorCombatProfileRespawnDelayMsRejectsDurationOverflow(t *testing.T) {
 	validDelayMs := TrainingDummyBootstrapRespawnDelay.Milliseconds()
 	if !ValidStaticActorCombatProfileRespawnDelayMs(validDelayMs) {

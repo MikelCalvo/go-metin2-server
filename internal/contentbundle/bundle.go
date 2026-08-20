@@ -3913,6 +3913,9 @@ func validCombatProfileSnapshot(profile worldruntime.StaticActorCombatProfileSna
 	if profile.RetaliationPointDelta > 0 {
 		return false
 	}
+	if !worldruntime.ValidStaticActorCombatProfileAggroRadius(profile.AggroRadius) {
+		return false
+	}
 	if profile.MaxHP == 0 || profile.AttackValue == 0 || !worldruntime.ValidStaticActorCombatProfileRespawnDelayMs(profile.RespawnDelayMs) {
 		return false
 	}
@@ -3938,6 +3941,7 @@ func combatProfileSnapshotMatchesDefaults(snapshot worldruntime.StaticActorComba
 		candidateDefaults.Level == defaults.Level &&
 		candidateDefaults.Rank == defaults.Rank &&
 		candidateDefaults.RespawnDelay == defaults.RespawnDelay &&
+		candidateDefaults.AggroRadius == defaults.AggroRadius &&
 		candidateDefaults.RetaliationPointDelta == defaults.RetaliationPointDelta &&
 		reflect.DeepEqual(candidateDefaults.DeathReward.Clone(), defaults.DeathReward.Clone())
 }
@@ -3945,6 +3949,9 @@ func combatProfileSnapshotMatchesDefaults(snapshot worldruntime.StaticActorComba
 func combatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfileSnapshot) (worldruntime.StaticActorCombatProfileDefaults, bool) {
 	respawnDelay, ok := worldruntime.StaticActorCombatProfileRespawnDelay(snapshot.RespawnDelayMs)
 	if strings.TrimSpace(snapshot.Profile) == "" || snapshot.MaxHP == 0 || snapshot.AttackValue == 0 || !ok {
+		return worldruntime.StaticActorCombatProfileDefaults{}, false
+	}
+	if !worldruntime.ValidStaticActorCombatProfileAggroRadius(snapshot.AggroRadius) {
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
 	defaults := worldruntime.StaticActorCombatProfileDefaults{
@@ -3955,6 +3962,7 @@ func combatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfil
 		Level:                 snapshot.Level,
 		Rank:                  snapshot.Rank,
 		RespawnDelay:          respawnDelay,
+		AggroRadius:           snapshot.AggroRadius,
 		RetaliationPointDelta: snapshot.RetaliationPointDelta,
 		DeathReward:           snapshot.DeathReward.Clone(),
 	}

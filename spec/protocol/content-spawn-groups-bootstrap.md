@@ -544,7 +544,7 @@ Explicit non-goals for this proximity aggro freeze alone:
 - aggro hysteresis / a drop radius distinct from the acquire radius (leave-radius release reuses the actor's effective acquire radius)
 - pack aggro, assist calls, or multi-mob linkage
 - chase packets, patrol, or pathfinding
-- profile-authored per-mob aggro radii beyond the first bootstrap default (frozen separately below as the next Track A follow-on)
+- profile-authored per-mob aggro radii beyond the first bootstrap default (owned below through optional `combat_profiles.aggro_radius`)
 
 ## First owned profile-authored aggro-radius seam
 
@@ -568,7 +568,10 @@ Contract for optional authored `aggro_radius` on portable `combat_profiles` / `S
 - content-bundle import/export must round-trip a non-default authored `aggro_radius` through `combat_profiles` the same way `respawn_delay_ms` already round-trips
 
 Current implementation status:
-- this seam is frozen here as the next honest RED/GREEN boundary; runtime still uses bootstrap `DefaultSpawnAggroRadius = 200` for every practice mob until the focused failing coverage and GREEN land
+- optional authored `aggro_radius` is owned on portable `combat_profiles` / `StaticActorCombatProfileDefaults` and round-trips through content-bundle canonicalize/import/export and file-backed static-actor snapshots
+- `EffectiveStaticActorSpawnAggroRadius(profile)` / `EffectiveStaticActorSpawnAggroRadiusForActor(actor)` resolve omitted/zero to `DefaultSpawnAggroRadius` (`200`) and honor positive authored values up to `DefaultSpawnLeashRadius` (`400`)
+- live proximity acquisition, leave-radius release, and death/respawn suppress seeding reuse that effective radius instead of hard-coding the bootstrap default
+- negative radii and radii above the leash fail closed at registration / bundle / static-snapshot validation
 
 Explicit non-goals for this profile-authored aggro-radius freeze alone:
 - aggro hysteresis / a drop radius distinct from the acquire radius

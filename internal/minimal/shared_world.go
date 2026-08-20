@@ -1588,7 +1588,7 @@ func (r *sharedWorldRegistry) ClearStaticActorCombatEngagementsBySubject(subject
 
 // ReleaseProximitySpawnGroupEngagementsOutsideAggroRadius releases proximity-only
 // aggro-lite engagements owned by subjectID when that owner is no longer inside
-// DefaultSpawnAggroRadius of the engaged spawn-backed actor. Selected-target
+// the engaged spawn-backed actor's effective aggro radius. Selected-target
 // ownership is intentionally ignored here; callers use this after MOVE /
 // SYNC_POSITION when activeCombatTargetVID == 0. Released entity IDs are
 // returned so the session can cancel delayed retaliation and chase schedules.
@@ -1617,7 +1617,7 @@ func (r *sharedWorldRegistry) ReleaseProximitySpawnGroupEngagementsOutsideAggroR
 		if !ok || actor.SpawnGroupRef == "" || !staticActorSpawnGroupAggroLiteCombatKind(actor.CombatKind) {
 			continue
 		}
-		evaluation, ok := worldruntime.EvaluateStaticActorSpawnAggroAcquisition(actor, subjectPos, worldruntime.DefaultSpawnAggroRadius)
+		evaluation, ok := worldruntime.EvaluateStaticActorSpawnAggroAcquisition(actor, subjectPos, worldruntime.EffectiveStaticActorSpawnAggroRadiusForActor(actor))
 		if ok && evaluation.Acquired {
 			continue
 		}
@@ -1689,7 +1689,7 @@ func (r *sharedWorldRegistry) clearProximityAggroSuppressIfOutsideRadiusLocked(a
 		if candidate.EntityID == 0 {
 			continue
 		}
-		evaluation, ok := worldruntime.EvaluateStaticActorSpawnAggroAcquisition(actor, candidate.Position, worldruntime.DefaultSpawnAggroRadius)
+		evaluation, ok := worldruntime.EvaluateStaticActorSpawnAggroAcquisition(actor, candidate.Position, worldruntime.EffectiveStaticActorSpawnAggroRadiusForActor(actor))
 		if !ok || !evaluation.Acquired {
 			continue
 		}
@@ -1715,7 +1715,7 @@ func (r *sharedWorldRegistry) seedProximityAggroSuppressForInsideCandidatesLocke
 		if !ok || characterAtBootstrapHPFloor(player) {
 			continue
 		}
-		evaluation, ok := worldruntime.EvaluateStaticActorSpawnAggroAcquisition(actor, worldruntime.PositionFromCharacter(player), worldruntime.DefaultSpawnAggroRadius)
+		evaluation, ok := worldruntime.EvaluateStaticActorSpawnAggroAcquisition(actor, worldruntime.PositionFromCharacter(player), worldruntime.EffectiveStaticActorSpawnAggroRadiusForActor(actor))
 		if !ok || !evaluation.Acquired {
 			continue
 		}
@@ -2173,10 +2173,10 @@ func staticActorSpawnGroupAggroLiteCombatKind(combatKind string) bool {
 
 // AcquireProximitySpawnGroupAggro scans live unengaged spawn-backed practice
 // mobs and establishes aggro-lite engagement for the nearest eligible live
-// same-map session inside DefaultSpawnAggroRadius. Acquisition itself stays
-// pure: it does not invent selected-target ownership, emit immediate
-// retaliation, or arm delayed retaliation. Chase scheduling is synced by the
-// runtime consumer after engagement is newly established, and the engaged
+// same-map session inside the actor's effective aggro radius. Acquisition
+// itself stays pure: it does not invent selected-target ownership, emit
+// immediate retaliation, or arm delayed retaliation. Chase scheduling is synced
+// by the runtime consumer after engagement is newly established, and the engaged
 // owner's session may separately arm the delayed server-origin retaliation
 // cadence from that same engagement. After an explicit engagement release, the
 // same candidate stays suppressed until it leaves the aggro radius and
@@ -2229,7 +2229,7 @@ func (r *sharedWorldRegistry) AcquireProximitySpawnGroupAggro() []uint64 {
 			}
 			eligible = append(eligible, candidate)
 		}
-		selected, ok := worldruntime.SelectStaticActorSpawnAggroCandidate(actor, eligible, worldruntime.DefaultSpawnAggroRadius)
+		selected, ok := worldruntime.SelectStaticActorSpawnAggroCandidate(actor, eligible, worldruntime.EffectiveStaticActorSpawnAggroRadiusForActor(actor))
 		if !ok {
 			continue
 		}

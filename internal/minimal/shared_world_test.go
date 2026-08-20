@@ -2583,6 +2583,79 @@ func TestGameRuntimeFlushServerFramesSkipsProximityAggroOutsideDefaultRadius(t *
 	}
 }
 
+func TestGameRuntimeFlushServerFramesHonorsAuthoredCombatProfileAggroRadius(t *testing.T) {
+	const profile = "practice_authored_aggro_live_wolf"
+	store := loginticket.NewFileStore(t.TempDir())
+	// Distance from spawn (1700,2800) is 250: outside bootstrap DefaultSpawnAggroRadius=200
+	// but inside the authored profile radius 320.
+	owner := peerVisibilityCharacter("AggroAuthoredOwner", 0x010301a2, 0x020401a2, 1950, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "aggro-authored-owner", 0x4a4a4a4a, owner)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700002500, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for authored-radius proximity aggro: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:           "practice.aggro_authored_auto",
+			Name:          "AggroAuthoredMob",
+			MapIndex:      42,
+			X:             1700,
+			Y:             2800,
+			RaceNum:       20350,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        profile,
+			MaxHP:          24,
+			AttackValue:    8,
+			DefenseValue:   2,
+			RespawnDelayMs: 1500,
+			AggroRadius:    320,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("import authored-radius aggro spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.aggro_authored_auto")
+	if !ok {
+		t.Fatal("expected authored-radius aggro spawn group to resolve by ref")
+	}
+	if got := worldruntime.EffectiveStaticActorSpawnAggroRadius(profile); got != 320 {
+		t.Fatalf("expected imported profile effective aggro radius 320, got %d", got)
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "aggro-authored-owner", 0x4a4a4a4a)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	ownerEntity, ok := runtime.sharedWorld.playerEntityByName("AggroAuthoredOwner")
+	if !ok {
+		t.Fatal("expected authored-radius owner entity to remain registered")
+	}
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected player inside authored aggro radius 320 to acquire engagement for entity %d", group.EntityID)
+	}
+}
+
 func TestGameRuntimeFlushServerFramesAppliesDueProximitySpawnGroupChaseStepWithoutHit(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("ProximityChaseOwner", 0x01030193, 0x02040193, 1850, 2800, 0, 101, 201)

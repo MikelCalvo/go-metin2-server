@@ -601,3 +601,39 @@ func TestSelectStaticActorSpawnAggroCandidateChoosesNearestThenLowestEntityID(t 
 		t.Fatalf("expected ascending entity-id tie-break on nearest candidate, got %+v", selected)
 	}
 }
+
+func TestEffectiveStaticActorSpawnAggroRadiusForActorUsesRegisteredProfile(t *testing.T) {
+	const profile = "practice_spawn_aggro_actor_wolf"
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:        24,
+		AttackValue:  8,
+		DefenseValue: 2,
+		RespawnDelay: PracticeMobBootstrapRespawnDelay,
+		AggroRadius:  300,
+	}) {
+		t.Fatalf("expected %q profile registration to succeed", profile)
+	}
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	actor := StaticEntity{
+		Entity:        Entity{ID: 77, Kind: EntityKindStaticActor, Name: "AuthoredAggroMob"},
+		Position:      NewPosition(42, 1700, 2800),
+		SpawnHome:     NewPosition(42, 1700, 2800),
+		RaceNum:       20350,
+		CombatProfile: profile,
+		CombatKind:    profile,
+		SpawnGroupRef: "practice.authored_aggro_actor",
+	}
+	if got := EffectiveStaticActorSpawnAggroRadiusForActor(actor); got != 300 {
+		t.Fatalf("expected actor effective aggro radius 300, got %d", got)
+	}
+
+	inside, ok := EvaluateStaticActorSpawnAggroAcquisition(actor, NewPosition(42, 1950, 2800), EffectiveStaticActorSpawnAggroRadiusForActor(actor))
+	if !ok || !inside.Acquired || inside.Radius != 300 {
+		t.Fatalf("expected authored radius 300 to acquire at distance 250, got ok=%v evaluation=%+v", ok, inside)
+	}
+	outside, ok := EvaluateStaticActorSpawnAggroAcquisition(actor, NewPosition(42, 2050, 2800), EffectiveStaticActorSpawnAggroRadiusForActor(actor))
+	if !ok || outside.Acquired || outside.Radius != 300 {
+		t.Fatalf("expected authored radius 300 to reject distance 350, got ok=%v evaluation=%+v", ok, outside)
+	}
+}

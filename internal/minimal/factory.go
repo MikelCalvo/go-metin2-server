@@ -9346,6 +9346,7 @@ func contentBundleCombatProfileSnapshotMatchesDefaults(snapshot worldruntime.Sta
 		normalized.Level == defaults.Level &&
 		normalized.Rank == defaults.Rank &&
 		normalized.RespawnDelay == defaults.RespawnDelay &&
+		normalized.AggroRadius == defaults.AggroRadius &&
 		normalized.RetaliationPointDelta == defaults.RetaliationPointDelta &&
 		reflect.DeepEqual(normalized.DeathReward.Clone(), defaults.DeathReward.Clone())
 }
@@ -9353,6 +9354,9 @@ func contentBundleCombatProfileSnapshotMatchesDefaults(snapshot worldruntime.Sta
 func contentBundleCombatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfileSnapshot) (worldruntime.StaticActorCombatProfileDefaults, bool) {
 	respawnDelay, ok := worldruntime.StaticActorCombatProfileRespawnDelay(snapshot.RespawnDelayMs)
 	if strings.TrimSpace(snapshot.Profile) == "" || snapshot.MaxHP == 0 || snapshot.AttackValue == 0 || !ok {
+		return worldruntime.StaticActorCombatProfileDefaults{}, false
+	}
+	if !worldruntime.ValidStaticActorCombatProfileAggroRadius(snapshot.AggroRadius) {
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
 	defaults := worldruntime.StaticActorCombatProfileDefaults{
@@ -9363,6 +9367,7 @@ func contentBundleCombatProfileSnapshotDefaults(snapshot worldruntime.StaticActo
 		Level:                 snapshot.Level,
 		Rank:                  snapshot.Rank,
 		RespawnDelay:          respawnDelay,
+		AggroRadius:           snapshot.AggroRadius,
 		RetaliationPointDelta: snapshot.RetaliationPointDelta,
 		DeathReward:           snapshot.DeathReward.Clone(),
 	}
@@ -9455,6 +9460,10 @@ func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorComb
 			rollback()
 			return nil, contentbundle.ErrInvalidBundle
 		}
+		if !worldruntime.ValidStaticActorCombatProfileAggroRadius(snapshot.AggroRadius) {
+			rollback()
+			return nil, contentbundle.ErrInvalidBundle
+		}
 		if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
 			MaxHP:                 snapshot.MaxHP,
 			DamagePerNormalAttack: snapshot.DamagePerNormalAttack,
@@ -9463,6 +9472,7 @@ func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorComb
 			Level:                 snapshot.Level,
 			Rank:                  snapshot.Rank,
 			RespawnDelay:          respawnDelay,
+			AggroRadius:           snapshot.AggroRadius,
 			RetaliationPointDelta: snapshot.RetaliationPointDelta,
 			DeathReward:           snapshot.DeathReward,
 		}) {
