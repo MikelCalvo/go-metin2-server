@@ -5529,7 +5529,7 @@ func TestLocalSpawnGroupLeashEndpointRejectsInvalidRequestBeforeCallback(t *test
 		return nil, false
 	})
 
-	for _, path := range []string{"/local/spawn-groups/not-an-id/leash?radius=400", "/local/spawn-groups/44/leash", "/local/spawn-groups/44/leash?radius=0", "/local/spawn-groups/44/leash?radius=-1"} {
+	for _, path := range []string{"/local/spawn-groups/not-an-id/leash?radius=400", "/local/spawn-groups/44/leash?radius=0", "/local/spawn-groups/44/leash?radius=-1"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.RemoteAddr = "127.0.0.1:12345"
 		rec := httptest.NewRecorder()
@@ -5539,6 +5539,30 @@ func TestLocalSpawnGroupLeashEndpointRejectsInvalidRequestBeforeCallback(t *test
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected status %d for %s, got %d", http.StatusBadRequest, path, rec.Code)
 		}
+	}
+}
+
+func TestLocalSpawnGroupLeashEndpointDefaultsOmittedRadiusToZeroOverride(t *testing.T) {
+	var gotRadius int32 = -1
+	mux := RegisterLocalSpawnGroupLeashEndpoint(NewPprofMux("gamed"), func(entityID uint64, radius int32) (any, bool) {
+		if entityID != 44 {
+			return nil, false
+		}
+		gotRadius = radius
+		return map[string]any{"entity_id": entityID, "radius": radius, "status": "at_home"}, true
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/spawn-groups/44/leash", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body %q", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	if gotRadius != 0 {
+		t.Fatalf("expected omitted radius query to pass override sentinel 0, got %d", gotRadius)
 	}
 }
 

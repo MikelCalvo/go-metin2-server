@@ -5118,6 +5118,63 @@ func TestCanonicalizeRejectsCombatProfileAggroRadiusAboveLeash(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeRoundTripsAuthoredCombatProfileLeashRadius(t *testing.T) {
+	const profile = "practice_authored_leash_wolf"
+
+	canonical, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.authored_leash_wolf",
+			Name:          "Authored Leash Wolf",
+			MapIndex:      42,
+			X:             1775,
+			Y:             2875,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        profile,
+			MaxHP:          24,
+			AttackValue:    8,
+			DefenseValue:   2,
+			RespawnDelayMs: 1500,
+			AggroRadius:    200,
+			LeashRadius:    500,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize authored leash-radius combat profile: %v", err)
+	}
+	if len(canonical.CombatProfiles) != 1 || canonical.CombatProfiles[0].LeashRadius != 500 {
+		t.Fatalf("expected canonical combat profile to preserve leash_radius 500, got %#v", canonical.CombatProfiles)
+	}
+}
+
+func TestCanonicalizeRejectsCombatProfileLeashRadiusBelowAggro(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.underaggro_leash_wolf",
+			Name:          "Underaggro Leash Wolf",
+			MapIndex:      42,
+			X:             1800,
+			Y:             2900,
+			RaceNum:       101,
+			CombatProfile: "practice_underaggro_leash_wolf",
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        "practice_underaggro_leash_wolf",
+			MaxHP:          24,
+			AttackValue:    8,
+			DefenseValue:   2,
+			RespawnDelayMs: 1500,
+			AggroRadius:    300,
+			LeashRadius:    250,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for combat-profile leash radius below aggro, got %v", err)
+	}
+}
+
 func TestCanonicalizeRejectsOverflowingCombatProfileRespawnDelay(t *testing.T) {
 	_, err := Canonicalize(Bundle{
 		SpawnGroups: []SpawnGroup{{

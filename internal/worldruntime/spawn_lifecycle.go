@@ -196,7 +196,7 @@ func EvaluateStaticActorSpawnAggroAcquisition(actor StaticEntity, candidate Posi
 	if radius <= 0 || !candidate.Valid() {
 		return SpawnAggroAcquisitionEvaluation{}, false
 	}
-	evaluation, ok := EvaluateStaticActorCurrentSpawnLeash(actor, DefaultSpawnLeashRadius)
+	evaluation, ok := EvaluateStaticActorCurrentSpawnLeash(actor, EffectiveStaticActorSpawnLeashRadiusForActor(actor))
 	if !ok {
 		return SpawnAggroAcquisitionEvaluation{}, false
 	}

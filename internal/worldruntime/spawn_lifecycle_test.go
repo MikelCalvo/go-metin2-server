@@ -637,3 +637,42 @@ func TestEffectiveStaticActorSpawnAggroRadiusForActorUsesRegisteredProfile(t *te
 		t.Fatalf("expected authored radius 300 to reject distance 350, got ok=%v evaluation=%+v", ok, outside)
 	}
 }
+
+func TestEffectiveStaticActorSpawnLeashRadiusForActorUsesRegisteredProfile(t *testing.T) {
+	const profile = "practice_spawn_leash_actor_wolf"
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:        24,
+		AttackValue:  8,
+		DefenseValue: 2,
+		RespawnDelay: PracticeMobBootstrapRespawnDelay,
+		AggroRadius:  200,
+		LeashRadius:  300,
+	}) {
+		t.Fatalf("expected %q profile registration to succeed", profile)
+	}
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	actor := StaticEntity{
+		Entity:        Entity{ID: 78, Kind: EntityKindStaticActor, Name: "AuthoredLeashMob"},
+		Position:      NewPosition(42, 2001, 2800),
+		SpawnHome:     NewPosition(42, 1700, 2800),
+		RaceNum:       20350,
+		CombatProfile: profile,
+		CombatKind:    profile,
+		SpawnGroupRef: "practice.authored_leash_actor",
+	}
+	if got := EffectiveStaticActorSpawnLeashRadiusForActor(actor); got != 300 {
+		t.Fatalf("expected actor effective leash radius 300, got %d", got)
+	}
+
+	// Distance from home (1700,2800) to current (2001,2800) is 301: outside authored 300
+	// but still inside bootstrap DefaultSpawnLeashRadius=400.
+	evaluation, ok := EvaluateStaticActorCurrentSpawnLeash(actor, EffectiveStaticActorSpawnLeashRadiusForActor(actor))
+	if !ok || !evaluation.ReturnRequired || evaluation.Radius != 300 {
+		t.Fatalf("expected authored leash radius 300 to require return at distance 301, got ok=%v evaluation=%+v", ok, evaluation)
+	}
+	bootstrap, ok := EvaluateStaticActorCurrentSpawnLeash(actor, DefaultSpawnLeashRadius)
+	if !ok || bootstrap.ReturnRequired {
+		t.Fatalf("expected bootstrap leash 400 to keep distance 301 within radius, got ok=%v evaluation=%+v", ok, bootstrap)
+	}
+}

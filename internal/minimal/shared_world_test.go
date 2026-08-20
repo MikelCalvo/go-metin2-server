@@ -2656,6 +2656,94 @@ func TestGameRuntimeFlushServerFramesHonorsAuthoredCombatProfileAggroRadius(t *t
 	}
 }
 
+func TestGameRuntimeSpawnGroupLeashHonorsAuthoredCombatProfileLeashRadius(t *testing.T) {
+	const profile = "practice_authored_leash_live_wolf"
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("LeashAuthoredOwner", 0x010301a3, 0x020401a3, 1850, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "leash-authored-owner", 0x4b4b4b4b, owner)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for authored-radius leash: %v", err)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:           "practice.leash_authored_auto",
+			Name:          "LeashAuthoredMob",
+			MapIndex:      42,
+			X:             1700,
+			Y:             2800,
+			RaceNum:       20350,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        profile,
+			MaxHP:          24,
+			AttackValue:    8,
+			DefenseValue:   2,
+			RespawnDelayMs: 1500,
+			AggroRadius:    200,
+			LeashRadius:    300,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("import authored-radius leash spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.leash_authored_auto")
+	if !ok {
+		t.Fatal("expected authored-radius leash spawn group to resolve by ref")
+	}
+	if got := worldruntime.EffectiveStaticActorSpawnLeashRadius(profile); got != 300 {
+		t.Fatalf("expected imported profile effective leash radius 300, got %d", got)
+	}
+
+	updated, ok := runtime.UpdateStaticActor(group.EntityID, "LeashAuthoredMob", 42, 2001, 2800, 20350)
+	if !ok {
+		t.Fatal("expected authored-leash actor displace to succeed")
+	}
+	if updated.SpawnLeash == nil || !updated.SpawnLeash.ReturnRequired || updated.SpawnLeash.Radius != 300 {
+		t.Fatalf("expected displace to distance 301 to require return under authored leash 300, got %+v", updated.SpawnLeash)
+	}
+
+	defaulted, ok := runtime.SpawnGroupLeash(group.EntityID, 0)
+	if !ok || !defaulted.ReturnRequired || defaulted.Radius != 300 {
+		t.Fatalf("expected omitted-radius leash lookup to use authored effective radius 300, got ok=%v leash=%+v", ok, defaulted)
+	}
+	override, ok := runtime.SpawnGroupLeash(group.EntityID, worldruntime.DefaultSpawnLeashRadius)
+	if !ok || override.ReturnRequired || override.Radius != worldruntime.DefaultSpawnLeashRadius {
+		t.Fatalf("expected explicit bootstrap radius override to keep distance 301 within leash, got ok=%v leash=%+v", ok, override)
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "leash-authored-owner", 0x4b4b4b4b)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	ownerEntity, ok := runtime.sharedWorld.playerEntityByName("LeashAuthoredOwner")
+	if !ok {
+		t.Fatal("expected authored-leash owner entity to remain registered")
+	}
+	attempt := runtime.sharedWorld.AttemptStaticActorCombatTarget(ownerEntity.Entity.ID, uint32(group.EntityID))
+	if attempt.Accepted || attempt.Failure != StaticActorCombatTargetFailureTargetReturnRequired {
+		t.Fatalf("expected authored leash return-required actor to fail target as %q, got %+v", StaticActorCombatTargetFailureTargetReturnRequired, attempt)
+	}
+}
+
 func TestGameRuntimeFlushServerFramesAppliesDueProximitySpawnGroupChaseStepWithoutHit(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("ProximityChaseOwner", 0x01030193, 0x02040193, 1850, 2800, 0, 101, 201)
@@ -5544,8 +5632,13 @@ func TestGameRuntimeSpawnGroupLeashesForMapReturnsMapLocalLeashSnapshots(t *test
 	if !ok || len(guideOnlyLeashes) != 0 {
 		t.Fatalf("expected occupied map 99 with no spawn groups to return an empty leash slice, ok=%v snapshots=%+v", ok, guideOnlyLeashes)
 	}
-	if leashes, ok := runtime.SpawnGroupLeashesForMap(42, 0); ok || len(leashes) != 0 {
-		t.Fatalf("expected non-positive radius lookup to fail closed, got ok=%v leashes=%+v", ok, leashes)
+	if leashes, ok := runtime.SpawnGroupLeashesForMap(42, 0); !ok || len(leashes) != 2 {
+		t.Fatalf("expected omitted-radius map leash lookup to resolve through actor effective leashes, got ok=%v leashes=%+v", ok, leashes)
+	} else if leashes[0].Radius != worldruntime.DefaultSpawnLeashRadius || leashes[1].Radius != worldruntime.DefaultSpawnLeashRadius {
+		t.Fatalf("expected omitted-radius map leash lookup to use bootstrap effective leash %d, got %+v", worldruntime.DefaultSpawnLeashRadius, leashes)
+	}
+	if leashes, ok := runtime.SpawnGroupLeashesForMap(42, -1); ok || len(leashes) != 0 {
+		t.Fatalf("expected negative radius lookup to fail closed, got ok=%v leashes=%+v", ok, leashes)
 	}
 	if leashes, ok := runtime.SpawnGroupLeashesForMap(0, 400); ok || len(leashes) != 0 {
 		t.Fatalf("expected map 0 leash lookup to fail closed, got ok=%v leashes=%+v", ok, leashes)

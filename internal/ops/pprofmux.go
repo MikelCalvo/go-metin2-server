@@ -67,6 +67,7 @@ type localStaticActorCombatProfileRequest struct {
 	Rank                  uint8                       `json:"rank"`
 	RespawnDelayMs        int64                       `json:"respawn_delay_ms"`
 	AggroRadius           int32                       `json:"aggro_radius"`
+	LeashRadius           int32                       `json:"leash_radius"`
 	RetaliationPointDelta int32                       `json:"retaliation_point_delta"`
 	DeathReward           localStaticActorDeathReward `json:"death_reward"`
 }
@@ -87,6 +88,7 @@ type localStaticActorCombatProfileResponse struct {
 	Rank                  uint8                               `json:"rank"`
 	RespawnDelayMs        int64                               `json:"respawn_delay_ms"`
 	AggroRadius           int32                               `json:"aggro_radius,omitempty"`
+	LeashRadius           int32                               `json:"leash_radius,omitempty"`
 	RetaliationPointDelta int32                               `json:"retaliation_point_delta"`
 	DeathReward           worldruntime.StaticActorDeathReward `json:"death_reward"`
 }
@@ -2852,6 +2854,7 @@ func RegisterLocalStaticActorCombatProfileEndpoint(mux *http.ServeMux) *http.Ser
 				Rank:                  registered.Rank,
 				RespawnDelayMs:        registered.RespawnDelay.Milliseconds(),
 				AggroRadius:           registered.AggroRadius,
+				LeashRadius:           registered.LeashRadius,
 				RetaliationPointDelta: registered.RetaliationPointDelta,
 				DeathReward:           registered.DeathReward,
 			}, http.StatusOK)
@@ -5268,6 +5271,7 @@ func decodeLocalStaticActorCombatProfileRequest(r *http.Request) (string, worldr
 		Rank:                  request.Rank,
 		RespawnDelay:          time.Duration(request.RespawnDelayMs) * time.Millisecond,
 		AggroRadius:           request.AggroRadius,
+		LeashRadius:           request.LeashRadius,
 		RetaliationPointDelta: request.RetaliationPointDelta,
 		DeathReward: worldruntime.StaticActorDeathReward{
 			Experience: request.DeathReward.Experience,
@@ -5746,6 +5750,9 @@ func decodeLocalSpawnGroupLeashRequest(r *http.Request) (uint64, int32, bool) {
 		return 0, 0, false
 	}
 	radiusValues := r.URL.Query()["radius"]
+	if len(radiusValues) == 0 {
+		return entityID, 0, true
+	}
 	if len(radiusValues) != 1 {
 		return 0, 0, false
 	}
@@ -5867,6 +5874,9 @@ func decodeLocalMapSpawnGroupLeashesRequest(r *http.Request) (uint32, int32, boo
 		return 0, 0, false
 	}
 	radiusValues := r.URL.Query()["radius"]
+	if len(radiusValues) == 0 {
+		return mapIndex, 0, true
+	}
 	if len(radiusValues) != 1 {
 		return 0, 0, false
 	}

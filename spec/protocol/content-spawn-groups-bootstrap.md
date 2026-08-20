@@ -604,7 +604,11 @@ Contract for optional authored `leash_radius` on portable `combat_profiles` / `S
 - content-bundle import/export must round-trip a non-default authored `leash_radius` through `combat_profiles` the same way `aggro_radius` / `respawn_delay_ms` already round-trip
 
 Current implementation status:
-- this seam is frozen here as the next honest RED/GREEN boundary; runtime still uses bootstrap `DefaultSpawnLeashRadius = 400` for every practice mob until the focused failing coverage and GREEN land
+- optional authored `leash_radius` is owned on portable `combat_profiles` / `StaticActorCombatProfileDefaults` and round-trips through content-bundle canonicalize/import/export and file-backed static-actor snapshots
+- `EffectiveStaticActorSpawnLeashRadius(profile)` / `EffectiveStaticActorSpawnLeashRadiusForActor(actor)` resolve omitted/zero to `DefaultSpawnLeashRadius` (`400`) and honor positive authored values that stay at or above the profile's effective aggro radius
+- live leash classification, return-step / return-home, chase-step planning/execution, and `target_return_required` gating reuse that effective radius instead of hard-coding the bootstrap default
+- read-only operator leash GET endpoints keep an explicit query `radius` override and default omitted lookups through the actor's effective leash radius
+- negative leash radii and positive leash radii below the profile's effective aggro fail closed; positive authored aggro must also stay within the profile's effective leash
 
 Explicit non-goals for this profile-authored leash-radius freeze alone:
 - pathfinding, navmesh, patrol, or continuous interpolation

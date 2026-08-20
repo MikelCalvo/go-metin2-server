@@ -304,7 +304,7 @@ Current implementation status:
 - this seam is now live for retained viewers of a successful same-map live spawn-backed operator/runtime position-only update
 - presentation/name/race refreshes, dead trailing-`DEAD` refreshes, respawn rebuild, content-bundle replacement, and cross-map updates remain on delete/readd
 - engagement release, selected-target clear, and pending chase-deadline clear still follow the already-owned operator/runtime update lifecycle
-- the next honest Track A follow-on after owned profile-authored `aggro_radius` is profile-authored optional `leash_radius` (frozen above / in `content-spawn-groups-bootstrap.md`); cross-map return MOVE / warp packet choreography remains explicitly deferred below until a client-facing packet boundary is owned
+- the next honest Track A follow-on after owned profile-authored `leash_radius` is deferred cross-map return MOVE / warp packet choreography (still blocked until a client-facing packet boundary is owned); live damaged-HP daemon-restart durability remains out of scope
 
 Explicit non-goals for this operator/runtime position MOVE freeze alone:
 - converting presentation/name/race refreshes, dead trailing-`DEAD` refreshes, respawn rebuild, or content-bundle replacement to MOVE
@@ -329,7 +329,11 @@ The full portable-bundle / registration / effective-radius contract lives in `co
 - cross-map return MOVE / warp choreography stays deferred below; this seam does not open that packet boundary
 
 Current implementation status:
-- contract frozen; runtime still hard-codes `DefaultSpawnLeashRadius = 400` until the focused RED/GREEN lands
+- optional authored `leash_radius` is owned on portable `combat_profiles` / `StaticActorCombatProfileDefaults`
+- `EffectiveStaticActorSpawnLeashRadius(profile)` / `...ForActor(actor)` resolve omitted/zero to `DefaultSpawnLeashRadius` (`400`)
+- live classification, return-step / return-home, chase-step planning/execution, and `target_return_required` gating reuse that effective radius
+- operator leash GET endpoints keep an explicit query `radius` override; omitted lookups resolve through the actor's effective leash radius
+- positive authored leash below the profile's effective aggro radius fails closed; positive authored aggro must also stay within the profile's effective leash
 
 ## Deferred cross-map return MOVE / warp choreography seam
 

@@ -2674,7 +2674,7 @@ func (r *sharedWorldRegistry) combatTargetSnapshotLocked(entityID uint64) (Comba
 		return CombatTargetSnapshot{}, false
 	}
 	if actor.SpawnGroupRef != "" {
-		leash, ok := worldruntime.EvaluateStaticActorCurrentSpawnLeash(actor, worldruntime.DefaultSpawnLeashRadius)
+		leash, ok := worldruntime.EvaluateStaticActorCurrentSpawnLeash(actor, worldruntime.EffectiveStaticActorSpawnLeashRadiusForActor(actor))
 		if !ok || leash.ReturnRequired {
 			return CombatTargetSnapshot{}, false
 		}
@@ -4113,7 +4113,7 @@ func (r *sharedWorldRegistry) SpawnGroupsForMap(mapIndex uint32) ([]StaticActorS
 }
 
 func (r *sharedWorldRegistry) SpawnGroupLeashesForMap(mapIndex uint32, radius int32) ([]SpawnGroupLeashSnapshot, bool) {
-	if r == nil || r.entities == nil || mapIndex == 0 || radius <= 0 {
+	if r == nil || r.entities == nil || mapIndex == 0 || radius < 0 {
 		return nil, false
 	}
 
@@ -4129,7 +4129,11 @@ func (r *sharedWorldRegistry) SpawnGroupLeashesForMap(mapIndex uint32, radius in
 		if !ok || actor.SpawnGroupRef == "" {
 			continue
 		}
-		evaluation, ok := worldruntime.EvaluateStaticActorCurrentSpawnLeash(actor, radius)
+		effectiveRadius := radius
+		if effectiveRadius == 0 {
+			effectiveRadius = worldruntime.EffectiveStaticActorSpawnLeashRadiusForActor(actor)
+		}
+		evaluation, ok := worldruntime.EvaluateStaticActorCurrentSpawnLeash(actor, effectiveRadius)
 		if !ok {
 			continue
 		}
@@ -4184,7 +4188,7 @@ func (r *sharedWorldRegistry) SpawnGroupByRef(ref string) (StaticActorSnapshot, 
 }
 
 func (r *sharedWorldRegistry) SpawnGroupLeash(entityID uint64, radius int32) (SpawnGroupLeashSnapshot, bool) {
-	if r == nil || r.entities == nil || entityID == 0 {
+	if r == nil || r.entities == nil || entityID == 0 || radius < 0 {
 		return SpawnGroupLeashSnapshot{}, false
 	}
 
@@ -4194,7 +4198,11 @@ func (r *sharedWorldRegistry) SpawnGroupLeash(entityID uint64, radius int32) (Sp
 	if !ok || actor.SpawnGroupRef == "" {
 		return SpawnGroupLeashSnapshot{}, false
 	}
-	evaluation, ok := worldruntime.EvaluateStaticActorCurrentSpawnLeash(actor, radius)
+	effectiveRadius := radius
+	if effectiveRadius == 0 {
+		effectiveRadius = worldruntime.EffectiveStaticActorSpawnLeashRadiusForActor(actor)
+	}
+	evaluation, ok := worldruntime.EvaluateStaticActorCurrentSpawnLeash(actor, effectiveRadius)
 	if !ok {
 		return SpawnGroupLeashSnapshot{}, false
 	}
@@ -4219,7 +4227,7 @@ func (r *sharedWorldRegistry) PlanSpawnGroupReturnHomeStep(entityID uint64, maxS
 	if !ok || currentHP == 0 {
 		return worldruntime.SpawnLeashReturnStepPlan{}, false
 	}
-	return worldruntime.PlanStaticActorSpawnLeashReturnStep(actor, worldruntime.DefaultSpawnLeashRadius, maxStep)
+	return worldruntime.PlanStaticActorSpawnLeashReturnStep(actor, worldruntime.EffectiveStaticActorSpawnLeashRadiusForActor(actor), maxStep)
 }
 
 func (r *sharedWorldRegistry) StepSpawnGroupReturnHome(entityID uint64, maxStep int32) (SpawnGroupReturnStepSnapshot, bool) {
@@ -4237,7 +4245,7 @@ func (r *sharedWorldRegistry) StepSpawnGroupReturnHome(entityID uint64, maxStep 
 	if !ok || currentHP == 0 {
 		return SpawnGroupReturnStepSnapshot{}, false
 	}
-	plan, ok := worldruntime.PlanStaticActorSpawnLeashReturnStep(actor, worldruntime.DefaultSpawnLeashRadius, maxStep)
+	plan, ok := worldruntime.PlanStaticActorSpawnLeashReturnStep(actor, worldruntime.EffectiveStaticActorSpawnLeashRadiusForActor(actor), maxStep)
 	if !ok {
 		return SpawnGroupReturnStepSnapshot{}, false
 	}
@@ -4332,7 +4340,7 @@ func (r *sharedWorldRegistry) PlanSpawnGroupChaseStep(entityID uint64, owner wor
 	if !ok || currentHP == 0 {
 		return worldruntime.SpawnChaseStepPlan{}, false
 	}
-	return worldruntime.PlanStaticActorSpawnChaseStep(actor, owner, worldruntime.DefaultSpawnLeashRadius, maxStep)
+	return worldruntime.PlanStaticActorSpawnChaseStep(actor, owner, worldruntime.EffectiveStaticActorSpawnLeashRadiusForActor(actor), maxStep)
 }
 
 // StepSpawnGroupChase applies one planned chase step toward the engaged owner.
@@ -4353,7 +4361,7 @@ func (r *sharedWorldRegistry) StepSpawnGroupChase(entityID uint64, owner worldru
 	if !ok || currentHP == 0 {
 		return SpawnGroupReturnStepSnapshot{}, false
 	}
-	plan, ok := worldruntime.PlanStaticActorSpawnChaseStep(actor, owner, worldruntime.DefaultSpawnLeashRadius, maxStep)
+	plan, ok := worldruntime.PlanStaticActorSpawnChaseStep(actor, owner, worldruntime.EffectiveStaticActorSpawnLeashRadiusForActor(actor), maxStep)
 	if !ok {
 		return SpawnGroupReturnStepSnapshot{}, false
 	}
@@ -4427,7 +4435,7 @@ func (r *sharedWorldRegistry) ReturnSpawnGroupHome(entityID uint64) (SpawnGroupL
 	if !ok || actor.SpawnGroupRef == "" {
 		return SpawnGroupLeashSnapshot{}, false
 	}
-	evaluation, ok := worldruntime.EvaluateStaticActorCurrentSpawnLeash(actor, worldruntime.DefaultSpawnLeashRadius)
+	evaluation, ok := worldruntime.EvaluateStaticActorCurrentSpawnLeash(actor, worldruntime.EffectiveStaticActorSpawnLeashRadiusForActor(actor))
 	if !ok {
 		return SpawnGroupLeashSnapshot{}, false
 	}
@@ -4514,7 +4522,7 @@ func (r *sharedWorldRegistry) ReturnSpawnGroupHome(entityID uint64) (SpawnGroupL
 	if targetVID, ok := worldruntime.StaticActorVisibilityVID(actor); ok {
 		r.clearSelectedCombatTargetsLocked(targetVID, 0)
 	}
-	return r.spawnGroupLeashLocked(updated, worldruntime.DefaultSpawnLeashRadius)
+	return r.spawnGroupLeashLocked(updated, worldruntime.EffectiveStaticActorSpawnLeashRadiusForActor(updated))
 }
 
 func (r *sharedWorldRegistry) spawnGroupLeashLocked(actor worldruntime.StaticEntity, radius int32) (SpawnGroupLeashSnapshot, bool) {
@@ -4822,7 +4830,7 @@ func (r *sharedWorldRegistry) attemptStaticActorCombatTargetLocked(subjectID uin
 		return attempt
 	}
 	if actor.SpawnGroupRef != "" {
-		leash, ok := worldruntime.EvaluateStaticActorCurrentSpawnLeash(actor, worldruntime.DefaultSpawnLeashRadius)
+		leash, ok := worldruntime.EvaluateStaticActorCurrentSpawnLeash(actor, worldruntime.EffectiveStaticActorSpawnLeashRadiusForActor(actor))
 		if !ok {
 			attempt.Failure = StaticActorCombatTargetFailureTargetNotTargetable
 			return attempt
@@ -5146,7 +5154,7 @@ func staticActorSnapshot(topology worldruntime.BootstrapTopology, actor worldrun
 		RewardGold:            actor.DeathReward.Gold,
 		RewardDropVnums:       actor.DeathReward.Clone().DropVnums,
 	}
-	if leash, ok := worldruntime.EvaluateStaticActorCurrentSpawnLeash(actor, worldruntime.DefaultSpawnLeashRadius); ok {
+	if leash, ok := worldruntime.EvaluateStaticActorCurrentSpawnLeash(actor, worldruntime.EffectiveStaticActorSpawnLeashRadiusForActor(actor)); ok {
 		leashSnapshot := worldruntime.SpawnLeashSnapshotFromEvaluation(leash)
 		spawnHome := leashSnapshot.Home
 		snapshot.SpawnHome = &spawnHome

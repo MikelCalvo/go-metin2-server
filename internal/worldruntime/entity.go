@@ -124,6 +124,7 @@ type StaticActorCombatProfileDefaults struct {
 	Rank                  uint8
 	RespawnDelay          time.Duration
 	AggroRadius           int32
+	LeashRadius           int32
 	RetaliationPointDelta int32
 	DeathReward           StaticActorDeathReward
 }
@@ -138,6 +139,7 @@ type StaticActorCombatProfileSnapshot struct {
 	Rank                  uint8                  `json:"rank"`
 	RespawnDelayMs        int64                  `json:"respawn_delay_ms"`
 	AggroRadius           int32                  `json:"aggro_radius,omitempty"`
+	LeashRadius           int32                  `json:"leash_radius,omitempty"`
 	RetaliationPointDelta int32                  `json:"retaliation_point_delta,omitempty"`
 	DeathReward           StaticActorDeathReward `json:"death_reward"`
 }
@@ -157,7 +159,10 @@ func RegisterStaticActorCombatProfile(profile string, defaults StaticActorCombat
 	if defaults.RetaliationPointDelta > 0 {
 		return false
 	}
-	if !ValidStaticActorCombatProfileAggroRadius(defaults.AggroRadius) {
+	if !ValidStaticActorCombatProfileAggroRadius(defaults.AggroRadius, defaults.LeashRadius) {
+		return false
+	}
+	if !ValidStaticActorCombatProfileLeashRadius(defaults.LeashRadius, defaults.AggroRadius) {
 		return false
 	}
 	hasLegacyDamage := defaults.DamagePerNormalAttack != 0
@@ -240,6 +245,7 @@ func staticActorCombatProfileSnapshot(profile string, defaults StaticActorCombat
 		Rank:                  defaults.Rank,
 		RespawnDelayMs:        defaults.RespawnDelay.Milliseconds(),
 		AggroRadius:           defaults.AggroRadius,
+		LeashRadius:           defaults.LeashRadius,
 		DeathReward:           defaults.DeathReward.Clone(),
 	}
 	if defaults.RetaliationPointDelta != PracticeMobBootstrapRetaliationPointDelta {
@@ -269,9 +275,42 @@ func StaticActorCombatProfileRespawnDelay(delayMs int64) (time.Duration, bool) {
 }
 
 // ValidStaticActorCombatProfileAggroRadius accepts omitted/zero (bootstrap default)
-// and positive authored radii that do not stretch past DefaultSpawnLeashRadius.
-func ValidStaticActorCombatProfileAggroRadius(radius int32) bool {
-	return radius >= 0 && radius <= DefaultSpawnLeashRadius
+// and positive authored radii that do not stretch past the profile's effective leash.
+func ValidStaticActorCombatProfileAggroRadius(aggroRadius int32, leashRadius int32) bool {
+	if aggroRadius < 0 {
+		return false
+	}
+	return aggroRadius <= EffectiveStaticActorSpawnLeashRadiusFromDefaults(StaticActorCombatProfileDefaults{LeashRadius: leashRadius})
+}
+
+// ValidStaticActorCombatProfileLeashRadius accepts omitted/zero (bootstrap default)
+// and positive authored radii that stay at or above the profile's effective aggro.
+func ValidStaticActorCombatProfileLeashRadius(leashRadius int32, aggroRadius int32) bool {
+	if leashRadius < 0 {
+		return false
+	}
+	if leashRadius == 0 {
+		return true
+	}
+	return leashRadius >= EffectiveStaticActorSpawnAggroRadiusFromDefaults(StaticActorCombatProfileDefaults{AggroRadius: aggroRadius})
+}
+
+// EffectiveStaticActorSpawnAggroRadiusFromDefaults resolves omit/zero to the
+// bootstrap DefaultSpawnAggroRadius without consulting the profile registry.
+func EffectiveStaticActorSpawnAggroRadiusFromDefaults(defaults StaticActorCombatProfileDefaults) int32 {
+	if defaults.AggroRadius <= 0 {
+		return DefaultSpawnAggroRadius
+	}
+	return defaults.AggroRadius
+}
+
+// EffectiveStaticActorSpawnLeashRadiusFromDefaults resolves omit/zero to the
+// bootstrap DefaultSpawnLeashRadius without consulting the profile registry.
+func EffectiveStaticActorSpawnLeashRadiusFromDefaults(defaults StaticActorCombatProfileDefaults) int32 {
+	if defaults.LeashRadius <= 0 {
+		return DefaultSpawnLeashRadius
+	}
+	return defaults.LeashRadius
 }
 
 // EffectiveStaticActorSpawnAggroRadius returns the acquire / leave-radius /
@@ -279,16 +318,33 @@ func ValidStaticActorCombatProfileAggroRadius(radius int32) bool {
 // keep the bootstrap DefaultSpawnAggroRadius.
 func EffectiveStaticActorSpawnAggroRadius(profile string) int32 {
 	defaults, ok := BootstrapStaticActorCombatProfileDefaults(strings.TrimSpace(profile))
-	if !ok || defaults.AggroRadius <= 0 {
+	if !ok {
 		return DefaultSpawnAggroRadius
 	}
-	return defaults.AggroRadius
+	return EffectiveStaticActorSpawnAggroRadiusFromDefaults(defaults)
 }
 
 // EffectiveStaticActorSpawnAggroRadiusForActor resolves the actor's combat
 // profile and returns its effective spawn aggro radius.
 func EffectiveStaticActorSpawnAggroRadiusForActor(actor StaticEntity) int32 {
 	return EffectiveStaticActorSpawnAggroRadius(staticActorCombatProfile(actor.CombatProfile, actor.CombatKind))
+}
+
+// EffectiveStaticActorSpawnLeashRadius returns the leash / return / chase-clamp
+// distance for one combat profile. Omitted or unknown profiles keep the
+// bootstrap DefaultSpawnLeashRadius.
+func EffectiveStaticActorSpawnLeashRadius(profile string) int32 {
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(strings.TrimSpace(profile))
+	if !ok {
+		return DefaultSpawnLeashRadius
+	}
+	return EffectiveStaticActorSpawnLeashRadiusFromDefaults(defaults)
+}
+
+// EffectiveStaticActorSpawnLeashRadiusForActor resolves the actor's combat
+// profile and returns its effective spawn leash radius.
+func EffectiveStaticActorSpawnLeashRadiusForActor(actor StaticEntity) int32 {
+	return EffectiveStaticActorSpawnLeashRadius(staticActorCombatProfile(actor.CombatProfile, actor.CombatKind))
 }
 
 func validStaticActorCombatProfileName(profile string) bool {

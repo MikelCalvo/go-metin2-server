@@ -9347,6 +9347,7 @@ func contentBundleCombatProfileSnapshotMatchesDefaults(snapshot worldruntime.Sta
 		normalized.Rank == defaults.Rank &&
 		normalized.RespawnDelay == defaults.RespawnDelay &&
 		normalized.AggroRadius == defaults.AggroRadius &&
+		normalized.LeashRadius == defaults.LeashRadius &&
 		normalized.RetaliationPointDelta == defaults.RetaliationPointDelta &&
 		reflect.DeepEqual(normalized.DeathReward.Clone(), defaults.DeathReward.Clone())
 }
@@ -9356,7 +9357,10 @@ func contentBundleCombatProfileSnapshotDefaults(snapshot worldruntime.StaticActo
 	if strings.TrimSpace(snapshot.Profile) == "" || snapshot.MaxHP == 0 || snapshot.AttackValue == 0 || !ok {
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
-	if !worldruntime.ValidStaticActorCombatProfileAggroRadius(snapshot.AggroRadius) {
+	if !worldruntime.ValidStaticActorCombatProfileAggroRadius(snapshot.AggroRadius, snapshot.LeashRadius) {
+		return worldruntime.StaticActorCombatProfileDefaults{}, false
+	}
+	if !worldruntime.ValidStaticActorCombatProfileLeashRadius(snapshot.LeashRadius, snapshot.AggroRadius) {
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
 	defaults := worldruntime.StaticActorCombatProfileDefaults{
@@ -9368,6 +9372,7 @@ func contentBundleCombatProfileSnapshotDefaults(snapshot worldruntime.StaticActo
 		Rank:                  snapshot.Rank,
 		RespawnDelay:          respawnDelay,
 		AggroRadius:           snapshot.AggroRadius,
+		LeashRadius:           snapshot.LeashRadius,
 		RetaliationPointDelta: snapshot.RetaliationPointDelta,
 		DeathReward:           snapshot.DeathReward.Clone(),
 	}
@@ -9460,7 +9465,11 @@ func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorComb
 			rollback()
 			return nil, contentbundle.ErrInvalidBundle
 		}
-		if !worldruntime.ValidStaticActorCombatProfileAggroRadius(snapshot.AggroRadius) {
+		if !worldruntime.ValidStaticActorCombatProfileAggroRadius(snapshot.AggroRadius, snapshot.LeashRadius) {
+			rollback()
+			return nil, contentbundle.ErrInvalidBundle
+		}
+		if !worldruntime.ValidStaticActorCombatProfileLeashRadius(snapshot.LeashRadius, snapshot.AggroRadius) {
 			rollback()
 			return nil, contentbundle.ErrInvalidBundle
 		}
@@ -9473,6 +9482,7 @@ func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorComb
 			Rank:                  snapshot.Rank,
 			RespawnDelay:          respawnDelay,
 			AggroRadius:           snapshot.AggroRadius,
+			LeashRadius:           snapshot.LeashRadius,
 			RetaliationPointDelta: snapshot.RetaliationPointDelta,
 			DeathReward:           snapshot.DeathReward,
 		}) {

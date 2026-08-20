@@ -194,7 +194,10 @@ func validCombatProfileSnapshot(profile worldruntime.StaticActorCombatProfileSna
 	if profile.RetaliationPointDelta > 0 {
 		return false
 	}
-	if !worldruntime.ValidStaticActorCombatProfileAggroRadius(profile.AggroRadius) {
+	if !worldruntime.ValidStaticActorCombatProfileAggroRadius(profile.AggroRadius, profile.LeashRadius) {
+		return false
+	}
+	if !worldruntime.ValidStaticActorCombatProfileLeashRadius(profile.LeashRadius, profile.AggroRadius) {
 		return false
 	}
 	if profile.MaxHP == 0 || profile.AttackValue == 0 || !worldruntime.ValidStaticActorCombatProfileRespawnDelayMs(profile.RespawnDelayMs) {
@@ -223,6 +226,7 @@ func combatProfileSnapshotMatchesDefaults(snapshot worldruntime.StaticActorComba
 		candidateDefaults.Rank == defaults.Rank &&
 		candidateDefaults.RespawnDelay == defaults.RespawnDelay &&
 		candidateDefaults.AggroRadius == defaults.AggroRadius &&
+		candidateDefaults.LeashRadius == defaults.LeashRadius &&
 		candidateDefaults.RetaliationPointDelta == defaults.RetaliationPointDelta &&
 		candidateDefaults.DeathReward.Experience == defaults.DeathReward.Experience &&
 		candidateDefaults.DeathReward.Gold == defaults.DeathReward.Gold &&
@@ -234,7 +238,10 @@ func combatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfil
 	if strings.TrimSpace(snapshot.Profile) == "" || snapshot.MaxHP == 0 || snapshot.AttackValue == 0 || !ok {
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
-	if !worldruntime.ValidStaticActorCombatProfileAggroRadius(snapshot.AggroRadius) {
+	if !worldruntime.ValidStaticActorCombatProfileAggroRadius(snapshot.AggroRadius, snapshot.LeashRadius) {
+		return worldruntime.StaticActorCombatProfileDefaults{}, false
+	}
+	if !worldruntime.ValidStaticActorCombatProfileLeashRadius(snapshot.LeashRadius, snapshot.AggroRadius) {
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
 	defaults := worldruntime.StaticActorCombatProfileDefaults{
@@ -246,6 +253,7 @@ func combatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfil
 		Rank:                  snapshot.Rank,
 		RespawnDelay:          respawnDelay,
 		AggroRadius:           snapshot.AggroRadius,
+		LeashRadius:           snapshot.LeashRadius,
 		RetaliationPointDelta: snapshot.RetaliationPointDelta,
 		DeathReward:           cloneDeathRewardPreservingDropMultiplicity(snapshot.DeathReward),
 	}

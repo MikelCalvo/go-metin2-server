@@ -598,7 +598,7 @@ func staticActorSnapshot(topology BootstrapTopology, actor StaticEntity) StaticA
 		RewardGold:            actor.DeathReward.Gold,
 		RewardDropVnums:       actor.DeathReward.Clone().DropVnums,
 	}
-	if leash, ok := EvaluateStaticActorCurrentSpawnLeash(actor, DefaultSpawnLeashRadius); ok {
+	if leash, ok := EvaluateStaticActorCurrentSpawnLeash(actor, EffectiveStaticActorSpawnLeashRadiusForActor(actor)); ok {
 		leashSnapshot := SpawnLeashSnapshotFromEvaluation(leash)
 		spawnHome := leashSnapshot.Home
 		snapshot.SpawnHome = &spawnHome

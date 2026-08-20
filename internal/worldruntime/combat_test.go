@@ -410,6 +410,101 @@ func TestRegisterStaticActorCombatProfileRejectsNegativeAggroRadius(t *testing.T
 	}
 }
 
+func TestEffectiveStaticActorSpawnLeashRadiusDefaultsToBootstrap(t *testing.T) {
+	if got := EffectiveStaticActorSpawnLeashRadius(StaticActorCombatProfilePracticeMob); got != DefaultSpawnLeashRadius {
+		t.Fatalf("expected practice_mob effective leash radius %d, got %d", DefaultSpawnLeashRadius, got)
+	}
+	if got := EffectiveStaticActorSpawnLeashRadius(StaticActorCombatProfileTrainingDummy); got != DefaultSpawnLeashRadius {
+		t.Fatalf("expected training_dummy effective leash radius %d, got %d", DefaultSpawnLeashRadius, got)
+	}
+	if got := EffectiveStaticActorSpawnLeashRadius("missing_profile"); got != DefaultSpawnLeashRadius {
+		t.Fatalf("expected unknown profile effective leash radius %d, got %d", DefaultSpawnLeashRadius, got)
+	}
+}
+
+func TestRegisterStaticActorCombatProfileHonorsAuthoredLeashRadius(t *testing.T) {
+	const profile = "practice_leash_radius_wolf"
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:        24,
+		AttackValue:  8,
+		DefenseValue: 2,
+		RespawnDelay: PracticeMobBootstrapRespawnDelay,
+		AggroRadius:  200,
+		LeashRadius:  500,
+	}) {
+		t.Fatalf("expected %q profile registration with authored leash radius to succeed", profile)
+	}
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(profile)
+	if !ok {
+		t.Fatalf("expected registered profile defaults to resolve")
+	}
+	if defaults.LeashRadius != 500 {
+		t.Fatalf("expected registered leash radius 500, got %+v", defaults)
+	}
+	if got := EffectiveStaticActorSpawnLeashRadius(profile); got != 500 {
+		t.Fatalf("expected effective leash radius 500, got %d", got)
+	}
+	snapshot, ok := staticActorCombatProfileSnapshotByName(StaticActorCombatProfileSnapshots(), profile)
+	if !ok {
+		t.Fatalf("expected registered profile snapshot for %q", profile)
+	}
+	if snapshot.LeashRadius != 500 {
+		t.Fatalf("expected snapshot to expose authored leash radius 500, got %+v", snapshot)
+	}
+}
+
+func TestRegisterStaticActorCombatProfileRejectsLeashRadiusBelowAggro(t *testing.T) {
+	const profile = "practice_underaggro_leash_wolf"
+	if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:        24,
+		AttackValue:  8,
+		DefenseValue: 2,
+		RespawnDelay: PracticeMobBootstrapRespawnDelay,
+		AggroRadius:  300,
+		LeashRadius:  250,
+	}) {
+		t.Fatalf("expected %q profile registration with leash below aggro to fail closed", profile)
+	}
+	if ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected under-aggro leash profile %q not to become valid", profile)
+	}
+}
+
+func TestRegisterStaticActorCombatProfileRejectsNegativeLeashRadius(t *testing.T) {
+	const profile = "practice_negative_leash_wolf"
+	if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:        24,
+		AttackValue:  8,
+		DefenseValue: 2,
+		RespawnDelay: PracticeMobBootstrapRespawnDelay,
+		LeashRadius:  -1,
+	}) {
+		t.Fatalf("expected %q profile registration with negative leash radius to fail closed", profile)
+	}
+	if ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected negative-leash profile %q not to become valid", profile)
+	}
+}
+
+func TestRegisterStaticActorCombatProfileRejectsAggroAboveAuthoredLeash(t *testing.T) {
+	const profile = "practice_aggro_above_authored_leash_wolf"
+	if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:        24,
+		AttackValue:  8,
+		DefenseValue: 2,
+		RespawnDelay: PracticeMobBootstrapRespawnDelay,
+		AggroRadius:  350,
+		LeashRadius:  300,
+	}) {
+		t.Fatalf("expected %q profile registration with aggro above authored leash to fail closed", profile)
+	}
+	if ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected over-authored-leash aggro profile %q not to become valid", profile)
+	}
+}
+
 func TestStaticActorCombatProfileRespawnDelayMsRejectsDurationOverflow(t *testing.T) {
 	validDelayMs := TrainingDummyBootstrapRespawnDelay.Milliseconds()
 	if !ValidStaticActorCombatProfileRespawnDelayMs(validDelayMs) {
