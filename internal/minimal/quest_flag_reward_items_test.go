@@ -210,3 +210,180 @@ func TestGameSessionFlowStaticActorQuestFlagRewardItemsRejectsWhenSecondGrantWou
 		t.Fatalf("expected quest-state unchanged after reward-items overflow rejection:\n got: %#v\nwant: %#v", loaded, wantFlags)
 	}
 }
+
+func TestGameSessionFlowStaticActorQuestFlagRewardItemRejectsAntiGetWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	peer := peerVisibilityCharacter("QuestHero", 0x01030118, 0x02040118, 1100, 2100, 0, 101, 201)
+	peer.Gold = 25
+	issuePeerTicket(t, ticketStore, "qf-reward-antiget", 0x1c1c1c1c, peer)
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "qf-reward-antiget", Empire: peer.Empire, Characters: []loginticket.Character{peer}}); err != nil {
+		t.Fatalf("seed quest-flag anti_get reward account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+		Kind:            interactionstore.KindQuestFlag,
+		Ref:             "quest:first_steps_kill_turnin",
+		Text:            "Quest updated: first_steps.killed_qa_mob = 0.",
+		QuestRef:        "quest:first_steps",
+		QuestFlag:       "killed_qa_mob",
+		QuestFrom:       1,
+		QuestTo:         0,
+		RewardGold:      100,
+		RewardItemVnum:  27001,
+		RewardItemCount: 1,
+	}})
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
+		Vnum: 27001, Name: "Bound Reward Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiGet: true,
+	}}}); err != nil {
+		t.Fatalf("seed quest-flag anti_get reward templates: %v", err)
+	}
+	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{
+		Character: "QuestHero",
+		QuestRef:  "quest:first_steps",
+		Name:      "killed_qa_mob",
+		Value:     1,
+	}}}); err != nil {
+		t.Fatalf("seed quest-state for anti_get reward turn-in: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, ticketStore, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected quest-flag anti_get reward runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("QuestHunter", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindQuestFlag, "quest:first_steps_kill_turnin")
+	if !ok {
+		t.Fatal("expected quest-flag anti_get reward static actor registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "qf-reward-antiget", 0x1c1c1c1c)
+	if len(enterOut) < 8 {
+		t.Fatalf("expected bootstrap frames with visible quest-flag anti_get reward actor, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected quest-flag anti_get reward interaction error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected anti_get quest-flag reward turn-in to emit no frames, got %d", len(out))
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(peer.Name)
+	if !ok || currencySnapshot.Gold != 25 {
+		t.Fatalf("expected gold unchanged after anti_get reward rejection, got ok=%v snapshot=%+v", ok, currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(peer.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected inventory unchanged after anti_get reward rejection, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+	account, err := accounts.Load("qf-reward-antiget")
+	if err != nil {
+		t.Fatalf("load persisted quest-flag anti_get reward account: %v", err)
+	}
+	if account.Characters[0].Gold != 25 || len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected persisted account unchanged after anti_get reward rejection, got %+v", account.Characters[0])
+	}
+	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	if err != nil {
+		t.Fatalf("load quest-state after anti_get reward rejection: %v", err)
+	}
+	wantFlags := queststate.Snapshot{Flags: []queststate.Flag{{
+		Character: "QuestHero",
+		QuestRef:  "quest:first_steps",
+		Name:      "killed_qa_mob",
+		Value:     1,
+	}}}
+	if !reflect.DeepEqual(loaded, wantFlags) {
+		t.Fatalf("expected quest-state unchanged after anti_get reward rejection:\n got: %#v\nwant: %#v", loaded, wantFlags)
+	}
+}
+
+func TestGameSessionFlowStaticActorQuestFlagRewardItemRejectsSelectedCharacterRestrictionWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	peer := peerVisibilityCharacter("QuestHero", 0x01030119, 0x02040119, 1100, 2100, 0, 101, 201)
+	peer.Gold = 25
+	peer.Level = 5
+	issuePeerTicket(t, ticketStore, "qf-reward-minlevel", 0x1d1d1d1d, peer)
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "qf-reward-minlevel", Empire: peer.Empire, Characters: []loginticket.Character{peer}}); err != nil {
+		t.Fatalf("seed quest-flag min_level reward account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+		Kind:            interactionstore.KindQuestFlag,
+		Ref:             "quest:first_steps_kill_turnin",
+		Text:            "Quest updated: first_steps.killed_qa_mob = 0.",
+		QuestRef:        "quest:first_steps",
+		QuestFlag:       "killed_qa_mob",
+		QuestFrom:       1,
+		QuestTo:         0,
+		RewardGold:      100,
+		RewardItemVnum:  27001,
+		RewardItemCount: 1,
+	}})
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
+		Vnum: 27001, Name: "High-Level Reward Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, MinLevel: 10,
+	}}}); err != nil {
+		t.Fatalf("seed quest-flag min_level reward templates: %v", err)
+	}
+	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{
+		Character: "QuestHero",
+		QuestRef:  "quest:first_steps",
+		Name:      "killed_qa_mob",
+		Value:     1,
+	}}}); err != nil {
+		t.Fatalf("seed quest-state for min_level reward turn-in: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, ticketStore, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected quest-flag min_level reward runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("QuestHunter", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindQuestFlag, "quest:first_steps_kill_turnin")
+	if !ok {
+		t.Fatal("expected quest-flag min_level reward static actor registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "qf-reward-minlevel", 0x1d1d1d1d)
+	if len(enterOut) < 8 {
+		t.Fatalf("expected bootstrap frames with visible quest-flag min_level reward actor, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected quest-flag min_level reward interaction error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected min_level quest-flag reward turn-in to emit no frames, got %d", len(out))
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(peer.Name)
+	if !ok || currencySnapshot.Gold != 25 {
+		t.Fatalf("expected gold unchanged after min_level reward rejection, got ok=%v snapshot=%+v", ok, currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(peer.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected inventory unchanged after min_level reward rejection, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+	account, err := accounts.Load("qf-reward-minlevel")
+	if err != nil {
+		t.Fatalf("load persisted quest-flag min_level reward account: %v", err)
+	}
+	if account.Characters[0].Gold != 25 || len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected persisted account unchanged after min_level reward rejection, got %+v", account.Characters[0])
+	}
+	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	if err != nil {
+		t.Fatalf("load quest-state after min_level reward rejection: %v", err)
+	}
+	wantFlags := queststate.Snapshot{Flags: []queststate.Flag{{
+		Character: "QuestHero",
+		QuestRef:  "quest:first_steps",
+		Name:      "killed_qa_mob",
+		Value:     1,
+	}}}
+	if !reflect.DeepEqual(loaded, wantFlags) {
+		t.Fatalf("expected quest-state unchanged after min_level reward rejection:\n got: %#v\nwant: %#v", loaded, wantFlags)
+	}
+}

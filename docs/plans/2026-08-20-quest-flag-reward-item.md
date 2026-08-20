@@ -20,7 +20,7 @@ Give successful `quest_flag` NPC interactions an optional authored carried-inven
 8. Gold + item + quest mutation share one fail-closed transaction:
    - validate gold overflow / item grantability before applying the quest transition
    - if live grant or account save fails after the transition applies, roll back live gold/inventory and reverse the quest transition; emit no frames
-9. Inventory-full / missing template / AntiGet / unusable template fail closed with no frames (same posture as gold overflow).
+9. Inventory-full / missing template / `anti_get` / selected-character restriction (`CanUseTemplate` job/sex/empire/`min_level`) fail closed with no frames (same posture as gold overflow).
 10. Operator summaries / previews surface `reward_item_vnum` / `reward_item_count` on quest-flag trigger and route rows, and compact previews annotate successful text with `[reward_item <name|vnum> x<count>]` when present (after any `[reward_gold N]` annotation).
 11. QA fixtures grant `reward_item_vnum = 27001`, `reward_item_count = 1` on `quest:first_steps_kill_turnin` (`QuestHunter`) beside the existing `reward_gold = 100`.
 

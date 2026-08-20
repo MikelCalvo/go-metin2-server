@@ -2872,6 +2872,62 @@ func TestRuntimeValidateCarriedItemGrantRejectsNoValidPlacementWithoutMutatingSt
 	}
 }
 
+func TestRuntimeValidateCarriedItemGrantRejectsAntiGetAndSelectedCharacterRestrictionsWithoutMutatingState(t *testing.T) {
+	cases := []struct {
+		name     string
+		mutate   func(*loginticket.Character, *itemcatalog.Template)
+		template itemcatalog.Template
+	}{
+		{
+			name:     "anti_get",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Bound Reward Potion", Stackable: true, MaxCount: 200, AntiGet: true},
+		},
+		{
+			name: "anti_warrior",
+			mutate: func(character *loginticket.Character, _ *itemcatalog.Template) {
+				character.Job = 0
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Warrior Restricted Reward Potion", Stackable: true, MaxCount: 200, AntiWarrior: true},
+		},
+		{
+			name: "min_level",
+			mutate: func(character *loginticket.Character, _ *itemcatalog.Template) {
+				character.Level = 5
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "High-Level Reward Potion", Stackable: true, MaxCount: 200, MinLevel: 10},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := inventoryRuntimeCharacterFixture()
+			persisted.Inventory = nil
+			persisted.Job = 0
+			persisted.RaceNum = 0
+			persisted.Level = 20
+			template := tc.template
+			if tc.mutate != nil {
+				tc.mutate(&persisted, &template)
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+			beforeInventory := runtime.LiveInventory()
+			beforeGold := runtime.LiveGold()
+
+			if failure := runtime.ValidateCarriedItemGrant(template, 1); failure != CarriedItemGrantFailureInvalid {
+				t.Fatalf("expected invalid grant failure for %s, got %q", tc.name, failure)
+			}
+			if _, ok := runtime.GrantCarriedItem(template, 1); ok {
+				t.Fatalf("expected %s grant to fail closed", tc.name)
+			}
+			if !reflect.DeepEqual(runtime.LiveInventory(), beforeInventory) {
+				t.Fatalf("%s grant mutated inventory: got %#v want %#v", tc.name, runtime.LiveInventory(), beforeInventory)
+			}
+			if runtime.LiveGold() != beforeGold {
+				t.Fatalf("%s grant mutated gold: got %d want %d", tc.name, runtime.LiveGold(), beforeGold)
+			}
+		})
+	}
+}
+
 func TestRuntimeBuyMerchantItemMergesIntoExistingCompatibleStackBeforeAllocatingNewSlot(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
