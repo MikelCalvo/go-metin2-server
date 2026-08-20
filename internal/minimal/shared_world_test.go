@@ -32070,6 +32070,191 @@ func TestGameSessionFlowStaticActorQuestFlagRewardGoldGrantsCurrencyAndPersistsA
 	}
 }
 
+func TestGameSessionFlowStaticActorQuestFlagRewardItemGrantsInventoryAndPersistsAccount(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	peer := peerVisibilityCharacter("QuestHero", 0x01030112, 0x02040112, 1100, 2100, 0, 101, 201)
+	peer.Gold = 25
+	issuePeerTicket(t, ticketStore, "quest-hero-reward-item", 0x16161616, peer)
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "quest-hero-reward-item", Empire: peer.Empire, Characters: []loginticket.Character{peer}}); err != nil {
+		t.Fatalf("seed quest-flag reward-item account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+		Kind:            interactionstore.KindQuestFlag,
+		Ref:             "quest:first_steps_kill_turnin",
+		Text:            "Quest updated: first_steps.killed_qa_mob = 0.",
+		QuestRef:        "quest:first_steps",
+		QuestFlag:       "killed_qa_mob",
+		QuestFrom:       1,
+		QuestTo:         0,
+		RewardGold:      100,
+		RewardItemVnum:  27001,
+		RewardItemCount: 1,
+	}})
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
+		Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5,
+	}}}); err != nil {
+		t.Fatalf("seed quest-flag reward-item templates: %v", err)
+	}
+	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{
+		Character: "QuestHero",
+		QuestRef:  "quest:first_steps",
+		Name:      "killed_qa_mob",
+		Value:     1,
+	}}}); err != nil {
+		t.Fatalf("seed quest-state for reward-item turn-in: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, ticketStore, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected quest-flag reward-item runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("QuestHunter", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindQuestFlag, "quest:first_steps_kill_turnin")
+	if !ok {
+		t.Fatal("expected quest-flag reward-item static actor registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "quest-hero-reward-item", 0x16161616)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible quest-flag reward-item actor, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected quest-flag reward-item interaction error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected chat + gold + item frames for quest-flag reward-item interaction, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil || delivery.Message != "Quest updated: first_steps.killed_qa_mob = 0." {
+		t.Fatalf("unexpected quest-flag reward-item chat delivery: %+v err=%v", delivery, err)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[1]))
+	if err != nil || pointChange.Amount != 100 || pointChange.Value != 125 {
+		t.Fatalf("unexpected quest-flag reward-item gold frame: %+v err=%v", pointChange, err)
+	}
+	itemSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[2]))
+	if err != nil || itemSet.Position != itemproto.InventoryPosition(0) || itemSet.Vnum != 27001 || itemSet.Count != 1 {
+		t.Fatalf("unexpected quest-flag reward-item set frame: %+v err=%v", itemSet, err)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(peer.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].Vnum != 27001 || inventorySnapshot.Inventory[0].Count != 1 {
+		t.Fatalf("expected live inventory grant after quest-flag reward-item interaction, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+	account, err := accounts.Load("quest-hero-reward-item")
+	if err != nil {
+		t.Fatalf("load persisted quest-flag reward-item account: %v", err)
+	}
+	if account.Characters[0].Gold != 125 {
+		t.Fatalf("expected persisted gold 125 after quest-flag reward-item interaction, got %d", account.Characters[0].Gold)
+	}
+	if len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0].Vnum != 27001 || account.Characters[0].Inventory[0].Count != 1 {
+		t.Fatalf("expected persisted inventory grant after quest-flag reward-item interaction, got %+v", account.Characters[0].Inventory)
+	}
+	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	if err != nil {
+		t.Fatalf("load quest-state after quest-flag reward-item interaction: %v", err)
+	}
+	if want := (queststate.Snapshot{Flags: []queststate.Flag{}}); !reflect.DeepEqual(loaded, want) {
+		t.Fatalf("unexpected persisted quest-state after quest-flag reward-item interaction:\n got: %#v\nwant: %#v", loaded, want)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for self-only quest-flag reward-item interaction, got %d", len(queued))
+	}
+}
+
+func TestGameSessionFlowStaticActorQuestFlagRewardItemRejectsFullInventoryWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	peer := peerVisibilityCharacter("QuestHero", 0x01030113, 0x02040113, 1100, 2100, 0, 101, 201)
+	peer.Gold = 25
+	peer.Inventory = merchantBuyerFullInventory()
+	issuePeerTicket(t, ticketStore, "quest-hero-reward-item-full", 0x17171717, peer)
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "quest-hero-reward-item-full", Empire: peer.Empire, Characters: []loginticket.Character{peer}}); err != nil {
+		t.Fatalf("seed quest-flag reward-item full-inventory account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+		Kind:            interactionstore.KindQuestFlag,
+		Ref:             "quest:first_steps_kill_turnin",
+		Text:            "Quest updated: first_steps.killed_qa_mob = 0.",
+		QuestRef:        "quest:first_steps",
+		QuestFlag:       "killed_qa_mob",
+		QuestFrom:       1,
+		QuestTo:         0,
+		RewardGold:      100,
+		RewardItemVnum:  27001,
+		RewardItemCount: 1,
+	}})
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
+		Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5,
+	}}}); err != nil {
+		t.Fatalf("seed quest-flag reward-item full-inventory templates: %v", err)
+	}
+	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{
+		Character: "QuestHero",
+		QuestRef:  "quest:first_steps",
+		Name:      "killed_qa_mob",
+		Value:     1,
+	}}}); err != nil {
+		t.Fatalf("seed quest-state for full-inventory reward-item turn-in: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, ticketStore, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected quest-flag reward-item full-inventory runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("QuestHunter", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindQuestFlag, "quest:first_steps_kill_turnin")
+	if !ok {
+		t.Fatal("expected quest-flag reward-item full-inventory static actor registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "quest-hero-reward-item-full", 0x17171717)
+	if len(enterOut) < 8 {
+		t.Fatalf("expected bootstrap frames with visible quest-flag reward-item actor, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected quest-flag reward-item full-inventory interaction error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected full inventory quest-flag reward-item turn-in to emit no frames, got %d", len(out))
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(peer.Name)
+	if !ok || currencySnapshot.Gold != 25 {
+		t.Fatalf("expected gold unchanged after full-inventory reward-item rejection, got ok=%v snapshot=%+v", ok, currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(peer.Name)
+	if !ok || len(inventorySnapshot.Inventory) != int(inventory.CarriedInventorySlotCount) {
+		t.Fatalf("expected inventory unchanged after full-inventory reward-item rejection, got ok=%v len=%d", ok, len(inventorySnapshot.Inventory))
+	}
+	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	if err != nil {
+		t.Fatalf("load quest-state after full-inventory reward-item rejection: %v", err)
+	}
+	wantFlags := queststate.Snapshot{Flags: []queststate.Flag{{
+		Character: "QuestHero",
+		QuestRef:  "quest:first_steps",
+		Name:      "killed_qa_mob",
+		Value:     1,
+	}}}
+	if !reflect.DeepEqual(loaded, wantFlags) {
+		t.Fatalf("expected quest-state unchanged after full-inventory reward-item rejection:\n got: %#v\nwant: %#v", loaded, wantFlags)
+	}
+	account, err := accounts.Load("quest-hero-reward-item-full")
+	if err != nil {
+		t.Fatalf("load persisted quest-flag reward-item full-inventory account: %v", err)
+	}
+	if account.Characters[0].Gold != 25 || len(account.Characters[0].Inventory) != int(inventory.CarriedInventorySlotCount) {
+		t.Fatalf("expected persisted gold/inventory unchanged after full-inventory rejection, got gold=%d inventory=%d", account.Characters[0].Gold, len(account.Characters[0].Inventory))
+	}
+}
+
 func TestGameSessionFlowStaticActorQuestFlagMismatchReturnsSelfOnlyInfoWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")

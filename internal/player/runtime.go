@@ -72,6 +72,18 @@ type MerchantBuyResult struct {
 	Gold        uint64
 }
 
+type CarriedItemGrantFailure string
+
+const (
+	CarriedItemGrantFailureInvalid          CarriedItemGrantFailure = "invalid"
+	CarriedItemGrantFailureNoValidPlacement CarriedItemGrantFailure = "no_valid_placement"
+)
+
+type CarriedItemGrantResult struct {
+	Items       []inventory.ItemInstance
+	ItemChanges []MerchantBuyItemChange
+}
+
 type MerchantSellResult struct {
 	Slot        inventory.SlotIndex
 	ItemRemoved bool
@@ -1528,6 +1540,24 @@ func (r *Runtime) ValidateMerchantBuy(template itemcatalog.Template, count uint1
 	if r.liveGold < price {
 		return MerchantBuyFailureInsufficientGold
 	}
+	if failure := r.ValidateCarriedItemGrant(template, count); failure != "" {
+		switch failure {
+		case CarriedItemGrantFailureNoValidPlacement:
+			return MerchantBuyFailureNoValidPlacement
+		default:
+			return MerchantBuyFailureInvalid
+		}
+	}
+	return ""
+}
+
+func (r *Runtime) ValidateCarriedItemGrant(template itemcatalog.Template, count uint16) CarriedItemGrantFailure {
+	if r == nil || !itemcatalog.ValidTemplate(template) || !r.CanUseTemplate(template) || template.AntiGet || count == 0 || count > template.MaxCount {
+		return CarriedItemGrantFailureInvalid
+	}
+	if !template.Stackable && count != 1 {
+		return CarriedItemGrantFailureInvalid
+	}
 	if template.Stackable && !template.AntiStack {
 		if findMergeableInventoryIndex(r.liveInventory, template.Vnum, count, template.MaxCount) >= 0 {
 			return ""
@@ -1539,11 +1569,11 @@ func (r *Runtime) ValidateMerchantBuy(template itemcatalog.Template, count uint1
 			if _, ok := nextFreeInventorySlot(r.liveInventory); ok {
 				return ""
 			}
-			return MerchantBuyFailureNoValidPlacement
+			return CarriedItemGrantFailureNoValidPlacement
 		}
 	}
 	if _, ok := nextFreeInventorySlot(r.liveInventory); !ok {
-		return MerchantBuyFailureNoValidPlacement
+		return CarriedItemGrantFailureNoValidPlacement
 	}
 	return ""
 }
@@ -1552,6 +1582,22 @@ func (r *Runtime) BuyMerchantItem(template itemcatalog.Template, count uint16, p
 	if failure := r.ValidateMerchantBuy(template, count, price); failure != "" {
 		return MerchantBuyResult{}, false
 	}
+	grant, ok := r.grantCarriedItem(template, count)
+	if !ok {
+		return MerchantBuyResult{}, false
+	}
+	r.liveGold -= price
+	return MerchantBuyResult{Items: grant.Items, ItemChanges: grant.ItemChanges, Gold: r.liveGold}, true
+}
+
+func (r *Runtime) GrantCarriedItem(template itemcatalog.Template, count uint16) (CarriedItemGrantResult, bool) {
+	if failure := r.ValidateCarriedItemGrant(template, count); failure != "" {
+		return CarriedItemGrantResult{}, false
+	}
+	return r.grantCarriedItem(template, count)
+}
+
+func (r *Runtime) grantCarriedItem(template itemcatalog.Template, count uint16) (CarriedItemGrantResult, bool) {
 	inventoryItems := cloneItemInstances(r.liveInventory)
 	changedItems := make([]inventory.ItemInstance, 0, 2)
 	changedExistingSlots := map[inventory.SlotIndex]bool{}
@@ -1561,7 +1607,7 @@ func (r *Runtime) BuyMerchantItem(template itemcatalog.Template, count uint16, p
 			item := inventoryItems[mergeIndex]
 			item.Count += remaining
 			if err := item.Validate(); err != nil {
-				return MerchantBuyResult{}, false
+				return CarriedItemGrantResult{}, false
 			}
 			inventoryItems[mergeIndex] = item
 			changedItems = append(changedItems, item)
@@ -1579,11 +1625,11 @@ func (r *Runtime) BuyMerchantItem(template itemcatalog.Template, count uint16, p
 	if remaining > 0 {
 		slot, ok := nextFreeInventorySlot(inventoryItems)
 		if !ok {
-			return MerchantBuyResult{}, false
+			return CarriedItemGrantResult{}, false
 		}
 		item, err := (inventory.ItemInstance{ID: nextLiveItemInstanceID(inventoryItems, r.liveEquipment), Vnum: template.Vnum, Count: remaining}).WithInventorySlot(slot)
 		if err != nil {
-			return MerchantBuyResult{}, false
+			return CarriedItemGrantResult{}, false
 		}
 		inventoryItems = append(inventoryItems, item)
 		changedItems = append(changedItems, item)
@@ -1594,9 +1640,8 @@ func (r *Runtime) BuyMerchantItem(template itemcatalog.Template, count uint16, p
 	for _, item := range changedItems {
 		itemChanges = append(itemChanges, MerchantBuyItemChange{Item: item, Created: !changedExistingSlots[item.Slot]})
 	}
-	r.liveGold -= price
 	r.liveInventory = inventoryItems
-	return MerchantBuyResult{Items: changedItems, ItemChanges: itemChanges, Gold: r.liveGold}, true
+	return CarriedItemGrantResult{Items: changedItems, ItemChanges: itemChanges}, true
 }
 
 func (r *Runtime) SellMerchantItem(slot inventory.SlotIndex, count uint16, unitPrice uint64) (MerchantSellResult, bool) {

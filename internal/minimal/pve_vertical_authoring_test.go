@@ -18,6 +18,7 @@ import (
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
+	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
@@ -239,8 +240,8 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if err != nil {
 		t.Fatalf("unexpected QuestHunter turn-in interaction error: %v", err)
 	}
-	if len(turnInOut) != 2 {
-		t.Fatalf("expected chat + gold point-change frames for QuestHunter turn-in, got %d", len(turnInOut))
+	if len(turnInOut) != 3 {
+		t.Fatalf("expected chat + gold point-change + item frames for QuestHunter turn-in, got %d", len(turnInOut))
 	}
 	turnInChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, turnInOut[0]))
 	if err != nil || turnInChat.Message != "Quest updated: first_steps.killed_qa_mob = 0." {
@@ -254,9 +255,20 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if turnInGold.VID != hero.VID || turnInGold.Type != bootstrapGoldPointType || turnInGold.Amount != 100 || uint64(turnInGold.Value) != wantGoldAfter {
 		t.Fatalf("unexpected QuestHunter turn-in gold point change: %+v want value=%d before=%d", turnInGold, wantGoldAfter, beforeTurnInCurrency.Gold)
 	}
+	itemSet, err := itemproto.DecodeSet(decodeSingleFrame(t, turnInOut[2]))
+	if err != nil {
+		t.Fatalf("decode QuestHunter turn-in item set: %v", err)
+	}
+	if itemSet.Position != itemproto.InventoryPosition(0) || itemSet.Vnum != 27001 || itemSet.Count != 1 {
+		t.Fatalf("unexpected QuestHunter turn-in item set: %+v", itemSet)
+	}
 	currencySnapshot, ok := runtime.CurrencySnapshot(hero.Name)
 	if !ok || currencySnapshot.Gold != wantGoldAfter {
 		t.Fatalf("expected live gold %d after QuestHunter turn-in, got ok=%v snapshot=%+v", wantGoldAfter, ok, currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(hero.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].Vnum != 27001 || inventorySnapshot.Inventory[0].Count != 1 || inventorySnapshot.Inventory[0].Slot != 0 {
+		t.Fatalf("expected live inventory grant after QuestHunter turn-in, got ok=%v snapshot=%+v", ok, inventorySnapshot)
 	}
 	account, err := accounts.Load("pve-vertical")
 	if err != nil {
@@ -264,6 +276,9 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	}
 	if account.Characters[0].Gold != wantGoldAfter {
 		t.Fatalf("expected persisted gold %d after QuestHunter turn-in, got %d", wantGoldAfter, account.Characters[0].Gold)
+	}
+	if len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0].Vnum != 27001 || account.Characters[0].Inventory[0].Count != 1 {
+		t.Fatalf("expected persisted inventory grant after QuestHunter turn-in, got %+v", account.Characters[0].Inventory)
 	}
 	loaded, err = runtime.questStateStore.Load()
 	if err != nil {

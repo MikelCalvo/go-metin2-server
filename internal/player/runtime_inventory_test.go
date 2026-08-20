@@ -2772,6 +2772,51 @@ func TestRuntimeBuyMerchantItemDoesNotMergeIntoLockedCompatibleStack(t *testing.
 	}
 }
 
+func TestRuntimeGrantCarriedItemPlacesIntoFirstFreeSlotWithoutGoldMutation(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = nil
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+
+	if failure := runtime.ValidateCarriedItemGrant(template, 1); failure != "" {
+		t.Fatalf("expected carried item grant validation to succeed, got %q", failure)
+	}
+	result, ok := runtime.GrantCarriedItem(template, 1)
+	if !ok {
+		t.Fatal("expected carried item grant to succeed")
+	}
+	if len(result.ItemChanges) != 1 || !result.ItemChanges[0].Created || result.ItemChanges[0].Item.Vnum != 27001 || result.ItemChanges[0].Item.Count != 1 || result.ItemChanges[0].Item.Slot != 0 {
+		t.Fatalf("unexpected carried item grant changes: %+v", result.ItemChanges)
+	}
+	if runtime.LiveGold() != persisted.Gold {
+		t.Fatalf("expected carried item grant to leave gold unchanged, got %d want %d", runtime.LiveGold(), persisted.Gold)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), []inventory.ItemInstance{{ID: 22, Vnum: 27001, Count: 1, Slot: 0}}) {
+		t.Fatalf("unexpected live inventory after carried item grant: %#v", runtime.LiveInventory())
+	}
+}
+
+func TestRuntimeValidateCarriedItemGrantRejectsNoValidPlacementWithoutMutatingState(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = make([]inventory.ItemInstance, 0, inventory.CarriedInventorySlotCount)
+	for slot := inventory.SlotIndex(0); slot < inventory.CarriedInventorySlotCount; slot++ {
+		persisted.Inventory = append(persisted.Inventory, inventory.ItemInstance{ID: uint64(slot) + 1, Vnum: 1120, Count: 1, Slot: slot})
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	before := runtime.LiveInventory()
+
+	if failure := runtime.ValidateCarriedItemGrant(template, 1); failure != CarriedItemGrantFailureNoValidPlacement {
+		t.Fatalf("expected no_valid_placement, got %q", failure)
+	}
+	if _, ok := runtime.GrantCarriedItem(template, 1); ok {
+		t.Fatal("expected full inventory grant to fail closed")
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), before) {
+		t.Fatalf("full inventory grant mutated inventory: got %#v want %#v", runtime.LiveInventory(), before)
+	}
+}
+
 func TestRuntimeBuyMerchantItemMergesIntoExistingCompatibleStackBeforeAllocatingNewSlot(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})

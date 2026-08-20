@@ -9,6 +9,7 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
+	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
@@ -355,15 +356,23 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardGoldPreview(t *te
 	peer := peerVisibilityCharacter("PeerOne", 0x01030121, 0x02040121, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one-reward-gold", 0x15151515, peer)
 	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
-		Kind:       interactionstore.KindQuestFlag,
-		Ref:        "quest:first_steps_kill_turnin",
-		Text:       "Quest updated: first_steps.killed_qa_mob = 0.",
-		QuestRef:   "quest:first_steps",
-		QuestFlag:  "killed_qa_mob",
-		QuestFrom:  1,
-		QuestTo:    0,
-		RewardGold: 100,
+		Kind:            interactionstore.KindQuestFlag,
+		Ref:             "quest:first_steps_kill_turnin",
+		Text:            "Quest updated: first_steps.killed_qa_mob = 0.",
+		QuestRef:        "quest:first_steps",
+		QuestFlag:       "killed_qa_mob",
+		QuestFrom:       1,
+		QuestTo:         0,
+		RewardGold:      100,
+		RewardItemVnum:  27001,
+		RewardItemCount: 1,
 	}})
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
+		Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5,
+	}}}); err != nil {
+		t.Fatalf("seed quest-flag reward-item preview templates: %v", err)
+	}
 	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{
 		Character: "PeerOne",
@@ -374,7 +383,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardGoldPreview(t *te
 		t.Fatalf("seed quest-state for reward-gold preview: %v", err)
 	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore, itemStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -389,7 +398,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardGoldPreview(t *te
 		t.Fatalf("expected one visible quest-flag reward-gold interactable, got %+v", snapshots)
 	}
 	entry := snapshots[0].VisibleInteractableStaticActors[0]
-	if entry.Name != "QuestHunter" || entry.Preview != "Quest updated: first_steps.killed_qa_mob = 0. [reward_gold 100]" || entry.ResolutionFailure != "" {
+	if entry.Name != "QuestHunter" || entry.Preview != "Quest updated: first_steps.killed_qa_mob = 0. [reward_gold 100] [reward_item Small Red Potion x1]" || entry.ResolutionFailure != "" {
 		t.Fatalf("unexpected quest-flag reward-gold interaction visibility entry: %+v", entry)
 	}
 }

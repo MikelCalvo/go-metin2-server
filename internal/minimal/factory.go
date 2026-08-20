@@ -5955,6 +5955,16 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if rewardGold > interactionstore.QuestFlagRewardGoldMax {
 							return gameflow.InteractionResult{Accepted: false}
 						}
+						rewardItemVnum := resolution.Definition.RewardItemVnum
+						rewardItemCount := resolution.Definition.RewardItemCount
+						var rewardItemTemplate itemcatalog.Template
+						if rewardItemVnum != 0 {
+							template, ok := runtime.itemTemplates[rewardItemVnum]
+							if !ok || selectedPlayer.ValidateCarriedItemGrant(template, rewardItemCount) != "" {
+								return gameflow.InteractionResult{Accepted: false}
+							}
+							rewardItemTemplate = template
+						}
 						previousSelected := selected
 						if rewardGold != 0 {
 							if previousSelected.Gold > uint64(math.MaxInt32) || previousSelected.Gold > uint64(math.MaxInt32)-rewardGold {
@@ -5978,22 +5988,42 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.InteractionResult{Accepted: true, Frames: frames}
 						}
 						frames := prependMerchantCloseFrame([][]byte{chatproto.EncodeChatDelivery(*resolution.Delivery)})
+						rollbackQuestFlagRewards := func() {
+							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+							refreshLiveCharacterRegistration()
+							_, _ = runtime.ApplyQuestStateTransition(queststate.Transition{Character: previousSelected.Name, QuestRef: resolution.Definition.QuestRef, Flag: resolution.Definition.QuestFlag, From: resolution.Definition.QuestTo, To: resolution.Definition.QuestFrom})
+						}
+						var goldReward player.DeathRewardResult
 						if rewardGold != 0 {
 							reward, rewardOK := selectedPlayer.ApplyStaticActorDeathReward(worldruntime.StaticActorDeathReward{Gold: rewardGold})
 							if !rewardOK || reward.GoldAfter > uint64(math.MaxInt32) || reward.GoldAfter < reward.GoldBefore || reward.Gold != rewardGold {
-								selectedPlayer.SetLiveGold(previousSelected.Gold)
-								refreshLiveCharacterRegistration()
-								_, _ = runtime.ApplyQuestStateTransition(queststate.Transition{Character: previousSelected.Name, QuestRef: resolution.Definition.QuestRef, Flag: resolution.Definition.QuestFlag, From: resolution.Definition.QuestTo, To: resolution.Definition.QuestFrom})
+								rollbackQuestFlagRewards()
 								return gameflow.InteractionResult{Accepted: false}
 							}
+							goldReward = reward
+						}
+						var itemFrames [][]byte
+						if rewardItemVnum != 0 {
+							grant, ok := selectedPlayer.GrantCarriedItem(rewardItemTemplate, rewardItemCount)
+							if !ok {
+								rollbackQuestFlagRewards()
+								return gameflow.InteractionResult{Accepted: false}
+							}
+							encodedItemFrames, err := merchantBuyResultFrames(player.MerchantBuyResult{Items: grant.Items, ItemChanges: grant.ItemChanges}, runtime.itemTemplates)
+							if err != nil {
+								rollbackQuestFlagRewards()
+								return gameflow.InteractionResult{Accepted: false}
+							}
+							itemFrames = encodedItemFrames
+						}
+						if rewardGold != 0 || rewardItemVnum != 0 {
 							updatedSelected := selectedPlayer.LiveCharacter()
 							persistedSelected := selectedPlayer.PersistedSnapshot()
 							persistedSelected.Gold = updatedSelected.Gold
+							persistedSelected.Inventory = updatedSelected.Inventory
 							updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, persistedSelected)
 							if !ok || !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
-								selectedPlayer.SetLiveGold(previousSelected.Gold)
-								refreshLiveCharacterRegistration()
-								_, _ = runtime.ApplyQuestStateTransition(queststate.Transition{Character: previousSelected.Name, QuestRef: resolution.Definition.QuestRef, Flag: resolution.Definition.QuestFlag, From: resolution.Definition.QuestTo, To: resolution.Definition.QuestFrom})
+								rollbackQuestFlagRewards()
 								return gameflow.InteractionResult{Accepted: false}
 							}
 							sessionTicket.Characters = updatedCharacters
@@ -6002,12 +6032,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							if ownsLiveSharedWorldSession() {
 								sharedWorld.UpdateCharacter(sharedWorldID, updatedSelected)
 							}
-							frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
-								VID:    previousSelected.VID,
-								Type:   bootstrapGoldPointType,
-								Amount: int32(reward.Gold),
-								Value:  int32(reward.GoldAfter),
-							}))
+							if rewardGold != 0 {
+								frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+									VID:    previousSelected.VID,
+									Type:   bootstrapGoldPointType,
+									Amount: int32(goldReward.Gold),
+									Value:  int32(goldReward.GoldAfter),
+								}))
+							}
+							frames = append(frames, itemFrames...)
 						}
 						markInteractionCooldown(packet.TargetVID)
 						return gameflow.InteractionResult{Accepted: true, Frames: frames}
@@ -9925,10 +9958,7 @@ func (r *gameRuntime) interactionDefinitionVisibilityPreview(characterName strin
 		return fmt.Sprintf("%s [%s]", message, summary), true
 	case interactionstore.KindQuestFlag:
 		if characterName == "" {
-			if definition.RewardGold == 0 {
-				return definition.Text, true
-			}
-			return fmt.Sprintf("%s [reward_gold %d]", definition.Text, definition.RewardGold), true
+			return questFlagRewardPreview(definition.Text, definition, r.itemTemplates), true
 		}
 		preview, err := r.previewQuestFlagInteraction(characterName, definition)
 		if err != nil {
@@ -9949,10 +9979,7 @@ func (r *gameRuntime) previewQuestFlagInteraction(characterName string, definiti
 		return "", err
 	}
 	if result.Result.Applied {
-		if definition.RewardGold == 0 {
-			return definition.Text, nil
-		}
-		return fmt.Sprintf("%s [reward_gold %d]", definition.Text, definition.RewardGold), nil
+		return questFlagRewardPreview(definition.Text, definition, r.itemTemplates), nil
 	}
 	if result.Result.Reason == queststate.TransitionReasonCurrentValueMismatch {
 		message, ok := staticActorInteractionFailureMessage(staticActorInteractionFailureQuestCurrentValueMismatch)
@@ -9962,6 +9989,28 @@ func (r *gameRuntime) previewQuestFlagInteraction(characterName string, definiti
 		return message, nil
 	}
 	return "", fmt.Errorf("quest flag transition preview failed: %s", result.Result.Reason)
+}
+
+func questFlagRewardPreview(text string, definition InteractionDefinition, itemTemplates map[uint32]itemcatalog.Template) string {
+	preview := text
+	if definition.RewardGold != 0 {
+		preview = fmt.Sprintf("%s [reward_gold %d]", preview, definition.RewardGold)
+	}
+	if definition.RewardItemVnum == 0 {
+		return preview
+	}
+	itemLabel := fmt.Sprintf("vnum %d", definition.RewardItemVnum)
+	if template, ok := itemTemplates[definition.RewardItemVnum]; ok {
+		name := strings.TrimSpace(template.Name)
+		if name != "" {
+			itemLabel = name
+		}
+	}
+	count := definition.RewardItemCount
+	if count == 0 {
+		count = 1
+	}
+	return fmt.Sprintf("%s [reward_item %s x%d]", preview, itemLabel, count)
 }
 
 func (r *gameRuntime) shopPreviewInteractionPreview(definition InteractionDefinition) (string, bool) {
