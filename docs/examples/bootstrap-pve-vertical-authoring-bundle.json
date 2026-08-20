@@ -64,7 +64,7 @@
       "interaction_ref": "lore:qa_square"
     }
   ],
-  "spawn_groups": [
+  "regen_spawns": [
     {
       "ref": "practice.qa_pve_vertical_mob",
       "name": "QAPveVerticalMob",
@@ -72,10 +72,16 @@
       "x": 469550,
       "y": 964200,
       "race_num": 20350,
-      "combat_profile": "practice_mob",
+      "count": 1,
+      "reward_drop_table_ref": "loot.qa_pve_vertical_reward"
+    }
+  ],
+  "drop_tables": [
+    {
+      "ref": "loot.qa_pve_vertical_reward",
       "reward_experience": 75,
       "reward_gold": 60,
-      "reward_drop_vnums": [
+      "drop_vnums": [
         27001
       ],
       "reward_quest_ref": "quest:first_steps",

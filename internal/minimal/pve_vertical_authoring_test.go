@@ -70,7 +70,14 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	currentTime := time.Unix(1_700_001_000, 0)
 	runtime.now = func() time.Time { return currentTime }
 
-	imported, err := runtime.ImportContentBundle(loadBootstrapPveVerticalAuthoringBundle(t))
+	authored := loadBootstrapPveVerticalAuthoringBundle(t)
+	if len(authored.RegenSpawns) == 0 || len(authored.DropTables) == 0 {
+		t.Fatalf("expected authored PvE vertical bundle to keep regen_spawns and drop_tables before import, got regen=%+v drop_tables=%+v", authored.RegenSpawns, authored.DropTables)
+	}
+	if len(authored.SpawnGroups) != 0 {
+		t.Fatalf("expected authored PvE vertical bundle to expand from regen/drop tables rather than direct spawn_groups, got %+v", authored.SpawnGroups)
+	}
+	imported, err := runtime.ImportContentBundle(authored)
 	if err != nil {
 		t.Fatalf("import PvE vertical authoring bundle: %v", err)
 	}

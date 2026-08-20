@@ -4536,6 +4536,12 @@ func TestCanonicalizePveVerticalAuthoringExampleExpandsQuestLoop(t *testing.T) {
 	if err := json.Unmarshal(raw, &bundle); err != nil {
 		t.Fatalf("decode PvE vertical authoring example bundle: %v", err)
 	}
+	if len(bundle.RegenSpawns) == 0 || len(bundle.DropTables) == 0 {
+		t.Fatalf("expected PvE vertical authoring example to keep authoring-form regen_spawns and drop_tables before canonicalize, got regen=%+v drop_tables=%+v", bundle.RegenSpawns, bundle.DropTables)
+	}
+	if len(bundle.SpawnGroups) != 0 {
+		t.Fatalf("expected PvE vertical authoring example to author through regen/drop tables rather than direct spawn_groups, got %+v", bundle.SpawnGroups)
+	}
 	canonical, err := Canonicalize(bundle)
 	if err != nil {
 		t.Fatalf("canonicalize PvE vertical authoring example bundle: %v", err)

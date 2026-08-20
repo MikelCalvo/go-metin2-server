@@ -1702,19 +1702,20 @@ These are currently out of scope for the present server state unless the milesto
 
 - [ ] inventory UX completeness
 - [ ] full equipment UX/stat semantics beyond the current bootstrap equip/unequip + shared-world appearance refresh slice
-- [ ] item use
-- [ ] full merchant UI semantics beyond the current bootstrap open / buy / close slice, or any sell flow
-- [ ] inventory or currency mutation from non-merchant NPC interactions
+- [ ] item use beyond the currently owned bootstrap special-effect / transfer ITEM_USE guards
+- [ ] richer merchant-window choreography beyond the current bootstrap open / buy / sell / close slice (for example stock depletion, cash shops, or extra `UPDATE_ITEM` / `UPDATE_PRICE` polish)
 - [ ] broader mob/skill combat beyond the current `training_dummy` / content-loaded `practice_mob` target -> hit -> death -> timed-respawn loop
-- [ ] quest acceptance, progression, or rewards
+- [ ] client quest packets, quest acceptance/completion UI, branching dialog trees, or script-VM quest runtime beyond the owned `quest_flag` / kill-quest credit compare-and-set seam
 - [ ] broader player death / respawn systems beyond the current retaliation-owned `DEAD`, `/restart_here`, and `/restart_town` bootstrap seams
-- [ ] random loot tables, party/contribution reward splits, level-up/stat recalculation choreography, corpse gameplay, or public-loot expiry beyond the current deterministic bootstrap EXP/gold/drop-vnum reward descriptor seam
+- [ ] random/weighted loot tables, party/contribution reward splits, level-up/stat recalculation choreography, corpse gameplay, or public-loot expiry beyond the current deterministic bootstrap EXP/gold/drop-vnum reward descriptor seam
 - [ ] multi-channel real behavior
 - [ ] polished client-facing warp/loading choreography
 
 Important note:
 - the project has operator-side transfer primitives and ongoing runtime transfer work
 - for current QA, validate only the existing bootstrap warp/rebootstrap path; polished final warp/loading choreography is still not a general pass/fail gate
+- do **not** treat the owned bootstrap quest loop as out of scope: when QA content is loaded, `quest_flag` unlock/turn-in, gated `info` / `talk` / `warp` / `shop_preview`, kill-quest credit, and turn-in gold/experience/item consume+grant feedback are expected pass/fail checks (see §5.4 / §5.11)
+- do **not** treat bootstrap merchant sell-back or `quest_flag` inventory/currency mutation as out of scope when those seams are under test
 
 ---
 
@@ -1728,7 +1729,8 @@ A current build is a good candidate when all of these pass:
 - [ ] create/select/enter-game work
 - [ ] single-client movement works
 - [ ] reconnect works
-- [ ] when authored QA NPC content is loaded, supported NPC smoke checks (`info` / `talk`, `shop_preview`, `warp`) pass without disconnecting the client
+- [ ] when authored QA NPC content is loaded, supported NPC smoke checks (`info` / `talk`, `quest_flag`, `shop_preview`, `warp`) pass without disconnecting the client
+- [ ] when authored QA quest content is loaded, the owned guide unlock -> gated services -> kill-quest credit -> turn-in loop matches §5.4 / §5.11
 - [ ] with two clients: peer visibility works
 - [ ] with two clients: peer movement works
 - [ ] with two clients: local chat and whisper work
