@@ -4472,6 +4472,116 @@ func (r *sharedWorldRegistry) PlanSpawnGroupChaseStep(entityID uint64, owner wor
 	return worldruntime.PlanStaticActorSpawnChaseStep(actor, owner, worldruntime.EffectiveStaticActorSpawnLeashRadiusForActor(actor), maxStep)
 }
 
+func (r *sharedWorldRegistry) PlanSpawnGroupHomewardStep(entityID uint64, maxStep int32) (worldruntime.SpawnLeashHomewardStepPlan, bool) {
+	if r == nil || r.entities == nil || entityID == 0 || maxStep <= 0 {
+		return worldruntime.SpawnLeashHomewardStepPlan{}, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	actor, ok := r.entities.StaticActor(entityID)
+	if !ok || actor.SpawnGroupRef == "" {
+		return worldruntime.SpawnLeashHomewardStepPlan{}, false
+	}
+	currentHP, ok := r.ensureStaticActorCombatCurrentHPLocked(actor)
+	if !ok || currentHP == 0 {
+		return worldruntime.SpawnLeashHomewardStepPlan{}, false
+	}
+	if engagedBy := r.staticActorCombatEngagedBy[entityID]; engagedBy != 0 {
+		return worldruntime.SpawnLeashHomewardStepPlan{}, false
+	}
+	return worldruntime.PlanStaticActorSpawnLeashHomewardStep(actor, worldruntime.EffectiveStaticActorSpawnLeashRadiusForActor(actor), maxStep)
+}
+
+// StepSpawnGroupHomeward applies one planned within-radius homeward step toward
+// authored home for an unengaged live spawn-backed actor. Same-map retained
+// viewers reuse server MOVE replication; engagement/selected-target ownership
+// stay cleared (homeward never invents chase-style preservation).
+func (r *sharedWorldRegistry) StepSpawnGroupHomeward(entityID uint64, maxStep int32) (SpawnGroupReturnStepSnapshot, bool) {
+	if r == nil || r.entities == nil || entityID == 0 || maxStep <= 0 {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	actor, ok := r.entities.StaticActor(entityID)
+	if !ok || actor.SpawnGroupRef == "" {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	currentHP, ok := r.ensureStaticActorCombatCurrentHPLocked(actor)
+	if !ok || currentHP == 0 {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	if engagedBy := r.staticActorCombatEngagedBy[entityID]; engagedBy != 0 {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	plan, ok := worldruntime.PlanStaticActorSpawnLeashHomewardStep(actor, worldruntime.EffectiveStaticActorSpawnLeashRadiusForActor(actor), maxStep)
+	if !ok {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	if plan.Complete && plan.Next.Equal(actor.Position) {
+		return SpawnGroupReturnStepSnapshot{
+			Actor: r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor)),
+			Step: SpawnLeashReturnStepSnapshot{
+				SpawnLeashSnapshot: worldruntime.SpawnLeashSnapshotFromEvaluation(plan.Evaluation),
+				Next:               worldruntime.PositionSnapshotFromPosition(plan.Next),
+				Complete:           true,
+			},
+		}, true
+	}
+
+	steppedActor := actor
+	steppedActor.Position = plan.Next
+	targetDiff := r.scopesLocked().RelocateStaticActorTargetDiff(actor, steppedActor)
+	updated, ok := r.entities.UpdateStaticActor(steppedActor)
+	if !ok {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	r.syncStaticActorCombatStateLocked(updated)
+
+	if moveRaw, moveEncodable := encodeStaticActorChaseMoveFrame(updated); moveEncodable {
+		for _, target := range targetDiff.RetainedVisibleTargets {
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
+			r.enqueueToEntityLocked(target.Entity.ID, [][]byte{moveRaw})
+		}
+	}
+	deleteRaw, deleteEncodable := encodeStaticActorDeleteFrame(actor)
+	if deleteEncodable {
+		for _, target := range targetDiff.RemovedVisibleTargets {
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
+			r.enqueueToEntityLocked(target.Entity.ID, [][]byte{deleteRaw})
+		}
+	}
+	addFrames := r.encodeStaticActorVisibilityStateFramesLocked(updated)
+	if len(addFrames) > 0 {
+		for _, target := range targetDiff.AddedVisibleTargets {
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
+			r.enqueueToEntityLocked(target.Entity.ID, addFrames)
+		}
+	}
+	if engagedBy := r.staticActorCombatEngagedBy[updated.Entity.ID]; engagedBy != 0 {
+		delete(r.staticActorCombatEngagedBy, updated.Entity.ID)
+		r.markProximityAggroSuppressLocked(updated.Entity.ID, engagedBy)
+	}
+	if targetVID, ok := worldruntime.StaticActorVisibilityVID(actor); ok {
+		r.clearSelectedCombatTargetsLocked(targetVID, 0)
+	}
+	return SpawnGroupReturnStepSnapshot{
+		Actor: r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, updated)),
+		Step: SpawnLeashReturnStepSnapshot{
+			SpawnLeashSnapshot: worldruntime.SpawnLeashSnapshotFromEvaluation(plan.Evaluation),
+			Next:               worldruntime.PositionSnapshotFromPosition(plan.Next),
+			Complete:           plan.Complete,
+		},
+	}, true
+}
+
 // StepSpawnGroupChase applies one planned chase step toward the engaged owner.
 // Unlike return-step recovery, a successful chase move preserves engagement and
 // selected-target ownership and does not advance the combat snapshot version.

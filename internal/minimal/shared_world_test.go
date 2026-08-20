@@ -3272,6 +3272,187 @@ func TestGameRuntimeClientTargetZeroClearsPendingSpawnGroupChaseStepDeadline(t *
 	}
 }
 
+func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupHomewardStepAfterChaseEngagementRelease(t *testing.T) {
+	// After chase leaves a practice mob within_radius and engagement is released,
+	// the pending-frame homeward executor must step the actor back toward authored
+	// home with retained-viewer MOVE while staying unengaged.
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("HomewardStepOwner", 0x010301A1, 0x020401A1, 1900, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "homeward-step-owner", 0x40404040, owner)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700003000, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for homeward-step after chase release: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.homeward_step_after_chase",
+		Name:          "HomewardStepMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import homeward-step spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.homeward_step_after_chase")
+	if !ok {
+		t.Fatal("expected homeward-step spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "homeward-step-owner", 0x40404040)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
+		t.Fatalf("unexpected owner target error before homeward chase displace: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	}))); err != nil {
+		t.Fatalf("unexpected accepted hit before homeward chase displace: %v", err)
+	}
+	if pending, ok := runtime.SpawnGroupChaseStep(group.EntityID); !ok || pending.EntityID != group.EntityID {
+		t.Fatalf("expected engaged hit to arm chase before homeward release, ok=%v snapshot=%+v", ok, pending)
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if queued := flushServerFrames(t, flow); len(queued) != 2 {
+		t.Fatalf("expected delayed retaliation before chase displace, got %d frames", len(queued))
+	}
+	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay - bootstrapPracticeMobServerOriginRetaliationDelay)
+	chaseQueued := flushServerFrames(t, flow)
+	if len(chaseQueued) == 0 {
+		t.Fatal("expected due chase-step to displace actor within_radius before homeward release")
+	}
+	chaseMove, err := movep.DecodeMoveAck(decodeSingleFrame(t, chaseQueued[0]))
+	if err != nil {
+		t.Fatalf("decode chase displace MOVE before homeward: %v", err)
+	}
+	if chaseMove.VID != targetVID || chaseMove.X != 1800 || chaseMove.Y != 2800 {
+		t.Fatalf("expected chase displace to +100 toward owner, got %+v", chaseMove)
+	}
+	displaced, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || displaced.X != 1800 || displaced.Y != 2800 || displaced.SpawnLeash == nil || displaced.SpawnLeash.Status != worldruntime.SpawnLeashStatusWithinRadius {
+		t.Fatalf("expected chase-displaced within_radius actor before homeward arm, ok=%v snapshot=%+v", ok, displaced)
+	}
+
+	// Leave aggro radius before TARGET(0) so proximity acquisition cannot re-lock
+	// the same owner and clear the homeward schedule.
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+		Func: 1,
+		Arg:  0,
+		Rot:  12,
+		X:    2100,
+		Y:    2800,
+		Time: 0x61626364,
+	}))); err != nil {
+		t.Fatalf("unexpected owner move outside aggro before homeward release: %v", err)
+	}
+	_ = flushServerFrames(t, flow)
+
+	clearOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: 0})))
+	if err != nil {
+		t.Fatalf("unexpected owner TARGET(0) clear before homeward arm: %v", err)
+	}
+	if len(clearOut) != 0 {
+		t.Fatalf("expected TARGET(0) clear to emit no frames, got %d", len(clearOut))
+	}
+
+	runtime.spawnChaseMu.Lock()
+	_, chaseScheduled := runtime.spawnChaseStepDueAt[group.EntityID]
+	runtime.spawnChaseMu.Unlock()
+	if chaseScheduled {
+		t.Fatalf("expected TARGET(0) to clear chase deadline before homeward arm for entity %d", group.EntityID)
+	}
+	runtime.spawnHomewardMu.Lock()
+	homewardDueAt, homewardScheduled := runtime.spawnHomewardStepDueAt[group.EntityID]
+	runtime.spawnHomewardMu.Unlock()
+	if !homewardScheduled {
+		t.Fatalf("expected engagement release on within_radius displace to arm homeward deadline for entity %d", group.EntityID)
+	}
+	expectedHomewardDueAt := currentTime.Add(bootstrapSpawnGroupHomewardStepDelay)
+	if !homewardDueAt.Equal(expectedHomewardDueAt) {
+		t.Fatalf("expected homeward deadline at %s, got %s", expectedHomewardDueAt, homewardDueAt)
+	}
+	ownerEntity, ok := runtime.sharedWorld.playerEntityByName("HomewardStepOwner")
+	if !ok {
+		t.Fatal("expected homeward owner entity to remain registered")
+	}
+	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected homeward arming path to leave entity %d unengaged", group.EntityID)
+	}
+
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no homeward MOVE before the 1s deadline, got %d frames", len(queued))
+	}
+
+	currentTime = currentTime.Add(bootstrapSpawnGroupHomewardStepDelay)
+	homewardQueued := flushServerFrames(t, flow)
+	if len(homewardQueued) == 0 {
+		t.Fatal("expected due homeward-step to queue retained owner MOVE replication toward home")
+	}
+	homewardMove, err := movep.DecodeMoveAck(decodeSingleFrame(t, homewardQueued[0]))
+	if err != nil {
+		t.Fatalf("expected retained homeward viewer to receive MOVE replication, first frame decode err=%v", err)
+	}
+	if homewardMove.VID != targetVID || homewardMove.X != 1700 || homewardMove.Y != 2800 {
+		t.Fatalf("expected homeward MOVE to authored home, got %+v", homewardMove)
+	}
+	if homewardMove.Duration == 0 {
+		t.Fatalf("expected homeward MOVE to carry non-zero bootstrap duration, got %+v", homewardMove)
+	}
+	for _, raw := range homewardQueued[1:] {
+		if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, raw)); err == nil && deleted.VID == targetVID {
+			t.Fatalf("expected homeward MOVE fanout not to emit retained-viewer CHARACTER_DEL, got %+v", deleted)
+		}
+		if add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, raw)); err == nil && add.VID == targetVID {
+			t.Fatalf("expected homeward MOVE fanout not to emit retained-viewer CHARACTER_ADD, got %+v", add)
+		}
+	}
+
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after homeward-step: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].X != 1700 || persisted.StaticActors[0].Y != 2800 || persisted.StaticActors[0].SpawnHome == nil || persisted.StaticActors[0].SpawnHome.X != 1700 {
+		t.Fatalf("expected homeward-step to persist authored home and preserve spawn home, got %+v", persisted.StaticActors)
+	}
+	returned, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || returned.X != 1700 || returned.Y != 2800 || returned.Dead || returned.SpawnLeash == nil || returned.SpawnLeash.Status != worldruntime.SpawnLeashStatusAtHome {
+		t.Fatalf("expected homeward-step to restore at_home leash state, ok=%v snapshot=%+v", ok, returned)
+	}
+	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected homeward-step to keep entity %d unengaged", group.EntityID)
+	}
+	runtime.spawnHomewardMu.Lock()
+	_, stillHomeward := runtime.spawnHomewardStepDueAt[group.EntityID]
+	runtime.spawnHomewardMu.Unlock()
+	if stillHomeward {
+		t.Fatalf("expected completed at-home homeward-step to clear pending deadline for entity %d", group.EntityID)
+	}
+}
+
 func TestGameRuntimeEnterGameReclaimClearsPendingSpawnGroupChaseStepDeadline(t *testing.T) {
 	// EnterGame reclaim that drops practice-mob engagement must also clear the
 	// pending chase-step deadline, matching owner disconnect/transfer release and the

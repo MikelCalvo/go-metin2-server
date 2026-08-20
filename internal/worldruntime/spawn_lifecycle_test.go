@@ -332,6 +332,106 @@ func TestPlanStaticActorSpawnLeashReturnStepFailsClosedForInvalidInput(t *testin
 	}
 }
 
+func TestPlanStaticActorSpawnLeashHomewardStepMovesWithinRadiusTowardHomeWithoutMutating(t *testing.T) {
+	home := NewPosition(42, 1700, 2800)
+	current := NewPosition(42, 1900, 2800)
+	actor := StaticEntity{
+		Entity:        Entity{ID: 36, Kind: EntityKindStaticActor, Name: "HomewardPlannerMob"},
+		Position:      current,
+		SpawnHome:     home,
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.homeward_planner",
+	}
+
+	plan, ok := PlanStaticActorSpawnLeashHomewardStep(actor, DefaultSpawnLeashRadius, 100)
+	if !ok {
+		t.Fatal("expected within-radius spawn actor to produce a homeward-step plan toward home")
+	}
+	if plan.Evaluation.Status != SpawnLeashStatusWithinRadius {
+		t.Fatalf("expected within-radius evaluation in homeward-step plan, got %+v", plan.Evaluation)
+	}
+	if plan.Next != NewPosition(42, 1800, 2800) || plan.Complete {
+		t.Fatalf("expected one 100-unit x-axis homeward step toward home, got %+v", plan)
+	}
+	if actor.Position != current || actor.SpawnHome != home {
+		t.Fatalf("expected homeward-step planning not to mutate actor, got actor=%+v", actor)
+	}
+}
+
+func TestPlanStaticActorSpawnLeashHomewardStepCompletesAtHomeWhenWithinOneStep(t *testing.T) {
+	home := NewPosition(42, 1700, 2800)
+	current := NewPosition(42, 1750, 2800)
+	actor := StaticEntity{
+		Entity:        Entity{ID: 37, Kind: EntityKindStaticActor, Name: "HomewardPlannerNearHomeMob"},
+		Position:      current,
+		SpawnHome:     home,
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.homeward_planner_near",
+	}
+
+	plan, ok := PlanStaticActorSpawnLeashHomewardStep(actor, DefaultSpawnLeashRadius, 100)
+	if !ok {
+		t.Fatal("expected near-home within-radius actor to produce a homeward-step plan")
+	}
+	if plan.Next != home || !plan.Complete {
+		t.Fatalf("expected homeward plan to land exactly on authored home when within one step, got %+v", plan)
+	}
+}
+
+func TestPlanStaticActorSpawnLeashHomewardStepNoOpsWhenAtHome(t *testing.T) {
+	home := NewPosition(42, 1700, 2800)
+	actor := StaticEntity{
+		Entity:        Entity{ID: 38, Kind: EntityKindStaticActor, Name: "HomewardPlannerAtHomeMob"},
+		Position:      home,
+		SpawnHome:     home,
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.homeward_planner_home",
+	}
+
+	plan, ok := PlanStaticActorSpawnLeashHomewardStep(actor, DefaultSpawnLeashRadius, 100)
+	if !ok {
+		t.Fatal("expected at-home spawn actor to produce a no-op homeward-step plan")
+	}
+	if plan.Evaluation.Status != SpawnLeashStatusAtHome || plan.Next != home || !plan.Complete {
+		t.Fatalf("expected at-home homeward-step plan to be complete no-op, got %+v", plan)
+	}
+}
+
+func TestPlanStaticActorSpawnLeashHomewardStepFailsClosedForReturnRequiredOrInvalidInput(t *testing.T) {
+	outside := StaticEntity{
+		Entity:        Entity{ID: 39, Kind: EntityKindStaticActor, Name: "HomewardPlannerOutsideMob"},
+		Position:      NewPosition(42, 2301, 2800),
+		SpawnHome:     NewPosition(42, 1700, 2800),
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.homeward_planner_outside",
+	}
+	if plan, ok := PlanStaticActorSpawnLeashHomewardStep(outside, DefaultSpawnLeashRadius, 100); ok || plan.Next.Valid() {
+		t.Fatalf("expected return_required homeward plan to fail closed, got ok=%v plan=%+v", ok, plan)
+	}
+
+	invalid := StaticEntity{Entity: Entity{ID: 391, Kind: EntityKindStaticActor, Name: "HomewardPlannerInvalidMob"}, Position: NewPosition(42, 1800, 2800), RaceNum: 20350}
+	if plan, ok := PlanStaticActorSpawnLeashHomewardStep(invalid, DefaultSpawnLeashRadius, 100); ok || plan.Next.Valid() {
+		t.Fatalf("expected non-spawn actor homeward plan to fail closed, got ok=%v plan=%+v", ok, plan)
+	}
+
+	outside.CombatProfile = StaticActorCombatProfilePracticeMob
+	outside.CombatKind = StaticActorCombatProfilePracticeMob
+	if plan, ok := PlanStaticActorSpawnLeashHomewardStep(outside, 0, 100); ok || plan.Next.Valid() {
+		t.Fatalf("expected non-positive leash radius homeward plan to fail closed, got ok=%v plan=%+v", ok, plan)
+	}
+	if plan, ok := PlanStaticActorSpawnLeashHomewardStep(outside, DefaultSpawnLeashRadius, 0); ok || plan.Next.Valid() {
+		t.Fatalf("expected non-positive max step homeward plan to fail closed, got ok=%v plan=%+v", ok, plan)
+	}
+}
+
 func TestPlanStaticActorSpawnChaseStepMovesTowardOwnerWithoutMutating(t *testing.T) {
 	home := NewPosition(42, 1700, 2800)
 	current := NewPosition(42, 1700, 2800)

@@ -661,6 +661,7 @@ Current implementation status:
 - live leash classification, return-step / return-home, chase-step planning/execution, and `target_return_required` gating reuse that effective radius instead of hard-coding the bootstrap default
 - read-only operator leash GET endpoints keep an explicit query `radius` override and default omitted lookups through the actor's effective leash radius
 - negative leash radii and positive leash radii below the profile's effective aggro fail closed; positive authored aggro must also stay within the profile's effective leash
+- unengaged `within_radius` homeward recovery after chase/engagement release is now owned beside return-step: `PlanStaticActorSpawnLeashHomewardStep` plus the pending-frame homeward executor step the actor toward authored home with same-map retained-viewer `MOVE` while combat remains allowed and engagement stays cleared; `return_required` recovery and operator exact-home `return-home` are unchanged
 
 Explicit non-goals for this profile-authored leash-radius freeze alone:
 - pathfinding, navmesh, patrol, or continuous interpolation

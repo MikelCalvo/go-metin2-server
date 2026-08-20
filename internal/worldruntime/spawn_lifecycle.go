@@ -45,6 +45,16 @@ type SpawnChaseStepPlan struct {
 	Complete   bool
 }
 
+// SpawnLeashHomewardStepPlan is a pure planning result for the first unengaged
+// within-radius homeward seam after chase/engagement release. It does not
+// mutate actor state or emit packets. return_required recovery stays owned by
+// PlanStaticActorSpawnLeashReturnStep.
+type SpawnLeashHomewardStepPlan struct {
+	Evaluation SpawnLeashEvaluation
+	Next       Position
+	Complete   bool
+}
+
 // SpawnAggroAcquisitionEvaluation is a pure planning result for the first
 // proximity aggro-radius acquisition seam. It does not mutate actor state,
 // set engagement, arm retaliation/chase timers, or emit packets.
@@ -150,6 +160,36 @@ func PlanStaticActorSpawnLeashReturnStep(actor StaticEntity, radius int32, maxSt
 		plan.Next = evaluation.Home
 		plan.Complete = true
 		return plan, true
+	}
+	next, complete := returnStepTowardHome(evaluation.Current, evaluation.Home, maxStep)
+	plan.Next = next
+	plan.Complete = complete
+	return plan, true
+}
+
+// PlanStaticActorSpawnLeashHomewardStep computes one deterministic homeward step
+// toward authored home for a live spawn-backed actor that currently classifies
+// within_radius. at_home plans are complete no-ops; return_required and invalid
+// inputs fail closed so outside-leash recovery stays with the return-step seam.
+// The planner never mutates actor state.
+func PlanStaticActorSpawnLeashHomewardStep(actor StaticEntity, radius int32, maxStep int32) (SpawnLeashHomewardStepPlan, bool) {
+	if maxStep <= 0 {
+		return SpawnLeashHomewardStepPlan{}, false
+	}
+	evaluation, ok := EvaluateStaticActorCurrentSpawnLeash(actor, radius)
+	if !ok {
+		return SpawnLeashHomewardStepPlan{}, false
+	}
+	if evaluation.ReturnRequired {
+		return SpawnLeashHomewardStepPlan{}, false
+	}
+	plan := SpawnLeashHomewardStepPlan{Evaluation: evaluation, Next: evaluation.Current}
+	if evaluation.Status == SpawnLeashStatusAtHome || evaluation.Current.Equal(evaluation.Home) {
+		plan.Complete = true
+		return plan, true
+	}
+	if evaluation.Status != SpawnLeashStatusWithinRadius || !evaluation.Home.SameMap(evaluation.Current) {
+		return SpawnLeashHomewardStepPlan{}, false
 	}
 	next, complete := returnStepTowardHome(evaluation.Current, evaluation.Home, maxStep)
 	plan.Next = next
