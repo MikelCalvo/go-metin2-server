@@ -158,12 +158,12 @@ The current owned synchronization is intentionally narrow:
 
 - move synchronization applies to accepted carried-inventory mutations where the source cell becomes empty and the moved item now lives at a different carried cell, including exact counted full-stack compatible merges, incompatible occupied-destination full-stack swaps whose source and target cells both pass authored template-count guards, and the bootstrap `/inventory_move <from> <to>` compatibility seam for full-stack carried-cell moves after authored source/target template metadata has passed the same incompatible-swap guard boundary;
 - when that destination carried cell already has matching item quickslots, only those destination quickslots are deleted before the moved source quickslot is retargeted so one carried cell does not retain multiple stale item quickslot bindings; unrelated item quickslots for other carried cells stay unchanged;
-- removal synchronization applies to accepted carried-to-equipment `ITEM_MOVE` equips, the bootstrap `/equip_item` command seam, accepted last-stack carried-inventory `ITEM_USE` paths, full-source `ITEM_USE_TO_ITEM` merges, and accepted whole-stack merchant sell paths where the carried item slot becomes empty;
+- removal synchronization applies to accepted carried-to-equipment `ITEM_MOVE` equips, the bootstrap `/equip_item` command seam, accepted last-stack carried-inventory `ITEM_USE` paths, full-source `ITEM_USE_TO_ITEM` merges, accepted whole-stack merchant sell paths where the carried item slot becomes empty, and mutual-accept exchange finalize when a displayed whole stack leaves its source carried cell;
 - removal synchronization rejects non-carried source cells fail-closed before live or persisted quickslot mutation;
 - it does not rewrite or delete skill or command quickslots that happen to carry the same byte value;
 - move/removal synchronization does not run for partial merges or partial-stack splits where the original item still remains at the source cell, including partial `ITEM_MOVE` counted merges, partial counted `ITEM_DROP2`, and partial `ITEM_USE_TO_ITEM` stack consolidation;
 - merchant partial-stack `SELL2` does not delete quickslots, because the original item still remains at the source cell;
-- it does not yet delete item quickslots when safebox, exchange, item timeout, destruction, trade, movement to non-carried storage, or other item-removal paths clear an item cell.
+- it does not yet delete item quickslots when safebox, item timeout, destruction, movement to non-carried storage, or other item-removal paths outside the owned mutual-accept exchange finalize clear an item cell.
 
 ## Current scope
 
@@ -189,9 +189,10 @@ Implemented now:
 - stale/reclaimed carried-item drop sockets keep that deletion synchronization self-local only: the old socket can receive `GC::QUICKSLOT_DEL` for its own cleared source-cell item quickslots, but the authoritative persisted account snapshot and fresh live session quickslots stay unchanged and no bootstrap ground handle is registered from the stale mutation.
 - accepted ground-item pickup stack merges refresh compatible target carried stacks without deleting or retargeting existing item quickslots for that target cell; pickup does not emit quickslot synchronization frames unless a later dedicated pickup/removal path owns one.
 - automatic item quickslot deletion synchronization after accepted whole-stack merchant `SHOP SELL` / `SELL2` packets.
+- automatic item quickslot deletion synchronization after mutual-accept exchange finalize when a displayed whole stack leaves its source carried cell: each matching source item quickslot is deleted with the trade mutation, persisted on both selected-character snapshots, and emitted as self/queued `GC::QUICKSLOT_DEL(position)` after that side's inventory refresh frames and before any gold `PLAYER_POINT_CHANGE` / shell `END` frames for the finalize burst.
 - validation of bootstrap quickslot positions (`0..35`), item quickslot cells (`0..89`), skill quickslot slots (`0..199`), command quickslot slots (`0..59`), and supported tuple types (`item`, `skill`, `command`).
 
 Not implemented yet:
 
-- automatic item quickslot deletion after safebox, exchange, item timeout, destruction, trade, movement to non-carried storage, or other item-removal paths
+- automatic item quickslot deletion after safebox, item timeout, destruction, movement to non-carried storage, or other item-removal paths outside the owned mutual-accept exchange finalize
 - automatic item quickslot synchronization for belt inventory cells beyond the current carried inventory bootstrap range

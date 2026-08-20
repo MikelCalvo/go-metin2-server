@@ -2092,6 +2092,119 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverInventoryIDCollisionB
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "receiver inventory-id collision peer")
 }
 
+func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverLockedCompatibleStacksWithoutFreeSlotBeforeFinalizationWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchangeLockedStackOwner", 0x010307bf, 0x020407bf, 1100, 2100, 0, 101, 201)
+	owner.Gold = 500
+	owner.Inventory = []inventory.ItemInstance{{ID: 787, Vnum: 27045, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchangeLockedStackPeer", 0x010307c0, 0x020407c0, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = merchantBuyerFullInventory()
+	// Fill every carried cell, then replace slot 0 with a locked compatible stack that would
+	// otherwise absorb the incoming count if locked merges were allowed.
+	peer.Inventory[0] = inventory.ItemInstance{ID: 788, Vnum: 27045, Count: 10, Slot: 0, Locked: true}
+	peer.Quickslots = []loginticket.Quickslot{}
+	ownerLogin := "ex-locked-stack-a"
+	peerLogin := "ex-locked-stack-b"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070bf, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070c0, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange locked-stack owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange locked-stack peer account: %v", err)
+	}
+	displayTemplate := itemcatalog.Template{Vnum: 27045, Name: "Displayed Locked-Stack Potion", Stackable: true, MaxCount: 200, Sockets: itemcatalog.SocketValues{1, 3, 5}}
+	fillerTemplates := make([]itemcatalog.Template, 0, int(inventory.CarriedInventorySlotCount)+1)
+	fillerTemplates = append(fillerTemplates, displayTemplate)
+	for slot := inventory.SlotIndex(1); slot < inventory.CarriedInventorySlotCount; slot++ {
+		fillerTemplates = append(fillerTemplates, itemcatalog.Template{Vnum: 40000 + uint32(slot), Name: "Locked Capacity Filler", MaxCount: 1})
+	}
+	itemStore := newItemTemplateStore(t, fillerTemplates)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange locked-stack runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070bf)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070c0)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected locked-stack exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected locked-stack exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "locked-stack owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected locked-stack exchange start to queue one peer frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "locked-stack peer start")
+
+	itemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 7, Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected locked-stack item-add error: %v", err)
+	}
+	if len(itemAddOut) != 1 {
+		t.Fatalf("expected locked-stack item-add to emit one owner frame, got %d", len(itemAddOut))
+	}
+	assertExchangeItemAddFrame(t, itemAddOut[0], 1, 7, owner.Inventory[0], displayTemplate, "locked-stack owner item-add")
+	queuedItemAdd := flushServerFrames(t, peerFlow)
+	if len(queuedItemAdd) != 1 {
+		t.Fatalf("expected locked-stack item-add to queue one peer frame, got %d", len(queuedItemAdd))
+	}
+	assertExchangeItemAddFrame(t, queuedItemAdd[0], 0, 7, owner.Inventory[0], displayTemplate, "locked-stack peer item-add")
+
+	ownerAcceptOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected locked-stack owner accept error: %v", err)
+	}
+	if len(ownerAcceptOut) != 1 {
+		t.Fatalf("expected locked-stack owner accept to emit one frame, got %d", len(ownerAcceptOut))
+	}
+	assertExchangeAcceptFrame(t, ownerAcceptOut[0], 1, "locked-stack owner accept")
+	queuedOwnerAccept := flushServerFrames(t, peerFlow)
+	if len(queuedOwnerAccept) != 1 {
+		t.Fatalf("expected locked-stack owner accept to queue one peer frame, got %d", len(queuedOwnerAccept))
+	}
+	assertExchangeAcceptFrame(t, queuedOwnerAccept[0], 0, "locked-stack owner accept peer")
+
+	peerAcceptOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected locked-stack peer accept error: %v", err)
+	}
+	if len(peerAcceptOut) != 0 {
+		t.Fatalf("expected second accept to reject receiver locked-compatible-stack capacity with no frames, got %d", len(peerAcceptOut))
+	}
+	if queuedAccept := flushServerFrames(t, ownerFlow); len(queuedAccept) != 0 {
+		t.Fatalf("expected receiver locked-compatible-stack precondition to queue no owner frames, got %d", len(queuedAccept))
+	}
+
+	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected locked-stack cancel after rejected peer accept: %v", err)
+	}
+	if len(cancelOut) != 1 {
+		t.Fatalf("expected locked-stack shell to remain cancellable, got %d frames", len(cancelOut))
+	}
+	assertExchangeEndFrame(t, cancelOut[0], "locked-stack peer cancel")
+	queuedCancel := flushServerFrames(t, ownerFlow)
+	if len(queuedCancel) != 1 {
+		t.Fatalf("expected locked-stack peer cancel to queue one owner END, got %d", len(queuedCancel))
+	}
+	assertExchangeEndFrame(t, queuedCancel[0], "locked-stack owner queued cancel")
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "receiver locked-compatible-stack owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "receiver locked-compatible-stack peer")
+}
+
 func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverOverTemplateMaxCompatibleStackBeforeFinalizationWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -2365,16 +2478,60 @@ func TestGameRuntimeItemExchangeMutualAcceptFinalizesDisplayedTradeAndClosesShel
 	if err != nil {
 		t.Fatalf("unexpected finalize peer accept error: %v", err)
 	}
-	if len(peerAcceptOut) < 2 {
-		t.Fatalf("expected mutual-accept finalize to emit peer accept marker plus shell END (and inventory/gold refresh frames), got %d", len(peerAcceptOut))
+	// peer finalize burst: ACCEPT + ITEM_DEL(source) + ITEM_SET(incoming) + QUICKSLOT_DEL(source) + POINT_CHANGE(gold) + END
+	if len(peerAcceptOut) != 6 {
+		t.Fatalf("expected mutual-accept finalize peer burst of 6 frames (accept, item del, item set, quickslot del, gold, end), got %d", len(peerAcceptOut))
 	}
 	assertExchangeAcceptFrame(t, peerAcceptOut[0], 1, "finalize peer accept")
+	peerItemDel, err := itemproto.DecodeDel(decodeSingleFrame(t, peerAcceptOut[1]))
+	if err != nil {
+		t.Fatalf("decode finalize peer item delete: %v", err)
+	}
+	if peerItemDel.Position != itemproto.InventoryPosition(6) {
+		t.Fatalf("unexpected finalize peer item delete: %+v", peerItemDel)
+	}
+	peerItemSet, err := itemproto.DecodeSet(decodeSingleFrame(t, peerAcceptOut[2]))
+	if err != nil {
+		t.Fatalf("decode finalize peer item set: %v", err)
+	}
+	if peerItemSet.Position != itemproto.InventoryPosition(6) || peerItemSet.Vnum != ownerTemplate.Vnum || peerItemSet.Count != 3 {
+		t.Fatalf("unexpected finalize peer item set: %+v", peerItemSet)
+	}
+	peerQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, peerAcceptOut[3]))
+	if err != nil {
+		t.Fatalf("decode finalize peer quickslot delete: %v", err)
+	}
+	if peerQuickslotDel.Position != 3 {
+		t.Fatalf("unexpected finalize peer quickslot delete: %+v", peerQuickslotDel)
+	}
 	assertExchangeEndFrame(t, peerAcceptOut[len(peerAcceptOut)-1], "finalize peer shell end")
 	queuedPeerAccept := flushServerFrames(t, ownerFlow)
-	if len(queuedPeerAccept) < 2 {
-		t.Fatalf("expected mutual-accept finalize to queue owner accept marker plus shell END (and inventory/gold refresh frames), got %d", len(queuedPeerAccept))
+	// owner queued burst: ACCEPT + ITEM_DEL(source) + ITEM_SET(incoming) + QUICKSLOT_DEL(source) + POINT_CHANGE(gold) + END
+	if len(queuedPeerAccept) != 6 {
+		t.Fatalf("expected mutual-accept finalize owner queued burst of 6 frames (accept, item del, item set, quickslot del, gold, end), got %d", len(queuedPeerAccept))
 	}
 	assertExchangeAcceptFrame(t, queuedPeerAccept[0], 0, "finalize peer accept owner")
+	ownerItemDel, err := itemproto.DecodeDel(decodeSingleFrame(t, queuedPeerAccept[1]))
+	if err != nil {
+		t.Fatalf("decode finalize owner item delete: %v", err)
+	}
+	if ownerItemDel.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected finalize owner item delete: %+v", ownerItemDel)
+	}
+	ownerItemSet, err := itemproto.DecodeSet(decodeSingleFrame(t, queuedPeerAccept[2]))
+	if err != nil {
+		t.Fatalf("decode finalize owner item set: %v", err)
+	}
+	if ownerItemSet.Position != itemproto.InventoryPosition(5) || ownerItemSet.Vnum != peerTemplate.Vnum || ownerItemSet.Count != 2 {
+		t.Fatalf("unexpected finalize owner item set: %+v", ownerItemSet)
+	}
+	ownerQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, queuedPeerAccept[3]))
+	if err != nil {
+		t.Fatalf("decode finalize owner quickslot delete: %v", err)
+	}
+	if ownerQuickslotDel.Position != 2 {
+		t.Fatalf("unexpected finalize owner quickslot delete: %+v", ownerQuickslotDel)
+	}
 	assertExchangeEndFrame(t, queuedPeerAccept[len(queuedPeerAccept)-1], "finalize owner queued shell end")
 
 	ownerAccount, err := accounts.Load(ownerLogin)
