@@ -3,7 +3,8 @@
 ## Objective
 
 Prove Track E.4 crash/restart rematerialization for the durable PvE character
-state already owned by bootstrap FileStores: gold, inventory, and quest flags.
+state already owned by bootstrap FileStores: gold, inventory, quest flags,
+equipment, quickslots, map/x/y, and character point-state.
 
 After a successful `quest_flag` turn-in that grants gold + item and clears the
 turn-in flag, a fresh `gameRuntime` rebuilt from the same account / quest /
@@ -21,8 +22,10 @@ pre-reward character snapshot.
    - committed quest-state remains cleared for the consumed turn-in flag
    - a second interaction against the same quest_flag definition rejects with
      the ordinary requirements-not-met info chat and does not grant again
-3. The focused proof is
-   `TestGameRuntimeQuestFlagRewardStateRematerializesAcrossDaemonRestart`.
+3. The focused proofs are:
+   - `TestGameRuntimeQuestFlagRewardStateRematerializesAcrossDaemonRestart`
+   - `TestGameRuntimeEquipmentAndQuickslotsRematerializeAcrossDaemonRestart`
+   - `TestGameRuntimePositionAndPointsRematerializeAcrossDaemonRestart`
 4. Pending bootstrap ground-item / ground-gold handles remain out of scope.
 
 ## What this is not yet
@@ -37,7 +40,7 @@ pre-reward character snapshot.
 
 Focused coverage:
 
-- `go test ./internal/minimal -run 'TestGameRuntimeQuestFlagRewardStateRematerializesAcrossDaemonRestart' -count=1`
+- `go test ./internal/minimal -run 'TestGameRuntimeQuestFlagRewardStateRematerializesAcrossDaemonRestart|TestGameRuntimeEquipmentAndQuickslotsRematerializeAcrossDaemonRestart|TestGameRuntimePositionAndPointsRematerializeAcrossDaemonRestart' -count=1`
 - `gofmt` on touched Go files
 - `git diff --check`
 
@@ -45,7 +48,8 @@ Focused coverage:
 
 1. ~~Prove equipment + quickslot rematerialization across daemon restart.~~ Done
    (`TestGameRuntimeEquipmentAndQuickslotsRematerializeAcrossDaemonRestart`).
-2. Add position (map/x/y) and character point-state rematerialization proofs.
+2. ~~Add position (map/x/y) and character point-state rematerialization proofs.~~
+   Done (`TestGameRuntimePositionAndPointsRematerializeAcrossDaemonRestart`).
 3. Keep ground-item restart durability deferred until operators decide that
    quarantined `0010` exports should drive recovery.
 4. Add production-safe observability conventions before remote admin surfaces.

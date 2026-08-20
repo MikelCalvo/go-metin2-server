@@ -14,6 +14,7 @@ import (
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
+	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
@@ -392,5 +393,207 @@ func TestGameRuntimeEquipmentAndQuickslotsRematerializeAcrossDaemonRestart(t *te
 		{Position: 5, Type: quickslotproto.TypeItem, Slot: 7},
 	}) {
 		t.Fatalf("expected live quickslots to match post-restart delete, ok=%v snapshot=%+v", ok, liveQuickslots)
+	}
+}
+
+// TestGameRuntimePositionAndPointsRematerializeAcrossDaemonRestart proves the
+// Track E.4 crash/restart rematerialization contract for durable PvE map/x/y and
+// character point-state: after a live item-use point mutation and a transfer-backed
+// location change, a fresh gameRuntime rebuilt from the same FileStore paths
+// rematerializes committed account position and points on EnterGame even when the
+// post-restart login ticket still carries the pre-mutation snapshot.
+//
+// This deliberately does not cover pending ground-item / ground-gold restart
+// durability.
+func TestGameRuntimePositionAndPointsRematerializeAcrossDaemonRestart(t *testing.T) {
+	ticketDir := t.TempDir()
+	accountDir := t.TempDir()
+
+	ticketStore := loginticket.NewFileStore(ticketDir)
+	accounts := accountstore.NewFileStore(accountDir)
+
+	peer := peerVisibilityCharacter("PointHero", 0x01030141, 0x02040141, 1100, 2100, 0, 101, 201)
+	peer.Gold = 40
+	peer.Points[bootstrapPlayerPointValueIndex] = 700
+	peer.Points[bootstrapExperiencePointType] = 25
+	peer.Inventory = []inventory.ItemInstance{
+		{ID: 2001, Vnum: 27001, Count: 2, Slot: 5},
+	}
+	const (
+		login    = "point-hero-restart"
+		loginKey = uint32(0x39393939)
+	)
+	issuePeerTicket(t, ticketStore, login, loginKey, peer)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: peer.Empire, Characters: []loginticket.Character{peer}}); err != nil {
+		t.Fatalf("seed position/points restart account: %v", err)
+	}
+
+	const (
+		transferSourceX   = int32(1500)
+		transferSourceY   = int32(2600)
+		transferTargetMap = uint32(42)
+		transferTargetX   = int32(1700)
+		transferTargetY   = int32(2800)
+	)
+	runtime, err := newGameRuntimeWithAccountStoreAndTransferTriggers(config.Service{
+		LegacyAddr: ":13000",
+		PublicAddr: "127.0.0.1",
+	}, ticketStore, accounts, []bootstrapTransferTrigger{{
+		SourceMapIndex: bootstrapMapIndex,
+		SourceX:        transferSourceX,
+		SourceY:        transferSourceY,
+		TargetMapIndex: transferTargetMap,
+		TargetX:        transferTargetX,
+		TargetY:        transferTargetY,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected position/points restart runtime error: %v", err)
+	}
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	if len(enterOut) < 5 {
+		t.Fatalf("expected EnterGame bootstrap before position/points mutation, got %d frames", len(enterOut))
+	}
+
+	useOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{
+		Position: itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected position/points restart item-use error: %v", err)
+	}
+	if len(useOut) < 3 {
+		t.Fatalf("expected item-use frames before daemon restart, got %d", len(useOut))
+	}
+
+	transferOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+		Func: 1,
+		Arg:  0,
+		Rot:  12,
+		X:    transferSourceX,
+		Y:    transferSourceY,
+		Time: 0x01020304,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected position/points restart transfer move error: %v", err)
+	}
+	if len(transferOut) == 0 {
+		t.Fatal("expected transfer-backed move to emit location-change frames before daemon restart")
+	}
+	closeSessionFlow(t, flow)
+
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted position/points account before daemon restart: %v", err)
+	}
+	if account.Characters[0].MapIndex != transferTargetMap || account.Characters[0].X != transferTargetX || account.Characters[0].Y != transferTargetY {
+		t.Fatalf("expected persisted location map=%d x=%d y=%d before daemon restart, got map=%d x=%d y=%d",
+			transferTargetMap, transferTargetX, transferTargetY,
+			account.Characters[0].MapIndex, account.Characters[0].X, account.Characters[0].Y)
+	}
+	if got := account.Characters[0].Points[bootstrapPlayerPointValueIndex]; got != 750 {
+		t.Fatalf("expected persisted points[1]=750 before daemon restart, got %d", got)
+	}
+	if got := account.Characters[0].Points[bootstrapExperiencePointType]; got != 25 {
+		t.Fatalf("expected persisted experience points to stay 25 before daemon restart, got %d", got)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, []inventory.ItemInstance{
+		{ID: 2001, Vnum: 27001, Count: 1, Slot: 5},
+	}) {
+		t.Fatalf("unexpected persisted inventory before daemon restart: %#v", account.Characters[0].Inventory)
+	}
+
+	// Simulate process restart: rebuild runtime from the same FileStore paths.
+	// Issue a fresh ticket that still carries the pre-mutation snapshot so the
+	// account-store rematerialization path is exercised instead of ticket state.
+	staleTicketStore := loginticket.NewFileStore(ticketDir)
+	const postRestartLoginKey = uint32(0x3a3a3a3a)
+	issuePeerTicket(t, staleTicketStore, login, postRestartLoginKey, peer)
+	staleTicket, err := staleTicketStore.Load(login, postRestartLoginKey)
+	if err != nil {
+		t.Fatalf("load stale post-restart ticket: %v", err)
+	}
+	if len(staleTicket.Characters) != 1 ||
+		staleTicket.Characters[0].MapIndex != bootstrapMapIndex ||
+		staleTicket.Characters[0].X != 1100 ||
+		staleTicket.Characters[0].Y != 2100 ||
+		staleTicket.Characters[0].Points[bootstrapPlayerPointValueIndex] != 700 ||
+		len(staleTicket.Characters[0].Inventory) != 1 ||
+		staleTicket.Characters[0].Inventory[0].Count != 2 {
+		t.Fatalf("expected stale post-restart ticket to keep pre-mutation location/points/inventory, got %+v", staleTicket.Characters)
+	}
+
+	reloadedAccounts := accountstore.NewFileStore(accountDir)
+	reloaded, err := newGameRuntimeWithAccountStoreAndTransferTriggers(config.Service{
+		LegacyAddr: ":13000",
+		PublicAddr: "127.0.0.1",
+	}, staleTicketStore, reloadedAccounts, []bootstrapTransferTrigger{{
+		SourceMapIndex: bootstrapMapIndex,
+		SourceX:        transferSourceX,
+		SourceY:        transferSourceY,
+		TargetMapIndex: transferTargetMap,
+		TargetX:        transferTargetX,
+		TargetY:        transferTargetY,
+	}})
+	if err != nil {
+		t.Fatalf("reload runtime after position/points daemon restart: %v", err)
+	}
+
+	restartFlow, restartEnter := enterGameWithLoginTicket(t, reloaded.SessionFactory(), login, postRestartLoginKey)
+	defer closeSessionFlow(t, restartFlow)
+	if len(restartEnter) < 5 {
+		t.Fatalf("expected rematerialized EnterGame bootstrap after daemon restart, got %d frames", len(restartEnter))
+	}
+
+	connected, ok := reloaded.ConnectedCharacterSnapshot(peer.Name)
+	if !ok {
+		t.Fatal("expected connected character snapshot after daemon restart rematerialization")
+	}
+	if connected.MapIndex != transferTargetMap || connected.X != transferTargetX || connected.Y != transferTargetY {
+		t.Fatalf("expected rematerialized location map=%d x=%d y=%d after daemon restart, got %+v",
+			transferTargetMap, transferTargetX, transferTargetY, connected)
+	}
+
+	pointsSnapshot, ok := reloaded.PointsSnapshot(peer.Name)
+	if !ok || pointsSnapshot.Points[bootstrapPlayerPointValueIndex] != 750 {
+		t.Fatalf("expected rematerialized points[1]=750 after daemon restart, ok=%v snapshot=%+v", ok, pointsSnapshot)
+	}
+	if pointsSnapshot.Points[bootstrapExperiencePointType] != 25 {
+		t.Fatalf("expected rematerialized experience points to stay 25 after daemon restart, got %d", pointsSnapshot.Points[bootstrapExperiencePointType])
+	}
+
+	inventorySnapshot, ok := reloaded.InventorySnapshot(peer.Name)
+	if !ok || !reflect.DeepEqual(inventorySnapshot.Inventory, []InventoryItemSnapshot{
+		{ID: 2001, Vnum: 27001, Count: 1, Slot: 5},
+	}) {
+		t.Fatalf("expected rematerialized inventory after daemon restart, ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+
+	// Post-restart mutation must persist against rematerialized location/points.
+	useAgainOut, err := restartFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{
+		Position: itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart item-use error: %v", err)
+	}
+	if len(useAgainOut) < 3 {
+		t.Fatalf("expected post-restart item-use frames, got %d", len(useAgainOut))
+	}
+	accountAfterUse, err := reloadedAccounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart item use: %v", err)
+	}
+	if accountAfterUse.Characters[0].MapIndex != transferTargetMap || accountAfterUse.Characters[0].X != transferTargetX || accountAfterUse.Characters[0].Y != transferTargetY {
+		t.Fatalf("expected rematerialized location to survive post-restart item use, got map=%d x=%d y=%d",
+			accountAfterUse.Characters[0].MapIndex, accountAfterUse.Characters[0].X, accountAfterUse.Characters[0].Y)
+	}
+	if got := accountAfterUse.Characters[0].Points[bootstrapPlayerPointValueIndex]; got != 800 {
+		t.Fatalf("expected persisted points[1]=800 after post-restart item use, got %d", got)
+	}
+	if len(accountAfterUse.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected inventory to empty after final post-restart item use, got %#v", accountAfterUse.Characters[0].Inventory)
+	}
+	livePoints, ok := reloaded.PointsSnapshot(peer.Name)
+	if !ok || livePoints.Points[bootstrapPlayerPointValueIndex] != 800 {
+		t.Fatalf("expected live points[1]=800 after post-restart item use, ok=%v snapshot=%+v", ok, livePoints)
 	}
 }
