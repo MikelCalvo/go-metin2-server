@@ -382,7 +382,7 @@ Live pending-frame executor rules:
 - each `FlushServerFrames()` pass keeps the order of due respawns, then due `return_required` return-steps, then due homeward steps, then due chase steps, then proximity acquisition / delayed retaliation
 - a due homeward step plans, persists the stepped materialized position, fans retained-viewer same-map `MOVE` (remove/add still delete/bootstrap), keeps the actor unengaged, and re-arms while still eligible `within_radius`; landing on authored home clears the deadline
 - re-engage / chase eligibility clears any pending homeward deadline so chase and homeward never both own the same actor
-- EnterGame / transfer / restart preflights flush due homeward before encoding static-actor visibility, matching return-step and chase preflight
+- EnterGame / transfer / restart preflights flush due homeward before encoding static-actor visibility, matching return-step and chase preflight; focused shared-world coverage now freezes the already-due EnterGame and `/restart_here` catch-up paths for homeward the same way return/chase already own them
 
 Current implementation status:
 - pure planner `PlanStaticActorSpawnLeashHomewardStep` is owned in `internal/worldruntime`
@@ -423,6 +423,7 @@ Current implementation status:
 - due homeward steps persist position, queue retained-viewer `MOVE` replication (with remove/add visibility still using delete/bootstrap), keep the actor unengaged, and re-arm while the actor remains eligible `within_radius`
 - re-engage / chase eligibility, return-step, respawn, remove, return-home, operator/runtime `UpdateStaticActor`, and content-bundle prune/restore paths clear or restore homeward deadlines alongside the chase/return schedules
 - the read-only pending homeward inspection endpoints above are now live over that already-owned schedule
+- focused EnterGame and `/restart_here` due-homeward catch-up coverage now mirrors the owned return/chase preflight proofs so skipped zero-HP lifecycle frames cannot leave stale within_radius visuals behind
 
 Explicit non-goals for this homeward freeze alone:
 - auto exact-home correction for every `within_radius` actor without a prior engagement/chase displacement boundary beyond the owned arming rules
