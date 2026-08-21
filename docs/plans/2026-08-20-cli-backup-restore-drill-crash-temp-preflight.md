@@ -56,4 +56,5 @@ Focused coverage:
 
 1. Keep ground-item restart durability deferred until operators decide that quarantined `0010` exports should drive recovery.
 2. ~~Add deployment topology / artifact retention docs once production hosts are known.~~ Done: see [lab deployment topology](../workflow/lab-deployment-topology.md) and [production observability](../workflow/production-observability.md).
-3. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
+3. ~~Align the printed backup tree with the lab `YYYYMMDDTHHMMSSZ-<commit12>` retention contract.~~ Done: see [CLI Backup-Restore Drill Lab Retention](2026-08-21-cli-backup-run-lab-retention.md).
+4. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.

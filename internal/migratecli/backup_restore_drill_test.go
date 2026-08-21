@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-func TestRunBackupRestoreDrillPrintsPathAwareCommands(t *testing.T) {
-	payload := `{
+func validBackupRestoreRuntimeConfig() string {
+	return `{
   "local_channel_id": 1,
   "visibility_mode": "radius",
   "visibility_radius": 400,
@@ -27,6 +27,23 @@ func TestRunBackupRestoreDrillPrintsPathAwareCommands(t *testing.T) {
     "dsn_configured": false
   }
 }`
+}
+
+func writeTempJSON(t *testing.T, name, payload string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, []byte(payload), 0o600); err != nil {
+		t.Fatalf("write %s: %v", name, err)
+	}
+	return path
+}
+
+func TestRunBackupRestoreDrillPrintsLabRetentionCommands(t *testing.T) {
+	buildInfoPath := writeTempJSON(t, "build-info.json", `{
+  "version": "v0.1.0",
+  "commit": "abcdef0123456789deadbeef",
+  "build_date": "2026-08-21T15:30:45Z"
+}`)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -34,10 +51,11 @@ func TestRunBackupRestoreDrillPrintsPathAwareCommands(t *testing.T) {
 		[]string{
 			"backup-restore-drill",
 			"--runtime-config", "-",
+			"--build-info", buildInfoPath,
 			"--ops-base-url", "http://127.0.0.1:6060",
-			"--backup-base", "/var/metin2/backups/drill",
+			"--backup-base", "/var/metin2/backups",
 		},
-		strings.NewReader(payload),
+		strings.NewReader(validBackupRestoreRuntimeConfig()),
 		&stdout,
 		&stderr,
 	)
@@ -50,17 +68,25 @@ func TestRunBackupRestoreDrillPrintsPathAwareCommands(t *testing.T) {
 
 	body := stdout.String()
 	for _, want := range []string{
+		`# read-only printer: does not execute backup/restore`,
+		`# crash-temps/cleanup mutates only hidden crash-temp residue after validate`,
+		`docs/workflow/file-store-backup-restore-drill.md`,
+		`docs/workflow/lab-deployment-topology.md`,
 		`OPS='http://127.0.0.1:6060'`,
-		`BASE='/var/metin2/backups/drill'`,
+		`BACKUPS_BASE='/var/metin2/backups'`,
+		`COMMIT12='abcdef012345'`,
 		`ACCOUNT_STORE_DIR='/var/metin2/accounts'`,
 		`LOGIN_TICKET_STORE_DIR='/var/metin2/login-tickets'`,
 		`ITEM_TEMPLATE_STORE_PATH='/var/metin2/item-templates/item-templates.json'`,
 		`INTERACTION_STORE_PATH='/var/metin2/interactions/interaction-definitions.json'`,
 		`STATIC_ACTOR_STORE_PATH='/var/metin2/static-actors/static-actors.json'`,
 		`QUEST_STATE_STORE_PATH='/var/metin2/quest-state/quest-state.json'`,
-		`curl -sS "$OPS/healthz"`,
-		`curl -sS "$OPS/local/runtime-config"`,
-		`curl -sS "$OPS/local/persistence/status"`,
+		`TS=$(date -u +%Y%m%dT%H%M%SZ)`,
+		`BASE="${BACKUPS_BASE}/${TS}-${COMMIT12}"`,
+		`mkdir -p "$BASE"/accounts "$BASE"/login-tickets "$BASE"/item-templates "$BASE"/interaction-store "$BASE"/static-actors "$BASE"/quest-state`,
+		`curl -sS "$OPS/local/runtime-config" > "$BASE/runtime-config.json"`,
+		`curl -sS "$OPS/local/persistence/status" > "$BASE/persistence-status-before.json"`,
+		`curl -sS "$OPS/local/persistence/status" > "$BASE/persistence-status-after.json"`,
 		`echo '== store validate / crash-temp triage =='`,
 		`"$OPS/local/account-store/validate"`,
 		`"$OPS/local/account-store/crash-temps/cleanup"`,
@@ -75,18 +101,22 @@ func TestRunBackupRestoreDrillPrintsPathAwareCommands(t *testing.T) {
 		`"$OPS/local/quest-state/validate"`,
 		`"$OPS/local/quest-state/crash-temps/cleanup"`,
 		`"$OPS/local/account-store/backup"`,
+		`$BASE/accounts`,
 		`"$OPS/local/login-tickets/backup"`,
+		`$BASE/login-tickets`,
 		`"$OPS/local/item-templates/backup"`,
+		`$BASE/item-templates`,
 		`"$OPS/local/interaction-store/backup"`,
+		`$BASE/interaction-store`,
 		`"$OPS/local/static-actors/backup"`,
+		`$BASE/static-actors`,
 		`"$OPS/local/quest-state/backup"`,
+		`$BASE/quest-state`,
 		`"$OPS/local/account-store/backup/validate"`,
 		`"$OPS/local/item-templates/restore"`,
 		`"$OPS/local/login-tickets/restore"`,
 		`mv "$ACCOUNT_STORE_DIR"`,
 		`mv "$(dirname "$ITEM_TEMPLATE_STORE_PATH")"`,
-		`# read-only printer: does not execute backup/restore`,
-		`# crash-temps/cleanup mutates only hidden crash-temp residue after validate`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in stdout:\n%s", want, body)
@@ -95,18 +125,27 @@ func TestRunBackupRestoreDrillPrintsPathAwareCommands(t *testing.T) {
 	if strings.Contains(body, "CREATE TABLE") || strings.Contains(body, "DROP TABLE") || strings.Contains(body, "memory://") {
 		t.Fatalf("backup-restore-drill must not expose SQL or DSN text, got %s", body)
 	}
-	idxStatus := strings.Index(body, `curl -sS "$OPS/local/persistence/status"`)
+	if strings.Contains(body, `/var/metin2/backups/drill`) || strings.Contains(body, `$BASE/account"`) || strings.Contains(body, `$BASE/interactions`) {
+		t.Fatalf("expected lab retention paths, not legacy drill naming, got %s", body)
+	}
+	if strings.Contains(body, `BASE="${BASE}-${TS}"`) || strings.Contains(body, `TS=$(date +%Y%m%dT%H%M%S)`) {
+		t.Fatalf("expected UTC commit12 retention tree, got legacy local-time suffix:\n%s", body)
+	}
+
+	idxRuntimeRetain := strings.Index(body, `> "$BASE/runtime-config.json"`)
+	idxStatusBefore := strings.Index(body, `> "$BASE/persistence-status-before.json"`)
 	idxStoreValidate := strings.Index(body, `"$OPS/local/account-store/validate"`)
 	idxCrashCleanup := strings.Index(body, `"$OPS/local/account-store/crash-temps/cleanup"`)
 	idxBackup := strings.Index(body, `"$OPS/local/account-store/backup"`)
 	idxBackupValidate := strings.Index(body, `"$OPS/local/account-store/backup/validate"`)
 	idxRestore := strings.Index(body, `"$OPS/local/item-templates/restore"`)
-	if idxStatus < 0 || idxStoreValidate < 0 || idxCrashCleanup < 0 || idxBackup < 0 || idxBackupValidate < 0 || idxRestore < 0 {
+	idxStatusAfter := strings.Index(body, `> "$BASE/persistence-status-after.json"`)
+	if idxRuntimeRetain < 0 || idxStatusBefore < 0 || idxStoreValidate < 0 || idxCrashCleanup < 0 || idxBackup < 0 || idxBackupValidate < 0 || idxRestore < 0 || idxStatusAfter < 0 {
 		t.Fatalf("missing expected ordering markers in stdout:\n%s", body)
 	}
-	if !(idxStatus < idxStoreValidate && idxStoreValidate < idxCrashCleanup && idxCrashCleanup < idxBackup && idxBackup < idxBackupValidate && idxBackupValidate < idxRestore) {
-		t.Fatalf("expected status -> store validate -> crash-temp cleanup -> backup -> backup validate -> restore ordering, got idxs status=%d validate=%d cleanup=%d backup=%d backupValidate=%d restore=%d\n%s",
-			idxStatus, idxStoreValidate, idxCrashCleanup, idxBackup, idxBackupValidate, idxRestore, body)
+	if !(idxRuntimeRetain < idxStatusBefore && idxStatusBefore < idxStoreValidate && idxStoreValidate < idxCrashCleanup && idxCrashCleanup < idxBackup && idxBackup < idxBackupValidate && idxBackupValidate < idxRestore && idxRestore < idxStatusAfter) {
+		t.Fatalf("expected retain runtime-config -> status-before -> validate -> cleanup -> backup -> backup validate -> restore -> status-after ordering, got idxs runtime=%d before=%d validate=%d cleanup=%d backup=%d backupValidate=%d restore=%d after=%d\n%s",
+			idxRuntimeRetain, idxStatusBefore, idxStoreValidate, idxCrashCleanup, idxBackup, idxBackupValidate, idxRestore, idxStatusAfter, body)
 	}
 	idxStaticActorValidate := strings.Index(body, `"$OPS/local/static-actor-store/validate"`)
 	idxStaticActorsBackup := strings.Index(body, `"$OPS/local/static-actors/backup"`)
@@ -118,10 +157,8 @@ func TestRunBackupRestoreDrillPrintsPathAwareCommands(t *testing.T) {
 	}
 }
 
-func TestRunBackupRestoreDrillReadsRegularFile(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "runtime-config.json")
-	payload := `{
+func TestRunBackupRestoreDrillReadsRegularFiles(t *testing.T) {
+	runtimePath := writeTempJSON(t, "runtime-config.json", `{
   "local_channel_id": 1,
   "visibility_mode": "whole_map",
   "visibility_radius": 0,
@@ -135,15 +172,13 @@ func TestRunBackupRestoreDrillReadsRegularFile(t *testing.T) {
     "quest_state_store_path": "/state/quests/quest-state.json"
   },
   "database": {"configured": false, "dsn_configured": false}
-}`
-	if err := os.WriteFile(path, []byte(payload), 0o600); err != nil {
-		t.Fatalf("write runtime-config: %v", err)
-	}
+}`)
+	buildInfoPath := writeTempJSON(t, "build-info.json", `{"version":"v0.1.0","commit":"deadbeefcafe","build_date":"2026-08-21T15:30:45Z"}`)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	code := Run(
-		[]string{"backup-restore-drill", "--runtime-config", path},
+		[]string{"backup-restore-drill", "--runtime-config", runtimePath, "--build-info", buildInfoPath},
 		nil,
 		&stdout,
 		&stderr,
@@ -151,12 +186,20 @@ func TestRunBackupRestoreDrillReadsRegularFile(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d stderr=%q", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), `ACCOUNT_STORE_DIR='/state/accounts'`) {
-		t.Fatalf("expected account path in stdout:\n%s", stdout.String())
+	body := stdout.String()
+	if !strings.Contains(body, `ACCOUNT_STORE_DIR='/state/accounts'`) {
+		t.Fatalf("expected account path in stdout:\n%s", body)
+	}
+	if !strings.Contains(body, `COMMIT12='deadbeefcafe'`) {
+		t.Fatalf("expected short commit in stdout:\n%s", body)
+	}
+	if !strings.Contains(body, `BACKUPS_BASE='/var/metin2/backups'`) {
+		t.Fatalf("expected default backups base in stdout:\n%s", body)
 	}
 }
 
 func TestRunBackupRestoreDrillRejectsSharedFileStoreParents(t *testing.T) {
+	buildInfoPath := writeTempJSON(t, "build-info.json", `{"version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-21T15:30:45Z"}`)
 	payload := `{
   "local_channel_id": 1,
   "visibility_mode": "whole_map",
@@ -176,7 +219,7 @@ func TestRunBackupRestoreDrillRejectsSharedFileStoreParents(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	code := Run(
-		[]string{"backup-restore-drill", "--runtime-config", "-"},
+		[]string{"backup-restore-drill", "--runtime-config", "-", "--build-info", buildInfoPath},
 		strings.NewReader(payload),
 		&stdout,
 		&stderr,
@@ -193,6 +236,7 @@ func TestRunBackupRestoreDrillRejectsSharedFileStoreParents(t *testing.T) {
 }
 
 func TestRunBackupRestoreDrillRejectsBlankPersistencePath(t *testing.T) {
+	buildInfoPath := writeTempJSON(t, "build-info.json", `{"version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-21T15:30:45Z"}`)
 	payload := `{
   "local_channel_id": 1,
   "visibility_mode": "whole_map",
@@ -212,7 +256,7 @@ func TestRunBackupRestoreDrillRejectsBlankPersistencePath(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	code := Run(
-		[]string{"backup-restore-drill", "--runtime-config", "-"},
+		[]string{"backup-restore-drill", "--runtime-config", "-", "--build-info", buildInfoPath},
 		strings.NewReader(payload),
 		&stdout,
 		&stderr,
@@ -225,7 +269,101 @@ func TestRunBackupRestoreDrillRejectsBlankPersistencePath(t *testing.T) {
 	}
 }
 
+func TestRunBackupRestoreDrillRejectsBlankCommit(t *testing.T) {
+	buildInfoPath := writeTempJSON(t, "build-info.json", `{"version":"v0.1.0","commit":"   ","build_date":"2026-08-21T15:30:45Z"}`)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{"backup-restore-drill", "--runtime-config", "-", "--build-info", buildInfoPath},
+		strings.NewReader(validBackupRestoreRuntimeConfig()),
+		&stdout,
+		&stderr,
+	)
+	if code != 1 {
+		t.Fatalf("expected exit 1, got %d stderr=%q", code, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout on failure, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "commit") {
+		t.Fatalf("expected commit reason, got %q", stderr.String())
+	}
+}
+
+func TestRunBackupRestoreDrillRejectsDualStdin(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{"backup-restore-drill", "--runtime-config", "-", "--build-info", "-"},
+		strings.NewReader(validBackupRestoreRuntimeConfig()),
+		&stdout,
+		&stderr,
+	)
+	if code != 1 {
+		t.Fatalf("expected exit 1, got %d stderr=%q", code, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout on failure, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "stdin") {
+		t.Fatalf("expected dual-stdin reason, got %q", stderr.String())
+	}
+}
+
+func TestRunBackupRestoreDrillRejectsRelativeBackupBase(t *testing.T) {
+	buildInfoPath := writeTempJSON(t, "build-info.json", `{"version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-21T15:30:45Z"}`)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"backup-restore-drill",
+			"--runtime-config", "-",
+			"--build-info", buildInfoPath,
+			"--backup-base", "relative/backups",
+		},
+		strings.NewReader(validBackupRestoreRuntimeConfig()),
+		&stdout,
+		&stderr,
+	)
+	if code != 1 {
+		t.Fatalf("expected exit 1, got %d stderr=%q", code, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout on failure, got %q", stdout.String())
+	}
+}
+
+func TestRunBackupRestoreDrillRejectsInvalidOpsBaseURL(t *testing.T) {
+	buildInfoPath := writeTempJSON(t, "build-info.json", `{"version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-21T15:30:45Z"}`)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"backup-restore-drill",
+			"--runtime-config", "-",
+			"--build-info", buildInfoPath,
+			"--ops-base-url", "ftp://127.0.0.1:6060",
+		},
+		strings.NewReader(validBackupRestoreRuntimeConfig()),
+		&stdout,
+		&stderr,
+	)
+	if code != 1 {
+		t.Fatalf("expected exit 1, got %d stderr=%q", code, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout on failure, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "ops-base-url") {
+		t.Fatalf("expected ops-base-url reason, got %q", stderr.String())
+	}
+}
+
 func TestRunBackupRestoreDrillRejectsMalformedAndOversizedInput(t *testing.T) {
+	buildInfoPath := writeTempJSON(t, "build-info.json", `{"version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-21T15:30:45Z"}`)
 	cases := []struct {
 		name    string
 		payload string
@@ -241,7 +379,7 @@ func TestRunBackupRestoreDrillRejectsMalformedAndOversizedInput(t *testing.T) {
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
 			code := Run(
-				[]string{"backup-restore-drill", "--runtime-config", "-"},
+				[]string{"backup-restore-drill", "--runtime-config", "-", "--build-info", buildInfoPath},
 				strings.NewReader(tc.payload),
 				&stdout,
 				&stderr,
@@ -262,7 +400,8 @@ func TestRunBackupRestoreDrillUsageErrors(t *testing.T) {
 		args []string
 	}{
 		{name: "missing-flag", args: []string{"backup-restore-drill"}},
-		{name: "unexpected-arg", args: []string{"backup-restore-drill", "--runtime-config", "-", "extra"}},
+		{name: "missing-build-info", args: []string{"backup-restore-drill", "--runtime-config", "-"}},
+		{name: "unexpected-arg", args: []string{"backup-restore-drill", "--runtime-config", "-", "--build-info", "-", "extra"}},
 		{name: "unknown-flag", args: []string{"backup-restore-drill", "--nope", "1"}},
 	}
 	for _, tc := range cases {
@@ -275,6 +414,9 @@ func TestRunBackupRestoreDrillUsageErrors(t *testing.T) {
 			}
 			if !strings.Contains(stderr.String(), "backup-restore-drill usage:") {
 				t.Fatalf("expected usage text, got %q", stderr.String())
+			}
+			if !strings.Contains(stderr.String(), "--build-info") || !strings.Contains(stderr.String(), "/var/metin2/backups") {
+				t.Fatalf("expected usage to mention --build-info and /var/metin2/backups default, got %q", stderr.String())
 			}
 		})
 	}

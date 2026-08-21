@@ -2119,7 +2119,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  apply-audit-status     inspect a migration apply audit file without mutating it")
 	fmt.Fprintln(w, "  apply                  apply a target plan using a database/sql driver and offline ledger snapshot")
 	fmt.Fprintln(w, "  quarantine-export      validate and canonicalize a retained migration-shaped export offline")
-	fmt.Fprintln(w, "  backup-restore-drill   print path-aware file-store backup/restore drill commands from runtime-config")
+	fmt.Fprintln(w, "  backup-restore-drill   print path-aware lab backup retention + file-store drill commands from runtime-config and build-info")
 	fmt.Fprintln(w, "  migration-run-retention print path-aware migration-runs retention commands from build-info")
 	fmt.Fprintln(w, "  version                print metadata-only binary build identity")
 	fmt.Fprintln(w, "")

@@ -39,11 +39,14 @@ Related helpers:
 - `GET /local/runtime-config` — confirms active `persistence.*` paths before any backup/restore
 - `GET /local/persistence/status` — aggregate validity, `live_selected_character_count`, per-store `backup_manifest`, and `restore_blocked_by_live_sessions`
 - per-store `.../validate` and `.../crash-temps/cleanup` — optional triage before backup; static-actor validate/cleanup use the `/local/static-actor-store/...` prefix
-- `metin2-migrate backup-restore-drill --runtime-config <path|->` — read-only printer that turns a retained runtime-config snapshot into the path-aware curl / aside-rename script below without executing backup or restore. The printed script now includes the optional store validate + crash-temp cleanup triage before backup; if an operator runs that printed section, `crash-temps/cleanup` mutates only hidden crash-temp residue after validate.
+- `metin2-migrate backup-restore-drill --runtime-config <path|-> --build-info <path|->` — read-only printer that turns retained runtime-config + build-info snapshots into the path-aware curl / aside-rename script for the lab `/var/metin2/backups/YYYYMMDDTHHMMSSZ-<commit12>/` tree without executing backup or restore. The printed script retains `runtime-config.json` / `persistence-status-*.json`, uses lab store subdirectory names (`accounts`, `interaction-store`, ...), and includes the optional store validate + crash-temp cleanup triage before backup; if an operator runs that printed section, `crash-temps/cleanup` mutates only hidden crash-temp residue after validate.
 
 ```bash
+metin2-migrate version > /tmp/build-info.json
 curl -sS http://127.0.0.1:6060/local/runtime-config \
-  | go run ./cmd/metin2-migrate backup-restore-drill --runtime-config -
+  | go run ./cmd/metin2-migrate backup-restore-drill \
+      --runtime-config - \
+      --build-info /tmp/build-info.json
 ```
 
 Request bodies:
@@ -121,13 +124,16 @@ Backup destinations must be empty and must not equal or nest under the live stor
 6. quest state
 
 ```bash
-TS=$(date +%Y%m%dT%H%M%S)
-BASE=/var/metin2/backups/drill-${TS}
-mkdir -p "$BASE"/{account,login-tickets,item-templates,interactions,static-actors,quest-state}
+TS=$(date -u +%Y%m%dT%H%M%SZ)
+COMMIT12=$(curl -sS http://127.0.0.1:6060/local/build-info | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"][:12])')
+BASE=/var/metin2/backups/${TS}-${COMMIT12}
+mkdir -p "$BASE"/{accounts,login-tickets,item-templates,interaction-store,static-actors,quest-state}
+curl -sS http://127.0.0.1:6060/local/runtime-config > "$BASE/runtime-config.json"
+curl -sS http://127.0.0.1:6060/local/persistence/status > "$BASE/persistence-status-before.json"
 
 curl -sS -X POST http://127.0.0.1:6060/local/account-store/backup \
   -H 'Content-Type: application/json' \
-  -d "{\"dst_dir\":\"$BASE/account\"}"
+  -d "{\"dst_dir\":\"$BASE/accounts\"}"
 
 curl -sS -X POST http://127.0.0.1:6060/local/login-tickets/backup \
   -H 'Content-Type: application/json' \
@@ -139,7 +145,7 @@ curl -sS -X POST http://127.0.0.1:6060/local/item-templates/backup \
 
 curl -sS -X POST http://127.0.0.1:6060/local/interaction-store/backup \
   -H 'Content-Type: application/json' \
-  -d "{\"dst_dir\":\"$BASE/interactions\"}"
+  -d "{\"dst_dir\":\"$BASE/interaction-store\"}"
 
 curl -sS -X POST http://127.0.0.1:6060/local/static-actors/backup \
   -H 'Content-Type: application/json' \
@@ -150,7 +156,7 @@ curl -sS -X POST http://127.0.0.1:6060/local/quest-state/backup \
   -d "{\"dst_dir\":\"$BASE/quest-state\"}"
 ```
 
-Retain the whole `$BASE` tree as the drill artifact set. Each successful backup writes its store-specific manifest next to the copied snapshot payload.
+Retain the whole `$BASE` tree as the drill artifact set, matching [lab deployment topology](lab-deployment-topology.md). Each successful backup writes its store-specific manifest next to the copied snapshot payload.
 
 ## Validate before emptying anything
 
@@ -158,13 +164,13 @@ Dry-run every backup source before renaming live stores aside:
 
 ```bash
 curl -sS -X POST http://127.0.0.1:6060/local/account-store/backup/validate \
-  -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/account\"}"
+  -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/accounts\"}"
 curl -sS -X POST http://127.0.0.1:6060/local/login-tickets/backup/validate \
   -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/login-tickets\"}"
 curl -sS -X POST http://127.0.0.1:6060/local/item-templates/backup/validate \
   -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/item-templates\"}"
 curl -sS -X POST http://127.0.0.1:6060/local/interaction-store/backup/validate \
-  -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/interactions\"}"
+  -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/interaction-store\"}"
 curl -sS -X POST http://127.0.0.1:6060/local/static-actors/backup/validate \
   -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/static-actors\"}"
 curl -sS -X POST http://127.0.0.1:6060/local/quest-state/backup/validate \
@@ -220,13 +226,13 @@ Restore order prefers authored dependencies and live index reloads before durabl
 curl -sS -X POST http://127.0.0.1:6060/local/item-templates/restore \
   -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/item-templates\"}"
 curl -sS -X POST http://127.0.0.1:6060/local/interaction-store/restore \
-  -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/interactions\"}"
+  -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/interaction-store\"}"
 curl -sS -X POST http://127.0.0.1:6060/local/static-actors/restore \
   -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/static-actors\"}"
 curl -sS -X POST http://127.0.0.1:6060/local/quest-state/restore \
   -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/quest-state\"}"
 curl -sS -X POST http://127.0.0.1:6060/local/account-store/restore \
-  -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/account\"}"
+  -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/accounts\"}"
 curl -sS -X POST http://127.0.0.1:6060/local/login-tickets/restore \
   -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/login-tickets\"}"
 ```
@@ -234,7 +240,7 @@ curl -sS -X POST http://127.0.0.1:6060/local/login-tickets/restore \
 ## Post-restore checks
 
 ```bash
-curl -sS http://127.0.0.1:6060/local/persistence/status
+curl -sS http://127.0.0.1:6060/local/persistence/status > "$BASE/persistence-status-after.json"
 ```
 
 Expected:

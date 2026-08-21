@@ -14,7 +14,7 @@ When `apply --lock-file <path>` fails because the lock already exists:
 metin2-migrate apply-lock-status --lock-file <path> > apply-lock-status.json
 ```
 
-Retain that JSON under the current `/var/metin2/migration-runs/YYYY-MM-DDTHHMMSSZ-<commit12>/` tree beside the other metadata-safe artifacts. The helper never deletes the lock, never opens the DB target, and never prints DSNs or executable SQL.
+Retain that JSON under the current `/var/metin2/migration-runs/YYYYMMDDTHHMMSSZ-<commit12>/` tree beside the other metadata-safe artifacts. The helper never deletes the lock, never opens the DB target, and never prints DSNs or executable SQL.
 
 Present locks report:
 

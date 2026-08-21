@@ -16,8 +16,10 @@ import (
 
 const (
 	maxRuntimeConfigBytes          = 64 * 1024
+	maxBackupRestoreBuildInfoBytes = 64 * 1024
 	defaultBackupRestoreOpsBaseURL = "http://127.0.0.1:6060"
-	defaultBackupRestoreBackupBase = "/var/metin2/backups/drill"
+	defaultBackupRestoreBackupBase = "/var/metin2/backups"
+	backupRestoreCommitSuffixMax   = 12
 )
 
 var errInvalidBackupRestoreDrillInput = errors.New("invalid backup-restore-drill input")
@@ -46,9 +48,19 @@ type backupRestoreDatabaseConfig struct {
 	DSNConfigured bool   `json:"dsn_configured"`
 }
 
+type backupRestoreBuildInfo struct {
+	Version   string `json:"version"`
+	Commit    string `json:"commit"`
+	BuildDate string `json:"build_date"`
+}
+
 type backupRestoreDrillPlan struct {
 	OpsBaseURL            string
 	BackupBase            string
+	Commit12              string
+	BuildVersion          string
+	BuildCommit           string
+	BuildDate             string
 	AccountStoreDir       string
 	LoginTicketStoreDir   string
 	ItemTemplateStorePath string
@@ -61,9 +73,11 @@ func runBackupRestoreDrill(args []string, stdin io.Reader, stdout io.Writer, std
 	flags := flag.NewFlagSet("backup-restore-drill", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	var runtimeConfigPath string
+	var buildInfoPath string
 	var opsBaseURL string
 	var backupBase string
 	flags.StringVar(&runtimeConfigPath, "runtime-config", "", "path to retained /local/runtime-config JSON, or - for stdin")
+	flags.StringVar(&buildInfoPath, "build-info", "", "path to retained /local/build-info or metin2-migrate version JSON, or - for stdin")
 	flags.StringVar(&opsBaseURL, "ops-base-url", defaultBackupRestoreOpsBaseURL, "loopback ops base URL used in printed curl commands")
 	flags.StringVar(&backupBase, "backup-base", defaultBackupRestoreBackupBase, "absolute backup root used in printed drill commands")
 	flags.Usage = func() { printBackupRestoreDrillUsage(stderr) }
@@ -80,23 +94,46 @@ func runBackupRestoreDrill(args []string, stdin io.Reader, stdout io.Writer, std
 		printBackupRestoreDrillUsage(stderr)
 		return exitUsage
 	}
+	if strings.TrimSpace(buildInfoPath) == "" {
+		fmt.Fprintln(stderr, "--build-info is required for backup-restore-drill")
+		printBackupRestoreDrillUsage(stderr)
+		return exitUsage
+	}
+	if strings.TrimSpace(runtimeConfigPath) == "-" && strings.TrimSpace(buildInfoPath) == "-" {
+		fmt.Fprintln(stderr, "backup-restore-drill: --runtime-config and --build-info cannot both read stdin")
+		return exitError
+	}
 
-	reader, closeReader, err := openBackupRestoreRuntimeConfigReader(runtimeConfigPath, stdin)
+	runtimeReader, closeRuntime, err := openBackupRestoreRuntimeConfigReader(runtimeConfigPath, stdin)
 	if err != nil {
 		fmt.Fprintf(stderr, "backup-restore-drill: %v\n", err)
 		return exitError
 	}
-	if closeReader != nil {
-		defer closeReader()
+	if closeRuntime != nil {
+		defer closeRuntime()
 	}
 
-	raw, err := readBoundedRuntimeConfig(reader)
+	buildInfoReader, closeBuildInfo, err := openBackupRestoreBuildInfoReader(buildInfoPath, stdin)
+	if err != nil {
+		fmt.Fprintf(stderr, "backup-restore-drill: %v\n", err)
+		return exitError
+	}
+	if closeBuildInfo != nil {
+		defer closeBuildInfo()
+	}
+
+	runtimeRaw, err := readBoundedRuntimeConfig(runtimeReader)
+	if err != nil {
+		fmt.Fprintf(stderr, "backup-restore-drill: %v\n", err)
+		return exitError
+	}
+	buildInfoRaw, err := readBoundedBackupRestoreBuildInfo(buildInfoReader)
 	if err != nil {
 		fmt.Fprintf(stderr, "backup-restore-drill: %v\n", err)
 		return exitError
 	}
 
-	plan, err := buildBackupRestoreDrillPlan(raw, opsBaseURL, backupBase)
+	plan, err := buildBackupRestoreDrillPlan(runtimeRaw, buildInfoRaw, opsBaseURL, backupBase)
 	if err != nil {
 		fmt.Fprintf(stderr, "backup-restore-drill: %v\n", err)
 		return exitError
@@ -139,6 +176,37 @@ func openBackupRestoreRuntimeConfigReader(path string, stdin io.Reader) (io.Read
 	return file, func() { _ = file.Close() }, nil
 }
 
+func openBackupRestoreBuildInfoReader(path string, stdin io.Reader) (io.Reader, func(), error) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "-" {
+		return stdin, nil, nil
+	}
+	info, err := os.Lstat(trimmed)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: stat build-info: %v", errInvalidBackupRestoreDrillInput, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, nil, fmt.Errorf("%w: build-info must not be a symlink: %s", errInvalidBackupRestoreDrillInput, trimmed)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, nil, fmt.Errorf("%w: build-info must be a regular file: %s", errInvalidBackupRestoreDrillInput, trimmed)
+	}
+	file, err := os.Open(trimmed)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: open build-info: %v", errInvalidBackupRestoreDrillInput, err)
+	}
+	openedInfo, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, nil, fmt.Errorf("%w: stat opened build-info: %v", errInvalidBackupRestoreDrillInput, err)
+	}
+	if !openedInfo.Mode().IsRegular() {
+		_ = file.Close()
+		return nil, nil, fmt.Errorf("%w: opened build-info must be a regular file: %s", errInvalidBackupRestoreDrillInput, trimmed)
+	}
+	return file, func() { _ = file.Close() }, nil
+}
+
 func readBoundedRuntimeConfig(reader io.Reader) ([]byte, error) {
 	if reader == nil {
 		reader = strings.NewReader("")
@@ -159,10 +227,43 @@ func readBoundedRuntimeConfig(reader io.Reader) ([]byte, error) {
 	return raw, nil
 }
 
-func buildBackupRestoreDrillPlan(raw []byte, opsBaseURL string, backupBase string) (backupRestoreDrillPlan, error) {
+func readBoundedBackupRestoreBuildInfo(reader io.Reader) ([]byte, error) {
+	if reader == nil {
+		reader = strings.NewReader("")
+	}
+	raw, err := io.ReadAll(io.LimitReader(reader, maxBackupRestoreBuildInfoBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("%w: read build-info: %v", errInvalidBackupRestoreDrillInput, err)
+	}
+	if len(raw) > maxBackupRestoreBuildInfoBytes {
+		return nil, fmt.Errorf("%w: build-info exceeds %d bytes", errInvalidBackupRestoreDrillInput, maxBackupRestoreBuildInfoBytes)
+	}
+	if !utf8.Valid(raw) {
+		return nil, fmt.Errorf("%w: build-info is not valid UTF-8", errInvalidBackupRestoreDrillInput)
+	}
+	if len(bytes.TrimSpace(raw)) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, fmt.Errorf("%w: build-info is empty", errInvalidBackupRestoreDrillInput)
+	}
+	return raw, nil
+}
+
+func buildBackupRestoreDrillPlan(runtimeRaw, buildInfoRaw []byte, opsBaseURL string, backupBase string) (backupRestoreDrillPlan, error) {
 	var snapshot backupRestoreRuntimeConfig
-	if err := decodeStrictRuntimeConfigJSON(raw, &snapshot); err != nil {
+	if err := decodeStrictRuntimeConfigJSON(runtimeRaw, &snapshot); err != nil {
 		return backupRestoreDrillPlan{}, err
+	}
+	var buildInfo backupRestoreBuildInfo
+	if err := decodeStrictBackupRestoreBuildInfoJSON(buildInfoRaw, &buildInfo); err != nil {
+		return backupRestoreDrillPlan{}, err
+	}
+
+	commit := strings.TrimSpace(buildInfo.Commit)
+	if commit == "" {
+		return backupRestoreDrillPlan{}, fmt.Errorf("%w: commit is required", errInvalidBackupRestoreDrillInput)
+	}
+	commit12 := commit
+	if len(commit12) > backupRestoreCommitSuffixMax {
+		commit12 = commit12[:backupRestoreCommitSuffixMax]
 	}
 
 	normalizedOps, err := normalizeBackupRestoreOpsBaseURL(opsBaseURL)
@@ -220,6 +321,10 @@ func buildBackupRestoreDrillPlan(raw []byte, opsBaseURL string, backupBase strin
 	return backupRestoreDrillPlan{
 		OpsBaseURL:            normalizedOps,
 		BackupBase:            normalizedBackupBase,
+		Commit12:              commit12,
+		BuildVersion:          strings.TrimSpace(buildInfo.Version),
+		BuildCommit:           commit,
+		BuildDate:             strings.TrimSpace(buildInfo.BuildDate),
 		AccountStoreDir:       accountDir,
 		LoginTicketStoreDir:   loginTicketDir,
 		ItemTemplateStorePath: itemTemplatePath,
@@ -238,6 +343,19 @@ func decodeStrictRuntimeConfigJSON(raw []byte, dest any) error {
 	var trailing struct{}
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return fmt.Errorf("%w: runtime-config has trailing JSON", errInvalidBackupRestoreDrillInput)
+	}
+	return nil
+}
+
+func decodeStrictBackupRestoreBuildInfoJSON(raw []byte, dest *backupRestoreBuildInfo) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dest); err != nil {
+		return fmt.Errorf("%w: decode build-info: %v", errInvalidBackupRestoreDrillInput, err)
+	}
+	var trailing struct{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return fmt.Errorf("%w: build-info has trailing JSON", errInvalidBackupRestoreDrillInput)
 	}
 	return nil
 }
@@ -299,11 +417,16 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	b.WriteString("#!/bin/sh\n")
 	b.WriteString("# read-only printer: does not execute backup/restore\n")
 	b.WriteString("# crash-temps/cleanup mutates only hidden crash-temp residue after validate\n")
-	b.WriteString("# Generated from a retained /local/runtime-config snapshot for docs/workflow/file-store-backup-restore-drill.md\n")
+	b.WriteString("# Generated from retained /local/runtime-config and /local/build-info snapshots\n")
+	b.WriteString("# for docs/workflow/file-store-backup-restore-drill.md and docs/workflow/lab-deployment-topology.md\n")
 	b.WriteString("set -eu\n")
 	b.WriteString("\n")
 	fmt.Fprintf(&b, "OPS=%s\n", shellSingleQuote(plan.OpsBaseURL))
-	fmt.Fprintf(&b, "BASE=%s\n", shellSingleQuote(plan.BackupBase))
+	fmt.Fprintf(&b, "BACKUPS_BASE=%s\n", shellSingleQuote(plan.BackupBase))
+	fmt.Fprintf(&b, "COMMIT12=%s\n", shellSingleQuote(plan.Commit12))
+	fmt.Fprintf(&b, "BUILD_VERSION=%s\n", shellSingleQuote(plan.BuildVersion))
+	fmt.Fprintf(&b, "BUILD_COMMIT=%s\n", shellSingleQuote(plan.BuildCommit))
+	fmt.Fprintf(&b, "BUILD_DATE=%s\n", shellSingleQuote(plan.BuildDate))
 	fmt.Fprintf(&b, "ACCOUNT_STORE_DIR=%s\n", shellSingleQuote(plan.AccountStoreDir))
 	fmt.Fprintf(&b, "LOGIN_TICKET_STORE_DIR=%s\n", shellSingleQuote(plan.LoginTicketStoreDir))
 	fmt.Fprintf(&b, "ITEM_TEMPLATE_STORE_PATH=%s\n", shellSingleQuote(plan.ItemTemplateStorePath))
@@ -311,49 +434,49 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	fmt.Fprintf(&b, "STATIC_ACTOR_STORE_PATH=%s\n", shellSingleQuote(plan.StaticActorStorePath))
 	fmt.Fprintf(&b, "QUEST_STATE_STORE_PATH=%s\n", shellSingleQuote(plan.QuestStateStorePath))
 	b.WriteString("\n")
-	b.WriteString("TS=$(date +%Y%m%dT%H%M%S)\n")
-	b.WriteString("BASE=\"${BASE}-${TS}\"\n")
+	b.WriteString("TS=$(date -u +%Y%m%dT%H%M%SZ)\n")
+	b.WriteString(`BASE="${BACKUPS_BASE}/${TS}-${COMMIT12}"` + "\n")
 	b.WriteString("\n")
-	b.WriteString("echo '== preflight =='\n")
-	b.WriteString("curl -sS \"$OPS/healthz\"\n")
-	b.WriteString("curl -sS \"$OPS/local/runtime-config\"\n")
-	b.WriteString("curl -sS \"$OPS/local/persistence/status\"\n")
+	b.WriteString("echo '== prepare lab backup retention tree =='\n")
+	b.WriteString(`mkdir -p "$BASE"/accounts "$BASE"/login-tickets "$BASE"/item-templates "$BASE"/interaction-store "$BASE"/static-actors "$BASE"/quest-state` + "\n")
+	b.WriteString("\n")
+	b.WriteString("echo '== retain runtime-config / preflight status =='\n")
+	b.WriteString(`curl -sS "$OPS/local/runtime-config" > "$BASE/runtime-config.json"` + "\n")
+	b.WriteString(`curl -sS "$OPS/healthz"` + "\n")
+	b.WriteString(`curl -sS "$OPS/local/persistence/status" > "$BASE/persistence-status-before.json"` + "\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== store validate / crash-temp triage =='\n")
 	b.WriteString("# Optional runbook triage before backup. validate is read-only; crash-temps/cleanup\n")
 	b.WriteString("# removes only hidden crash-temp residue after validating committed snapshots.\n")
 	b.WriteString("# Do not treat cleanup as enough preparation for restore: committed snapshots and\n")
 	b.WriteString("# active *-backup-manifest.json still make destinations non-empty.\n")
-	b.WriteString("curl -sS -X POST \"$OPS/local/account-store/validate\"\n")
-	b.WriteString("curl -sS -X POST \"$OPS/local/account-store/crash-temps/cleanup\"\n")
-	b.WriteString("curl -sS -X POST \"$OPS/local/login-tickets/validate\"\n")
-	b.WriteString("curl -sS -X POST \"$OPS/local/login-tickets/crash-temps/cleanup\"\n")
-	b.WriteString("curl -sS -X POST \"$OPS/local/item-templates/validate\"\n")
-	b.WriteString("curl -sS -X POST \"$OPS/local/item-templates/crash-temps/cleanup\"\n")
-	b.WriteString("curl -sS -X POST \"$OPS/local/interaction-store/validate\"\n")
-	b.WriteString("curl -sS -X POST \"$OPS/local/interaction-store/crash-temps/cleanup\"\n")
-	b.WriteString("curl -sS -X POST \"$OPS/local/static-actor-store/validate\"\n")
-	b.WriteString("curl -sS -X POST \"$OPS/local/static-actor-store/crash-temps/cleanup\"\n")
-	b.WriteString("curl -sS -X POST \"$OPS/local/quest-state/validate\"\n")
-	b.WriteString("curl -sS -X POST \"$OPS/local/quest-state/crash-temps/cleanup\"\n")
-	b.WriteString("curl -sS \"$OPS/local/persistence/status\"\n")
-	b.WriteString("\n")
-	b.WriteString("echo '== prepare backup destinations =='\n")
-	b.WriteString("mkdir -p \"$BASE\"/account \"$BASE\"/login-tickets \"$BASE\"/item-templates \"$BASE\"/interactions \"$BASE\"/static-actors \"$BASE\"/quest-state\n")
+	b.WriteString(`curl -sS -X POST "$OPS/local/account-store/validate"` + "\n")
+	b.WriteString(`curl -sS -X POST "$OPS/local/account-store/crash-temps/cleanup"` + "\n")
+	b.WriteString(`curl -sS -X POST "$OPS/local/login-tickets/validate"` + "\n")
+	b.WriteString(`curl -sS -X POST "$OPS/local/login-tickets/crash-temps/cleanup"` + "\n")
+	b.WriteString(`curl -sS -X POST "$OPS/local/item-templates/validate"` + "\n")
+	b.WriteString(`curl -sS -X POST "$OPS/local/item-templates/crash-temps/cleanup"` + "\n")
+	b.WriteString(`curl -sS -X POST "$OPS/local/interaction-store/validate"` + "\n")
+	b.WriteString(`curl -sS -X POST "$OPS/local/interaction-store/crash-temps/cleanup"` + "\n")
+	b.WriteString(`curl -sS -X POST "$OPS/local/static-actor-store/validate"` + "\n")
+	b.WriteString(`curl -sS -X POST "$OPS/local/static-actor-store/crash-temps/cleanup"` + "\n")
+	b.WriteString(`curl -sS -X POST "$OPS/local/quest-state/validate"` + "\n")
+	b.WriteString(`curl -sS -X POST "$OPS/local/quest-state/crash-temps/cleanup"` + "\n")
+	b.WriteString(`curl -sS "$OPS/local/persistence/status"` + "\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== backup =='\n")
-	b.WriteString("curl -sS -X POST \"$OPS/local/account-store/backup\" -H 'Content-Type: application/json' -d \"{\\\"dst_dir\\\":\\\"$BASE/account\\\"}\"\n")
+	b.WriteString("curl -sS -X POST \"$OPS/local/account-store/backup\" -H 'Content-Type: application/json' -d \"{\\\"dst_dir\\\":\\\"$BASE/accounts\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/login-tickets/backup\" -H 'Content-Type: application/json' -d \"{\\\"dst_dir\\\":\\\"$BASE/login-tickets\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/item-templates/backup\" -H 'Content-Type: application/json' -d \"{\\\"dst_dir\\\":\\\"$BASE/item-templates\\\"}\"\n")
-	b.WriteString("curl -sS -X POST \"$OPS/local/interaction-store/backup\" -H 'Content-Type: application/json' -d \"{\\\"dst_dir\\\":\\\"$BASE/interactions\\\"}\"\n")
+	b.WriteString("curl -sS -X POST \"$OPS/local/interaction-store/backup\" -H 'Content-Type: application/json' -d \"{\\\"dst_dir\\\":\\\"$BASE/interaction-store\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/static-actors/backup\" -H 'Content-Type: application/json' -d \"{\\\"dst_dir\\\":\\\"$BASE/static-actors\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/quest-state/backup\" -H 'Content-Type: application/json' -d \"{\\\"dst_dir\\\":\\\"$BASE/quest-state\\\"}\"\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== backup validate =='\n")
-	b.WriteString("curl -sS -X POST \"$OPS/local/account-store/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/account\\\"}\"\n")
+	b.WriteString("curl -sS -X POST \"$OPS/local/account-store/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/accounts\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/login-tickets/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/login-tickets\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/item-templates/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/item-templates\\\"}\"\n")
-	b.WriteString("curl -sS -X POST \"$OPS/local/interaction-store/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/interactions\\\"}\"\n")
+	b.WriteString("curl -sS -X POST \"$OPS/local/interaction-store/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/interaction-store\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/static-actors/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/static-actors\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/quest-state/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/quest-state\\\"}\"\n")
 	b.WriteString("\n")
@@ -374,18 +497,18 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	b.WriteString("\n")
 	b.WriteString("echo '== restore =='\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/item-templates/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/item-templates\\\"}\"\n")
-	b.WriteString("curl -sS -X POST \"$OPS/local/interaction-store/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/interactions\\\"}\"\n")
+	b.WriteString("curl -sS -X POST \"$OPS/local/interaction-store/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/interaction-store\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/static-actors/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/static-actors\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/quest-state/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/quest-state\\\"}\"\n")
-	b.WriteString("curl -sS -X POST \"$OPS/local/account-store/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/account\\\"}\"\n")
+	b.WriteString("curl -sS -X POST \"$OPS/local/account-store/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/accounts\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/login-tickets/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/login-tickets\\\"}\"\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== post-restore =='\n")
-	b.WriteString("curl -sS \"$OPS/local/persistence/status\"\n")
+	b.WriteString("curl -sS \"$OPS/local/persistence/status\" > \"$BASE/persistence-status-after.json\"\n")
 	return b.String()
 }
 
 func printBackupRestoreDrillUsage(w io.Writer) {
 	fmt.Fprintln(w, "backup-restore-drill usage:")
-	fmt.Fprintln(w, "  metin2-migrate backup-restore-drill --runtime-config <path|-> [--ops-base-url http://127.0.0.1:6060] [--backup-base /var/metin2/backups/drill]")
+	fmt.Fprintln(w, "  metin2-migrate backup-restore-drill --runtime-config <path|-> --build-info <path|-> [--ops-base-url http://127.0.0.1:6060] [--backup-base /var/metin2/backups]")
 }

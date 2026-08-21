@@ -53,7 +53,7 @@ Keep operator evidence outside live data trees:
 
 ```text
 /var/metin2/backups/
-  YYYY-MM-DDTHHMMSSZ-<commit12>/
+  YYYYMMDDTHHMMSSZ-<commit12>/
     accounts/
     login-tickets/
     item-templates/
@@ -65,7 +65,7 @@ Keep operator evidence outside live data trees:
     persistence-status-after.json
 
 /var/metin2/migration-runs/
-  YYYY-MM-DDTHHMMSSZ-<commit12>/
+  YYYYMMDDTHHMMSSZ-<commit12>/
     migration-catalog.json
     ledger-snapshot.json
     ledger-snapshot-status.json
@@ -89,7 +89,17 @@ Naming rules:
 3. Never store DSNs, passwords, login keys, raw tickets, or executable SQL inside these trees.
 4. Deployment-specific DB engine dumps live beside these trees under a host-local policy; they are not owned by this repository.
 
-Default drill printer base remains `/var/metin2/backups/drill` via `metin2-migrate backup-restore-drill --backup-base ...`. Prefer creating a fresh timestamped parent for each real window rather than reusing `drill/`.
+Default backup printer base is `/var/metin2/backups` via:
+
+```bash
+metin2-migrate version > /tmp/build-info.json
+curl -sS http://127.0.0.1:6060/local/runtime-config \
+  | metin2-migrate backup-restore-drill \
+      --runtime-config - \
+      --build-info /tmp/build-info.json
+```
+
+The printer emits a path-aware shell script that creates `YYYYMMDDTHHMMSSZ-<commit12>/`, retains `runtime-config.json` / `persistence-status-*.json`, and uses the lab store subdirectory names above. It never executes backup/restore, never opens a database, and never embeds a DSN.
 
 Default migration-runs printer base remains `/var/metin2/migration-runs` via:
 
@@ -126,5 +136,5 @@ See also:
 - remote admin APIs
 - automatic artifact GC / lifecycle jobs
 - automatic stale-lock expiry (lab recovery remains confirmation-gated `apply-lock-aside` / operator aside-rename; see [lab stale-lock recovery](lab-stale-lock-recovery.md))
-- automatic execution of the printed `migration-run-retention` script (the CLI only prints commands)
+- automatic execution of the printed `migration-run-retention` or `backup-restore-drill` scripts (the CLI only prints commands)
 - a claim that bootstrap file stores are the final production persistence layer

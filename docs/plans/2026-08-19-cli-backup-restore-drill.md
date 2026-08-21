@@ -74,3 +74,4 @@ Validation:
 2. Keep ground-item restart durability deferred until a real world-state repository exists.
 3. Add deployment topology docs once production hosts are known.
 4. ~~Include the optional per-store validate + crash-temp cleanup triage in the printed drill script.~~ Done: see [CLI Backup/Restore Drill Crash-Temp Preflight](2026-08-20-cli-backup-restore-drill-crash-temp-preflight.md).
+5. ~~Align the printed backup tree with the lab `YYYYMMDDTHHMMSSZ-<commit12>` retention contract (default base `/var/metin2/backups`, required `--build-info`, lab subdirectory names).~~ Done: see [CLI Backup-Restore Drill Lab Retention](2026-08-21-cli-backup-run-lab-retention.md). The `--backup-base /var/metin2/backups/drill` default frozen above is superseded by that later slice.
