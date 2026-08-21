@@ -392,7 +392,7 @@ Current implementation status:
 - daemon-restart rematerialization of live unengaged `within_radius` spawn-backed actors now arms pending homeward through `loadPersistedStaticActors`
 - operator `POST .../return-step` still no-ops `within_radius`; exact-home snap remains the controlled `return-home` trigger
 - the read-only pending homeward inspection endpoints below are now live over that already-owned schedule
-- operator/runtime same-map position `UpdateStaticActor` that leaves an unengaged spawn-backed actor `within_radius` still clears homeward rather than re-arming it; that re-arm is the next owned hardening seam
+- operator/runtime same-map position `UpdateStaticActor` that leaves an unengaged spawn-backed actor `within_radius` now re-arms pending homeward through the shared eligibility sync (mirroring `return_required` return-step re-arm) instead of only clearing the deadline
 
 ## First owned pending homeward-step inspection seam
 
@@ -429,6 +429,7 @@ Current implementation status:
 - the read-only pending homeward inspection endpoints above are now live over that already-owned schedule
 - focused EnterGame, `/restart_here`, and `/restart_town` due-homeward catch-up coverage now mirrors the owned return/chase preflight proofs so skipped zero-HP lifecycle frames cannot leave stale within_radius visuals behind
 - daemon-restart rematerialization of live unengaged `within_radius` spawn-backed actors now arms pending homeward
+- operator/runtime same-map position `UpdateStaticActor` that leaves a live unengaged spawn-backed actor `within_radius` now re-arms pending homeward through `syncSpawnGroupHomewardStepScheduleForEntity` (and still clears for `at_home` / `return_required` / dead / engaged / non-spawn)
 
 Explicit non-goals for this homeward freeze alone:
 - auto exact-home correction for every `within_radius` actor without a prior engagement/chase displacement boundary beyond the owned arming rules
@@ -438,23 +439,22 @@ Explicit non-goals for this homeward freeze alone:
 - operator POST homeward trigger
 - inventing selected-target ownership or preserving engagement across homeward
 
-## Next: operator/runtime UpdateStaticActor re-arms within-radius homeward
+## Done: operator/runtime UpdateStaticActor re-arms within-radius homeward
 
 Question frozen here:
 
 **Once engagement-release and daemon-restore already arm pending homeward for live unengaged `within_radius` spawn-backed actors, and operator/runtime same-map position `UpdateStaticActor` already re-arms return-step when the actor classifies `return_required`, what is the smallest honest follow-on so that same update path re-arms homeward when it leaves the actor unengaged `within_radius` instead of only clearing the deadline?**
 
-Contract for the next GREEN:
+Contract (now GREEN):
 - after a successful same-map position-only operator/runtime `UpdateStaticActor` on a live spawn-backed practice mob, call the same homeward eligibility sync used by engagement-release / restore
 - if the post-update actor is live, unengaged, spawn-backed, and classifies `within_radius`, arm one pending homeward deadline (`1s`, fixed `max_step = 100`)
 - if the post-update actor is `at_home`, `return_required`, dead, engaged, or non-spawn, clear any pending homeward deadline (return-step ownership still wins for `return_required`)
 - keep the existing engagement / selected-target / chase clear behavior on operator/runtime update
 - do not invent a homeward POST trigger, pathfinding, or cross-map homeward choreography
 
-Why this is the next RED:
-- today `UpdateStaticActor` explicitly clears homeward after syncing return-step, so an operator displace into `within_radius` leaves the actor stranded until some later engagement-release path re-arms recovery
-- the restore and engagement-release arming helpers already exist; the missing seam is wiring that sync on the operator/runtime update path
+Current implementation status:
+- `UpdateStaticActor` now calls `syncSpawnGroupHomewardStepScheduleForEntity` after syncing return-step and clearing chase
+- focused coverage proves arming for unengaged `within_radius` plus due homeward flush that restores `at_home` without arming return-step
+- the older "within_radius never auto-moves" isolation proof is replaced by that homeward-after-update / return-step-idle proof
 
-Current implementation status before the RED:
-- restore / engagement-release / due `/restart_town` homeward preflight are owned
-- operator/runtime `UpdateStaticActor` still clears homeward unconditionally after the update
+Next honest Track A follow-on remains the deferred cross-map return MOVE / warp packet choreography freeze above (RED intentionally blocked until a client-facing packet boundary is owned).

@@ -3208,7 +3208,11 @@ func (r *gameRuntime) updateStaticActorWithInteractionCombatProfileAndSpawnGroup
 	// shared-world; clear any pending chase deadline so a stale 5s chase MOVE
 	// cannot fire after that owned reset boundary (matches return-home / remove).
 	r.clearSpawnGroupChaseStep(entityID)
-	r.clearSpawnGroupHomewardStep(entityID)
+	// Mirror return_required return-step re-arm: a same-map displace that leaves
+	// the actor live, unengaged, and within_radius must re-arm pending homeward
+	// instead of only clearing the deadline. at_home / return_required / dead /
+	// engaged / non-spawn outcomes still clear through the shared eligibility sync.
+	r.syncSpawnGroupHomewardStepScheduleForEntity(entityID)
 	if credit, ok := r.sharedWorld.StaticActorKillQuestCredit(entityID); ok {
 		updated.RewardQuestRef = credit.QuestRef
 		updated.RewardQuestFlag = credit.QuestFlag

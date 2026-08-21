@@ -3000,6 +3000,9 @@ func TestGameRuntimeUpdateStaticActorClearsPendingSpawnGroupChaseStepDeadline(t 
 	// Operator/runtime UpdateStaticActor already releases engagement and clears
 	// selected-target ownership. It must also clear any pending chase-step deadline
 	// so a stale 5s chase MOVE cannot fire after the owned update reset boundary.
+	// The same update now re-arms homeward for unengaged within_radius, so delayed
+	// visibility after the chase window may be homeward recovery toward authored
+	// home — never a chase step toward the previous owner.
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("ChaseStepUpdateClearOwner", 0x01030195, 0x02040195, 1900, 2800, 0, 101, 201)
 	owner.MapIndex = 42
@@ -3074,18 +3077,32 @@ func TestGameRuntimeUpdateStaticActorClearsPendingSpawnGroupChaseStepDeadline(t 
 	if pending, ok := runtime.SpawnGroupChaseStep(group.EntityID); ok || pending.EntityID != 0 {
 		t.Fatalf("expected chase-step inspection to omit actor after UpdateStaticActor release, ok=%v snapshot=%+v", ok, pending)
 	}
+	if pending, ok := runtime.SpawnGroupHomewardStep(group.EntityID); !ok || pending.EntityID != group.EntityID {
+		t.Fatalf("expected UpdateStaticActor within_radius release to arm homeward, ok=%v snapshot=%+v", ok, pending)
+	}
 
 	// Drain immediate update cleanup (MOVE / selected-target clear) before proving
 	// the old chase deadline cannot still fire a delayed chase MOVE.
 	_ = flushServerFrames(t, flow)
 
 	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay)
-	if queued := flushServerFrames(t, flow); len(queued) != 0 {
-		t.Fatalf("expected no delayed chase-step visibility after UpdateStaticActor cleared the deadline, got %d frames", len(queued))
+	queued := flushServerFrames(t, flow)
+	if len(queued) == 0 {
+		t.Fatal("expected due homeward recovery after UpdateStaticActor within_radius displace")
+	}
+	homewardMove, err := movep.DecodeMoveAck(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("expected delayed visibility after UpdateStaticActor to be homeward MOVE, not chase, decode err=%v", err)
+	}
+	if homewardMove.VID != targetVID || homewardMove.X >= 1750 {
+		t.Fatalf("expected delayed MOVE toward authored home (not chase toward owner), got %+v", homewardMove)
 	}
 	actor, ok := runtime.SpawnGroup(group.EntityID)
-	if !ok || actor.X != 1750 || actor.Y != 2800 {
-		t.Fatalf("expected actor to remain at operator-updated position without a late chase step, ok=%v snapshot=%+v", ok, actor)
+	if !ok || actor.X >= 1750 || actor.Y != 2800 {
+		t.Fatalf("expected homeward recovery toward home without a late chase step, ok=%v snapshot=%+v", ok, actor)
+	}
+	if pending, ok := runtime.SpawnGroupChaseStep(group.EntityID); ok || pending.EntityID != 0 {
+		t.Fatalf("expected chase-step to stay cleared through homeward recovery, ok=%v snapshot=%+v", ok, pending)
 	}
 }
 
@@ -5405,6 +5422,65 @@ func TestGameRuntimeLoadPersistedStaticActorsArmsHomewardForUnengagedWithinRadiu
 	}
 }
 
+func TestGameRuntimeUpdateStaticActorArmsHomewardForUnengagedWithinRadiusSpawn(t *testing.T) {
+	// Mirror return_required UpdateStaticActor scheduling: a same-map operator/
+	// runtime position update that leaves a live unengaged spawn-backed actor
+	// classified within_radius re-arms pending homeward through the shared
+	// homeward eligibility sync instead of only clearing the deadline.
+	store := loginticket.NewFileStore(t.TempDir())
+	staticActorStore := staticstore.NewFileStore(filepath.Join(t.TempDir(), "static-actors.json"))
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionStore,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for UpdateStaticActor within_radius homeward arm: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.hw_update_within_radius",
+		Name:          "HwUpdateWithinMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import within_radius homeward UpdateStaticActor spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.hw_update_within_radius")
+	if !ok {
+		t.Fatal("expected within_radius homeward UpdateStaticActor spawn group to resolve by ref")
+	}
+	if pending, ok := runtime.SpawnGroupHomewardStep(group.EntityID); ok || pending.EntityID != 0 {
+		t.Fatalf("expected at_home import to leave homeward unarmed, ok=%v snapshot=%+v", ok, pending)
+	}
+
+	updated, ok := runtime.UpdateStaticActor(group.EntityID, "HwUpdateWithinMob", 42, 1800, 2800, 20350)
+	if !ok {
+		t.Fatal("expected same-map within_radius UpdateStaticActor to succeed before homeward arm proof")
+	}
+	if updated.X != 1800 || updated.Y != 2800 || updated.SpawnLeash == nil || updated.SpawnLeash.Status != worldruntime.SpawnLeashStatusWithinRadius || updated.SpawnLeash.ReturnRequired {
+		t.Fatalf("expected UpdateStaticActor to leave unengaged within_radius actor, got %+v", updated)
+	}
+	if pending, ok := runtime.SpawnGroupReturnStep(group.EntityID); ok || pending.EntityID != 0 {
+		t.Fatalf("expected within_radius UpdateStaticActor not to arm return-step, ok=%v snapshot=%+v", ok, pending)
+	}
+	if pending, ok := runtime.SpawnGroupHomewardStep(group.EntityID); !ok || pending.EntityID != group.EntityID {
+		t.Fatalf("expected UpdateStaticActor to arm pending homeward for unengaged within_radius entity %d, ok=%v snapshot=%+v", group.EntityID, ok, pending)
+	}
+}
+
 func TestGameRuntimeFlushServerFramesStopsSpawnGroupReturnStepWhenActorReentersLeashRadius(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	// Keep the viewer visible to both the displaced and stepped positions, but outside
@@ -5488,7 +5564,11 @@ func TestGameRuntimeFlushServerFramesStopsSpawnGroupReturnStepWhenActorReentersL
 	}
 }
 
-func TestGameRuntimeFlushServerFramesDoesNotMoveWithinRadiusSpawnGroup(t *testing.T) {
+func TestGameRuntimeFlushServerFramesHomewardAfterUpdateStaticActorDoesNotArmReturnStep(t *testing.T) {
+	// Operator/runtime UpdateStaticActor into within_radius must re-arm homeward,
+	// not the return_required return-step executor. This replaces the older
+	// "within_radius never auto-moves" isolation proof now that homeward owns
+	// that recovery path.
 	store := loginticket.NewFileStore(t.TempDir())
 	viewer := peerVisibilityCharacter("ReturnStepAutoWithinViewer", 0x0103016d, 0x0204016d, 1700, 2800, 0, 101, 201)
 	viewer.MapIndex = 42
@@ -5510,7 +5590,7 @@ func TestGameRuntimeFlushServerFramesDoesNotMoveWithinRadiusSpawnGroup(t *testin
 		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
 	)
 	if err != nil {
-		t.Fatalf("new game runtime for within-radius autonomous return-step: %v", err)
+		t.Fatalf("new game runtime for within-radius homeward-after-update: %v", err)
 	}
 	runtime.now = func() time.Time { return currentTime }
 	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
@@ -5523,27 +5603,56 @@ func TestGameRuntimeFlushServerFramesDoesNotMoveWithinRadiusSpawnGroup(t *testin
 		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
 	}}})
 	if err != nil {
-		t.Fatalf("import within-radius autonomous return-step spawn-group bundle: %v", err)
+		t.Fatalf("import within-radius homeward-after-update spawn-group bundle: %v", err)
 	}
 	group, ok := runtime.SpawnGroupByRef("practice.return_step_auto_within")
 	if !ok {
-		t.Fatal("expected within-radius autonomous return-step spawn group to resolve by ref")
+		t.Fatal("expected within-radius homeward-after-update spawn group to resolve by ref")
 	}
 
 	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "return-step-auto-within-viewer", 0x1d1d1d1d)
 	defer closeSessionFlow(t, flow)
 	flushServerFrames(t, flow)
-	if _, ok := runtime.UpdateStaticActor(group.EntityID, "ReturnStepAutoWithinMob", 42, 1900, 2900, 20350); !ok {
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "ReturnStepAutoWithinMob", 42, 1800, 2800, 20350); !ok {
 		t.Fatal("expected spawn-backed actor current-position update inside leash radius to succeed")
 	}
-	flushServerFrames(t, flow)
-	currentTime = currentTime.Add(5 * time.Second)
-	if queued := flushServerFrames(t, flow); len(queued) != 0 {
-		t.Fatalf("expected within-radius spawn group not to auto-step or queue refresh, got %d frames", len(queued))
+	if pending, ok := runtime.SpawnGroupReturnStep(group.EntityID); ok || pending.EntityID != 0 {
+		t.Fatalf("expected within_radius UpdateStaticActor not to arm return-step, ok=%v snapshot=%+v", ok, pending)
+	}
+	if pending, ok := runtime.SpawnGroupHomewardStep(group.EntityID); !ok || pending.EntityID != group.EntityID {
+		t.Fatalf("expected within_radius UpdateStaticActor to arm homeward, ok=%v snapshot=%+v", ok, pending)
+	}
+	// Drain the same-map operator/runtime position MOVE fanout before waiting for homeward.
+	updateQueued := flushServerFrames(t, flow)
+	if len(updateQueued) == 0 {
+		t.Fatal("expected UpdateStaticActor within_radius displace to queue retained-viewer MOVE")
+	}
+	updateMove, err := movep.DecodeMoveAck(decodeSingleFrame(t, updateQueued[0]))
+	if err != nil {
+		t.Fatalf("decode UpdateStaticActor MOVE before homeward: %v", err)
+	}
+	if updateMove.VID != uint32(group.EntityID) || updateMove.X != 1800 || updateMove.Y != 2800 {
+		t.Fatalf("expected UpdateStaticActor MOVE to displaced within_radius coords, got %+v", updateMove)
+	}
+
+	currentTime = currentTime.Add(bootstrapSpawnGroupHomewardStepDelay)
+	homewardQueued := flushServerFrames(t, flow)
+	if len(homewardQueued) == 0 {
+		t.Fatal("expected due homeward-step after UpdateStaticActor to queue retained-viewer MOVE")
+	}
+	homewardMove, err := movep.DecodeMoveAck(decodeSingleFrame(t, homewardQueued[0]))
+	if err != nil {
+		t.Fatalf("decode homeward MOVE after UpdateStaticActor: %v", err)
+	}
+	if homewardMove.VID != uint32(group.EntityID) || homewardMove.X != 1700 || homewardMove.Y != 2800 {
+		t.Fatalf("expected homeward MOVE to authored home after UpdateStaticActor, got %+v", homewardMove)
+	}
+	if pending, ok := runtime.SpawnGroupReturnStep(group.EntityID); ok || pending.EntityID != 0 {
+		t.Fatalf("expected homeward recovery not to arm return-step, ok=%v snapshot=%+v", ok, pending)
 	}
 	current, ok := runtime.SpawnGroup(group.EntityID)
-	if !ok || current.X != 1900 || current.Y != 2900 || current.SpawnLeash == nil || current.SpawnLeash.Status != worldruntime.SpawnLeashStatusWithinRadius {
-		t.Fatalf("expected within-radius spawn group to remain in place, ok=%v snapshot=%+v", ok, current)
+	if !ok || current.X != 1700 || current.Y != 2800 || current.SpawnLeash == nil || current.SpawnLeash.Status != worldruntime.SpawnLeashStatusAtHome {
+		t.Fatalf("expected homeward-after-update to restore at_home, ok=%v snapshot=%+v", ok, current)
 	}
 }
 
