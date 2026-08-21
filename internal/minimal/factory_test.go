@@ -3625,10 +3625,10 @@ func TestGameRuntimeConfigSnapshotReportsPersistenceStoreLocations(t *testing.T)
 		PublicAddr:            "127.0.0.1",
 		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
 		AccountStoreDir:       filepath.Join(root, "accounts"),
-		StaticActorStorePath:  filepath.Join(root, "content", "static-actors.json"),
-		InteractionStorePath:  filepath.Join(root, "content", "interactions.json"),
-		ItemTemplateStorePath: filepath.Join(root, "content", "item-templates.json"),
-		QuestStateStorePath:   filepath.Join(root, "content", "quest-state.json"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors", "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
+		QuestStateStorePath:   filepath.Join(root, "quest-state", "quest-state.json"),
 	}
 
 	runtime, err := NewGameRuntime(cfg)
@@ -3816,9 +3816,9 @@ func TestNewGameRuntimeRejectsWildcardOpsBind(t *testing.T) {
 		PublicAddr:            "127.0.0.1",
 		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
 		AccountStoreDir:       filepath.Join(root, "accounts"),
-		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
-		InteractionStorePath:  filepath.Join(root, "interactions.json"),
-		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors", "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
 	}
 
 	_, err := NewGameRuntime(cfg)
@@ -3835,9 +3835,9 @@ func TestNewGameRuntimeRejectsPartialDatabaseConfig(t *testing.T) {
 		PublicAddr:            "127.0.0.1",
 		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
 		AccountStoreDir:       filepath.Join(root, "accounts"),
-		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
-		InteractionStorePath:  filepath.Join(root, "interactions.json"),
-		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors", "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
 		DatabaseDriver:        "sqlite3",
 	}
 
@@ -3855,9 +3855,9 @@ func TestNewGameRuntimeRejectsUnavailableDatabaseDriver(t *testing.T) {
 		PublicAddr:            "127.0.0.1",
 		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
 		AccountStoreDir:       filepath.Join(root, "accounts"),
-		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
-		InteractionStorePath:  filepath.Join(root, "interactions.json"),
-		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors", "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
 		DatabaseDriver:        "go_metin2_missing_driver",
 		DatabaseDSN:           "file:metin2.db",
 	}
@@ -3877,13 +3877,34 @@ func TestNewGameRuntimeRejectsOverlappingPersistencePaths(t *testing.T) {
 		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
 		AccountStoreDir:       filepath.Join(root, "accounts"),
 		StaticActorStorePath:  filepath.Join(root, "accounts", "static-actors.json"),
-		InteractionStorePath:  filepath.Join(root, "interactions.json"),
-		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
+		QuestStateStorePath:   filepath.Join(root, "quest-state", "quest-state.json"),
 	}
 
 	_, err := NewGameRuntime(cfg)
 	if !errors.Is(err, config.ErrPersistencePathOverlap) {
 		t.Fatalf("expected ErrPersistencePathOverlap, got %v", err)
+	}
+}
+
+func TestNewGameRuntimeRejectsSharedFileStoreParentDirectory(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Service{
+		PprofAddr:             "127.0.0.1:6060",
+		LegacyAddr:            ":13000",
+		PublicAddr:            "127.0.0.1",
+		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
+		AccountStoreDir:       filepath.Join(root, "accounts"),
+		StaticActorStorePath:  filepath.Join(root, "content", "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "content", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
+		QuestStateStorePath:   filepath.Join(root, "quest-state", "quest-state.json"),
+	}
+
+	_, err := NewGameRuntime(cfg)
+	if !errors.Is(err, config.ErrPersistencePathSharedParent) {
+		t.Fatalf("expected ErrPersistencePathSharedParent, got %v", err)
 	}
 }
 
@@ -3903,9 +3924,9 @@ func TestNewGameRuntimeRejectsSymlinkedDirectoryPersistenceRoot(t *testing.T) {
 		PublicAddr:            "127.0.0.1",
 		LoginTicketStoreDir:   linkedTickets,
 		AccountStoreDir:       filepath.Join(root, "accounts"),
-		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
-		InteractionStorePath:  filepath.Join(root, "interactions.json"),
-		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors", "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
 	}
 
 	_, err := NewGameRuntime(cfg)
@@ -3934,9 +3955,9 @@ func TestNewAuthSessionFactoryWithValidatedConfigRejectsOverlappingPersistencePa
 		PprofAddr:             "127.0.0.1:6061",
 		LoginTicketStoreDir:   filepath.Join(root, "state"),
 		AccountStoreDir:       filepath.Join(root, "state"),
-		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
-		InteractionStorePath:  filepath.Join(root, "interactions.json"),
-		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors", "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
 	}
 
 	_, err := NewAuthSessionFactoryWithValidatedConfig(cfg)

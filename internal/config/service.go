@@ -32,6 +32,7 @@ type Service struct {
 var (
 	ErrPersistencePathRequired     = errors.New("persistence path is required")
 	ErrPersistencePathOverlap      = errors.New("persistence paths overlap")
+	ErrPersistencePathSharedParent = errors.New("persistence file-store paths share a parent directory")
 	ErrPersistencePathRoleConflict = errors.New("persistence path conflicts with expected store type")
 	ErrPersistencePathSymlink      = errors.New("persistence directory store path must not be a symlink")
 	ErrOpsAddrRequired             = errors.New("ops bind address is required")
@@ -129,11 +130,13 @@ func ValidateDatabaseDriverAvailability(cfg Service) error {
 
 // ValidatePersistenceConfig fails closed when bootstrap JSON stores are missing,
 // configured with the wrong filesystem entry type, configured to share the same
-// filesystem boundary, or routed through a symlinked directory-store root.
-// Directory-backed stores own their full subtree, while file-backed stores own
-// only their exact file path; any lexical or symlink-resolved overlap is
-// rejected before runtime code can validate, back up, restore, or mutate the
-// wrong store.
+// filesystem boundary, routed through a symlinked directory-store root, or when
+// multiple file-backed stores share a parent directory. Directory-backed stores
+// own their full subtree, while file-backed stores own only their exact file
+// path; any lexical or symlink-resolved overlap is rejected before runtime code
+// can validate, back up, restore, or mutate the wrong store. Shared file-store
+// parents are rejected because restore empties filepath.Dir(snapshotPath) and
+// would otherwise wipe sibling snapshots and manifests.
 func ValidatePersistenceConfig(cfg Service) error {
 	return validatePersistencePathSelections([]persistencePathSelection{
 		{Name: "login_ticket_store_dir", Role: persistencePathRoleDir, Path: cfg.LoginTicketStoreDir},
@@ -169,6 +172,31 @@ func validatePersistencePathSelections(paths []persistencePathSelection) error {
 				return fmt.Errorf("%w: %s %q overlaps %s %q", ErrPersistencePathOverlap, paths[i].Name, paths[i].Path, paths[j].Name, paths[j].Path)
 			}
 		}
+	}
+	if err := rejectSharedFileStoreParents(paths, false); err != nil {
+		return err
+	}
+	return rejectSharedFileStoreParents(paths, true)
+}
+
+func rejectSharedFileStoreParents(paths []persistencePathSelection, useLexical bool) error {
+	seenParents := make(map[string]persistencePathSelection)
+	for _, selection := range paths {
+		if selection.Role != persistencePathRoleFile {
+			continue
+		}
+		path := selection.Path
+		if useLexical {
+			path = selection.LexicalPath
+		}
+		if path == "" {
+			continue
+		}
+		parent := filepath.Clean(filepath.Dir(path))
+		if other, ok := seenParents[parent]; ok {
+			return fmt.Errorf("%w: %s %q and %s %q share parent %q; restore empties filepath.Dir(snapshotPath)", ErrPersistencePathSharedParent, other.Name, other.Path, selection.Name, selection.Path, parent)
+		}
+		seenParents[parent] = selection
 	}
 	return nil
 }
@@ -357,7 +385,7 @@ func DefaultAccountStoreDir() string {
 }
 
 func defaultStaticActorStorePath() string {
-	return filepath.Join(os.TempDir(), "go-metin2-server-static-actors.json")
+	return filepath.Join(os.TempDir(), "go-metin2-server-static-actors", "static-actors.json")
 }
 
 func DefaultStaticActorStorePath() string {
@@ -365,7 +393,7 @@ func DefaultStaticActorStorePath() string {
 }
 
 func defaultInteractionStorePath() string {
-	return filepath.Join(os.TempDir(), "go-metin2-server-interaction-definitions.json")
+	return filepath.Join(os.TempDir(), "go-metin2-server-interaction-definitions", "interaction-definitions.json")
 }
 
 func DefaultInteractionStorePath() string {
@@ -373,7 +401,7 @@ func DefaultInteractionStorePath() string {
 }
 
 func defaultItemTemplateStorePath() string {
-	return filepath.Join(os.TempDir(), "go-metin2-server-item-templates.json")
+	return filepath.Join(os.TempDir(), "go-metin2-server-item-templates", "item-templates.json")
 }
 
 func DefaultItemTemplateStorePath() string {
@@ -381,7 +409,7 @@ func DefaultItemTemplateStorePath() string {
 }
 
 func defaultQuestStateStorePath() string {
-	return filepath.Join(os.TempDir(), "go-metin2-server-quest-state.json")
+	return filepath.Join(os.TempDir(), "go-metin2-server-quest-state", "quest-state.json")
 }
 
 func questStateStorePathOrDefault(path string) string {

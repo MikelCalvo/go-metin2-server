@@ -65,13 +65,15 @@ File-path stores restore into `filepath.Dir(snapshotPath)`, not “just the JSON
 For any real backup/restore drill, give each file-backed store a dedicated parent directory before starting the daemons, for example:
 
 ```text
-/var/metin2/accounts/                 # account_store_dir
-/var/metin2/login-tickets/            # login_ticket_store_dir
-/var/metin2/item-templates/item-templates.json
-/var/metin2/interactions/interaction-definitions.json
-/var/metin2/static-actors/static-actors.json
-/var/metin2/quest-state/quest-state.json
+/var/metin2/data/accounts/                                  # account_store_dir
+/var/metin2/data/login-tickets/                             # login_ticket_store_dir
+/var/metin2/data/item-templates/item-templates.json
+/var/metin2/data/interactions/interaction-definitions.json
+/var/metin2/data/static-actors/static-actors.json
+/var/metin2/data/quest-state/quest-state.json
 ```
+
+`gamed` startup now rejects shared file-store parents with `ErrPersistencePathSharedParent`, matching the drill printer. Zero-config temp defaults also use dedicated parents under the process temp directory.
 
 Confirm the running daemon with `GET /local/runtime-config` before continuing.
 

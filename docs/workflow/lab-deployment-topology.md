@@ -26,12 +26,12 @@ Rules:
 Prefer explicit absolute paths for durable QA / drill runs instead of process-temp defaults:
 
 ```text
-/var/metin2/data/login-tickets/          # directory store
-/var/metin2/data/accounts/               # directory store
-/var/metin2/data/static-actors.json      # file store
-/var/metin2/data/interaction-definitions.json
-/var/metin2/data/item-templates.json
-/var/metin2/data/quest-state.json
+/var/metin2/data/login-tickets/                          # directory store
+/var/metin2/data/accounts/                               # directory store
+/var/metin2/data/static-actors/static-actors.json        # file store (dedicated parent)
+/var/metin2/data/interactions/interaction-definitions.json
+/var/metin2/data/item-templates/item-templates.json
+/var/metin2/data/quest-state/quest-state.json
 ```
 
 Example environment (service-specific overrides win over globals):
@@ -39,11 +39,13 @@ Example environment (service-specific overrides win over globals):
 ```bash
 export METIN2_LOGIN_TICKET_STORE_DIR=/var/metin2/data/login-tickets
 export METIN2_ACCOUNT_STORE_DIR=/var/metin2/data/accounts
-export METIN2_GAMED_STATIC_ACTOR_STORE_PATH=/var/metin2/data/static-actors.json
-export METIN2_GAMED_INTERACTION_STORE_PATH=/var/metin2/data/interaction-definitions.json
-export METIN2_GAMED_ITEM_TEMPLATE_STORE_PATH=/var/metin2/data/item-templates.json
-export METIN2_GAMED_QUEST_STATE_STORE_PATH=/var/metin2/data/quest-state.json
+export METIN2_GAMED_STATIC_ACTOR_STORE_PATH=/var/metin2/data/static-actors/static-actors.json
+export METIN2_GAMED_INTERACTION_STORE_PATH=/var/metin2/data/interactions/interaction-definitions.json
+export METIN2_GAMED_ITEM_TEMPLATE_STORE_PATH=/var/metin2/data/item-templates/item-templates.json
+export METIN2_GAMED_QUEST_STATE_STORE_PATH=/var/metin2/data/quest-state/quest-state.json
 ```
+
+File-backed stores must use dedicated parent directories. `gamed` startup and `metin2-migrate backup-restore-drill` both fail closed when two file stores share `filepath.Dir(snapshotPath)`, because restore empties that parent.
 
 Confirm the live process with `GET /local/runtime-config` before backup/restore or migration windows.
 

@@ -209,13 +209,85 @@ func TestValidatePersistenceConfigAcceptsDistinctExplicitPaths(t *testing.T) {
 		Name:                  "gamed",
 		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
 		AccountStoreDir:       filepath.Join(root, "accounts"),
-		StaticActorStorePath:  filepath.Join(root, "content", "static-actors.json"),
-		InteractionStorePath:  filepath.Join(root, "content", "interactions.json"),
-		ItemTemplateStorePath: filepath.Join(root, "content", "item-templates.json"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors", "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
+		QuestStateStorePath:   filepath.Join(root, "quest-state", "quest-state.json"),
 	}
 
 	if err := ValidatePersistenceConfig(cfg); err != nil {
 		t.Fatalf("expected distinct persistence paths to validate, got %v", err)
+	}
+}
+
+func TestValidatePersistenceConfigAcceptsBootstrapDefaults(t *testing.T) {
+	clearPersistenceEnv(t)
+
+	cfg := LoadService("gamed", "127.0.0.1:6060", ":13000", "127.0.0.1")
+	if err := ValidatePersistenceConfig(cfg); err != nil {
+		t.Fatalf("expected bootstrap default persistence paths to validate, got %v", err)
+	}
+}
+
+func TestValidatePersistenceConfigRejectsFileStoresThatShareParentDirectory(t *testing.T) {
+	root := t.TempDir()
+	cfg := Service{
+		Name:                  "gamed",
+		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
+		AccountStoreDir:       filepath.Join(root, "accounts"),
+		StaticActorStorePath:  filepath.Join(root, "content", "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "content", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
+		QuestStateStorePath:   filepath.Join(root, "quest-state", "quest-state.json"),
+	}
+
+	err := ValidatePersistenceConfig(cfg)
+	if !errors.Is(err, ErrPersistencePathSharedParent) {
+		t.Fatalf("expected ErrPersistencePathSharedParent for shared file-store parent, got %v", err)
+	}
+}
+
+func TestValidatePersistenceConfigRejectsQuestStateSharingParentWithItemTemplates(t *testing.T) {
+	root := t.TempDir()
+	cfg := Service{
+		Name:                  "gamed",
+		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
+		AccountStoreDir:       filepath.Join(root, "accounts"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors", "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "shared", "item-templates.json"),
+		QuestStateStorePath:   filepath.Join(root, "shared", "quest-state.json"),
+	}
+
+	err := ValidatePersistenceConfig(cfg)
+	if !errors.Is(err, ErrPersistencePathSharedParent) {
+		t.Fatalf("expected ErrPersistencePathSharedParent for quest-state/item-template shared parent, got %v", err)
+	}
+}
+
+func TestValidatePersistenceConfigRejectsSymlinkResolvedSharedFileStoreParent(t *testing.T) {
+	root := t.TempDir()
+	realContent := filepath.Join(root, "real-content")
+	if err := os.MkdirAll(realContent, 0o755); err != nil {
+		t.Fatalf("create real content dir: %v", err)
+	}
+	linkedContent := filepath.Join(root, "linked-content")
+	if err := os.Symlink(realContent, linkedContent); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	cfg := Service{
+		Name:                  "gamed",
+		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
+		AccountStoreDir:       filepath.Join(root, "accounts"),
+		StaticActorStorePath:  filepath.Join(realContent, "static-actors.json"),
+		InteractionStorePath:  filepath.Join(linkedContent, "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
+		QuestStateStorePath:   filepath.Join(root, "quest-state", "quest-state.json"),
+	}
+
+	err := ValidatePersistenceConfig(cfg)
+	if !errors.Is(err, ErrPersistencePathSharedParent) {
+		t.Fatalf("expected ErrPersistencePathSharedParent for symlink-resolved shared parent, got %v", err)
 	}
 }
 
@@ -225,9 +297,9 @@ func TestValidatePersistenceConfigRejectsMissingCriticalStorePath(t *testing.T) 
 		Name:                  "gamed",
 		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
 		AccountStoreDir:       "   ",
-		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
-		InteractionStorePath:  filepath.Join(root, "interactions.json"),
-		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors", "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
 	}
 
 	err := ValidatePersistenceConfig(cfg)
@@ -242,9 +314,9 @@ func TestValidatePersistenceConfigRejectsDirectoryStoresThatOverlap(t *testing.T
 		Name:                  "gamed",
 		LoginTicketStoreDir:   filepath.Join(root, "state"),
 		AccountStoreDir:       filepath.Join(root, "state"),
-		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
-		InteractionStorePath:  filepath.Join(root, "interactions.json"),
-		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors", "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
 	}
 
 	err := ValidatePersistenceConfig(cfg)
@@ -299,9 +371,9 @@ func TestValidatePersistenceConfigRejectsDirectoryStoreSymlinkRoot(t *testing.T)
 		Name:                  "gamed",
 		LoginTicketStoreDir:   " " + linkedTickets + " ",
 		AccountStoreDir:       filepath.Join(root, "accounts"),
-		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
-		InteractionStorePath:  filepath.Join(root, "interactions.json"),
-		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors", "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
 	}
 
 	err := ValidatePersistenceConfig(cfg)
@@ -335,8 +407,8 @@ func TestValidatePersistenceConfigRejectsFileStoreInsideDirectoryStore(t *testin
 		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
 		AccountStoreDir:       filepath.Join(root, "accounts"),
 		StaticActorStorePath:  filepath.Join(root, "accounts", "static-actors.json"),
-		InteractionStorePath:  filepath.Join(root, "interactions.json"),
-		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
 	}
 
 	err := ValidatePersistenceConfig(cfg)
@@ -354,7 +426,8 @@ func TestValidatePersistenceConfigRejectsFileStoresThatSharePath(t *testing.T) {
 		AccountStoreDir:       filepath.Join(root, "accounts"),
 		StaticActorStorePath:  sharedPath,
 		InteractionStorePath:  sharedPath,
-		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
+		QuestStateStorePath:   filepath.Join(root, "quest-state", "quest-state.json"),
 	}
 
 	err := ValidatePersistenceConfig(cfg)
@@ -370,8 +443,8 @@ func TestValidatePersistenceConfigRejectsQuestStateFileStoreOverlap(t *testing.T
 		Name:                  "gamed",
 		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
 		AccountStoreDir:       filepath.Join(root, "accounts"),
-		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
-		InteractionStorePath:  filepath.Join(root, "interactions.json"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors", "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions", "interactions.json"),
 		ItemTemplateStorePath: sharedPath,
 		QuestStateStorePath:   sharedPath,
 	}
@@ -390,8 +463,8 @@ func TestValidatePersistenceConfigRejectsFileStorePathAtDirectoryStore(t *testin
 		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
 		AccountStoreDir:       dirPath,
 		StaticActorStorePath:  dirPath,
-		InteractionStorePath:  filepath.Join(root, "interactions.json"),
-		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
 	}
 
 	err := ValidatePersistenceConfig(cfg)
@@ -410,9 +483,9 @@ func TestValidatePersistenceConfigRejectsDirectoryStorePathThatIsExistingFile(t 
 		Name:                  "gamed",
 		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
 		AccountStoreDir:       accountPath,
-		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
-		InteractionStorePath:  filepath.Join(root, "interactions.json"),
-		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors", "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
 	}
 
 	err := ValidatePersistenceConfig(cfg)
@@ -432,8 +505,8 @@ func TestValidatePersistenceConfigRejectsFileStorePathThatIsExistingDirectory(t 
 		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
 		AccountStoreDir:       filepath.Join(root, "accounts"),
 		StaticActorStorePath:  staticActorDir,
-		InteractionStorePath:  filepath.Join(root, "interactions.json"),
-		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
 	}
 
 	err := ValidatePersistenceConfig(cfg)
@@ -457,8 +530,8 @@ func TestValidatePersistenceConfigRejectsSymlinkResolvedFileStoreInsideDirectory
 		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
 		AccountStoreDir:       accountsDir,
 		StaticActorStorePath:  linkPath,
-		InteractionStorePath:  filepath.Join(root, "interactions.json"),
-		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
 	}
 
 	err := ValidatePersistenceConfig(cfg)
@@ -486,8 +559,8 @@ func TestValidatePersistenceConfigRejectsFileStoreSymlinkPathInsideDirectoryStor
 		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
 		AccountStoreDir:       accountsDir,
 		StaticActorStorePath:  linkPath,
-		InteractionStorePath:  filepath.Join(root, "interactions.json"),
-		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
 	}
 
 	err := ValidatePersistenceConfig(cfg)
