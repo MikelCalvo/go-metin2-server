@@ -18,8 +18,8 @@ It does **not** yet claim:
 - public/admin-authenticated remote authoring
 - merge semantics across environments
 - partial import semantics
-- branching quest scripts, quest UI packets, or rewards
-- real merchant transactions, branching dialogs, or richer authored UI state
+- branching quest scripts, quest UI packets, or scripted mission graphs beyond the owned `quest_flag` compare-and-set turn-in payload
+- real merchant transactions beyond the currently owned bootstrap shop path, branching dialogs, or richer authored UI state
 
 ## Interaction-definition authoring
 
@@ -37,7 +37,7 @@ Current rules:
 - refs without a namespace, refs containing `/`, whitespace, dots, hyphens, uppercase letters, blank segments, or extra `:` separators are rejected before persistence/import
 - `info` / `talk` currently use authored `text`, and may optionally carry a non-mutating quest gate (`quest_ref` + `quest_flag` + optional `quest_from`) that must match the selected character's current quest-state before the self-only chat delivery is returned
 - `shop_preview` currently uses authored `title + catalog[]`, and may optionally carry the same non-mutating quest gate before the merchant window opens
-- `quest_flag` currently uses authored `text`, `quest_ref`, `quest_flag`, optional `quest_from`, and `quest_to`; it applies exactly one selected-character compare-and-set transition through the quest-state store when a visible actor resolves it, including `quest_to = 0` clears when the current value matches `quest_from`
+- `quest_flag` currently uses authored `text`, `quest_ref`, `quest_flag`, optional `quest_from`, and `quest_to`, plus the optional turn-in economy fields already frozen in `quest-state-bootstrap.md` (`reward_experience`, `reward_gold`, scalar or table `reward_items`, `consume_items`, `consume_gold`, `consume_experience`); it applies exactly one selected-character compare-and-set transition through the quest-state store when a visible actor resolves it, including `quest_to = 0` clears when the current value matches `quest_from`, and grants/debits the authored turn-in payload only after that transition applies
 - `warp` currently uses authored `map_index`, `x`, `y`, with optional `text`, and may optionally carry the same non-mutating quest gate before transfer/rebootstrap runs
 - create/update bodies must be valid UTF-8 before JSON decoding; malformed raw bytes are rejected before runtime mutation callbacks can see lossy replacement-character strings
 - exact lookup is read-only and loopback-only; it returns the authored definition JSON for one `kind + ref`, returns `404` when absent, and rejects blank or decoded slash-containing identities as path-ambiguous `400` requests
@@ -47,6 +47,7 @@ Current rules:
 - the backing catalog remains deterministic and file-backed under `internal/interactionstore`
 - the file-backed interaction-definition loader rejects JSON `null` document roots, `null` `definitions` collections, unknown top-level JSON fields, and trailing JSON instead of accepting a lossy or partial object silently
 - the static-actor store accepts interaction metadata only for currently owned definition kinds (`info`, `talk`, `quest_flag`, `warp`, `shop_preview`); future content kinds must be added to the interaction definition catalog before static actors can reference them durably
+- loopback `POST` / `PUT` / `PATCH` `/local/interactions` decode the full owned `quest_flag` turn-in payload through the same `NormalizeDefinition` / `ValidDefinition` seam used by content-bundle import, so operator HTTP authoring can create the same reward/consume definitions that bundles already import; non-`quest_flag` kinds still reject those fields with `400`
 
 ## Interaction-focused QA visibility
 
@@ -143,6 +144,7 @@ Current rules:
 
 After this slice, the repository should be able to say:
 - minimal `info`, `talk`, and `warp` definitions plus the structured `shop_preview` merchant catalog are authorable and exactly readable through loopback HTTP today
+- `quest_flag` definitions are also authorable through the same loopback HTTP surface, including the owned optional turn-in reward/consume payload, so operators are not forced through content-bundle import just to seed a kill -> pickup -> turn-in NPC
 - visible interactables can still be inspected live with compact resolved previews for the currently previewable kinds and fail-closed markers otherwise
 - bootstrap static actors, item templates, and their interaction definitions can be exported/imported as one deterministic authored-content bundle, with the structured merchant export/import shape already wired through that bundle surface
 - local operators can inspect a compact deterministic content-bundle summary, including interaction-definition previews, exact warp destinations, exact shop/warp service routes, spawn-group identities, and item-template identities, for either the live exported bundle or a candidate bundle before deciding whether to fetch or import the full bundle payload

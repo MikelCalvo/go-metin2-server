@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -438,6 +439,126 @@ func TestLocalInteractionDefinitionsEndpointCreatesQuestFlagClearDefinitionForLo
 	}
 }
 
+func TestLocalInteractionDefinitionsEndpointCreatesQuestFlagTurnInDefinitionForLoopbackPost(t *testing.T) {
+	creator := &stubInteractionDefinitionCreator{status: http.StatusOK, definition: map[string]any{
+		"kind":               "quest_flag",
+		"ref":                "quest:first_steps_kill_turnin",
+		"text":               "Quest updated: first_steps.killed_qa_mob = 0.",
+		"quest_ref":          "quest:first_steps",
+		"quest_flag":         "killed_qa_mob",
+		"quest_from":         float64(1),
+		"quest_to":           float64(0),
+		"reward_experience":  float64(50),
+		"reward_gold":        float64(100),
+		"reward_items":       []map[string]any{{"item_vnum": float64(11200), "count": float64(1)}},
+		"consume_items":      []map[string]any{{"item_vnum": float64(27001), "count": float64(1)}},
+		"consume_gold":       float64(25),
+		"consume_experience": float64(10),
+	}}
+	mux := RegisterLocalInteractionDefinitionEndpoints(NewPprofMux("gamed"), nil, creator.CreateInteractionDefinition)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interactions", strings.NewReader(`{"kind":"quest_flag","ref":"quest:first_steps_kill_turnin","text":"Quest updated: first_steps.killed_qa_mob = 0.","quest_ref":"quest:first_steps","quest_flag":"killed_qa_mob","quest_from":1,"quest_to":0,"reward_experience":50,"reward_gold":100,"reward_items":[{"item_vnum":11200,"count":1}],"consume_items":[{"item_vnum":27001,"count":1}],"consume_gold":25,"consume_experience":10}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	want := interactionstore.Definition{
+		Kind:              interactionstore.KindQuestFlag,
+		Ref:               "quest:first_steps_kill_turnin",
+		Text:              "Quest updated: first_steps.killed_qa_mob = 0.",
+		QuestRef:          "quest:first_steps",
+		QuestFlag:         "killed_qa_mob",
+		QuestFrom:         1,
+		QuestTo:           0,
+		RewardExperience:  50,
+		RewardGold:        100,
+		RewardItems:       []interactionstore.RewardItemEntry{{ItemVnum: 11200, Count: 1}},
+		ConsumeItems:      []interactionstore.RewardItemEntry{{ItemVnum: 27001, Count: 1}},
+		ConsumeGold:       25,
+		ConsumeExperience: 10,
+	}
+	if creator.calls != 1 || !reflect.DeepEqual(creator.lastDefinition, want) {
+		t.Fatalf("unexpected quest flag turn-in interaction definition creator call state:\n got: %#v\nwant: %#v", creator.lastDefinition, want)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	for _, needle := range []string{
+		`"kind":"quest_flag"`,
+		`"ref":"quest:first_steps_kill_turnin"`,
+		`"reward_experience":50`,
+		`"reward_gold":100`,
+		`"consume_gold":25`,
+		`"consume_experience":10`,
+		`"item_vnum":11200`,
+		`"item_vnum":27001`,
+	} {
+		if !strings.Contains(string(body), needle) {
+			t.Fatalf("expected response body to contain %q, got %q", needle, string(body))
+		}
+	}
+}
+
+func TestLocalInteractionDefinitionsEndpointCreatesQuestFlagTurnInDefinitionFromScalarRewardShorthand(t *testing.T) {
+	creator := &stubInteractionDefinitionCreator{status: http.StatusOK, definition: map[string]any{
+		"kind":              "quest_flag",
+		"ref":               "quest:first_steps_scalar_reward",
+		"text":              "Quest updated.",
+		"quest_ref":         "quest:first_steps",
+		"quest_flag":        "met_guide",
+		"quest_to":          float64(1),
+		"reward_item_vnum":  float64(27001),
+		"reward_item_count": float64(3),
+		"reward_items":      []map[string]any{{"item_vnum": float64(27001), "count": float64(3)}},
+	}}
+	mux := RegisterLocalInteractionDefinitionEndpoints(NewPprofMux("gamed"), nil, creator.CreateInteractionDefinition)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interactions", strings.NewReader(`{"kind":"quest_flag","ref":"quest:first_steps_scalar_reward","text":"Quest updated.","quest_ref":"quest:first_steps","quest_flag":"met_guide","quest_to":1,"reward_item_vnum":27001,"reward_item_count":3}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	want := interactionstore.Definition{
+		Kind:        interactionstore.KindQuestFlag,
+		Ref:         "quest:first_steps_scalar_reward",
+		Text:        "Quest updated.",
+		QuestRef:    "quest:first_steps",
+		QuestFlag:   "met_guide",
+		QuestTo:     1,
+		RewardItems: []interactionstore.RewardItemEntry{{ItemVnum: 27001, Count: 3}},
+	}
+	if creator.calls != 1 || !reflect.DeepEqual(creator.lastDefinition, want) {
+		t.Fatalf("unexpected scalar reward quest flag creator call state:\n got: %#v\nwant: %#v", creator.lastDefinition, want)
+	}
+}
+
+func TestLocalInteractionDefinitionsEndpointRejectsRewardGoldOnNonQuestFlagDefinition(t *testing.T) {
+	creator := &stubInteractionDefinitionCreator{status: http.StatusOK}
+	mux := RegisterLocalInteractionDefinitionEndpoints(NewPprofMux("gamed"), nil, creator.CreateInteractionDefinition)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interactions", strings.NewReader(`{"kind":"info","ref":"lore:square","text":"Welcome.","reward_gold":100}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if creator.calls != 0 {
+		t.Fatalf("expected interaction definition creator not to be called, got %d calls", creator.calls)
+	}
+}
+
 func TestLocalInteractionDefinitionUpdateEndpointUpsertsDefinitionForLoopbackPatch(t *testing.T) {
 	updater := &stubInteractionDefinitionUpdater{status: http.StatusOK, definition: map[string]any{"kind": "talk", "ref": "npc:village_guard", "text": "Keep your blade sharp."}}
 	mux := RegisterLocalInteractionDefinitionUpdateEndpoint(NewPprofMux("gamed"), updater.UpsertInteractionDefinition)
@@ -553,6 +674,67 @@ func TestLocalInteractionDefinitionUpdateEndpointUpsertsQuestFlagDefinitionForLo
 	}
 	if !strings.Contains(string(body), `"kind":"quest_flag"`) || !strings.Contains(string(body), `"quest_to":1`) {
 		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalInteractionDefinitionUpdateEndpointUpsertsQuestFlagTurnInDefinitionForLoopbackPut(t *testing.T) {
+	updater := &stubInteractionDefinitionUpdater{status: http.StatusOK, definition: map[string]any{
+		"kind":               "quest_flag",
+		"ref":                "quest:first_steps_kill_turnin",
+		"text":               "Quest updated: first_steps.killed_qa_mob = 0.",
+		"quest_ref":          "quest:first_steps",
+		"quest_flag":         "killed_qa_mob",
+		"quest_from":         float64(1),
+		"quest_to":           float64(0),
+		"reward_experience":  float64(50),
+		"reward_gold":        float64(100),
+		"reward_items":       []map[string]any{{"item_vnum": float64(11200), "count": float64(1)}},
+		"consume_items":      []map[string]any{{"item_vnum": float64(27001), "count": float64(1)}},
+		"consume_gold":       float64(25),
+		"consume_experience": float64(10),
+	}}
+	mux := RegisterLocalInteractionDefinitionUpdateEndpoint(NewPprofMux("gamed"), updater.UpsertInteractionDefinition)
+
+	req := httptest.NewRequest(http.MethodPut, "/local/interactions/quest_flag/quest:first_steps_kill_turnin", strings.NewReader(`{"kind":"quest_flag","ref":"quest:first_steps_kill_turnin","text":"Quest updated: first_steps.killed_qa_mob = 0.","quest_ref":"quest:first_steps","quest_flag":"killed_qa_mob","quest_from":1,"quest_to":0,"reward_experience":50,"reward_gold":100,"reward_items":[{"item_vnum":11200,"count":1}],"consume_items":[{"item_vnum":27001,"count":1}],"consume_gold":25,"consume_experience":10}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	want := interactionstore.Definition{
+		Kind:              interactionstore.KindQuestFlag,
+		Ref:               "quest:first_steps_kill_turnin",
+		Text:              "Quest updated: first_steps.killed_qa_mob = 0.",
+		QuestRef:          "quest:first_steps",
+		QuestFlag:         "killed_qa_mob",
+		QuestFrom:         1,
+		QuestTo:           0,
+		RewardExperience:  50,
+		RewardGold:        100,
+		RewardItems:       []interactionstore.RewardItemEntry{{ItemVnum: 11200, Count: 1}},
+		ConsumeItems:      []interactionstore.RewardItemEntry{{ItemVnum: 27001, Count: 1}},
+		ConsumeGold:       25,
+		ConsumeExperience: 10,
+	}
+	if updater.calls != 1 || !reflect.DeepEqual(updater.lastDefinition, want) {
+		t.Fatalf("unexpected quest flag turn-in interaction definition updater call state:\n got: %#v\nwant: %#v", updater.lastDefinition, want)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	for _, needle := range []string{
+		`"kind":"quest_flag"`,
+		`"consume_experience":10`,
+		`"reward_gold":100`,
+		`"item_vnum":11200`,
+	} {
+		if !strings.Contains(string(body), needle) {
+			t.Fatalf("expected response body to contain %q, got %q", needle, string(body))
+		}
 	}
 }
 

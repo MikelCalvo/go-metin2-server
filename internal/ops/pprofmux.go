@@ -98,18 +98,26 @@ type localStaticActorCombatProfileListResponse struct {
 }
 
 type localInteractionDefinitionRequest struct {
-	Kind      string                                  `json:"kind"`
-	Ref       string                                  `json:"ref"`
-	Text      string                                  `json:"text"`
-	Title     string                                  `json:"title"`
-	Catalog   []interactionstore.MerchantCatalogEntry `json:"catalog"`
-	MapIndex  uint32                                  `json:"map_index"`
-	X         int32                                   `json:"x"`
-	Y         int32                                   `json:"y"`
-	QuestRef  string                                  `json:"quest_ref"`
-	QuestFlag string                                  `json:"quest_flag"`
-	QuestFrom uint32                                  `json:"quest_from"`
-	QuestTo   uint32                                  `json:"quest_to"`
+	Kind              string                                  `json:"kind"`
+	Ref               string                                  `json:"ref"`
+	Text              string                                  `json:"text"`
+	Title             string                                  `json:"title"`
+	Catalog           []interactionstore.MerchantCatalogEntry `json:"catalog"`
+	MapIndex          uint32                                  `json:"map_index"`
+	X                 int32                                   `json:"x"`
+	Y                 int32                                   `json:"y"`
+	QuestRef          string                                  `json:"quest_ref"`
+	QuestFlag         string                                  `json:"quest_flag"`
+	QuestFrom         uint32                                  `json:"quest_from"`
+	QuestTo           uint32                                  `json:"quest_to"`
+	RewardExperience  uint64                                  `json:"reward_experience"`
+	RewardGold        uint64                                  `json:"reward_gold"`
+	RewardItemVnum    uint32                                  `json:"reward_item_vnum"`
+	RewardItemCount   uint16                                  `json:"reward_item_count"`
+	RewardItems       []interactionstore.RewardItemEntry      `json:"reward_items"`
+	ConsumeItems      []interactionstore.RewardItemEntry      `json:"consume_items"`
+	ConsumeGold       uint64                                  `json:"consume_gold"`
+	ConsumeExperience uint64                                  `json:"consume_experience"`
 }
 
 type localContentBundleRequest struct {
@@ -5392,18 +5400,26 @@ func decodeLocalInteractionDefinitionRequest(r *http.Request) (interactionstore.
 		return interactionstore.Definition{}, http.StatusBadRequest, false
 	}
 	definition := interactionstore.NormalizeDefinition(interactionstore.Definition{
-		Kind:      strings.TrimSpace(request.Kind),
-		Ref:       strings.TrimSpace(request.Ref),
-		Text:      request.Text,
-		Title:     request.Title,
-		Catalog:   request.Catalog,
-		MapIndex:  request.MapIndex,
-		X:         request.X,
-		Y:         request.Y,
-		QuestRef:  request.QuestRef,
-		QuestFlag: request.QuestFlag,
-		QuestFrom: request.QuestFrom,
-		QuestTo:   request.QuestTo,
+		Kind:              strings.TrimSpace(request.Kind),
+		Ref:               strings.TrimSpace(request.Ref),
+		Text:              request.Text,
+		Title:             request.Title,
+		Catalog:           request.Catalog,
+		MapIndex:          request.MapIndex,
+		X:                 request.X,
+		Y:                 request.Y,
+		QuestRef:          request.QuestRef,
+		QuestFlag:         request.QuestFlag,
+		QuestFrom:         request.QuestFrom,
+		QuestTo:           request.QuestTo,
+		RewardExperience:  request.RewardExperience,
+		RewardGold:        request.RewardGold,
+		RewardItemVnum:    request.RewardItemVnum,
+		RewardItemCount:   request.RewardItemCount,
+		RewardItems:       request.RewardItems,
+		ConsumeItems:      request.ConsumeItems,
+		ConsumeGold:       request.ConsumeGold,
+		ConsumeExperience: request.ConsumeExperience,
 	})
 	if !interactionstore.ValidDefinition(definition) {
 		return interactionstore.Definition{}, http.StatusBadRequest, false

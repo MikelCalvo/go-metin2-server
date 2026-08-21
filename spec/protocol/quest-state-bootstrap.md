@@ -143,6 +143,7 @@ Owned rules:
 - optional `consume_experience` may be omitted or `0`; when present and non-zero it must fit the bootstrap experience `PLAYER_POINT_CHANGE` carrier (`<= 1<<31-1`) and is debited only after the transition applies.
 - `title`, merchant `catalog`, warp `map_index`, `x`, and `y` are not valid for `quest_flag` definitions.
 - non-`quest_flag` interaction kinds must keep `reward_experience`, `reward_gold`, `consume_gold`, `consume_experience`, reward-item, and consume-item fields absent/`0`.
+- loopback `POST` / `PUT` / `PATCH` `/local/interactions` now accept the same optional turn-in fields, normalize scalar `reward_item_vnum` / `reward_item_count` into `reward_items`, and reject invalid or non-`quest_flag` payloads before persistence so operator HTTP authoring matches content-bundle import.
 
 Runtime behavior:
 

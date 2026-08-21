@@ -193,6 +193,100 @@ func TestGameRuntimeCreateQuestFlagClearInteractionDefinitionPersistsSnapshotAnd
 	}
 }
 
+func TestGameRuntimeCreateQuestFlagTurnInInteractionDefinitionPersistsSnapshotAndResolvesDefinition(t *testing.T) {
+	interactionStore := newInteractionDefinitionStore(t, nil)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	wantDefinition := interactionstore.Definition{
+		Kind:              interactionstore.KindQuestFlag,
+		Ref:               "quest:first_steps_kill_turnin",
+		Text:              "Quest updated: first_steps.killed_qa_mob = 0.",
+		QuestRef:          "quest:first_steps",
+		QuestFlag:         "killed_qa_mob",
+		QuestFrom:         1,
+		QuestTo:           0,
+		RewardExperience:  50,
+		RewardGold:        100,
+		RewardItems:       []interactionstore.RewardItemEntry{{ItemVnum: 11200, Count: 1}},
+		ConsumeItems:      []interactionstore.RewardItemEntry{{ItemVnum: 27001, Count: 1}},
+		ConsumeGold:       25,
+		ConsumeExperience: 10,
+	}
+
+	definition, err := runtime.CreateInteractionDefinition(wantDefinition)
+	if err != nil {
+		t.Fatalf("create quest flag turn-in interaction definition: %v", err)
+	}
+	if !reflect.DeepEqual(definition, wantDefinition) {
+		t.Fatalf("unexpected created quest flag turn-in interaction definition:\n got: %#v\nwant: %#v", definition, wantDefinition)
+	}
+	resolved, ok := runtime.ResolveInteractionDefinition(interactionstore.KindQuestFlag, "quest:first_steps_kill_turnin")
+	if !ok || !reflect.DeepEqual(resolved, definition) {
+		t.Fatalf("expected created quest flag turn-in interaction definition to resolve, got definition=%+v ok=%v", resolved, ok)
+	}
+	persisted, err := interactionStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted interaction definitions: %v", err)
+	}
+	wantSnapshot := interactionstore.Snapshot{Definitions: []interactionstore.Definition{wantDefinition}}
+	if !reflect.DeepEqual(persisted, wantSnapshot) {
+		t.Fatalf("unexpected persisted quest flag turn-in interaction definitions:\n got: %#v\nwant: %#v", persisted, wantSnapshot)
+	}
+}
+
+func TestGameRuntimeUpsertQuestFlagTurnInInteractionDefinitionPersistsSnapshotAndResolvesDefinition(t *testing.T) {
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+		Kind:      interactionstore.KindQuestFlag,
+		Ref:       "quest:first_steps_kill_turnin",
+		Text:      "Old turn-in text.",
+		QuestRef:  "quest:first_steps",
+		QuestFlag: "killed_qa_mob",
+		QuestFrom: 1,
+		QuestTo:   0,
+	}})
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	wantDefinition := interactionstore.Definition{
+		Kind:              interactionstore.KindQuestFlag,
+		Ref:               "quest:first_steps_kill_turnin",
+		Text:              "Quest updated: first_steps.killed_qa_mob = 0.",
+		QuestRef:          "quest:first_steps",
+		QuestFlag:         "killed_qa_mob",
+		QuestFrom:         1,
+		QuestTo:           0,
+		RewardExperience:  50,
+		RewardGold:        100,
+		RewardItems:       []interactionstore.RewardItemEntry{{ItemVnum: 11200, Count: 1}},
+		ConsumeItems:      []interactionstore.RewardItemEntry{{ItemVnum: 27001, Count: 1}},
+		ConsumeGold:       25,
+		ConsumeExperience: 10,
+	}
+
+	definition, err := runtime.UpsertInteractionDefinition(wantDefinition)
+	if err != nil {
+		t.Fatalf("upsert quest flag turn-in interaction definition: %v", err)
+	}
+	if !reflect.DeepEqual(definition, wantDefinition) {
+		t.Fatalf("unexpected upserted quest flag turn-in interaction definition:\n got: %#v\nwant: %#v", definition, wantDefinition)
+	}
+	resolved, ok := runtime.ResolveInteractionDefinition(interactionstore.KindQuestFlag, "quest:first_steps_kill_turnin")
+	if !ok || !reflect.DeepEqual(resolved, definition) {
+		t.Fatalf("expected upserted quest flag turn-in interaction definition to resolve, got definition=%+v ok=%v", resolved, ok)
+	}
+	persisted, err := interactionStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted interaction definitions: %v", err)
+	}
+	wantSnapshot := interactionstore.Snapshot{Definitions: []interactionstore.Definition{wantDefinition}}
+	if !reflect.DeepEqual(persisted, wantSnapshot) {
+		t.Fatalf("unexpected persisted quest flag turn-in interaction definitions after upsert:\n got: %#v\nwant: %#v", persisted, wantSnapshot)
+	}
+}
+
 func TestGameRuntimeCreateInteractionDefinitionRejectsDuplicateDefinition(t *testing.T) {
 	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."}})
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
