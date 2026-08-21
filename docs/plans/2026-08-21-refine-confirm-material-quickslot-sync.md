@@ -32,6 +32,6 @@ Focused coverage:
 
 ## Follow-up options
 
-1. Keep lower-probability refine outcomes deferred until failure/destroy contracts are frozen.
+1. Keep lower-probability refine outcomes deferred until failure/destroy contracts are frozen; accepted `probability = 100` confirm now also emits self-only `CHAT_TYPE_COMMAND` `RefineSuceeded <type>` (`docs/plans/2026-08-21-refine-confirm-success-command-chat.md`).
 2. Keep mall / timeout / destruction quickslot sync deferred; accepted `SAFEBOX_CHECKIN` removal sync is already owned.
 3. ACCEPT and commit-time busy-window reject info-chat now reuse the START requester/partner strings; optional authored/template-backed overrides remain deferred.

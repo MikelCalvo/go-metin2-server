@@ -5789,7 +5789,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						if !ok {
 							return gameflow.ItemRefineResult{Accepted: false}
 						}
-						frames, err := refineSuccessResultFrames(previousSelected, result, runtime.itemTemplates)
+						frames, err := refineSuccessResultFrames(previousSelected, result, runtime.itemTemplates, packet.Type)
 						if err != nil {
 							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 							return gameflow.ItemRefineResult{Accepted: false}
@@ -8828,8 +8828,8 @@ func carriedItemConsumeResultFrames(result player.CarriedItemConsumeResult, temp
 	return frames, nil
 }
 
-func refineSuccessResultFrames(character loginticket.Character, result player.RefineSuccessResult, templates map[uint32]itemcatalog.Template) ([][]byte, error) {
-	frames := make([][]byte, 0, len(result.MaterialChanges)+2)
+func refineSuccessResultFrames(character loginticket.Character, result player.RefineSuccessResult, templates map[uint32]itemcatalog.Template, refineType uint8) ([][]byte, error) {
+	frames := make([][]byte, 0, len(result.MaterialChanges)+3)
 	for _, change := range result.MaterialChanges {
 		position, err := itemproto.CarriedInventoryPosition(uint16(change.Slot))
 		if err != nil {
@@ -8858,6 +8858,14 @@ func refineSuccessResultFrames(character loginticket.Character, result player.Re
 		Type:   bootstrapGoldPointType,
 		Amount: -result.Cost,
 		Value:  int32(result.Gold),
+	}))
+	// Legacy TMP4 clients listen for CHAT_TYPE_COMMAND "RefineSuceeded <type>"
+	// (intentional historical spelling) to play the success popup/sound.
+	frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+		Type:    chatproto.ChatTypeCommand,
+		VID:     0,
+		Empire:  0,
+		Message: fmt.Sprintf("RefineSuceeded %d", refineType),
 	}))
 	return frames, nil
 }

@@ -1,6 +1,7 @@
 package minimal
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -670,8 +671,8 @@ func TestGameRuntimeItemRefineConfirmAfterPreviewProbability100PersistsAndEmitsB
 	if err != nil {
 		t.Fatalf("unexpected refine confirm packet error: %v", err)
 	}
-	if len(confirmOut) != 7 {
-		t.Fatalf("expected refine confirm burst of 7 frames, got %d", len(confirmOut))
+	if len(confirmOut) != 8 {
+		t.Fatalf("expected refine confirm burst of 8 frames, got %d", len(confirmOut))
 	}
 	delA, err := itemproto.DecodeDel(decodeSingleFrame(t, confirmOut[0]))
 	if err != nil {
@@ -722,6 +723,7 @@ func TestGameRuntimeItemRefineConfirmAfterPreviewProbability100PersistsAndEmitsB
 	if goldChange.VID != owner.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != -2500 || goldChange.Value != 2500 {
 		t.Fatalf("unexpected gold point change: %+v", goldChange)
 	}
+	assertRefineSucceededCommandChat(t, confirmOut[7], 3, "probability-100 refine confirm")
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued frames after refine confirm, got %d", len(queued))
 	}
@@ -949,8 +951,8 @@ func TestGameRuntimeItemRefineConfirmBusySafeboxFailsClosedWithoutMutation(t *te
 	if err != nil {
 		t.Fatalf("unexpected post-safebox-close refine confirm packet error: %v", err)
 	}
-	if len(confirmOut) != 3 {
-		t.Fatalf("expected post-safebox-close refine confirm burst of 3 frames, got %d", len(confirmOut))
+	if len(confirmOut) != 4 {
+		t.Fatalf("expected post-safebox-close refine confirm burst of 4 frames, got %d", len(confirmOut))
 	}
 	materialDel, err := itemproto.DecodeDel(decodeSingleFrame(t, confirmOut[0]))
 	if err != nil {
@@ -973,6 +975,7 @@ func TestGameRuntimeItemRefineConfirmBusySafeboxFailsClosedWithoutMutation(t *te
 	if goldChange.VID != owner.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != -1000 || goldChange.Value != 4000 {
 		t.Fatalf("unexpected post-safebox-close gold point change: %+v", goldChange)
 	}
+	assertRefineSucceededCommandChat(t, confirmOut[3], 3, "post-safebox-close refine confirm")
 
 	persisted, err := accounts.Load(ownerLogin)
 	if err != nil {
@@ -1036,4 +1039,16 @@ func TestGameRuntimeItemRefineConfirmProbabilityBelow100FailsClosedWithoutMutati
 		t.Fatalf("expected low-prob refine cancel to emit no frames, got %d err=%v", len(cancelOut), err)
 	}
 	assertExchangeAccountUnchanged(t, accounts, "item-refine-lowprob", owner, "low-prob refine cancel")
+}
+
+func assertRefineSucceededCommandChat(t *testing.T, frame []byte, refineType uint8, label string) {
+	t.Helper()
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, frame))
+	if err != nil {
+		t.Fatalf("decode %s RefineSuceeded chat: %v", label, err)
+	}
+	wantMessage := fmt.Sprintf("RefineSuceeded %d", refineType)
+	if delivery.Type != chatproto.ChatTypeCommand || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != wantMessage {
+		t.Fatalf("unexpected %s RefineSuceeded chat: %+v want message=%q", label, delivery, wantMessage)
+	}
 }
