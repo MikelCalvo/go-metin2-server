@@ -2068,3 +2068,239 @@ func TestGameRuntimeSafeboxItemMoveClosesActiveMerchantWindowOnSuccess(t *testin
 	wantOwner.Inventory = nil
 	assertExchangeAccountUnchanged(t, accounts, login, wantOwner, "merchant-open safebox item-move owner")
 }
+
+func TestGameRuntimeSafeboxCheckinOfDisplayedExchangeItemFailsClosedWithoutClosingShell(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("SafeboxDispCheckinOwner", 0x01030801, 0x02040801, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4242
+	owner.Inventory = []inventory.ItemInstance{{ID: 951, Vnum: 27001, Count: 2, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("SafeboxDispCheckinPeer", 0x01030802, 0x02040802, 1120, 2120, 0, 101, 201)
+	peer.Gold = 5151
+	ownerLogin := "safebox-disp-checkin-owner"
+	peerLogin := "safebox-disp-checkin-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707101, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x70707102, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed displayed-exchange safebox check-in owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed displayed-exchange safebox check-in peer account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected displayed-exchange safebox check-in runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707101)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707102)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected displayed-exchange safebox check-in start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected displayed-exchange safebox check-in start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "displayed-exchange safebox check-in owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected displayed-exchange safebox check-in peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "displayed-exchange safebox check-in peer start")
+
+	itemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 7, Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected displayed-exchange safebox check-in item-add error: %v", err)
+	}
+	if len(itemAddOut) != 1 {
+		t.Fatalf("expected displayed-exchange safebox check-in item-add to emit one owner frame, got %d", len(itemAddOut))
+	}
+	assertExchangeItemAddFrame(t, itemAddOut[0], 1, 7, owner.Inventory[0], template, "displayed-exchange safebox check-in owner item-add")
+	queuedItemAdd := flushServerFrames(t, peerFlow)
+	if len(queuedItemAdd) != 1 {
+		t.Fatalf("expected displayed-exchange safebox check-in peer item-add frame, got %d", len(queuedItemAdd))
+	}
+	assertExchangeItemAddFrame(t, queuedItemAdd[0], 0, 7, owner.Inventory[0], template, "displayed-exchange safebox check-in peer item-add")
+
+	openOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_safebox during displayed-exchange check-in error: %v", err)
+	}
+	if len(openOut) != 1 {
+		t.Fatalf("expected /open_safebox during displayed-exchange check-in to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected /open_safebox during displayed-exchange check-in to queue no peer frames, got %d", len(queued))
+	}
+
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 0,
+		Position: itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected displayed-exchange locked safebox check-in error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected displayed-exchange locked safebox check-in to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected displayed-exchange locked safebox check-in to queue no peer frames, got %d", len(queued))
+	}
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "displayed-exchange locked safebox check-in owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "displayed-exchange locked safebox check-in peer")
+
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected displayed-exchange cancel after locked safebox check-in: %v", err)
+	}
+	if len(cancelOut) != 1 {
+		t.Fatalf("expected displayed-exchange shell to remain cancellable after locked safebox check-in, got %d frames", len(cancelOut))
+	}
+	assertExchangeEndFrame(t, cancelOut[0], "displayed-exchange locked safebox check-in owner cancel")
+	queuedCancel := flushServerFrames(t, peerFlow)
+	if len(queuedCancel) != 1 {
+		t.Fatalf("expected displayed-exchange locked safebox check-in peer cancel END, got %d", len(queuedCancel))
+	}
+	assertExchangeEndFrame(t, queuedCancel[0], "displayed-exchange locked safebox check-in peer cancel")
+}
+
+func TestGameRuntimeSafeboxCheckoutIntoDisplayedExchangeCellFailsClosedWithoutClosingShell(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("SafeboxDispCheckoutOwner", 0x01030803, 0x02040803, 1100, 2100, 0, 101, 201)
+	owner.Gold = 6262
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 961, Vnum: 27001, Count: 1, Slot: 5},
+		{ID: 962, Vnum: 27001, Count: 1, Slot: 6},
+	}
+	peer := peerVisibilityCharacter("SafeboxDispCheckoutPeer", 0x01030804, 0x02040804, 1120, 2120, 0, 101, 201)
+	peer.Gold = 7373
+	ownerLogin := "safebox-disp-checkout-owner"
+	peerLogin := "safebox-disp-checkout-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707103, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x70707104, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed displayed-exchange safebox check-out owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed displayed-exchange safebox check-out peer account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected displayed-exchange safebox check-out runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707103)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707104)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_safebox before displayed-exchange check-out error: %v", err)
+	}
+	checkinOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 0,
+		Position: itemproto.InventoryPosition(6),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected safebox check-in before displayed-exchange check-out error: %v", err)
+	}
+	if len(checkinOut) < 2 {
+		t.Fatalf("expected safebox check-in before displayed-exchange check-out to emit inventory/safebox frames, got %d", len(checkinOut))
+	}
+
+	afterCheckin := owner
+	afterCheckin.Inventory = []inventory.ItemInstance{{ID: 961, Vnum: 27001, Count: 1, Slot: 5}}
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, afterCheckin, "safebox check-in before displayed-exchange check-out")
+	assertCloseSafeboxCommandChat(t, ownerFlow, "/close_safebox", "close-safebox before displayed-exchange check-out start")
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected displayed-exchange safebox check-out start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected displayed-exchange safebox check-out start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "displayed-exchange safebox check-out owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected displayed-exchange safebox check-out peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "displayed-exchange safebox check-out peer start")
+
+	itemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 3, Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected displayed-exchange safebox check-out item-add error: %v", err)
+	}
+	if len(itemAddOut) != 1 {
+		t.Fatalf("expected displayed-exchange safebox check-out item-add to emit one owner frame, got %d", len(itemAddOut))
+	}
+	assertExchangeItemAddFrame(t, itemAddOut[0], 1, 3, afterCheckin.Inventory[0], template, "displayed-exchange safebox check-out owner item-add")
+	queuedItemAdd := flushServerFrames(t, peerFlow)
+	if len(queuedItemAdd) != 1 {
+		t.Fatalf("expected displayed-exchange safebox check-out peer item-add frame, got %d", len(queuedItemAdd))
+	}
+	assertExchangeItemAddFrame(t, queuedItemAdd[0], 0, 3, afterCheckin.Inventory[0], template, "displayed-exchange safebox check-out peer item-add")
+
+	reopenOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_safebox reopen during displayed-exchange before check-out error: %v", err)
+	}
+	if len(reopenOut) != 2 {
+		t.Fatalf("expected /open_safebox reopen during displayed-exchange to emit SAFEBOX_SIZE plus remembered SAFEBOX_SET, got %d", len(reopenOut))
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected /open_safebox reopen during displayed-exchange check-out to queue no peer frames, got %d", len(queued))
+	}
+
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckout(itemproto.ClientSafeboxCheckoutPacket{
+		SafeSlot: 0,
+		Position: itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected displayed-exchange locked safebox check-out error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected displayed-exchange locked safebox check-out to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected displayed-exchange locked safebox check-out to queue no peer frames, got %d", len(queued))
+	}
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, afterCheckin, "displayed-exchange locked safebox check-out owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "displayed-exchange locked safebox check-out peer")
+
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected displayed-exchange cancel after locked safebox check-out: %v", err)
+	}
+	if len(cancelOut) != 1 {
+		t.Fatalf("expected displayed-exchange shell to remain cancellable after locked safebox check-out, got %d frames", len(cancelOut))
+	}
+	assertExchangeEndFrame(t, cancelOut[0], "displayed-exchange locked safebox check-out owner cancel")
+	queuedCancel := flushServerFrames(t, peerFlow)
+	if len(queuedCancel) != 1 {
+		t.Fatalf("expected displayed-exchange locked safebox check-out peer cancel END, got %d", len(queuedCancel))
+	}
+	assertExchangeEndFrame(t, queuedCancel[0], "displayed-exchange locked safebox check-out peer cancel")
+}
