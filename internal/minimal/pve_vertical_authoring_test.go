@@ -206,14 +206,17 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if err != nil {
 		t.Fatalf("unexpected unlocked warehouse interaction error: %v", err)
 	}
-	if len(warehouseOut) != 2 {
-		t.Fatalf("expected chat + SAFEBOX_SIZE frames after guide unlock, got %d", len(warehouseOut))
+	if len(warehouseOut) != 3 {
+		t.Fatalf("expected merchant close plus chat + SAFEBOX_SIZE frames after guide unlock, got %d", len(warehouseOut))
 	}
-	warehouseChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, warehouseOut[0]))
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, warehouseOut[0])); err != nil {
+		t.Fatalf("decode merchant close before unlocked warehouse open: %v", err)
+	}
+	warehouseChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, warehouseOut[1]))
 	if err != nil || warehouseChat.Message != "The warehouse keeper unlocks the vault." {
 		t.Fatalf("unexpected unlocked warehouse chat: %+v err=%v", warehouseChat, err)
 	}
-	warehouseSize, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, warehouseOut[1]))
+	warehouseSize, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, warehouseOut[2]))
 	if err != nil {
 		t.Fatalf("decode unlocked warehouse SAFEBOX_SIZE: %v", err)
 	}

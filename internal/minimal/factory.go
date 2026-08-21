@@ -6975,6 +6975,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						}
 						frames = append(frames, itemproto.EncodeSafeboxSize(itemproto.SafeboxSizePacket{Size: size}))
 						frames = append(frames, encodeActiveSafeboxSetFrames()...)
+						frames = prependMerchantCloseFrame(frames)
 						markInteractionCooldown(packet.TargetVID)
 						return gameflow.InteractionResult{Accepted: true, Frames: frames}
 					}

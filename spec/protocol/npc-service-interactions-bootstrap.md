@@ -139,6 +139,7 @@ Frozen target behavior:
 - that authored store-level definition may carry optional informational `text`, optional bootstrap page `size` in `1..3` (omitted / `0` defaults to `1`), and the same optional non-mutating selected-character quest gate used by `warp` / `shop_preview`
 - when the interaction applies, the runtime may deliver one self-facing informational chat message if authored text is present
 - the runtime then reuses the existing `/open_safebox` presentation seam: set the same-socket busy flag, emit `GC::SAFEBOX_SIZE`, and re-emit any remembered same-session `SAFEBOX_SET` rows
+- if a bootstrap merchant window is still open on the same socket when that warehouse `INTERACT` applies, the runtime prepends one self-only `GC::SHOP END` and clears the merchant context before the optional warehouse chat and safebox open frames, matching the already-owned non-merchant interaction close rule
 - no password load, durable safebox persistence, mall, money, or `SAFEBOX_ITEM_MOVE` is introduced by this kind
 
 Current owned `open_safebox` failure semantics:

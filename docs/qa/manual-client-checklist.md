@@ -478,6 +478,7 @@ Run this only if packet tooling or the client build can emit safebox/mall item-t
 - [ ] If packet tooling allows it, repeat one malformed payload-size case
 - [ ] If slash harness tooling is available, run `/open_safebox` and confirm one self-only `GC::SAFEBOX_SIZE` appears without inventory/gold mutation
 - [ ] If authored QA NPC content is loaded, interact with the visible `Warehouse` `open_safebox` actor and confirm the same bootstrap safebox presentation (`GC::SAFEBOX_SIZE`, optional self-only info chat, busy for exchange `START`) without inventory/gold mutation; with the quest gate unmet, expect `Quest requirements are not met.` and no safebox presentation
+- [ ] If a bootstrap merchant window is already open, interact with that same `Warehouse` and confirm one self-only `GC::SHOP END` precedes the warehouse chat / `SAFEBOX_SIZE`, merchant context is cleared, and later `SHOP END` / `SHOP BUY` fail closed until the merchant is opened again
 - [ ] If slash harness tooling is available, run `/open_safebox 4` (or another out-of-range size) and confirm no `SAFEBOX_SIZE`, no ordinary chat fallthrough, and no safebox busy state for later exchange `START`
 - [ ] If slash harness tooling is available, run `/close_safebox` (or the client `/safebox_close` companion) after that open and confirm one self-only `CHAT_TYPE_COMMAND` `CloseSafebox` hides the window and later exchange `START` is no longer blocked by the safebox busy guard
 

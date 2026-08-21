@@ -310,6 +310,7 @@ The first owned merchant window model is one-session-at-a-time and one-merchant-
 - one selected character session may hold at most one active merchant window context
 - opening a new merchant window replaces any prior merchant context for that same live session
 - interacting with a non-merchant static actor or a player-visible interaction failure while a merchant window is still open now prepends one self-only `GC::SHOP END` before that interaction's own self response and clears the stale merchant context before later `SHOP END` / `SHOP BUY` handling
+- that same non-merchant close now includes successful authored `open_safebox` warehouse `INTERACT`: self-only `GC::SHOP END` precedes any optional warehouse info chat and `GC::SAFEBOX_SIZE` / remembered `SAFEBOX_SET` refresh frames
 - `BUY` and `END` are only valid while that active merchant window context exists
 - the active merchant window context must be cleared on transfer, disconnect, logout, close, or any other loss of selected-session runtime ownership
 

@@ -36731,6 +36731,100 @@ func TestGameSessionFlowItemUseToItemRejectsTargetCapacityEdgesWithoutMutation(t
 	}
 }
 
+func TestGameSessionFlowInteractingWithOpenSafeboxActorClosesOpenMerchantWindowBeforeSafeboxSize(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	buyer := merchantBuyerCharacter("MerchantWarehouseClose", 0x01040134, 0x02050134, 125, nil)
+	issuePeerTicket(t, store, "merchant-warehouse-close", 0x34343434, buyer)
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "merchant-warehouse-close", Empire: buyer.Empire, Characters: cloneCharacters([]loginticket.Character{buyer})}); err != nil {
+		t.Fatalf("seed merchant warehouse-close account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{
+		defaultMerchantCatalogDefinition(),
+		{Kind: interactionstore.KindOpenSafebox, Ref: "npc:warehouse", Text: "The warehouse keeper unlocks the vault.", Size: 2},
+	})
+	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected merchant warehouse-close runtime error: %v", err)
+	}
+	merchant, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:merchant")
+	if !ok {
+		t.Fatal("expected merchant static actor registration to succeed")
+	}
+	warehouse, ok := runtime.RegisterStaticActorWithInteraction("Warehouse", bootstrapMapIndex, 1200, 2200, 20301, interactionstore.KindOpenSafebox, "npc:warehouse")
+	if !ok {
+		t.Fatal("expected warehouse static actor registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "merchant-warehouse-close", 0x34343434)
+	if len(enterOut) < 11 {
+		t.Fatalf("expected merchant warehouse-close bootstrap to include both static actors, got %d frames", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, merchant.EntityID)
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(warehouse.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected open_safebox interaction while merchant is open: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected merchant close plus chat + SAFEBOX_SIZE after interacting with warehouse, got %d frames", len(out))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, out[0])); err != nil {
+		t.Fatalf("decode merchant close before open_safebox frames: %v", err)
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode open_safebox chat after merchant close: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != "The warehouse keeper unlocks the vault." {
+		t.Fatalf("unexpected open_safebox chat delivery after merchant close: %+v", delivery)
+	}
+	size, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode open_safebox SAFEBOX_SIZE after merchant close: %v", err)
+	}
+	if size != (itemproto.SafeboxSizePacket{Size: 2}) {
+		t.Fatalf("unexpected open_safebox SAFEBOX_SIZE after merchant close: %+v", size)
+	}
+
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected explicit SHOP END after open_safebox closed merchant: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected open_safebox interaction to clear merchant context before later SHOP END, got %d frames", len(closeOut))
+	}
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected packet shop buy after open_safebox closed merchant: %v", err)
+	}
+	if len(buyOut) != 0 {
+		t.Fatalf("expected open_safebox interaction to reject later packet buy frames, got %d", len(buyOut))
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after open_safebox merchant close")
+	}
+	if currencySnapshot.Gold != 125 {
+		t.Fatalf("expected open_safebox merchant close to keep gold at 125, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after open_safebox merchant close")
+	}
+	if len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected open_safebox merchant close to keep inventory unchanged, got %+v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load("merchant-warehouse-close")
+	if err != nil {
+		t.Fatalf("load persisted open_safebox merchant-close account: %v", err)
+	}
+	if account.Characters[0].Gold != 125 || len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected persisted open_safebox merchant-close account to stay unchanged, got %#v", account.Characters[0])
+	}
+}
+
 func TestGameSessionFlowInteractingWithInfoActorClosesOpenMerchantWindowBeforeChat(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	buyer := merchantBuyerCharacter("MerchantInfoClose", 0x01040133, 0x02050133, 125, nil)
