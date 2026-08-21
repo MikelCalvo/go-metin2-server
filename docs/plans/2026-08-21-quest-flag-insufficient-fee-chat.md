@@ -29,7 +29,7 @@ Give successful-path `quest_flag` turn-ins distinct self-only `CHAT_TYPE_INFO` t
 
 - authored reject text fields on the interaction definition itself
 - branching quest scripts / quest UI packets
-- distinct chat for gold/experience overflow or account-save rollback paths
+- distinct chat for account-save rollback paths
 - new NPC service kinds
 
 ## TDD and validation
@@ -45,3 +45,4 @@ Focused coverage:
 1. Keep branching quest scripts deferred.
 2. Optional interaction-definition-authored reject text remains deferred unless the frozen strings prove insufficient for QA.
 3. Keep new NPC service kinds deferred until accepted safebox/storage mutations exist.
+4. ~~Distinct chat for reward gold/experience carrier overflow.~~ Done: see [quest-flag reward overflow chat](2026-08-21-quest-flag-reward-overflow-chat.md).

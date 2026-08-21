@@ -89,6 +89,8 @@ const questFlagRewardRestrictedInfoMessage = "You cannot receive this quest rewa
 const questFlagInsufficientGoldInfoMessage = "You do not have enough gold."
 const questFlagInsufficientExperienceInfoMessage = "You do not have enough experience."
 const questFlagInsufficientMaterialsInfoMessage = "You do not have the required items."
+const questFlagRewardGoldOverflowInfoMessage = "You cannot carry any more gold."
+const questFlagRewardExperienceOverflowInfoMessage = "You cannot gain any more experience."
 const exchangePartnerMerchantBusyInfoMessage = "That player cannot trade right now."
 const exchangeRequesterMerchantBusyInfoMessage = "You cannot trade while another trade window is open."
 const bootstrapSafeboxOpenMinSize uint8 = 1
@@ -257,17 +259,19 @@ type StaticActorRespawnSnapshot struct {
 }
 
 const (
-	staticActorInteractionFailureDefinitionNotFound          = "interaction_definition_not_found"
-	staticActorInteractionFailureUnsupportedKind             = "unsupported_interaction_kind"
-	staticActorInteractionFailureWarpDestinationInvalid      = "warp_destination_invalid"
-	staticActorInteractionFailureWarpNotApplied              = "warp_not_applied"
-	staticActorInteractionFailureQuestCurrentValueMismatch   = "quest_current_value_mismatch"
-	staticActorInteractionFailureQuestInsufficientGold       = "quest_insufficient_gold"
-	staticActorInteractionFailureQuestInsufficientExperience = "quest_insufficient_experience"
-	staticActorInteractionFailureQuestInsufficientMaterials  = "quest_insufficient_materials"
-	staticActorInteractionFailureQuestRewardInventoryFull    = "quest_reward_inventory_full"
-	staticActorInteractionFailureQuestRewardRestricted       = "quest_reward_restricted"
-	staticActorInteractionCooldown                           = time.Second
+	staticActorInteractionFailureDefinitionNotFound            = "interaction_definition_not_found"
+	staticActorInteractionFailureUnsupportedKind               = "unsupported_interaction_kind"
+	staticActorInteractionFailureWarpDestinationInvalid        = "warp_destination_invalid"
+	staticActorInteractionFailureWarpNotApplied                = "warp_not_applied"
+	staticActorInteractionFailureQuestCurrentValueMismatch     = "quest_current_value_mismatch"
+	staticActorInteractionFailureQuestInsufficientGold         = "quest_insufficient_gold"
+	staticActorInteractionFailureQuestInsufficientExperience   = "quest_insufficient_experience"
+	staticActorInteractionFailureQuestInsufficientMaterials    = "quest_insufficient_materials"
+	staticActorInteractionFailureQuestRewardInventoryFull      = "quest_reward_inventory_full"
+	staticActorInteractionFailureQuestRewardRestricted         = "quest_reward_restricted"
+	staticActorInteractionFailureQuestRewardGoldOverflow       = "quest_reward_gold_overflow"
+	staticActorInteractionFailureQuestRewardExperienceOverflow = "quest_reward_experience_overflow"
+	staticActorInteractionCooldown                             = time.Second
 )
 
 type staticActorInteractionResolution struct {
@@ -6450,7 +6454,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if rewardGold != 0 {
 							goldAfterConsume := previousSelected.Gold - consumeGold
 							if goldAfterConsume > uint64(math.MaxInt32) || goldAfterConsume > uint64(math.MaxInt32)-rewardGold {
-								return gameflow.InteractionResult{Accepted: false}
+								failureDelivery := staticActorInteractionFailureDelivery(staticActorInteractionFailureQuestRewardGoldOverflow)
+								if failureDelivery == nil {
+									return gameflow.InteractionResult{Accepted: false}
+								}
+								markInteractionCooldown(packet.TargetVID)
+								frames := prependMerchantCloseFrame([][]byte{chatproto.EncodeChatDelivery(*failureDelivery)})
+								return gameflow.InteractionResult{Accepted: true, Frames: frames}
 							}
 						}
 						if rewardExperience != 0 {
@@ -6460,7 +6470,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							experienceAfterConsume := int64(experienceBefore) - int64(consumeExperience)
 							nextExperience := experienceAfterConsume + int64(rewardExperience)
 							if nextExperience > math.MaxInt32 {
-								return gameflow.InteractionResult{Accepted: false}
+								failureDelivery := staticActorInteractionFailureDelivery(staticActorInteractionFailureQuestRewardExperienceOverflow)
+								if failureDelivery == nil {
+									return gameflow.InteractionResult{Accepted: false}
+								}
+								markInteractionCooldown(packet.TargetVID)
+								frames := prependMerchantCloseFrame([][]byte{chatproto.EncodeChatDelivery(*failureDelivery)})
+								return gameflow.InteractionResult{Accepted: true, Frames: frames}
 							}
 						}
 						if len(consumeRequirements) > 0 {
@@ -10562,6 +10578,10 @@ func staticActorInteractionFailureMessage(failure string) (string, bool) {
 		return itemPickupInventoryFullInfoMessage, true
 	case staticActorInteractionFailureQuestRewardRestricted:
 		return questFlagRewardRestrictedInfoMessage, true
+	case staticActorInteractionFailureQuestRewardGoldOverflow:
+		return questFlagRewardGoldOverflowInfoMessage, true
+	case staticActorInteractionFailureQuestRewardExperienceOverflow:
+		return questFlagRewardExperienceOverflowInfoMessage, true
 	default:
 		return "", false
 	}
@@ -10690,6 +10710,9 @@ func (r *gameRuntime) previewQuestFlagInteraction(characterName string, definiti
 				return message, nil
 			}
 		}
+		if message, ok := r.questFlagRewardScalarOverflowPreviewFailure(characterName, definition); ok {
+			return message, nil
+		}
 		if message, ok := r.questFlagRewardGrantPreviewFailure(characterName, definition); ok {
 			return message, nil
 		}
@@ -10703,6 +10726,44 @@ func (r *gameRuntime) previewQuestFlagInteraction(characterName string, definiti
 		return message, nil
 	}
 	return "", fmt.Errorf("quest flag transition preview failed: %s", result.Result.Reason)
+}
+
+func (r *gameRuntime) questFlagRewardScalarOverflowPreviewFailure(characterName string, definition InteractionDefinition) (string, bool) {
+	state, ok := r.liveCharacterState(characterName)
+	if !ok {
+		return "", false
+	}
+	if definition.RewardGold != 0 {
+		goldAfterConsume := state.Gold
+		if definition.ConsumeGold != 0 {
+			if state.Gold > uint64(math.MaxInt32) || state.Gold < definition.ConsumeGold {
+				return "", false
+			}
+			goldAfterConsume = state.Gold - definition.ConsumeGold
+		}
+		if goldAfterConsume > uint64(math.MaxInt32) || goldAfterConsume > uint64(math.MaxInt32)-definition.RewardGold {
+			message, ok := staticActorInteractionFailureMessage(staticActorInteractionFailureQuestRewardGoldOverflow)
+			return message, ok
+		}
+	}
+	if definition.RewardExperience != 0 {
+		if definition.RewardExperience > uint64(math.MaxInt32) {
+			return "", false
+		}
+		experienceBefore := state.Points[bootstrapExperiencePointType]
+		if definition.ConsumeExperience != 0 {
+			if experienceBefore < 0 || uint64(experienceBefore) < definition.ConsumeExperience {
+				return "", false
+			}
+		}
+		experienceAfterConsume := int64(experienceBefore) - int64(definition.ConsumeExperience)
+		nextExperience := experienceAfterConsume + int64(definition.RewardExperience)
+		if nextExperience > math.MaxInt32 {
+			message, ok := staticActorInteractionFailureMessage(staticActorInteractionFailureQuestRewardExperienceOverflow)
+			return message, ok
+		}
+	}
+	return "", false
 }
 
 func (r *gameRuntime) questFlagRewardGrantPreviewFailure(characterName string, definition InteractionDefinition) (string, bool) {

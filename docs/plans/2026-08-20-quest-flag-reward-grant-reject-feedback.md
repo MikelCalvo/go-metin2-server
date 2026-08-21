@@ -13,7 +13,7 @@ Give player-facing self-only `CHAT_TYPE_INFO` feedback when an otherwise valid `
 3. Emit exactly one self-only `GC_CHAT` (`CHAT_TYPE_INFO`, `vid = 0`, `empire = 0`) and mark the ordinary interaction cooldown:
    - inventory full -> `You have too many items.`
    - restricted -> template-authored `buy_reject_message` when present, otherwise `You cannot receive this quest reward.`
-4. Missing templates, gold/experience overflow, store errors, and account-save / post-apply rollback failures remain silent fail-closed with no frames.
+4. Missing templates, store errors, and account-save / post-apply rollback failures remain silent fail-closed with no frames.
 5. Loopback interaction-visibility previews for the selected character reuse the same messages without mutation when a dry-run CAS would apply but reward placement/restriction fails.
 6. Spec/QA wording updates the previously silent restricted / inventory-full turn-in expectations to this chat-backed feedback.
 
@@ -23,7 +23,7 @@ Give player-facing self-only `CHAT_TYPE_INFO` feedback when an otherwise valid `
 - weighted/random turn-in loot
 - branching quest scripts
 - client quest UI / completion packets
-- feedback for gold overflow or account-save rollback paths
+- feedback for account-save rollback paths
 
 ## TDD and validation
 
@@ -38,3 +38,4 @@ Focused coverage:
 1. Keep branching quest scripts deferred.
 2. Keep interaction-definition-authored reject text deferred unless template `buy_reject_message` proves insufficient for QA.
 3. Keep new NPC service kinds deferred until accepted safebox/storage mutations exist.
+4. ~~Distinct chat for reward gold/experience carrier overflow.~~ Done: see [quest-flag reward overflow chat](2026-08-21-quest-flag-reward-overflow-chat.md).
