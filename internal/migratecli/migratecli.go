@@ -877,6 +877,13 @@ func runApplyLockStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 		}
 		status.HolderHostnameLocal = &hostnameLocal
 		status.HolderHostnameCheck = migrationApplyLockHolderHostnameCheck
+		buildMatches, err := localBuildIdentityMatches(lock.BuildVersion, lock.BuildCommit, lock.BuildDate)
+		if err != nil {
+			fmt.Fprintf(stderr, "migration apply lock status: %v\n", err)
+			return exitError
+		}
+		status.HolderBuildMatches = &buildMatches
+		status.HolderBuildCheck = migrationApplyLockHolderBuildCheck
 	}
 	return writeJSON(stdout, stderr, status)
 }
@@ -925,6 +932,8 @@ const migrationApplyLockStatusFormat = "go-metin2-migration-apply-lock-status-v1
 const migrationApplyLockHolderPIDCheck = "local_signal_0"
 
 const migrationApplyLockHolderHostnameCheck = "local_os_hostname"
+
+const migrationApplyLockHolderBuildCheck = "local_buildinfo_current"
 
 const migrationApplyAuditStatusFormat = "go-metin2-migration-apply-audit-status-v1"
 
@@ -976,6 +985,8 @@ type migrationApplyLockStatus struct {
 	HolderPIDCheck      string              `json:"holder_pid_check,omitempty"`
 	HolderHostnameLocal *bool               `json:"holder_hostname_local,omitempty"`
 	HolderHostnameCheck string              `json:"holder_hostname_check,omitempty"`
+	HolderBuildMatches  *bool               `json:"holder_build_matches,omitempty"`
+	HolderBuildCheck    string              `json:"holder_build_check,omitempty"`
 }
 
 // localProcessExists reports whether pid appears in the local process table.
@@ -1011,6 +1022,23 @@ func localHostnameMatches(lockHostname string) (bool, error) {
 		return false, fmt.Errorf("%w: local hostname is empty", ErrMigrationApplyLock)
 	}
 	return hostname == strings.TrimSpace(lockHostname), nil
+}
+
+// localBuildIdentityMatches reports whether the lock's stamped build identity
+// equals buildinfo.Current() on the inspecting binary after trimming each
+// field. Empty inspecting-binary identity fails closed so operators never
+// treat an inconclusive probe as authorization to delete a lock.
+func localBuildIdentityMatches(lockVersion, lockCommit, lockBuildDate string) (bool, error) {
+	identity := buildinfo.Current()
+	version := strings.TrimSpace(identity.Version)
+	commit := strings.TrimSpace(identity.Commit)
+	buildDate := strings.TrimSpace(identity.BuildDate)
+	if version == "" || commit == "" || buildDate == "" {
+		return false, fmt.Errorf("%w: local build identity is incomplete", ErrMigrationApplyLock)
+	}
+	return version == strings.TrimSpace(lockVersion) &&
+		commit == strings.TrimSpace(lockCommit) &&
+		buildDate == strings.TrimSpace(lockBuildDate), nil
 }
 
 type migrationApplyAuditStatus struct {

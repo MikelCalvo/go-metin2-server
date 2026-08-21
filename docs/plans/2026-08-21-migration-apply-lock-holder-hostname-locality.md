@@ -65,6 +65,6 @@ Validation for this slice:
 ## Follow-up options
 
 1. Keep automatic stale-lock removal deferred until a deployment-specific recovery policy exists.
-2. Add advisory `holder_build_matches` / `holder_build_check` comparing lock build identity to `buildinfo.Current()` on the inspecting binary.
+2. ~~Add advisory `holder_build_matches` / `holder_build_check` comparing lock build identity to `buildinfo.Current()` on the inspecting binary.~~ Done: see [migration apply lock holder build match](2026-08-21-migration-apply-lock-holder-build-match.md).
 3. Add DB-engine-specific advisory lock coverage once a production driver is selected.
 4. Keep ground-item restart durability deferred until operators decide that quarantined `0010` exports should drive recovery.
