@@ -46,14 +46,25 @@ Only after `manual_clear_candidate` is `true` **and** the operator has reviewed 
 1. Confirm no other operator still owns the migration window (notes, chat, host console).
 2. Confirm DB and file-store backup evidence for the window still exists outside the live data trees.
 3. Compare `lock.plan_sha256` / `lock.ledger_snapshot_sha256` / stamped build identity against retained `migration-plan-artifact.json`, `apply-preflight.json`, and `GET /local/build-info` / `metin2-migrate version`.
-4. Aside-rename the lock instead of deleting it:
+4. Aside-rename through the confirmation-gated CLI helper (preferred over hand-rolled `mv`):
+
+```bash
+metin2-migrate apply-lock-aside \
+  --lock-file <path> \
+  --i-confirm-lab-aside-rename \
+  > apply-lock-aside.json
+```
+
+The helper recomputes the lab gate immediately before renaming, writes `<path>.stale-<UTC>` (for example `.stale-20260821T153045Z`), refuses destination collisions, never unlinks the lock, and never opens the DB target. Retain `apply-lock-aside.json` beside `apply-lock-status.json` in the migration-runs tree.
+
+If the CLI binary is unavailable and an operator must fall back to a manual rename after the same review, keep the same destination naming:
 
 ```bash
 ts=$(date -u +%Y%m%dT%H%M%SZ)
 mv -- "<path>" "<path>.stale-${ts}"
 ```
 
-5. Retain the renamed lock beside `apply-lock-status.json` in the migration-runs tree.
+5. Retain the renamed lock beside `apply-lock-status.json` / `apply-lock-aside.json` in the migration-runs tree.
 6. Re-run `apply-lock-status` and confirm `present: false` before starting a fresh `apply --lock-file` with a new lock path or the original path now free.
 7. Re-validate the reviewed plan/preflight boundary before opening the DB again (`plan-artifact-status` / `apply-preflight-status` as appropriate).
 
@@ -64,6 +75,7 @@ Do **not**:
 - clear a lock copied from another host (`holder_hostname_local=false`);
 - clear a lock from a different binary stamp (`holder_build_matches=false`) without proving the original apply finished or rolled back;
 - invent a daemon `/local/...` unlock endpoint;
+- treat `manual_clear_candidate=true` alone as enough without `--i-confirm-lab-aside-rename` (or equivalent operator judgment for a manual fallback);
 - treat this policy as multi-host or orchestrated unlock coordination.
 
 ## Relationship to other docs
@@ -74,7 +86,9 @@ Do **not**:
 
 ## What this is not yet
 
-- automatic stale-lock expiry or CLI force-unlock
+- automatic stale-lock expiry or daemon/cron unlock
+- `rm` / unlink / truncate helpers
 - DB-engine advisory locks
 - multi-host unlock coordination
 - a claim that leftover locks prove a migration succeeded or failed
+- treating `manual_clear_candidate=true` alone as permission to mutate without confirmation / operator judgment

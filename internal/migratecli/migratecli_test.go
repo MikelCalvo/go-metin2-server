@@ -2091,6 +2091,293 @@ func TestRunApplyLockStatusRejectsManualClearCandidateWhenAgeBelowOneHour(t *tes
 	}
 }
 
+func writeLabStaleApplyLockForTest(t *testing.T, lockPath string, lock migrationApplyLock) {
+	t.Helper()
+	rawLock, err := json.MarshalIndent(lock, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal lock JSON: %v", err)
+	}
+	rawLock = append(rawLock, '\n')
+	if err := os.WriteFile(lockPath, rawLock, 0o600); err != nil {
+		t.Fatalf("write lock JSON: %v", err)
+	}
+}
+
+func TestRunApplyLockAsideRequiresConfirmation(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	absentPID := findAbsentLocalPID(t)
+	wantHostname := mustLocalHostname(t)
+	wantIdentity := buildinfo.Current()
+	lockPath := t.TempDir() + "/migration-apply.lock"
+	createdAt := "2026-08-17T00:00:00Z"
+	inspectAt := time.Date(2026, 8, 17, 1, 0, 0, 0, time.UTC)
+	restoreApplyLockStatusNow := setApplyLockStatusNow(t, inspectAt)
+	defer restoreApplyLockStatusNow()
+	writeLabStaleApplyLockForTest(t, lockPath, migrationApplyLock{
+		Format:               migrationApplyLockFormat,
+		CreatedAt:            createdAt,
+		PID:                  absentPID,
+		Hostname:             wantHostname,
+		BuildVersion:         wantIdentity.Version,
+		BuildCommit:          wantIdentity.Commit,
+		BuildDate:            wantIdentity.BuildDate,
+		Driver:               "example-driver",
+		DSNConfigured:        true,
+		TargetVersion:        1,
+		TargetLatest:         false,
+		PlanSHA256:           strings.Repeat("a", 64),
+		LedgerSnapshotSHA256: strings.Repeat("b", 64),
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-lock-aside", "--lock-file", lockPath}, nil, &stdout, &stderr)
+
+	if code != exitUsage {
+		t.Fatalf("expected missing confirmation to exit %d, got exit=%d stdout=%q stderr=%q", exitUsage, code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout without confirmation, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "--i-confirm-lab-aside-rename") {
+		t.Fatalf("expected confirmation guidance, got %q", stderr.String())
+	}
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("missing confirmation must leave the lock untouched: %v", err)
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("apply-lock-aside must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunApplyLockAsideRenamesLabStaleCandidate(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	absentPID := findAbsentLocalPID(t)
+	wantHostname := mustLocalHostname(t)
+	wantIdentity := buildinfo.Current()
+	lockPath := t.TempDir() + "/migration-apply.lock"
+	createdAt := "2026-08-17T00:00:00Z"
+	inspectAt := time.Date(2026, 8, 17, 1, 0, 0, 0, time.UTC)
+	restoreApplyLockStatusNow := setApplyLockStatusNow(t, inspectAt)
+	defer restoreApplyLockStatusNow()
+	writeLabStaleApplyLockForTest(t, lockPath, migrationApplyLock{
+		Format:               migrationApplyLockFormat,
+		CreatedAt:            createdAt,
+		PID:                  absentPID,
+		Hostname:             wantHostname,
+		BuildVersion:         wantIdentity.Version,
+		BuildCommit:          wantIdentity.Commit,
+		BuildDate:            wantIdentity.BuildDate,
+		Driver:               "example-driver",
+		DSNConfigured:        true,
+		TargetVersion:        1,
+		TargetLatest:         false,
+		PlanSHA256:           strings.Repeat("a", 64),
+		LedgerSnapshotSHA256: strings.Repeat("b", 64),
+	})
+	wantAsidePath := lockAsidePath(lockPath, inspectAt)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-lock-aside", "--lock-file", lockPath, "--i-confirm-lab-aside-rename"}, nil, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("expected apply-lock-aside to succeed for lab stale gate, exit=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr on apply-lock-aside success, got %q", stderr.String())
+	}
+	var got migrationApplyLockAside
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode lock aside JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if got.Format != migrationApplyLockAsideFormat {
+		t.Fatalf("unexpected aside format: %q", got.Format)
+	}
+	if got.LockFile != lockPath || got.AsidePath != wantAsidePath {
+		t.Fatalf("unexpected aside paths: lock=%q aside=%q wantAside=%q", got.LockFile, got.AsidePath, wantAsidePath)
+	}
+	if got.RenamedAt != inspectAt.UTC().Format(time.RFC3339Nano) {
+		t.Fatalf("unexpected renamed_at: got %q want %q", got.RenamedAt, inspectAt.UTC().Format(time.RFC3339Nano))
+	}
+	if got.Lock == nil || got.Lock.PID != absentPID {
+		t.Fatalf("expected aside result to embed lock metadata, got %#v", got.Lock)
+	}
+	if got.ManualClearCandidate == nil || !*got.ManualClearCandidate || got.ManualClearCheck != migrationApplyLockManualClearCheck {
+		t.Fatalf("expected lab stale gate candidate true in aside result, got candidate=%v check=%q", got.ManualClearCandidate, got.ManualClearCheck)
+	}
+	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("original lock path should be gone after aside-rename, got err=%v", err)
+	}
+	if _, err := os.Stat(wantAsidePath); err != nil {
+		t.Fatalf("aside path should exist after rename: %v", err)
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("apply-lock-aside must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunApplyLockAsideRejectsYoungLock(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	absentPID := findAbsentLocalPID(t)
+	wantHostname := mustLocalHostname(t)
+	wantIdentity := buildinfo.Current()
+	lockPath := t.TempDir() + "/migration-apply.lock"
+	createdAt := "2026-08-17T00:30:00Z"
+	inspectAt := time.Date(2026, 8, 17, 1, 0, 0, 0, time.UTC)
+	restoreApplyLockStatusNow := setApplyLockStatusNow(t, inspectAt)
+	defer restoreApplyLockStatusNow()
+	writeLabStaleApplyLockForTest(t, lockPath, migrationApplyLock{
+		Format:               migrationApplyLockFormat,
+		CreatedAt:            createdAt,
+		PID:                  absentPID,
+		Hostname:             wantHostname,
+		BuildVersion:         wantIdentity.Version,
+		BuildCommit:          wantIdentity.Commit,
+		BuildDate:            wantIdentity.BuildDate,
+		Driver:               "example-driver",
+		DSNConfigured:        true,
+		TargetVersion:        1,
+		TargetLatest:         false,
+		PlanSHA256:           strings.Repeat("a", 64),
+		LedgerSnapshotSHA256: strings.Repeat("b", 64),
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-lock-aside", "--lock-file", lockPath, "--i-confirm-lab-aside-rename"}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected young lock aside to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout for rejected aside, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "not a lab manual-clear candidate") {
+		t.Fatalf("expected non-candidate guidance, got %q", stderr.String())
+	}
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("rejected aside must leave the lock untouched: %v", err)
+	}
+}
+
+func TestRunApplyLockAsideRejectsAliveHolder(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	wantHostname := mustLocalHostname(t)
+	wantIdentity := buildinfo.Current()
+	lockPath := t.TempDir() + "/migration-apply.lock"
+	createdAt := "2026-08-17T00:00:00Z"
+	inspectAt := time.Date(2026, 8, 17, 1, 0, 0, 0, time.UTC)
+	restoreApplyLockStatusNow := setApplyLockStatusNow(t, inspectAt)
+	defer restoreApplyLockStatusNow()
+	writeLabStaleApplyLockForTest(t, lockPath, migrationApplyLock{
+		Format:               migrationApplyLockFormat,
+		CreatedAt:            createdAt,
+		PID:                  os.Getpid(),
+		Hostname:             wantHostname,
+		BuildVersion:         wantIdentity.Version,
+		BuildCommit:          wantIdentity.Commit,
+		BuildDate:            wantIdentity.BuildDate,
+		Driver:               "example-driver",
+		DSNConfigured:        true,
+		TargetVersion:        1,
+		TargetLatest:         false,
+		PlanSHA256:           strings.Repeat("a", 64),
+		LedgerSnapshotSHA256: strings.Repeat("b", 64),
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-lock-aside", "--lock-file", lockPath, "--i-confirm-lab-aside-rename"}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected alive-holder aside to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "not a lab manual-clear candidate") {
+		t.Fatalf("expected non-candidate guidance, got %q", stderr.String())
+	}
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("rejected aside must leave the lock untouched: %v", err)
+	}
+}
+
+func TestRunApplyLockAsideRejectsDestinationCollision(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	absentPID := findAbsentLocalPID(t)
+	wantHostname := mustLocalHostname(t)
+	wantIdentity := buildinfo.Current()
+	lockPath := t.TempDir() + "/migration-apply.lock"
+	createdAt := "2026-08-17T00:00:00Z"
+	inspectAt := time.Date(2026, 8, 17, 1, 0, 0, 0, time.UTC)
+	restoreApplyLockStatusNow := setApplyLockStatusNow(t, inspectAt)
+	defer restoreApplyLockStatusNow()
+	writeLabStaleApplyLockForTest(t, lockPath, migrationApplyLock{
+		Format:               migrationApplyLockFormat,
+		CreatedAt:            createdAt,
+		PID:                  absentPID,
+		Hostname:             wantHostname,
+		BuildVersion:         wantIdentity.Version,
+		BuildCommit:          wantIdentity.Commit,
+		BuildDate:            wantIdentity.BuildDate,
+		Driver:               "example-driver",
+		DSNConfigured:        true,
+		TargetVersion:        1,
+		TargetLatest:         false,
+		PlanSHA256:           strings.Repeat("a", 64),
+		LedgerSnapshotSHA256: strings.Repeat("b", 64),
+	})
+	asidePath := lockAsidePath(lockPath, inspectAt)
+	if err := os.WriteFile(asidePath, []byte("occupied\n"), 0o600); err != nil {
+		t.Fatalf("seed colliding aside path: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-lock-aside", "--lock-file", lockPath, "--i-confirm-lab-aside-rename"}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected destination collision to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout on collision, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "aside path already exists") {
+		t.Fatalf("expected collision guidance, got %q", stderr.String())
+	}
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("collision must leave the original lock untouched: %v", err)
+	}
+	raw, err := os.ReadFile(asidePath)
+	if err != nil {
+		t.Fatalf("read colliding aside path: %v", err)
+	}
+	if string(raw) != "occupied\n" {
+		t.Fatalf("collision must not overwrite existing aside path, got %q", string(raw))
+	}
+}
+
+func TestRunApplyLockAsideRejectsMissingLock(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	lockPath := t.TempDir() + "/missing-migration-apply.lock"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"apply-lock-aside", "--lock-file", lockPath, "--i-confirm-lab-aside-rename"}, nil, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected missing lock aside to exit 1, got exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout for missing lock, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "lock file is not present") {
+		t.Fatalf("expected missing-lock guidance, got %q", stderr.String())
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("apply-lock-aside must not open a database target, got events %#v", events)
+	}
+}
+
 func TestRunApplyLockStatusRejectsMalformedLockFile(t *testing.T) {
 	_ = registerMigrateCLITestSQLDriver(t)
 	lockPath := t.TempDir() + "/migration-apply.lock"

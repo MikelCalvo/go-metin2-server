@@ -58,7 +58,7 @@ Validation for this slice:
 
 ## Follow-up options
 
-1. Keep automatic stale-lock removal deferred; any future clear helper must require explicit operator confirmation beyond this advisory bit.
+1. ~~Keep automatic stale-lock removal deferred; any future clear helper must require explicit operator confirmation beyond this advisory bit.~~ Done for lab aside-rename: see [CLI apply-lock aside](2026-08-21-cli-apply-lock-aside.md). Automatic deletion / `rm` remains deferred.
 2. Add DB-engine-specific advisory lock coverage once a production driver is selected.
 3. Keep ground-item restart durability deferred until operators decide that quarantined `0010` exports should drive recovery.
 4. Add systemd/unit or multi-host unlock samples only after the lab topology has been exercised on a real host.

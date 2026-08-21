@@ -69,5 +69,6 @@ Validation for this slice:
 ## Follow-up options
 
 1. ~~Keep automatic stale-lock removal deferred until a deployment-specific recovery policy exists.~~ Done for the single-host lab topology: see [lab stale-lock recovery](../workflow/lab-stale-lock-recovery.md) and the advisory `manual_clear_candidate` bit on `apply-lock-status`. Automatic deletion remains deferred.
-2. Add DB-engine-specific advisory lock coverage once a production driver is selected.
-3. Keep ground-item restart durability deferred until operators decide that quarantined `0010` exports should drive recovery.
+2. ~~Encode the lab aside-rename as a confirmation-gated CLI helper.~~ Done: see [CLI apply-lock aside](2026-08-21-cli-apply-lock-aside.md).
+3. Add DB-engine-specific advisory lock coverage once a production driver is selected.
+4. Keep ground-item restart durability deferred until operators decide that quarantined `0010` exports should drive recovery.

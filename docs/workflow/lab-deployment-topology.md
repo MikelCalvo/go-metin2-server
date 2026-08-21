@@ -73,6 +73,9 @@ Keep operator evidence outside live data trees:
     plan-artifact-status.json
     apply-preflight.json
     apply-preflight-status.json
+    apply-lock-status.json
+    apply-lock-aside.json
+    migration-apply.lock.stale-<UTC>
     migration-apply-audit.json
     apply-audit-status.json
     post-apply-status.json
@@ -113,5 +116,5 @@ See also:
 - Kubernetes / systemd unit shipping in-tree
 - remote admin APIs
 - automatic artifact GC / lifecycle jobs
-- automatic stale-lock expiry (lab recovery remains operator aside-rename; see [lab stale-lock recovery](lab-stale-lock-recovery.md))
+- automatic stale-lock expiry (lab recovery remains confirmation-gated `apply-lock-aside` / operator aside-rename; see [lab stale-lock recovery](lab-stale-lock-recovery.md))
 - a claim that bootstrap file stores are the final production persistence layer

@@ -44,6 +44,9 @@ const (
 // operator-supplied database driver, DSN, strict offline ledger snapshot, and
 // target version, and it remains deliberately separate from daemon startup and
 // local ops endpoints.
+// apply-lock-aside is a separate confirmation-gated local filesystem mutation: it
+// only aside-renames a leftover apply lock after recomputing the lab stale-lock
+// gate and never opens a database target.
 // Rollback/down plans must be explicitly confirmed with --allow-rollback plus
 // --plan-sha256, --plan-artifact, or --apply-preflight. Operators can
 // optionally require a previously inspected plan checksum, plan artifact, or
@@ -84,6 +87,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runApplyPreflightStatus(args[1:], stdout, stderr)
 	case "apply-lock-status":
 		return runApplyLockStatus(args[1:], stdout, stderr)
+	case "apply-lock-aside":
+		return runApplyLockAside(args[1:], stdout, stderr)
 	case "apply-audit-status":
 		return runApplyAuditStatus(args[1:], stdout, stderr)
 	case "empty-ledger-snapshot":
@@ -852,50 +857,88 @@ func runApplyLockStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 		return exitUsage
 	}
 
-	lock, present, err := readMigrationApplyLockFile(lockFilePath)
+	status, err := inspectMigrationApplyLockStatus(lockFilePath)
 	if err != nil {
 		fmt.Fprintf(stderr, "migration apply lock status: %v\n", err)
 		return exitError
 	}
-	status := migrationApplyLockStatus{
-		Format:  migrationApplyLockStatusFormat,
-		Present: present,
-	}
-	if present {
-		status.Lock = &lock
-		alive, err := localProcessExists(lock.PID)
-		if err != nil {
-			fmt.Fprintf(stderr, "migration apply lock status: %v\n", err)
-			return exitError
-		}
-		status.HolderPIDAlive = &alive
-		status.HolderPIDCheck = migrationApplyLockHolderPIDCheck
-		hostnameLocal, err := localHostnameMatches(lock.Hostname)
-		if err != nil {
-			fmt.Fprintf(stderr, "migration apply lock status: %v\n", err)
-			return exitError
-		}
-		status.HolderHostnameLocal = &hostnameLocal
-		status.HolderHostnameCheck = migrationApplyLockHolderHostnameCheck
-		buildMatches, err := localBuildIdentityMatches(lock.BuildVersion, lock.BuildCommit, lock.BuildDate)
-		if err != nil {
-			fmt.Fprintf(stderr, "migration apply lock status: %v\n", err)
-			return exitError
-		}
-		status.HolderBuildMatches = &buildMatches
-		status.HolderBuildCheck = migrationApplyLockHolderBuildCheck
-		ageSeconds, err := lockAgeSeconds(lock.CreatedAt, applyLockStatusNow())
-		if err != nil {
-			fmt.Fprintf(stderr, "migration apply lock status: %v\n", err)
-			return exitError
-		}
-		status.LockAgeSeconds = &ageSeconds
-		status.LockAgeCheck = migrationApplyLockAgeCheck
-		candidate := labManualClearCandidate(alive, hostnameLocal, buildMatches, ageSeconds)
-		status.ManualClearCandidate = &candidate
-		status.ManualClearCheck = migrationApplyLockManualClearCheck
-	}
 	return writeJSON(stdout, stderr, status)
+}
+
+func runApplyLockAside(args []string, stdout io.Writer, stderr io.Writer) int {
+	flags := flag.NewFlagSet("apply-lock-aside", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	var lockFilePath string
+	var confirmAsideRename bool
+	flags.StringVar(&lockFilePath, "lock-file", "", "path to the local migration apply lock file")
+	flags.BoolVar(&confirmAsideRename, "i-confirm-lab-aside-rename", false, "confirm lab stale-lock aside-rename after recomputing the candidate gate")
+	flags.Usage = func() { printApplyLockAsideUsage(stderr) }
+	if err := flags.Parse(args); err != nil {
+		return exitUsage
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintf(stderr, "unexpected apply-lock-aside argument %q\n", flags.Arg(0))
+		printApplyLockAsideUsage(stderr)
+		return exitUsage
+	}
+	if strings.TrimSpace(lockFilePath) == "" {
+		fmt.Fprintln(stderr, "--lock-file is required for apply-lock-aside")
+		printApplyLockAsideUsage(stderr)
+		return exitUsage
+	}
+	if !confirmAsideRename {
+		fmt.Fprintln(stderr, "--i-confirm-lab-aside-rename is required for apply-lock-aside")
+		printApplyLockAsideUsage(stderr)
+		return exitUsage
+	}
+
+	status, err := inspectMigrationApplyLockStatus(lockFilePath)
+	if err != nil {
+		fmt.Fprintf(stderr, "migration apply lock aside: %v\n", err)
+		return exitError
+	}
+	if !status.Present || status.Lock == nil {
+		fmt.Fprintf(stderr, "migration apply lock aside: %v\n", fmt.Errorf("%w: lock file is not present: %s", ErrMigrationApplyLockAside, strings.TrimSpace(lockFilePath)))
+		return exitError
+	}
+	if status.ManualClearCandidate == nil || !*status.ManualClearCandidate {
+		fmt.Fprintf(stderr, "migration apply lock aside: %v\n", fmt.Errorf("%w: lock is not a lab manual-clear candidate", ErrMigrationApplyLockAside))
+		return exitError
+	}
+
+	now := applyLockStatusNow().UTC()
+	asidePath := lockAsidePath(lockFilePath, now)
+	if _, err := os.Lstat(asidePath); err == nil {
+		fmt.Fprintf(stderr, "migration apply lock aside: %v\n", fmt.Errorf("%w: aside path already exists: %s", ErrMigrationApplyLockAside, asidePath))
+		return exitError
+	} else if !errors.Is(err, os.ErrNotExist) {
+		fmt.Fprintf(stderr, "migration apply lock aside: %v\n", fmt.Errorf("%w: stat aside path: %v", ErrMigrationApplyLockAside, err))
+		return exitError
+	}
+
+	if err := os.Rename(strings.TrimSpace(lockFilePath), asidePath); err != nil {
+		fmt.Fprintf(stderr, "migration apply lock aside: %v\n", fmt.Errorf("%w: rename lock file: %v", ErrMigrationApplyLockAside, err))
+		return exitError
+	}
+
+	result := migrationApplyLockAside{
+		Format:               migrationApplyLockAsideFormat,
+		LockFile:             strings.TrimSpace(lockFilePath),
+		AsidePath:            asidePath,
+		RenamedAt:            now.Format(time.RFC3339Nano),
+		Lock:                 status.Lock,
+		HolderPIDAlive:       status.HolderPIDAlive,
+		HolderPIDCheck:       status.HolderPIDCheck,
+		HolderHostnameLocal:  status.HolderHostnameLocal,
+		HolderHostnameCheck:  status.HolderHostnameCheck,
+		HolderBuildMatches:   status.HolderBuildMatches,
+		HolderBuildCheck:     status.HolderBuildCheck,
+		LockAgeSeconds:       status.LockAgeSeconds,
+		LockAgeCheck:         status.LockAgeCheck,
+		ManualClearCandidate: status.ManualClearCandidate,
+		ManualClearCheck:     status.ManualClearCheck,
+	}
+	return writeJSON(stdout, stderr, result)
 }
 
 func runApplyAuditStatus(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -939,6 +982,8 @@ const migrationApplyLockFormat = "go-metin2-migration-apply-lock-v1"
 
 const migrationApplyLockStatusFormat = "go-metin2-migration-apply-lock-status-v1"
 
+const migrationApplyLockAsideFormat = "go-metin2-migration-apply-lock-aside-v1"
+
 const migrationApplyLockHolderPIDCheck = "local_signal_0"
 
 const migrationApplyLockHolderHostnameCheck = "local_os_hostname"
@@ -959,13 +1004,16 @@ const labManualClearMinAgeSeconds int64 = 3600
 
 const migrationApplyAuditStatusFormat = "go-metin2-migration-apply-audit-status-v1"
 
-// applyLockStatusNow is the wall clock used by apply-lock-status age triage.
-// Tests may override it; production keeps time.Now.
+// applyLockStatusNow is the wall clock used by apply-lock-status age triage and
+// apply-lock-aside destination timestamps. Tests may override it; production
+// keeps time.Now.
 var applyLockStatusNow = time.Now
 
 var ErrMigrationApplyAudit = errors.New("migration apply audit failed")
 
 var ErrMigrationApplyLock = errors.New("migration apply lock failed")
+
+var ErrMigrationApplyLockAside = errors.New("migration apply lock aside failed")
 
 var ErrMigrationApplyPlanConfirmation = errors.New("migration apply plan confirmation failed")
 
@@ -1017,6 +1065,74 @@ type migrationApplyLockStatus struct {
 	LockAgeCheck         string              `json:"lock_age_check,omitempty"`
 	ManualClearCandidate *bool               `json:"manual_clear_candidate,omitempty"`
 	ManualClearCheck     string              `json:"manual_clear_check,omitempty"`
+}
+
+type migrationApplyLockAside struct {
+	Format               string              `json:"format"`
+	LockFile             string              `json:"lock_file"`
+	AsidePath            string              `json:"aside_path"`
+	RenamedAt            string              `json:"renamed_at"`
+	Lock                 *migrationApplyLock `json:"lock,omitempty"`
+	HolderPIDAlive       *bool               `json:"holder_pid_alive,omitempty"`
+	HolderPIDCheck       string              `json:"holder_pid_check,omitempty"`
+	HolderHostnameLocal  *bool               `json:"holder_hostname_local,omitempty"`
+	HolderHostnameCheck  string              `json:"holder_hostname_check,omitempty"`
+	HolderBuildMatches   *bool               `json:"holder_build_matches,omitempty"`
+	HolderBuildCheck     string              `json:"holder_build_check,omitempty"`
+	LockAgeSeconds       *int64              `json:"lock_age_seconds,omitempty"`
+	LockAgeCheck         string              `json:"lock_age_check,omitempty"`
+	ManualClearCandidate *bool               `json:"manual_clear_candidate,omitempty"`
+	ManualClearCheck     string              `json:"manual_clear_check,omitempty"`
+}
+
+// inspectMigrationApplyLockStatus validates and triages a local apply lock without
+// mutating it. Missing paths return present=false; malformed/symlink/oversized
+// locks fail closed.
+func inspectMigrationApplyLockStatus(lockFilePath string) (migrationApplyLockStatus, error) {
+	lock, present, err := readMigrationApplyLockFile(lockFilePath)
+	if err != nil {
+		return migrationApplyLockStatus{}, err
+	}
+	status := migrationApplyLockStatus{
+		Format:  migrationApplyLockStatusFormat,
+		Present: present,
+	}
+	if !present {
+		return status, nil
+	}
+	status.Lock = &lock
+	alive, err := localProcessExists(lock.PID)
+	if err != nil {
+		return migrationApplyLockStatus{}, err
+	}
+	status.HolderPIDAlive = &alive
+	status.HolderPIDCheck = migrationApplyLockHolderPIDCheck
+	hostnameLocal, err := localHostnameMatches(lock.Hostname)
+	if err != nil {
+		return migrationApplyLockStatus{}, err
+	}
+	status.HolderHostnameLocal = &hostnameLocal
+	status.HolderHostnameCheck = migrationApplyLockHolderHostnameCheck
+	buildMatches, err := localBuildIdentityMatches(lock.BuildVersion, lock.BuildCommit, lock.BuildDate)
+	if err != nil {
+		return migrationApplyLockStatus{}, err
+	}
+	status.HolderBuildMatches = &buildMatches
+	status.HolderBuildCheck = migrationApplyLockHolderBuildCheck
+	ageSeconds, err := lockAgeSeconds(lock.CreatedAt, applyLockStatusNow())
+	if err != nil {
+		return migrationApplyLockStatus{}, err
+	}
+	status.LockAgeSeconds = &ageSeconds
+	status.LockAgeCheck = migrationApplyLockAgeCheck
+	candidate := labManualClearCandidate(alive, hostnameLocal, buildMatches, ageSeconds)
+	status.ManualClearCandidate = &candidate
+	status.ManualClearCheck = migrationApplyLockManualClearCheck
+	return status, nil
+}
+
+func lockAsidePath(lockFilePath string, now time.Time) string {
+	return strings.TrimSpace(lockFilePath) + ".stale-" + now.UTC().Format("20060102T150405Z")
 }
 
 // localProcessExists reports whether pid appears in the local process table.
@@ -1997,6 +2113,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  apply-preflight        validate apply inputs and plan confirmation without opening a database")
 	fmt.Fprintln(w, "  apply-preflight-status inspect a migration apply preflight file without mutating it")
 	fmt.Fprintln(w, "  apply-lock-status      inspect a local migration apply lock file without mutating it")
+	fmt.Fprintln(w, "  apply-lock-aside       confirmation-gated lab aside-rename for a stale apply lock")
 	fmt.Fprintln(w, "  apply-audit-status     inspect a migration apply audit file without mutating it")
 	fmt.Fprintln(w, "  apply                  apply a target plan using a database/sql driver and offline ledger snapshot")
 	fmt.Fprintln(w, "  quarantine-export      validate and canonicalize a retained migration-shaped export offline")
@@ -2024,6 +2141,8 @@ func printUsage(w io.Writer) {
 	printApplyPreflightStatusUsage(w)
 	fmt.Fprintln(w, "")
 	printApplyLockStatusUsage(w)
+	fmt.Fprintln(w, "")
+	printApplyLockAsideUsage(w)
 	fmt.Fprintln(w, "")
 	printApplyAuditStatusUsage(w)
 	fmt.Fprintln(w, "")
@@ -2088,6 +2207,11 @@ func printApplyPreflightStatusUsage(w io.Writer) {
 func printApplyLockStatusUsage(w io.Writer) {
 	fmt.Fprintln(w, "apply-lock-status usage:")
 	fmt.Fprintln(w, "  metin2-migrate apply-lock-status --lock-file <path>")
+}
+
+func printApplyLockAsideUsage(w io.Writer) {
+	fmt.Fprintln(w, "apply-lock-aside usage:")
+	fmt.Fprintln(w, "  metin2-migrate apply-lock-aside --lock-file <path> --i-confirm-lab-aside-rename")
 }
 
 func printApplyAuditStatusUsage(w io.Writer) {
