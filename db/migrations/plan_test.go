@@ -223,6 +223,9 @@ func TestPlanUpToLatestUsesBuiltInCatalog(t *testing.T) {
 	if plan.Pending[10].Version != 11 || plan.Pending[10].Name != "character_point_state" || plan.Pending[10].Direction != DirectionUp || plan.Pending[10].Path != "0011_character_point_state.up.sql" {
 		t.Fatalf("unexpected eleventh built-in pending step: %#v", plan.Pending[10])
 	}
+	if plan.Pending[11].Version != 12 || plan.Pending[11].Name != "static_actor_pve_interaction_state" || plan.Pending[11].Direction != DirectionUp || plan.Pending[11].Path != "0012_static_actor_pve_interaction_state.up.sql" {
+		t.Fatalf("unexpected twelfth built-in pending step: %#v", plan.Pending[11])
+	}
 }
 
 func TestPlanJSONShapeIsStableForFuturePreflightOutput(t *testing.T) {

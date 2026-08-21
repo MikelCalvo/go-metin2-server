@@ -24,7 +24,7 @@ Supported `--kind` values:
 | `character-quest-state` | `0004_character_quest_state` |
 | `auth-login-ticket-handoff` | `0007_auth_login_ticket_handoff` |
 | `item-template-state` | `0009_item_template_refine_info` |
-| `static-actor-content-state` | `0008_static_actor_content_state` |
+| `static-actor-content-state` | `0012_static_actor_pve_interaction_state` |
 | `bootstrap-ground-item-state` | `0010_bootstrap_ground_item_state` |
 
 Behavior:

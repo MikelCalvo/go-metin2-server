@@ -35,6 +35,8 @@ const (
 	expectedBootstrapGroundItemStateDownSHA256  = "1509b9ae5105449c4ef1317b68d1ad8d05c120f2188b7c0fe110c84515381042"
 	expectedCharacterPointStateUpSHA256         = "2034ab84227eaa0701a257ed1dbd592d18e4d33fa09add30e05e93dcf4c8dc43"
 	expectedCharacterPointStateDownSHA256       = "a77745e16a6066f5acaa905699176b8e57ef809b4ae61383dd20fdd0fb8eeafa"
+	expectedStaticActorPVEInteractionUpSHA256   = "97570fea21e09c8c744601d433ddf0bde0f302e61eb0a9d72c5c55a7d8f5bf60"
+	expectedStaticActorPVEInteractionDownSHA256 = "ebd3d0e36da41f938604f63a42c45afa18a64ae1ceb32de645e2abb34d81819a"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -476,6 +478,59 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 		t.Fatalf("expected character-point-state down migration to drop points, got:\n%s", eleventh.DownSQL)
 	}
 
+	if len(catalog) < 12 {
+		t.Fatalf("expected static-actor PvE interaction-state migration after character point-state, got %d", len(catalog))
+	}
+	twelfth := catalog[11]
+	if twelfth.Version != 12 || twelfth.Name != "static_actor_pve_interaction_state" {
+		t.Fatalf("unexpected twelfth migration: %#v", twelfth)
+	}
+	if twelfth.UpPath != "0012_static_actor_pve_interaction_state.up.sql" {
+		t.Fatalf("unexpected twelfth up path: %q", twelfth.UpPath)
+	}
+	if twelfth.DownPath != "0012_static_actor_pve_interaction_state.down.sql" {
+		t.Fatalf("unexpected twelfth down path: %q", twelfth.DownPath)
+	}
+	if twelfth.UpSHA256 != expectedStaticActorPVEInteractionUpSHA256 {
+		t.Fatalf("unexpected static-actor-pve-interaction-state up checksum: got %q want %q", twelfth.UpSHA256, expectedStaticActorPVEInteractionUpSHA256)
+	}
+	if twelfth.DownSHA256 != expectedStaticActorPVEInteractionDownSHA256 {
+		t.Fatalf("unexpected static-actor-pve-interaction-state down checksum: got %q want %q", twelfth.DownSHA256, expectedStaticActorPVEInteractionDownSHA256)
+	}
+	for _, want := range []string{
+		"CREATE TABLE interaction_definitions_mig12",
+		"CREATE TABLE interaction_quest_flag_reward_items",
+		"CREATE TABLE interaction_quest_flag_consume_items",
+		"CHECK (kind IN ('info', 'talk', 'warp', 'shop_preview', 'open_safebox', 'quest_flag'))",
+		"reward_quest_ref TEXT NOT NULL DEFAULT ''",
+		"require_quest_flag TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE interaction_definitions_mig12 RENAME TO interaction_definitions",
+		"DROP TABLE interaction_quest_flag_consume_items",
+	} {
+		if !strings.Contains(twelfth.UpSQL, want) && !strings.Contains(twelfth.DownSQL, want) {
+			t.Fatalf("expected static-actor-pve-interaction-state migration to contain %q, got up:\n%s\ndown:\n%s", want, twelfth.UpSQL, twelfth.DownSQL)
+		}
+	}
+	for _, want := range []string{
+		"CREATE TABLE interaction_quest_flag_reward_items",
+		"CREATE TABLE interaction_quest_flag_consume_items",
+		"CHECK (kind IN ('info', 'talk', 'warp', 'shop_preview', 'open_safebox', 'quest_flag'))",
+		"reward_quest_ref TEXT NOT NULL DEFAULT ''",
+	} {
+		if !strings.Contains(twelfth.UpSQL, want) {
+			t.Fatalf("expected static-actor-pve-interaction-state up migration to contain %q, got:\n%s", want, twelfth.UpSQL)
+		}
+	}
+	for _, want := range []string{
+		"DROP TABLE interaction_quest_flag_consume_items",
+		"DROP TABLE interaction_quest_flag_reward_items",
+		"CHECK (kind IN ('info', 'talk', 'warp', 'shop_preview'))",
+	} {
+		if !strings.Contains(twelfth.DownSQL, want) {
+			t.Fatalf("expected static-actor-pve-interaction-state down migration to contain %q, got:\n%s", want, twelfth.DownSQL)
+		}
+	}
+
 	for i, migration := range catalog {
 		wantVersion := i + 1
 		if migration.Version != wantVersion {
@@ -545,7 +600,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("built-in catalog summary: %v", err)
 	}
-	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 11 {
+	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 12 {
 		t.Fatalf("unexpected built-in catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -555,7 +610,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 		t.Fatalf("unexpected first built-in catalog summary row: %#v", summary.Migrations[0])
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "character_point_state" {
+	if latest.Version != summary.LatestVersion || latest.Name != "static_actor_pve_interaction_state" {
 		t.Fatalf("unexpected latest built-in catalog summary row: %#v", latest)
 	}
 }

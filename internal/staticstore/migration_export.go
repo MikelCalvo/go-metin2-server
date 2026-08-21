@@ -9,13 +9,14 @@ import (
 )
 
 const (
-	StaticActorContentStateMigrationVersion = 8
-	StaticActorContentStateMigrationName    = "static_actor_content_state"
+	StaticActorContentStateMigrationVersion = 12
+	StaticActorContentStateMigrationName    = "static_actor_pve_interaction_state"
 )
 
 // StaticActorContentStateExport is a deterministic, schema-shaped projection of
 // committed bootstrap static-actor and interaction-definition snapshots onto the
-// 0008_static_actor_content_state migration boundary. It is intentionally a
+// 0012_static_actor_pve_interaction_state migration boundary (after the
+// historical 0008_static_actor_content_state tables). It is intentionally a
 // data-model/export contract only: it does not open a database, emit SQL, apply
 // migrations, or mutate the file stores.
 type StaticActorContentStateExport struct {
@@ -23,25 +24,36 @@ type StaticActorContentStateExport struct {
 	MigrationName          string                               `json:"migration_name"`
 	InteractionDefinitions []InteractionDefinitionRow           `json:"interaction_definitions"`
 	MerchantCatalogEntries []InteractionMerchantCatalogEntryRow `json:"merchant_catalog_entries"`
+	QuestFlagRewardItems   []InteractionQuestFlagItemRow        `json:"quest_flag_reward_items"`
+	QuestFlagConsumeItems  []InteractionQuestFlagItemRow        `json:"quest_flag_consume_items"`
 	StaticActors           []StaticActorContentStateRow         `json:"static_actors"`
 	RewardDrops            []StaticActorRewardDropRow           `json:"reward_drops"`
 }
 
 // InteractionDefinitionRow mirrors the interaction_definitions table columns
-// frozen by the 0008_static_actor_content_state migration, excluding timestamps
-// that are database-owned at insert/update time.
+// frozen by the 0012_static_actor_pve_interaction_state migration, excluding
+// timestamps that are database-owned at insert/update time.
 type InteractionDefinitionRow struct {
-	Kind     string  `json:"kind"`
-	Ref      string  `json:"ref"`
-	Text     string  `json:"text,omitempty"`
-	Title    string  `json:"title,omitempty"`
-	MapIndex *uint32 `json:"map_index,omitempty"`
-	X        *int32  `json:"x,omitempty"`
-	Y        *int32  `json:"y,omitempty"`
+	Kind              string  `json:"kind"`
+	Ref               string  `json:"ref"`
+	Text              string  `json:"text,omitempty"`
+	Title             string  `json:"title,omitempty"`
+	MapIndex          *uint32 `json:"map_index,omitempty"`
+	X                 *int32  `json:"x,omitempty"`
+	Y                 *int32  `json:"y,omitempty"`
+	Size              uint8   `json:"size,omitempty"`
+	QuestRef          string  `json:"quest_ref,omitempty"`
+	QuestFlag         string  `json:"quest_flag,omitempty"`
+	QuestFrom         uint32  `json:"quest_from,omitempty"`
+	QuestTo           uint32  `json:"quest_to,omitempty"`
+	RewardExperience  uint64  `json:"reward_experience,omitempty"`
+	RewardGold        uint64  `json:"reward_gold,omitempty"`
+	ConsumeGold       uint64  `json:"consume_gold,omitempty"`
+	ConsumeExperience uint64  `json:"consume_experience,omitempty"`
 }
 
 // InteractionMerchantCatalogEntryRow mirrors shop-preview child rows for the
-// interaction_merchant_catalog_entries table frozen by migration 0008.
+// interaction_merchant_catalog_entries table frozen by migration 0008 / 0012.
 type InteractionMerchantCatalogEntryRow struct {
 	DefinitionKind string `json:"definition_kind"`
 	DefinitionRef  string `json:"definition_ref"`
@@ -51,8 +63,18 @@ type InteractionMerchantCatalogEntryRow struct {
 	Count          uint16 `json:"count"`
 }
 
+// InteractionQuestFlagItemRow mirrors ordered quest_flag reward/consume item
+// child rows frozen by migration 0012.
+type InteractionQuestFlagItemRow struct {
+	DefinitionKind string `json:"definition_kind"`
+	DefinitionRef  string `json:"definition_ref"`
+	Position       uint8  `json:"position"`
+	ItemVnum       uint32 `json:"item_vnum"`
+	Count          uint16 `json:"count"`
+}
+
 // StaticActorContentStateRow mirrors the static_actors table columns frozen by
-// migration 0008, excluding timestamps that are database-owned at insert/update
+// migration 0012, excluding timestamps that are database-owned at insert/update
 // time.
 type StaticActorContentStateRow struct {
 	EntityID          uint64  `json:"entity_id"`
@@ -70,10 +92,18 @@ type StaticActorContentStateRow struct {
 	SpawnGroupRef     string  `json:"spawn_group_ref,omitempty"`
 	RewardExperience  uint64  `json:"reward_experience,omitempty"`
 	RewardGold        uint64  `json:"reward_gold,omitempty"`
+	RewardQuestRef    string  `json:"reward_quest_ref,omitempty"`
+	RewardQuestFlag   string  `json:"reward_quest_flag,omitempty"`
+	RewardQuestFrom   uint32  `json:"reward_quest_from,omitempty"`
+	RewardQuestTo     uint32  `json:"reward_quest_to,omitempty"`
+	RewardQuestText   string  `json:"reward_quest_text,omitempty"`
+	RequireQuestRef   string  `json:"require_quest_ref,omitempty"`
+	RequireQuestFlag  string  `json:"require_quest_flag,omitempty"`
+	RequireQuestFrom  uint32  `json:"require_quest_from,omitempty"`
 }
 
 // StaticActorRewardDropRow mirrors ordered static_actor_reward_drops rows frozen
-// by migration 0008.
+// by migration 0008 / 0012.
 type StaticActorRewardDropRow struct {
 	EntityID uint64 `json:"entity_id"`
 	Position uint8  `json:"position"`
@@ -83,10 +113,10 @@ type StaticActorRewardDropRow struct {
 // ExportStaticActorContentState validates bootstrap static actor and interaction
 // snapshots and returns rows ordered exactly as a future backfill/import tool
 // should process them: interaction definitions by kind/ref, merchant catalog
-// entries by definition/slot, static actors by name/entity id, and reward drops
-// by actor/position. All validation fails closed against the 0008 migration
-// constraints so malformed bootstrap JSON cannot be silently coerced into a
-// future database import.
+// entries by definition/slot, quest-flag item tables by definition/position,
+// static actors by name/entity id, and reward drops by actor/position. All
+// validation fails closed against the 0012 migration constraints so malformed
+// bootstrap JSON cannot be silently coerced into a future database import.
 func ExportStaticActorContentState(staticSnapshot Snapshot, interactionSnapshot interactionstore.Snapshot) (StaticActorContentStateExport, error) {
 	normalizedInteractions, err := normalizedInteractionDefinitionsForExport(interactionSnapshot)
 	if err != nil {
@@ -108,6 +138,8 @@ func ExportStaticActorContentState(staticSnapshot Snapshot, interactionSnapshot 
 		MigrationName:          StaticActorContentStateMigrationName,
 		InteractionDefinitions: []InteractionDefinitionRow{},
 		MerchantCatalogEntries: []InteractionMerchantCatalogEntryRow{},
+		QuestFlagRewardItems:   []InteractionQuestFlagItemRow{},
+		QuestFlagConsumeItems:  []InteractionQuestFlagItemRow{},
 		StaticActors:           []StaticActorContentStateRow{},
 		RewardDrops:            []StaticActorRewardDropRow{},
 	}
@@ -121,6 +153,24 @@ func ExportStaticActorContentState(staticSnapshot Snapshot, interactionSnapshot 
 				Slot:           entry.Slot,
 				ItemVnum:       entry.ItemVnum,
 				Price:          entry.Price,
+				Count:          entry.Count,
+			})
+		}
+		for i, entry := range interactionstore.EffectiveRewardItems(definition) {
+			export.QuestFlagRewardItems = append(export.QuestFlagRewardItems, InteractionQuestFlagItemRow{
+				DefinitionKind: definition.Kind,
+				DefinitionRef:  definition.Ref,
+				Position:       uint8(i),
+				ItemVnum:       entry.ItemVnum,
+				Count:          entry.Count,
+			})
+		}
+		for i, entry := range interactionstore.EffectiveConsumeItems(definition) {
+			export.QuestFlagConsumeItems = append(export.QuestFlagConsumeItems, InteractionQuestFlagItemRow{
+				DefinitionKind: definition.Kind,
+				DefinitionRef:  definition.Ref,
+				Position:       uint8(i),
+				ItemVnum:       entry.ItemVnum,
 				Count:          entry.Count,
 			})
 		}
@@ -145,8 +195,9 @@ func ExportStaticActorContentState(staticSnapshot Snapshot, interactionSnapshot 
 }
 
 // ExportStaticActorContentStateFromStores validates and projects the committed
-// file-store snapshots onto the 0008 static actor content-state migration shape.
-// It reads the same committed snapshot sets as Load and applies no mutations.
+// file-store snapshots onto the 0012 static actor PvE interaction-state
+// migration shape. It reads the same committed snapshot sets as Load and
+// applies no mutations.
 func ExportStaticActorContentStateFromStores(staticActors Store, interactions interactionstore.Store) (StaticActorContentStateExport, error) {
 	staticSnapshot, err := loadStaticActorSnapshotForExport(staticActors)
 	if err != nil {
@@ -160,8 +211,8 @@ func ExportStaticActorContentStateFromStores(staticActors Store, interactions in
 }
 
 // ExportStaticActorContentState projects this FileStore's committed snapshot
-// onto the 0008 static-actor content-state migration shape, reading the paired
-// interaction store through the shared FromStores helper.
+// onto the 0012 static-actor PvE interaction-state migration shape, reading the
+// paired interaction store through the shared FromStores helper.
 func (s *FileStore) ExportStaticActorContentState(interactions interactionstore.Store) (StaticActorContentStateExport, error) {
 	return ExportStaticActorContentStateFromStores(s, interactions)
 }
@@ -228,7 +279,7 @@ func normalizedInteractionDefinitionsForExport(snapshot interactionstore.Snapsho
 
 func validStaticActorContentStateInteractionDefinition(definition interactionstore.Definition) bool {
 	switch definition.Kind {
-	case interactionstore.KindInfo, interactionstore.KindTalk, interactionstore.KindWarp, interactionstore.KindShopPreview:
+	case interactionstore.KindInfo, interactionstore.KindTalk, interactionstore.KindWarp, interactionstore.KindShopPreview, interactionstore.KindOpenSafebox, interactionstore.KindQuestFlag:
 		return true
 	default:
 		return false
@@ -236,7 +287,21 @@ func validStaticActorContentStateInteractionDefinition(definition interactionsto
 }
 
 func interactionDefinitionRowForExport(definition interactionstore.Definition) InteractionDefinitionRow {
-	row := InteractionDefinitionRow{Kind: definition.Kind, Ref: definition.Ref, Text: definition.Text, Title: definition.Title}
+	row := InteractionDefinitionRow{
+		Kind:              definition.Kind,
+		Ref:               definition.Ref,
+		Text:              definition.Text,
+		Title:             definition.Title,
+		Size:              definition.Size,
+		QuestRef:          definition.QuestRef,
+		QuestFlag:         definition.QuestFlag,
+		QuestFrom:         definition.QuestFrom,
+		QuestTo:           definition.QuestTo,
+		RewardExperience:  definition.RewardExperience,
+		RewardGold:        definition.RewardGold,
+		ConsumeGold:       definition.ConsumeGold,
+		ConsumeExperience: definition.ConsumeExperience,
+	}
 	if definition.Kind == interactionstore.KindWarp {
 		row.MapIndex = uint32ExportPtr(definition.MapIndex)
 		row.X = int32ExportPtr(definition.X)
@@ -259,6 +324,14 @@ func staticActorContentStateRowForExport(actor StaticActor) StaticActorContentSt
 		SpawnGroupRef:    actor.SpawnGroupRef,
 		RewardExperience: actor.RewardExperience,
 		RewardGold:       actor.RewardGold,
+		RewardQuestRef:   actor.RewardQuestRef,
+		RewardQuestFlag:  actor.RewardQuestFlag,
+		RewardQuestFrom:  actor.RewardQuestFrom,
+		RewardQuestTo:    actor.RewardQuestTo,
+		RewardQuestText:  actor.RewardQuestText,
+		RequireQuestRef:  actor.RequireQuestRef,
+		RequireQuestFlag: actor.RequireQuestFlag,
+		RequireQuestFrom: actor.RequireQuestFrom,
 	}
 	if actor.SpawnHome != nil {
 		row.SpawnHomeMapIndex = uint32ExportPtr(actor.SpawnHome.MapIndex)

@@ -10,7 +10,7 @@ import (
 )
 
 // ErrInvalidStaticActorContentStateExport reports that a retained static-actor
-// content-state export failed the 0008 migration-shaped quarantine contract.
+// content-state export failed the 0012 migration-shaped quarantine contract.
 var ErrInvalidStaticActorContentStateExport = errors.New("invalid static actor content-state export")
 
 // StaticActorContentStateQuarantineSummary is the metadata-only result of
@@ -19,6 +19,8 @@ var ErrInvalidStaticActorContentStateExport = errors.New("invalid static actor c
 type StaticActorContentStateQuarantineSummary struct {
 	InteractionDefinitionCount int      `json:"interaction_definition_count"`
 	MerchantCatalogEntryCount  int      `json:"merchant_catalog_entry_count"`
+	QuestFlagRewardItemCount   int      `json:"quest_flag_reward_item_count"`
+	QuestFlagConsumeItemCount  int      `json:"quest_flag_consume_item_count"`
 	StaticActorCount           int      `json:"static_actor_count"`
 	RewardDropCount            int      `json:"reward_drop_count"`
 	EntityIDs                  []uint64 `json:"entity_ids"`
@@ -34,9 +36,9 @@ type StaticActorContentStateQuarantineResult struct {
 }
 
 // ValidateStaticActorContentStateExport fails closed when a retained export
-// does not match the 0008_static_actor_content_state shape. It does not open a
-// database, write static-actor/interaction snapshots, or mutate the supplied
-// export.
+// does not match the 0012_static_actor_pve_interaction_state shape. It does not
+// open a database, write static-actor/interaction snapshots, or mutate the
+// supplied export.
 func ValidateStaticActorContentStateExport(export StaticActorContentStateExport) (StaticActorContentStateQuarantineSummary, error) {
 	canonical, summary, err := canonicalizeStaticActorContentStateExport(export)
 	if err != nil {
@@ -65,6 +67,12 @@ func canonicalizeStaticActorContentStateExport(export StaticActorContentStateExp
 	}
 	if export.MerchantCatalogEntries == nil {
 		return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: merchant_catalog_entries must be present", ErrInvalidStaticActorContentStateExport)
+	}
+	if export.QuestFlagRewardItems == nil {
+		return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: quest_flag_reward_items must be present", ErrInvalidStaticActorContentStateExport)
+	}
+	if export.QuestFlagConsumeItems == nil {
+		return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: quest_flag_consume_items must be present", ErrInvalidStaticActorContentStateExport)
 	}
 	if export.StaticActors == nil {
 		return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: static_actors must be present", ErrInvalidStaticActorContentStateExport)
@@ -99,6 +107,8 @@ func canonicalizeStaticActorContentStateExport(export StaticActorContentStateExp
 	summary := StaticActorContentStateQuarantineSummary{
 		InteractionDefinitionCount: len(canonical.InteractionDefinitions),
 		MerchantCatalogEntryCount:  len(canonical.MerchantCatalogEntries),
+		QuestFlagRewardItemCount:   len(canonical.QuestFlagRewardItems),
+		QuestFlagConsumeItemCount:  len(canonical.QuestFlagConsumeItems),
 		StaticActorCount:           len(canonical.StaticActors),
 		RewardDropCount:            len(canonical.RewardDrops),
 		EntityIDs:                  entityIDs,
@@ -153,6 +163,13 @@ func snapshotsFromStaticActorContentStateExport(export StaticActorContentStateEx
 			Count:    entry.Count,
 		})
 		definitionsByKey[key] = definition
+	}
+
+	if err := attachQuestFlagItems(definitionsByKey, export.QuestFlagRewardItems, true); err != nil {
+		return Snapshot{}, interactionstore.Snapshot{}, err
+	}
+	if err := attachQuestFlagItems(definitionsByKey, export.QuestFlagConsumeItems, false); err != nil {
+		return Snapshot{}, interactionstore.Snapshot{}, err
 	}
 
 	for i := range definitions {
@@ -210,25 +227,75 @@ func snapshotsFromStaticActorContentStateExport(export StaticActorContentStateEx
 	return Snapshot{StaticActors: actors}, interactionstore.Snapshot{Definitions: definitions}, nil
 }
 
+func attachQuestFlagItems(definitionsByKey map[string]interactionstore.Definition, rows []InteractionQuestFlagItemRow, reward bool) error {
+	grouped := make(map[string][]InteractionQuestFlagItemRow)
+	for _, row := range rows {
+		key := interactionDefinitionExportKey(row.DefinitionKind, row.DefinitionRef)
+		definition, ok := definitionsByKey[key]
+		if !ok {
+			return fmt.Errorf("%w: quest_flag item references missing interaction definition %s:%s", ErrInvalidStaticActorContentStateExport, row.DefinitionKind, row.DefinitionRef)
+		}
+		if row.DefinitionKind != interactionstore.KindQuestFlag || definition.Kind != interactionstore.KindQuestFlag {
+			return fmt.Errorf("%w: quest_flag item requires quest_flag definition", ErrInvalidStaticActorContentStateExport)
+		}
+		if row.Position >= 8 || row.ItemVnum == 0 || row.Count == 0 || row.Count > 255 {
+			return fmt.Errorf("%w: invalid quest_flag item position=%d item_vnum=%d", ErrInvalidStaticActorContentStateExport, row.Position, row.ItemVnum)
+		}
+		grouped[key] = append(grouped[key], row)
+	}
+	for key, items := range grouped {
+		sort.Slice(items, func(i, j int) bool { return items[i].Position < items[j].Position })
+		entries := make([]interactionstore.RewardItemEntry, 0, len(items))
+		seen := make(map[uint8]struct{}, len(items))
+		for i, item := range items {
+			if _, exists := seen[item.Position]; exists {
+				return fmt.Errorf("%w: duplicate quest_flag item position %d for %s", ErrInvalidStaticActorContentStateExport, item.Position, key)
+			}
+			if int(item.Position) != i {
+				return fmt.Errorf("%w: quest_flag item positions for %s must be contiguous from 0", ErrInvalidStaticActorContentStateExport, key)
+			}
+			seen[item.Position] = struct{}{}
+			entries = append(entries, interactionstore.RewardItemEntry{ItemVnum: item.ItemVnum, Count: item.Count})
+		}
+		definition := definitionsByKey[key]
+		if reward {
+			definition.RewardItems = entries
+		} else {
+			definition.ConsumeItems = entries
+		}
+		definitionsByKey[key] = definition
+	}
+	return nil
+}
+
 func interactionDefinitionFromContentStateRow(row InteractionDefinitionRow) (interactionstore.Definition, error) {
 	definition := interactionstore.Definition{
-		Kind:  row.Kind,
-		Ref:   row.Ref,
-		Text:  row.Text,
-		Title: row.Title,
+		Kind:              row.Kind,
+		Ref:               row.Ref,
+		Text:              row.Text,
+		Title:             row.Title,
+		Size:              row.Size,
+		QuestRef:          row.QuestRef,
+		QuestFlag:         row.QuestFlag,
+		QuestFrom:         row.QuestFrom,
+		QuestTo:           row.QuestTo,
+		RewardExperience:  row.RewardExperience,
+		RewardGold:        row.RewardGold,
+		ConsumeGold:       row.ConsumeGold,
+		ConsumeExperience: row.ConsumeExperience,
 	}
 	switch row.Kind {
 	case interactionstore.KindInfo, interactionstore.KindTalk:
-		if row.MapIndex != nil || row.X != nil || row.Y != nil || row.Title != "" {
-			return interactionstore.Definition{}, fmt.Errorf("%w: %s definition %q carries unsupported warp/title fields", ErrInvalidStaticActorContentStateExport, row.Kind, row.Ref)
+		if row.MapIndex != nil || row.X != nil || row.Y != nil || row.Title != "" || row.Size != 0 || row.RewardExperience != 0 || row.RewardGold != 0 || row.ConsumeGold != 0 || row.ConsumeExperience != 0 {
+			return interactionstore.Definition{}, fmt.Errorf("%w: %s definition %q carries unsupported fields", ErrInvalidStaticActorContentStateExport, row.Kind, row.Ref)
 		}
 	case interactionstore.KindShopPreview:
-		if row.MapIndex != nil || row.X != nil || row.Y != nil || row.Text != "" {
-			return interactionstore.Definition{}, fmt.Errorf("%w: shop_preview definition %q carries unsupported text/warp fields", ErrInvalidStaticActorContentStateExport, row.Ref)
+		if row.MapIndex != nil || row.X != nil || row.Y != nil || row.Text != "" || row.Size != 0 || row.RewardExperience != 0 || row.RewardGold != 0 || row.ConsumeGold != 0 || row.ConsumeExperience != 0 {
+			return interactionstore.Definition{}, fmt.Errorf("%w: shop_preview definition %q carries unsupported fields", ErrInvalidStaticActorContentStateExport, row.Ref)
 		}
 	case interactionstore.KindWarp:
-		if row.Title != "" {
-			return interactionstore.Definition{}, fmt.Errorf("%w: warp definition %q carries unsupported title", ErrInvalidStaticActorContentStateExport, row.Ref)
+		if row.Title != "" || row.Size != 0 || row.RewardExperience != 0 || row.RewardGold != 0 || row.ConsumeGold != 0 || row.ConsumeExperience != 0 {
+			return interactionstore.Definition{}, fmt.Errorf("%w: warp definition %q carries unsupported fields", ErrInvalidStaticActorContentStateExport, row.Ref)
 		}
 		if row.MapIndex == nil || row.X == nil || row.Y == nil {
 			return interactionstore.Definition{}, fmt.Errorf("%w: warp definition %q requires map_index/x/y", ErrInvalidStaticActorContentStateExport, row.Ref)
@@ -236,6 +303,14 @@ func interactionDefinitionFromContentStateRow(row InteractionDefinitionRow) (int
 		definition.MapIndex = *row.MapIndex
 		definition.X = *row.X
 		definition.Y = *row.Y
+	case interactionstore.KindOpenSafebox:
+		if row.MapIndex != nil || row.X != nil || row.Y != nil || row.Title != "" || row.RewardExperience != 0 || row.RewardGold != 0 || row.ConsumeGold != 0 || row.ConsumeExperience != 0 {
+			return interactionstore.Definition{}, fmt.Errorf("%w: open_safebox definition %q carries unsupported fields", ErrInvalidStaticActorContentStateExport, row.Ref)
+		}
+	case interactionstore.KindQuestFlag:
+		if row.MapIndex != nil || row.X != nil || row.Y != nil || row.Title != "" || row.Size != 0 {
+			return interactionstore.Definition{}, fmt.Errorf("%w: quest_flag definition %q carries unsupported fields", ErrInvalidStaticActorContentStateExport, row.Ref)
+		}
 	default:
 		return interactionstore.Definition{}, fmt.Errorf("%w: unsupported interaction kind %q", ErrInvalidStaticActorContentStateExport, row.Kind)
 	}
@@ -256,6 +331,14 @@ func staticActorFromContentStateRow(row StaticActorContentStateRow) (StaticActor
 		SpawnGroupRef:    row.SpawnGroupRef,
 		RewardExperience: row.RewardExperience,
 		RewardGold:       row.RewardGold,
+		RewardQuestRef:   row.RewardQuestRef,
+		RewardQuestFlag:  row.RewardQuestFlag,
+		RewardQuestFrom:  row.RewardQuestFrom,
+		RewardQuestTo:    row.RewardQuestTo,
+		RewardQuestText:  row.RewardQuestText,
+		RequireQuestRef:  row.RequireQuestRef,
+		RequireQuestFlag: row.RequireQuestFlag,
+		RequireQuestFrom: row.RequireQuestFrom,
 	}
 	homePresent := row.SpawnHomeMapIndex != nil || row.SpawnHomeX != nil || row.SpawnHomeY != nil
 	if homePresent {

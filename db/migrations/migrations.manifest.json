@@ -88,6 +88,14 @@
       "down_path": "0011_character_point_state.down.sql",
       "up_sha256": "2034ab84227eaa0701a257ed1dbd592d18e4d33fa09add30e05e93dcf4c8dc43",
       "down_sha256": "a77745e16a6066f5acaa905699176b8e57ef809b4ae61383dd20fdd0fb8eeafa"
+    },
+    {
+      "version": 12,
+      "name": "static_actor_pve_interaction_state",
+      "up_path": "0012_static_actor_pve_interaction_state.up.sql",
+      "down_path": "0012_static_actor_pve_interaction_state.down.sql",
+      "up_sha256": "97570fea21e09c8c744601d433ddf0bde0f302e61eb0a9d72c5c55a7d8f5bf60",
+      "down_sha256": "ebd3d0e36da41f938604f63a42c45afa18a64ae1ceb32de645e2abb34d81819a"
     }
   ]
 }

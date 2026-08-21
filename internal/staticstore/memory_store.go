@@ -51,8 +51,8 @@ func (s *MemoryStore) Save(snapshot Snapshot) error {
 }
 
 // ExportStaticActorContentState projects the committed in-memory snapshot onto
-// the 0008 static-actor content-state migration shape without filesystem I/O.
-// Missing committed snapshots on either store side are treated as empty
+// the 0012 static-actor PvE interaction-state migration shape without filesystem
+// I/O. Missing committed snapshots on either store side are treated as empty
 // collections, matching FileStore / ExportStaticActorContentStateFromStores.
 func (s *MemoryStore) ExportStaticActorContentState(interactions interactionstore.Store) (StaticActorContentStateExport, error) {
 	return ExportStaticActorContentStateFromStores(s, interactions)

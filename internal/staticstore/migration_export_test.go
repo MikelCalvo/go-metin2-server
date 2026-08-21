@@ -49,6 +49,9 @@ func TestExportStaticActorContentStateBuildsDeterministicRowsMatchingMigrationSh
 	if !reflect.DeepEqual(export.MerchantCatalogEntries, wantCatalog) {
 		t.Fatalf("unexpected merchant catalog rows:\n got: %#v\nwant: %#v", export.MerchantCatalogEntries, wantCatalog)
 	}
+	if len(export.QuestFlagRewardItems) != 0 || len(export.QuestFlagConsumeItems) != 0 {
+		t.Fatalf("expected empty quest-flag item tables for historical kinds, got rewards=%#v consumes=%#v", export.QuestFlagRewardItems, export.QuestFlagConsumeItems)
+	}
 	wantActors := []StaticActorContentStateRow{
 		{EntityID: 7, Name: "PracticeMob", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, SpawnHomeMapIndex: uint32Ptr(42), SpawnHomeX: int32Ptr(1700), SpawnHomeY: int32Ptr(2800), CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.reward_mob", RewardExperience: 25, RewardGold: 12},
 		{EntityID: 9, Name: "VillageGuard", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"},
@@ -88,7 +91,7 @@ func TestExportStaticActorContentStateRejectsRowsThatCannotTargetMigrationSchema
 		{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "VillageGuard : Keep your blade sharp."},
 		{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "VillageGuard : Keep your spear sharp."},
 	}}
-	questFlagDefinitions := interactionstore.Snapshot{Definitions: []interactionstore.Definition{{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestTo: 1}}}
+	incompleteQuestFlagDefinitions := interactionstore.Snapshot{Definitions: []interactionstore.Definition{{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated."}}}
 
 	cases := []struct {
 		name        string
@@ -100,7 +103,7 @@ func TestExportStaticActorContentStateRejectsRowsThatCannotTargetMigrationSchema
 		{name: "too many reward drops for migration position column", actors: tooManyDropActor, definitions: validDefinitions, wantErr: ErrInvalidSnapshot},
 		{name: "duplicate interaction definition key", actors: Snapshot{}, definitions: duplicateDefinitions, wantErr: interactionstore.ErrInvalidSnapshot},
 		{name: "invalid interaction definition body", actors: Snapshot{}, definitions: interactionstore.Snapshot{Definitions: []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:empty"}}}, wantErr: interactionstore.ErrInvalidSnapshot},
-		{name: "quest flag definition has no migration 0008 columns yet", actors: Snapshot{}, definitions: questFlagDefinitions, wantErr: interactionstore.ErrInvalidSnapshot},
+		{name: "incomplete quest_flag definition", actors: Snapshot{}, definitions: incompleteQuestFlagDefinitions, wantErr: interactionstore.ErrInvalidSnapshot},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -109,6 +112,45 @@ func TestExportStaticActorContentStateRejectsRowsThatCannotTargetMigrationSchema
 				t.Fatalf("expected %v, got %v", tc.wantErr, err)
 			}
 		})
+	}
+}
+
+func TestExportStaticActorContentStateProjectsPvEQuestFlagAndOpenSafebox(t *testing.T) {
+	interactionSnapshot := interactionstore.Snapshot{Definitions: []interactionstore.Definition{
+		{Kind: interactionstore.KindOpenSafebox, Ref: "npc:warehouse", Text: "Open your warehouse.", Size: 2, QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1},
+		{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps", Text: "Quest updated.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 0, QuestTo: 1, RewardGold: 50, RewardItems: []interactionstore.RewardItemEntry{{ItemVnum: 27001, Count: 2}}, ConsumeItems: []interactionstore.RewardItemEntry{{ItemVnum: 27002, Count: 1}}, ConsumeExperience: 10},
+	}}
+	staticSnapshot := Snapshot{StaticActors: []StaticActor{
+		{EntityID: 11, Name: "Warehouse", MapIndex: 1, X: 100, Y: 200, RaceNum: 20010, InteractionKind: interactionstore.KindOpenSafebox, InteractionRef: "npc:warehouse"},
+		{EntityID: 12, Name: "QuestGuide", MapIndex: 1, X: 120, Y: 220, RaceNum: 20302, InteractionKind: interactionstore.KindQuestFlag, InteractionRef: "quest:first_steps"},
+		{EntityID: 13, Name: "KillQuestMob", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.kill_quest_mob", RewardQuestRef: "quest:first_steps", RewardQuestFlag: "killed_qa_mob", RewardQuestTo: 1, RewardQuestText: "Quest updated.", RequireQuestRef: "quest:first_steps", RequireQuestFlag: "met_guide", RequireQuestFrom: 1},
+	}}
+
+	export, err := ExportStaticActorContentState(staticSnapshot, interactionSnapshot)
+	if err != nil {
+		t.Fatalf("export PvE static actor content state: %v", err)
+	}
+	if export.MigrationVersion != 12 || export.MigrationName != "static_actor_pve_interaction_state" {
+		t.Fatalf("unexpected migration boundary: %#v", export)
+	}
+	if len(export.InteractionDefinitions) != 2 || export.InteractionDefinitions[0].Kind != interactionstore.KindOpenSafebox || export.InteractionDefinitions[1].Kind != interactionstore.KindQuestFlag {
+		t.Fatalf("unexpected interaction definitions: %#v", export.InteractionDefinitions)
+	}
+	if len(export.QuestFlagRewardItems) != 1 || export.QuestFlagRewardItems[0].ItemVnum != 27001 || export.QuestFlagRewardItems[0].Count != 2 {
+		t.Fatalf("unexpected quest flag reward items: %#v", export.QuestFlagRewardItems)
+	}
+	if len(export.QuestFlagConsumeItems) != 1 || export.QuestFlagConsumeItems[0].ItemVnum != 27002 || export.QuestFlagConsumeItems[0].Count != 1 {
+		t.Fatalf("unexpected quest flag consume items: %#v", export.QuestFlagConsumeItems)
+	}
+	if len(export.StaticActors) != 3 {
+		t.Fatalf("unexpected static actors: %#v", export.StaticActors)
+	}
+	killQuest := export.StaticActors[0]
+	if killQuest.Name != "KillQuestMob" || killQuest.RewardQuestFlag != "killed_qa_mob" || killQuest.RequireQuestFlag != "met_guide" {
+		t.Fatalf("unexpected kill-quest actor projection: %#v", killQuest)
+	}
+	if _, err := ValidateStaticActorContentStateExport(export); err != nil {
+		t.Fatalf("validate PvE export: %v", err)
 	}
 }
 
@@ -148,7 +190,7 @@ func TestExportStaticActorContentStateFromStoresTreatsMissingSnapshotsAsEmpty(t 
 	if export.MigrationVersion != StaticActorContentStateMigrationVersion || export.MigrationName != StaticActorContentStateMigrationName {
 		t.Fatalf("unexpected migration boundary: %#v", export)
 	}
-	if len(export.InteractionDefinitions) != 0 || len(export.MerchantCatalogEntries) != 0 || len(export.StaticActors) != 0 || len(export.RewardDrops) != 0 {
+	if len(export.InteractionDefinitions) != 0 || len(export.MerchantCatalogEntries) != 0 || len(export.QuestFlagRewardItems) != 0 || len(export.QuestFlagConsumeItems) != 0 || len(export.StaticActors) != 0 || len(export.RewardDrops) != 0 {
 		t.Fatalf("expected empty export for missing snapshots, got %#v", export)
 	}
 }

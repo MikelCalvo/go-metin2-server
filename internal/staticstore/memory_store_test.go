@@ -193,7 +193,7 @@ func TestMemoryStoreExportTreatsEmptyStoreAsEmpty(t *testing.T) {
 	if export.MigrationVersion != StaticActorContentStateMigrationVersion || export.MigrationName != StaticActorContentStateMigrationName {
 		t.Fatalf("unexpected migration boundary: %#v", export)
 	}
-	if len(export.InteractionDefinitions) != 0 || len(export.MerchantCatalogEntries) != 0 || len(export.StaticActors) != 0 || len(export.RewardDrops) != 0 {
+	if len(export.InteractionDefinitions) != 0 || len(export.MerchantCatalogEntries) != 0 || len(export.QuestFlagRewardItems) != 0 || len(export.QuestFlagConsumeItems) != 0 || len(export.StaticActors) != 0 || len(export.RewardDrops) != 0 {
 		t.Fatalf("expected empty static-actor content-state export, got %#v", export)
 	}
 }

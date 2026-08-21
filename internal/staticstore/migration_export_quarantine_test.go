@@ -19,6 +19,8 @@ func TestValidateStaticActorContentStateExportAcceptsCanonicalExport(t *testing.
 	want := StaticActorContentStateQuarantineSummary{
 		InteractionDefinitionCount: 4,
 		MerchantCatalogEntryCount:  2,
+		QuestFlagRewardItemCount:   0,
+		QuestFlagConsumeItemCount:  0,
 		StaticActorCount:           3,
 		RewardDropCount:            2,
 		EntityIDs:                  []uint64{7, 9, 2},
@@ -35,6 +37,8 @@ func TestValidateStaticActorContentStateExportAcceptsEmptyCollections(t *testing
 		MigrationName:          StaticActorContentStateMigrationName,
 		InteractionDefinitions: []InteractionDefinitionRow{},
 		MerchantCatalogEntries: []InteractionMerchantCatalogEntryRow{},
+		QuestFlagRewardItems:   []InteractionQuestFlagItemRow{},
+		QuestFlagConsumeItems:  []InteractionQuestFlagItemRow{},
 		StaticActors:           []StaticActorContentStateRow{},
 		RewardDrops:            []StaticActorRewardDropRow{},
 	}
@@ -46,6 +50,8 @@ func TestValidateStaticActorContentStateExportAcceptsEmptyCollections(t *testing
 	want := StaticActorContentStateQuarantineSummary{
 		InteractionDefinitionCount: 0,
 		MerchantCatalogEntryCount:  0,
+		QuestFlagRewardItemCount:   0,
+		QuestFlagConsumeItemCount:  0,
 		StaticActorCount:           0,
 		RewardDropCount:            0,
 		EntityIDs:                  []uint64{},
@@ -100,7 +106,19 @@ func TestValidateStaticActorContentStateExportRejectsMalformedRows(t *testing.T)
 			},
 		},
 		{
-			name: "quest flag kind unsupported by migration 0008",
+			name: "nil quest flag reward items",
+			mutate: func(export *StaticActorContentStateExport) {
+				export.QuestFlagRewardItems = nil
+			},
+		},
+		{
+			name: "nil quest flag consume items",
+			mutate: func(export *StaticActorContentStateExport) {
+				export.QuestFlagConsumeItems = nil
+			},
+		},
+		{
+			name: "incomplete quest_flag definition",
 			mutate: func(export *StaticActorContentStateExport) {
 				export.InteractionDefinitions = append(export.InteractionDefinitions, InteractionDefinitionRow{
 					Kind: interactionstore.KindQuestFlag,
@@ -192,6 +210,8 @@ func TestQuarantineStaticActorContentStateExportCanonicalizesRowOrder(t *testing
 	wantSummary := StaticActorContentStateQuarantineSummary{
 		InteractionDefinitionCount: 4,
 		MerchantCatalogEntryCount:  2,
+		QuestFlagRewardItemCount:   0,
+		QuestFlagConsumeItemCount:  0,
 		StaticActorCount:           3,
 		RewardDropCount:            2,
 		EntityIDs:                  []uint64{7, 9, 2},
@@ -216,6 +236,8 @@ func sampleStaticActorContentStateExport() StaticActorContentStateExport {
 			{DefinitionKind: interactionstore.KindShopPreview, DefinitionRef: "npc:merchant", Slot: 0, ItemVnum: 27001, Price: 50, Count: 2},
 			{DefinitionKind: interactionstore.KindShopPreview, DefinitionRef: "npc:merchant", Slot: 1, ItemVnum: 11200, Price: 500, Count: 1},
 		},
+		QuestFlagRewardItems:  []InteractionQuestFlagItemRow{},
+		QuestFlagConsumeItems: []InteractionQuestFlagItemRow{},
 		StaticActors: []StaticActorContentStateRow{
 			{EntityID: 7, Name: "PracticeMob", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, SpawnHomeMapIndex: uint32Ptr(42), SpawnHomeX: int32Ptr(1700), SpawnHomeY: int32Ptr(2800), CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.reward_mob", RewardExperience: 25, RewardGold: 12},
 			{EntityID: 9, Name: "VillageGuard", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"},

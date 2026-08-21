@@ -966,7 +966,11 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	if eleventh.Version != 11 || eleventh.Name != "character_point_state" || eleventh.Direction != dbmigrations.DirectionUp || eleventh.Path != "0011_character_point_state.up.sql" {
 		t.Fatalf("unexpected eleventh pending migration step: %#v", eleventh)
 	}
-	for _, step := range []dbmigrations.PlanStep{first, second, third, fourth, fifth, sixth, seventh, eighth, ninth, tenth, eleventh} {
+	twelfth := plan.Pending[11]
+	if twelfth.Version != 12 || twelfth.Name != "static_actor_pve_interaction_state" || twelfth.Direction != dbmigrations.DirectionUp || twelfth.Path != "0012_static_actor_pve_interaction_state.up.sql" {
+		t.Fatalf("unexpected twelfth pending migration step: %#v", twelfth)
+	}
+	for _, step := range []dbmigrations.PlanStep{first, second, third, fourth, fifth, sixth, seventh, eighth, ninth, tenth, eleventh, twelfth} {
 		if step.SHA256 == "" || strings.Contains(step.Path, "CREATE TABLE") {
 			t.Fatalf("expected metadata-only pending steps with checksums, got %#v", plan.Pending)
 		}
@@ -991,7 +995,7 @@ func TestGameRuntimeMigrationCatalogSummaryReturnsMetadataOnlyCatalog(t *testing
 	if err != nil {
 		t.Fatalf("migration catalog summary: %v", err)
 	}
-	if summary.Format != dbmigrations.CatalogSummaryFormat || summary.LatestVersion < 11 {
+	if summary.Format != dbmigrations.CatalogSummaryFormat || summary.LatestVersion < 12 {
 		t.Fatalf("unexpected migration catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -1002,7 +1006,7 @@ func TestGameRuntimeMigrationCatalogSummaryReturnsMetadataOnlyCatalog(t *testing
 		t.Fatalf("unexpected first catalog summary row: %#v", first)
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "character_point_state" || latest.DownSHA256 == "" {
+	if latest.Version != summary.LatestVersion || latest.Name != "static_actor_pve_interaction_state" || latest.DownSHA256 == "" {
 		t.Fatalf("unexpected latest catalog summary row: %#v", latest)
 	}
 	raw, err := json.Marshal(summary)

@@ -613,9 +613,27 @@ The quarantine contract requires `migration_version = 9`, `migration_name = "ite
 
 ### `GET /local/static-actors/exports/static-actor-content-state`
 
-Returns a loopback-only, read-only JSON projection of the committed authored static-actor and interaction-definition snapshots onto the `0008_static_actor_content_state` migration boundary. This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if either committed content store cannot be loaded, if any actor/definition/catalog/reward row would violate the schema shape, or if a newer file-backed interaction kind such as `quest_flag` has no owned columns/kind in migration `0008` yet.
+Returns a loopback-only, read-only JSON projection of the committed authored static-actor and interaction-definition snapshots onto the `0012_static_actor_pve_interaction_state` migration boundary (after the historical `0008_static_actor_content_state` tables). This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if either committed content store cannot be loaded, if any actor/definition/catalog/reward/quest-flag-item row would violate the schema shape, or if an interaction kind outside the owned set (`info` / `talk` / `warp` / `shop_preview` / `open_safebox` / `quest_flag`) appears in the committed stores.
 
-Successful responses include `migration_version`, `migration_name`, deterministic `interaction_definitions`, `merchant_catalog_entries`, `static_actors`, and `reward_drops`. Missing committed static-actor or interaction-definition snapshots are exported as empty migration-shaped collections. Actor rows keep only the current authored content boundary (placement, race, optional interaction ref, optional spawn home/group/combat profile, and reward scalar fields), while ordered reward drops are emitted as child rows. The response deliberately omits executable SQL, account/item-instance rows, live runtime-only actor HP/respawn timers/combat targets, content-bundle import previews, and any database apply output; it does not mutate the JSON stores.
+Successful responses include `migration_version`, `migration_name`, deterministic `interaction_definitions`, `merchant_catalog_entries`, `quest_flag_reward_items`, `quest_flag_consume_items`, `static_actors`, and `reward_drops`. Missing committed static-actor or interaction-definition snapshots are exported as empty migration-shaped collections. Actor rows keep the current authored content boundary (placement, race, optional interaction ref, optional spawn home/group/combat profile, reward scalar fields, and optional kill-quest / require-gate metadata), while ordered reward drops and quest-flag item tables are emitted as child rows. The response deliberately omits executable SQL, account/item-instance rows, live runtime-only actor HP/respawn timers/combat targets, content-bundle import previews, and any database apply output; it does not mutate the JSON stores.
+
+### `POST /local/static-actors/exports/static-actor-content-state/quarantine`
+
+Validates and canonicalizes a retained `0012_static_actor_pve_interaction_state` export without opening a database or mutating static-actor/interaction snapshots. This endpoint is registered only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects non-loopback callers with `403`, rejects oversized bodies over 1 MiB with `413`, rejects malformed/invalid-UTF-8/`null` JSON with `400`, and returns `409` when the payload fails the quarantine contract.
+
+Successful responses include:
+
+- `summary.interaction_definition_count`
+- `summary.merchant_catalog_entry_count`
+- `summary.quest_flag_reward_item_count`
+- `summary.quest_flag_consume_item_count`
+- `summary.static_actor_count`
+- `summary.reward_drop_count`
+- deterministic sorted `summary.entity_ids`
+- deterministic sorted `summary.interaction_kinds`
+- a canonicalized `export` whose definitions are ordered by kind/ref and whose child rows keep stable definition/position ordering
+
+The quarantine contract requires `migration_version = 12`, `migration_name = "static_actor_pve_interaction_state"`, present (possibly empty) `interaction_definitions` / `merchant_catalog_entries` / `quest_flag_reward_items` / `quest_flag_consume_items` / `static_actors` / `reward_drops` arrays, unique definition keys and actor entity ids, child rows that reference exported parents, contiguous positions from `0`, and reconstructed snapshots that satisfy the bootstrap static-actor / interaction validation rules (including complete `quest_flag` / `open_safebox` shapes). Retained `migration_version = 8` / `static_actor_content_state` artifacts fail closed; re-export from the live stores. Use this after retaining an export artifact and before any future DB backfill/import tool. It is not a repository write path and never emits SQL or DSNs.
 
 ### `GET /local/ground-items/exports/bootstrap-ground-item-state`
 

@@ -49,7 +49,7 @@ func TestRunQuarantineExportAcceptsEmptyValidExports(t *testing.T) {
 		},
 		{
 			kind:    "static-actor-content-state",
-			payload: `{"migration_version":8,"migration_name":"static_actor_content_state","interaction_definitions":[],"merchant_catalog_entries":[],"static_actors":[],"reward_drops":[]}`,
+			payload: `{"migration_version":12,"migration_name":"static_actor_pve_interaction_state","interaction_definitions":[],"merchant_catalog_entries":[],"quest_flag_reward_items":[],"quest_flag_consume_items":[],"static_actors":[],"reward_drops":[]}`,
 			want:    `"static_actor_count": 0`,
 		},
 		{
