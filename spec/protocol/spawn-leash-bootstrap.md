@@ -389,6 +389,7 @@ Live pending-frame executor rules:
 Current implementation status:
 - pure planner `PlanStaticActorSpawnLeashHomewardStep` is owned in `internal/worldruntime`
 - pending-frame homeward executor, engagement-release arming, chase mutual exclusion, and same-map retained-viewer `MOVE` are live in `internal/minimal`
+- focused coverage now also freezes owner death-floor engagement release after chase leaves the mob `within_radius`: immediate and delayed floor paths keep the homeward schedule armed by `clearActiveCombatTarget` instead of clearing it, the still-connected dead owner is skipped for retained homeward `MOVE`, and a living retained watcher receives the due homeward `MOVE` back to authored home
 - focused EnterGame / MOVE-transfer / `/restart_here` / `/restart_town` due-homeward preflight coverage now mirrors the owned chase/return preflight proofs
 - daemon-restart rematerialization of live unengaged `within_radius` spawn-backed actors now arms pending homeward through `loadPersistedStaticActors`
 - operator `POST .../return-step` still no-ops `within_radius`; exact-home snap remains the controlled `return-home` trigger

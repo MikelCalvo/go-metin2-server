@@ -3614,6 +3614,202 @@ func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupHomewardStepAfterChaseE
 	}
 }
 
+func TestGameRuntimeOwnerDeathFloorArmsHomewardAfterChaseDisplaceWithinRadius(t *testing.T) {
+	// Owner death-floor engagement release must arm within-radius homeward the same
+	// way TARGET(0) / walk-away already do after chase leaves the mob displaced.
+	// The dead owner is skipped for retained MOVE fanout, so a living watcher proves
+	// the due homeward step still mutates world state and emits client-visible MOVE.
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("HomewardFloorOwner", 0x010301A2, 0x020401A2, 1900, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	// Survive the immediate piggyback and the first delayed beat before chase. The
+	// next due delayed beat is intentionally left pending so the chase flush at +5s
+	// displaces within_radius first, then the same flush reaches the owner floor.
+	owner.Points[bootstrapPlayerPointValueIndex] = 3
+	watcher := peerVisibilityCharacter("HomewardFloorWatcher", 0x010301A3, 0x020401A3, 1600, 2800, 0, 101, 201)
+	watcher.MapIndex = 42
+	watcher.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "homeward-floor-owner", 0x40404041, owner)
+	issuePeerTicket(t, store, "homeward-floor-watcher", 0x40404042, watcher)
+	if err := accounts.Save(accountstore.Account{Login: "homeward-floor-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed homeward-floor owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "homeward-floor-watcher", Empire: watcher.Empire, Characters: cloneCharacters([]loginticket.Character{watcher})}); err != nil {
+		t.Fatalf("seed homeward-floor watcher account: %v", err)
+	}
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700003100, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		accounts,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for homeward after death-floor release: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.homeward_step_after_death_floor",
+		Name:          "HomewardFloorMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import homeward death-floor spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.homeward_step_after_death_floor")
+	if !ok {
+		t.Fatal("expected homeward death-floor spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "homeward-floor-owner", 0x40404041)
+	defer closeSessionFlow(t, ownerFlow)
+	flushServerFrames(t, ownerFlow)
+
+	watcherFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "homeward-floor-watcher", 0x40404042)
+	defer closeSessionFlow(t, watcherFlow)
+	flushServerFrames(t, watcherFlow)
+	flushServerFrames(t, ownerFlow)
+
+	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
+		t.Fatalf("unexpected owner target error before death-floor chase displace: %v", err)
+	}
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted hit before death-floor chase displace: %v", err)
+	}
+	if len(attackOut) < 2 {
+		t.Fatalf("expected immediate attack frames before death-floor chase displace, got %d", len(attackOut))
+	}
+	if pending, ok := runtime.SpawnGroupChaseStep(group.EntityID); !ok || pending.EntityID != group.EntityID {
+		t.Fatalf("expected engaged hit to arm chase before death-floor release, ok=%v snapshot=%+v", ok, pending)
+	}
+	_ = flushServerFrames(t, watcherFlow)
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 2 {
+		t.Fatalf("expected delayed retaliation before chase displace for death-floor homeward, got %d frames", len(queued))
+	}
+	_ = flushServerFrames(t, watcherFlow)
+	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay - bootstrapPracticeMobServerOriginRetaliationDelay)
+	chaseFloorQueued := flushServerFrames(t, ownerFlow)
+	if len(chaseFloorQueued) < 4 {
+		t.Fatalf("expected due chase MOVE plus delayed owner-floor point-change/dead/clear, got %d frames", len(chaseFloorQueued))
+	}
+	chaseMove, err := movep.DecodeMoveAck(decodeSingleFrame(t, chaseFloorQueued[0]))
+	if err != nil {
+		t.Fatalf("decode chase displace MOVE before death-floor homeward: %v", err)
+	}
+	if chaseMove.VID != targetVID || chaseMove.X != 1800 || chaseMove.Y != 2800 {
+		t.Fatalf("expected chase displace to +100 toward owner before death floor, got %+v", chaseMove)
+	}
+	floorPoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, chaseFloorQueued[1]))
+	if err != nil {
+		t.Fatalf("decode owner-floor point-change after chase displace: %v", err)
+	}
+	if floorPoint.Type != bootstrapPlayerPointType || floorPoint.Value != 0 {
+		t.Fatalf("expected delayed owner-floor retaliation to reach HP 0 after chase displace, got %+v", floorPoint)
+	}
+	ownerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, chaseFloorQueued[2]))
+	if err != nil {
+		t.Fatalf("decode owner-floor dead frame after chase displace: %v", err)
+	}
+	if ownerDead.VID != owner.VID {
+		t.Fatalf("expected owner-floor dead for %#08x after chase displace, got %#08x", owner.VID, ownerDead.VID)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, chaseFloorQueued[3]))
+	if err != nil {
+		t.Fatalf("decode owner-floor target clear after chase displace: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected owner-floor target clear after chase displace, got %+v", clearTarget)
+	}
+	displaced, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || displaced.X != 1800 || displaced.Y != 2800 || displaced.SpawnLeash == nil || displaced.SpawnLeash.Status != worldruntime.SpawnLeashStatusWithinRadius {
+		t.Fatalf("expected chase-displaced within_radius actor after death-floor release, ok=%v snapshot=%+v", ok, displaced)
+	}
+	watcherChaseQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherChaseQueued) == 0 {
+		t.Fatal("expected living watcher to receive chase MOVE before death-floor homeward arm")
+	}
+
+	runtime.spawnChaseMu.Lock()
+	_, chaseScheduled := runtime.spawnChaseStepDueAt[group.EntityID]
+	runtime.spawnChaseMu.Unlock()
+	if chaseScheduled {
+		t.Fatalf("expected death-floor release to clear chase deadline before homeward arm for entity %d", group.EntityID)
+	}
+
+	ownerEntity, ok := runtime.sharedWorld.playerEntityByName("HomewardFloorOwner")
+	if !ok {
+		t.Fatal("expected homeward-floor owner entity to remain registered")
+	}
+	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected death-floor release to leave entity %d unengaged", group.EntityID)
+	}
+
+	runtime.spawnHomewardMu.Lock()
+	homewardDueAt, homewardScheduled := runtime.spawnHomewardStepDueAt[group.EntityID]
+	runtime.spawnHomewardMu.Unlock()
+	if !homewardScheduled {
+		t.Fatalf("expected death-floor engagement release on within_radius displace to arm homeward deadline for entity %d", group.EntityID)
+	}
+	expectedHomewardDueAt := currentTime.Add(bootstrapSpawnGroupHomewardStepDelay)
+	if !homewardDueAt.Equal(expectedHomewardDueAt) {
+		t.Fatalf("expected death-floor homeward deadline at %s, got %s", expectedHomewardDueAt, homewardDueAt)
+	}
+
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected no homeward MOVE on dead owner before the 1s deadline, got %d frames", len(queued))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
+		t.Fatalf("expected no homeward MOVE on living watcher before the 1s deadline, got %d frames", len(queued))
+	}
+
+	currentTime = currentTime.Add(bootstrapSpawnGroupHomewardStepDelay)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected dead owner to stay skipped for due homeward MOVE fanout, got %d frames", len(queued))
+	}
+	homewardQueued := flushServerFrames(t, watcherFlow)
+	if len(homewardQueued) == 0 {
+		t.Fatal("expected due homeward-step after death floor to queue retained living-watcher MOVE replication toward home")
+	}
+	homewardMove, err := movep.DecodeMoveAck(decodeSingleFrame(t, homewardQueued[0]))
+	if err != nil {
+		t.Fatalf("expected retained living watcher after death floor to receive MOVE replication, first frame decode err=%v", err)
+	}
+	if homewardMove.VID != targetVID || homewardMove.X != 1700 || homewardMove.Y != 2800 {
+		t.Fatalf("expected homeward MOVE to authored home after death floor, got %+v", homewardMove)
+	}
+	returned, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || returned.X != 1700 || returned.Y != 2800 || returned.Dead || returned.SpawnLeash == nil || returned.SpawnLeash.Status != worldruntime.SpawnLeashStatusAtHome {
+		t.Fatalf("expected homeward-step after death floor to restore at_home leash state, ok=%v snapshot=%+v", ok, returned)
+	}
+	runtime.spawnHomewardMu.Lock()
+	_, stillHomeward := runtime.spawnHomewardStepDueAt[group.EntityID]
+	runtime.spawnHomewardMu.Unlock()
+	if stillHomeward {
+		t.Fatalf("expected completed at-home homeward-step after death floor to clear pending deadline for entity %d", group.EntityID)
+	}
+}
+
 func TestGameRuntimeEnterGameReclaimClearsPendingSpawnGroupChaseStepDeadline(t *testing.T) {
 	// EnterGame reclaim that drops practice-mob engagement must also clear the
 	// pending chase-step deadline, matching owner disconnect/transfer release and the
