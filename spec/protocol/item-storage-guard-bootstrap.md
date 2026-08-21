@@ -257,7 +257,7 @@ Later slices must write a new contract before broadening storage behavior. In pa
 - interaction/NPC surfaces that open storage windows;
 - the legacy `CloseSafebox` command-chat companion beyond the local `/close_safebox` open-flag clear above;
 - accepted template-authority policy for `anti_save`, mall-only items, or cash-shop metadata beyond the currently owned `ITEM_SET.anti_flags` projection and self-only `safebox_reject_message` feedback;
-- merchant-window auto-close on accepted check-in/out/item-move success (still deferred; only the reject path closes merchant today);
+- merchant-window auto-close on accepted check-in/out/item-move success is frozen for the next items-lane slice in `docs/plans/2026-08-21-safebox-accepted-mutation-merchant-auto-close.md` (reject path already closes merchant today; accepted success still leaves the merchant window open until that slice lands);
 - partial-count safebox splits that allocate a new item identity into an empty destination cell.
 
 ## Current coverage

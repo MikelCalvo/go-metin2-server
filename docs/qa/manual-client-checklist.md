@@ -488,7 +488,7 @@ Expected result:
 - the client may see one self-only `GC::SAFEBOX_SIZE` presentation frame from `/open_safebox` and the same-socket character becomes busy for exchange `START` under the owned requester/partner busy-window chat strings; `/close_safebox` clears that busy presentation without clearing same-session in-memory safebox contents; out-of-range `/open_safebox 4` (and other sizes outside `1..3`) emit no frames, do not fall through as ordinary talking chat, and do not set the busy presentation flag
 - item-template validation rejects `safebox_reject_message` if it contains embedded NUL bytes or is authored without `anti_safebox`, so contradictory storage feedback should fail before gameplay testing starts
 - malformed storage payload sizes fail at the codec/dispatcher boundary rather than mutating runtime state
-- this is still not a completed safebox, mall, or durable storage feature: password/load, money, partial-split identity allocation, and persistence remain deferred
+- this is still not a completed safebox, mall, or durable storage feature: password/load, money, partial-split identity allocation, and persistence remain deferred; accepted check-in/out/item-move success still leaves an open merchant window open until the frozen merchant auto-close slice lands (`docs/plans/2026-08-21-safebox-accepted-mutation-merchant-auto-close.md`)
 
 ### 4.5.13 Unsupported item exchange guard (`EXCHANGE`)
 
