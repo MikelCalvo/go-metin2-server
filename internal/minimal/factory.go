@@ -1031,6 +1031,7 @@ func (r *gameRuntime) reloadPersistedStaticActorsLocked() error {
 	}
 	r.pruneSpawnGroupReturnStepSchedules()
 	r.pruneSpawnGroupChaseStepSchedules()
+	r.pruneSpawnGroupHomewardStepSchedules()
 	return nil
 }
 
@@ -9497,6 +9498,7 @@ func (r *gameRuntime) loadPersistedStaticActors() error {
 			}
 		}
 		r.syncSpawnGroupReturnStepSchedule(registered)
+		r.syncSpawnGroupHomewardStepScheduleForEntity(registered.EntityID)
 	}
 	loaded = true
 	return nil

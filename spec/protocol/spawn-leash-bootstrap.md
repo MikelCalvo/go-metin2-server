@@ -378,18 +378,21 @@ Contract for `PlanStaticActorSpawnLeashHomewardStep(actor, radius, max_step)`:
 Live pending-frame executor rules:
 - arm one pending homeward deadline (`1s`, fixed `max_step = 100`) only for a live spawn-backed practice mob that currently lacks `engaged_by` ownership and classifies `within_radius`
 - arm from engagement-release paths that also clear chase (client `TARGET(0)`, proximity leave-radius walk-away, leave/logout/close, phase-select, transfer, EnterGame reclaim, owner death floor, and other owned engagement releases) after the actor is already displaced `within_radius`
+- arm on runtime startup / daemon rematerialization when a persisted live spawn-backed actor already classifies unengaged `within_radius`, mirroring how `return_required` rematerialization arms return-step
 - never arm while still engaged, `at_home`, `return_required`, dead/waiting on respawn, or non-spawn
 - each `FlushServerFrames()` pass keeps the order of due respawns, then due `return_required` return-steps, then due homeward steps, then due chase steps, then proximity acquisition / delayed retaliation
 - a due homeward step plans, persists the stepped materialized position, fans retained-viewer same-map `MOVE` (remove/add still delete/bootstrap), keeps the actor unengaged, and re-arms while still eligible `within_radius`; landing on authored home clears the deadline
 - re-engage / chase eligibility clears any pending homeward deadline so chase and homeward never both own the same actor
-- EnterGame / transfer / restart preflights flush due homeward before encoding static-actor visibility, matching return-step and chase preflight; focused shared-world coverage now freezes the already-due EnterGame and `/restart_here` catch-up paths for homeward the same way return/chase already own them
+- EnterGame / transfer / restart preflights flush due homeward before encoding static-actor visibility, matching return-step and chase preflight; focused shared-world coverage now freezes the already-due EnterGame, `/restart_here`, and `/restart_town` catch-up paths for homeward the same way return/chase already own them
 
 Current implementation status:
 - pure planner `PlanStaticActorSpawnLeashHomewardStep` is owned in `internal/worldruntime`
 - pending-frame homeward executor, engagement-release arming, chase mutual exclusion, and same-map retained-viewer `MOVE` are live in `internal/minimal`
-- focused EnterGame / MOVE-transfer / `/restart_here` due-homeward preflight coverage now mirrors the owned chase/return preflight proofs
+- focused EnterGame / MOVE-transfer / `/restart_here` / `/restart_town` due-homeward preflight coverage now mirrors the owned chase/return preflight proofs
+- daemon-restart rematerialization of live unengaged `within_radius` spawn-backed actors now arms pending homeward through `loadPersistedStaticActors`
 - operator `POST .../return-step` still no-ops `within_radius`; exact-home snap remains the controlled `return-home` trigger
 - the read-only pending homeward inspection endpoints below are now live over that already-owned schedule
+- operator/runtime same-map position `UpdateStaticActor` that leaves an unengaged spawn-backed actor `within_radius` still clears homeward rather than re-arming it; that re-arm is the next owned hardening seam
 
 ## First owned pending homeward-step inspection seam
 
@@ -424,7 +427,8 @@ Current implementation status:
 - due homeward steps persist position, queue retained-viewer `MOVE` replication (with remove/add visibility still using delete/bootstrap), keep the actor unengaged, and re-arm while the actor remains eligible `within_radius`
 - re-engage / chase eligibility, return-step, respawn, remove, return-home, operator/runtime `UpdateStaticActor`, and content-bundle prune/restore paths clear or restore homeward deadlines alongside the chase/return schedules
 - the read-only pending homeward inspection endpoints above are now live over that already-owned schedule
-- focused EnterGame and `/restart_here` due-homeward catch-up coverage now mirrors the owned return/chase preflight proofs so skipped zero-HP lifecycle frames cannot leave stale within_radius visuals behind
+- focused EnterGame, `/restart_here`, and `/restart_town` due-homeward catch-up coverage now mirrors the owned return/chase preflight proofs so skipped zero-HP lifecycle frames cannot leave stale within_radius visuals behind
+- daemon-restart rematerialization of live unengaged `within_radius` spawn-backed actors now arms pending homeward
 
 Explicit non-goals for this homeward freeze alone:
 - auto exact-home correction for every `within_radius` actor without a prior engagement/chase displacement boundary beyond the owned arming rules
@@ -433,3 +437,24 @@ Explicit non-goals for this homeward freeze alone:
 - pathfinding, patrol, or a second scheduler/goroutine
 - operator POST homeward trigger
 - inventing selected-target ownership or preserving engagement across homeward
+
+## Next: operator/runtime UpdateStaticActor re-arms within-radius homeward
+
+Question frozen here:
+
+**Once engagement-release and daemon-restore already arm pending homeward for live unengaged `within_radius` spawn-backed actors, and operator/runtime same-map position `UpdateStaticActor` already re-arms return-step when the actor classifies `return_required`, what is the smallest honest follow-on so that same update path re-arms homeward when it leaves the actor unengaged `within_radius` instead of only clearing the deadline?**
+
+Contract for the next GREEN:
+- after a successful same-map position-only operator/runtime `UpdateStaticActor` on a live spawn-backed practice mob, call the same homeward eligibility sync used by engagement-release / restore
+- if the post-update actor is live, unengaged, spawn-backed, and classifies `within_radius`, arm one pending homeward deadline (`1s`, fixed `max_step = 100`)
+- if the post-update actor is `at_home`, `return_required`, dead, engaged, or non-spawn, clear any pending homeward deadline (return-step ownership still wins for `return_required`)
+- keep the existing engagement / selected-target / chase clear behavior on operator/runtime update
+- do not invent a homeward POST trigger, pathfinding, or cross-map homeward choreography
+
+Why this is the next RED:
+- today `UpdateStaticActor` explicitly clears homeward after syncing return-step, so an operator displace into `within_radius` leaves the actor stranded until some later engagement-release path re-arms recovery
+- the restore and engagement-release arming helpers already exist; the missing seam is wiring that sync on the operator/runtime update path
+
+Current implementation status before the RED:
+- restore / engagement-release / due `/restart_town` homeward preflight are owned
+- operator/runtime `UpdateStaticActor` still clears homeward unconditionally after the update
