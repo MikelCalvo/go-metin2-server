@@ -1070,3 +1070,430 @@ func TestGameRuntimeSafeboxCheckoutClosesActiveExchangeShellOnSuccess(t *testing
 	assertExchangeAccountUnchanged(t, accounts, "safebox-exchange-checkout", wantOwner, "exchange-open safebox check-out owner")
 	assertExchangeAccountUnchanged(t, accounts, "safebox-exchange-checkout-peer", peer, "exchange-open safebox check-out peer")
 }
+
+func TestGameRuntimeSafeboxItemMoveWhileOpenRelocatesWholeStack(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("SafeboxMoveOwner", 0x010307e0, 0x020407e0, 1100, 2100, 0, 101, 201)
+	owner.Gold = 8080
+	owner.Inventory = []inventory.ItemInstance{{ID: 801, Vnum: 27001, Count: 2, Slot: 5}}
+	login := "safebox-move-owner"
+	issuePeerTicket(t, ticketStore, login, 0x707070e0, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed safebox item-move owner account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected safebox item-move runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707070e0)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_safebox before item-move error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 0,
+		Position: itemproto.InventoryPosition(5),
+	}))); err != nil {
+		t.Fatalf("unexpected safebox check-in before item-move error: %v", err)
+	}
+
+	afterCheckin := owner
+	afterCheckin.Inventory = nil
+	assertExchangeAccountUnchanged(t, accounts, login, afterCheckin, "safebox check-in before item-move")
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxItemMove(itemproto.ClientSafeboxItemMovePacket{
+		Source:      itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0},
+		Destination: itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 3},
+		Count:       0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted safebox item-move error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected accepted safebox item-move to emit SAFEBOX_DEL and SAFEBOX_SET, got %d", len(out))
+	}
+	del, err := itemproto.DecodeSafeboxDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode safebox item-move SAFEBOX_DEL: %v", err)
+	}
+	if del.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0}) {
+		t.Fatalf("unexpected safebox item-move SAFEBOX_DEL: %+v", del.Position)
+	}
+	set, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode safebox item-move SAFEBOX_SET: %v", err)
+	}
+	if set.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 3}) || set.Vnum != 27001 || set.Count != 2 {
+		t.Fatalf("unexpected safebox item-move SAFEBOX_SET: %+v", set)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected accepted safebox item-move to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, afterCheckin, "accepted safebox item-move owner")
+	assertExchangeLiveStateUnchanged(t, runtime, afterCheckin, "accepted safebox item-move live owner")
+
+	reopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_safebox reopen after item-move error: %v", err)
+	}
+	if len(reopenOut) != 2 {
+		t.Fatalf("expected /open_safebox reopen after item-move to emit SAFEBOX_SIZE plus remembered SAFEBOX_SET, got %d", len(reopenOut))
+	}
+	reopenSet, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, reopenOut[1]))
+	if err != nil {
+		t.Fatalf("decode reopen SAFEBOX_SET after item-move: %v", err)
+	}
+	if reopenSet != set {
+		t.Fatalf("unexpected reopen SAFEBOX_SET after item-move: %+v want %+v", reopenSet, set)
+	}
+}
+
+func TestGameRuntimeSafeboxItemMoveMergesCompatibleDestination(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("SafeboxMoveMerge", 0x010307e1, 0x020407e1, 1100, 2100, 0, 101, 201)
+	owner.Gold = 9090
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 802, Vnum: 27001, Count: 2, Slot: 5},
+		{ID: 803, Vnum: 27001, Count: 3, Slot: 6},
+	}
+	login := "safebox-move-merge"
+	issuePeerTicket(t, ticketStore, login, 0x707070e1, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed safebox item-move merge owner account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected safebox item-move merge runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707070e1)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_safebox before merge item-move error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 0,
+		Position: itemproto.InventoryPosition(5),
+	}))); err != nil {
+		t.Fatalf("unexpected first safebox check-in before merge item-move error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 1,
+		Position: itemproto.InventoryPosition(6),
+	}))); err != nil {
+		t.Fatalf("unexpected second safebox check-in before merge item-move error: %v", err)
+	}
+
+	afterCheckin := owner
+	afterCheckin.Inventory = nil
+	assertExchangeAccountUnchanged(t, accounts, login, afterCheckin, "safebox check-ins before merge item-move")
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxItemMove(itemproto.ClientSafeboxItemMovePacket{
+		Source:      itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0},
+		Destination: itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 1},
+		Count:       2,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected merge safebox item-move error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected merge safebox item-move to emit SAFEBOX_DEL and SAFEBOX_SET, got %d", len(out))
+	}
+	del, err := itemproto.DecodeSafeboxDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode merge safebox item-move SAFEBOX_DEL: %v", err)
+	}
+	if del.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0}) {
+		t.Fatalf("unexpected merge safebox item-move SAFEBOX_DEL: %+v", del.Position)
+	}
+	set, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode merge safebox item-move SAFEBOX_SET: %v", err)
+	}
+	if set.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 1}) || set.Vnum != 27001 || set.Count != 5 {
+		t.Fatalf("unexpected merge safebox item-move SAFEBOX_SET: %+v", set)
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, afterCheckin, "merge safebox item-move owner")
+
+	reopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_safebox reopen after merge item-move error: %v", err)
+	}
+	if len(reopenOut) != 2 {
+		t.Fatalf("expected /open_safebox reopen after merge item-move to emit SAFEBOX_SIZE plus one SAFEBOX_SET, got %d", len(reopenOut))
+	}
+	reopenSet, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, reopenOut[1]))
+	if err != nil {
+		t.Fatalf("decode reopen SAFEBOX_SET after merge item-move: %v", err)
+	}
+	if reopenSet != set {
+		t.Fatalf("unexpected reopen SAFEBOX_SET after merge item-move: %+v want %+v", reopenSet, set)
+	}
+}
+
+func TestGameRuntimeSafeboxItemMoveWithoutOpenOrBadCellsFailsClosedWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("SafeboxClosedMove", 0x010307e2, 0x020407e2, 1100, 2100, 0, 101, 201)
+	owner.Gold = 1010
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 804, Vnum: 27001, Count: 2, Slot: 5},
+		{ID: 805, Vnum: 27002, Count: 1, Slot: 6},
+	}
+	login := "safebox-closed-move"
+	issuePeerTicket(t, ticketStore, login, 0x707070e2, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed closed safebox item-move owner account: %v", err)
+	}
+	templates := []itemcatalog.Template{
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+		{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+	}
+	itemStore := newItemTemplateStore(t, templates)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected closed safebox item-move runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707070e2)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	closedOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxItemMove(itemproto.ClientSafeboxItemMovePacket{
+		Source:      itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0},
+		Destination: itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 1},
+		Count:       0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected closed safebox item-move error: %v", err)
+	}
+	if len(closedOut) != 0 {
+		t.Fatalf("expected closed safebox item-move to emit no frames, got %d", len(closedOut))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "closed safebox item-move")
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_safebox before bad item-move error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 0,
+		Position: itemproto.InventoryPosition(5),
+	}))); err != nil {
+		t.Fatalf("unexpected first safebox check-in before bad item-move error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 1,
+		Position: itemproto.InventoryPosition(6),
+	}))); err != nil {
+		t.Fatalf("unexpected second safebox check-in before bad item-move error: %v", err)
+	}
+
+	afterCheckin := owner
+	afterCheckin.Inventory = nil
+	assertExchangeAccountUnchanged(t, accounts, login, afterCheckin, "safebox check-ins before bad item-move")
+
+	cases := []struct {
+		name   string
+		packet itemproto.ClientSafeboxItemMovePacket
+	}{
+		{
+			name: "inventory windows",
+			packet: itemproto.ClientSafeboxItemMovePacket{
+				Source:      itemproto.InventoryPosition(0),
+				Destination: itemproto.InventoryPosition(1),
+				Count:       0,
+			},
+		},
+		{
+			name: "same cell",
+			packet: itemproto.ClientSafeboxItemMovePacket{
+				Source:      itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0},
+				Destination: itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0},
+				Count:       0,
+			},
+		},
+		{
+			name: "out of range",
+			packet: itemproto.ClientSafeboxItemMovePacket{
+				Source:      itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0},
+				Destination: itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 5},
+				Count:       0,
+			},
+		},
+		{
+			name: "partial count",
+			packet: itemproto.ClientSafeboxItemMovePacket{
+				Source:      itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0},
+				Destination: itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 2},
+				Count:       1,
+			},
+		},
+		{
+			name: "incompatible destination",
+			packet: itemproto.ClientSafeboxItemMovePacket{
+				Source:      itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0},
+				Destination: itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 1},
+				Count:       0,
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxItemMove(tc.packet)))
+			if err != nil {
+				t.Fatalf("unexpected %s safebox item-move error: %v", tc.name, err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s safebox item-move to emit no frames, got %d", tc.name, len(out))
+			}
+			assertExchangeAccountUnchanged(t, accounts, login, afterCheckin, tc.name+" safebox item-move")
+		})
+	}
+
+	reopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_safebox reopen after bad item-move error: %v", err)
+	}
+	if len(reopenOut) != 3 {
+		t.Fatalf("expected /open_safebox reopen after bad item-move to emit SAFEBOX_SIZE plus two SAFEBOX_SET rows, got %d", len(reopenOut))
+	}
+}
+
+func TestGameRuntimeSafeboxItemMoveClosesActiveExchangeShellOnSuccess(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("SafeboxExchangeMove", 0x010307e3, 0x020407e3, 1100, 2100, 0, 101, 201)
+	owner.Gold = 1112
+	owner.Inventory = []inventory.ItemInstance{{ID: 806, Vnum: 27001, Count: 1, Slot: 5}}
+	peer := peerVisibilityCharacter("SafeboxExchangeMovePeer", 0x010307e4, 0x020407e4, 1120, 2120, 0, 101, 201)
+	peer.Gold = 1113
+	issuePeerTicket(t, ticketStore, "safebox-exchange-move", 0x707070e3, owner)
+	issuePeerTicket(t, ticketStore, "safebox-exchange-move-peer", 0x707070e4, peer)
+	if err := accounts.Save(accountstore.Account{Login: "safebox-exchange-move", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed safebox exchange item-move owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "safebox-exchange-move-peer", Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed safebox exchange item-move peer account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected safebox exchange item-move runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "safebox-exchange-move", 0x707070e3)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "safebox-exchange-move-peer", 0x707070e4)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_safebox before exchange item-move error: %v", err)
+	}
+	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 2,
+		Position: itemproto.InventoryPosition(5),
+	}))); err != nil {
+		t.Fatalf("unexpected safebox check-in before exchange item-move error: %v", err)
+	}
+	if closeOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/close_safebox",
+	}))); err != nil {
+		t.Fatalf("unexpected /close_safebox before exchange start error: %v", err)
+	} else if len(closeOut) != 0 {
+		t.Fatalf("expected /close_safebox before exchange start to emit no frames, got %d", len(closeOut))
+	}
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected safebox exchange start before item-move error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected safebox exchange start before item-move to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "safebox exchange owner start before item-move")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected safebox exchange peer start frame before item-move, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "safebox exchange peer start before item-move")
+
+	reopenOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_safebox reopen during exchange before item-move error: %v", err)
+	}
+	if len(reopenOut) != 2 {
+		t.Fatalf("expected /open_safebox reopen during exchange to emit SAFEBOX_SIZE plus remembered SAFEBOX_SET, got %d", len(reopenOut))
+	}
+
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxItemMove(itemproto.ClientSafeboxItemMovePacket{
+		Source:      itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 2},
+		Destination: itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 4},
+		Count:       0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected exchange-open safebox item-move error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected exchange-open safebox item-move to emit END, SAFEBOX_DEL, and SAFEBOX_SET, got %d", len(out))
+	}
+	assertExchangeEndFrame(t, out[0], "safebox exchange owner close before item-move")
+	del, err := itemproto.DecodeSafeboxDel(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode exchange-open safebox item-move SAFEBOX_DEL: %v", err)
+	}
+	if del.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 2}) {
+		t.Fatalf("unexpected exchange-open safebox item-move SAFEBOX_DEL: %+v", del.Position)
+	}
+	set, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode exchange-open safebox item-move SAFEBOX_SET: %v", err)
+	}
+	if set.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 4}) || set.Vnum != 27001 || set.Count != 1 {
+		t.Fatalf("unexpected exchange-open safebox item-move SAFEBOX_SET: %+v", set)
+	}
+	queuedClose := flushServerFrames(t, peerFlow)
+	if len(queuedClose) != 1 {
+		t.Fatalf("expected safebox exchange peer to receive one queued END after item-move, got %d", len(queuedClose))
+	}
+	assertExchangeEndFrame(t, queuedClose[0], "safebox exchange peer close before item-move")
+
+	wantOwner := owner
+	wantOwner.Inventory = nil
+	assertExchangeAccountUnchanged(t, accounts, "safebox-exchange-move", wantOwner, "exchange-open safebox item-move owner")
+	assertExchangeAccountUnchanged(t, accounts, "safebox-exchange-move-peer", peer, "exchange-open safebox item-move peer")
+}

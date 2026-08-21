@@ -5930,6 +5930,86 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					frames = prependExchangeCloseFrame(frames)
 					return gameflow.SafeboxCheckoutResult{Accepted: true, Frames: frames}
 				},
+				HandleSafeboxItemMove: func(packet itemproto.ClientSafeboxItemMovePacket) gameflow.SafeboxItemMoveResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveSafeboxOpen {
+						return gameflow.SafeboxItemMoveResult{Accepted: false}
+					}
+					if packet.Source.WindowType != itemproto.WindowSafebox || packet.Destination.WindowType != itemproto.WindowSafebox {
+						return gameflow.SafeboxItemMoveResult{Accepted: false}
+					}
+					if packet.Source.Cell > 0xff || packet.Destination.Cell > 0xff {
+						return gameflow.SafeboxItemMoveResult{Accepted: false}
+					}
+					sourceSlot := uint8(packet.Source.Cell)
+					destinationSlot := uint8(packet.Destination.Cell)
+					if sourceSlot == destinationSlot {
+						return gameflow.SafeboxItemMoveResult{Accepted: false}
+					}
+					capacity := bootstrapSafeboxCapacity(activeSafeboxSize)
+					if capacity == 0 || sourceSlot >= capacity || destinationSlot >= capacity {
+						return gameflow.SafeboxItemMoveResult{Accepted: false}
+					}
+					sourceItem, occupied := activeSafeboxItems[sourceSlot]
+					if !occupied {
+						return gameflow.SafeboxItemMoveResult{Accepted: false}
+					}
+					template, ok := runtime.itemTemplates[sourceItem.Vnum]
+					if !ok || !itemcatalog.ValidTemplate(template) || sourceItem.Vnum != template.Vnum || sourceItem.Count == 0 || sourceItem.Count > template.MaxCount {
+						return gameflow.SafeboxItemMoveResult{Accepted: false}
+					}
+					if sourceItem.Equipped || sourceItem.Locked {
+						return gameflow.SafeboxItemMoveResult{Accepted: false}
+					}
+					if err := sourceItem.Validate(); err != nil {
+						return gameflow.SafeboxItemMoveResult{Accepted: false}
+					}
+					// Whole-stack only for this bootstrap seam: count 0 means full stack.
+					if packet.Count != 0 && uint16(packet.Count) != sourceItem.Count {
+						return gameflow.SafeboxItemMoveResult{Accepted: false}
+					}
+
+					destinationItem, destinationOccupied := activeSafeboxItems[destinationSlot]
+					var resultItem inventory.ItemInstance
+					if !destinationOccupied {
+						resultItem = sourceItem
+						resultItem.Slot = inventory.SlotIndex(destinationSlot)
+						if err := resultItem.Validate(); err != nil {
+							return gameflow.SafeboxItemMoveResult{Accepted: false}
+						}
+					} else {
+						if destinationItem.Equipped || destinationItem.Locked || destinationItem.Vnum != sourceItem.Vnum || destinationItem.Count == 0 || destinationItem.Count > template.MaxCount {
+							return gameflow.SafeboxItemMoveResult{Accepted: false}
+						}
+						if err := destinationItem.Validate(); err != nil {
+							return gameflow.SafeboxItemMoveResult{Accepted: false}
+						}
+						if uint32(destinationItem.Count)+uint32(sourceItem.Count) > uint32(template.MaxCount) {
+							return gameflow.SafeboxItemMoveResult{Accepted: false}
+						}
+						resultItem = destinationItem
+						resultItem.Count += sourceItem.Count
+						if err := resultItem.Validate(); err != nil {
+							return gameflow.SafeboxItemMoveResult{Accepted: false}
+						}
+					}
+
+					setFrame, err := encodeBootstrapSafeboxSetFrame(itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: uint16(destinationSlot)}, resultItem, runtime.itemTemplates)
+					if err != nil {
+						return gameflow.SafeboxItemMoveResult{Accepted: false}
+					}
+					frames := [][]byte{
+						itemproto.EncodeSafeboxDel(itemproto.DelPacket{Position: itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: uint16(sourceSlot)}}),
+						setFrame,
+					}
+					delete(activeSafeboxItems, sourceSlot)
+					activeSafeboxItems[destinationSlot] = resultItem
+					frames = prependExchangeCloseFrame(frames)
+					return gameflow.SafeboxItemMoveResult{Accepted: true, Frames: frames}
+				},
 				HandleItemDrop: func(packet itemproto.ClientDropPacket) gameflow.ItemDropResult {
 					stateMu.Lock()
 					defer stateMu.Unlock()

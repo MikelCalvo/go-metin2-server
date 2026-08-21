@@ -79,7 +79,7 @@ Payload size is 7 bytes:
 | 3 | `destination_pos` | packed `TItemPos` | client-supplied destination slot |
 | 6 | `count` | `uint8` | requested move count |
 
-The TMP4 client send helper builds the two `TItemPos` fields with the inventory window and safebox-slot byte values, but the owned codec keeps the wire field generic. Accepted safebox semantics remain deferred.
+The TMP4 client send helper builds the two `TItemPos` fields with the inventory window and safebox-slot byte values, but the owned codec keeps the wire field generic. Accepted same-session in-memory move semantics are owned below and require both positions to name the safebox window.
 
 Total frame length is 11 bytes including the common frame envelope.
 
@@ -161,18 +161,18 @@ Total frame length is 5 bytes including the common frame envelope.
 
 ## Current runtime contract
 
-`internal/game` decodes these four packet layouts only while the session is already in `GAME` and routes each one through an explicit storage-facing handler seam. The default handlers remain fail-closed with no output, so adding the seam does not imply accepted safebox or mall mutation semantics beyond the currently owned check-in/out paths below.
+`internal/game` decodes these four packet layouts only while the session is already in `GAME` and routes each one through an explicit storage-facing handler seam. The default handlers remain fail-closed with no output, so adding the seam does not imply accepted safebox or mall mutation semantics beyond the currently owned check-in/out/item-move paths below.
 
-The shipped minimal runtime intentionally rejects ordinary storage requests without output except for the owned `SAFEBOX_CHECKIN` / `SAFEBOX_CHECKOUT` mutation and `anti_safebox` feedback seams:
+The shipped minimal runtime intentionally rejects ordinary storage requests without output except for the owned `SAFEBOX_CHECKIN` / `SAFEBOX_CHECKOUT` / `SAFEBOX_ITEM_MOVE` mutations and `anti_safebox` feedback seams:
 
-- no `GC::SAFEBOX_*` or `GC::MALL_*` storage response frames are emitted for unsupported storage-transfer packets (`SAFEBOX_ITEM_MOVE`, `MALL_CHECKOUT`), even though their first codecs are now owned;
+- no `GC::SAFEBOX_*` or `GC::MALL_*` storage response frames are emitted for unsupported storage-transfer packets (`MALL_CHECKOUT`), even though their first codecs are now owned;
 - no carried inventory, equipment, quickslot, point, gold, ground-handle, exchange, merchant, or peer state is mutated by those unsupported transfer packets;
 - no account snapshot is persisted by those unsupported transfer packets;
 - the session remains in `GAME` and the socket stays usable.
 
 ## First bootstrap safebox-open presentation seam
 
-A later storage/safebox slice still owns password load, durable item persistence, money, move, and mall. This contract freezes the smallest presentation seam needed so exchange busy-window policy can observe an open safebox, plus the first accepted same-session in-memory check-in and check-out mutations:
+A later storage/safebox slice still owns password load, durable item persistence, money, and mall. This contract freezes the smallest presentation seam needed so exchange busy-window policy can observe an open safebox, plus the first accepted same-session in-memory check-in, check-out, and item-move mutations:
 
 - the local slash harness `/open_safebox [size]` may mark the selected character's same-socket bootstrap safebox presentation as open while the session is already in `GAME` and above the bootstrap zero-HP floor;
 - optional `size` is a page count in the owned bootstrap range `1..3`; omitted size defaults to `1`; values outside that range (for example `/open_safebox 4`), non-uint8 size tokens, and extra arguments fail closed with no frames, no ordinary talking-chat fallthrough, and no open-state mutation;
@@ -211,6 +211,22 @@ A later storage/safebox slice still owns password load, durable item persistence
 - no gold/money/mall frames are introduced;
 - reconnect / process restart / logout / shared-world leave discard remaining in-memory safebox contents until a later persistence slice owns durable safebox state.
 
+## Accepted in-memory `SAFEBOX_ITEM_MOVE`
+
+`CG::SAFEBOX_ITEM_MOVE` is now accepted for whole-stack relocate / compatible merge inside same-session in-memory safebox contents while the bootstrap `/open_safebox` presentation is already open:
+
+- the selected character must be above the bootstrap zero-HP floor;
+- source and destination must both name the safebox window (`WindowSafebox`) with distinct cells inside the currently opened bootstrap capacity (`size * 5` cells for remembered open size `1..3`);
+- source must resolve to exactly one remembered same-session in-memory safebox item;
+- the loaded template for that safebox item `vnum` must be valid, must match the stored item `vnum`, and must bound the stored stack count with `max_count`;
+- requested `count` must be `0` or exactly the live source count (whole-stack only); partial splits that would create a new safebox item identity in an empty destination stay fail-closed with no frames;
+- empty destination relocates the whole source stack while preserving item identity and emits self-only `GC::SAFEBOX_DEL` (source) plus `GC::SAFEBOX_SET` (destination);
+- occupied destination must be a compatible unlocked unequipped same-`vnum` stack that still fits `max_count` after merging the whole source count; success clears the source cell and emits self-only `GC::SAFEBOX_DEL` (source) plus `GC::SAFEBOX_SET` (merged destination);
+- occupied incompatible / over-max / locked destinations, missing / out-of-range / same-cell / non-safebox windows, and closed presentation all fail closed with no frames;
+- if an active bootstrap exchange shell is open and the move would otherwise succeed, the runtime closes that presentation shell first with self/peer `GC::EXCHANGE END`, then emits the safebox refresh frames; merchant windows stay deferred for this first mutation path and are not auto-closed on success;
+- carried inventory, equipment, quickslots, gold, mall, and account persistence stay unchanged;
+- reconnect / process restart / logout / shared-world leave discard remaining in-memory safebox contents until a later persistence slice owns durable safebox state.
+
 The only current output for unsupported or rejected storage-transfer packets remains template-authored rejection feedback for safebox check-in:
 
 - `CG::SAFEBOX_CHECKIN` must reference the inventory window and a carried cell inside the owned carried-inventory range;
@@ -235,17 +251,18 @@ Later slices must write a new contract before broadening storage behavior. In pa
 - safebox password / DB load flow beyond the local slash open-presentation harness above;
 - safebox money state or `SAFEBOX_MONEY_CHANGE` runtime emission;
 - runtime emission policy for `SAFEBOX_WRONG_PASSWORD`, `SAFEBOX_MONEY_CHANGE`, `MALL_OPEN`, `MALL_SET`, or `MALL_DEL`;
-- accepted item-move mutation ordering beyond the currently owned check-in/out paths;
+- accepted item-move mutation ordering beyond the currently owned whole-stack same-session relocate / compatible-merge path;
 - mall open/checkout behavior;
 - durable storage item persistence or DB schema;
 - interaction/NPC surfaces that open storage windows;
 - the legacy `CloseSafebox` command-chat companion beyond the local `/close_safebox` open-flag clear above;
 - accepted template-authority policy for `anti_save`, mall-only items, or cash-shop metadata beyond the currently owned `ITEM_SET.anti_flags` projection and self-only `safebox_reject_message` feedback;
-- merchant-window auto-close on accepted check-in/out success (still deferred; only the reject path closes merchant today).
+- merchant-window auto-close on accepted check-in/out/item-move success (still deferred; only the reject path closes merchant today);
+- partial-count safebox splits that allocate a new item identity into an empty destination cell.
 
 ## Current coverage
 
 - `internal/proto/item` freezes encode/decode behavior, exact wire bytes, unexpected-header rejection, and invalid-payload rejection for the four client storage request packets and the first eight server safebox/mall response packets.
 - `internal/game` freezes `GAME`-phase decode dispatch and optional handler-frame paths for all four storage-facing packets while preserving no-frame fail-closed defaults.
 - `internal/player` freezes template-backed `SafeboxCheckinRejectText`, whole-stack `SafeboxCheckinItem` live inventory removal for accepted check-in, and whole-stack `SafeboxCheckoutItem` empty-cell placement / compatible merge for accepted check-out.
-- `internal/minimal` freezes both ordinary no-frame/no-mutation/no-persistence storage guards and the authored `anti_safebox` / `safebox_reject_message` info-chat feedback path through the normal session harness, including active merchant-window and active-exchange-shell teardown before that feedback is delivered. It also freezes the player-death-floor variant where those same storage-facing requests stay silent and non-mutating after practice-mob retaliation has already driven the selected owner to `0` HP, including the `SAFEBOX_CHECKIN` case that would otherwise be allowed to emit authored `anti_safebox` feedback while alive. The bootstrap `/open_safebox` / `/close_safebox` presentation seam is owned here as well: `/open_safebox [1..3]` emits self-only `GC::SAFEBOX_SIZE` (plus remembered same-session `SAFEBOX_SET` rows), remembers the same-socket open flag (with omitted size defaulting to `1` on first open and reusing the remembered size on later idempotent refresh), `/close_safebox` clears that flag with no frames while keeping same-session in-memory contents, and exchange `START` requester/partner busy rejects observe that open flag with the already-owned merchant busy-window chat strings. Accepted open-presentation `SAFEBOX_CHECKIN` freezes inventory removal + quickslot sync + same-session in-memory `SAFEBOX_SET`, including reopen re-emission and exchange-shell close-on-success. Accepted open-presentation `SAFEBOX_CHECKOUT` freezes same-session safebox removal + carried empty-cell `ITEM_SET` / compatible `ITEM_UPDATE`, inventory persistence, reopen without the checked-out row, and exchange-shell close-on-success.
+- `internal/minimal` freezes both ordinary no-frame/no-mutation/no-persistence storage guards and the authored `anti_safebox` / `safebox_reject_message` info-chat feedback path through the normal session harness, including active merchant-window and active-exchange-shell teardown before that feedback is delivered. It also freezes the player-death-floor variant where those same storage-facing requests stay silent and non-mutating after practice-mob retaliation has already driven the selected owner to `0` HP, including the `SAFEBOX_CHECKIN` case that would otherwise be allowed to emit authored `anti_safebox` feedback while alive. The bootstrap `/open_safebox` / `/close_safebox` presentation seam is owned here as well: `/open_safebox [1..3]` emits self-only `GC::SAFEBOX_SIZE` (plus remembered same-session `SAFEBOX_SET` rows), remembers the same-socket open flag (with omitted size defaulting to `1` on first open and reusing the remembered size on later idempotent refresh), `/close_safebox` clears that flag with no frames while keeping same-session in-memory contents, and exchange `START` requester/partner busy rejects observe that open flag with the already-owned merchant busy-window chat strings. Accepted open-presentation `SAFEBOX_CHECKIN` freezes inventory removal + quickslot sync + same-session in-memory `SAFEBOX_SET`, including reopen re-emission and exchange-shell close-on-success. Accepted open-presentation `SAFEBOX_CHECKOUT` freezes same-session safebox removal + carried empty-cell `ITEM_SET` / compatible `ITEM_UPDATE`, inventory persistence, reopen without the checked-out row, and exchange-shell close-on-success. Accepted open-presentation `SAFEBOX_ITEM_MOVE` freezes whole-stack same-session relocate into an empty safebox cell and compatible same-`vnum` merge under template `max_count`, emitting self-only `SAFEBOX_DEL` + `SAFEBOX_SET` without inventory/quickslot/gold/account mutation, including closed/out-of-range/incompatible fail-closed coverage and exchange-shell close-on-success.

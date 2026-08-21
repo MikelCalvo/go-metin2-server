@@ -33,6 +33,7 @@ Focused coverage:
 
 ## Follow-up options
 
-1. Keep move / money / password / durable persistence deferred until after the first check-in/out vertical is green.
-2. Keep partner-side open player-shop / cube busy-window exchange rejects deferred until those presentation seams exist.
-3. Optional next items-lane seam: first fail-closed `SAFEBOX_ITEM_MOVE` within same-session in-memory contents, or merchant-window auto-close on accepted check-in/out success.
+1. ~~Implement the first accepted `SAFEBOX_ITEM_MOVE` within same-session in-memory contents (`docs/plans/2026-08-21-safebox-item-move-in-memory-mutation.md`).~~ Done for bootstrap scope (whole-stack relocate / compatible merge only).
+2. Keep money / password / durable persistence / partial-split identity allocation deferred.
+3. Keep partner-side open player-shop / cube busy-window exchange rejects deferred until those presentation seams exist.
+4. Optional next items-lane seam: merchant-window auto-close on accepted check-in/out/move success.
