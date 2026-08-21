@@ -3681,6 +3681,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			}
 			return size * bootstrapSafeboxCellsPerPage
 		}
+		// TMP4 SendSafeBoxItemMovePacket packs both TItemPos fields with the
+		// inventory window type and safebox-slot cell bytes. Explicit tooling
+		// may also name WindowSafebox. Cells are always interpreted as same-
+		// session safebox slot indices while the presentation is open.
+		acceptedSafeboxItemMoveWindow := func(windowType uint8) bool {
+			return windowType == itemproto.WindowInventory || windowType == itemproto.WindowSafebox
+		}
 		clearActiveSafeboxItems := func() {
 			if len(activeSafeboxItems) == 0 {
 				return
@@ -5976,7 +5983,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveSafeboxOpen {
 						return gameflow.SafeboxItemMoveResult{Accepted: false}
 					}
-					if packet.Source.WindowType != itemproto.WindowSafebox || packet.Destination.WindowType != itemproto.WindowSafebox {
+					if !acceptedSafeboxItemMoveWindow(packet.Source.WindowType) || !acceptedSafeboxItemMoveWindow(packet.Destination.WindowType) {
 						return gameflow.SafeboxItemMoveResult{Accepted: false}
 					}
 					if packet.Source.Cell > 0xff || packet.Destination.Cell > 0xff {

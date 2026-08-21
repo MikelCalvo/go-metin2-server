@@ -1139,12 +1139,12 @@ func TestGameRuntimeSafeboxItemMoveWhileOpenRelocatesWholeStack(t *testing.T) {
 	assertExchangeAccountUnchanged(t, accounts, login, afterCheckin, "safebox check-in before item-move")
 
 	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxItemMove(itemproto.ClientSafeboxItemMovePacket{
-		Source:      itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0},
-		Destination: itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 3},
+		Source:      itemproto.InventoryPosition(0),
+		Destination: itemproto.InventoryPosition(3),
 		Count:       0,
 	})))
 	if err != nil {
-		t.Fatalf("unexpected accepted safebox item-move error: %v", err)
+		t.Fatalf("unexpected accepted TMP4 inventory-window safebox item-move error: %v", err)
 	}
 	if len(out) != 2 {
 		t.Fatalf("expected accepted safebox item-move to emit SAFEBOX_DEL and SAFEBOX_SET, got %d", len(out))
@@ -1186,6 +1186,92 @@ func TestGameRuntimeSafeboxItemMoveWhileOpenRelocatesWholeStack(t *testing.T) {
 	if reopenSet != set {
 		t.Fatalf("unexpected reopen SAFEBOX_SET after item-move: %+v want %+v", reopenSet, set)
 	}
+}
+
+func TestGameRuntimeSafeboxItemMoveAcceptsExplicitSafeboxAndMixedWindows(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("SafeboxMoveWireOwner", 0x010307ef, 0x020407ef, 1100, 2100, 0, 101, 201)
+	owner.Gold = 8181
+	owner.Inventory = []inventory.ItemInstance{{ID: 821, Vnum: 27001, Count: 2, Slot: 5}}
+	login := "safebox-move-wire-owner"
+	issuePeerTicket(t, ticketStore, login, 0x707070ef, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed safebox item-move wire owner account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected safebox item-move wire runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707070ef)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_safebox before wire item-move error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 0,
+		Position: itemproto.InventoryPosition(5),
+	}))); err != nil {
+		t.Fatalf("unexpected safebox check-in before wire item-move error: %v", err)
+	}
+
+	afterCheckin := owner
+	afterCheckin.Inventory = nil
+	assertExchangeAccountUnchanged(t, accounts, login, afterCheckin, "safebox check-in before wire item-move")
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxItemMove(itemproto.ClientSafeboxItemMovePacket{
+		Source:      itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0},
+		Destination: itemproto.InventoryPosition(2),
+		Count:       0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected mixed-window safebox item-move error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected mixed-window safebox item-move to emit SAFEBOX_DEL and SAFEBOX_SET, got %d", len(out))
+	}
+	del, err := itemproto.DecodeSafeboxDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode mixed-window safebox item-move SAFEBOX_DEL: %v", err)
+	}
+	if del.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0}) {
+		t.Fatalf("unexpected mixed-window safebox item-move SAFEBOX_DEL: %+v", del.Position)
+	}
+	set, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode mixed-window safebox item-move SAFEBOX_SET: %v", err)
+	}
+	if set.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 2}) || set.Vnum != 27001 || set.Count != 2 {
+		t.Fatalf("unexpected mixed-window safebox item-move SAFEBOX_SET: %+v", set)
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, afterCheckin, "mixed-window safebox item-move owner")
+
+	out, err = flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxItemMove(itemproto.ClientSafeboxItemMovePacket{
+		Source:      itemproto.InventoryPosition(2),
+		Destination: itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 4},
+		Count:       0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected reverse mixed-window safebox item-move error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected reverse mixed-window safebox item-move to emit SAFEBOX_DEL and SAFEBOX_SET, got %d", len(out))
+	}
+	set, err = itemproto.DecodeSafeboxSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode reverse mixed-window safebox item-move SAFEBOX_SET: %v", err)
+	}
+	if set.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 4}) || set.Vnum != 27001 || set.Count != 2 {
+		t.Fatalf("unexpected reverse mixed-window safebox item-move SAFEBOX_SET: %+v", set)
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, afterCheckin, "reverse mixed-window safebox item-move owner")
 }
 
 func TestGameRuntimeSafeboxItemMoveMergesCompatibleDestination(t *testing.T) {
@@ -1544,10 +1630,26 @@ func TestGameRuntimeSafeboxItemMoveWithoutOpenOrBadCellsFailsClosedWithoutMutati
 		packet itemproto.ClientSafeboxItemMovePacket
 	}{
 		{
-			name: "inventory windows",
+			name: "mall windows",
+			packet: itemproto.ClientSafeboxItemMovePacket{
+				Source:      itemproto.Position{WindowType: itemproto.WindowMall, Cell: 0},
+				Destination: itemproto.Position{WindowType: itemproto.WindowMall, Cell: 1},
+				Count:       0,
+			},
+		},
+		{
+			name: "equipment windows",
+			packet: itemproto.ClientSafeboxItemMovePacket{
+				Source:      itemproto.Position{WindowType: itemproto.WindowEquipment, Cell: 0},
+				Destination: itemproto.Position{WindowType: itemproto.WindowEquipment, Cell: 1},
+				Count:       0,
+			},
+		},
+		{
+			name: "mixed inventory and mall windows",
 			packet: itemproto.ClientSafeboxItemMovePacket{
 				Source:      itemproto.InventoryPosition(0),
-				Destination: itemproto.InventoryPosition(1),
+				Destination: itemproto.Position{WindowType: itemproto.WindowMall, Cell: 1},
 				Count:       0,
 			},
 		},
