@@ -13313,6 +13313,178 @@ func TestNewGameSessionFactoryDueSpawnGroupChaseStepFlushesBeforeMoveTransferReb
 	}
 }
 
+func TestNewGameSessionFactoryDueSpawnGroupHomewardStepFlushesBeforeMoveTransferRebootstrap(t *testing.T) {
+	// Mirror the owned chase-step transfer preflight: once a pending homeward-step
+	// deadline is already due after chase→release, a MOVE transfer rebootstrap onto
+	// that map must flush the due homeward step before encoding destination
+	// static-actor visibility.
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("HwXferOwner", 0x010301c2, 0x020401c2, 1900, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "hw-xfer-owner", 0xc2c2c2c2, owner)
+	mover := peerVisibilityCharacter("HwXferMover", 0x010301c3, 0x020401c3, 1300, 2300, 0, 102, 202)
+	issuePeerTicket(t, store, "hw-xfer-mover", 0xc3c3c3c3, mover)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700003020, 0)
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		[]bootstrapTransferTrigger{{
+			SourceMapIndex: bootstrapMapIndex,
+			SourceX:        1500,
+			SourceY:        2600,
+			TargetMapIndex: 42,
+			TargetX:        1850,
+			TargetY:        2800,
+		}},
+	)
+	if err != nil {
+		t.Fatalf("unexpected homeward-step transfer runtime error: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.hw_xfer_preflight",
+		Name:          "HwXferPreflightMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import transfer homeward-step spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.hw_xfer_preflight")
+	if !ok {
+		t.Fatal("expected transfer homeward-step spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "hw-xfer-owner", 0xc2c2c2c2)
+	defer closeSessionFlow(t, ownerFlow)
+	flushServerFrames(t, ownerFlow)
+	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
+		t.Fatalf("unexpected owner target error before homeward-step transfer preflight: %v", err)
+	}
+	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	}))); err != nil {
+		t.Fatalf("unexpected accepted hit before homeward-step transfer preflight: %v", err)
+	}
+	if pending, ok := runtime.SpawnGroupChaseStep(group.EntityID); !ok || pending.EntityID != group.EntityID {
+		t.Fatalf("expected engaged hit to arm chase before homeward release, ok=%v snapshot=%+v", ok, pending)
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 2 {
+		t.Fatalf("expected the owned delayed retaliation beat to fire before the later chase step, got %d frames", len(queued))
+	}
+	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay - bootstrapPracticeMobServerOriginRetaliationDelay)
+	chaseQueued := flushServerFrames(t, ownerFlow)
+	if len(chaseQueued) == 0 {
+		t.Fatal("expected due chase-step to displace actor within_radius before homeward release")
+	}
+	chaseMove, err := movep.DecodeMoveAck(decodeSingleFrame(t, chaseQueued[0]))
+	if err != nil {
+		t.Fatalf("decode chase displace MOVE before homeward transfer: %v", err)
+	}
+	if chaseMove.VID != targetVID || chaseMove.X != 1800 || chaseMove.Y != 2800 {
+		t.Fatalf("expected chase displace to +100 toward owner, got %+v", chaseMove)
+	}
+
+	moverFlow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "hw-xfer-mover", 0xc3c3c3c3)
+	defer closeSessionFlow(t, moverFlow)
+	if len(enterOut) != 5 {
+		t.Fatalf("expected source-map enter before homeward-step transfer to avoid destination actor visibility, got %d frames", len(enterOut))
+	}
+
+	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+		Func: 1,
+		Arg:  0,
+		Rot:  12,
+		X:    2100,
+		Y:    2800,
+		Time: 0x61626364,
+	}))); err != nil {
+		t.Fatalf("unexpected owner move outside aggro before homeward release: %v", err)
+	}
+	_ = flushServerFrames(t, ownerFlow)
+
+	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: 0}))); err != nil {
+		t.Fatalf("unexpected owner TARGET(0) clear before homeward arm: %v", err)
+	}
+	runtime.spawnHomewardMu.Lock()
+	homewardDueAt, homewardScheduled := runtime.spawnHomewardStepDueAt[group.EntityID]
+	runtime.spawnHomewardMu.Unlock()
+	if !homewardScheduled {
+		t.Fatalf("expected engagement release on within_radius displace to arm homeward deadline for entity %d", group.EntityID)
+	}
+
+	currentTime = currentTime.Add(bootstrapSpawnGroupHomewardStepDelay)
+	if runtime.now().Before(homewardDueAt) {
+		t.Fatalf("expected homeward-step deadline to be due before transfer, due_at=%s now=%s", homewardDueAt, runtime.now())
+	}
+
+	moveOut, err := moverFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x21222324})))
+	if err != nil {
+		t.Fatalf("unexpected move transfer error before due homeward-step rebootstrap: %v", err)
+	}
+	steppedAddIdx := -1
+	for idx := range moveOut {
+		add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moveOut[idx]))
+		if err != nil {
+			continue
+		}
+		if add.VID != targetVID {
+			continue
+		}
+		if add.X != 1700 || add.Y != 2800 {
+			t.Fatalf("expected transfer rebootstrap to see due homeward-step position 1700,2800 for actor %d, got %+v", group.EntityID, add)
+		}
+		steppedAddIdx = idx
+		break
+	}
+	if steppedAddIdx < 0 {
+		t.Fatalf("expected transfer rebootstrap after due homeward-step to include stepped static-actor CHARACTER_ADD, got %d frames", len(moveOut))
+	}
+	if steppedAddIdx+2 >= len(moveOut) {
+		t.Fatalf("expected stepped homeward actor info/update after CHARACTER_ADD at frame %d, got %d frames", steppedAddIdx, len(moveOut))
+	}
+	steppedInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, moveOut[steppedAddIdx+1]))
+	if err != nil {
+		t.Fatalf("decode transfer stepped homeward actor info: %v", err)
+	}
+	if steppedInfo.VID != targetVID || steppedInfo.Name != "HwXferPreflightMob" {
+		t.Fatalf("expected transfer rebootstrap to see stepped homeward actor info for target %d, got %+v", group.EntityID, steppedInfo)
+	}
+	steppedUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, moveOut[steppedAddIdx+2]))
+	if err != nil {
+		t.Fatalf("decode transfer stepped homeward actor update: %v", err)
+	}
+	if steppedUpdate.VID != targetVID {
+		t.Fatalf("expected transfer rebootstrap to see stepped homeward actor update for target %d, got %+v", group.EntityID, steppedUpdate)
+	}
+	if queued := flushServerFrames(t, moverFlow); len(queued) != 0 {
+		t.Fatalf("expected no duplicate queued homeward-step rebuild after transfer rebootstrap, got %d", len(queued))
+	}
+	actor, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || actor.X != 1700 || actor.Y != 2800 {
+		t.Fatalf("expected runtime actor at due homeward-step position after transfer preflight, ok=%v snapshot=%+v", ok, actor)
+	}
+}
+
 func TestNewGameSessionFactoryDueStaticActorRespawnFlushesBeforeMoveTransferRebootstrap(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	killer := peerVisibilityCharacter("RespawnTransferKiller", 0x01030172, 0x02040172, 1200, 2200, 0, 101, 201)

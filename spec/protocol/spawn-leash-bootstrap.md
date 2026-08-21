@@ -387,6 +387,7 @@ Live pending-frame executor rules:
 Current implementation status:
 - pure planner `PlanStaticActorSpawnLeashHomewardStep` is owned in `internal/worldruntime`
 - pending-frame homeward executor, engagement-release arming, chase mutual exclusion, and same-map retained-viewer `MOVE` are live in `internal/minimal`
+- focused EnterGame / MOVE-transfer / `/restart_here` due-homeward preflight coverage now mirrors the owned chase/return preflight proofs
 - operator `POST .../return-step` still no-ops `within_radius`; exact-home snap remains the controlled `return-home` trigger
 - the read-only pending homeward inspection endpoints below are now live over that already-owned schedule
 
