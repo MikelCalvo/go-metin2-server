@@ -382,19 +382,19 @@ func TestGameRuntimeExportsCharacterQuestStateThroughMemoryStoreSeam(t *testing.
 		t.Fatalf("save memory quest-state snapshot: %v", err)
 	}
 
-	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		loginticket.NewFileStore(t.TempDir()),
 		accountStore,
 		nil,
 		nil,
 		itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")),
+		questStore,
 		nil,
 	)
 	if err != nil {
 		t.Fatalf("new game runtime: %v", err)
 	}
-	runtime.questStateStore = questStore
 
 	export, err := runtime.ExportCharacterQuestState()
 	if err != nil {

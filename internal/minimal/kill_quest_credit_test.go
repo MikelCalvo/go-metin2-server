@@ -1,7 +1,6 @@
 package minimal
 
 import (
-	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -37,19 +36,19 @@ func metGuideQuestFlagWriterDefinition() interactionstore.Definition {
 }
 
 func TestGameRuntimeImportsContentBundleKillQuestCredit(t *testing.T) {
-	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		loginticket.NewFileStore(t.TempDir()),
 		nil,
 		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
 		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
 		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		queststate.NewMemoryStore(),
 		nil,
 	)
 	if err != nil {
 		t.Fatalf("new kill quest runtime: %v", err)
 	}
-	runtime.questStateStore = queststate.NewMemoryStore()
 	imported, err := runtime.ImportContentBundle(contentbundle.Bundle{
 		SpawnGroups: []contentbundle.SpawnGroup{{
 			Ref:             "practice.kill_quest_mob",
@@ -92,19 +91,19 @@ func TestGameRuntimeImportsContentBundleKillQuestCredit(t *testing.T) {
 }
 
 func TestGameRuntimeImportsDropTableKillQuestCredit(t *testing.T) {
-	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		loginticket.NewFileStore(t.TempDir()),
 		nil,
 		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
 		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
 		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		queststate.NewMemoryStore(),
 		nil,
 	)
 	if err != nil {
 		t.Fatalf("new drop-table kill quest runtime: %v", err)
 	}
-	runtime.questStateStore = queststate.NewMemoryStore()
 	imported, err := runtime.ImportContentBundle(contentbundle.Bundle{
 		DropTables: []contentbundle.DropTable{{
 			Ref:              "loot.qa_kill_quest_reward",
@@ -144,19 +143,19 @@ func TestGameRuntimeImportsDropTableKillQuestCredit(t *testing.T) {
 }
 
 func TestGameRuntimeImportsDropTableKillQuestRequireGate(t *testing.T) {
-	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		loginticket.NewFileStore(t.TempDir()),
 		nil,
 		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
 		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
 		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		queststate.NewMemoryStore(),
 		nil,
 	)
 	if err != nil {
 		t.Fatalf("new drop-table gated kill quest runtime: %v", err)
 	}
-	runtime.questStateStore = queststate.NewMemoryStore()
 	imported, err := runtime.ImportContentBundle(contentbundle.Bundle{
 		DropTables: []contentbundle.DropTable{{
 			Ref:              "loot.qa_gated_kill_quest_reward",
@@ -221,19 +220,19 @@ func TestGameRuntimeImportsDropTableKillQuestRequireGate(t *testing.T) {
 }
 
 func TestGameRuntimeImportsRegenSpawnKillQuestRequireGate(t *testing.T) {
-	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		loginticket.NewFileStore(t.TempDir()),
 		nil,
 		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
 		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
 		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		queststate.NewMemoryStore(),
 		nil,
 	)
 	if err != nil {
 		t.Fatalf("new regen gated kill quest runtime: %v", err)
 	}
-	runtime.questStateStore = queststate.NewMemoryStore()
 	imported, err := runtime.ImportContentBundle(contentbundle.Bundle{
 		DropTables: []contentbundle.DropTable{{
 			Ref:              "loot.qa_regen_gated_kill_quest_reward",
@@ -308,19 +307,19 @@ func TestHandleAttackKillAppliesQuestFlagCreditAfterDeathReward(t *testing.T) {
 	if err := accounts.Save(accountstore.Account{Login: "kill-quest-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
 		t.Fatalf("seed kill quest killer account: %v", err)
 	}
-	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		ticketStore,
 		accounts,
 		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
 		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
 		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		queststate.NewMemoryStore(),
 		nil,
 	)
 	if err != nil {
 		t.Fatalf("new kill quest credit runtime: %v", err)
 	}
-	runtime.questStateStore = queststate.NewMemoryStore()
 	currentTime := time.Unix(1_700_000_500, 0)
 	runtime.now = func() time.Time { return currentTime }
 	imported, err := runtime.ImportContentBundle(contentbundle.Bundle{
@@ -395,19 +394,19 @@ func TestHandleAttackKillQuestCreditSilentOnCurrentValueMismatch(t *testing.T) {
 	if err := accounts.Save(accountstore.Account{Login: "kill-quest-mismatch", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
 		t.Fatalf("seed mismatch killer account: %v", err)
 	}
-	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		ticketStore,
 		accounts,
 		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
 		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
 		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		queststate.NewMemoryStore(),
 		nil,
 	)
 	if err != nil {
 		t.Fatalf("new mismatch kill quest runtime: %v", err)
 	}
-	runtime.questStateStore = queststate.NewMemoryStore()
 	currentTime := time.Unix(1_700_000_600, 0)
 	runtime.now = func() time.Time { return currentTime }
 	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{
@@ -471,19 +470,19 @@ func TestHandleAttackKillQuestCreditAppliesWhenDeathRewardEmpty(t *testing.T) {
 	if err := accounts.Save(accountstore.Account{Login: "kill-quest-empty", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
 		t.Fatalf("seed empty-reward killer account: %v", err)
 	}
-	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		ticketStore,
 		accounts,
 		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
 		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
 		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		queststate.NewMemoryStore(),
 		nil,
 	)
 	if err != nil {
 		t.Fatalf("new empty-reward kill quest runtime: %v", err)
 	}
-	runtime.questStateStore = queststate.NewMemoryStore()
 	currentTime := time.Unix(1_700_000_700, 0)
 	runtime.now = func() time.Time { return currentTime }
 	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{
@@ -544,19 +543,19 @@ func TestKillQuestCreditThenTurnInClearsKilledQAMob(t *testing.T) {
 	if err := accounts.Save(accountstore.Account{Login: "kill-quest-turnin", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
 		t.Fatalf("seed turn-in killer account: %v", err)
 	}
-	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		ticketStore,
 		accounts,
 		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
 		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
 		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		queststate.NewMemoryStore(),
 		nil,
 	)
 	if err != nil {
 		t.Fatalf("new kill quest turn-in runtime: %v", err)
 	}
-	runtime.questStateStore = queststate.NewMemoryStore()
 	currentTime := time.Unix(1_700_000_800, 0)
 	runtime.now = func() time.Time { return currentTime }
 	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{
@@ -669,19 +668,19 @@ func TestKillQuestTurnInMismatchWithoutKillCredit(t *testing.T) {
 	if err := accounts.Save(accountstore.Account{Login: "kill-quest-turnin-mismatch", Empire: peer.Empire, Characters: []loginticket.Character{peer}}); err != nil {
 		t.Fatalf("seed turn-in mismatch account: %v", err)
 	}
-	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		ticketStore,
 		accounts,
 		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
 		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
 		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		queststate.NewMemoryStore(),
 		nil,
 	)
 	if err != nil {
 		t.Fatalf("new kill quest turn-in mismatch runtime: %v", err)
 	}
-	runtime.questStateStore = queststate.NewMemoryStore()
 	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{
 		StaticActors: []contentbundle.StaticActor{{
 			Name:            "QuestHunter",
@@ -739,19 +738,19 @@ func TestHandleAttackKillQuestRequireGateSilentWhenUnmet(t *testing.T) {
 	if err := accounts.Save(accountstore.Account{Login: "kill-quest-gate-miss", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
 		t.Fatalf("seed gated miss killer account: %v", err)
 	}
-	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		ticketStore,
 		accounts,
 		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
 		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
 		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		queststate.NewMemoryStore(),
 		nil,
 	)
 	if err != nil {
 		t.Fatalf("new gated miss kill quest runtime: %v", err)
 	}
-	runtime.questStateStore = queststate.NewMemoryStore()
 	currentTime := time.Unix(1_700_000_600, 0)
 	runtime.now = func() time.Time { return currentTime }
 	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{
@@ -813,19 +812,19 @@ func TestHandleAttackKillQuestRequireGateAppliesWhenMet(t *testing.T) {
 	if err := accounts.Save(accountstore.Account{Login: "kill-quest-gate-hit", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
 		t.Fatalf("seed gated hit killer account: %v", err)
 	}
-	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		ticketStore,
 		accounts,
 		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
 		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
 		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		queststate.NewMemoryStore(),
 		nil,
 	)
 	if err != nil {
 		t.Fatalf("new gated hit kill quest runtime: %v", err)
 	}
-	runtime.questStateStore = queststate.NewMemoryStore()
 	currentTime := time.Unix(1_700_000_700, 0)
 	runtime.now = func() time.Time { return currentTime }
 	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{

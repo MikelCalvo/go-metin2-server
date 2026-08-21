@@ -56,19 +56,19 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if err := accounts.Save(accountstore.Account{Login: "pve-vertical", Empire: hero.Empire, Characters: []loginticket.Character{hero}}); err != nil {
 		t.Fatalf("seed PvE vertical account: %v", err)
 	}
-	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: filepath.Join(t.TempDir(), "quest-state.json")},
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		ticketStore,
 		accounts,
 		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
 		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
 		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		queststate.NewMemoryStore(),
 		nil,
 	)
 	if err != nil {
 		t.Fatalf("new PvE vertical runtime: %v", err)
 	}
-	runtime.questStateStore = queststate.NewMemoryStore()
 	currentTime := time.Unix(1_700_001_000, 0)
 	runtime.now = func() time.Time { return currentTime }
 

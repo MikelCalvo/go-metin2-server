@@ -3575,6 +3575,14 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 }
 
 func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service, store loginticket.Store, accounts accountstore.Store, staticActors staticstore.Store, interactions interactionstore.Store, items itemcatalog.Store, transferTriggers []bootstrapTransferTrigger) (*gameRuntime, error) {
+	return newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg, store, accounts, staticActors, interactions, items, nil, transferTriggers)
+}
+
+// newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore is the deepest
+// test/runtime constructor. A non-nil questState is used as-is so hermetic
+// gameplay tests can inject queststate.MemoryStore without construct-and-discard
+// of a path-isolated FileStore. Nil keeps the ordinary FileStore default.
+func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.Service, store loginticket.Store, accounts accountstore.Store, staticActors staticstore.Store, interactions interactionstore.Store, items itemcatalog.Store, questState queststate.Store, transferTriggers []bootstrapTransferTrigger) (*gameRuntime, error) {
 	if err := validateRuntimePersistenceConfig(cfg); err != nil {
 		return nil, err
 	}
@@ -3603,6 +3611,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 	if items == nil {
 		items = itemcatalog.NewFileStore(serviceItemTemplateStorePath(cfg))
 	}
+	if questState == nil {
+		questState = queststate.NewFileStore(serviceQuestStateStorePath(cfg))
+	}
 	sharedWorld := newSharedWorldRegistryWithTopology(topology)
 	runtime := &gameRuntime{
 		sharedWorld:          sharedWorld,
@@ -3612,7 +3623,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		accountStore:         accounts,
 		itemStore:            items,
 		interactionStore:     interactions,
-		questStateStore:      queststate.NewFileStore(serviceQuestStateStorePath(cfg)),
+		questStateStore:      questState,
 		liveCharactersByName: make(map[string]liveCharacterRegistration),
 		spawnReturnStepDueAt: make(map[uint64]time.Time),
 		spawnChaseStepDueAt:  make(map[uint64]time.Time),
