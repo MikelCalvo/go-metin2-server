@@ -2214,6 +2214,30 @@ func (r *gameRuntime) spawnGroupHomewardStepDueAtSnapshot() map[uint64]time.Time
 	return snapshot
 }
 
+func (r *gameRuntime) restoreSpawnGroupHomewardStepDueAtSnapshot(snapshot map[uint64]time.Time) {
+	if r == nil {
+		return
+	}
+	restored := make(map[uint64]time.Time, len(snapshot))
+	for entityID, dueAt := range snapshot {
+		if entityID == 0 || dueAt.IsZero() || !r.spawnGroupHomewardStepStillEligible(entityID) {
+			continue
+		}
+		restored[entityID] = dueAt
+	}
+	r.spawnHomewardMu.Lock()
+	defer r.spawnHomewardMu.Unlock()
+	if r.spawnHomewardStepDueAt == nil {
+		r.spawnHomewardStepDueAt = make(map[uint64]time.Time, len(restored))
+	}
+	for entityID := range r.spawnHomewardStepDueAt {
+		delete(r.spawnHomewardStepDueAt, entityID)
+	}
+	for entityID, dueAt := range restored {
+		r.spawnHomewardStepDueAt[entityID] = dueAt
+	}
+}
+
 func (r *gameRuntime) spawnGroupHomewardStepNow() time.Time {
 	now := time.Now()
 	if r != nil && r.now != nil {
@@ -2255,20 +2279,7 @@ func (r *gameRuntime) spawnGroupHomewardStepSnapshot(entityID uint64, dueAt time
 }
 
 func (r *gameRuntime) pruneSpawnGroupHomewardStepSchedules() {
-	if r == nil {
-		return
-	}
-	r.spawnHomewardMu.Lock()
-	entityIDs := make([]uint64, 0, len(r.spawnHomewardStepDueAt))
-	for entityID := range r.spawnHomewardStepDueAt {
-		entityIDs = append(entityIDs, entityID)
-	}
-	r.spawnHomewardMu.Unlock()
-	for _, entityID := range entityIDs {
-		if !r.spawnGroupHomewardStepStillEligible(entityID) {
-			r.clearSpawnGroupHomewardStep(entityID)
-		}
-	}
+	r.restoreSpawnGroupHomewardStepDueAtSnapshot(r.spawnGroupHomewardStepDueAtSnapshot())
 }
 
 func (r *gameRuntime) flushDueSpawnGroupHomewardSteps() {
@@ -3616,18 +3627,19 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 	}
 	sharedWorld := newSharedWorldRegistryWithTopology(topology)
 	runtime := &gameRuntime{
-		sharedWorld:          sharedWorld,
-		config:               cfg,
-		staticStore:          staticActors,
-		loginTicketStore:     store,
-		accountStore:         accounts,
-		itemStore:            items,
-		interactionStore:     interactions,
-		questStateStore:      questState,
-		liveCharactersByName: make(map[string]liveCharacterRegistration),
-		spawnReturnStepDueAt: make(map[uint64]time.Time),
-		spawnChaseStepDueAt:  make(map[uint64]time.Time),
-		now:                  time.Now,
+		sharedWorld:            sharedWorld,
+		config:                 cfg,
+		staticStore:            staticActors,
+		loginTicketStore:       store,
+		accountStore:           accounts,
+		itemStore:              items,
+		interactionStore:       interactions,
+		questStateStore:        questState,
+		liveCharactersByName:   make(map[string]liveCharacterRegistration),
+		spawnReturnStepDueAt:   make(map[uint64]time.Time),
+		spawnChaseStepDueAt:    make(map[uint64]time.Time),
+		spawnHomewardStepDueAt: make(map[uint64]time.Time),
+		now:                    time.Now,
 	}
 	sharedWorld.now = func() time.Time {
 		if runtime != nil && runtime.now != nil {
@@ -10277,11 +10289,13 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 	if reflect.DeepEqual(previousBundle, normalized) {
 		r.pruneSpawnGroupReturnStepSchedules()
 		r.pruneSpawnGroupChaseStepSchedules()
+		r.pruneSpawnGroupHomewardStepSchedules()
 		return normalized, nil
 	}
 	previousActors := r.StaticActors()
 	previousSpawnReturnStepDueAt := r.spawnGroupReturnStepDueAtSnapshot()
 	previousSpawnChaseStepDueAt := r.spawnGroupChaseStepDueAtSnapshot()
+	previousSpawnHomewardStepDueAt := r.spawnGroupHomewardStepDueAtSnapshot()
 	var previousCombatState staticActorCombatStateSnapshot
 	if r.sharedWorld != nil {
 		r.sharedWorld.mu.Lock()
@@ -10332,6 +10346,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		}
 		r.restoreSpawnGroupReturnStepDueAtSnapshot(previousSpawnReturnStepDueAt)
 		r.restoreSpawnGroupChaseStepDueAtSnapshot(previousSpawnChaseStepDueAt)
+		r.restoreSpawnGroupHomewardStepDueAtSnapshot(previousSpawnHomewardStepDueAt)
 		if r.sharedWorld != nil {
 			r.sharedWorld.discardStaticActorImportFanout()
 		}
@@ -10346,6 +10361,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 	}
 	r.pruneSpawnGroupReturnStepSchedules()
 	r.pruneSpawnGroupChaseStepSchedules()
+	r.pruneSpawnGroupHomewardStepSchedules()
 	if r.sharedWorld != nil {
 		r.sharedWorld.flushStaticActorImportFanout()
 	}
