@@ -41,3 +41,6 @@ Focused coverage:
 1. Keep branching quest scripts deferred.
 2. Optional distinct insufficient-experience chat remains a later UX seam.
 3. Keep new NPC service kinds deferred until accepted safebox/storage mutations exist.
+4. ~~Prove consume_experience + reward_experience rematerialization across daemon
+   restart with a stale ticket.~~ Done: see
+   [quest-flag consume/reward experience process-restart recovery](2026-08-21-quest-flag-consume-experience-process-restart-recovery.md).

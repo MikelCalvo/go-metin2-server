@@ -219,6 +219,240 @@ func TestGameRuntimeQuestFlagRewardStateRematerializesAcrossDaemonRestart(t *tes
 	}
 }
 
+// TestGameRuntimeQuestFlagConsumeExperienceStateRematerializesAcrossDaemonRestart
+// proves the Track E.4 crash/restart rematerialization contract for the durable
+// PvE experience delta owned by a successful quest_flag turn-in that both debits
+// consume_experience and grants reward_experience: after the turn-in, a fresh
+// gameRuntime rebuilt from the same FileStore paths rematerializes the net
+// experience / gold / inventory state on EnterGame even when the post-restart
+// login ticket still carries the pre-turn-in character snapshot.
+//
+// This deliberately does not cover pending ground-item / ground-gold restart
+// durability (still deferred for migration 0010).
+func TestGameRuntimeQuestFlagConsumeExperienceStateRematerializesAcrossDaemonRestart(t *testing.T) {
+	ticketDir := t.TempDir()
+	accountDir := t.TempDir()
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	itemTemplatePath := filepath.Join(t.TempDir(), "item-templates.json")
+
+	ticketStore := loginticket.NewFileStore(ticketDir)
+	accounts := accountstore.NewFileStore(accountDir)
+
+	peer := peerVisibilityCharacter("QuestHero", 0x0103012c, 0x0204012c, 1100, 2100, 0, 101, 201)
+	peer.Gold = 40
+	peer.Points[bootstrapExperiencePointType] = 40
+	peer.Inventory = []inventory.ItemInstance{{ID: 73, Vnum: 27001, Count: 1, Slot: 0}}
+	const (
+		login    = "quest-hero-restart-consume-exp"
+		loginKey = uint32(0x1b1b1b1b)
+	)
+	issuePeerTicket(t, ticketStore, login, loginKey, peer)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: peer.Empire, Characters: []loginticket.Character{peer}}); err != nil {
+		t.Fatalf("seed quest-flag restart-consume-experience account: %v", err)
+	}
+
+	interactionPath := filepath.Join(t.TempDir(), "interaction-definitions.json")
+	interactionStore := interactionstore.NewFileStore(interactionPath)
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
+		Kind:              interactionstore.KindQuestFlag,
+		Ref:               "quest:first_steps_kill_turnin",
+		Text:              "Quest updated: first_steps.killed_qa_mob = 0.",
+		QuestRef:          "quest:first_steps",
+		QuestFlag:         "killed_qa_mob",
+		QuestFrom:         1,
+		QuestTo:           0,
+		RewardGold:        100,
+		RewardExperience:  50,
+		RewardItems:       []interactionstore.RewardItemEntry{{ItemVnum: 11200, Count: 1}},
+		ConsumeItems:      []interactionstore.RewardItemEntry{{ItemVnum: 27001, Count: 1}},
+		ConsumeGold:       25,
+		ConsumeExperience: 10,
+	}}}); err != nil {
+		t.Fatalf("seed quest-flag restart-consume-experience interactions: %v", err)
+	}
+	itemStore := itemcatalog.NewFileStore(itemTemplatePath)
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopBuyPrice: 50},
+	}}); err != nil {
+		t.Fatalf("seed quest-flag restart-consume-experience templates: %v", err)
+	}
+	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{
+		Character: "QuestHero",
+		QuestRef:  "quest:first_steps",
+		Name:      "killed_qa_mob",
+		Value:     1,
+	}}}); err != nil {
+		t.Fatalf("seed quest-state for restart-consume-experience turn-in: %v", err)
+	}
+
+	cfg := config.Service{
+		LegacyAddr:          ":13000",
+		PublicAddr:          "127.0.0.1",
+		QuestStateStorePath: questStatePath,
+	}
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(cfg, ticketStore, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected quest-flag restart-consume-experience runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("QuestHunter", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindQuestFlag, "quest:first_steps_kill_turnin")
+	if !ok {
+		t.Fatal("expected quest-flag restart-consume-experience static actor registration to succeed")
+	}
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	if len(enterOut) < 8 {
+		t.Fatalf("expected bootstrap frames with visible quest-flag restart-consume-experience actor, got %d", len(enterOut))
+	}
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected quest-flag restart-consume-experience interaction error: %v", err)
+	}
+	if len(out) != 7 {
+		t.Fatalf("expected chat + consume-gold + consume-experience + reward-gold + reward-experience + consume + reward frames for quest-flag restart-consume-experience interaction, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil || delivery.Message != "Quest updated: first_steps.killed_qa_mob = 0." {
+		t.Fatalf("unexpected quest-flag restart-consume-experience chat delivery: %+v err=%v", delivery, err)
+	}
+	consumeGoldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[1]))
+	if err != nil || consumeGoldChange.Amount != -25 || consumeGoldChange.Value != 15 {
+		t.Fatalf("unexpected quest-flag restart-consume-experience gold debit frame: %+v err=%v", consumeGoldChange, err)
+	}
+	consumeExperienceChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[2]))
+	if err != nil || consumeExperienceChange.Type != bootstrapExperiencePointType || consumeExperienceChange.Amount != -10 || consumeExperienceChange.Value != 30 {
+		t.Fatalf("unexpected quest-flag restart-consume-experience debit frame: %+v err=%v", consumeExperienceChange, err)
+	}
+	rewardGoldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[3]))
+	if err != nil || rewardGoldChange.Amount != 100 || rewardGoldChange.Value != 115 {
+		t.Fatalf("unexpected quest-flag restart-consume-experience reward-gold frame: %+v err=%v", rewardGoldChange, err)
+	}
+	rewardExperienceChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[4]))
+	if err != nil || rewardExperienceChange.Type != bootstrapExperiencePointType || rewardExperienceChange.Amount != 50 || rewardExperienceChange.Value != 80 {
+		t.Fatalf("unexpected quest-flag restart-consume-experience reward-experience frame: %+v err=%v", rewardExperienceChange, err)
+	}
+	consumeDel, err := itemproto.DecodeDel(decodeSingleFrame(t, out[5]))
+	if err != nil || consumeDel.Position != itemproto.InventoryPosition(0) {
+		t.Fatalf("unexpected quest-flag restart-consume-experience delete frame: %+v err=%v", consumeDel, err)
+	}
+	itemSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[6]))
+	if err != nil || itemSet.Position != itemproto.InventoryPosition(0) || itemSet.Vnum != 11200 || itemSet.Count != 1 {
+		t.Fatalf("unexpected quest-flag restart-consume-experience reward set frame: %+v err=%v", itemSet, err)
+	}
+	closeSessionFlow(t, flow)
+
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted quest-flag restart-consume-experience account before daemon restart: %v", err)
+	}
+	if account.Characters[0].Gold != 115 {
+		t.Fatalf("expected persisted gold 115 before daemon restart, got %d", account.Characters[0].Gold)
+	}
+	if account.Characters[0].Points[bootstrapExperiencePointType] != 80 {
+		t.Fatalf("expected persisted experience 80 before daemon restart, got %d", account.Characters[0].Points[bootstrapExperiencePointType])
+	}
+	if len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0].Vnum != 11200 || account.Characters[0].Inventory[0].Count != 1 {
+		t.Fatalf("expected persisted inventory reward before daemon restart, got %+v", account.Characters[0].Inventory)
+	}
+	loadedQuest, err := queststate.NewFileStore(questStatePath).Load()
+	if err != nil {
+		t.Fatalf("load quest-state before daemon restart: %v", err)
+	}
+	if want := (queststate.Snapshot{Flags: []queststate.Flag{}}); !reflect.DeepEqual(loadedQuest, want) {
+		t.Fatalf("unexpected persisted quest-state before daemon restart:\n got: %#v\nwant: %#v", loadedQuest, want)
+	}
+
+	// Simulate process restart: rebuild runtime from the same FileStore paths.
+	// Issue a fresh ticket that still carries the pre-turn-in snapshot so the
+	// account-store rematerialization path is exercised instead of ticket state.
+	staleTicketStore := loginticket.NewFileStore(ticketDir)
+	const postRestartLoginKey = uint32(0x1c1c1c1c)
+	issuePeerTicket(t, staleTicketStore, login, postRestartLoginKey, peer)
+	staleTicket, err := staleTicketStore.Load(login, postRestartLoginKey)
+	if err != nil {
+		t.Fatalf("load stale post-restart ticket: %v", err)
+	}
+	if len(staleTicket.Characters) != 1 ||
+		staleTicket.Characters[0].Gold != 40 ||
+		staleTicket.Characters[0].Points[bootstrapExperiencePointType] != 40 ||
+		len(staleTicket.Characters[0].Inventory) != 1 ||
+		staleTicket.Characters[0].Inventory[0].Vnum != 27001 {
+		t.Fatalf("expected stale post-restart ticket to keep pre-turn-in gold/experience/inventory, got %+v", staleTicket.Characters)
+	}
+
+	reloadedAccounts := accountstore.NewFileStore(accountDir)
+	reloadedInteractions := interactionstore.NewFileStore(interactionPath)
+	reloadedItems := itemcatalog.NewFileStore(itemTemplatePath)
+	reloaded, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(cfg, staleTicketStore, reloadedAccounts, reloadedInteractions, reloadedItems)
+	if err != nil {
+		t.Fatalf("reload runtime after quest-flag consume-experience daemon restart: %v", err)
+	}
+	if _, ok := reloaded.RegisterStaticActorWithInteraction("QuestHunter", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindQuestFlag, "quest:first_steps_kill_turnin"); !ok {
+		t.Fatal("expected quest-flag restart-consume-experience static actor registration after daemon restart")
+	}
+
+	restartFlow, restartEnter := enterGameWithLoginTicket(t, reloaded.SessionFactory(), login, postRestartLoginKey)
+	defer closeSessionFlow(t, restartFlow)
+	if len(restartEnter) < 5 {
+		t.Fatalf("expected rematerialized EnterGame bootstrap after daemon restart, got %d frames", len(restartEnter))
+	}
+
+	currencySnapshot, ok := reloaded.CurrencySnapshot(peer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after daemon restart rematerialization")
+	}
+	if currencySnapshot.Gold != 115 {
+		t.Fatalf("expected rematerialized gold 115 after daemon restart, got %+v", currencySnapshot)
+	}
+	pointsSnapshot, ok := reloaded.PointsSnapshot(peer.Name)
+	if !ok || pointsSnapshot.Points[bootstrapExperiencePointType] != 80 {
+		t.Fatalf("expected rematerialized experience 80 after daemon restart, ok=%v snapshot=%+v", ok, pointsSnapshot)
+	}
+	inventorySnapshot, ok := reloaded.InventorySnapshot(peer.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].Vnum != 11200 || inventorySnapshot.Inventory[0].Count != 1 {
+		t.Fatalf("expected rematerialized inventory reward after daemon restart, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+
+	reloadedQuest, err := queststate.NewFileStore(questStatePath).Load()
+	if err != nil {
+		t.Fatalf("load quest-state after daemon restart: %v", err)
+	}
+	if want := (queststate.Snapshot{Flags: []queststate.Flag{}}); !reflect.DeepEqual(reloadedQuest, want) {
+		t.Fatalf("unexpected quest-state after daemon restart:\n got: %#v\nwant: %#v", reloadedQuest, want)
+	}
+
+	// Turn-in must stay idempotent: cleared quest flag should not debit/grant again.
+	actors := reloaded.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one static actor after daemon restart, got %+v", actors)
+	}
+	repeatOut, err := restartFlow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actors[0].EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart quest-flag interaction error: %v", err)
+	}
+	if len(repeatOut) != 1 {
+		t.Fatalf("expected one requirements-not-met info frame after daemon restart, got %d", len(repeatOut))
+	}
+	repeatDelivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, repeatOut[0]))
+	// After the successful turn-in consumed the material fee, the owned insufficient-
+	// materials preflight rejects before CAS mismatch chat, so the idempotent retry
+	// surfaces the fee-specific string rather than the generic requirements message.
+	if err != nil || repeatDelivery.Type != chatproto.ChatTypeInfo || repeatDelivery.Message != questFlagInsufficientMaterialsInfoMessage {
+		t.Fatalf("unexpected post-restart quest-flag rejection delivery: %+v err=%v", repeatDelivery, err)
+	}
+	if currency, ok := reloaded.CurrencySnapshot(peer.Name); !ok || currency.Gold != 115 {
+		t.Fatalf("expected gold to remain 115 after rejected post-restart turn-in, ok=%v snapshot=%+v", ok, currency)
+	}
+	if points, ok := reloaded.PointsSnapshot(peer.Name); !ok || points.Points[bootstrapExperiencePointType] != 80 {
+		t.Fatalf("expected experience to remain 80 after rejected post-restart turn-in, ok=%v snapshot=%+v", ok, points)
+	}
+	inventoryAfterReject, ok := reloaded.InventorySnapshot(peer.Name)
+	if !ok || len(inventoryAfterReject.Inventory) != 1 || inventoryAfterReject.Inventory[0].Vnum != 11200 || inventoryAfterReject.Inventory[0].Count != 1 {
+		t.Fatalf("expected inventory to remain rematerialized after rejected post-restart turn-in, ok=%v snapshot=%+v", ok, inventoryAfterReject)
+	}
+}
+
 // TestGameRuntimeEquipmentAndQuickslotsRematerializeAcrossDaemonRestart proves the
 // Track E.4 crash/restart rematerialization contract for durable PvE equipment and
 // quickslots: after a live equip + quickslot bind, a fresh gameRuntime rebuilt from

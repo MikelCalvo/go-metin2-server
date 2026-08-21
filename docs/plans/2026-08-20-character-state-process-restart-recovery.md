@@ -24,6 +24,7 @@ pre-reward character snapshot.
      the ordinary requirements-not-met info chat and does not grant again
 3. The focused proofs are:
    - `TestGameRuntimeQuestFlagRewardStateRematerializesAcrossDaemonRestart`
+   - `TestGameRuntimeQuestFlagConsumeExperienceStateRematerializesAcrossDaemonRestart`
    - `TestGameRuntimeEquipmentAndQuickslotsRematerializeAcrossDaemonRestart`
    - `TestGameRuntimePositionAndPointsRematerializeAcrossDaemonRestart`
 4. Pending bootstrap ground-item / ground-gold handles remain out of scope.
@@ -40,7 +41,7 @@ pre-reward character snapshot.
 
 Focused coverage:
 
-- `go test ./internal/minimal -run 'TestGameRuntimeQuestFlagRewardStateRematerializesAcrossDaemonRestart|TestGameRuntimeEquipmentAndQuickslotsRematerializeAcrossDaemonRestart|TestGameRuntimePositionAndPointsRematerializeAcrossDaemonRestart' -count=1`
+- `go test ./internal/minimal -run 'TestGameRuntimeQuestFlagRewardStateRematerializesAcrossDaemonRestart|TestGameRuntimeQuestFlagConsumeExperienceStateRematerializesAcrossDaemonRestart|TestGameRuntimeEquipmentAndQuickslotsRematerializeAcrossDaemonRestart|TestGameRuntimePositionAndPointsRematerializeAcrossDaemonRestart' -count=1`
 - `gofmt` on touched Go files
 - `git diff --check`
 
@@ -59,3 +60,6 @@ Focused coverage:
    Done: `internal/observability` + `docs/workflow/production-observability.md`.
 6. ~~Add deployment topology / artifact retention docs once production hosts are
    known.~~ Done: `docs/workflow/lab-deployment-topology.md`.
+7. ~~Prove quest_flag consume_experience + reward_experience rematerialization
+   across daemon restart with a stale ticket.~~ Done: see
+   [quest-flag consume/reward experience process-restart recovery](2026-08-21-quest-flag-consume-experience-process-restart-recovery.md).
