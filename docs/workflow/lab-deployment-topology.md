@@ -54,6 +54,8 @@ Keep operator evidence outside live data trees:
 ```text
 /var/metin2/backups/
   YYYYMMDDTHHMMSSZ-<commit12>/
+    gamed-build-info.json
+    authd-build-info.json
     accounts/
     login-tickets/
     item-templates/
@@ -62,6 +64,7 @@ Keep operator evidence outside live data trees:
     quest-state/
     runtime-config.json
     persistence-status-before.json
+    notes.md
     persistence-status-after.json
 
 /var/metin2/migration-runs/
@@ -105,7 +108,7 @@ curl -sS http://127.0.0.1:6060/local/runtime-config \
       --build-info /tmp/build-info.json
 ```
 
-The printer emits a path-aware shell script that creates `YYYYMMDDTHHMMSSZ-<commit12>/`, retains `runtime-config.json` / `persistence-status-*.json`, and uses the lab store subdirectory names above. It never executes backup/restore, never opens a database, and never embeds a DSN.
+The printer emits a path-aware shell script that creates `YYYYMMDDTHHMMSSZ-<commit12>/`, retains both-daemon build-info (`gamed` via `--ops-base-url`, `authd` via `--authd-ops-base-url`, default `http://127.0.0.1:6061`), `runtime-config.json` / `persistence-status-*.json`, a `notes.md` stub, and uses the lab store subdirectory names above. It never executes backup/restore, never opens a database, and never embeds a DSN.
 
 Default migration-runs printer base remains `/var/metin2/migration-runs` via:
 

@@ -73,6 +73,7 @@ func TestRunBackupRestoreDrillPrintsLabRetentionCommands(t *testing.T) {
 		`docs/workflow/file-store-backup-restore-drill.md`,
 		`docs/workflow/lab-deployment-topology.md`,
 		`OPS='http://127.0.0.1:6060'`,
+		`AUTH_OPS='http://127.0.0.1:6061'`,
 		`BACKUPS_BASE='/var/metin2/backups'`,
 		`COMMIT12='abcdef012345'`,
 		`ACCOUNT_STORE_DIR='/var/metin2/accounts'`,
@@ -84,8 +85,13 @@ func TestRunBackupRestoreDrillPrintsLabRetentionCommands(t *testing.T) {
 		`TS=$(date -u +%Y%m%dT%H%M%SZ)`,
 		`BASE="${BACKUPS_BASE}/${TS}-${COMMIT12}"`,
 		`mkdir -p "$BASE"/accounts "$BASE"/login-tickets "$BASE"/item-templates "$BASE"/interaction-store "$BASE"/static-actors "$BASE"/quest-state`,
+		`curl -sS "$OPS/local/build-info" > "$BASE/gamed-build-info.json"`,
+		`curl -sS "$AUTH_OPS/local/build-info" > "$BASE/authd-build-info.json"`,
 		`curl -sS "$OPS/local/runtime-config" > "$BASE/runtime-config.json"`,
 		`curl -sS "$OPS/local/persistence/status" > "$BASE/persistence-status-before.json"`,
+		`cat > "$BASE/notes.md" <<'EOF'`,
+		`# Backup/restore drill notes`,
+		`Do not paste DSNs, passwords, login keys, tickets, or executable SQL here.`,
 		`curl -sS "$OPS/local/persistence/status" > "$BASE/persistence-status-after.json"`,
 		`echo '== store validate / crash-temp triage =='`,
 		`"$OPS/local/account-store/validate"`,
@@ -132,20 +138,23 @@ func TestRunBackupRestoreDrillPrintsLabRetentionCommands(t *testing.T) {
 		t.Fatalf("expected UTC commit12 retention tree, got legacy local-time suffix:\n%s", body)
 	}
 
+	idxGamedBuild := strings.Index(body, `curl -sS "$OPS/local/build-info" > "$BASE/gamed-build-info.json"`)
+	idxAuthdBuild := strings.Index(body, `curl -sS "$AUTH_OPS/local/build-info" > "$BASE/authd-build-info.json"`)
 	idxRuntimeRetain := strings.Index(body, `> "$BASE/runtime-config.json"`)
 	idxStatusBefore := strings.Index(body, `> "$BASE/persistence-status-before.json"`)
+	idxNotes := strings.Index(body, `cat > "$BASE/notes.md" <<'EOF'`)
 	idxStoreValidate := strings.Index(body, `"$OPS/local/account-store/validate"`)
 	idxCrashCleanup := strings.Index(body, `"$OPS/local/account-store/crash-temps/cleanup"`)
 	idxBackup := strings.Index(body, `"$OPS/local/account-store/backup"`)
 	idxBackupValidate := strings.Index(body, `"$OPS/local/account-store/backup/validate"`)
 	idxRestore := strings.Index(body, `"$OPS/local/item-templates/restore"`)
 	idxStatusAfter := strings.Index(body, `> "$BASE/persistence-status-after.json"`)
-	if idxRuntimeRetain < 0 || idxStatusBefore < 0 || idxStoreValidate < 0 || idxCrashCleanup < 0 || idxBackup < 0 || idxBackupValidate < 0 || idxRestore < 0 || idxStatusAfter < 0 {
+	if idxGamedBuild < 0 || idxAuthdBuild < 0 || idxRuntimeRetain < 0 || idxStatusBefore < 0 || idxNotes < 0 || idxStoreValidate < 0 || idxCrashCleanup < 0 || idxBackup < 0 || idxBackupValidate < 0 || idxRestore < 0 || idxStatusAfter < 0 {
 		t.Fatalf("missing expected ordering markers in stdout:\n%s", body)
 	}
-	if !(idxRuntimeRetain < idxStatusBefore && idxStatusBefore < idxStoreValidate && idxStoreValidate < idxCrashCleanup && idxCrashCleanup < idxBackup && idxBackup < idxBackupValidate && idxBackupValidate < idxRestore && idxRestore < idxStatusAfter) {
-		t.Fatalf("expected retain runtime-config -> status-before -> validate -> cleanup -> backup -> backup validate -> restore -> status-after ordering, got idxs runtime=%d before=%d validate=%d cleanup=%d backup=%d backupValidate=%d restore=%d after=%d\n%s",
-			idxRuntimeRetain, idxStatusBefore, idxStoreValidate, idxCrashCleanup, idxBackup, idxBackupValidate, idxRestore, idxStatusAfter, body)
+	if !(idxGamedBuild < idxAuthdBuild && idxAuthdBuild < idxRuntimeRetain && idxRuntimeRetain < idxStatusBefore && idxStatusBefore < idxNotes && idxNotes < idxStoreValidate && idxStoreValidate < idxCrashCleanup && idxCrashCleanup < idxBackup && idxBackup < idxBackupValidate && idxBackupValidate < idxRestore && idxRestore < idxStatusAfter) {
+		t.Fatalf("expected gamed/authd build-info -> runtime-config -> status-before -> notes -> validate -> cleanup -> backup -> backup validate -> restore -> status-after ordering, got idxs gamed=%d authd=%d runtime=%d before=%d notes=%d validate=%d cleanup=%d backup=%d backupValidate=%d restore=%d after=%d\n%s",
+			idxGamedBuild, idxAuthdBuild, idxRuntimeRetain, idxStatusBefore, idxNotes, idxStoreValidate, idxCrashCleanup, idxBackup, idxBackupValidate, idxRestore, idxStatusAfter, body)
 	}
 	idxStaticActorValidate := strings.Index(body, `"$OPS/local/static-actor-store/validate"`)
 	idxStaticActorsBackup := strings.Index(body, `"$OPS/local/static-actors/backup"`)
@@ -362,6 +371,61 @@ func TestRunBackupRestoreDrillRejectsInvalidOpsBaseURL(t *testing.T) {
 	}
 }
 
+func TestRunBackupRestoreDrillRejectsInvalidAuthdOpsBaseURL(t *testing.T) {
+	buildInfoPath := writeTempJSON(t, "build-info.json", `{"version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-21T15:30:45Z"}`)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"backup-restore-drill",
+			"--runtime-config", "-",
+			"--build-info", buildInfoPath,
+			"--authd-ops-base-url", "ftp://127.0.0.1:6061",
+		},
+		strings.NewReader(validBackupRestoreRuntimeConfig()),
+		&stdout,
+		&stderr,
+	)
+	if code != 1 {
+		t.Fatalf("expected exit 1, got %d stderr=%q", code, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout on contract failure, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "authd-ops-base-url") {
+		t.Fatalf("expected authd-ops-base-url reason, got %q", stderr.String())
+	}
+}
+
+func TestRunBackupRestoreDrillHonorsCustomAuthdOpsBaseURL(t *testing.T) {
+	buildInfoPath := writeTempJSON(t, "build-info.json", `{"version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-21T15:30:45Z"}`)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"backup-restore-drill",
+			"--runtime-config", "-",
+			"--build-info", buildInfoPath,
+			"--authd-ops-base-url", "http://127.0.0.1:7061",
+		},
+		strings.NewReader(validBackupRestoreRuntimeConfig()),
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d stderr=%q", code, stderr.String())
+	}
+	body := stdout.String()
+	if !strings.Contains(body, `AUTH_OPS='http://127.0.0.1:7061'`) {
+		t.Fatalf("expected custom AUTH_OPS in stdout:\n%s", body)
+	}
+	if !strings.Contains(body, `curl -sS "$AUTH_OPS/local/build-info" > "$BASE/authd-build-info.json"`) {
+		t.Fatalf("expected authd build-info retain in stdout:\n%s", body)
+	}
+}
+
 func TestRunBackupRestoreDrillRejectsMalformedAndOversizedInput(t *testing.T) {
 	buildInfoPath := writeTempJSON(t, "build-info.json", `{"version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-21T15:30:45Z"}`)
 	cases := []struct {
@@ -417,6 +481,9 @@ func TestRunBackupRestoreDrillUsageErrors(t *testing.T) {
 			}
 			if !strings.Contains(stderr.String(), "--build-info") || !strings.Contains(stderr.String(), "/var/metin2/backups") {
 				t.Fatalf("expected usage to mention --build-info and /var/metin2/backups default, got %q", stderr.String())
+			}
+			if !strings.Contains(stderr.String(), "--authd-ops-base-url") {
+				t.Fatalf("expected usage to list --authd-ops-base-url, got %q", stderr.String())
 			}
 		})
 	}
