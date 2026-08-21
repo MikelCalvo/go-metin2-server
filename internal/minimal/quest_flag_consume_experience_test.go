@@ -1,7 +1,6 @@
 package minimal
 
 import (
-	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -16,11 +15,11 @@ import (
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
+	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 )
 
 func TestGameSessionFlowStaticActorQuestFlagConsumeExperienceDebitsPointAndGrantsReward(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	peer := peerVisibilityCharacter("QuestHero", 0x0103011c, 0x0204011c, 1100, 2100, 0, 101, 201)
 	peer.Gold = 40
 	peer.Points[bootstrapExperiencePointType] = 40
@@ -30,7 +29,8 @@ func TestGameSessionFlowStaticActorQuestFlagConsumeExperienceDebitsPointAndGrant
 	if err := accounts.Save(accountstore.Account{Login: "qf-consume-exp", Empire: peer.Empire, Characters: []loginticket.Character{peer}}); err != nil {
 		t.Fatalf("seed quest-flag consume-experience account: %v", err)
 	}
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
 		Kind:              interactionstore.KindQuestFlag,
 		Ref:               "quest:first_steps_kill_turnin",
 		Text:              "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -44,15 +44,18 @@ func TestGameSessionFlowStaticActorQuestFlagConsumeExperienceDebitsPointAndGrant
 		ConsumeItems:      []interactionstore.RewardItemEntry{{ItemVnum: 27001, Count: 1}},
 		ConsumeGold:       25,
 		ConsumeExperience: 10,
-	}})
-	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	}}}); err != nil {
+		t.Fatalf("seed quest-flag interaction definitions: %v", err)
+	}
+	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopBuyPrice: 50},
 	}}); err != nil {
 		t.Fatalf("seed quest-flag consume-experience templates: %v", err)
 	}
-	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(queststate.Snapshot{Flags: []queststate.Flag{{
 		Character: "QuestHero",
 		QuestRef:  "quest:first_steps",
 		Name:      "killed_qa_mob",
@@ -61,7 +64,16 @@ func TestGameSessionFlowStaticActorQuestFlagConsumeExperienceDebitsPointAndGrant
 		t.Fatalf("seed quest-state for consume-experience turn-in: %v", err)
 	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, ticketStore, accounts, interactionStore, itemStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		ticketStore,
+		accounts,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		itemStore,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected quest-flag consume-experience runtime error: %v", err)
 	}
@@ -128,7 +140,7 @@ func TestGameSessionFlowStaticActorQuestFlagConsumeExperienceDebitsPointAndGrant
 	if account.Characters[0].Points[bootstrapExperiencePointType] != 80 {
 		t.Fatalf("expected persisted experience 80 after quest-flag consume-experience interaction, got %d", account.Characters[0].Points[bootstrapExperiencePointType])
 	}
-	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	loaded, err := questStore.Load()
 	if err != nil {
 		t.Fatalf("load quest-state after quest-flag consume-experience interaction: %v", err)
 	}
@@ -139,7 +151,6 @@ func TestGameSessionFlowStaticActorQuestFlagConsumeExperienceDebitsPointAndGrant
 
 func TestGameSessionFlowStaticActorQuestFlagConsumeExperienceRejectsInsufficientExperienceWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	peer := peerVisibilityCharacter("QuestHero", 0x0103011d, 0x0204011d, 1100, 2100, 0, 101, 201)
 	peer.Gold = 40
 	peer.Points[bootstrapExperiencePointType] = 5
@@ -149,7 +160,8 @@ func TestGameSessionFlowStaticActorQuestFlagConsumeExperienceRejectsInsufficient
 	if err := accounts.Save(accountstore.Account{Login: "qf-consume-exp-miss", Empire: peer.Empire, Characters: []loginticket.Character{peer}}); err != nil {
 		t.Fatalf("seed quest-flag consume-experience mismatch account: %v", err)
 	}
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
 		Kind:              interactionstore.KindQuestFlag,
 		Ref:               "quest:first_steps_kill_turnin",
 		Text:              "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -163,15 +175,18 @@ func TestGameSessionFlowStaticActorQuestFlagConsumeExperienceRejectsInsufficient
 		ConsumeItems:      []interactionstore.RewardItemEntry{{ItemVnum: 27001, Count: 1}},
 		ConsumeGold:       25,
 		ConsumeExperience: 10,
-	}})
-	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	}}}); err != nil {
+		t.Fatalf("seed quest-flag interaction definitions: %v", err)
+	}
+	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopBuyPrice: 50},
 	}}); err != nil {
 		t.Fatalf("seed quest-flag consume-experience mismatch templates: %v", err)
 	}
-	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(queststate.Snapshot{Flags: []queststate.Flag{{
 		Character: "QuestHero",
 		QuestRef:  "quest:first_steps",
 		Name:      "killed_qa_mob",
@@ -180,7 +195,16 @@ func TestGameSessionFlowStaticActorQuestFlagConsumeExperienceRejectsInsufficient
 		t.Fatalf("seed quest-state for consume-experience mismatch turn-in: %v", err)
 	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, ticketStore, accounts, interactionStore, itemStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		ticketStore,
+		accounts,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		itemStore,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected quest-flag consume-experience mismatch runtime error: %v", err)
 	}
@@ -214,7 +238,7 @@ func TestGameSessionFlowStaticActorQuestFlagConsumeExperienceRejectsInsufficient
 	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].Vnum != 27001 {
 		t.Fatalf("expected inventory unchanged after consume-experience mismatch, got ok=%v snapshot=%+v", ok, inventorySnapshot)
 	}
-	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	loaded, err := questStore.Load()
 	if err != nil {
 		t.Fatalf("load quest-state after consume-experience mismatch: %v", err)
 	}

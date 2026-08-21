@@ -1,7 +1,6 @@
 package minimal
 
 import (
-	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -16,11 +15,11 @@ import (
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
+	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 )
 
 func TestGameSessionFlowStaticActorQuestFlagConsumeGoldDebitsCurrencyAndGrantsReward(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	peer := peerVisibilityCharacter("QuestHero", 0x0103011a, 0x0204011a, 1100, 2100, 0, 101, 201)
 	peer.Gold = 40
 	peer.Inventory = []inventory.ItemInstance{{ID: 61, Vnum: 27001, Count: 1, Slot: 0}}
@@ -29,7 +28,8 @@ func TestGameSessionFlowStaticActorQuestFlagConsumeGoldDebitsCurrencyAndGrantsRe
 	if err := accounts.Save(accountstore.Account{Login: "qf-consume-gold", Empire: peer.Empire, Characters: []loginticket.Character{peer}}); err != nil {
 		t.Fatalf("seed quest-flag consume-gold account: %v", err)
 	}
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
 		Kind:       interactionstore.KindQuestFlag,
 		Ref:        "quest:first_steps_kill_turnin",
 		Text:       "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -45,15 +45,18 @@ func TestGameSessionFlowStaticActorQuestFlagConsumeGoldDebitsCurrencyAndGrantsRe
 			{ItemVnum: 27001, Count: 1},
 		},
 		ConsumeGold: 25,
-	}})
-	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	}}}); err != nil {
+		t.Fatalf("seed quest-flag interaction definitions: %v", err)
+	}
+	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopBuyPrice: 50},
 	}}); err != nil {
 		t.Fatalf("seed quest-flag consume-gold templates: %v", err)
 	}
-	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(queststate.Snapshot{Flags: []queststate.Flag{{
 		Character: "QuestHero",
 		QuestRef:  "quest:first_steps",
 		Name:      "killed_qa_mob",
@@ -62,7 +65,16 @@ func TestGameSessionFlowStaticActorQuestFlagConsumeGoldDebitsCurrencyAndGrantsRe
 		t.Fatalf("seed quest-state for consume-gold turn-in: %v", err)
 	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, ticketStore, accounts, interactionStore, itemStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		ticketStore,
+		accounts,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		itemStore,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected quest-flag consume-gold runtime error: %v", err)
 	}
@@ -114,7 +126,7 @@ func TestGameSessionFlowStaticActorQuestFlagConsumeGoldDebitsCurrencyAndGrantsRe
 	if account.Characters[0].Gold != 115 {
 		t.Fatalf("expected persisted gold 115 after quest-flag consume-gold interaction, got %d", account.Characters[0].Gold)
 	}
-	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	loaded, err := questStore.Load()
 	if err != nil {
 		t.Fatalf("load quest-state after quest-flag consume-gold interaction: %v", err)
 	}
@@ -125,7 +137,6 @@ func TestGameSessionFlowStaticActorQuestFlagConsumeGoldDebitsCurrencyAndGrantsRe
 
 func TestGameSessionFlowStaticActorQuestFlagConsumeGoldRejectsInsufficientGoldWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	peer := peerVisibilityCharacter("QuestHero", 0x0103011b, 0x0204011b, 1100, 2100, 0, 101, 201)
 	peer.Gold = 10
 	peer.Inventory = []inventory.ItemInstance{{ID: 62, Vnum: 27001, Count: 1, Slot: 0}}
@@ -134,7 +145,8 @@ func TestGameSessionFlowStaticActorQuestFlagConsumeGoldRejectsInsufficientGoldWi
 	if err := accounts.Save(accountstore.Account{Login: "qf-consume-gold-miss", Empire: peer.Empire, Characters: []loginticket.Character{peer}}); err != nil {
 		t.Fatalf("seed quest-flag consume-gold mismatch account: %v", err)
 	}
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
 		Kind:       interactionstore.KindQuestFlag,
 		Ref:        "quest:first_steps_kill_turnin",
 		Text:       "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -150,15 +162,18 @@ func TestGameSessionFlowStaticActorQuestFlagConsumeGoldRejectsInsufficientGoldWi
 			{ItemVnum: 27001, Count: 1},
 		},
 		ConsumeGold: 25,
-	}})
-	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	}}}); err != nil {
+		t.Fatalf("seed quest-flag interaction definitions: %v", err)
+	}
+	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopBuyPrice: 50},
 	}}); err != nil {
 		t.Fatalf("seed quest-flag consume-gold mismatch templates: %v", err)
 	}
-	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(queststate.Snapshot{Flags: []queststate.Flag{{
 		Character: "QuestHero",
 		QuestRef:  "quest:first_steps",
 		Name:      "killed_qa_mob",
@@ -167,7 +182,16 @@ func TestGameSessionFlowStaticActorQuestFlagConsumeGoldRejectsInsufficientGoldWi
 		t.Fatalf("seed quest-state for consume-gold mismatch turn-in: %v", err)
 	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, ticketStore, accounts, interactionStore, itemStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		ticketStore,
+		accounts,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		itemStore,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected quest-flag consume-gold mismatch runtime error: %v", err)
 	}
@@ -197,7 +221,7 @@ func TestGameSessionFlowStaticActorQuestFlagConsumeGoldRejectsInsufficientGoldWi
 	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].Vnum != 27001 {
 		t.Fatalf("expected inventory unchanged after consume-gold mismatch, got ok=%v snapshot=%+v", ok, inventorySnapshot)
 	}
-	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	loaded, err := questStore.Load()
 	if err != nil {
 		t.Fatalf("load quest-state after consume-gold mismatch: %v", err)
 	}
