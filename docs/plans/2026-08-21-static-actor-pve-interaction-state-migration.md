@@ -63,3 +63,4 @@ Focused coverage:
 2. Optionally project combat-profile / aggro / leash metadata once operators need those columns for offline content review.
 3. Keep ground-item restart durability deferred until operators decide quarantined `0010` exports should drive recovery.
 4. Keep daemon-local migration endpoints read-only.
+5. ~~Prove the checked-in NPC QA fixture projects onto the `0012` export/quarantine tip.~~ Done: see [NPC service bundle 0012 export quarantine](2026-08-22-npc-service-bundle-0012-export-quarantine.md).

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -4838,6 +4839,155 @@ func TestExampleBootstrapNPCServiceBundleStaysValid(t *testing.T) {
 	canonicalJSON = append(canonicalJSON, '\n')
 	if string(raw) != string(canonicalJSON) {
 		t.Fatalf("example content bundle is not byte-for-byte canonical; update docs/examples/bootstrap-npc-service-bundle.json to:\n%s", string(canonicalJSON))
+	}
+}
+
+func TestExampleBootstrapNPCServiceBundleExportsAndQuarantinesStaticActorPvEMigrationShape(t *testing.T) {
+	_, canonical := readCanonicalExampleBundle(t, "bootstrap-npc-service-bundle.json")
+
+	actors := make([]staticstore.StaticActor, 0, len(canonical.StaticActors)+len(canonical.SpawnGroups))
+	for _, actor := range canonical.StaticActors {
+		actors = append(actors, staticstore.StaticActor{
+			Name:            actor.Name,
+			MapIndex:        actor.MapIndex,
+			X:               actor.X,
+			Y:               actor.Y,
+			RaceNum:         actor.RaceNum,
+			CombatProfile:   actor.CombatProfile,
+			InteractionKind: actor.InteractionKind,
+			InteractionRef:  actor.InteractionRef,
+		})
+	}
+	for _, spawnGroup := range canonical.SpawnGroups {
+		actors = append(actors, staticstore.StaticActor{
+			Name:             spawnGroup.Name,
+			MapIndex:         spawnGroup.MapIndex,
+			X:                spawnGroup.X,
+			Y:                spawnGroup.Y,
+			RaceNum:          spawnGroup.RaceNum,
+			SpawnHome:        &worldruntime.PositionSnapshot{MapIndex: spawnGroup.MapIndex, X: spawnGroup.X, Y: spawnGroup.Y},
+			CombatProfile:    spawnGroup.CombatProfile,
+			SpawnGroupRef:    spawnGroup.Ref,
+			RewardExperience: spawnGroup.RewardExperience,
+			RewardGold:       spawnGroup.RewardGold,
+			RewardDropVnums:  append([]uint32(nil), spawnGroup.RewardDropVnums...),
+			RewardQuestRef:   spawnGroup.RewardQuestRef,
+			RewardQuestFlag:  spawnGroup.RewardQuestFlag,
+			RewardQuestFrom:  spawnGroup.RewardQuestFrom,
+			RewardQuestTo:    spawnGroup.RewardQuestTo,
+			RewardQuestText:  spawnGroup.RewardQuestText,
+			RequireQuestRef:  spawnGroup.RequireQuestRef,
+			RequireQuestFlag: spawnGroup.RequireQuestFlag,
+			RequireQuestFrom: spawnGroup.RequireQuestFrom,
+		})
+	}
+	// Assign deterministic entity IDs in store-canonical name order so the
+	// migration-shaped export stays stable without requiring a live runtime.
+	sort.Slice(actors, func(i int, j int) bool {
+		if actors[i].Name == actors[j].Name {
+			return actors[i].EntityID < actors[j].EntityID
+		}
+		return actors[i].Name < actors[j].Name
+	})
+	for i := range actors {
+		actors[i].EntityID = uint64(i + 1)
+	}
+
+	staticSnapshot := staticstore.Snapshot{StaticActors: actors}
+	interactionSnapshot := interactionstore.Snapshot{Definitions: append([]interactionstore.Definition(nil), canonical.InteractionDefinitions...)}
+
+	export, err := staticstore.ExportStaticActorContentState(staticSnapshot, interactionSnapshot)
+	if err != nil {
+		t.Fatalf("export NPC service fixture onto 0012 migration shape: %v", err)
+	}
+	if export.MigrationVersion != staticstore.StaticActorContentStateMigrationVersion || export.MigrationName != staticstore.StaticActorContentStateMigrationName {
+		t.Fatalf("unexpected migration boundary: version=%d name=%q", export.MigrationVersion, export.MigrationName)
+	}
+
+	summary, err := staticstore.ValidateStaticActorContentStateExport(export)
+	if err != nil {
+		t.Fatalf("validate NPC service 0012 export: %v", err)
+	}
+	wantSummary := staticstore.StaticActorContentStateQuarantineSummary{
+		InteractionDefinitionCount: 8,
+		MerchantCatalogEntryCount:  2,
+		QuestFlagRewardItemCount:   1,
+		QuestFlagConsumeItemCount:  1,
+		StaticActorCount:           9,
+		RewardDropCount:            1,
+		EntityIDs:                  []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9},
+		InteractionKinds: []string{
+			interactionstore.KindInfo,
+			interactionstore.KindOpenSafebox,
+			interactionstore.KindQuestFlag,
+			interactionstore.KindShopPreview,
+			interactionstore.KindTalk,
+			interactionstore.KindWarp,
+		},
+	}
+	if !reflect.DeepEqual(summary, wantSummary) {
+		t.Fatalf("unexpected NPC service quarantine summary:\n got: %#v\nwant: %#v", summary, wantSummary)
+	}
+
+	quarantined, quarantineSummary, err := staticstore.QuarantineStaticActorContentStateExport(export)
+	if err != nil {
+		t.Fatalf("quarantine NPC service 0012 export: %v", err)
+	}
+	if !reflect.DeepEqual(quarantineSummary, wantSummary) {
+		t.Fatalf("unexpected quarantined NPC service summary:\n got: %#v\nwant: %#v", quarantineSummary, wantSummary)
+	}
+	if !reflect.DeepEqual(quarantined, export) {
+		t.Fatalf("expected quarantine to preserve the already-canonical NPC service export")
+	}
+
+	var (
+		foundTurnIn    bool
+		foundWarehouse bool
+		foundKillQuest bool
+	)
+	for _, definition := range export.InteractionDefinitions {
+		switch {
+		case definition.Kind == interactionstore.KindQuestFlag && definition.Ref == "quest:first_steps_kill_turnin":
+			foundTurnIn = true
+			if definition.RewardExperience != 50 || definition.RewardGold != 100 || definition.ConsumeGold != 25 || definition.ConsumeExperience != 10 {
+				t.Fatalf("unexpected QuestHunter turn-in scalars: %#v", definition)
+			}
+		case definition.Kind == interactionstore.KindOpenSafebox && definition.Ref == "npc:qa_warehouse":
+			foundWarehouse = true
+			if definition.Size != 2 || definition.QuestRef != "quest:first_steps" || definition.QuestFlag != "met_guide" || definition.QuestFrom != 1 {
+				t.Fatalf("unexpected Warehouse open_safebox projection: %#v", definition)
+			}
+		}
+	}
+	if !foundTurnIn {
+		t.Fatal("expected quest:first_steps_kill_turnin projection in 0012 export")
+	}
+	if !foundWarehouse {
+		t.Fatal("expected npc:qa_warehouse open_safebox projection in 0012 export")
+	}
+	if len(export.QuestFlagRewardItems) != 1 || export.QuestFlagRewardItems[0].DefinitionRef != "quest:first_steps_kill_turnin" || export.QuestFlagRewardItems[0].ItemVnum != 11200 || export.QuestFlagRewardItems[0].Count != 1 {
+		t.Fatalf("unexpected quest_flag reward item rows: %#v", export.QuestFlagRewardItems)
+	}
+	if len(export.QuestFlagConsumeItems) != 1 || export.QuestFlagConsumeItems[0].DefinitionRef != "quest:first_steps_kill_turnin" || export.QuestFlagConsumeItems[0].ItemVnum != 27001 || export.QuestFlagConsumeItems[0].Count != 1 {
+		t.Fatalf("unexpected quest_flag consume item rows: %#v", export.QuestFlagConsumeItems)
+	}
+	for _, actor := range export.StaticActors {
+		if actor.SpawnGroupRef != "practice.qa_reward_mob" {
+			continue
+		}
+		foundKillQuest = true
+		if actor.Name != "QARewardMob" || actor.RewardQuestFlag != "killed_qa_mob" || actor.RewardQuestTo != 1 || actor.RequireQuestFlag != "met_guide" || actor.RequireQuestFrom != 1 {
+			t.Fatalf("unexpected kill-quest actor projection: %#v", actor)
+		}
+		if actor.RewardExperience != 75 || actor.RewardGold != 60 {
+			t.Fatalf("unexpected kill-quest combat rewards: %#v", actor)
+		}
+	}
+	if !foundKillQuest {
+		t.Fatal("expected practice.qa_reward_mob kill-quest projection in 0012 export")
+	}
+	if len(export.RewardDrops) != 1 || export.RewardDrops[0].ItemVnum != 27001 {
+		t.Fatalf("unexpected reward drop rows: %#v", export.RewardDrops)
 	}
 }
 
