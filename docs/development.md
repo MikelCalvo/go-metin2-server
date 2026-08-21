@@ -14,7 +14,7 @@ make test
 make build
 ```
 
-`make build` stamps `internal/buildinfo` via `-ldflags` using the current git describe/commit and a UTC RFC3339 build date. Unstamped `go run` / plain `go build` binaries keep the package defaults (`dev` / `none` / `unknown`). See [release/versioning policy](workflow/release-versioning.md). For the first lab host layout, timestamped artifact trees, and daemon JSON logging / secret-redaction conventions, see [lab deployment topology](workflow/lab-deployment-topology.md) and [production observability](workflow/production-observability.md).
+`make build` stamps `internal/buildinfo` via `-ldflags` using a UTC RFC3339 build date plus `VERSION` / `COMMIT` resolved from `GITHUB_REF_NAME` / `GITHUB_SHA` when set, otherwise `git describe` / `git rev-parse` (fallbacks `dev` / `none`). Unstamped `go run` / plain `go build` binaries keep the package defaults (`dev` / `none` / `unknown`). See [release/versioning policy](workflow/release-versioning.md). For the first lab host layout, timestamped artifact trees, and daemon JSON logging / secret-redaction conventions, see [lab deployment topology](workflow/lab-deployment-topology.md) and [production observability](workflow/production-observability.md).
 
 Run locally:
 
@@ -64,7 +64,7 @@ It currently validates:
 - daemon builds for `authd`, `gamed`, and `metin2-migrate`
 - Docker runtime and debug image builds
 
-Binary and image builds stamp `internal/buildinfo` when invoked through `make build` / `make docker-build`, and the public CI workflow now forwards the same `VERSION` / `COMMIT` / `BUILD_DATE` args for both Go and Docker builds.
+Binary and image builds stamp `internal/buildinfo` when invoked through `make build` / `make docker-build`. The public CI workflow prefers `GITHUB_SHA` (first 12 chars) and `GITHUB_REF_NAME` for those stamps, reuses the same resolved identity for Go and both Docker targets, and fail-closes when `GITHUB_SHA` is set but the stamped `metin2-migrate version` commit is blank/`none` or mismatches the resolved value.
 
 The intent is simple: every small slice should be pushable and publicly re-checkable.
 

@@ -1,8 +1,11 @@
 GO ?= go
 IMAGE ?= go-metin2-server
 
-VERSION != git describe --tags --always --dirty 2>/dev/null || echo dev
-COMMIT != git rev-parse --short=12 HEAD 2>/dev/null || echo none
+# Prefer CI-provided identity when present so lab retention trees keyed by
+# <commit12> match the GitHub Actions checkout even on shallow/detached SHAs.
+# FreeBSD/bmake-compatible `!=` shell assignments (not GNU Make $(shell ...)).
+VERSION != if [ -n "$${GITHUB_REF_NAME:-}" ]; then printf '%s' "$${GITHUB_REF_NAME}"; else git describe --tags --always --dirty 2>/dev/null || echo dev; fi
+COMMIT != if [ -n "$${GITHUB_SHA:-}" ]; then printf '%s' "$${GITHUB_SHA}" | cut -c1-12; else git rev-parse --short=12 HEAD 2>/dev/null || echo none; fi
 BUILD_DATE != date -u +%Y-%m-%dT%H:%M:%SZ
 BUILDINFO_PKG = github.com/MikelCalvo/go-metin2-server/internal/buildinfo
 LDFLAGS = -X $(BUILDINFO_PKG).Version=$(VERSION) -X $(BUILDINFO_PKG).Commit=$(COMMIT) -X $(BUILDINFO_PKG).BuildDate=$(BUILD_DATE)

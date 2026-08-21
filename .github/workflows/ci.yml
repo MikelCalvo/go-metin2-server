@@ -40,16 +40,47 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
-      - name: Build binaries
+      - name: Resolve release identity
+        id: identity
         run: |
-          VERSION="${GITHUB_REF_NAME:-dev}"
-          COMMIT="$(git rev-parse --short=12 HEAD)"
+          set -eu
+          if [ -n "${GITHUB_REF_NAME:-}" ]; then
+            VERSION="${GITHUB_REF_NAME}"
+          else
+            VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
+          fi
+          if [ -n "${GITHUB_SHA:-}" ]; then
+            COMMIT="$(printf '%s' "${GITHUB_SHA}" | cut -c1-12)"
+          else
+            COMMIT="$(git rev-parse --short=12 HEAD 2>/dev/null || echo none)"
+          fi
           BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          if [ -n "${GITHUB_SHA:-}" ] && { [ -z "${COMMIT}" ] || [ "${COMMIT}" = "none" ]; }; then
+            echo "GITHUB_SHA was set but resolved COMMIT is empty or 'none'" >&2
+            exit 1
+          fi
+          echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "COMMIT=${COMMIT}" >> "$GITHUB_OUTPUT"
+          echo "BUILD_DATE=${BUILD_DATE}" >> "$GITHUB_OUTPUT"
+          echo "Resolved release identity: version=${VERSION} commit=${COMMIT} build_date=${BUILD_DATE}"
+
+      - name: Build binaries
+        env:
+          VERSION: ${{ steps.identity.outputs.VERSION }}
+          COMMIT: ${{ steps.identity.outputs.COMMIT }}
+          BUILD_DATE: ${{ steps.identity.outputs.BUILD_DATE }}
+        run: |
+          set -eu
           BUILDINFO_PKG=github.com/MikelCalvo/go-metin2-server/internal/buildinfo
           LDFLAGS="-X ${BUILDINFO_PKG}.Version=${VERSION} -X ${BUILDINFO_PKG}.Commit=${COMMIT} -X ${BUILDINFO_PKG}.BuildDate=${BUILD_DATE}"
-          go build -ldflags "${LDFLAGS}" ./cmd/authd
-          go build -ldflags "${LDFLAGS}" ./cmd/gamed
-          go build -ldflags "${LDFLAGS}" ./cmd/metin2-migrate
+          go build -ldflags "${LDFLAGS}" -o ./authd ./cmd/authd
+          go build -ldflags "${LDFLAGS}" -o ./gamed ./cmd/gamed
+          go build -ldflags "${LDFLAGS}" -o ./metin2-migrate ./cmd/metin2-migrate
+          got_commit="$(./metin2-migrate version | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"])')"
+          if [ "${got_commit}" != "${COMMIT}" ]; then
+            echo "stamped metin2-migrate commit ${got_commit} != resolved ${COMMIT}" >&2
+            exit 1
+          fi
 
   docker-build:
     runs-on: ubuntu-latest
@@ -58,20 +89,64 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Build runtime image
+      - name: Resolve release identity
+        id: identity
         run: |
+          set -eu
+          if [ -n "${GITHUB_REF_NAME:-}" ]; then
+            VERSION="${GITHUB_REF_NAME}"
+          else
+            VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
+          fi
+          if [ -n "${GITHUB_SHA:-}" ]; then
+            COMMIT="$(printf '%s' "${GITHUB_SHA}" | cut -c1-12)"
+          else
+            COMMIT="$(git rev-parse --short=12 HEAD 2>/dev/null || echo none)"
+          fi
+          BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          if [ -n "${GITHUB_SHA:-}" ] && { [ -z "${COMMIT}" ] || [ "${COMMIT}" = "none" ]; }; then
+            echo "GITHUB_SHA was set but resolved COMMIT is empty or 'none'" >&2
+            exit 1
+          fi
+          echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "COMMIT=${COMMIT}" >> "$GITHUB_OUTPUT"
+          echo "BUILD_DATE=${BUILD_DATE}" >> "$GITHUB_OUTPUT"
+          echo "Resolved release identity: version=${VERSION} commit=${COMMIT} build_date=${BUILD_DATE}"
+
+      - name: Build runtime image
+        env:
+          VERSION: ${{ steps.identity.outputs.VERSION }}
+          COMMIT: ${{ steps.identity.outputs.COMMIT }}
+          BUILD_DATE: ${{ steps.identity.outputs.BUILD_DATE }}
+        run: |
+          set -eu
           docker build \
-            --build-arg VERSION="${GITHUB_REF_NAME:-dev}" \
-            --build-arg COMMIT="$(git rev-parse --short=12 HEAD)" \
-            --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --build-arg VERSION="${VERSION}" \
+            --build-arg COMMIT="${COMMIT}" \
+            --build-arg BUILD_DATE="${BUILD_DATE}" \
             --target runtime \
             -t go-metin2-server:ci .
+          got_commit="$(docker run --rm --entrypoint /app/metin2-migrate go-metin2-server:ci version | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"])')"
+          if [ "${got_commit}" != "${COMMIT}" ]; then
+            echo "runtime image metin2-migrate commit ${got_commit} != resolved ${COMMIT}" >&2
+            exit 1
+          fi
 
       - name: Build debug runtime image
+        env:
+          VERSION: ${{ steps.identity.outputs.VERSION }}
+          COMMIT: ${{ steps.identity.outputs.COMMIT }}
+          BUILD_DATE: ${{ steps.identity.outputs.BUILD_DATE }}
         run: |
+          set -eu
           docker build \
-            --build-arg VERSION="${GITHUB_REF_NAME:-dev}" \
-            --build-arg COMMIT="$(git rev-parse --short=12 HEAD)" \
-            --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --build-arg VERSION="${VERSION}" \
+            --build-arg COMMIT="${COMMIT}" \
+            --build-arg BUILD_DATE="${BUILD_DATE}" \
             --target runtime-debug \
             -t go-metin2-server:debug-ci .
+          got_commit="$(docker run --rm --entrypoint /app/metin2-migrate go-metin2-server:debug-ci version | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"])')"
+          if [ "${got_commit}" != "${COMMIT}" ]; then
+            echo "debug image metin2-migrate commit ${got_commit} != resolved ${COMMIT}" >&2
+            exit 1
+          fi
