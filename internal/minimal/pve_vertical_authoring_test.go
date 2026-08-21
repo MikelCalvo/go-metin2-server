@@ -90,7 +90,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("expected imported spawn group practice.qa_pve_vertical_mob, got %+v", imported.SpawnGroups)
 	}
 
-	var guideVID, hunterVID, merchantVID, mobVID uint32
+	var guideVID, hunterVID, merchantVID, warehouseVID, mobVID uint32
 	for _, actor := range runtime.StaticActors() {
 		switch actor.Name {
 		case "QuestGuide":
@@ -99,12 +99,14 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 			hunterVID = uint32(actor.EntityID)
 		case "Merchant":
 			merchantVID = uint32(actor.EntityID)
+		case "Warehouse":
+			warehouseVID = uint32(actor.EntityID)
 		case "QAPveVerticalMob":
 			mobVID = uint32(actor.EntityID)
 		}
 	}
-	if guideVID == 0 || hunterVID == 0 || merchantVID == 0 || mobVID == 0 {
-		t.Fatalf("expected guide/hunter/merchant/mob actors after import, got %+v", runtime.StaticActors())
+	if guideVID == 0 || hunterVID == 0 || merchantVID == 0 || warehouseVID == 0 || mobVID == 0 {
+		t.Fatalf("expected guide/hunter/merchant/warehouse/mob actors after import, got %+v", runtime.StaticActors())
 	}
 
 	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pve-vertical", 0x60606060)
@@ -119,6 +121,19 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	mismatchChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, mismatchOut[0]))
 	if err != nil || mismatchChat.Message != "Quest requirements are not met." {
 		t.Fatalf("unexpected gated merchant mismatch chat: %+v err=%v", mismatchChat, err)
+	}
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	warehouseMismatchOut, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: warehouseVID})))
+	if err != nil {
+		t.Fatalf("unexpected gated warehouse mismatch interaction error: %v", err)
+	}
+	if len(warehouseMismatchOut) != 1 {
+		t.Fatalf("expected 1 self-only warehouse mismatch frame, got %d", len(warehouseMismatchOut))
+	}
+	warehouseMismatchChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, warehouseMismatchOut[0]))
+	if err != nil || warehouseMismatchChat.Message != "Quest requirements are not met." {
+		t.Fatalf("unexpected gated warehouse mismatch chat: %+v err=%v", warehouseMismatchChat, err)
 	}
 
 	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: mobVID}))); err != nil || len(out) != 1 {
@@ -184,6 +199,26 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	}
 	if _, err := shopproto.DecodeServerStart(decodeSingleFrame(t, shopOut[0])); err != nil {
 		t.Fatalf("decode unlocked merchant shop start: %v", err)
+	}
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	warehouseOut, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: warehouseVID})))
+	if err != nil {
+		t.Fatalf("unexpected unlocked warehouse interaction error: %v", err)
+	}
+	if len(warehouseOut) != 2 {
+		t.Fatalf("expected chat + SAFEBOX_SIZE frames after guide unlock, got %d", len(warehouseOut))
+	}
+	warehouseChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, warehouseOut[0]))
+	if err != nil || warehouseChat.Message != "The warehouse keeper unlocks the vault." {
+		t.Fatalf("unexpected unlocked warehouse chat: %+v err=%v", warehouseChat, err)
+	}
+	warehouseSize, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, warehouseOut[1]))
+	if err != nil {
+		t.Fatalf("decode unlocked warehouse SAFEBOX_SIZE: %v", err)
+	}
+	if warehouseSize != (itemproto.SafeboxSizePacket{Size: 2}) {
+		t.Fatalf("unexpected unlocked warehouse SAFEBOX_SIZE: %+v", warehouseSize)
 	}
 
 	closeSessionFlow(t, flow)

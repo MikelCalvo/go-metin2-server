@@ -61,6 +61,6 @@ git diff --check
 
 ## Follow-up options
 
-1. Optionally add `Warehouse` into `bootstrap-pve-vertical-authoring-bundle.json` once the summary surface is live.
+1. ~~Optionally add `Warehouse` into `bootstrap-pve-vertical-authoring-bundle.json` once the summary surface is live.~~ Done: see [PvE vertical authoring warehouse](2026-08-21-pve-vertical-authoring-warehouse.md).
 2. Keep durable safebox persistence / password load deferred.
 3. Keep branching quest scripts deferred.

@@ -805,8 +805,18 @@ func TestLocalContentBundleValidateEndpointExpandsPveVerticalAuthoringExample(t 
 	if len(got.SpawnGroups) != 1 || !reflect.DeepEqual(got.SpawnGroups[0], wantSpawn) {
 		t.Fatalf("expected validation response to expand PvE vertical authoring into gated kill-quest spawn group, got %+v", got.SpawnGroups)
 	}
-	if len(got.StaticActors) != 7 || len(got.InteractionDefinitions) != 7 || len(got.QuestState) != 1 {
+	if len(got.StaticActors) != 8 || len(got.InteractionDefinitions) != 8 || len(got.QuestState) != 1 {
 		t.Fatalf("unexpected PvE vertical authoring validation counts: actors=%d defs=%d quest_state=%d", len(got.StaticActors), len(got.InteractionDefinitions), len(got.QuestState))
+	}
+	foundWarehouse := false
+	for _, actor := range got.StaticActors {
+		if actor.Name == "Warehouse" && actor.InteractionKind == interactionstore.KindOpenSafebox && actor.InteractionRef == "npc:qa_warehouse" {
+			foundWarehouse = true
+			break
+		}
+	}
+	if !foundWarehouse {
+		t.Fatalf("expected validated PvE vertical authoring bundle to keep Warehouse open_safebox actor, got %+v", got.StaticActors)
 	}
 }
 

@@ -62,6 +62,15 @@
       "race_num": 20303,
       "interaction_kind": "info",
       "interaction_ref": "lore:qa_square"
+    },
+    {
+      "name": "Warehouse",
+      "map_index": 1,
+      "x": 469575,
+      "y": 964200,
+      "race_num": 20301,
+      "interaction_kind": "open_safebox",
+      "interaction_ref": "npc:qa_warehouse"
     }
   ],
   "regen_spawns": [
@@ -122,7 +131,16 @@
     {
       "kind": "info",
       "ref": "lore:qa_square",
-      "text": "The QA square contains a merchant, teleporter, guide, hunter, and reward mob.",
+      "text": "The QA square contains a merchant, teleporter, guide, hunter, warehouse, and reward mob.",
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "met_guide",
+      "quest_from": 1
+    },
+    {
+      "kind": "open_safebox",
+      "ref": "npc:qa_warehouse",
+      "text": "The warehouse keeper unlocks the vault.",
+      "size": 2,
       "quest_ref": "quest:first_steps",
       "quest_flag": "met_guide",
       "quest_from": 1

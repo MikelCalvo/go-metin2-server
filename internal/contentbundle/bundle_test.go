@@ -4713,6 +4713,27 @@ func TestCanonicalizePveVerticalAuthoringExampleExpandsQuestLoop(t *testing.T) {
 	if !foundGuide || !foundHunter {
 		t.Fatalf("expected QuestGuide and QuestHunter quest-flag routes, got %+v", summary.QuestFlagRoutes)
 	}
+	if summary.OpenSafeboxRouteCount != 1 {
+		t.Fatalf("expected 1 open_safebox route in PvE vertical authoring example, got %d", summary.OpenSafeboxRouteCount)
+	}
+	wantWarehouse := OpenSafeboxRouteSummary{
+		ActorName:      "Warehouse",
+		SourceMapIndex: 1,
+		SourceX:        469575,
+		SourceY:        964200,
+		Ref:            "npc:qa_warehouse",
+		Text:           "The warehouse keeper unlocks the vault.",
+		Size:           2,
+		QuestRef:       "quest:first_steps",
+		QuestFlag:      "met_guide",
+		QuestFrom:      1,
+	}
+	if !reflect.DeepEqual(summary.OpenSafeboxRoutes, []OpenSafeboxRouteSummary{wantWarehouse}) {
+		t.Fatalf("unexpected PvE vertical open_safebox routes:\n got: %#v\nwant: %#v", summary.OpenSafeboxRoutes, []OpenSafeboxRouteSummary{wantWarehouse})
+	}
+	if len(canonical.StaticActors) != 8 || len(canonical.InteractionDefinitions) != 8 {
+		t.Fatalf("unexpected canonical PvE vertical counts: actors=%d defs=%d", len(canonical.StaticActors), len(canonical.InteractionDefinitions))
+	}
 }
 
 func TestCanonicalizeRegenSpawnsCanReferenceBundledCombatProfile(t *testing.T) {

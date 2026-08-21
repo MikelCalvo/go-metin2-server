@@ -641,7 +641,7 @@ Run this only when the target build has authored QA NPC content loaded nearby.
 
 If the lab currently has no such content, either:
 - import/adapt `docs/examples/bootstrap-npc-service-bundle.json` through `/local/content-bundle`, or
-- import/adapt `docs/examples/bootstrap-pve-vertical-authoring-bundle.json` when validating the authoring-form regen/drop + quest loop (validate/import expands it into the same owned runtime content), or
+- import/adapt `docs/examples/bootstrap-pve-vertical-authoring-bundle.json` when validating the authoring-form regen/drop + quest loop (validate/import expands it into the same owned runtime content, including the gated `Warehouse` `open_safebox` actor), or
 - record this subsection as **N/A** instead of treating the absence of authored NPCs as a gameplay regression.
 
 Optional operator preflight before importing a candidate bundle:
