@@ -91,7 +91,7 @@ Current owned warp operator-summary semantics:
 
 Current owned interaction cooldown semantics:
 - a fixed `1s` runtime cooldown now applies per live session and per target static-actor `VID`
-- the cooldown currently applies across all owned interaction kinds, including `info`, `talk`, `quest_flag`, `shop_preview`, and `warp`
+- the cooldown currently applies across all owned interaction kinds, including `info`, `talk`, `quest_flag`, `shop_preview`, `warp`, and `open_safebox`
 - repeated `INTERACT` requests for the same target while that cooldown is active are consumed as a deliberate no-op with no outgoing frames
 - different players do not share a cooldown bucket with each other, and a fresh reconnect starts with a fresh cooldown state
 
@@ -130,6 +130,23 @@ Current owned self-only interaction operator-summary semantics:
 
 This remains intentionally narrow even now that the first buy-only merchant path exists: sell-back, stock depletion, and richer merchant-window choreography still remain separate later work.
 
+### 3. `open_safebox`
+A visible static actor can act as a warehouse-style NPC that opens the already-owned bootstrap safebox presentation.
+
+Frozen target behavior:
+- the player sends the existing `INTERACT (0x0501)` request
+- the runtime resolves a deterministic authored `open_safebox` definition behind that actor
+- that authored store-level definition may carry optional informational `text`, optional bootstrap page `size` in `1..3` (omitted / `0` defaults to `1`), and the same optional non-mutating selected-character quest gate used by `warp` / `shop_preview`
+- when the interaction applies, the runtime may deliver one self-facing informational chat message if authored text is present
+- the runtime then reuses the existing `/open_safebox` presentation seam: set the same-socket busy flag, emit `GC::SAFEBOX_SIZE`, and re-emit any remembered same-session `SAFEBOX_SET` rows
+- no password load, durable safebox persistence, mall, money, or `SAFEBOX_ITEM_MOVE` is introduced by this kind
+
+Current owned `open_safebox` failure semantics:
+- if an optional quest gate is present and the selected character's current flag value does not match `quest_from`, the player receives one self-only `CHAT_TYPE_INFO` message: `Quest requirements are not met.` and no safebox presentation opens
+- invalid authored sizes and foreign fields fail closed at store / content-bundle validation before runtime mutation
+
+This remains intentionally narrow: check-in / check-out already exist once the presentation is open, but durable storage and password load stay deferred.
+
 ## Content-bundle combat profile guardrail
 
 Content bundles can carry authored combat profile snapshots so imported spawn groups can materialize process-local practice-mob variants before the static actors are restored.
@@ -158,9 +175,10 @@ No new client-originated packet family is frozen in this stage.
 ## Response rule
 
 The current owned response families stay intentionally conservative:
-- `info` and `talk` remain self-only chat-backed authored responses; they may optionally carry the same non-mutating selected-character quest gate as `warp` / `shop_preview`, returning `Quest requirements are not met.` instead of the authored text when the gate mismatches
+- `info` and `talk` remain self-only chat-backed authored responses; they may optionally carry the same non-mutating selected-character quest gate as `warp` / `shop_preview` / `open_safebox`, returning `Quest requirements are not met.` instead of the authored text when the gate mismatches
 - `warp` now reuses the already-owned transfer / rebootstrap contract rather than inventing a separate NPC warp packet; if authored `text` is present, the interacting player first receives one self-only informational chat delivery and then the transfer rebootstrap frames
 - `shop_preview` now reuses the current bootstrap merchant window open / buy / close contract, while preserving the deterministic preview render for QA/debug and lower-level resolution surfaces
+- `open_safebox` now reuses the current bootstrap safebox open presentation (`SAFEBOX_SIZE` + remembered `SAFEBOX_SET` rows) rather than inventing a separate warehouse packet family; if authored `text` is present, the interacting player first receives one self-only informational chat delivery and then the safebox open frames
 
 ## Ordered implementation status
 
@@ -187,7 +205,8 @@ This stage still does **not** freeze:
 
 After the currently landed and later follow-up slices, the repository should be able to say:
 - bootstrap static actors already support self-only `info` / `talk` plus merchant-style `shop_preview`
-- the current owned service-style NPC gameplay families are `warp` and merchant `shop_preview`
+- the current owned service-style NPC gameplay families are `warp`, merchant `shop_preview`, and warehouse `open_safebox`
 - `warp` is the first real NPC gameplay action and already reuses the existing transfer / rebootstrap runtime through `INTERACT`
 - `shop_preview` now already resolves through `INTERACT` into the bootstrap merchant window open / buy / close flow built on the same structured catalog seam
-- the project still avoids speculative dialog-window, quest, sell-back, and broader merchant semantics until the underlying systems exist
+- `open_safebox` now already resolves through `INTERACT` into the bootstrap safebox open presentation used by same-session check-in / check-out
+- the project still avoids speculative dialog-window, quest-script, sell-back, and durable storage semantics until the underlying systems exist

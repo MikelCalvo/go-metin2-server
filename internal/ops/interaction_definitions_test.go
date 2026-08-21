@@ -396,6 +396,31 @@ func TestLocalInteractionDefinitionsEndpointCreatesShopPreviewDefinitionForLoopb
 	}
 }
 
+func TestLocalInteractionDefinitionsEndpointCreatesOpenSafeboxDefinitionForLoopbackPost(t *testing.T) {
+	creator := &stubInteractionDefinitionCreator{status: http.StatusOK, definition: map[string]any{"kind": "open_safebox", "ref": "npc:warehouse", "text": "Store your goods safely.", "size": float64(2)}}
+	mux := RegisterLocalInteractionDefinitionEndpoints(NewPprofMux("gamed"), nil, creator.CreateInteractionDefinition)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interactions", strings.NewReader(`{"kind":"open_safebox","ref":"npc:warehouse","text":"Store your goods safely.","size":2}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if creator.calls != 1 || creator.lastDefinition.Kind != interactionstore.KindOpenSafebox || creator.lastDefinition.Ref != "npc:warehouse" || creator.lastDefinition.Text != "Store your goods safely." || creator.lastDefinition.Size != 2 {
+		t.Fatalf("unexpected open_safebox interaction definition creator call state: %+v", creator)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"kind":"open_safebox"`) || !strings.Contains(string(body), `"ref":"npc:warehouse"`) || !strings.Contains(string(body), `"size":2`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
 func TestLocalInteractionDefinitionsEndpointCreatesQuestFlagDefinitionForLoopbackPost(t *testing.T) {
 	creator := &stubInteractionDefinitionCreator{status: http.StatusOK, definition: map[string]any{"kind": "quest_flag", "ref": "quest:first_steps", "text": "Quest updated.", "quest_ref": "quest:first_steps", "quest_flag": "met_guide", "quest_from": float64(1), "quest_to": float64(2)}}
 	mux := RegisterLocalInteractionDefinitionEndpoints(NewPprofMux("gamed"), nil, creator.CreateInteractionDefinition)

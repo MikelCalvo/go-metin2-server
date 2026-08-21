@@ -106,6 +106,7 @@ type localInteractionDefinitionRequest struct {
 	MapIndex          uint32                                  `json:"map_index"`
 	X                 int32                                   `json:"x"`
 	Y                 int32                                   `json:"y"`
+	Size              uint8                                   `json:"size"`
 	QuestRef          string                                  `json:"quest_ref"`
 	QuestFlag         string                                  `json:"quest_flag"`
 	QuestFrom         uint32                                  `json:"quest_from"`
@@ -5479,6 +5480,7 @@ func decodeLocalInteractionDefinitionRequest(r *http.Request) (interactionstore.
 		MapIndex:          request.MapIndex,
 		X:                 request.X,
 		Y:                 request.Y,
+		Size:              request.Size,
 		QuestRef:          request.QuestRef,
 		QuestFlag:         request.QuestFlag,
 		QuestFrom:         request.QuestFrom,

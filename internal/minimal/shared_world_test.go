@@ -35018,6 +35018,111 @@ func TestGameSessionFlowStaticActorQuestGatedShopReturnsSelfOnlyMismatchWithoutO
 	}
 }
 
+func TestGameSessionFlowStaticActorOpenSafeboxInteractionReturnsSafeboxSize(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+		Kind: interactionstore.KindOpenSafebox,
+		Ref:  "npc:warehouse",
+		Text: "The warehouse keeper unlocks the vault.",
+		Size: 2,
+	}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Warehouse", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindOpenSafebox, "npc:warehouse")
+	if !ok {
+		t.Fatal("expected open_safebox static actor registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) < 8 {
+		t.Fatalf("expected bootstrap frames with visible warehouse actor, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected open_safebox interaction error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected chat + SAFEBOX_SIZE frames, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode open_safebox chat delivery: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != "The warehouse keeper unlocks the vault." {
+		t.Fatalf("unexpected open_safebox chat delivery: %+v", delivery)
+	}
+	size, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode open_safebox SAFEBOX_SIZE: %v", err)
+	}
+	if size != (itemproto.SafeboxSizePacket{Size: 2}) {
+		t.Fatalf("unexpected open_safebox SAFEBOX_SIZE: %+v", size)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for open_safebox, got %d", len(queued))
+	}
+
+	subject, ok := runtime.sharedWorld.entities.PlayerByName(peer.Name)
+	if !ok {
+		t.Fatalf("expected live shared-world entity for %q after enter", peer.Name)
+	}
+	resolution := runtime.resolveStaticActorInteraction(subject.Entity.ID, uint32(actor.EntityID))
+	if !resolution.Accepted || resolution.Failure != "" || resolution.Definition.Kind != interactionstore.KindOpenSafebox {
+		t.Fatalf("unexpected open_safebox resolution: %+v", resolution)
+	}
+}
+
+func TestGameSessionFlowStaticActorQuestGatedOpenSafeboxRejectsWhenRequirementMissing(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+		Kind:      interactionstore.KindOpenSafebox,
+		Ref:       "npc:gated_warehouse",
+		Text:      "The warehouse keeper unlocks the vault.",
+		Size:      2,
+		QuestRef:  "quest:first_steps",
+		QuestFlag: "met_guide",
+		QuestFrom: 1,
+	}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Warehouse", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindOpenSafebox, "npc:gated_warehouse")
+	if !ok {
+		t.Fatal("expected gated open_safebox static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected gated open_safebox mismatch interaction error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 self-only gated open_safebox mismatch frame, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode gated open_safebox mismatch delivery: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != "Quest requirements are not met." {
+		t.Fatalf("unexpected gated open_safebox mismatch delivery: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for gated open_safebox mismatch, got %d", len(queued))
+	}
+}
+
 func TestGameSessionFlowQuestGatedShopBuyClosesWhenRequirementClearedWhileOpen(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

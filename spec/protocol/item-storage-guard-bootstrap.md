@@ -175,9 +175,12 @@ The shipped minimal runtime intentionally rejects ordinary storage requests with
 A later storage/safebox slice still owns password load, durable item persistence, money, and mall. This contract freezes the smallest presentation seam needed so exchange busy-window policy can observe an open safebox, plus the first accepted same-session in-memory check-in, check-out, and item-move mutations:
 
 - the local slash harness `/open_safebox [size]` may mark the selected character's same-socket bootstrap safebox presentation as open while the session is already in `GAME` and above the bootstrap zero-HP floor;
-- optional `size` is a page count in the owned bootstrap range `1..3`; omitted size defaults to `1`; values outside that range (for example `/open_safebox 4`), non-uint8 size tokens, and extra arguments fail closed with no frames, no ordinary talking-chat fallthrough, and no open-state mutation;
+- an authored static-actor interaction with `interaction_kind = "open_safebox"` may open that same presentation through ordinary `INTERACT (0x0501)` against a visible in-range warehouse NPC, reusing the same busy flag, `SAFEBOX_SIZE`, and remembered `SAFEBOX_SET` re-emission path as the slash harness;
+- optional authored `size` is a page count in the owned bootstrap range `1..3`; omitted / `0` size defaults to `1`; slash values outside that range (for example `/open_safebox 4`), non-uint8 size tokens, and extra arguments fail closed with no frames, no ordinary talking-chat fallthrough, and no open-state mutation; store/content validation likewise rejects authored `open_safebox` definitions whose `size` is outside `0..3`;
+- optional authored `text` on an `open_safebox` definition emits one self-only `CHAT_TYPE_INFO` acknowledgement before `SAFEBOX_SIZE` when the interaction applies;
+- optional non-mutating quest gates on `open_safebox` reuse the ordinary service-gate mismatch text `Quest requirements are not met.` and leave the presentation closed;
 - on success the runtime emits exactly one self-only `GC::SAFEBOX_SIZE` with that page count, remembers an in-memory same-socket `open safebox` presentation flag, and then re-emits any still-remembered same-session in-memory `GC::SAFEBOX_SET` rows for that open session;
-- repeating `/open_safebox` while already open is idempotent presentation refresh: it re-emits `GC::SAFEBOX_SIZE` for the currently remembered size (or the newly requested in-range size), re-emits remembered in-memory `SAFEBOX_SET` rows, and leaves inventory/equipment/quickslot/gold/persistence unchanged;
+- repeating `/open_safebox` or a successful `open_safebox` `INTERACT` while already open is idempotent presentation refresh: it re-emits `GC::SAFEBOX_SIZE` for the currently remembered size (or the newly requested in-range size), re-emits remembered in-memory `SAFEBOX_SET` rows, and leaves inventory/equipment/quickslot/gold/persistence unchanged;
 - the local slash harness `/close_safebox` clears that same-socket open flag when present and emits no storage frames in this bootstrap seam; remembered in-memory safebox contents stay in the same session until logout / shared-world leave / process end, and a later reopen may re-emit them after `SAFEBOX_SIZE`;
 - opening or closing this presentation seam never loads durable safebox items from password/DB, never mutates carried inventory/equipment/quickslots/points/gold/ground handles by itself, never persists safebox contents, and never opens mall/player-shop/cube state;
 - once the open flag is set, exchange `START` treats that same-socket character as busy under the exchange busy-window policy frozen in `item-exchange-bootstrap.md`, using the same requester/partner info-chat strings already owned for open merchant windows;
@@ -248,13 +251,12 @@ Malformed payload sizes fail at the codec/dispatcher boundary rather than reachi
 
 Later slices must write a new contract before broadening storage behavior. In particular, this slice does not freeze:
 
-- safebox password / DB load flow beyond the local slash open-presentation harness above;
+- safebox password / DB load flow beyond the local slash and authored `open_safebox` open-presentation harness above;
 - safebox money state or `SAFEBOX_MONEY_CHANGE` runtime emission;
 - runtime emission policy for `SAFEBOX_WRONG_PASSWORD`, `SAFEBOX_MONEY_CHANGE`, `MALL_OPEN`, `MALL_SET`, or `MALL_DEL`;
 - accepted item-move mutation ordering beyond the currently owned whole-stack same-session relocate / compatible-merge path;
 - mall open/checkout behavior;
 - durable storage item persistence or DB schema;
-- interaction/NPC surfaces that open storage windows;
 - the legacy `CloseSafebox` command-chat companion beyond the local `/close_safebox` open-flag clear above;
 - accepted template-authority policy for `anti_save`, mall-only items, or cash-shop metadata beyond the currently owned `ITEM_SET.anti_flags` projection and self-only `safebox_reject_message` feedback;
 - partial-count safebox splits that allocate a new item identity into an empty destination cell.

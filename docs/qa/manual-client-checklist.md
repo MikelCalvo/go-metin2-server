@@ -476,6 +476,7 @@ Run this only if packet tooling or the client build can emit safebox/mall item-t
 - [ ] Attempt one `MALL_CHECKOUT` request into a disposable carried destination slot
 - [ ] If packet tooling allows it, repeat one malformed payload-size case
 - [ ] If slash harness tooling is available, run `/open_safebox` and confirm one self-only `GC::SAFEBOX_SIZE` appears without inventory/gold mutation
+- [ ] If authored QA NPC content is loaded, interact with the visible `Warehouse` `open_safebox` actor and confirm the same bootstrap safebox presentation (`GC::SAFEBOX_SIZE`, optional self-only info chat, busy for exchange `START`) without inventory/gold mutation; with the quest gate unmet, expect `Quest requirements are not met.` and no safebox presentation
 - [ ] If slash harness tooling is available, run `/open_safebox 4` (or another out-of-range size) and confirm no `SAFEBOX_SIZE`, no ordinary chat fallthrough, and no safebox busy state for later exchange `START`
 - [ ] If slash harness tooling is available, run `/close_safebox` after that open and confirm later exchange `START` is no longer blocked by the safebox busy guard
 
@@ -654,7 +655,7 @@ Optional operator preflight before importing a candidate bundle:
 
 #### 5.4.1 Talk / info / quest flag / merchant interactions
 
-- [ ] Approach a visible authored QA NPC with `info`, `talk`, `quest_flag`, or merchant `shop_preview`
+- [ ] Approach a visible authored QA NPC with `info`, `talk`, `quest_flag`, merchant `shop_preview`, or warehouse `open_safebox`
 - [ ] For `info` / `talk`, interact once and wait for the self-only response
 - [ ] For a `quest_flag` actor, interact once and confirm the self-only info acknowledgement appears; then inspect `GET /local/quest-state/characters/{character}` or `GET /local/content-bundle/quest-state/characters/{character}` and confirm the authored flag advanced for the selected character
 - [ ] Before re-interacting, inspect `GET /local/interaction-visibility/{character}` and confirm that the same visible `quest_flag` actor now previews `Quest requirements are not met.` without mutating quest-state, because the authored `quest_from` value no longer matches
@@ -1736,7 +1737,7 @@ These are currently out of scope for the present server state unless the milesto
 Important note:
 - the project has operator-side transfer primitives and ongoing runtime transfer work
 - for current QA, validate only the existing bootstrap warp/rebootstrap path; polished final warp/loading choreography is still not a general pass/fail gate
-- do **not** treat the owned bootstrap quest loop as out of scope: when QA content is loaded, `quest_flag` unlock/turn-in, gated `info` / `talk` / `warp` / `shop_preview`, kill-quest credit, and turn-in gold/experience/item consume+grant feedback are expected pass/fail checks (see §5.4 / §5.11)
+- do **not** treat the owned bootstrap quest loop as out of scope: when QA content is loaded, `quest_flag` unlock/turn-in, gated `info` / `talk` / `warp` / `shop_preview` / `open_safebox`, kill-quest credit, and turn-in gold/experience/item consume+grant feedback are expected pass/fail checks (see §5.4 / §5.11)
 - do **not** treat bootstrap merchant sell-back or `quest_flag` inventory/currency mutation as out of scope when those seams are under test
 
 ---
@@ -1751,7 +1752,7 @@ A current build is a good candidate when all of these pass:
 - [ ] create/select/enter-game work
 - [ ] single-client movement works
 - [ ] reconnect works
-- [ ] when authored QA NPC content is loaded, supported NPC smoke checks (`info` / `talk`, `quest_flag`, `shop_preview`, `warp`) pass without disconnecting the client
+- [ ] when authored QA NPC content is loaded, supported NPC smoke checks (`info` / `talk`, `quest_flag`, `shop_preview`, `warp`, `open_safebox`) pass without disconnecting the client
 - [ ] when authored QA quest content is loaded, the owned guide unlock -> gated services -> kill-quest credit -> turn-in loop matches §5.4 / §5.11
 - [ ] with two clients: peer visibility works
 - [ ] with two clients: peer movement works

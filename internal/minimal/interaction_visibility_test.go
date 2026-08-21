@@ -92,6 +92,7 @@ func TestGameRuntimeInteractionVisibilityReturnsServicePreviewsForVisibleWarpAnd
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
 	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{
 		defaultMerchantCatalogDefinition(),
+		{Kind: interactionstore.KindOpenSafebox, Ref: "npc:warehouse", Text: "Store your goods safely.", Size: 2},
 		{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800, Text: "Step through the gate."},
 	})
 	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
@@ -106,6 +107,9 @@ func TestGameRuntimeInteractionVisibilityReturnsServicePreviewsForVisibleWarpAnd
 	if _, ok := runtime.RegisterStaticActorWithInteraction("Teleporter", bootstrapMapIndex, 1250, 2250, 20301, interactionstore.KindWarp, "npc:teleporter"); !ok {
 		t.Fatal("expected warp static actor registration to succeed")
 	}
+	if _, ok := runtime.RegisterStaticActorWithInteraction("Warehouse", bootstrapMapIndex, 1300, 2300, 20302, interactionstore.KindOpenSafebox, "npc:warehouse"); !ok {
+		t.Fatal("expected open_safebox static actor registration to succeed")
+	}
 	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
 	defer closeSessionFlow(t, flow)
 
@@ -114,8 +118,8 @@ func TestGameRuntimeInteractionVisibilityReturnsServicePreviewsForVisibleWarpAnd
 		t.Fatalf("expected 1 interaction visibility snapshot, got %+v", snapshots)
 	}
 	entries := snapshots[0].VisibleInteractableStaticActors
-	if len(entries) != 2 {
-		t.Fatalf("expected 2 visible service interactables, got %+v", entries)
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 visible service interactables, got %+v", entries)
 	}
 	byName := make(map[string]InteractableStaticActorVisibilitySnapshot, len(entries))
 	for _, entry := range entries {
@@ -134,6 +138,13 @@ func TestGameRuntimeInteractionVisibilityReturnsServicePreviewsForVisibleWarpAnd
 	}
 	if teleporter.Preview != "Step through the gate. [warp -> map 42 @ 1700,2800]" || teleporter.ResolutionFailure != "" {
 		t.Fatalf("unexpected warp interaction visibility entry: %+v", teleporter)
+	}
+	warehouse, ok := byName["Warehouse"]
+	if !ok {
+		t.Fatalf("expected Warehouse interaction visibility entry, got %+v", entries)
+	}
+	if warehouse.Preview != "Store your goods safely. [open_safebox size 2]" || warehouse.ResolutionFailure != "" {
+		t.Fatalf("unexpected open_safebox interaction visibility entry: %+v", warehouse)
 	}
 }
 

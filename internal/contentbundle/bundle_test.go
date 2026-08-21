@@ -3359,6 +3359,7 @@ func TestBootstrapNPCServiceExampleBundleCoversOwnedServiceInteractionKinds(t *t
 		interactionstore.KindTalk:        {},
 		interactionstore.KindWarp:        {},
 		interactionstore.KindShopPreview: {},
+		interactionstore.KindOpenSafebox: {},
 	}
 	seenDefinitions := make(map[string]struct{}, len(decoded.InteractionDefinitions))
 	for _, definition := range decoded.InteractionDefinitions {

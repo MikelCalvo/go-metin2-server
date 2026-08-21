@@ -19,7 +19,7 @@ Land the first accepted `SAFEBOX_CHECKOUT` contract for same-session in-memory s
 - `SAFEBOX_ITEM_MOVE`, mall open/checkout
 - safebox money / `SAFEBOX_MONEY_CHANGE`
 - multi-cell item-size grid packing beyond the bootstrap 1-cell occupancy used by carried inventory today
-- NPC / interaction surfaces that open storage windows
+- ~~NPC / interaction surfaces that open storage windows~~ Done for bootstrap scope: see [open-safebox NPC service](2026-08-21-open-safebox-npc-service.md).
 - merchant-window auto-close on accepted check-out success
 
 ## TDD and validation

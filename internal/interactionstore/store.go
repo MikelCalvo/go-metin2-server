@@ -14,10 +14,15 @@ const (
 	KindTalk        = "talk"
 	KindWarp        = "warp"
 	KindShopPreview = "shop_preview"
+	KindOpenSafebox = "open_safebox"
 	KindQuestFlag   = "quest_flag"
 
 	MerchantCatalogMaxEntryPrice uint64 = 1<<32 - 1
 	MerchantCatalogMaxEntryCount uint16 = 1<<8 - 1
+	// OpenSafeboxSizeMin / OpenSafeboxSizeMax mirror the bootstrap /open_safebox
+	// page-count range. Authored size 0 means "default to 1" at runtime.
+	OpenSafeboxSizeMin uint8 = 1
+	OpenSafeboxSizeMax uint8 = 3
 	// QuestFlagRewardGoldMax is the maximum authored gold grant that still fits
 	// the bootstrap PLAYER_POINT_CHANGE gold carrier used by death rewards.
 	QuestFlagRewardGoldMax uint64 = 1<<31 - 1
@@ -69,6 +74,7 @@ type Definition struct {
 	MapIndex          uint32                 `json:"map_index,omitempty"`
 	X                 int32                  `json:"x,omitempty"`
 	Y                 int32                  `json:"y,omitempty"`
+	Size              uint8                  `json:"size,omitempty"`
 	QuestRef          string                 `json:"quest_ref,omitempty"`
 	QuestFlag         string                 `json:"quest_flag,omitempty"`
 	QuestFrom         uint32                 `json:"quest_from,omitempty"`
@@ -170,7 +176,7 @@ func validateSnapshot(snapshot Snapshot) error {
 
 func validKind(kind string) bool {
 	switch kind {
-	case KindInfo, KindTalk, KindWarp, KindShopPreview, KindQuestFlag:
+	case KindInfo, KindTalk, KindWarp, KindShopPreview, KindOpenSafebox, KindQuestFlag:
 		return true
 	default:
 		return false
@@ -218,16 +224,18 @@ func validDefinition(definition Definition) bool {
 	}
 	switch definition.Kind {
 	case KindInfo, KindTalk:
-		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && definition.ConsumeExperience == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
+		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.Size == 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && definition.ConsumeExperience == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
 	case KindShopPreview:
-		if definition.Title == "" || !validDefinitionText(definition.Title) || definition.Text != "" || definition.MapIndex != 0 || definition.X != 0 || definition.Y != 0 || definition.RewardExperience != 0 || definition.RewardGold != 0 || definition.ConsumeGold != 0 || definition.ConsumeExperience != 0 || hasRewardItems(definition) || hasConsumeItems(definition) || !validOptionalServiceQuestGate(definition) {
+		if definition.Title == "" || !validDefinitionText(definition.Title) || definition.Text != "" || definition.MapIndex != 0 || definition.X != 0 || definition.Y != 0 || definition.Size != 0 || definition.RewardExperience != 0 || definition.RewardGold != 0 || definition.ConsumeGold != 0 || definition.ConsumeExperience != 0 || hasRewardItems(definition) || hasConsumeItems(definition) || !validOptionalServiceQuestGate(definition) {
 			return false
 		}
 		return validMerchantCatalog(definition.Catalog)
 	case KindWarp:
-		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && definition.MapIndex != 0 && definition.X != 0 && definition.Y != 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && definition.ConsumeExperience == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
+		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && definition.MapIndex != 0 && definition.X != 0 && definition.Y != 0 && definition.Size == 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && definition.ConsumeExperience == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
+	case KindOpenSafebox:
+		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.Size <= OpenSafeboxSizeMax && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && definition.ConsumeExperience == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
 	case KindQuestFlag:
-		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && queststate.ValidQuestRef(definition.QuestRef) && queststate.ValidFlagName(definition.QuestFlag) && definition.QuestFrom != definition.QuestTo && definition.RewardExperience <= QuestFlagRewardExperienceMax && definition.RewardGold <= QuestFlagRewardGoldMax && definition.ConsumeGold <= QuestFlagConsumeGoldMax && definition.ConsumeExperience <= QuestFlagConsumeExperienceMax && validOptionalRewardItems(definition) && validOptionalConsumeItems(definition)
+		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.Size == 0 && queststate.ValidQuestRef(definition.QuestRef) && queststate.ValidFlagName(definition.QuestFlag) && definition.QuestFrom != definition.QuestTo && definition.RewardExperience <= QuestFlagRewardExperienceMax && definition.RewardGold <= QuestFlagRewardGoldMax && definition.ConsumeGold <= QuestFlagConsumeGoldMax && definition.ConsumeExperience <= QuestFlagConsumeExperienceMax && validOptionalRewardItems(definition) && validOptionalConsumeItems(definition)
 	default:
 		return false
 	}
@@ -285,14 +293,24 @@ func validOptionalConsumeItems(definition Definition) bool {
 	return true
 }
 
-// HasServiceQuestGate reports whether an info/talk/warp/shop_preview definition
-// carries an optional selected-character quest-flag prerequisite. The gate is
-// present only when both quest_ref and quest_flag are authored; quest_from
+// HasServiceQuestGate reports whether an info/talk/warp/shop_preview/open_safebox
+// definition carries an optional selected-character quest-flag prerequisite. The
+// gate is present only when both quest_ref and quest_flag are authored; quest_from
 // defaults to 0 and quest_to must remain 0 because gated non-mutating
 // interactions do not change quest state.
 func HasServiceQuestGate(definition Definition) bool {
 	definition = normalizeDefinition(definition)
 	return definition.QuestRef != "" && definition.QuestFlag != ""
+}
+
+// EffectiveOpenSafeboxSize returns the bootstrap page count used by an
+// open_safebox definition. Authored size 0 defaults to OpenSafeboxSizeMin.
+func EffectiveOpenSafeboxSize(definition Definition) uint8 {
+	definition = normalizeDefinition(definition)
+	if definition.Size == 0 {
+		return OpenSafeboxSizeMin
+	}
+	return definition.Size
 }
 
 func validOptionalServiceQuestGate(definition Definition) bool {

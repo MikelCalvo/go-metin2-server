@@ -40,6 +40,7 @@ func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	store := NewFileStore(path)
 	want := Snapshot{Definitions: []Definition{
 		{Kind: KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
+		{Kind: KindOpenSafebox, Ref: "npc:warehouse", Text: "Store your goods safely.", Size: 2},
 		testMerchantCatalogDefinition(),
 		{Kind: KindTalk, Ref: "npc:village_guard", Text: "VillageGuard : Keep your blade sharp."},
 		{Kind: KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800},
@@ -679,6 +680,15 @@ func TestFileStoreSaveThenLoadQuestGatedWarpAndShopPreviewDefinitions(t *testing
 			QuestFrom: 1,
 		},
 		{
+			Kind:      KindOpenSafebox,
+			Ref:       "npc:gated_warehouse",
+			Text:      "The warehouse keeper unlocks the vault.",
+			Size:      2,
+			QuestRef:  "quest:first_steps",
+			QuestFlag: "met_guide",
+			QuestFrom: 1,
+		},
+		{
 			Kind:      KindShopPreview,
 			Ref:       "npc:gated_merchant",
 			Title:     "Gated Merchant",
@@ -722,6 +732,76 @@ func TestFileStoreSaveThenLoadQuestGatedWarpAndShopPreviewDefinitions(t *testing
 		if !HasServiceQuestGate(definition) {
 			t.Fatalf("expected loaded non-mutating definitions to report quest gates, got %#v", got.Definitions)
 		}
+	}
+}
+
+func TestFileStoreSaveThenLoadOpenSafeboxDefinitions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	want := Snapshot{Definitions: []Definition{
+		{Kind: KindOpenSafebox, Ref: "npc:default_warehouse", Text: "Default vault."},
+		{Kind: KindOpenSafebox, Ref: "npc:warehouse", Text: "Store your goods safely.", Size: 3},
+	}}
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save open_safebox definitions: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load open_safebox definitions: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected open_safebox snapshot:\n got: %#v\nwant: %#v", got, want)
+	}
+	if EffectiveOpenSafeboxSize(got.Definitions[0]) != OpenSafeboxSizeMin {
+		t.Fatalf("expected omitted size to default to %d, got %d", OpenSafeboxSizeMin, EffectiveOpenSafeboxSize(got.Definitions[0]))
+	}
+	if EffectiveOpenSafeboxSize(got.Definitions[1]) != 3 {
+		t.Fatalf("expected authored size 3, got %d", EffectiveOpenSafeboxSize(got.Definitions[1]))
+	}
+}
+
+func TestFileStoreRejectsInvalidOpenSafeboxDefinitions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	cases := []struct {
+		name       string
+		definition Definition
+	}{
+		{
+			name:       "size above max",
+			definition: Definition{Kind: KindOpenSafebox, Ref: "npc:warehouse", Text: "Vault.", Size: OpenSafeboxSizeMax + 1},
+		},
+		{
+			name:       "title not allowed",
+			definition: Definition{Kind: KindOpenSafebox, Ref: "npc:warehouse", Text: "Vault.", Title: "Warehouse"},
+		},
+		{
+			name:       "catalog not allowed",
+			definition: Definition{Kind: KindOpenSafebox, Ref: "npc:warehouse", Text: "Vault.", Catalog: []MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}}},
+		},
+		{
+			name:       "warp coords not allowed",
+			definition: Definition{Kind: KindOpenSafebox, Ref: "npc:warehouse", Text: "Vault.", MapIndex: 1, X: 100, Y: 200},
+		},
+		{
+			name:       "reward gold not allowed",
+			definition: Definition{Kind: KindOpenSafebox, Ref: "npc:warehouse", Text: "Vault.", RewardGold: 10},
+		},
+		{
+			name:       "quest_to mutates",
+			definition: Definition{Kind: KindOpenSafebox, Ref: "npc:warehouse", Text: "Vault.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1, QuestTo: 2},
+		},
+		{
+			name:       "text with NUL",
+			definition: Definition{Kind: KindOpenSafebox, Ref: "npc:warehouse", Text: "visible\x00hidden"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := store.Save(Snapshot{Definitions: []Definition{tc.definition}}); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot for %s, got %v", tc.name, err)
+			}
+		})
 	}
 }
 

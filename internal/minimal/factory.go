@@ -6884,6 +6884,18 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						markInteractionCooldown(packet.TargetVID)
 						return gameflow.InteractionResult{Accepted: true, Frames: frames}
 					}
+					if resolution.Definition.Kind == interactionstore.KindOpenSafebox {
+						size := interactionstore.EffectiveOpenSafeboxSize(resolution.Definition)
+						setActiveSafeboxOpen(size, true)
+						frames := make([][]byte, 0, 2)
+						if resolution.Delivery != nil {
+							frames = append(frames, chatproto.EncodeChatDelivery(*resolution.Delivery))
+						}
+						frames = append(frames, itemproto.EncodeSafeboxSize(itemproto.SafeboxSizePacket{Size: size}))
+						frames = append(frames, encodeActiveSafeboxSetFrames()...)
+						markInteractionCooldown(packet.TargetVID)
+						return gameflow.InteractionResult{Accepted: true, Frames: frames}
+					}
 					if resolution.Delivery == nil {
 						return gameflow.InteractionResult{Accepted: false}
 					}
@@ -10609,6 +10621,29 @@ func (r *gameRuntime) resolveStaticActorInteraction(subjectID uint64, targetVID 
 			return resolution
 		}
 	}
+	if definition.Kind == interactionstore.KindOpenSafebox {
+		if !interactionstore.ValidDefinition(definition) {
+			resolution.Failure = staticActorInteractionFailureUnsupportedKind
+			resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
+			return resolution
+		}
+		if ok, err := r.serviceQuestGateSatisfied(characterName, definition); err != nil {
+			resolution.Failure = staticActorInteractionFailureUnsupportedKind
+			resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
+			return resolution
+		} else if !ok {
+			resolution.Failure = staticActorInteractionFailureQuestCurrentValueMismatch
+			resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
+			return resolution
+		}
+		resolution.Accepted = true
+		message := strings.TrimSpace(definition.Text)
+		if message != "" {
+			delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message}
+			resolution.Delivery = &delivery
+		}
+		return resolution
+	}
 	if definition.Kind == interactionstore.KindInfo || definition.Kind == interactionstore.KindTalk {
 		if !interactionstore.ValidDefinition(definition) {
 			resolution.Failure = staticActorInteractionFailureUnsupportedKind
@@ -10885,6 +10920,26 @@ func (r *gameRuntime) interactionDefinitionVisibilityPreview(characterName strin
 			}
 		}
 		summary := fmt.Sprintf("warp -> map %d @ %d,%d", definition.MapIndex, definition.X, definition.Y)
+		message := strings.TrimSpace(definition.Text)
+		if message == "" {
+			return summary, true
+		}
+		return fmt.Sprintf("%s [%s]", message, summary), true
+	case interactionstore.KindOpenSafebox:
+		if characterName != "" && interactionstore.HasServiceQuestGate(definition) {
+			ok, err := r.serviceQuestGateSatisfied(characterName, definition)
+			if err != nil {
+				return "", false
+			}
+			if !ok {
+				message, ok := staticActorInteractionFailureMessage(staticActorInteractionFailureQuestCurrentValueMismatch)
+				if !ok {
+					return "", false
+				}
+				return message, true
+			}
+		}
+		summary := fmt.Sprintf("open_safebox size %d", interactionstore.EffectiveOpenSafeboxSize(definition))
 		message := strings.TrimSpace(definition.Text)
 		if message == "" {
 			return summary, true

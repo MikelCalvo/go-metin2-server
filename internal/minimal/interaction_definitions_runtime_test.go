@@ -135,6 +135,35 @@ func TestGameRuntimeCreateShopPreviewInteractionDefinitionPersistsSnapshotAndRes
 	}
 }
 
+func TestGameRuntimeCreateOpenSafeboxInteractionDefinitionPersistsSnapshotAndResolvesDefinition(t *testing.T) {
+	interactionStore := newInteractionDefinitionStore(t, nil)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	wantDefinition := interactionstore.Definition{Kind: interactionstore.KindOpenSafebox, Ref: "npc:warehouse", Text: "Store your goods safely.", Size: 2}
+	definition, err := runtime.CreateInteractionDefinition(wantDefinition)
+	if err != nil {
+		t.Fatalf("create open_safebox interaction definition: %v", err)
+	}
+	if !reflect.DeepEqual(definition, wantDefinition) {
+		t.Fatalf("unexpected created open_safebox interaction definition: %+v", definition)
+	}
+	resolved, ok := runtime.ResolveInteractionDefinition(interactionstore.KindOpenSafebox, "npc:warehouse")
+	if !ok || !reflect.DeepEqual(resolved, definition) {
+		t.Fatalf("expected created open_safebox interaction definition to resolve, got definition=%+v ok=%v", resolved, ok)
+	}
+	persisted, err := interactionStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted interaction definitions: %v", err)
+	}
+	want := interactionstore.Snapshot{Definitions: []interactionstore.Definition{wantDefinition}}
+	if !reflect.DeepEqual(persisted, want) {
+		t.Fatalf("unexpected persisted open_safebox interaction definitions:\n got: %#v\nwant: %#v", persisted, want)
+	}
+}
+
 func TestGameRuntimeCreateQuestFlagInteractionDefinitionPersistsSnapshotAndResolvesDefinition(t *testing.T) {
 	interactionStore := newInteractionDefinitionStore(t, nil)
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
