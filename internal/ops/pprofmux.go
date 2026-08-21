@@ -2197,6 +2197,53 @@ func RegisterLocalSpawnGroupChaseStepSnapshotEndpoint(mux *http.ServeMux, spawnG
 	return mux
 }
 
+func RegisterLocalSpawnGroupHomewardStepsEndpoint(mux *http.ServeMux, spawnGroupHomewardSteps func() any) *http.ServeMux {
+	if mux == nil || spawnGroupHomewardSteps == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/spawn-group-homeward-steps", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if err := json.NewEncoder(w).Encode(spawnGroupHomewardSteps()); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	})
+	return mux
+}
+
+func RegisterLocalSpawnGroupHomewardStepSnapshotEndpoint(mux *http.ServeMux, spawnGroupHomewardStep func(uint64) (any, bool)) *http.ServeMux {
+	if mux == nil || spawnGroupHomewardStep == nil {
+		return mux
+	}
+
+	mux.HandleFunc("GET /local/spawn-group-homeward-steps/{entity_id}", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		entityID, ok := decodeLocalSpawnGroupHomewardStepSnapshotEntityID(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		value, ok := spawnGroupHomewardStep(entityID)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalSpawnGroupsEndpoint(mux *http.ServeMux, spawnGroups func() any) *http.ServeMux {
 	if mux == nil || spawnGroups == nil {
 		return mux
@@ -2546,6 +2593,30 @@ func RegisterLocalMapSpawnGroupChaseStepsEndpoint(mux *http.ServeMux, spawnGroup
 			return
 		}
 		value, ok := spawnGroupChaseStepsForMap(mapIndex)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalMapSpawnGroupHomewardStepsEndpoint(mux *http.ServeMux, spawnGroupHomewardStepsForMap func(uint32) (any, bool)) *http.ServeMux {
+	if mux == nil || spawnGroupHomewardStepsForMap == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/maps/{map_index}/spawn-group-homeward-steps", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		mapIndex, ok := decodeLocalMapScopedListIndex(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		value, ok := spawnGroupHomewardStepsForMap(mapIndex)
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -5835,6 +5906,10 @@ func decodeLocalSpawnGroupReturnStepSnapshotEntityID(r *http.Request) (uint64, b
 
 func decodeLocalSpawnGroupChaseStepSnapshotEntityID(r *http.Request) (uint64, bool) {
 	return decodeLocalPositiveUint64PathComponent(strings.TrimSpace(r.PathValue("entity_id")))
+}
+
+func decodeLocalSpawnGroupHomewardStepSnapshotEntityID(r *http.Request) (uint64, bool) {
+	return decodeLocalSpawnGroupChaseStepSnapshotEntityID(r)
 }
 
 func decodeLocalPositiveUint64PathComponent(raw string) (uint64, bool) {

@@ -168,6 +168,14 @@ type SpawnGroupPendingChaseStepSnapshot struct {
 	Step        SpawnLeashReturnStepSnapshot `json:"step"`
 }
 
+type SpawnGroupPendingHomewardStepSnapshot struct {
+	EntityID    uint64                       `json:"entity_id"`
+	ReadyAt     time.Time                    `json:"ready_at"`
+	RemainingMs int64                        `json:"remaining_ms"`
+	Actor       StaticActorSnapshot          `json:"actor"`
+	Step        SpawnLeashReturnStepSnapshot `json:"step"`
+}
+
 type SpawnLeashReturnStepSnapshot struct {
 	SpawnLeashSnapshot
 	Next     worldruntime.PositionSnapshot `json:"next"`
@@ -2115,6 +2123,123 @@ func (r *gameRuntime) spawnGroupHomewardStepStillEligible(entityID uint64) bool 
 	}
 	_, ok = r.sharedWorld.PlanSpawnGroupHomewardStep(entityID, bootstrapSpawnGroupHomewardStepMaxStep)
 	return ok
+}
+
+func (r *gameRuntime) SpawnGroupHomewardSteps() []SpawnGroupPendingHomewardStepSnapshot {
+	if r == nil {
+		return nil
+	}
+	dueAtByID := r.spawnGroupHomewardStepDueAtSnapshot()
+	if len(dueAtByID) == 0 {
+		return nil
+	}
+	entityIDs := make([]uint64, 0, len(dueAtByID))
+	for entityID := range dueAtByID {
+		entityIDs = append(entityIDs, entityID)
+	}
+	sort.Slice(entityIDs, func(i, j int) bool { return entityIDs[i] < entityIDs[j] })
+
+	now := r.spawnGroupHomewardStepNow()
+	snapshots := make([]SpawnGroupPendingHomewardStepSnapshot, 0, len(entityIDs))
+	for _, entityID := range entityIDs {
+		snapshot, ok := r.spawnGroupHomewardStepSnapshot(entityID, dueAtByID[entityID], now)
+		if !ok {
+			continue
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	return snapshots
+}
+
+func (r *gameRuntime) SpawnGroupHomewardStep(entityID uint64) (SpawnGroupPendingHomewardStepSnapshot, bool) {
+	if r == nil || entityID == 0 {
+		return SpawnGroupPendingHomewardStepSnapshot{}, false
+	}
+	r.spawnHomewardMu.Lock()
+	dueAt, ok := r.spawnHomewardStepDueAt[entityID]
+	r.spawnHomewardMu.Unlock()
+	if !ok {
+		return SpawnGroupPendingHomewardStepSnapshot{}, false
+	}
+	return r.spawnGroupHomewardStepSnapshot(entityID, dueAt, r.spawnGroupHomewardStepNow())
+}
+
+func (r *gameRuntime) SpawnGroupHomewardStepsForMap(mapIndex uint32) ([]SpawnGroupPendingHomewardStepSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil || mapIndex == 0 {
+		return nil, false
+	}
+	if _, ok := r.MapOccupancySnapshot(mapIndex); !ok {
+		return nil, false
+	}
+
+	all := r.SpawnGroupHomewardSteps()
+	if len(all) == 0 {
+		return []SpawnGroupPendingHomewardStepSnapshot{}, true
+	}
+	filtered := make([]SpawnGroupPendingHomewardStepSnapshot, 0, len(all))
+	for _, snapshot := range all {
+		if snapshot.Actor.MapIndex != mapIndex {
+			continue
+		}
+		filtered = append(filtered, snapshot)
+	}
+	return filtered, true
+}
+
+func (r *gameRuntime) spawnGroupHomewardStepDueAtSnapshot() map[uint64]time.Time {
+	if r == nil {
+		return nil
+	}
+	r.spawnHomewardMu.Lock()
+	defer r.spawnHomewardMu.Unlock()
+	if len(r.spawnHomewardStepDueAt) == 0 {
+		return nil
+	}
+	snapshot := make(map[uint64]time.Time, len(r.spawnHomewardStepDueAt))
+	for entityID, dueAt := range r.spawnHomewardStepDueAt {
+		snapshot[entityID] = dueAt
+	}
+	return snapshot
+}
+
+func (r *gameRuntime) spawnGroupHomewardStepNow() time.Time {
+	now := time.Now()
+	if r != nil && r.now != nil {
+		now = r.now()
+	}
+	return now
+}
+
+func (r *gameRuntime) spawnGroupHomewardStepSnapshot(entityID uint64, dueAt time.Time, now time.Time) (SpawnGroupPendingHomewardStepSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil || entityID == 0 || dueAt.IsZero() {
+		return SpawnGroupPendingHomewardStepSnapshot{}, false
+	}
+	if !r.spawnGroupHomewardStepStillEligible(entityID) {
+		return SpawnGroupPendingHomewardStepSnapshot{}, false
+	}
+	actor, ok := r.SpawnGroup(entityID)
+	if !ok {
+		return SpawnGroupPendingHomewardStepSnapshot{}, false
+	}
+	plan, ok := r.sharedWorld.PlanSpawnGroupHomewardStep(entityID, bootstrapSpawnGroupHomewardStepMaxStep)
+	if !ok {
+		return SpawnGroupPendingHomewardStepSnapshot{}, false
+	}
+	remaining := dueAt.Sub(now).Milliseconds()
+	if remaining < 0 {
+		remaining = 0
+	}
+	return SpawnGroupPendingHomewardStepSnapshot{
+		EntityID:    entityID,
+		ReadyAt:     dueAt,
+		RemainingMs: remaining,
+		Actor:       actor,
+		Step: SpawnLeashReturnStepSnapshot{
+			SpawnLeashSnapshot: worldruntime.SpawnLeashSnapshotFromEvaluation(plan.Evaluation),
+			Next:               worldruntime.PositionSnapshotFromPosition(plan.Next),
+			Complete:           plan.Complete,
+		},
+	}, true
 }
 
 func (r *gameRuntime) pruneSpawnGroupHomewardStepSchedules() {

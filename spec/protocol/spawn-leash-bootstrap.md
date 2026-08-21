@@ -388,12 +388,46 @@ Current implementation status:
 - pure planner `PlanStaticActorSpawnLeashHomewardStep` is owned in `internal/worldruntime`
 - pending-frame homeward executor, engagement-release arming, chase mutual exclusion, and same-map retained-viewer `MOVE` are live in `internal/minimal`
 - operator `POST .../return-step` still no-ops `within_radius`; exact-home snap remains the controlled `return-home` trigger
-- read-only pending homeward inspection endpoints are intentionally not owned yet (next RED)
+- the read-only pending homeward inspection endpoints below are now live over that already-owned schedule
+
+## First owned pending homeward-step inspection seam
+
+Question frozen here:
+
+**Once the pending-frame homeward executor is live, what is the smallest read-only loopback inspection surface that can expose currently armed homeward-step deadlines without inventing a homeward POST trigger, homeward packets, or a second scheduler?**
+
+The paired read-only pending-homeward schedule surfaces mirror chase/return-step inspection:
+- `GET /local/spawn-group-homeward-steps`
+- `GET /local/spawn-group-homeward-steps/{entity_id}`
+- `GET /local/maps/{map_index}/spawn-group-homeward-steps`
+
+Rows are local/operator snapshots, not gameplay packets. Each row exposes:
+- `entity_id`
+- `ready_at`
+- `remaining_ms`
+- the current still-eligible spawn-group `actor`
+- the planned homeward `step` that the fixed-`max_step = 100` / default-leash executor would apply on the next due flush (`home` / `current` / `radius` / `status` / `return_required` plus `next` and `complete`)
+
+Row rules:
+- rows are sorted by `entity_id`
+- already-due but unflushed schedules remain visible with `remaining_ms = 0`
+- stale schedules whose actor is gone, dead, no longer spawn-backed, `return_required`, no longer `within_radius`, re-engaged by a live owner, or no longer safely plannable are omitted and return `404` for exact lookup
+- the map-local endpoint returns the same row shape filtered by the pending actor's current effective `map_index`, returns an empty JSON array for a known map with no pending homeward-step timers, rejects malformed or zero map indexes with `400`, and returns `404` when the runtime cannot resolve that map-scoped snapshot
+- `GET /local/spawn-group-homeward-steps/{entity_id}` returns `400` for malformed entity IDs and `404` for absent/stale/ineligible pending homeward-step schedules
+- these endpoints never mutate actor position, engagement, selected-target ownership, HP, death/respawn timers, return-step schedules, chase deadlines, homeward deadlines, or visible-world membership
+- no `POST` homeward-step operator surface is owned by this inspection freeze
+
+Current implementation status:
+- the pending-frame homeward executor is now live in `internal/minimal`
+- engagement-release paths that clear chase after a `within_radius` displace arm the `1s` homeward deadline
+- due homeward steps persist position, queue retained-viewer `MOVE` replication (with remove/add visibility still using delete/bootstrap), keep the actor unengaged, and re-arm while the actor remains eligible `within_radius`
+- re-engage / chase eligibility, return-step, respawn, remove, return-home, operator/runtime `UpdateStaticActor`, and content-bundle prune/restore paths clear or restore homeward deadlines alongside the chase/return schedules
+- the read-only pending homeward inspection endpoints above are now live over that already-owned schedule
 
 Explicit non-goals for this homeward freeze alone:
 - auto exact-home correction for every `within_radius` actor without a prior engagement/chase displacement boundary beyond the owned arming rules
 - changing `PlanStaticActorSpawnLeashReturnStep` so `within_radius` starts moving
 - cross-map homeward / warp choreography
 - pathfinding, patrol, or a second scheduler/goroutine
-- operator POST homeward trigger or pending-homeward inspection surfaces in this freeze
+- operator POST homeward trigger
 - inventing selected-target ownership or preserving engagement across homeward
