@@ -485,6 +485,7 @@ Expected result:
 - item-template validation rejects `safebox_reject_message` if it contains embedded NUL bytes or is authored without `anti_safebox`, so contradictory storage feedback should fail before gameplay testing starts
 - malformed storage payload sizes fail at the codec/dispatcher boundary rather than mutating runtime state
 - this is a fail-closed guard plus a presentation-only open seam, not a completed safebox, mall, or storage feature
+- next accepted seam (docs-frozen only in `docs/plans/2026-08-21-safebox-checkin-in-memory-mutation.md`, not yet implemented): after `/open_safebox`, a non-`anti_safebox` `SAFEBOX_CHECKIN` into an empty in-range `safe_pos` should remove the carried item, sync source item quickslots, store the item in same-session in-memory safebox state, and emit inventory removal plus `GC::SAFEBOX_SET`; reconnect/restart still discard those contents until persistence exists
 
 ### 4.5.13 Unsupported item exchange guard (`EXCHANGE`)
 

@@ -206,13 +206,25 @@ Later slices must write a new contract before broadening storage behavior. In pa
 
 - safebox password / DB load flow beyond the local slash open-presentation harness above;
 - safebox money state or `SAFEBOX_MONEY_CHANGE` runtime emission;
-- runtime emission policy for `SAFEBOX_SET`, `SAFEBOX_DEL`, `SAFEBOX_WRONG_PASSWORD`, `SAFEBOX_MONEY_CHANGE`, `MALL_OPEN`, `MALL_SET`, or `MALL_DEL`;
-- accepted checkin/checkout/item-move mutation ordering;
+- runtime emission policy for `SAFEBOX_DEL`, `SAFEBOX_WRONG_PASSWORD`, `SAFEBOX_MONEY_CHANGE`, `MALL_OPEN`, `MALL_SET`, or `MALL_DEL`;
+- accepted checkout/item-move mutation ordering;
 - mall open/checkout behavior;
 - storage item persistence or DB schema;
 - interaction/NPC surfaces that open storage windows;
 - the legacy `CloseSafebox` command-chat companion beyond the local `/close_safebox` open-flag clear above;
 - accepted template-authority policy for `anti_safebox`, `anti_save`, mall-only items, or cash-shop metadata beyond the currently owned `ITEM_SET.anti_flags` projection and self-only `safebox_reject_message` feedback.
+
+## Next accepted check-in contract (docs freeze only)
+
+`docs/plans/2026-08-21-safebox-checkin-in-memory-mutation.md` freezes the next runtime seam before GREEN implementation:
+
+- accepted `SAFEBOX_CHECKIN` only while the bootstrap `/open_safebox` presentation is already open;
+- destination `safe_pos` empty and inside remembered open capacity `size * 5` for size `1..3`;
+- success removes the carried item, syncs source item quickslots, stores the item in same-session in-memory safebox state, and emits self-only inventory removal plus `GC::SAFEBOX_SET`;
+- `anti_safebox` keeps the already-owned authored reject chat / silent fail-closed path;
+- reconnect / restart / logout still discard those in-memory contents until a later persistence slice owns durable safebox state.
+
+The shipped runtime remains fail-closed for accepted check-in until that GREEN slice lands. This docs freeze deliberately does not open RED tests yet.
 
 ## Current coverage
 
