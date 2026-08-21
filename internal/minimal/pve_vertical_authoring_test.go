@@ -354,7 +354,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("expected 1 self-only second QuestHunter mismatch frame, got %d", len(secondTurnInOut))
 	}
 	secondTurnInChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, secondTurnInOut[0]))
-	if err != nil || secondTurnInChat.Message != "Quest requirements are not met." {
+	if err != nil || secondTurnInChat.Message != questFlagInsufficientMaterialsInfoMessage {
 		t.Fatalf("unexpected second QuestHunter mismatch chat: %+v err=%v", secondTurnInChat, err)
 	}
 	loaded, err = runtime.questStateStore.Load()

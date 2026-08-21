@@ -86,6 +86,9 @@ const itemBuyRejectedInfoMessage = "The merchant will not sell this item to you.
 const itemSellRejectedInfoMessage = "The merchant refuses to buy this item."
 const itemUnequipRejectedInfoMessage = "You cannot remove this item."
 const questFlagRewardRestrictedInfoMessage = "You cannot receive this quest reward."
+const questFlagInsufficientGoldInfoMessage = "You do not have enough gold."
+const questFlagInsufficientExperienceInfoMessage = "You do not have enough experience."
+const questFlagInsufficientMaterialsInfoMessage = "You do not have the required items."
 const exchangePartnerMerchantBusyInfoMessage = "That player cannot trade right now."
 const exchangeRequesterMerchantBusyInfoMessage = "You cannot trade while another trade window is open."
 const bootstrapSafeboxOpenMinSize uint8 = 1
@@ -254,14 +257,17 @@ type StaticActorRespawnSnapshot struct {
 }
 
 const (
-	staticActorInteractionFailureDefinitionNotFound        = "interaction_definition_not_found"
-	staticActorInteractionFailureUnsupportedKind           = "unsupported_interaction_kind"
-	staticActorInteractionFailureWarpDestinationInvalid    = "warp_destination_invalid"
-	staticActorInteractionFailureWarpNotApplied            = "warp_not_applied"
-	staticActorInteractionFailureQuestCurrentValueMismatch = "quest_current_value_mismatch"
-	staticActorInteractionFailureQuestRewardInventoryFull  = "quest_reward_inventory_full"
-	staticActorInteractionFailureQuestRewardRestricted     = "quest_reward_restricted"
-	staticActorInteractionCooldown                         = time.Second
+	staticActorInteractionFailureDefinitionNotFound          = "interaction_definition_not_found"
+	staticActorInteractionFailureUnsupportedKind             = "unsupported_interaction_kind"
+	staticActorInteractionFailureWarpDestinationInvalid      = "warp_destination_invalid"
+	staticActorInteractionFailureWarpNotApplied              = "warp_not_applied"
+	staticActorInteractionFailureQuestCurrentValueMismatch   = "quest_current_value_mismatch"
+	staticActorInteractionFailureQuestInsufficientGold       = "quest_insufficient_gold"
+	staticActorInteractionFailureQuestInsufficientExperience = "quest_insufficient_experience"
+	staticActorInteractionFailureQuestInsufficientMaterials  = "quest_insufficient_materials"
+	staticActorInteractionFailureQuestRewardInventoryFull    = "quest_reward_inventory_full"
+	staticActorInteractionFailureQuestRewardRestricted       = "quest_reward_restricted"
+	staticActorInteractionCooldown                           = time.Second
 )
 
 type staticActorInteractionResolution struct {
@@ -6414,7 +6420,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						previousSelected := selected
 						if consumeGold != 0 {
 							if previousSelected.Gold > uint64(math.MaxInt32) || previousSelected.Gold < consumeGold {
-								failureDelivery := staticActorInteractionFailureDelivery(staticActorInteractionFailureQuestCurrentValueMismatch)
+								failureDelivery := staticActorInteractionFailureDelivery(staticActorInteractionFailureQuestInsufficientGold)
 								if failureDelivery == nil {
 									return gameflow.InteractionResult{Accepted: false}
 								}
@@ -6426,7 +6432,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						experienceBefore := previousSelected.Points[bootstrapExperiencePointType]
 						if consumeExperience != 0 {
 							if experienceBefore < 0 || uint64(experienceBefore) < consumeExperience {
-								failureDelivery := staticActorInteractionFailureDelivery(staticActorInteractionFailureQuestCurrentValueMismatch)
+								failureDelivery := staticActorInteractionFailureDelivery(staticActorInteractionFailureQuestInsufficientExperience)
 								if failureDelivery == nil {
 									return gameflow.InteractionResult{Accepted: false}
 								}
@@ -6456,7 +6462,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 								if failure != player.CarriedItemConsumeFailureInsufficientMaterials {
 									return gameflow.InteractionResult{Accepted: false}
 								}
-								failureDelivery := staticActorInteractionFailureDelivery(staticActorInteractionFailureQuestCurrentValueMismatch)
+								failureDelivery := staticActorInteractionFailureDelivery(staticActorInteractionFailureQuestInsufficientMaterials)
 								if failureDelivery == nil {
 									return gameflow.InteractionResult{Accepted: false}
 								}
@@ -10535,6 +10541,12 @@ func staticActorInteractionFailureMessage(failure string) (string, bool) {
 		return "Warp unavailable right now.", true
 	case staticActorInteractionFailureQuestCurrentValueMismatch:
 		return "Quest requirements are not met.", true
+	case staticActorInteractionFailureQuestInsufficientGold:
+		return questFlagInsufficientGoldInfoMessage, true
+	case staticActorInteractionFailureQuestInsufficientExperience:
+		return questFlagInsufficientExperienceInfoMessage, true
+	case staticActorInteractionFailureQuestInsufficientMaterials:
+		return questFlagInsufficientMaterialsInfoMessage, true
 	case staticActorInteractionFailureQuestRewardInventoryFull:
 		return itemPickupInventoryFullInfoMessage, true
 	case staticActorInteractionFailureQuestRewardRestricted:
@@ -10641,9 +10653,9 @@ func (r *gameRuntime) previewQuestFlagInteraction(characterName string, definiti
 		if definition.ConsumeGold != 0 {
 			state, ok := r.liveCharacterState(characterName)
 			if !ok || state.Gold > uint64(math.MaxInt32) || state.Gold < definition.ConsumeGold {
-				message, ok := staticActorInteractionFailureMessage(staticActorInteractionFailureQuestCurrentValueMismatch)
+				message, ok := staticActorInteractionFailureMessage(staticActorInteractionFailureQuestInsufficientGold)
 				if !ok {
-					return "", fmt.Errorf("quest flag mismatch preview is unsupported")
+					return "", fmt.Errorf("quest flag insufficient-gold preview is unsupported")
 				}
 				return message, nil
 			}
@@ -10651,18 +10663,18 @@ func (r *gameRuntime) previewQuestFlagInteraction(characterName string, definiti
 		if definition.ConsumeExperience != 0 {
 			state, ok := r.liveCharacterState(characterName)
 			if !ok || state.Points[bootstrapExperiencePointType] < 0 || uint64(state.Points[bootstrapExperiencePointType]) < definition.ConsumeExperience {
-				message, ok := staticActorInteractionFailureMessage(staticActorInteractionFailureQuestCurrentValueMismatch)
+				message, ok := staticActorInteractionFailureMessage(staticActorInteractionFailureQuestInsufficientExperience)
 				if !ok {
-					return "", fmt.Errorf("quest flag mismatch preview is unsupported")
+					return "", fmt.Errorf("quest flag insufficient-experience preview is unsupported")
 				}
 				return message, nil
 			}
 		}
 		if consumeRequirements := questFlagConsumeRequirements(definition); len(consumeRequirements) > 0 {
 			if !r.characterCanSupplyQuestFlagConsumeItems(characterName, consumeRequirements) {
-				message, ok := staticActorInteractionFailureMessage(staticActorInteractionFailureQuestCurrentValueMismatch)
+				message, ok := staticActorInteractionFailureMessage(staticActorInteractionFailureQuestInsufficientMaterials)
 				if !ok {
-					return "", fmt.Errorf("quest flag mismatch preview is unsupported")
+					return "", fmt.Errorf("quest flag insufficient-materials preview is unsupported")
 				}
 				return message, nil
 			}

@@ -187,7 +187,7 @@ func TestGameSessionFlowStaticActorQuestFlagConsumeItemsRejectsInsufficientMater
 		t.Fatalf("expected one self-only mismatch frame for missing consume items, got %d", len(out))
 	}
 	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
-	if err != nil || delivery.Message != "Quest requirements are not met." {
+	if err != nil || delivery.Message != questFlagInsufficientMaterialsInfoMessage {
 		t.Fatalf("unexpected quest-flag consume-items mismatch chat: %+v err=%v", delivery, err)
 	}
 	currencySnapshot, ok := runtime.CurrencySnapshot(peer.Name)
