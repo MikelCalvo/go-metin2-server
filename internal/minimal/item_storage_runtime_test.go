@@ -338,15 +338,20 @@ func assertCloseSafeboxCommandChat(t *testing.T, flow service.SessionFlow, slash
 	if len(closeOut) != 1 {
 		t.Fatalf("expected %s %s to emit one CloseSafebox command chat, got %d", label, slash, len(closeOut))
 	}
-	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, closeOut[0]))
-	if err != nil {
-		t.Fatalf("decode %s %s CloseSafebox chat: %v", label, slash, err)
-	}
-	if delivery.Type != chatproto.ChatTypeCommand || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != "CloseSafebox" {
-		t.Fatalf("unexpected %s %s CloseSafebox chat: %+v", label, slash, delivery)
-	}
+	assertCloseSafeboxCommandChatFrame(t, closeOut[0], label+" "+slash)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected %s %s to queue no peer frames, got %d", label, slash, len(queued))
+	}
+}
+
+func assertCloseSafeboxCommandChatFrame(t *testing.T, frame []byte, label string) {
+	t.Helper()
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, frame))
+	if err != nil {
+		t.Fatalf("decode %s CloseSafebox chat: %v", label, err)
+	}
+	if delivery.Type != chatproto.ChatTypeCommand || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != "CloseSafebox" {
+		t.Fatalf("unexpected %s CloseSafebox chat: %+v", label, delivery)
 	}
 }
 

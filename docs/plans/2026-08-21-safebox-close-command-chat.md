@@ -16,7 +16,8 @@ Emit the legacy client-visible `CHAT_TYPE_COMMAND` / `CloseSafebox` companion wh
 - password / DB load and `SAFEBOX_WRONG_PASSWORD`
 - durable safebox item persistence / money / mall
 - partner-side open player-shop / cube busy-window exchange rejects
-- automatic close on death / transfer beyond already-owned leave/lifecycle clear of the open flag
+
+Lifecycle death-floor / transfer / `/phase_select` / `/quit` / `/logout` `CloseSafebox` companions are owned by `docs/plans/2026-08-21-safebox-lifecycle-close-command-chat.md` and are no longer deferred here.
 
 ## TDD and validation
 

@@ -106,9 +106,10 @@ func TestGameSessionFlowPracticeMobDeathClearsOpenSafeboxBusyBeforeRestartExchan
 	if err != nil {
 		t.Fatalf("unexpected safebox-death attack: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected target refresh, point-change, self dead, and clear-target with no extra safebox frames, got %d", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected target refresh, point-change, self dead, clear-target, and CloseSafebox command chat, got %d", len(attackOut))
 	}
+	assertCloseSafeboxCommandChatFrame(t, attackOut[4], "safebox-death floor")
 	if queued := flushServerFrames(t, partnerFlow); len(queued) != 1 {
 		t.Fatalf("expected partner visible DEAD after safebox-death floor, got %d", len(queued))
 	}
