@@ -486,6 +486,7 @@ Expected result:
 - item-template validation rejects `safebox_reject_message` if it contains embedded NUL bytes or is authored without `anti_safebox`, so contradictory storage feedback should fail before gameplay testing starts
 - malformed storage payload sizes fail at the codec/dispatcher boundary rather than mutating runtime state
 - this is still not a completed safebox, mall, or durable storage feature: password/load, checkout/move, money, and persistence remain deferred
+- next accepted seam (docs-frozen only in `docs/plans/2026-08-21-safebox-checkout-in-memory-mutation.md`, not yet implemented): after `/open_safebox`, a `SAFEBOX_CHECKOUT` from a remembered same-session safebox cell into an accepting carried destination should emit `SAFEBOX_DEL` plus inventory refresh and restore the item to carried inventory; reconnect/restart still discard remaining in-memory contents until persistence exists
 
 ### 4.5.13 Unsupported item exchange guard (`EXCHANGE`)
 

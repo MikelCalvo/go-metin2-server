@@ -31,4 +31,4 @@ Focused coverage:
 
 1. Keep partner-side open player-shop / cube busy-window exchange rejects deferred until those presentation seams exist.
 2. Keep ground-item restart durability deferred until operators decide quarantined `0010` exports should drive recovery.
-3. Next items-lane seam: first accepted in-memory `SAFEBOX_CHECKIN` while `/open_safebox` is open (`docs/plans/2026-08-21-safebox-checkin-in-memory-mutation.md`); password/load/checkout/money/durable persistence stay deferred.
+3. Next items-lane seam: first accepted in-memory `SAFEBOX_CHECKOUT` while `/open_safebox` is open (`docs/plans/2026-08-21-safebox-checkout-in-memory-mutation.md`); password/load/move/money/durable persistence stay deferred.

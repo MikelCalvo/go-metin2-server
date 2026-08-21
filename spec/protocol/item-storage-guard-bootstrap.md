@@ -220,14 +220,26 @@ Later slices must write a new contract before broadening storage behavior. In pa
 
 - safebox password / DB load flow beyond the local slash open-presentation harness above;
 - safebox money state or `SAFEBOX_MONEY_CHANGE` runtime emission;
-- runtime emission policy for `SAFEBOX_DEL`, `SAFEBOX_WRONG_PASSWORD`, `SAFEBOX_MONEY_CHANGE`, `MALL_OPEN`, `MALL_SET`, or `MALL_DEL`;
-- accepted checkout/item-move mutation ordering;
+- runtime emission policy for `SAFEBOX_WRONG_PASSWORD`, `SAFEBOX_MONEY_CHANGE`, `MALL_OPEN`, `MALL_SET`, or `MALL_DEL`;
+- accepted item-move mutation ordering beyond the currently owned check-in path;
 - mall open/checkout behavior;
 - durable storage item persistence or DB schema;
 - interaction/NPC surfaces that open storage windows;
 - the legacy `CloseSafebox` command-chat companion beyond the local `/close_safebox` open-flag clear above;
 - accepted template-authority policy for `anti_save`, mall-only items, or cash-shop metadata beyond the currently owned `ITEM_SET.anti_flags` projection and self-only `safebox_reject_message` feedback;
 - merchant-window auto-close on accepted check-in success (still deferred; only the reject path closes merchant today).
+
+## Next accepted check-out contract (docs freeze only)
+
+`docs/plans/2026-08-21-safebox-checkout-in-memory-mutation.md` freezes the next runtime seam before GREEN implementation:
+
+- accepted `SAFEBOX_CHECKOUT` only while the bootstrap `/open_safebox` presentation is already open;
+- `safe_pos` must resolve to one remembered same-session in-memory safebox item inside capacity `size * 5`;
+- destination carried cell must accept the whole stack under the loaded template (empty cell or compatible under-`max_count` stack);
+- success removes the safebox item, places/merges into inventory, persists inventory/quickslots, and emits self-only `SAFEBOX_DEL` plus inventory `ITEM_SET` / `ITEM_UPDATE`;
+- reconnect / restart / logout still discard remaining in-memory contents until a later persistence slice owns durable safebox state.
+
+The shipped runtime remains fail-closed for accepted check-out until that GREEN slice lands. This docs freeze deliberately does not open RED tests yet.
 
 ## Current coverage
 
