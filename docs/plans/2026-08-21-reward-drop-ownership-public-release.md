@@ -29,5 +29,5 @@ Focused coverage:
 ## Follow-up options
 
 1. Keep restart-restored ownership/despawn timers deferred until operators decide quarantined `0010` exports should drive recovery.
-2. Optional commit-time exchange busy reject chat remains a later presentation seam.
-3. Keep accepted safebox password/load/placement/money deferred.
+2. Optional commit-time exchange busy reject chat is now owned; keep accepted safebox password/load/placement/money deferred.
+3. Keep partner-side open player-shop / cube busy-window exchange rejects deferred until those presentation seams exist.

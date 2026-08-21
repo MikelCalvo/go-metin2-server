@@ -813,9 +813,11 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 
 // CommitExchangeFinalize updates both characters, clears the exchange shell without
 // partner-notify END (caller supplies END frames), and enqueues peer finalize frames.
-func (r *sharedWorldRegistry) CommitExchangeFinalize(plan *exchangeFinalizePlan, updatedOrigin loginticket.Character, updatedPartner loginticket.Character, peerFrames [][]byte) bool {
+// On commit-time busy-window drift it returns the same self-only START/ACCEPT busy
+// info-chat frames for the commit requester (plan.OriginID) and leaves the shell open.
+func (r *sharedWorldRegistry) CommitExchangeFinalize(plan *exchangeFinalizePlan, updatedOrigin loginticket.Character, updatedPartner loginticket.Character, peerFrames [][]byte) ([][]byte, bool) {
 	if r == nil || plan == nil || plan.OriginID == 0 || plan.PartnerID == 0 {
-		return false
+		return nil, false
 	}
 
 	r.mu.Lock()
@@ -823,45 +825,56 @@ func (r *sharedWorldRegistry) CommitExchangeFinalize(plan *exchangeFinalizePlan,
 
 	partnerID, ok := r.exchangePartners[plan.OriginID]
 	if !ok || partnerID != plan.PartnerID {
-		return false
+		return nil, false
 	}
 	if reverse, ok := r.exchangePartners[plan.PartnerID]; !ok || reverse != plan.OriginID {
-		return false
+		return nil, false
 	}
 	if _, ok := r.sessionEntryLocked(plan.OriginID); !ok {
-		return false
+		return nil, false
 	}
 	if _, ok := r.sessionEntryLocked(plan.PartnerID); !ok {
-		return false
+		return nil, false
 	}
 	// Revalidate busy windows / displayed item-gold / receiver preconditions at
 	// commit time so post-AcceptExchange drift cannot finalize a stale plan.
+	// Busy-window drift reuses ACCEPT's local-first requester/partner info-chat.
+	if frames, busy := r.exchangeFinalizeCommitBusyRejectLocked(plan); busy {
+		return frames, false
+	}
 	if !r.exchangeFinalizeCommitStillValidLocked(plan) {
-		return false
+		return nil, false
 	}
 	if !r.enqueueToEntityLocked(plan.PartnerID, peerFrames) {
-		return false
+		return nil, false
 	}
 	_ = r.entities.UpdatePlayer(plan.OriginID, updatedOrigin)
 	r.lastKnownCharacters[plan.OriginID] = updatedOrigin
 	_ = r.entities.UpdatePlayer(plan.PartnerID, updatedPartner)
 	r.lastKnownCharacters[plan.PartnerID] = updatedPartner
 	if !r.clearExchangeLocked(plan.OriginID, false) {
-		return false
+		return nil, false
 	}
-	return true
+	return nil, true
 }
 
-func (r *sharedWorldRegistry) exchangePairBusyWindowOpenLocked(originID uint64, partnerID uint64) bool {
-	return r.hasMerchantWindowOpenLocked(originID) || r.hasSafeboxWindowOpenLocked(originID) || r.hasRefineWindowOpenLocked(originID) ||
-		r.hasMerchantWindowOpenLocked(partnerID) || r.hasSafeboxWindowOpenLocked(partnerID) || r.hasRefineWindowOpenLocked(partnerID)
+func (r *sharedWorldRegistry) exchangeFinalizeCommitBusyRejectLocked(plan *exchangeFinalizePlan) ([][]byte, bool) {
+	if r == nil || plan == nil || plan.OriginID == 0 || plan.PartnerID == 0 {
+		return nil, false
+	}
+	// Mirror ACCEPT / START busy ordering: commit-requester (plan.OriginID) busy
+	// wins over partner busy when both presentations are open.
+	if r.hasMerchantWindowOpenLocked(plan.OriginID) || r.hasSafeboxWindowOpenLocked(plan.OriginID) || r.hasRefineWindowOpenLocked(plan.OriginID) {
+		return [][]byte{encodeExchangeRequesterMerchantBusyInfoFrame()}, true
+	}
+	if r.hasMerchantWindowOpenLocked(plan.PartnerID) || r.hasSafeboxWindowOpenLocked(plan.PartnerID) || r.hasRefineWindowOpenLocked(plan.PartnerID) {
+		return [][]byte{encodeExchangePartnerMerchantBusyInfoFrame()}, true
+	}
+	return nil, false
 }
 
 func (r *sharedWorldRegistry) exchangeFinalizeCommitStillValidLocked(plan *exchangeFinalizePlan) bool {
 	if r == nil || plan == nil || plan.OriginID == 0 || plan.PartnerID == 0 {
-		return false
-	}
-	if r.exchangePairBusyWindowOpenLocked(plan.OriginID, plan.PartnerID) {
 		return false
 	}
 	origin, ok := r.playerCharacter(plan.OriginID)

@@ -17,7 +17,7 @@ Fail closed for active-shell `EXCHANGE ACCEPT` (including second-accept mutual-a
 - partner-side open player-shop / cube busy-window rejection text
 - richer trade-target eligibility beyond the owned distance + merchant/safebox/refine busy gate
 - stronger rollback/audit policy beyond the current fail-closed mutual-accept finalize
-- optional authored/template-backed reject-chat overrides beyond the fixed START busy strings now also used by ACCEPT; commit-time busy reject chat
+- optional authored/template-backed reject-chat overrides beyond the fixed START busy strings now also used by ACCEPT and commit-time busy reject chat
 
 ## TDD and validation
 
@@ -31,4 +31,4 @@ Focused coverage:
 
 1. Keep partner-side open player-shop / cube busy-window exchange rejects deferred until those presentation seams exist.
 2. Keep ground-item restart durability deferred until operators decide quarantined `0010` exports should drive recovery.
-3. ACCEPT busy-window reject info-chat now reuses the START requester/partner strings; optional authored/template-backed overrides and commit-time busy reject chat remain later presentation seams.
+3. ACCEPT and commit-time busy-window reject info-chat now reuse the START requester/partner strings; optional authored/template-backed overrides remain later presentation seams.

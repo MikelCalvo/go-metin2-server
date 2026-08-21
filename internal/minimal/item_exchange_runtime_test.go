@@ -3799,11 +3799,47 @@ func TestSharedWorldCommitExchangeFinalizeRejectsBusyWindowOpenedAfterAcceptPlan
 
 	updatedOrigin := cloneExchangeCharacter(owner)
 	updatedPartner := cloneExchangeCharacter(peer)
-	if registry.CommitExchangeFinalize(finalizePlan, updatedOrigin, updatedPartner, [][]byte{encodeExchangeEndFrame()}) {
+	// Second accepter is peer (plan.OriginID); owner safebox is partner busy.
+	busyFrames, committed := registry.CommitExchangeFinalize(finalizePlan, updatedOrigin, updatedPartner, [][]byte{encodeExchangeEndFrame()})
+	if committed {
 		t.Fatal("expected CommitExchangeFinalize to fail closed after post-plan busy-window open")
+	}
+	if len(busyFrames) != 1 {
+		t.Fatalf("expected commit-time partner busy reject to emit one self-only info chat, got %d frames", len(busyFrames))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, busyFrames[0]))
+	if err != nil {
+		t.Fatalf("decode commit-time partner busy info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangePartnerMerchantBusyInfoMessage {
+		t.Fatalf("unexpected commit-time partner busy info chat: %+v", infoChat)
 	}
 	if queued := peerPending.flush(); len(queued) != 0 {
 		t.Fatalf("expected failed CommitExchangeFinalize to queue no peer frames, got %d", len(queued))
+	}
+
+	if !registry.SetSafeboxWindowOpen(ownerID, false) {
+		t.Fatal("expected SetSafeboxWindowOpen(owner,false) to succeed")
+	}
+	if !registry.SetSafeboxWindowOpen(peerID, true) {
+		t.Fatal("expected SetSafeboxWindowOpen(peer) after accept plan to succeed")
+	}
+	busyFrames, committed = registry.CommitExchangeFinalize(finalizePlan, updatedOrigin, updatedPartner, [][]byte{encodeExchangeEndFrame()})
+	if committed {
+		t.Fatal("expected CommitExchangeFinalize to fail closed after commit-requester busy-window open")
+	}
+	if len(busyFrames) != 1 {
+		t.Fatalf("expected commit-time requester busy reject to emit one self-only info chat, got %d frames", len(busyFrames))
+	}
+	infoChat, err = chatproto.DecodeChatDelivery(decodeSingleFrame(t, busyFrames[0]))
+	if err != nil {
+		t.Fatalf("decode commit-time requester busy info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterMerchantBusyInfoMessage {
+		t.Fatalf("unexpected commit-time requester busy info chat: %+v", infoChat)
+	}
+	if queued := peerPending.flush(); len(queued) != 0 {
+		t.Fatalf("expected failed CommitExchangeFinalize requester busy reject to queue no peer frames, got %d", len(queued))
 	}
 
 	cancelFrames, ok := registry.CancelExchange(peerID)

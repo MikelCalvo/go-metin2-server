@@ -6150,6 +6150,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						}
 						selfFrames, applied := applyExchangeFinalize(runtime, accounts, sharedWorld, selectedPlayer, &sessionTicket, finalizePlan)
 						if !applied {
+							// Commit-time busy-window drift returns the same self-only
+							// START/ACCEPT busy info-chat while leaving the shell open.
+							if len(selfFrames) > 0 {
+								return gameflow.ItemExchangeResult{Accepted: true, Frames: selfFrames}
+							}
 							return gameflow.ItemExchangeResult{Accepted: false}
 						}
 						refreshLiveCharacterRegistration()
@@ -7344,7 +7349,8 @@ func applyExchangeFinalize(runtime *gameRuntime, accounts accountstore.Store, sh
 		return nil, false
 	}
 
-	if !sharedWorld.CommitExchangeFinalize(plan, updatedOrigin, updatedPartner, peerFrames) {
+	busyFrames, committed := sharedWorld.CommitExchangeFinalize(plan, updatedOrigin, updatedPartner, peerFrames)
+	if !committed {
 		rollbackAccounts()
 		switch selected.ID {
 		case plan.Origin.ID:
@@ -7353,6 +7359,9 @@ func applyExchangeFinalize(runtime *gameRuntime, accounts accountstore.Store, sh
 		case plan.Partner.ID:
 			_ = applyLocalSnapshot(plan.Partner)
 			_ = runtime.applyLiveCharacterPersistedSnapshot(plan.Origin.Name, plan.Origin)
+		}
+		if len(busyFrames) > 0 {
+			return busyFrames, false
 		}
 		return nil, false
 	}

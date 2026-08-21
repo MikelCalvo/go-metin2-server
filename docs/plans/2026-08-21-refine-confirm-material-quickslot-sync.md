@@ -32,4 +32,4 @@ Focused coverage:
 
 1. Keep lower-probability refine outcomes deferred until failure/destroy contracts are frozen.
 2. Keep safebox / storage removal quickslot sync deferred until accepted safebox mutation exists.
-3. ACCEPT busy-window reject info-chat now reuses the START requester/partner strings; optional commit-time busy reject chat remains a separate presentation seam.
+3. ACCEPT and commit-time busy-window reject info-chat now reuse the START requester/partner strings; optional authored/template-backed overrides remain deferred.
