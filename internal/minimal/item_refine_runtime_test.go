@@ -619,7 +619,14 @@ func TestGameRuntimeItemRefineConfirmAfterPreviewProbability100PersistsAndEmitsB
 		{ID: 632, Vnum: 27002, Count: 1, Slot: 7},
 		{ID: 633, Vnum: 27002, Count: 4, Slot: 8},
 	}
-	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 1, Type: quickslotproto.TypeSkill, Slot: 6},
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 7},
+		{Position: 5, Type: quickslotproto.TypeItem, Slot: 8},
+		{Position: 6, Type: quickslotproto.TypeCommand, Slot: 7},
+	}
 	issuePeerTicket(t, ticketStore, "item-refine-confirm", 0x70707060, owner)
 	if err := accounts.Save(accountstore.Account{Login: "item-refine-confirm", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed item-refine confirm account: %v", err)
@@ -663,8 +670,8 @@ func TestGameRuntimeItemRefineConfirmAfterPreviewProbability100PersistsAndEmitsB
 	if err != nil {
 		t.Fatalf("unexpected refine confirm packet error: %v", err)
 	}
-	if len(confirmOut) != 5 {
-		t.Fatalf("expected refine confirm burst of 5 frames, got %d", len(confirmOut))
+	if len(confirmOut) != 7 {
+		t.Fatalf("expected refine confirm burst of 7 frames, got %d", len(confirmOut))
 	}
 	delA, err := itemproto.DecodeDel(decodeSingleFrame(t, confirmOut[0]))
 	if err != nil {
@@ -687,14 +694,28 @@ func TestGameRuntimeItemRefineConfirmAfterPreviewProbability100PersistsAndEmitsB
 	if updateB.Position.WindowType != itemproto.WindowInventory || updateB.Position.Cell != 8 || updateB.Count != 2 {
 		t.Fatalf("unexpected material B update: %+v", updateB)
 	}
-	resultSet, err := itemproto.DecodeSet(decodeSingleFrame(t, confirmOut[3]))
+	quickslotDelA, err := quickslotproto.DecodeDel(decodeSingleFrame(t, confirmOut[3]))
+	if err != nil {
+		t.Fatalf("decode material A QUICKSLOT_DEL: %v", err)
+	}
+	if quickslotDelA.Position != 3 {
+		t.Fatalf("unexpected material A quickslot delete position: %+v", quickslotDelA)
+	}
+	quickslotDelB, err := quickslotproto.DecodeDel(decodeSingleFrame(t, confirmOut[4]))
+	if err != nil {
+		t.Fatalf("decode material B QUICKSLOT_DEL: %v", err)
+	}
+	if quickslotDelB.Position != 4 {
+		t.Fatalf("unexpected material B quickslot delete position: %+v", quickslotDelB)
+	}
+	resultSet, err := itemproto.DecodeSet(decodeSingleFrame(t, confirmOut[5]))
 	if err != nil {
 		t.Fatalf("decode result ITEM_SET: %v", err)
 	}
 	if resultSet.Position.WindowType != itemproto.WindowInventory || resultSet.Position.Cell != 5 || resultSet.Vnum != 11231 || resultSet.Count != 1 {
 		t.Fatalf("unexpected result ITEM_SET: %+v", resultSet)
 	}
-	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, confirmOut[4]))
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, confirmOut[6]))
 	if err != nil {
 		t.Fatalf("decode gold PLAYER_POINT_CHANGE: %v", err)
 	}
@@ -716,8 +737,14 @@ func TestGameRuntimeItemRefineConfirmAfterPreviewProbability100PersistsAndEmitsB
 	if !reflect.DeepEqual(persisted.Characters[0].Inventory, wantInventory) {
 		t.Fatalf("unexpected persisted inventory after refine confirm:\n got: %+v\nwant: %+v", persisted.Characters[0].Inventory, wantInventory)
 	}
-	if persisted.Characters[0].Gold != 2500 || !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
-		t.Fatalf("unexpected persisted scalars after refine confirm: gold=%d quickslots=%+v", persisted.Characters[0].Gold, persisted.Characters[0].Quickslots)
+	wantQuickslots := []loginticket.Quickslot{
+		{Position: 1, Type: quickslotproto.TypeSkill, Slot: 6},
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 5, Type: quickslotproto.TypeItem, Slot: 8},
+		{Position: 6, Type: quickslotproto.TypeCommand, Slot: 7},
+	}
+	if persisted.Characters[0].Gold != 2500 || !reflect.DeepEqual(persisted.Characters[0].Quickslots, wantQuickslots) {
+		t.Fatalf("unexpected persisted scalars after refine confirm: gold=%d quickslots=%+v want=%+v", persisted.Characters[0].Gold, persisted.Characters[0].Quickslots, wantQuickslots)
 	}
 
 	repeatOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))

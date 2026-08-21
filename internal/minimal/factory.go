@@ -5579,6 +5579,22 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 							return gameflow.ItemRefineResult{Accepted: false}
 						}
+						var materialQuickslotFrames [][]byte
+						for _, change := range result.MaterialChanges {
+							if !change.ItemRemoved {
+								continue
+							}
+							quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, change.Slot)
+							if !ok {
+								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+								return gameflow.ItemRefineResult{Accepted: false}
+							}
+							materialQuickslotFrames = append(materialQuickslotFrames, quickslotFrames...)
+						}
+						if len(materialQuickslotFrames) > 0 {
+							insertAt := len(result.MaterialChanges)
+							frames = append(frames[:insertAt], append(materialQuickslotFrames, frames[insertAt:]...)...)
+						}
 						committed, ok := commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 						if !ok {
 							return gameflow.ItemRefineResult{Accepted: false}
