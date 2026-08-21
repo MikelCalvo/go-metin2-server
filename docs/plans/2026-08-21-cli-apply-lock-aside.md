@@ -67,4 +67,4 @@ Validation for this slice:
 1. Keep automatic stale-lock removal deferred.
 2. Add DB-engine-specific advisory lock coverage once a production driver is selected.
 3. Keep ground-item restart durability deferred until operators decide that quarantined `0010` exports should drive recovery.
-4. Optional migration-runs retention printer for aside locks remains deferred; naming stays documented in the lab topology/runbook.
+4. ~~Optional migration-runs retention printer for aside locks remains deferred; naming stays documented in the lab topology/runbook.~~ Done: see [CLI migration-run retention](2026-08-21-cli-migration-run-retention.md).

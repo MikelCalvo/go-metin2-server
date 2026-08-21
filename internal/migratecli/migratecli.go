@@ -103,6 +103,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runQuarantineExport(args[1:], stdin, stdout, stderr)
 	case "backup-restore-drill":
 		return runBackupRestoreDrill(args[1:], stdin, stdout, stderr)
+	case "migration-run-retention":
+		return runMigrationRunRetention(args[1:], stdin, stdout, stderr)
 	case "version", "--version":
 		return runVersion(args[1:], stdout, stderr)
 	case "help", "-h", "--help":
@@ -2118,6 +2120,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  apply                  apply a target plan using a database/sql driver and offline ledger snapshot")
 	fmt.Fprintln(w, "  quarantine-export      validate and canonicalize a retained migration-shaped export offline")
 	fmt.Fprintln(w, "  backup-restore-drill   print path-aware file-store backup/restore drill commands from runtime-config")
+	fmt.Fprintln(w, "  migration-run-retention print path-aware migration-runs retention commands from build-info")
 	fmt.Fprintln(w, "  version                print metadata-only binary build identity")
 	fmt.Fprintln(w, "")
 	printVersionUsage(w)
@@ -2151,6 +2154,8 @@ func printUsage(w io.Writer) {
 	printQuarantineExportUsage(w)
 	fmt.Fprintln(w, "")
 	printBackupRestoreDrillUsage(w)
+	fmt.Fprintln(w, "")
+	printMigrationRunRetentionUsage(w)
 }
 
 func printVersionUsage(w io.Writer) {

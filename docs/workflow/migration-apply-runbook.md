@@ -42,6 +42,20 @@ Those two checksums let an operator correlate the preflight with the plan artifa
 
 From a clean checkout of the release you intend to run:
 
+Optionally print a path-aware retention script that creates the lab
+`/var/metin2/migration-runs/YYYYMMDDTHHMMSSZ-<commit12>/` tree documented in
+[lab deployment topology](lab-deployment-topology.md):
+
+```bash
+metin2-migrate version \
+  | metin2-migrate migration-run-retention --build-info - \
+  > migration-run-retention.sh
+```
+
+The printer never opens a database, never embeds a DSN, and never executes
+apply itself. Export `DRIVER` / `DSN` before running any printed DB-touching
+commands, then retain the redirected artifacts under `$RUN`.
+
 ```bash
 metin2-migrate catalog > migration-catalog.json
 metin2-migrate ledger-snapshot \

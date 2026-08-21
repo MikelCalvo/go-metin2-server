@@ -91,6 +91,15 @@ Naming rules:
 
 Default drill printer base remains `/var/metin2/backups/drill` via `metin2-migrate backup-restore-drill --backup-base ...`. Prefer creating a fresh timestamped parent for each real window rather than reusing `drill/`.
 
+Default migration-runs printer base remains `/var/metin2/migration-runs` via:
+
+```bash
+metin2-migrate version \
+  | metin2-migrate migration-run-retention --build-info -
+```
+
+The printer emits a path-aware shell script that creates `YYYYMMDDTHHMMSSZ-<commit12>/` and redirects the runbook artifacts listed above. It never opens a database, never embeds a DSN, and never executes apply itself — operators must export `DRIVER` / `DSN` before running the printed DB-touching commands.
+
 ## Operator correlation checklist
 
 For any reconnect/restart or migration window, retain:
@@ -117,4 +126,5 @@ See also:
 - remote admin APIs
 - automatic artifact GC / lifecycle jobs
 - automatic stale-lock expiry (lab recovery remains confirmation-gated `apply-lock-aside` / operator aside-rename; see [lab stale-lock recovery](lab-stale-lock-recovery.md))
+- automatic execution of the printed `migration-run-retention` script (the CLI only prints commands)
 - a claim that bootstrap file stores are the final production persistence layer
