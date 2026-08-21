@@ -80,3 +80,4 @@ Validation for this slice:
 3. Keep ground-item restart durability deferred until operators decide that quarantined `0010` exports should drive recovery.
 4. Keep automatic artifact GC / lifecycle jobs deferred.
 5. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
+6. ~~Print the full operator correlation checklist (`authd` build-info, runtime-config, persistence status, `notes.md`) from the retention printer.~~ Done: see [CLI migration-run retention correlation](2026-08-21-cli-migration-run-retention-correlation.md).

@@ -53,8 +53,10 @@ metin2-migrate version \
 ```
 
 The printer never opens a database, never embeds a DSN, and never executes
-apply itself. Export `DRIVER` / `DSN` before running any printed DB-touching
-commands, then retain the redirected artifacts under `$RUN`.
+apply itself. It retains both-daemon build-info, runtime-config, persistence
+status before/after mutation, and a `notes.md` stub beside the migration
+metadata artifacts. Export `DRIVER` / `DSN` before running any printed
+DB-touching commands, then retain the redirected artifacts under `$RUN`.
 
 ```bash
 metin2-migrate catalog > migration-catalog.json
@@ -127,7 +129,7 @@ metin2-migrate version \
   > migration-rollback-run-retention.sh
 ```
 
-`--allow-rollback` requires an explicit non-`latest` `--target-version`. When `--lock-file` is omitted the printed default becomes `migration-rollback.lock`. The printer still never opens a database, never embeds a DSN, and never executes rollback itself.
+`--allow-rollback` requires an explicit non-`latest` `--target-version`. When `--lock-file` is omitted the printed default becomes `migration-rollback.lock`. The printer still retains both-daemon build-info, runtime-config, persistence status before/after mutation, and a `notes.md` stub beside the rollback metadata artifacts. It never opens a database, never embeds a DSN, and never executes rollback itself.
 
 Preview first:
 

@@ -66,6 +66,12 @@ Keep operator evidence outside live data trees:
 
 /var/metin2/migration-runs/
   YYYYMMDDTHHMMSSZ-<commit12>/
+    gamed-build-info.json
+    authd-build-info.json
+    runtime-config.json
+    persistence-status-before.json
+    daemon-migrations-status.json
+    notes.md
     migration-catalog.json
     ledger-snapshot.json
     ledger-snapshot-status.json
@@ -79,7 +85,7 @@ Keep operator evidence outside live data trees:
     migration-apply-audit.json
     apply-audit-status.json
     post-apply-status.json
-    notes.md
+    persistence-status-after.json
 ```
 
 Naming rules:
@@ -108,7 +114,7 @@ metin2-migrate version \
   | metin2-migrate migration-run-retention --build-info -
 ```
 
-The printer emits a path-aware shell script that creates `YYYYMMDDTHHMMSSZ-<commit12>/` and redirects the runbook artifacts listed above. It never opens a database, never embeds a DSN, and never executes apply itself — operators must export `DRIVER` / `DSN` before running the printed DB-touching commands.
+The printer emits a path-aware shell script that creates `YYYYMMDDTHHMMSSZ-<commit12>/`, retains both-daemon build-info (`gamed` via `--ops-base-url`, `authd` via `--authd-ops-base-url`, default `http://127.0.0.1:6061`), `runtime-config.json`, persistence status before/after mutation, a `notes.md` stub, and the runbook artifacts listed above. It never opens a database, never embeds a DSN, and never executes apply itself — operators must export `DRIVER` / `DSN` before running the printed DB-touching commands.
 
 For rollback drills, pass an explicit non-`latest` target plus `--allow-rollback`:
 
@@ -120,7 +126,7 @@ metin2-migrate version \
       --allow-rollback
 ```
 
-That mode prints rollback artifact names (`rollback-plan-artifact.json`, `rollback-apply-preflight.json`, `migration-rollback-audit.json`, `post-rollback-status.json`), includes `--allow-rollback` on the printed preflight/apply lines, and defaults `--lock-file` to `migration-rollback.lock` when omitted.
+That mode prints rollback artifact names (`rollback-plan-artifact.json`, `rollback-apply-preflight.json`, `migration-rollback-audit.json`, `post-rollback-status.json`), includes `--allow-rollback` on the printed preflight/apply lines, defaults `--lock-file` to `migration-rollback.lock` when omitted, and keeps the same correlation checklist retains.
 
 ## Operator correlation checklist
 

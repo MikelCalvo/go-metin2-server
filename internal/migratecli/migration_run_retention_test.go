@@ -41,12 +41,19 @@ func TestRunMigrationRunRetentionPrintsLabTreeCommands(t *testing.T) {
 	for _, want := range []string{
 		`# read-only printer: does not execute migration apply/rollback`,
 		`OPS='http://127.0.0.1:6060'`,
+		`AUTH_OPS='http://127.0.0.1:6061'`,
 		`RUNS_BASE='/var/metin2/migration-runs'`,
 		`TARGET_VERSION='latest'`,
 		`LOCK_FILE='migration-apply.lock'`,
 		`COMMIT12='abcdef012345'`,
 		`RUN="${RUNS_BASE}/${TS}-${COMMIT12}"`,
 		`mkdir -p "$RUN"`,
+		`curl -sS "$OPS/local/build-info" > "$RUN/gamed-build-info.json"`,
+		`curl -sS "$AUTH_OPS/local/build-info" > "$RUN/authd-build-info.json"`,
+		`curl -sS "$OPS/local/runtime-config" > "$RUN/runtime-config.json"`,
+		`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-before.json"`,
+		`curl -sS "$OPS/local/db/migrations/status" > "$RUN/daemon-migrations-status.json"`,
+		`cat > "$RUN/notes.md" <<'EOF'`,
 		`metin2-migrate catalog > "$RUN/migration-catalog.json"`,
 		`metin2-migrate ledger-snapshot`,
 		`> "$RUN/ledger-snapshot.json"`,
@@ -67,10 +74,9 @@ func TestRunMigrationRunRetentionPrintsLabTreeCommands(t *testing.T) {
 		`> "$RUN/apply-audit-status.json"`,
 		`metin2-migrate status`,
 		`> "$RUN/post-apply-status.json"`,
+		`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-after.json"`,
 		`metin2-migrate apply-lock-status --lock-file "$RUN/$LOCK_FILE" > "$RUN/apply-lock-status.json"`,
 		`metin2-migrate apply-lock-aside --lock-file "$RUN/$LOCK_FILE" --i-confirm-lab-aside-rename > "$RUN/apply-lock-aside.json"`,
-		`curl -sS "$OPS/local/build-info" > "$RUN/gamed-build-info.json"`,
-		`curl -sS "$OPS/local/db/migrations/status" > "$RUN/daemon-migrations-status.json"`,
 		`# require operator-exported DRIVER/DSN; printer never embeds a DSN`,
 		`docs/workflow/migration-apply-runbook.md`,
 		`docs/workflow/lab-deployment-topology.md`,
@@ -83,17 +89,22 @@ func TestRunMigrationRunRetentionPrintsLabTreeCommands(t *testing.T) {
 		t.Fatalf("migration-run-retention must not expose SQL or concrete DSN text, got %s", body)
 	}
 	idxMkdir := strings.Index(body, `mkdir -p "$RUN"`)
+	idxAuthd := strings.Index(body, `curl -sS "$AUTH_OPS/local/build-info" > "$RUN/authd-build-info.json"`)
+	idxRuntime := strings.Index(body, `curl -sS "$OPS/local/runtime-config" > "$RUN/runtime-config.json"`)
+	idxStatusBefore := strings.Index(body, `> "$RUN/persistence-status-before.json"`)
+	idxNotes := strings.Index(body, `cat > "$RUN/notes.md" <<'EOF'`)
 	idxCatalog := strings.Index(body, `metin2-migrate catalog > "$RUN/migration-catalog.json"`)
 	idxPreflight := strings.Index(body, `> "$RUN/apply-preflight.json"`)
 	idxApply := strings.Index(body, `metin2-migrate apply \`)
 	idxPostStatus := strings.Index(body, `> "$RUN/post-apply-status.json"`)
+	idxStatusAfter := strings.Index(body, `> "$RUN/persistence-status-after.json"`)
 	idxLockStatus := strings.Index(body, `apply-lock-status --lock-file "$RUN/$LOCK_FILE"`)
-	if idxMkdir < 0 || idxCatalog < 0 || idxPreflight < 0 || idxApply < 0 || idxPostStatus < 0 || idxLockStatus < 0 {
+	if idxMkdir < 0 || idxAuthd < 0 || idxRuntime < 0 || idxStatusBefore < 0 || idxNotes < 0 || idxCatalog < 0 || idxPreflight < 0 || idxApply < 0 || idxPostStatus < 0 || idxStatusAfter < 0 || idxLockStatus < 0 {
 		t.Fatalf("missing expected ordering markers in stdout:\n%s", body)
 	}
-	if !(idxMkdir < idxCatalog && idxCatalog < idxPreflight && idxPreflight < idxApply && idxApply < idxPostStatus) {
-		t.Fatalf("expected mkdir -> catalog -> preflight -> apply -> post-status ordering, got idxs mkdir=%d catalog=%d preflight=%d apply=%d post=%d\n%s",
-			idxMkdir, idxCatalog, idxPreflight, idxApply, idxPostStatus, body)
+	if !(idxMkdir < idxAuthd && idxAuthd < idxRuntime && idxRuntime < idxStatusBefore && idxStatusBefore < idxNotes && idxNotes < idxCatalog && idxCatalog < idxPreflight && idxPreflight < idxApply && idxApply < idxPostStatus && idxPostStatus < idxStatusAfter) {
+		t.Fatalf("expected mkdir -> authd/runtime/status-before/notes -> catalog -> preflight -> apply -> post-status -> status-after ordering, got idxs mkdir=%d authd=%d runtime=%d before=%d notes=%d catalog=%d preflight=%d apply=%d post=%d after=%d\n%s",
+			idxMkdir, idxAuthd, idxRuntime, idxStatusBefore, idxNotes, idxCatalog, idxPreflight, idxApply, idxPostStatus, idxStatusAfter, body)
 	}
 }
 
@@ -249,7 +260,61 @@ func TestRunMigrationRunRetentionUsageErrors(t *testing.T) {
 			if !strings.Contains(stderr.String(), "--allow-rollback") {
 				t.Fatalf("expected usage to list --allow-rollback, got %q", stderr.String())
 			}
+			if !strings.Contains(stderr.String(), "--authd-ops-base-url") {
+				t.Fatalf("expected usage to list --authd-ops-base-url, got %q", stderr.String())
+			}
 		})
+	}
+}
+
+func TestRunMigrationRunRetentionRejectsInvalidAuthdOpsBaseURL(t *testing.T) {
+	payload := `{"version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-21T15:30:45Z"}`
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"migration-run-retention",
+			"--build-info", "-",
+			"--authd-ops-base-url", "ftp://127.0.0.1:6061",
+		},
+		strings.NewReader(payload),
+		&stdout,
+		&stderr,
+	)
+	if code != 1 {
+		t.Fatalf("expected exit 1, got %d stderr=%q", code, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout on contract failure, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "authd-ops-base-url") {
+		t.Fatalf("expected authd-ops-base-url error, got %q", stderr.String())
+	}
+}
+
+func TestRunMigrationRunRetentionHonorsCustomAuthdOpsBaseURL(t *testing.T) {
+	payload := `{"version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-21T15:30:45Z"}`
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"migration-run-retention",
+			"--build-info", "-",
+			"--authd-ops-base-url", "http://127.0.0.1:17061/",
+		},
+		strings.NewReader(payload),
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d stderr=%q", code, stderr.String())
+	}
+	body := stdout.String()
+	if !strings.Contains(body, `AUTH_OPS='http://127.0.0.1:17061'`) {
+		t.Fatalf("expected normalized custom AUTH_OPS, got:\n%s", body)
+	}
+	if !strings.Contains(body, `curl -sS "$AUTH_OPS/local/build-info" > "$RUN/authd-build-info.json"`) {
+		t.Fatalf("expected authd build-info retain, got:\n%s", body)
 	}
 }
 
@@ -298,12 +363,17 @@ func TestRunMigrationRunRetentionPrintsRollbackTreeCommands(t *testing.T) {
 	for _, want := range []string{
 		`# read-only printer: does not execute migration apply/rollback`,
 		`OPS='http://127.0.0.1:6060'`,
+		`AUTH_OPS='http://127.0.0.1:6061'`,
 		`RUNS_BASE='/var/metin2/migration-runs'`,
 		`TARGET_VERSION='0'`,
 		`LOCK_FILE='migration-rollback.lock'`,
 		`COMMIT12='abcdef012345'`,
 		`RUN="${RUNS_BASE}/${TS}-${COMMIT12}"`,
 		`mkdir -p "$RUN"`,
+		`curl -sS "$AUTH_OPS/local/build-info" > "$RUN/authd-build-info.json"`,
+		`curl -sS "$OPS/local/runtime-config" > "$RUN/runtime-config.json"`,
+		`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-before.json"`,
+		`cat > "$RUN/notes.md" <<'EOF'`,
 		`metin2-migrate catalog > "$RUN/migration-catalog.json"`,
 		`> "$RUN/ledger-snapshot.json"`,
 		`> "$RUN/ledger-snapshot-status.json"`,
@@ -315,6 +385,7 @@ func TestRunMigrationRunRetentionPrintsRollbackTreeCommands(t *testing.T) {
 		`--audit-file "$RUN/migration-rollback-audit.json"`,
 		`> "$RUN/rollback-apply-audit-status.json"`,
 		`> "$RUN/post-rollback-status.json"`,
+		`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-after.json"`,
 		`metin2-migrate apply-lock-status --lock-file "$RUN/$LOCK_FILE" > "$RUN/apply-lock-status.json"`,
 		`metin2-migrate apply-lock-aside --lock-file "$RUN/$LOCK_FILE" --i-confirm-lab-aside-rename > "$RUN/apply-lock-aside.json"`,
 		`# require operator-exported DRIVER/DSN; printer never embeds a DSN`,

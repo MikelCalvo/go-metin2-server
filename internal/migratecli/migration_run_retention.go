@@ -17,6 +17,7 @@ import (
 const (
 	maxMigrationRunBuildInfoBytes       = 64 * 1024
 	defaultMigrationRunOpsBaseURL       = "http://127.0.0.1:6060"
+	defaultMigrationRunAuthdOpsBaseURL  = "http://127.0.0.1:6061"
 	defaultMigrationRunsBase            = "/var/metin2/migration-runs"
 	defaultMigrationRunTargetVersion    = "latest"
 	defaultMigrationRunLockFile         = "migration-apply.lock"
@@ -34,6 +35,7 @@ type migrationRunBuildInfo struct {
 
 type migrationRunRetentionPlan struct {
 	OpsBaseURL        string
+	AuthdOpsBaseURL   string
 	MigrationRunsBase string
 	TargetVersion     string
 	LockFile          string
@@ -49,12 +51,14 @@ func runMigrationRunRetention(args []string, stdin io.Reader, stdout io.Writer, 
 	flags.SetOutput(stderr)
 	var buildInfoPath string
 	var opsBaseURL string
+	var authdOpsBaseURL string
 	var migrationRunsBase string
 	var targetVersion string
 	var lockFile string
 	var allowRollback bool
 	flags.StringVar(&buildInfoPath, "build-info", "", "path to retained /local/build-info or metin2-migrate version JSON, or - for stdin")
-	flags.StringVar(&opsBaseURL, "ops-base-url", defaultMigrationRunOpsBaseURL, "loopback ops base URL used in printed curl commands")
+	flags.StringVar(&opsBaseURL, "ops-base-url", defaultMigrationRunOpsBaseURL, "loopback gamed ops base URL used in printed curl commands")
+	flags.StringVar(&authdOpsBaseURL, "authd-ops-base-url", defaultMigrationRunAuthdOpsBaseURL, "loopback authd ops base URL used in printed curl commands")
 	flags.StringVar(&migrationRunsBase, "migration-runs-base", defaultMigrationRunsBase, "absolute migration-runs root used in printed retention commands")
 	flags.StringVar(&targetVersion, "target-version", defaultMigrationRunTargetVersion, "plan/apply target version printed into the retention script")
 	flags.StringVar(&lockFile, "lock-file", defaultMigrationRunLockFile, "apply lock file name or absolute path printed into the retention script")
@@ -96,7 +100,7 @@ func runMigrationRunRetention(args []string, stdin io.Reader, stdout io.Writer, 
 		return exitError
 	}
 
-	plan, err := buildMigrationRunRetentionPlan(raw, opsBaseURL, migrationRunsBase, targetVersion, lockFile, lockFileExplicit, allowRollback)
+	plan, err := buildMigrationRunRetentionPlan(raw, opsBaseURL, authdOpsBaseURL, migrationRunsBase, targetVersion, lockFile, lockFileExplicit, allowRollback)
 	if err != nil {
 		fmt.Fprintf(stderr, "migration-run-retention: %v\n", err)
 		return exitError
@@ -159,7 +163,7 @@ func readBoundedMigrationRunBuildInfo(reader io.Reader) ([]byte, error) {
 	return raw, nil
 }
 
-func buildMigrationRunRetentionPlan(raw []byte, opsBaseURL, migrationRunsBase, targetVersion, lockFile string, lockFileExplicit, allowRollback bool) (migrationRunRetentionPlan, error) {
+func buildMigrationRunRetentionPlan(raw []byte, opsBaseURL, authdOpsBaseURL, migrationRunsBase, targetVersion, lockFile string, lockFileExplicit, allowRollback bool) (migrationRunRetentionPlan, error) {
 	var snapshot migrationRunBuildInfo
 	if err := decodeStrictMigrationRunBuildInfoJSON(raw, &snapshot); err != nil {
 		return migrationRunRetentionPlan{}, err
@@ -175,6 +179,10 @@ func buildMigrationRunRetentionPlan(raw []byte, opsBaseURL, migrationRunsBase, t
 	}
 
 	normalizedOps, err := normalizeMigrationRunOpsBaseURL(opsBaseURL)
+	if err != nil {
+		return migrationRunRetentionPlan{}, err
+	}
+	normalizedAuthdOps, err := normalizeMigrationRunOpsBaseURLLabeled(authdOpsBaseURL, "authd-ops-base-url")
 	if err != nil {
 		return migrationRunRetentionPlan{}, err
 	}
@@ -204,6 +212,7 @@ func buildMigrationRunRetentionPlan(raw []byte, opsBaseURL, migrationRunsBase, t
 
 	return migrationRunRetentionPlan{
 		OpsBaseURL:        normalizedOps,
+		AuthdOpsBaseURL:   normalizedAuthdOps,
 		MigrationRunsBase: normalizedRunsBase,
 		TargetVersion:     trimmedTarget,
 		LockFile:          trimmedLock,
@@ -229,19 +238,23 @@ func decodeStrictMigrationRunBuildInfoJSON(raw []byte, dest *migrationRunBuildIn
 }
 
 func normalizeMigrationRunOpsBaseURL(raw string) (string, error) {
+	return normalizeMigrationRunOpsBaseURLLabeled(raw, "ops-base-url")
+}
+
+func normalizeMigrationRunOpsBaseURLLabeled(raw string, label string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
-		return "", fmt.Errorf("%w: ops-base-url is required", errInvalidMigrationRunRetentionInput)
+		return "", fmt.Errorf("%w: %s is required", errInvalidMigrationRunRetentionInput, label)
 	}
 	parsed, err := url.Parse(trimmed)
 	if err != nil {
-		return "", fmt.Errorf("%w: ops-base-url: %v", errInvalidMigrationRunRetentionInput, err)
+		return "", fmt.Errorf("%w: %s: %v", errInvalidMigrationRunRetentionInput, label, err)
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return "", fmt.Errorf("%w: ops-base-url scheme must be http or https", errInvalidMigrationRunRetentionInput)
+		return "", fmt.Errorf("%w: %s scheme must be http or https", errInvalidMigrationRunRetentionInput, label)
 	}
 	if parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", fmt.Errorf("%w: ops-base-url must be an absolute http(s) URL with a host and no query/fragment", errInvalidMigrationRunRetentionInput)
+		return "", fmt.Errorf("%w: %s must be an absolute http(s) URL with a host and no query/fragment", errInvalidMigrationRunRetentionInput, label)
 	}
 	parsed.Path = strings.TrimRight(parsed.Path, "/")
 	if parsed.Path == "/" {
@@ -275,6 +288,7 @@ func renderMigrationRunRetentionScript(plan migrationRunRetentionPlan) string {
 	b.WriteString("set -eu\n")
 	b.WriteString("\n")
 	fmt.Fprintf(&b, "OPS=%s\n", shellSingleQuote(plan.OpsBaseURL))
+	fmt.Fprintf(&b, "AUTH_OPS=%s\n", shellSingleQuote(plan.AuthdOpsBaseURL))
 	fmt.Fprintf(&b, "RUNS_BASE=%s\n", shellSingleQuote(plan.MigrationRunsBase))
 	fmt.Fprintf(&b, "TARGET_VERSION=%s\n", shellSingleQuote(plan.TargetVersion))
 	fmt.Fprintf(&b, "LOCK_FILE=%s\n", shellSingleQuote(plan.LockFile))
@@ -289,10 +303,27 @@ func renderMigrationRunRetentionScript(plan migrationRunRetentionPlan) string {
 	b.WriteString("echo '== prepare migration-runs tree =='\n")
 	b.WriteString(`mkdir -p "$RUN"` + "\n")
 	b.WriteString("\n")
-	b.WriteString("echo '== retain daemon identity / optional status =='\n")
+	b.WriteString("echo '== retain daemon identity / runtime correlation =='\n")
 	b.WriteString(`curl -sS "$OPS/local/build-info" > "$RUN/gamed-build-info.json"` + "\n")
+	b.WriteString(`curl -sS "$AUTH_OPS/local/build-info" > "$RUN/authd-build-info.json"` + "\n")
+	b.WriteString(`curl -sS "$OPS/local/runtime-config" > "$RUN/runtime-config.json"` + "\n")
+	b.WriteString(`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-before.json"` + "\n")
 	b.WriteString(`# optional when a daemon is configured against the migration target:` + "\n")
 	b.WriteString(`curl -sS "$OPS/local/db/migrations/status" > "$RUN/daemon-migrations-status.json"` + "\n")
+	b.WriteString("\n")
+	b.WriteString("echo '== operator notes stub =='\n")
+	b.WriteString(`cat > "$RUN/notes.md" <<'EOF'` + "\n")
+	b.WriteString("# Migration window notes\n")
+	b.WriteString("\n")
+	b.WriteString("- Operator:\n")
+	b.WriteString("- Window start (UTC):\n")
+	b.WriteString("- Target version:\n")
+	b.WriteString("- Reviewed plan/preflight checksums:\n")
+	b.WriteString("- Backup evidence path:\n")
+	b.WriteString("- Outcome / follow-ups:\n")
+	b.WriteString("\n")
+	b.WriteString("Do not paste DSNs, passwords, login keys, tickets, or executable SQL here.\n")
+	b.WriteString("EOF\n")
 	b.WriteString("\n")
 
 	planArtifact := "migration-plan-artifact.json"
@@ -370,6 +401,7 @@ func renderMigrationRunRetentionScript(plan migrationRunRetentionPlan) string {
 	b.WriteString(`  --dsn "$DSN" \` + "\n")
 	b.WriteString(`  --target-version "$TARGET_VERSION" \` + "\n")
 	fmt.Fprintf(&b, "  > \"$RUN/%s\"\n", postStatus)
+	b.WriteString(`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-after.json"` + "\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== optional lab stale-lock triage / aside-rename =='\n")
 	b.WriteString(`# Only when apply fails because "$RUN/$LOCK_FILE" already exists.` + "\n")
@@ -382,5 +414,5 @@ func renderMigrationRunRetentionScript(plan migrationRunRetentionPlan) string {
 
 func printMigrationRunRetentionUsage(w io.Writer) {
 	fmt.Fprintln(w, "migration-run-retention usage:")
-	fmt.Fprintln(w, "  metin2-migrate migration-run-retention --build-info <path|-> [--ops-base-url http://127.0.0.1:6060] [--migration-runs-base /var/metin2/migration-runs] [--target-version latest] [--lock-file migration-apply.lock|migration-rollback.lock] [--allow-rollback]")
+	fmt.Fprintln(w, "  metin2-migrate migration-run-retention --build-info <path|-> [--ops-base-url http://127.0.0.1:6060] [--authd-ops-base-url http://127.0.0.1:6061] [--migration-runs-base /var/metin2/migration-runs] [--target-version latest] [--lock-file migration-apply.lock|migration-rollback.lock] [--allow-rollback]")
 }
