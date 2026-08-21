@@ -27,7 +27,7 @@ It does **not** yet claim:
 - level-up choreography or stat recalculation
 - party reward sharing or contribution splits
 - randomized loot tables or probabilities
-- corpse interaction, pickup ownership expiry, or public loot release
+- corpse interaction beyond the shared bootstrap ground-item ownership / public-release / destroy-deadline path already owned by `item-drop-pickup-bootstrap.md`
 - quest credit, achievements, or scripted on-death hooks beyond the narrow spawn-group kill-quest credit fields documented in `quest-state-bootstrap.md`
 - persisted non-player reward state across process restart
 
@@ -154,6 +154,8 @@ Current rules:
 - each configured drop spawns at the killer's current position
 - each drop has count `1`
 - each drop is owned by the killer's character name
+- reward ground handles reuse the same bootstrap exclusive-ownership timer (`30` seconds), blank public `GC::ITEM_OWNERSHIP` release, and in-memory destroy deadline (`300` seconds from registration) already owned by player drops in `item-drop-pickup-bootstrap.md`; restart-restored ownership/despawn timer state remains deferred
+- while exclusive ownership is active, a non-owner visible collector's `ITEM_PICKUP` fails closed with no frames and leaves the reward handle pending; after public ownership release, the same collector uses ordinary collector-side pickup
 - item drops are runtime ground items first; they do not mutate persisted inventory until an explicit pickup succeeds
 - item-shaped reward drops backed by loaded authored item-template metadata inherit that template's non-zero `pickup_range`; omitted or zero `pickup_range` keeps the deterministic 300-unit bootstrap reach already used by ordinary ground handles
 - the killer receives the drop's `ITEM_GROUND_ADD` / `ITEM_OWNERSHIP` pair inline after the killing-hit death and scalar-reward frames

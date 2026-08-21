@@ -985,6 +985,7 @@ Run this when the target build has authored QA `spawn_groups` practice-mob conte
 - [ ] If QA can temporarily fill carried inventory so the second authored `reward_items` entry cannot place, confirm `QuestHunter` returns exactly one self-only info chat `You have too many items.`, no point/item frames, and leaves quest-state/gold/experience/inventory unchanged
 - [ ] If the mob was authored through `drop_tables`, confirm the actual imported/runtime `spawn_groups` row carries direct `reward_experience`, `reward_gold`, `reward_drop_vnums`, and any table-authored kill-quest credit fields; there should be no gameplay-visible table lookup or random roll at kill time
 - [ ] Pick up one reward drop and confirm the normal bootstrap pickup path removes the ground item, adds it to carried inventory, persists it, and rejects a replayed pickup
+- [ ] With a second living visible client watching, wait until the exclusive ownership window elapses (~30 seconds) after a kill reward drop and confirm both clients receive a blank ownership label; then have the watcher pick up the now-public reward drop as ordinary collector pickup
 - [ ] If the reward drop's authored item template sets `pickup_range`, move outside the default 300-unit reach but inside that authored reach and confirm pickup succeeds; repeat with a shorter authored reach and confirm the visible-but-out-of-range pickup fails closed while the ground handle remains pending
 - [ ] With a second living visible client watching, disconnect the reward-drop owner before pickup and confirm the watcher sees deterministic ground-delete cleanup for the owner's still-owned reward drops
 - [ ] If a second watcher is already at the bootstrap `0`-HP floor, confirm that dead watcher receives neither the owner leave delete nor the owned-ground delete noise
@@ -998,6 +999,7 @@ Expected result:
 - `quest_flag` turn-in `reward_items` that resolve to `anti_get` or selected-character-restricted templates fail closed before the quest transition: one self-only info chat (`buy_reject_message` when authored, otherwise `You cannot receive this quest reward.`), no point/item frames, and no quest-state/gold/experience/inventory mutation
 - inventory-full `quest_flag` reward placement fails closed the same way with one self-only info chat `You have too many items.` and no quest-state/gold/experience/inventory mutation
 - reward drop pickup uses the same template-authored reach override as ordinary dropped handles when loaded item-template metadata is present
+- reward drops reuse the same bootstrap exclusive-ownership timer / blank public ownership release / in-memory destroy deadline as ordinary player drops; exclusive non-owner pickup fails closed until release, then ordinary collector pickup succeeds
 - invalid or unsupported reward descriptors preserve the accepted death/clear edge while omitting reward mutation and reward frames
 - a live ground-drop `VID` collision suppresses only that colliding drop; it does not roll back death/clear, scalar rewards, or independent non-colliding drops
 
