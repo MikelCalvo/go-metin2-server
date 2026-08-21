@@ -943,16 +943,7 @@ func TestGameRuntimeItemRefineConfirmBusySafeboxFailsClosedWithoutMutation(t *te
 	}
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "busy-safebox refine confirm")
 
-	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
-		Type:    chatproto.ChatTypeTalking,
-		Message: "/close_safebox",
-	})))
-	if err != nil {
-		t.Fatalf("unexpected busy-safebox /close_safebox error: %v", err)
-	}
-	if len(closeOut) != 0 {
-		t.Fatalf("expected busy-safebox /close_safebox to emit no frames, got %d", len(closeOut))
-	}
+	assertCloseSafeboxCommandChat(t, flow, "/close_safebox", "busy-safebox close")
 
 	confirmOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
 	if err != nil {

@@ -5496,8 +5496,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							}
 						}
 						if slashCloseSafeboxCommand(packet.Message) {
+							if !hasActiveSafeboxOpen {
+								// Already-closed close attempts stay fail-closed-consume: no
+								// ordinary talking-chat fallthrough and no CloseSafebox echo.
+								return gameflow.ChatResult{Accepted: true}
+							}
 							setActiveSafeboxOpen(0, false)
-							return gameflow.ChatResult{Accepted: true}
+							delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeCommand, Message: "CloseSafebox"}
+							return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
 						}
 					}
 
@@ -8084,7 +8090,15 @@ func slashCloseSafeboxCommand(message string) bool {
 		return false
 	}
 	fields := strings.Fields(strings.TrimSpace(message[1:]))
-	return len(fields) == 1 && fields[0] == "close_safebox"
+	if len(fields) != 1 {
+		return false
+	}
+	switch fields[0] {
+	case "close_safebox", "safebox_close":
+		return true
+	default:
+		return false
+	}
 }
 
 func ticketLoginSuccessPacket(ticket loginticket.Ticket, addr uint32, port uint16) loginproto.LoginSuccess4Packet {

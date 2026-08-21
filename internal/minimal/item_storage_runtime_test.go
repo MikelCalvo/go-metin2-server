@@ -13,6 +13,7 @@ import (
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
+	"github.com/MikelCalvo/go-metin2-server/internal/service"
 )
 
 func TestGameRuntimeSafeboxCheckinAntiSafeboxTemplateReturnsAuthoredRejectTextWithoutMutation(t *testing.T) {
@@ -261,7 +262,7 @@ func TestGameRuntimeOpenSafeboxEmitsSizeWithoutMutation(t *testing.T) {
 	assertExchangeAccountUnchanged(t, accounts, login, owner, "open-safebox owner")
 }
 
-func TestGameRuntimeCloseSafeboxClearsOpenPresentationWithoutFrames(t *testing.T) {
+func TestGameRuntimeCloseSafeboxClearsOpenPresentationWithCommandChat(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("CloseSafeboxOwner", 0x010307c9, 0x020407c9, 1100, 2100, 0, 101, 201)
@@ -297,17 +298,56 @@ func TestGameRuntimeCloseSafeboxClearsOpenPresentationWithoutFrames(t *testing.T
 		t.Fatalf("unexpected /open_safebox size before close: %+v", size)
 	}
 
-	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+	assertCloseSafeboxCommandChat(t, flow, "/close_safebox", "close-safebox owner")
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "close-safebox owner")
+
+	alreadyClosedOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
 		Type:    chatproto.ChatTypeTalking,
-		Message: "/close_safebox",
+		Message: "/safebox_close",
 	})))
 	if err != nil {
-		t.Fatalf("unexpected /close_safebox error: %v", err)
+		t.Fatalf("unexpected already-closed /safebox_close error: %v", err)
 	}
-	if len(closeOut) != 0 {
-		t.Fatalf("expected /close_safebox to emit no frames, got %d", len(closeOut))
+	if len(alreadyClosedOut) != 0 {
+		t.Fatalf("expected already-closed /safebox_close to emit no frames, got %d", len(alreadyClosedOut))
 	}
-	assertExchangeAccountUnchanged(t, accounts, login, owner, "close-safebox owner")
+
+	reopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox 2",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_safebox before client-slash close error: %v", err)
+	}
+	if len(reopenOut) != 1 {
+		t.Fatalf("expected /open_safebox before client-slash close to emit one SAFEBOX_SIZE frame, got %d", len(reopenOut))
+	}
+	assertCloseSafeboxCommandChat(t, flow, "/safebox_close", "close-safebox client slash")
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "close-safebox client slash")
+}
+
+func assertCloseSafeboxCommandChat(t *testing.T, flow service.SessionFlow, slash string, label string) {
+	t.Helper()
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: slash,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected %s %s error: %v", label, slash, err)
+	}
+	if len(closeOut) != 1 {
+		t.Fatalf("expected %s %s to emit one CloseSafebox command chat, got %d", label, slash, len(closeOut))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, closeOut[0]))
+	if err != nil {
+		t.Fatalf("decode %s %s CloseSafebox chat: %v", label, slash, err)
+	}
+	if delivery.Type != chatproto.ChatTypeCommand || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != "CloseSafebox" {
+		t.Fatalf("unexpected %s %s CloseSafebox chat: %+v", label, slash, delivery)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected %s %s to queue no peer frames, got %d", label, slash, len(queued))
+	}
 }
 
 func TestGameRuntimeOpenSafeboxOutOfRangeFailsClosedWithoutMutation(t *testing.T) {
@@ -441,16 +481,7 @@ func TestGameRuntimeSafeboxCheckinWhileOpenMovesItemToInMemorySafebox(t *testing
 	assertExchangeAccountUnchanged(t, accounts, login, wantPersisted, "accepted safebox check-in owner")
 	assertExchangeLiveStateUnchanged(t, runtime, wantPersisted, "accepted safebox check-in live owner")
 
-	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
-		Type:    chatproto.ChatTypeTalking,
-		Message: "/close_safebox",
-	})))
-	if err != nil {
-		t.Fatalf("unexpected /close_safebox after check-in error: %v", err)
-	}
-	if len(closeOut) != 0 {
-		t.Fatalf("expected /close_safebox after check-in to emit no frames, got %d", len(closeOut))
-	}
+	assertCloseSafeboxCommandChat(t, flow, "/close_safebox", "close-safebox after check-in")
 
 	reopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
 		Type:    chatproto.ChatTypeTalking,
@@ -1000,14 +1031,7 @@ func TestGameRuntimeSafeboxCheckoutClosesActiveExchangeShellOnSuccess(t *testing
 	}))); err != nil {
 		t.Fatalf("unexpected safebox check-in before exchange check-out error: %v", err)
 	}
-	if closeOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
-		Type:    chatproto.ChatTypeTalking,
-		Message: "/close_safebox",
-	}))); err != nil {
-		t.Fatalf("unexpected /close_safebox before exchange start error: %v", err)
-	} else if len(closeOut) != 0 {
-		t.Fatalf("expected /close_safebox before exchange start to emit no frames, got %d", len(closeOut))
-	}
+	assertCloseSafeboxCommandChat(t, ownerFlow, "/close_safebox", "close-safebox before exchange start check-out")
 
 	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
 	if err != nil {
@@ -1621,14 +1645,7 @@ func TestGameRuntimeSafeboxItemMoveClosesActiveExchangeShellOnSuccess(t *testing
 	}))); err != nil {
 		t.Fatalf("unexpected safebox check-in before exchange item-move error: %v", err)
 	}
-	if closeOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
-		Type:    chatproto.ChatTypeTalking,
-		Message: "/close_safebox",
-	}))); err != nil {
-		t.Fatalf("unexpected /close_safebox before exchange start error: %v", err)
-	} else if len(closeOut) != 0 {
-		t.Fatalf("expected /close_safebox before exchange start to emit no frames, got %d", len(closeOut))
-	}
+	assertCloseSafeboxCommandChat(t, ownerFlow, "/close_safebox", "close-safebox before exchange start item-move")
 
 	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
 	if err != nil {
