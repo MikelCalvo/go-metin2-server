@@ -1101,6 +1101,150 @@ func TestGameRuntimeReturnSpawnGroupHomeAcrossMapsLeavesNoDualMapOccupancy(t *te
 	}
 }
 
+func TestGameRuntimeFlushServerFramesAppliesDueCrossMapSpawnGroupReturnStepLeavesNoDualMapOccupancy(t *testing.T) {
+	// Automatic pending-frame return-step already snaps cross-map return_required
+	// actors to authored home through the interim delete/readd path. Mirror the
+	// operator return-home dual-map anti-leak proof for that due flush so a
+	// UpdateStaticActor cross-map displace cannot leave dual-map occupancy or a
+	// retained-viewer MOVE after the server-owned delay.
+	store := loginticket.NewFileStore(t.TempDir())
+	homeViewer := peerVisibilityCharacter("CMRSHomeViewer", 0x01030173, 0x02040173, 1700, 2800, 0, 101, 201)
+	homeViewer.MapIndex = 42
+	awayViewer := peerVisibilityCharacter("CMRSAwayViewer", 0x01030174, 0x02040174, 1800, 2900, 0, 102, 202)
+	awayViewer.MapIndex = 43
+	issuePeerTicket(t, store, "cmrs-home-viewer", 0x19191919, homeViewer)
+	issuePeerTicket(t, store, "cmrs-away-viewer", 0x1a1a1a1b, awayViewer)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700000910, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for cross-map automatic return-step: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.return_step_cross_map_auto",
+		Name:          "ReturnStepCrossMapAutoMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import cross-map automatic return-step spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.return_step_cross_map_auto")
+	if !ok {
+		t.Fatal("expected cross-map automatic return-step spawn group to resolve by ref")
+	}
+
+	factory := runtime.SessionFactory()
+	homeFlow, _ := enterGameWithLoginTicket(t, factory, "cmrs-home-viewer", 0x19191919)
+	defer closeSessionFlow(t, homeFlow)
+	awayFlow, _ := enterGameWithLoginTicket(t, factory, "cmrs-away-viewer", 0x1a1a1a1b)
+	defer closeSessionFlow(t, awayFlow)
+	flushServerFrames(t, homeFlow)
+	flushServerFrames(t, awayFlow)
+
+	if _, ok := runtime.UpdateStaticActor(group.EntityID, "ReturnStepCrossMapAutoMob", 43, 1800, 2900, 20350); !ok {
+		t.Fatal("expected spawn-backed actor current-position update onto foreign map to succeed")
+	}
+	if homeDelete := flushServerFrames(t, homeFlow); len(homeDelete) != 1 {
+		t.Fatalf("expected home-map viewer to receive one delete when actor leaves map 42, got %d", len(homeDelete))
+	}
+	awayAddFrames := flushServerFrames(t, awayFlow)
+	if len(awayAddFrames) != 3 {
+		t.Fatalf("expected away-map viewer to receive add burst at displaced foreign-map position, got %d", len(awayAddFrames))
+	}
+	displaced, ok := runtime.SpawnGroupByRef("practice.return_step_cross_map_auto")
+	if !ok || displaced.MapIndex != 43 || displaced.X != 1800 || displaced.Y != 2900 {
+		t.Fatalf("expected displaced actor on map 43 before automatic cross-map return-step, got ok=%v snapshot=%+v", ok, displaced)
+	}
+	pending, ok := runtime.SpawnGroupReturnStep(group.EntityID)
+	if !ok || pending.EntityID != group.EntityID {
+		t.Fatalf("expected UpdateStaticActor cross-map displace to arm pending return-step, ok=%v snapshot=%+v", ok, pending)
+	}
+	if queued := flushServerFrames(t, homeFlow); len(queued) != 0 {
+		t.Fatalf("expected no automatic cross-map return-step before the server-owned delay on home viewer, got %d frames", len(queued))
+	}
+	if queued := flushServerFrames(t, awayFlow); len(queued) != 0 {
+		t.Fatalf("expected no automatic cross-map return-step before the server-owned delay on away viewer, got %d frames", len(queued))
+	}
+
+	currentTime = currentTime.Add(bootstrapSpawnGroupReturnStepDelay)
+	awayDelete := flushServerFrames(t, awayFlow)
+	if len(awayDelete) != 1 {
+		t.Fatalf("expected away-map viewer to receive one delete on automatic cross-map return-step, got %d frames", len(awayDelete))
+	}
+	if _, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, awayDelete[0])); err != nil {
+		t.Fatalf("decode away-map automatic cross-map return-step delete: %v", err)
+	}
+	for _, raw := range awayDelete {
+		if moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, raw)); err == nil && moveAck.VID == uint32(group.EntityID) {
+			t.Fatalf("expected automatic cross-map return-step not to invent retained-viewer MOVE on away map, got %+v", moveAck)
+		}
+	}
+	homeReturnFrames := flushServerFrames(t, homeFlow)
+	if len(homeReturnFrames) != 3 {
+		t.Fatalf("expected home-map viewer to receive delete/readd bootstrap burst on automatic cross-map return-step, got %d frames", len(homeReturnFrames))
+	}
+	homeAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, homeReturnFrames[0]))
+	if err != nil {
+		t.Fatalf("decode automatic cross-map return-step add: %v", err)
+	}
+	if homeAdd.VID != uint32(group.EntityID) || homeAdd.X != 1700 || homeAdd.Y != 2800 {
+		t.Fatalf("expected automatic cross-map return-step add at authored home, got %+v", homeAdd)
+	}
+	for _, raw := range homeReturnFrames {
+		if moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, raw)); err == nil && moveAck.VID == uint32(group.EntityID) {
+			t.Fatalf("expected automatic cross-map return-step not to invent retained-viewer MOVE on home map, got %+v", moveAck)
+		}
+	}
+
+	returned, ok := runtime.SpawnGroupByRef("practice.return_step_cross_map_auto")
+	if !ok || returned.EntityID != group.EntityID || returned.MapIndex != 42 || returned.X != 1700 || returned.Y != 2800 {
+		t.Fatalf("expected exact by-ref lookup to keep one actor at authored home after automatic cross-map return-step, got ok=%v snapshot=%+v", ok, returned)
+	}
+	if returned.SpawnLeash == nil || returned.SpawnLeash.Status != worldruntime.SpawnLeashStatusAtHome || returned.SpawnLeash.ReturnRequired {
+		t.Fatalf("expected automatic cross-map return-step to restore at-home leash state, got %+v", returned.SpawnLeash)
+	}
+	homeActors, ok := runtime.StaticActorsForMap(42)
+	if !ok || len(homeActors) != 1 || homeActors[0].EntityID != group.EntityID || homeActors[0].SpawnGroupRef != "practice.return_step_cross_map_auto" {
+		t.Fatalf("expected exactly one home-map occupancy after automatic cross-map return-step, got ok=%v actors=%+v", ok, homeActors)
+	}
+	awayActors, ok := runtime.StaticActorsForMap(43)
+	if !ok || len(awayActors) != 0 {
+		t.Fatalf("expected no dual-map occupancy on foreign map after automatic cross-map return-step, got ok=%v actors=%+v", ok, awayActors)
+	}
+	allActors := runtime.StaticActors()
+	if len(allActors) != 1 || allActors[0].EntityID != group.EntityID || allActors[0].SpawnGroupRef != "practice.return_step_cross_map_auto" {
+		t.Fatalf("expected one live runtime actor for authored ref after automatic cross-map return-step, got %+v", allActors)
+	}
+	if pending, ok := runtime.SpawnGroupReturnStep(group.EntityID); ok || pending.EntityID != 0 {
+		t.Fatalf("expected automatic cross-map return-step to clear pending return-step schedule, ok=%v snapshot=%+v", ok, pending)
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load static actor snapshot after automatic cross-map return-step: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].MapIndex != 42 || persisted.StaticActors[0].X != 1700 || persisted.StaticActors[0].Y != 2800 || persisted.StaticActors[0].SpawnHome == nil || persisted.StaticActors[0].SpawnHome.MapIndex != 42 {
+		t.Fatalf("expected persisted spawn group to return to authored home map after automatic cross-map return-step, got %+v", persisted.StaticActors)
+	}
+}
+
 func TestGameRuntimeStepSpawnGroupReturnHomeMovesOnePlannedStepAndQueuesRetainedRefresh(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	viewer := peerVisibilityCharacter("ReturnStepViewer", 0x0103016a, 0x0204016a, 2301, 2800, 0, 101, 201)

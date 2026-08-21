@@ -275,7 +275,7 @@ Current implementation status:
 - remove/add visibility membership across the same step / home return still uses the ordinary `CHARACTER_DEL` / add-info-update bootstrap path
 - cross-map return-home, respawn rebuild, presentation/name/race operator refreshes, and content-bundle replacement remain on delete/readd
 - engagement release and selected-target clear still follow the already-owned return recovery lifecycle
-- cross-map return-home / return-step membership is also part of the Track A #6 anti-leak matrix in `content-spawn-groups-bootstrap.md`: a successful cross-map return must restore exactly one entity to authored home and leave no dual-map occupancy / duplicate `spawn_group_ref`
+- cross-map return-home / return-step membership is also part of the Track A #6 anti-leak matrix in `content-spawn-groups-bootstrap.md`: a successful cross-map return must restore exactly one entity to authored home and leave no dual-map occupancy / duplicate `spawn_group_ref`; focused coverage now owns both the operator exact-home trigger and the automatic pending-frame return-step flush after a cross-map `UpdateStaticActor` displace (delete/readd, no invented MOVE)
 
 Explicit non-goals for this return-step MOVE freeze alone:
 - pathfinding, navmesh, patrol, or continuous interpolation beyond one discrete planned return step / exact-home snap
@@ -344,6 +344,7 @@ Question frozen here:
 Interim owned behavior (unchanged by this freeze):
 - cross-map return-home / return-step stay on delete/readd / direct-home rebuild
 - a successful cross-map return still restores exactly one entity to the authored home map and must leave no dual-map occupancy or duplicate `spawn_group_ref` membership behind
+- focused coverage now owns that anti-leak matrix for both operator `return-home` and the automatic pending-frame return-step flush after a cross-map `UpdateStaticActor` displace (foreign-map `CHARACTER_DEL`, home-map add/info/update, cleared pending schedule, persisted authored home, no invented cross-map `MOVE`)
 - engagement release and selected-target clear continue to follow the already-owned return recovery lifecycle
 
 Why RED is deferred:
@@ -457,4 +458,4 @@ Current implementation status:
 - focused coverage proves arming for unengaged `within_radius` plus due homeward flush that restores `at_home` without arming return-step
 - the older "within_radius never auto-moves" isolation proof is replaced by that homeward-after-update / return-step-idle proof
 
-Next honest Track A follow-on remains the deferred cross-map return MOVE / warp packet choreography freeze above (RED intentionally blocked until a client-facing packet boundary is owned).
+Automatic pending-frame cross-map return-step dual-map anti-leak after `UpdateStaticActor` is now owned beside operator return-home (`TestGameRuntimeFlushServerFramesAppliesDueCrossMapSpawnGroupReturnStepLeavesNoDualMapOccupancy`). Next honest Track A follow-on remains the deferred cross-map return MOVE / warp packet choreography freeze above (RED intentionally blocked until a client-facing packet boundary is owned).
