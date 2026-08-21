@@ -1252,6 +1252,201 @@ func TestGameRuntimeSafeboxItemMoveMergesCompatibleDestination(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeSafeboxItemMovePartialSplitIntoEmptyCell(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("SafeboxPartialSplit", 0x010307f0, 0x020407f0, 1100, 2100, 0, 101, 201)
+	owner.Gold = 1212
+	owner.Inventory = []inventory.ItemInstance{{ID: 820, Vnum: 27001, Count: 5, Slot: 5}}
+	login := "safebox-partial-split"
+	issuePeerTicket(t, ticketStore, login, 0x707070f0, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed safebox partial-split owner account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected safebox partial-split runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707070f0)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_safebox before partial-split error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 0,
+		Position: itemproto.InventoryPosition(5),
+	}))); err != nil {
+		t.Fatalf("unexpected safebox check-in before partial-split error: %v", err)
+	}
+
+	afterCheckin := owner
+	afterCheckin.Inventory = nil
+	assertExchangeAccountUnchanged(t, accounts, login, afterCheckin, "safebox check-in before partial-split")
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxItemMove(itemproto.ClientSafeboxItemMovePacket{
+		Source:      itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0},
+		Destination: itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 2},
+		Count:       2,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected partial-split safebox item-move error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected partial-split safebox item-move to emit two SAFEBOX_SET frames, got %d", len(out))
+	}
+	sourceSet, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode partial-split source SAFEBOX_SET: %v", err)
+	}
+	if sourceSet.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0}) || sourceSet.Vnum != 27001 || sourceSet.Count != 3 {
+		t.Fatalf("unexpected partial-split source SAFEBOX_SET: %+v", sourceSet)
+	}
+	destinationSet, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode partial-split destination SAFEBOX_SET: %v", err)
+	}
+	if destinationSet.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 2}) || destinationSet.Vnum != 27001 || destinationSet.Count != 2 {
+		t.Fatalf("unexpected partial-split destination SAFEBOX_SET: %+v", destinationSet)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected partial-split safebox item-move to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, afterCheckin, "partial-split safebox item-move owner")
+	assertExchangeLiveStateUnchanged(t, runtime, afterCheckin, "partial-split safebox item-move live owner")
+
+	reopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_safebox reopen after partial-split error: %v", err)
+	}
+	if len(reopenOut) != 3 {
+		t.Fatalf("expected /open_safebox reopen after partial-split to emit SAFEBOX_SIZE plus two SAFEBOX_SET rows, got %d", len(reopenOut))
+	}
+	reopenSource, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, reopenOut[1]))
+	if err != nil {
+		t.Fatalf("decode reopen source SAFEBOX_SET after partial-split: %v", err)
+	}
+	reopenDestination, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, reopenOut[2]))
+	if err != nil {
+		t.Fatalf("decode reopen destination SAFEBOX_SET after partial-split: %v", err)
+	}
+	if reopenSource != sourceSet {
+		t.Fatalf("unexpected reopen source SAFEBOX_SET after partial-split: %+v want %+v", reopenSource, sourceSet)
+	}
+	if reopenDestination != destinationSet {
+		t.Fatalf("unexpected reopen destination SAFEBOX_SET after partial-split: %+v want %+v", reopenDestination, destinationSet)
+	}
+}
+
+func TestGameRuntimeSafeboxItemMovePartialMergesCompatibleDestination(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("SafeboxPartialMerge", 0x010307f1, 0x020407f1, 1100, 2100, 0, 101, 201)
+	owner.Gold = 1313
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 821, Vnum: 27001, Count: 4, Slot: 5},
+		{ID: 822, Vnum: 27001, Count: 3, Slot: 6},
+	}
+	login := "safebox-partial-merge"
+	issuePeerTicket(t, ticketStore, login, 0x707070f1, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed safebox partial-merge owner account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected safebox partial-merge runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707070f1)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_safebox before partial-merge error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 0,
+		Position: itemproto.InventoryPosition(5),
+	}))); err != nil {
+		t.Fatalf("unexpected first safebox check-in before partial-merge error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 1,
+		Position: itemproto.InventoryPosition(6),
+	}))); err != nil {
+		t.Fatalf("unexpected second safebox check-in before partial-merge error: %v", err)
+	}
+
+	afterCheckin := owner
+	afterCheckin.Inventory = nil
+	assertExchangeAccountUnchanged(t, accounts, login, afterCheckin, "safebox check-ins before partial-merge")
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxItemMove(itemproto.ClientSafeboxItemMovePacket{
+		Source:      itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0},
+		Destination: itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 1},
+		Count:       2,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected partial-merge safebox item-move error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected partial-merge safebox item-move to emit two SAFEBOX_SET frames, got %d", len(out))
+	}
+	sourceSet, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode partial-merge source SAFEBOX_SET: %v", err)
+	}
+	if sourceSet.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0}) || sourceSet.Vnum != 27001 || sourceSet.Count != 2 {
+		t.Fatalf("unexpected partial-merge source SAFEBOX_SET: %+v", sourceSet)
+	}
+	destinationSet, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode partial-merge destination SAFEBOX_SET: %v", err)
+	}
+	if destinationSet.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 1}) || destinationSet.Vnum != 27001 || destinationSet.Count != 5 {
+		t.Fatalf("unexpected partial-merge destination SAFEBOX_SET: %+v", destinationSet)
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, afterCheckin, "partial-merge safebox item-move owner")
+
+	reopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_safebox reopen after partial-merge error: %v", err)
+	}
+	if len(reopenOut) != 3 {
+		t.Fatalf("expected /open_safebox reopen after partial-merge to emit SAFEBOX_SIZE plus two SAFEBOX_SET rows, got %d", len(reopenOut))
+	}
+	reopenSource, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, reopenOut[1]))
+	if err != nil {
+		t.Fatalf("decode reopen source SAFEBOX_SET after partial-merge: %v", err)
+	}
+	reopenDestination, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, reopenOut[2]))
+	if err != nil {
+		t.Fatalf("decode reopen destination SAFEBOX_SET after partial-merge: %v", err)
+	}
+	if reopenSource != sourceSet {
+		t.Fatalf("unexpected reopen source SAFEBOX_SET after partial-merge: %+v want %+v", reopenSource, sourceSet)
+	}
+	if reopenDestination != destinationSet {
+		t.Fatalf("unexpected reopen destination SAFEBOX_SET after partial-merge: %+v want %+v", reopenDestination, destinationSet)
+	}
+}
+
 func TestGameRuntimeSafeboxItemMoveWithoutOpenOrBadCellsFailsClosedWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -1344,11 +1539,11 @@ func TestGameRuntimeSafeboxItemMoveWithoutOpenOrBadCellsFailsClosedWithoutMutati
 			},
 		},
 		{
-			name: "partial count",
+			name: "oversize count",
 			packet: itemproto.ClientSafeboxItemMovePacket{
 				Source:      itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0},
 				Destination: itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 2},
-				Count:       1,
+				Count:       3,
 			},
 		},
 		{

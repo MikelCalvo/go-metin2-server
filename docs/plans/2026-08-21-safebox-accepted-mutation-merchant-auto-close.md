@@ -28,5 +28,6 @@ Focused coverage:
 
 ## Follow-up options
 
-1. Keep money / password / durable persistence / partial-split identity allocation deferred.
-2. Keep partner-side open player-shop / cube busy-window exchange rejects deferred until those presentation seams exist.
+1. ~~Accept partial-count empty-destination split / compatible partial merge (`docs/plans/2026-08-21-safebox-item-move-partial-split.md`).~~ Done for bootstrap scope.
+2. Keep money / password / durable persistence deferred.
+3. Keep partner-side open player-shop / cube busy-window exchange rejects deferred until those presentation seams exist.

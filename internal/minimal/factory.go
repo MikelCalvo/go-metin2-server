@@ -5967,15 +5967,69 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if err := sourceItem.Validate(); err != nil {
 						return gameflow.SafeboxItemMoveResult{Accepted: false}
 					}
-					// Whole-stack only for this bootstrap seam: count 0 means full stack.
-					if packet.Count != 0 && uint16(packet.Count) != sourceItem.Count {
+					moveCount := sourceItem.Count
+					if packet.Count != 0 {
+						moveCount = uint16(packet.Count)
+					}
+					if moveCount == 0 || moveCount > sourceItem.Count {
 						return gameflow.SafeboxItemMoveResult{Accepted: false}
 					}
+					wholeStack := moveCount == sourceItem.Count
 
 					destinationItem, destinationOccupied := activeSafeboxItems[destinationSlot]
+					if wholeStack {
+						var resultItem inventory.ItemInstance
+						if !destinationOccupied {
+							resultItem = sourceItem
+							resultItem.Slot = inventory.SlotIndex(destinationSlot)
+							if err := resultItem.Validate(); err != nil {
+								return gameflow.SafeboxItemMoveResult{Accepted: false}
+							}
+						} else {
+							if destinationItem.Equipped || destinationItem.Locked || destinationItem.Vnum != sourceItem.Vnum || destinationItem.Count == 0 || destinationItem.Count > template.MaxCount {
+								return gameflow.SafeboxItemMoveResult{Accepted: false}
+							}
+							if err := destinationItem.Validate(); err != nil {
+								return gameflow.SafeboxItemMoveResult{Accepted: false}
+							}
+							if uint32(destinationItem.Count)+uint32(sourceItem.Count) > uint32(template.MaxCount) {
+								return gameflow.SafeboxItemMoveResult{Accepted: false}
+							}
+							resultItem = destinationItem
+							resultItem.Count += sourceItem.Count
+							if err := resultItem.Validate(); err != nil {
+								return gameflow.SafeboxItemMoveResult{Accepted: false}
+							}
+						}
+
+						setFrame, err := encodeBootstrapSafeboxSetFrame(itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: uint16(destinationSlot)}, resultItem, runtime.itemTemplates)
+						if err != nil {
+							return gameflow.SafeboxItemMoveResult{Accepted: false}
+						}
+						frames := [][]byte{
+							itemproto.EncodeSafeboxDel(itemproto.DelPacket{Position: itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: uint16(sourceSlot)}}),
+							setFrame,
+						}
+						delete(activeSafeboxItems, sourceSlot)
+						activeSafeboxItems[destinationSlot] = resultItem
+						frames = prependMerchantCloseFrame(prependExchangeCloseFrame(frames))
+						return gameflow.SafeboxItemMoveResult{Accepted: true, Frames: frames}
+					}
+
+					sourceRemainder := sourceItem
+					sourceRemainder.Count -= moveCount
+					if err := sourceRemainder.Validate(); err != nil {
+						return gameflow.SafeboxItemMoveResult{Accepted: false}
+					}
 					var resultItem inventory.ItemInstance
 					if !destinationOccupied {
+						nextID := nextSafeboxSplitItemID(selectedPlayer, activeSafeboxItems)
+						if nextID == 0 {
+							return gameflow.SafeboxItemMoveResult{Accepted: false}
+						}
 						resultItem = sourceItem
+						resultItem.ID = nextID
+						resultItem.Count = moveCount
 						resultItem.Slot = inventory.SlotIndex(destinationSlot)
 						if err := resultItem.Validate(); err != nil {
 							return gameflow.SafeboxItemMoveResult{Accepted: false}
@@ -5987,25 +6041,26 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if err := destinationItem.Validate(); err != nil {
 							return gameflow.SafeboxItemMoveResult{Accepted: false}
 						}
-						if uint32(destinationItem.Count)+uint32(sourceItem.Count) > uint32(template.MaxCount) {
+						if uint32(destinationItem.Count)+uint32(moveCount) > uint32(template.MaxCount) {
 							return gameflow.SafeboxItemMoveResult{Accepted: false}
 						}
 						resultItem = destinationItem
-						resultItem.Count += sourceItem.Count
+						resultItem.Count += moveCount
 						if err := resultItem.Validate(); err != nil {
 							return gameflow.SafeboxItemMoveResult{Accepted: false}
 						}
 					}
 
-					setFrame, err := encodeBootstrapSafeboxSetFrame(itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: uint16(destinationSlot)}, resultItem, runtime.itemTemplates)
+					sourceFrame, err := encodeBootstrapSafeboxSetFrame(itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: uint16(sourceSlot)}, sourceRemainder, runtime.itemTemplates)
 					if err != nil {
 						return gameflow.SafeboxItemMoveResult{Accepted: false}
 					}
-					frames := [][]byte{
-						itemproto.EncodeSafeboxDel(itemproto.DelPacket{Position: itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: uint16(sourceSlot)}}),
-						setFrame,
+					destinationFrame, err := encodeBootstrapSafeboxSetFrame(itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: uint16(destinationSlot)}, resultItem, runtime.itemTemplates)
+					if err != nil {
+						return gameflow.SafeboxItemMoveResult{Accepted: false}
 					}
-					delete(activeSafeboxItems, sourceSlot)
+					frames := [][]byte{sourceFrame, destinationFrame}
+					activeSafeboxItems[sourceSlot] = sourceRemainder
 					activeSafeboxItems[destinationSlot] = resultItem
 					frames = prependMerchantCloseFrame(prependExchangeCloseFrame(frames))
 					return gameflow.SafeboxItemMoveResult{Accepted: true, Frames: frames}
@@ -9044,6 +9099,31 @@ func encodeBootstrapItemFrameWithTemplates(position itemproto.Position, instance
 		return nil, err
 	}
 	return itemproto.EncodeSet(packet), nil
+}
+
+func nextSafeboxSplitItemID(selectedPlayer *player.Runtime, safeboxItems map[uint8]inventory.ItemInstance) uint64 {
+	var maxID uint64
+	if selectedPlayer != nil {
+		for _, item := range selectedPlayer.LiveInventory() {
+			if item.ID > maxID {
+				maxID = item.ID
+			}
+		}
+		for _, item := range selectedPlayer.LiveEquipment() {
+			if item.ID > maxID {
+				maxID = item.ID
+			}
+		}
+	}
+	for _, item := range safeboxItems {
+		if item.ID > maxID {
+			maxID = item.ID
+		}
+	}
+	if maxID == ^uint64(0) {
+		return 0
+	}
+	return maxID + 1
 }
 
 func encodeBootstrapSafeboxSetFrame(position itemproto.Position, instance inventory.ItemInstance, templates map[uint32]itemcatalog.Template) ([]byte, error) {
