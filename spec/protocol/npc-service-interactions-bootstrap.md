@@ -124,7 +124,7 @@ Current owned shop operator-summary semantics:
 
 Current owned self-only interaction operator-summary semantics:
 - per-map `maps[]` entries now also include `info_actor_count`, `talk_actor_count`, and `quest_flag_actor_count`
-- these counts audit authored `info` / `talk` / `quest_flag` static actors separately from service-style `shop_preview` and `warp` actors without requiring operators to expand the full `interactable_static_actors` array
+- these counts audit authored `info` / `talk` / `quest_flag` static actors separately from service-style `shop_preview`, `warp`, and `open_safebox` actors without requiring operators to expand the full `interactable_static_actors` array
 - `GET /local/content-bundle/interaction-definitions/{kind}/{ref}` now returns one compact authored definition preview row with `kind`, `ref`, `preview`, and `referenced`, so operators can inspect a single `info` / `talk` / `quest_flag` / service definition summary without fetching the full bundle summary or full bundle payload
 - `GET /local/content-bundle/item-templates/{vnum}` now returns one exact summarized item-template row for local QA, including the guard/rejection metadata already exposed in content-bundle summaries, without fetching the full bundle summary or opening a merchant in-game
 
@@ -144,6 +144,17 @@ Frozen target behavior:
 Current owned `open_safebox` failure semantics:
 - if an optional quest gate is present and the selected character's current flag value does not match `quest_from`, the player receives one self-only `CHAT_TYPE_INFO` message: `Quest requirements are not met.` and no safebox presentation opens
 - invalid authored sizes and foreign fields fail closed at store / content-bundle validation before runtime mutation
+
+Current owned `open_safebox` operator-summary semantics:
+- `GET /local/content-bundle/summary` and dry-run `POST /local/content-bundle/summary` now report deterministic `open_safebox_routes` entries for every interactable static actor that resolves to an `open_safebox` definition
+- each route summary entry carries `actor_name`, source `map_index`/`x`/`y`, `ref`, optional `text`, effective bootstrap page `size`, and any authored quest-gate fields
+- `GET /local/content-bundle/open-safebox-routes/{actor_name}` now returns every exact route row for one authored warehouse actor name, so duplicated placements remain inspectable without fetching the full bundle summary or opening safebox in-game
+- `GET /local/content-bundle/maps/{map_index}/open-safebox-routes` now returns every route row whose source actor is on one authored map, so local QA can audit all warehouses on a map without filtering the full summary or knowing actor names first
+- per-map `maps[]` entries include `open_safebox_actor_count`
+- `POST /local/content-bundle/import-preview` exposes the same current/candidate summary comparison and count deltas for open-safebox routes before a candidate bundle is applied
+- `POST /local/content-bundle/import-preview/open-safebox-routes/{actor_name}` returns every exact open-safebox-route delta for one authored warehouse actor name, so local QA can inspect one warehouse placement impact without fetching and filtering the broad preview
+- map import-preview deltas also carry `open_safebox_actor_count` and map-local `open_safebox_routes` rows
+- this makes exact actor-to-warehouse placement inspectable without fetching the full authored bundle or applying a candidate import
 
 This remains intentionally narrow: check-in / check-out already exist once the presentation is open, but durable storage and password load stay deferred.
 

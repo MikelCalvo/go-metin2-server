@@ -3150,6 +3150,117 @@ func TestLocalContentBundleImportPreviewEndpointReturnsServiceRouteDeltaJSONForL
 	}
 }
 
+func TestLocalContentBundleOpenSafeboxRouteImportPreviewEndpointReturnsActorDeltasForLoopbackPost(t *testing.T) {
+	currentWarehouse := interactionstore.Definition{Kind: interactionstore.KindOpenSafebox, Ref: "npc:warehouse", Text: "Old vault.", Size: 1}
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "Warehouse", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20301, InteractionKind: interactionstore.KindOpenSafebox, InteractionRef: currentWarehouse.Ref}},
+		InteractionDefinitions: []interactionstore.Definition{currentWarehouse},
+	}}
+	mux := RegisterLocalContentBundleOpenSafeboxRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/open-safebox-routes/Warehouse", strings.NewReader(`{"static_actors":[{"name":"Warehouse","map_index":1,"x":1000,"y":2000,"race_num":20301,"interaction_kind":"open_safebox","interaction_ref":"npc:warehouse"},{"name":"RemoteWarehouse","map_index":3,"x":3000,"y":4000,"race_num":20301,"interaction_kind":"open_safebox","interaction_ref":"npc:remote_warehouse"}],"interaction_definitions":[{"kind":"quest_flag","ref":"quest:first_steps","text":"Quest updated: first_steps.met_guide = 1.","quest_ref":"quest:first_steps","quest_flag":"met_guide","quest_to":1},{"kind":"open_safebox","ref":"npc:warehouse","text":"New vault.","size":2,"quest_ref":"quest:first_steps","quest_flag":"met_guide","quest_from":1},{"kind":"open_safebox","ref":"npc:remote_warehouse","text":"Remote vault.","size":3}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected import previewer to be called once, got %d calls", previewer.calls)
+	}
+	var got []contentbundle.OpenSafeboxRouteDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode open-safebox route import-preview response body: %v", err)
+	}
+	currentRoute := contentbundle.OpenSafeboxRouteSummary{ActorName: "Warehouse", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:warehouse", Text: "Old vault.", Size: 1}
+	candidateRoute := contentbundle.OpenSafeboxRouteSummary{ActorName: "Warehouse", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:warehouse", Text: "New vault.", Size: 2, QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1}
+	want := []contentbundle.OpenSafeboxRouteDelta{{ActorName: "Warehouse", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:warehouse", Change: "changed", Current: &currentRoute, Candidate: &candidateRoute}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected open-safebox route import-preview deltas:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleOpenSafeboxRouteImportPreviewEndpointReturnsNotFoundWhenActorHasNoRouteDeltas(t *testing.T) {
+	currentWarehouse := interactionstore.Definition{Kind: interactionstore.KindOpenSafebox, Ref: "npc:warehouse", Text: "Same vault.", Size: 2}
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "Warehouse", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20301, InteractionKind: interactionstore.KindOpenSafebox, InteractionRef: currentWarehouse.Ref}},
+		InteractionDefinitions: []interactionstore.Definition{currentWarehouse},
+	}}
+	mux := RegisterLocalContentBundleOpenSafeboxRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/open-safebox-routes/Warehouse", strings.NewReader(`{"static_actors":[{"name":"Warehouse","map_index":1,"x":1000,"y":2000,"race_num":20301,"interaction_kind":"open_safebox","interaction_ref":"npc:warehouse"}],"interaction_definitions":[{"kind":"open_safebox","ref":"npc:warehouse","text":"Same vault.","size":2}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d when open-safebox route deltas are absent, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
+func TestLocalContentBundleOpenSafeboxRouteImportPreviewEndpointRejectsMalformedActorNameBeforeCallback(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{}}
+	mux := RegisterLocalContentBundleOpenSafeboxRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	for _, path := range []string{
+		"/local/content-bundle/import-preview/open-safebox-routes/",
+		"/local/content-bundle/import-preview/open-safebox-routes/Bad%2FWarehouse",
+		"/local/content-bundle/import-preview/open-safebox-routes/Warehouse/extra",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"interaction_definitions":[]}`))
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for malformed open-safebox route import-preview path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected import previewer not to be called for malformed actor names, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleOpenSafeboxRouteImportPreviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{}}
+	mux := RegisterLocalContentBundleOpenSafeboxRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/open-safebox-routes/Warehouse", strings.NewReader(`{"interaction_definitions":[]}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback caller, got %d", http.StatusForbidden, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected import previewer not to be called, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleOpenSafeboxRouteImportPreviewEndpointRejectsWrongMethod(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{}}
+	mux := RegisterLocalContentBundleOpenSafeboxRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/import-preview/open-safebox-routes/Warehouse", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected import previewer not to be called, got %d calls", previewer.calls)
+	}
+}
+
 func TestLocalContentBundleImportPreviewEndpointReturnsWarpDestinationDeltaJSONForLoopbackPost(t *testing.T) {
 	currentGate := interactionstore.Definition{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "Old gate.", MapIndex: 2, X: 2000, Y: 3000}
 	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
@@ -4716,6 +4827,48 @@ func TestLocalContentBundleMapWarpRoutesEndpointReturnsMatchingRoutesForLoopback
 	}
 }
 
+func TestLocalContentBundleMapOpenSafeboxRoutesEndpointReturnsMatchingRoutesForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{
+			Maps: []contentbundle.MapContentSummary{
+				{MapIndex: 1, StaticActorCount: 2, OpenSafeboxActorCount: 2},
+				{MapIndex: 7, StaticActorCount: 1, OpenSafeboxActorCount: 1},
+			},
+			OpenSafeboxRoutes: []contentbundle.OpenSafeboxRouteSummary{
+				{ActorName: "Remote Warehouse", SourceMapIndex: 7, SourceX: 1300, SourceY: 2300, Ref: "npc:remote_warehouse", Text: "Remote vault.", Size: 3},
+				{ActorName: "Village Warehouse", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:village_warehouse", Text: "The warehouse keeper unlocks the vault.", Size: 2},
+				{ActorName: "Village Depot", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:village_depot", Size: 1},
+			},
+		},
+	}
+	mux := RegisterLocalContentBundleMapOpenSafeboxRoutesEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/maps/1/open-safebox-routes", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got []contentbundle.OpenSafeboxRouteSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode map open-safebox-route response body: %v", err)
+	}
+	want := []contentbundle.OpenSafeboxRouteSummary{
+		{ActorName: "Village Warehouse", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:village_warehouse", Text: "The warehouse keeper unlocks the vault.", Size: 2},
+		{ActorName: "Village Depot", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:village_depot", Size: 1},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle map open-safebox routes:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
 func TestLocalContentBundleMapFocusedContentEndpointsReturnEmptyListForKnownMapWithoutMatches(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -4727,6 +4880,7 @@ func TestLocalContentBundleMapFocusedContentEndpointsReturnEmptyListForKnownMapW
 		{name: "quest flag routes", register: RegisterLocalContentBundleMapQuestFlagRoutesEndpoint, path: "/local/content-bundle/maps/42/quest-flag-routes"},
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
+		{name: "open_safebox routes", register: RegisterLocalContentBundleMapOpenSafeboxRoutesEndpoint, path: "/local/content-bundle/maps/42/open-safebox-routes"},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
 		{name: "reward drops", register: RegisterLocalContentBundleMapRewardDropsEndpoint, path: "/local/content-bundle/maps/42/reward-drops"},
 	}
@@ -4765,6 +4919,7 @@ func TestLocalContentBundleMapFocusedContentEndpointsReturnNotFoundForMissingMap
 		{name: "quest flag routes", register: RegisterLocalContentBundleMapQuestFlagRoutesEndpoint, path: "/local/content-bundle/maps/42/quest-flag-routes"},
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
+		{name: "open_safebox routes", register: RegisterLocalContentBundleMapOpenSafeboxRoutesEndpoint, path: "/local/content-bundle/maps/42/open-safebox-routes"},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
 		{name: "reward drops", register: RegisterLocalContentBundleMapRewardDropsEndpoint, path: "/local/content-bundle/maps/42/reward-drops"},
 	}
@@ -4800,6 +4955,7 @@ func TestLocalContentBundleMapFocusedContentEndpointsRejectInvalidMapIndex(t *te
 		{name: "quest flag routes", register: RegisterLocalContentBundleMapQuestFlagRoutesEndpoint, paths: []string{"/local/content-bundle/maps/0/quest-flag-routes", "/local/content-bundle/maps/not-a-map/quest-flag-routes", "/local/content-bundle/maps/42/quest-flag-routes/extra"}},
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, paths: []string{"/local/content-bundle/maps/0/shop-routes", "/local/content-bundle/maps/not-a-map/shop-routes", "/local/content-bundle/maps/42/shop-routes/extra"}},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, paths: []string{"/local/content-bundle/maps/0/warp-routes", "/local/content-bundle/maps/not-a-map/warp-routes", "/local/content-bundle/maps/42/warp-routes/extra"}},
+		{name: "open_safebox routes", register: RegisterLocalContentBundleMapOpenSafeboxRoutesEndpoint, paths: []string{"/local/content-bundle/maps/0/open-safebox-routes", "/local/content-bundle/maps/not-a-map/open-safebox-routes", "/local/content-bundle/maps/42/open-safebox-routes/extra"}},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, paths: []string{"/local/content-bundle/maps/0/spawn-groups", "/local/content-bundle/maps/not-a-map/spawn-groups", "/local/content-bundle/maps/42/spawn-groups/extra"}},
 		{name: "reward drops", register: RegisterLocalContentBundleMapRewardDropsEndpoint, paths: []string{"/local/content-bundle/maps/0/reward-drops", "/local/content-bundle/maps/not-a-map/reward-drops", "/local/content-bundle/maps/42/reward-drops/extra"}},
 	}
@@ -4836,6 +4992,7 @@ func TestLocalContentBundleMapFocusedContentEndpointsRejectNonLoopbackRemoteAddr
 		{name: "quest flag routes", register: RegisterLocalContentBundleMapQuestFlagRoutesEndpoint, path: "/local/content-bundle/maps/42/quest-flag-routes"},
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
+		{name: "open_safebox routes", register: RegisterLocalContentBundleMapOpenSafeboxRoutesEndpoint, path: "/local/content-bundle/maps/42/open-safebox-routes"},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
 		{name: "reward drops", register: RegisterLocalContentBundleMapRewardDropsEndpoint, path: "/local/content-bundle/maps/42/reward-drops"},
 	}
@@ -4871,6 +5028,7 @@ func TestLocalContentBundleMapFocusedContentEndpointsRejectWrongMethod(t *testin
 		{name: "quest flag routes", register: RegisterLocalContentBundleMapQuestFlagRoutesEndpoint, path: "/local/content-bundle/maps/42/quest-flag-routes"},
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
+		{name: "open_safebox routes", register: RegisterLocalContentBundleMapOpenSafeboxRoutesEndpoint, path: "/local/content-bundle/maps/42/open-safebox-routes"},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
 		{name: "reward drops", register: RegisterLocalContentBundleMapRewardDropsEndpoint, path: "/local/content-bundle/maps/42/reward-drops"},
 	}
@@ -6007,6 +6165,116 @@ func TestLocalContentBundleShopRouteEndpointRejectsWrongMethod(t *testing.T) {
 	mux := RegisterLocalContentBundleShopRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
 
 	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/shop-routes/Village%20Merchant", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleOpenSafeboxRouteEndpointReturnsMatchingRoutesForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{OpenSafeboxRoutes: []contentbundle.OpenSafeboxRouteSummary{
+			{ActorName: "Remote Warehouse", SourceMapIndex: 7, SourceX: 1300, SourceY: 2300, Ref: "npc:remote_warehouse", Text: "Remote vault.", Size: 3},
+			{ActorName: "Village Warehouse", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:village_warehouse", Text: "The warehouse keeper unlocks the vault.", Size: 2, QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1},
+			{ActorName: "Village Warehouse", SourceMapIndex: 2, SourceX: 1100, SourceY: 2100, Ref: "npc:village_warehouse_branch", Size: 1},
+		}},
+	}
+	mux := RegisterLocalContentBundleOpenSafeboxRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/open-safebox-routes/Village%20Warehouse", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got []contentbundle.OpenSafeboxRouteSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode open-safebox route response body: %v", err)
+	}
+	want := []contentbundle.OpenSafeboxRouteSummary{
+		{ActorName: "Village Warehouse", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:village_warehouse", Text: "The warehouse keeper unlocks the vault.", Size: 2, QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1},
+		{ActorName: "Village Warehouse", SourceMapIndex: 2, SourceX: 1100, SourceY: 2100, Ref: "npc:village_warehouse_branch", Size: 1},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle open-safebox route rows:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleOpenSafeboxRouteEndpointReturnsNotFoundForMissingRoute(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{OpenSafeboxRoutes: []contentbundle.OpenSafeboxRouteSummary{{ActorName: "Village Warehouse", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:village_warehouse", Size: 2}}}}
+	mux := RegisterLocalContentBundleOpenSafeboxRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/open-safebox-routes/Missing%20Warehouse", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for missing open-safebox route, got %d", http.StatusNotFound, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleOpenSafeboxRouteEndpointRejectsInvalidActorName(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{OpenSafeboxRoutes: []contentbundle.OpenSafeboxRouteSummary{{ActorName: "Village Warehouse"}}}}
+	mux := RegisterLocalContentBundleOpenSafeboxRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	for _, path := range []string{"/local/content-bundle/open-safebox-routes/", "/local/content-bundle/open-safebox-routes/Village%2FWarehouse", "/local/content-bundle/open-safebox-routes/Village%20Warehouse/extra"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for invalid open-safebox route path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called for invalid open-safebox route actor names, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleOpenSafeboxRouteEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{OpenSafeboxRoutes: []contentbundle.OpenSafeboxRouteSummary{{ActorName: "Village Warehouse"}}}}
+	mux := RegisterLocalContentBundleOpenSafeboxRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/open-safebox-routes/Village%20Warehouse", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback caller, got %d", http.StatusForbidden, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleOpenSafeboxRouteEndpointRejectsWrongMethod(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{OpenSafeboxRoutes: []contentbundle.OpenSafeboxRouteSummary{{ActorName: "Village Warehouse"}}}}
+	mux := RegisterLocalContentBundleOpenSafeboxRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/open-safebox-routes/Village%20Warehouse", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 

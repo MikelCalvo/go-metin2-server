@@ -53,5 +53,5 @@ git diff --check
 ## Follow-up options
 
 1. Keep durable safebox persistence / password load deferred.
-2. Optional light content-bundle `open_safebox` route summary later if QA needs map-local warehouse audit without full interactable previews.
+2. ~~Optional light content-bundle `open_safebox` route summary later if QA needs map-local warehouse audit without full interactable previews.~~ Done: see [open-safebox content-bundle route summary](2026-08-21-open-safebox-content-bundle-route-summary.md).
 3. Keep branching quest scripts deferred.

@@ -777,6 +777,10 @@ func main() {
 		opsHandler,
 		exportContentBundleSummary,
 	)
+	opsHandler = ops.RegisterLocalContentBundleMapOpenSafeboxRoutesEndpoint(
+		opsHandler,
+		exportContentBundleSummary,
+	)
 	opsHandler = ops.RegisterLocalContentBundleMapSpawnGroupsEndpoint(
 		opsHandler,
 		exportContentBundleSummary,
@@ -857,6 +861,10 @@ func main() {
 		opsHandler,
 		exportContentBundleSummary,
 	)
+	opsHandler = ops.RegisterLocalContentBundleOpenSafeboxRouteEndpoint(
+		opsHandler,
+		exportContentBundleSummary,
+	)
 	previewContentBundleImport := func(bundle contentbundle.Bundle) (any, int) {
 		preview, err := gameRuntime.PreviewContentBundleImport(bundle)
 		if err != nil {
@@ -913,6 +921,10 @@ func main() {
 		previewContentBundleImport,
 	)
 	opsHandler = ops.RegisterLocalContentBundleWarpRouteImportPreviewEndpoint(
+		opsHandler,
+		previewContentBundleImport,
+	)
+	opsHandler = ops.RegisterLocalContentBundleOpenSafeboxRouteImportPreviewEndpoint(
 		opsHandler,
 		previewContentBundleImport,
 	)
