@@ -85,7 +85,8 @@ When accepted, `/restart_town`:
 5. preflights already-due server-owned non-player lifecycle timers before transfer-style visibility is composed:
    - ready static-actor respawns flush first
    - due spawn-group return steps flush next
-   - due spawn-group chase steps flush after return steps
+   - due spawn-group homeward steps flush after return steps and before chase steps
+   - due spawn-group chase steps flush after homeward steps
 6. appends the already-owned transfer-origin visibility deltas after that self burst:
    - source visible peers leave through `CHARACTER_DEL`
    - destination visible peers enter through the ordinary add/info/update burst
