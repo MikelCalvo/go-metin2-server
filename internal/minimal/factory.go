@@ -5872,7 +5872,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.SafeboxCheckinResult{Accepted: false}
 					}
 					activeSafeboxItems[packet.SafeSlot] = checkin.Item
-					frames = prependExchangeCloseFrame(frames)
+					frames = prependMerchantCloseFrame(prependExchangeCloseFrame(frames))
 					return gameflow.SafeboxCheckinResult{Accepted: true, Frames: frames}
 				},
 				HandleSafeboxCheckout: func(packet itemproto.ClientSafeboxCheckoutPacket) gameflow.SafeboxCheckoutResult {
@@ -5927,7 +5927,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.SafeboxCheckoutResult{Accepted: false}
 					}
 					delete(activeSafeboxItems, packet.SafeSlot)
-					frames = prependExchangeCloseFrame(frames)
+					frames = prependMerchantCloseFrame(prependExchangeCloseFrame(frames))
 					return gameflow.SafeboxCheckoutResult{Accepted: true, Frames: frames}
 				},
 				HandleSafeboxItemMove: func(packet itemproto.ClientSafeboxItemMovePacket) gameflow.SafeboxItemMoveResult {
@@ -6007,7 +6007,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					delete(activeSafeboxItems, sourceSlot)
 					activeSafeboxItems[destinationSlot] = resultItem
-					frames = prependExchangeCloseFrame(frames)
+					frames = prependMerchantCloseFrame(prependExchangeCloseFrame(frames))
 					return gameflow.SafeboxItemMoveResult{Accepted: true, Frames: frames}
 				},
 				HandleItemDrop: func(packet itemproto.ClientDropPacket) gameflow.ItemDropResult {

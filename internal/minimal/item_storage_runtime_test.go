@@ -1497,3 +1497,255 @@ func TestGameRuntimeSafeboxItemMoveClosesActiveExchangeShellOnSuccess(t *testing
 	assertExchangeAccountUnchanged(t, accounts, "safebox-exchange-move", wantOwner, "exchange-open safebox item-move owner")
 	assertExchangeAccountUnchanged(t, accounts, "safebox-exchange-move-peer", peer, "exchange-open safebox item-move peer")
 }
+
+func TestGameRuntimeSafeboxCheckinClosesActiveMerchantWindowOnSuccess(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := merchantBuyerCharacter("SafeboxMerchantCheckin", 0x010307f0, 0x020407f0, 15151, []inventory.ItemInstance{{ID: 901, Vnum: 27001, Count: 1, Slot: 5}})
+	login := "safebox-merchant-checkin"
+	issuePeerTicket(t, ticketStore, login, 0x707070f0, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed safebox merchant check-in owner account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{defaultMerchantCatalogDefinition()})
+	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected safebox merchant check-in runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:merchant")
+	if !ok {
+		t.Fatal("expected merchant static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707070f0)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+	interactWithMerchantForBuy(t, flow, actor.EntityID)
+
+	if openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_safebox during merchant check-in error: %v", err)
+	} else if len(openOut) != 1 {
+		t.Fatalf("expected /open_safebox during merchant check-in to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
+	}
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 0,
+		Position: itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected merchant-open safebox check-in error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected merchant-open safebox check-in to emit SHOP END, ITEM_DEL, and SAFEBOX_SET, got %d", len(out))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, out[0])); err != nil {
+		t.Fatalf("decode merchant SHOP END before accepted safebox check-in: %v", err)
+	}
+	del, err := itemproto.DecodeDel(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode merchant-open safebox check-in ITEM_DEL: %v", err)
+	}
+	if del.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected merchant-open safebox check-in ITEM_DEL: %+v", del.Position)
+	}
+	set, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode merchant-open safebox check-in SAFEBOX_SET: %v", err)
+	}
+	if set.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0}) || set.Vnum != 27001 || set.Count != 1 {
+		t.Fatalf("unexpected merchant-open safebox check-in SAFEBOX_SET: %+v", set)
+	}
+
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected post-check-in merchant SHOP END error: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected post-check-in merchant SHOP END to emit no frames after shell close, got %d", len(closeOut))
+	}
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected post-check-in merchant SHOP BUY error: %v", err)
+	}
+	if len(buyOut) != 0 {
+		t.Fatalf("expected post-check-in merchant SHOP BUY to fail closed until reopen, got %d", len(buyOut))
+	}
+
+	wantOwner := owner
+	wantOwner.Inventory = nil
+	assertExchangeAccountUnchanged(t, accounts, login, wantOwner, "merchant-open safebox check-in owner")
+}
+
+func TestGameRuntimeSafeboxCheckoutClosesActiveMerchantWindowOnSuccess(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := merchantBuyerCharacter("SafeboxMerchantCheckout", 0x010307f1, 0x020407f1, 16161, []inventory.ItemInstance{{ID: 902, Vnum: 27001, Count: 1, Slot: 5}})
+	login := "safebox-merchant-checkout"
+	issuePeerTicket(t, ticketStore, login, 0x707070f1, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed safebox merchant check-out owner account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{defaultMerchantCatalogDefinition()})
+	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected safebox merchant check-out runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:merchant")
+	if !ok {
+		t.Fatal("expected merchant static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707070f1)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_safebox before merchant check-out error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 0,
+		Position: itemproto.InventoryPosition(5),
+	}))); err != nil {
+		t.Fatalf("unexpected safebox check-in before merchant check-out error: %v", err)
+	}
+	interactWithMerchantForBuy(t, flow, actor.EntityID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckout(itemproto.ClientSafeboxCheckoutPacket{
+		SafeSlot: 0,
+		Position: itemproto.InventoryPosition(7),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected merchant-open safebox check-out error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected merchant-open safebox check-out to emit SHOP END, SAFEBOX_DEL, and ITEM_SET, got %d", len(out))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, out[0])); err != nil {
+		t.Fatalf("decode merchant SHOP END before accepted safebox check-out: %v", err)
+	}
+	del, err := itemproto.DecodeSafeboxDel(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode merchant-open safebox check-out SAFEBOX_DEL: %v", err)
+	}
+	if del.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0}) {
+		t.Fatalf("unexpected merchant-open safebox check-out SAFEBOX_DEL: %+v", del.Position)
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode merchant-open safebox check-out ITEM_SET: %v", err)
+	}
+	if set.Position != itemproto.InventoryPosition(7) || set.Vnum != 27001 || set.Count != 1 {
+		t.Fatalf("unexpected merchant-open safebox check-out ITEM_SET: %+v", set)
+	}
+
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected post-check-out merchant SHOP END error: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected post-check-out merchant SHOP END to emit no frames after shell close, got %d", len(closeOut))
+	}
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected post-check-out merchant SHOP BUY error: %v", err)
+	}
+	if len(buyOut) != 0 {
+		t.Fatalf("expected post-check-out merchant SHOP BUY to fail closed until reopen, got %d", len(buyOut))
+	}
+
+	wantOwner := owner
+	wantOwner.Inventory = []inventory.ItemInstance{{ID: 902, Vnum: 27001, Count: 1, Slot: 7}}
+	assertExchangeAccountUnchanged(t, accounts, login, wantOwner, "merchant-open safebox check-out owner")
+}
+
+func TestGameRuntimeSafeboxItemMoveClosesActiveMerchantWindowOnSuccess(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := merchantBuyerCharacter("SafeboxMerchantMove", 0x010307f2, 0x020407f2, 17171, []inventory.ItemInstance{{ID: 903, Vnum: 27001, Count: 1, Slot: 5}})
+	login := "safebox-merchant-move"
+	issuePeerTicket(t, ticketStore, login, 0x707070f2, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed safebox merchant item-move owner account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{defaultMerchantCatalogDefinition()})
+	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected safebox merchant item-move runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:merchant")
+	if !ok {
+		t.Fatal("expected merchant static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707070f2)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_safebox before merchant item-move error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 1,
+		Position: itemproto.InventoryPosition(5),
+	}))); err != nil {
+		t.Fatalf("unexpected safebox check-in before merchant item-move error: %v", err)
+	}
+	interactWithMerchantForBuy(t, flow, actor.EntityID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxItemMove(itemproto.ClientSafeboxItemMovePacket{
+		Source:      itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 1},
+		Destination: itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 3},
+		Count:       0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected merchant-open safebox item-move error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected merchant-open safebox item-move to emit SHOP END, SAFEBOX_DEL, and SAFEBOX_SET, got %d", len(out))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, out[0])); err != nil {
+		t.Fatalf("decode merchant SHOP END before accepted safebox item-move: %v", err)
+	}
+	del, err := itemproto.DecodeSafeboxDel(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode merchant-open safebox item-move SAFEBOX_DEL: %v", err)
+	}
+	if del.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 1}) {
+		t.Fatalf("unexpected merchant-open safebox item-move SAFEBOX_DEL: %+v", del.Position)
+	}
+	set, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode merchant-open safebox item-move SAFEBOX_SET: %v", err)
+	}
+	if set.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 3}) || set.Vnum != 27001 || set.Count != 1 {
+		t.Fatalf("unexpected merchant-open safebox item-move SAFEBOX_SET: %+v", set)
+	}
+
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected post-item-move merchant SHOP END error: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected post-item-move merchant SHOP END to emit no frames after shell close, got %d", len(closeOut))
+	}
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected post-item-move merchant SHOP BUY error: %v", err)
+	}
+	if len(buyOut) != 0 {
+		t.Fatalf("expected post-item-move merchant SHOP BUY to fail closed until reopen, got %d", len(buyOut))
+	}
+
+	wantOwner := owner
+	wantOwner.Inventory = nil
+	assertExchangeAccountUnchanged(t, accounts, login, wantOwner, "merchant-open safebox item-move owner")
+}
