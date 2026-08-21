@@ -110,6 +110,18 @@ metin2-migrate version \
 
 The printer emits a path-aware shell script that creates `YYYYMMDDTHHMMSSZ-<commit12>/` and redirects the runbook artifacts listed above. It never opens a database, never embeds a DSN, and never executes apply itself — operators must export `DRIVER` / `DSN` before running the printed DB-touching commands.
 
+For rollback drills, pass an explicit non-`latest` target plus `--allow-rollback`:
+
+```bash
+metin2-migrate version \
+  | metin2-migrate migration-run-retention \
+      --build-info - \
+      --target-version 0 \
+      --allow-rollback
+```
+
+That mode prints rollback artifact names (`rollback-plan-artifact.json`, `rollback-apply-preflight.json`, `migration-rollback-audit.json`, `post-rollback-status.json`), includes `--allow-rollback` on the printed preflight/apply lines, and defaults `--lock-file` to `migration-rollback.lock` when omitted.
+
 ## Operator correlation checklist
 
 For any reconnect/restart or migration window, retain:

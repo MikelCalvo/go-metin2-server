@@ -246,6 +246,9 @@ func TestRunMigrationRunRetentionUsageErrors(t *testing.T) {
 			if !strings.Contains(stderr.String(), "migration-run-retention usage:") {
 				t.Fatalf("expected usage text, got %q", stderr.String())
 			}
+			if !strings.Contains(stderr.String(), "--allow-rollback") {
+				t.Fatalf("expected usage to list --allow-rollback, got %q", stderr.String())
+			}
 		})
 	}
 }
@@ -259,5 +262,155 @@ func TestRunRejectsUnknownCommandMentionsMigrationRunRetention(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "migration-run-retention") {
 		t.Fatalf("expected usage to list migration-run-retention, got %q", stderr.String())
+	}
+}
+
+func TestRunMigrationRunRetentionPrintsRollbackTreeCommands(t *testing.T) {
+	payload := `{
+  "version": "v0.1.0",
+  "commit": "abcdef0123456789deadbeef",
+  "build_date": "2026-08-21T15:30:45Z"
+}`
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"migration-run-retention",
+			"--build-info", "-",
+			"--ops-base-url", "http://127.0.0.1:6060",
+			"--migration-runs-base", "/var/metin2/migration-runs",
+			"--target-version", "0",
+			"--allow-rollback",
+		},
+		strings.NewReader(payload),
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr, got %q", stderr.String())
+	}
+
+	body := stdout.String()
+	for _, want := range []string{
+		`# read-only printer: does not execute migration apply/rollback`,
+		`OPS='http://127.0.0.1:6060'`,
+		`RUNS_BASE='/var/metin2/migration-runs'`,
+		`TARGET_VERSION='0'`,
+		`LOCK_FILE='migration-rollback.lock'`,
+		`COMMIT12='abcdef012345'`,
+		`RUN="${RUNS_BASE}/${TS}-${COMMIT12}"`,
+		`mkdir -p "$RUN"`,
+		`metin2-migrate catalog > "$RUN/migration-catalog.json"`,
+		`> "$RUN/ledger-snapshot.json"`,
+		`> "$RUN/ledger-snapshot-status.json"`,
+		`> "$RUN/rollback-plan-artifact.json"`,
+		`> "$RUN/rollback-plan-artifact-status.json"`,
+		`> "$RUN/rollback-apply-preflight.json"`,
+		`> "$RUN/rollback-apply-preflight-status.json"`,
+		`--allow-rollback`,
+		`--audit-file "$RUN/migration-rollback-audit.json"`,
+		`> "$RUN/rollback-apply-audit-status.json"`,
+		`> "$RUN/post-rollback-status.json"`,
+		`metin2-migrate apply-lock-status --lock-file "$RUN/$LOCK_FILE" > "$RUN/apply-lock-status.json"`,
+		`metin2-migrate apply-lock-aside --lock-file "$RUN/$LOCK_FILE" --i-confirm-lab-aside-rename > "$RUN/apply-lock-aside.json"`,
+		`# require operator-exported DRIVER/DSN; printer never embeds a DSN`,
+		`docs/workflow/migration-apply-runbook.md`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected %q in stdout:\n%s", want, body)
+		}
+	}
+	for _, banned := range []string{
+		`> "$RUN/migration-plan-artifact.json"`,
+		`> "$RUN/plan-artifact-status.json"`,
+		`> "$RUN/apply-preflight.json"`,
+		`> "$RUN/apply-preflight-status.json"`,
+		`--audit-file "$RUN/migration-apply-audit.json"`,
+		`> "$RUN/apply-audit-status.json"`,
+		`> "$RUN/post-apply-status.json"`,
+		`LOCK_FILE='migration-apply.lock'`,
+		`CREATE TABLE`,
+		`DROP TABLE`,
+		`password=`,
+		`memory://`,
+	} {
+		if strings.Contains(body, banned) {
+			t.Fatalf("rollback retention must not contain %q, got:\n%s", banned, body)
+		}
+	}
+	preflightIdx := strings.Index(body, `metin2-migrate apply-preflight`)
+	applyIdx := strings.Index(body, `metin2-migrate apply \`)
+	if preflightIdx < 0 || applyIdx < 0 {
+		t.Fatalf("missing preflight/apply markers:\n%s", body)
+	}
+	preflightBlock := body[preflightIdx:applyIdx]
+	applyBlock := body[applyIdx:]
+	if !strings.Contains(preflightBlock, `--allow-rollback`) {
+		t.Fatalf("expected --allow-rollback on apply-preflight block:\n%s", preflightBlock)
+	}
+	if !strings.Contains(applyBlock, `--allow-rollback`) {
+		t.Fatalf("expected --allow-rollback on apply block:\n%s", applyBlock)
+	}
+}
+
+func TestRunMigrationRunRetentionRejectsAllowRollbackWithLatestTarget(t *testing.T) {
+	payload := `{"version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-21T15:30:45Z"}`
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "explicit-latest",
+			args: []string{"migration-run-retention", "--build-info", "-", "--target-version", "latest", "--allow-rollback"},
+		},
+		{
+			name: "default-latest",
+			args: []string{"migration-run-retention", "--build-info", "-", "--allow-rollback"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			code := Run(tc.args, strings.NewReader(payload), &stdout, &stderr)
+			if code != 1 {
+				t.Fatalf("expected exit 1, got %d stderr=%q", code, stderr.String())
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("expected no stdout on contract failure, got %q", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), "allow-rollback") || !strings.Contains(stderr.String(), "target-version") {
+				t.Fatalf("expected allow-rollback/target-version error, got %q", stderr.String())
+			}
+		})
+	}
+}
+
+func TestRunMigrationRunRetentionForwardPathOmitsAllowRollback(t *testing.T) {
+	payload := `{"version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-21T15:30:45Z"}`
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{"migration-run-retention", "--build-info", "-"},
+		strings.NewReader(payload),
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d stderr=%q", code, stderr.String())
+	}
+	body := stdout.String()
+	if strings.Contains(body, `--allow-rollback`) {
+		t.Fatalf("forward retention must omit --allow-rollback, got:\n%s", body)
+	}
+	if strings.Contains(body, `rollback-plan-artifact.json`) || strings.Contains(body, `migration-rollback.lock`) {
+		t.Fatalf("forward retention must omit rollback artifact names, got:\n%s", body)
+	}
+	if !strings.Contains(body, `LOCK_FILE='migration-apply.lock'`) {
+		t.Fatalf("expected forward default lock file, got:\n%s", body)
 	}
 }

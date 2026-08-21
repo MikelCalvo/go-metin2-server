@@ -69,4 +69,4 @@ Validation for this slice:
 1. Keep automatic stale-lock removal / `rm` deferred.
 2. Add DB-engine-specific advisory lock coverage once a production driver is selected.
 3. Keep ground-item restart durability deferred until operators decide that quarantined `0010` exports should drive recovery.
-4. Optional rollback-direction retention printer variant remains deferred; operators can still pass an explicit `--target-version` plus manual `--allow-rollback` when executing the printed apply block.
+4. ~~Optional rollback-direction retention printer variant remains deferred; operators can still pass an explicit `--target-version` plus manual `--allow-rollback` when executing the printed apply block.~~ Done: see [CLI migration rollback-run retention](2026-08-21-cli-migration-rollback-run-retention.md).

@@ -116,7 +116,20 @@ After success:
 
 ## Rollback drill workflow
 
-Rollback/down plans require an explicit direction acknowledgement and reviewed-plan confirmation. Preview first:
+Rollback/down plans require an explicit direction acknowledgement and reviewed-plan confirmation. Optionally print a path-aware retention script for the same lab `/var/metin2/migration-runs/YYYYMMDDTHHMMSSZ-<commit12>/` tree with rollback artifact names:
+
+```bash
+metin2-migrate version \
+  | metin2-migrate migration-run-retention \
+      --build-info - \
+      --target-version <rollback-version> \
+      --allow-rollback \
+  > migration-rollback-run-retention.sh
+```
+
+`--allow-rollback` requires an explicit non-`latest` `--target-version`. When `--lock-file` is omitted the printed default becomes `migration-rollback.lock`. The printer still never opens a database, never embeds a DSN, and never executes rollback itself.
+
+Preview first:
 
 ```bash
 metin2-migrate ledger-snapshot \

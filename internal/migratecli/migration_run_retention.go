@@ -15,12 +15,13 @@ import (
 )
 
 const (
-	maxMigrationRunBuildInfoBytes    = 64 * 1024
-	defaultMigrationRunOpsBaseURL    = "http://127.0.0.1:6060"
-	defaultMigrationRunsBase         = "/var/metin2/migration-runs"
-	defaultMigrationRunTargetVersion = "latest"
-	defaultMigrationRunLockFile      = "migration-apply.lock"
-	migrationRunCommitSuffixMaxRunes = 12
+	maxMigrationRunBuildInfoBytes       = 64 * 1024
+	defaultMigrationRunOpsBaseURL       = "http://127.0.0.1:6060"
+	defaultMigrationRunsBase            = "/var/metin2/migration-runs"
+	defaultMigrationRunTargetVersion    = "latest"
+	defaultMigrationRunLockFile         = "migration-apply.lock"
+	defaultMigrationRunRollbackLockFile = "migration-rollback.lock"
+	migrationRunCommitSuffixMaxRunes    = 12
 )
 
 var errInvalidMigrationRunRetentionInput = errors.New("invalid migration-run-retention input")
@@ -40,6 +41,7 @@ type migrationRunRetentionPlan struct {
 	BuildVersion      string
 	BuildCommit       string
 	BuildDate         string
+	AllowRollback     bool
 }
 
 func runMigrationRunRetention(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
@@ -50,11 +52,13 @@ func runMigrationRunRetention(args []string, stdin io.Reader, stdout io.Writer, 
 	var migrationRunsBase string
 	var targetVersion string
 	var lockFile string
+	var allowRollback bool
 	flags.StringVar(&buildInfoPath, "build-info", "", "path to retained /local/build-info or metin2-migrate version JSON, or - for stdin")
 	flags.StringVar(&opsBaseURL, "ops-base-url", defaultMigrationRunOpsBaseURL, "loopback ops base URL used in printed curl commands")
 	flags.StringVar(&migrationRunsBase, "migration-runs-base", defaultMigrationRunsBase, "absolute migration-runs root used in printed retention commands")
 	flags.StringVar(&targetVersion, "target-version", defaultMigrationRunTargetVersion, "plan/apply target version printed into the retention script")
 	flags.StringVar(&lockFile, "lock-file", defaultMigrationRunLockFile, "apply lock file name or absolute path printed into the retention script")
+	flags.BoolVar(&allowRollback, "allow-rollback", false, "print rollback-direction retention commands and require an explicit non-latest target-version")
 	flags.Usage = func() { printMigrationRunRetentionUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
@@ -69,6 +73,13 @@ func runMigrationRunRetention(args []string, stdin io.Reader, stdout io.Writer, 
 		printMigrationRunRetentionUsage(stderr)
 		return exitUsage
 	}
+
+	lockFileExplicit := false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "lock-file" {
+			lockFileExplicit = true
+		}
+	})
 
 	reader, closeReader, err := openMigrationRunBuildInfoReader(buildInfoPath, stdin)
 	if err != nil {
@@ -85,7 +96,7 @@ func runMigrationRunRetention(args []string, stdin io.Reader, stdout io.Writer, 
 		return exitError
 	}
 
-	plan, err := buildMigrationRunRetentionPlan(raw, opsBaseURL, migrationRunsBase, targetVersion, lockFile)
+	plan, err := buildMigrationRunRetentionPlan(raw, opsBaseURL, migrationRunsBase, targetVersion, lockFile, lockFileExplicit, allowRollback)
 	if err != nil {
 		fmt.Fprintf(stderr, "migration-run-retention: %v\n", err)
 		return exitError
@@ -148,7 +159,7 @@ func readBoundedMigrationRunBuildInfo(reader io.Reader) ([]byte, error) {
 	return raw, nil
 }
 
-func buildMigrationRunRetentionPlan(raw []byte, opsBaseURL, migrationRunsBase, targetVersion, lockFile string) (migrationRunRetentionPlan, error) {
+func buildMigrationRunRetentionPlan(raw []byte, opsBaseURL, migrationRunsBase, targetVersion, lockFile string, lockFileExplicit, allowRollback bool) (migrationRunRetentionPlan, error) {
 	var snapshot migrationRunBuildInfo
 	if err := decodeStrictMigrationRunBuildInfoJSON(raw, &snapshot); err != nil {
 		return migrationRunRetentionPlan{}, err
@@ -176,9 +187,16 @@ func buildMigrationRunRetentionPlan(raw []byte, opsBaseURL, migrationRunsBase, t
 	if trimmedTarget == "" {
 		return migrationRunRetentionPlan{}, fmt.Errorf("%w: target-version is required", errInvalidMigrationRunRetentionInput)
 	}
+	if allowRollback && trimmedTarget == defaultMigrationRunTargetVersion {
+		return migrationRunRetentionPlan{}, fmt.Errorf("%w: --allow-rollback requires an explicit non-latest --target-version", errInvalidMigrationRunRetentionInput)
+	}
+
 	trimmedLock := strings.TrimSpace(lockFile)
 	if trimmedLock == "" {
 		return migrationRunRetentionPlan{}, fmt.Errorf("%w: lock-file is required", errInvalidMigrationRunRetentionInput)
+	}
+	if !lockFileExplicit && allowRollback {
+		trimmedLock = defaultMigrationRunRollbackLockFile
 	}
 	if filepath.IsAbs(trimmedLock) {
 		trimmedLock = filepath.Clean(trimmedLock)
@@ -193,6 +211,7 @@ func buildMigrationRunRetentionPlan(raw []byte, opsBaseURL, migrationRunsBase, t
 		BuildVersion:      strings.TrimSpace(snapshot.Version),
 		BuildCommit:       commit,
 		BuildDate:         strings.TrimSpace(snapshot.BuildDate),
+		AllowRollback:     allowRollback,
 	}, nil
 }
 
@@ -275,7 +294,31 @@ func renderMigrationRunRetentionScript(plan migrationRunRetentionPlan) string {
 	b.WriteString(`# optional when a daemon is configured against the migration target:` + "\n")
 	b.WriteString(`curl -sS "$OPS/local/db/migrations/status" > "$RUN/daemon-migrations-status.json"` + "\n")
 	b.WriteString("\n")
-	b.WriteString("echo '== offline catalog / ledger / plan / preflight =='\n")
+
+	planArtifact := "migration-plan-artifact.json"
+	planArtifactStatus := "plan-artifact-status.json"
+	preflightArtifact := "apply-preflight.json"
+	preflightStatus := "apply-preflight-status.json"
+	auditArtifact := "migration-apply-audit.json"
+	auditStatus := "apply-audit-status.json"
+	postStatus := "post-apply-status.json"
+	offlineEcho := "echo '== offline catalog / ledger / plan / preflight =='\n"
+	mutateEcho := "echo '== mutating apply (after deployment-specific DB/file-store backups) =='\n"
+	postEcho := "echo '== post-apply retention =='\n"
+	if plan.AllowRollback {
+		planArtifact = "rollback-plan-artifact.json"
+		planArtifactStatus = "rollback-plan-artifact-status.json"
+		preflightArtifact = "rollback-apply-preflight.json"
+		preflightStatus = "rollback-apply-preflight-status.json"
+		auditArtifact = "migration-rollback-audit.json"
+		auditStatus = "rollback-apply-audit-status.json"
+		postStatus = "post-rollback-status.json"
+		offlineEcho = "echo '== offline catalog / ledger / rollback plan / preflight =='\n"
+		mutateEcho = "echo '== mutating rollback apply (after deployment-specific DB/file-store backups) =='\n"
+		postEcho = "echo '== post-rollback retention =='\n"
+	}
+
+	b.WriteString(offlineEcho)
 	b.WriteString(`metin2-migrate catalog > "$RUN/migration-catalog.json"` + "\n")
 	b.WriteString(`: "${DRIVER:?export DRIVER to the database/sql driver name}"` + "\n")
 	b.WriteString(`: "${DSN:?export DSN to the operator-managed database/sql DSN}"` + "\n")
@@ -289,38 +332,44 @@ func renderMigrationRunRetentionScript(plan migrationRunRetentionPlan) string {
 	b.WriteString(`metin2-migrate plan-artifact \` + "\n")
 	b.WriteString(`  --ledger-snapshot "$RUN/ledger-snapshot.json" \` + "\n")
 	b.WriteString(`  --target-version "$TARGET_VERSION" \` + "\n")
-	b.WriteString(`  > "$RUN/migration-plan-artifact.json"` + "\n")
+	fmt.Fprintf(&b, "  > \"$RUN/%s\"\n", planArtifact)
 	b.WriteString(`metin2-migrate plan-artifact-status \` + "\n")
-	b.WriteString(`  --plan-artifact "$RUN/migration-plan-artifact.json" \` + "\n")
-	b.WriteString(`  > "$RUN/plan-artifact-status.json"` + "\n")
+	fmt.Fprintf(&b, "  --plan-artifact \"$RUN/%s\" \\\n", planArtifact)
+	fmt.Fprintf(&b, "  > \"$RUN/%s\"\n", planArtifactStatus)
 	b.WriteString(`metin2-migrate apply-preflight \` + "\n")
 	b.WriteString(`  --ledger-snapshot "$RUN/ledger-snapshot.json" \` + "\n")
 	b.WriteString(`  --target-version "$TARGET_VERSION" \` + "\n")
-	b.WriteString(`  --plan-artifact "$RUN/migration-plan-artifact.json" \` + "\n")
-	b.WriteString(`  > "$RUN/apply-preflight.json"` + "\n")
+	fmt.Fprintf(&b, "  --plan-artifact \"$RUN/%s\" \\\n", planArtifact)
+	if plan.AllowRollback {
+		b.WriteString(`  --allow-rollback \` + "\n")
+	}
+	fmt.Fprintf(&b, "  > \"$RUN/%s\"\n", preflightArtifact)
 	b.WriteString(`metin2-migrate apply-preflight-status \` + "\n")
-	b.WriteString(`  --apply-preflight "$RUN/apply-preflight.json" \` + "\n")
-	b.WriteString(`  > "$RUN/apply-preflight-status.json"` + "\n")
+	fmt.Fprintf(&b, "  --apply-preflight \"$RUN/%s\" \\\n", preflightArtifact)
+	fmt.Fprintf(&b, "  > \"$RUN/%s\"\n", preflightStatus)
 	b.WriteString("\n")
-	b.WriteString("echo '== mutating apply (after deployment-specific DB/file-store backups) =='\n")
+	b.WriteString(mutateEcho)
 	b.WriteString(`metin2-migrate apply \` + "\n")
 	b.WriteString(`  --driver "$DRIVER" \` + "\n")
 	b.WriteString(`  --dsn "$DSN" \` + "\n")
 	b.WriteString(`  --ledger-snapshot "$RUN/ledger-snapshot.json" \` + "\n")
 	b.WriteString(`  --target-version "$TARGET_VERSION" \` + "\n")
-	b.WriteString(`  --apply-preflight "$RUN/apply-preflight.json" \` + "\n")
+	fmt.Fprintf(&b, "  --apply-preflight \"$RUN/%s\" \\\n", preflightArtifact)
+	if plan.AllowRollback {
+		b.WriteString(`  --allow-rollback \` + "\n")
+	}
 	b.WriteString(`  --lock-file "$RUN/$LOCK_FILE" \` + "\n")
-	b.WriteString(`  --audit-file "$RUN/migration-apply-audit.json"` + "\n")
+	fmt.Fprintf(&b, "  --audit-file \"$RUN/%s\"\n", auditArtifact)
 	b.WriteString("\n")
-	b.WriteString("echo '== post-apply retention =='\n")
+	b.WriteString(postEcho)
 	b.WriteString(`metin2-migrate apply-audit-status \` + "\n")
-	b.WriteString(`  --audit-file "$RUN/migration-apply-audit.json" \` + "\n")
-	b.WriteString(`  > "$RUN/apply-audit-status.json"` + "\n")
+	fmt.Fprintf(&b, "  --audit-file \"$RUN/%s\" \\\n", auditArtifact)
+	fmt.Fprintf(&b, "  > \"$RUN/%s\"\n", auditStatus)
 	b.WriteString(`metin2-migrate status \` + "\n")
 	b.WriteString(`  --driver "$DRIVER" \` + "\n")
 	b.WriteString(`  --dsn "$DSN" \` + "\n")
 	b.WriteString(`  --target-version "$TARGET_VERSION" \` + "\n")
-	b.WriteString(`  > "$RUN/post-apply-status.json"` + "\n")
+	fmt.Fprintf(&b, "  > \"$RUN/%s\"\n", postStatus)
 	b.WriteString("\n")
 	b.WriteString("echo '== optional lab stale-lock triage / aside-rename =='\n")
 	b.WriteString(`# Only when apply fails because "$RUN/$LOCK_FILE" already exists.` + "\n")
@@ -333,5 +382,5 @@ func renderMigrationRunRetentionScript(plan migrationRunRetentionPlan) string {
 
 func printMigrationRunRetentionUsage(w io.Writer) {
 	fmt.Fprintln(w, "migration-run-retention usage:")
-	fmt.Fprintln(w, "  metin2-migrate migration-run-retention --build-info <path|-> [--ops-base-url http://127.0.0.1:6060] [--migration-runs-base /var/metin2/migration-runs] [--target-version latest] [--lock-file migration-apply.lock]")
+	fmt.Fprintln(w, "  metin2-migrate migration-run-retention --build-info <path|-> [--ops-base-url http://127.0.0.1:6060] [--migration-runs-base /var/metin2/migration-runs] [--target-version latest] [--lock-file migration-apply.lock|migration-rollback.lock] [--allow-rollback]")
 }
