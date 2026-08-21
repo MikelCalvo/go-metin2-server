@@ -6122,9 +6122,18 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						// Same-socket busy presentations already published into shared-world
 						// START eligibility must also fail closed for ACCEPT / mutual-accept
 						// finalize so a later-opened merchant/safebox/refine window cannot
-						// sneak past the frozen busy-window trade policy.
+						// sneak past the frozen busy-window trade policy. Mirror START's
+						// requester busy info-chat so the reject is client-visible.
 						if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog {
-							return gameflow.ItemExchangeResult{Accepted: false}
+							return gameflow.ItemExchangeResult{
+								Accepted: true,
+								Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+									Type:    chatproto.ChatTypeInfo,
+									VID:     0,
+									Empire:  0,
+									Message: exchangeRequesterMerchantBusyInfoMessage,
+								})},
+							}
 						}
 						frames, finalizePlan, ok := sharedWorld.AcceptExchange(sharedWorldID, selectedPlayer.LiveGold(), selectedPlayer.LiveCharacter())
 						if !ok {

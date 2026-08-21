@@ -17,7 +17,7 @@ Close an active bootstrap exchange shell before exact-position transfer / warp r
 - partner-side open player-shop / cube busy-window rejection text
 - richer trade-target eligibility beyond the owned distance + merchant/safebox/refine busy gate + transfer teardown
 - stronger rollback/audit policy beyond the current fail-closed mutual-accept finalize
-- optional authored reject-chat feedback for busy-window accept rejects
+- optional authored/template-backed reject-chat overrides beyond the fixed START busy strings now also used by ACCEPT; commit-time busy reject chat
 
 ## TDD and validation
 
@@ -31,4 +31,4 @@ Focused coverage:
 
 1. Keep partner-side open player-shop / cube busy-window exchange rejects deferred until those presentation seams exist.
 2. Keep ground-item restart durability deferred until operators decide quarantined `0010` exports should drive recovery.
-3. Optional authored reject-chat feedback for busy-window accept rejects remains a later presentation seam.
+3. ACCEPT busy-window reject info-chat now reuses the START requester/partner strings; optional authored/template-backed overrides and commit-time busy reject chat remain later presentation seams.

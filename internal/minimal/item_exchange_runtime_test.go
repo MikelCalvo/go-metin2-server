@@ -3010,8 +3010,15 @@ func TestGameRuntimeItemExchangeAcceptRejectsRequesterOpenSafeboxWithoutMutation
 	if err != nil {
 		t.Fatalf("unexpected accept-safebox owner accept error: %v", err)
 	}
-	if len(acceptOut) != 0 {
-		t.Fatalf("expected requester open-safebox accept to fail closed with no frames, got %d", len(acceptOut))
+	if len(acceptOut) != 1 {
+		t.Fatalf("expected requester open-safebox accept to emit one busy info chat frame, got %d", len(acceptOut))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, acceptOut[0]))
+	if err != nil {
+		t.Fatalf("decode requester open-safebox accept busy info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterMerchantBusyInfoMessage {
+		t.Fatalf("unexpected requester open-safebox accept busy info chat: %+v", infoChat)
 	}
 	if queuedAccept := flushServerFrames(t, peerFlow); len(queuedAccept) != 0 {
 		t.Fatalf("expected requester open-safebox accept to queue no peer frames, got %d", len(queuedAccept))
@@ -3130,8 +3137,15 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsPartnerOpenSafeboxWithoutMuta
 	if err != nil {
 		t.Fatalf("unexpected partner-safebox second accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 0 {
-		t.Fatalf("expected second accept to reject partner open-safebox with no frames, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 1 {
+		t.Fatalf("expected second accept to reject partner open-safebox with one busy info chat frame, got %d", len(peerAcceptOut))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
+	if err != nil {
+		t.Fatalf("decode partner open-safebox second accept busy info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterMerchantBusyInfoMessage {
+		t.Fatalf("unexpected partner open-safebox second accept busy info chat: %+v", infoChat)
 	}
 	if queuedAccept := flushServerFrames(t, ownerFlow); len(queuedAccept) != 0 {
 		t.Fatalf("expected partner open-safebox second accept to queue no owner frames, got %d", len(queuedAccept))
@@ -3261,8 +3275,15 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsPartnerOpenMerchantWithoutMut
 	if err != nil {
 		t.Fatalf("unexpected partner-merchant second accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 0 {
-		t.Fatalf("expected second accept to reject partner open-merchant with no frames, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 1 {
+		t.Fatalf("expected second accept to reject partner open-merchant with one busy info chat frame, got %d", len(peerAcceptOut))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
+	if err != nil {
+		t.Fatalf("decode partner open-merchant second accept busy info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterMerchantBusyInfoMessage {
+		t.Fatalf("unexpected partner open-merchant second accept busy info chat: %+v", infoChat)
 	}
 	if queuedAccept := flushServerFrames(t, ownerFlow); len(queuedAccept) != 0 {
 		t.Fatalf("expected partner open-merchant second accept to queue no owner frames, got %d", len(queuedAccept))
@@ -3378,8 +3399,15 @@ func TestGameRuntimeItemExchangeAcceptRejectsRequesterOpenMerchantWithoutMutatio
 	if err != nil {
 		t.Fatalf("unexpected accept-merchant owner accept error: %v", err)
 	}
-	if len(acceptOut) != 0 {
-		t.Fatalf("expected requester open-merchant accept to fail closed with no frames, got %d", len(acceptOut))
+	if len(acceptOut) != 1 {
+		t.Fatalf("expected requester open-merchant accept to emit one busy info chat frame, got %d", len(acceptOut))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, acceptOut[0]))
+	if err != nil {
+		t.Fatalf("decode requester open-merchant accept busy info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterMerchantBusyInfoMessage {
+		t.Fatalf("unexpected requester open-merchant accept busy info chat: %+v", infoChat)
 	}
 	if queuedAccept := flushServerFrames(t, peerFlow); len(queuedAccept) != 0 {
 		t.Fatalf("expected requester open-merchant accept to queue no peer frames, got %d", len(queuedAccept))
@@ -3495,8 +3523,15 @@ func TestGameRuntimeItemExchangeAcceptRejectsPartnerOpenMerchantWithoutMutation(
 	if err != nil {
 		t.Fatalf("unexpected partner-merchant first-accept owner accept error: %v", err)
 	}
-	if len(acceptOut) != 0 {
-		t.Fatalf("expected first accept to reject partner open-merchant with no frames, got %d", len(acceptOut))
+	if len(acceptOut) != 1 {
+		t.Fatalf("expected first accept to reject partner open-merchant with one busy info chat frame, got %d", len(acceptOut))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, acceptOut[0]))
+	if err != nil {
+		t.Fatalf("decode partner open-merchant accept busy info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangePartnerMerchantBusyInfoMessage {
+		t.Fatalf("unexpected partner open-merchant accept busy info chat: %+v", infoChat)
 	}
 	if queuedAccept := flushServerFrames(t, peerFlow); len(queuedAccept) != 0 {
 		t.Fatalf("expected partner open-merchant first accept to queue no peer frames, got %d", len(queuedAccept))
@@ -3601,8 +3636,15 @@ func TestGameRuntimeItemExchangeAcceptRejectsPartnerOpenSafeboxWithoutMutation(t
 	if err != nil {
 		t.Fatalf("unexpected partner-safebox first-accept owner accept error: %v", err)
 	}
-	if len(acceptOut) != 0 {
-		t.Fatalf("expected first accept to reject partner open-safebox with no frames, got %d", len(acceptOut))
+	if len(acceptOut) != 1 {
+		t.Fatalf("expected first accept to reject partner open-safebox with one busy info chat frame, got %d", len(acceptOut))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, acceptOut[0]))
+	if err != nil {
+		t.Fatalf("decode partner open-safebox accept busy info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangePartnerMerchantBusyInfoMessage {
+		t.Fatalf("unexpected partner open-safebox accept busy info chat: %+v", infoChat)
 	}
 	if queuedAccept := flushServerFrames(t, peerFlow); len(queuedAccept) != 0 {
 		t.Fatalf("expected partner open-safebox first accept to queue no peer frames, got %d", len(queuedAccept))
@@ -3654,8 +3696,15 @@ func TestSharedWorldAcceptExchangeRejectsOpenRefineWindowWithoutMutation(t *test
 		t.Fatal("expected SetRefineWindowOpen(owner) to succeed")
 	}
 	acceptFrames, finalizePlan, ok := registry.AcceptExchange(ownerID, owner.Gold, owner)
-	if ok || finalizePlan != nil || len(acceptFrames) != 0 {
-		t.Fatalf("expected requester open-refine AcceptExchange to fail closed, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
+	if !ok || finalizePlan != nil || len(acceptFrames) != 1 {
+		t.Fatalf("expected requester open-refine AcceptExchange to emit one busy info chat frame, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, acceptFrames[0]))
+	if err != nil {
+		t.Fatalf("decode requester open-refine AcceptExchange busy info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterMerchantBusyInfoMessage {
+		t.Fatalf("unexpected requester open-refine AcceptExchange busy info chat: %+v", infoChat)
 	}
 	if queued := peerPending.flush(); len(queued) != 0 {
 		t.Fatalf("expected requester open-refine AcceptExchange to queue no peer frames, got %d", len(queued))
@@ -3668,8 +3717,15 @@ func TestSharedWorldAcceptExchangeRejectsOpenRefineWindowWithoutMutation(t *test
 		t.Fatal("expected SetRefineWindowOpen(peer) to succeed")
 	}
 	acceptFrames, finalizePlan, ok = registry.AcceptExchange(ownerID, owner.Gold, owner)
-	if ok || finalizePlan != nil || len(acceptFrames) != 0 {
-		t.Fatalf("expected partner open-refine AcceptExchange to fail closed, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
+	if !ok || finalizePlan != nil || len(acceptFrames) != 1 {
+		t.Fatalf("expected partner open-refine AcceptExchange to emit one busy info chat frame, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
+	}
+	infoChat, err = chatproto.DecodeChatDelivery(decodeSingleFrame(t, acceptFrames[0]))
+	if err != nil {
+		t.Fatalf("decode partner open-refine AcceptExchange busy info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangePartnerMerchantBusyInfoMessage {
+		t.Fatalf("unexpected partner open-refine AcceptExchange busy info chat: %+v", infoChat)
 	}
 	if queued := peerPending.flush(); len(queued) != 0 {
 		t.Fatalf("expected partner open-refine AcceptExchange to queue no peer frames, got %d", len(queued))

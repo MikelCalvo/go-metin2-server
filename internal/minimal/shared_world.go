@@ -767,8 +767,12 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 	}
 	// Fail closed before accept markers or mutual-accept finalize when either paired
 	// side currently has an open merchant / safebox / refine busy presentation.
-	if r.exchangePairBusyWindowOpenLocked(originID, partnerID) {
-		return nil, nil, false
+	// Mirror START busy info-chat: requester-local busy wins, otherwise partner busy.
+	if r.hasMerchantWindowOpenLocked(originID) || r.hasSafeboxWindowOpenLocked(originID) || r.hasRefineWindowOpenLocked(originID) {
+		return [][]byte{encodeExchangeRequesterMerchantBusyInfoFrame()}, nil, true
+	}
+	if r.hasMerchantWindowOpenLocked(partnerID) || r.hasSafeboxWindowOpenLocked(partnerID) || r.hasRefineWindowOpenLocked(partnerID) {
+		return [][]byte{encodeExchangePartnerMerchantBusyInfoFrame()}, nil, true
 	}
 	if !exchangeDisplayedItemsStillLive(r.exchangeItems[originID], live, r.itemTemplates) {
 		return nil, nil, false
@@ -5652,6 +5656,15 @@ func encodeExchangePartnerMerchantBusyInfoFrame() []byte {
 		VID:     0,
 		Empire:  0,
 		Message: exchangePartnerMerchantBusyInfoMessage,
+	})
+}
+
+func encodeExchangeRequesterMerchantBusyInfoFrame() []byte {
+	return chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+		Type:    chatproto.ChatTypeInfo,
+		VID:     0,
+		Empire:  0,
+		Message: exchangeRequesterMerchantBusyInfoMessage,
 	})
 }
 

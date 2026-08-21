@@ -15,7 +15,7 @@ Fail closed at mutual-accept commit/apply time when either paired side opens a m
 ## What this is not yet
 
 - partner-side open player-shop / cube busy-window rejection text
-- optional authored reject-chat feedback for busy-window accept / commit rejects
+- optional authored/template-backed reject-chat overrides beyond the fixed START busy strings now also used by ACCEPT; commit-time busy reject chat
 - richer rollback/audit policy beyond the current fail-closed mutual-accept finalize
 - ground-item restart durability
 
@@ -30,5 +30,5 @@ Focused coverage:
 ## Follow-up options
 
 1. Keep partner-side open player-shop / cube busy-window exchange rejects deferred until those presentation seams exist.
-2. Optional authored reject-chat feedback for busy-window accept / commit rejects remains a later presentation seam.
+2. ACCEPT busy-window reject info-chat now reuses the START requester/partner strings; optional authored/template-backed overrides and commit-time busy reject chat remain later presentation seams.
 3. Keep ground-item restart durability deferred until operators decide quarantined `0010` exports should drive recovery.
