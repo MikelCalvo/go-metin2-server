@@ -16,8 +16,10 @@ When a `probability = 100` refine confirm fully consumes a material carried cell
 
 - refine `probability < 100` failure/destroy outcomes
 - catalyst / scroll / socket-copy refine semantics
-- safebox / mall / timeout / destruction quickslot deletion beyond the currently owned removal set
+- mall / timeout / destruction quickslot deletion beyond the currently owned removal set
 - peer-facing refine notifications
+
+Accepted open-presentation `SAFEBOX_CHECKIN` source-cell quickslot deletion is now owned beside this refine path; see `docs/plans/2026-08-21-safebox-checkin-quickslot-sync-docs.md` and `spec/protocol/quickslot-bootstrap.md`.
 
 ## TDD and validation
 
@@ -31,5 +33,5 @@ Focused coverage:
 ## Follow-up options
 
 1. Keep lower-probability refine outcomes deferred until failure/destroy contracts are frozen.
-2. Keep safebox / storage removal quickslot sync deferred until accepted safebox mutation exists.
+2. Keep mall / timeout / destruction quickslot sync deferred; accepted `SAFEBOX_CHECKIN` removal sync is already owned.
 3. ACCEPT and commit-time busy-window reject info-chat now reuse the START requester/partner strings; optional authored/template-backed overrides remain deferred.
