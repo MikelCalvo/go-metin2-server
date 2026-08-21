@@ -2486,6 +2486,8 @@ func TestRuntimeEquipItemWithTemplateRejectsSelectedCharacterAntiFlagsWithoutMut
 		Name:      "TemplateGuard",
 		Job:       0,
 		RaceNum:   0,
+		Level:     5,
+		Empire:    2,
 		Inventory: []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 1, Slot: 8}},
 	}
 	cases := []struct {
@@ -2501,6 +2503,16 @@ func TestRuntimeEquipItemWithTemplateRejectsSelectedCharacterAntiFlagsWithoutMut
 		{
 			name:      "sex restricted",
 			template:  itemcatalog.Template{Vnum: 0x11223344, Name: "Male-Banned Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), AntiMale: true},
+			equipSlot: inventory.EquipmentSlotBody,
+		},
+		{
+			name:      "empire restricted",
+			template:  itemcatalog.Template{Vnum: 0x11223344, Name: "Empire-B-Banned Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), AntiEmpireB: true},
+			equipSlot: inventory.EquipmentSlotBody,
+		},
+		{
+			name:      "min level restricted",
+			template:  itemcatalog.Template{Vnum: 0x11223344, Name: "Veteran Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), MinLevel: 10},
 			equipSlot: inventory.EquipmentSlotBody,
 		},
 	}

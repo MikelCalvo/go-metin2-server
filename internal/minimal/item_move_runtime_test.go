@@ -1483,6 +1483,30 @@ func TestGameRuntimeItemMoveEquipRejectsTemplateAntiFlagsWithoutMutation(t *test
 				EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 50},
 			},
 		},
+		{
+			name: "anti empire b",
+			template: itemcatalog.Template{
+				Vnum:        11500,
+				Name:        "Empire-B Restricted Test Armor",
+				Stackable:   false,
+				MaxCount:    1,
+				AntiEmpireB: true,
+				EquipSlot:   inventory.EquipmentSlotBody.String(),
+				EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 50},
+			},
+		},
+		{
+			name: "min level",
+			template: itemcatalog.Template{
+				Vnum:        11500,
+				Name:        "Veteran Test Armor",
+				Stackable:   false,
+				MaxCount:    1,
+				MinLevel:    30,
+				EquipSlot:   inventory.EquipmentSlotBody.String(),
+				EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 50},
+			},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1543,74 +1567,132 @@ func TestGameRuntimeItemMoveEquipRejectsTemplateAntiFlagsWithoutMutation(t *test
 }
 
 func TestGameRuntimeItemMoveEquipRejectsAntiFlagWithTemplateText(t *testing.T) {
-	ticketStore := loginticket.NewFileStore(t.TempDir())
-	accounts := accountstore.NewFileStore(t.TempDir())
-	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
-	template := itemcatalog.Template{
-		Vnum:            11500,
-		Name:            "Class-Locked Test Armor",
-		Stackable:       false,
-		MaxCount:        1,
-		AntiWarrior:     true,
-		EquipSlot:       inventory.EquipmentSlotBody.String(),
-		EquipRejectText: "Only another class can equip this armor.",
-		EquipEffect:     &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 50},
+	cases := []struct {
+		name     string
+		login    string
+		loginKey uint32
+		ownerID  uint32
+		ownerVID uint32
+		itemID   uint64
+		template itemcatalog.Template
+	}{
+		{
+			name:     "anti warrior",
+			login:    "text-reject-equip",
+			loginKey: 0x57575757,
+			ownerID:  0x01030257,
+			ownerVID: 0x02040257,
+			itemID:   5701,
+			template: itemcatalog.Template{
+				Vnum:            11500,
+				Name:            "Class-Locked Test Armor",
+				Stackable:       false,
+				MaxCount:        1,
+				AntiWarrior:     true,
+				EquipSlot:       inventory.EquipmentSlotBody.String(),
+				EquipRejectText: "Only another class can equip this armor.",
+				EquipEffect:     &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 50},
+			},
+		},
+		{
+			name:     "anti empire b",
+			login:    "text-reject-empire-equip",
+			loginKey: 0x5757575b,
+			ownerID:  0x0103025b,
+			ownerVID: 0x0204025b,
+			itemID:   5703,
+			template: itemcatalog.Template{
+				Vnum:            11510,
+				Name:            "Empire-B Locked Test Armor",
+				Stackable:       false,
+				MaxCount:        1,
+				AntiEmpireB:     true,
+				EquipSlot:       inventory.EquipmentSlotBody.String(),
+				EquipRejectText: "Your empire cannot equip this armor.",
+				EquipEffect:     &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 50},
+			},
+		},
+		{
+			name:     "min level",
+			login:    "text-reject-level-equip",
+			loginKey: 0x5757575c,
+			ownerID:  0x0103025c,
+			ownerVID: 0x0204025c,
+			itemID:   5704,
+			template: itemcatalog.Template{
+				Vnum:            11511,
+				Name:            "Veteran Locked Test Armor",
+				Stackable:       false,
+				MaxCount:        1,
+				MinLevel:        30,
+				EquipSlot:       inventory.EquipmentSlotBody.String(),
+				EquipRejectText: "You are not experienced enough to equip this armor.",
+				EquipEffect:     &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 50},
+			},
+		},
 	}
-	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{template}}); err != nil {
-		t.Fatalf("seed template-authored equip rejection text: %v", err)
-	}
-	owner := peerVisibilityCharacter("TextRejectEquip", 0x01030257, 0x02040257, 1300, 2300, 0, 101, 201)
-	owner.Inventory = []inventory.ItemInstance{{ID: 5701, Vnum: template.Vnum, Count: 1, Slot: 5}}
-	owner.Equipment = nil
-	owner.Points[1] = 750
-	issuePeerTicket(t, ticketStore, "text-reject-equip", 0x57575757, owner)
-	if err := accounts.Save(accountstore.Account{Login: "text-reject-equip", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
-		t.Fatalf("seed text-reject equip account: %v", err)
-	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+			if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{tc.template}}); err != nil {
+				t.Fatalf("seed template-authored equip rejection text: %v", err)
+			}
+			owner := peerVisibilityCharacter("TextRejectEquip", tc.ownerID, tc.ownerVID, 1300, 2300, 0, 101, 201)
+			owner.Inventory = []inventory.ItemInstance{{ID: tc.itemID, Vnum: tc.template.Vnum, Count: 1, Slot: 5}}
+			owner.Equipment = nil
+			owner.Points[1] = 750
+			issuePeerTicket(t, ticketStore, tc.login, tc.loginKey, owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed text-reject equip account: %v", err)
+			}
 
-	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
-	if err != nil {
-		t.Fatalf("unexpected text-reject equip runtime error: %v", err)
-	}
-	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "text-reject-equip", 0x57575757)
-	defer closeSessionFlow(t, flow)
-	bodyPosition, err := itemproto.EquipmentPosition(0)
-	if err != nil {
-		t.Fatalf("build body equipment position: %v", err)
-	}
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected text-reject equip runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, tc.loginKey)
+			defer closeSessionFlow(t, flow)
+			bodyPosition, err := itemproto.EquipmentPosition(0)
+			if err != nil {
+				t.Fatalf("build body equipment position: %v", err)
+			}
 
-	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
-		Source:      itemproto.InventoryPosition(5),
-		Destination: bodyPosition,
-	})))
-	if err != nil {
-		t.Fatalf("unexpected text-reject equip error: %v", err)
-	}
-	if len(out) != 1 {
-		t.Fatalf("expected template-authored equip rejection to emit one info-chat frame, got %d", len(out))
-	}
-	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
-	if err != nil {
-		t.Fatalf("decode template-authored equip rejection info chat: %v", err)
-	}
-	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != template.EquipRejectText {
-		t.Fatalf("unexpected template-authored equip rejection chat: %+v", delivery)
-	}
-	if queued := flushServerFrames(t, flow); len(queued) != 0 {
-		t.Fatalf("expected no queued frames after equip rejection, got %d", len(queued))
-	}
-	account, err := accounts.Load("text-reject-equip")
-	if err != nil {
-		t.Fatalf("load text-reject equip account: %v", err)
-	}
-	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
-		t.Fatalf("text-reject equip mutated persisted inventory: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
-	}
-	if len(account.Characters[0].Equipment) != 0 {
-		t.Fatalf("text-reject equip mutated persisted equipment: got %#v", account.Characters[0].Equipment)
-	}
-	if account.Characters[0].Points[1] != owner.Points[1] {
-		t.Fatalf("text-reject equip mutated persisted point: got %d want %d", account.Characters[0].Points[1], owner.Points[1])
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+				Source:      itemproto.InventoryPosition(5),
+				Destination: bodyPosition,
+			})))
+			if err != nil {
+				t.Fatalf("unexpected text-reject equip error: %v", err)
+			}
+			if len(out) != 1 {
+				t.Fatalf("expected template-authored equip rejection to emit one info-chat frame, got %d", len(out))
+			}
+			delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+			if err != nil {
+				t.Fatalf("decode template-authored equip rejection info chat: %v", err)
+			}
+			if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != tc.template.EquipRejectText {
+				t.Fatalf("unexpected template-authored equip rejection chat: %+v", delivery)
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected no queued frames after equip rejection, got %d", len(queued))
+			}
+			account, err := accounts.Load(tc.login)
+			if err != nil {
+				t.Fatalf("load text-reject equip account: %v", err)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("text-reject equip mutated persisted inventory: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+			}
+			if len(account.Characters[0].Equipment) != 0 {
+				t.Fatalf("text-reject equip mutated persisted equipment: got %#v", account.Characters[0].Equipment)
+			}
+			if account.Characters[0].Points[1] != owner.Points[1] {
+				t.Fatalf("text-reject equip mutated persisted point: got %d want %d", account.Characters[0].Points[1], owner.Points[1])
+			}
+		})
 	}
 }
 
@@ -1799,59 +1881,115 @@ func TestGameRuntimeItemMoveUnequipRejectTextClosesActiveExchangeShellWithoutMut
 }
 
 func TestGameRuntimeSlashEquipRejectsAntiFlagWithTemplateText(t *testing.T) {
-	ticketStore := loginticket.NewFileStore(t.TempDir())
-	accounts := accountstore.NewFileStore(t.TempDir())
-	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
-	template := itemcatalog.Template{
-		Vnum:            11502,
-		Name:            "Slash Class-Locked Test Armor",
-		Stackable:       false,
-		MaxCount:        1,
-		AntiWarrior:     true,
-		EquipSlot:       inventory.EquipmentSlotBody.String(),
-		EquipRejectText: "Slash equip rejection text.",
+	cases := []struct {
+		name     string
+		login    string
+		loginKey uint32
+		ownerID  uint32
+		ownerVID uint32
+		itemID   uint64
+		template itemcatalog.Template
+	}{
+		{
+			name:     "anti warrior",
+			login:    "slash-text-reject-equip",
+			loginKey: 0x58585858,
+			ownerID:  0x01030258,
+			ownerVID: 0x02040258,
+			itemID:   5702,
+			template: itemcatalog.Template{
+				Vnum:            11502,
+				Name:            "Slash Class-Locked Test Armor",
+				Stackable:       false,
+				MaxCount:        1,
+				AntiWarrior:     true,
+				EquipSlot:       inventory.EquipmentSlotBody.String(),
+				EquipRejectText: "Slash equip rejection text.",
+			},
+		},
+		{
+			name:     "anti empire b",
+			login:    "slash-text-reject-empire-equip",
+			loginKey: 0x5858585b,
+			ownerID:  0x0103025d,
+			ownerVID: 0x0204025d,
+			itemID:   5705,
+			template: itemcatalog.Template{
+				Vnum:            11512,
+				Name:            "Slash Empire-B Locked Test Armor",
+				Stackable:       false,
+				MaxCount:        1,
+				AntiEmpireB:     true,
+				EquipSlot:       inventory.EquipmentSlotBody.String(),
+				EquipRejectText: "Slash empire equip rejection text.",
+			},
+		},
+		{
+			name:     "min level",
+			login:    "slash-text-reject-level-equip",
+			loginKey: 0x5858585c,
+			ownerID:  0x0103025e,
+			ownerVID: 0x0204025e,
+			itemID:   5706,
+			template: itemcatalog.Template{
+				Vnum:            11513,
+				Name:            "Slash Veteran Locked Test Armor",
+				Stackable:       false,
+				MaxCount:        1,
+				MinLevel:        30,
+				EquipSlot:       inventory.EquipmentSlotBody.String(),
+				EquipRejectText: "Slash min-level equip rejection text.",
+			},
+		},
 	}
-	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{template}}); err != nil {
-		t.Fatalf("seed slash template-authored equip rejection text: %v", err)
-	}
-	owner := peerVisibilityCharacter("SlashTextRejectEquip", 0x01030258, 0x02040258, 1300, 2300, 0, 101, 201)
-	owner.Inventory = []inventory.ItemInstance{{ID: 5702, Vnum: template.Vnum, Count: 1, Slot: 5}}
-	owner.Equipment = nil
-	issuePeerTicket(t, ticketStore, "slash-text-reject-equip", 0x58585858, owner)
-	if err := accounts.Save(accountstore.Account{Login: "slash-text-reject-equip", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
-		t.Fatalf("seed slash text-reject equip account: %v", err)
-	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+			if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{tc.template}}); err != nil {
+				t.Fatalf("seed slash template-authored equip rejection text: %v", err)
+			}
+			owner := peerVisibilityCharacter("SlashTextRejectEquip", tc.ownerID, tc.ownerVID, 1300, 2300, 0, 101, 201)
+			owner.Inventory = []inventory.ItemInstance{{ID: tc.itemID, Vnum: tc.template.Vnum, Count: 1, Slot: 5}}
+			owner.Equipment = nil
+			issuePeerTicket(t, ticketStore, tc.login, tc.loginKey, owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed slash text-reject equip account: %v", err)
+			}
 
-	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
-	if err != nil {
-		t.Fatalf("unexpected slash text-reject equip runtime error: %v", err)
-	}
-	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "slash-text-reject-equip", 0x58585858)
-	defer closeSessionFlow(t, flow)
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected slash text-reject equip runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, tc.loginKey)
+			defer closeSessionFlow(t, flow)
 
-	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/equip_item 5 body"})))
-	if err != nil {
-		t.Fatalf("unexpected slash text-reject equip error: %v", err)
-	}
-	if len(out) != 1 {
-		t.Fatalf("expected slash template-authored equip rejection to emit one info-chat frame, got %d", len(out))
-	}
-	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
-	if err != nil {
-		t.Fatalf("decode slash template-authored equip rejection info chat: %v", err)
-	}
-	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != template.EquipRejectText {
-		t.Fatalf("unexpected slash template-authored equip rejection chat: %+v", delivery)
-	}
-	account, err := accounts.Load("slash-text-reject-equip")
-	if err != nil {
-		t.Fatalf("load slash text-reject equip account: %v", err)
-	}
-	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
-		t.Fatalf("slash text-reject equip mutated persisted inventory: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
-	}
-	if len(account.Characters[0].Equipment) != 0 {
-		t.Fatalf("slash text-reject equip mutated persisted equipment: got %#v", account.Characters[0].Equipment)
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/equip_item 5 body"})))
+			if err != nil {
+				t.Fatalf("unexpected slash text-reject equip error: %v", err)
+			}
+			if len(out) != 1 {
+				t.Fatalf("expected slash template-authored equip rejection to emit one info-chat frame, got %d", len(out))
+			}
+			delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+			if err != nil {
+				t.Fatalf("decode slash template-authored equip rejection info chat: %v", err)
+			}
+			if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != tc.template.EquipRejectText {
+				t.Fatalf("unexpected slash template-authored equip rejection chat: %+v", delivery)
+			}
+			account, err := accounts.Load(tc.login)
+			if err != nil {
+				t.Fatalf("load slash text-reject equip account: %v", err)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("slash text-reject equip mutated persisted inventory: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+			}
+			if len(account.Characters[0].Equipment) != 0 {
+				t.Fatalf("slash text-reject equip mutated persisted equipment: got %#v", account.Characters[0].Equipment)
+			}
+		})
 	}
 }
 
