@@ -103,6 +103,7 @@ See also:
 - [release/versioning policy](release-versioning.md)
 - [production observability conventions](production-observability.md)
 - [migration apply runbook](migration-apply-runbook.md)
+- [lab stale-lock recovery](lab-stale-lock-recovery.md)
 - [file-store backup/restore drill](file-store-backup-restore-drill.md)
 
 ## What this is not yet
@@ -112,4 +113,5 @@ See also:
 - Kubernetes / systemd unit shipping in-tree
 - remote admin APIs
 - automatic artifact GC / lifecycle jobs
+- automatic stale-lock expiry (lab recovery remains operator aside-rename; see [lab stale-lock recovery](lab-stale-lock-recovery.md))
 - a claim that bootstrap file stores are the final production persistence layer

@@ -891,6 +891,9 @@ func runApplyLockStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 		}
 		status.LockAgeSeconds = &ageSeconds
 		status.LockAgeCheck = migrationApplyLockAgeCheck
+		candidate := labManualClearCandidate(alive, hostnameLocal, buildMatches, ageSeconds)
+		status.ManualClearCandidate = &candidate
+		status.ManualClearCheck = migrationApplyLockManualClearCheck
 	}
 	return writeJSON(stdout, stderr, status)
 }
@@ -944,6 +947,16 @@ const migrationApplyLockHolderBuildCheck = "local_buildinfo_current"
 
 const migrationApplyLockAgeCheck = "local_wall_clock"
 
+// migrationApplyLockManualClearCheck is the fixed probe name for the lab
+// stale-lock recovery policy. A true candidate is triage evidence only and
+// never authorizes automatic lock deletion.
+const migrationApplyLockManualClearCheck = "lab_stale_lock_policy_v1"
+
+// labManualClearMinAgeSeconds is the minimum advisory wall-clock age required
+// by the lab stale-lock recovery policy before a leftover lock may be
+// considered for operator aside-rename. It is not an auto-expiry threshold.
+const labManualClearMinAgeSeconds int64 = 3600
+
 const migrationApplyAuditStatusFormat = "go-metin2-migration-apply-audit-status-v1"
 
 // applyLockStatusNow is the wall clock used by apply-lock-status age triage.
@@ -991,17 +1004,19 @@ type migrationApplyLock struct {
 }
 
 type migrationApplyLockStatus struct {
-	Format              string              `json:"format"`
-	Present             bool                `json:"present"`
-	Lock                *migrationApplyLock `json:"lock,omitempty"`
-	HolderPIDAlive      *bool               `json:"holder_pid_alive,omitempty"`
-	HolderPIDCheck      string              `json:"holder_pid_check,omitempty"`
-	HolderHostnameLocal *bool               `json:"holder_hostname_local,omitempty"`
-	HolderHostnameCheck string              `json:"holder_hostname_check,omitempty"`
-	HolderBuildMatches  *bool               `json:"holder_build_matches,omitempty"`
-	HolderBuildCheck    string              `json:"holder_build_check,omitempty"`
-	LockAgeSeconds      *int64              `json:"lock_age_seconds,omitempty"`
-	LockAgeCheck        string              `json:"lock_age_check,omitempty"`
+	Format               string              `json:"format"`
+	Present              bool                `json:"present"`
+	Lock                 *migrationApplyLock `json:"lock,omitempty"`
+	HolderPIDAlive       *bool               `json:"holder_pid_alive,omitempty"`
+	HolderPIDCheck       string              `json:"holder_pid_check,omitempty"`
+	HolderHostnameLocal  *bool               `json:"holder_hostname_local,omitempty"`
+	HolderHostnameCheck  string              `json:"holder_hostname_check,omitempty"`
+	HolderBuildMatches   *bool               `json:"holder_build_matches,omitempty"`
+	HolderBuildCheck     string              `json:"holder_build_check,omitempty"`
+	LockAgeSeconds       *int64              `json:"lock_age_seconds,omitempty"`
+	LockAgeCheck         string              `json:"lock_age_check,omitempty"`
+	ManualClearCandidate *bool               `json:"manual_clear_candidate,omitempty"`
+	ManualClearCheck     string              `json:"manual_clear_check,omitempty"`
 }
 
 // localProcessExists reports whether pid appears in the local process table.
@@ -1069,6 +1084,14 @@ func lockAgeSeconds(createdAt string, now time.Time) (int64, error) {
 		return 0, nil
 	}
 	return int64(age / time.Second), nil
+}
+
+// labManualClearCandidate reports whether the lab stale-lock recovery policy
+// considers a leftover lock an advisory candidate for operator aside-rename.
+// All four gates must hold: absent local PID, local hostname, matching build
+// identity, and age at least one hour. A true result never deletes the lock.
+func labManualClearCandidate(pidAlive, hostnameLocal, buildMatches bool, ageSeconds int64) bool {
+	return !pidAlive && hostnameLocal && buildMatches && ageSeconds >= labManualClearMinAgeSeconds
 }
 
 type migrationApplyAuditStatus struct {
