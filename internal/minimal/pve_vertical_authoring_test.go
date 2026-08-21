@@ -60,9 +60,9 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		ticketStore,
 		accounts,
-		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
-		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
-		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		staticstore.NewMemoryStore(),
+		interactionstore.NewMemoryStore(),
+		itemcatalog.NewMemoryStore(),
 		queststate.NewMemoryStore(),
 		nil,
 	)

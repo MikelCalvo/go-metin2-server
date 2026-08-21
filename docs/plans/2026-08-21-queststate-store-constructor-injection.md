@@ -22,8 +22,8 @@ Extend the deepest game-runtime constructor so hermetic kill-quest / PvE gamepla
 
 ## What this is not yet
 
-- hermetic static-content / interaction MemoryStore constructor injection
-- broader filesystem decoupling of account / ticket / item stores in the same helpers
+- ~~hermetic static-content / interaction MemoryStore wiring in kill-quest / PvE gameplay tests~~ Done: see [hermetic content MemoryStore gameplay tests](2026-08-21-hermetic-content-memorystore-gameplay-tests.md).
+- broader filesystem decoupling of account / ticket stores in the same helpers
 - SQL-backed quest-state repositories or import/backfill tooling
 - production `NewGameRuntime` accepting an injected quest-state store
 
@@ -37,6 +37,6 @@ git diff --check
 
 ## Follow-up options
 
-1. Optionally add matching hermetic constructor injection for static/interaction stores once callers need the same coupling reduction.
+1. ~~Optionally add matching hermetic constructor injection for static/interaction stores once callers need the same coupling reduction.~~ Done for kill-quest / PvE gameplay tests via direct MemoryStore construction: see [hermetic content MemoryStore gameplay tests](2026-08-21-hermetic-content-memorystore-gameplay-tests.md).
 2. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
 3. Keep branching quest scripts deferred.

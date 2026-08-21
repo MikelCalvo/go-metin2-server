@@ -17,9 +17,9 @@ Wire the already-landed hermetic `queststate.MemoryStore` into kill-quest and Pv
 ## What this is not yet
 
 - ~~constructor-level optional quest-state store injection~~ Done: see [quest-state store constructor injection](2026-08-21-queststate-store-constructor-injection.md).
-- hermetic static-content / interaction MemoryStore repository seams
+- ~~hermetic static-content / interaction MemoryStore repository seams in gameplay tests~~ Done: see [hermetic content MemoryStore gameplay tests](2026-08-21-hermetic-content-memorystore-gameplay-tests.md).
 - SQL-backed quest-state repositories or import/backfill tooling
-- broader filesystem decoupling of account / ticket / item stores in the same tests
+- broader filesystem decoupling of account / ticket stores in the same tests
 
 ## TDD and validation
 
@@ -31,6 +31,6 @@ Focused coverage:
 
 ## Follow-up options
 
-1. Add matching hermetic seams for static-content exports once callers need the same coupling reduction.
+1. ~~Add matching hermetic seams for static-content exports once callers need the same coupling reduction.~~ Done for kill-quest / PvE gameplay tests: see [hermetic content MemoryStore gameplay tests](2026-08-21-hermetic-content-memorystore-gameplay-tests.md).
 2. ~~Optionally extend `newGameRuntimeWithStores...` to accept an injected `queststate.Store` so hermetic tests no longer construct-and-discard a path-isolated `FileStore`.~~ Done: see [quest-state store constructor injection](2026-08-21-queststate-store-constructor-injection.md).
 3. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
