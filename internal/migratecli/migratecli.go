@@ -884,6 +884,13 @@ func runApplyLockStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 		}
 		status.HolderBuildMatches = &buildMatches
 		status.HolderBuildCheck = migrationApplyLockHolderBuildCheck
+		ageSeconds, err := lockAgeSeconds(lock.CreatedAt, applyLockStatusNow())
+		if err != nil {
+			fmt.Fprintf(stderr, "migration apply lock status: %v\n", err)
+			return exitError
+		}
+		status.LockAgeSeconds = &ageSeconds
+		status.LockAgeCheck = migrationApplyLockAgeCheck
 	}
 	return writeJSON(stdout, stderr, status)
 }
@@ -935,7 +942,13 @@ const migrationApplyLockHolderHostnameCheck = "local_os_hostname"
 
 const migrationApplyLockHolderBuildCheck = "local_buildinfo_current"
 
+const migrationApplyLockAgeCheck = "local_wall_clock"
+
 const migrationApplyAuditStatusFormat = "go-metin2-migration-apply-audit-status-v1"
+
+// applyLockStatusNow is the wall clock used by apply-lock-status age triage.
+// Tests may override it; production keeps time.Now.
+var applyLockStatusNow = time.Now
 
 var ErrMigrationApplyAudit = errors.New("migration apply audit failed")
 
@@ -987,6 +1000,8 @@ type migrationApplyLockStatus struct {
 	HolderHostnameCheck string              `json:"holder_hostname_check,omitempty"`
 	HolderBuildMatches  *bool               `json:"holder_build_matches,omitempty"`
 	HolderBuildCheck    string              `json:"holder_build_check,omitempty"`
+	LockAgeSeconds      *int64              `json:"lock_age_seconds,omitempty"`
+	LockAgeCheck        string              `json:"lock_age_check,omitempty"`
 }
 
 // localProcessExists reports whether pid appears in the local process table.
@@ -1039,6 +1054,21 @@ func localBuildIdentityMatches(lockVersion, lockCommit, lockBuildDate string) (b
 	return version == strings.TrimSpace(lockVersion) &&
 		commit == strings.TrimSpace(lockCommit) &&
 		buildDate == strings.TrimSpace(lockBuildDate), nil
+}
+
+// lockAgeSeconds reports the non-negative whole-second floor of the wall-clock
+// age between lock created_at and now. Future-dated locks clamp to 0 so operators
+// never see a negative age from clock skew; parse failures fail closed.
+func lockAgeSeconds(createdAt string, now time.Time) (int64, error) {
+	created, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(createdAt))
+	if err != nil {
+		return 0, fmt.Errorf("%w: invalid lock created_at: %v", ErrMigrationApplyLock, err)
+	}
+	age := now.UTC().Sub(created.UTC())
+	if age < 0 {
+		return 0, nil
+	}
+	return int64(age / time.Second), nil
 }
 
 type migrationApplyAuditStatus struct {
