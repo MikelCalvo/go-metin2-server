@@ -3316,6 +3316,149 @@ func TestRuntimeSafeboxCheckinItemRejectsAntiSafeboxAndMalformedWithoutMutation(
 	}
 }
 
+func TestRuntimeSafeboxCheckoutItemPlacesWholeStackIntoEmptyDestination(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:    0x0103010c,
+		VID:   0x0204010c,
+		Name:  "PeerTwelve",
+		Level: 1,
+		Inventory: []inventory.ItemInstance{
+			{ID: 120, Vnum: 27002, Count: 1, Slot: 6},
+		},
+		Gold: 4242,
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-twelve", CharacterIndex: 1})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	item := inventory.ItemInstance{ID: 119, Vnum: 27001, Count: 3, Slot: 0}
+
+	result, ok := runtime.SafeboxCheckoutItem(5, item, template)
+	if !ok {
+		t.Fatal("expected safebox check-out into empty destination to succeed")
+	}
+	if result.Merged || result.Destination != 5 || result.Item.ID != 119 || result.Item.Vnum != 27001 || result.Item.Count != 3 || result.Item.Slot != 5 {
+		t.Fatalf("unexpected safebox check-out empty placement: %+v", result)
+	}
+	live := runtime.LiveCharacter()
+	wantInventory := []inventory.ItemInstance{
+		{ID: 119, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 120, Vnum: 27002, Count: 1, Slot: 6},
+	}
+	if !reflect.DeepEqual(live.Inventory, wantInventory) {
+		t.Fatalf("unexpected live inventory after safebox check-out: %#v", live.Inventory)
+	}
+	if live.Gold != persisted.Gold {
+		t.Fatalf("safebox check-out mutated gold: got %d want %d", live.Gold, persisted.Gold)
+	}
+	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) {
+		t.Fatalf("safebox check-out mutated persisted inventory early: got %#v want %#v", got.Inventory, persisted.Inventory)
+	}
+}
+
+func TestRuntimeSafeboxCheckoutItemMergesWholeStackIntoCompatibleDestination(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:    0x0103010d,
+		VID:   0x0204010d,
+		Name:  "PeerThirteen",
+		Level: 1,
+		Inventory: []inventory.ItemInstance{
+			{ID: 121, Vnum: 27001, Count: 4, Slot: 5},
+			{ID: 122, Vnum: 27002, Count: 1, Slot: 6},
+		},
+		Gold: 55,
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-thirteen", CharacterIndex: 1})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	item := inventory.ItemInstance{ID: 123, Vnum: 27001, Count: 2, Slot: 0}
+
+	result, ok := runtime.SafeboxCheckoutItem(5, item, template)
+	if !ok {
+		t.Fatal("expected safebox check-out merge to succeed")
+	}
+	if !result.Merged || result.Destination != 5 || result.Item.ID != 121 || result.Item.Count != 6 || result.Item.Slot != 5 {
+		t.Fatalf("unexpected safebox check-out merge result: %+v", result)
+	}
+	live := runtime.LiveCharacter()
+	wantInventory := []inventory.ItemInstance{
+		{ID: 121, Vnum: 27001, Count: 6, Slot: 5},
+		{ID: 122, Vnum: 27002, Count: 1, Slot: 6},
+	}
+	if !reflect.DeepEqual(live.Inventory, wantInventory) {
+		t.Fatalf("unexpected live inventory after safebox check-out merge: %#v", live.Inventory)
+	}
+	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) {
+		t.Fatalf("safebox check-out merge mutated persisted inventory early: got %#v want %#v", got.Inventory, persisted.Inventory)
+	}
+}
+
+func TestRuntimeSafeboxCheckoutItemRejectsIncompatibleOrMalformedWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name        string
+		destination inventory.SlotIndex
+		inventory   []inventory.ItemInstance
+		item        inventory.ItemInstance
+		template    itemcatalog.Template
+	}{
+		{
+			name:        "incompatible vnum",
+			destination: 5,
+			inventory:   []inventory.ItemInstance{{ID: 130, Vnum: 27002, Count: 1, Slot: 5}},
+			item:        inventory.ItemInstance{ID: 131, Vnum: 27001, Count: 1, Slot: 0},
+			template:    itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+		},
+		{
+			name:        "over max after merge",
+			destination: 5,
+			inventory:   []inventory.ItemInstance{{ID: 132, Vnum: 27001, Count: 199, Slot: 5}},
+			item:        inventory.ItemInstance{ID: 133, Vnum: 27001, Count: 2, Slot: 0},
+			template:    itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+		},
+		{
+			name:        "locked destination",
+			destination: 5,
+			inventory:   []inventory.ItemInstance{{ID: 134, Vnum: 27001, Count: 1, Slot: 5, Locked: true}},
+			item:        inventory.ItemInstance{ID: 135, Vnum: 27001, Count: 1, Slot: 0},
+			template:    itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+		},
+		{
+			name:        "mismatched template",
+			destination: 5,
+			inventory:   nil,
+			item:        inventory.ItemInstance{ID: 136, Vnum: 27001, Count: 1, Slot: 0},
+			template:    itemcatalog.Template{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		},
+		{
+			name:        "duplicate live id",
+			destination: 5,
+			inventory:   []inventory.ItemInstance{{ID: 137, Vnum: 27002, Count: 1, Slot: 6}},
+			item:        inventory.ItemInstance{ID: 137, Vnum: 27001, Count: 1, Slot: 0},
+			template:    itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:        0x0103010e,
+				VID:       0x0204010e,
+				Name:      "PeerFourteen",
+				Level:     1,
+				Inventory: cloneItemInstances(tc.inventory),
+				Gold:      77,
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-fourteen", CharacterIndex: 1})
+			if result, ok := runtime.SafeboxCheckoutItem(tc.destination, tc.item, tc.template); ok {
+				t.Fatalf("expected %s safebox check-out to fail closed, got %+v", tc.name, result)
+			}
+			if got := runtime.LiveCharacter(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || got.Gold != persisted.Gold {
+				t.Fatalf("%s safebox check-out mutated live character: got %#v want %#v", tc.name, got, persisted)
+			}
+			if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || got.Gold != persisted.Gold {
+				t.Fatalf("%s safebox check-out mutated persisted character: got %#v want %#v", tc.name, got, persisted)
+			}
+		})
+	}
+}
+
 func TestRuntimeExchangeItemAddRejectTextComesFromTemplateGuardWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name    string

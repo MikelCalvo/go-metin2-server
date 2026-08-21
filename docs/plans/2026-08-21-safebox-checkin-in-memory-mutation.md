@@ -33,6 +33,6 @@ Focused coverage:
 
 ## Follow-up options
 
-1. Implement the first accepted `SAFEBOX_CHECKOUT` from same-session in-memory contents back into carried inventory (`docs/plans/2026-08-21-safebox-checkout-in-memory-mutation.md`).
+1. ~~Implement the first accepted `SAFEBOX_CHECKOUT` from same-session in-memory contents back into carried inventory (`docs/plans/2026-08-21-safebox-checkout-in-memory-mutation.md`).~~ Done for bootstrap scope.
 2. Keep move / money / password / durable persistence deferred until after the first check-in/out vertical is green.
 3. Keep partner-side open player-shop / cube busy-window exchange rejects deferred until those presentation seams exist.

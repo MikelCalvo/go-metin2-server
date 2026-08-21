@@ -105,6 +105,14 @@ type SafeboxCheckinItemResult struct {
 	Item inventory.ItemInstance
 }
 
+// SafeboxCheckoutItemResult is the live carried placement produced by an accepted
+// bootstrap safebox check-out. Safebox slot removal itself stays session-local.
+type SafeboxCheckoutItemResult struct {
+	Destination inventory.SlotIndex
+	Merged      bool
+	Item        inventory.ItemInstance
+}
+
 type RefineInformation struct {
 	Type        uint8
 	Position    inventory.SlotIndex
@@ -1252,6 +1260,57 @@ func (r *Runtime) SafeboxCheckinItem(slot inventory.SlotIndex, template itemcata
 	sortInventoryItems(updatedInventory)
 	r.liveInventory = updatedInventory
 	return SafeboxCheckinItemResult{Slot: slot, Item: item}, true
+}
+
+// SafeboxCheckoutItem places one whole same-session safebox stack into a named
+// carried destination cell. Empty cells preserve item identity; compatible
+// unlocked under-max stacks merge the whole count into that named cell.
+func (r *Runtime) SafeboxCheckoutItem(destination inventory.SlotIndex, item inventory.ItemInstance, template itemcatalog.Template) (SafeboxCheckoutItemResult, bool) {
+	if r == nil || destination >= inventory.CarriedInventorySlotCount || !itemcatalog.ValidTemplate(template) {
+		return SafeboxCheckoutItemResult{}, false
+	}
+	if item.ID == 0 || item.Vnum == 0 || item.Vnum != template.Vnum || item.Count == 0 || item.Count > template.MaxCount {
+		return SafeboxCheckoutItemResult{}, false
+	}
+	if item.Equipped || item.Locked {
+		return SafeboxCheckoutItemResult{}, false
+	}
+	if err := item.Validate(); err != nil {
+		return SafeboxCheckoutItemResult{}, false
+	}
+	if countInventorySlotOccupancy(r.liveInventory, destination) > 1 {
+		return SafeboxCheckoutItemResult{}, false
+	}
+	updatedInventory := cloneItemInstances(r.liveInventory)
+	destinationIndex := findInventorySlot(updatedInventory, destination)
+	if destinationIndex < 0 {
+		if hasItemInstanceID(updatedInventory, item.ID) || hasItemInstanceID(r.liveEquipment, item.ID) {
+			return SafeboxCheckoutItemResult{}, false
+		}
+		placed, err := item.WithInventorySlot(destination)
+		if err != nil {
+			return SafeboxCheckoutItemResult{}, false
+		}
+		updatedInventory = append(updatedInventory, placed)
+		sortInventoryItems(updatedInventory)
+		r.liveInventory = updatedInventory
+		return SafeboxCheckoutItemResult{Destination: destination, Item: placed}, true
+	}
+	destinationItem := updatedInventory[destinationIndex]
+	if destinationItem.Equipped || destinationItem.Locked || destinationItem.Vnum != item.Vnum || destinationItem.Count == 0 || destinationItem.Count > template.MaxCount {
+		return SafeboxCheckoutItemResult{}, false
+	}
+	if uint32(destinationItem.Count)+uint32(item.Count) > uint32(template.MaxCount) {
+		return SafeboxCheckoutItemResult{}, false
+	}
+	destinationItem.Count += item.Count
+	if err := destinationItem.Validate(); err != nil {
+		return SafeboxCheckoutItemResult{}, false
+	}
+	updatedInventory[destinationIndex] = destinationItem
+	sortInventoryItems(updatedInventory)
+	r.liveInventory = updatedInventory
+	return SafeboxCheckoutItemResult{Destination: destination, Merged: true, Item: destinationItem}, true
 }
 
 func (r *Runtime) ExchangeItemAddDisplay(slot inventory.SlotIndex, template itemcatalog.Template) (ExchangeItemAddDisplay, bool) {

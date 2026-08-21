@@ -5875,6 +5875,61 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					frames = prependExchangeCloseFrame(frames)
 					return gameflow.SafeboxCheckinResult{Accepted: true, Frames: frames}
 				},
+				HandleSafeboxCheckout: func(packet itemproto.ClientSafeboxCheckoutPacket) gameflow.SafeboxCheckoutResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveSafeboxOpen || packet.Position.WindowType != itemproto.WindowInventory || packet.Position.Cell >= itemproto.InventoryMaxCell {
+						return gameflow.SafeboxCheckoutResult{Accepted: false}
+					}
+					capacity := bootstrapSafeboxCapacity(activeSafeboxSize)
+					if capacity == 0 || packet.SafeSlot >= capacity {
+						return gameflow.SafeboxCheckoutResult{Accepted: false}
+					}
+					safeboxItem, occupied := activeSafeboxItems[packet.SafeSlot]
+					if !occupied {
+						return gameflow.SafeboxCheckoutResult{Accepted: false}
+					}
+					template, ok := runtime.itemTemplates[safeboxItem.Vnum]
+					if !ok || !itemcatalog.ValidTemplate(template) || safeboxItem.Vnum != template.Vnum || safeboxItem.Count == 0 || safeboxItem.Count > template.MaxCount {
+						return gameflow.SafeboxCheckoutResult{Accepted: false}
+					}
+					destination := inventory.SlotIndex(packet.Position.Cell)
+					if exchangeDisplaysCarriedSlot(destination) {
+						return gameflow.SafeboxCheckoutResult{Accepted: false}
+					}
+					previousSelected := selectedPlayer.LiveCharacter()
+					checkout, ok := selectedPlayer.SafeboxCheckoutItem(destination, safeboxItem, template)
+					if !ok {
+						return gameflow.SafeboxCheckoutResult{Accepted: false}
+					}
+					frames := [][]byte{itemproto.EncodeSafeboxDel(itemproto.DelPacket{Position: itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: uint16(packet.SafeSlot)}})}
+					if checkout.Merged {
+						updateFrame, err := encodeInventoryItemUpdateFrameWithTemplates(checkout.Item, runtime.itemTemplates)
+						if err != nil {
+							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+							refreshLiveCharacterRegistration()
+							return gameflow.SafeboxCheckoutResult{Accepted: false}
+						}
+						frames = append(frames, updateFrame)
+					} else {
+						setFrame, err := encodeBootstrapItemFrameWithTemplates(itemproto.InventoryPosition(uint16(checkout.Item.Slot)), checkout.Item, runtime.itemTemplates)
+						if err != nil {
+							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+							refreshLiveCharacterRegistration()
+							return gameflow.SafeboxCheckoutResult{Accepted: false}
+						}
+						frames = append(frames, setFrame)
+					}
+					frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+					if !ok {
+						return gameflow.SafeboxCheckoutResult{Accepted: false}
+					}
+					delete(activeSafeboxItems, packet.SafeSlot)
+					frames = prependExchangeCloseFrame(frames)
+					return gameflow.SafeboxCheckoutResult{Accepted: true, Frames: frames}
+				},
 				HandleItemDrop: func(packet itemproto.ClientDropPacket) gameflow.ItemDropResult {
 					stateMu.Lock()
 					defer stateMu.Unlock()
