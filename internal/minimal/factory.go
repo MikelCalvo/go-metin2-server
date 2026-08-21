@@ -95,6 +95,7 @@ const exchangePartnerMerchantBusyInfoMessage = "That player cannot trade right n
 const exchangeRequesterMerchantBusyInfoMessage = "You cannot trade while another trade window is open."
 const bootstrapSafeboxOpenMinSize uint8 = 1
 const bootstrapSafeboxOpenMaxSize uint8 = 3
+const bootstrapSafeboxCellsPerPage uint8 = 5
 const bootstrapMapIndex uint32 = 1
 const bootstrapShinsooYonganStartX int32 = 469300
 const bootstrapShinsooYonganStartY int32 = 964200
@@ -3656,8 +3657,41 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		var hasActiveMerchantBuy bool
 		var hasActiveSafeboxOpen bool
 		var activeSafeboxSize uint8
+		activeSafeboxItems := make(map[uint8]inventory.ItemInstance)
 		var activeRefineDialog refineDialogPresentation
 		var hasActiveRefineDialog bool
+		bootstrapSafeboxCapacity := func(size uint8) uint8 {
+			if size < bootstrapSafeboxOpenMinSize || size > bootstrapSafeboxOpenMaxSize {
+				return 0
+			}
+			return size * bootstrapSafeboxCellsPerPage
+		}
+		clearActiveSafeboxItems := func() {
+			if len(activeSafeboxItems) == 0 {
+				return
+			}
+			activeSafeboxItems = make(map[uint8]inventory.ItemInstance)
+		}
+		encodeActiveSafeboxSetFrames := func() [][]byte {
+			if len(activeSafeboxItems) == 0 {
+				return nil
+			}
+			slots := make([]uint8, 0, len(activeSafeboxItems))
+			for slot := range activeSafeboxItems {
+				slots = append(slots, slot)
+			}
+			sort.Slice(slots, func(i, j int) bool { return slots[i] < slots[j] })
+			frames := make([][]byte, 0, len(slots))
+			for _, slot := range slots {
+				item := activeSafeboxItems[slot]
+				frame, err := encodeBootstrapSafeboxSetFrame(itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: uint16(slot)}, item, runtime.itemTemplates)
+				if err != nil {
+					continue
+				}
+				frames = append(frames, frame)
+			}
+			return frames
+		}
 		interactionCooldowns := make(map[uint32]time.Time)
 		sessionNow := func() time.Time {
 			if runtime != nil && runtime.now != nil {
@@ -5450,9 +5484,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 								size = activeSafeboxSize
 							}
 							setActiveSafeboxOpen(size, true)
+							frames := [][]byte{itemproto.EncodeSafeboxSize(itemproto.SafeboxSizePacket{Size: size})}
+							frames = append(frames, encodeActiveSafeboxSetFrames()...)
 							return gameflow.ChatResult{
 								Accepted: true,
-								Frames:   [][]byte{itemproto.EncodeSafeboxSize(itemproto.SafeboxSizePacket{Size: size})},
+								Frames:   frames,
 							}
 						}
 						if slashCloseSafeboxCommand(packet.Message) {
@@ -5472,6 +5508,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 								sharedWorldID = 0
 							}
 							setActiveSafeboxOpen(0, false)
+							clearActiveSafeboxItems()
 							setActiveRefineDialog(refineDialogPresentation{}, false)
 						}
 						switch command {
@@ -5792,7 +5829,47 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						frames = prependMerchantCloseFrame(prependExchangeCloseFrame(frames))
 						return gameflow.SafeboxCheckinResult{Accepted: true, Frames: frames}
 					}
-					return gameflow.SafeboxCheckinResult{Accepted: false}
+					if !hasActiveSafeboxOpen {
+						return gameflow.SafeboxCheckinResult{Accepted: false}
+					}
+					capacity := bootstrapSafeboxCapacity(activeSafeboxSize)
+					if capacity == 0 || packet.SafeSlot >= capacity {
+						return gameflow.SafeboxCheckinResult{Accepted: false}
+					}
+					if _, occupied := activeSafeboxItems[packet.SafeSlot]; occupied {
+						return gameflow.SafeboxCheckinResult{Accepted: false}
+					}
+					slot := inventory.SlotIndex(packet.Position.Cell)
+					if exchangeDisplaysCarriedSlot(slot) {
+						return gameflow.SafeboxCheckinResult{Accepted: false}
+					}
+					previousSelected := selectedPlayer.LiveCharacter()
+					checkin, ok := selectedPlayer.SafeboxCheckinItem(slot, template)
+					if !ok {
+						return gameflow.SafeboxCheckinResult{Accepted: false}
+					}
+					safeboxFrame, err := encodeBootstrapSafeboxSetFrame(itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: uint16(packet.SafeSlot)}, checkin.Item, runtime.itemTemplates)
+					if err != nil {
+						selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+						refreshLiveCharacterRegistration()
+						return gameflow.SafeboxCheckinResult{Accepted: false}
+					}
+					frames := [][]byte{itemproto.EncodeDel(itemproto.DelPacket{Position: itemproto.InventoryPosition(uint16(slot))})}
+					quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, slot)
+					if !ok {
+						selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+						refreshLiveCharacterRegistration()
+						return gameflow.SafeboxCheckinResult{Accepted: false}
+					}
+					frames = append(frames, quickslotFrames...)
+					frames = append(frames, safeboxFrame)
+					frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+					if !ok {
+						return gameflow.SafeboxCheckinResult{Accepted: false}
+					}
+					activeSafeboxItems[packet.SafeSlot] = checkin.Item
+					frames = prependExchangeCloseFrame(frames)
+					return gameflow.SafeboxCheckinResult{Accepted: true, Frames: frames}
 				},
 				HandleItemDrop: func(packet itemproto.ClientDropPacket) gameflow.ItemDropResult {
 					stateMu.Lock()
@@ -6989,6 +7066,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			joinedSharedWorld = false
 			clearActiveMerchantBuy()
 			setActiveSafeboxOpen(0, false)
+			clearActiveSafeboxItems()
 			setActiveRefineDialog(refineDialogPresentation{}, false)
 			clearActiveCombatTarget()
 			clearLiveCharacterRegistration()
@@ -8810,11 +8888,27 @@ func encodeBootstrapItemFrame(position itemproto.Position, instance inventory.It
 }
 
 func encodeBootstrapItemFrameWithTemplates(position itemproto.Position, instance inventory.ItemInstance, templates map[uint32]itemcatalog.Template) ([]byte, error) {
+	packet, err := bootstrapItemSetPacket(position, instance, templates)
+	if err != nil {
+		return nil, err
+	}
+	return itemproto.EncodeSet(packet), nil
+}
+
+func encodeBootstrapSafeboxSetFrame(position itemproto.Position, instance inventory.ItemInstance, templates map[uint32]itemcatalog.Template) ([]byte, error) {
+	packet, err := bootstrapItemSetPacket(position, instance, templates)
+	if err != nil {
+		return nil, err
+	}
+	return itemproto.EncodeSafeboxSet(packet), nil
+}
+
+func bootstrapItemSetPacket(position itemproto.Position, instance inventory.ItemInstance, templates map[uint32]itemcatalog.Template) (itemproto.SetPacket, error) {
 	if instance.Count > 255 {
-		return nil, fmt.Errorf("bootstrap item count exceeds legacy uint8: %d", instance.Count)
+		return itemproto.SetPacket{}, fmt.Errorf("bootstrap item count exceeds legacy uint8: %d", instance.Count)
 	}
 	template := templates[instance.Vnum]
-	packet := itemproto.SetPacket{
+	return itemproto.SetPacket{
 		Position:   position,
 		Vnum:       instance.Vnum,
 		Count:      uint8(instance.Count),
@@ -8823,8 +8917,7 @@ func encodeBootstrapItemFrameWithTemplates(position itemproto.Position, instance
 		Highlight:  bootstrapItemHighlight(template),
 		Sockets:    bootstrapItemSockets(template),
 		Attributes: bootstrapItemAttributes(template),
-	}
-	return itemproto.EncodeSet(packet), nil
+	}, nil
 }
 
 func bootstrapItemFlags(template itemcatalog.Template) uint32 {

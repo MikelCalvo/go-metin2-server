@@ -98,6 +98,13 @@ type ExchangeItemAddDisplay struct {
 	Attributes itemcatalog.AttributeValues
 }
 
+// SafeboxCheckinItemResult is the live inventory removal produced by an accepted
+// bootstrap safebox check-in. Safebox slot placement itself stays session-local.
+type SafeboxCheckinItemResult struct {
+	Slot inventory.SlotIndex
+	Item inventory.ItemInstance
+}
+
 type RefineInformation struct {
 	Type        uint8
 	Position    inventory.SlotIndex
@@ -1217,6 +1224,34 @@ func (r *Runtime) SafeboxCheckinRejectText(slot inventory.SlotIndex, template it
 		return "", false
 	}
 	return template.SafeboxRejectText, true
+}
+
+// SafeboxCheckinItem removes one whole carried stack for an accepted bootstrap
+// safebox check-in. Templates that author anti_safebox stay fail-closed here;
+// authored reject chat remains owned by SafeboxCheckinRejectText.
+func (r *Runtime) SafeboxCheckinItem(slot inventory.SlotIndex, template itemcatalog.Template) (SafeboxCheckinItemResult, bool) {
+	if r == nil || template.AntiSafebox || slot >= inventory.CarriedInventorySlotCount || !itemcatalog.ValidTemplate(template) {
+		return SafeboxCheckinItemResult{}, false
+	}
+	if countInventorySlotOccupancy(r.liveInventory, slot) != 1 {
+		return SafeboxCheckinItemResult{}, false
+	}
+	index := findInventorySlot(r.liveInventory, slot)
+	if index < 0 {
+		return SafeboxCheckinItemResult{}, false
+	}
+	item := r.liveInventory[index]
+	if item.Equipped || item.Locked || item.Vnum != template.Vnum || item.Count == 0 || item.Count > template.MaxCount {
+		return SafeboxCheckinItemResult{}, false
+	}
+	if err := item.Validate(); err != nil {
+		return SafeboxCheckinItemResult{}, false
+	}
+	updatedInventory := cloneItemInstances(r.liveInventory)
+	updatedInventory = removeInventoryIndex(updatedInventory, index)
+	sortInventoryItems(updatedInventory)
+	r.liveInventory = updatedInventory
+	return SafeboxCheckinItemResult{Slot: slot, Item: item}, true
 }
 
 func (r *Runtime) ExchangeItemAddDisplay(slot inventory.SlotIndex, template itemcatalog.Template) (ExchangeItemAddDisplay, bool) {

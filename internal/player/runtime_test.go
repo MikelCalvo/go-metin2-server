@@ -3226,6 +3226,96 @@ func TestRuntimeSafeboxCheckinRejectTextRejectsMismatchedOrUnguardedTemplateWith
 	}
 }
 
+func TestRuntimeSafeboxCheckinItemRemovesWholeStackWithoutAntiSafebox(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:    0x0103010a,
+		VID:   0x0204010a,
+		Name:  "PeerTen",
+		Level: 1,
+		Inventory: []inventory.ItemInstance{
+			{ID: 110, Vnum: 27001, Count: 3, Slot: 5},
+			{ID: 111, Vnum: 27002, Count: 1, Slot: 6},
+		},
+		Quickslots: []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}},
+		Gold:       1234,
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-ten", CharacterIndex: 1})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+
+	result, ok := runtime.SafeboxCheckinItem(5, template)
+	if !ok {
+		t.Fatal("expected safebox check-in item removal to succeed")
+	}
+	if result.Slot != 5 || result.Item.ID != 110 || result.Item.Vnum != 27001 || result.Item.Count != 3 {
+		t.Fatalf("unexpected safebox check-in removal result: %+v", result)
+	}
+	live := runtime.LiveCharacter()
+	if !reflect.DeepEqual(live.Inventory, []inventory.ItemInstance{{ID: 111, Vnum: 27002, Count: 1, Slot: 6}}) {
+		t.Fatalf("unexpected live inventory after safebox check-in: %#v", live.Inventory)
+	}
+	if !reflect.DeepEqual(live.Quickslots, persisted.Quickslots) {
+		t.Fatalf("safebox check-in item removal should not clear quickslots itself: got %#v want %#v", live.Quickslots, persisted.Quickslots)
+	}
+	if live.Gold != persisted.Gold {
+		t.Fatalf("safebox check-in item removal mutated gold: got %d want %d", live.Gold, persisted.Gold)
+	}
+	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) {
+		t.Fatalf("safebox check-in item removal mutated persisted inventory early: got %#v want %#v", got.Inventory, persisted.Inventory)
+	}
+}
+
+func TestRuntimeSafeboxCheckinItemRejectsAntiSafeboxAndMalformedWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name      string
+		inventory []inventory.ItemInstance
+		template  itemcatalog.Template
+	}{
+		{
+			name:      "anti safebox",
+			inventory: []inventory.ItemInstance{{ID: 112, Vnum: 71124, Count: 1, Slot: 8}},
+			template:  itemcatalog.Template{Vnum: 71124, Name: "Protected Storage Charm", Stackable: false, MaxCount: 1, AntiSafebox: true, SafeboxRejectText: "blocked"},
+		},
+		{
+			name:      "mismatched vnum",
+			inventory: []inventory.ItemInstance{{ID: 113, Vnum: 71124, Count: 1, Slot: 8}},
+			template:  itemcatalog.Template{Vnum: 71125, Name: "Other Charm", Stackable: false, MaxCount: 1},
+		},
+		{
+			name:      "locked",
+			inventory: []inventory.ItemInstance{{ID: 114, Vnum: 71124, Count: 1, Slot: 8, Locked: true}},
+			template:  itemcatalog.Template{Vnum: 71124, Name: "Locked Charm", Stackable: false, MaxCount: 1},
+		},
+		{
+			name:      "over template max",
+			inventory: []inventory.ItemInstance{{ID: 115, Vnum: 71124, Count: 2, Slot: 8}},
+			template:  itemcatalog.Template{Vnum: 71124, Name: "Tiny Charm", Stackable: false, MaxCount: 1},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:        0x0103010b,
+				VID:       0x0204010b,
+				Name:      "PeerEleven",
+				Level:     1,
+				Inventory: cloneItemInstances(tc.inventory),
+				Gold:      55,
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-eleven", CharacterIndex: 1})
+			if result, ok := runtime.SafeboxCheckinItem(8, tc.template); ok {
+				t.Fatalf("expected %s safebox check-in to fail closed, got %+v", tc.name, result)
+			}
+			if got := runtime.LiveCharacter(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || got.Gold != persisted.Gold {
+				t.Fatalf("%s safebox check-in mutated live character: got %#v want %#v", tc.name, got, persisted)
+			}
+			if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || got.Gold != persisted.Gold {
+				t.Fatalf("%s safebox check-in mutated persisted character: got %#v want %#v", tc.name, got, persisted)
+			}
+		})
+	}
+}
+
 func TestRuntimeExchangeItemAddRejectTextComesFromTemplateGuardWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name    string

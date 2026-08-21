@@ -161,29 +161,43 @@ Total frame length is 5 bytes including the common frame envelope.
 
 ## Current runtime contract
 
-`internal/game` decodes these four packet layouts only while the session is already in `GAME` and routes each one through an explicit storage-facing handler seam. The default handlers remain fail-closed with no output, so adding the seam does not imply accepted safebox or mall mutation semantics.
+`internal/game` decodes these four packet layouts only while the session is already in `GAME` and routes each one through an explicit storage-facing handler seam. The default handlers remain fail-closed with no output, so adding the seam does not imply accepted safebox or mall mutation semantics beyond the currently owned check-in path below.
 
-The shipped minimal runtime intentionally rejects ordinary storage requests without output:
+The shipped minimal runtime intentionally rejects ordinary storage requests without output except for the owned `SAFEBOX_CHECKIN` mutation and `anti_safebox` feedback seams:
 
-- no `GC::SAFEBOX_*` or `GC::MALL_*` storage response frames are emitted for unsupported storage-transfer packets, even though their first codecs are now owned;
-- no carried inventory, equipment, quickslot, point, gold, ground-handle, exchange, merchant, or peer state is mutated by those transfer packets;
-- no account snapshot is persisted by those transfer packets;
+- no `GC::SAFEBOX_*` or `GC::MALL_*` storage response frames are emitted for unsupported storage-transfer packets (`SAFEBOX_CHECKOUT`, `SAFEBOX_ITEM_MOVE`, `MALL_CHECKOUT`), even though their first codecs are now owned;
+- no carried inventory, equipment, quickslot, point, gold, ground-handle, exchange, merchant, or peer state is mutated by those unsupported transfer packets;
+- no account snapshot is persisted by those unsupported transfer packets;
 - the session remains in `GAME` and the socket stays usable.
 
 ## First bootstrap safebox-open presentation seam
 
-A later storage/safebox slice still owns password load, item placement, money, and persistence. This contract freezes only the smallest presentation seam needed so exchange busy-window policy can observe an open safebox without inventing fake transfer semantics:
+A later storage/safebox slice still owns password load, durable item persistence, money, checkout/move, and mall. This contract freezes the smallest presentation seam needed so exchange busy-window policy can observe an open safebox, plus the first accepted same-session in-memory check-in mutation:
 
 - the local slash harness `/open_safebox [size]` may mark the selected character's same-socket bootstrap safebox presentation as open while the session is already in `GAME` and above the bootstrap zero-HP floor;
 - optional `size` is a page count in the owned bootstrap range `1..3`; omitted size defaults to `1`; values outside that range (for example `/open_safebox 4`), non-uint8 size tokens, and extra arguments fail closed with no frames, no ordinary talking-chat fallthrough, and no open-state mutation;
-- on success the runtime emits exactly one self-only `GC::SAFEBOX_SIZE` with that page count and remembers an in-memory same-socket `open safebox` presentation flag;
-- repeating `/open_safebox` while already open is idempotent presentation refresh: it re-emits `GC::SAFEBOX_SIZE` for the currently remembered size (or the newly requested in-range size) and leaves inventory/equipment/quickslot/gold/persistence unchanged;
-- the local slash harness `/close_safebox` clears that same-socket open flag when present and emits no storage frames in this bootstrap seam; a later slice may own the legacy `CloseSafebox` command-chat companion;
-- opening or closing this presentation seam never loads safebox items, never mutates carried inventory/equipment/quickslots/points/gold/ground handles, never persists an account snapshot, and never opens mall/player-shop/cube state;
+- on success the runtime emits exactly one self-only `GC::SAFEBOX_SIZE` with that page count, remembers an in-memory same-socket `open safebox` presentation flag, and then re-emits any still-remembered same-session in-memory `GC::SAFEBOX_SET` rows for that open session;
+- repeating `/open_safebox` while already open is idempotent presentation refresh: it re-emits `GC::SAFEBOX_SIZE` for the currently remembered size (or the newly requested in-range size), re-emits remembered in-memory `SAFEBOX_SET` rows, and leaves inventory/equipment/quickslot/gold/persistence unchanged;
+- the local slash harness `/close_safebox` clears that same-socket open flag when present and emits no storage frames in this bootstrap seam; remembered in-memory safebox contents stay in the same session until logout / shared-world leave / process end, and a later reopen may re-emit them after `SAFEBOX_SIZE`;
+- opening or closing this presentation seam never loads durable safebox items from password/DB, never mutates carried inventory/equipment/quickslots/points/gold/ground handles by itself, never persists safebox contents, and never opens mall/player-shop/cube state;
 - once the open flag is set, exchange `START` treats that same-socket character as busy under the exchange busy-window policy frozen in `item-exchange-bootstrap.md`, using the same requester/partner info-chat strings already owned for open merchant windows;
 - after `/close_safebox`, later exchange `START` attempts are no longer rejected by this safebox busy guard.
 
-The only current output for storage-transfer packets remains template-authored rejection feedback for safebox check-in:
+## Accepted in-memory `SAFEBOX_CHECKIN`
+
+`CG::SAFEBOX_CHECKIN` is now accepted for one carried inventory item while the bootstrap `/open_safebox` presentation is already open:
+
+- the selected character must be above the bootstrap zero-HP floor;
+- the request must name the inventory window and a carried cell inside the owned carried-inventory range that resolves to exactly one unlocked, unequipped, well-formed live item;
+- the loaded template for that `vnum` must be valid, must match the live item `vnum`, must bound the live stack count with `max_count`, and must **not** author `anti_safebox`;
+- `safe_pos` must be empty and inside the currently opened bootstrap capacity (`size * 5` cells for remembered open size `1..3`);
+- a carried cell currently displayed in an active exchange shell fails closed with no frames and leaves the shell open;
+- on success the runtime removes the whole carried stack from inventory, syncs source item quickslots with the already-owned removal path (`GC::QUICKSLOT_DEL` when the cell is fully removed), stores the item in same-session in-memory safebox state, persists the inventory/quickslot account snapshot, and emits self-only `GC::ITEM_DEL` plus `GC::SAFEBOX_SET` for that safebox cell;
+- if an active bootstrap exchange shell is open and the check-in would otherwise succeed, the runtime closes that presentation shell first with self/peer `GC::EXCHANGE END`, then emits the inventory/safebox refresh frames; merchant windows stay deferred for this first mutation path and are not auto-closed on success;
+- no gold/money/mall frames are introduced;
+- reconnect / process restart / logout / shared-world leave discard those in-memory safebox contents until a later persistence slice owns durable safebox state.
+
+The only current output for unsupported or rejected storage-transfer packets remains template-authored rejection feedback for safebox check-in:
 
 - `CG::SAFEBOX_CHECKIN` must reference the inventory window and a carried cell inside the owned carried-inventory range;
 - the selected character must own exactly one valid, unlocked, unequipped live item in that cell;
@@ -194,7 +208,7 @@ The only current output for storage-transfer packets remains template-authored r
 - if both bootstrap presentation shells are active on the same socket, the runtime emits the local `GC::SHOP END` first, then the exchange close frame(s), then the storage rejection chat;
 - inventory, equipment, quickslots, points, gold, ground handles, storage state, exchange item/gold displays, and persisted snapshots remain unchanged.
 
-If the template omits `safebox_reject_message`, if `anti_safebox` is absent, if metadata is missing/invalid/mismatched, or if the live item is malformed, locked, duplicated, absent, or already over template `max_count`, the request preserves the older no-frame/no-mutation fail-closed behavior.
+If the template omits `safebox_reject_message`, if `anti_safebox` is absent, if metadata is missing/invalid/mismatched, if the live item is malformed, locked, duplicated, absent, or already over template `max_count`, if the safebox presentation is closed, or if the destination `safe_pos` is occupied/out of range, the request preserves the older no-frame/no-mutation fail-closed behavior (except the accepted open-presentation mutation path above).
 
 That same no-frame/no-mutation rule now also covers the retaliation-owned player-death floor. Once a content practice mob has driven the selected owner's live bootstrap HP to `0`, later `SAFEBOX_CHECKIN`, `SAFEBOX_CHECKOUT`, `SAFEBOX_ITEM_MOVE`, and `MALL_CHECKOUT` requests fail closed before any storage response frame, before any template-authored `anti_safebox` info-chat feedback, and before carried inventory/equipment, quickslot, point, gold, ground-handle, or account-persistence side effects can run. This does not broaden storage itself; it only keeps the existing unsupported storage guard from becoming a post-death escape hatch.
 
@@ -209,25 +223,15 @@ Later slices must write a new contract before broadening storage behavior. In pa
 - runtime emission policy for `SAFEBOX_DEL`, `SAFEBOX_WRONG_PASSWORD`, `SAFEBOX_MONEY_CHANGE`, `MALL_OPEN`, `MALL_SET`, or `MALL_DEL`;
 - accepted checkout/item-move mutation ordering;
 - mall open/checkout behavior;
-- storage item persistence or DB schema;
+- durable storage item persistence or DB schema;
 - interaction/NPC surfaces that open storage windows;
 - the legacy `CloseSafebox` command-chat companion beyond the local `/close_safebox` open-flag clear above;
-- accepted template-authority policy for `anti_safebox`, `anti_save`, mall-only items, or cash-shop metadata beyond the currently owned `ITEM_SET.anti_flags` projection and self-only `safebox_reject_message` feedback.
-
-## Next accepted check-in contract (docs freeze only)
-
-`docs/plans/2026-08-21-safebox-checkin-in-memory-mutation.md` freezes the next runtime seam before GREEN implementation:
-
-- accepted `SAFEBOX_CHECKIN` only while the bootstrap `/open_safebox` presentation is already open;
-- destination `safe_pos` empty and inside remembered open capacity `size * 5` for size `1..3`;
-- success removes the carried item, syncs source item quickslots, stores the item in same-session in-memory safebox state, and emits self-only inventory removal plus `GC::SAFEBOX_SET`;
-- `anti_safebox` keeps the already-owned authored reject chat / silent fail-closed path;
-- reconnect / restart / logout still discard those in-memory contents until a later persistence slice owns durable safebox state.
-
-The shipped runtime remains fail-closed for accepted check-in until that GREEN slice lands. This docs freeze deliberately does not open RED tests yet.
+- accepted template-authority policy for `anti_save`, mall-only items, or cash-shop metadata beyond the currently owned `ITEM_SET.anti_flags` projection and self-only `safebox_reject_message` feedback;
+- merchant-window auto-close on accepted check-in success (still deferred; only the reject path closes merchant today).
 
 ## Current coverage
 
 - `internal/proto/item` freezes encode/decode behavior, exact wire bytes, unexpected-header rejection, and invalid-payload rejection for the four client storage request packets and the first eight server safebox/mall response packets.
 - `internal/game` freezes `GAME`-phase decode dispatch and optional handler-frame paths for all four storage-facing packets while preserving no-frame fail-closed defaults.
-- `internal/minimal` freezes both ordinary no-frame/no-mutation/no-persistence storage guards and the authored `anti_safebox` / `safebox_reject_message` info-chat feedback path through the normal session harness, including active merchant-window and active-exchange-shell teardown before that feedback is delivered. It also freezes the player-death-floor variant where those same storage-facing requests stay silent and non-mutating after practice-mob retaliation has already driven the selected owner to `0` HP, including the `SAFEBOX_CHECKIN` case that would otherwise be allowed to emit authored `anti_safebox` feedback while alive. The bootstrap `/open_safebox` / `/close_safebox` presentation seam is owned here as well: `/open_safebox [1..3]` emits self-only `GC::SAFEBOX_SIZE`, remembers the same-socket open flag (with omitted size defaulting to `1` on first open and reusing the remembered size on later idempotent refresh), `/close_safebox` clears that flag with no frames, and exchange `START` requester/partner busy rejects observe that open flag with the already-owned merchant busy-window chat strings.
+- `internal/player` freezes template-backed `SafeboxCheckinRejectText` and whole-stack `SafeboxCheckinItem` live inventory removal for accepted check-in.
+- `internal/minimal` freezes both ordinary no-frame/no-mutation/no-persistence storage guards and the authored `anti_safebox` / `safebox_reject_message` info-chat feedback path through the normal session harness, including active merchant-window and active-exchange-shell teardown before that feedback is delivered. It also freezes the player-death-floor variant where those same storage-facing requests stay silent and non-mutating after practice-mob retaliation has already driven the selected owner to `0` HP, including the `SAFEBOX_CHECKIN` case that would otherwise be allowed to emit authored `anti_safebox` feedback while alive. The bootstrap `/open_safebox` / `/close_safebox` presentation seam is owned here as well: `/open_safebox [1..3]` emits self-only `GC::SAFEBOX_SIZE` (plus remembered same-session `SAFEBOX_SET` rows), remembers the same-socket open flag (with omitted size defaulting to `1` on first open and reusing the remembered size on later idempotent refresh), `/close_safebox` clears that flag with no frames while keeping same-session in-memory contents, and exchange `START` requester/partner busy rejects observe that open flag with the already-owned merchant busy-window chat strings. Accepted open-presentation `SAFEBOX_CHECKIN` now also freezes inventory removal + quickslot sync + same-session in-memory `SAFEBOX_SET`, including reopen re-emission and exchange-shell close-on-success.
