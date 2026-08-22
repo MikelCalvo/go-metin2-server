@@ -5004,6 +5004,171 @@ func TestExampleBootstrapNPCServiceBundleExportsAndQuarantinesStaticActorPvEMigr
 	}
 }
 
+func TestExampleBootstrapPveVerticalAuthoringBundleExportsOnto0012ButQuarantineFailsClosedWithoutCombatProfiles(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-pve-vertical-authoring-bundle.json"))
+	if err != nil {
+		t.Fatalf("read PvE vertical authoring example bundle: %v", err)
+	}
+	var authored Bundle
+	if err := json.Unmarshal(raw, &authored); err != nil {
+		t.Fatalf("decode PvE vertical authoring example bundle: %v", err)
+	}
+	if len(authored.RegenSpawns) == 0 || len(authored.DropTables) == 0 {
+		t.Fatalf("expected PvE vertical authoring example to keep authoring-form regen_spawns and drop_tables before canonicalize, got regen=%+v drop_tables=%+v", authored.RegenSpawns, authored.DropTables)
+	}
+	if len(authored.SpawnGroups) != 0 {
+		t.Fatalf("expected PvE vertical authoring example to author through regen/drop tables rather than direct spawn_groups, got %+v", authored.SpawnGroups)
+	}
+
+	canonical, err := Canonicalize(authored)
+	if err != nil {
+		t.Fatalf("canonicalize PvE vertical authoring example bundle: %v", err)
+	}
+	if len(canonical.RegenSpawns) != 0 || len(canonical.DropTables) != 0 {
+		t.Fatalf("expected canonicalize to strip authoring-only regen/drop collections, got regen=%+v drop_tables=%+v", canonical.RegenSpawns, canonical.DropTables)
+	}
+	if len(canonical.SpawnGroups) != 1 || canonical.SpawnGroups[0].Ref != "practice.qa_pve_vertical_mob" {
+		t.Fatalf("expected expanded spawn group practice.qa_pve_vertical_mob, got %+v", canonical.SpawnGroups)
+	}
+	if len(canonical.CombatProfiles) != 1 || canonical.CombatProfiles[0].Profile != "qa_pve_vertical_practice_mob" {
+		t.Fatalf("expected portable qa_pve_vertical_practice_mob combat profile, got %+v", canonical.CombatProfiles)
+	}
+
+	actors := make([]staticstore.StaticActor, 0, len(canonical.StaticActors)+len(canonical.SpawnGroups))
+	for _, actor := range canonical.StaticActors {
+		actors = append(actors, staticstore.StaticActor{
+			Name:            actor.Name,
+			MapIndex:        actor.MapIndex,
+			X:               actor.X,
+			Y:               actor.Y,
+			RaceNum:         actor.RaceNum,
+			CombatProfile:   actor.CombatProfile,
+			InteractionKind: actor.InteractionKind,
+			InteractionRef:  actor.InteractionRef,
+		})
+	}
+	for _, spawnGroup := range canonical.SpawnGroups {
+		actors = append(actors, staticstore.StaticActor{
+			Name:             spawnGroup.Name,
+			MapIndex:         spawnGroup.MapIndex,
+			X:                spawnGroup.X,
+			Y:                spawnGroup.Y,
+			RaceNum:          spawnGroup.RaceNum,
+			SpawnHome:        &worldruntime.PositionSnapshot{MapIndex: spawnGroup.MapIndex, X: spawnGroup.X, Y: spawnGroup.Y},
+			CombatProfile:    spawnGroup.CombatProfile,
+			SpawnGroupRef:    spawnGroup.Ref,
+			RewardExperience: spawnGroup.RewardExperience,
+			RewardGold:       spawnGroup.RewardGold,
+			RewardDropVnums:  append([]uint32(nil), spawnGroup.RewardDropVnums...),
+			RewardQuestRef:   spawnGroup.RewardQuestRef,
+			RewardQuestFlag:  spawnGroup.RewardQuestFlag,
+			RewardQuestFrom:  spawnGroup.RewardQuestFrom,
+			RewardQuestTo:    spawnGroup.RewardQuestTo,
+			RewardQuestText:  spawnGroup.RewardQuestText,
+			RequireQuestRef:  spawnGroup.RequireQuestRef,
+			RequireQuestFlag: spawnGroup.RequireQuestFlag,
+			RequireQuestFrom: spawnGroup.RequireQuestFrom,
+		})
+	}
+	// Assign deterministic entity IDs in store-canonical name order so the
+	// migration-shaped export stays stable without requiring a live runtime.
+	sort.Slice(actors, func(i int, j int) bool {
+		if actors[i].Name == actors[j].Name {
+			return actors[i].EntityID < actors[j].EntityID
+		}
+		return actors[i].Name < actors[j].Name
+	})
+	for i := range actors {
+		actors[i].EntityID = uint64(i + 1)
+	}
+
+	staticSnapshot := staticstore.Snapshot{
+		StaticActors:   actors,
+		CombatProfiles: append([]worldruntime.StaticActorCombatProfileSnapshot(nil), canonical.CombatProfiles...),
+	}
+	interactionSnapshot := interactionstore.Snapshot{Definitions: append([]interactionstore.Definition(nil), canonical.InteractionDefinitions...)}
+
+	export, err := staticstore.ExportStaticActorContentState(staticSnapshot, interactionSnapshot)
+	if err != nil {
+		t.Fatalf("export PvE vertical authoring fixture onto 0012 migration shape: %v", err)
+	}
+	if export.MigrationVersion != staticstore.StaticActorContentStateMigrationVersion || export.MigrationName != staticstore.StaticActorContentStateMigrationName {
+		t.Fatalf("unexpected migration boundary: version=%d name=%q", export.MigrationVersion, export.MigrationName)
+	}
+	if len(export.InteractionDefinitions) != 8 || len(export.MerchantCatalogEntries) != 2 || len(export.QuestFlagRewardItems) != 1 || len(export.QuestFlagConsumeItems) != 1 || len(export.StaticActors) != 9 || len(export.RewardDrops) != 1 {
+		t.Fatalf("unexpected PvE vertical authoring export counts: defs=%d catalog=%d reward_items=%d consume_items=%d actors=%d drops=%d",
+			len(export.InteractionDefinitions), len(export.MerchantCatalogEntries), len(export.QuestFlagRewardItems), len(export.QuestFlagConsumeItems), len(export.StaticActors), len(export.RewardDrops))
+	}
+
+	var (
+		foundTurnIn    bool
+		foundWarehouse bool
+		foundKillQuest bool
+	)
+	for _, definition := range export.InteractionDefinitions {
+		switch {
+		case definition.Kind == interactionstore.KindQuestFlag && definition.Ref == "quest:first_steps_kill_turnin":
+			foundTurnIn = true
+			if definition.RewardExperience != 50 || definition.RewardGold != 100 || definition.ConsumeGold != 25 || definition.ConsumeExperience != 10 {
+				t.Fatalf("unexpected QuestHunter turn-in scalars: %#v", definition)
+			}
+		case definition.Kind == interactionstore.KindOpenSafebox && definition.Ref == "npc:qa_warehouse":
+			foundWarehouse = true
+			if definition.Size != 2 || definition.QuestRef != "quest:first_steps" || definition.QuestFlag != "met_guide" || definition.QuestFrom != 1 {
+				t.Fatalf("unexpected Warehouse open_safebox projection: %#v", definition)
+			}
+		}
+	}
+	if !foundTurnIn {
+		t.Fatal("expected quest:first_steps_kill_turnin projection in 0012 export")
+	}
+	if !foundWarehouse {
+		t.Fatal("expected npc:qa_warehouse open_safebox projection in 0012 export")
+	}
+	if export.QuestFlagRewardItems[0].DefinitionRef != "quest:first_steps_kill_turnin" || export.QuestFlagRewardItems[0].ItemVnum != 11200 || export.QuestFlagRewardItems[0].Count != 1 {
+		t.Fatalf("unexpected quest_flag reward item rows: %#v", export.QuestFlagRewardItems)
+	}
+	if export.QuestFlagConsumeItems[0].DefinitionRef != "quest:first_steps_kill_turnin" || export.QuestFlagConsumeItems[0].ItemVnum != 27001 || export.QuestFlagConsumeItems[0].Count != 1 {
+		t.Fatalf("unexpected quest_flag consume item rows: %#v", export.QuestFlagConsumeItems)
+	}
+	for _, actor := range export.StaticActors {
+		if actor.SpawnGroupRef != "practice.qa_pve_vertical_mob" {
+			continue
+		}
+		foundKillQuest = true
+		if actor.Name != "QAPveVerticalMob" || actor.RewardQuestFlag != "killed_qa_mob" || actor.RewardQuestTo != 1 || actor.RequireQuestFlag != "met_guide" || actor.RequireQuestFrom != 1 {
+			t.Fatalf("unexpected kill-quest actor projection: %#v", actor)
+		}
+		if actor.RewardExperience != 75 || actor.RewardGold != 60 {
+			t.Fatalf("unexpected kill-quest combat rewards: %#v", actor)
+		}
+		if actor.CombatProfile != "qa_pve_vertical_practice_mob" {
+			t.Fatalf("unexpected kill-quest combat profile name: %#v", actor)
+		}
+	}
+	if !foundKillQuest {
+		t.Fatal("expected practice.qa_pve_vertical_mob kill-quest projection in 0012 export")
+	}
+	if export.RewardDrops[0].ItemVnum != 27001 {
+		t.Fatalf("unexpected reward drop rows: %#v", export.RewardDrops)
+	}
+
+	// Migration 0012 retains only the combat_profile name on static_actors.
+	// Quarantine rebuilds the static snapshot without portable combat_profiles[],
+	// so custom formula profiles fail closed until a later tip owns those rows.
+	if _, err := staticstore.ValidateStaticActorContentStateExport(export); !errors.Is(err, staticstore.ErrInvalidStaticActorContentStateExport) {
+		t.Fatalf("expected quarantine validation to fail closed without combat_profiles tip, got %v", err)
+	}
+	if _, _, err := staticstore.QuarantineStaticActorContentStateExport(export); !errors.Is(err, staticstore.ErrInvalidStaticActorContentStateExport) {
+		t.Fatalf("expected quarantine to fail closed without combat_profiles tip, got %v", err)
+	}
+}
+
 func readCanonicalExampleBundle(t *testing.T, name string) ([]byte, Bundle) {
 	t.Helper()
 	_, filename, _, ok := runtime.Caller(0)

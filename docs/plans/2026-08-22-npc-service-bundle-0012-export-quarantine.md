@@ -40,3 +40,10 @@ go test ./internal/contentbundle -run 'TestExampleBootstrapNPCServiceBundleExpor
 - import/backfill execution from quarantined exports
 - branching quest scripts / new NPC service kinds
 - durable safebox persistence / password load
+
+## Follow-up
+
+The matching authoring-form fixture still uses a portable custom combat profile.
+See [PvE vertical authoring 0012 export combat-profile gap](2026-08-22-pve-vertical-authoring-0012-export-combat-profile-gap.md)
+for the owned fail-closed quarantine proof until a later tip retains
+`combat_profiles[]`.

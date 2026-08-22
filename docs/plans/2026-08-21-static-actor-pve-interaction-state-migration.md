@@ -64,3 +64,4 @@ Focused coverage:
 3. Keep ground-item restart durability deferred until operators decide quarantined `0010` exports should drive recovery.
 4. Keep daemon-local migration endpoints read-only.
 5. ~~Prove the checked-in NPC QA fixture projects onto the `0012` export/quarantine tip.~~ Done: see [NPC service bundle 0012 export quarantine](2026-08-22-npc-service-bundle-0012-export-quarantine.md).
+6. ~~Prove the authoring-form PvE vertical fixture exports onto `0012` and that quarantine fails closed without portable `combat_profiles[]`.~~ Done: see [PvE vertical authoring 0012 export combat-profile gap](2026-08-22-pve-vertical-authoring-0012-export-combat-profile-gap.md). Next migration tip should retain combat-profile rows.
