@@ -68,6 +68,6 @@ handles that previously lived only in `sharedWorldRegistry.groundItemsByVID`.
 1. Keep SQL import/backfill deferred until a driver-backed harness exists.
 2. ~~Optional later: include ground-item FileStore in backup-restore drill once
    BackupTo/RestoreFrom exist.~~ Done: see [ground-item file-store backup/restore](2026-08-22-ground-item-file-store-backup-restore.md).
-3. Optional later: rebind process-local `OwnerID` when the exclusive owner
-   rejoins the shared world.
+3. Optional later: ~~rebind process-local `OwnerID` when the exclusive owner
+   rejoins the shared world.~~ Done: see [ground-item exclusive OwnerID rebind](2026-08-22-ground-item-exclusive-owner-id-rebind.md).
 4. Keep automatic artifact GC deletion deferred.

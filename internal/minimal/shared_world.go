@@ -3345,6 +3345,7 @@ func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pen
 		return 0, nil
 	}
 	r.claimPendingProximityAggroSuppressLocked(character.VID, id)
+	r.rebindExclusiveGroundOwnerIDLocked(id, character)
 
 	peerFrames := encodePeerVisibilityBootstrapFramesWithTemplates(character, r.itemTemplates)
 	for _, peerCharacter := range visibilityDiff.AddedVisiblePeers {
@@ -3354,6 +3355,26 @@ func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pen
 		r.enqueueToCharacterLocked(peerCharacter, peerFrames)
 	}
 	return id, visibilityDiff.TargetVisiblePeers
+}
+
+// rebindExclusiveGroundOwnerIDLocked attaches process-local OwnerID to rematerialized
+// exclusive ground handles whose durable owner identity matches the joining character.
+// Public handles and already-bound OwnerID values are left untouched. Absolute timers
+// and durable FileStore rows stay unchanged (OwnerID remains process-local only).
+func (r *sharedWorldRegistry) rebindExclusiveGroundOwnerIDLocked(ownerID uint64, character loginticket.Character) {
+	if r == nil || ownerID == 0 || len(r.groundItemsByVID) == 0 {
+		return
+	}
+	for vid, ground := range r.groundItemsByVID {
+		if !ground.OwnershipExclusive || ground.OwnerID != 0 {
+			continue
+		}
+		if !sameGroundItemOwnerIdentity(ground, character) {
+			continue
+		}
+		ground.OwnerID = ownerID
+		r.groundItemsByVID[vid] = ground
+	}
 }
 
 func (r *sharedWorldRegistry) Leave(id uint64) {

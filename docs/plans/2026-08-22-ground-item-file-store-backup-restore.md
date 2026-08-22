@@ -92,4 +92,4 @@ validate / backup / backup-validate / empty-destination / restore sequencing
 
 1. Keep SQL import/backfill deferred until a driver-backed harness exists.
 2. Keep automatic artifact GC deferred.
-3. Optional later: rebind process-local `OwnerID` when the exclusive owner rejoins.
+3. Optional later: ~~rebind process-local `OwnerID` when the exclusive owner rejoins.~~ Done: see [ground-item exclusive OwnerID rebind](2026-08-22-ground-item-exclusive-owner-id-rebind.md).
