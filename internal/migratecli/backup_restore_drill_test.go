@@ -21,7 +21,8 @@ func validBackupRestoreRuntimeConfig() string {
     "interaction_store_path": "/var/metin2/interactions/interaction-definitions.json",
     "item_template_store_path": "/var/metin2/item-templates/item-templates.json",
     "quest_state_store_path": "/var/metin2/quest-state/quest-state.json",
-    "ground_item_store_path": "/var/metin2/ground-items/ground-items.json"
+    "ground_item_store_path": "/var/metin2/ground-items/ground-items.json",
+    "safebox_store_path": "/var/metin2/safebox/safebox.json"
   },
   "database": {
     "configured": false,
@@ -84,9 +85,10 @@ func TestRunBackupRestoreDrillPrintsLabRetentionCommands(t *testing.T) {
 		`STATIC_ACTOR_STORE_PATH='/var/metin2/static-actors/static-actors.json'`,
 		`QUEST_STATE_STORE_PATH='/var/metin2/quest-state/quest-state.json'`,
 		`GROUND_ITEM_STORE_PATH='/var/metin2/ground-items/ground-items.json'`,
+		`SAFEBOX_STORE_PATH='/var/metin2/safebox/safebox.json'`,
 		`TS=$(date -u +%Y%m%dT%H%M%SZ)`,
 		`BASE="${BACKUPS_BASE}/${TS}-${COMMIT12}"`,
-		`mkdir -p "$BASE"/accounts "$BASE"/login-tickets "$BASE"/item-templates "$BASE"/interaction-store "$BASE"/static-actors "$BASE"/quest-state "$BASE"/ground-items`,
+		`mkdir -p "$BASE"/accounts "$BASE"/login-tickets "$BASE"/item-templates "$BASE"/interaction-store "$BASE"/static-actors "$BASE"/quest-state "$BASE"/ground-items "$BASE"/safebox`,
 		`curl -sS "$OPS/local/build-info" > "$BASE/gamed-build-info.json"`,
 		`curl -sS "$AUTH_OPS/local/build-info" > "$BASE/authd-build-info.json"`,
 		`curl -sS "$OPS/local/runtime-config" > "$BASE/runtime-config.json"`,
@@ -110,6 +112,8 @@ func TestRunBackupRestoreDrillPrintsLabRetentionCommands(t *testing.T) {
 		`"$OPS/local/quest-state/crash-temps/cleanup"`,
 		`"$OPS/local/ground-item-store/validate"`,
 		`"$OPS/local/ground-item-store/crash-temps/cleanup"`,
+		`"$OPS/local/safebox-store/validate"`,
+		`"$OPS/local/safebox-store/crash-temps/cleanup"`,
 		`"$OPS/local/account-store/backup"`,
 		`$BASE/accounts`,
 		`"$OPS/local/login-tickets/backup"`,
@@ -124,12 +128,17 @@ func TestRunBackupRestoreDrillPrintsLabRetentionCommands(t *testing.T) {
 		`$BASE/quest-state`,
 		`"$OPS/local/ground-item-store/backup"`,
 		`$BASE/ground-items`,
+		`"$OPS/local/safebox-store/backup"`,
+		`$BASE/safebox`,
 		`"$OPS/local/account-store/backup/validate"`,
+		`"$OPS/local/safebox-store/backup/validate"`,
 		`"$OPS/local/item-templates/restore"`,
 		`"$OPS/local/ground-item-store/restore"`,
+		`"$OPS/local/safebox-store/restore"`,
 		`"$OPS/local/login-tickets/restore"`,
 		`mv "$ACCOUNT_STORE_DIR"`,
 		`mv "$(dirname "$ITEM_TEMPLATE_STORE_PATH")"`,
+		`mv "$(dirname "$SAFEBOX_STORE_PATH")"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in stdout:\n%s", want, body)
@@ -186,7 +195,8 @@ func TestRunBackupRestoreDrillReadsRegularFiles(t *testing.T) {
     "interaction_store_path": "/state/interactions/interaction-definitions.json",
     "item_template_store_path": "/state/items/item-templates.json",
     "quest_state_store_path": "/state/quests/quest-state.json",
-    "ground_item_store_path": "/state/ground-items/ground-items.json"
+    "ground_item_store_path": "/state/ground-items/ground-items.json",
+    "safebox_store_path": "/state/safebox/safebox.json"
   },
   "database": {"configured": false, "dsn_configured": false}
 }`)
@@ -229,7 +239,8 @@ func TestRunBackupRestoreDrillRejectsSharedFileStoreParents(t *testing.T) {
     "interaction_store_path": "/tmp/shared/interaction-definitions.json",
     "item_template_store_path": "/tmp/shared/item-templates.json",
     "quest_state_store_path": "/tmp/shared/quest-state.json",
-    "ground_item_store_path": "/tmp/ground-items/ground-items.json"
+    "ground_item_store_path": "/tmp/ground-items/ground-items.json",
+    "safebox_store_path": "/tmp/safebox/safebox.json"
   },
   "database": {"configured": false, "dsn_configured": false}
 }`
@@ -267,7 +278,8 @@ func TestRunBackupRestoreDrillRejectsBlankPersistencePath(t *testing.T) {
     "interaction_store_path": "/var/metin2/interactions/interaction-definitions.json",
     "item_template_store_path": "/var/metin2/item-templates/item-templates.json",
     "quest_state_store_path": "/var/metin2/quest-state/quest-state.json",
-    "ground_item_store_path": "/var/metin2/ground-items/ground-items.json"
+    "ground_item_store_path": "/var/metin2/ground-items/ground-items.json",
+    "safebox_store_path": "/var/metin2/safebox/safebox.json"
   },
   "database": {"configured": false, "dsn_configured": false}
 }`
@@ -445,7 +457,7 @@ func TestRunBackupRestoreDrillRejectsMalformedAndOversizedInput(t *testing.T) {
 		{name: "invalid-json", payload: `{"persistence":`},
 		{name: "invalid-utf8", payload: "{\x80"},
 		{name: "null", payload: "null"},
-		{name: "unknown-field", payload: `{"local_channel_id":1,"visibility_mode":"whole_map","visibility_radius":0,"visibility_sector_size":0,"persistence":{"login_ticket_store_dir":"/a","account_store_dir":"/b","static_actor_store_path":"/c/s.json","interaction_store_path":"/d/i.json","item_template_store_path":"/e/t.json","quest_state_store_path":"/f/q.json","ground_item_store_path":"/g/gi.json"},"database":{"configured":false,"dsn_configured":false},"extra":true}`},
+		{name: "unknown-field", payload: `{"local_channel_id":1,"visibility_mode":"whole_map","visibility_radius":0,"visibility_sector_size":0,"persistence":{"login_ticket_store_dir":"/a","account_store_dir":"/b","static_actor_store_path":"/c/s.json","interaction_store_path":"/d/i.json","item_template_store_path":"/e/t.json","quest_state_store_path":"/f/q.json","ground_item_store_path":"/g/gi.json","safebox_store_path":"/h/s.json"},"database":{"configured":false,"dsn_configured":false},"extra":true}`},
 		{name: "oversized", payload: strings.Repeat("a", maxRuntimeConfigBytes+1)},
 	}
 	for _, tc := range cases {

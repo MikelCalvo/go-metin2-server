@@ -92,9 +92,10 @@ Before applying, verify and retain deployment-specific backups outside the migra
 - interaction definitions (`/local/interaction-store/validate`, `/local/interaction-store/backup/validate` when using a store backup);
 - static actors (`/local/static-actor-store/validate`, `/local/static-actors/backup/validate` when using a store backup);
 - quest state (`/local/quest-state/validate`, `/local/quest-state/backup/validate` when using a store backup);
-- pending ground item/gold handles (`/local/ground-item-store/validate`, `/local/ground-item-store/backup/validate` when using a store backup).
+- pending ground item/gold handles (`/local/ground-item-store/validate`, `/local/ground-item-store/backup/validate` when using a store backup);
+- durable safebox cells (`/local/safebox-store/validate`, `/local/safebox-store/backup/validate` when using a store backup).
 
-When the window needs a combined multi-store file backup or a drained-session restore drill across the seven manifested stores, follow the detailed [file-store backup/restore drill](file-store-backup-restore-drill.md) instead of improvising per-store ordering.
+When the window needs a combined multi-store file backup or a drained-session restore drill across the eight manifested stores, follow the detailed [file-store backup/restore drill](file-store-backup-restore-drill.md) instead of improvising per-store ordering.
 
 Then run the mutating apply with an exclusive local lock and audit file:
 
