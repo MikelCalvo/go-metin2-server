@@ -66,7 +66,7 @@ Validation for this slice:
 ## Follow-up options
 
 1. Keep automatic stale-lock removal / `rm` deferred.
-2. Keep automatic artifact GC / lifecycle jobs deferred.
+2. ~~Keep automatic artifact GC / lifecycle jobs deferred.~~ Done for the offline aside-rename printer: see [CLI artifact-retention GC printer](2026-08-22-cli-artifact-retention-gc-printer.md). Automatic / scheduled deletion remains deferred.
 3. Add DB-engine-specific advisory lock coverage once a production driver is selected.
 4. Keep ground-item restart durability deferred until operators decide that quarantined `0010` exports should drive recovery.
 5. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.

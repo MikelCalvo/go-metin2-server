@@ -72,7 +72,7 @@ Validation for this slice:
 ## Follow-up options
 
 1. Keep ground-item restart durability deferred until operators decide that quarantined `0010` exports should drive recovery.
-2. Keep automatic artifact GC / lifecycle jobs deferred.
+2. ~~Keep automatic artifact GC / lifecycle jobs deferred.~~ Done for the offline aside-rename printer: see [CLI artifact-retention GC printer](2026-08-22-cli-artifact-retention-gc-printer.md). Automatic / scheduled deletion remains deferred.
 3. ~~Optional rollback-direction migration retention printer remains deferred; operators can still pass an explicit `--target-version` plus manual `--allow-rollback` when executing the printed apply block.~~ Done: see [CLI migration rollback-run retention](2026-08-21-cli-migration-rollback-run-retention.md).
 4. ~~Optional backup-restore drill correlation checklist (both-daemon build-info + `notes.md`) remains deferred.~~ Done: see [CLI backup-restore drill correlation](2026-08-21-cli-backup-restore-drill-correlation.md).
 5. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.

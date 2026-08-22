@@ -133,6 +133,17 @@ metin2-migrate version \
 
 That mode prints rollback artifact names (`rollback-plan-artifact.json`, `rollback-apply-preflight.json`, `migration-rollback-audit.json`, `post-rollback-status.json`), includes `--allow-rollback` on the printed preflight/apply lines, defaults `--lock-file` to `migration-rollback.lock` when omitted, and keeps the same correlation checklist retains.
 
+Aged retention trees can be triage-printed without deletion via:
+
+```bash
+metin2-migrate artifact-retention-gc \
+  --retention-base /var/metin2/backups \
+  --keep-days 14 \
+  --now 2026-08-22T12:00:00Z
+```
+
+The printer emits a path-aware shell script that aside-renames matching `YYYYMMDDTHHMMSSZ-<commit12>/` children older than `--keep-days` to `<name>.gc-aside-<NOW_UTC>`, refuses destination collisions, never deletes trees, never opens a database, and never embeds a DSN. The same command works against `/var/metin2/migration-runs`.
+
 ## Operator correlation checklist
 
 For any reconnect/restart or migration window, retain:
@@ -150,6 +161,7 @@ See also:
 - [migration apply runbook](migration-apply-runbook.md)
 - [lab stale-lock recovery](lab-stale-lock-recovery.md)
 - [file-store backup/restore drill](file-store-backup-restore-drill.md)
+- [CLI artifact-retention GC printer plan](../plans/2026-08-22-cli-artifact-retention-gc-printer.md)
 
 ## What this is not yet
 
@@ -157,7 +169,8 @@ See also:
 - load-balanced shards or channel farms
 - Kubernetes / systemd unit shipping in-tree
 - remote admin APIs
-- automatic artifact GC / lifecycle jobs
+- automatic / scheduled artifact GC or lifecycle daemons that invoke deletion
 - automatic stale-lock expiry (lab recovery remains confirmation-gated `apply-lock-aside` / operator aside-rename; see [lab stale-lock recovery](lab-stale-lock-recovery.md))
-- automatic execution of the printed `migration-run-retention` or `backup-restore-drill` scripts (the CLI only prints commands)
+- automatic execution of the printed `migration-run-retention`, `backup-restore-drill`, or `artifact-retention-gc` scripts (the CLI only prints commands; GC remains confirmation-gated aside-rename by the operator)
+- `rm` / unlink of aside-renamed retention trees
 - a claim that bootstrap file stores are the final production persistence layer

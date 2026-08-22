@@ -61,7 +61,7 @@ Validation for this slice:
 
 ## Follow-up options
 
-1. Keep automatic artifact GC / lifecycle jobs deferred.
+1. ~~Keep automatic artifact GC / lifecycle jobs deferred.~~ Done for the offline aside-rename printer: see [CLI artifact-retention GC printer](2026-08-22-cli-artifact-retention-gc-printer.md). Automatic / scheduled deletion remains deferred.
 2. Keep ground-item restart durability deferred until operators decide that quarantined `0010` exports should drive recovery.
 3. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
 4. ~~Optional Docker `LABEL` workflow-run metadata remains deferred.~~ Done: see [Docker LABEL workflow-run metadata](2026-08-22-docker-label-workflow-run-metadata.md).

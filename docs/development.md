@@ -151,7 +151,7 @@ The database-backed runtime is still future work, but `gamed` can now point the 
 
 Both driver and DSN must be empty to keep DB preflight disabled, or both must be set. Partial values fail daemon startup instead of silently returning the embedded empty-ledger migration plan. The project does not yet ship a DB driver dependency or select a production database engine, so operators must not treat this as a finished DB-backed runtime. `/local/runtime-config` reports only whether a DSN is configured plus the driver name; it intentionally never exposes the DSN value. For offline preflight, `GET /local/db/migrations/ledger-snapshot` exports the running daemon's configured ledger metadata as strict `go-metin2-schema-migrations-ledger-v1` JSON (`version` / `name` / `up_sha256` only), returning an explicit empty snapshot when DB preflight is disabled. `POST /local/db/migrations/plan-from-ledger-snapshot?target_version=N` accepts that same metadata-only snapshot shape and returns the dry-run plan without opening the configured DB or exposing executable SQL.
 
-`cmd/metin2-migrate` is the first shipped migration CLI. Its catalog, status, empty-ledger-snapshot, ledger-snapshot, ledger-snapshot-status, plan, plan-artifact, plan-artifact-status, apply-preflight, apply-preflight-status, apply-lock-status, apply-audit-status, quarantine-export, backup-restore-drill, and migration-run-retention commands are read-only/preflight surfaces. `apply-lock-aside` is a separate confirmation-gated local filesystem mutation for lab stale-lock recovery and still never opens a database:
+`cmd/metin2-migrate` is the first shipped migration CLI. Its catalog, status, empty-ledger-snapshot, ledger-snapshot, ledger-snapshot-status, plan, plan-artifact, plan-artifact-status, apply-preflight, apply-preflight-status, apply-lock-status, apply-audit-status, quarantine-export, backup-restore-drill, migration-run-retention, and artifact-retention-gc commands are read-only/preflight surfaces. `apply-lock-aside` is a separate confirmation-gated local filesystem mutation for lab stale-lock recovery and still never opens a database:
 
 ```bash
 go run ./cmd/metin2-migrate catalog
@@ -178,6 +178,10 @@ go run ./cmd/metin2-migrate version \
       --build-info - \
       --target-version 0 \
       --allow-rollback
+go run ./cmd/metin2-migrate artifact-retention-gc \
+  --retention-base /var/metin2/backups \
+  --keep-days 14 \
+  --now 2026-08-22T12:00:00Z
 go run ./cmd/metin2-migrate empty-ledger-snapshot \
   | go run ./cmd/metin2-migrate plan --ledger-snapshot - --target-version latest
 curl -s http://127.0.0.1:6060/local/db/migrations/ledger-snapshot \
