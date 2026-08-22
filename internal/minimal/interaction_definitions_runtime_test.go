@@ -11,7 +11,7 @@ import (
 )
 
 func TestGameRuntimeInteractionDefinitionsReturnsSortedSnapshot(t *testing.T) {
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{
 		{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "VillageGuard:\nKeep your blade sharp."},
 		{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
 	})
@@ -31,7 +31,7 @@ func TestGameRuntimeInteractionDefinitionsReturnsSortedSnapshot(t *testing.T) {
 }
 
 func TestGameRuntimeInteractionDefinitionReturnsExactDefinitionByIdentity(t *testing.T) {
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{
 		{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "VillageGuard:\nKeep your blade sharp."},
 		{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
 	})
@@ -51,7 +51,7 @@ func TestGameRuntimeInteractionDefinitionReturnsExactDefinitionByIdentity(t *tes
 }
 
 func TestGameRuntimeCreateInteractionDefinitionPersistsSnapshotAndResolvesDefinition(t *testing.T) {
-	interactionStore := newInteractionDefinitionStore(t, nil)
+	interactionStore := newMemoryInteractionDefinitionStore(t, nil)
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -79,7 +79,7 @@ func TestGameRuntimeCreateInteractionDefinitionPersistsSnapshotAndResolvesDefini
 }
 
 func TestGameRuntimeCreateWarpInteractionDefinitionPersistsSnapshotAndResolvesDefinition(t *testing.T) {
-	interactionStore := newInteractionDefinitionStore(t, nil)
+	interactionStore := newMemoryInteractionDefinitionStore(t, nil)
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -107,8 +107,8 @@ func TestGameRuntimeCreateWarpInteractionDefinitionPersistsSnapshotAndResolvesDe
 }
 
 func TestGameRuntimeCreateShopPreviewInteractionDefinitionPersistsSnapshotAndResolvesDefinition(t *testing.T) {
-	interactionStore := newInteractionDefinitionStore(t, nil)
-	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+	interactionStore := newMemoryInteractionDefinitionStore(t, nil)
+	itemStore := newMemoryItemTemplateStore(t, defaultMerchantItemTemplates())
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore, itemStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -136,7 +136,7 @@ func TestGameRuntimeCreateShopPreviewInteractionDefinitionPersistsSnapshotAndRes
 }
 
 func TestGameRuntimeCreateOpenSafeboxInteractionDefinitionPersistsSnapshotAndResolvesDefinition(t *testing.T) {
-	interactionStore := newInteractionDefinitionStore(t, nil)
+	interactionStore := newMemoryInteractionDefinitionStore(t, nil)
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -165,7 +165,7 @@ func TestGameRuntimeCreateOpenSafeboxInteractionDefinitionPersistsSnapshotAndRes
 }
 
 func TestGameRuntimeCreateQuestFlagInteractionDefinitionPersistsSnapshotAndResolvesDefinition(t *testing.T) {
-	interactionStore := newInteractionDefinitionStore(t, nil)
+	interactionStore := newMemoryInteractionDefinitionStore(t, nil)
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -194,7 +194,7 @@ func TestGameRuntimeCreateQuestFlagInteractionDefinitionPersistsSnapshotAndResol
 }
 
 func TestGameRuntimeCreateQuestFlagClearInteractionDefinitionPersistsSnapshotAndResolvesDefinition(t *testing.T) {
-	interactionStore := newInteractionDefinitionStore(t, nil)
+	interactionStore := newMemoryInteractionDefinitionStore(t, nil)
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -223,7 +223,7 @@ func TestGameRuntimeCreateQuestFlagClearInteractionDefinitionPersistsSnapshotAnd
 }
 
 func TestGameRuntimeCreateQuestFlagTurnInInteractionDefinitionPersistsSnapshotAndResolvesDefinition(t *testing.T) {
-	interactionStore := newInteractionDefinitionStore(t, nil)
+	interactionStore := newMemoryInteractionDefinitionStore(t, nil)
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -266,7 +266,7 @@ func TestGameRuntimeCreateQuestFlagTurnInInteractionDefinitionPersistsSnapshotAn
 }
 
 func TestGameRuntimeUpsertQuestFlagTurnInInteractionDefinitionPersistsSnapshotAndResolvesDefinition(t *testing.T) {
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{
 		Kind:      interactionstore.KindQuestFlag,
 		Ref:       "quest:first_steps_kill_turnin",
 		Text:      "Old turn-in text.",
@@ -317,7 +317,7 @@ func TestGameRuntimeUpsertQuestFlagTurnInInteractionDefinitionPersistsSnapshotAn
 }
 
 func TestGameRuntimeCreateInteractionDefinitionRejectsDuplicateDefinition(t *testing.T) {
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."}})
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."}})
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -329,7 +329,7 @@ func TestGameRuntimeCreateInteractionDefinitionRejectsDuplicateDefinition(t *tes
 }
 
 func TestGameRuntimeCreateInteractionDefinitionRejectsPathAmbiguousRef(t *testing.T) {
-	interactionStore := newInteractionDefinitionStore(t, nil)
+	interactionStore := newMemoryInteractionDefinitionStore(t, nil)
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -341,7 +341,7 @@ func TestGameRuntimeCreateInteractionDefinitionRejectsPathAmbiguousRef(t *testin
 }
 
 func TestGameRuntimeUpsertInteractionDefinitionPersistsDefinitionText(t *testing.T) {
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Old text."}})
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Old text."}})
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -369,7 +369,7 @@ func TestGameRuntimeUpsertInteractionDefinitionPersistsDefinitionText(t *testing
 }
 
 func TestGameRuntimeUpsertWarpInteractionDefinitionPersistsPayload(t *testing.T) {
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 1, X: 100, Y: 200, Text: "Old gate."}})
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 1, X: 100, Y: 200, Text: "Old gate."}})
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -397,7 +397,7 @@ func TestGameRuntimeUpsertWarpInteractionDefinitionPersistsPayload(t *testing.T)
 }
 
 func TestGameRuntimeUpsertShopPreviewInteractionDefinitionPersistsStructuredCatalog(t *testing.T) {
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{
 		Kind:  interactionstore.KindShopPreview,
 		Ref:   "npc:merchant",
 		Title: "Old Merchant",
@@ -405,7 +405,7 @@ func TestGameRuntimeUpsertShopPreviewInteractionDefinitionPersistsStructuredCata
 			{Slot: 0, ItemVnum: 27001, Price: 25, Count: 1},
 		},
 	}})
-	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+	itemStore := newMemoryItemTemplateStore(t, defaultMerchantItemTemplates())
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore, itemStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -433,7 +433,7 @@ func TestGameRuntimeUpsertShopPreviewInteractionDefinitionPersistsStructuredCata
 }
 
 func TestGameRuntimeRemoveInteractionDefinitionRejectsReferencedDefinition(t *testing.T) {
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."}})
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."}})
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -456,7 +456,7 @@ func TestGameRuntimeRemoveInteractionDefinitionRejectsReferencedDefinition(t *te
 }
 
 func TestGameRuntimeRemoveInteractionDefinitionPersistsSnapshotOnSuccess(t *testing.T) {
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{
 		{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
 		{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."},
 	})
