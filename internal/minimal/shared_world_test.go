@@ -8336,8 +8336,8 @@ func TestGameRuntimeFailedContentBundleImportRestoresSpawnGroupReturnStepSchedul
 	viewer.MapIndex = 42
 	issuePeerTicket(t, store, "spawn-return-rollback", 0x55554141, viewer)
 
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	currentTime := time.Unix(1700000960, 0)
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "radius", VisibilityRadius: 500, VisibilitySectorSize: 256},
@@ -8452,8 +8452,8 @@ func TestGameRuntimeNoOpContentBundleImportPrunesStaleSpawnGroupReturnStepSchedu
 	viewer.MapIndex = 42
 	issuePeerTicket(t, store, "spawn-return-noop", 0x55554343, viewer)
 
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	currentTime := time.Unix(1700000980, 0)
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "radius", VisibilityRadius: 500, VisibilitySectorSize: 256},
@@ -8544,8 +8544,8 @@ func TestGameRuntimeSuccessfulContentBundleReplacementClearsStaleSpawnGroupRetur
 	viewer.MapIndex = 42
 	issuePeerTicket(t, store, "spawn-return-replace", 0x55554242, viewer)
 
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	currentTime := time.Unix(1700000970, 0)
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "radius", VisibilityRadius: 500, VisibilitySectorSize: 256},
