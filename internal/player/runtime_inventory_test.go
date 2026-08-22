@@ -425,6 +425,9 @@ func TestPickupGroundItemWithTemplateRejectsAuthoredRestrictionsWithoutMutation(
 		{name: "anti shaman", character: loginticket.Character{Job: 3, RaceNum: 3}, template: itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiShaman: true}},
 		{name: "anti male", character: loginticket.Character{Job: 0, RaceNum: 0}, template: itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiMale: true}},
 		{name: "anti female", character: loginticket.Character{Job: 1, RaceNum: 1}, template: itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiFemale: true}},
+		{name: "anti empire a", character: loginticket.Character{Job: 0, RaceNum: 0, Empire: 1}, template: itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiEmpireA: true}},
+		{name: "anti empire b", character: loginticket.Character{Job: 0, RaceNum: 0, Empire: 2}, template: itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiEmpireB: true}},
+		{name: "anti empire c", character: loginticket.Character{Job: 0, RaceNum: 0, Empire: 3}, template: itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiEmpireC: true}},
 		{name: "min level", character: loginticket.Character{Job: 0, RaceNum: 0, Level: 9}, template: itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, MinLevel: 10}},
 	}
 	for _, tc := range cases {
