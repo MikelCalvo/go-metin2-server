@@ -994,7 +994,7 @@ func TestRuntimeUseItemRejectsAuthoredJobSexLevelAndTransferAntiFlagsWithoutMuta
 	}
 }
 
-func TestRuntimeUseItemRejectsConfirmWhenUseTemplateWithoutMutation(t *testing.T) {
+func TestRuntimeUseItemAcceptsConfirmWhenUseTemplateLikeOrdinaryConsumable(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:        0x01030102,
 		VID:       0x02040102,
@@ -1007,18 +1007,34 @@ func TestRuntimeUseItemRejectsConfirmWhenUseTemplateWithoutMutation(t *testing.T
 		},
 	}
 	runtime := NewRuntime(persisted, SessionLink{Login: "confirm-use-peer", CharacterIndex: 0})
-	before := runtime.LiveCharacter()
 	template := bootstrapConsumableTemplate(27001, 1, 1, 50, "confirm:27001:+50")
 	template.ConfirmWhenUse = true
 
-	if result, ok := runtime.UseItem(5, template); ok {
-		t.Fatalf("expected confirm_when_use item use to fail closed until confirmation flow is owned, got %+v", result)
+	result, ok := runtime.UseItem(5, template)
+	if !ok {
+		t.Fatal("expected confirm_when_use item use to follow the ordinary consumable success path after client-local confirm")
 	}
-	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
-		t.Fatalf("confirm_when_use item use mutated live character: got %#v want %#v", got, before)
+	if result.ItemRemoved {
+		t.Fatal("expected stacked confirm_when_use consumable to remain after one use")
 	}
-	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) || got.Points[1] != persisted.Points[1] {
-		t.Fatalf("confirm_when_use item use mutated persisted state: inventory=%#v quickslots=%#v points[1]=%d", got.Inventory, got.Quickslots, got.Points[1])
+	if result.Item.ID != 11 || result.Item.Vnum != 27001 || result.Item.Count != 2 || result.Item.Slot != 5 {
+		t.Fatalf("unexpected confirm_when_use updated inventory item: %+v", result.Item)
+	}
+	if result.PointType != 1 || result.PointAmount != 50 || result.PointValue != 750 || result.EffectMessage != "confirm:27001:+50" {
+		t.Fatalf("unexpected confirm_when_use use result: %+v", result)
+	}
+	got := runtime.LiveCharacter()
+	if got.Points[1] != 750 {
+		t.Fatalf("confirm_when_use item use live point: got %d want 750", got.Points[1])
+	}
+	if !reflect.DeepEqual(got.Inventory, []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 2, Slot: 5}}) {
+		t.Fatalf("confirm_when_use item use live inventory: %#v", got.Inventory)
+	}
+	if !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) {
+		t.Fatalf("confirm_when_use partial consume should keep item quickslot: got %#v want %#v", got.Quickslots, persisted.Quickslots)
+	}
+	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || got.Points[1] != persisted.Points[1] {
+		t.Fatalf("confirm_when_use item use should leave persisted snapshot unchanged until session persist: inventory=%#v points[1]=%d", got.Inventory, got.Points[1])
 	}
 }
 
@@ -1030,7 +1046,6 @@ func TestRuntimeUseItemRejectTextComesFromTemplateGuardWithoutMutation(t *testin
 		level   uint8
 		mutate  func(*itemcatalog.Template)
 	}{
-		{name: "confirm_when_use", level: 10, mutate: func(template *itemcatalog.Template) { template.ConfirmWhenUse = true }},
 		{name: "quest_use", level: 10, mutate: func(template *itemcatalog.Template) { template.QuestUse = true }},
 		{name: "quest_use_multiple", level: 10, mutate: func(template *itemcatalog.Template) { template.QuestUseMultiple = true }},
 		{name: "applicable", level: 10, mutate: func(template *itemcatalog.Template) { template.Applicable = true }},
@@ -1102,7 +1117,7 @@ func TestRuntimeUseItemRejectTextIgnoresHypotheticalPointOverflowForGuardedUse(t
 	}
 	runtime := NewRuntime(persisted, SessionLink{Login: "use-reject-overflow-peer", CharacterIndex: 0})
 	template := bootstrapConsumableTemplate(27014, 1, 1, 50, "confirm:27014:+50")
-	template.ConfirmWhenUse = true
+	template.QuestUse = true
 	template.UseRejectText = "You must confirm this item before using it."
 
 	message, ok := runtime.UseItemRejectText(5, template)
@@ -1110,7 +1125,7 @@ func TestRuntimeUseItemRejectTextIgnoresHypotheticalPointOverflowForGuardedUse(t
 		t.Fatalf("expected authored use rejection text despite hypothetical point overflow, got %q ok=%v", message, ok)
 	}
 	if result, ok := runtime.UseItem(5, template); ok {
-		t.Fatalf("expected confirm_when_use item use to stay fail-closed despite reject text, got %+v", result)
+		t.Fatalf("expected quest_use item use to stay fail-closed despite reject text, got %+v", result)
 	}
 	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, persisted.Inventory) {
 		t.Fatalf("overflow-gated use rejection mutated live inventory: got %#v want %#v", got, persisted.Inventory)

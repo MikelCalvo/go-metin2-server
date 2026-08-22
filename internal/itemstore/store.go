@@ -608,7 +608,7 @@ func templateHasEquipRejectGuard(template Template) bool {
 }
 
 func templateHasUseRejectGuard(template Template) bool {
-	return template.ConfirmWhenUse || template.QuestUse || template.QuestUseMultiple || template.Applicable ||
+	return template.QuestUse || template.QuestUseMultiple || template.Applicable ||
 		template.AntiStack || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell ||
 		template.AntiMale || template.AntiFemale || template.AntiWarrior || template.AntiAssassin || template.AntiSura || template.AntiShaman ||
 		template.AntiEmpireA || template.AntiEmpireB || template.AntiEmpireC || template.MinLevel != 0

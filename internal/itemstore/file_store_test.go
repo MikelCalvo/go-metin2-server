@@ -2240,13 +2240,13 @@ func TestFileStoreSaveThenLoadRoundTripPreservesUseRejectText(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)
 	want := Snapshot{Templates: []Template{{
-		Vnum:           27012,
-		Name:           "Confirm Use Potion",
-		Stackable:      true,
-		MaxCount:       200,
-		ConfirmWhenUse: true,
-		UseEffect:      &UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "confirm:27012:+50"},
-		UseRejectText:  "You must confirm this item before using it.",
+		Vnum:          27012,
+		Name:          "Quest Use Potion",
+		Stackable:     true,
+		MaxCount:      200,
+		QuestUse:      true,
+		UseEffect:     &UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "quest:27012:+50"},
+		UseRejectText: "You cannot use this quest item yet.",
 	}}}
 
 	if err := store.Save(want); err != nil {
@@ -2264,7 +2264,7 @@ func TestFileStoreSaveThenLoadRoundTripPreservesUseRejectText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read persisted snapshot with use reject message: %v", err)
 	}
-	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27012,\n      \"name\": \"Confirm Use Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"confirm_when_use\": true,\n      \"use_effect\": {\n        \"point_type\": 1,\n        \"point_index\": 1,\n        \"point_delta\": 50,\n        \"message\": \"confirm:27012:+50\"\n      },\n      \"use_reject_message\": \"You must confirm this item before using it.\"\n    }\n  ]\n}\n"
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27012,\n      \"name\": \"Quest Use Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"quest_use\": true,\n      \"use_effect\": {\n        \"point_type\": 1,\n        \"point_index\": 1,\n        \"point_delta\": 50,\n        \"message\": \"quest:27012:+50\"\n      },\n      \"use_reject_message\": \"You cannot use this quest item yet.\"\n    }\n  ]\n}\n"
 	if string(raw) != wantJSON {
 		t.Fatalf("unexpected deterministic snapshot with use reject message:\n got: %s\nwant: %s", string(raw), wantJSON)
 	}
@@ -2561,41 +2561,55 @@ func TestFileStoreRejectsInvalidUseRejectTextMetadata(t *testing.T) {
 		{
 			name: "nul message",
 			invalid: Template{
-				Vnum:           27012,
-				Name:           "Broken Use Message Potion",
-				Stackable:      true,
-				MaxCount:       200,
-				ConfirmWhenUse: true,
-				UseEffect:      &UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "confirm:27012:+50"},
-				UseRejectText:  "bad\x00message",
+				Vnum:          27012,
+				Name:          "Broken Use Message Potion",
+				Stackable:     true,
+				MaxCount:      200,
+				QuestUse:      true,
+				UseEffect:     &UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "quest:27012:+50"},
+				UseRejectText: "bad\x00message",
 			},
-			rawJSON:  `{"templates":[{"vnum":27012,"name":"Broken Use Message Potion","stackable":true,"max_count":200,"confirm_when_use":true,"use_effect":{"point_type":1,"point_index":1,"point_delta":50,"message":"confirm:27012:+50"},"use_reject_message":"bad\u0000message"}]}`,
+			rawJSON:  `{"templates":[{"vnum":27012,"name":"Broken Use Message Potion","stackable":true,"max_count":200,"quest_use":true,"use_effect":{"point_type":1,"point_index":1,"point_delta":50,"message":"quest:27012:+50"},"use_reject_message":"bad\u0000message"}]}`,
 			wantText: "NUL use reject message",
 		},
 		{
 			name: "without use effect",
 			invalid: Template{
-				Vnum:           27013,
-				Name:           "Message Without Effect Potion",
+				Vnum:          27013,
+				Name:          "Message Without Effect Potion",
+				Stackable:     true,
+				MaxCount:      200,
+				QuestUse:      true,
+				UseRejectText: "This item cannot be used yet.",
+			},
+			rawJSON:  `{"templates":[{"vnum":27013,"name":"Message Without Effect Potion","stackable":true,"max_count":200,"quest_use":true,"use_reject_message":"This item cannot be used yet."}]}`,
+			wantText: "use reject message without use effect",
+		},
+		{
+			name: "confirm_when_use is not a direct-use reject guard",
+			invalid: Template{
+				Vnum:           27014,
+				Name:           "Confirm Only Use Message Potion",
 				Stackable:      true,
 				MaxCount:       200,
 				ConfirmWhenUse: true,
-				UseRejectText:  "This item cannot be used yet.",
+				UseEffect:      &UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "confirm:27014:+50"},
+				UseRejectText:  "This item has no owned use rejection guard.",
 			},
-			rawJSON:  `{"templates":[{"vnum":27013,"name":"Message Without Effect Potion","stackable":true,"max_count":200,"confirm_when_use":true,"use_reject_message":"This item cannot be used yet."}]}`,
-			wantText: "use reject message without use effect",
+			rawJSON:  `{"templates":[{"vnum":27014,"name":"Confirm Only Use Message Potion","stackable":true,"max_count":200,"confirm_when_use":true,"use_effect":{"point_type":1,"point_index":1,"point_delta":50,"message":"confirm:27014:+50"},"use_reject_message":"This item has no owned use rejection guard."}]}`,
+			wantText: "use reject message without direct-use guard",
 		},
 		{
 			name: "without direct-use guard",
 			invalid: Template{
-				Vnum:          27014,
+				Vnum:          27015,
 				Name:          "Unguarded Use Message Potion",
 				Stackable:     true,
 				MaxCount:      200,
-				UseEffect:     &UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "consume:27014:+50"},
+				UseEffect:     &UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "consume:27015:+50"},
 				UseRejectText: "This item has no owned use rejection guard.",
 			},
-			rawJSON:  `{"templates":[{"vnum":27014,"name":"Unguarded Use Message Potion","stackable":true,"max_count":200,"use_effect":{"point_type":1,"point_index":1,"point_delta":50,"message":"consume:27014:+50"},"use_reject_message":"This item has no owned use rejection guard."}]}`,
+			rawJSON:  `{"templates":[{"vnum":27015,"name":"Unguarded Use Message Potion","stackable":true,"max_count":200,"use_effect":{"point_type":1,"point_index":1,"point_delta":50,"message":"consume:27015:+50"},"use_reject_message":"This item has no owned use rejection guard."}]}`,
 			wantText: "use reject message without direct-use guard",
 		},
 	}

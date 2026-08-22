@@ -11,6 +11,7 @@ Reclassify template-authored `confirm_when_use` from a server-side fail-closed g
 3. Existing transfer / selected-character / `use_reject_message` / busy merchant-exchange teardown guards stay unchanged and still apply before mutation.
 4. `quest_use`, `quest_use_multiple`, and `applicable` remain fail-closed for direct consumable use until those seams are owned.
 5. Spec/QA stop claiming that `confirm_when_use` itself rejects direct use; they name it as client-local confirm + ordinary server use.
+6. Item-template store validation no longer treats `confirm_when_use` alone as an owned `use_reject_message` guard; authored reject text still requires one real direct-use rejection guard.
 
 ## What this is not yet
 
@@ -18,12 +19,13 @@ Reclassify template-authored `confirm_when_use` from a server-side fail-closed g
 - quest-use / applicable acceptance
 - peer-facing use notifications beyond already-owned exchange teardown
 
-## TDD and validation (implementation follow-up)
+## TDD and validation
 
 Focused coverage:
 
-- `go test ./internal/player -run 'UseItem.*ConfirmWhenUse|ConfirmWhenUse' -count=1`
-- `go test ./internal/minimal -run 'ItemUse.*ConfirmWhenUse|ConfirmWhenUse' -count=1` (if a session proof is added)
+- `go test ./internal/player -run 'UseItem.*ConfirmWhenUse|ConfirmWhenUse|UseItemRejectText' -count=1`
+- `go test ./internal/itemstore -run 'UseRejectText|ConfirmWhenUse' -count=1`
+- `go test ./internal/minimal -run 'ItemUse.*ConfirmWhenUse|ItemUseRejectsQuestUseWithTemplateText|ItemUseRejectTextClosesActive|ItemUseRejectTextSurvivesHypothetical|SlashUseItemRejectsQuestUse' -count=1`
 - `gofmt` on touched Go files
 - `git diff --check`
 
@@ -34,4 +36,4 @@ Focused coverage:
 
 ## Status
 
-Docs/spec contract freeze. RED/GREEN implementation follows in the next items-lane step.
+Shipped: `confirm_when_use` follows the ordinary consumable `ITEM_USE` / `/use_item` success path; store/`use_reject_message` validation no longer treats it as a reject guard; `quest_use` / `applicable` stay fail-closed.
