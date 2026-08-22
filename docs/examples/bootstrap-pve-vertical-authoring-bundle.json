@@ -73,6 +73,15 @@
       "interaction_ref": "npc:qa_warehouse"
     }
   ],
+  "combat_profiles": [
+    {
+      "profile": "qa_pve_vertical_practice_mob",
+      "max_hp": 20,
+      "attack_value": 9,
+      "defense_value": 4,
+      "respawn_delay_ms": 2000
+    }
+  ],
   "regen_spawns": [
     {
       "ref": "practice.qa_pve_vertical_mob",
@@ -82,6 +91,7 @@
       "y": 964200,
       "race_num": 20350,
       "count": 1,
+      "combat_profile": "qa_pve_vertical_practice_mob",
       "reward_drop_table_ref": "loot.qa_pve_vertical_reward"
     }
   ],

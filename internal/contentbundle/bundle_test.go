@@ -4672,6 +4672,19 @@ func TestCanonicalizePveVerticalAuthoringExampleExpandsQuestLoop(t *testing.T) {
 	if len(canonical.RegenSpawns) != 0 || len(canonical.DropTables) != 0 {
 		t.Fatalf("expected PvE vertical authoring example to strip regen_spawns and drop_tables, got regen=%+v drop_tables=%+v", canonical.RegenSpawns, canonical.DropTables)
 	}
+	wantProfile := worldruntime.StaticActorCombatProfileSnapshot{
+		Profile:               "qa_pve_vertical_practice_mob",
+		MaxHP:                 20,
+		DamagePerNormalAttack: 5,
+		AttackValue:           9,
+		DefenseValue:          4,
+		Level:                 worldruntime.TrainingDummyBootstrapLevel,
+		Rank:                  0,
+		RespawnDelayMs:        2000,
+	}
+	if len(canonical.CombatProfiles) != 1 || !reflect.DeepEqual(canonical.CombatProfiles[0], wantProfile) {
+		t.Fatalf("unexpected canonical PvE vertical combat profile:\n got: %#v\nwant: %#v", canonical.CombatProfiles, wantProfile)
+	}
 	wantSpawn := []SpawnGroup{{
 		Ref:              "practice.qa_pve_vertical_mob",
 		Name:             "QAPveVerticalMob",
@@ -4679,7 +4692,7 @@ func TestCanonicalizePveVerticalAuthoringExampleExpandsQuestLoop(t *testing.T) {
 		X:                469550,
 		Y:                964200,
 		RaceNum:          20350,
-		CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+		CombatProfile:    "qa_pve_vertical_practice_mob",
 		RewardExperience: 75,
 		RewardGold:       60,
 		RewardDropVnums:  []uint32{27001},

@@ -24,7 +24,6 @@ import (
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
-	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
 func loadBootstrapPveVerticalAuthoringBundle(t *testing.T) contentbundle.Bundle {
@@ -79,6 +78,9 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if len(authored.SpawnGroups) != 0 {
 		t.Fatalf("expected authored PvE vertical bundle to expand from regen/drop tables rather than direct spawn_groups, got %+v", authored.SpawnGroups)
 	}
+	const pveVerticalMobMaxHP = uint8(20)
+	const pveVerticalMobHitsToKill = 4 // max_hp 20 / formula damage 5
+	const pveVerticalMobRespawnDelay = 2 * time.Second
 	imported, err := runtime.ImportContentBundle(authored)
 	if err != nil {
 		t.Fatalf("import PvE vertical authoring bundle: %v", err)
@@ -88,6 +90,12 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	}
 	if len(imported.SpawnGroups) != 1 || imported.SpawnGroups[0].Ref != "practice.qa_pve_vertical_mob" {
 		t.Fatalf("expected imported spawn group practice.qa_pve_vertical_mob, got %+v", imported.SpawnGroups)
+	}
+	if imported.SpawnGroups[0].CombatProfile != "qa_pve_vertical_practice_mob" {
+		t.Fatalf("expected imported PvE vertical mob to use formula combat profile, got %+v", imported.SpawnGroups[0])
+	}
+	if len(imported.CombatProfiles) != 1 || imported.CombatProfiles[0].Profile != "qa_pve_vertical_practice_mob" || imported.CombatProfiles[0].MaxHP != pveVerticalMobMaxHP || imported.CombatProfiles[0].DamagePerNormalAttack != 5 {
+		t.Fatalf("expected imported portable formula combat profile max_hp=20 damage=5, got %+v", imported.CombatProfiles)
 	}
 
 	var guideVID, hunterVID, merchantVID, warehouseVID, mobVID uint32
@@ -140,7 +148,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("expected pre-guide target selection to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 	var preGuideKillOut [][]byte
-	for hit := 1; hit <= int(worldruntime.PracticeMobBootstrapMaxHP); hit++ {
+	for hit := 1; hit <= pveVerticalMobHitsToKill; hit++ {
 		if hit > 1 {
 			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
 		}
@@ -162,7 +170,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("unexpected quest-state after pre-guide kill:\n got: %#v", loaded)
 	}
 
-	currentTime = currentTime.Add(worldruntime.PracticeMobBootstrapRespawnDelay)
+	currentTime = currentTime.Add(pveVerticalMobRespawnDelay)
 	_ = flushServerFrames(t, flow)
 
 	currentTime = currentTime.Add(staticActorInteractionCooldown)
@@ -254,7 +262,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("expected post-guide target selection to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 	var postGuideKillOut [][]byte
-	for hit := 1; hit <= int(worldruntime.PracticeMobBootstrapMaxHP); hit++ {
+	for hit := 1; hit <= pveVerticalMobHitsToKill; hit++ {
 		if hit > 1 {
 			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
 		}

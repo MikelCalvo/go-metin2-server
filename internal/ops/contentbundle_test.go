@@ -783,6 +783,19 @@ func TestLocalContentBundleValidateEndpointExpandsPveVerticalAuthoringExample(t 
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode PvE vertical validation response: %v", err)
 	}
+	wantProfile := worldruntime.StaticActorCombatProfileSnapshot{
+		Profile:               "qa_pve_vertical_practice_mob",
+		MaxHP:                 20,
+		DamagePerNormalAttack: 5,
+		AttackValue:           9,
+		DefenseValue:          4,
+		Level:                 worldruntime.TrainingDummyBootstrapLevel,
+		Rank:                  0,
+		RespawnDelayMs:        2000,
+	}
+	if len(got.CombatProfiles) != 1 || !reflect.DeepEqual(got.CombatProfiles[0], wantProfile) {
+		t.Fatalf("expected validation response to keep portable PvE vertical formula combat profile, got %+v", got.CombatProfiles)
+	}
 	wantSpawn := contentbundle.SpawnGroup{
 		Ref:              "practice.qa_pve_vertical_mob",
 		Name:             "QAPveVerticalMob",
@@ -790,7 +803,7 @@ func TestLocalContentBundleValidateEndpointExpandsPveVerticalAuthoringExample(t 
 		X:                469550,
 		Y:                964200,
 		RaceNum:          20350,
-		CombatProfile:    "practice_mob",
+		CombatProfile:    "qa_pve_vertical_practice_mob",
 		RewardExperience: 75,
 		RewardGold:       60,
 		RewardDropVnums:  []uint32{27001},
