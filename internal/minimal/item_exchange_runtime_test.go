@@ -2030,11 +2030,26 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsStaleAcceptedPartnerGoldWitho
 	if err != nil {
 		t.Fatalf("unexpected partner-gold peer accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 0 {
-		t.Fatalf("expected second accept to reject stale accepted partner gold with no frames, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 1 {
+		t.Fatalf("expected second accept stale partner-gold reject to emit one CheckOther info chat, got %d", len(peerAcceptOut))
 	}
-	if queuedAccept := flushServerFrames(t, ownerFlow); len(queuedAccept) != 0 {
-		t.Fatalf("expected stale accepted partner-gold rejection to queue no owner frames, got %d", len(queuedAccept))
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
+	if err != nil {
+		t.Fatalf("decode partner-gold peer CheckOther info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeFinalizeCheckOtherInfoMessage {
+		t.Fatalf("unexpected partner-gold peer CheckOther info chat: %+v", infoChat)
+	}
+	queuedAccept := flushServerFrames(t, ownerFlow)
+	if len(queuedAccept) != 1 {
+		t.Fatalf("expected stale accepted partner-gold rejection to queue one owner CheckSelf info chat, got %d", len(queuedAccept))
+	}
+	queuedInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queuedAccept[0]))
+	if err != nil {
+		t.Fatalf("decode partner-gold owner CheckSelf info chat: %v", err)
+	}
+	if queuedInfo.Type != chatproto.ChatTypeInfo || queuedInfo.VID != 0 || queuedInfo.Message != exchangeFinalizeCheckSelfInfoMessage {
+		t.Fatalf("unexpected partner-gold owner CheckSelf info chat: %+v", queuedInfo)
 	}
 
 	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
@@ -2157,11 +2172,26 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsStaleAcceptedPartnerItemWitho
 	if err != nil {
 		t.Fatalf("unexpected partner-item peer accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 0 {
-		t.Fatalf("expected second accept to reject stale accepted partner item with no frames, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 1 {
+		t.Fatalf("expected second accept stale partner-item reject to emit one CheckOther info chat, got %d", len(peerAcceptOut))
 	}
-	if queuedAccept := flushServerFrames(t, ownerFlow); len(queuedAccept) != 0 {
-		t.Fatalf("expected stale accepted partner-item rejection to queue no owner frames, got %d", len(queuedAccept))
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
+	if err != nil {
+		t.Fatalf("decode partner-item peer CheckOther info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeFinalizeCheckOtherInfoMessage {
+		t.Fatalf("unexpected partner-item peer CheckOther info chat: %+v", infoChat)
+	}
+	queuedAccept := flushServerFrames(t, ownerFlow)
+	if len(queuedAccept) != 1 {
+		t.Fatalf("expected stale accepted partner-item rejection to queue one owner CheckSelf info chat, got %d", len(queuedAccept))
+	}
+	queuedInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queuedAccept[0]))
+	if err != nil {
+		t.Fatalf("decode partner-item owner CheckSelf info chat: %v", err)
+	}
+	if queuedInfo.Type != chatproto.ChatTypeInfo || queuedInfo.VID != 0 || queuedInfo.Message != exchangeFinalizeCheckSelfInfoMessage {
+		t.Fatalf("unexpected partner-item owner CheckSelf info chat: %+v", queuedInfo)
 	}
 
 	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
@@ -2262,11 +2292,26 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverInventoryCapacityBefo
 	if err != nil {
 		t.Fatalf("unexpected capacity peer accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 0 {
-		t.Fatalf("expected second accept to reject receiver inventory-capacity precondition with no frames, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 1 {
+		t.Fatalf("expected second accept inventory-capacity reject to emit one self Space info chat, got %d", len(peerAcceptOut))
 	}
-	if queuedAccept := flushServerFrames(t, ownerFlow); len(queuedAccept) != 0 {
-		t.Fatalf("expected receiver inventory-capacity precondition to queue no owner frames, got %d", len(queuedAccept))
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
+	if err != nil {
+		t.Fatalf("decode capacity peer Space info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeFinalizeSpaceSelfInfoMessage {
+		t.Fatalf("unexpected capacity peer Space info chat: %+v", infoChat)
+	}
+	queuedAccept := flushServerFrames(t, ownerFlow)
+	if len(queuedAccept) != 1 {
+		t.Fatalf("expected receiver inventory-capacity reject to queue one owner SpaceOther info chat, got %d", len(queuedAccept))
+	}
+	queuedInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queuedAccept[0]))
+	if err != nil {
+		t.Fatalf("decode capacity owner SpaceOther info chat: %v", err)
+	}
+	if queuedInfo.Type != chatproto.ChatTypeInfo || queuedInfo.VID != 0 || queuedInfo.Message != exchangeFinalizeSpaceOtherInfoMessage {
+		t.Fatalf("unexpected capacity owner SpaceOther info chat: %+v", queuedInfo)
 	}
 
 	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))

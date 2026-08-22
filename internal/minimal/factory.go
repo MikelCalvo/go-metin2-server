@@ -93,6 +93,10 @@ const questFlagRewardGoldOverflowInfoMessage = "You cannot carry any more gold."
 const questFlagRewardExperienceOverflowInfoMessage = "You cannot gain any more experience."
 const exchangePartnerMerchantBusyInfoMessage = "That player cannot trade right now."
 const exchangeRequesterMerchantBusyInfoMessage = "You cannot trade while another trade window is open."
+const exchangeFinalizeCheckSelfInfoMessage = "Not enough Yang or the item is not in place."
+const exchangeFinalizeCheckOtherInfoMessage = "The other player does not have enough Yang or their item is not in place."
+const exchangeFinalizeSpaceSelfInfoMessage = "There isn't enough space in your inventory."
+const exchangeFinalizeSpaceOtherInfoMessage = "The other person has no space left in their inventory."
 const bootstrapSafeboxOpenMinSize uint8 = 1
 const bootstrapSafeboxOpenMaxSize uint8 = 3
 const bootstrapSafeboxCellsPerPage uint8 = 5
@@ -6644,8 +6648,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						}
 						selfFrames, applied := applyExchangeFinalize(runtime, accounts, sharedWorld, selectedPlayer, &sessionTicket, finalizePlan)
 						if !applied {
-							// Commit-time busy-window drift returns the same self-only
-							// START/ACCEPT busy info-chat while leaving the shell open.
+							// Commit-time busy-window or Check/Space drift returns
+							// reject info-chat while leaving the shell open.
 							if len(selfFrames) > 0 {
 								return gameflow.ItemExchangeResult{Accepted: true, Frames: selfFrames}
 							}

@@ -10,7 +10,7 @@ Make active-shell `EXCHANGE ACCEPT` busy-window rejects client-visible by emitti
 2. Partner-side open merchant / safebox / refine presentation rejects first-side or second-side `ACCEPT` with one self-only `CHAT_TYPE_INFO` (`That player cannot trade right now.`), with the same no-accept-marker / no-mutation / still-cancellable contract.
 3. When both sides are busy, the requester busy text wins, matching the local-first `START` busy ordering.
 4. Shared-world `AcceptExchange` unit coverage for open refine mirrors the same requester/partner chat frames.
-5. Commit-time busy drift after a second-accept finalize plan is built now emits the same self-only START/ACCEPT busy info-chat; non-busy commit-time revalidation failures stay silent/no-frame.
+5. Commit-time busy drift after a second-accept finalize plan is built now emits the same self-only START/ACCEPT busy info-chat; Check/Space non-busy commit/second-accept rejects are owned by `2026-08-22-exchange-finalize-check-space-reject-chat.md`, while other non-busy receiver precondition failures stay silent/no-frame.
 
 ## What this is not yet
 

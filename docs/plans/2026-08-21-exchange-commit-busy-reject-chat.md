@@ -9,7 +9,7 @@ Make commit-time busy-window drift after a mutual-accept finalize plan is built 
 1. When `CommitExchangeFinalize` finds the commit requester (`plan.OriginID`, the second accepter) has an open merchant / safebox / refine presentation, it returns one self-only `CHAT_TYPE_INFO` (`You cannot trade while another trade window is open.`), applies no live shared-world trade mutation, emits no finalize/accept/`END` frames, and leaves the shell cancellable.
 2. When only the paired partner has one of those busy presentations open, it returns one self-only `CHAT_TYPE_INFO` (`That player cannot trade right now.`) with the same no-mutation / still-cancellable contract.
 3. When both sides are busy, the commit-requester busy text wins, matching the local-first `START` / `ACCEPT` busy ordering.
-4. Non-busy commit-time revalidation failures (displayed item/gold drift, receiver finalization precondition drift) stay silent/no-frame.
+4. ~~Non-busy commit-time revalidation failures (displayed item/gold drift, receiver finalization precondition drift) stay silent/no-frame.~~ Superseded for Check/Space by `2026-08-22-exchange-finalize-check-space-reject-chat.md`; other receiver precondition drift stays silent.
 5. Spec/QA name commit-time busy reject chat beside the already-owned ACCEPT busy reject chat; the factory rolls back any already-written account/live snapshots from that finalize attempt before returning the busy chat frames.
 
 ## What this is not yet

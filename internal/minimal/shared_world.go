@@ -775,6 +775,10 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 		return [][]byte{encodeExchangePartnerMerchantBusyInfoFrame()}, nil, true
 	}
 	if !exchangeDisplayedItemsStillLive(r.exchangeItems[originID], live, r.itemTemplates) {
+		// Second-accept Check failure is dual-sided; first-side accept stays silent.
+		if r.exchangeAccepted[partnerID] {
+			return r.exchangeEmitFinalizeCheckRejectLocked(originID, partnerID)
+		}
 		return nil, nil, false
 	}
 	if displayedGold := r.exchangeGold[originID]; displayedGold != 0 && uint64(displayedGold) > availableGold {
@@ -782,13 +786,21 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 	}
 	if r.exchangeAccepted[partnerID] {
 		if !exchangeDisplayedItemsStillLive(r.exchangeItems[partnerID], partner, r.itemTemplates) {
-			return nil, nil, false
+			frames, ok := r.exchangeEmitFinalizeCheckRejectForCallerLocked(originID, partnerID, originID)
+			if !ok {
+				return nil, nil, false
+			}
+			return frames, nil, true
 		}
 		if displayedGold := r.exchangeGold[partnerID]; displayedGold != 0 && uint64(displayedGold) > partner.Gold {
-			return nil, nil, false
+			frames, ok := r.exchangeEmitFinalizeCheckRejectForCallerLocked(originID, partnerID, originID)
+			if !ok {
+				return nil, nil, false
+			}
+			return frames, nil, true
 		}
-		if !r.exchangeFinalizationPreconditionsLocked(originID, partnerID, origin, partner) {
-			return nil, nil, false
+		if frames, rejected := r.exchangeFinalizationRejectLocked(originID, partnerID, origin, partner); rejected {
+			return frames, nil, len(frames) > 0
 		}
 		return nil, &exchangeFinalizePlan{
 			OriginID:     originID,
@@ -815,6 +827,8 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 // partner-notify END (caller supplies END frames), and enqueues peer finalize frames.
 // On commit-time busy-window drift it returns the same self-only START/ACCEPT busy
 // info-chat frames for the commit requester (plan.OriginID) and leaves the shell open.
+// On commit-time Check/Space drift it returns dual-sided info-chat (self return +
+// peer enqueue) and leaves the shell open.
 func (r *sharedWorldRegistry) CommitExchangeFinalize(plan *exchangeFinalizePlan, updatedOrigin loginticket.Character, updatedPartner loginticket.Character, peerFrames [][]byte) ([][]byte, bool) {
 	if r == nil || plan == nil || plan.OriginID == 0 || plan.PartnerID == 0 {
 		return nil, false
@@ -842,8 +856,8 @@ func (r *sharedWorldRegistry) CommitExchangeFinalize(plan *exchangeFinalizePlan,
 	if frames, busy := r.exchangeFinalizeCommitBusyRejectLocked(plan); busy {
 		return frames, false
 	}
-	if !r.exchangeFinalizeCommitStillValidLocked(plan) {
-		return nil, false
+	if frames, rejected := r.exchangeFinalizeCommitCheckSpaceRejectLocked(plan); rejected {
+		return frames, false
 	}
 	if !r.enqueueToEntityLocked(plan.PartnerID, peerFrames) {
 		return nil, false
@@ -873,37 +887,133 @@ func (r *sharedWorldRegistry) exchangeFinalizeCommitBusyRejectLocked(plan *excha
 	return nil, false
 }
 
-func (r *sharedWorldRegistry) exchangeFinalizeCommitStillValidLocked(plan *exchangeFinalizePlan) bool {
+// exchangeFinalizeCommitCheckSpaceRejectLocked revalidates displayed item/gold and
+// receiver preconditions. Check/Space failures emit dual-sided info-chat; other
+// receiver precondition failures stay silent/no-frame. Returns rejected=true when
+// commit must fail closed (with or without frames).
+func (r *sharedWorldRegistry) exchangeFinalizeCommitCheckSpaceRejectLocked(plan *exchangeFinalizePlan) ([][]byte, bool) {
 	if r == nil || plan == nil || plan.OriginID == 0 || plan.PartnerID == 0 {
-		return false
+		return nil, true
 	}
 	origin, ok := r.playerCharacter(plan.OriginID)
 	if !ok || characterAtBootstrapHPFloor(origin) {
-		return false
+		return nil, true
 	}
 	partner, ok := r.playerCharacter(plan.PartnerID)
 	if !ok || characterAtBootstrapHPFloor(partner) {
-		return false
+		return nil, true
 	}
 	if !exchangeDisplayedItemsStillLive(plan.OriginItems, origin, r.itemTemplates) {
-		return false
+		return r.exchangeEmitFinalizeCheckRejectForCallerLocked(plan.OriginID, plan.OriginID, plan.PartnerID)
 	}
 	if !exchangeDisplayedItemsStillLive(plan.PartnerItems, partner, r.itemTemplates) {
-		return false
+		return r.exchangeEmitFinalizeCheckRejectForCallerLocked(plan.OriginID, plan.PartnerID, plan.OriginID)
 	}
 	if plan.OriginGold != 0 && uint64(plan.OriginGold) > origin.Gold {
-		return false
+		return r.exchangeEmitFinalizeCheckRejectForCallerLocked(plan.OriginID, plan.OriginID, plan.PartnerID)
 	}
 	if plan.PartnerGold != 0 && uint64(plan.PartnerGold) > partner.Gold {
-		return false
+		return r.exchangeEmitFinalizeCheckRejectForCallerLocked(plan.OriginID, plan.PartnerID, plan.OriginID)
 	}
-	if !r.exchangeRecipientCanAcceptLocked(origin, plan.PartnerItems, plan.PartnerGold) {
-		return false
+	// Oracle CheckSpace order: partner can take origin items, then origin can take
+	// partner items. Space gets dual-sided chat; other recipient rejects stay silent.
+	switch r.exchangeRecipientRejectReasonLocked(partner, plan.OriginItems, plan.OriginGold) {
+	case exchangeRecipientRejectSpace:
+		return r.exchangeEmitFinalizeSpaceRejectForCallerLocked(plan.OriginID, plan.PartnerID, plan.OriginID)
+	case exchangeRecipientRejectOther:
+		return nil, true
 	}
-	if !r.exchangeRecipientCanAcceptLocked(partner, plan.OriginItems, plan.OriginGold) {
-		return false
+	switch r.exchangeRecipientRejectReasonLocked(origin, plan.PartnerItems, plan.PartnerGold) {
+	case exchangeRecipientRejectSpace:
+		return r.exchangeEmitFinalizeSpaceRejectForCallerLocked(plan.OriginID, plan.OriginID, plan.PartnerID)
+	case exchangeRecipientRejectOther:
+		return nil, true
 	}
-	return true
+	return nil, false
+}
+
+func (r *sharedWorldRegistry) exchangeFinalizationPreconditionsLocked(originID uint64, partnerID uint64, origin loginticket.Character, partner loginticket.Character) bool {
+	frames, rejected := r.exchangeFinalizationRejectLocked(originID, partnerID, origin, partner)
+	_ = frames
+	return !rejected
+}
+
+// exchangeFinalizationRejectLocked returns dual-sided Space chat when a receiver
+// lacks inventory capacity for incoming displayed items. Other recipient
+// precondition failures stay silent (frames=nil, rejected=true).
+// Returned frames are for the AcceptExchange caller (originID / second accepter).
+func (r *sharedWorldRegistry) exchangeFinalizationRejectLocked(originID uint64, partnerID uint64, origin loginticket.Character, partner loginticket.Character) ([][]byte, bool) {
+	if r == nil || originID == 0 || partnerID == 0 {
+		return nil, true
+	}
+	switch r.exchangeRecipientRejectReasonLocked(partner, r.exchangeItems[originID], r.exchangeGold[originID]) {
+	case exchangeRecipientRejectSpace:
+		return r.exchangeEmitFinalizeSpaceRejectForCallerLocked(originID, partnerID, originID)
+	case exchangeRecipientRejectOther:
+		return nil, true
+	}
+	switch r.exchangeRecipientRejectReasonLocked(origin, r.exchangeItems[partnerID], r.exchangeGold[partnerID]) {
+	case exchangeRecipientRejectSpace:
+		return r.exchangeEmitFinalizeSpaceRejectForCallerLocked(originID, originID, partnerID)
+	case exchangeRecipientRejectOther:
+		return nil, true
+	}
+	return nil, false
+}
+
+// exchangeEmitFinalizeCheckRejectLocked is used by AcceptExchange second-accept
+// Check failures. failedID receives CheckSelf; otherID receives CheckOther via
+// queued frames. Returned frames go to the AcceptExchange caller (failedID when
+// the caller's own Check failed, or the peer when the already-accepted partner
+// Check failed — callers pass accordingly and return the self slice).
+func (r *sharedWorldRegistry) exchangeEmitFinalizeCheckRejectLocked(failedID uint64, otherID uint64) ([][]byte, *exchangeFinalizePlan, bool) {
+	frames, ok := r.exchangeEmitFinalizeCheckRejectForCallerLocked(failedID, failedID, otherID)
+	if !ok {
+		return nil, nil, false
+	}
+	return frames, nil, true
+}
+
+// exchangeEmitFinalizeCheckRejectForCallerLocked delivers CheckSelf to failedID
+// and CheckOther to otherID. The slice returned is always the caller's self frame.
+func (r *sharedWorldRegistry) exchangeEmitFinalizeCheckRejectForCallerLocked(callerID uint64, failedID uint64, otherID uint64) ([][]byte, bool) {
+	selfFrame := encodeExchangeFinalizeCheckSelfInfoFrame()
+	otherFrame := encodeExchangeFinalizeCheckOtherInfoFrame()
+	switch callerID {
+	case failedID:
+		if !r.enqueueToEntityLocked(otherID, [][]byte{otherFrame}) {
+			return nil, false
+		}
+		return [][]byte{selfFrame}, true
+	case otherID:
+		if !r.enqueueToEntityLocked(failedID, [][]byte{selfFrame}) {
+			return nil, false
+		}
+		return [][]byte{otherFrame}, true
+	default:
+		return nil, false
+	}
+}
+
+// exchangeEmitFinalizeSpaceRejectForCallerLocked delivers SpaceSelf to the full
+// receiver and SpaceOther to the paired side. Returned frames are for callerID.
+func (r *sharedWorldRegistry) exchangeEmitFinalizeSpaceRejectForCallerLocked(callerID uint64, fullReceiverID uint64, otherID uint64) ([][]byte, bool) {
+	selfFrame := encodeExchangeFinalizeSpaceSelfInfoFrame()
+	otherFrame := encodeExchangeFinalizeSpaceOtherInfoFrame()
+	switch callerID {
+	case fullReceiverID:
+		if !r.enqueueToEntityLocked(otherID, [][]byte{otherFrame}) {
+			return nil, false
+		}
+		return [][]byte{selfFrame}, true
+	case otherID:
+		if !r.enqueueToEntityLocked(fullReceiverID, [][]byte{selfFrame}) {
+			return nil, false
+		}
+		return [][]byte{otherFrame}, true
+	default:
+		return nil, false
+	}
 }
 
 func cloneExchangeCharacter(character loginticket.Character) loginticket.Character {
@@ -927,36 +1037,39 @@ func cloneExchangeDisplayedItems(displayed map[uint8]exchangeDisplayedItem) map[
 
 const exchangeGoldPointChangeCarrierMax = uint64(1<<31 - 1)
 
-func (r *sharedWorldRegistry) exchangeFinalizationPreconditionsLocked(originID uint64, partnerID uint64, origin loginticket.Character, partner loginticket.Character) bool {
-	if r == nil || originID == 0 || partnerID == 0 {
-		return false
-	}
-	if !r.exchangeRecipientCanAcceptLocked(origin, r.exchangeItems[partnerID], r.exchangeGold[partnerID]) {
-		return false
-	}
-	if !r.exchangeRecipientCanAcceptLocked(partner, r.exchangeItems[originID], r.exchangeGold[originID]) {
-		return false
-	}
-	return true
-}
+type exchangeRecipientRejectReason int
+
+const (
+	exchangeRecipientRejectNone exchangeRecipientRejectReason = iota
+	exchangeRecipientRejectSpace
+	exchangeRecipientRejectOther
+)
 
 func (r *sharedWorldRegistry) exchangeRecipientCanAcceptLocked(recipient loginticket.Character, incoming map[uint8]exchangeDisplayedItem, incomingGold uint32) bool {
+	return r.exchangeRecipientRejectReasonLocked(recipient, incoming, incomingGold) == exchangeRecipientRejectNone
+}
+
+// exchangeRecipientRejectReasonLocked classifies why a receiver cannot accept
+// incoming displayed items/gold. Space is inventory placement/capacity failure
+// after gold/id/template gates pass; Other covers gold overflow, id collision,
+// selected-character/transfer guards, and invalid snapshots.
+func (r *sharedWorldRegistry) exchangeRecipientRejectReasonLocked(recipient loginticket.Character, incoming map[uint8]exchangeDisplayedItem, incomingGold uint32) exchangeRecipientRejectReason {
 	if r == nil || recipient.ID == 0 || characterAtBootstrapHPFloor(recipient) {
-		return false
+		return exchangeRecipientRejectOther
 	}
 	if incomingGold != 0 {
 		if uint64(incomingGold) > exchangeGoldPointChangeCarrierMax || recipient.Gold > exchangeGoldPointChangeCarrierMax || recipient.Gold > exchangeGoldPointChangeCarrierMax-uint64(incomingGold) {
-			return false
+			return exchangeRecipientRejectOther
 		}
 	}
 	if len(incoming) == 0 {
-		return true
+		return exchangeRecipientRejectNone
 	}
 	if exchangeInventorySnapshotInvalidForDisplayedItems(recipient.Inventory) {
-		return false
+		return exchangeRecipientRejectOther
 	}
 	if exchangeEquipmentSnapshotInvalidForIncomingItems(recipient.Equipment) {
-		return false
+		return exchangeRecipientRejectOther
 	}
 
 	working := append([]inventory.ItemInstance(nil), recipient.Inventory...)
@@ -964,24 +1077,24 @@ func (r *sharedWorldRegistry) exchangeRecipientCanAcceptLocked(recipient loginti
 	for _, displaySlot := range sortedExchangeDisplaySlots(incoming) {
 		display := incoming[displaySlot]
 		if display.ItemID == 0 || display.Vnum == 0 || display.Count == 0 || display.Slot >= inventory.CarriedInventorySlotCount {
-			return false
+			return exchangeRecipientRejectOther
 		}
 		if _, duplicate := seenIncomingIDs[display.ItemID]; duplicate {
-			return false
+			return exchangeRecipientRejectOther
 		}
 		seenIncomingIDs[display.ItemID] = struct{}{}
 		if exchangeInventoryHasItemID(working, display.ItemID) || exchangeEquipmentHasItemID(recipient.Equipment, display.ItemID) {
-			return false
+			return exchangeRecipientRejectOther
 		}
 		template, ok := r.itemTemplates[display.Vnum]
 		if !ok || !itemcatalog.ValidTemplate(template) || template.Vnum != display.Vnum || template.AntiStack || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || !templateUsableByCharacter(recipient, template) || display.Count > template.MaxCount {
-			return false
+			return exchangeRecipientRejectOther
 		}
-		if !exchangePlaceIncomingDisplayedItem(&working, display, template) {
-			return false
+		if reason := exchangePlaceIncomingDisplayedItemReason(&working, display, template); reason != exchangeRecipientRejectNone {
+			return reason
 		}
 	}
-	return true
+	return exchangeRecipientRejectNone
 }
 
 func sortedExchangeDisplaySlots(displayed map[uint8]exchangeDisplayedItem) []uint8 {
@@ -997,15 +1110,24 @@ func sortedExchangeDisplaySlots(displayed map[uint8]exchangeDisplayedItem) []uin
 }
 
 func exchangePlaceIncomingDisplayedItem(items *[]inventory.ItemInstance, display exchangeDisplayedItem, template itemcatalog.Template) bool {
+	return exchangePlaceIncomingDisplayedItemReason(items, display, template) == exchangeRecipientRejectNone
+}
+
+// exchangePlaceIncomingDisplayedItemReason places one incoming displayed item into
+// the working inventory. Only a missing free carried cell after merge attempts is
+// classified as Space; over-template-max stacks, locked-only merge dead-ends that
+// still fail for non-capacity reasons, and validation errors stay Other so they
+// remain silent/no-frame beside the owned Space chat.
+func exchangePlaceIncomingDisplayedItemReason(items *[]inventory.ItemInstance, display exchangeDisplayedItem, template itemcatalog.Template) exchangeRecipientRejectReason {
 	if items == nil || display.Count == 0 || display.Count > template.MaxCount {
-		return false
+		return exchangeRecipientRejectOther
 	}
 	remaining := display.Count
 	if template.Stackable {
 		for idx := range *items {
 			item := (*items)[idx]
 			if item.Vnum == display.Vnum && item.Count > template.MaxCount {
-				return false
+				return exchangeRecipientRejectOther
 			}
 			if item.Equipped || item.Locked || item.Vnum != display.Vnum || item.Count >= template.MaxCount {
 				continue
@@ -1016,28 +1138,33 @@ func exchangePlaceIncomingDisplayedItem(items *[]inventory.ItemInstance, display
 			}
 			item.Count += room
 			if err := item.Validate(); err != nil {
-				return false
+				return exchangeRecipientRejectOther
 			}
 			(*items)[idx] = item
 			remaining -= room
 			if remaining == 0 {
-				return true
+				return exchangeRecipientRejectNone
 			}
 		}
 	}
 	if remaining == 0 {
-		return true
+		return exchangeRecipientRejectNone
 	}
 	if !template.Stackable && remaining != 1 {
-		return false
+		return exchangeRecipientRejectOther
 	}
 	slot, ok := exchangeNextFreeInventorySlot(*items)
 	if !ok {
-		return false
+		// Locked compatible stacks are skipped for merge; when that leaves no free
+		// cell, keep the older silent/no-frame reject instead of Space chat.
+		if template.Stackable && exchangeHasLockedCompatibleStack(*items, display.Vnum) {
+			return exchangeRecipientRejectOther
+		}
+		return exchangeRecipientRejectSpace
 	}
 	placed, err := (inventory.ItemInstance{ID: display.ItemID, Vnum: display.Vnum, Count: remaining}).WithInventorySlot(slot)
 	if err != nil {
-		return false
+		return exchangeRecipientRejectOther
 	}
 	*items = append(*items, placed)
 	sort.Slice(*items, func(i int, j int) bool {
@@ -1046,7 +1173,7 @@ func exchangePlaceIncomingDisplayedItem(items *[]inventory.ItemInstance, display
 		}
 		return (*items)[i].ID < (*items)[j].ID
 	})
-	return true
+	return exchangeRecipientRejectNone
 }
 
 func exchangeNextFreeInventorySlot(items []inventory.ItemInstance) (inventory.SlotIndex, bool) {
@@ -1063,6 +1190,18 @@ func exchangeNextFreeInventorySlot(items []inventory.ItemInstance) (inventory.Sl
 		}
 	}
 	return 0, false
+}
+
+func exchangeHasLockedCompatibleStack(items []inventory.ItemInstance, vnum uint32) bool {
+	if vnum == 0 {
+		return false
+	}
+	for _, item := range items {
+		if item.Locked && !item.Equipped && item.Vnum == vnum {
+			return true
+		}
+	}
+	return false
 }
 
 func exchangeInventoryHasItemID(items []inventory.ItemInstance, id uint64) bool {
@@ -5678,6 +5817,42 @@ func encodeExchangeRequesterMerchantBusyInfoFrame() []byte {
 		VID:     0,
 		Empire:  0,
 		Message: exchangeRequesterMerchantBusyInfoMessage,
+	})
+}
+
+func encodeExchangeFinalizeCheckSelfInfoFrame() []byte {
+	return chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+		Type:    chatproto.ChatTypeInfo,
+		VID:     0,
+		Empire:  0,
+		Message: exchangeFinalizeCheckSelfInfoMessage,
+	})
+}
+
+func encodeExchangeFinalizeCheckOtherInfoFrame() []byte {
+	return chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+		Type:    chatproto.ChatTypeInfo,
+		VID:     0,
+		Empire:  0,
+		Message: exchangeFinalizeCheckOtherInfoMessage,
+	})
+}
+
+func encodeExchangeFinalizeSpaceSelfInfoFrame() []byte {
+	return chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+		Type:    chatproto.ChatTypeInfo,
+		VID:     0,
+		Empire:  0,
+		Message: exchangeFinalizeSpaceSelfInfoMessage,
+	})
+}
+
+func encodeExchangeFinalizeSpaceOtherInfoFrame() []byte {
+	return chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+		Type:    chatproto.ChatTypeInfo,
+		VID:     0,
+		Empire:  0,
+		Message: exchangeFinalizeSpaceOtherInfoMessage,
 	})
 }
 
