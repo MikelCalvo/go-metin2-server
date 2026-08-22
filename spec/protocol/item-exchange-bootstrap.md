@@ -201,6 +201,7 @@ Later slices must write a new contract before broadening this packet into real g
 
 - richer trade target eligibility beyond the current visible-player check plus owned exchange-distance gate (`ApproxDistance < 1000`), the requester-side open-merchant / open-safebox / open-refine-dialog PREVENT_TRADE_WINDOW start reject, the partner-side open-merchant / open-safebox / open-refine-dialog busy-window rejection text, and the owned exact-position transfer / warp rebootstrap exchange teardown
 - partner-side open player-shop / cube busy-window rejection text
+- `EXCHANGE START` gold-carrier-cap reject chat when either side already holds `>= 1<<31-1` gold: requester self-only `You have more than 2 Billion Yang. You cannot trade.`; partner-over-cap self-only `The player has more than 2 Billion Yang. You cannot trade with him.` with local-first requester-wins ordering (`docs/plans/2026-08-22-exchange-start-gold-carrier-cap-reject-chat.md`)
 - exchange-window item/gold/accept updates beyond the current `START` / display-only `ITEM_ADD` / display-only `ITEM_DEL` / display-only `GOLD_ADD` / display-only `ACCEPT` / accept reset / accept-time displayed-item and displayed-gold revalidation / `LESS_GOLD` / `END` shell
 - trade item removal, carried-item locking/removal, or accepted gold mutation semantics beyond the first mutual-accept finalize described above
 - real finalize/result state machines beyond the first mutual-accept mutation + shell-close contract
