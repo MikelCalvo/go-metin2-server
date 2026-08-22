@@ -41,6 +41,6 @@ git diff --check
 
 ## Follow-up options
 
-1. ~~Optionally widen the same MemoryStore pattern to quest-flag interaction-visibility preview tests that still allocate disposable content FileStores.~~ Done: see [hermetic interaction-visibility quest MemoryStore tests](2026-08-22-hermetic-interaction-visibility-quest-memorystore-tests.md).
+1. ~~Optionally widen the same MemoryStore pattern to quest-flag interaction-visibility preview tests that still allocate disposable content FileStores.~~ Done: see [hermetic interaction-visibility quest MemoryStore tests](2026-08-22-hermetic-interaction-visibility-quest-memorystore-tests.md) and the broader suite conversion in [hermetic interaction-visibility MemoryStore tests](2026-08-22-hermetic-interaction-visibility-memorystore-tests.md).
 2. Keep branching quest scripts deferred.
 3. Keep new NPC service kinds deferred until accepted durable safebox/storage mutations exist beyond the owned bootstrap presentation.

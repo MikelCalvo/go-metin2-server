@@ -21,7 +21,7 @@ func TestGameRuntimeInteractionVisibilityReturnsResolvedPreviewsForVisibleIntera
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{
 		{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
 		{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."},
 	})
@@ -64,7 +64,7 @@ func TestGameRuntimeInteractionVisibilityReportsResolutionFailureForDanglingDefi
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
-	interactionStore := newInteractionDefinitionStore(t, nil)
+	interactionStore := newMemoryInteractionDefinitionStore(t, nil)
 
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
 	if err != nil {
@@ -90,12 +90,12 @@ func TestGameRuntimeInteractionVisibilityReturnsServicePreviewsForVisibleWarpAnd
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{
 		defaultMerchantCatalogDefinition(),
 		{Kind: interactionstore.KindOpenSafebox, Ref: "npc:warehouse", Text: "Store your goods safely.", Size: 2},
 		{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800, Text: "Step through the gate."},
 	})
-	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+	itemStore := newMemoryItemTemplateStore(t, defaultMerchantItemTemplates())
 
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore, itemStore)
 	if err != nil {
@@ -157,8 +157,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestGatedWarpMismatchPreviewWit
 	if err := questStore.Save(before); err != nil {
 		t.Fatalf("seed quest state: %v", err)
 	}
-	interactionStore := interactionstore.NewMemoryStore()
-	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{
 		Kind:      interactionstore.KindWarp,
 		Ref:       "npc:gated_teleporter",
 		Text:      "Step through the gate.",
@@ -168,9 +167,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestGatedWarpMismatchPreviewWit
 		QuestRef:  "quest:first_steps",
 		QuestFlag: "met_guide",
 		QuestFrom: 0,
-	}}}); err != nil {
-		t.Fatalf("seed interaction definitions: %v", err)
-	}
+	}})
 
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
@@ -223,14 +220,8 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestGatedShopMismatchPreviewWit
 	catalog.QuestRef = "quest:first_steps"
 	catalog.QuestFlag = "met_guide"
 	catalog.QuestFrom = 0
-	interactionStore := interactionstore.NewMemoryStore()
-	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{catalog}}); err != nil {
-		t.Fatalf("seed interaction definitions: %v", err)
-	}
-	itemStore := itemcatalog.NewMemoryStore()
-	if err := itemStore.Save(itemcatalog.Snapshot{Templates: defaultMerchantItemTemplates()}); err != nil {
-		t.Fatalf("seed item templates: %v", err)
-	}
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{catalog})
+	itemStore := newMemoryItemTemplateStore(t, defaultMerchantItemTemplates())
 
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
@@ -277,8 +268,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestGatedOpenSafeboxMismatchPre
 	if err := questStore.Save(before); err != nil {
 		t.Fatalf("seed quest state: %v", err)
 	}
-	interactionStore := interactionstore.NewMemoryStore()
-	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{
 		Kind:      interactionstore.KindOpenSafebox,
 		Ref:       "npc:gated_warehouse",
 		Text:      "Store your goods safely.",
@@ -286,9 +276,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestGatedOpenSafeboxMismatchPre
 		QuestRef:  "quest:first_steps",
 		QuestFlag: "met_guide",
 		QuestFrom: 0,
-	}}}); err != nil {
-		t.Fatalf("seed interaction definitions: %v", err)
-	}
+	}})
 
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
@@ -335,17 +323,14 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestGatedTalkMismatchPreviewWit
 	if err := questStore.Save(before); err != nil {
 		t.Fatalf("seed quest state: %v", err)
 	}
-	interactionStore := interactionstore.NewMemoryStore()
-	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{
 		Kind:      interactionstore.KindTalk,
 		Ref:       "npc:gated_guide",
 		Text:      "Welcome to the gated square.",
 		QuestRef:  "quest:first_steps",
 		QuestFlag: "met_guide",
 		QuestFrom: 0,
-	}}}); err != nil {
-		t.Fatalf("seed interaction definitions: %v", err)
-	}
+	}})
 
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
@@ -392,17 +377,14 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestGatedInfoMismatchPreviewWit
 	if err := questStore.Save(before); err != nil {
 		t.Fatalf("seed quest state: %v", err)
 	}
-	interactionStore := interactionstore.NewMemoryStore()
-	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{
 		Kind:      interactionstore.KindInfo,
 		Ref:       "lore:gated_signpost",
 		Text:      "The gated signpost describes the square.",
 		QuestRef:  "quest:first_steps",
 		QuestFlag: "met_guide",
 		QuestFrom: 0,
-	}}}); err != nil {
-		t.Fatalf("seed interaction definitions: %v", err)
-	}
+	}})
 
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
@@ -444,29 +426,16 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagPreview(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
-	interactionStore := interactionstore.NewMemoryStore()
-	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{
 		Kind:      interactionstore.KindQuestFlag,
 		Ref:       "quest:first_steps",
 		Text:      "Quest updated: first_steps.met_guide = 1.",
 		QuestRef:  "quest:first_steps",
 		QuestFlag: "met_guide",
 		QuestTo:   1,
-	}}}); err != nil {
-		t.Fatalf("seed interaction definitions: %v", err)
-	}
+	}})
 
-	questStore := queststate.NewMemoryStore()
-	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
-		store,
-		nil,
-		staticstore.NewMemoryStore(),
-		interactionStore,
-		nil,
-		questStore,
-		nil,
-	)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -490,8 +459,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardGoldPreview(t *te
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030121, 0x02040121, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one-reward-gold", 0x15151515, peer)
-	interactionStore := interactionstore.NewMemoryStore()
-	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{
 		Kind:             interactionstore.KindQuestFlag,
 		Ref:              "quest:first_steps_kill_turnin",
 		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -505,9 +473,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardGoldPreview(t *te
 			{ItemVnum: 27001, Count: 1},
 			{ItemVnum: 11200, Count: 1},
 		},
-	}}}); err != nil {
-		t.Fatalf("seed interaction definitions: %v", err)
-	}
+	}})
 	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
@@ -561,8 +527,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagConsumeItemPreview(t *t
 	peer.Gold = 40
 	peer.Points[bootstrapExperiencePointType] = 40
 	issuePeerTicket(t, store, "peer-one-consume-items", 0x16161616, peer)
-	interactionStore := interactionstore.NewMemoryStore()
-	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{
 		Kind:             interactionstore.KindQuestFlag,
 		Ref:              "quest:first_steps_kill_turnin",
 		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -580,9 +545,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagConsumeItemPreview(t *t
 		},
 		ConsumeGold:       25,
 		ConsumeExperience: 10,
-	}}}); err != nil {
-		t.Fatalf("seed interaction definitions: %v", err)
-	}
+	}})
 	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
@@ -636,8 +599,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagConsumeGoldPreview(t *t
 	peer.Gold = 40
 	peer.Points[bootstrapExperiencePointType] = 40
 	issuePeerTicket(t, store, "peer-one-consume-gold", 0x17171717, peer)
-	interactionStore := interactionstore.NewMemoryStore()
-	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{
 		Kind:             interactionstore.KindQuestFlag,
 		Ref:              "quest:first_steps_kill_turnin",
 		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -655,9 +617,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagConsumeGoldPreview(t *t
 		},
 		ConsumeGold:       25,
 		ConsumeExperience: 10,
-	}}}); err != nil {
-		t.Fatalf("seed interaction definitions: %v", err)
-	}
+	}})
 	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
@@ -711,8 +671,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagConsumeExperiencePrevie
 	peer.Gold = 40
 	peer.Points[bootstrapExperiencePointType] = 40
 	issuePeerTicket(t, store, "peer-one-consume-exp", 0x1919191a, peer)
-	interactionStore := interactionstore.NewMemoryStore()
-	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{
 		Kind:             interactionstore.KindQuestFlag,
 		Ref:              "quest:first_steps_kill_turnin",
 		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -730,9 +689,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagConsumeExperiencePrevie
 		},
 		ConsumeGold:       25,
 		ConsumeExperience: 10,
-	}}}); err != nil {
-		t.Fatalf("seed interaction definitions: %v", err)
-	}
+	}})
 	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
@@ -785,8 +742,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagInsufficientConsumeGold
 	peer.Inventory = []inventory.ItemInstance{{ID: 53, Vnum: 27001, Count: 1, Slot: 0}}
 	peer.Gold = 10
 	issuePeerTicket(t, store, "peer-one-consume-gold-miss", 0x18181818, peer)
-	interactionStore := interactionstore.NewMemoryStore()
-	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{
 		Kind:             interactionstore.KindQuestFlag,
 		Ref:              "quest:first_steps_kill_turnin",
 		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -803,9 +759,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagInsufficientConsumeGold
 			{ItemVnum: 27001, Count: 1},
 		},
 		ConsumeGold: 25,
-	}}}); err != nil {
-		t.Fatalf("seed interaction definitions: %v", err)
-	}
+	}})
 	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
@@ -859,8 +813,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagInsufficientConsumeExpe
 	peer.Gold = 40
 	peer.Points[bootstrapExperiencePointType] = 5
 	issuePeerTicket(t, store, "peer-one-consume-exp-miss", 0x1a1a1a1a, peer)
-	interactionStore := interactionstore.NewMemoryStore()
-	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{
 		Kind:             interactionstore.KindQuestFlag,
 		Ref:              "quest:first_steps_kill_turnin",
 		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -878,9 +831,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagInsufficientConsumeExpe
 		},
 		ConsumeGold:       25,
 		ConsumeExperience: 10,
-	}}}); err != nil {
-		t.Fatalf("seed interaction definitions: %v", err)
-	}
+	}})
 	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
@@ -939,8 +890,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardGoldOverflowPrevi
 	if err := questStore.Save(before); err != nil {
 		t.Fatalf("seed quest state: %v", err)
 	}
-	interactionStore := interactionstore.NewMemoryStore()
-	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{
 		Kind:             interactionstore.KindQuestFlag,
 		Ref:              "quest:first_steps_kill_turnin",
 		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -952,9 +902,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardGoldOverflowPrevi
 		RewardExperience: 50,
 		RewardItems:      []interactionstore.RewardItemEntry{{ItemVnum: 11200, Count: 1}},
 		ConsumeItems:     []interactionstore.RewardItemEntry{{ItemVnum: 27001, Count: 1}},
-	}}}); err != nil {
-		t.Fatalf("seed interaction definitions: %v", err)
-	}
+	}})
 	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
@@ -1011,8 +959,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardExperienceOverflo
 	if err := questStore.Save(before); err != nil {
 		t.Fatalf("seed quest state: %v", err)
 	}
-	interactionStore := interactionstore.NewMemoryStore()
-	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{
 		Kind:             interactionstore.KindQuestFlag,
 		Ref:              "quest:first_steps_kill_turnin",
 		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -1024,9 +971,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardExperienceOverflo
 		RewardExperience: 1,
 		RewardItems:      []interactionstore.RewardItemEntry{{ItemVnum: 11200, Count: 1}},
 		ConsumeItems:     []interactionstore.RewardItemEntry{{ItemVnum: 27001, Count: 1}},
-	}}}); err != nil {
-		t.Fatalf("seed interaction definitions: %v", err)
-	}
+	}})
 	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
@@ -1077,8 +1022,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagInsufficientConsumeItem
 	peer.Gold = 40
 	peer.Points[bootstrapExperiencePointType] = 40
 	issuePeerTicket(t, store, "peer-one-consume-items-miss", 0x1b1b1b1b, peer)
-	interactionStore := interactionstore.NewMemoryStore()
-	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{
 		Kind:             interactionstore.KindQuestFlag,
 		Ref:              "quest:first_steps_kill_turnin",
 		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -1096,9 +1040,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagInsufficientConsumeItem
 		},
 		ConsumeGold:       25,
 		ConsumeExperience: 10,
-	}}}); err != nil {
-		t.Fatalf("seed interaction definitions: %v", err)
-	}
+	}})
 	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
@@ -1154,17 +1096,14 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagMismatchPreviewWithoutM
 	if err := questStore.Save(before); err != nil {
 		t.Fatalf("seed quest state: %v", err)
 	}
-	interactionStore := interactionstore.NewMemoryStore()
-	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{
 		Kind:      interactionstore.KindQuestFlag,
 		Ref:       "quest:first_steps",
 		Text:      "Quest updated: first_steps.met_guide = 1.",
 		QuestRef:  "quest:first_steps",
 		QuestFlag: "met_guide",
 		QuestTo:   1,
-	}}}); err != nil {
-		t.Fatalf("seed interaction definitions: %v", err)
-	}
+	}})
 
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
@@ -1212,8 +1151,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardInventoryFullPrev
 	if err := questStore.Save(before); err != nil {
 		t.Fatalf("seed quest state: %v", err)
 	}
-	interactionStore := interactionstore.NewMemoryStore()
-	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{
 		Kind:      interactionstore.KindQuestFlag,
 		Ref:       "quest:first_steps_kill_turnin",
 		Text:      "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -1225,9 +1163,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardInventoryFullPrev
 			{ItemVnum: 27001, Count: 1},
 			{ItemVnum: 11200, Count: 1},
 		},
-	}}}); err != nil {
-		t.Fatalf("seed interaction definitions: %v", err)
-	}
+	}})
 	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
@@ -1282,8 +1218,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardRestrictedPreview
 	if err := questStore.Save(before); err != nil {
 		t.Fatalf("seed quest state: %v", err)
 	}
-	interactionStore := interactionstore.NewMemoryStore()
-	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{
 		Kind:            interactionstore.KindQuestFlag,
 		Ref:             "quest:first_steps_kill_turnin",
 		Text:            "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -1293,9 +1228,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardRestrictedPreview
 		QuestTo:         0,
 		RewardItemVnum:  27001,
 		RewardItemCount: 1,
-	}}}); err != nil {
-		t.Fatalf("seed interaction definitions: %v", err)
-	}
+	}})
 	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
 		Vnum: 27001, Name: "High-Level Reward Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, MinLevel: 10,
@@ -1344,7 +1277,7 @@ func TestGameRuntimeInteractionVisibilityReturnsWarpDestinationPreviewWhenWarpTe
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800, Text: "   "}})
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800, Text: "   "}})
 
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
 	if err != nil {
@@ -1371,7 +1304,7 @@ func TestGameRuntimeInteractionVisibilityCompactsUnicodePreviewsOnRuneBoundaries
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
 	longText := strings.Repeat("界", 200)
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:unicode_notice", Text: longText}})
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:unicode_notice", Text: longText}})
 
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
 	if err != nil {
@@ -1398,7 +1331,7 @@ func TestGameRuntimeInteractionVisibilityMarksDeadInteractableStaticActor(t *tes
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:fallen_guard", Text: "..."}})
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:fallen_guard", Text: "..."}})
 
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
 	if err != nil {
@@ -1430,7 +1363,7 @@ func TestGameRuntimeInteractionVisibilitySnapshotReturnsExactConnectedCharacter(
 	beta := peerVisibilityCharacter("Beta", 0x01030102, 0x02040102, 1200, 2200, 0, 102, 202)
 	issuePeerTicket(t, store, "alpha", 0x11111111, alpha)
 	issuePeerTicket(t, store, "beta", 0x22222222, beta)
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{
 		{Kind: interactionstore.KindInfo, Ref: "lore:guide", Text: "Read the village sign."},
 	})
 
@@ -1466,4 +1399,22 @@ func TestGameRuntimeInteractionVisibilitySnapshotReturnsExactConnectedCharacter(
 	if missing, ok := runtime.InteractionVisibilitySnapshot("Missing"); ok || missing.Name != "" {
 		t.Fatalf("expected missing exact interaction visibility snapshot to fail closed, got snapshot=%+v ok=%v", missing, ok)
 	}
+}
+
+func newMemoryInteractionDefinitionStore(t *testing.T, definitions []interactionstore.Definition) interactionstore.Store {
+	t.Helper()
+	store := interactionstore.NewMemoryStore()
+	if err := store.Save(interactionstore.Snapshot{Definitions: definitions}); err != nil {
+		t.Fatalf("save interaction definitions: %v", err)
+	}
+	return store
+}
+
+func newMemoryItemTemplateStore(t *testing.T, templates []itemcatalog.Template) itemcatalog.Store {
+	t.Helper()
+	store := itemcatalog.NewMemoryStore()
+	if err := store.Save(itemcatalog.Snapshot{Templates: templates}); err != nil {
+		t.Fatalf("save item templates: %v", err)
+	}
+	return store
 }
