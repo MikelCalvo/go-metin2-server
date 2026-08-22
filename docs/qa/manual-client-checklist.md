@@ -801,7 +801,7 @@ Expected result:
 - the current seeded practice blade still resolves to `vnum = 12200`, `type = 1`, and `amount = +/-10` on equip/unequip
 - the response burst stays self-only and ordered as `ITEM_DEL` + `ITEM_SET` + optional `PLAYER_POINT_CHANGE` + `CHARACTER_UPDATE`
 - if a point-bearing wearable is forced through the wrong slash seam slot, the item mutation can still stay appearance-only in the current bootstrap slice but the template-backed `PLAYER_POINT_CHANGE` must not fire
-- if the selected character is restricted by the wearable template's job/sex anti flags, or if the wearable template is temporarily authored with transfer/pickup-style anti flags such as `anti_get`, packet and slash equip fail closed with no item-slot, point, or appearance mutation
+- if the selected character is restricted by the wearable template's job/sex/empire/`min_level` anti flags, or if the wearable template is temporarily authored with transfer/pickup-style anti flags such as `anti_get`, packet and slash equip fail closed with no item-slot, point, or appearance mutation
 - already-visible peers still only receive the projected appearance refresh; no peer-visible point stream is frozen by this slice
 
 ### 5.7 Template-backed consumable item use
@@ -812,13 +812,13 @@ Expected result:
 - [ ] Confirm the consumed slot decrements by exactly one stack item or clears entirely if it was the last item
 - [ ] Confirm one self-only `CHAT_TYPE_INFO` placeholder effect arrives using the template-authored message
 - [ ] Reconnect and confirm the consumed stack and updated point value persisted
-- [ ] If QA data allows it, repeat with the selected character restricted by the consumable template's authored job/sex anti flags; confirm no item, point, quickslot, or info-chat mutation is visible
+- [ ] If QA data allows it, repeat with the selected character restricted by the consumable template's authored job/sex/empire/`min_level` anti flags; confirm no item, point, quickslot, or info-chat mutation is visible
 
 Expected result:
 - the current carried-slot client item-use path resolves through item-template metadata rather than a runtime-only hardcoded consumable switch
 - the current seeded bootstrap template still yields `type = 1`, `amount = 50`, `value = updated Points[1]`, and `consume:27001:+50`
 - the response burst stays self-only and ordered as `PLAYER_POINT_CHANGE` then `ITEM_SET`/`ITEM_DEL` then `CHAT_TYPE_INFO`
-- selected-character job/sex anti-flag templates fail closed before the consumable point/effect path runs
+- selected-character job/sex/empire/`min_level` anti-flag templates fail closed before the consumable point/effect path runs
 - the selected-character snapshot persists atomically through the current save/rollback boundary
 
 ### 5.7.1 Drag-to-item stack consolidation
