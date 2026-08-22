@@ -119,7 +119,42 @@ var (
 	ErrQuestStateStoreRestoreLiveSessions   = errors.New("quest state store restore requires no live sessions")
 	ErrStaticActorStoreRestoreLiveSessions  = errors.New("static actor store restore requires no live sessions")
 	ErrInteractionStoreRestoreLiveSessions  = errors.New("interaction store restore requires no live sessions")
+
+	refineConfirmRollMu       sync.Mutex
+	refineConfirmRollOverride []int
 )
+
+// QueueRefineConfirmRollForTest appends one injected refine confirm roll in
+// 1..100 for the next probability 1..99 confirm. Tests should restore via the
+// returned cleanup so leftover injections cannot leak across cases.
+func QueueRefineConfirmRollForTest(roll int) func() {
+	refineConfirmRollMu.Lock()
+	defer refineConfirmRollMu.Unlock()
+	previous := append([]int(nil), refineConfirmRollOverride...)
+	refineConfirmRollOverride = append(refineConfirmRollOverride, roll)
+	return func() {
+		refineConfirmRollMu.Lock()
+		defer refineConfirmRollMu.Unlock()
+		refineConfirmRollOverride = previous
+	}
+}
+
+func takeRefineConfirmRoll() (int, bool) {
+	refineConfirmRollMu.Lock()
+	if len(refineConfirmRollOverride) > 0 {
+		roll := refineConfirmRollOverride[0]
+		refineConfirmRollOverride = append([]int(nil), refineConfirmRollOverride[1:]...)
+		refineConfirmRollMu.Unlock()
+		return roll, true
+	}
+	refineConfirmRollMu.Unlock()
+
+	var buf [8]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return 0, false
+	}
+	return int(binary.BigEndian.Uint64(buf[:])%100) + 1, true
+}
 
 type loginKeyGenerator func() (uint32, error)
 
@@ -5878,7 +5913,88 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							setActiveRefineDialog(refineDialogPresentation{}, false)
 							return gameflow.ItemRefineResult{Accepted: true, Frames: committed}
 						default:
-							return gameflow.ItemRefineResult{Accepted: false}
+							if activeRefineDialog.RefineInfo.Probability < 1 || activeRefineDialog.RefineInfo.Probability > 99 {
+								return gameflow.ItemRefineResult{Accepted: false}
+							}
+							roll, ok := takeRefineConfirmRoll()
+							if !ok {
+								return gameflow.ItemRefineResult{Accepted: false}
+							}
+							outcome, ok := selectedPlayer.ApplyRefineWithRoll(inventory.SlotIndex(packet.Position), packet.Type, activeRefineDialog.SourceID, activeRefineDialog.RefineInfo, sourceTemplate, resultTemplate, roll)
+							if !ok {
+								return gameflow.ItemRefineResult{Accepted: false}
+							}
+							if outcome.Succeeded {
+								result := outcome.Success
+								frames, err := refineSuccessResultFrames(previousSelected, result, runtime.itemTemplates, packet.Type)
+								if err != nil {
+									selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+									return gameflow.ItemRefineResult{Accepted: false}
+								}
+								var materialQuickslotFrames [][]byte
+								for _, change := range result.MaterialChanges {
+									if !change.ItemRemoved {
+										continue
+									}
+									quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, change.Slot)
+									if !ok {
+										selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+										return gameflow.ItemRefineResult{Accepted: false}
+									}
+									materialQuickslotFrames = append(materialQuickslotFrames, quickslotFrames...)
+								}
+								if len(materialQuickslotFrames) > 0 {
+									insertAt := len(result.MaterialChanges)
+									frames = append(frames[:insertAt], append(materialQuickslotFrames, frames[insertAt:]...)...)
+								}
+								committed, ok := commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+								if !ok {
+									return gameflow.ItemRefineResult{Accepted: false}
+								}
+								setActiveRefineDialog(refineDialogPresentation{}, false)
+								return gameflow.ItemRefineResult{Accepted: true, Frames: committed}
+							}
+							if !outcome.Destroyed {
+								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+								return gameflow.ItemRefineResult{Accepted: false}
+							}
+							result := outcome.Destroy
+							frames, err := refineDestroyFailureResultFrames(previousSelected, result, runtime.itemTemplates, packet.Type)
+							if err != nil {
+								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+								return gameflow.ItemRefineResult{Accepted: false}
+							}
+							var materialQuickslotFrames [][]byte
+							for _, change := range result.MaterialChanges {
+								if !change.ItemRemoved {
+									continue
+								}
+								quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, change.Slot)
+								if !ok {
+									selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+									return gameflow.ItemRefineResult{Accepted: false}
+								}
+								materialQuickslotFrames = append(materialQuickslotFrames, quickslotFrames...)
+							}
+							if len(materialQuickslotFrames) > 0 {
+								insertAt := len(result.MaterialChanges)
+								frames = append(frames[:insertAt], append(materialQuickslotFrames, frames[insertAt:]...)...)
+							}
+							sourceQuickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, result.SourceSlot)
+							if !ok {
+								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+								return gameflow.ItemRefineResult{Accepted: false}
+							}
+							if len(sourceQuickslotFrames) > 0 {
+								insertAt := len(result.MaterialChanges) + len(materialQuickslotFrames) + 1
+								frames = append(frames[:insertAt], append(sourceQuickslotFrames, frames[insertAt:]...)...)
+							}
+							committed, ok := commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+							if !ok {
+								return gameflow.ItemRefineResult{Accepted: false}
+							}
+							setActiveRefineDialog(refineDialogPresentation{}, false)
+							return gameflow.ItemRefineResult{Accepted: true, Frames: committed}
 						}
 					}
 					template, ok := runtime.resolveRuntimeItemTemplate(selectedPlayer, inventory.SlotIndex(packet.Position))

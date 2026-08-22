@@ -1106,55 +1106,212 @@ func assertRefineFailedCommandChat(t *testing.T, frame []byte, refineType uint8,
 	}
 }
 
-func TestGameRuntimeItemRefineConfirmProbabilityBelow100FailsClosedWithoutMutation(t *testing.T) {
+func TestGameRuntimeItemRefineConfirmAfterPreviewProbability75RollSuccessPersistsAndEmitsBurst(t *testing.T) {
+	restore := QueueRefineConfirmRollForTest(75)
+	t.Cleanup(restore)
+
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
-	owner := peerVisibilityCharacter("RefineLowProb", 0x01030763, 0x02040763, 1100, 2100, 0, 101, 201)
+	owner := peerVisibilityCharacter("RefineRollOK", 0x01030763, 0x02040763, 1100, 2100, 0, 101, 201)
 	owner.Gold = 5000
 	owner.Inventory = []inventory.ItemInstance{
 		{ID: 660, Vnum: 11236, Count: 1, Slot: 5},
 		{ID: 661, Vnum: 27001, Count: 2, Slot: 6},
 	}
-	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
-	issuePeerTicket(t, ticketStore, "item-refine-lowprob", 0x70707063, owner)
-	if err := accounts.Save(accountstore.Account{Login: "item-refine-lowprob", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
-		t.Fatalf("seed item-refine low-prob account: %v", err)
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	issuePeerTicket(t, ticketStore, "item-refine-roll-ok", 0x70707063, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-refine-roll-ok", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-refine roll-success account: %v", err)
 	}
 	sourceTemplate := itemcatalog.Template{
 		Vnum:       11236,
-		Name:       "Low Prob Practice Blade",
+		Name:       "Roll Success Practice Blade",
 		Stackable:  false,
 		MaxCount:   1,
 		Refineable: true,
 		RefineInfo: &itemcatalog.RefineInfo{ResultVnum: 11237, Cost: 1000, Probability: 75, Materials: []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}}},
 	}
-	resultTemplate := itemcatalog.Template{Vnum: 11237, Name: "Low Prob Result Blade", Stackable: false, MaxCount: 1}
+	resultTemplate := itemcatalog.Template{Vnum: 11237, Name: "Roll Success Result Blade", Stackable: false, MaxCount: 1}
 	material := itemcatalog.Template{Vnum: 27001, Name: "Refine Material A", Stackable: true, MaxCount: 200}
 	itemStore := newItemTemplateStore(t, []itemcatalog.Template{sourceTemplate, resultTemplate, material})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
-		t.Fatalf("unexpected item-refine low-prob runtime error: %v", err)
+		t.Fatalf("unexpected item-refine roll-success runtime error: %v", err)
 	}
-	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-refine-lowprob", 0x70707063)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-refine-roll-ok", 0x70707063)
 	defer closeSessionFlow(t, flow)
 
 	previewOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
 	if err != nil || len(previewOut) != 1 {
-		t.Fatalf("expected low-prob refine preview to emit one frame, got %d err=%v", len(previewOut), err)
+		t.Fatalf("expected probability-75 roll-success preview to emit one frame, got %d err=%v", len(previewOut), err)
 	}
+	if _, err := itemproto.DecodeRefineInformationNew(decodeSingleFrame(t, previewOut[0])); err != nil {
+		t.Fatalf("decode probability-75 roll-success preview: %v", err)
+	}
+
 	confirmOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
 	if err != nil {
-		t.Fatalf("unexpected low-prob refine confirm packet error: %v", err)
+		t.Fatalf("unexpected probability-75 roll-success confirm packet error: %v", err)
 	}
-	if len(confirmOut) != 0 {
-		t.Fatalf("expected low-prob refine confirm to fail closed, got %d frames", len(confirmOut))
+	if len(confirmOut) != 5 {
+		t.Fatalf("expected probability-75 roll-success burst of 5 frames, got %d", len(confirmOut))
 	}
-	assertExchangeAccountUnchanged(t, accounts, "item-refine-lowprob", owner, "low-prob refine confirm")
-	cancelOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 255})))
-	if err != nil || len(cancelOut) != 0 {
-		t.Fatalf("expected low-prob refine cancel to emit no frames, got %d err=%v", len(cancelOut), err)
+	materialDel, err := itemproto.DecodeDel(decodeSingleFrame(t, confirmOut[0]))
+	if err != nil {
+		t.Fatalf("decode probability-75 roll-success material ITEM_DEL: %v", err)
 	}
-	assertExchangeAccountUnchanged(t, accounts, "item-refine-lowprob", owner, "low-prob refine cancel")
+	if materialDel.Position.WindowType != itemproto.WindowInventory || materialDel.Position.Cell != 6 {
+		t.Fatalf("unexpected probability-75 roll-success material delete position: %+v", materialDel.Position)
+	}
+	materialQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, confirmOut[1]))
+	if err != nil {
+		t.Fatalf("decode probability-75 roll-success material QUICKSLOT_DEL: %v", err)
+	}
+	if materialQuickslotDel.Position != 3 {
+		t.Fatalf("unexpected probability-75 roll-success material quickslot delete: %+v", materialQuickslotDel)
+	}
+	resultSet, err := itemproto.DecodeSet(decodeSingleFrame(t, confirmOut[2]))
+	if err != nil {
+		t.Fatalf("decode probability-75 roll-success result ITEM_SET: %v", err)
+	}
+	if resultSet.Position.WindowType != itemproto.WindowInventory || resultSet.Position.Cell != 5 || resultSet.Vnum != 11237 || resultSet.Count != 1 {
+		t.Fatalf("unexpected probability-75 roll-success result ITEM_SET: %+v", resultSet)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, confirmOut[3]))
+	if err != nil {
+		t.Fatalf("decode probability-75 roll-success gold PLAYER_POINT_CHANGE: %v", err)
+	}
+	if goldChange.VID != owner.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != -1000 || goldChange.Value != 4000 {
+		t.Fatalf("unexpected probability-75 roll-success gold point change: %+v", goldChange)
+	}
+	assertRefineSucceededCommandChat(t, confirmOut[4], 3, "probability-75 roll-success confirm")
+
+	persisted, err := accounts.Load("item-refine-roll-ok")
+	if err != nil {
+		t.Fatalf("load persisted probability-75 roll-success account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{{ID: 660, Vnum: 11237, Count: 1, Slot: 5}}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("unexpected persisted inventory after probability-75 roll-success:\n got: %+v\nwant: %+v", persisted.Characters[0].Inventory, wantInventory)
+	}
+	wantQuickslots := []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	if persisted.Characters[0].Gold != 4000 || !reflect.DeepEqual(persisted.Characters[0].Quickslots, wantQuickslots) {
+		t.Fatalf("unexpected persisted scalars after probability-75 roll-success: gold=%d quickslots=%+v want=%+v", persisted.Characters[0].Gold, persisted.Characters[0].Quickslots, wantQuickslots)
+	}
+}
+
+func TestGameRuntimeItemRefineConfirmAfterPreviewProbability75RollFailureDestroysAndEmitsRefineFailed(t *testing.T) {
+	restore := QueueRefineConfirmRollForTest(76)
+	t.Cleanup(restore)
+
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("RefineRollFail", 0x01030764, 0x02040764, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 662, Vnum: 11242, Count: 1, Slot: 5},
+		{ID: 663, Vnum: 27001, Count: 2, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	issuePeerTicket(t, ticketStore, "item-refine-roll-fail", 0x70707064, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-refine-roll-fail", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-refine roll-fail account: %v", err)
+	}
+	sourceTemplate := itemcatalog.Template{
+		Vnum:       11242,
+		Name:       "Roll Fail Practice Blade",
+		Stackable:  false,
+		MaxCount:   1,
+		Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{ResultVnum: 11243, Cost: 1000, Probability: 75, Materials: []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}}},
+	}
+	resultTemplate := itemcatalog.Template{Vnum: 11243, Name: "Unreached Roll Result Blade", Stackable: false, MaxCount: 1}
+	material := itemcatalog.Template{Vnum: 27001, Name: "Refine Material A", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{sourceTemplate, resultTemplate, material})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-refine roll-fail runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-refine-roll-fail", 0x70707064)
+	defer closeSessionFlow(t, flow)
+
+	previewOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 4})))
+	if err != nil || len(previewOut) != 1 {
+		t.Fatalf("expected probability-75 roll-fail preview to emit one frame, got %d err=%v", len(previewOut), err)
+	}
+	if _, err := itemproto.DecodeRefineInformationNew(decodeSingleFrame(t, previewOut[0])); err != nil {
+		t.Fatalf("decode probability-75 roll-fail preview: %v", err)
+	}
+
+	confirmOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 4})))
+	if err != nil {
+		t.Fatalf("unexpected probability-75 roll-fail confirm packet error: %v", err)
+	}
+	if len(confirmOut) != 6 {
+		t.Fatalf("expected probability-75 roll-fail destroy burst of 6 frames, got %d", len(confirmOut))
+	}
+	materialDel, err := itemproto.DecodeDel(decodeSingleFrame(t, confirmOut[0]))
+	if err != nil {
+		t.Fatalf("decode probability-75 roll-fail material ITEM_DEL: %v", err)
+	}
+	if materialDel.Position.WindowType != itemproto.WindowInventory || materialDel.Position.Cell != 6 {
+		t.Fatalf("unexpected probability-75 roll-fail material delete position: %+v", materialDel.Position)
+	}
+	materialQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, confirmOut[1]))
+	if err != nil {
+		t.Fatalf("decode probability-75 roll-fail material QUICKSLOT_DEL: %v", err)
+	}
+	if materialQuickslotDel.Position != 3 {
+		t.Fatalf("unexpected probability-75 roll-fail material quickslot delete: %+v", materialQuickslotDel)
+	}
+	sourceDel, err := itemproto.DecodeDel(decodeSingleFrame(t, confirmOut[2]))
+	if err != nil {
+		t.Fatalf("decode probability-75 roll-fail source ITEM_DEL: %v", err)
+	}
+	if sourceDel.Position.WindowType != itemproto.WindowInventory || sourceDel.Position.Cell != 5 {
+		t.Fatalf("unexpected probability-75 roll-fail source delete position: %+v", sourceDel.Position)
+	}
+	sourceQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, confirmOut[3]))
+	if err != nil {
+		t.Fatalf("decode probability-75 roll-fail source QUICKSLOT_DEL: %v", err)
+	}
+	if sourceQuickslotDel.Position != 2 {
+		t.Fatalf("unexpected probability-75 roll-fail source quickslot delete: %+v", sourceQuickslotDel)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, confirmOut[4]))
+	if err != nil {
+		t.Fatalf("decode probability-75 roll-fail gold point change: %v", err)
+	}
+	if goldChange.VID != owner.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != -1000 || goldChange.Value != 4000 {
+		t.Fatalf("unexpected probability-75 roll-fail gold point change: %+v", goldChange)
+	}
+	assertRefineFailedCommandChat(t, confirmOut[5], 4, "probability-75 roll-fail confirm")
+
+	account, err := accounts.Load("item-refine-roll-fail")
+	if err != nil {
+		t.Fatalf("load probability-75 roll-fail refine account: %v", err)
+	}
+	if account.Characters[0].Gold != 4000 {
+		t.Fatalf("expected persisted gold 4000 after probability-75 roll-fail destroy, got %d", account.Characters[0].Gold)
+	}
+	if len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected empty persisted inventory after probability-75 roll-fail destroy, got %#v", account.Characters[0].Inventory)
+	}
+	wantQuickslots := []loginticket.Quickslot{{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5}}
+	if !reflect.DeepEqual(account.Characters[0].Quickslots, wantQuickslots) {
+		t.Fatalf("unexpected persisted quickslots after probability-75 roll-fail destroy: got %#v want %#v", account.Characters[0].Quickslots, wantQuickslots)
+	}
 }
 
 func assertRefineSucceededCommandChat(t *testing.T, frame []byte, refineType uint8, label string) {

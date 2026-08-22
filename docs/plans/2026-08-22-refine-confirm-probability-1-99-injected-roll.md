@@ -33,6 +33,9 @@ Focused coverage:
 
 ## Follow-up options
 
-1. Implement the GREEN path after this contract freeze (player roll helper + minimal confirm wiring + session proofs for success and destroy rolls).
-2. Keep keep-grade / catalyst variants deferred.
-3. Optional later: document the default production RNG source once operators pick one.
+1. Keep keep-grade / catalyst variants deferred.
+2. Optional later: document operator-facing production RNG observability if QA needs stronger tooling beyond observing either owned burst.
+
+## Status
+
+Shipped: player `ApplyRefineWithRoll` + minimal confirm wiring for remembered `probability` in `1..99`. Session confirm draws one roll via `takeRefineConfirmRoll()` (`crypto/rand` production; `QueueRefineConfirmRollForTest` for tests). `roll` outside `1..100` fails closed; `roll <= probability` emits the owned success burst / `RefineSuceeded <type>`; `roll > probability` emits the owned destroy burst / `RefineFailed <type>` including destroy-source quickslot sync. `probability = 0` / `100` stay deterministic without a roll. Keep-grade and catalyst variants remain deferred.

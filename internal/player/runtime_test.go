@@ -4034,6 +4034,68 @@ func TestRuntimeApplyRefineDestroyFailureRejectsInsufficientGoldOrMaterialsWitho
 	}
 }
 
+func TestRuntimeApplyRefineWithRollProbability75SuccessConsumesGoldMaterialsAndReplacesVnum(t *testing.T) {
+	persisted := refineSuccessSeedCharacter(5000)
+	runtime := NewRuntime(persisted, SessionLink{Login: "refine-roll-success", CharacterIndex: 1})
+	sourceTemplate, resultTemplate, remembered := refineSuccessTemplates(75)
+
+	outcome, ok := runtime.ApplyRefineWithRoll(5, 3, 701, remembered, sourceTemplate, resultTemplate, 75)
+	if !ok || !outcome.Succeeded || outcome.Destroyed {
+		t.Fatalf("expected probability-75 roll=75 to succeed, got ok=%v outcome=%+v", ok, outcome)
+	}
+	if outcome.Success.ResultItem != (inventory.ItemInstance{ID: 701, Vnum: 11201, Count: 1, Slot: 5}) || outcome.Success.Gold != 2500 {
+		t.Fatalf("unexpected refine roll success payload: %+v", outcome.Success)
+	}
+	live := runtime.LiveCharacter()
+	wantInventory := []inventory.ItemInstance{
+		{ID: 701, Vnum: 11201, Count: 1, Slot: 5},
+	}
+	if !reflect.DeepEqual(live.Inventory, wantInventory) || live.Gold != 2500 {
+		t.Fatalf("unexpected live state after refine roll success: inventory=%#v gold=%d", live.Inventory, live.Gold)
+	}
+	persistedAfter := runtime.PersistedSnapshot()
+	if !reflect.DeepEqual(persistedAfter.Inventory, persisted.Inventory) || persistedAfter.Gold != persisted.Gold {
+		t.Fatalf("refine roll success mutated persisted snapshot before commit: got %#v want %#v", persistedAfter, persisted)
+	}
+}
+
+func TestRuntimeApplyRefineWithRollProbability75FailureDestroysSource(t *testing.T) {
+	persisted := refineSuccessSeedCharacter(5000)
+	runtime := NewRuntime(persisted, SessionLink{Login: "refine-roll-fail", CharacterIndex: 1})
+	sourceTemplate, resultTemplate, remembered := refineSuccessTemplates(75)
+
+	outcome, ok := runtime.ApplyRefineWithRoll(5, 3, 701, remembered, sourceTemplate, resultTemplate, 76)
+	if !ok || outcome.Succeeded || !outcome.Destroyed {
+		t.Fatalf("expected probability-75 roll=76 to destroy, got ok=%v outcome=%+v", ok, outcome)
+	}
+	if outcome.Destroy.SourceSlot != 5 || outcome.Destroy.Gold != 2500 || outcome.Destroy.Cost != 2500 {
+		t.Fatalf("unexpected refine roll destroy payload: %+v", outcome.Destroy)
+	}
+	live := runtime.LiveCharacter()
+	if len(live.Inventory) != 0 || live.Gold != 2500 {
+		t.Fatalf("unexpected live state after refine roll destroy: inventory=%#v gold=%d", live.Inventory, live.Gold)
+	}
+	persistedAfter := runtime.PersistedSnapshot()
+	if !reflect.DeepEqual(persistedAfter.Inventory, persisted.Inventory) || persistedAfter.Gold != persisted.Gold {
+		t.Fatalf("refine roll destroy mutated persisted snapshot before commit: got %#v want %#v", persistedAfter, persisted)
+	}
+}
+
+func TestRuntimeApplyRefineWithRollRejectsOutOfRangeRollWithoutMutation(t *testing.T) {
+	persisted := refineSuccessSeedCharacter(5000)
+	runtime := NewRuntime(persisted, SessionLink{Login: "refine-roll-range", CharacterIndex: 1})
+	sourceTemplate, resultTemplate, remembered := refineSuccessTemplates(75)
+
+	if outcome, ok := runtime.ApplyRefineWithRoll(5, 3, 701, remembered, sourceTemplate, resultTemplate, 0); ok {
+		t.Fatalf("expected roll=0 to fail closed, got %+v", outcome)
+	}
+	assertRefineSuccessUnchanged(t, runtime, persisted)
+	if outcome, ok := runtime.ApplyRefineWithRoll(5, 3, 701, remembered, sourceTemplate, resultTemplate, 101); ok {
+		t.Fatalf("expected roll=101 to fail closed, got %+v", outcome)
+	}
+	assertRefineSuccessUnchanged(t, runtime, persisted)
+}
+
 func TestRuntimeApplyRefineSuccessRejectsInsufficientGoldOrMaterialsWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name  string

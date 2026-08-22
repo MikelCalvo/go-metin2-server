@@ -149,6 +149,16 @@ type RefineDestroyFailureResult struct {
 	Cost            int32
 }
 
+// RefineWithRollResult is the live mutation outcome for remembered
+// probability values in 1..99 when confirm supplies one injected roll in
+// 1..100. Exactly one of Succeeded or Destroyed is set on acceptance.
+type RefineWithRollResult struct {
+	Succeeded bool
+	Destroyed bool
+	Success   RefineSuccessResult
+	Destroy   RefineDestroyFailureResult
+}
+
 // CarriedItemConsumeRequirement is one by-vnum carried-inventory debit request.
 type CarriedItemConsumeRequirement struct {
 	ItemVnum uint32
@@ -1602,6 +1612,41 @@ func (r *Runtime) ApplyRefineDestroyFailure(slot inventory.SlotIndex, refineType
 	r.liveGold = nextGold
 	r.liveInventory = inventoryItems
 	return result, true
+}
+
+// ApplyRefineWithRoll owns the first deterministic confirm path for remembered
+// refine_info.probability values in 1..99. roll must be in 1..100:
+// roll <= probability applies the owned success mutation; roll > probability
+// applies the owned whole-source destroy mutation. Rolls outside 1..100 and
+// remembered probabilities outside 1..99 fail closed with no mutation.
+func (r *Runtime) ApplyRefineWithRoll(slot inventory.SlotIndex, refineType uint8, sourceID uint64, remembered itemcatalog.RefineInfo, sourceTemplate itemcatalog.Template, resultTemplate itemcatalog.Template, roll int) (RefineWithRollResult, bool) {
+	if r == nil || roll < 1 || roll > 100 || remembered.Probability < 1 || remembered.Probability > 99 {
+		return RefineWithRollResult{}, false
+	}
+	if sourceTemplate.RefineInfo == nil || !refineInfoEqual(remembered, *sourceTemplate.RefineInfo) {
+		return RefineWithRollResult{}, false
+	}
+	adjustedRemembered := remembered
+	adjustedSource := sourceTemplate
+	adjustedInfo := *sourceTemplate.RefineInfo
+	if int32(roll) <= remembered.Probability {
+		adjustedRemembered.Probability = 100
+		adjustedInfo.Probability = 100
+		adjustedSource.RefineInfo = &adjustedInfo
+		success, ok := r.ApplyRefineSuccess(slot, refineType, sourceID, adjustedRemembered, adjustedSource, resultTemplate)
+		if !ok {
+			return RefineWithRollResult{}, false
+		}
+		return RefineWithRollResult{Succeeded: true, Success: success}, true
+	}
+	adjustedRemembered.Probability = 0
+	adjustedInfo.Probability = 0
+	adjustedSource.RefineInfo = &adjustedInfo
+	destroy, ok := r.ApplyRefineDestroyFailure(slot, refineType, sourceID, adjustedRemembered, adjustedSource, resultTemplate)
+	if !ok {
+		return RefineWithRollResult{}, false
+	}
+	return RefineWithRollResult{Destroyed: true, Destroy: destroy}, true
 }
 
 type refineMaterialPlanEntry struct {
