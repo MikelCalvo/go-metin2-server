@@ -4561,6 +4561,44 @@ func TestCanonicalizeRejectsUnsupportedMultiCountRegenSpawn(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeRejectsCheckedInMultiCountRegenExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-invalid-regen-count-bundle.json"))
+	if err != nil {
+		t.Fatalf("read invalid multi-count regen example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode invalid multi-count regen example bundle: %v", err)
+	}
+	if _, err := Canonicalize(bundle); !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for checked-in multi-count regen example, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsCheckedInOrphanQuestGateExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-invalid-orphan-quest-gate-bundle.json"))
+	if err != nil {
+		t.Fatalf("read invalid orphan quest-gate example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode invalid orphan quest-gate example bundle: %v", err)
+	}
+	if _, err := Canonicalize(bundle); !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for checked-in orphan quest-gate example, got %v", err)
+	}
+}
+
 func TestCanonicalizeKillQuestCreditAuthoringExample(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
