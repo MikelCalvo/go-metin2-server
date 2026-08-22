@@ -26,7 +26,7 @@ Name empire anti-flags (`anti_empire_a` / `anti_empire_b` / `anti_empire_c`) bes
 
 ## Follow-up options
 
-1. Optionally add dual-sided chat for exchange finalize id-collision / selected-character / transfer-guard restriction rejects once QA wants those distinguishable from silent fail-closed.
+1. ~~Freeze dual-sided exchange finalize Other reject chat (`Unknown error`) for id-collision / restriction / over-max / locked-compatible-stack (`docs/plans/2026-08-22-exchange-finalize-other-reject-chat.md`).~~ Contract frozen; implementation RED deferred to the next items-lane run.
 2. Keep partner-side open player-shop / cube busy-window exchange rejects deferred until those presentation seams exist.
 3. Keep party-shaped owner-delivery deferred.
 
