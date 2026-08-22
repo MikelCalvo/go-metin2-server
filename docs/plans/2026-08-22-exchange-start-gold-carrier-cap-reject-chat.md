@@ -28,7 +28,7 @@ Focused coverage:
 
 ## Follow-up options
 
-1. Optionally mirror the same carrier-cap reject on first-side `ACCEPT` if live gold drifts to the cap after shell open.
+1. Mirror the same carrier-cap reject on first-side / second-side `ACCEPT` and commit-time revalidation when live gold drifts to the cap after shell open (`docs/plans/2026-08-22-exchange-accept-gold-carrier-cap-reject-chat.md`).
 2. Keep id-collision / restriction finalize reject chat deferred until QA wants those distinguishable from silent fail-closed.
 3. Keep partner-side open player-shop / cube busy rejects deferred until those presentation seams exist.
 

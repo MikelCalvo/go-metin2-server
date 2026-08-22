@@ -597,6 +597,7 @@ Expected result:
 - out-of-range `EXCHANGE ITEM_ADD` display slots stay no-frame/no-mutation even for those guarded templates
 - malformed `EXCHANGE` payload sizes fail at the codec/dispatcher boundary rather than mutating runtime state
 - this is an exchange-window shell plus the first owned mutual-accept finalize path, not a completed exchange, trade, safebox, or player-shop feature
+- deferred next: `EXCHANGE ACCEPT` / commit-time gold-carrier-cap reject chat when either paired side's live gold drifts to `>= 1<<31-1` after shell open (`You have more than 2 Billion Yang. You cannot trade.` / `The player has more than 2 Billion Yang. You cannot trade with him.`; `docs/plans/2026-08-22-exchange-accept-gold-carrier-cap-reject-chat.md`)
 
 ---
 
