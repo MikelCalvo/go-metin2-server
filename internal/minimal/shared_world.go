@@ -54,25 +54,29 @@ type sharedWorldRegistry struct {
 	staticActorCombatSnapshot         map[uint64]uint64
 	staticActorCombatEngagedBy        map[uint64]uint64
 	staticActorProximityAggroSuppress map[uint64]map[uint64]struct{}
-	staticActorDeathReward            map[uint64]worldruntime.StaticActorDeathReward
-	staticActorKillQuestCredit        map[uint64]staticActorKillQuestCredit
-	sessionCombatTargets              map[uint64]uint32
-	sessionCombatRetaliations         map[uint64]combatRetaliationTimer
-	sessionMerchantWindows            map[uint64]bool
-	sessionSafeboxWindows             map[uint64]bool
-	sessionRefineWindows              map[uint64]bool
-	exchangePartners                  map[uint64]uint64
-	exchangeItems                     map[uint64]map[uint8]exchangeDisplayedItem
-	exchangeGold                      map[uint64]uint32
-	exchangeAccepted                  map[uint64]bool
-	nextStaticActorCombatSnapshotID   uint64
-	lastKnownCharacters               map[uint64]loginticket.Character
-	groundItemsByVID                  map[uint32]sharedGroundItem
-	itemTemplates                     map[uint32]itemcatalog.Template
-	suppressStaticActorFanout         bool
-	pendingStaticActorImportDeletes   []worldruntime.StaticEntity
-	now                               func() time.Time
-	onGroundItemsChanged              func()
+	// pendingProximityAggroSuppressByVID parks actor suppress membership across
+	// Leave → fresh Join identity changes (e.g. /phase_select). Live suppress
+	// stays keyed by subject entity ID; VID is only the handoff key.
+	pendingProximityAggroSuppressByVID map[uint32]map[uint64]struct{}
+	staticActorDeathReward             map[uint64]worldruntime.StaticActorDeathReward
+	staticActorKillQuestCredit         map[uint64]staticActorKillQuestCredit
+	sessionCombatTargets               map[uint64]uint32
+	sessionCombatRetaliations          map[uint64]combatRetaliationTimer
+	sessionMerchantWindows             map[uint64]bool
+	sessionSafeboxWindows              map[uint64]bool
+	sessionRefineWindows               map[uint64]bool
+	exchangePartners                   map[uint64]uint64
+	exchangeItems                      map[uint64]map[uint8]exchangeDisplayedItem
+	exchangeGold                       map[uint64]uint32
+	exchangeAccepted                   map[uint64]bool
+	nextStaticActorCombatSnapshotID    uint64
+	lastKnownCharacters                map[uint64]loginticket.Character
+	groundItemsByVID                   map[uint32]sharedGroundItem
+	itemTemplates                      map[uint32]itemcatalog.Template
+	suppressStaticActorFanout          bool
+	pendingStaticActorImportDeletes    []worldruntime.StaticEntity
+	now                                func() time.Time
+	onGroundItemsChanged               func()
 }
 
 type sharedGroundItem struct {
@@ -407,23 +411,24 @@ func newSharedWorldRegistry() *sharedWorldRegistry {
 
 func newSharedWorldRegistryWithTopology(topology worldruntime.BootstrapTopology) *sharedWorldRegistry {
 	return &sharedWorldRegistry{
-		topology:                          topology,
-		entities:                          worldruntime.NewEntityRegistryWithTopology(topology),
-		sessionDirectory:                  worldruntime.NewSessionDirectory(),
-		staticActorCombatHP:               make(map[uint64]uint8),
-		staticActorCombatRespawnAt:        make(map[uint64]time.Time),
-		staticActorCombatSnapshot:         make(map[uint64]uint64),
-		staticActorCombatEngagedBy:        make(map[uint64]uint64),
-		staticActorProximityAggroSuppress: make(map[uint64]map[uint64]struct{}),
-		staticActorDeathReward:            make(map[uint64]worldruntime.StaticActorDeathReward),
-		staticActorKillQuestCredit:        make(map[uint64]staticActorKillQuestCredit),
-		sessionCombatRetaliations:         make(map[uint64]combatRetaliationTimer),
-		exchangePartners:                  make(map[uint64]uint64),
-		exchangeAccepted:                  make(map[uint64]bool),
-		exchangeGold:                      make(map[uint64]uint32),
-		lastKnownCharacters:               make(map[uint64]loginticket.Character),
-		groundItemsByVID:                  make(map[uint32]sharedGroundItem),
-		now:                               time.Now,
+		topology:                           topology,
+		entities:                           worldruntime.NewEntityRegistryWithTopology(topology),
+		sessionDirectory:                   worldruntime.NewSessionDirectory(),
+		staticActorCombatHP:                make(map[uint64]uint8),
+		staticActorCombatRespawnAt:         make(map[uint64]time.Time),
+		staticActorCombatSnapshot:          make(map[uint64]uint64),
+		staticActorCombatEngagedBy:         make(map[uint64]uint64),
+		staticActorProximityAggroSuppress:  make(map[uint64]map[uint64]struct{}),
+		pendingProximityAggroSuppressByVID: make(map[uint32]map[uint64]struct{}),
+		staticActorDeathReward:             make(map[uint64]worldruntime.StaticActorDeathReward),
+		staticActorKillQuestCredit:         make(map[uint64]staticActorKillQuestCredit),
+		sessionCombatRetaliations:          make(map[uint64]combatRetaliationTimer),
+		exchangePartners:                   make(map[uint64]uint64),
+		exchangeAccepted:                   make(map[uint64]bool),
+		exchangeGold:                       make(map[uint64]uint32),
+		lastKnownCharacters:                make(map[uint64]loginticket.Character),
+		groundItemsByVID:                   make(map[uint32]sharedGroundItem),
+		now:                                time.Now,
 	}
 }
 
@@ -2022,10 +2027,64 @@ func (r *sharedWorldRegistry) markProximityAggroSuppressLocked(entityID uint64, 
 }
 
 func (r *sharedWorldRegistry) clearProximityAggroSuppressForActorLocked(entityID uint64) {
-	if r == nil || entityID == 0 || r.staticActorProximityAggroSuppress == nil {
+	if r == nil || entityID == 0 {
 		return
 	}
-	delete(r.staticActorProximityAggroSuppress, entityID)
+	if r.staticActorProximityAggroSuppress != nil {
+		delete(r.staticActorProximityAggroSuppress, entityID)
+	}
+	if r.pendingProximityAggroSuppressByVID == nil {
+		return
+	}
+	for vid, actors := range r.pendingProximityAggroSuppressByVID {
+		delete(actors, entityID)
+		if len(actors) == 0 {
+			delete(r.pendingProximityAggroSuppressByVID, vid)
+		}
+	}
+}
+
+// detachProximityAggroSuppressSubjectLocked removes subjectID from every live
+// actor suppress set and, when vid is non-zero, parks those actor IDs under
+// that VID so a later Join can rematerialize suppress under a new subject ID.
+func (r *sharedWorldRegistry) detachProximityAggroSuppressSubjectLocked(subjectID uint64, vid uint32) {
+	if r == nil || subjectID == 0 || r.staticActorProximityAggroSuppress == nil {
+		return
+	}
+	for actorID, subjects := range r.staticActorProximityAggroSuppress {
+		if _, ok := subjects[subjectID]; !ok {
+			continue
+		}
+		delete(subjects, subjectID)
+		if len(subjects) == 0 {
+			delete(r.staticActorProximityAggroSuppress, actorID)
+		}
+		if vid == 0 {
+			continue
+		}
+		if r.pendingProximityAggroSuppressByVID == nil {
+			r.pendingProximityAggroSuppressByVID = make(map[uint32]map[uint64]struct{})
+		}
+		actors := r.pendingProximityAggroSuppressByVID[vid]
+		if actors == nil {
+			actors = make(map[uint64]struct{})
+			r.pendingProximityAggroSuppressByVID[vid] = actors
+		}
+		actors[actorID] = struct{}{}
+	}
+}
+
+// claimPendingProximityAggroSuppressLocked rematerializes suppress parked under
+// vid onto newSubjectID after Leave → Join identity change.
+func (r *sharedWorldRegistry) claimPendingProximityAggroSuppressLocked(vid uint32, newSubjectID uint64) {
+	if r == nil || vid == 0 || newSubjectID == 0 || r.pendingProximityAggroSuppressByVID == nil {
+		return
+	}
+	actors := r.pendingProximityAggroSuppressByVID[vid]
+	delete(r.pendingProximityAggroSuppressByVID, vid)
+	for actorID := range actors {
+		r.markProximityAggroSuppressLocked(actorID, newSubjectID)
+	}
 }
 
 func (r *sharedWorldRegistry) proximityAggroSuppressActiveLocked(entityID uint64, subjectID uint64) bool {
@@ -3241,6 +3300,7 @@ func (r *sharedWorldRegistry) removeStaleOwnershipLocked(entityIDs []uint64) {
 		r.clearRefineWindowOpenLocked(entityID)
 		r.clearStaticActorCombatEngagementsBySubjectLocked(entityID)
 		r.clearExchangeLocked(entityID, true)
+		r.detachProximityAggroSuppressSubjectLocked(entityID, currentCharacter.VID)
 		_, _ = r.entities.Remove(entityID)
 		delete(r.lastKnownCharacters, entityID)
 		if !ok {
@@ -3284,6 +3344,7 @@ func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pen
 		_, _ = r.entities.Remove(id)
 		return 0, nil
 	}
+	r.claimPendingProximityAggroSuppressLocked(character.VID, id)
 
 	peerFrames := encodePeerVisibilityBootstrapFramesWithTemplates(character, r.itemTemplates)
 	for _, peerCharacter := range visibilityDiff.AddedVisiblePeers {
@@ -3316,6 +3377,7 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 	r.clearRefineWindowOpenLocked(id)
 	r.clearStaticActorCombatEngagementsBySubjectLocked(id)
 	r.clearExchangeLocked(id, true)
+	r.detachProximityAggroSuppressSubjectLocked(id, currentCharacter.VID)
 	_, _ = r.entities.Remove(id)
 	delete(r.lastKnownCharacters, id)
 	if !ok {

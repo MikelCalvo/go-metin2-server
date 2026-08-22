@@ -416,3 +416,373 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOw
 		t.Fatalf("expected leave/re-enter after death-floor /restart_here suppress to reacquire engagement for entity %d", group.EntityID)
 	}
 }
+
+func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOwnerDeathFloorPhaseSelectRestartHere(t *testing.T) {
+	// Owner death floor seeds proximity suppress by subject entity ID. /phase_select
+	// Leave + fresh Join allocates a new entity ID, so the same still-inside owner must
+	// keep suppress across that identity change through /restart_here until leave/re-enter.
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("AggroFloorPhaseOwner", 0x0103019b, 0x0204019b, 1850, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	issuePeerTicket(t, store, "aggro-floor-phase", 0x4b4b4b4b, owner)
+	if err := accounts.Save(accountstore.Account{Login: "aggro-floor-phase", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed proximity death-floor phase_select suppress owner account: %v", err)
+	}
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700002700, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		accounts,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for proximity death-floor suppress phase_select restart_here: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.aggro_floor_suppress_phase_select",
+		Name:          "AggroFloorPhaseSuppressMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import proximity death-floor phase_select suppress spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.aggro_floor_suppress_phase_select")
+	if !ok {
+		t.Fatal("expected proximity death-floor phase_select suppress spawn group to resolve by ref")
+	}
+
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "aggro-floor-phase", 0x4b4b4b4b)
+	defer closeSessionFlow(t, ownerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+
+	ownerEntity, ok := runtime.sharedWorld.playerEntityByName("AggroFloorPhaseOwner")
+	if !ok {
+		t.Fatal("expected proximity death-floor phase_select suppress owner entity to remain registered")
+	}
+	prePhaseSelectEntityID := ownerEntity.Entity.ID
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, prePhaseSelectEntityID) {
+		t.Fatalf("expected pending-frame proximity acquisition to engage owner for entity %d", group.EntityID)
+	}
+	if snapshot, ok := runtime.CombatTargetSnapshot("AggroFloorPhaseOwner"); ok {
+		t.Fatalf("expected proximity-armed death-floor phase_select suppress path not to invent selected combat target ownership, got %+v", snapshot)
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	floorQueued := flushServerFrames(t, ownerFlow)
+	if len(floorQueued) != 3 {
+		t.Fatalf("expected proximity-armed owner-floor retaliation to emit point-change, player dead, and target clear, got %d frames", len(floorQueued))
+	}
+	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, prePhaseSelectEntityID) {
+		t.Fatalf("expected proximity-armed death floor to release engagement for entity %d", group.EntityID)
+	}
+
+	phaseSelectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/phase_select",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /phase_select after proximity-armed death floor: %v", err)
+	}
+	if len(phaseSelectOut) == 0 {
+		t.Fatal("expected /phase_select frames after proximity-armed death floor")
+	}
+
+	selectPhaseOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 0})))
+	if err != nil {
+		t.Fatalf("unexpected character select after proximity-armed death-floor /phase_select: %v", err)
+	}
+	if len(selectPhaseOut) != 3 {
+		t.Fatalf("expected 3 character-select frames after proximity-armed death-floor /phase_select, got %d", len(selectPhaseOut))
+	}
+
+	reenterOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame()))
+	if err != nil {
+		t.Fatalf("unexpected enter-game after proximity-armed death-floor /phase_select: %v", err)
+	}
+	if len(reenterOut) == 0 {
+		t.Fatal("expected enter-game bootstrap frames after proximity-armed death-floor /phase_select")
+	}
+	_ = flushServerFrames(t, ownerFlow)
+
+	ownerEntity, ok = runtime.sharedWorld.playerEntityByName("AggroFloorPhaseOwner")
+	if !ok {
+		t.Fatal("expected proximity death-floor phase_select suppress owner entity after re-entry")
+	}
+	postPhaseSelectEntityID := ownerEntity.Entity.ID
+	if postPhaseSelectEntityID == 0 {
+		t.Fatal("expected non-zero owner entity ID after /phase_select re-entry")
+	}
+	if postPhaseSelectEntityID == prePhaseSelectEntityID {
+		t.Fatalf("expected /phase_select Leave/Join to allocate a new owner entity ID; still %d", postPhaseSelectEntityID)
+	}
+	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, postPhaseSelectEntityID) {
+		t.Fatalf("expected zero-HP /phase_select re-entry not to reacquire proximity engagement for entity %d", group.EntityID)
+	}
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_here",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here after proximity-armed death-floor /phase_select re-entry: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatal("expected /restart_here recovery frames after proximity-armed death-floor /phase_select re-entry")
+	}
+	_ = flushServerFrames(t, ownerFlow)
+
+	ownerEntity, ok = runtime.sharedWorld.playerEntityByName("AggroFloorPhaseOwner")
+	if !ok {
+		t.Fatal("expected proximity death-floor phase_select suppress owner entity after /restart_here")
+	}
+	if ownerEntity.Entity.ID != postPhaseSelectEntityID {
+		t.Fatalf("expected /restart_here to keep the post-/phase_select entity ID %d, got %d", postPhaseSelectEntityID, ownerEntity.Entity.ID)
+	}
+	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected still-inside owner to stay suppressed after death-floor /phase_select /restart_here for entity %d", group.EntityID)
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		for _, raw := range queued {
+			if _, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, raw)); err == nil {
+				t.Fatalf("expected suppressed post-/phase_select /restart_here owner not to receive delayed retaliation POINT_CHANGE, got %#v", queued)
+			}
+		}
+	}
+	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected delayed flush not to re-lock suppressed still-inside owner after death-floor /phase_select /restart_here for entity %d", group.EntityID)
+	}
+
+	moveOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+		Func: 1,
+		Arg:  0,
+		Rot:  12,
+		X:    1950,
+		Y:    2800,
+		Time: 0x5152535b,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected owner move error while leaving aggro radius after death-floor /phase_select /restart_here suppress: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 immediate self move ack after leaving aggro radius post-/phase_select /restart_here, got %d frames", len(moveOut))
+	}
+	_ = flushServerFrames(t, ownerFlow)
+
+	moveIn, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+		Func: 1,
+		Arg:  0,
+		Rot:  12,
+		X:    1850,
+		Y:    2800,
+		Time: 0x5152535c,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected owner move error while re-entering aggro radius after death-floor /phase_select /restart_here suppress: %v", err)
+	}
+	if len(moveIn) != 1 {
+		t.Fatalf("expected 1 immediate self move ack after re-entering aggro radius post-/phase_select /restart_here, got %d frames", len(moveIn))
+	}
+	_ = flushServerFrames(t, ownerFlow)
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected leave/re-enter after death-floor /phase_select /restart_here suppress to reacquire engagement for entity %d", group.EntityID)
+	}
+}
+
+func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOwnerDeathFloorReconnectRestartHere(t *testing.T) {
+	// Owner death floor seeds proximity suppress by subject entity ID. Abrupt
+	// disconnect Leave + fresh Join allocates a new entity ID, so the same still-inside
+	// owner must keep suppress across that identity change through /restart_here until leave/re-enter.
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("AggroFloorReconnectOwner", 0x0103019c, 0x0204019c, 1850, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	issuePeerTicket(t, store, "aggro-floor-reconnect", 0x4c4c4c4c, owner)
+	if err := accounts.Save(accountstore.Account{Login: "aggro-floor-reconnect", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed proximity death-floor reconnect suppress owner account: %v", err)
+	}
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700002800, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		accounts,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for proximity death-floor suppress reconnect restart_here: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.aggro_floor_suppress_reconnect",
+		Name:          "AggroFloorReconnectSuppressMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import proximity death-floor reconnect suppress spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.aggro_floor_suppress_reconnect")
+	if !ok {
+		t.Fatal("expected proximity death-floor reconnect suppress spawn group to resolve by ref")
+	}
+
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "aggro-floor-reconnect", 0x4c4c4c4c)
+	_ = flushServerFrames(t, ownerFlow)
+
+	ownerEntity, ok := runtime.sharedWorld.playerEntityByName("AggroFloorReconnectOwner")
+	if !ok {
+		t.Fatal("expected proximity death-floor reconnect suppress owner entity to remain registered")
+	}
+	preReconnectEntityID := ownerEntity.Entity.ID
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, preReconnectEntityID) {
+		t.Fatalf("expected pending-frame proximity acquisition to engage owner for entity %d", group.EntityID)
+	}
+	if snapshot, ok := runtime.CombatTargetSnapshot("AggroFloorReconnectOwner"); ok {
+		t.Fatalf("expected proximity-armed death-floor reconnect suppress path not to invent selected combat target ownership, got %+v", snapshot)
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	floorQueued := flushServerFrames(t, ownerFlow)
+	if len(floorQueued) != 3 {
+		t.Fatalf("expected proximity-armed owner-floor retaliation to emit point-change, player dead, and target clear, got %d frames", len(floorQueued))
+	}
+	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, preReconnectEntityID) {
+		t.Fatalf("expected proximity-armed death floor to release engagement for entity %d", group.EntityID)
+	}
+
+	persisted, err := accounts.Load("aggro-floor-reconnect")
+	if err != nil {
+		t.Fatalf("load persisted account after proximity-armed death floor: %v", err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected exactly 1 persisted owner after proximity-armed death floor, got %+v", persisted)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 0 {
+		t.Fatalf("expected proximity-armed death floor to persist points[%d]=0 before reconnect, got %d", bootstrapPlayerPointValueIndex, persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+
+	closeSessionFlow(t, ownerFlow)
+	issuePeerTicket(t, store, "aggro-floor-reconnect", 0x4d4d4d4d, persisted.Characters[0])
+
+	reconnectFlow, reconnectEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "aggro-floor-reconnect", 0x4d4d4d4d)
+	defer closeSessionFlow(t, reconnectFlow)
+	if len(reconnectEnter) == 0 {
+		t.Fatal("expected enter-game bootstrap frames after proximity-armed death-floor reconnect")
+	}
+	_ = flushServerFrames(t, reconnectFlow)
+
+	ownerEntity, ok = runtime.sharedWorld.playerEntityByName("AggroFloorReconnectOwner")
+	if !ok {
+		t.Fatal("expected proximity death-floor reconnect suppress owner entity after re-entry")
+	}
+	postReconnectEntityID := ownerEntity.Entity.ID
+	if postReconnectEntityID == 0 {
+		t.Fatal("expected non-zero owner entity ID after reconnect re-entry")
+	}
+	if postReconnectEntityID == preReconnectEntityID {
+		t.Fatalf("expected reconnect Leave/Join to allocate a new owner entity ID; still %d", postReconnectEntityID)
+	}
+	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, postReconnectEntityID) {
+		t.Fatalf("expected zero-HP reconnect re-entry not to reacquire proximity engagement for entity %d", group.EntityID)
+	}
+
+	restartOut, err := reconnectFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_here",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here after proximity-armed death-floor reconnect re-entry: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatal("expected /restart_here recovery frames after proximity-armed death-floor reconnect re-entry")
+	}
+	_ = flushServerFrames(t, reconnectFlow)
+
+	ownerEntity, ok = runtime.sharedWorld.playerEntityByName("AggroFloorReconnectOwner")
+	if !ok {
+		t.Fatal("expected proximity death-floor reconnect suppress owner entity after /restart_here")
+	}
+	if ownerEntity.Entity.ID != postReconnectEntityID {
+		t.Fatalf("expected /restart_here to keep the post-reconnect entity ID %d, got %d", postReconnectEntityID, ownerEntity.Entity.ID)
+	}
+	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected still-inside owner to stay suppressed after death-floor reconnect /restart_here for entity %d", group.EntityID)
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if queued := flushServerFrames(t, reconnectFlow); len(queued) != 0 {
+		for _, raw := range queued {
+			if _, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, raw)); err == nil {
+				t.Fatalf("expected suppressed post-reconnect /restart_here owner not to receive delayed retaliation POINT_CHANGE, got %#v", queued)
+			}
+		}
+	}
+	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected delayed flush not to re-lock suppressed still-inside owner after death-floor reconnect /restart_here for entity %d", group.EntityID)
+	}
+
+	moveOut, err := reconnectFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+		Func: 1,
+		Arg:  0,
+		Rot:  12,
+		X:    1950,
+		Y:    2800,
+		Time: 0x5152535d,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected owner move error while leaving aggro radius after death-floor reconnect /restart_here suppress: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 immediate self move ack after leaving aggro radius post-reconnect /restart_here, got %d frames", len(moveOut))
+	}
+	_ = flushServerFrames(t, reconnectFlow)
+
+	moveIn, err := reconnectFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+		Func: 1,
+		Arg:  0,
+		Rot:  12,
+		X:    1850,
+		Y:    2800,
+		Time: 0x5152535e,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected owner move error while re-entering aggro radius after death-floor reconnect /restart_here suppress: %v", err)
+	}
+	if len(moveIn) != 1 {
+		t.Fatalf("expected 1 immediate self move ack after re-entering aggro radius post-reconnect /restart_here, got %d frames", len(moveIn))
+	}
+	_ = flushServerFrames(t, reconnectFlow)
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected leave/re-enter after death-floor reconnect /restart_here suppress to reacquire engagement for entity %d", group.EntityID)
+	}
+}
