@@ -345,6 +345,84 @@ func TestRunWithOpsHandlerServesCustomOpsEndpoint(t *testing.T) {
 	}
 }
 
+func TestRunWithOpsHandlerLogsLocalAccessAndSkipsHealthz(t *testing.T) {
+	pprofAddr := reserveLocalAddr(t)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "ok\n")
+	})
+	mux.HandleFunc("/local/build-info", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `{"version":"dev"}`)
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var logBuffer bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuffer, nil))
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- RunWithOpsHandler(ctx, config.Service{
+			Name:       "gamed",
+			PprofAddr:  pprofAddr,
+			PublicAddr: "127.0.0.1",
+		}, logger, nil, mux)
+	}()
+
+	waitForHealthz(t, pprofAddr, "ok\n")
+
+	beforeLocal := logBuffer.String()
+	resp, err := http.Get("http://" + pprofAddr + "/local/build-info?token=should-not-log")
+	if err != nil {
+		t.Fatalf("get local build-info: %v", err)
+	}
+	body, readErr := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if readErr != nil {
+		t.Fatalf("read local build-info body: %v", readErr)
+	}
+	if resp.StatusCode != http.StatusOK || string(body) != `{"version":"dev"}` {
+		t.Fatalf("unexpected local build-info response: status=%d body=%q", resp.StatusCode, string(body))
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	var logs string
+	for {
+		logs = logBuffer.String()
+		if strings.Contains(logs, `"msg":"ops local request"`) && strings.Contains(logs, `"path":"/local/build-info"`) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected ops local access log, got:\n%s", logs)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if strings.Contains(logs, "token=") || strings.Contains(logs, "should-not-log") {
+		t.Fatalf("access log leaked query string: %s", logs)
+	}
+	if strings.Count(logs, `"msg":"ops local request"`)-strings.Count(beforeLocal, `"msg":"ops local request"`) != 1 {
+		t.Fatalf("expected exactly one new ops local access log line, got:\n%s", logs)
+	}
+	if strings.Contains(logs, `"path":"/healthz"`) {
+		t.Fatalf("healthz must not emit ops local access logs: %s", logs)
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("run with ops access logging returned error: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout waiting for RunWithOpsHandler to stop")
+	}
+}
+
 func TestServeLegacyFlushesServerInitiatedFramesWithoutIncomingTraffic(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

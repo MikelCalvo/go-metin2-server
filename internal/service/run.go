@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	"github.com/MikelCalvo/go-metin2-server/internal/observability"
 	"github.com/MikelCalvo/go-metin2-server/internal/ops"
 )
 
@@ -75,6 +76,7 @@ func serveOps(ctx context.Context, cfg config.Service, logger *slog.Logger, hand
 	if handler == nil {
 		handler = ops.NewPprofMux(cfg.Name)
 	}
+	handler = observability.WrapOpsAccessLog(logger, handler)
 	server := &http.Server{
 		Addr:              cfg.PprofAddr,
 		Handler:           handler,

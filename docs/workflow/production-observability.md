@@ -45,11 +45,43 @@ Example safe startup line shape:
 {"time":"...","level":"INFO","msg":"ops server listening","service":"gamed","version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-20T15:30:45Z","addr":"127.0.0.1:6060"}
 ```
 
+## Loopback `/local/*` access logs
+
+`service.serveOps` wraps the ops mux with `observability.WrapOpsAccessLog` so both
+`authd` and `gamed` emit one metadata-only JSON info line after each `/local/*`
+handler returns.
+
+Access-line fields (in addition to the process-logger baseline attrs):
+
+| Field | Meaning |
+| --- | --- |
+| `msg` | always `ops local request` |
+| `method` | HTTP method |
+| `path` | `URL.Path` only (never query/fragment) |
+| `remote_addr` | request `RemoteAddr` |
+| `status` | response status (`200` when the handler wrote a body without `WriteHeader`) |
+| `duration_ms` | wall-clock milliseconds spent in the handler |
+
+Rules:
+
+1. `/healthz` and `/debug/pprof/*` are never access-logged.
+2. Request and response bodies are never logged.
+3. Query strings are never logged (so `?token=...` cannot leak through this seam).
+4. Nil process loggers remain a passthrough; custom `RunWithOpsHandler` muxes still
+   inherit the wrapper when a logger is supplied.
+
+Example safe access line shape:
+
+```json
+{"time":"...","level":"INFO","msg":"ops local request","service":"gamed","version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-20T15:30:45Z","method":"GET","path":"/local/build-info","remote_addr":"127.0.0.1:54321","status":200,"duration_ms":1}
+```
+
 ## What this is not yet
 
 - metrics exporters (`/metrics`) or OpenTelemetry traces
 - remote log shipping / SIEM sinks
-- request-scoped HTTP access logs for `/local/*`
+- logging `/healthz` or `/debug/pprof/*`
+- request/response body capture or query-string logging
 - log sampling / rate limits
 - changing the migration CLI redaction helper beyond its existing DSN scrub
 - remote admin authentication
@@ -59,3 +91,4 @@ Example safe startup line shape:
 - [lab deployment topology](lab-deployment-topology.md)
 - [release/versioning policy](release-versioning.md)
 - [debugging and profiling](../debugging-and-profiling.md)
+- [ops local access logging plan](../plans/2026-08-22-ops-local-access-logging.md)
