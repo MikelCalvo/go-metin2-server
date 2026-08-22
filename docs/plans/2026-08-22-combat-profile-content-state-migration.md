@@ -56,7 +56,7 @@ execution, or daemon-local mutating migration endpoint is added.
 
 - SQL-backed static-actor / combat-profile repositories at runtime
 - INSERT / backfill / restore-from-export tooling
-- ground-item restart durability
+- SQL import/backfill of pending ground handles from quarantined `0010` exports (FileStore rematerialize + backup/restore are already owned)
 - weighted/random loot tables or branching quest scripts
 - remote admin API
 - automatic registration of portable profiles into the process registry from SQL
@@ -76,6 +76,6 @@ Focused coverage:
 ## Follow-up options
 
 1. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
-2. Keep ground-item restart durability deferred until operators decide quarantined `0010` exports should drive recovery.
+2. ~~Keep ground-item restart durability deferred until operators decide quarantined `0010` exports should drive recovery.~~ Done for FileStore rematerialize + backup/restore: see [ground-item process-restart durability](2026-08-22-ground-item-process-restart-durability.md) and [ground-item file-store backup/restore](2026-08-22-ground-item-file-store-backup-restore.md). SQL import/backfill from quarantined `0010` exports remains deferred.
 3. Keep daemon-local migration endpoints read-only.
 4. Optional later: project process-registry builtins into a read-only offline review artifact (still not portable store rows).

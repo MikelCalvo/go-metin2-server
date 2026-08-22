@@ -22,7 +22,7 @@ File-path restore empties `filepath.Dir(snapshotPath)`. Shared parents are there
 ## What this is not yet
 
 - automatic migration of existing shared-parent lab trees
-- ground-item restart durability / `0010` recovery
+- SQL import/backfill of pending ground handles from quarantined `0010` exports (FileStore rematerialize + backup/restore are already owned)
 - SQL import/backfill
 - remote admin APIs
 - changing restore semantics themselves
@@ -36,6 +36,6 @@ File-path restore empties `filepath.Dir(snapshotPath)`. Shared parents are there
 
 ## Follow-up options
 
-1. Keep ground-item restart durability deferred until operators decide quarantined `0010` exports should drive recovery.
+1. ~~Keep ground-item restart durability deferred until operators decide quarantined `0010` exports should drive recovery.~~ Done for FileStore rematerialize + backup/restore: see [ground-item process-restart durability](2026-08-22-ground-item-process-restart-durability.md) and [ground-item file-store backup/restore](2026-08-22-ground-item-file-store-backup-restore.md). SQL import/backfill from quarantined `0010` exports remains deferred.
 2. Keep SQL import/backfill deferred until a driver-backed harness and backup policy exist.
 3. ~~Optional Docker `LABEL` workflow-run metadata remains deferred.~~ Done: see [Docker LABEL workflow-run metadata](2026-08-22-docker-label-workflow-run-metadata.md).

@@ -24,7 +24,7 @@ Supported `--kind` values:
 | `character-quest-state` | `0004_character_quest_state` |
 | `auth-login-ticket-handoff` | `0007_auth_login_ticket_handoff` |
 | `item-template-state` | `0009_item_template_refine_info` |
-| `static-actor-content-state` | `0012_static_actor_pve_interaction_state` |
+| `static-actor-content-state` | `0013_static_actor_combat_profile_state` |
 | `bootstrap-ground-item-state` | `0010_bootstrap_ground_item_state` |
 
 Behavior:
@@ -67,4 +67,4 @@ Validation:
 
 1. ~~Add a dry-run helper that prints backup/restore drill commands from `/local/runtime-config`.~~ Done: `metin2-migrate backup-restore-drill`.
 2. Extract repository seams only after offline quarantine + loopback quarantine both prove the export boundary.
-3. Keep ground-item restart durability deferred until a real world-state repository exists.
+3. ~~Keep ground-item restart durability deferred until a real world-state repository exists.~~ Done for FileStore rematerialize + backup/restore: see [ground-item process-restart durability](2026-08-22-ground-item-process-restart-durability.md) and [ground-item file-store backup/restore](2026-08-22-ground-item-file-store-backup-restore.md). SQL import/backfill from quarantined `0010` exports remains deferred.
