@@ -1162,3 +1162,206 @@ func TestGameRuntimePendingGroundItemAndGoldRematerializeAcrossDaemonRestart(t *
 	closeSessionFlow(t, ownerRestartFlow)
 	closeSessionFlow(t, peerRestartFlow)
 }
+
+// TestGameRuntimePracticeMobKillRewardDropRematerializesAcrossDaemonRestart proves
+// that an accepted practice-mob killing-hit drop reuses the same GroundItem FileStore
+// rematerialize path as player drops: exclusive ownership / despawn absolute timers
+// survive process restart, a peer stays fail-closed mid-window, and the killer can
+// reclaim the rematerialized reward after rejoin.
+func TestGameRuntimePracticeMobKillRewardDropRematerializesAcrossDaemonRestart(t *testing.T) {
+	defer worldruntime.DisableDurableGroundItemSyncForTest()()
+
+	ticketDir := t.TempDir()
+	accountDir := t.TempDir()
+	groundItemPath := filepath.Join(t.TempDir(), "ground-items.json")
+	itemTemplatePath := filepath.Join(t.TempDir(), "item-templates.json")
+	staticActorPath := filepath.Join(t.TempDir(), "static-actors.json")
+	interactionPath := filepath.Join(t.TempDir(), "interaction-definitions.json")
+
+	ticketStore := loginticket.NewFileStore(ticketDir)
+	accounts := accountstore.NewFileStore(accountDir)
+	itemStore := itemcatalog.NewFileStore(itemTemplatePath)
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: rewardDropItemTemplates(27001)}); err != nil {
+		t.Fatalf("seed kill-reward restart item templates: %v", err)
+	}
+
+	killer := peerVisibilityCharacter("KillRewardRestartKiller", 0x01030181, 0x02040181, 1100, 2100, 0, 101, 201)
+	peer := peerVisibilityCharacter("KillRewardRestartPeer", 0x01030182, 0x02040182, 1110, 2110, 0, 101, 201)
+	const (
+		killerLogin = "kill-reward-restart-killer"
+		peerLogin   = "kill-reward-restart-peer"
+		killerKey   = uint32(0x81818181)
+		peerKey     = uint32(0x82828282)
+	)
+	issuePeerTicket(t, ticketStore, killerLogin, killerKey, killer)
+	issuePeerTicket(t, ticketStore, peerLogin, peerKey, peer)
+	if err := accounts.Save(accountstore.Account{Login: killerLogin, Empire: killer.Empire, Characters: cloneCharacters([]loginticket.Character{killer})}); err != nil {
+		t.Fatalf("seed kill-reward restart killer account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed kill-reward restart peer account: %v", err)
+	}
+
+	cfg := config.Service{
+		LegacyAddr:          ":13000",
+		PublicAddr:          "127.0.0.1",
+		LoginTicketStoreDir: ticketDir,
+		AccountStoreDir:     accountDir,
+		GroundItemStorePath: groundItemPath,
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		cfg,
+		ticketStore,
+		accounts,
+		staticstore.NewFileStore(staticActorPath),
+		interactionstore.NewFileStore(interactionPath),
+		itemStore,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected kill-reward restart runtime error: %v", err)
+	}
+	// Use wall-clock time so construction-time rematerialize filtering (which
+	// reads time.Now before the test can override runtime.now) still sees the
+	// pending kill-reward handle inside its absolute despawn window.
+	currentTime := time.Now().UTC().Truncate(time.Second)
+	runtime.now = func() time.Time { return currentTime }
+	runtime.sharedWorld.now = runtime.now
+
+	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{
+		ItemTemplates: rewardDropItemTemplates(27001),
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:             "practice.kill_reward_restart_mob",
+			Name:            "KillRewardRestartMob",
+			MapIndex:        bootstrapMapIndex,
+			X:               1200,
+			Y:               2200,
+			RaceNum:         20350,
+			CombatProfile:   worldruntime.StaticActorCombatProfileTrainingDummy,
+			RewardDropVnums: []uint32{27001},
+		}},
+	}); err != nil {
+		t.Fatalf("import kill-reward restart spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 kill-reward restart practice mob, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	killerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), killerLogin, killerKey)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, peerKey)
+	flushServerFrames(t, killerFlow)
+	flushServerFrames(t, peerFlow)
+
+	if out, err := killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected kill-reward restart target selection to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+			AttackType: combatproto.ClientAttackTypeNormal,
+			TargetVID:  targetVID,
+		})))
+		if err != nil {
+			t.Fatalf("unexpected kill-reward restart attack error on hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 4 {
+		t.Fatalf("expected killing hit to return dead, clear, ground-add, and ownership frames, got %d", len(killOut))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	if err != nil || ground.Vnum != 27001 {
+		t.Fatalf("unexpected kill-reward restart ground add: %+v err=%v", ground, err)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	if err != nil || ownership.VID != ground.VID || ownership.OwnerName != killer.Name {
+		t.Fatalf("unexpected kill-reward restart ownership: %+v err=%v", ownership, err)
+	}
+	if !runtime.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatal("expected kill-reward drop to be registered before daemon restart")
+	}
+
+	persisted, err := worldruntime.NewGroundItemFileStore(groundItemPath).Load()
+	if err != nil {
+		t.Fatalf("load persisted kill-reward ground items before restart: %v", err)
+	}
+	if len(persisted.GroundItems) != 1 || persisted.GroundItems[0].VID != ground.VID || !persisted.GroundItems[0].OwnershipExclusive {
+		t.Fatalf("expected 1 exclusive persisted kill-reward handle before restart, got %#v", persisted.GroundItems)
+	}
+
+	// Simulate process crash: abandon live sessions without Leave-owned deletion.
+	runtime.sharedWorld.SetGroundItemsChangedHook(nil)
+	closeSessionFlow(t, killerFlow)
+	closeSessionFlow(t, peerFlow)
+
+	reloaded, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		cfg,
+		ticketStore,
+		accountstore.NewFileStore(accountDir),
+		staticstore.NewFileStore(staticActorPath),
+		interactionstore.NewFileStore(interactionPath),
+		itemcatalog.NewFileStore(itemTemplatePath),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected post-restart kill-reward rematerialize runtime error: %v", err)
+	}
+	reloaded.now = func() time.Time { return currentTime.Add(5 * time.Second) }
+	reloaded.sharedWorld.now = reloaded.now
+
+	snapshot := reloaded.sharedWorld.DurableGroundItemSnapshot()
+	if len(snapshot.GroundItems) != 1 {
+		t.Fatalf("expected durable rematerialized kill-reward snapshot with 1 row, got %#v", snapshot.GroundItems)
+	}
+	row := snapshot.GroundItems[0]
+	if row.VID != ground.VID || row.Vnum != 27001 || row.ItemCount == nil || *row.ItemCount != 1 || !row.OwnershipExclusive {
+		t.Fatalf("unexpected rematerialized kill-reward row: %#v", row)
+	}
+
+	killerRestartFlow, _ := enterGameWithLoginTicket(t, reloaded.SessionFactory(), killerLogin, killerKey)
+	peerRestartFlow, _ := enterGameWithLoginTicket(t, reloaded.SessionFactory(), peerLogin, peerKey)
+	defer closeSessionFlow(t, killerRestartFlow)
+	defer closeSessionFlow(t, peerRestartFlow)
+
+	killerEntity, ok := reloaded.sharedWorld.playerEntityByName(killer.Name)
+	peerEntity, peerOK := reloaded.sharedWorld.playerEntityByName(peer.Name)
+	if !ok || !peerOK || killerEntity.Entity.ID == 0 || peerEntity.Entity.ID == 0 {
+		t.Fatalf("expected rematerialized killer/peer entity ids, killerOK=%v peerOK=%v", ok, peerOK)
+	}
+	killerID := killerEntity.Entity.ID
+	peerID := peerEntity.Entity.ID
+
+	items, mapOK := reloaded.GroundItemsForMap(bootstrapMapIndex)
+	if !mapOK || len(items) != 1 || items[0].VID != ground.VID {
+		t.Fatalf("expected rematerialized kill-reward handle visible on occupied map after rejoin, ok=%v items=%#v", mapOK, items)
+	}
+	if _, ok := reloaded.sharedWorld.GroundItemPickupFor(peerID, peer, ground.VID); ok {
+		t.Fatal("expected rematerialized exclusive kill-reward ownership to block peer mid-window")
+	}
+	if pickup, ok := reloaded.sharedWorld.GroundItemPickupFor(killerID, killer, ground.VID); !ok || pickup.Item.Vnum != 27001 || pickup.Item.Count != 1 {
+		t.Fatalf("expected rematerialized exclusive kill-reward ownership to allow killer pickup, ok=%v pickup=%+v", ok, pickup)
+	}
+
+	pickupOut := pickupGroundItem(t, killerRestartFlow, ground.VID)
+	if len(pickupOut) < 3 {
+		t.Fatalf("expected rematerialized kill-reward pickup to emit ground-del plus inventory refresh frames, got %d", len(pickupOut))
+	}
+	if del, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, pickupOut[0])); err != nil || del.VID != ground.VID {
+		t.Fatalf("unexpected rematerialized kill-reward ground delete: del=%+v err=%v", del, err)
+	}
+	if reloaded.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatal("expected rematerialized kill-reward pickup to remove the ground handle")
+	}
+	afterPickup, err := worldruntime.NewGroundItemFileStore(groundItemPath).Load()
+	if err != nil {
+		t.Fatalf("load ground items after rematerialized kill-reward pickup: %v", err)
+	}
+	if len(afterPickup.GroundItems) != 0 {
+		t.Fatalf("expected FileStore to clear rematerialized kill-reward after pickup, got %#v", afterPickup.GroundItems)
+	}
+}

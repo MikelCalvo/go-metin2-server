@@ -154,7 +154,7 @@ Current rules:
 - each configured drop spawns at the killer's current position
 - each drop has count `1`
 - each drop is owned by the killer's character name
-- reward ground handles reuse the same bootstrap exclusive-ownership timer (`30` seconds), blank public `GC::ITEM_OWNERSHIP` release, and in-memory destroy deadline (`300` seconds from registration) already owned by player drops in `item-drop-pickup-bootstrap.md`; restart-restored ownership/despawn timer state remains deferred
+- reward ground handles reuse the same bootstrap exclusive-ownership timer (`30` seconds), blank public `GC::ITEM_OWNERSHIP` release, and destroy deadline (`300` seconds from registration) already owned by player drops in `item-drop-pickup-bootstrap.md`; pending kill-reward handles rematerialize across `gamed` process restart from the dedicated ground-item FileStore with absolute `ownership_expires_at` / `despawn_at` timers, identity-keyed exclusive ownership while `OwnerID = 0`, and process-local exclusive `OwnerID` rebind when the matching killer rejoins
 - while exclusive ownership is active, a non-owner visible collector's `ITEM_PICKUP` fails closed with no frames and leaves the reward handle pending; after public ownership release, the same collector uses ordinary collector-side pickup
 - item drops are runtime ground items first; they do not mutate persisted inventory until an explicit pickup succeeds
 - item-shaped reward drops backed by loaded authored item-template metadata inherit that template's non-zero `pickup_range`; omitted or zero `pickup_range` keeps the deterministic 300-unit bootstrap reach already used by ordinary ground handles
@@ -204,6 +204,7 @@ The repository can now say:
 - scalar rewards persist before their point-change frames are emitted
 - item drops become owned ground items only after the currently loaded item-template metadata allows that reward drop for the selected killer, and persist to inventory only through the normal pickup path
 - item-shaped reward drops use the same template-authored pickup reach as ordinary dropped handles, so authored long-range rewards can be collected farther away while authored short-range rewards stay pending when the collector is outside that reach
+- pending kill-reward ground handles rematerialize across `gamed` process restart from the dedicated ground-item FileStore with absolute ownership/despawn timers, the same way ordinary player drops do
 - timed respawn rebuild preserves authored reward descriptor metadata so later kills continue to use the same content contract
 
 Broader reward, loot-table, party, and level-up systems remain future work.
