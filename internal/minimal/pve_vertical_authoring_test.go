@@ -80,6 +80,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	}
 	const pveVerticalMobMaxHP = uint8(20)
 	const pveVerticalMobHitsToKill = 4 // max_hp 20 / formula damage 5
+	const pveVerticalMobFormulaDamage = int32(5)
 	const pveVerticalMobRespawnDelay = 2 * time.Second
 	imported, err := runtime.ImportContentBundle(authored)
 	if err != nil {
@@ -155,6 +156,9 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		preGuideKillOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: mobVID})))
 		if err != nil {
 			t.Fatalf("unexpected pre-guide kill attack error on hit %d: %v", hit, err)
+		}
+		if hit == 1 {
+			assertPveVerticalFormulaFirstHitFrames(t, preGuideKillOut, mobVID, hero.VID, pveVerticalMobFormulaDamage, "pre-guide")
 		}
 	}
 	for _, frame := range preGuideKillOut {
@@ -269,6 +273,9 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		postGuideKillOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: mobVID})))
 		if err != nil {
 			t.Fatalf("unexpected post-guide kill attack error on hit %d: %v", hit, err)
+		}
+		if hit == 1 {
+			assertPveVerticalFormulaFirstHitFrames(t, postGuideKillOut, mobVID, hero.VID, pveVerticalMobFormulaDamage, "post-guide")
 		}
 	}
 	killChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, postGuideKillOut[len(postGuideKillOut)-1]))
@@ -414,4 +421,27 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if !ok || currencySnapshot.Gold != wantGoldAfter {
 		t.Fatalf("expected mismatch path to leave gold at %d, got ok=%v snapshot=%+v", wantGoldAfter, ok, currencySnapshot)
 	}
+}
+
+func assertPveVerticalFormulaFirstHitFrames(t *testing.T, frames [][]byte, mobVID uint32, ownerVID uint32, wantMobDamage int32, context string) {
+	t.Helper()
+	if len(frames) != 4 {
+		t.Fatalf("expected target refresh, retaliation, and damage-info on %s formula first hit, got %d frames", context, len(frames))
+	}
+	refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, frames[0]))
+	if err != nil {
+		t.Fatalf("decode %s formula first-hit target refresh: %v", context, err)
+	}
+	if refresh.TargetVID != mobVID || refresh.HPPercent != 75 {
+		t.Fatalf("expected %s formula first hit to reach 75%% HP (20->15), got %+v", context, refresh)
+	}
+	retaliation, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, frames[1]))
+	if err != nil {
+		t.Fatalf("decode %s formula first-hit retaliation point-change: %v", context, err)
+	}
+	if retaliation.VID != ownerVID || retaliation.Type != bootstrapPlayerPointType || retaliation.Amount != bootstrapPracticeMobRetaliationPointDelta {
+		t.Fatalf("unexpected %s formula first-hit retaliation point-change: %+v", context, retaliation)
+	}
+	assertDamageInfoFrame(t, frames[2], mobVID, wantMobDamage, context+" mob damage-info")
+	assertDamageInfoFrame(t, frames[3], ownerVID, -bootstrapPracticeMobRetaliationPointDelta, context+" owner retaliation damage-info")
 }

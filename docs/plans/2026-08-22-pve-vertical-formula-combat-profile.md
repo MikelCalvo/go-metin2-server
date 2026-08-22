@@ -47,7 +47,10 @@ git diff --check
 ## Follow-up options
 
 1. Keep weighted/random loot and full legacy formulas deferred.
-2. Optional: assert first-hit formula `DAMAGE_INFO` amount inside the vertical
-   gameplay proof if QA wants packet-level coverage in the same fixture.
+2. ~~Optional: assert first-hit formula `DAMAGE_INFO` amount inside the vertical
+   gameplay proof if QA wants packet-level coverage in the same fixture.~~ Done:
+   `TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn` now asserts
+   the first pre-guide and post-guide live hits emit `TARGET(75%)` plus spawn-backed
+   retaliation/`DAMAGE_INFO` companions with formula `damage = 5`.
 3. Next combat-lane candidates remain engagement cleanup only where an owned
    invariant is still missing, or deferred skill/ranged/PvP codecs.
