@@ -26,7 +26,7 @@ Name empire anti-flags (`anti_empire_a` / `anti_empire_b` / `anti_empire_c`) bes
 
 ## Follow-up options
 
-1. ~~Freeze dual-sided exchange finalize Other reject chat (`Unknown error`) for id-collision / restriction / over-max / locked-compatible-stack (`docs/plans/2026-08-22-exchange-finalize-other-reject-chat.md`).~~ Contract frozen; implementation RED deferred to the next items-lane run.
+1. ~~Freeze dual-sided exchange finalize Other reject chat (`Unknown error`) for id-collision / restriction / over-max / locked-compatible-stack (`docs/plans/2026-08-22-exchange-finalize-other-reject-chat.md`).~~ Done: dual-sided `Unknown error` shipped for second-accept/commit-time Other.
 2. Keep partner-side open player-shop / cube busy-window exchange rejects deferred until those presentation seams exist.
 3. Keep party-shaped owner-delivery deferred.
 

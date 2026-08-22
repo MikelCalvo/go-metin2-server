@@ -4,7 +4,7 @@
 
 Make the remaining second-accept / commit-time receiver finalization precondition failures client-visible by emitting dual-sided `CHAT_TYPE_INFO` `"Unknown error"` for the already-classified `exchangeRecipientRejectOther` bucket (item-id collision, over-template-max compatible stack, locked-compatible-stack capacity with no free cell, selected-character / transfer-guard template restrictions, and invalid receiver snapshots), instead of failing closed with zero frames.
 
-## Contract to own
+## Contract owned by this slice
 
 1. On second-accept (`AcceptExchange` when the partner had already accepted), when a receiver fails with `exchangeRecipientRejectOther` after the already-owned busy / gold-carrier-cap / Check / Space / gold-overflow gates, emit:
    - to both paired sides: one self-facing `CHAT_TYPE_INFO` with message `Unknown error` (`vid = 0`)
@@ -24,9 +24,9 @@ Make the remaining second-accept / commit-time receiver finalization preconditio
 
 ## TDD and validation
 
-Focused coverage once implementation starts:
+Focused coverage:
 
-- `go test ./internal/minimal -run 'ItemExchangeSecondAcceptRejectsReceiverEquipmentIDCollision|ItemExchangeSecondAcceptRejectsReceiverInventoryIDCollision|ItemExchangeSecondAcceptRejectsReceiverSelectedCharacterRestriction|SharedWorldCommitExchangeFinalizeRejects' -count=1`
+- `go test ./internal/minimal -run 'ItemExchangeSecondAcceptRejectsReceiverEquipmentIDCollision|ItemExchangeSecondAcceptRejectsReceiverInventoryIDCollision|ItemExchangeSecondAcceptRejectsReceiverSelectedCharacterRestriction|ItemExchangeSecondAcceptRejectsReceiverLockedCompatible|ItemExchangeSecondAcceptRejectsReceiverOverTemplate|SharedWorldCommitExchangeFinalizeRejects' -count=1`
 - `gofmt` on touched Go files
 - `git diff --check`
 
@@ -38,4 +38,4 @@ Focused coverage once implementation starts:
 
 ## Status
 
-Contract frozen for the next items-lane slice. RED was intentionally deferred to this handoff so `main` / `lane/items` stay green; the next implementation run should open the failing tests against the existing silent Other reject paths, then wire dual-sided `Unknown error` through second-accept and commit-time Other.
+Shipped: second-accept and commit-time `exchangeRecipientRejectOther` emit dual-sided `CHAT_TYPE_INFO` `Unknown error` while leaving the shell cancellable and performing no trade mutation. Player-shop/cube busy rejects and durable safebox persistence stay deferred.

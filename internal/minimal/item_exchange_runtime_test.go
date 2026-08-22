@@ -2698,11 +2698,26 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverEquipmentIDCollisionB
 	if err != nil {
 		t.Fatalf("unexpected equipment-collision peer accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 0 {
-		t.Fatalf("expected second accept to reject receiver equipment-id collision with no frames, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 1 {
+		t.Fatalf("expected second accept equipment-id collision Other reject to emit one self Unknown error info chat, got %d", len(peerAcceptOut))
 	}
-	if queuedAccept := flushServerFrames(t, ownerFlow); len(queuedAccept) != 0 {
-		t.Fatalf("expected receiver equipment-id collision precondition to queue no owner frames, got %d", len(queuedAccept))
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
+	if err != nil {
+		t.Fatalf("decode equipment-collision peer self info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeFinalizeOtherInfoMessage {
+		t.Fatalf("unexpected equipment-collision peer self info chat: %+v", infoChat)
+	}
+	queuedAccept := flushServerFrames(t, ownerFlow)
+	if len(queuedAccept) != 1 {
+		t.Fatalf("expected receiver equipment-id collision Other reject to queue one owner Unknown error info chat, got %d", len(queuedAccept))
+	}
+	queuedInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queuedAccept[0]))
+	if err != nil {
+		t.Fatalf("decode equipment-collision owner Other info chat: %v", err)
+	}
+	if queuedInfo.Type != chatproto.ChatTypeInfo || queuedInfo.VID != 0 || queuedInfo.Message != exchangeFinalizeOtherInfoMessage {
+		t.Fatalf("unexpected equipment-collision owner Other info chat: %+v", queuedInfo)
 	}
 
 	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
@@ -2806,11 +2821,26 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverInventoryIDCollisionB
 	if err != nil {
 		t.Fatalf("unexpected inventory-collision peer accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 0 {
-		t.Fatalf("expected second accept to reject receiver inventory-id collision with no frames, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 1 {
+		t.Fatalf("expected second accept inventory-id collision Other reject to emit one self Unknown error info chat, got %d", len(peerAcceptOut))
 	}
-	if queuedAccept := flushServerFrames(t, ownerFlow); len(queuedAccept) != 0 {
-		t.Fatalf("expected receiver inventory-id collision precondition to queue no owner frames, got %d", len(queuedAccept))
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
+	if err != nil {
+		t.Fatalf("decode inventory-collision peer self info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeFinalizeOtherInfoMessage {
+		t.Fatalf("unexpected inventory-collision peer self info chat: %+v", infoChat)
+	}
+	queuedAccept := flushServerFrames(t, ownerFlow)
+	if len(queuedAccept) != 1 {
+		t.Fatalf("expected receiver inventory-id collision Other reject to queue one owner Unknown error info chat, got %d", len(queuedAccept))
+	}
+	queuedInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queuedAccept[0]))
+	if err != nil {
+		t.Fatalf("decode inventory-collision owner Other info chat: %v", err)
+	}
+	if queuedInfo.Type != chatproto.ChatTypeInfo || queuedInfo.VID != 0 || queuedInfo.Message != exchangeFinalizeOtherInfoMessage {
+		t.Fatalf("unexpected inventory-collision owner Other info chat: %+v", queuedInfo)
 	}
 
 	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
@@ -2919,11 +2949,26 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverLockedCompatibleStack
 	if err != nil {
 		t.Fatalf("unexpected locked-stack peer accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 0 {
-		t.Fatalf("expected second accept to reject receiver locked-compatible-stack capacity with no frames, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 1 {
+		t.Fatalf("expected second accept locked-compatible-stack Other reject to emit one self Unknown error info chat, got %d", len(peerAcceptOut))
 	}
-	if queuedAccept := flushServerFrames(t, ownerFlow); len(queuedAccept) != 0 {
-		t.Fatalf("expected receiver locked-compatible-stack precondition to queue no owner frames, got %d", len(queuedAccept))
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
+	if err != nil {
+		t.Fatalf("decode locked-stack peer self info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeFinalizeOtherInfoMessage {
+		t.Fatalf("unexpected locked-stack peer self info chat: %+v", infoChat)
+	}
+	queuedAccept := flushServerFrames(t, ownerFlow)
+	if len(queuedAccept) != 1 {
+		t.Fatalf("expected receiver locked-compatible-stack Other reject to queue one owner Unknown error info chat, got %d", len(queuedAccept))
+	}
+	queuedInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queuedAccept[0]))
+	if err != nil {
+		t.Fatalf("decode locked-stack owner Other info chat: %v", err)
+	}
+	if queuedInfo.Type != chatproto.ChatTypeInfo || queuedInfo.VID != 0 || queuedInfo.Message != exchangeFinalizeOtherInfoMessage {
+		t.Fatalf("unexpected locked-stack owner Other info chat: %+v", queuedInfo)
 	}
 
 	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
@@ -3024,11 +3069,26 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverOverTemplateMaxCompat
 	if err != nil {
 		t.Fatalf("unexpected over-max-stack peer accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 0 {
-		t.Fatalf("expected second accept to reject receiver over-template-max compatible stack with no frames, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 1 {
+		t.Fatalf("expected second accept over-template-max Other reject to emit one self Unknown error info chat, got %d", len(peerAcceptOut))
 	}
-	if queuedAccept := flushServerFrames(t, ownerFlow); len(queuedAccept) != 0 {
-		t.Fatalf("expected receiver over-template-max precondition to queue no owner frames, got %d", len(queuedAccept))
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
+	if err != nil {
+		t.Fatalf("decode over-max-stack peer self info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeFinalizeOtherInfoMessage {
+		t.Fatalf("unexpected over-max-stack peer self info chat: %+v", infoChat)
+	}
+	queuedAccept := flushServerFrames(t, ownerFlow)
+	if len(queuedAccept) != 1 {
+		t.Fatalf("expected receiver over-template-max Other reject to queue one owner Unknown error info chat, got %d", len(queuedAccept))
+	}
+	queuedInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queuedAccept[0]))
+	if err != nil {
+		t.Fatalf("decode over-max-stack owner Other info chat: %v", err)
+	}
+	if queuedInfo.Type != chatproto.ChatTypeInfo || queuedInfo.VID != 0 || queuedInfo.Message != exchangeFinalizeOtherInfoMessage {
+		t.Fatalf("unexpected over-max-stack owner Other info chat: %+v", queuedInfo)
 	}
 
 	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
@@ -3129,11 +3189,26 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverSelectedCharacterRest
 	if err != nil {
 		t.Fatalf("unexpected receiver-restriction peer accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 0 {
-		t.Fatalf("expected second accept to reject receiver selected-character restriction with no frames, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 1 {
+		t.Fatalf("expected second accept selected-character restriction Other reject to emit one self Unknown error info chat, got %d", len(peerAcceptOut))
 	}
-	if queuedAccept := flushServerFrames(t, ownerFlow); len(queuedAccept) != 0 {
-		t.Fatalf("expected receiver selected-character restriction precondition to queue no owner frames, got %d", len(queuedAccept))
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
+	if err != nil {
+		t.Fatalf("decode receiver-restriction peer self info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeFinalizeOtherInfoMessage {
+		t.Fatalf("unexpected receiver-restriction peer self info chat: %+v", infoChat)
+	}
+	queuedAccept := flushServerFrames(t, ownerFlow)
+	if len(queuedAccept) != 1 {
+		t.Fatalf("expected receiver selected-character restriction Other reject to queue one owner Unknown error info chat, got %d", len(queuedAccept))
+	}
+	queuedInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queuedAccept[0]))
+	if err != nil {
+		t.Fatalf("decode receiver-restriction owner Other info chat: %v", err)
+	}
+	if queuedInfo.Type != chatproto.ChatTypeInfo || queuedInfo.VID != 0 || queuedInfo.Message != exchangeFinalizeOtherInfoMessage {
+		t.Fatalf("unexpected receiver-restriction owner Other info chat: %+v", queuedInfo)
 	}
 
 	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))

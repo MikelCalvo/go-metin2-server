@@ -938,9 +938,8 @@ func (r *sharedWorldRegistry) exchangeFinalizeCommitGoldCarrierRejectLocked(plan
 }
 
 // exchangeFinalizeCommitCheckSpaceRejectLocked revalidates displayed item/gold and
-// receiver preconditions. Check/Space/gold-overflow failures emit dual-sided
-// info-chat; other receiver precondition failures stay silent/no-frame. Returns
-// rejected=true when commit must fail closed (with or without frames).
+// receiver preconditions. Check/Space/gold-overflow/Other failures emit dual-sided
+// info-chat. Returns rejected=true when commit must fail closed (with or without frames).
 func (r *sharedWorldRegistry) exchangeFinalizeCommitCheckSpaceRejectLocked(plan *exchangeFinalizePlan) ([][]byte, bool) {
 	if r == nil || plan == nil || plan.OriginID == 0 || plan.PartnerID == 0 {
 		return nil, true
@@ -966,14 +965,14 @@ func (r *sharedWorldRegistry) exchangeFinalizeCommitCheckSpaceRejectLocked(plan 
 		return r.exchangeEmitFinalizeCheckRejectForCallerLocked(plan.OriginID, plan.PartnerID, plan.OriginID)
 	}
 	// Oracle CheckSpace order: partner can take origin items, then origin can take
-	// partner items. Space/gold-overflow get dual-sided chat; other recipient rejects stay silent.
+	// partner items. Space/gold-overflow/Other get dual-sided chat.
 	switch r.exchangeRecipientRejectReasonLocked(partner, plan.OriginItems, plan.OriginGold) {
 	case exchangeRecipientRejectSpace:
 		return r.exchangeEmitFinalizeSpaceRejectForCallerLocked(plan.OriginID, plan.PartnerID, plan.OriginID)
 	case exchangeRecipientRejectGoldOverflow:
 		return r.exchangeEmitFinalizeGoldOverflowRejectForCallerLocked(plan.OriginID, plan.PartnerID, plan.OriginID)
 	case exchangeRecipientRejectOther:
-		return nil, true
+		return r.exchangeEmitFinalizeOtherRejectForCallerLocked(plan.OriginID, plan.PartnerID)
 	}
 	switch r.exchangeRecipientRejectReasonLocked(origin, plan.PartnerItems, plan.PartnerGold) {
 	case exchangeRecipientRejectSpace:
@@ -981,7 +980,7 @@ func (r *sharedWorldRegistry) exchangeFinalizeCommitCheckSpaceRejectLocked(plan 
 	case exchangeRecipientRejectGoldOverflow:
 		return r.exchangeEmitFinalizeGoldOverflowRejectForCallerLocked(plan.OriginID, plan.OriginID, plan.PartnerID)
 	case exchangeRecipientRejectOther:
-		return nil, true
+		return r.exchangeEmitFinalizeOtherRejectForCallerLocked(plan.OriginID, plan.PartnerID)
 	}
 	return nil, false
 }
@@ -992,10 +991,9 @@ func (r *sharedWorldRegistry) exchangeFinalizationPreconditionsLocked(originID u
 	return !rejected
 }
 
-// exchangeFinalizationRejectLocked returns dual-sided Space/gold-overflow chat
-// when a receiver lacks inventory capacity or would overflow the gold carrier.
-// Other recipient precondition failures stay silent (frames=nil, rejected=true).
-// Returned frames are for the AcceptExchange caller (originID / second accepter).
+// exchangeFinalizationRejectLocked returns dual-sided Space/gold-overflow/Other chat
+// when a receiver fails finalization preconditions. Returned frames are for the
+// AcceptExchange caller (originID / second accepter).
 func (r *sharedWorldRegistry) exchangeFinalizationRejectLocked(originID uint64, partnerID uint64, origin loginticket.Character, partner loginticket.Character) ([][]byte, bool) {
 	if r == nil || originID == 0 || partnerID == 0 {
 		return nil, true
@@ -1006,7 +1004,7 @@ func (r *sharedWorldRegistry) exchangeFinalizationRejectLocked(originID uint64, 
 	case exchangeRecipientRejectGoldOverflow:
 		return r.exchangeEmitFinalizeGoldOverflowRejectForCallerLocked(originID, partnerID, originID)
 	case exchangeRecipientRejectOther:
-		return nil, true
+		return r.exchangeEmitFinalizeOtherRejectForCallerLocked(originID, partnerID)
 	}
 	switch r.exchangeRecipientRejectReasonLocked(origin, r.exchangeItems[partnerID], r.exchangeGold[partnerID]) {
 	case exchangeRecipientRejectSpace:
@@ -1014,7 +1012,7 @@ func (r *sharedWorldRegistry) exchangeFinalizationRejectLocked(originID uint64, 
 	case exchangeRecipientRejectGoldOverflow:
 		return r.exchangeEmitFinalizeGoldOverflowRejectForCallerLocked(originID, originID, partnerID)
 	case exchangeRecipientRejectOther:
-		return nil, true
+		return r.exchangeEmitFinalizeOtherRejectForCallerLocked(originID, partnerID)
 	}
 	return nil, false
 }
@@ -1093,6 +1091,19 @@ func (r *sharedWorldRegistry) exchangeEmitFinalizeGoldOverflowRejectForCallerLoc
 	default:
 		return nil, false
 	}
+}
+
+// exchangeEmitFinalizeOtherRejectForCallerLocked delivers the same catch-all
+// Unknown error info-chat to both paired sides (oracle DB-dead / non-Check/Space abort wording).
+func (r *sharedWorldRegistry) exchangeEmitFinalizeOtherRejectForCallerLocked(callerID uint64, partnerID uint64) ([][]byte, bool) {
+	frame := encodeExchangeFinalizeOtherInfoFrame()
+	if callerID == 0 || partnerID == 0 || callerID == partnerID {
+		return nil, false
+	}
+	if !r.enqueueToEntityLocked(partnerID, [][]byte{frame}) {
+		return nil, false
+	}
+	return [][]byte{frame}, true
 }
 
 func cloneExchangeCharacter(character loginticket.Character) loginticket.Character {
@@ -6216,6 +6227,15 @@ func encodeExchangeFinalizeGoldOverflowOtherInfoFrame() []byte {
 		VID:     0,
 		Empire:  0,
 		Message: exchangeFinalizeGoldOverflowOtherInfoMessage,
+	})
+}
+
+func encodeExchangeFinalizeOtherInfoFrame() []byte {
+	return chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+		Type:    chatproto.ChatTypeInfo,
+		VID:     0,
+		Empire:  0,
+		Message: exchangeFinalizeOtherInfoMessage,
 	})
 }
 

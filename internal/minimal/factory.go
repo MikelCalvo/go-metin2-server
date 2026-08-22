@@ -101,6 +101,7 @@ const exchangeFinalizeSpaceSelfInfoMessage = "There isn't enough space in your i
 const exchangeFinalizeSpaceOtherInfoMessage = "The other person has no space left in their inventory."
 const exchangeFinalizeGoldOverflowSelfInfoMessage = questFlagRewardGoldOverflowInfoMessage
 const exchangeFinalizeGoldOverflowOtherInfoMessage = "The other person cannot carry any more gold."
+const exchangeFinalizeOtherInfoMessage = "Unknown error"
 const exchangeFinalizeSuccessInfoMessageFormat = "The trade with %s has been successful."
 const bootstrapSafeboxOpenMinSize uint8 = 1
 const bootstrapSafeboxOpenMaxSize uint8 = 3
