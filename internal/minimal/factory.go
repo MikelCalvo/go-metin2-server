@@ -86,6 +86,7 @@ const itemPickupInventoryFullInfoMessage = "You have too many items."
 const itemBuyRejectedInfoMessage = "The merchant will not sell this item to you."
 const itemSellRejectedInfoMessage = "The merchant refuses to buy this item."
 const itemUnequipRejectedInfoMessage = "You cannot remove this item."
+const itemEquipOccupiedWearSlotInfoMessage = "You are already wearing equipment."
 const questFlagRewardRestrictedInfoMessage = "You cannot receive this quest reward."
 const questFlagInsufficientGoldInfoMessage = "You do not have enough gold."
 const questFlagInsufficientExperienceInfoMessage = "You do not have enough experience."
@@ -5877,6 +5878,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							}
 							return gameflow.ChatResult{Accepted: false}
 						}
+						if selectedPlayer.EquipmentSlotOccupied(equipSlot) {
+							frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemEquipOccupiedWearSlotInfoMessage})}
+							frames = prependExchangeCloseFrame(frames)
+							return gameflow.ChatResult{Accepted: true, Frames: frames}
+						}
 						var equippedItem inventory.ItemInstance
 						if requiresTemplate {
 							equippedItem, ok = selectedPlayer.EquipItemWithTemplate(fromSlot, equipSlot, template)
@@ -6876,6 +6882,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								return gameflow.ItemMoveResult{Accepted: true, Frames: frames}
 							}
 							return gameflow.ItemMoveResult{Accepted: false}
+						}
+						if selectedPlayer.EquipmentSlotOccupied(equipSlot) {
+							frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemEquipOccupiedWearSlotInfoMessage})}
+							frames = prependExchangeCloseFrame(frames)
+							return gameflow.ItemMoveResult{Accepted: true, Frames: frames}
 						}
 						fromSlot := inventory.SlotIndex(packet.Source.Cell)
 						var equippedItem inventory.ItemInstance

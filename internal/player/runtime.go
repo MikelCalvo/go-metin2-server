@@ -254,6 +254,16 @@ func (r *Runtime) LiveInventory() []inventory.ItemInstance {
 	return cloneItemInstances(r.liveInventory)
 }
 
+// EquipmentSlotOccupied reports whether the live equipment slice already has
+// any occupant in the addressed wear cell. Packet / slash equip uses this to
+// emit occupied-wear reject chat before the empty-slot mutation path runs.
+func (r *Runtime) EquipmentSlotOccupied(slot inventory.EquipmentSlot) bool {
+	if r == nil || !slot.Valid() {
+		return false
+	}
+	return equipmentSlotOccupied(r.liveEquipment, slot)
+}
+
 func (r *Runtime) LiveEquipment() []inventory.ItemInstance {
 	if r == nil {
 		return []inventory.ItemInstance{}

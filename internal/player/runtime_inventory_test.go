@@ -2498,6 +2498,53 @@ func TestRuntimeEquipItemWithTemplateAcceptsMatchingAuthoredSlot(t *testing.T) {
 	}
 }
 
+func TestRuntimeEquipItemRejectsOccupiedWearSlotWithoutMutatingState(t *testing.T) {
+	character := loginticket.Character{
+		ID:        1,
+		Name:      "OccupiedWear",
+		Inventory: []inventory.ItemInstance{{ID: 2002, Vnum: 0x11223345, Count: 1, Slot: 8}},
+		Equipment: []inventory.ItemInstance{{ID: 2001, Vnum: 0x11223344, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}},
+	}
+	runtime := NewRuntime(character, SessionLink{Login: "occupied-wear", CharacterIndex: 0})
+
+	if !runtime.EquipmentSlotOccupied(inventory.EquipmentSlotBody) {
+		t.Fatal("expected body wear cell to report occupied before reject")
+	}
+	if _, ok := runtime.EquipItem(8, inventory.EquipmentSlotBody); ok {
+		t.Fatal("expected occupied wear cell to reject empty-slot equip mutation")
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), character.Inventory) {
+		t.Fatalf("occupied equip mutated live inventory: got %#v want %#v", runtime.LiveInventory(), character.Inventory)
+	}
+	if !reflect.DeepEqual(runtime.LiveEquipment(), character.Equipment) {
+		t.Fatalf("occupied equip mutated live equipment: got %#v want %#v", runtime.LiveEquipment(), character.Equipment)
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, character.Inventory) || !reflect.DeepEqual(runtime.PersistedSnapshot().Equipment, character.Equipment) {
+		t.Fatalf("occupied equip mutated persisted snapshot: %#v", runtime.PersistedSnapshot())
+	}
+}
+
+func TestRuntimeEquipItemWithTemplateRejectsOccupiedWearSlotWithoutMutatingState(t *testing.T) {
+	character := loginticket.Character{
+		ID:        1,
+		Name:      "OccupiedWearTemplate",
+		Inventory: []inventory.ItemInstance{{ID: 2002, Vnum: 0x11223345, Count: 1, Slot: 8}},
+		Equipment: []inventory.ItemInstance{{ID: 2001, Vnum: 0x11223344, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}},
+	}
+	runtime := NewRuntime(character, SessionLink{Login: "occupied-wear-template", CharacterIndex: 0})
+	template := itemcatalog.Template{Vnum: 0x11223345, Name: "Replacement Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()}
+
+	if _, ok := runtime.EquipItemWithTemplate(8, inventory.EquipmentSlotBody, template); ok {
+		t.Fatal("expected occupied wear cell to reject template-backed empty-slot equip mutation")
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), character.Inventory) {
+		t.Fatalf("occupied template equip mutated live inventory: got %#v want %#v", runtime.LiveInventory(), character.Inventory)
+	}
+	if !reflect.DeepEqual(runtime.LiveEquipment(), character.Equipment) {
+		t.Fatalf("occupied template equip mutated live equipment: got %#v want %#v", runtime.LiveEquipment(), character.Equipment)
+	}
+}
+
 func TestRuntimeEquipItemWithTemplateRejectsSelectedCharacterAntiFlagsWithoutMutatingState(t *testing.T) {
 	character := loginticket.Character{
 		ID:        1,
