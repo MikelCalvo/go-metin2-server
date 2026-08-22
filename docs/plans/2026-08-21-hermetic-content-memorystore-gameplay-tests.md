@@ -43,6 +43,6 @@ git diff --check
 
 ## Follow-up options
 
-1. ~~Optionally widen the same MemoryStore pattern to neighboring content gameplay tests that still allocate disposable static/interaction/item FileStores.~~ Done for focused `quest_flag` turn-in suites: see [hermetic quest-flag turn-in MemoryStore tests](2026-08-21-hermetic-quest-flag-turnin-memorystore-tests.md). Also done for interaction-visibility preview suites: see [hermetic interaction-visibility MemoryStore tests](2026-08-22-hermetic-interaction-visibility-memorystore-tests.md).
+1. ~~Optionally widen the same MemoryStore pattern to neighboring content gameplay tests that still allocate disposable static/interaction/item FileStores.~~ Done for focused `quest_flag` turn-in suites: see [hermetic quest-flag turn-in MemoryStore tests](2026-08-21-hermetic-quest-flag-turnin-memorystore-tests.md). Also done for interaction-visibility preview suites: see [hermetic interaction-visibility MemoryStore tests](2026-08-22-hermetic-interaction-visibility-memorystore-tests.md). Also done for content-bundle runtime export/import/summary suites: see [hermetic content-bundle runtime MemoryStore tests](2026-08-22-hermetic-content-bundle-runtime-memorystore-tests.md).
 2. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
 3. Keep branching quest scripts deferred.

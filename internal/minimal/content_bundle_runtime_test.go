@@ -19,17 +19,17 @@ import (
 )
 
 func TestGameRuntimeExportContentBundleBuildsDeterministicPortableBundle(t *testing.T) {
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{
 		{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."},
 		{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
 		{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800, Text: "Step through the gate."},
 	})
-	questStatePath := t.TempDir() + "/quest-state.json"
-	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2}}}); err != nil {
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(queststate.Snapshot{Flags: []queststate.Flag{{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2}}}); err != nil {
 		t.Fatalf("seed quest state store: %v", err)
 	}
-	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, nil, questStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -62,19 +62,19 @@ func TestGameRuntimeExportContentBundleBuildsDeterministicPortableBundle(t *test
 }
 
 func TestGameRuntimeExportContentBundleSummaryReturnsDeterministicCounts(t *testing.T) {
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{
 		{Kind: interactionstore.KindInfo, Ref: "lore:unused", Text: "Unused lore kept for later QA."},
 		{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."},
 	})
-	questStatePath := t.TempDir() + "/quest-state.json"
-	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(queststate.Snapshot{Flags: []queststate.Flag{
 		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 2},
 		{Character: "AnotherHero", QuestRef: "quest:first_steps", Name: "met_guard", Value: 1},
 	}}); err != nil {
 		t.Fatalf("seed quest state store: %v", err)
 	}
-	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, nil, questStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -138,8 +138,8 @@ func TestGameRuntimeExportContentBundleSummaryReturnsDeterministicCounts(t *test
 }
 
 func TestGameRuntimePreviewContentBundleImportReturnsDeltasWithoutMutatingRuntime(t *testing.T) {
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{
 		{Kind: interactionstore.KindInfo, Ref: "lore:notice", Text: "Old notice."},
 		{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Welcome."},
 	})
@@ -254,8 +254,8 @@ func TestGameRuntimePreviewContentBundleImportReturnsDeltasWithoutMutatingRuntim
 func TestGameRuntimeImportContentBundleRejectsNonCanonicalCombatProfileSnapshotIdentity(t *testing.T) {
 	const profile = "PracticeRuntimeWolf"
 	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -294,8 +294,8 @@ func TestGameRuntimeImportContentBundleRejectsNonCanonicalCombatProfileSnapshotI
 func TestGameRuntimeImportContentBundleRejectsOverflowingCombatProfileRespawnDelay(t *testing.T) {
 	const profile = "practice_runtime_overflow_respawn_wolf"
 	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -331,8 +331,8 @@ func TestGameRuntimeImportContentBundleRejectsOverflowingCombatProfileRespawnDel
 }
 
 func TestGameRuntimeExportContentBundleSummaryIncludesSpawnGroupDetails(t *testing.T) {
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -396,8 +396,8 @@ func TestGameRuntimeExportContentBundleSummaryIncludesPortableCombatProfiles(t *
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
 	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
 
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -447,19 +447,16 @@ func TestGameRuntimeExportContentBundleSummaryIncludesPortableCombatProfiles(t *
 }
 
 func TestGameRuntimeImportContentBundleReplacesRuntimeStateAndPersistsStores(t *testing.T) {
-	staticPath := t.TempDir() + "/static-actors.json"
-	staticActorStore := staticstore.NewFileStore(staticPath)
-	interactionPath := t.TempDir() + "/interaction-definitions.json"
-	interactionStore := interactionstore.NewFileStore(interactionPath)
-	questStatePath := t.TempDir() + "/quest-state.json"
-	questStateStore := queststate.NewFileStore(questStatePath)
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
+	questStateStore := queststate.NewMemoryStore()
 	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "old:lore", Text: "Old lore."}}}); err != nil {
 		t.Fatalf("save old interaction definitions: %v", err)
 	}
 	if err := questStateStore.Save(queststate.Snapshot{Flags: []queststate.Flag{{Character: "OldHero", QuestRef: "quest:first_steps", Name: "step", Value: 1}}}); err != nil {
 		t.Fatalf("save old quest state: %v", err)
 	}
-	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, nil, questStateStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -513,10 +510,9 @@ func TestGameRuntimeImportContentBundleReplacesRuntimeStateAndPersistsStores(t *
 }
 
 func TestGameRuntimeImportContentBundlePersistsBundledItemTemplates(t *testing.T) {
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
-	itemPath := t.TempDir() + "/item-templates.json"
-	itemStore := itemcatalog.NewFileStore(itemPath)
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
+	itemStore := itemcatalog.NewMemoryStore()
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -553,9 +549,9 @@ func TestGameRuntimeImportContentBundlePersistsBundledItemTemplates(t *testing.T
 }
 
 func TestGameRuntimeImportContentBundleRejectsShopCatalogEntriesThatDoNotFitShopStartCarriersWithoutMutatingRuntime(t *testing.T) {
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
-	itemStore := itemcatalog.NewFileStore(t.TempDir() + "/item-templates.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
+	itemStore := itemcatalog.NewMemoryStore()
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -603,9 +599,9 @@ func TestGameRuntimeImportContentBundleRejectsShopCatalogEntriesThatDoNotFitShop
 }
 
 func TestGameRuntimeExportContentBundleSummaryIncludesItemTemplateDetails(t *testing.T) {
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
-	itemStore := itemcatalog.NewFileStore(t.TempDir() + "/item-templates.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
+	itemStore := itemcatalog.NewMemoryStore()
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -634,9 +630,9 @@ func TestGameRuntimeExportContentBundleSummaryIncludesItemTemplateDetails(t *tes
 
 func TestGameRuntimeExportContentBundleSummaryIncludesShopSellPriceMetadata(t *testing.T) {
 	const shopSellPrice uint64 = 13
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
-	itemStore := itemcatalog.NewFileStore(t.TempDir() + "/item-templates.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
+	itemStore := itemcatalog.NewMemoryStore()
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -716,9 +712,9 @@ func TestGameRuntimeExportContentBundleSummaryIncludesShopSellPriceMetadata(t *t
 func TestGameRuntimeExportContentBundleSummaryIncludesMerchantAntiFlagMetadata(t *testing.T) {
 	const buyRejectMessage = "The merchant will not sell this guarded potion to you."
 	const sellRejectMessage = "The merchant refuses this guarded potion."
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
-	itemStore := itemcatalog.NewFileStore(t.TempDir() + "/item-templates.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
+	itemStore := itemcatalog.NewMemoryStore()
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -779,9 +775,9 @@ func TestGameRuntimeExportContentBundleSummaryIncludesMerchantAntiFlagMetadata(t
 
 func TestGameRuntimeExportContentBundleSummaryIncludesDirectUseGuardMetadata(t *testing.T) {
 	const useRejectMessage = "This quest-sealed potion cannot be used yet."
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
-	itemStore := itemcatalog.NewFileStore(t.TempDir() + "/item-templates.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
+	itemStore := itemcatalog.NewMemoryStore()
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -842,8 +838,8 @@ func TestGameRuntimeExportContentBundleSummaryIncludesDirectUseGuardMetadata(t *
 }
 
 func TestGameRuntimeExportContentBundleSummaryIncludesWarpDestinationDetails(t *testing.T) {
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -880,8 +876,8 @@ func TestGameRuntimeExportContentBundleSummaryIncludesWarpDestinationDetails(t *
 }
 
 func TestGameRuntimeImportContentBundleRejectsDanglingInteractionReference(t *testing.T) {
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -893,8 +889,8 @@ func TestGameRuntimeImportContentBundleRejectsDanglingInteractionReference(t *te
 }
 
 func TestGameRuntimeImportContentBundleRejectsInvalidWarpInteractionDefinition(t *testing.T) {
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -920,8 +916,8 @@ func TestGameRuntimeImportContentBundleRejectsInvalidWarpInteractionDefinition(t
 }
 
 func TestGameRuntimeExportContentBundleIncludesStaticActorCombatProfile(t *testing.T) {
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := newInteractionDefinitionStore(t, nil)
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := newMemoryInteractionDefinitionStore(t, nil)
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -941,8 +937,8 @@ func TestGameRuntimeExportContentBundleIncludesStaticActorCombatProfile(t *testi
 }
 
 func TestGameRuntimeRegisterStaticActorReturnsCombatProfileSnapshot(t *testing.T) {
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := newInteractionDefinitionStore(t, nil)
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := newMemoryInteractionDefinitionStore(t, nil)
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -958,9 +954,8 @@ func TestGameRuntimeRegisterStaticActorReturnsCombatProfileSnapshot(t *testing.T
 }
 
 func TestGameRuntimeImportContentBundlePreservesCombatProfileActors(t *testing.T) {
-	staticPath := t.TempDir() + "/static-actors.json"
-	staticActorStore := staticstore.NewFileStore(staticPath)
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -993,7 +988,7 @@ func TestGameRuntimeLoadsPersistedCustomCombatProfileSpawnGroupAfterRestart(t *t
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
 	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
 
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	staticActorStore := staticstore.NewMemoryStore()
 	persisted := staticstore.Snapshot{
 		StaticActors: []staticstore.StaticActor{{
 			EntityID:      23,
@@ -1019,7 +1014,7 @@ func TestGameRuntimeLoadsPersistedCustomCombatProfileSpawnGroupAfterRestart(t *t
 	}
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
 
-	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"))
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionstore.NewMemoryStore())
 	if err != nil {
 		t.Fatalf("restart runtime with persisted custom combat profile: %v", err)
 	}
@@ -1061,10 +1056,9 @@ func TestGameRuntimeLoadsPersistedCustomCombatProfileSpawnGroupAfterRestart(t *t
 }
 
 func TestGameRuntimeImportContentBundleMaterializesSpawnGroupsAsAttackablePracticeMobs(t *testing.T) {
-	staticPath := t.TempDir() + "/static-actors.json"
-	staticActorStore := staticstore.NewFileStore(staticPath)
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
-	itemStore := itemcatalog.NewFileStore(t.TempDir() + "/item-templates.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
+	itemStore := itemcatalog.NewMemoryStore()
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -1126,9 +1120,9 @@ func TestGameRuntimeExportContentBundleIncludesTemplatesReferencedOnlyByCombatPr
 		t.Fatalf("expected custom reward-default profile %q to register", profile)
 	}
 	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
-	itemStore := itemcatalog.NewFileStore(t.TempDir() + "/item-templates.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
+	itemStore := itemcatalog.NewMemoryStore()
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -1178,8 +1172,8 @@ func TestGameRuntimeExportContentBundleIncludesTemplatesReferencedOnlyByCombatPr
 }
 
 func TestGameRuntimeImportContentBundleRejectsInvalidSpawnGroupWithoutMutatingRuntime(t *testing.T) {
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -1224,8 +1218,8 @@ func TestGameRuntimeImportContentBundleRejectsInvalidSpawnGroupWithoutMutatingRu
 }
 
 func TestGameRuntimeImportContentBundleRejectsRewardDropsWithoutBundledItemTemplates(t *testing.T) {
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -1262,8 +1256,8 @@ func TestGameRuntimeImportContentBundleRejectsRewardDropsWithoutBundledItemTempl
 }
 
 func TestGameRuntimeImportContentBundleRejectsDuplicateSpawnGroupRefsWithoutMutatingRuntime(t *testing.T) {
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -1305,8 +1299,8 @@ func TestGameRuntimeImportContentBundleRejectsUnreferencedCombatProfileWithoutRe
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
 	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
 
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -1338,8 +1332,8 @@ func TestGameRuntimeImportContentBundleRollsBackImportedCombatProfileWhenPreviou
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
 	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
 
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -1381,8 +1375,8 @@ func TestGameRuntimeImportContentBundleRollsBackImportedCombatProfileWhenPreviou
 }
 
 func TestGameRuntimeImportContentBundleRejectsDuplicateCombatProfilesWithoutMutatingRuntime(t *testing.T) {
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -1464,8 +1458,8 @@ func (s *failOnSaveStaticActorStore) Save(snapshot staticstore.Snapshot) error {
 }
 
 func TestGameRuntimeImportContentBundleRestoresPreviousContentWhenStaticActorPersistenceFails(t *testing.T) {
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -1514,8 +1508,8 @@ func TestGameRuntimeImportContentBundleFlushesStaticActorReplacementFanoutAfterS
 	player.MapIndex = 42
 	issuePeerTicket(t, store, "bundle-watcher", 0x60600202, player)
 
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -1579,8 +1573,8 @@ func TestGameRuntimeImportIdenticalContentBundlePreservesLivePracticeMobCombatSt
 	player := peerVisibilityCharacter("BundleCombat", 0x01036003, 0x02046003, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "bundle-combat", 0x60600303, player)
 
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -1665,8 +1659,8 @@ func TestGameRuntimeImportContentBundleDoesNotLeakStaticActorFanoutWhenReplaceme
 	player.MapIndex = 42
 	issuePeerTicket(t, store, "bundle-watcher", 0x60600101, player)
 
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -1708,9 +1702,9 @@ func TestGameRuntimeImportContentBundleDoesNotLeakStaticActorFanoutWhenReplaceme
 }
 
 func TestGameRuntimeUpdateSpawnGroupStaticActorPreservesRewardDescriptor(t *testing.T) {
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
-	itemStore := itemcatalog.NewFileStore(t.TempDir() + "/item-templates.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
+	itemStore := itemcatalog.NewMemoryStore()
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
