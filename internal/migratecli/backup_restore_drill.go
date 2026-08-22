@@ -41,6 +41,7 @@ type backupRestorePersistenceConfig struct {
 	InteractionStorePath  string `json:"interaction_store_path"`
 	ItemTemplateStorePath string `json:"item_template_store_path"`
 	QuestStateStorePath   string `json:"quest_state_store_path"`
+	GroundItemStorePath   string `json:"ground_item_store_path"`
 }
 
 type backupRestoreDatabaseConfig struct {
@@ -307,6 +308,10 @@ func buildBackupRestoreDrillPlan(runtimeRaw, buildInfoRaw []byte, opsBaseURL, au
 	if err != nil {
 		return backupRestoreDrillPlan{}, err
 	}
+	groundItemPath, err := normalizeAbsoluteCleanPath(snapshot.Persistence.GroundItemStorePath, "persistence.ground_item_store_path")
+	if err != nil {
+		return backupRestoreDrillPlan{}, err
+	}
 
 	if cleanedPathEqualsOrNests(accountDir, loginTicketDir) {
 		return backupRestoreDrillPlan{}, fmt.Errorf("%w: account_store_dir and login_ticket_store_dir must not equal or nest under each other", errInvalidBackupRestoreDrillInput)
@@ -317,6 +322,7 @@ func buildBackupRestoreDrillPlan(runtimeRaw, buildInfoRaw []byte, opsBaseURL, au
 		"interaction_store_path":   filepath.Dir(interactionPath),
 		"static_actor_store_path":  filepath.Dir(staticActorPath),
 		"quest_state_store_path":   filepath.Dir(questStatePath),
+		"ground_item_store_path":   filepath.Dir(groundItemPath),
 	}
 	seenParents := make(map[string]string, len(fileParents))
 	for label, parent := range fileParents {

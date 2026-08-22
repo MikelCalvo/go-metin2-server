@@ -25,6 +25,7 @@ type Service struct {
 	InteractionStorePath  string
 	ItemTemplateStorePath string
 	QuestStateStorePath   string
+	GroundItemStorePath   string
 	DatabaseDriver        string
 	DatabaseDSN           string
 }
@@ -145,6 +146,7 @@ func ValidatePersistenceConfig(cfg Service) error {
 		{Name: "interaction_store_path", Role: persistencePathRoleFile, Path: cfg.InteractionStorePath},
 		{Name: "item_template_store_path", Role: persistencePathRoleFile, Path: cfg.ItemTemplateStorePath},
 		{Name: "quest_state_store_path", Role: persistencePathRoleFile, Path: questStateStorePathOrDefault(cfg.QuestStateStorePath)},
+		{Name: "ground_item_store_path", Role: persistencePathRoleFile, Path: groundItemStorePathOrDefault(cfg.GroundItemStorePath)},
 	})
 }
 
@@ -363,6 +365,7 @@ func LoadService(name string, defaultPprofAddr string, defaultLegacyAddr string,
 		InteractionStorePath:  loadPathOverride(upperName, "INTERACTION_STORE_PATH", defaultInteractionStorePath()),
 		ItemTemplateStorePath: loadPathOverride(upperName, "ITEM_TEMPLATE_STORE_PATH", defaultItemTemplateStorePath()),
 		QuestStateStorePath:   loadPathOverride(upperName, "QUEST_STATE_STORE_PATH", defaultQuestStateStorePath()),
+		GroundItemStorePath:   loadPathOverride(upperName, "GROUND_ITEM_STORE_PATH", defaultGroundItemStorePath()),
 		DatabaseDriver:        loadPathOverride(upperName, "DB_DRIVER", ""),
 		DatabaseDSN:           loadPathOverride(upperName, "DB_DSN", ""),
 	}
@@ -421,6 +424,21 @@ func questStateStorePathOrDefault(path string) string {
 
 func DefaultQuestStateStorePath() string {
 	return defaultQuestStateStorePath()
+}
+
+func defaultGroundItemStorePath() string {
+	return filepath.Join(os.TempDir(), "go-metin2-server-ground-items", "ground-items.json")
+}
+
+func groundItemStorePathOrDefault(path string) string {
+	if trimmed := strings.TrimSpace(path); trimmed != "" {
+		return trimmed
+	}
+	return defaultGroundItemStorePath()
+}
+
+func DefaultGroundItemStorePath() string {
+	return defaultGroundItemStorePath()
 }
 
 func loadOverride(upperName string, suffix string, fallback string) string {

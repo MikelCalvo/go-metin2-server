@@ -33,7 +33,7 @@ import (
 // carries the pre-reward character snapshot.
 //
 // This deliberately does not cover pending ground-item / ground-gold restart
-// durability (still deferred for migration 0010).
+// durability (covered separately by TestGameRuntimePendingGroundItemAndGoldRematerializeAcrossDaemonRestart).
 func TestGameRuntimeQuestFlagRewardStateRematerializesAcrossDaemonRestart(t *testing.T) {
 	ticketDir := t.TempDir()
 	accountDir := t.TempDir()
@@ -845,7 +845,7 @@ func TestGameRuntimePositionAndPointsRematerializeAcrossDaemonRestart(t *testing
 // login ticket still carries the pre-death live HP value.
 //
 // This deliberately does not cover pending ground-item / ground-gold restart
-// durability.
+// durability (covered separately by TestGameRuntimePendingGroundItemAndGoldRematerializeAcrossDaemonRestart).
 func TestGameRuntimePlayerDeathFloorRematerializesAcrossDaemonRestart(t *testing.T) {
 	ticketDir := t.TempDir()
 	accountDir := t.TempDir()
@@ -1024,4 +1024,139 @@ func TestGameRuntimePlayerDeathFloorRematerializesAcrossDaemonRestart(t *testing
 	if len(denyOut) != 0 {
 		t.Fatalf("expected rematerialized dead owner combat TARGET to fail closed, got %d frames", len(denyOut))
 	}
+}
+
+// TestGameRuntimePendingGroundItemAndGoldRematerializeAcrossDaemonRestart proves the
+// Track E.4 crash/restart rematerialization contract for pending bootstrap ground
+// item/gold handles: after register + FileStore persist, a fresh gameRuntime rebuilt
+// from the same GroundItemStorePath rematerializes both shapes with absolute timers,
+// keeps mid-window exclusive ownership identity-keyed for the owner, and blocks a peer.
+func TestGameRuntimePendingGroundItemAndGoldRematerializeAcrossDaemonRestart(t *testing.T) {
+	defer worldruntime.DisableDurableGroundItemSyncForTest()()
+
+	ticketDir := t.TempDir()
+	accountDir := t.TempDir()
+	groundItemPath := filepath.Join(t.TempDir(), "ground-items.json")
+
+	ticketStore := loginticket.NewFileStore(ticketDir)
+	accounts := accountstore.NewFileStore(accountDir)
+
+	owner := peerVisibilityCharacter("GroundRestartHero", 0x01030171, 0x02040171, 1100, 2100, 0, 101, 201)
+	peer := peerVisibilityCharacter("GroundRestartPeer", 0x01030172, 0x02040172, 1110, 2110, 0, 101, 201)
+	const (
+		ownerLogin = "ground-restart-hero"
+		peerLogin  = "ground-restart-peer"
+		ownerKey   = uint32(0x71717171)
+		peerKey    = uint32(0x72727272)
+		itemVID    = uint32(0x07000071)
+		goldVID    = uint32(0x07000072)
+	)
+	issuePeerTicket(t, ticketStore, ownerLogin, ownerKey, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, peerKey, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed ground-restart owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed ground-restart peer account: %v", err)
+	}
+
+	cfg := config.Service{
+		PprofAddr:           "127.0.0.1:6060",
+		LegacyAddr:          ":13000",
+		PublicAddr:          "127.0.0.1",
+		LoginTicketStoreDir: ticketDir,
+		AccountStoreDir:     accountDir,
+		GroundItemStorePath: groundItemPath,
+	}
+	runtime, err := NewGameRuntime(cfg)
+	if err != nil {
+		t.Fatalf("unexpected ground-restart runtime error: %v", err)
+	}
+	currentTime := time.Now().UTC().Truncate(time.Second)
+	runtime.now = func() time.Time { return currentTime }
+	runtime.sharedWorld.now = runtime.now
+
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, ownerKey)
+	ownerEntity, ok := runtime.sharedWorld.playerEntityByName(owner.Name)
+	if !ok || ownerEntity.Entity.ID == 0 {
+		t.Fatal("expected owner shared-world entity id after enter-game")
+	}
+	ownerID := ownerEntity.Entity.ID
+	if !runtime.sharedWorld.RegisterGroundItemWithPickupRange(ownerID, ownerLogin, owner, itemVID, inventory.ItemInstance{ID: 0x30010071, Vnum: 27001, Count: 2}, 450) {
+		t.Fatal("expected ground-item registration before daemon restart")
+	}
+	if !runtime.sharedWorld.RegisterGroundGoldWithPickupRange(ownerID, ownerLogin, owner, goldVID, 75, 300) {
+		t.Fatal("expected ground-gold registration before daemon restart")
+	}
+	persisted, err := worldruntime.NewGroundItemFileStore(groundItemPath).Load()
+	if err != nil {
+		t.Fatalf("load persisted ground items before restart: %v", err)
+	}
+	if len(persisted.GroundItems) != 2 {
+		t.Fatalf("expected 2 persisted pending ground handles before restart, got %#v", persisted.GroundItems)
+	}
+	closeSessionFlow(t, ownerFlow)
+
+	reloaded, err := NewGameRuntime(cfg)
+	if err != nil {
+		t.Fatalf("unexpected post-restart ground rematerialize runtime error: %v", err)
+	}
+	reloaded.now = func() time.Time { return currentTime.Add(5 * time.Second) }
+	reloaded.sharedWorld.now = reloaded.now
+
+	snapshot := reloaded.sharedWorld.DurableGroundItemSnapshot()
+	if len(snapshot.GroundItems) != 2 {
+		t.Fatalf("expected durable rematerialized snapshot with 2 rows, got %#v", snapshot.GroundItems)
+	}
+	itemRow := snapshot.GroundItems[0]
+	goldRow := snapshot.GroundItems[1]
+	if itemRow.VID != itemVID || itemRow.ItemID != 0x30010071 || itemRow.ItemCount == nil || *itemRow.ItemCount != 2 || !itemRow.OwnershipExclusive {
+		t.Fatalf("unexpected rematerialized item row: %#v", itemRow)
+	}
+	if goldRow.VID != goldVID || goldRow.GoldAmount == nil || *goldRow.GoldAmount != 75 || !goldRow.OwnershipExclusive {
+		t.Fatalf("unexpected rematerialized gold row: %#v", goldRow)
+	}
+
+	ownerRestartFlow, _ := enterGameWithLoginTicket(t, reloaded.SessionFactory(), ownerLogin, ownerKey)
+	peerRestartFlow, _ := enterGameWithLoginTicket(t, reloaded.SessionFactory(), peerLogin, peerKey)
+	ownerEntity, ok = reloaded.sharedWorld.playerEntityByName(owner.Name)
+	peerEntity, peerOK := reloaded.sharedWorld.playerEntityByName(peer.Name)
+	if !ok || !peerOK || ownerEntity.Entity.ID == 0 || peerEntity.Entity.ID == 0 {
+		t.Fatalf("expected rematerialized owner/peer entity ids, ownerOK=%v peerOK=%v", ok, peerOK)
+	}
+	ownerID = ownerEntity.Entity.ID
+	peerID := peerEntity.Entity.ID
+
+	items, mapOK := reloaded.GroundItemsForMap(bootstrapMapIndex)
+	if !mapOK || len(items) != 2 {
+		t.Fatalf("expected rematerialized pending ground handles visible on occupied map after rejoin, ok=%v items=%#v", mapOK, items)
+	}
+
+	if _, ok := reloaded.sharedWorld.GroundItemPickupFor(peerID, peer, itemVID); ok {
+		t.Fatal("expected rematerialized exclusive ownership to block peer mid-window")
+	}
+	if pickup, ok := reloaded.sharedWorld.GroundItemPickupFor(ownerID, owner, itemVID); !ok || pickup.Item.ID != 0x30010071 || pickup.Item.Count != 2 {
+		t.Fatalf("expected rematerialized exclusive ownership to allow owner pickup, ok=%v pickup=%+v", ok, pickup)
+	}
+	if !reloaded.sharedWorld.RemoveGroundItem(ownerID, owner, itemVID) {
+		t.Fatal("expected owner to remove rematerialized ground item")
+	}
+	afterPickup, err := worldruntime.NewGroundItemFileStore(groundItemPath).Load()
+	if err != nil {
+		t.Fatalf("load ground items after rematerialized pickup: %v", err)
+	}
+	if len(afterPickup.GroundItems) != 1 || afterPickup.GroundItems[0].VID != goldVID {
+		t.Fatalf("expected only gold handle to remain after item pickup, got %#v", afterPickup.GroundItems)
+	}
+
+	status := reloaded.PersistenceStatus()
+	if !status.GroundItemStore.Valid || status.GroundItemStore.Path != groundItemPath {
+		t.Fatalf("expected ground item persistence status path/valid, got %#v", status.GroundItemStore)
+	}
+	if status.GroundItemStore.Summary.GroundItemCount != 1 || status.GroundItemStore.Summary.GoldShapedCount != 1 {
+		t.Fatalf("unexpected ground item persistence summary: %#v", status.GroundItemStore.Summary)
+	}
+
+	closeSessionFlow(t, ownerRestartFlow)
+	closeSessionFlow(t, peerRestartFlow)
 }

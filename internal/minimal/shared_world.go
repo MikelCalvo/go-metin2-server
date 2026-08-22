@@ -1,6 +1,7 @@
 package minimal
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -71,6 +72,7 @@ type sharedWorldRegistry struct {
 	suppressStaticActorFanout         bool
 	pendingStaticActorImportDeletes   []worldruntime.StaticEntity
 	now                               func() time.Time
+	onGroundItemsChanged              func()
 }
 
 type sharedGroundItem struct {
@@ -3439,9 +3441,8 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 	}
 
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	if !r.canRegisterGroundItemLocked(ownerID, character, vid) {
+		r.mu.Unlock()
 		return false
 	}
 	now := time.Now()
@@ -3474,6 +3475,11 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 			continue
 		}
 		r.enqueueToEntityLocked(target.Entity.ID, frames)
+	}
+	hook := r.onGroundItemsChanged
+	r.mu.Unlock()
+	if hook != nil {
+		hook()
 	}
 	return true
 }
@@ -3654,14 +3660,18 @@ func (r *sharedWorldRegistry) FlushDueGroundItemOwnershipReleases() {
 		return
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.flushDueGroundItemOwnershipReleasesLocked()
-	r.flushDueGroundItemDespawnsLocked()
+	changed := r.flushDueGroundItemOwnershipReleasesLocked()
+	changed = r.flushDueGroundItemDespawnsLocked() || changed
+	hook := r.onGroundItemsChanged
+	r.mu.Unlock()
+	if changed && hook != nil {
+		hook()
+	}
 }
 
-func (r *sharedWorldRegistry) flushDueGroundItemOwnershipReleasesLocked() {
+func (r *sharedWorldRegistry) flushDueGroundItemOwnershipReleasesLocked() bool {
 	if r == nil || len(r.groundItemsByVID) == 0 {
-		return
+		return false
 	}
 	now := r.currentTimeLocked()
 	released := make([]sharedGroundItem, 0)
@@ -3685,11 +3695,12 @@ func (r *sharedWorldRegistry) flushDueGroundItemOwnershipReleasesLocked() {
 			r.enqueueToEntityLocked(target.Entity.ID, frames)
 		}
 	}
+	return len(released) > 0
 }
 
-func (r *sharedWorldRegistry) flushDueGroundItemDespawnsLocked() {
+func (r *sharedWorldRegistry) flushDueGroundItemDespawnsLocked() bool {
 	if r == nil || len(r.groundItemsByVID) == 0 {
-		return
+		return false
 	}
 	now := r.currentTimeLocked()
 	despawned := make([]sharedGroundItem, 0)
@@ -3711,10 +3722,23 @@ func (r *sharedWorldRegistry) flushDueGroundItemDespawnsLocked() {
 			r.enqueueToEntityLocked(target.Entity.ID, frames)
 		}
 	}
+	return len(despawned) > 0
 }
 
-func groundItemExclusiveOwnershipBlocksCollector(ground sharedGroundItem, collectorID uint64) bool {
-	return ground.OwnershipExclusive && ground.OwnerID != 0 && ground.OwnerID != collectorID
+func groundItemExclusiveOwnershipBlocksCollector(ground sharedGroundItem, collectorID uint64, collector loginticket.Character) bool {
+	if !ground.OwnershipExclusive {
+		return false
+	}
+	if ground.OwnerID != 0 {
+		return ground.OwnerID != collectorID
+	}
+	// Rematerialized exclusive handles have no process-local OwnerID until the
+	// original owner rejoins; keep peers blocked via durable owner identity.
+	return !sameGroundItemOwnerIdentity(ground, collector)
+}
+
+func sameGroundItemOwnerIdentity(ground sharedGroundItem, character loginticket.Character) bool {
+	return character.ID == ground.OwnerCharacterID && character.VID == ground.OwnerVID && character.Name == ground.OwnerName
 }
 
 func buildGroundItemVisibilityTransitionFrames(removed []sharedGroundItem, added []sharedGroundItem) [][]byte {
@@ -3788,7 +3812,7 @@ func (r *sharedWorldRegistry) groundItemPickupFor(collectorID uint64, collector 
 	if !ok {
 		return sharedGroundItemPickup{}, false
 	}
-	if groundItemExclusiveOwnershipBlocksCollector(ground, collectorID) {
+	if groundItemExclusiveOwnershipBlocksCollector(ground, collectorID, registeredCollector) {
 		return sharedGroundItemPickup{}, false
 	}
 	if explicitRange {
@@ -3822,14 +3846,14 @@ func (r *sharedWorldRegistry) RemoveGroundItem(collectorID uint64, collector log
 	}
 
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	registeredCollector, ok := r.playerCharacter(collectorID)
 	if !ok || characterAtBootstrapHPFloor(registeredCollector) || characterAtBootstrapHPFloor(collector) || !sameGroundRewardCollectorSnapshot(registeredCollector, collector) {
+		r.mu.Unlock()
 		return false
 	}
 	ground, ok := r.groundItemsByVID[vid]
 	if !ok || !r.groundItemReachableByCharacterLocked(ground, registeredCollector) {
+		r.mu.Unlock()
 		return false
 	}
 	delete(r.groundItemsByVID, vid)
@@ -3840,7 +3864,129 @@ func (r *sharedWorldRegistry) RemoveGroundItem(collectorID uint64, collector log
 		}
 		r.enqueueToEntityLocked(target.Entity.ID, frames)
 	}
+	hook := r.onGroundItemsChanged
+	r.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 	return true
+}
+
+// RestorePersistedGroundItems inserts durable pending ground handles without
+// requiring a live owner session. It is the offline rematerialize path used at
+// gamed startup; live drops continue to use RegisterGroundItem*.
+func (r *sharedWorldRegistry) RestorePersistedGroundItems(records []worldruntime.DurableGroundItemRecord) error {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, record := range records {
+		if err := r.restorePersistedGroundItemLocked(record); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *sharedWorldRegistry) restorePersistedGroundItemLocked(record worldruntime.DurableGroundItemRecord) error {
+	record = worldruntime.NormalizeDurableGroundItemSnapshot(worldruntime.DurableGroundItemSnapshot{GroundItems: []worldruntime.DurableGroundItemRecord{record}}).GroundItems[0]
+	if err := worldruntime.ValidateDurableGroundItemSnapshot(worldruntime.DurableGroundItemSnapshot{GroundItems: []worldruntime.DurableGroundItemRecord{record}}); err != nil {
+		return err
+	}
+	if _, exists := r.groundItemsByVID[record.VID]; exists {
+		return fmt.Errorf("%w: ground vid %d already exists", worldruntime.ErrInvalidGroundItemSnapshot, record.VID)
+	}
+
+	item := inventory.ItemInstance{}
+	var goldAmount uint32
+	if record.GoldAmount != nil {
+		goldAmount = *record.GoldAmount
+		item = inventory.ItemInstance{Vnum: 1, Count: 1}
+	} else {
+		item = inventory.ItemInstance{ID: record.ItemID, Vnum: record.Vnum, Count: *record.ItemCount}
+	}
+
+	ground := sharedGroundItem{
+		VID:                record.VID,
+		OwnerID:            0,
+		OwnerLogin:         record.OwnerLogin,
+		OwnerCharacterID:   record.OwnerCharacterID,
+		OwnerVID:           record.OwnerVID,
+		OwnerName:          record.OwnerName,
+		Item:               item,
+		GoldAmount:         goldAmount,
+		PickupRange:        record.PickupRange,
+		MapIndex:           record.MapIndex,
+		X:                  record.X,
+		Y:                  record.Y,
+		Z:                  record.Z,
+		OwnershipExclusive: record.OwnershipExclusive,
+		DespawnAt:          record.DespawnAt.UTC(),
+	}
+	if record.OwnershipExclusive && record.OwnershipExpiresAt != nil {
+		ground.OwnershipExpiresAt = record.OwnershipExpiresAt.UTC()
+	}
+	r.groundItemsByVID[record.VID] = ground
+	return nil
+}
+
+func (r *sharedWorldRegistry) DurableGroundItemSnapshot() worldruntime.DurableGroundItemSnapshot {
+	if r == nil {
+		return worldruntime.DurableGroundItemSnapshot{GroundItems: []worldruntime.DurableGroundItemRecord{}}
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.durableGroundItemSnapshotLocked()
+}
+
+func (r *sharedWorldRegistry) durableGroundItemSnapshotLocked() worldruntime.DurableGroundItemSnapshot {
+	records := make([]worldruntime.DurableGroundItemRecord, 0, len(r.groundItemsByVID))
+	for _, ground := range r.groundItemsByVID {
+		records = append(records, durableGroundItemRecordFromShared(ground))
+	}
+	return worldruntime.NormalizeDurableGroundItemSnapshot(worldruntime.DurableGroundItemSnapshot{GroundItems: records})
+}
+
+func durableGroundItemRecordFromShared(ground sharedGroundItem) worldruntime.DurableGroundItemRecord {
+	record := worldruntime.DurableGroundItemRecord{
+		VID:                ground.VID,
+		Vnum:               ground.Item.Vnum,
+		OwnerLogin:         ground.OwnerLogin,
+		OwnerCharacterID:   ground.OwnerCharacterID,
+		OwnerVID:           ground.OwnerVID,
+		OwnerName:          ground.OwnerName,
+		MapIndex:           ground.MapIndex,
+		X:                  ground.X,
+		Y:                  ground.Y,
+		Z:                  ground.Z,
+		PickupRange:        ground.PickupRange,
+		OwnershipExclusive: ground.OwnershipExclusive,
+		DespawnAt:          ground.DespawnAt.UTC(),
+	}
+	if ground.GoldAmount != 0 {
+		gold := ground.GoldAmount
+		record.GoldAmount = &gold
+		record.Vnum = 1
+	} else {
+		count := ground.Item.Count
+		record.ItemCount = &count
+		record.ItemID = ground.Item.ID
+	}
+	if ground.OwnershipExclusive && !ground.OwnershipExpiresAt.IsZero() {
+		expires := ground.OwnershipExpiresAt.UTC()
+		record.OwnershipExpiresAt = &expires
+	}
+	return record
+}
+
+func (r *sharedWorldRegistry) SetGroundItemsChangedHook(hook func()) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.onGroundItemsChanged = hook
 }
 
 func (r *sharedWorldRegistry) UpdateCharacterWithVisibilityTransition(id uint64, previous loginticket.Character, current loginticket.Character, stableFrames [][]byte) {

@@ -380,6 +380,7 @@ type PersistenceConfigSnapshot struct {
 	InteractionStorePath  string `json:"interaction_store_path"`
 	ItemTemplateStorePath string `json:"item_template_store_path"`
 	QuestStateStorePath   string `json:"quest_state_store_path"`
+	GroundItemStorePath   string `json:"ground_item_store_path"`
 }
 
 type DatabaseConfigSnapshot struct {
@@ -397,6 +398,7 @@ type PersistenceStatusSnapshot struct {
 	StaticActorStore           StaticActorStoreStatus  `json:"static_actor_store"`
 	InteractionStore           InteractionStoreStatus  `json:"interaction_store"`
 	QuestStateStore            QuestStateStoreStatus   `json:"quest_state_store"`
+	GroundItemStore            GroundItemStoreStatus   `json:"ground_item_store"`
 }
 
 type AccountStoreStatus struct {
@@ -463,6 +465,13 @@ type QuestStateStoreStatus struct {
 	Error                        string                     `json:"error,omitempty"`
 }
 
+type GroundItemStoreStatus struct {
+	Path    string                                        `json:"path"`
+	Valid   bool                                          `json:"valid"`
+	Summary worldruntime.DurableGroundItemSnapshotSummary `json:"summary"`
+	Error   string                                        `json:"error,omitempty"`
+}
+
 type MapOccupancyChange = worldruntime.MapOccupancyChange
 
 type RelocationPreview = worldruntime.RelocationPreview
@@ -477,7 +486,9 @@ type gameRuntime struct {
 	itemStore               itemcatalog.Store
 	interactionStore        interactionstore.Store
 	questStateStore         queststate.Store
+	groundItemStore         worldruntime.GroundItemStore
 	groundItemExporter      worldruntime.BootstrapGroundItemStateExporter
+	groundItemPersistMu     sync.Mutex
 	itemTemplates           map[uint32]itemcatalog.Template
 	itemTemplatesAuthored   bool
 	liveCharacterMu         sync.RWMutex
@@ -609,8 +620,9 @@ func (r *gameRuntime) PersistenceStatus() PersistenceStatusSnapshot {
 	staticActorStatus := r.staticActorStoreStatus(liveSelectedCharacterCount)
 	interactionStatus := r.interactionStoreStatus(liveSelectedCharacterCount)
 	questStateStatus := r.questStateStoreStatus(liveSelectedCharacterCount)
+	groundItemStatus := r.groundItemStoreStatus()
 	return PersistenceStatusSnapshot{
-		OK:                         accountStatus.Valid && loginTicketStatus.Valid && itemTemplateStatus.Valid && staticActorStatus.Valid && interactionStatus.Valid && questStateStatus.Valid,
+		OK:                         accountStatus.Valid && loginTicketStatus.Valid && itemTemplateStatus.Valid && staticActorStatus.Valid && interactionStatus.Valid && questStateStatus.Valid && groundItemStatus.Valid,
 		LiveSelectedCharacterCount: liveSelectedCharacterCount,
 		AccountStore:               accountStatus,
 		LoginTicketStore:           loginTicketStatus,
@@ -618,6 +630,7 @@ func (r *gameRuntime) PersistenceStatus() PersistenceStatusSnapshot {
 		StaticActorStore:           staticActorStatus,
 		InteractionStore:           interactionStatus,
 		QuestStateStore:            questStateStatus,
+		GroundItemStore:            groundItemStatus,
 	}
 }
 
@@ -721,6 +734,40 @@ func (r *gameRuntime) questStateStoreStatus(liveSelectedCharacterCount int) Ques
 	status.Valid = true
 	status.Summary = summary
 	return status
+}
+
+func (r *gameRuntime) groundItemStoreStatus() GroundItemStoreStatus {
+	status := GroundItemStoreStatus{Path: groundItemStorePath(nil), Summary: worldruntime.DurableGroundItemSnapshotSummary{VIDs: []uint32{}}}
+	if r != nil {
+		status.Path = groundItemStorePath(r.groundItemStore)
+	}
+	summary, err := r.ValidateGroundItemStore()
+	if err != nil {
+		status.Error = err.Error()
+		return status
+	}
+	status.Valid = true
+	status.Summary = summary
+	return status
+}
+
+func (r *gameRuntime) ValidateGroundItemStore() (worldruntime.DurableGroundItemSnapshotSummary, error) {
+	if r == nil || r.groundItemStore == nil {
+		return worldruntime.DurableGroundItemSnapshotSummary{VIDs: []uint32{}}, nil
+	}
+	if validator, ok := r.groundItemStore.(interface {
+		Validate() (worldruntime.DurableGroundItemSnapshotSummary, error)
+	}); ok {
+		return validator.Validate()
+	}
+	snapshot, err := r.groundItemStore.Load()
+	if err != nil {
+		if errors.Is(err, worldruntime.ErrGroundItemSnapshotNotFound) {
+			return worldruntime.DurableGroundItemSnapshotSummary{VIDs: []uint32{}}, nil
+		}
+		return worldruntime.DurableGroundItemSnapshotSummary{}, err
+	}
+	return worldruntime.SummarizeDurableGroundItemSnapshot(snapshot), nil
 }
 
 func (r *gameRuntime) ValidateAccountStore() (accountstore.SnapshotSummary, error) {
@@ -2703,6 +2750,7 @@ func runtimePersistenceConfigSnapshot(r *gameRuntime) PersistenceConfigSnapshot 
 		InteractionStorePath:  interactionStorePath(r.interactionStore),
 		ItemTemplateStorePath: itemTemplateStorePath(r.itemStore),
 		QuestStateStorePath:   questStateStorePath(r.questStateStore),
+		GroundItemStorePath:   groundItemStorePath(r.groundItemStore),
 	}
 }
 
@@ -2757,6 +2805,16 @@ func itemTemplateStorePath(store itemcatalog.Store) string {
 }
 
 func questStateStorePath(store queststate.Store) string {
+	if store == nil {
+		return ""
+	}
+	if locator, ok := store.(interface{ Path() string }); ok {
+		return locator.Path()
+	}
+	return ""
+}
+
+func groundItemStorePath(store worldruntime.GroundItemStore) string {
 	if store == nil {
 		return ""
 	}
@@ -3666,6 +3724,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 	if questState == nil {
 		questState = queststate.NewFileStore(serviceQuestStateStorePath(cfg))
 	}
+	groundItemPath := serviceGroundItemStorePath(cfg)
+	if strings.TrimSpace(cfg.GroundItemStorePath) == "" {
+		// Hermetic constructors that omit an explicit path must not share the
+		// process-wide default FileStore; otherwise one test's pending drops
+		// rematerialize into the next runtime via /tmp pollution.
+		groundItemPath = filepath.Join(os.TempDir(), fmt.Sprintf("go-metin2-ground-items-%d-%d", os.Getpid(), time.Now().UnixNano()), "ground-items.json")
+	}
+	groundItems := worldruntime.NewGroundItemFileStore(groundItemPath)
 	sharedWorld := newSharedWorldRegistryWithTopology(topology)
 	runtime := &gameRuntime{
 		sharedWorld:            sharedWorld,
@@ -3676,6 +3742,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		itemStore:              items,
 		interactionStore:       interactions,
 		questStateStore:        questState,
+		groundItemStore:        groundItems,
 		liveCharactersByName:   make(map[string]liveCharacterRegistration),
 		spawnReturnStepDueAt:   make(map[uint64]time.Time),
 		spawnChaseStepDueAt:    make(map[uint64]time.Time),
@@ -3688,6 +3755,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		}
 		return time.Now()
 	}
+	sharedWorld.SetGroundItemsChangedHook(runtime.persistPendingGroundItems)
 	if err := runtime.loadItemTemplates(); err != nil {
 		return nil, err
 	}
@@ -3696,6 +3764,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		return nil, err
 	}
 	if err := runtime.loadPersistedStaticActors(); err != nil {
+		return nil, err
+	}
+	if err := runtime.loadPersistedGroundItems(); err != nil {
 		return nil, err
 	}
 	transferTriggers = cloneBootstrapTransferTriggers(transferTriggers)
@@ -11768,6 +11839,7 @@ func servicePersistenceConfigWithDefaults(cfg config.Service) config.Service {
 	cfg.InteractionStorePath = serviceInteractionStorePath(cfg)
 	cfg.ItemTemplateStorePath = serviceItemTemplateStorePath(cfg)
 	cfg.QuestStateStorePath = serviceQuestStateStorePath(cfg)
+	cfg.GroundItemStorePath = serviceGroundItemStorePath(cfg)
 	return cfg
 }
 
@@ -11828,6 +11900,56 @@ func serviceQuestStateStorePath(cfg config.Service) string {
 		return path
 	}
 	return defaultQuestStateStorePath()
+}
+
+func defaultGroundItemStorePath() string {
+	return config.DefaultGroundItemStorePath()
+}
+
+func serviceGroundItemStorePath(cfg config.Service) string {
+	if path := strings.TrimSpace(cfg.GroundItemStorePath); path != "" {
+		return path
+	}
+	return defaultGroundItemStorePath()
+}
+
+func (r *gameRuntime) loadPersistedGroundItems() error {
+	if r == nil || r.groundItemStore == nil || r.sharedWorld == nil {
+		return nil
+	}
+	snapshot, err := r.groundItemStore.Load()
+	if err != nil {
+		if errors.Is(err, worldruntime.ErrGroundItemSnapshotNotFound) {
+			return nil
+		}
+		return err
+	}
+	now := time.Now()
+	if r.now != nil {
+		now = r.now()
+	}
+	filtered := worldruntime.FilterDurableGroundItemSnapshotForRestore(snapshot, now)
+	if err := r.sharedWorld.RestorePersistedGroundItems(filtered.GroundItems); err != nil {
+		return err
+	}
+	// Rewrite filtered/publicized pending set so crash restart does not revive expired ownership.
+	return r.persistPendingGroundItemsLocked()
+}
+
+func (r *gameRuntime) persistPendingGroundItems() {
+	if r == nil {
+		return
+	}
+	_ = r.persistPendingGroundItemsLocked()
+}
+
+func (r *gameRuntime) persistPendingGroundItemsLocked() error {
+	if r == nil || r.groundItemStore == nil || r.sharedWorld == nil {
+		return nil
+	}
+	r.groundItemPersistMu.Lock()
+	defer r.groundItemPersistMu.Unlock()
+	return r.groundItemStore.Save(r.sharedWorld.DurableGroundItemSnapshot())
 }
 
 func sequentialBytes32(start byte) [32]byte {

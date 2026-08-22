@@ -3633,6 +3633,7 @@ func TestGameRuntimeConfigSnapshotReportsPersistenceStoreLocations(t *testing.T)
 		InteractionStorePath:  filepath.Join(root, "interactions", "interactions.json"),
 		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
 		QuestStateStorePath:   filepath.Join(root, "quest-state", "quest-state.json"),
+		GroundItemStorePath:   filepath.Join(root, "ground-items", "ground-items.json"),
 	}
 
 	runtime, err := NewGameRuntime(cfg)
@@ -3658,6 +3659,9 @@ func TestGameRuntimeConfigSnapshotReportsPersistenceStoreLocations(t *testing.T)
 	}
 	if snapshot.Persistence.QuestStateStorePath != cfg.QuestStateStorePath {
 		t.Fatalf("expected quest state store path %q, got %q", cfg.QuestStateStorePath, snapshot.Persistence.QuestStateStorePath)
+	}
+	if snapshot.Persistence.GroundItemStorePath != cfg.GroundItemStorePath {
+		t.Fatalf("expected ground item store path %q, got %q", cfg.GroundItemStorePath, snapshot.Persistence.GroundItemStorePath)
 	}
 }
 
@@ -3884,6 +3888,7 @@ func TestNewGameRuntimeRejectsOverlappingPersistencePaths(t *testing.T) {
 		InteractionStorePath:  filepath.Join(root, "interactions", "interactions.json"),
 		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
 		QuestStateStorePath:   filepath.Join(root, "quest-state", "quest-state.json"),
+		GroundItemStorePath:   filepath.Join(root, "ground-items", "ground-items.json"),
 	}
 
 	_, err := NewGameRuntime(cfg)
@@ -3904,6 +3909,7 @@ func TestNewGameRuntimeRejectsSharedFileStoreParentDirectory(t *testing.T) {
 		InteractionStorePath:  filepath.Join(root, "content", "interactions.json"),
 		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
 		QuestStateStorePath:   filepath.Join(root, "quest-state", "quest-state.json"),
+		GroundItemStorePath:   filepath.Join(root, "ground-items", "ground-items.json"),
 	}
 
 	_, err := NewGameRuntime(cfg)

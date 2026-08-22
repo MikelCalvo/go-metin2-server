@@ -20,7 +20,8 @@ func validBackupRestoreRuntimeConfig() string {
     "static_actor_store_path": "/var/metin2/static-actors/static-actors.json",
     "interaction_store_path": "/var/metin2/interactions/interaction-definitions.json",
     "item_template_store_path": "/var/metin2/item-templates/item-templates.json",
-    "quest_state_store_path": "/var/metin2/quest-state/quest-state.json"
+    "quest_state_store_path": "/var/metin2/quest-state/quest-state.json",
+    "ground_item_store_path": "/var/metin2/ground-items/ground-items.json"
   },
   "database": {
     "configured": false,
@@ -178,7 +179,8 @@ func TestRunBackupRestoreDrillReadsRegularFiles(t *testing.T) {
     "static_actor_store_path": "/state/static/static-actors.json",
     "interaction_store_path": "/state/interactions/interaction-definitions.json",
     "item_template_store_path": "/state/items/item-templates.json",
-    "quest_state_store_path": "/state/quests/quest-state.json"
+    "quest_state_store_path": "/state/quests/quest-state.json",
+    "ground_item_store_path": "/state/ground-items/ground-items.json"
   },
   "database": {"configured": false, "dsn_configured": false}
 }`)
@@ -220,7 +222,8 @@ func TestRunBackupRestoreDrillRejectsSharedFileStoreParents(t *testing.T) {
     "static_actor_store_path": "/tmp/shared/static-actors.json",
     "interaction_store_path": "/tmp/shared/interaction-definitions.json",
     "item_template_store_path": "/tmp/shared/item-templates.json",
-    "quest_state_store_path": "/tmp/shared/quest-state.json"
+    "quest_state_store_path": "/tmp/shared/quest-state.json",
+    "ground_item_store_path": "/tmp/ground-items/ground-items.json"
   },
   "database": {"configured": false, "dsn_configured": false}
 }`
@@ -257,7 +260,8 @@ func TestRunBackupRestoreDrillRejectsBlankPersistencePath(t *testing.T) {
     "static_actor_store_path": "/var/metin2/static-actors/static-actors.json",
     "interaction_store_path": "/var/metin2/interactions/interaction-definitions.json",
     "item_template_store_path": "/var/metin2/item-templates/item-templates.json",
-    "quest_state_store_path": "/var/metin2/quest-state/quest-state.json"
+    "quest_state_store_path": "/var/metin2/quest-state/quest-state.json",
+    "ground_item_store_path": "/var/metin2/ground-items/ground-items.json"
   },
   "database": {"configured": false, "dsn_configured": false}
 }`
@@ -435,7 +439,7 @@ func TestRunBackupRestoreDrillRejectsMalformedAndOversizedInput(t *testing.T) {
 		{name: "invalid-json", payload: `{"persistence":`},
 		{name: "invalid-utf8", payload: "{\x80"},
 		{name: "null", payload: "null"},
-		{name: "unknown-field", payload: `{"local_channel_id":1,"visibility_mode":"whole_map","visibility_radius":0,"visibility_sector_size":0,"persistence":{"login_ticket_store_dir":"/a","account_store_dir":"/b","static_actor_store_path":"/c/s.json","interaction_store_path":"/d/i.json","item_template_store_path":"/e/t.json","quest_state_store_path":"/f/q.json"},"database":{"configured":false,"dsn_configured":false},"extra":true}`},
+		{name: "unknown-field", payload: `{"local_channel_id":1,"visibility_mode":"whole_map","visibility_radius":0,"visibility_sector_size":0,"persistence":{"login_ticket_store_dir":"/a","account_store_dir":"/b","static_actor_store_path":"/c/s.json","interaction_store_path":"/d/i.json","item_template_store_path":"/e/t.json","quest_state_store_path":"/f/q.json","ground_item_store_path":"/g/gi.json"},"database":{"configured":false,"dsn_configured":false},"extra":true}`},
 		{name: "oversized", payload: strings.Repeat("a", maxRuntimeConfigBytes+1)},
 	}
 	for _, tc := range cases {
