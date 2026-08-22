@@ -60,8 +60,8 @@ Focused coverage:
 ## Follow-up options
 
 1. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
-2. Optionally project combat-profile / aggro / leash metadata once operators need those columns for offline content review.
-3. Keep ground-item restart durability deferred until operators decide quarantined `0010` exports should drive recovery.
+2. ~~Optionally project combat-profile / aggro / leash metadata once operators need those columns for offline content review.~~ Done for portable combat-profile rows at tip `0013`: see [combat-profile content-state migration](2026-08-22-combat-profile-content-state-migration.md).
+3. ~~Keep ground-item restart durability deferred until operators decide quarantined `0010` exports should drive recovery.~~ Done for FileStore rematerialize + backup/restore: see [ground-item process-restart durability](2026-08-22-ground-item-process-restart-durability.md) and [ground-item file-store backup/restore](2026-08-22-ground-item-file-store-backup-restore.md). SQL import/backfill from quarantined `0010` exports remains deferred.
 4. Keep daemon-local migration endpoints read-only.
-5. ~~Prove the checked-in NPC QA fixture projects onto the `0012` export/quarantine tip.~~ Done: see [NPC service bundle 0012 export quarantine](2026-08-22-npc-service-bundle-0012-export-quarantine.md).
-6. ~~Prove the authoring-form PvE vertical fixture exports onto `0012` and that quarantine fails closed without portable `combat_profiles[]`.~~ Done: see [PvE vertical authoring 0012 export combat-profile gap](2026-08-22-pve-vertical-authoring-0012-export-combat-profile-gap.md). Next migration tip should retain combat-profile rows.
+5. ~~Prove the checked-in NPC QA fixture projects onto the static-actor export/quarantine tip.~~ Done: see [NPC service bundle 0012 export quarantine](2026-08-22-npc-service-bundle-0012-export-quarantine.md) (current tip `0013`).
+6. ~~Prove the authoring-form PvE vertical fixture exports onto `0012` and that quarantine fails closed without portable `combat_profiles[]`, then tip `0013` retaining those rows.~~ Historical fail-closed proof plus green `0013` quarantine: see [PvE vertical authoring 0012 export combat-profile gap](2026-08-22-pve-vertical-authoring-0012-export-combat-profile-gap.md) and [combat-profile content-state migration](2026-08-22-combat-profile-content-state-migration.md).

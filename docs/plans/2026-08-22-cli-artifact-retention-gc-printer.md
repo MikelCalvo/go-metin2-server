@@ -68,6 +68,6 @@ Validation for this slice:
 
 1. Keep automatic / scheduled artifact GC deferred; any future cron/unit must require explicit operator confirmation beyond this printer.
 2. Keep `rm` of aside-renamed trees deferred.
-3. Keep ground-item restart durability deferred until operators decide quarantined `0010` exports drive recovery.
+3. ~~Keep ground-item restart durability deferred until operators decide quarantined `0010` exports drive recovery.~~ Done for FileStore rematerialize + backup/restore: see [ground-item process-restart durability](2026-08-22-ground-item-process-restart-durability.md) and [ground-item file-store backup/restore](2026-08-22-ground-item-file-store-backup-restore.md). SQL import/backfill from quarantined `0010` exports remains deferred.
 4. Keep SQL import/backfill deferred until a driver-backed harness exists.
 5. Optional later: systemd/unit samples that only print (never auto-run) this triage script.
