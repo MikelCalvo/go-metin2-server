@@ -4079,9 +4079,9 @@ func TestGameRuntimeItemExchangeMutualAcceptFinalizesDisplayedTradeAndClosesShel
 	if err != nil {
 		t.Fatalf("unexpected finalize peer accept error: %v", err)
 	}
-	// peer finalize burst: ACCEPT + ITEM_DEL(source) + ITEM_SET(incoming) + QUICKSLOT_DEL(source) + POINT_CHANGE(gold) + END
-	if len(peerAcceptOut) != 6 {
-		t.Fatalf("expected mutual-accept finalize peer burst of 6 frames (accept, item del, item set, quickslot del, gold, end), got %d", len(peerAcceptOut))
+	// peer finalize burst: ACCEPT + ITEM_DEL(source) + ITEM_SET(incoming) + QUICKSLOT_DEL(source) + POINT_CHANGE(gold) + success chat + END
+	if len(peerAcceptOut) != 7 {
+		t.Fatalf("expected mutual-accept finalize peer burst of 7 frames (accept, item del, item set, quickslot del, gold, success chat, end), got %d", len(peerAcceptOut))
 	}
 	assertExchangeAcceptFrame(t, peerAcceptOut[0], 1, "finalize peer accept")
 	peerItemDel, err := itemproto.DecodeDel(decodeSingleFrame(t, peerAcceptOut[1]))
@@ -4105,11 +4105,18 @@ func TestGameRuntimeItemExchangeMutualAcceptFinalizesDisplayedTradeAndClosesShel
 	if peerQuickslotDel.Position != 3 {
 		t.Fatalf("unexpected finalize peer quickslot delete: %+v", peerQuickslotDel)
 	}
+	peerSuccessChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[len(peerAcceptOut)-2]))
+	if err != nil {
+		t.Fatalf("decode finalize peer success chat: %v", err)
+	}
+	if peerSuccessChat.Type != chatproto.ChatTypeInfo || peerSuccessChat.VID != 0 || peerSuccessChat.Message != exchangeFinalizeSuccessInfoMessage(owner.Name) {
+		t.Fatalf("unexpected finalize peer success chat: %+v", peerSuccessChat)
+	}
 	assertExchangeEndFrame(t, peerAcceptOut[len(peerAcceptOut)-1], "finalize peer shell end")
 	queuedPeerAccept := flushServerFrames(t, ownerFlow)
-	// owner queued burst: ACCEPT + ITEM_DEL(source) + ITEM_SET(incoming) + QUICKSLOT_DEL(source) + POINT_CHANGE(gold) + END
-	if len(queuedPeerAccept) != 6 {
-		t.Fatalf("expected mutual-accept finalize owner queued burst of 6 frames (accept, item del, item set, quickslot del, gold, end), got %d", len(queuedPeerAccept))
+	// owner queued burst: ACCEPT + ITEM_DEL(source) + ITEM_SET(incoming) + QUICKSLOT_DEL(source) + POINT_CHANGE(gold) + success chat + END
+	if len(queuedPeerAccept) != 7 {
+		t.Fatalf("expected mutual-accept finalize owner queued burst of 7 frames (accept, item del, item set, quickslot del, gold, success chat, end), got %d", len(queuedPeerAccept))
 	}
 	assertExchangeAcceptFrame(t, queuedPeerAccept[0], 0, "finalize peer accept owner")
 	ownerItemDel, err := itemproto.DecodeDel(decodeSingleFrame(t, queuedPeerAccept[1]))
@@ -4132,6 +4139,13 @@ func TestGameRuntimeItemExchangeMutualAcceptFinalizesDisplayedTradeAndClosesShel
 	}
 	if ownerQuickslotDel.Position != 2 {
 		t.Fatalf("unexpected finalize owner quickslot delete: %+v", ownerQuickslotDel)
+	}
+	ownerSuccessChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queuedPeerAccept[len(queuedPeerAccept)-2]))
+	if err != nil {
+		t.Fatalf("decode finalize owner success chat: %v", err)
+	}
+	if ownerSuccessChat.Type != chatproto.ChatTypeInfo || ownerSuccessChat.VID != 0 || ownerSuccessChat.Message != exchangeFinalizeSuccessInfoMessage(peer.Name) {
+		t.Fatalf("unexpected finalize owner success chat: %+v", ownerSuccessChat)
 	}
 	assertExchangeEndFrame(t, queuedPeerAccept[len(queuedPeerAccept)-1], "finalize owner queued shell end")
 
@@ -4423,17 +4437,31 @@ func TestGameRuntimeItemExchangeAcceptDisplaysWithoutFinalizingTrade(t *testing.
 	if err != nil {
 		t.Fatalf("unexpected peer exchange accept error: %v", err)
 	}
-	if len(peerAcceptOut) < 2 {
-		t.Fatalf("expected empty mutual-accept finalize to emit peer accept marker plus shell END, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 3 {
+		t.Fatalf("expected empty mutual-accept finalize to emit peer accept marker, success chat, and shell END, got %d", len(peerAcceptOut))
 	}
 	assertExchangeAcceptFrame(t, peerAcceptOut[0], 1, "peer accept self response")
-	assertExchangeEndFrame(t, peerAcceptOut[len(peerAcceptOut)-1], "peer accept shell end")
+	peerSuccessChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[1]))
+	if err != nil {
+		t.Fatalf("decode empty mutual-accept peer success chat: %v", err)
+	}
+	if peerSuccessChat.Type != chatproto.ChatTypeInfo || peerSuccessChat.VID != 0 || peerSuccessChat.Message != exchangeFinalizeSuccessInfoMessage(owner.Name) {
+		t.Fatalf("unexpected empty mutual-accept peer success chat: %+v", peerSuccessChat)
+	}
+	assertExchangeEndFrame(t, peerAcceptOut[2], "peer accept shell end")
 	queuedPeerAccept := flushServerFrames(t, ownerFlow)
-	if len(queuedPeerAccept) < 2 {
-		t.Fatalf("expected empty mutual-accept finalize to queue owner accept marker plus shell END, got %d", len(queuedPeerAccept))
+	if len(queuedPeerAccept) != 3 {
+		t.Fatalf("expected empty mutual-accept finalize to queue owner accept marker, success chat, and shell END, got %d", len(queuedPeerAccept))
 	}
 	assertExchangeAcceptFrame(t, queuedPeerAccept[0], 0, "peer accept owner response")
-	assertExchangeEndFrame(t, queuedPeerAccept[len(queuedPeerAccept)-1], "owner queued shell end")
+	ownerSuccessChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queuedPeerAccept[1]))
+	if err != nil {
+		t.Fatalf("decode empty mutual-accept owner success chat: %v", err)
+	}
+	if ownerSuccessChat.Type != chatproto.ChatTypeInfo || ownerSuccessChat.VID != 0 || ownerSuccessChat.Message != exchangeFinalizeSuccessInfoMessage(peer.Name) {
+		t.Fatalf("unexpected empty mutual-accept owner success chat: %+v", ownerSuccessChat)
+	}
+	assertExchangeEndFrame(t, queuedPeerAccept[2], "owner queued shell end")
 
 	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
 	if err != nil {

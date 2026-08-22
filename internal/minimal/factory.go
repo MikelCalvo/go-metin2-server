@@ -99,6 +99,7 @@ const exchangeFinalizeSpaceSelfInfoMessage = "There isn't enough space in your i
 const exchangeFinalizeSpaceOtherInfoMessage = "The other person has no space left in their inventory."
 const exchangeFinalizeGoldOverflowSelfInfoMessage = questFlagRewardGoldOverflowInfoMessage
 const exchangeFinalizeGoldOverflowOtherInfoMessage = "The other person cannot carry any more gold."
+const exchangeFinalizeSuccessInfoMessageFormat = "The trade with %s has been successful."
 const bootstrapSafeboxOpenMinSize uint8 = 1
 const bootstrapSafeboxOpenMaxSize uint8 = 3
 const bootstrapSafeboxCellsPerPage uint8 = 5
@@ -7914,13 +7915,15 @@ func applyExchangeFinalize(runtime *gameRuntime, accounts accountstore.Store, sh
 			_ = applyLocalSnapshot(plan.Origin)
 			return nil, false
 		}
-		selfFrames = make([][]byte, 0, 2+len(originFrames))
+		selfFrames = make([][]byte, 0, 3+len(originFrames))
 		selfFrames = append(selfFrames, encodeExchangeAcceptFrame(1))
 		selfFrames = append(selfFrames, originFrames...)
+		selfFrames = append(selfFrames, encodeExchangeFinalizeSuccessInfoFrame(plan.Partner.Name))
 		selfFrames = append(selfFrames, encodeExchangeEndFrame())
-		peerFrames = make([][]byte, 0, 2+len(partnerFrames))
+		peerFrames = make([][]byte, 0, 3+len(partnerFrames))
 		peerFrames = append(peerFrames, encodeExchangeAcceptFrame(0))
 		peerFrames = append(peerFrames, partnerFrames...)
+		peerFrames = append(peerFrames, encodeExchangeFinalizeSuccessInfoFrame(plan.Origin.Name))
 		peerFrames = append(peerFrames, encodeExchangeEndFrame())
 	case plan.Partner.ID:
 		if !applyLocalSnapshot(updatedPartner) {
@@ -7932,13 +7935,15 @@ func applyExchangeFinalize(runtime *gameRuntime, accounts accountstore.Store, sh
 			_ = applyLocalSnapshot(plan.Partner)
 			return nil, false
 		}
-		selfFrames = make([][]byte, 0, 2+len(partnerFrames))
+		selfFrames = make([][]byte, 0, 3+len(partnerFrames))
 		selfFrames = append(selfFrames, encodeExchangeAcceptFrame(1))
 		selfFrames = append(selfFrames, partnerFrames...)
+		selfFrames = append(selfFrames, encodeExchangeFinalizeSuccessInfoFrame(plan.Origin.Name))
 		selfFrames = append(selfFrames, encodeExchangeEndFrame())
-		peerFrames = make([][]byte, 0, 2+len(originFrames))
+		peerFrames = make([][]byte, 0, 3+len(originFrames))
 		peerFrames = append(peerFrames, encodeExchangeAcceptFrame(0))
 		peerFrames = append(peerFrames, originFrames...)
+		peerFrames = append(peerFrames, encodeExchangeFinalizeSuccessInfoFrame(plan.Partner.Name))
 		peerFrames = append(peerFrames, encodeExchangeEndFrame())
 	default:
 		rollbackAccounts()

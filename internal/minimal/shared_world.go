@@ -6050,6 +6050,19 @@ func encodeExchangeFinalizeGoldOverflowOtherInfoFrame() []byte {
 	})
 }
 
+func encodeExchangeFinalizeSuccessInfoFrame(partnerName string) []byte {
+	return chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+		Type:    chatproto.ChatTypeInfo,
+		VID:     0,
+		Empire:  0,
+		Message: exchangeFinalizeSuccessInfoMessage(partnerName),
+	})
+}
+
+func exchangeFinalizeSuccessInfoMessage(partnerName string) string {
+	return fmt.Sprintf(exchangeFinalizeSuccessInfoMessageFormat, normalizeLiveCharacterName(partnerName))
+}
+
 func encodeExchangeEndFrame() []byte {
 	return itemproto.EncodeServerExchange(itemproto.ServerExchangePacket{Subheader: itemproto.ExchangeServerSubheaderEnd})
 }
