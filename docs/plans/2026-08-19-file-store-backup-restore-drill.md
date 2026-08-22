@@ -29,7 +29,11 @@ Rules frozen by the runbook:
 Supporting doc fixes in the same slice:
 
 - `docs/debugging-and-profiling.md` now documents interaction-store `backup_manifest` and `restore_blocked_by_live_sessions` on `/local/persistence/status`, matching the runtime status shape;
-- `docs/workflow/migration-apply-runbook.md` and `docs/development.md` link the combined drill and list all six store validate/backup-validate surfaces.
+- `docs/workflow/migration-apply-runbook.md` and `docs/development.md` link the combined drill and list the then-owned six store validate/backup-validate surfaces.
+
+Later sync: the seventh durable ground-item FileStore validate/backup-validate
+surface is now listed in the apply runbook as well — see
+[ops docs migration-apply ground-item preflight](2026-08-22-ops-docs-migration-apply-ground-item-preflight.md).
 
 ## What this is not yet
 
@@ -46,5 +50,5 @@ Docs-only slice. Validation:
 ## Follow-up options
 
 1. ~~Add a small operator script or hermetic dry-run helper that prints the drill commands from `/local/runtime-config` without performing restore.~~ Done: `metin2-migrate backup-restore-drill`.
-2. Keep ground-item / ground-gold restart durability deferred until a real world-state repository exists.
+2. ~~Keep ground-item / ground-gold restart durability deferred until a real world-state repository exists.~~ Done for FileStore rematerialize + backup/restore + drill coverage; apply-runbook preflight listing followed in [ops docs migration-apply ground-item preflight](2026-08-22-ops-docs-migration-apply-ground-item-preflight.md). SQL import/backfill from quarantined `0010` exports remains deferred.
 3. Extract repository seams only after offline quarantine + loopback quarantine both prove the export boundary.
