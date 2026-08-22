@@ -5803,37 +5803,83 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							return gameflow.ItemRefineResult{Accepted: false}
 						}
 						previousSelected := selectedPlayer.LiveCharacter()
-						result, ok := selectedPlayer.ApplyRefineSuccess(inventory.SlotIndex(packet.Position), packet.Type, activeRefineDialog.SourceID, activeRefineDialog.RefineInfo, sourceTemplate, resultTemplate)
-						if !ok {
-							return gameflow.ItemRefineResult{Accepted: false}
-						}
-						frames, err := refineSuccessResultFrames(previousSelected, result, runtime.itemTemplates, packet.Type)
-						if err != nil {
-							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
-							return gameflow.ItemRefineResult{Accepted: false}
-						}
-						var materialQuickslotFrames [][]byte
-						for _, change := range result.MaterialChanges {
-							if !change.ItemRemoved {
-								continue
+						switch activeRefineDialog.RefineInfo.Probability {
+						case 100:
+							result, ok := selectedPlayer.ApplyRefineSuccess(inventory.SlotIndex(packet.Position), packet.Type, activeRefineDialog.SourceID, activeRefineDialog.RefineInfo, sourceTemplate, resultTemplate)
+							if !ok {
+								return gameflow.ItemRefineResult{Accepted: false}
 							}
-							quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, change.Slot)
+							frames, err := refineSuccessResultFrames(previousSelected, result, runtime.itemTemplates, packet.Type)
+							if err != nil {
+								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+								return gameflow.ItemRefineResult{Accepted: false}
+							}
+							var materialQuickslotFrames [][]byte
+							for _, change := range result.MaterialChanges {
+								if !change.ItemRemoved {
+									continue
+								}
+								quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, change.Slot)
+								if !ok {
+									selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+									return gameflow.ItemRefineResult{Accepted: false}
+								}
+								materialQuickslotFrames = append(materialQuickslotFrames, quickslotFrames...)
+							}
+							if len(materialQuickslotFrames) > 0 {
+								insertAt := len(result.MaterialChanges)
+								frames = append(frames[:insertAt], append(materialQuickslotFrames, frames[insertAt:]...)...)
+							}
+							committed, ok := commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+							if !ok {
+								return gameflow.ItemRefineResult{Accepted: false}
+							}
+							setActiveRefineDialog(refineDialogPresentation{}, false)
+							return gameflow.ItemRefineResult{Accepted: true, Frames: committed}
+						case 0:
+							result, ok := selectedPlayer.ApplyRefineDestroyFailure(inventory.SlotIndex(packet.Position), packet.Type, activeRefineDialog.SourceID, activeRefineDialog.RefineInfo, sourceTemplate, resultTemplate)
+							if !ok {
+								return gameflow.ItemRefineResult{Accepted: false}
+							}
+							frames, err := refineDestroyFailureResultFrames(previousSelected, result, runtime.itemTemplates, packet.Type)
+							if err != nil {
+								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+								return gameflow.ItemRefineResult{Accepted: false}
+							}
+							var materialQuickslotFrames [][]byte
+							for _, change := range result.MaterialChanges {
+								if !change.ItemRemoved {
+									continue
+								}
+								quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, change.Slot)
+								if !ok {
+									selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+									return gameflow.ItemRefineResult{Accepted: false}
+								}
+								materialQuickslotFrames = append(materialQuickslotFrames, quickslotFrames...)
+							}
+							if len(materialQuickslotFrames) > 0 {
+								insertAt := len(result.MaterialChanges)
+								frames = append(frames[:insertAt], append(materialQuickslotFrames, frames[insertAt:]...)...)
+							}
+							sourceQuickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, result.SourceSlot)
 							if !ok {
 								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 								return gameflow.ItemRefineResult{Accepted: false}
 							}
-							materialQuickslotFrames = append(materialQuickslotFrames, quickslotFrames...)
-						}
-						if len(materialQuickslotFrames) > 0 {
-							insertAt := len(result.MaterialChanges)
-							frames = append(frames[:insertAt], append(materialQuickslotFrames, frames[insertAt:]...)...)
-						}
-						committed, ok := commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
-						if !ok {
+							if len(sourceQuickslotFrames) > 0 {
+								insertAt := len(result.MaterialChanges) + len(materialQuickslotFrames) + 1
+								frames = append(frames[:insertAt], append(sourceQuickslotFrames, frames[insertAt:]...)...)
+							}
+							committed, ok := commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+							if !ok {
+								return gameflow.ItemRefineResult{Accepted: false}
+							}
+							setActiveRefineDialog(refineDialogPresentation{}, false)
+							return gameflow.ItemRefineResult{Accepted: true, Frames: committed}
+						default:
 							return gameflow.ItemRefineResult{Accepted: false}
 						}
-						setActiveRefineDialog(refineDialogPresentation{}, false)
-						return gameflow.ItemRefineResult{Accepted: true, Frames: committed}
 					}
 					template, ok := runtime.resolveRuntimeItemTemplate(selectedPlayer, inventory.SlotIndex(packet.Position))
 					if !ok {
@@ -8883,6 +8929,48 @@ func refineSuccessResultFrames(character loginticket.Character, result player.Re
 		VID:     0,
 		Empire:  0,
 		Message: fmt.Sprintf("RefineSuceeded %d", refineType),
+	}))
+	return frames, nil
+}
+
+func refineDestroyFailureResultFrames(character loginticket.Character, result player.RefineDestroyFailureResult, templates map[uint32]itemcatalog.Template, refineType uint8) ([][]byte, error) {
+	frames := make([][]byte, 0, len(result.MaterialChanges)+3)
+	for _, change := range result.MaterialChanges {
+		position, err := itemproto.CarriedInventoryPosition(uint16(change.Slot))
+		if err != nil {
+			return nil, err
+		}
+		if change.ItemRemoved {
+			frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: position}))
+			continue
+		}
+		updateFrame, err := encodeBootstrapItemUpdateFrameWithTemplates(position, change.Item, templates)
+		if err != nil {
+			return nil, err
+		}
+		frames = append(frames, updateFrame)
+	}
+	sourcePosition, err := itemproto.CarriedInventoryPosition(uint16(result.SourceSlot))
+	if err != nil {
+		return nil, err
+	}
+	frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: sourcePosition}))
+	if result.GoldBefore < result.Gold || result.GoldBefore-result.Gold != uint64(result.Cost) || result.Gold > uint64(math.MaxInt32) || result.Cost < 0 {
+		return nil, fmt.Errorf("refine destroy gold point-change out of range")
+	}
+	frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+		VID:    character.VID,
+		Type:   bootstrapGoldPointType,
+		Amount: -result.Cost,
+		Value:  int32(result.Gold),
+	}))
+	// Legacy TMP4 clients listen for CHAT_TYPE_COMMAND "RefineFailed <type>"
+	// to play the failure popup/sound.
+	frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+		Type:    chatproto.ChatTypeCommand,
+		VID:     0,
+		Empire:  0,
+		Message: fmt.Sprintf("RefineFailed %d", refineType),
 	}))
 	return frames, nil
 }

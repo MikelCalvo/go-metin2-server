@@ -138,6 +138,17 @@ type RefineSuccessResult struct {
 	Cost            int32
 }
 
+// RefineDestroyFailureResult is the live mutation outcome for remembered
+// probability = 0 confirm-after-preview dialogs: gold/materials consumed and
+// the source carried item destroyed without placing a result vnum.
+type RefineDestroyFailureResult struct {
+	SourceSlot      inventory.SlotIndex
+	MaterialChanges []RefineMaterialChange
+	GoldBefore      uint64
+	Gold            uint64
+	Cost            int32
+}
+
 // CarriedItemConsumeRequirement is one by-vnum carried-inventory debit request.
 type CarriedItemConsumeRequirement struct {
 	ItemVnum uint32
@@ -1497,6 +1508,92 @@ func (r *Runtime) ApplyRefineSuccess(slot inventory.SlotIndex, refineType uint8,
 	result := RefineSuccessResult{
 		SourceSlot:      slot,
 		ResultItem:      resultItem,
+		MaterialChanges: materialChanges,
+		GoldBefore:      r.liveGold,
+		Gold:            nextGold,
+		Cost:            remembered.Cost,
+	}
+	r.liveGold = nextGold
+	r.liveInventory = inventoryItems
+	return result, true
+}
+
+func (r *Runtime) ApplyRefineDestroyFailure(slot inventory.SlotIndex, refineType uint8, sourceID uint64, remembered itemcatalog.RefineInfo, sourceTemplate itemcatalog.Template, resultTemplate itemcatalog.Template) (RefineDestroyFailureResult, bool) {
+	if r == nil || sourceID == 0 || remembered.Probability != 0 || remembered.Cost < 0 || remembered.ResultVnum == 0 || len(remembered.Materials) > itemcatalog.MaxRefineMaterialCount {
+		return RefineDestroyFailureResult{}, false
+	}
+	info, ok := r.RefineInformation(slot, refineType, sourceTemplate)
+	if !ok || info.SourceVnum == 0 || sourceTemplate.RefineInfo == nil {
+		return RefineDestroyFailureResult{}, false
+	}
+	if !refineInfoEqual(remembered, *sourceTemplate.RefineInfo) || !refineInfoEqual(remembered, itemcatalog.RefineInfo{
+		ResultVnum:  info.ResultVnum,
+		Cost:        info.Cost,
+		Probability: info.Probability,
+		Materials:   info.Materials,
+	}) {
+		return RefineDestroyFailureResult{}, false
+	}
+	if !itemcatalog.ValidTemplate(resultTemplate) || resultTemplate.Vnum != remembered.ResultVnum {
+		return RefineDestroyFailureResult{}, false
+	}
+	index := findInventorySlot(r.liveInventory, slot)
+	if index < 0 {
+		return RefineDestroyFailureResult{}, false
+	}
+	sourceItem := r.liveInventory[index]
+	if sourceItem.ID != sourceID || sourceItem.Vnum != info.SourceVnum || sourceItem.Equipped || sourceItem.Locked || sourceItem.Count != 1 {
+		return RefineDestroyFailureResult{}, false
+	}
+	cost := uint64(remembered.Cost)
+	const maxPointChangeCarrier = uint64(1<<31 - 1)
+	if cost > maxPointChangeCarrier || r.liveGold < cost || r.liveGold > maxPointChangeCarrier {
+		return RefineDestroyFailureResult{}, false
+	}
+	nextGold := r.liveGold - cost
+	materialPlan, ok := planRefineMaterialChanges(r.liveInventory, slot, remembered.Materials)
+	if !ok {
+		return RefineDestroyFailureResult{}, false
+	}
+
+	inventoryItems := cloneItemInstances(r.liveInventory)
+	materialChanges := make([]RefineMaterialChange, 0, len(materialPlan))
+	for _, planned := range materialPlan {
+		currentIndex := findInventorySlot(inventoryItems, planned.Slot)
+		if currentIndex < 0 {
+			return RefineDestroyFailureResult{}, false
+		}
+		item := inventoryItems[currentIndex]
+		if item.Equipped || item.Locked || item.Vnum != planned.Vnum || item.Count < planned.Consume {
+			return RefineDestroyFailureResult{}, false
+		}
+		change := RefineMaterialChange{Slot: planned.Slot}
+		if item.Count == planned.Consume {
+			inventoryItems = removeInventoryIndex(inventoryItems, currentIndex)
+			change.ItemRemoved = true
+		} else {
+			item.Count -= planned.Consume
+			if err := item.Validate(); err != nil {
+				return RefineDestroyFailureResult{}, false
+			}
+			inventoryItems[currentIndex] = item
+			change.Item = item
+		}
+		materialChanges = append(materialChanges, change)
+	}
+	sourceIndex := findInventorySlot(inventoryItems, slot)
+	if sourceIndex < 0 {
+		return RefineDestroyFailureResult{}, false
+	}
+	destroyed := inventoryItems[sourceIndex]
+	if destroyed.ID != sourceID || destroyed.Vnum != info.SourceVnum || destroyed.Count != 1 || destroyed.Equipped || destroyed.Locked {
+		return RefineDestroyFailureResult{}, false
+	}
+	inventoryItems = removeInventoryIndex(inventoryItems, sourceIndex)
+	sortInventoryItems(inventoryItems)
+
+	result := RefineDestroyFailureResult{
+		SourceSlot:      slot,
 		MaterialChanges: materialChanges,
 		GoldBefore:      r.liveGold,
 		Gold:            nextGold,

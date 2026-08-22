@@ -3923,6 +3923,117 @@ func TestRuntimeApplyRefineSuccessRejectsProbabilityBelow100WithoutMutation(t *t
 	assertRefineSuccessUnchanged(t, runtime, persisted)
 }
 
+func TestRuntimeApplyRefineDestroyFailureProbability0ConsumesGoldMaterialsAndDestroysSource(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:    0x01030173,
+		VID:   0x02040173,
+		Name:  "RefineDestroy",
+		Level: 1,
+		Gold:  5000,
+		Inventory: []inventory.ItemInstance{
+			{ID: 701, Vnum: 11200, Count: 1, Slot: 5},
+			{ID: 702, Vnum: 27001, Count: 2, Slot: 6},
+			{ID: 703, Vnum: 27002, Count: 1, Slot: 7},
+			{ID: 704, Vnum: 27002, Count: 4, Slot: 8},
+		},
+		Quickslots: []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "refine-destroy", CharacterIndex: 1})
+	sourceTemplate, resultTemplate, remembered := refineSuccessTemplates(0)
+
+	result, ok := runtime.ApplyRefineDestroyFailure(5, 3, 701, remembered, sourceTemplate, resultTemplate)
+	if !ok {
+		t.Fatal("expected probability-0 refine destroy failure to apply")
+	}
+	if result.SourceSlot != 5 || result.GoldBefore != 5000 || result.Gold != 2500 || result.Cost != 2500 {
+		t.Fatalf("unexpected refine destroy scalars: %+v", result)
+	}
+	wantMaterials := []RefineMaterialChange{
+		{Slot: 6, ItemRemoved: true},
+		{Slot: 7, ItemRemoved: true},
+		{Slot: 8, Item: inventory.ItemInstance{ID: 704, Vnum: 27002, Count: 2, Slot: 8}},
+	}
+	if !reflect.DeepEqual(result.MaterialChanges, wantMaterials) {
+		t.Fatalf("unexpected refine destroy material changes:\n got: %#v\nwant: %#v", result.MaterialChanges, wantMaterials)
+	}
+	live := runtime.LiveCharacter()
+	wantInventory := []inventory.ItemInstance{
+		{ID: 704, Vnum: 27002, Count: 2, Slot: 8},
+	}
+	if !reflect.DeepEqual(live.Inventory, wantInventory) {
+		t.Fatalf("unexpected live inventory after refine destroy:\n got: %#v\nwant: %#v", live.Inventory, wantInventory)
+	}
+	if live.Gold != 2500 || !reflect.DeepEqual(live.Quickslots, persisted.Quickslots) {
+		t.Fatalf("unexpected live scalars after refine destroy: gold=%d quickslots=%#v", live.Gold, live.Quickslots)
+	}
+	persistedAfter := runtime.PersistedSnapshot()
+	if !reflect.DeepEqual(persistedAfter.Inventory, persisted.Inventory) || persistedAfter.Gold != persisted.Gold {
+		t.Fatalf("refine destroy mutated persisted snapshot before commit: got %#v want %#v", persistedAfter, persisted)
+	}
+}
+
+func TestRuntimeApplyRefineDestroyFailureRejectsProbabilityAbove0WithoutMutation(t *testing.T) {
+	persisted := refineSuccessSeedCharacter(4500)
+	runtime := NewRuntime(persisted, SessionLink{Login: "refine-destroy-prob", CharacterIndex: 1})
+	sourceTemplate, resultTemplate, remembered := refineSuccessTemplates(100)
+
+	if result, ok := runtime.ApplyRefineDestroyFailure(5, 3, 701, remembered, sourceTemplate, resultTemplate); ok {
+		t.Fatalf("expected probability-100 destroy helper to fail closed, got %+v", result)
+	}
+	assertRefineSuccessUnchanged(t, runtime, persisted)
+
+	sourceTemplate, resultTemplate, remembered = refineSuccessTemplates(75)
+	if result, ok := runtime.ApplyRefineDestroyFailure(5, 3, 701, remembered, sourceTemplate, resultTemplate); ok {
+		t.Fatalf("expected probability-75 destroy helper to fail closed, got %+v", result)
+	}
+	assertRefineSuccessUnchanged(t, runtime, persisted)
+}
+
+func TestRuntimeApplyRefineDestroyFailureRejectsInsufficientGoldOrMaterialsWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name  string
+		gold  uint64
+		items []inventory.ItemInstance
+	}{
+		{
+			name: "insufficient gold",
+			gold: 2499,
+			items: []inventory.ItemInstance{
+				{ID: 701, Vnum: 11200, Count: 1, Slot: 5},
+				{ID: 702, Vnum: 27001, Count: 2, Slot: 6},
+				{ID: 703, Vnum: 27002, Count: 3, Slot: 7},
+			},
+		},
+		{
+			name: "insufficient materials",
+			gold: 5000,
+			items: []inventory.ItemInstance{
+				{ID: 701, Vnum: 11200, Count: 1, Slot: 5},
+				{ID: 702, Vnum: 27001, Count: 1, Slot: 6},
+				{ID: 703, Vnum: 27002, Count: 3, Slot: 7},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:        0x01030174,
+				VID:       0x02040174,
+				Name:      "RefineDestroyGuard",
+				Level:     1,
+				Gold:      tc.gold,
+				Inventory: tc.items,
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "refine-destroy-guard", CharacterIndex: 1})
+			sourceTemplate, resultTemplate, remembered := refineSuccessTemplates(0)
+			if result, ok := runtime.ApplyRefineDestroyFailure(5, 3, 701, remembered, sourceTemplate, resultTemplate); ok {
+				t.Fatalf("expected %s refine destroy to fail closed, got %+v", tc.name, result)
+			}
+			assertRefineSuccessUnchanged(t, runtime, persisted)
+		})
+	}
+}
+
 func TestRuntimeApplyRefineSuccessRejectsInsufficientGoldOrMaterialsWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name  string

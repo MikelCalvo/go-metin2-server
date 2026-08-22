@@ -40,3 +40,7 @@ Focused coverage:
 1. Implement the GREEN path after this contract freeze.
 2. Keep `1..99` RNG deferred until operators choose a deterministic test seam.
 3. Keep catalyst / keep-grade failure variants deferred.
+
+## Status
+
+Shipped: player `ApplyRefineDestroyFailure` + minimal confirm wiring for remembered `probability = 0` dialogs, with session proof of the destroy burst and `RefineFailed <type>` companion. `1..99` RNG remains deferred.

@@ -990,6 +990,122 @@ func TestGameRuntimeItemRefineConfirmBusySafeboxFailsClosedWithoutMutation(t *te
 	}
 }
 
+func TestGameRuntimeItemRefineConfirmAfterPreviewProbability0DestroysAndEmitsRefineFailed(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("RefineFailConfirm", 0x01030766, 0x02040766, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 670, Vnum: 11240, Count: 1, Slot: 5},
+		{ID: 671, Vnum: 27001, Count: 2, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	issuePeerTicket(t, ticketStore, "item-refine-fail-confirm", 0x70707066, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-refine-fail-confirm", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-refine fail-confirm account: %v", err)
+	}
+	sourceTemplate := itemcatalog.Template{
+		Vnum:       11240,
+		Name:       "Always-Fail Practice Blade",
+		Stackable:  false,
+		MaxCount:   1,
+		Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{ResultVnum: 11241, Cost: 1000, Probability: 0, Materials: []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}}},
+	}
+	resultTemplate := itemcatalog.Template{Vnum: 11241, Name: "Unreached Result Blade", Stackable: false, MaxCount: 1}
+	material := itemcatalog.Template{Vnum: 27001, Name: "Refine Material A", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{sourceTemplate, resultTemplate, material})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-refine fail-confirm runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-refine-fail-confirm", 0x70707066)
+	defer closeSessionFlow(t, flow)
+
+	previewOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 4})))
+	if err != nil || len(previewOut) != 1 {
+		t.Fatalf("expected probability-0 refine preview to emit one frame, got %d err=%v", len(previewOut), err)
+	}
+	if _, err := itemproto.DecodeRefineInformationNew(decodeSingleFrame(t, previewOut[0])); err != nil {
+		t.Fatalf("decode probability-0 refine preview: %v", err)
+	}
+
+	confirmOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 4})))
+	if err != nil {
+		t.Fatalf("unexpected probability-0 refine confirm packet error: %v", err)
+	}
+	if len(confirmOut) != 6 {
+		t.Fatalf("expected probability-0 refine destroy burst of 6 frames, got %d", len(confirmOut))
+	}
+	materialDel, err := itemproto.DecodeDel(decodeSingleFrame(t, confirmOut[0]))
+	if err != nil {
+		t.Fatalf("decode probability-0 material ITEM_DEL: %v", err)
+	}
+	if materialDel.Position.WindowType != itemproto.WindowInventory || materialDel.Position.Cell != 6 {
+		t.Fatalf("unexpected probability-0 material delete position: %+v", materialDel.Position)
+	}
+	materialQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, confirmOut[1]))
+	if err != nil {
+		t.Fatalf("decode probability-0 material QUICKSLOT_DEL: %v", err)
+	}
+	if materialQuickslotDel.Position != 3 {
+		t.Fatalf("unexpected probability-0 material quickslot delete: %+v", materialQuickslotDel)
+	}
+	sourceDel, err := itemproto.DecodeDel(decodeSingleFrame(t, confirmOut[2]))
+	if err != nil {
+		t.Fatalf("decode probability-0 source ITEM_DEL: %v", err)
+	}
+	if sourceDel.Position.WindowType != itemproto.WindowInventory || sourceDel.Position.Cell != 5 {
+		t.Fatalf("unexpected probability-0 source delete position: %+v", sourceDel.Position)
+	}
+	sourceQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, confirmOut[3]))
+	if err != nil {
+		t.Fatalf("decode probability-0 source QUICKSLOT_DEL: %v", err)
+	}
+	if sourceQuickslotDel.Position != 2 {
+		t.Fatalf("unexpected probability-0 source quickslot delete: %+v", sourceQuickslotDel)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, confirmOut[4]))
+	if err != nil {
+		t.Fatalf("decode probability-0 gold point change: %v", err)
+	}
+	if goldChange.VID != owner.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != -1000 || goldChange.Value != 4000 {
+		t.Fatalf("unexpected probability-0 gold point change: %+v", goldChange)
+	}
+	assertRefineFailedCommandChat(t, confirmOut[5], 4, "probability-0 confirm")
+
+	account, err := accounts.Load("item-refine-fail-confirm")
+	if err != nil {
+		t.Fatalf("load probability-0 refine account: %v", err)
+	}
+	if account.Characters[0].Gold != 4000 {
+		t.Fatalf("expected persisted gold 4000 after probability-0 destroy, got %d", account.Characters[0].Gold)
+	}
+	if len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected empty persisted inventory after probability-0 destroy, got %#v", account.Characters[0].Inventory)
+	}
+	wantQuickslots := []loginticket.Quickslot{{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5}}
+	if !reflect.DeepEqual(account.Characters[0].Quickslots, wantQuickslots) {
+		t.Fatalf("unexpected persisted quickslots after probability-0 destroy: got %#v want %#v", account.Characters[0].Quickslots, wantQuickslots)
+	}
+}
+
+func assertRefineFailedCommandChat(t *testing.T, frame []byte, refineType uint8, label string) {
+	t.Helper()
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, frame))
+	if err != nil {
+		t.Fatalf("decode %s RefineFailed chat: %v", label, err)
+	}
+	wantMessage := fmt.Sprintf("RefineFailed %d", refineType)
+	if delivery.Type != chatproto.ChatTypeCommand || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != wantMessage {
+		t.Fatalf("unexpected %s RefineFailed chat: %+v want message=%q", label, delivery, wantMessage)
+	}
+}
+
 func TestGameRuntimeItemRefineConfirmProbabilityBelow100FailsClosedWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
