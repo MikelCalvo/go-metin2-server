@@ -3994,6 +3994,17 @@ func (r *sharedWorldRegistry) RestorePersistedGroundItems(records []worldruntime
 	return nil
 }
 
+// ClearPersistedGroundItems drops all pending ground handles. Used by operator
+// restore before rematerializing a manifested backup into the live shared world.
+func (r *sharedWorldRegistry) ClearPersistedGroundItems() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.groundItemsByVID = make(map[uint32]sharedGroundItem)
+}
+
 func (r *sharedWorldRegistry) restorePersistedGroundItemLocked(record worldruntime.DurableGroundItemRecord) error {
 	record = worldruntime.NormalizeDurableGroundItemSnapshot(worldruntime.DurableGroundItemSnapshot{GroundItems: []worldruntime.DurableGroundItemRecord{record}}).GroundItems[0]
 	if err := worldruntime.ValidateDurableGroundItemSnapshot(worldruntime.DurableGroundItemSnapshot{GroundItems: []worldruntime.DurableGroundItemRecord{record}}); err != nil {

@@ -70,6 +70,7 @@ type backupRestoreDrillPlan struct {
 	InteractionStorePath  string
 	StaticActorStorePath  string
 	QuestStateStorePath   string
+	GroundItemStorePath   string
 }
 
 func runBackupRestoreDrill(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
@@ -346,6 +347,7 @@ func buildBackupRestoreDrillPlan(runtimeRaw, buildInfoRaw []byte, opsBaseURL, au
 		InteractionStorePath:  interactionPath,
 		StaticActorStorePath:  staticActorPath,
 		QuestStateStorePath:   questStatePath,
+		GroundItemStorePath:   groundItemPath,
 	}, nil
 }
 
@@ -453,12 +455,13 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	fmt.Fprintf(&b, "INTERACTION_STORE_PATH=%s\n", shellSingleQuote(plan.InteractionStorePath))
 	fmt.Fprintf(&b, "STATIC_ACTOR_STORE_PATH=%s\n", shellSingleQuote(plan.StaticActorStorePath))
 	fmt.Fprintf(&b, "QUEST_STATE_STORE_PATH=%s\n", shellSingleQuote(plan.QuestStateStorePath))
+	fmt.Fprintf(&b, "GROUND_ITEM_STORE_PATH=%s\n", shellSingleQuote(plan.GroundItemStorePath))
 	b.WriteString("\n")
 	b.WriteString("TS=$(date -u +%Y%m%dT%H%M%SZ)\n")
 	b.WriteString(`BASE="${BACKUPS_BASE}/${TS}-${COMMIT12}"` + "\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== prepare lab backup retention tree =='\n")
-	b.WriteString(`mkdir -p "$BASE"/accounts "$BASE"/login-tickets "$BASE"/item-templates "$BASE"/interaction-store "$BASE"/static-actors "$BASE"/quest-state` + "\n")
+	b.WriteString(`mkdir -p "$BASE"/accounts "$BASE"/login-tickets "$BASE"/item-templates "$BASE"/interaction-store "$BASE"/static-actors "$BASE"/quest-state "$BASE"/ground-items` + "\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== retain daemon identity / runtime correlation =='\n")
 	b.WriteString(`curl -sS "$OPS/local/build-info" > "$BASE/gamed-build-info.json"` + "\n")
@@ -497,6 +500,8 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	b.WriteString(`curl -sS -X POST "$OPS/local/static-actor-store/crash-temps/cleanup"` + "\n")
 	b.WriteString(`curl -sS -X POST "$OPS/local/quest-state/validate"` + "\n")
 	b.WriteString(`curl -sS -X POST "$OPS/local/quest-state/crash-temps/cleanup"` + "\n")
+	b.WriteString(`curl -sS -X POST "$OPS/local/ground-item-store/validate"` + "\n")
+	b.WriteString(`curl -sS -X POST "$OPS/local/ground-item-store/crash-temps/cleanup"` + "\n")
 	b.WriteString(`curl -sS "$OPS/local/persistence/status"` + "\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== backup =='\n")
@@ -506,6 +511,7 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	b.WriteString("curl -sS -X POST \"$OPS/local/interaction-store/backup\" -H 'Content-Type: application/json' -d \"{\\\"dst_dir\\\":\\\"$BASE/interaction-store\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/static-actors/backup\" -H 'Content-Type: application/json' -d \"{\\\"dst_dir\\\":\\\"$BASE/static-actors\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/quest-state/backup\" -H 'Content-Type: application/json' -d \"{\\\"dst_dir\\\":\\\"$BASE/quest-state\\\"}\"\n")
+	b.WriteString("curl -sS -X POST \"$OPS/local/ground-item-store/backup\" -H 'Content-Type: application/json' -d \"{\\\"dst_dir\\\":\\\"$BASE/ground-items\\\"}\"\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== backup validate =='\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/account-store/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/accounts\\\"}\"\n")
@@ -514,6 +520,7 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	b.WriteString("curl -sS -X POST \"$OPS/local/interaction-store/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/interaction-store\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/static-actors/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/static-actors\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/quest-state/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/quest-state\\\"}\"\n")
+	b.WriteString("curl -sS -X POST \"$OPS/local/ground-item-store/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/ground-items\\\"}\"\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== empty active destinations (requires drained selected-character sessions) =='\n")
 	b.WriteString("mv \"$ACCOUNT_STORE_DIR\" \"${ACCOUNT_STORE_DIR}.aside-${TS}\"\n")
@@ -528,6 +535,8 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	b.WriteString("mkdir -p \"$(dirname \"$STATIC_ACTOR_STORE_PATH\")\"\n")
 	b.WriteString("mv \"$(dirname \"$QUEST_STATE_STORE_PATH\")\" \"$(dirname \"$QUEST_STATE_STORE_PATH\").aside-${TS}\"\n")
 	b.WriteString("mkdir -p \"$(dirname \"$QUEST_STATE_STORE_PATH\")\"\n")
+	b.WriteString("mv \"$(dirname \"$GROUND_ITEM_STORE_PATH\")\" \"$(dirname \"$GROUND_ITEM_STORE_PATH\").aside-${TS}\"\n")
+	b.WriteString("mkdir -p \"$(dirname \"$GROUND_ITEM_STORE_PATH\")\"\n")
 	b.WriteString("curl -sS \"$OPS/local/persistence/status\"\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== restore =='\n")
@@ -535,6 +544,7 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	b.WriteString("curl -sS -X POST \"$OPS/local/interaction-store/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/interaction-store\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/static-actors/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/static-actors\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/quest-state/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/quest-state\\\"}\"\n")
+	b.WriteString("curl -sS -X POST \"$OPS/local/ground-item-store/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/ground-items\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/account-store/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/accounts\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/login-tickets/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/login-tickets\\\"}\"\n")
 	b.WriteString("\n")

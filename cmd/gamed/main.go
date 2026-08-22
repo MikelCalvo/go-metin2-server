@@ -152,6 +152,26 @@ func main() {
 		opsHandler,
 		func() (any, error) { return gameRuntime.CleanupQuestStateStoreCrashTempFiles() },
 	)
+	opsHandler = ops.RegisterLocalGroundItemStoreValidateEndpoint(
+		opsHandler,
+		func() (any, error) { return gameRuntime.ValidateGroundItemStore() },
+	)
+	opsHandler = ops.RegisterLocalGroundItemStoreCrashTempCleanupEndpoint(
+		opsHandler,
+		func() (any, error) { return gameRuntime.CleanupGroundItemStoreCrashTempFiles() },
+	)
+	opsHandler = ops.RegisterLocalGroundItemStoreBackupEndpoint(
+		opsHandler,
+		func(dstDir string) (any, error) { return gameRuntime.BackupGroundItemStore(dstDir) },
+	)
+	opsHandler = ops.RegisterLocalGroundItemStoreBackupValidateEndpoint(
+		opsHandler,
+		func(srcDir string) (any, error) { return gameRuntime.ValidateGroundItemStoreBackup(srcDir) },
+	)
+	opsHandler = ops.RegisterLocalGroundItemStoreRestoreEndpoint(
+		opsHandler,
+		func(srcDir string) (any, error) { return gameRuntime.RestoreGroundItemStore(srcDir) },
+	)
 	opsHandler = ops.RegisterLocalQuestStateTransitionEndpoint(
 		opsHandler,
 		func(transition queststate.Transition) (any, error) {

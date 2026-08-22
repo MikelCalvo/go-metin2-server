@@ -128,6 +128,7 @@ var (
 	ErrQuestStateStoreRestoreLiveSessions   = errors.New("quest state store restore requires no live sessions")
 	ErrStaticActorStoreRestoreLiveSessions  = errors.New("static actor store restore requires no live sessions")
 	ErrInteractionStoreRestoreLiveSessions  = errors.New("interaction store restore requires no live sessions")
+	ErrGroundItemStoreRestoreLiveSessions   = errors.New("ground item store restore requires no live sessions")
 
 	refineConfirmRollMu       sync.Mutex
 	refineConfirmRollOverride []int
@@ -469,10 +470,12 @@ type QuestStateStoreStatus struct {
 }
 
 type GroundItemStoreStatus struct {
-	Path    string                                        `json:"path"`
-	Valid   bool                                          `json:"valid"`
-	Summary worldruntime.DurableGroundItemSnapshotSummary `json:"summary"`
-	Error   string                                        `json:"error,omitempty"`
+	Path                         string                                        `json:"path"`
+	Valid                        bool                                          `json:"valid"`
+	Summary                      worldruntime.DurableGroundItemSnapshotSummary `json:"summary"`
+	BackupManifest               BackupManifestStatus                          `json:"backup_manifest"`
+	RestoreBlockedByLiveSessions bool                                          `json:"restore_blocked_by_live_sessions"`
+	Error                        string                                        `json:"error,omitempty"`
 }
 
 type MapOccupancyChange = worldruntime.MapOccupancyChange
@@ -740,10 +743,16 @@ func (r *gameRuntime) questStateStoreStatus(liveSelectedCharacterCount int) Ques
 }
 
 func (r *gameRuntime) groundItemStoreStatus() GroundItemStoreStatus {
+	liveSelectedCharacterCount := 0
+	if r != nil {
+		liveSelectedCharacterCount = r.liveSelectedCharacterCount()
+	}
 	status := GroundItemStoreStatus{Path: groundItemStorePath(nil), Summary: worldruntime.DurableGroundItemSnapshotSummary{VIDs: []uint32{}}}
 	if r != nil {
 		status.Path = groundItemStorePath(r.groundItemStore)
 	}
+	status.BackupManifest = groundItemBackupManifestStatus(status.Path)
+	status.RestoreBlockedByLiveSessions = liveSelectedCharacterCount != 0
 	summary, err := r.ValidateGroundItemStore()
 	if err != nil {
 		status.Error = err.Error()
@@ -1295,6 +1304,118 @@ func (r *gameRuntime) RestoreQuestStateStore(srcDir string) (queststate.Snapshot
 		return queststate.SnapshotSummary{}, err
 	}
 	return restorer.Validate()
+}
+
+func (r *gameRuntime) CleanupGroundItemStoreCrashTempFiles() (worldruntime.DurableGroundItemSnapshotSummary, error) {
+	if r == nil || r.groundItemStore == nil {
+		return worldruntime.DurableGroundItemSnapshotSummary{VIDs: []uint32{}}, nil
+	}
+	cleaner, ok := r.groundItemStore.(interface {
+		CleanupCrashTempFiles() (worldruntime.DurableGroundItemSnapshotSummary, error)
+	})
+	if !ok {
+		return worldruntime.DurableGroundItemSnapshotSummary{}, fmt.Errorf("ground item store crash temp cleanup is not supported")
+	}
+	r.groundItemPersistMu.Lock()
+	defer r.groundItemPersistMu.Unlock()
+	return cleaner.CleanupCrashTempFiles()
+}
+
+func (r *gameRuntime) BackupGroundItemStore(dstDir string) (worldruntime.DurableGroundItemSnapshotSummary, error) {
+	if r == nil || r.groundItemStore == nil {
+		return worldruntime.DurableGroundItemSnapshotSummary{VIDs: []uint32{}}, nil
+	}
+	backer, ok := r.groundItemStore.(interface {
+		BackupTo(string) error
+		ValidateBackupFrom(string) (worldruntime.DurableGroundItemSnapshotSummary, error)
+	})
+	if !ok {
+		return worldruntime.DurableGroundItemSnapshotSummary{}, fmt.Errorf("ground item store backup is not supported")
+	}
+	r.groundItemPersistMu.Lock()
+	defer r.groundItemPersistMu.Unlock()
+	if err := backer.BackupTo(dstDir); err != nil {
+		return worldruntime.DurableGroundItemSnapshotSummary{}, err
+	}
+	return backer.ValidateBackupFrom(dstDir)
+}
+
+func (r *gameRuntime) ValidateGroundItemStoreBackup(srcDir string) (worldruntime.DurableGroundItemSnapshotSummary, error) {
+	if r == nil || r.groundItemStore == nil {
+		return worldruntime.DurableGroundItemSnapshotSummary{VIDs: []uint32{}}, nil
+	}
+	validator, ok := r.groundItemStore.(interface {
+		ValidateBackupFrom(string) (worldruntime.DurableGroundItemSnapshotSummary, error)
+	})
+	if !ok {
+		return worldruntime.DurableGroundItemSnapshotSummary{}, fmt.Errorf("ground item store backup validation is not supported")
+	}
+	r.groundItemPersistMu.Lock()
+	defer r.groundItemPersistMu.Unlock()
+	return validator.ValidateBackupFrom(srcDir)
+}
+
+func (r *gameRuntime) RestoreGroundItemStore(srcDir string) (worldruntime.DurableGroundItemSnapshotSummary, error) {
+	if r == nil || r.groundItemStore == nil {
+		return worldruntime.DurableGroundItemSnapshotSummary{VIDs: []uint32{}}, nil
+	}
+	restorer, ok := r.groundItemStore.(interface {
+		RestoreFrom(string) error
+		Validate() (worldruntime.DurableGroundItemSnapshotSummary, error)
+		Load() (worldruntime.DurableGroundItemSnapshot, error)
+	})
+	if !ok {
+		return worldruntime.DurableGroundItemSnapshotSummary{}, fmt.Errorf("ground item store restore is not supported")
+	}
+	r.liveCharacterMu.Lock()
+	defer r.liveCharacterMu.Unlock()
+	if len(r.liveCharactersByName) != 0 {
+		return worldruntime.DurableGroundItemSnapshotSummary{}, ErrGroundItemStoreRestoreLiveSessions
+	}
+	r.groundItemPersistMu.Lock()
+	defer r.groundItemPersistMu.Unlock()
+	if err := restorer.RestoreFrom(srcDir); err != nil {
+		return worldruntime.DurableGroundItemSnapshotSummary{}, err
+	}
+	if err := r.rematerializeGroundItemsAfterRestoreLocked(restorer); err != nil {
+		return worldruntime.DurableGroundItemSnapshotSummary{}, err
+	}
+	return restorer.Validate()
+}
+
+func (r *gameRuntime) rematerializeGroundItemsAfterRestoreLocked(loader interface {
+	Load() (worldruntime.DurableGroundItemSnapshot, error)
+}) error {
+	if r == nil || r.sharedWorld == nil || loader == nil {
+		return nil
+	}
+	r.sharedWorld.ClearPersistedGroundItems()
+	snapshot, err := loader.Load()
+	if err != nil {
+		if errors.Is(err, worldruntime.ErrGroundItemSnapshotNotFound) {
+			return nil
+		}
+		return err
+	}
+	now := time.Now()
+	if r.now != nil {
+		now = r.now()
+	}
+	filtered := worldruntime.FilterDurableGroundItemSnapshotForRestore(snapshot, now)
+	if err := r.sharedWorld.RestorePersistedGroundItems(filtered.GroundItems); err != nil {
+		return err
+	}
+	live := r.sharedWorld.DurableGroundItemSnapshot()
+	if err := r.groundItemStore.Save(live); err != nil {
+		return err
+	}
+	// Save clears a restored manifest; rewrite it against the filtered live set.
+	if refresher, ok := r.groundItemStore.(interface {
+		RefreshActiveBackupManifest() error
+	}); ok {
+		return refresher.RefreshActiveBackupManifest()
+	}
+	return nil
 }
 
 func (r *gameRuntime) BackupItemTemplateStore(dstDir string) (itemcatalog.SnapshotSummary, error) {
@@ -2900,6 +3021,27 @@ func questStateBackupManifestStatus(questStatePath string) BackupManifestStatus 
 		return status
 	}
 	var manifest queststate.BackupManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return status
+	}
+	status.Format = manifest.Format
+	status.FileCount = len(manifest.Files)
+	for _, file := range manifest.Files {
+		status.SnapshotSizeBytes += file.SizeBytes
+	}
+	return status
+}
+
+func groundItemBackupManifestStatus(groundItemPath string) BackupManifestStatus {
+	if strings.TrimSpace(groundItemPath) == "" {
+		return BackupManifestStatus{}
+	}
+	path := filepath.Join(filepath.Dir(groundItemPath), worldruntime.BackupManifestFilename)
+	raw, status, ok := readBackupManifestStatusRaw(path)
+	if !ok {
+		return status
+	}
+	var manifest worldruntime.BackupManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		return status
 	}

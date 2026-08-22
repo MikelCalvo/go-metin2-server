@@ -176,7 +176,37 @@ func (s *FileStore) Validate() (DurableGroundItemSnapshotSummary, error) {
 	}
 	summary.CrashTempCount = len(crashTempFiles)
 	summary.CrashTempFiles = crashTempFiles
+	if err := s.validateActiveBackupManifest(); err != nil {
+		return DurableGroundItemSnapshotSummary{}, err
+	}
 	return summary, nil
+}
+
+// CleanupCrashTempFiles removes hidden .ground-items-*.json crash temps after Validate succeeds.
+func (s *FileStore) CleanupCrashTempFiles() (DurableGroundItemSnapshotSummary, error) {
+	if s == nil || s.path == "" {
+		return DurableGroundItemSnapshotSummary{}, ErrGroundItemStorePathRequired
+	}
+	if _, err := s.Validate(); err != nil {
+		return DurableGroundItemSnapshotSummary{}, err
+	}
+	crashTempFiles, err := s.crashTempFiles()
+	if err != nil {
+		return DurableGroundItemSnapshotSummary{}, err
+	}
+	if len(crashTempFiles) == 0 {
+		return s.Validate()
+	}
+	storeDir := filepath.Dir(s.path)
+	for _, filename := range crashTempFiles {
+		if err := os.Remove(filepath.Join(storeDir, filename)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return DurableGroundItemSnapshotSummary{}, fmt.Errorf("remove ground item crash temp file %q: %w", filename, err)
+		}
+	}
+	if err := syncGroundItemStoreDir(storeDir); err != nil {
+		return DurableGroundItemSnapshotSummary{}, fmt.Errorf("sync ground item store dir after crash temp cleanup: %w", err)
+	}
+	return s.Validate()
 }
 
 // Save atomically commits a validated durable ground-item snapshot.
@@ -219,6 +249,9 @@ func (s *FileStore) Save(snapshot DurableGroundItemSnapshot) error {
 	storeDir := filepath.Dir(s.path)
 	if err := os.Rename(temp.Name(), s.path); err != nil {
 		return fmt.Errorf("commit ground item snapshot: %w", err)
+	}
+	if err := removeBackupManifest(storeDir); err != nil {
+		return fmt.Errorf("remove stale ground item backup manifest: %w", err)
 	}
 	if !durableGroundItemSyncDisabledForTest {
 		if err := syncGroundItemStoreDir(storeDir); err != nil {
