@@ -42,6 +42,7 @@ type backupRestorePersistenceConfig struct {
 	ItemTemplateStorePath string `json:"item_template_store_path"`
 	QuestStateStorePath   string `json:"quest_state_store_path"`
 	GroundItemStorePath   string `json:"ground_item_store_path"`
+	SafeboxStorePath      string `json:"safebox_store_path"`
 }
 
 type backupRestoreDatabaseConfig struct {
@@ -71,6 +72,7 @@ type backupRestoreDrillPlan struct {
 	StaticActorStorePath  string
 	QuestStateStorePath   string
 	GroundItemStorePath   string
+	SafeboxStorePath      string
 }
 
 func runBackupRestoreDrill(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
@@ -313,6 +315,10 @@ func buildBackupRestoreDrillPlan(runtimeRaw, buildInfoRaw []byte, opsBaseURL, au
 	if err != nil {
 		return backupRestoreDrillPlan{}, err
 	}
+	safeboxPath, err := normalizeAbsoluteCleanPath(snapshot.Persistence.SafeboxStorePath, "persistence.safebox_store_path")
+	if err != nil {
+		return backupRestoreDrillPlan{}, err
+	}
 
 	if cleanedPathEqualsOrNests(accountDir, loginTicketDir) {
 		return backupRestoreDrillPlan{}, fmt.Errorf("%w: account_store_dir and login_ticket_store_dir must not equal or nest under each other", errInvalidBackupRestoreDrillInput)
@@ -324,6 +330,7 @@ func buildBackupRestoreDrillPlan(runtimeRaw, buildInfoRaw []byte, opsBaseURL, au
 		"static_actor_store_path":  filepath.Dir(staticActorPath),
 		"quest_state_store_path":   filepath.Dir(questStatePath),
 		"ground_item_store_path":   filepath.Dir(groundItemPath),
+		"safebox_store_path":       filepath.Dir(safeboxPath),
 	}
 	seenParents := make(map[string]string, len(fileParents))
 	for label, parent := range fileParents {
@@ -348,6 +355,7 @@ func buildBackupRestoreDrillPlan(runtimeRaw, buildInfoRaw []byte, opsBaseURL, au
 		StaticActorStorePath:  staticActorPath,
 		QuestStateStorePath:   questStatePath,
 		GroundItemStorePath:   groundItemPath,
+		SafeboxStorePath:      safeboxPath,
 	}, nil
 }
 
@@ -456,12 +464,13 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	fmt.Fprintf(&b, "STATIC_ACTOR_STORE_PATH=%s\n", shellSingleQuote(plan.StaticActorStorePath))
 	fmt.Fprintf(&b, "QUEST_STATE_STORE_PATH=%s\n", shellSingleQuote(plan.QuestStateStorePath))
 	fmt.Fprintf(&b, "GROUND_ITEM_STORE_PATH=%s\n", shellSingleQuote(plan.GroundItemStorePath))
+	fmt.Fprintf(&b, "SAFEBOX_STORE_PATH=%s\n", shellSingleQuote(plan.SafeboxStorePath))
 	b.WriteString("\n")
 	b.WriteString("TS=$(date -u +%Y%m%dT%H%M%SZ)\n")
 	b.WriteString(`BASE="${BACKUPS_BASE}/${TS}-${COMMIT12}"` + "\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== prepare lab backup retention tree =='\n")
-	b.WriteString(`mkdir -p "$BASE"/accounts "$BASE"/login-tickets "$BASE"/item-templates "$BASE"/interaction-store "$BASE"/static-actors "$BASE"/quest-state "$BASE"/ground-items` + "\n")
+	b.WriteString(`mkdir -p "$BASE"/accounts "$BASE"/login-tickets "$BASE"/item-templates "$BASE"/interaction-store "$BASE"/static-actors "$BASE"/quest-state "$BASE"/ground-items "$BASE"/safebox` + "\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== retain daemon identity / runtime correlation =='\n")
 	b.WriteString(`curl -sS "$OPS/local/build-info" > "$BASE/gamed-build-info.json"` + "\n")
@@ -502,6 +511,8 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	b.WriteString(`curl -sS -X POST "$OPS/local/quest-state/crash-temps/cleanup"` + "\n")
 	b.WriteString(`curl -sS -X POST "$OPS/local/ground-item-store/validate"` + "\n")
 	b.WriteString(`curl -sS -X POST "$OPS/local/ground-item-store/crash-temps/cleanup"` + "\n")
+	b.WriteString(`curl -sS -X POST "$OPS/local/safebox-store/validate"` + "\n")
+	b.WriteString(`curl -sS -X POST "$OPS/local/safebox-store/crash-temps/cleanup"` + "\n")
 	b.WriteString(`curl -sS "$OPS/local/persistence/status"` + "\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== backup =='\n")
@@ -512,6 +523,7 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	b.WriteString("curl -sS -X POST \"$OPS/local/static-actors/backup\" -H 'Content-Type: application/json' -d \"{\\\"dst_dir\\\":\\\"$BASE/static-actors\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/quest-state/backup\" -H 'Content-Type: application/json' -d \"{\\\"dst_dir\\\":\\\"$BASE/quest-state\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/ground-item-store/backup\" -H 'Content-Type: application/json' -d \"{\\\"dst_dir\\\":\\\"$BASE/ground-items\\\"}\"\n")
+	b.WriteString("curl -sS -X POST \"$OPS/local/safebox-store/backup\" -H 'Content-Type: application/json' -d \"{\\\"dst_dir\\\":\\\"$BASE/safebox\\\"}\"\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== backup validate =='\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/account-store/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/accounts\\\"}\"\n")
@@ -521,6 +533,7 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	b.WriteString("curl -sS -X POST \"$OPS/local/static-actors/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/static-actors\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/quest-state/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/quest-state\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/ground-item-store/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/ground-items\\\"}\"\n")
+	b.WriteString("curl -sS -X POST \"$OPS/local/safebox-store/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/safebox\\\"}\"\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== empty active destinations (requires drained selected-character sessions) =='\n")
 	b.WriteString("mv \"$ACCOUNT_STORE_DIR\" \"${ACCOUNT_STORE_DIR}.aside-${TS}\"\n")
@@ -537,6 +550,8 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	b.WriteString("mkdir -p \"$(dirname \"$QUEST_STATE_STORE_PATH\")\"\n")
 	b.WriteString("mv \"$(dirname \"$GROUND_ITEM_STORE_PATH\")\" \"$(dirname \"$GROUND_ITEM_STORE_PATH\").aside-${TS}\"\n")
 	b.WriteString("mkdir -p \"$(dirname \"$GROUND_ITEM_STORE_PATH\")\"\n")
+	b.WriteString("mv \"$(dirname \"$SAFEBOX_STORE_PATH\")\" \"$(dirname \"$SAFEBOX_STORE_PATH\").aside-${TS}\"\n")
+	b.WriteString("mkdir -p \"$(dirname \"$SAFEBOX_STORE_PATH\")\"\n")
 	b.WriteString("curl -sS \"$OPS/local/persistence/status\"\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== restore =='\n")
@@ -545,6 +560,7 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	b.WriteString("curl -sS -X POST \"$OPS/local/static-actors/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/static-actors\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/quest-state/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/quest-state\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/ground-item-store/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/ground-items\\\"}\"\n")
+	b.WriteString("curl -sS -X POST \"$OPS/local/safebox-store/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/safebox\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/account-store/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/accounts\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/login-tickets/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/login-tickets\\\"}\"\n")
 	b.WriteString("\n")

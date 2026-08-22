@@ -64,6 +64,6 @@ Validation for this slice:
 3. Keep systemd/unit samples that only print (never auto-run) this triage script
    deferred until a real lab host exercises the topology.
 4. Keep SQL import/backfill deferred until a driver-backed harness exists.
-5. Optional later: fold durable safebox FileStore into the combined
+5. ~~Optional later: fold durable safebox FileStore into the combined
    backup-restore drill after the items-lane rematerialize commit lands on
-   `main`.
+   `main`.~~ Done: see [safebox file-store backup/restore drill fold-in](2026-08-23-safebox-file-store-backup-restore-drill.md).

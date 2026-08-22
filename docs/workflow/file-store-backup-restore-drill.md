@@ -1,6 +1,6 @@
 # File-Store Backup/Restore Drill
 
-This runbook freezes the combined loopback-only backup → validate → restore sequence for the seven bootstrap JSON stores that already own manifested backup primitives on `gamed`. It is an operator recovery drill for reconnect/restart and migration preflight windows, not a remote admin API and not daemon startup policy.
+This runbook freezes the combined loopback-only backup → validate → restore sequence for the eight bootstrap JSON stores that already own manifested backup primitives on `gamed`. It is an operator recovery drill for reconnect/restart and migration preflight windows, not a remote admin API and not daemon startup policy.
 
 ## Scope and guardrails
 
@@ -13,6 +13,7 @@ Use this workflow when you need to preserve or replace the current file-backed P
 - authored static actors / spawn content (`staticstore`)
 - standalone quest flags (`queststate`)
 - pending ground item/gold handles (`worldruntime` ground-item FileStore)
+- durable same-account safebox cells (`safeboxstore`)
 
 The current boundary is deliberately narrow:
 
@@ -21,6 +22,7 @@ The current boundary is deliberately narrow:
 - restore refuses live selected-character sessions;
 - restore is a replacement into an empty destination, not an online merge;
 - pending ground item/gold handles rematerialize across `gamed` process restart from `GroundItemStorePath` (see [ground-item process-restart durability](../plans/2026-08-22-ground-item-process-restart-durability.md)); this drill now also covers their FileStore backup/restore and rematerializes the live shared-world pending set on restore;
+- durable safebox cells rematerialize across `gamed` process restart / reconnect from `SafeboxStorePath` (see [durable safebox persistence contract freeze](../plans/2026-08-22-durable-safebox-persistence-contract-freeze.md)); this drill covers their FileStore backup/restore through `/local/safebox-store/*`;
 - committed account gold/inventory and quest flags rematerialize across `gamed` process restart from the same FileStore paths (see [character-state process-restart recovery](../plans/2026-08-20-character-state-process-restart-recovery.md)); this drill still covers backup/restore, not that rematerialization proof;
 - SQL migration apply remains CLI-only through `metin2-migrate` — see [migration apply runbook](migration-apply-runbook.md).
 
@@ -35,13 +37,14 @@ The current boundary is deliberately narrow:
 | static actors | file path | `static-actor-backup-manifest.json` / `go-metin2-static-actor-backup-v1` | `POST /local/static-actors/backup` | `POST /local/static-actors/backup/validate` | `POST /local/static-actors/restore` |
 | quest state | file path | `quest-state-backup-manifest.json` / `go-metin2-quest-state-backup-v1` | `POST /local/quest-state/backup` | `POST /local/quest-state/backup/validate` | `POST /local/quest-state/restore` |
 | ground items | file path | `ground-item-backup-manifest.json` / `go-metin2-ground-item-backup-v1` | `POST /local/ground-item-store/backup` | `POST /local/ground-item-store/backup/validate` | `POST /local/ground-item-store/restore` |
+| safebox | file path | `safebox-backup-manifest.json` / `go-metin2-safebox-backup-v1` | `POST /local/safebox-store/backup` | `POST /local/safebox-store/backup/validate` | `POST /local/safebox-store/restore` |
 
 Related helpers:
 
 - `GET /local/runtime-config` — confirms active `persistence.*` paths before any backup/restore
 - `GET /local/persistence/status` — aggregate validity, `live_selected_character_count`, per-store `backup_manifest`, and `restore_blocked_by_live_sessions`
-- per-store `.../validate` and `.../crash-temps/cleanup` — optional triage before backup; static-actor validate/cleanup use the `/local/static-actor-store/...` prefix, and ground-item validate/cleanup/backup/restore use `/local/ground-item-store/...` to avoid colliding with live `GET /local/ground-items` routes
-- `metin2-migrate backup-restore-drill --runtime-config <path|-> --build-info <path|-> [--authd-ops-base-url http://127.0.0.1:6061]` — read-only printer that turns retained runtime-config + build-info snapshots into the path-aware curl / aside-rename script for the lab `/var/metin2/backups/YYYYMMDDTHHMMSSZ-<commit12>/` tree without executing backup or restore. The printed script retains both-daemon build-info (`gamed` via `--ops-base-url`, `authd` via `--authd-ops-base-url`), `runtime-config.json` / `persistence-status-*.json`, a `notes.md` stub, uses lab store subdirectory names (`accounts`, `interaction-store`, ...), and includes the optional store validate + crash-temp cleanup triage before backup; if an operator runs that printed section, `crash-temps/cleanup` mutates only hidden crash-temp residue after validate.
+- per-store `.../validate` and `.../crash-temps/cleanup` — optional triage before backup; static-actor validate/cleanup use the `/local/static-actor-store/...` prefix, ground-item validate/cleanup/backup/restore use `/local/ground-item-store/...` to avoid colliding with live `GET /local/ground-items` routes, and safebox validate/cleanup/backup/restore use `/local/safebox-store/...`
+- `metin2-migrate backup-restore-drill --runtime-config <path|-> --build-info <path|-> [--authd-ops-base-url http://127.0.0.1:6061]` — read-only printer that turns retained runtime-config + build-info snapshots into the path-aware curl / aside-rename script for the lab `/var/metin2/backups/YYYYMMDDTHHMMSSZ-<commit12>/` tree without executing backup or restore. The printed script retains both-daemon build-info (`gamed` via `--ops-base-url`, `authd` via `--authd-ops-base-url`), `runtime-config.json` / `persistence-status-*.json`, a `notes.md` stub, uses lab store subdirectory names (`accounts`, `interaction-store`, `safebox`, ...), and includes the optional store validate + crash-temp cleanup triage before backup; if an operator runs that printed section, `crash-temps/cleanup` mutates only hidden crash-temp residue after validate.
 
 ```bash
 metin2-migrate version > /tmp/build-info.json
@@ -74,6 +77,7 @@ For any real backup/restore drill, give each file-backed store a dedicated paren
 /var/metin2/data/static-actors/static-actors.json
 /var/metin2/data/quest-state/quest-state.json
 /var/metin2/data/ground-items/ground-items.json
+/var/metin2/data/safebox/safebox.json
 ```
 
 `gamed` startup now rejects shared file-store parents with `ErrPersistencePathSharedParent`, matching the drill printer. Zero-config temp defaults also use dedicated parents under the process temp directory.
@@ -116,6 +120,8 @@ curl -sS -X POST http://127.0.0.1:6060/local/quest-state/validate
 curl -sS -X POST http://127.0.0.1:6060/local/quest-state/crash-temps/cleanup
 curl -sS -X POST http://127.0.0.1:6060/local/ground-item-store/validate
 curl -sS -X POST http://127.0.0.1:6060/local/ground-item-store/crash-temps/cleanup
+curl -sS -X POST http://127.0.0.1:6060/local/safebox-store/validate
+curl -sS -X POST http://127.0.0.1:6060/local/safebox-store/crash-temps/cleanup
 curl -sS http://127.0.0.1:6060/local/persistence/status
 ```
 
@@ -130,12 +136,13 @@ Backup destinations must be empty and must not equal or nest under the live stor
 5. static actors
 6. quest state
 7. ground items
+8. safebox
 
 ```bash
 TS=$(date -u +%Y%m%dT%H%M%SZ)
 COMMIT12=$(curl -sS http://127.0.0.1:6060/local/build-info | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"][:12])')
 BASE=/var/metin2/backups/${TS}-${COMMIT12}
-mkdir -p "$BASE"/{accounts,login-tickets,item-templates,interaction-store,static-actors,quest-state,ground-items}
+mkdir -p "$BASE"/{accounts,login-tickets,item-templates,interaction-store,static-actors,quest-state,ground-items,safebox}
 curl -sS http://127.0.0.1:6060/local/runtime-config > "$BASE/runtime-config.json"
 curl -sS http://127.0.0.1:6060/local/persistence/status > "$BASE/persistence-status-before.json"
 
@@ -166,6 +173,10 @@ curl -sS -X POST http://127.0.0.1:6060/local/quest-state/backup \
 curl -sS -X POST http://127.0.0.1:6060/local/ground-item-store/backup \
   -H 'Content-Type: application/json' \
   -d "{\"dst_dir\":\"$BASE/ground-items\"}"
+
+curl -sS -X POST http://127.0.0.1:6060/local/safebox-store/backup \
+  -H 'Content-Type: application/json' \
+  -d "{\"dst_dir\":\"$BASE/safebox\"}"
 ```
 
 Retain the whole `$BASE` tree as the drill artifact set, matching [lab deployment topology](lab-deployment-topology.md). Each successful backup writes its store-specific manifest next to the copied snapshot payload.
@@ -189,6 +200,8 @@ curl -sS -X POST http://127.0.0.1:6060/local/quest-state/backup/validate \
   -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/quest-state\"}"
 curl -sS -X POST http://127.0.0.1:6060/local/ground-item-store/backup/validate \
   -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/ground-items\"}"
+curl -sS -X POST http://127.0.0.1:6060/local/safebox-store/backup/validate \
+  -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/safebox\"}"
 ```
 
 Stop on any `409`. Invalid UTF-8 manifests, checksum/size/coverage drift, untracked visible entries, or symlinked manifests/snapshots fail closed and must not be restored.
@@ -211,7 +224,7 @@ mkdir -p "$LOGIN_TICKET_STORE_DIR"
 File-path stores (dedicated parents only):
 
 ```bash
-# Example for item templates; repeat for interactions, static actors, quest state, and ground items.
+# Example for item templates; repeat for interactions, static actors, quest state, ground items, and safebox.
 PARENT=$(dirname "$ITEM_TEMPLATE_STORE_PATH")
 mv "$PARENT" "${PARENT}.aside-${TS}"
 mkdir -p "$PARENT"
@@ -234,8 +247,9 @@ Restore order prefers authored dependencies and live index reloads before durabl
 3. static actors — reloads the shared-world static-actor set
 4. quest state
 5. ground items — rematerializes pending ground handles into the live shared world
-6. account
-7. login tickets
+6. safebox — replaces durable same-account warehouse cells
+7. account
+8. login tickets
 
 ```bash
 curl -sS -X POST http://127.0.0.1:6060/local/item-templates/restore \
@@ -248,6 +262,8 @@ curl -sS -X POST http://127.0.0.1:6060/local/quest-state/restore \
   -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/quest-state\"}"
 curl -sS -X POST http://127.0.0.1:6060/local/ground-item-store/restore \
   -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/ground-items\"}"
+curl -sS -X POST http://127.0.0.1:6060/local/safebox-store/restore \
+  -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/safebox\"}"
 curl -sS -X POST http://127.0.0.1:6060/local/account-store/restore \
   -H 'Content-Type: application/json' -d "{\"src_dir\":\"$BASE/accounts\"}"
 curl -sS -X POST http://127.0.0.1:6060/local/login-tickets/restore \
@@ -302,3 +318,4 @@ Do not use this runbook to justify:
 - claiming account/character/item/quest/content repositories are DB-backed
 - daemon-local `/local/db/migrations/apply`
 - treating the `0010` migration-shaped live export as a substitute for the durable ground-item FileStore backup/restore path
+- claiming safebox password / money / mall ownership from this drill

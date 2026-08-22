@@ -33,6 +33,7 @@ Prefer explicit absolute paths for durable QA / drill runs instead of process-te
 /var/metin2/data/item-templates/item-templates.json
 /var/metin2/data/quest-state/quest-state.json
 /var/metin2/data/ground-items/ground-items.json          # durable pending ground handles
+/var/metin2/data/safebox/safebox.json                     # durable same-account safebox cells
 ```
 
 Example environment (service-specific overrides win over globals):
@@ -45,6 +46,7 @@ export METIN2_GAMED_INTERACTION_STORE_PATH=/var/metin2/data/interactions/interac
 export METIN2_GAMED_ITEM_TEMPLATE_STORE_PATH=/var/metin2/data/item-templates/item-templates.json
 export METIN2_GAMED_QUEST_STATE_STORE_PATH=/var/metin2/data/quest-state/quest-state.json
 export METIN2_GAMED_GROUND_ITEM_STORE_PATH=/var/metin2/data/ground-items/ground-items.json
+export METIN2_GAMED_SAFEBOX_STORE_PATH=/var/metin2/data/safebox/safebox.json
 ```
 
 File-backed stores must use dedicated parent directories. `gamed` startup and `metin2-migrate backup-restore-drill` both fail closed when two file stores share `filepath.Dir(snapshotPath)`, because restore empties that parent.
@@ -67,6 +69,7 @@ Keep operator evidence outside live data trees:
     static-actors/
     quest-state/
     ground-items/
+    safebox/
     runtime-config.json
     persistence-status-before.json
     notes.md
@@ -166,6 +169,7 @@ See also:
 - [file-store backup/restore drill](file-store-backup-restore-drill.md)
 - [CLI artifact-retention GC printer plan](../plans/2026-08-22-cli-artifact-retention-gc-printer.md)
 - [ops docs ground-item lab topology / tip sync](../plans/2026-08-22-ops-docs-ground-item-lab-topology-tip-sync.md)
+- [safebox file-store backup/restore drill fold-in](../plans/2026-08-23-safebox-file-store-backup-restore-drill.md)
 
 ## What this is not yet
 
