@@ -827,8 +827,8 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 // partner-notify END (caller supplies END frames), and enqueues peer finalize frames.
 // On commit-time busy-window drift it returns the same self-only START/ACCEPT busy
 // info-chat frames for the commit requester (plan.OriginID) and leaves the shell open.
-// On commit-time Check/Space drift it returns dual-sided info-chat (self return +
-// peer enqueue) and leaves the shell open.
+// On commit-time Check/Space/gold-overflow drift it returns dual-sided info-chat
+// (self return + peer enqueue) and leaves the shell open.
 func (r *sharedWorldRegistry) CommitExchangeFinalize(plan *exchangeFinalizePlan, updatedOrigin loginticket.Character, updatedPartner loginticket.Character, peerFrames [][]byte) ([][]byte, bool) {
 	if r == nil || plan == nil || plan.OriginID == 0 || plan.PartnerID == 0 {
 		return nil, false
@@ -888,9 +888,9 @@ func (r *sharedWorldRegistry) exchangeFinalizeCommitBusyRejectLocked(plan *excha
 }
 
 // exchangeFinalizeCommitCheckSpaceRejectLocked revalidates displayed item/gold and
-// receiver preconditions. Check/Space failures emit dual-sided info-chat; other
-// receiver precondition failures stay silent/no-frame. Returns rejected=true when
-// commit must fail closed (with or without frames).
+// receiver preconditions. Check/Space/gold-overflow failures emit dual-sided
+// info-chat; other receiver precondition failures stay silent/no-frame. Returns
+// rejected=true when commit must fail closed (with or without frames).
 func (r *sharedWorldRegistry) exchangeFinalizeCommitCheckSpaceRejectLocked(plan *exchangeFinalizePlan) ([][]byte, bool) {
 	if r == nil || plan == nil || plan.OriginID == 0 || plan.PartnerID == 0 {
 		return nil, true
@@ -916,16 +916,20 @@ func (r *sharedWorldRegistry) exchangeFinalizeCommitCheckSpaceRejectLocked(plan 
 		return r.exchangeEmitFinalizeCheckRejectForCallerLocked(plan.OriginID, plan.PartnerID, plan.OriginID)
 	}
 	// Oracle CheckSpace order: partner can take origin items, then origin can take
-	// partner items. Space gets dual-sided chat; other recipient rejects stay silent.
+	// partner items. Space/gold-overflow get dual-sided chat; other recipient rejects stay silent.
 	switch r.exchangeRecipientRejectReasonLocked(partner, plan.OriginItems, plan.OriginGold) {
 	case exchangeRecipientRejectSpace:
 		return r.exchangeEmitFinalizeSpaceRejectForCallerLocked(plan.OriginID, plan.PartnerID, plan.OriginID)
+	case exchangeRecipientRejectGoldOverflow:
+		return r.exchangeEmitFinalizeGoldOverflowRejectForCallerLocked(plan.OriginID, plan.PartnerID, plan.OriginID)
 	case exchangeRecipientRejectOther:
 		return nil, true
 	}
 	switch r.exchangeRecipientRejectReasonLocked(origin, plan.PartnerItems, plan.PartnerGold) {
 	case exchangeRecipientRejectSpace:
 		return r.exchangeEmitFinalizeSpaceRejectForCallerLocked(plan.OriginID, plan.OriginID, plan.PartnerID)
+	case exchangeRecipientRejectGoldOverflow:
+		return r.exchangeEmitFinalizeGoldOverflowRejectForCallerLocked(plan.OriginID, plan.OriginID, plan.PartnerID)
 	case exchangeRecipientRejectOther:
 		return nil, true
 	}
@@ -938,9 +942,9 @@ func (r *sharedWorldRegistry) exchangeFinalizationPreconditionsLocked(originID u
 	return !rejected
 }
 
-// exchangeFinalizationRejectLocked returns dual-sided Space chat when a receiver
-// lacks inventory capacity for incoming displayed items. Other recipient
-// precondition failures stay silent (frames=nil, rejected=true).
+// exchangeFinalizationRejectLocked returns dual-sided Space/gold-overflow chat
+// when a receiver lacks inventory capacity or would overflow the gold carrier.
+// Other recipient precondition failures stay silent (frames=nil, rejected=true).
 // Returned frames are for the AcceptExchange caller (originID / second accepter).
 func (r *sharedWorldRegistry) exchangeFinalizationRejectLocked(originID uint64, partnerID uint64, origin loginticket.Character, partner loginticket.Character) ([][]byte, bool) {
 	if r == nil || originID == 0 || partnerID == 0 {
@@ -949,12 +953,16 @@ func (r *sharedWorldRegistry) exchangeFinalizationRejectLocked(originID uint64, 
 	switch r.exchangeRecipientRejectReasonLocked(partner, r.exchangeItems[originID], r.exchangeGold[originID]) {
 	case exchangeRecipientRejectSpace:
 		return r.exchangeEmitFinalizeSpaceRejectForCallerLocked(originID, partnerID, originID)
+	case exchangeRecipientRejectGoldOverflow:
+		return r.exchangeEmitFinalizeGoldOverflowRejectForCallerLocked(originID, partnerID, originID)
 	case exchangeRecipientRejectOther:
 		return nil, true
 	}
 	switch r.exchangeRecipientRejectReasonLocked(origin, r.exchangeItems[partnerID], r.exchangeGold[partnerID]) {
 	case exchangeRecipientRejectSpace:
 		return r.exchangeEmitFinalizeSpaceRejectForCallerLocked(originID, originID, partnerID)
+	case exchangeRecipientRejectGoldOverflow:
+		return r.exchangeEmitFinalizeGoldOverflowRejectForCallerLocked(originID, originID, partnerID)
 	case exchangeRecipientRejectOther:
 		return nil, true
 	}
@@ -1016,6 +1024,27 @@ func (r *sharedWorldRegistry) exchangeEmitFinalizeSpaceRejectForCallerLocked(cal
 	}
 }
 
+// exchangeEmitFinalizeGoldOverflowRejectForCallerLocked delivers GoldOverflowSelf
+// to the overflow receiver and GoldOverflowOther to the paired side.
+func (r *sharedWorldRegistry) exchangeEmitFinalizeGoldOverflowRejectForCallerLocked(callerID uint64, overflowReceiverID uint64, otherID uint64) ([][]byte, bool) {
+	selfFrame := encodeExchangeFinalizeGoldOverflowSelfInfoFrame()
+	otherFrame := encodeExchangeFinalizeGoldOverflowOtherInfoFrame()
+	switch callerID {
+	case overflowReceiverID:
+		if !r.enqueueToEntityLocked(otherID, [][]byte{otherFrame}) {
+			return nil, false
+		}
+		return [][]byte{selfFrame}, true
+	case otherID:
+		if !r.enqueueToEntityLocked(overflowReceiverID, [][]byte{selfFrame}) {
+			return nil, false
+		}
+		return [][]byte{otherFrame}, true
+	default:
+		return nil, false
+	}
+}
+
 func cloneExchangeCharacter(character loginticket.Character) loginticket.Character {
 	cloned := loginticket.CloneCharacters([]loginticket.Character{character})
 	if len(cloned) == 0 {
@@ -1042,6 +1071,7 @@ type exchangeRecipientRejectReason int
 const (
 	exchangeRecipientRejectNone exchangeRecipientRejectReason = iota
 	exchangeRecipientRejectSpace
+	exchangeRecipientRejectGoldOverflow
 	exchangeRecipientRejectOther
 )
 
@@ -1051,15 +1081,15 @@ func (r *sharedWorldRegistry) exchangeRecipientCanAcceptLocked(recipient loginti
 
 // exchangeRecipientRejectReasonLocked classifies why a receiver cannot accept
 // incoming displayed items/gold. Space is inventory placement/capacity failure
-// after gold/id/template gates pass; Other covers gold overflow, id collision,
-// selected-character/transfer guards, and invalid snapshots.
+// after gold/id/template gates pass; GoldOverflow is signed gold-carrier overflow;
+// Other covers id collision, selected-character/transfer guards, and invalid snapshots.
 func (r *sharedWorldRegistry) exchangeRecipientRejectReasonLocked(recipient loginticket.Character, incoming map[uint8]exchangeDisplayedItem, incomingGold uint32) exchangeRecipientRejectReason {
 	if r == nil || recipient.ID == 0 || characterAtBootstrapHPFloor(recipient) {
 		return exchangeRecipientRejectOther
 	}
 	if incomingGold != 0 {
 		if uint64(incomingGold) > exchangeGoldPointChangeCarrierMax || recipient.Gold > exchangeGoldPointChangeCarrierMax || recipient.Gold > exchangeGoldPointChangeCarrierMax-uint64(incomingGold) {
-			return exchangeRecipientRejectOther
+			return exchangeRecipientRejectGoldOverflow
 		}
 	}
 	if len(incoming) == 0 {
@@ -5853,6 +5883,24 @@ func encodeExchangeFinalizeSpaceOtherInfoFrame() []byte {
 		VID:     0,
 		Empire:  0,
 		Message: exchangeFinalizeSpaceOtherInfoMessage,
+	})
+}
+
+func encodeExchangeFinalizeGoldOverflowSelfInfoFrame() []byte {
+	return chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+		Type:    chatproto.ChatTypeInfo,
+		VID:     0,
+		Empire:  0,
+		Message: exchangeFinalizeGoldOverflowSelfInfoMessage,
+	})
+}
+
+func encodeExchangeFinalizeGoldOverflowOtherInfoFrame() []byte {
+	return chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+		Type:    chatproto.ChatTypeInfo,
+		VID:     0,
+		Empire:  0,
+		Message: exchangeFinalizeGoldOverflowOtherInfoMessage,
 	})
 }
 

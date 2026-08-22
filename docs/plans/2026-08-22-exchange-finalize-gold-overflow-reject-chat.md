@@ -23,11 +23,11 @@ Make mutual-accept finalization receiver gold-overflow precondition failures cli
 - optional authored/template-backed overrides for these strings
 - restart-restored ground ownership / despawn timers
 
-## TDD and validation (implementation follow-up)
+## TDD and validation
 
 Focused coverage:
 
-- `go test ./internal/minimal -run 'ItemExchangeSecondAcceptRejectsReceiverGoldOverflow|SharedWorldCommitExchangeFinalizeRejects' -count=1`
+- `go test ./internal/minimal -run 'ItemExchangeSecondAcceptRejectsReceiverGoldOverflow|ItemExchangeSecondAcceptRejectsReceiverInventoryCapacity|SharedWorldCommitExchangeFinalizeRejects' -count=1`
 - `gofmt` on touched Go files
 - `git diff --check`
 
@@ -39,4 +39,4 @@ Focused coverage:
 
 ## Status
 
-Docs/spec contract freeze. RED/GREEN implementation follows in the next items-lane step.
+Shipped: second-accept and commit-time receiver gold-overflow dual-sided info-chat. Id-collision / restriction rejects stay silent; player-shop/cube busy rejects stay deferred.

@@ -2410,11 +2410,26 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverGoldOverflowBeforeFin
 	if err != nil {
 		t.Fatalf("unexpected gold-overflow peer accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 0 {
-		t.Fatalf("expected second accept to reject receiver gold-overflow precondition with no frames, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 1 {
+		t.Fatalf("expected second accept gold-overflow reject to emit one self gold-overflow info chat, got %d", len(peerAcceptOut))
 	}
-	if queuedAccept := flushServerFrames(t, ownerFlow); len(queuedAccept) != 0 {
-		t.Fatalf("expected receiver gold-overflow precondition to queue no owner frames, got %d", len(queuedAccept))
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
+	if err != nil {
+		t.Fatalf("decode gold-overflow peer self info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeFinalizeGoldOverflowSelfInfoMessage {
+		t.Fatalf("unexpected gold-overflow peer self info chat: %+v", infoChat)
+	}
+	queuedAccept := flushServerFrames(t, ownerFlow)
+	if len(queuedAccept) != 1 {
+		t.Fatalf("expected receiver gold-overflow reject to queue one owner gold-overflow Other info chat, got %d", len(queuedAccept))
+	}
+	queuedInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queuedAccept[0]))
+	if err != nil {
+		t.Fatalf("decode gold-overflow owner Other info chat: %v", err)
+	}
+	if queuedInfo.Type != chatproto.ChatTypeInfo || queuedInfo.VID != 0 || queuedInfo.Message != exchangeFinalizeGoldOverflowOtherInfoMessage {
+		t.Fatalf("unexpected gold-overflow owner Other info chat: %+v", queuedInfo)
 	}
 
 	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
