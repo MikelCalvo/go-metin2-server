@@ -190,8 +190,8 @@ func TestPlanUpToLatestUsesBuiltInCatalog(t *testing.T) {
 	if plan.Pending[0].Version != 1 || plan.Pending[0].Name != "bootstrap_schema_migrations" || plan.Pending[0].Direction != DirectionUp {
 		t.Fatalf("unexpected first built-in pending step: %#v", plan.Pending[0])
 	}
-	if len(plan.Pending) < 11 {
-		t.Fatalf("expected account/character roster, character item-state, character quest-state, item-template-state, safebox-reject, auth login-ticket handoff, static actor content-state, item-template refine-info, bootstrap ground-item state, and character point-state migrations in built-in pending plan, got %#v", plan.Pending)
+	if len(plan.Pending) < 13 {
+		t.Fatalf("expected account/character roster, character item-state, character quest-state, item-template-state, safebox-reject, auth login-ticket handoff, static actor content-state, item-template refine-info, bootstrap ground-item state, character point-state, static-actor PvE interaction-state, and static-actor combat-profile-state migrations in built-in pending plan, got %#v", plan.Pending)
 	}
 	if plan.Pending[1].Version != 2 || plan.Pending[1].Name != "account_character_roster" || plan.Pending[1].Direction != DirectionUp || plan.Pending[1].Path != "0002_account_character_roster.up.sql" {
 		t.Fatalf("unexpected second built-in pending step: %#v", plan.Pending[1])
@@ -225,6 +225,9 @@ func TestPlanUpToLatestUsesBuiltInCatalog(t *testing.T) {
 	}
 	if plan.Pending[11].Version != 12 || plan.Pending[11].Name != "static_actor_pve_interaction_state" || plan.Pending[11].Direction != DirectionUp || plan.Pending[11].Path != "0012_static_actor_pve_interaction_state.up.sql" {
 		t.Fatalf("unexpected twelfth built-in pending step: %#v", plan.Pending[11])
+	}
+	if plan.Pending[12].Version != 13 || plan.Pending[12].Name != "static_actor_combat_profile_state" || plan.Pending[12].Direction != DirectionUp || plan.Pending[12].Path != "0013_static_actor_combat_profile_state.up.sql" {
+		t.Fatalf("unexpected thirteenth built-in pending step: %#v", plan.Pending[12])
 	}
 }
 

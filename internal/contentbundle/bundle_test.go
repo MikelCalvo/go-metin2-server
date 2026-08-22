@@ -4911,7 +4911,7 @@ func TestExampleBootstrapNPCServiceBundleExportsAndQuarantinesStaticActorPvEMigr
 
 	export, err := staticstore.ExportStaticActorContentState(staticSnapshot, interactionSnapshot)
 	if err != nil {
-		t.Fatalf("export NPC service fixture onto 0012 migration shape: %v", err)
+		t.Fatalf("export NPC service fixture onto 0013 migration shape: %v", err)
 	}
 	if export.MigrationVersion != staticstore.StaticActorContentStateMigrationVersion || export.MigrationName != staticstore.StaticActorContentStateMigrationName {
 		t.Fatalf("unexpected migration boundary: version=%d name=%q", export.MigrationVersion, export.MigrationName)
@@ -4919,16 +4919,18 @@ func TestExampleBootstrapNPCServiceBundleExportsAndQuarantinesStaticActorPvEMigr
 
 	summary, err := staticstore.ValidateStaticActorContentStateExport(export)
 	if err != nil {
-		t.Fatalf("validate NPC service 0012 export: %v", err)
+		t.Fatalf("validate NPC service 0013 export: %v", err)
 	}
 	wantSummary := staticstore.StaticActorContentStateQuarantineSummary{
-		InteractionDefinitionCount: 8,
-		MerchantCatalogEntryCount:  2,
-		QuestFlagRewardItemCount:   1,
-		QuestFlagConsumeItemCount:  1,
-		StaticActorCount:           9,
-		RewardDropCount:            1,
-		EntityIDs:                  []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9},
+		InteractionDefinitionCount:        8,
+		MerchantCatalogEntryCount:         2,
+		QuestFlagRewardItemCount:          1,
+		QuestFlagConsumeItemCount:         1,
+		StaticActorCount:                  9,
+		RewardDropCount:                   1,
+		CombatProfileCount:                0,
+		CombatProfileDeathRewardDropCount: 0,
+		EntityIDs:                         []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9},
 		InteractionKinds: []string{
 			interactionstore.KindInfo,
 			interactionstore.KindOpenSafebox,
@@ -4937,6 +4939,7 @@ func TestExampleBootstrapNPCServiceBundleExportsAndQuarantinesStaticActorPvEMigr
 			interactionstore.KindTalk,
 			interactionstore.KindWarp,
 		},
+		CombatProfiles: []string{},
 	}
 	if !reflect.DeepEqual(summary, wantSummary) {
 		t.Fatalf("unexpected NPC service quarantine summary:\n got: %#v\nwant: %#v", summary, wantSummary)
@@ -4944,7 +4947,7 @@ func TestExampleBootstrapNPCServiceBundleExportsAndQuarantinesStaticActorPvEMigr
 
 	quarantined, quarantineSummary, err := staticstore.QuarantineStaticActorContentStateExport(export)
 	if err != nil {
-		t.Fatalf("quarantine NPC service 0012 export: %v", err)
+		t.Fatalf("quarantine NPC service 0013 export: %v", err)
 	}
 	if !reflect.DeepEqual(quarantineSummary, wantSummary) {
 		t.Fatalf("unexpected quarantined NPC service summary:\n got: %#v\nwant: %#v", quarantineSummary, wantSummary)
@@ -5004,7 +5007,7 @@ func TestExampleBootstrapNPCServiceBundleExportsAndQuarantinesStaticActorPvEMigr
 	}
 }
 
-func TestExampleBootstrapPveVerticalAuthoringBundleExportsOnto0012ButQuarantineFailsClosedWithoutCombatProfiles(t *testing.T) {
+func TestExampleBootstrapPveVerticalAuthoringBundleExportsOnto0013AndQuarantinesWithCombatProfiles(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("locate contentbundle test file")
@@ -5095,7 +5098,7 @@ func TestExampleBootstrapPveVerticalAuthoringBundleExportsOnto0012ButQuarantineF
 
 	export, err := staticstore.ExportStaticActorContentState(staticSnapshot, interactionSnapshot)
 	if err != nil {
-		t.Fatalf("export PvE vertical authoring fixture onto 0012 migration shape: %v", err)
+		t.Fatalf("export PvE vertical authoring fixture onto 0013 migration shape: %v", err)
 	}
 	if export.MigrationVersion != staticstore.StaticActorContentStateMigrationVersion || export.MigrationName != staticstore.StaticActorContentStateMigrationName {
 		t.Fatalf("unexpected migration boundary: version=%d name=%q", export.MigrationVersion, export.MigrationName)
@@ -5103,6 +5106,12 @@ func TestExampleBootstrapPveVerticalAuthoringBundleExportsOnto0012ButQuarantineF
 	if len(export.InteractionDefinitions) != 8 || len(export.MerchantCatalogEntries) != 2 || len(export.QuestFlagRewardItems) != 1 || len(export.QuestFlagConsumeItems) != 1 || len(export.StaticActors) != 9 || len(export.RewardDrops) != 1 {
 		t.Fatalf("unexpected PvE vertical authoring export counts: defs=%d catalog=%d reward_items=%d consume_items=%d actors=%d drops=%d",
 			len(export.InteractionDefinitions), len(export.MerchantCatalogEntries), len(export.QuestFlagRewardItems), len(export.QuestFlagConsumeItems), len(export.StaticActors), len(export.RewardDrops))
+	}
+	if len(export.CombatProfiles) != 1 || export.CombatProfiles[0].Profile != "qa_pve_vertical_practice_mob" {
+		t.Fatalf("unexpected combat profile rows: %#v", export.CombatProfiles)
+	}
+	if len(export.CombatProfileDeathRewardDrops) != len(canonical.CombatProfiles[0].DeathReward.DropVnums) {
+		t.Fatalf("unexpected combat profile death-reward drop rows: %#v", export.CombatProfileDeathRewardDrops)
 	}
 
 	var (
@@ -5125,10 +5134,10 @@ func TestExampleBootstrapPveVerticalAuthoringBundleExportsOnto0012ButQuarantineF
 		}
 	}
 	if !foundTurnIn {
-		t.Fatal("expected quest:first_steps_kill_turnin projection in 0012 export")
+		t.Fatal("expected quest:first_steps_kill_turnin projection in 0013 export")
 	}
 	if !foundWarehouse {
-		t.Fatal("expected npc:qa_warehouse open_safebox projection in 0012 export")
+		t.Fatal("expected npc:qa_warehouse open_safebox projection in 0013 export")
 	}
 	if export.QuestFlagRewardItems[0].DefinitionRef != "quest:first_steps_kill_turnin" || export.QuestFlagRewardItems[0].ItemVnum != 11200 || export.QuestFlagRewardItems[0].Count != 1 {
 		t.Fatalf("unexpected quest_flag reward item rows: %#v", export.QuestFlagRewardItems)
@@ -5152,20 +5161,31 @@ func TestExampleBootstrapPveVerticalAuthoringBundleExportsOnto0012ButQuarantineF
 		}
 	}
 	if !foundKillQuest {
-		t.Fatal("expected practice.qa_pve_vertical_mob kill-quest projection in 0012 export")
+		t.Fatal("expected practice.qa_pve_vertical_mob kill-quest projection in 0013 export")
 	}
 	if export.RewardDrops[0].ItemVnum != 27001 {
 		t.Fatalf("unexpected reward drop rows: %#v", export.RewardDrops)
 	}
 
-	// Migration 0012 retains only the combat_profile name on static_actors.
-	// Quarantine rebuilds the static snapshot without portable combat_profiles[],
-	// so custom formula profiles fail closed until a later tip owns those rows.
-	if _, err := staticstore.ValidateStaticActorContentStateExport(export); !errors.Is(err, staticstore.ErrInvalidStaticActorContentStateExport) {
-		t.Fatalf("expected quarantine validation to fail closed without combat_profiles tip, got %v", err)
+	summary, err := staticstore.ValidateStaticActorContentStateExport(export)
+	if err != nil {
+		t.Fatalf("validate PvE vertical authoring export with combat profiles: %v", err)
 	}
-	if _, _, err := staticstore.QuarantineStaticActorContentStateExport(export); !errors.Is(err, staticstore.ErrInvalidStaticActorContentStateExport) {
-		t.Fatalf("expected quarantine to fail closed without combat_profiles tip, got %v", err)
+	if summary.CombatProfileCount != 1 || summary.StaticActorCount != 9 {
+		t.Fatalf("unexpected quarantine summary: %#v", summary)
+	}
+	quarantined, quarantinedSummary, err := staticstore.QuarantineStaticActorContentStateExport(export)
+	if err != nil {
+		t.Fatalf("quarantine PvE vertical authoring export with combat profiles: %v", err)
+	}
+	if !reflect.DeepEqual(quarantined, export) {
+		t.Fatalf("unexpected canonical quarantine export:\n got: %#v\nwant: %#v", quarantined, export)
+	}
+	if !reflect.DeepEqual(quarantinedSummary, summary) {
+		t.Fatalf("unexpected quarantine summary:\n got: %#v\nwant: %#v", quarantinedSummary, summary)
+	}
+	if len(quarantinedSummary.CombatProfiles) != 1 || quarantinedSummary.CombatProfiles[0] != "qa_pve_vertical_practice_mob" {
+		t.Fatalf("unexpected quarantine combat profile names: %#v", quarantinedSummary.CombatProfiles)
 	}
 }
 

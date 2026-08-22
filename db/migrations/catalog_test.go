@@ -37,6 +37,8 @@ const (
 	expectedCharacterPointStateDownSHA256       = "a77745e16a6066f5acaa905699176b8e57ef809b4ae61383dd20fdd0fb8eeafa"
 	expectedStaticActorPVEInteractionUpSHA256   = "97570fea21e09c8c744601d433ddf0bde0f302e61eb0a9d72c5c55a7d8f5bf60"
 	expectedStaticActorPVEInteractionDownSHA256 = "ebd3d0e36da41f938604f63a42c45afa18a64ae1ceb32de645e2abb34d81819a"
+	expectedStaticActorCombatProfileUpSHA256    = "1ec2fff925f5d67303be45c770e52379a42339ee9d545ec80dd65ff0ddde319e"
+	expectedStaticActorCombatProfileDownSHA256  = "6e704e0fa7b2dc5f7e27e8de33033f6c3210990133d6ba149055426cbecf276d"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -531,6 +533,55 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 		}
 	}
 
+	if len(catalog) < 13 {
+		t.Fatalf("expected static-actor combat-profile-state migration after PvE interaction-state, got %d", len(catalog))
+	}
+	thirteenth := catalog[12]
+	if thirteenth.Version != 13 || thirteenth.Name != "static_actor_combat_profile_state" {
+		t.Fatalf("unexpected thirteenth migration: %#v", thirteenth)
+	}
+	if thirteenth.UpPath != "0013_static_actor_combat_profile_state.up.sql" {
+		t.Fatalf("unexpected thirteenth up path: %q", thirteenth.UpPath)
+	}
+	if thirteenth.DownPath != "0013_static_actor_combat_profile_state.down.sql" {
+		t.Fatalf("unexpected thirteenth down path: %q", thirteenth.DownPath)
+	}
+	if thirteenth.UpSHA256 != expectedStaticActorCombatProfileUpSHA256 {
+		t.Fatalf("unexpected static-actor-combat-profile-state up checksum: got %q want %q", thirteenth.UpSHA256, expectedStaticActorCombatProfileUpSHA256)
+	}
+	if thirteenth.DownSHA256 != expectedStaticActorCombatProfileDownSHA256 {
+		t.Fatalf("unexpected static-actor-combat-profile-state down checksum: got %q want %q", thirteenth.DownSHA256, expectedStaticActorCombatProfileDownSHA256)
+	}
+	for _, want := range []string{
+		"CREATE TABLE static_actor_combat_profiles",
+		"CREATE TABLE static_actor_combat_profile_death_reward_drops",
+		"CHECK (profile NOT IN ('practice_mob', 'training_dummy'))",
+		"CHECK (retaliation_point_delta <= 0)",
+		"CREATE UNIQUE INDEX static_actor_combat_profile_death_reward_drops_profile_item_vnum_index",
+		"DROP TABLE IF EXISTS static_actor_combat_profiles",
+	} {
+		if !strings.Contains(thirteenth.UpSQL, want) && !strings.Contains(thirteenth.DownSQL, want) {
+			t.Fatalf("expected static-actor-combat-profile-state migration to contain %q, got up:\n%s\ndown:\n%s", want, thirteenth.UpSQL, thirteenth.DownSQL)
+		}
+	}
+	for _, want := range []string{
+		"CREATE TABLE static_actor_combat_profiles",
+		"CREATE TABLE static_actor_combat_profile_death_reward_drops",
+		"CHECK (profile NOT IN ('practice_mob', 'training_dummy'))",
+	} {
+		if !strings.Contains(thirteenth.UpSQL, want) {
+			t.Fatalf("expected static-actor-combat-profile-state up migration to contain %q, got:\n%s", want, thirteenth.UpSQL)
+		}
+	}
+	for _, want := range []string{
+		"DROP TABLE IF EXISTS static_actor_combat_profile_death_reward_drops",
+		"DROP TABLE IF EXISTS static_actor_combat_profiles",
+	} {
+		if !strings.Contains(thirteenth.DownSQL, want) {
+			t.Fatalf("expected static-actor-combat-profile-state down migration to contain %q, got:\n%s", want, thirteenth.DownSQL)
+		}
+	}
+
 	for i, migration := range catalog {
 		wantVersion := i + 1
 		if migration.Version != wantVersion {
@@ -600,7 +651,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("built-in catalog summary: %v", err)
 	}
-	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 12 {
+	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 13 {
 		t.Fatalf("unexpected built-in catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -610,7 +661,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 		t.Fatalf("unexpected first built-in catalog summary row: %#v", summary.Migrations[0])
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "static_actor_pve_interaction_state" {
+	if latest.Version != summary.LatestVersion || latest.Name != "static_actor_combat_profile_state" {
 		t.Fatalf("unexpected latest built-in catalog summary row: %#v", latest)
 	}
 }

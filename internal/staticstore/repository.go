@@ -4,8 +4,8 @@ import "github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 
 // StaticActorContentStateExporter is the first repository-style seam for the
 // durable authored static-actor + interaction content surface already projected
-// onto migration 0012_static_actor_pve_interaction_state (after the historical
-// 0008_static_actor_content_state tables). Implementations may be file-backed
+// onto migration 0013_static_actor_combat_profile_state (after the historical
+// 0008 / 0012 static-actor content tips). Implementations may be file-backed
 // or hermetic in-memory; none of these methods open a database, emit SQL, or
 // mutate stores beyond the optional Load/Save path already owned by Store.
 //

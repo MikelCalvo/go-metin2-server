@@ -37,6 +37,7 @@ const (
 	expectedBootstrapGroundItemStateStatusSHA256  = "7c7c3b9e20c680224777955be2d15dd86326d511208fa17e4048ec41beaf4abb"
 	expectedCharacterPointStateStatusSHA256       = "2034ab84227eaa0701a257ed1dbd592d18e4d33fa09add30e05e93dcf4c8dc43"
 	expectedStaticActorPVEInteractionStatusSHA256 = "97570fea21e09c8c744601d433ddf0bde0f302e61eb0a9d72c5c55a7d8f5bf60"
+	expectedStaticActorCombatProfileStatusSHA256  = "1ec2fff925f5d67303be45c770e52379a42339ee9d545ec80dd65ff0ddde319e"
 )
 
 func TestHealthzEndpointIncludesServiceName(t *testing.T) {
@@ -7786,7 +7787,7 @@ func TestLocalStaticActorDeleteEndpointRemovesActorForLoopbackDelete(t *testing.
 func TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet(t *testing.T) {
 	planner := &stubMigrationStatusPlanner{plan: dbmigrations.Plan{
 		CurrentVersion: 0,
-		LatestVersion:  12,
+		LatestVersion:  13,
 		UpToDate:       false,
 		Pending: []dbmigrations.PlanStep{
 			{Version: 1, Name: "bootstrap_schema_migrations", Direction: dbmigrations.DirectionUp, Path: "0001_bootstrap_schema_migrations.up.sql", SHA256: expectedBootstrapMigrationStatusSHA256},
@@ -7801,6 +7802,7 @@ func TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet(t *testing.
 			{Version: 10, Name: "bootstrap_ground_item_state", Direction: dbmigrations.DirectionUp, Path: "0010_bootstrap_ground_item_state.up.sql", SHA256: expectedBootstrapGroundItemStateStatusSHA256},
 			{Version: 11, Name: "character_point_state", Direction: dbmigrations.DirectionUp, Path: "0011_character_point_state.up.sql", SHA256: expectedCharacterPointStateStatusSHA256},
 			{Version: 12, Name: "static_actor_pve_interaction_state", Direction: dbmigrations.DirectionUp, Path: "0012_static_actor_pve_interaction_state.up.sql", SHA256: expectedStaticActorPVEInteractionStatusSHA256},
+			{Version: 13, Name: "static_actor_combat_profile_state", Direction: dbmigrations.DirectionUp, Path: "0013_static_actor_combat_profile_state.up.sql", SHA256: expectedStaticActorCombatProfileStatusSHA256},
 		},
 	}}
 	mux := RegisterLocalMigrationStatusEndpoint(NewPprofMux("gamed"), planner.Plan)
@@ -7821,7 +7823,7 @@ func TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet(t *testing.
 		t.Fatalf("expected application/json content type, got %q", contentType)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`"current_version":0`, `"latest_version":12`, `"up_to_date":false`, `"direction":"up"`, `"path":"0001_bootstrap_schema_migrations.up.sql"`, `"sha256":"` + expectedBootstrapMigrationStatusSHA256 + `"`, `"path":"0002_account_character_roster.up.sql"`, `"sha256":"` + expectedAccountCharacterRosterStatusSHA256 + `"`, `"path":"0003_character_item_state.up.sql"`, `"sha256":"` + expectedCharacterItemStateStatusSHA256 + `"`, `"path":"0004_character_quest_state.up.sql"`, `"sha256":"` + expectedCharacterQuestStateStatusSHA256 + `"`, `"path":"0005_item_template_state.up.sql"`, `"sha256":"` + expectedItemTemplateStateStatusSHA256 + `"`, `"path":"0006_item_template_safebox_reject_message.up.sql"`, `"sha256":"` + expectedItemTemplateSafeboxRejectStatusSHA256 + `"`, `"path":"0007_auth_login_ticket_handoff.up.sql"`, `"sha256":"` + expectedAuthLoginTicketHandoffStatusSHA256 + `"`, `"path":"0008_static_actor_content_state.up.sql"`, `"sha256":"` + expectedStaticActorContentStateStatusSHA256 + `"`, `"path":"0009_item_template_refine_info.up.sql"`, `"sha256":"` + expectedItemTemplateRefineInfoStatusSHA256 + `"`, `"path":"0010_bootstrap_ground_item_state.up.sql"`, `"sha256":"` + expectedBootstrapGroundItemStateStatusSHA256 + `"`, `"path":"0011_character_point_state.up.sql"`, `"sha256":"` + expectedCharacterPointStateStatusSHA256 + `"`, `"path":"0012_static_actor_pve_interaction_state.up.sql"`, `"sha256":"` + expectedStaticActorPVEInteractionStatusSHA256 + `"`} {
+	for _, want := range []string{`"current_version":0`, `"latest_version":13`, `"up_to_date":false`, `"direction":"up"`, `"path":"0001_bootstrap_schema_migrations.up.sql"`, `"sha256":"` + expectedBootstrapMigrationStatusSHA256 + `"`, `"path":"0002_account_character_roster.up.sql"`, `"sha256":"` + expectedAccountCharacterRosterStatusSHA256 + `"`, `"path":"0003_character_item_state.up.sql"`, `"sha256":"` + expectedCharacterItemStateStatusSHA256 + `"`, `"path":"0004_character_quest_state.up.sql"`, `"sha256":"` + expectedCharacterQuestStateStatusSHA256 + `"`, `"path":"0005_item_template_state.up.sql"`, `"sha256":"` + expectedItemTemplateStateStatusSHA256 + `"`, `"path":"0006_item_template_safebox_reject_message.up.sql"`, `"sha256":"` + expectedItemTemplateSafeboxRejectStatusSHA256 + `"`, `"path":"0007_auth_login_ticket_handoff.up.sql"`, `"sha256":"` + expectedAuthLoginTicketHandoffStatusSHA256 + `"`, `"path":"0008_static_actor_content_state.up.sql"`, `"sha256":"` + expectedStaticActorContentStateStatusSHA256 + `"`, `"path":"0009_item_template_refine_info.up.sql"`, `"sha256":"` + expectedItemTemplateRefineInfoStatusSHA256 + `"`, `"path":"0010_bootstrap_ground_item_state.up.sql"`, `"sha256":"` + expectedBootstrapGroundItemStateStatusSHA256 + `"`, `"path":"0011_character_point_state.up.sql"`, `"sha256":"` + expectedCharacterPointStateStatusSHA256 + `"`, `"path":"0012_static_actor_pve_interaction_state.up.sql"`, `"sha256":"` + expectedStaticActorPVEInteractionStatusSHA256 + `"`, `"path":"0013_static_actor_combat_profile_state.up.sql"`, `"sha256":"` + expectedStaticActorCombatProfileStatusSHA256 + `"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected migration status body to contain %s, got %s", want, body)
 		}
@@ -8959,6 +8961,8 @@ func TestLocalStaticActorContentStateQuarantineEndpointReturnsCanonicalJSON(t *t
 			{EntityID: 7, Position: 1, ItemVnum: 27002},
 			{EntityID: 7, Position: 0, ItemVnum: 27001},
 		},
+		CombatProfiles:                []staticstore.StaticActorCombatProfileRow{},
+		CombatProfileDeathRewardDrops: []staticstore.StaticActorCombatProfileDropRow{},
 	})
 	if err != nil {
 		t.Fatalf("marshal quarantine body: %v", err)
@@ -8982,8 +8986,9 @@ func TestLocalStaticActorContentStateQuarantineEndpointReturnsCanonicalJSON(t *t
 		`"quest_flag_consume_item_count":0`,
 		`"static_actor_count":3`,
 		`"reward_drop_count":2`,
+		`"combat_profile_count":0`,
 		`"entity_ids":[7,9,2]`,
-		`"migration_version":12`,
+		`"migration_version":13`,
 		`"kind":"info"`,
 		`"kind":"shop_preview"`,
 		`"kind":"talk"`,
@@ -9001,7 +9006,7 @@ func TestLocalStaticActorContentStateQuarantineEndpointReturnsCanonicalJSON(t *t
 
 func TestLocalStaticActorContentStateQuarantineEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
 	mux := RegisterLocalStaticActorContentStateQuarantineEndpoint(NewPprofMux("gamed"))
-	req := httptest.NewRequest(http.MethodPost, "/local/static-actors/exports/static-actor-content-state/quarantine", strings.NewReader(`{"migration_version":12,"migration_name":"static_actor_pve_interaction_state","interaction_definitions":[],"merchant_catalog_entries":[],"quest_flag_reward_items":[],"quest_flag_consume_items":[],"static_actors":[],"reward_drops":[]}`))
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors/exports/static-actor-content-state/quarantine", strings.NewReader(`{"migration_version":13,"migration_name":"static_actor_combat_profile_state","interaction_definitions":[],"merchant_catalog_entries":[],"quest_flag_reward_items":[],"quest_flag_consume_items":[],"static_actors":[],"reward_drops":[],"combat_profiles":[],"combat_profile_death_reward_drops":[]}`))
 	req.RemoteAddr = "198.51.100.10:12345"
 	rec := httptest.NewRecorder()
 
@@ -9027,7 +9032,7 @@ func TestLocalStaticActorContentStateQuarantineEndpointRejectsWrongMethod(t *tes
 
 func TestLocalStaticActorContentStateQuarantineEndpointRejectsInvalidExport(t *testing.T) {
 	mux := RegisterLocalStaticActorContentStateQuarantineEndpoint(NewPprofMux("gamed"))
-	req := httptest.NewRequest(http.MethodPost, "/local/static-actors/exports/static-actor-content-state/quarantine", strings.NewReader(`{"migration_version":4,"migration_name":"static_actor_content_state","interaction_definitions":[],"merchant_catalog_entries":[],"quest_flag_reward_items":[],"quest_flag_consume_items":[],"static_actors":[],"reward_drops":[]}`))
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors/exports/static-actor-content-state/quarantine", strings.NewReader(`{"migration_version":4,"migration_name":"static_actor_content_state","interaction_definitions":[],"merchant_catalog_entries":[],"quest_flag_reward_items":[],"quest_flag_consume_items":[],"static_actors":[],"reward_drops":[],"combat_profiles":[],"combat_profile_death_reward_drops":[]}`))
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 
@@ -9040,7 +9045,7 @@ func TestLocalStaticActorContentStateQuarantineEndpointRejectsInvalidExport(t *t
 
 func TestLocalStaticActorContentStateQuarantineEndpointRejectsMalformedJSON(t *testing.T) {
 	mux := RegisterLocalStaticActorContentStateQuarantineEndpoint(NewPprofMux("gamed"))
-	req := httptest.NewRequest(http.MethodPost, "/local/static-actors/exports/static-actor-content-state/quarantine", strings.NewReader(`{"migration_version":12`))
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors/exports/static-actor-content-state/quarantine", strings.NewReader(`{"migration_version":13`))
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 
@@ -9053,7 +9058,7 @@ func TestLocalStaticActorContentStateQuarantineEndpointRejectsMalformedJSON(t *t
 
 func TestNewPprofMuxDoesNotExposeLocalStaticActorContentStateQuarantineByDefault(t *testing.T) {
 	mux := NewPprofMux("authd")
-	req := httptest.NewRequest(http.MethodPost, "/local/static-actors/exports/static-actor-content-state/quarantine", strings.NewReader(`{"migration_version":12,"migration_name":"static_actor_pve_interaction_state","interaction_definitions":[],"merchant_catalog_entries":[],"quest_flag_reward_items":[],"quest_flag_consume_items":[],"static_actors":[],"reward_drops":[]}`))
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors/exports/static-actor-content-state/quarantine", strings.NewReader(`{"migration_version":13,"migration_name":"static_actor_combat_profile_state","interaction_definitions":[],"merchant_catalog_entries":[],"quest_flag_reward_items":[],"quest_flag_consume_items":[],"static_actors":[],"reward_drops":[],"combat_profiles":[],"combat_profile_death_reward_drops":[]}`))
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 
@@ -9640,6 +9645,8 @@ func TestLocalStaticActorContentStateExportEndpointReturnsLoopbackJSON(t *testin
 		RewardDrops: []staticstore.StaticActorRewardDropRow{
 			{EntityID: 22, Position: 0, ItemVnum: 27001},
 		},
+		CombatProfiles:                []staticstore.StaticActorCombatProfileRow{},
+		CombatProfileDeathRewardDrops: []staticstore.StaticActorCombatProfileDropRow{},
 	}}
 	mux := RegisterLocalStaticActorContentStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
 
@@ -9659,7 +9666,7 @@ func TestLocalStaticActorContentStateExportEndpointReturnsLoopbackJSON(t *testin
 		t.Fatalf("expected application/json content type, got %q", contentType)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`"migration_version":12`, `"migration_name":"static_actor_pve_interaction_state"`, `"interaction_definitions":[`, `"merchant_catalog_entries":[`, `"quest_flag_reward_items":[`, `"quest_flag_consume_items":[`, `"static_actors":[`, `"reward_drops":[`, `"ref":"npc:village_guard"`, `"entity_id":9`, `"item_vnum":27001`} {
+	for _, want := range []string{`"migration_version":13`, `"migration_name":"static_actor_combat_profile_state"`, `"interaction_definitions":[`, `"merchant_catalog_entries":[`, `"quest_flag_reward_items":[`, `"quest_flag_consume_items":[`, `"static_actors":[`, `"reward_drops":[`, `"combat_profiles":[`, `"combat_profile_death_reward_drops":[`, `"ref":"npc:village_guard"`, `"entity_id":9`, `"item_vnum":27001`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected static actor content-state export body to contain %s, got %s", want, body)
 		}
@@ -9670,7 +9677,7 @@ func TestLocalStaticActorContentStateExportEndpointReturnsLoopbackJSON(t *testin
 }
 
 func TestLocalStaticActorContentStateExportEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
-	exporter := &stubStaticActorContentStateExporter{export: staticstore.StaticActorContentStateExport{MigrationVersion: 12}}
+	exporter := &stubStaticActorContentStateExporter{export: staticstore.StaticActorContentStateExport{MigrationVersion: 13}}
 	mux := RegisterLocalStaticActorContentStateExportEndpoint(NewPprofMux("gamed"), exporter.Export)
 
 	req := httptest.NewRequest(http.MethodGet, "/local/static-actors/exports/static-actor-content-state", nil)

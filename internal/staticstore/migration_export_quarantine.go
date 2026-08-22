@@ -10,21 +10,24 @@ import (
 )
 
 // ErrInvalidStaticActorContentStateExport reports that a retained static-actor
-// content-state export failed the 0012 migration-shaped quarantine contract.
+// content-state export failed the 0013 migration-shaped quarantine contract.
 var ErrInvalidStaticActorContentStateExport = errors.New("invalid static actor content-state export")
 
 // StaticActorContentStateQuarantineSummary is the metadata-only result of
 // validating or quarantining a retained static-actor content-state export. It
 // never includes SQL, DSNs, or raw JSON store bytes.
 type StaticActorContentStateQuarantineSummary struct {
-	InteractionDefinitionCount int      `json:"interaction_definition_count"`
-	MerchantCatalogEntryCount  int      `json:"merchant_catalog_entry_count"`
-	QuestFlagRewardItemCount   int      `json:"quest_flag_reward_item_count"`
-	QuestFlagConsumeItemCount  int      `json:"quest_flag_consume_item_count"`
-	StaticActorCount           int      `json:"static_actor_count"`
-	RewardDropCount            int      `json:"reward_drop_count"`
-	EntityIDs                  []uint64 `json:"entity_ids"`
-	InteractionKinds           []string `json:"interaction_kinds"`
+	InteractionDefinitionCount        int      `json:"interaction_definition_count"`
+	MerchantCatalogEntryCount         int      `json:"merchant_catalog_entry_count"`
+	QuestFlagRewardItemCount          int      `json:"quest_flag_reward_item_count"`
+	QuestFlagConsumeItemCount         int      `json:"quest_flag_consume_item_count"`
+	StaticActorCount                  int      `json:"static_actor_count"`
+	RewardDropCount                   int      `json:"reward_drop_count"`
+	CombatProfileCount                int      `json:"combat_profile_count"`
+	CombatProfileDeathRewardDropCount int      `json:"combat_profile_death_reward_drop_count"`
+	EntityIDs                         []uint64 `json:"entity_ids"`
+	InteractionKinds                  []string `json:"interaction_kinds"`
+	CombatProfiles                    []string `json:"combat_profiles"`
 }
 
 // StaticActorContentStateQuarantineResult pairs the metadata-only quarantine
@@ -36,7 +39,7 @@ type StaticActorContentStateQuarantineResult struct {
 }
 
 // ValidateStaticActorContentStateExport fails closed when a retained export
-// does not match the 0012_static_actor_pve_interaction_state shape. It does not
+// does not match the 0013_static_actor_combat_profile_state shape. It does not
 // open a database, write static-actor/interaction snapshots, or mutate the
 // supplied export.
 func ValidateStaticActorContentStateExport(export StaticActorContentStateExport) (StaticActorContentStateQuarantineSummary, error) {
@@ -80,6 +83,12 @@ func canonicalizeStaticActorContentStateExport(export StaticActorContentStateExp
 	if export.RewardDrops == nil {
 		return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: reward_drops must be present", ErrInvalidStaticActorContentStateExport)
 	}
+	if export.CombatProfiles == nil {
+		return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: combat_profiles must be present", ErrInvalidStaticActorContentStateExport)
+	}
+	if export.CombatProfileDeathRewardDrops == nil {
+		return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: combat_profile_death_reward_drops must be present", ErrInvalidStaticActorContentStateExport)
+	}
 
 	staticSnapshot, interactionSnapshot, err := snapshotsFromStaticActorContentStateExport(export)
 	if err != nil {
@@ -103,22 +112,32 @@ func canonicalizeStaticActorContentStateExport(export StaticActorContentStateExp
 		kinds = append(kinds, kind)
 	}
 	sort.Strings(kinds)
+	profileNames := make([]string, 0, len(canonical.CombatProfiles))
+	for _, profile := range canonical.CombatProfiles {
+		profileNames = append(profileNames, profile.Profile)
+	}
 
 	summary := StaticActorContentStateQuarantineSummary{
-		InteractionDefinitionCount: len(canonical.InteractionDefinitions),
-		MerchantCatalogEntryCount:  len(canonical.MerchantCatalogEntries),
-		QuestFlagRewardItemCount:   len(canonical.QuestFlagRewardItems),
-		QuestFlagConsumeItemCount:  len(canonical.QuestFlagConsumeItems),
-		StaticActorCount:           len(canonical.StaticActors),
-		RewardDropCount:            len(canonical.RewardDrops),
-		EntityIDs:                  entityIDs,
-		InteractionKinds:           kinds,
+		InteractionDefinitionCount:        len(canonical.InteractionDefinitions),
+		MerchantCatalogEntryCount:         len(canonical.MerchantCatalogEntries),
+		QuestFlagRewardItemCount:          len(canonical.QuestFlagRewardItems),
+		QuestFlagConsumeItemCount:         len(canonical.QuestFlagConsumeItems),
+		StaticActorCount:                  len(canonical.StaticActors),
+		RewardDropCount:                   len(canonical.RewardDrops),
+		CombatProfileCount:                len(canonical.CombatProfiles),
+		CombatProfileDeathRewardDropCount: len(canonical.CombatProfileDeathRewardDrops),
+		EntityIDs:                         entityIDs,
+		InteractionKinds:                  kinds,
+		CombatProfiles:                    profileNames,
 	}
 	if summary.EntityIDs == nil {
 		summary.EntityIDs = []uint64{}
 	}
 	if summary.InteractionKinds == nil {
 		summary.InteractionKinds = []string{}
+	}
+	if summary.CombatProfiles == nil {
+		summary.CombatProfiles = []string{}
 	}
 	return canonical, summary, nil
 }
@@ -224,7 +243,58 @@ func snapshotsFromStaticActorContentStateExport(export StaticActorContentStateEx
 		actors[i] = actorsByID[actors[i].EntityID]
 	}
 
-	return Snapshot{StaticActors: actors}, interactionstore.Snapshot{Definitions: definitions}, nil
+	profilesByName := make(map[string]worldruntime.StaticActorCombatProfileSnapshot, len(export.CombatProfiles))
+	profiles := make([]worldruntime.StaticActorCombatProfileSnapshot, 0, len(export.CombatProfiles))
+	for _, row := range export.CombatProfiles {
+		profile, err := combatProfileFromContentStateRow(row)
+		if err != nil {
+			return Snapshot{}, interactionstore.Snapshot{}, err
+		}
+		if _, exists := profilesByName[profile.Profile]; exists {
+			return Snapshot{}, interactionstore.Snapshot{}, fmt.Errorf("%w: duplicate combat profile %q", ErrInvalidStaticActorContentStateExport, profile.Profile)
+		}
+		profilesByName[profile.Profile] = profile
+		profiles = append(profiles, profile)
+	}
+
+	dropsByProfile := make(map[string][]StaticActorCombatProfileDropRow, len(export.CombatProfileDeathRewardDrops))
+	for _, drop := range export.CombatProfileDeathRewardDrops {
+		if _, ok := profilesByName[drop.Profile]; !ok {
+			return Snapshot{}, interactionstore.Snapshot{}, fmt.Errorf("%w: combat profile death-reward drop references missing profile %q", ErrInvalidStaticActorContentStateExport, drop.Profile)
+		}
+		if drop.ItemVnum == 0 {
+			return Snapshot{}, interactionstore.Snapshot{}, fmt.Errorf("%w: combat profile death-reward drop for %q requires item_vnum > 0", ErrInvalidStaticActorContentStateExport, drop.Profile)
+		}
+		dropsByProfile[drop.Profile] = append(dropsByProfile[drop.Profile], drop)
+	}
+	for profileName, drops := range dropsByProfile {
+		sort.Slice(drops, func(i, j int) bool { return drops[i].Position < drops[j].Position })
+		seenPositions := make(map[uint8]struct{}, len(drops))
+		seenVnums := make(map[uint32]struct{}, len(drops))
+		vnums := make([]uint32, 0, len(drops))
+		for i, drop := range drops {
+			if _, exists := seenPositions[drop.Position]; exists {
+				return Snapshot{}, interactionstore.Snapshot{}, fmt.Errorf("%w: duplicate combat profile death-reward drop position %d for %q", ErrInvalidStaticActorContentStateExport, drop.Position, profileName)
+			}
+			if int(drop.Position) != i {
+				return Snapshot{}, interactionstore.Snapshot{}, fmt.Errorf("%w: combat profile death-reward drop positions for %q must be contiguous from 0", ErrInvalidStaticActorContentStateExport, profileName)
+			}
+			if _, exists := seenVnums[drop.ItemVnum]; exists {
+				return Snapshot{}, interactionstore.Snapshot{}, fmt.Errorf("%w: duplicate combat profile death-reward drop item_vnum %d for %q", ErrInvalidStaticActorContentStateExport, drop.ItemVnum, profileName)
+			}
+			seenPositions[drop.Position] = struct{}{}
+			seenVnums[drop.ItemVnum] = struct{}{}
+			vnums = append(vnums, drop.ItemVnum)
+		}
+		profile := profilesByName[profileName]
+		profile.DeathReward.DropVnums = vnums
+		profilesByName[profileName] = profile
+	}
+	for i := range profiles {
+		profiles[i] = profilesByName[profiles[i].Profile]
+	}
+
+	return Snapshot{StaticActors: actors, CombatProfiles: profiles}, interactionstore.Snapshot{Definitions: definitions}, nil
 }
 
 func attachQuestFlagItems(definitionsByKey map[string]interactionstore.Definition, rows []InteractionQuestFlagItemRow, reward bool) error {
@@ -352,4 +422,28 @@ func staticActorFromContentStateRow(row StaticActorContentStateRow) (StaticActor
 		}
 	}
 	return actor, nil
+}
+
+func combatProfileFromContentStateRow(row StaticActorCombatProfileRow) (worldruntime.StaticActorCombatProfileSnapshot, error) {
+	profile := worldruntime.StaticActorCombatProfileSnapshot{
+		Profile:               row.Profile,
+		MaxHP:                 row.MaxHP,
+		DamagePerNormalAttack: row.DamagePerNormalAttack,
+		AttackValue:           row.AttackValue,
+		DefenseValue:          row.DefenseValue,
+		Level:                 row.Level,
+		Rank:                  row.Rank,
+		RespawnDelayMs:        row.RespawnDelayMs,
+		AggroRadius:           row.AggroRadius,
+		LeashRadius:           row.LeashRadius,
+		RetaliationPointDelta: row.RetaliationPointDelta,
+		DeathReward: worldruntime.StaticActorDeathReward{
+			Experience: row.DeathRewardExperience,
+			Gold:       row.DeathRewardGold,
+		},
+	}
+	if !validCombatProfileSnapshot(profile) {
+		return worldruntime.StaticActorCombatProfileSnapshot{}, fmt.Errorf("%w: invalid combat profile %q", ErrInvalidStaticActorContentStateExport, row.Profile)
+	}
+	return profile, nil
 }

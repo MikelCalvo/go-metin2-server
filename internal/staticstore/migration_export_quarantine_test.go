@@ -17,14 +17,17 @@ func TestValidateStaticActorContentStateExportAcceptsCanonicalExport(t *testing.
 		t.Fatalf("validate static actor content-state export: %v", err)
 	}
 	want := StaticActorContentStateQuarantineSummary{
-		InteractionDefinitionCount: 4,
-		MerchantCatalogEntryCount:  2,
-		QuestFlagRewardItemCount:   0,
-		QuestFlagConsumeItemCount:  0,
-		StaticActorCount:           3,
-		RewardDropCount:            2,
-		EntityIDs:                  []uint64{7, 9, 2},
-		InteractionKinds:           []string{interactionstore.KindInfo, interactionstore.KindShopPreview, interactionstore.KindTalk, interactionstore.KindWarp},
+		InteractionDefinitionCount:        4,
+		MerchantCatalogEntryCount:         2,
+		QuestFlagRewardItemCount:          0,
+		QuestFlagConsumeItemCount:         0,
+		StaticActorCount:                  3,
+		RewardDropCount:                   2,
+		CombatProfileCount:                0,
+		CombatProfileDeathRewardDropCount: 0,
+		EntityIDs:                         []uint64{7, 9, 2},
+		InteractionKinds:                  []string{interactionstore.KindInfo, interactionstore.KindShopPreview, interactionstore.KindTalk, interactionstore.KindWarp},
+		CombatProfiles:                    []string{},
 	}
 	if !reflect.DeepEqual(summary, want) {
 		t.Fatalf("unexpected quarantine summary:\n got: %#v\nwant: %#v", summary, want)
@@ -33,14 +36,16 @@ func TestValidateStaticActorContentStateExportAcceptsCanonicalExport(t *testing.
 
 func TestValidateStaticActorContentStateExportAcceptsEmptyCollections(t *testing.T) {
 	export := StaticActorContentStateExport{
-		MigrationVersion:       StaticActorContentStateMigrationVersion,
-		MigrationName:          StaticActorContentStateMigrationName,
-		InteractionDefinitions: []InteractionDefinitionRow{},
-		MerchantCatalogEntries: []InteractionMerchantCatalogEntryRow{},
-		QuestFlagRewardItems:   []InteractionQuestFlagItemRow{},
-		QuestFlagConsumeItems:  []InteractionQuestFlagItemRow{},
-		StaticActors:           []StaticActorContentStateRow{},
-		RewardDrops:            []StaticActorRewardDropRow{},
+		MigrationVersion:              StaticActorContentStateMigrationVersion,
+		MigrationName:                 StaticActorContentStateMigrationName,
+		InteractionDefinitions:        []InteractionDefinitionRow{},
+		MerchantCatalogEntries:        []InteractionMerchantCatalogEntryRow{},
+		QuestFlagRewardItems:          []InteractionQuestFlagItemRow{},
+		QuestFlagConsumeItems:         []InteractionQuestFlagItemRow{},
+		StaticActors:                  []StaticActorContentStateRow{},
+		RewardDrops:                   []StaticActorRewardDropRow{},
+		CombatProfiles:                []StaticActorCombatProfileRow{},
+		CombatProfileDeathRewardDrops: []StaticActorCombatProfileDropRow{},
 	}
 
 	summary, err := ValidateStaticActorContentStateExport(export)
@@ -48,14 +53,17 @@ func TestValidateStaticActorContentStateExportAcceptsEmptyCollections(t *testing
 		t.Fatalf("validate empty static actor content-state export: %v", err)
 	}
 	want := StaticActorContentStateQuarantineSummary{
-		InteractionDefinitionCount: 0,
-		MerchantCatalogEntryCount:  0,
-		QuestFlagRewardItemCount:   0,
-		QuestFlagConsumeItemCount:  0,
-		StaticActorCount:           0,
-		RewardDropCount:            0,
-		EntityIDs:                  []uint64{},
-		InteractionKinds:           []string{},
+		InteractionDefinitionCount:        0,
+		MerchantCatalogEntryCount:         0,
+		QuestFlagRewardItemCount:          0,
+		QuestFlagConsumeItemCount:         0,
+		StaticActorCount:                  0,
+		RewardDropCount:                   0,
+		CombatProfileCount:                0,
+		CombatProfileDeathRewardDropCount: 0,
+		EntityIDs:                         []uint64{},
+		InteractionKinds:                  []string{},
+		CombatProfiles:                    []string{},
 	}
 	if !reflect.DeepEqual(summary, want) {
 		t.Fatalf("unexpected empty quarantine summary:\n got: %#v\nwant: %#v", summary, want)
@@ -103,6 +111,18 @@ func TestValidateStaticActorContentStateExportRejectsMalformedRows(t *testing.T)
 			name: "nil reward drops",
 			mutate: func(export *StaticActorContentStateExport) {
 				export.RewardDrops = nil
+			},
+		},
+		{
+			name: "nil combat profiles",
+			mutate: func(export *StaticActorContentStateExport) {
+				export.CombatProfiles = nil
+			},
+		},
+		{
+			name: "nil combat profile death reward drops",
+			mutate: func(export *StaticActorContentStateExport) {
+				export.CombatProfileDeathRewardDrops = nil
 			},
 		},
 		{
@@ -208,14 +228,17 @@ func TestQuarantineStaticActorContentStateExportCanonicalizesRowOrder(t *testing
 		t.Fatalf("unexpected canonical quarantine export:\n got: %#v\nwant: %#v", quarantined, wantExport)
 	}
 	wantSummary := StaticActorContentStateQuarantineSummary{
-		InteractionDefinitionCount: 4,
-		MerchantCatalogEntryCount:  2,
-		QuestFlagRewardItemCount:   0,
-		QuestFlagConsumeItemCount:  0,
-		StaticActorCount:           3,
-		RewardDropCount:            2,
-		EntityIDs:                  []uint64{7, 9, 2},
-		InteractionKinds:           []string{interactionstore.KindInfo, interactionstore.KindShopPreview, interactionstore.KindTalk, interactionstore.KindWarp},
+		InteractionDefinitionCount:        4,
+		MerchantCatalogEntryCount:         2,
+		QuestFlagRewardItemCount:          0,
+		QuestFlagConsumeItemCount:         0,
+		StaticActorCount:                  3,
+		RewardDropCount:                   2,
+		CombatProfileCount:                0,
+		CombatProfileDeathRewardDropCount: 0,
+		EntityIDs:                         []uint64{7, 9, 2},
+		InteractionKinds:                  []string{interactionstore.KindInfo, interactionstore.KindShopPreview, interactionstore.KindTalk, interactionstore.KindWarp},
+		CombatProfiles:                    []string{},
 	}
 	if !reflect.DeepEqual(summary, wantSummary) {
 		t.Fatalf("unexpected quarantine summary:\n got: %#v\nwant: %#v", summary, wantSummary)
@@ -247,5 +270,7 @@ func sampleStaticActorContentStateExport() StaticActorContentStateExport {
 			{EntityID: 7, Position: 0, ItemVnum: 27001},
 			{EntityID: 7, Position: 1, ItemVnum: 27002},
 		},
+		CombatProfiles:                []StaticActorCombatProfileRow{},
+		CombatProfileDeathRewardDrops: []StaticActorCombatProfileDropRow{},
 	}
 }

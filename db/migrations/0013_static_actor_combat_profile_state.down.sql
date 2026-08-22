@@ -1,0 +1,5 @@
+-- go-metin2 migration: 0013 static_actor_combat_profile_state down
+DROP INDEX IF EXISTS static_actor_combat_profile_death_reward_drops_profile_index;
+DROP INDEX IF EXISTS static_actor_combat_profile_death_reward_drops_profile_item_vnum_index;
+DROP TABLE IF EXISTS static_actor_combat_profile_death_reward_drops;
+DROP TABLE IF EXISTS static_actor_combat_profiles;

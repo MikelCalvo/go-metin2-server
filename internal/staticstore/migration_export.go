@@ -6,28 +6,31 @@ import (
 	"sort"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
 const (
-	StaticActorContentStateMigrationVersion = 12
-	StaticActorContentStateMigrationName    = "static_actor_pve_interaction_state"
+	StaticActorContentStateMigrationVersion = 13
+	StaticActorContentStateMigrationName    = "static_actor_combat_profile_state"
 )
 
 // StaticActorContentStateExport is a deterministic, schema-shaped projection of
 // committed bootstrap static-actor and interaction-definition snapshots onto the
-// 0012_static_actor_pve_interaction_state migration boundary (after the
-// historical 0008_static_actor_content_state tables). It is intentionally a
+// 0013_static_actor_combat_profile_state migration boundary (after the
+// historical 0008 / 0012 static-actor content tips). It is intentionally a
 // data-model/export contract only: it does not open a database, emit SQL, apply
 // migrations, or mutate the file stores.
 type StaticActorContentStateExport struct {
-	MigrationVersion       int                                  `json:"migration_version"`
-	MigrationName          string                               `json:"migration_name"`
-	InteractionDefinitions []InteractionDefinitionRow           `json:"interaction_definitions"`
-	MerchantCatalogEntries []InteractionMerchantCatalogEntryRow `json:"merchant_catalog_entries"`
-	QuestFlagRewardItems   []InteractionQuestFlagItemRow        `json:"quest_flag_reward_items"`
-	QuestFlagConsumeItems  []InteractionQuestFlagItemRow        `json:"quest_flag_consume_items"`
-	StaticActors           []StaticActorContentStateRow         `json:"static_actors"`
-	RewardDrops            []StaticActorRewardDropRow           `json:"reward_drops"`
+	MigrationVersion              int                                  `json:"migration_version"`
+	MigrationName                 string                               `json:"migration_name"`
+	InteractionDefinitions        []InteractionDefinitionRow           `json:"interaction_definitions"`
+	MerchantCatalogEntries        []InteractionMerchantCatalogEntryRow `json:"merchant_catalog_entries"`
+	QuestFlagRewardItems          []InteractionQuestFlagItemRow        `json:"quest_flag_reward_items"`
+	QuestFlagConsumeItems         []InteractionQuestFlagItemRow        `json:"quest_flag_consume_items"`
+	StaticActors                  []StaticActorContentStateRow         `json:"static_actors"`
+	RewardDrops                   []StaticActorRewardDropRow           `json:"reward_drops"`
+	CombatProfiles                []StaticActorCombatProfileRow        `json:"combat_profiles"`
+	CombatProfileDeathRewardDrops []StaticActorCombatProfileDropRow    `json:"combat_profile_death_reward_drops"`
 }
 
 // InteractionDefinitionRow mirrors the interaction_definitions table columns
@@ -103,9 +106,36 @@ type StaticActorContentStateRow struct {
 }
 
 // StaticActorRewardDropRow mirrors ordered static_actor_reward_drops rows frozen
-// by migration 0008 / 0012.
+// by migration 0008 / 0012 / 0013.
 type StaticActorRewardDropRow struct {
 	EntityID uint64 `json:"entity_id"`
+	Position uint8  `json:"position"`
+	ItemVnum uint32 `json:"item_vnum"`
+}
+
+// StaticActorCombatProfileRow mirrors portable combat-profile parent rows frozen
+// by migration 0013_static_actor_combat_profile_state, excluding timestamps that
+// are database-owned at insert/update time.
+type StaticActorCombatProfileRow struct {
+	Profile               string `json:"profile"`
+	MaxHP                 uint8  `json:"max_hp"`
+	DamagePerNormalAttack uint8  `json:"damage_per_normal_attack"`
+	AttackValue           uint16 `json:"attack_value"`
+	DefenseValue          uint16 `json:"defense_value"`
+	Level                 uint16 `json:"level"`
+	Rank                  uint8  `json:"rank"`
+	RespawnDelayMs        int64  `json:"respawn_delay_ms"`
+	AggroRadius           int32  `json:"aggro_radius"`
+	LeashRadius           int32  `json:"leash_radius"`
+	RetaliationPointDelta int32  `json:"retaliation_point_delta"`
+	DeathRewardExperience uint64 `json:"death_reward_experience"`
+	DeathRewardGold       uint64 `json:"death_reward_gold"`
+}
+
+// StaticActorCombatProfileDropRow mirrors ordered portable combat-profile
+// death-reward drop child rows frozen by migration 0013.
+type StaticActorCombatProfileDropRow struct {
+	Profile  string `json:"profile"`
 	Position uint8  `json:"position"`
 	ItemVnum uint32 `json:"item_vnum"`
 }
@@ -114,8 +144,9 @@ type StaticActorRewardDropRow struct {
 // snapshots and returns rows ordered exactly as a future backfill/import tool
 // should process them: interaction definitions by kind/ref, merchant catalog
 // entries by definition/slot, quest-flag item tables by definition/position,
-// static actors by name/entity id, and reward drops by actor/position. All
-// validation fails closed against the 0012 migration constraints so malformed
+// static actors by name/entity id, reward drops by actor/position, and portable
+// combat profiles / death-reward drops by profile name / position. All
+// validation fails closed against the 0013 migration constraints so malformed
 // bootstrap JSON cannot be silently coerced into a future database import.
 func ExportStaticActorContentState(staticSnapshot Snapshot, interactionSnapshot interactionstore.Snapshot) (StaticActorContentStateExport, error) {
 	normalizedInteractions, err := normalizedInteractionDefinitionsForExport(interactionSnapshot)
@@ -134,14 +165,16 @@ func ExportStaticActorContentState(staticSnapshot Snapshot, interactionSnapshot 
 	}
 
 	export := StaticActorContentStateExport{
-		MigrationVersion:       StaticActorContentStateMigrationVersion,
-		MigrationName:          StaticActorContentStateMigrationName,
-		InteractionDefinitions: []InteractionDefinitionRow{},
-		MerchantCatalogEntries: []InteractionMerchantCatalogEntryRow{},
-		QuestFlagRewardItems:   []InteractionQuestFlagItemRow{},
-		QuestFlagConsumeItems:  []InteractionQuestFlagItemRow{},
-		StaticActors:           []StaticActorContentStateRow{},
-		RewardDrops:            []StaticActorRewardDropRow{},
+		MigrationVersion:              StaticActorContentStateMigrationVersion,
+		MigrationName:                 StaticActorContentStateMigrationName,
+		InteractionDefinitions:        []InteractionDefinitionRow{},
+		MerchantCatalogEntries:        []InteractionMerchantCatalogEntryRow{},
+		QuestFlagRewardItems:          []InteractionQuestFlagItemRow{},
+		QuestFlagConsumeItems:         []InteractionQuestFlagItemRow{},
+		StaticActors:                  []StaticActorContentStateRow{},
+		RewardDrops:                   []StaticActorRewardDropRow{},
+		CombatProfiles:                []StaticActorCombatProfileRow{},
+		CombatProfileDeathRewardDrops: []StaticActorCombatProfileDropRow{},
 	}
 
 	for _, definition := range normalizedInteractions.Definitions {
@@ -188,6 +221,20 @@ func ExportStaticActorContentState(staticSnapshot Snapshot, interactionSnapshot 
 		export.StaticActors = append(export.StaticActors, staticActorContentStateRowForExport(actor))
 		for i, vnum := range actor.RewardDropVnums {
 			export.RewardDrops = append(export.RewardDrops, StaticActorRewardDropRow{EntityID: actor.EntityID, Position: uint8(i), ItemVnum: vnum})
+		}
+	}
+
+	for _, profile := range normalizedStaticActors.CombatProfiles {
+		if len(profile.DeathReward.DropVnums) > 255 {
+			return StaticActorContentStateExport{}, fmt.Errorf("%w: combat profile %q has %d death-reward drops; migration supports 255", ErrInvalidSnapshot, profile.Profile, len(profile.DeathReward.DropVnums))
+		}
+		export.CombatProfiles = append(export.CombatProfiles, staticActorCombatProfileRowForExport(profile))
+		for i, vnum := range profile.DeathReward.DropVnums {
+			export.CombatProfileDeathRewardDrops = append(export.CombatProfileDeathRewardDrops, StaticActorCombatProfileDropRow{
+				Profile:  profile.Profile,
+				Position: uint8(i),
+				ItemVnum: vnum,
+			})
 		}
 	}
 
@@ -339,6 +386,24 @@ func staticActorContentStateRowForExport(actor StaticActor) StaticActorContentSt
 		row.SpawnHomeY = int32ExportPtr(actor.SpawnHome.Y)
 	}
 	return row
+}
+
+func staticActorCombatProfileRowForExport(profile worldruntime.StaticActorCombatProfileSnapshot) StaticActorCombatProfileRow {
+	return StaticActorCombatProfileRow{
+		Profile:               profile.Profile,
+		MaxHP:                 profile.MaxHP,
+		DamagePerNormalAttack: profile.DamagePerNormalAttack,
+		AttackValue:           profile.AttackValue,
+		DefenseValue:          profile.DefenseValue,
+		Level:                 profile.Level,
+		Rank:                  profile.Rank,
+		RespawnDelayMs:        profile.RespawnDelayMs,
+		AggroRadius:           profile.AggroRadius,
+		LeashRadius:           profile.LeashRadius,
+		RetaliationPointDelta: profile.RetaliationPointDelta,
+		DeathRewardExperience: profile.DeathReward.Experience,
+		DeathRewardGold:       profile.DeathReward.Gold,
+	}
 }
 
 func interactionDefinitionExportKey(kind string, ref string) string {

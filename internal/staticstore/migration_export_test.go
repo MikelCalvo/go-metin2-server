@@ -130,7 +130,7 @@ func TestExportStaticActorContentStateProjectsPvEQuestFlagAndOpenSafebox(t *test
 	if err != nil {
 		t.Fatalf("export PvE static actor content state: %v", err)
 	}
-	if export.MigrationVersion != 12 || export.MigrationName != "static_actor_pve_interaction_state" {
+	if export.MigrationVersion != StaticActorContentStateMigrationVersion || export.MigrationName != StaticActorContentStateMigrationName {
 		t.Fatalf("unexpected migration boundary: %#v", export)
 	}
 	if len(export.InteractionDefinitions) != 2 || export.InteractionDefinitions[0].Kind != interactionstore.KindOpenSafebox || export.InteractionDefinitions[1].Kind != interactionstore.KindQuestFlag {
@@ -190,7 +190,7 @@ func TestExportStaticActorContentStateFromStoresTreatsMissingSnapshotsAsEmpty(t 
 	if export.MigrationVersion != StaticActorContentStateMigrationVersion || export.MigrationName != StaticActorContentStateMigrationName {
 		t.Fatalf("unexpected migration boundary: %#v", export)
 	}
-	if len(export.InteractionDefinitions) != 0 || len(export.MerchantCatalogEntries) != 0 || len(export.QuestFlagRewardItems) != 0 || len(export.QuestFlagConsumeItems) != 0 || len(export.StaticActors) != 0 || len(export.RewardDrops) != 0 {
+	if len(export.InteractionDefinitions) != 0 || len(export.MerchantCatalogEntries) != 0 || len(export.QuestFlagRewardItems) != 0 || len(export.QuestFlagConsumeItems) != 0 || len(export.StaticActors) != 0 || len(export.RewardDrops) != 0 || len(export.CombatProfiles) != 0 || len(export.CombatProfileDeathRewardDrops) != 0 {
 		t.Fatalf("expected empty export for missing snapshots, got %#v", export)
 	}
 }
