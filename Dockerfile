@@ -27,6 +27,16 @@ RUN GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath=false -buildvcs=true \
     -o /out/metin2-migrate ./cmd/metin2-migrate
 
 FROM gcr.io/distroless/static-debian12:nonroot AS runtime
+ARG VERSION=dev
+ARG COMMIT=none
+ARG BUILD_DATE=unknown
+ARG GITHUB_RUN_ID=
+ARG GITHUB_RUN_ATTEMPT=
+LABEL org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${COMMIT}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      com.github.actions.run_id="${GITHUB_RUN_ID}" \
+      com.github.actions.run_attempt="${GITHUB_RUN_ATTEMPT}"
 WORKDIR /app
 COPY --from=build /out/authd /app/authd
 COPY --from=build /out/gamed /app/gamed
@@ -37,6 +47,16 @@ USER nonroot:nonroot
 ENTRYPOINT ["/app/gamed"]
 
 FROM gcr.io/distroless/static-debian12:debug-nonroot AS runtime-debug
+ARG VERSION=dev
+ARG COMMIT=none
+ARG BUILD_DATE=unknown
+ARG GITHUB_RUN_ID=
+ARG GITHUB_RUN_ATTEMPT=
+LABEL org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${COMMIT}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      com.github.actions.run_id="${GITHUB_RUN_ID}" \
+      com.github.actions.run_attempt="${GITHUB_RUN_ATTEMPT}"
 WORKDIR /app
 COPY --from=build /out/authd /app/authd
 COPY --from=build /out/gamed /app/gamed

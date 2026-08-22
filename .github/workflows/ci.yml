@@ -124,11 +124,38 @@ jobs:
             --build-arg VERSION="${VERSION}" \
             --build-arg COMMIT="${COMMIT}" \
             --build-arg BUILD_DATE="${BUILD_DATE}" \
+            --build-arg GITHUB_RUN_ID="${GITHUB_RUN_ID}" \
+            --build-arg GITHUB_RUN_ATTEMPT="${GITHUB_RUN_ATTEMPT}" \
             --target runtime \
             -t go-metin2-server:ci .
           got_commit="$(docker run --rm --entrypoint /app/metin2-migrate go-metin2-server:ci version | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"])')"
           if [ "${got_commit}" != "${COMMIT}" ]; then
             echo "runtime image metin2-migrate commit ${got_commit} != resolved ${COMMIT}" >&2
+            exit 1
+          fi
+          label_revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' go-metin2-server:ci)"
+          label_version="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' go-metin2-server:ci)"
+          label_created="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.created" }}' go-metin2-server:ci)"
+          label_run_id="$(docker image inspect --format '{{ index .Config.Labels "com.github.actions.run_id" }}' go-metin2-server:ci)"
+          label_run_attempt="$(docker image inspect --format '{{ index .Config.Labels "com.github.actions.run_attempt" }}' go-metin2-server:ci)"
+          if [ "${label_revision}" != "${COMMIT}" ]; then
+            echo "runtime image revision label ${label_revision} != resolved ${COMMIT}" >&2
+            exit 1
+          fi
+          if [ "${label_version}" != "${VERSION}" ]; then
+            echo "runtime image version label ${label_version} != resolved ${VERSION}" >&2
+            exit 1
+          fi
+          if [ "${label_created}" != "${BUILD_DATE}" ]; then
+            echo "runtime image created label ${label_created} != resolved ${BUILD_DATE}" >&2
+            exit 1
+          fi
+          if [ "${label_run_id}" != "${GITHUB_RUN_ID}" ]; then
+            echo "runtime image run_id label ${label_run_id} != ${GITHUB_RUN_ID}" >&2
+            exit 1
+          fi
+          if [ "${label_run_attempt}" != "${GITHUB_RUN_ATTEMPT}" ]; then
+            echo "runtime image run_attempt label ${label_run_attempt} != ${GITHUB_RUN_ATTEMPT}" >&2
             exit 1
           fi
 
@@ -143,10 +170,37 @@ jobs:
             --build-arg VERSION="${VERSION}" \
             --build-arg COMMIT="${COMMIT}" \
             --build-arg BUILD_DATE="${BUILD_DATE}" \
+            --build-arg GITHUB_RUN_ID="${GITHUB_RUN_ID}" \
+            --build-arg GITHUB_RUN_ATTEMPT="${GITHUB_RUN_ATTEMPT}" \
             --target runtime-debug \
             -t go-metin2-server:debug-ci .
           got_commit="$(docker run --rm --entrypoint /app/metin2-migrate go-metin2-server:debug-ci version | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"])')"
           if [ "${got_commit}" != "${COMMIT}" ]; then
             echo "debug image metin2-migrate commit ${got_commit} != resolved ${COMMIT}" >&2
+            exit 1
+          fi
+          label_revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' go-metin2-server:debug-ci)"
+          label_version="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' go-metin2-server:debug-ci)"
+          label_created="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.created" }}' go-metin2-server:debug-ci)"
+          label_run_id="$(docker image inspect --format '{{ index .Config.Labels "com.github.actions.run_id" }}' go-metin2-server:debug-ci)"
+          label_run_attempt="$(docker image inspect --format '{{ index .Config.Labels "com.github.actions.run_attempt" }}' go-metin2-server:debug-ci)"
+          if [ "${label_revision}" != "${COMMIT}" ]; then
+            echo "debug image revision label ${label_revision} != resolved ${COMMIT}" >&2
+            exit 1
+          fi
+          if [ "${label_version}" != "${VERSION}" ]; then
+            echo "debug image version label ${label_version} != resolved ${VERSION}" >&2
+            exit 1
+          fi
+          if [ "${label_created}" != "${BUILD_DATE}" ]; then
+            echo "debug image created label ${label_created} != resolved ${BUILD_DATE}" >&2
+            exit 1
+          fi
+          if [ "${label_run_id}" != "${GITHUB_RUN_ID}" ]; then
+            echo "debug image run_id label ${label_run_id} != ${GITHUB_RUN_ID}" >&2
+            exit 1
+          fi
+          if [ "${label_run_attempt}" != "${GITHUB_RUN_ATTEMPT}" ]; then
+            echo "debug image run_attempt label ${label_run_attempt} != ${GITHUB_RUN_ATTEMPT}" >&2
             exit 1
           fi

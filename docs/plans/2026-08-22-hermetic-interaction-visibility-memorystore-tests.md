@@ -43,4 +43,4 @@ git diff --check
 1. Optionally convert shared `newInteractionDefinitionStore` / `newItemTemplateStore` helpers to MemoryStore once neighboring item gameplay suites are ready for the same coupling reduction.
 2. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
 3. Keep ground-item restart durability deferred until operators decide quarantined `0010` exports drive recovery.
-4. Optional Docker `LABEL` workflow-run metadata remains deferred.
+4. ~~Optional Docker `LABEL` workflow-run metadata remains deferred.~~ Done: see [Docker LABEL workflow-run metadata](2026-08-22-docker-label-workflow-run-metadata.md).

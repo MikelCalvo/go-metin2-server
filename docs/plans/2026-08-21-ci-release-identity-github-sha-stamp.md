@@ -50,6 +50,6 @@ CI workflow itself is the primary gate; local dry-run proves Makefile preference
 
 ## Follow-up options
 
-1. Optional Docker `LABEL` metadata for `GITHUB_RUN_ID` / `GITHUB_RUN_ATTEMPT` without expanding `buildinfo` JSON.
+1. ~~Optional Docker `LABEL` metadata for `GITHUB_RUN_ID` / `GITHUB_RUN_ATTEMPT` without expanding `buildinfo` JSON.~~ Done: see [Docker LABEL workflow-run metadata](2026-08-22-docker-label-workflow-run-metadata.md).
 2. Keep import/quarantine restore-from-export deferred until a driver-backed harness exists.
 3. Keep ground-item restart durability deferred until operators decide quarantined `0010` exports drive recovery.

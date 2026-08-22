@@ -38,4 +38,4 @@ File-path restore empties `filepath.Dir(snapshotPath)`. Shared parents are there
 
 1. Keep ground-item restart durability deferred until operators decide quarantined `0010` exports should drive recovery.
 2. Keep SQL import/backfill deferred until a driver-backed harness and backup policy exist.
-3. Optional Docker `LABEL` workflow-run metadata remains deferred.
+3. ~~Optional Docker `LABEL` workflow-run metadata remains deferred.~~ Done: see [Docker LABEL workflow-run metadata](2026-08-22-docker-label-workflow-run-metadata.md).

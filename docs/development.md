@@ -64,7 +64,7 @@ It currently validates:
 - daemon builds for `authd`, `gamed`, and `metin2-migrate`
 - Docker runtime and debug image builds
 
-Binary and image builds stamp `internal/buildinfo` when invoked through `make build` / `make docker-build`. The public CI workflow prefers `GITHUB_SHA` (first 12 chars) and `GITHUB_REF_NAME` for those stamps, reuses the same resolved identity for Go and both Docker targets, and fail-closes when `GITHUB_SHA` is set but the stamped `metin2-migrate version` commit is blank/`none` or mismatches the resolved value.
+Binary and image builds stamp `internal/buildinfo` when invoked through `make build` / `make docker-build`. The public CI workflow prefers `GITHUB_SHA` (first 12 chars) and `GITHUB_REF_NAME` for those stamps, reuses the same resolved identity for Go and both Docker targets, and fail-closes when `GITHUB_SHA` is set but the stamped `metin2-migrate version` commit is blank/`none` or mismatches the resolved value. Docker images additionally stamp OCI / Actions workflow-run labels (`org.opencontainers.image.{version,revision,created}`, `com.github.actions.run_{id,attempt}`) from the same identity plus optional `GITHUB_RUN_ID` / `GITHUB_RUN_ATTEMPT`; CI asserts those labels after each image build. Process `/local/build-info` and `metin2-migrate version` stay metadata-only (`version` / `commit` / `build_date`) and do not carry workflow-run IDs.
 
 The intent is simple: every small slice should be pushable and publicly re-checkable.
 

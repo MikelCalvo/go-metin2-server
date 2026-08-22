@@ -7,8 +7,12 @@ IMAGE ?= go-metin2-server
 VERSION != if [ -n "$${GITHUB_REF_NAME:-}" ]; then printf '%s' "$${GITHUB_REF_NAME}"; else git describe --tags --always --dirty 2>/dev/null || echo dev; fi
 COMMIT != if [ -n "$${GITHUB_SHA:-}" ]; then printf '%s' "$${GITHUB_SHA}" | cut -c1-12; else git rev-parse --short=12 HEAD 2>/dev/null || echo none; fi
 BUILD_DATE != date -u +%Y-%m-%dT%H:%M:%SZ
+# Optional workflow-run labels for Docker images only (empty for local builds).
+GITHUB_RUN_ID != printf '%s' "$${GITHUB_RUN_ID:-}"
+GITHUB_RUN_ATTEMPT != printf '%s' "$${GITHUB_RUN_ATTEMPT:-}"
 BUILDINFO_PKG = github.com/MikelCalvo/go-metin2-server/internal/buildinfo
 LDFLAGS = -X $(BUILDINFO_PKG).Version=$(VERSION) -X $(BUILDINFO_PKG).Commit=$(COMMIT) -X $(BUILDINFO_PKG).BuildDate=$(BUILD_DATE)
+DOCKER_IDENTITY_ARGS = --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILD_DATE=$(BUILD_DATE) --build-arg GITHUB_RUN_ID=$(GITHUB_RUN_ID) --build-arg GITHUB_RUN_ATTEMPT=$(GITHUB_RUN_ATTEMPT)
 
 .PHONY: fmt test build build-authd build-gamed build-metin2-migrate docker-build docker-build-debug
 
@@ -33,7 +37,7 @@ build-metin2-migrate:
 	$(GO) build -ldflags "$(LDFLAGS)" -o bin/metin2-migrate ./cmd/metin2-migrate
 
 docker-build:
-	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILD_DATE=$(BUILD_DATE) --target runtime -t $(IMAGE):latest .
+	docker build $(DOCKER_IDENTITY_ARGS) --target runtime -t $(IMAGE):latest .
 
 docker-build-debug:
-	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILD_DATE=$(BUILD_DATE) --target runtime-debug -t $(IMAGE):debug .
+	docker build $(DOCKER_IDENTITY_ARGS) --target runtime-debug -t $(IMAGE):debug .
