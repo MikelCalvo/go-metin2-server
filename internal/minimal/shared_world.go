@@ -2013,12 +2013,13 @@ func (r *sharedWorldRegistry) clearStaticActorCombatEngagementsBySubjectLocked(s
 			continue
 		}
 		delete(r.staticActorCombatEngagedBy, entityID)
-		actor, ok := r.entities.StaticActor(entityID)
-		if ok {
-			r.seedProximityAggroSuppressForInsideCandidatesLocked(actor)
-			continue
-		}
+		// Always mark the releasing subject. seedProximity skips bootstrap HP-floor
+		// candidates, but death-floor /restart_here recovery needs that same owner
+		// suppressed while still inside aggro radius after live HP is restored.
 		r.markProximityAggroSuppressLocked(entityID, subjectID)
+		if actor, ok := r.entities.StaticActor(entityID); ok {
+			r.seedProximityAggroSuppressForInsideCandidatesLocked(actor)
+		}
 	}
 }
 

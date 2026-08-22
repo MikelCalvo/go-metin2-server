@@ -786,3 +786,71 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOw
 		t.Fatalf("expected leave/re-enter after death-floor reconnect /restart_here suppress to reacquire engagement for entity %d", group.EntityID)
 	}
 }
+
+func TestSharedWorldRegistrySubjectReleaseSeedsProximitySuppressWhenOwnerAlreadyAtHPFloor(t *testing.T) {
+	// Death-floor subject release must seed leave/re-enter suppress for the releasing
+	// owner even when that owner's shared-world snapshot is already at the bootstrap
+	// 0-HP floor. seedProximity alone skips floor candidates, so subject clear must
+	// still mark the releasing subject explicitly before /restart_here recovers HP.
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+
+	owner := peerVisibilityCharacter("AggroFloorSeedOwner", 0x0103019d, 0x0204019d, 1850, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	ownerPending := newPendingServerFrames()
+	ownerID, _ := registry.Join(owner, ownerPending, nil)
+	if ownerID == 0 {
+		t.Fatal("expected owner to join shared world before floor-seed suppress proof")
+	}
+	ownerPending.flush()
+
+	actor, ok := registry.registerStaticActor(0, "AggroFloorSeedMob", 42, 1700, 2800, 20350, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "practice.aggro_floor_seed_suppress", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected spawn-backed practice mob registration to succeed before floor-seed suppress proof")
+	}
+	ownerPending.flush()
+
+	registry.mu.Lock()
+	registry.setStaticActorCombatEngagementLocked(actor.EntityID, ownerID)
+	registry.mu.Unlock()
+	if !registry.StaticActorCombatEngagedBySubject(actor.EntityID, ownerID) {
+		t.Fatalf("expected engagement to be recorded before floor-seed suppress proof for entity %d", actor.EntityID)
+	}
+
+	floored := owner
+	floored.Points[bootstrapPlayerPointValueIndex] = 0
+	registry.UpdateCharacter(ownerID, floored)
+
+	registry.ClearStaticActorCombatEngagementsBySubject(ownerID)
+	if registry.StaticActorCombatEngagedBySubject(actor.EntityID, ownerID) {
+		t.Fatalf("expected subject release to clear engagement for entity %d", actor.EntityID)
+	}
+
+	recovered := floored
+	recovered.Points[bootstrapPlayerPointValueIndex] = 800
+	registry.UpdateCharacter(ownerID, recovered)
+
+	if acquired := registry.AcquireProximitySpawnGroupAggro(); len(acquired) != 0 {
+		t.Fatalf("expected still-inside recovered owner to stay proximity-suppressed after floor-HP subject release, got acquired=%v", acquired)
+	}
+	if registry.StaticActorCombatEngagedBySubject(actor.EntityID, ownerID) {
+		t.Fatalf("expected suppressed recovered owner not to reacquire engagement for entity %d", actor.EntityID)
+	}
+
+	outside := recovered
+	outside.X = 1950
+	registry.UpdateCharacter(ownerID, outside)
+	_ = registry.AcquireProximitySpawnGroupAggro()
+
+	inside := outside
+	inside.X = 1850
+	registry.UpdateCharacter(ownerID, inside)
+	acquired := registry.AcquireProximitySpawnGroupAggro()
+	if len(acquired) != 1 || acquired[0] != actor.EntityID {
+		t.Fatalf("expected leave/re-enter after floor-HP subject-release suppress to reacquire entity %d, got %v", actor.EntityID, acquired)
+	}
+	if !registry.StaticActorCombatEngagedBySubject(actor.EntityID, ownerID) {
+		t.Fatalf("expected leave/re-enter to restore engagement for entity %d", actor.EntityID)
+	}
+}
