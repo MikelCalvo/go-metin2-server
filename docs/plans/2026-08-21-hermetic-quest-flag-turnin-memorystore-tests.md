@@ -26,7 +26,7 @@ Wire the already-landed hermetic `interactionstore.MemoryStore`, `itemstore.Memo
 
 ## What this is not yet
 
-- hermetic MemoryStore migration for `interaction_visibility_test.go` quest-flag previews
+- ~~hermetic MemoryStore migration for `interaction_visibility_test.go` quest-flag previews~~ Done: see [hermetic interaction-visibility quest MemoryStore tests](2026-08-22-hermetic-interaction-visibility-quest-memorystore-tests.md).
 - broader filesystem decoupling of account / login-ticket stores in the same helpers
 - production `NewGameRuntime` accepting injected content MemoryStores
 - branching quest scripts / new NPC service kinds
@@ -41,6 +41,6 @@ git diff --check
 
 ## Follow-up options
 
-1. Optionally widen the same MemoryStore pattern to quest-flag interaction-visibility preview tests that still allocate disposable content FileStores.
+1. ~~Optionally widen the same MemoryStore pattern to quest-flag interaction-visibility preview tests that still allocate disposable content FileStores.~~ Done: see [hermetic interaction-visibility quest MemoryStore tests](2026-08-22-hermetic-interaction-visibility-quest-memorystore-tests.md).
 2. Keep branching quest scripts deferred.
 3. Keep new NPC service kinds deferred until accepted durable safebox/storage mutations exist beyond the owned bootstrap presentation.

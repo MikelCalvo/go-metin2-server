@@ -2,7 +2,6 @@ package minimal
 
 import (
 	"math"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -14,6 +13,7 @@ import (
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
+	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
@@ -150,14 +150,15 @@ func TestGameRuntimeInteractionVisibilityReturnsServicePreviewsForVisibleWarpAnd
 
 func TestGameRuntimeInteractionVisibilityReturnsQuestGatedWarpMismatchPreviewWithoutMutatingQuestState(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
 	before := queststate.Snapshot{Flags: []queststate.Flag{{Character: "PeerOne", QuestRef: "quest:first_steps", Name: "met_guide", Value: 1}}}
-	if err := queststate.NewFileStore(questStatePath).Save(before); err != nil {
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(before); err != nil {
 		t.Fatalf("seed quest state: %v", err)
 	}
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
 		Kind:      interactionstore.KindWarp,
 		Ref:       "npc:gated_teleporter",
 		Text:      "Step through the gate.",
@@ -167,9 +168,20 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestGatedWarpMismatchPreviewWit
 		QuestRef:  "quest:first_steps",
 		QuestFlag: "met_guide",
 		QuestFrom: 0,
-	}})
+	}}}); err != nil {
+		t.Fatalf("seed interaction definitions: %v", err)
+	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		nil,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -187,7 +199,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestGatedWarpMismatchPreviewWit
 	if entry.Name != "Teleporter" || entry.Preview != "Quest requirements are not met." || entry.ResolutionFailure != "" {
 		t.Fatalf("unexpected gated warp mismatch interaction visibility entry: %+v", entry)
 	}
-	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	loaded, err := questStore.Load()
 	if err != nil {
 		t.Fatalf("load quest state after gated warp visibility preview: %v", err)
 	}
@@ -198,11 +210,11 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestGatedWarpMismatchPreviewWit
 
 func TestGameRuntimeInteractionVisibilityReturnsQuestGatedShopMismatchPreviewWithoutMutatingQuestState(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
 	before := queststate.Snapshot{Flags: []queststate.Flag{{Character: "PeerOne", QuestRef: "quest:first_steps", Name: "met_guide", Value: 1}}}
-	if err := queststate.NewFileStore(questStatePath).Save(before); err != nil {
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(before); err != nil {
 		t.Fatalf("seed quest state: %v", err)
 	}
 	catalog := defaultMerchantCatalogDefinition()
@@ -211,10 +223,25 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestGatedShopMismatchPreviewWit
 	catalog.QuestRef = "quest:first_steps"
 	catalog.QuestFlag = "met_guide"
 	catalog.QuestFrom = 0
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{catalog})
-	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{catalog}}); err != nil {
+		t.Fatalf("seed interaction definitions: %v", err)
+	}
+	itemStore := itemcatalog.NewMemoryStore()
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: defaultMerchantItemTemplates()}); err != nil {
+		t.Fatalf("seed item templates: %v", err)
+	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore, itemStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		itemStore,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -232,7 +259,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestGatedShopMismatchPreviewWit
 	if entry.Name != "Merchant" || entry.Preview != "Quest requirements are not met." || entry.ResolutionFailure != "" {
 		t.Fatalf("unexpected gated shop mismatch interaction visibility entry: %+v", entry)
 	}
-	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	loaded, err := questStore.Load()
 	if err != nil {
 		t.Fatalf("load quest state after gated shop visibility preview: %v", err)
 	}
@@ -243,14 +270,15 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestGatedShopMismatchPreviewWit
 
 func TestGameRuntimeInteractionVisibilityReturnsQuestGatedOpenSafeboxMismatchPreviewWithoutMutatingQuestState(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
 	before := queststate.Snapshot{Flags: []queststate.Flag{{Character: "PeerOne", QuestRef: "quest:first_steps", Name: "met_guide", Value: 1}}}
-	if err := queststate.NewFileStore(questStatePath).Save(before); err != nil {
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(before); err != nil {
 		t.Fatalf("seed quest state: %v", err)
 	}
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
 		Kind:      interactionstore.KindOpenSafebox,
 		Ref:       "npc:gated_warehouse",
 		Text:      "Store your goods safely.",
@@ -258,9 +286,20 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestGatedOpenSafeboxMismatchPre
 		QuestRef:  "quest:first_steps",
 		QuestFlag: "met_guide",
 		QuestFrom: 0,
-	}})
+	}}}); err != nil {
+		t.Fatalf("seed interaction definitions: %v", err)
+	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		nil,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -278,7 +317,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestGatedOpenSafeboxMismatchPre
 	if entry.Name != "Warehouse" || entry.Preview != "Quest requirements are not met." || entry.ResolutionFailure != "" {
 		t.Fatalf("unexpected gated open_safebox mismatch interaction visibility entry: %+v", entry)
 	}
-	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	loaded, err := questStore.Load()
 	if err != nil {
 		t.Fatalf("load quest state after gated open_safebox visibility preview: %v", err)
 	}
@@ -289,23 +328,35 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestGatedOpenSafeboxMismatchPre
 
 func TestGameRuntimeInteractionVisibilityReturnsQuestGatedTalkMismatchPreviewWithoutMutatingQuestState(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
 	before := queststate.Snapshot{Flags: []queststate.Flag{{Character: "PeerOne", QuestRef: "quest:first_steps", Name: "met_guide", Value: 1}}}
-	if err := queststate.NewFileStore(questStatePath).Save(before); err != nil {
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(before); err != nil {
 		t.Fatalf("seed quest state: %v", err)
 	}
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
 		Kind:      interactionstore.KindTalk,
 		Ref:       "npc:gated_guide",
 		Text:      "Welcome to the gated square.",
 		QuestRef:  "quest:first_steps",
 		QuestFlag: "met_guide",
 		QuestFrom: 0,
-	}})
+	}}}); err != nil {
+		t.Fatalf("seed interaction definitions: %v", err)
+	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		nil,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -323,7 +374,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestGatedTalkMismatchPreviewWit
 	if entry.Name != "VillageGuide" || entry.Preview != "Quest requirements are not met." || entry.ResolutionFailure != "" {
 		t.Fatalf("unexpected gated talk mismatch interaction visibility entry: %+v", entry)
 	}
-	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	loaded, err := questStore.Load()
 	if err != nil {
 		t.Fatalf("load quest state after gated talk visibility preview: %v", err)
 	}
@@ -334,23 +385,35 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestGatedTalkMismatchPreviewWit
 
 func TestGameRuntimeInteractionVisibilityReturnsQuestGatedInfoMismatchPreviewWithoutMutatingQuestState(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
 	before := queststate.Snapshot{Flags: []queststate.Flag{{Character: "PeerOne", QuestRef: "quest:first_steps", Name: "met_guide", Value: 1}}}
-	if err := queststate.NewFileStore(questStatePath).Save(before); err != nil {
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(before); err != nil {
 		t.Fatalf("seed quest state: %v", err)
 	}
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
 		Kind:      interactionstore.KindInfo,
 		Ref:       "lore:gated_signpost",
 		Text:      "The gated signpost describes the square.",
 		QuestRef:  "quest:first_steps",
 		QuestFlag: "met_guide",
 		QuestFrom: 0,
-	}})
+	}}}); err != nil {
+		t.Fatalf("seed interaction definitions: %v", err)
+	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		nil,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -368,7 +431,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestGatedInfoMismatchPreviewWit
 	if entry.Name != "VillageSignpost" || entry.Preview != "Quest requirements are not met." || entry.ResolutionFailure != "" {
 		t.Fatalf("unexpected gated info mismatch interaction visibility entry: %+v", entry)
 	}
-	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	loaded, err := questStore.Load()
 	if err != nil {
 		t.Fatalf("load quest state after gated info visibility preview: %v", err)
 	}
@@ -381,16 +444,29 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagPreview(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
 		Kind:      interactionstore.KindQuestFlag,
 		Ref:       "quest:first_steps",
 		Text:      "Quest updated: first_steps.met_guide = 1.",
 		QuestRef:  "quest:first_steps",
 		QuestFlag: "met_guide",
 		QuestTo:   1,
-	}})
+	}}}); err != nil {
+		t.Fatalf("seed interaction definitions: %v", err)
+	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
+	questStore := queststate.NewMemoryStore()
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		nil,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -414,7 +490,8 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardGoldPreview(t *te
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030121, 0x02040121, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one-reward-gold", 0x15151515, peer)
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
 		Kind:             interactionstore.KindQuestFlag,
 		Ref:              "quest:first_steps_kill_turnin",
 		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -428,16 +505,18 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardGoldPreview(t *te
 			{ItemVnum: 27001, Count: 1},
 			{ItemVnum: 11200, Count: 1},
 		},
-	}})
-	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	}}}); err != nil {
+		t.Fatalf("seed interaction definitions: %v", err)
+	}
+	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopBuyPrice: 50},
 	}}); err != nil {
 		t.Fatalf("seed quest-flag reward-item preview templates: %v", err)
 	}
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
-	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(queststate.Snapshot{Flags: []queststate.Flag{{
 		Character: "PeerOne",
 		QuestRef:  "quest:first_steps",
 		Name:      "killed_qa_mob",
@@ -446,7 +525,16 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardGoldPreview(t *te
 		t.Fatalf("seed quest-state for reward-gold preview: %v", err)
 	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore, itemStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		itemStore,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -473,7 +561,8 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagConsumeItemPreview(t *t
 	peer.Gold = 40
 	peer.Points[bootstrapExperiencePointType] = 40
 	issuePeerTicket(t, store, "peer-one-consume-items", 0x16161616, peer)
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
 		Kind:             interactionstore.KindQuestFlag,
 		Ref:              "quest:first_steps_kill_turnin",
 		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -491,16 +580,18 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagConsumeItemPreview(t *t
 		},
 		ConsumeGold:       25,
 		ConsumeExperience: 10,
-	}})
-	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	}}}); err != nil {
+		t.Fatalf("seed interaction definitions: %v", err)
+	}
+	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopBuyPrice: 50},
 	}}); err != nil {
 		t.Fatalf("seed quest-flag consume-item preview templates: %v", err)
 	}
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
-	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(queststate.Snapshot{Flags: []queststate.Flag{{
 		Character: "PeerOne",
 		QuestRef:  "quest:first_steps",
 		Name:      "killed_qa_mob",
@@ -509,7 +600,16 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagConsumeItemPreview(t *t
 		t.Fatalf("seed quest-state for consume-item preview: %v", err)
 	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore, itemStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		itemStore,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -536,7 +636,8 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagConsumeGoldPreview(t *t
 	peer.Gold = 40
 	peer.Points[bootstrapExperiencePointType] = 40
 	issuePeerTicket(t, store, "peer-one-consume-gold", 0x17171717, peer)
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
 		Kind:             interactionstore.KindQuestFlag,
 		Ref:              "quest:first_steps_kill_turnin",
 		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -554,16 +655,18 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagConsumeGoldPreview(t *t
 		},
 		ConsumeGold:       25,
 		ConsumeExperience: 10,
-	}})
-	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	}}}); err != nil {
+		t.Fatalf("seed interaction definitions: %v", err)
+	}
+	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopBuyPrice: 50},
 	}}); err != nil {
 		t.Fatalf("seed quest-flag consume-gold preview templates: %v", err)
 	}
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
-	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(queststate.Snapshot{Flags: []queststate.Flag{{
 		Character: "PeerOne",
 		QuestRef:  "quest:first_steps",
 		Name:      "killed_qa_mob",
@@ -572,7 +675,16 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagConsumeGoldPreview(t *t
 		t.Fatalf("seed quest-state for consume-gold preview: %v", err)
 	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore, itemStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		itemStore,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -599,7 +711,8 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagConsumeExperiencePrevie
 	peer.Gold = 40
 	peer.Points[bootstrapExperiencePointType] = 40
 	issuePeerTicket(t, store, "peer-one-consume-exp", 0x1919191a, peer)
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
 		Kind:             interactionstore.KindQuestFlag,
 		Ref:              "quest:first_steps_kill_turnin",
 		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -617,16 +730,18 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagConsumeExperiencePrevie
 		},
 		ConsumeGold:       25,
 		ConsumeExperience: 10,
-	}})
-	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	}}}); err != nil {
+		t.Fatalf("seed interaction definitions: %v", err)
+	}
+	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopBuyPrice: 50},
 	}}); err != nil {
 		t.Fatalf("seed quest-flag consume-experience preview templates: %v", err)
 	}
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
-	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(queststate.Snapshot{Flags: []queststate.Flag{{
 		Character: "PeerOne",
 		QuestRef:  "quest:first_steps",
 		Name:      "killed_qa_mob",
@@ -635,7 +750,16 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagConsumeExperiencePrevie
 		t.Fatalf("seed quest-state for consume-experience preview: %v", err)
 	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore, itemStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		itemStore,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -661,7 +785,8 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagInsufficientConsumeGold
 	peer.Inventory = []inventory.ItemInstance{{ID: 53, Vnum: 27001, Count: 1, Slot: 0}}
 	peer.Gold = 10
 	issuePeerTicket(t, store, "peer-one-consume-gold-miss", 0x18181818, peer)
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
 		Kind:             interactionstore.KindQuestFlag,
 		Ref:              "quest:first_steps_kill_turnin",
 		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -678,16 +803,18 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagInsufficientConsumeGold
 			{ItemVnum: 27001, Count: 1},
 		},
 		ConsumeGold: 25,
-	}})
-	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	}}}); err != nil {
+		t.Fatalf("seed interaction definitions: %v", err)
+	}
+	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopBuyPrice: 50},
 	}}); err != nil {
 		t.Fatalf("seed quest-flag consume-gold mismatch preview templates: %v", err)
 	}
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
-	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(queststate.Snapshot{Flags: []queststate.Flag{{
 		Character: "PeerOne",
 		QuestRef:  "quest:first_steps",
 		Name:      "killed_qa_mob",
@@ -696,7 +823,16 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagInsufficientConsumeGold
 		t.Fatalf("seed quest-state for consume-gold mismatch preview: %v", err)
 	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore, itemStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		itemStore,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -723,7 +859,8 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagInsufficientConsumeExpe
 	peer.Gold = 40
 	peer.Points[bootstrapExperiencePointType] = 5
 	issuePeerTicket(t, store, "peer-one-consume-exp-miss", 0x1a1a1a1a, peer)
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
 		Kind:             interactionstore.KindQuestFlag,
 		Ref:              "quest:first_steps_kill_turnin",
 		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -741,16 +878,18 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagInsufficientConsumeExpe
 		},
 		ConsumeGold:       25,
 		ConsumeExperience: 10,
-	}})
-	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	}}}); err != nil {
+		t.Fatalf("seed interaction definitions: %v", err)
+	}
+	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopBuyPrice: 50},
 	}}); err != nil {
 		t.Fatalf("seed quest-flag consume-experience mismatch preview templates: %v", err)
 	}
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
-	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(queststate.Snapshot{Flags: []queststate.Flag{{
 		Character: "PeerOne",
 		QuestRef:  "quest:first_steps",
 		Name:      "killed_qa_mob",
@@ -759,7 +898,16 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagInsufficientConsumeExpe
 		t.Fatalf("seed quest-state for consume-experience mismatch preview: %v", err)
 	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore, itemStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		itemStore,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -781,17 +929,18 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagInsufficientConsumeExpe
 
 func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardGoldOverflowPreview(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	peer := peerVisibilityCharacter("PeerOne", 0x0103012a, 0x0204012a, 1100, 2100, 0, 101, 201)
 	peer.Gold = uint64(math.MaxInt32)
 	peer.Points[bootstrapExperiencePointType] = 40
 	peer.Inventory = []inventory.ItemInstance{{ID: 91, Vnum: 27001, Count: 1, Slot: 0}}
 	issuePeerTicket(t, store, "peer-one-reward-gold-overflow", 0x1c1c1c1c, peer)
 	before := queststate.Snapshot{Flags: []queststate.Flag{{Character: "PeerOne", QuestRef: "quest:first_steps", Name: "killed_qa_mob", Value: 1}}}
-	if err := queststate.NewFileStore(questStatePath).Save(before); err != nil {
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(before); err != nil {
 		t.Fatalf("seed quest state: %v", err)
 	}
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
 		Kind:             interactionstore.KindQuestFlag,
 		Ref:              "quest:first_steps_kill_turnin",
 		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -803,8 +952,10 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardGoldOverflowPrevi
 		RewardExperience: 50,
 		RewardItems:      []interactionstore.RewardItemEntry{{ItemVnum: 11200, Count: 1}},
 		ConsumeItems:     []interactionstore.RewardItemEntry{{ItemVnum: 27001, Count: 1}},
-	}})
-	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	}}}); err != nil {
+		t.Fatalf("seed interaction definitions: %v", err)
+	}
+	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopBuyPrice: 50},
@@ -812,7 +963,16 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardGoldOverflowPrevi
 		t.Fatalf("seed reward-gold overflow preview templates: %v", err)
 	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore, itemStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		itemStore,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -830,7 +990,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardGoldOverflowPrevi
 	if entry.Name != "QuestHunter" || entry.Preview != questFlagRewardGoldOverflowInfoMessage || entry.ResolutionFailure != "" {
 		t.Fatalf("unexpected quest-flag reward-gold overflow interaction visibility entry: %+v", entry)
 	}
-	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	loaded, err := questStore.Load()
 	if err != nil {
 		t.Fatalf("load quest state after reward-gold overflow preview: %v", err)
 	}
@@ -841,17 +1001,18 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardGoldOverflowPrevi
 
 func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardExperienceOverflowPreview(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	peer := peerVisibilityCharacter("PeerOne", 0x0103012b, 0x0204012b, 1100, 2100, 0, 101, 201)
 	peer.Gold = 40
 	peer.Points[bootstrapExperiencePointType] = math.MaxInt32
 	peer.Inventory = []inventory.ItemInstance{{ID: 92, Vnum: 27001, Count: 1, Slot: 0}}
 	issuePeerTicket(t, store, "peer-one-reward-exp-overflow", 0x1d1d1d1d, peer)
 	before := queststate.Snapshot{Flags: []queststate.Flag{{Character: "PeerOne", QuestRef: "quest:first_steps", Name: "killed_qa_mob", Value: 1}}}
-	if err := queststate.NewFileStore(questStatePath).Save(before); err != nil {
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(before); err != nil {
 		t.Fatalf("seed quest state: %v", err)
 	}
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
 		Kind:             interactionstore.KindQuestFlag,
 		Ref:              "quest:first_steps_kill_turnin",
 		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -863,8 +1024,10 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardExperienceOverflo
 		RewardExperience: 1,
 		RewardItems:      []interactionstore.RewardItemEntry{{ItemVnum: 11200, Count: 1}},
 		ConsumeItems:     []interactionstore.RewardItemEntry{{ItemVnum: 27001, Count: 1}},
-	}})
-	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	}}}); err != nil {
+		t.Fatalf("seed interaction definitions: %v", err)
+	}
+	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopBuyPrice: 50},
@@ -872,7 +1035,16 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardExperienceOverflo
 		t.Fatalf("seed reward-experience overflow preview templates: %v", err)
 	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore, itemStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		itemStore,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -890,7 +1062,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardExperienceOverflo
 	if entry.Name != "QuestHunter" || entry.Preview != questFlagRewardExperienceOverflowInfoMessage || entry.ResolutionFailure != "" {
 		t.Fatalf("unexpected quest-flag reward-experience overflow interaction visibility entry: %+v", entry)
 	}
-	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	loaded, err := questStore.Load()
 	if err != nil {
 		t.Fatalf("load quest state after reward-experience overflow preview: %v", err)
 	}
@@ -905,7 +1077,8 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagInsufficientConsumeItem
 	peer.Gold = 40
 	peer.Points[bootstrapExperiencePointType] = 40
 	issuePeerTicket(t, store, "peer-one-consume-items-miss", 0x1b1b1b1b, peer)
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
 		Kind:             interactionstore.KindQuestFlag,
 		Ref:              "quest:first_steps_kill_turnin",
 		Text:             "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -923,16 +1096,18 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagInsufficientConsumeItem
 		},
 		ConsumeGold:       25,
 		ConsumeExperience: 10,
-	}})
-	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	}}}); err != nil {
+		t.Fatalf("seed interaction definitions: %v", err)
+	}
+	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopBuyPrice: 50},
 	}}); err != nil {
 		t.Fatalf("seed quest-flag consume-items mismatch preview templates: %v", err)
 	}
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
-	if err := queststate.NewFileStore(questStatePath).Save(queststate.Snapshot{Flags: []queststate.Flag{{
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(queststate.Snapshot{Flags: []queststate.Flag{{
 		Character: "PeerOne",
 		QuestRef:  "quest:first_steps",
 		Name:      "killed_qa_mob",
@@ -941,7 +1116,16 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagInsufficientConsumeItem
 		t.Fatalf("seed quest-state for consume-items mismatch preview: %v", err)
 	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore, itemStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		itemStore,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -963,23 +1147,35 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagInsufficientConsumeItem
 
 func TestGameRuntimeInteractionVisibilityReturnsQuestFlagMismatchPreviewWithoutMutatingQuestState(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
 	before := queststate.Snapshot{Flags: []queststate.Flag{{Character: "PeerOne", QuestRef: "quest:first_steps", Name: "met_guide", Value: 1}}}
-	if err := queststate.NewFileStore(questStatePath).Save(before); err != nil {
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(before); err != nil {
 		t.Fatalf("seed quest state: %v", err)
 	}
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
 		Kind:      interactionstore.KindQuestFlag,
 		Ref:       "quest:first_steps",
 		Text:      "Quest updated: first_steps.met_guide = 1.",
 		QuestRef:  "quest:first_steps",
 		QuestFlag: "met_guide",
 		QuestTo:   1,
-	}})
+	}}}); err != nil {
+		t.Fatalf("seed interaction definitions: %v", err)
+	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		nil,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -997,7 +1193,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagMismatchPreviewWithoutM
 	if entry.Name != "QuestGuide" || entry.Preview != "Quest requirements are not met." || entry.ResolutionFailure != "" {
 		t.Fatalf("unexpected quest-flag mismatch interaction visibility entry: %+v", entry)
 	}
-	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	loaded, err := questStore.Load()
 	if err != nil {
 		t.Fatalf("load quest state after interaction-visibility preview: %v", err)
 	}
@@ -1008,15 +1204,16 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagMismatchPreviewWithoutM
 
 func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardInventoryFullPreviewWithoutMutatingQuestState(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	peer := peerVisibilityCharacter("PeerOne", 0x01030123, 0x02040123, 1100, 2100, 0, 101, 201)
 	peer.Inventory = merchantBuyerInventoryLeavingOneFreeSlot()
 	issuePeerTicket(t, store, "peer-one-reward-full", 0x17171717, peer)
 	before := queststate.Snapshot{Flags: []queststate.Flag{{Character: "PeerOne", QuestRef: "quest:first_steps", Name: "killed_qa_mob", Value: 1}}}
-	if err := queststate.NewFileStore(questStatePath).Save(before); err != nil {
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(before); err != nil {
 		t.Fatalf("seed quest state: %v", err)
 	}
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
 		Kind:      interactionstore.KindQuestFlag,
 		Ref:       "quest:first_steps_kill_turnin",
 		Text:      "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -1028,8 +1225,10 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardInventoryFullPrev
 			{ItemVnum: 27001, Count: 1},
 			{ItemVnum: 11200, Count: 1},
 		},
-	}})
-	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	}}}); err != nil {
+		t.Fatalf("seed interaction definitions: %v", err)
+	}
+	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopBuyPrice: 50},
@@ -1037,7 +1236,16 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardInventoryFullPrev
 		t.Fatalf("seed reward inventory-full preview templates: %v", err)
 	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore, itemStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		itemStore,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -1055,7 +1263,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardInventoryFullPrev
 	if entry.Name != "QuestHunter" || entry.Preview != itemPickupInventoryFullInfoMessage || entry.ResolutionFailure != "" {
 		t.Fatalf("unexpected quest-flag reward inventory-full interaction visibility entry: %+v", entry)
 	}
-	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	loaded, err := questStore.Load()
 	if err != nil {
 		t.Fatalf("load quest state after reward inventory-full preview: %v", err)
 	}
@@ -1066,15 +1274,16 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardInventoryFullPrev
 
 func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardRestrictedPreviewWithoutMutatingQuestState(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
-	questStatePath := filepath.Join(t.TempDir(), "quest-state.json")
 	peer := peerVisibilityCharacter("PeerOne", 0x01030124, 0x02040124, 1100, 2100, 0, 101, 201)
 	peer.Level = 5
 	issuePeerTicket(t, store, "peer-one-reward-restricted", 0x18181818, peer)
 	before := queststate.Snapshot{Flags: []queststate.Flag{{Character: "PeerOne", QuestRef: "quest:first_steps", Name: "killed_qa_mob", Value: 1}}}
-	if err := queststate.NewFileStore(questStatePath).Save(before); err != nil {
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(before); err != nil {
 		t.Fatalf("seed quest state: %v", err)
 	}
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+	interactionStore := interactionstore.NewMemoryStore()
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{
 		Kind:            interactionstore.KindQuestFlag,
 		Ref:             "quest:first_steps_kill_turnin",
 		Text:            "Quest updated: first_steps.killed_qa_mob = 0.",
@@ -1084,8 +1293,10 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardRestrictedPreview
 		QuestTo:         0,
 		RewardItemVnum:  27001,
 		RewardItemCount: 1,
-	}})
-	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	}}}); err != nil {
+		t.Fatalf("seed interaction definitions: %v", err)
+	}
+	itemStore := itemcatalog.NewMemoryStore()
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
 		Vnum: 27001, Name: "High-Level Reward Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, MinLevel: 10,
 		BuyRejectText: "This reward is sealed against you.",
@@ -1093,7 +1304,16 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardRestrictedPreview
 		t.Fatalf("seed reward restricted preview templates: %v", err)
 	}
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", QuestStateStorePath: questStatePath}, store, nil, interactionStore, itemStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		itemStore,
+		questStore,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -1111,7 +1331,7 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestFlagRewardRestrictedPreview
 	if entry.Name != "QuestHunter" || entry.Preview != "This reward is sealed against you." || entry.ResolutionFailure != "" {
 		t.Fatalf("unexpected quest-flag reward restricted interaction visibility entry: %+v", entry)
 	}
-	loaded, err := queststate.NewFileStore(questStatePath).Load()
+	loaded, err := questStore.Load()
 	if err != nil {
 		t.Fatalf("load quest state after reward restricted preview: %v", err)
 	}
