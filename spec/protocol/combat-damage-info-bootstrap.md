@@ -64,6 +64,8 @@ Owner-floor immediate or delayed retaliation beats keep the owned player-death o
 2. `GC DEAD(owner_vid)`
 3. `GC TARGET(0, 0)`
 
+That floor ordering also covers proximity-armed delayed beats that reach `0` HP without a selected combat target or accepted owner hit. The self `TARGET(0, 0)` companion still fires on that edge; non-floor proximity walk-away release outside aggro radius remains the silent path that does not invent clear-target frames.
+
 The current client-visible response contract is therefore still conservative:
 - standalone bootstrap combat-profile non-lethal hits are authoritative through the selected-target HP refresh and carry one self hit-effect companion,
 - killing hits still use the existing death + clear-target choreography without a synthetic final damage-info frame,

@@ -2540,6 +2540,186 @@ func TestGameRuntimeFlushServerFramesArmsDelayedRetaliationFromProximityAggroWit
 	}
 }
 
+func TestGameRuntimeProximityAggroDelayedRetaliationReachesOwnerDeathFloorWithoutHitOrTarget(t *testing.T) {
+	// Proximity-armed delayed retaliation must reach the owned 0-HP floor without ever
+	// inventing selected-target ownership or a hit. Floor choreography still emits the
+	// owned point-change -> DEAD -> TARGET(0,0) sequence (TARGET clear is intentional even
+	// when no prior selection existed), persists HP 0, releases engagement, and fans out
+	// peer DEAD while skipping further delayed beats / owner DAMAGE_INFO.
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("AggroFloorOwner", 0x01030198, 0x02040198, 1850, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	issuePeerTicket(t, store, "aggro-floor-owner", 0x48484848, owner)
+	if err := accounts.Save(accountstore.Account{Login: "aggro-floor-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed proximity death-floor owner account: %v", err)
+	}
+	watcher := peerVisibilityCharacter("AggroFloorWatcher", 0x01030199, 0x02040199, 1920, 2800, 0, 101, 201)
+	watcher.MapIndex = 42
+	watcher.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "aggro-floor-watcher", 0x49494949, watcher)
+	if err := accounts.Save(accountstore.Account{Login: "aggro-floor-watcher", Empire: watcher.Empire, Characters: cloneCharacters([]loginticket.Character{watcher})}); err != nil {
+		t.Fatalf("seed proximity death-floor watcher account: %v", err)
+	}
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700002275, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		accounts,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for proximity-armed death floor: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.aggro_retaliation_floor",
+		Name:          "AggroFloorMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import proximity-armed death-floor spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.aggro_retaliation_floor")
+	if !ok {
+		t.Fatal("expected proximity-armed death-floor spawn group to resolve by ref")
+	}
+
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "aggro-floor-owner", 0x48484848)
+	defer closeSessionFlow(t, ownerFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected proximity acquisition alone not to emit immediate retaliation frames, got %d frames", len(queued))
+	}
+
+	watcherFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "aggro-floor-watcher", 0x49494949)
+	defer closeSessionFlow(t, watcherFlow)
+	flushServerFrames(t, watcherFlow)
+	flushServerFrames(t, ownerFlow)
+
+	ownerEntity, ok := runtime.sharedWorld.playerEntityByName("AggroFloorOwner")
+	if !ok {
+		t.Fatal("expected proximity-armed death-floor owner entity to remain registered")
+	}
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected pending-frame proximity acquisition to engage owner for entity %d", group.EntityID)
+	}
+	if snapshot, ok := runtime.CombatTargetSnapshot("AggroFloorOwner"); ok {
+		t.Fatalf("expected proximity-armed death-floor path not to invent selected combat target ownership, got %+v", snapshot)
+	}
+
+	watcherBlocked, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(group.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected watcher target error while proximity engagement remains live: %v", err)
+	}
+	if len(watcherBlocked) != 0 {
+		t.Fatalf("expected third-party TARGET to fail closed while proximity engagement remains live, got %d frames", len(watcherBlocked))
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	floorQueued := flushServerFrames(t, ownerFlow)
+	if len(floorQueued) != 3 {
+		t.Fatalf("expected proximity-armed owner-floor retaliation to emit point-change, player dead, and target clear, got %d frames", len(floorQueued))
+	}
+	floorPoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, floorQueued[0]))
+	if err != nil {
+		t.Fatalf("decode proximity-armed owner-floor point-change: %v", err)
+	}
+	if floorPoint.VID != owner.VID || floorPoint.Type != bootstrapPlayerPointType || floorPoint.Amount != -1 || floorPoint.Value != 0 {
+		t.Fatalf("expected proximity-armed delayed retaliation to reach owner HP floor 0, got %+v", floorPoint)
+	}
+	ownerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, floorQueued[1]))
+	if err != nil {
+		t.Fatalf("decode proximity-armed owner-floor dead frame: %v", err)
+	}
+	if ownerDead.VID != owner.VID {
+		t.Fatalf("expected proximity-armed owner-floor dead for %#08x, got %#08x", owner.VID, ownerDead.VID)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, floorQueued[2]))
+	if err != nil {
+		t.Fatalf("decode proximity-armed owner-floor target clear: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected proximity-armed owner-floor TARGET(0,0) clear even without prior selection, got %+v", clearTarget)
+	}
+	if snapshot, ok := runtime.CombatTargetSnapshot("AggroFloorOwner"); ok {
+		t.Fatalf("expected proximity-armed death floor to keep inventing no selected target after clear, got %+v", snapshot)
+	}
+	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected proximity-armed death floor to release engagement for entity %d", group.EntityID)
+	}
+
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 1 {
+		t.Fatalf("expected visible watcher to receive 1 queued owner DEAD after proximity-armed floor, got %d", len(watcherQueued))
+	}
+	peerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
+	if err != nil {
+		t.Fatalf("decode proximity-armed peer owner DEAD: %v", err)
+	}
+	if peerDead.VID != owner.VID {
+		t.Fatalf("expected proximity-armed peer DEAD for owner %#08x, got %#08x", owner.VID, peerDead.VID)
+	}
+
+	persisted, err := accounts.Load("aggro-floor-owner")
+	if err != nil {
+		t.Fatalf("load persisted proximity death-floor account: %v", err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected exactly 1 persisted owner after proximity death floor, got %+v", persisted)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 0 {
+		t.Fatalf("expected proximity-armed death floor to persist points[%d]=0, got %d", bootstrapPlayerPointValueIndex, persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if staleQueued := flushServerFrames(t, ownerFlow); len(staleQueued) != 0 {
+		t.Fatalf("expected proximity-armed death floor to stop further delayed retaliation, got %d frames", len(staleQueued))
+	}
+	if staleWatcher := flushServerFrames(t, watcherFlow); len(staleWatcher) != 0 {
+		t.Fatalf("expected no stale peer frames after proximity-armed death floor, got %d", len(staleWatcher))
+	}
+
+	postFloorTarget, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(group.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor owner TARGET dispatch error: %v", err)
+	}
+	if len(postFloorTarget) != 0 {
+		t.Fatalf("expected post-floor owner TARGET to fail closed at HP 0, got %d frames", len(postFloorTarget))
+	}
+	postFloorAttack, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  uint32(group.EntityID),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor owner ATTACK dispatch error: %v", err)
+	}
+	if len(postFloorAttack) != 0 {
+		t.Fatalf("expected post-floor owner ATTACK to fail closed at HP 0, got %d frames", len(postFloorAttack))
+	}
+
+	watcherSelect, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(group.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected watcher TARGET after proximity-armed death-floor release: %v", err)
+	}
+	if len(watcherSelect) != 1 {
+		t.Fatalf("expected watcher to freshly TARGET the still-live mob after proximity-armed death-floor release, got %d frames", len(watcherSelect))
+	}
+}
+
 func TestGameRuntimeProximityAggroWalkAwayReleasesEngagementAndCancelsDelayedRetaliation(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("AggroWalkAwayOwner", 0x01030194, 0x02040194, 1850, 2800, 0, 101, 201)

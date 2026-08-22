@@ -180,7 +180,9 @@ That ordering applies in both current bootstrap owners:
 - immediate retaliation piggybacked on an accepted live owner `ATTACK`
 - delayed retaliation flushed later through the pending server-frame path
 
-The target-clear companion remains important even after `GC DEAD(owner_vid)` because the current slice still wants the stale engaged practice-mob target removed deterministically on the same edge.
+The delayed path includes proximity-armed beats that never established a selected combat target and never accepted an owner `ATTACK`. Walking into aggro radius alone may arm the delayed cadence; when that beat reaches the `0`-HP floor, the same `PLAYER_POINT_CHANGE(value=0)` → `GC DEAD(owner_vid)` → `GC TARGET(0, 0)` sequence still fires. The self `TARGET(0, 0)` companion remains intentional even when no prior selection existed: it is the owned floor clear surface, not an invented mid-life selection. By contrast, proximity-only walk-away release outside aggro radius (before the floor) stays silent and does **not** invent `TARGET(0, 0)`.
+
+The target-clear companion remains important even after `GC DEAD(owner_vid)` because the current slice still wants any stale engaged practice-mob target removed deterministically on the same edge, and proximity-armed floors reuse that same clear surface so clients never keep a half-dead engagement state.
 
 ## Why this stays narrow
 

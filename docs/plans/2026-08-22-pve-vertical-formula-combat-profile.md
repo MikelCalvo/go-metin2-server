@@ -52,5 +52,4 @@ git diff --check
    `TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn` now asserts
    the first pre-guide and post-guide live hits emit `TARGET(75%)` plus spawn-backed
    retaliation/`DAMAGE_INFO` companions with formula `damage = 5`.
-3. Next combat-lane candidates remain engagement cleanup only where an owned
-   invariant is still missing, or deferred skill/ranged/PvP codecs.
+3. Next combat-lane candidates remain deferred skill/ranged/PvP codecs after the owned PvE baseline, or engagement cleanup only where a later RED proves a still-missing invariant. Proximity-armed owner death-floor without hit/target is now covered by `TestGameRuntimeProximityAggroDelayedRetaliationReachesOwnerDeathFloorWithoutHitOrTarget`.
