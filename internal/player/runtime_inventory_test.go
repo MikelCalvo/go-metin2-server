@@ -858,6 +858,21 @@ func TestMerchantTemplateMutationsRejectSelectedCharacterAntiFlagTemplates(t *te
 			template:  itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, MinLevel: 10},
 		},
 		{
+			name:      "anti empire a",
+			character: loginticket.Character{Empire: 1},
+			template:  itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiEmpireA: true},
+		},
+		{
+			name:      "anti empire b",
+			character: loginticket.Character{Empire: 2},
+			template:  itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiEmpireB: true},
+		},
+		{
+			name:      "anti empire c",
+			character: loginticket.Character{Empire: 3},
+			template:  itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiEmpireC: true},
+		},
+		{
 			name:      "anti get",
 			character: loginticket.Character{},
 			template:  itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiGet: true},

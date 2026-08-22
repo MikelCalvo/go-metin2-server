@@ -39101,6 +39101,62 @@ func TestGameSessionFlowShopBuyAndSellRejectMinLevelTemplatesWithoutMutation(t *
 	assertMerchantStateUnchanged(t, sellRuntime, sellAccounts, sellLogin, sellBuyer, "min-level packet shop sell2")
 }
 
+func TestGameSessionFlowShopBuyAndSellRejectEmpireAntiFlagTemplatesWithoutMutation(t *testing.T) {
+	buyBuyer := merchantBuyerCharacter("MerchantBuyerPacketEmpire", 0x0104012c, 0x0205012c, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
+	buyBuyer.Empire = 2
+	buyRuntime, buyAccounts, buyFlow, buyActorID, buyLogin := setupMerchantBuySession(t, "merchant-empire-buy", 0x2c2c2c2c, buyBuyer)
+	defer closeSessionFlow(t, buyFlow)
+	buyTemplate := itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiEmpireB: true, BuyRejectText: "This merchant will not sell this potion to your empire."}
+	buyRuntime.itemTemplates[27001] = buyTemplate
+
+	interactWithMerchantForBuy(t, buyFlow, buyActorID)
+	buyOut, err := buyFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected empire packet shop buy error: %v", err)
+	}
+	if len(buyOut) != 2 {
+		t.Fatalf("expected empire packet shop buy to emit invalid-pos plus authored info text, got %d", len(buyOut))
+	}
+	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, buyOut[0])); err != nil {
+		t.Fatalf("decode empire packet shop buy invalid-pos frame: %v", err)
+	}
+	buyInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, buyOut[1]))
+	if err != nil {
+		t.Fatalf("decode empire packet shop buy rejection info: %v", err)
+	}
+	if buyInfo.Type != chatproto.ChatTypeInfo || buyInfo.VID != 0 || buyInfo.Empire != 0 || buyInfo.Message != buyTemplate.BuyRejectText {
+		t.Fatalf("unexpected empire packet shop buy rejection info: %+v", buyInfo)
+	}
+	assertMerchantStateUnchanged(t, buyRuntime, buyAccounts, buyLogin, buyBuyer, "empire packet shop buy")
+
+	sellBuyer := merchantBuyerCharacter("MerchantSellerPacketEmpire", 0x0104012d, 0x0205012d, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
+	sellBuyer.Empire = 2
+	sellRuntime, sellAccounts, sellFlow, sellActorID, sellLogin := setupMerchantBuySession(t, "merchant-empire-sell", 0x2d2d2d2d, sellBuyer)
+	defer closeSessionFlow(t, sellFlow)
+	sellTemplate := itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiEmpireB: true, SellRejectText: "This merchant will not buy this potion from your empire."}
+	sellRuntime.itemTemplates[27001] = sellTemplate
+
+	interactWithMerchantForBuy(t, sellFlow, sellActorID)
+	sellOut, err := sellFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell2(shopproto.ClientSell2Packet{Slot: 5, Count: 2})))
+	if err != nil {
+		t.Fatalf("unexpected empire packet shop sell2 error: %v", err)
+	}
+	if len(sellOut) != 2 {
+		t.Fatalf("expected empire packet shop sell2 to emit invalid-pos plus authored info text, got %d", len(sellOut))
+	}
+	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, sellOut[0])); err != nil {
+		t.Fatalf("decode empire packet shop sell2 invalid-pos frame: %v", err)
+	}
+	sellInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, sellOut[1]))
+	if err != nil {
+		t.Fatalf("decode empire packet shop sell2 rejection info: %v", err)
+	}
+	if sellInfo.Type != chatproto.ChatTypeInfo || sellInfo.VID != 0 || sellInfo.Empire != 0 || sellInfo.Message != sellTemplate.SellRejectText {
+		t.Fatalf("unexpected empire packet shop sell2 rejection info: %+v", sellInfo)
+	}
+	assertMerchantStateUnchanged(t, sellRuntime, sellAccounts, sellLogin, sellBuyer, "empire packet shop sell2")
+}
+
 func assertMerchantStateUnchanged(t *testing.T, runtime *gameRuntime, accounts accountstore.Store, login string, want loginticket.Character, context string) {
 	t.Helper()
 	currencySnapshot, ok := runtime.CurrencySnapshot(want.Name)
