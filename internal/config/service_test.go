@@ -123,6 +123,9 @@ func TestLoadServiceUsesBootstrapPersistenceDefaultsWhenEnvIsMissing(t *testing.
 	if cfg.GroundItemStorePath != defaultGroundItemStorePath() {
 		t.Fatalf("expected default ground item store path, got %q", cfg.GroundItemStorePath)
 	}
+	if cfg.SafeboxStorePath != defaultSafeboxStorePath() {
+		t.Fatalf("expected default safebox store path, got %q", cfg.SafeboxStorePath)
+	}
 }
 
 func TestLoadServiceUsesGlobalBootstrapPersistenceOverrides(t *testing.T) {
@@ -134,6 +137,7 @@ func TestLoadServiceUsesGlobalBootstrapPersistenceOverrides(t *testing.T) {
 	t.Setenv("METIN2_ITEM_TEMPLATE_STORE_PATH", "/global/item-templates.json")
 	t.Setenv("METIN2_QUEST_STATE_STORE_PATH", "/global/quest-state.json")
 	t.Setenv("METIN2_GROUND_ITEM_STORE_PATH", "/global/ground-items.json")
+	t.Setenv("METIN2_SAFEBOX_STORE_PATH", "/global/safebox.json")
 
 	cfg := LoadService("gamed", ":6060", ":13000", "127.0.0.1")
 	if cfg.LoginTicketStoreDir != "/global/tickets" {
@@ -156,6 +160,9 @@ func TestLoadServiceUsesGlobalBootstrapPersistenceOverrides(t *testing.T) {
 	}
 	if cfg.GroundItemStorePath != "/global/ground-items.json" {
 		t.Fatalf("expected global ground item store path, got %q", cfg.GroundItemStorePath)
+	}
+	if cfg.SafeboxStorePath != "/global/safebox.json" {
+		t.Fatalf("expected global safebox store path, got %q", cfg.SafeboxStorePath)
 	}
 }
 
@@ -183,6 +190,7 @@ func TestLoadServicePrefersServiceSpecificBootstrapPersistenceOverrides(t *testi
 	t.Setenv("METIN2_ITEM_TEMPLATE_STORE_PATH", "/global/item-templates.json")
 	t.Setenv("METIN2_QUEST_STATE_STORE_PATH", "/global/quest-state.json")
 	t.Setenv("METIN2_GROUND_ITEM_STORE_PATH", "/global/ground-items.json")
+	t.Setenv("METIN2_SAFEBOX_STORE_PATH", "/global/safebox.json")
 	t.Setenv("METIN2_GAMED_LOGIN_TICKET_STORE_DIR", "/service/tickets")
 	t.Setenv("METIN2_GAMED_ACCOUNT_STORE_DIR", "/service/accounts")
 	t.Setenv("METIN2_GAMED_STATIC_ACTOR_STORE_PATH", "/service/static-actors.json")
@@ -190,6 +198,7 @@ func TestLoadServicePrefersServiceSpecificBootstrapPersistenceOverrides(t *testi
 	t.Setenv("METIN2_GAMED_ITEM_TEMPLATE_STORE_PATH", "/service/item-templates.json")
 	t.Setenv("METIN2_GAMED_QUEST_STATE_STORE_PATH", "/service/quest-state.json")
 	t.Setenv("METIN2_GAMED_GROUND_ITEM_STORE_PATH", "/service/ground-items.json")
+	t.Setenv("METIN2_GAMED_SAFEBOX_STORE_PATH", "/service/safebox.json")
 
 	cfg := LoadService("gamed", ":6060", ":13000", "127.0.0.1")
 	if cfg.LoginTicketStoreDir != "/service/tickets" {
@@ -213,6 +222,9 @@ func TestLoadServicePrefersServiceSpecificBootstrapPersistenceOverrides(t *testi
 	if cfg.GroundItemStorePath != "/service/ground-items.json" {
 		t.Fatalf("expected service-specific ground item store path, got %q", cfg.GroundItemStorePath)
 	}
+	if cfg.SafeboxStorePath != "/service/safebox.json" {
+		t.Fatalf("expected service-specific safebox store path, got %q", cfg.SafeboxStorePath)
+	}
 }
 
 func TestValidatePersistenceConfigAcceptsDistinctExplicitPaths(t *testing.T) {
@@ -226,6 +238,7 @@ func TestValidatePersistenceConfigAcceptsDistinctExplicitPaths(t *testing.T) {
 		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
 		QuestStateStorePath:   filepath.Join(root, "quest-state", "quest-state.json"),
 		GroundItemStorePath:   filepath.Join(root, "ground-items", "ground-items.json"),
+		SafeboxStorePath:      filepath.Join(root, "safebox", "safebox.json"),
 	}
 
 	if err := ValidatePersistenceConfig(cfg); err != nil {
@@ -253,6 +266,7 @@ func TestValidatePersistenceConfigRejectsFileStoresThatShareParentDirectory(t *t
 		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
 		QuestStateStorePath:   filepath.Join(root, "quest-state", "quest-state.json"),
 		GroundItemStorePath:   filepath.Join(root, "ground-items", "ground-items.json"),
+		SafeboxStorePath:      filepath.Join(root, "safebox", "safebox.json"),
 	}
 
 	err := ValidatePersistenceConfig(cfg)
@@ -272,6 +286,7 @@ func TestValidatePersistenceConfigRejectsQuestStateSharingParentWithItemTemplate
 		ItemTemplateStorePath: filepath.Join(root, "shared", "item-templates.json"),
 		QuestStateStorePath:   filepath.Join(root, "shared", "quest-state.json"),
 		GroundItemStorePath:   filepath.Join(root, "shared", "ground-items.json"),
+		SafeboxStorePath:      filepath.Join(root, "safebox", "safebox.json"),
 	}
 
 	err := ValidatePersistenceConfig(cfg)
@@ -299,6 +314,7 @@ func TestValidatePersistenceConfigRejectsSymlinkResolvedSharedFileStoreParent(t 
 		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
 		QuestStateStorePath:   filepath.Join(root, "quest-state", "quest-state.json"),
 		GroundItemStorePath:   filepath.Join(root, "ground-items", "ground-items.json"),
+		SafeboxStorePath:      filepath.Join(root, "safebox", "safebox.json"),
 	}
 
 	err := ValidatePersistenceConfig(cfg)
@@ -445,6 +461,7 @@ func TestValidatePersistenceConfigRejectsFileStoresThatSharePath(t *testing.T) {
 		ItemTemplateStorePath: filepath.Join(root, "item-templates", "item-templates.json"),
 		QuestStateStorePath:   filepath.Join(root, "quest-state", "quest-state.json"),
 		GroundItemStorePath:   filepath.Join(root, "ground-items", "ground-items.json"),
+		SafeboxStorePath:      filepath.Join(root, "safebox", "safebox.json"),
 	}
 
 	err := ValidatePersistenceConfig(cfg)
@@ -597,6 +614,7 @@ func clearPersistenceEnv(t *testing.T) {
 		"ITEM_TEMPLATE_STORE_PATH",
 		"QUEST_STATE_STORE_PATH",
 		"GROUND_ITEM_STORE_PATH",
+		"SAFEBOX_STORE_PATH",
 	} {
 		t.Setenv("METIN2_"+suffix, "")
 		t.Setenv("METIN2_GAMED_"+suffix, "")

@@ -1,0 +1,238 @@
+package safeboxstore
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"reflect"
+	"testing"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
+)
+
+func TestFileStoreRoundTripPersistsCellsAndItemIdentity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "safebox.json")
+	store := NewFileStore(path)
+	input := Snapshot{Characters: []CharacterRow{{
+		Login:       "owner-one",
+		CharacterID: 42,
+		Cells: []Cell{
+			{Cell: 2, ID: 9002, Vnum: 27001, Count: 3},
+			{Cell: 0, ID: 9001, Vnum: 27002, Count: 1, Locked: true},
+		},
+	}}}
+	if err := store.Save(input); err != nil {
+		t.Fatalf("save safebox: %v", err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("load safebox: %v", err)
+	}
+	want := Snapshot{Characters: []CharacterRow{{
+		Login:       "owner-one",
+		CharacterID: 42,
+		Cells: []Cell{
+			{Cell: 0, ID: 9001, Vnum: 27002, Count: 1, Locked: true},
+			{Cell: 2, ID: 9002, Vnum: 27001, Count: 3},
+		},
+	}}}
+	if !reflect.DeepEqual(loaded, want) {
+		t.Fatalf("unexpected loaded safebox snapshot:\n got: %#v\nwant: %#v", loaded, want)
+	}
+	cells := CharacterCells(loaded, "owner-one", 42)
+	if cells[0].ID != 9001 || cells[2].ID != 9002 || len(cells) != 2 {
+		t.Fatalf("unexpected CharacterCells projection: %#v", cells)
+	}
+}
+
+func TestFileStoreSaveIsDeterministicJSON(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "safebox.json")
+	store := NewFileStore(path)
+	input := Snapshot{Characters: []CharacterRow{
+		{Login: "zeta", CharacterID: 2, Cells: []Cell{{Cell: 1, ID: 2, Vnum: 10, Count: 1}}},
+		{Login: "alpha", CharacterID: 1, Cells: []Cell{{Cell: 0, ID: 1, Vnum: 20, Count: 2}}},
+	}}
+	if err := store.Save(input); err != nil {
+		t.Fatalf("save safebox: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read safebox snapshot: %v", err)
+	}
+	wantRaw := "{\n  \"characters\": [\n    {\n      \"login\": \"alpha\",\n      \"character_id\": 1,\n      \"cells\": [\n        {\n          \"cell\": 0,\n          \"id\": 1,\n          \"vnum\": 20,\n          \"count\": 2\n        }\n      ]\n    },\n    {\n      \"login\": \"zeta\",\n      \"character_id\": 2,\n      \"cells\": [\n        {\n          \"cell\": 1,\n          \"id\": 2,\n          \"vnum\": 10,\n          \"count\": 1\n        }\n      ]\n    }\n  ]\n}\n"
+	if string(raw) != wantRaw {
+		t.Fatalf("unexpected deterministic safebox JSON:\n got: %s\nwant: %s", string(raw), wantRaw)
+	}
+}
+
+func TestFileStoreLoadReturnsNotFoundForMissingSnapshot(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "missing", "safebox.json"))
+	_, err := store.Load()
+	if !errors.Is(err, ErrSnapshotNotFound) {
+		t.Fatalf("expected ErrSnapshotNotFound, got %v", err)
+	}
+}
+
+func TestFileStoreRejectsInvalidRowsAndMissingSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "safebox.json")
+	store := NewFileStore(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{name: "null_root", body: `null`},
+		{name: "null_characters", body: `{"characters":null}`},
+		{name: "unknown_root_field", body: `{"characters":[],"unknown":true}`},
+		{name: "unknown_cell_field", body: `{"characters":[{"login":"owner","character_id":1,"cells":[{"cell":0,"id":1,"vnum":10,"count":1,"unknown":true}]}]}`},
+		{name: "blank_login", body: `{"characters":[{"login":" ","character_id":1,"cells":[{"cell":0,"id":1,"vnum":10,"count":1}]}]}`},
+		{name: "zero_character_id", body: `{"characters":[{"login":"owner","character_id":0,"cells":[{"cell":0,"id":1,"vnum":10,"count":1}]}]}`},
+		{name: "cell_out_of_range", body: `{"characters":[{"login":"owner","character_id":1,"cells":[{"cell":15,"id":1,"vnum":10,"count":1}]}]}`},
+		{name: "duplicate_cell", body: `{"characters":[{"login":"owner","character_id":1,"cells":[{"cell":0,"id":1,"vnum":10,"count":1},{"cell":0,"id":2,"vnum":10,"count":1}]}]}`},
+		{name: "duplicate_character", body: `{"characters":[{"login":"owner","character_id":1,"cells":[]},{"login":"owner","character_id":1,"cells":[]}]}`},
+		{name: "zero_item_id", body: `{"characters":[{"login":"owner","character_id":1,"cells":[{"cell":0,"id":0,"vnum":10,"count":1}]}]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(path, []byte(tc.body), 0o644); err != nil {
+				t.Fatalf("write %s snapshot: %v", tc.name, err)
+			}
+			_, err := store.Load()
+			if !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot for %s, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
+func TestFileStoreValidateReportsCrashTemps(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "safebox.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Characters: []CharacterRow{{
+		Login: "owner", CharacterID: 7, Cells: []Cell{{Cell: 0, ID: 1, Vnum: 10, Count: 1}},
+	}}}); err != nil {
+		t.Fatalf("save safebox: %v", err)
+	}
+	for _, name := range []string{".safebox-b.json", ".safebox-a.json", ".not-safebox.json"} {
+		if err := os.WriteFile(filepath.Join(filepath.Dir(path), name), []byte(`{"characters":[]}`), 0o644); err != nil {
+			t.Fatalf("write crash temp %s: %v", name, err)
+		}
+	}
+	summary, err := store.Validate()
+	if err != nil {
+		t.Fatalf("validate safebox store: %v", err)
+	}
+	if summary.CharacterCount != 1 || summary.CellCount != 1 || summary.CrashTempCount != 2 {
+		t.Fatalf("unexpected validate summary: %+v", summary)
+	}
+	if !reflect.DeepEqual(summary.CrashTempFiles, []string{".safebox-a.json", ".safebox-b.json"}) {
+		t.Fatalf("unexpected crash temp files: %#v", summary.CrashTempFiles)
+	}
+	cleaned, err := store.CleanupCrashTempFiles()
+	if err != nil {
+		t.Fatalf("cleanup crash temps: %v", err)
+	}
+	if cleaned.CrashTempCount != 0 {
+		t.Fatalf("expected cleaned crash temps, got %+v", cleaned)
+	}
+}
+
+func TestFileStoreBackupToWritesCommittedSnapshotAndDeterministicManifest(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "safebox.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Characters: []CharacterRow{{
+		Login: "owner", CharacterID: 3, Cells: []Cell{{Cell: 1, ID: 55, Vnum: 27001, Count: 4}},
+	}}}); err != nil {
+		t.Fatalf("save safebox: %v", err)
+	}
+	dst := filepath.Join(t.TempDir(), "backup")
+	if err := store.BackupTo(dst); err != nil {
+		t.Fatalf("backup safebox: %v", err)
+	}
+	summary, err := store.ValidateBackupFrom(dst)
+	if err != nil {
+		t.Fatalf("validate backup: %v", err)
+	}
+	if summary.CharacterCount != 1 || summary.CellCount != 1 {
+		t.Fatalf("unexpected backup summary: %+v", summary)
+	}
+}
+
+func TestFileStoreBackupToTreatsMissingSnapshotAsEmptyStore(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "safebox.json")
+	store := NewFileStore(path)
+	dst := filepath.Join(t.TempDir(), "backup")
+	if err := store.BackupTo(dst); err != nil {
+		t.Fatalf("backup empty safebox: %v", err)
+	}
+	summary, err := store.ValidateBackupFrom(dst)
+	if err != nil {
+		t.Fatalf("validate empty backup: %v", err)
+	}
+	if summary.CharacterCount != 0 || summary.CellCount != 0 {
+		t.Fatalf("expected empty backup summary, got %+v", summary)
+	}
+}
+
+func TestFileStoreRestoreFromRestoresManifestedBackupIntoEmptyStore(t *testing.T) {
+	srcPath := filepath.Join(t.TempDir(), "src", "safebox.json")
+	src := NewFileStore(srcPath)
+	if err := src.Save(Snapshot{Characters: []CharacterRow{{
+		Login: "owner", CharacterID: 9, Cells: []Cell{{Cell: 0, ID: 77, Vnum: 27001, Count: 1}},
+	}}}); err != nil {
+		t.Fatalf("save source safebox: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "backup")
+	if err := src.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup source safebox: %v", err)
+	}
+	dstPath := filepath.Join(t.TempDir(), "dst", "safebox.json")
+	dst := NewFileStore(dstPath)
+	if err := dst.RestoreFrom(backupDir); err != nil {
+		t.Fatalf("restore safebox: %v", err)
+	}
+	loaded, err := dst.Load()
+	if err != nil {
+		t.Fatalf("load restored safebox: %v", err)
+	}
+	if len(loaded.Characters) != 1 || loaded.Characters[0].Cells[0].ID != 77 {
+		t.Fatalf("unexpected restored snapshot: %#v", loaded)
+	}
+}
+
+func TestMemorySafeboxStoreReplaceClearsWithoutFilesystem(t *testing.T) {
+	store := NewMemoryStore()
+	if _, err := store.Load(); !errors.Is(err, ErrSnapshotNotFound) {
+		t.Fatalf("expected missing memory snapshot, got %v", err)
+	}
+	if err := store.Save(Snapshot{Characters: []CharacterRow{{
+		Login: "owner", CharacterID: 1, Cells: []Cell{{Cell: 0, ID: 1, Vnum: 10, Count: 1}},
+	}}}); err != nil {
+		t.Fatalf("save memory safebox: %v", err)
+	}
+	store.Clear()
+	if _, err := store.Load(); !errors.Is(err, ErrSnapshotNotFound) {
+		t.Fatalf("expected cleared memory snapshot, got %v", err)
+	}
+}
+
+func TestReplaceCharacterCellsUpsertsAndRemovesRows(t *testing.T) {
+	snapshot := Snapshot{}
+	next, err := ReplaceCharacterCells(snapshot, "owner", 1, map[uint8]inventory.ItemInstance{
+		0: {ID: 10, Vnum: 27001, Count: 2, Slot: 0},
+	})
+	if err != nil {
+		t.Fatalf("replace cells: %v", err)
+	}
+	if len(next.Characters) != 1 || next.Characters[0].Cells[0].ID != 10 {
+		t.Fatalf("unexpected upsert: %#v", next)
+	}
+	cleared, err := ReplaceCharacterCells(next, "owner", 1, nil)
+	if err != nil {
+		t.Fatalf("clear cells: %v", err)
+	}
+	if len(cleared.Characters) != 0 {
+		t.Fatalf("expected cleared character row, got %#v", cleared)
+	}
+}

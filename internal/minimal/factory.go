@@ -49,6 +49,7 @@ import (
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
+	"github.com/MikelCalvo/go-metin2-server/internal/safeboxstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/securecipher"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
@@ -130,6 +131,7 @@ var (
 	ErrStaticActorStoreRestoreLiveSessions  = errors.New("static actor store restore requires no live sessions")
 	ErrInteractionStoreRestoreLiveSessions  = errors.New("interaction store restore requires no live sessions")
 	ErrGroundItemStoreRestoreLiveSessions   = errors.New("ground item store restore requires no live sessions")
+	ErrSafeboxStoreRestoreLiveSessions      = errors.New("safebox store restore requires no live sessions")
 
 	refineConfirmRollMu       sync.Mutex
 	refineConfirmRollOverride []int
@@ -386,6 +388,7 @@ type PersistenceConfigSnapshot struct {
 	ItemTemplateStorePath string `json:"item_template_store_path"`
 	QuestStateStorePath   string `json:"quest_state_store_path"`
 	GroundItemStorePath   string `json:"ground_item_store_path"`
+	SafeboxStorePath      string `json:"safebox_store_path"`
 }
 
 type DatabaseConfigSnapshot struct {
@@ -404,6 +407,7 @@ type PersistenceStatusSnapshot struct {
 	InteractionStore           InteractionStoreStatus  `json:"interaction_store"`
 	QuestStateStore            QuestStateStoreStatus   `json:"quest_state_store"`
 	GroundItemStore            GroundItemStoreStatus   `json:"ground_item_store"`
+	SafeboxStore               SafeboxStoreStatus      `json:"safebox_store"`
 }
 
 type AccountStoreStatus struct {
@@ -479,6 +483,15 @@ type GroundItemStoreStatus struct {
 	Error                        string                                        `json:"error,omitempty"`
 }
 
+type SafeboxStoreStatus struct {
+	Path                         string                       `json:"path"`
+	Valid                        bool                         `json:"valid"`
+	Summary                      safeboxstore.SnapshotSummary `json:"summary"`
+	BackupManifest               BackupManifestStatus         `json:"backup_manifest"`
+	RestoreBlockedByLiveSessions bool                         `json:"restore_blocked_by_live_sessions"`
+	Error                        string                       `json:"error,omitempty"`
+}
+
 type MapOccupancyChange = worldruntime.MapOccupancyChange
 
 type RelocationPreview = worldruntime.RelocationPreview
@@ -496,6 +509,8 @@ type gameRuntime struct {
 	groundItemStore         worldruntime.GroundItemStore
 	groundItemExporter      worldruntime.BootstrapGroundItemStateExporter
 	groundItemPersistMu     sync.Mutex
+	safeboxStore            safeboxstore.Store
+	safeboxPersistMu        sync.Mutex
 	itemTemplates           map[uint32]itemcatalog.Template
 	itemTemplatesAuthored   bool
 	liveCharacterMu         sync.RWMutex
@@ -628,8 +643,9 @@ func (r *gameRuntime) PersistenceStatus() PersistenceStatusSnapshot {
 	interactionStatus := r.interactionStoreStatus(liveSelectedCharacterCount)
 	questStateStatus := r.questStateStoreStatus(liveSelectedCharacterCount)
 	groundItemStatus := r.groundItemStoreStatus()
+	safeboxStatus := r.safeboxStoreStatus()
 	return PersistenceStatusSnapshot{
-		OK:                         accountStatus.Valid && loginTicketStatus.Valid && itemTemplateStatus.Valid && staticActorStatus.Valid && interactionStatus.Valid && questStateStatus.Valid && groundItemStatus.Valid,
+		OK:                         accountStatus.Valid && loginTicketStatus.Valid && itemTemplateStatus.Valid && staticActorStatus.Valid && interactionStatus.Valid && questStateStatus.Valid && groundItemStatus.Valid && safeboxStatus.Valid,
 		LiveSelectedCharacterCount: liveSelectedCharacterCount,
 		AccountStore:               accountStatus,
 		LoginTicketStore:           loginTicketStatus,
@@ -638,6 +654,7 @@ func (r *gameRuntime) PersistenceStatus() PersistenceStatusSnapshot {
 		InteractionStore:           interactionStatus,
 		QuestStateStore:            questStateStatus,
 		GroundItemStore:            groundItemStatus,
+		SafeboxStore:               safeboxStatus,
 	}
 }
 
@@ -755,6 +772,27 @@ func (r *gameRuntime) groundItemStoreStatus() GroundItemStoreStatus {
 	status.BackupManifest = groundItemBackupManifestStatus(status.Path)
 	status.RestoreBlockedByLiveSessions = liveSelectedCharacterCount != 0
 	summary, err := r.ValidateGroundItemStore()
+	if err != nil {
+		status.Error = err.Error()
+		return status
+	}
+	status.Valid = true
+	status.Summary = summary
+	return status
+}
+
+func (r *gameRuntime) safeboxStoreStatus() SafeboxStoreStatus {
+	liveSelectedCharacterCount := 0
+	if r != nil {
+		liveSelectedCharacterCount = r.liveSelectedCharacterCount()
+	}
+	status := SafeboxStoreStatus{Path: safeboxStorePath(nil), Summary: safeboxstore.SnapshotSummary{Logins: []string{}, CharacterKeys: []string{}}}
+	if r != nil {
+		status.Path = safeboxStorePath(r.safeboxStore)
+	}
+	status.BackupManifest = safeboxBackupManifestStatus(status.Path)
+	status.RestoreBlockedByLiveSessions = liveSelectedCharacterCount != 0
+	summary, err := r.ValidateSafeboxStore()
 	if err != nil {
 		status.Error = err.Error()
 		return status
@@ -1380,6 +1418,100 @@ func (r *gameRuntime) RestoreGroundItemStore(srcDir string) (worldruntime.Durabl
 	}
 	if err := r.rematerializeGroundItemsAfterRestoreLocked(restorer); err != nil {
 		return worldruntime.DurableGroundItemSnapshotSummary{}, err
+	}
+	return restorer.Validate()
+}
+
+func (r *gameRuntime) ValidateSafeboxStore() (safeboxstore.SnapshotSummary, error) {
+	if r == nil || r.safeboxStore == nil {
+		return safeboxstore.SnapshotSummary{Logins: []string{}, CharacterKeys: []string{}}, nil
+	}
+	if validator, ok := r.safeboxStore.(interface {
+		Validate() (safeboxstore.SnapshotSummary, error)
+	}); ok {
+		r.safeboxPersistMu.Lock()
+		defer r.safeboxPersistMu.Unlock()
+		return validator.Validate()
+	}
+	snapshot, err := r.safeboxStore.Load()
+	if err != nil {
+		if errors.Is(err, safeboxstore.ErrSnapshotNotFound) {
+			return safeboxstore.SnapshotSummary{Logins: []string{}, CharacterKeys: []string{}}, nil
+		}
+		return safeboxstore.SnapshotSummary{}, err
+	}
+	return safeboxstore.SummarizeSnapshot(snapshot)
+}
+
+func (r *gameRuntime) CleanupSafeboxStoreCrashTempFiles() (safeboxstore.SnapshotSummary, error) {
+	if r == nil || r.safeboxStore == nil {
+		return safeboxstore.SnapshotSummary{Logins: []string{}, CharacterKeys: []string{}}, nil
+	}
+	cleaner, ok := r.safeboxStore.(interface {
+		CleanupCrashTempFiles() (safeboxstore.SnapshotSummary, error)
+	})
+	if !ok {
+		return safeboxstore.SnapshotSummary{}, fmt.Errorf("safebox store crash temp cleanup is not supported")
+	}
+	r.safeboxPersistMu.Lock()
+	defer r.safeboxPersistMu.Unlock()
+	return cleaner.CleanupCrashTempFiles()
+}
+
+func (r *gameRuntime) BackupSafeboxStore(dstDir string) (safeboxstore.SnapshotSummary, error) {
+	if r == nil || r.safeboxStore == nil {
+		return safeboxstore.SnapshotSummary{Logins: []string{}, CharacterKeys: []string{}}, nil
+	}
+	backer, ok := r.safeboxStore.(interface {
+		BackupTo(string) error
+		ValidateBackupFrom(string) (safeboxstore.SnapshotSummary, error)
+	})
+	if !ok {
+		return safeboxstore.SnapshotSummary{}, fmt.Errorf("safebox store backup is not supported")
+	}
+	r.safeboxPersistMu.Lock()
+	defer r.safeboxPersistMu.Unlock()
+	if err := backer.BackupTo(dstDir); err != nil {
+		return safeboxstore.SnapshotSummary{}, err
+	}
+	return backer.ValidateBackupFrom(dstDir)
+}
+
+func (r *gameRuntime) ValidateSafeboxStoreBackup(srcDir string) (safeboxstore.SnapshotSummary, error) {
+	if r == nil || r.safeboxStore == nil {
+		return safeboxstore.SnapshotSummary{Logins: []string{}, CharacterKeys: []string{}}, nil
+	}
+	validator, ok := r.safeboxStore.(interface {
+		ValidateBackupFrom(string) (safeboxstore.SnapshotSummary, error)
+	})
+	if !ok {
+		return safeboxstore.SnapshotSummary{}, fmt.Errorf("safebox store backup validation is not supported")
+	}
+	r.safeboxPersistMu.Lock()
+	defer r.safeboxPersistMu.Unlock()
+	return validator.ValidateBackupFrom(srcDir)
+}
+
+func (r *gameRuntime) RestoreSafeboxStore(srcDir string) (safeboxstore.SnapshotSummary, error) {
+	if r == nil || r.safeboxStore == nil {
+		return safeboxstore.SnapshotSummary{Logins: []string{}, CharacterKeys: []string{}}, nil
+	}
+	restorer, ok := r.safeboxStore.(interface {
+		RestoreFrom(string) error
+		Validate() (safeboxstore.SnapshotSummary, error)
+	})
+	if !ok {
+		return safeboxstore.SnapshotSummary{}, fmt.Errorf("safebox store restore is not supported")
+	}
+	r.liveCharacterMu.Lock()
+	defer r.liveCharacterMu.Unlock()
+	if len(r.liveCharactersByName) != 0 {
+		return safeboxstore.SnapshotSummary{}, ErrSafeboxStoreRestoreLiveSessions
+	}
+	r.safeboxPersistMu.Lock()
+	defer r.safeboxPersistMu.Unlock()
+	if err := restorer.RestoreFrom(srcDir); err != nil {
+		return safeboxstore.SnapshotSummary{}, err
 	}
 	return restorer.Validate()
 }
@@ -2876,6 +3008,7 @@ func runtimePersistenceConfigSnapshot(r *gameRuntime) PersistenceConfigSnapshot 
 		ItemTemplateStorePath: itemTemplateStorePath(r.itemStore),
 		QuestStateStorePath:   questStateStorePath(r.questStateStore),
 		GroundItemStorePath:   groundItemStorePath(r.groundItemStore),
+		SafeboxStorePath:      safeboxStorePath(r.safeboxStore),
 	}
 }
 
@@ -2940,6 +3073,16 @@ func questStateStorePath(store queststate.Store) string {
 }
 
 func groundItemStorePath(store worldruntime.GroundItemStore) string {
+	if store == nil {
+		return ""
+	}
+	if locator, ok := store.(interface{ Path() string }); ok {
+		return locator.Path()
+	}
+	return ""
+}
+
+func safeboxStorePath(store safeboxstore.Store) string {
 	if store == nil {
 		return ""
 	}
@@ -3043,6 +3186,27 @@ func groundItemBackupManifestStatus(groundItemPath string) BackupManifestStatus 
 		return status
 	}
 	var manifest worldruntime.BackupManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return status
+	}
+	status.Format = manifest.Format
+	status.FileCount = len(manifest.Files)
+	for _, file := range manifest.Files {
+		status.SnapshotSizeBytes += file.SizeBytes
+	}
+	return status
+}
+
+func safeboxBackupManifestStatus(safeboxPath string) BackupManifestStatus {
+	if strings.TrimSpace(safeboxPath) == "" {
+		return BackupManifestStatus{}
+	}
+	path := filepath.Join(filepath.Dir(safeboxPath), safeboxstore.BackupManifestFilename)
+	raw, status, ok := readBackupManifestStatusRaw(path)
+	if !ok {
+		return status
+	}
+	var manifest safeboxstore.BackupManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		return status
 	}
@@ -3878,6 +4042,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		groundItemPath = filepath.Join(os.TempDir(), fmt.Sprintf("go-metin2-ground-items-%d-%d", os.Getpid(), time.Now().UnixNano()), "ground-items.json")
 	}
 	groundItems := worldruntime.NewGroundItemFileStore(groundItemPath)
+	safeboxPath := serviceSafeboxStorePath(cfg)
+	if strings.TrimSpace(cfg.SafeboxStorePath) == "" {
+		// Hermetic constructors that omit an explicit path must not share the
+		// process-wide default FileStore; otherwise one test's safebox cells
+		// rematerialize into the next runtime via /tmp pollution.
+		safeboxPath = filepath.Join(os.TempDir(), fmt.Sprintf("go-metin2-safebox-%d-%d", os.Getpid(), time.Now().UnixNano()), "safebox.json")
+	}
+	safeboxItems := safeboxstore.NewFileStore(safeboxPath)
 	sharedWorld := newSharedWorldRegistryWithTopology(topology)
 	runtime := &gameRuntime{
 		sharedWorld:            sharedWorld,
@@ -3889,6 +4061,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		interactionStore:       interactions,
 		questStateStore:        questState,
 		groundItemStore:        groundItems,
+		safeboxStore:           safeboxItems,
 		liveCharactersByName:   make(map[string]liveCharacterRegistration),
 		spawnReturnStepDueAt:   make(map[uint64]time.Time),
 		spawnChaseStepDueAt:    make(map[uint64]time.Time),
@@ -3964,12 +4137,60 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			}
 			activeSafeboxItems = make(map[uint8]inventory.ItemInstance)
 		}
+		cloneActiveSafeboxItems := func() map[uint8]inventory.ItemInstance {
+			if len(activeSafeboxItems) == 0 {
+				return make(map[uint8]inventory.ItemInstance)
+			}
+			cloned := make(map[uint8]inventory.ItemInstance, len(activeSafeboxItems))
+			for slot, item := range activeSafeboxItems {
+				cloned[slot] = item
+			}
+			return cloned
+		}
+		hydrateActiveSafeboxFromStore := func() {
+			if runtime == nil || runtime.safeboxStore == nil || !hasTicket || selectedPlayer == nil {
+				activeSafeboxItems = make(map[uint8]inventory.ItemInstance)
+				return
+			}
+			snapshot, err := safeboxstore.LoadOrEmpty(runtime.safeboxStore)
+			if err != nil {
+				activeSafeboxItems = make(map[uint8]inventory.ItemInstance)
+				return
+			}
+			activeSafeboxItems = safeboxstore.CharacterCells(snapshot, sessionTicket.Login, selectedPlayer.LiveCharacter().ID)
+			if activeSafeboxItems == nil {
+				activeSafeboxItems = make(map[uint8]inventory.ItemInstance)
+			}
+		}
+		persistActiveSafeboxCells := func(selected *player.Runtime) error {
+			if runtime == nil || runtime.safeboxStore == nil || selected == nil {
+				return nil
+			}
+			if !hasTicket {
+				return nil
+			}
+			runtime.safeboxPersistMu.Lock()
+			defer runtime.safeboxPersistMu.Unlock()
+			snapshot, err := safeboxstore.LoadOrEmpty(runtime.safeboxStore)
+			if err != nil {
+				return err
+			}
+			next, err := safeboxstore.ReplaceCharacterCells(snapshot, sessionTicket.Login, selected.LiveCharacter().ID, activeSafeboxItems)
+			if err != nil {
+				return err
+			}
+			return runtime.safeboxStore.Save(next)
+		}
 		encodeActiveSafeboxSetFrames := func() [][]byte {
 			if len(activeSafeboxItems) == 0 {
 				return nil
 			}
+			capacity := bootstrapSafeboxCapacity(activeSafeboxSize)
 			slots := make([]uint8, 0, len(activeSafeboxItems))
 			for slot := range activeSafeboxItems {
+				if capacity > 0 && slot >= capacity {
+					continue
+				}
 				slots = append(slots, slot)
 			}
 			sort.Slice(slots, func(i, j int) bool { return slots[i] < slots[j] })
@@ -5796,6 +6017,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								size = activeSafeboxSize
 							}
 							setActiveSafeboxOpen(size, true)
+							hydrateActiveSafeboxFromStore()
 							frames := [][]byte{itemproto.EncodeSafeboxSize(itemproto.SafeboxSizePacket{Size: size})}
 							frames = append(frames, encodeActiveSafeboxSetFrames()...)
 							return gameflow.ChatResult{
@@ -6308,11 +6530,21 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					}
 					frames = append(frames, quickslotFrames...)
 					frames = append(frames, safeboxFrame)
-					frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
-					if !ok {
+					previousSafeboxItems := cloneActiveSafeboxItems()
+					activeSafeboxItems[packet.SafeSlot] = checkin.Item
+					if err := persistActiveSafeboxCells(selectedPlayer); err != nil {
+						selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+						refreshLiveCharacterRegistration()
+						activeSafeboxItems = previousSafeboxItems
+						_ = persistActiveSafeboxCells(selectedPlayer)
 						return gameflow.SafeboxCheckinResult{Accepted: false}
 					}
-					activeSafeboxItems[packet.SafeSlot] = checkin.Item
+					frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+					if !ok {
+						activeSafeboxItems = previousSafeboxItems
+						_ = persistActiveSafeboxCells(selectedPlayer)
+						return gameflow.SafeboxCheckinResult{Accepted: false}
+					}
 					frames = prependMerchantCloseFrame(prependExchangeCloseFrame(frames))
 					return gameflow.SafeboxCheckinResult{Accepted: true, Frames: frames}
 				},
@@ -6363,11 +6595,21 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						}
 						frames = append(frames, setFrame)
 					}
-					frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
-					if !ok {
+					previousSafeboxItems := cloneActiveSafeboxItems()
+					delete(activeSafeboxItems, packet.SafeSlot)
+					if err := persistActiveSafeboxCells(selectedPlayer); err != nil {
+						selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+						refreshLiveCharacterRegistration()
+						activeSafeboxItems = previousSafeboxItems
+						_ = persistActiveSafeboxCells(selectedPlayer)
 						return gameflow.SafeboxCheckoutResult{Accepted: false}
 					}
-					delete(activeSafeboxItems, packet.SafeSlot)
+					frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+					if !ok {
+						activeSafeboxItems = previousSafeboxItems
+						_ = persistActiveSafeboxCells(selectedPlayer)
+						return gameflow.SafeboxCheckoutResult{Accepted: false}
+					}
 					frames = prependMerchantCloseFrame(prependExchangeCloseFrame(frames))
 					return gameflow.SafeboxCheckoutResult{Accepted: true, Frames: frames}
 				},
@@ -6451,8 +6693,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							itemproto.EncodeSafeboxDel(itemproto.DelPacket{Position: itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: uint16(sourceSlot)}}),
 							setFrame,
 						}
+						previousSafeboxItems := cloneActiveSafeboxItems()
 						delete(activeSafeboxItems, sourceSlot)
 						activeSafeboxItems[destinationSlot] = resultItem
+						if err := persistActiveSafeboxCells(selectedPlayer); err != nil {
+							activeSafeboxItems = previousSafeboxItems
+							return gameflow.SafeboxItemMoveResult{Accepted: false}
+						}
 						frames = prependMerchantCloseFrame(prependExchangeCloseFrame(frames))
 						return gameflow.SafeboxItemMoveResult{Accepted: true, Frames: frames}
 					}
@@ -6501,8 +6748,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						return gameflow.SafeboxItemMoveResult{Accepted: false}
 					}
 					frames := [][]byte{sourceFrame, destinationFrame}
+					previousSafeboxItems := cloneActiveSafeboxItems()
 					activeSafeboxItems[sourceSlot] = sourceRemainder
 					activeSafeboxItems[destinationSlot] = resultItem
+					if err := persistActiveSafeboxCells(selectedPlayer); err != nil {
+						activeSafeboxItems = previousSafeboxItems
+						return gameflow.SafeboxItemMoveResult{Accepted: false}
+					}
 					frames = prependMerchantCloseFrame(prependExchangeCloseFrame(frames))
 					return gameflow.SafeboxItemMoveResult{Accepted: true, Frames: frames}
 				},
@@ -7383,6 +7635,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if resolution.Definition.Kind == interactionstore.KindOpenSafebox {
 						size := interactionstore.EffectiveOpenSafeboxSize(resolution.Definition)
 						setActiveSafeboxOpen(size, true)
+						hydrateActiveSafeboxFromStore()
 						frames := make([][]byte, 0, 2)
 						if resolution.Delivery != nil {
 							frames = append(frames, chatproto.EncodeChatDelivery(*resolution.Delivery))
@@ -11990,6 +12243,7 @@ func servicePersistenceConfigWithDefaults(cfg config.Service) config.Service {
 	cfg.ItemTemplateStorePath = serviceItemTemplateStorePath(cfg)
 	cfg.QuestStateStorePath = serviceQuestStateStorePath(cfg)
 	cfg.GroundItemStorePath = serviceGroundItemStorePath(cfg)
+	cfg.SafeboxStorePath = serviceSafeboxStorePath(cfg)
 	return cfg
 }
 
@@ -12061,6 +12315,17 @@ func serviceGroundItemStorePath(cfg config.Service) string {
 		return path
 	}
 	return defaultGroundItemStorePath()
+}
+
+func defaultSafeboxStorePath() string {
+	return config.DefaultSafeboxStorePath()
+}
+
+func serviceSafeboxStorePath(cfg config.Service) string {
+	if path := strings.TrimSpace(cfg.SafeboxStorePath); path != "" {
+		return path
+	}
+	return defaultSafeboxStorePath()
 }
 
 func (r *gameRuntime) loadPersistedGroundItems() error {

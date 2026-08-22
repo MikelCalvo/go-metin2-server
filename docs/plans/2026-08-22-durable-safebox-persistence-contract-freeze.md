@@ -33,4 +33,4 @@ Freeze the first durable same-account safebox persistence contract before openin
 
 ## Status
 
-Docs-only planning freeze for the next items-lane storage slice. RED intentionally deferred until this contract is accepted into protocol/QA (separate docs commit or the same docs commit before tests).
+Implemented on `lane/items`: dedicated `safeboxstore` FileStore + open-presentation rematerialize for check-in/out/move. Password / money / mall remain deferred.

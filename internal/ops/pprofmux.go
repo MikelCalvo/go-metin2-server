@@ -1219,6 +1219,156 @@ func RegisterLocalGroundItemStoreRestoreEndpoint(mux *http.ServeMux, restore fun
 	return mux
 }
 
+func RegisterLocalSafeboxStoreValidateEndpoint(mux *http.ServeMux, validate func() (any, error)) *http.ServeMux {
+	if mux == nil || validate == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/safebox-store/validate", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		status, ok := requireEmptyLocalAccountStoreMutationBody(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		summary, err := validate()
+		if err != nil {
+			slog.Warn("local safebox store validation failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalSafeboxStoreCrashTempCleanupEndpoint(mux *http.ServeMux, cleanup func() (any, error)) *http.ServeMux {
+	if mux == nil || cleanup == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/safebox-store/crash-temps/cleanup", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		status, ok := requireEmptyLocalAccountStoreMutationBody(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		summary, err := cleanup()
+		if err != nil {
+			slog.Warn("local safebox store crash temp cleanup failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalSafeboxStoreBackupEndpoint(mux *http.ServeMux, backup func(string) (any, error)) *http.ServeMux {
+	if mux == nil || backup == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/safebox-store/backup", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		request, status, ok := decodeLocalAccountStoreBackupRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		summary, err := backup(request.DstDir)
+		if err != nil {
+			slog.Warn("local safebox store backup failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalSafeboxStoreBackupValidateEndpoint(mux *http.ServeMux, validate func(string) (any, error)) *http.ServeMux {
+	if mux == nil || validate == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/safebox-store/backup/validate", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		request, status, ok := decodeLocalAccountStoreRestoreRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		summary, err := validate(request.SrcDir)
+		if err != nil {
+			slog.Warn("local safebox store backup validation failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalSafeboxStoreRestoreEndpoint(mux *http.ServeMux, restore func(string) (any, error)) *http.ServeMux {
+	if mux == nil || restore == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/safebox-store/restore", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		request, status, ok := decodeLocalAccountStoreRestoreRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		summary, err := restore(request.SrcDir)
+		if err != nil {
+			slog.Warn("local safebox store restore failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalItemTemplateStoreBackupEndpoint(mux *http.ServeMux, backup func(string) (any, error)) *http.ServeMux {
 	if mux == nil || backup == nil {
 		return mux

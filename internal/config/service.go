@@ -26,6 +26,7 @@ type Service struct {
 	ItemTemplateStorePath string
 	QuestStateStorePath   string
 	GroundItemStorePath   string
+	SafeboxStorePath      string
 	DatabaseDriver        string
 	DatabaseDSN           string
 }
@@ -147,6 +148,7 @@ func ValidatePersistenceConfig(cfg Service) error {
 		{Name: "item_template_store_path", Role: persistencePathRoleFile, Path: cfg.ItemTemplateStorePath},
 		{Name: "quest_state_store_path", Role: persistencePathRoleFile, Path: questStateStorePathOrDefault(cfg.QuestStateStorePath)},
 		{Name: "ground_item_store_path", Role: persistencePathRoleFile, Path: groundItemStorePathOrDefault(cfg.GroundItemStorePath)},
+		{Name: "safebox_store_path", Role: persistencePathRoleFile, Path: safeboxStorePathOrDefault(cfg.SafeboxStorePath)},
 	})
 }
 
@@ -366,6 +368,7 @@ func LoadService(name string, defaultPprofAddr string, defaultLegacyAddr string,
 		ItemTemplateStorePath: loadPathOverride(upperName, "ITEM_TEMPLATE_STORE_PATH", defaultItemTemplateStorePath()),
 		QuestStateStorePath:   loadPathOverride(upperName, "QUEST_STATE_STORE_PATH", defaultQuestStateStorePath()),
 		GroundItemStorePath:   loadPathOverride(upperName, "GROUND_ITEM_STORE_PATH", defaultGroundItemStorePath()),
+		SafeboxStorePath:      loadPathOverride(upperName, "SAFEBOX_STORE_PATH", defaultSafeboxStorePath()),
 		DatabaseDriver:        loadPathOverride(upperName, "DB_DRIVER", ""),
 		DatabaseDSN:           loadPathOverride(upperName, "DB_DSN", ""),
 	}
@@ -439,6 +442,21 @@ func groundItemStorePathOrDefault(path string) string {
 
 func DefaultGroundItemStorePath() string {
 	return defaultGroundItemStorePath()
+}
+
+func defaultSafeboxStorePath() string {
+	return filepath.Join(os.TempDir(), "go-metin2-server-safebox", "safebox.json")
+}
+
+func safeboxStorePathOrDefault(path string) string {
+	if trimmed := strings.TrimSpace(path); trimmed != "" {
+		return trimmed
+	}
+	return defaultSafeboxStorePath()
+}
+
+func DefaultSafeboxStorePath() string {
+	return defaultSafeboxStorePath()
 }
 
 func loadOverride(upperName string, suffix string, fallback string) string {

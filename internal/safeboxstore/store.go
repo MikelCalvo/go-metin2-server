@@ -1,0 +1,525 @@
+package safeboxstore
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
+)
+
+var (
+	ErrStorePathRequired = errors.New("safebox store path is required")
+	ErrSnapshotNotFound  = errors.New("safebox snapshot not found")
+	ErrInvalidSnapshot   = errors.New("invalid safebox snapshot")
+)
+
+const (
+	// MaxDurableCellExclusive is the exclusive upper bound for durable safebox
+	// cells (bootstrap open size 1..3 × 5 cells/page). Open presentation still
+	// capacity-gates mutations and SAFEBOX_SET emission to the currently opened
+	// size; cells beyond that stay on disk for a later larger reopen.
+	MaxDurableCellExclusive = 15
+
+	safeboxCrashTempPrefix = ".safebox-"
+	safeboxCrashTempSuffix = ".json"
+)
+
+// Cell is one durable safebox slot for a selected character.
+type Cell struct {
+	Cell   uint8  `json:"cell"`
+	ID     uint64 `json:"id"`
+	Vnum   uint32 `json:"vnum"`
+	Count  uint16 `json:"count"`
+	Locked bool   `json:"locked,omitempty"`
+}
+
+// CharacterRow is the durable safebox contents for one account login + character id.
+type CharacterRow struct {
+	Login       string `json:"login"`
+	CharacterID uint32 `json:"character_id"`
+	Cells       []Cell `json:"cells"`
+}
+
+// Snapshot is the committed durable safebox FileStore payload.
+type Snapshot struct {
+	Characters []CharacterRow `json:"characters"`
+}
+
+// SnapshotSummary is the operator/debug summary for Validate.
+type SnapshotSummary struct {
+	CharacterCount int      `json:"character_count"`
+	CellCount      int      `json:"cell_count"`
+	Logins         []string `json:"logins"`
+	CharacterKeys  []string `json:"character_keys"`
+	CrashTempCount int      `json:"crash_temp_count,omitempty"`
+	CrashTempFiles []string `json:"crash_temp_files,omitempty"`
+}
+
+// Store is the Load/Save seam used by gamed rematerialize/persist.
+type Store interface {
+	Load() (Snapshot, error)
+	Save(Snapshot) error
+}
+
+// FileStore persists durable safebox cells beside other bootstrap JSON stores.
+type FileStore struct {
+	path string
+}
+
+var durableSyncDisabledForTest bool
+
+// DisableDurableSyncForTest skips fsync calls until restore runs.
+func DisableDurableSyncForTest() func() {
+	previous := durableSyncDisabledForTest
+	durableSyncDisabledForTest = true
+	return func() { durableSyncDisabledForTest = previous }
+}
+
+// NewFileStore returns a FileStore rooted at path.
+func NewFileStore(path string) *FileStore {
+	return &FileStore{path: path}
+}
+
+// Path returns the configured snapshot path.
+func (s *FileStore) Path() string {
+	if s == nil {
+		return ""
+	}
+	return s.path
+}
+
+func (s *FileStore) syncStoreDir(dir string) error {
+	if s == nil || durableSyncDisabledForTest {
+		return nil
+	}
+	return syncStoreDir(dir)
+}
+
+func (s *FileStore) syncFile(file *os.File) error {
+	if s == nil || durableSyncDisabledForTest {
+		return nil
+	}
+	return file.Sync()
+}
+
+// NormalizeSnapshot returns the deterministic safebox snapshot shape.
+func NormalizeSnapshot(snapshot Snapshot) Snapshot {
+	return normalizeSnapshot(snapshot)
+}
+
+// ValidSnapshot reports whether the snapshot is well-formed after normalize.
+func ValidSnapshot(snapshot Snapshot) bool {
+	return validateSnapshot(normalizeSnapshot(snapshot)) == nil
+}
+
+// SummarizeSnapshot returns the operator summary for a valid snapshot.
+func SummarizeSnapshot(snapshot Snapshot) (SnapshotSummary, error) {
+	normalized := normalizeSnapshot(snapshot)
+	if err := validateSnapshot(normalized); err != nil {
+		return SnapshotSummary{}, err
+	}
+	return summarizeSnapshot(normalized), nil
+}
+
+// Load reads and validates the committed durable safebox snapshot.
+func (s *FileStore) Load() (Snapshot, error) {
+	if s == nil || s.path == "" {
+		return Snapshot{}, ErrStorePathRequired
+	}
+	if err := rejectCommittedSnapshotSymlink(s.path); err != nil {
+		return Snapshot{}, err
+	}
+	raw, err := os.ReadFile(s.path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return Snapshot{}, ErrSnapshotNotFound
+		}
+		return Snapshot{}, fmt.Errorf("read safebox snapshot: %w", err)
+	}
+	if !utf8.Valid(raw) {
+		return Snapshot{}, fmt.Errorf("%w: decode safebox snapshot: invalid utf-8", ErrInvalidSnapshot)
+	}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return Snapshot{}, fmt.Errorf("%w: decode safebox snapshot: null root", ErrInvalidSnapshot)
+	}
+
+	var rawSnapshot struct {
+		Characters json.RawMessage `json:"characters"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&rawSnapshot); err != nil {
+		return Snapshot{}, fmt.Errorf("%w: decode safebox snapshot: %v", ErrInvalidSnapshot, err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return Snapshot{}, fmt.Errorf("%w: trailing safebox snapshot content", ErrInvalidSnapshot)
+	}
+
+	var snapshot Snapshot
+	if rawSnapshot.Characters != nil {
+		if bytes.Equal(bytes.TrimSpace(rawSnapshot.Characters), []byte("null")) {
+			return Snapshot{}, fmt.Errorf("%w: decode safebox snapshot: null characters collection", ErrInvalidSnapshot)
+		}
+		collectionDecoder := json.NewDecoder(bytes.NewReader(rawSnapshot.Characters))
+		collectionDecoder.DisallowUnknownFields()
+		if err := collectionDecoder.Decode(&snapshot.Characters); err != nil {
+			return Snapshot{}, fmt.Errorf("%w: decode safebox snapshot: %v", ErrInvalidSnapshot, err)
+		}
+		if err := collectionDecoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+			return Snapshot{}, fmt.Errorf("%w: trailing safebox characters content", ErrInvalidSnapshot)
+		}
+	}
+
+	normalized := normalizeSnapshot(snapshot)
+	if err := validateSnapshot(normalized); err != nil {
+		return Snapshot{}, fmt.Errorf("%w: validate safebox snapshot", err)
+	}
+	return normalized, nil
+}
+
+// Validate loads the committed snapshot when present and reports crash-temp residue.
+func (s *FileStore) Validate() (SnapshotSummary, error) {
+	if s == nil || s.path == "" {
+		return SnapshotSummary{}, ErrStorePathRequired
+	}
+	summary := SnapshotSummary{Logins: []string{}, CharacterKeys: []string{}}
+	snapshot, err := s.Load()
+	if err != nil {
+		if !errors.Is(err, ErrSnapshotNotFound) {
+			return SnapshotSummary{}, err
+		}
+	} else {
+		summary = summarizeSnapshot(snapshot)
+	}
+	crashTempFiles, err := s.crashTempFiles()
+	if err != nil {
+		return SnapshotSummary{}, err
+	}
+	summary.CrashTempCount = len(crashTempFiles)
+	summary.CrashTempFiles = crashTempFiles
+	if err := s.validateActiveBackupManifest(); err != nil {
+		return SnapshotSummary{}, err
+	}
+	return summary, nil
+}
+
+// CleanupCrashTempFiles removes hidden .safebox-*.json crash temps after Validate succeeds.
+func (s *FileStore) CleanupCrashTempFiles() (SnapshotSummary, error) {
+	if s == nil || s.path == "" {
+		return SnapshotSummary{}, ErrStorePathRequired
+	}
+	if _, err := s.Validate(); err != nil {
+		return SnapshotSummary{}, err
+	}
+	crashTempFiles, err := s.crashTempFiles()
+	if err != nil {
+		return SnapshotSummary{}, err
+	}
+	if len(crashTempFiles) == 0 {
+		return s.Validate()
+	}
+	storeDir := filepath.Dir(s.path)
+	for _, filename := range crashTempFiles {
+		if err := os.Remove(filepath.Join(storeDir, filename)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return SnapshotSummary{}, fmt.Errorf("remove safebox crash temp file %q: %w", filename, err)
+		}
+	}
+	if err := s.syncStoreDir(storeDir); err != nil {
+		return SnapshotSummary{}, fmt.Errorf("sync safebox store dir after crash temp cleanup: %w", err)
+	}
+	return s.Validate()
+}
+
+// Save writes the durable safebox snapshot via crash-temp + rename + fsync.
+func (s *FileStore) Save(snapshot Snapshot) error {
+	if s == nil || s.path == "" {
+		return ErrStorePathRequired
+	}
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+		return fmt.Errorf("create safebox store dir: %w", err)
+	}
+	normalized := normalizeSnapshot(snapshot)
+	if err := validateSnapshot(normalized); err != nil {
+		return fmt.Errorf("%w: validate safebox snapshot", err)
+	}
+	raw, err := json.MarshalIndent(normalized, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode safebox snapshot: %w", err)
+	}
+	raw = append(raw, '\n')
+
+	temp, err := os.CreateTemp(filepath.Dir(s.path), safeboxCrashTempPrefix+"*"+safeboxCrashTempSuffix)
+	if err != nil {
+		return fmt.Errorf("create safebox temp file: %w", err)
+	}
+	defer func() {
+		_ = temp.Close()
+		_ = os.Remove(temp.Name())
+	}()
+	if _, err := temp.Write(raw); err != nil {
+		return fmt.Errorf("write safebox snapshot: %w", err)
+	}
+	if err := s.syncFile(temp); err != nil {
+		return fmt.Errorf("sync safebox temp file: %w", err)
+	}
+	if err := temp.Close(); err != nil {
+		return fmt.Errorf("close safebox temp file: %w", err)
+	}
+	storeDir := filepath.Dir(s.path)
+	if err := os.Rename(temp.Name(), s.path); err != nil {
+		return fmt.Errorf("commit safebox snapshot: %w", err)
+	}
+	if err := removeBackupManifest(storeDir); err != nil {
+		return fmt.Errorf("remove stale safebox backup manifest: %w", err)
+	}
+	if err := s.syncStoreDir(storeDir); err != nil {
+		return fmt.Errorf("sync safebox store dir: %w", err)
+	}
+	return nil
+}
+
+func (s *FileStore) crashTempFiles() ([]string, error) {
+	return crashTempFilesInDir(filepath.Dir(s.path), filepath.Base(s.path))
+}
+
+// CharacterCells returns the durable cells for one login + character id as a map.
+func CharacterCells(snapshot Snapshot, login string, characterID uint32) map[uint8]inventory.ItemInstance {
+	login = strings.TrimSpace(login)
+	out := make(map[uint8]inventory.ItemInstance)
+	for _, row := range normalizeSnapshot(snapshot).Characters {
+		if row.Login != login || row.CharacterID != characterID {
+			continue
+		}
+		for _, cell := range row.Cells {
+			out[cell.Cell] = inventory.ItemInstance{
+				ID:     cell.ID,
+				Vnum:   cell.Vnum,
+				Count:  cell.Count,
+				Slot:   inventory.SlotIndex(cell.Cell),
+				Locked: cell.Locked,
+			}
+		}
+		return out
+	}
+	return out
+}
+
+// ReplaceCharacterCells upserts or removes one character row from the snapshot.
+// An empty cells map removes the character row entirely.
+func ReplaceCharacterCells(snapshot Snapshot, login string, characterID uint32, cells map[uint8]inventory.ItemInstance) (Snapshot, error) {
+	login = strings.TrimSpace(login)
+	if !validLogin(login) || characterID == 0 {
+		return Snapshot{}, ErrInvalidSnapshot
+	}
+	normalized := normalizeSnapshot(snapshot)
+	filtered := make([]CharacterRow, 0, len(normalized.Characters))
+	for _, row := range normalized.Characters {
+		if row.Login == login && row.CharacterID == characterID {
+			continue
+		}
+		filtered = append(filtered, row)
+	}
+	if len(cells) == 0 {
+		return normalizeSnapshot(Snapshot{Characters: filtered}), nil
+	}
+	rowCells := make([]Cell, 0, len(cells))
+	for cell, item := range cells {
+		if uint8(item.Slot) != cell && item.Slot != 0 {
+			// Prefer explicit map key; slot is rewritten to match cell.
+		}
+		rowCells = append(rowCells, Cell{
+			Cell:   cell,
+			ID:     item.ID,
+			Vnum:   item.Vnum,
+			Count:  item.Count,
+			Locked: item.Locked,
+		})
+	}
+	filtered = append(filtered, CharacterRow{
+		Login:       login,
+		CharacterID: characterID,
+		Cells:       rowCells,
+	})
+	next := normalizeSnapshot(Snapshot{Characters: filtered})
+	if err := validateSnapshot(next); err != nil {
+		return Snapshot{}, err
+	}
+	return next, nil
+}
+
+func normalizeSnapshot(snapshot Snapshot) Snapshot {
+	normalized := Snapshot{Characters: cloneCharacterRows(snapshot.Characters)}
+	if normalized.Characters == nil {
+		normalized.Characters = []CharacterRow{}
+	}
+	for i := range normalized.Characters {
+		normalized.Characters[i] = normalizeCharacterRow(normalized.Characters[i])
+	}
+	sort.Slice(normalized.Characters, func(i, j int) bool {
+		if normalized.Characters[i].Login == normalized.Characters[j].Login {
+			return normalized.Characters[i].CharacterID < normalized.Characters[j].CharacterID
+		}
+		return normalized.Characters[i].Login < normalized.Characters[j].Login
+	})
+	return normalized
+}
+
+func normalizeCharacterRow(row CharacterRow) CharacterRow {
+	row.Login = strings.TrimSpace(row.Login)
+	row.Cells = cloneCells(row.Cells)
+	if row.Cells == nil {
+		row.Cells = []Cell{}
+	}
+	for i := range row.Cells {
+		row.Cells[i] = normalizeCell(row.Cells[i])
+	}
+	sort.Slice(row.Cells, func(i, j int) bool {
+		return row.Cells[i].Cell < row.Cells[j].Cell
+	})
+	return row
+}
+
+func normalizeCell(cell Cell) Cell {
+	return cell
+}
+
+func summarizeSnapshot(snapshot Snapshot) SnapshotSummary {
+	summary := SnapshotSummary{
+		CharacterCount: len(snapshot.Characters),
+		Logins:         []string{},
+		CharacterKeys:  make([]string, 0, len(snapshot.Characters)),
+	}
+	loginsSeen := make(map[string]struct{})
+	for _, row := range normalizeSnapshot(snapshot).Characters {
+		summary.CellCount += len(row.Cells)
+		summary.CharacterKeys = append(summary.CharacterKeys, characterKey(row.Login, row.CharacterID))
+		loginsSeen[row.Login] = struct{}{}
+	}
+	for login := range loginsSeen {
+		summary.Logins = append(summary.Logins, login)
+	}
+	sort.Strings(summary.Logins)
+	return summary
+}
+
+func validateSnapshot(snapshot Snapshot) error {
+	seenCharacters := make(map[string]struct{}, len(snapshot.Characters))
+	seenItemIDs := make(map[uint64]struct{})
+	for _, row := range snapshot.Characters {
+		row = normalizeCharacterRow(row)
+		if !validLogin(row.Login) || row.CharacterID == 0 {
+			return ErrInvalidSnapshot
+		}
+		key := characterKey(row.Login, row.CharacterID)
+		if _, ok := seenCharacters[key]; ok {
+			return ErrInvalidSnapshot
+		}
+		seenCharacters[key] = struct{}{}
+		seenCells := make(map[uint8]struct{}, len(row.Cells))
+		for _, cell := range row.Cells {
+			if cell.Cell >= MaxDurableCellExclusive {
+				return ErrInvalidSnapshot
+			}
+			if _, ok := seenCells[cell.Cell]; ok {
+				return ErrInvalidSnapshot
+			}
+			seenCells[cell.Cell] = struct{}{}
+			item := inventory.ItemInstance{
+				ID:     cell.ID,
+				Vnum:   cell.Vnum,
+				Count:  cell.Count,
+				Slot:   inventory.SlotIndex(cell.Cell),
+				Locked: cell.Locked,
+			}
+			if err := item.Validate(); err != nil {
+				return ErrInvalidSnapshot
+			}
+			if item.Equipped {
+				return ErrInvalidSnapshot
+			}
+			if _, ok := seenItemIDs[cell.ID]; ok {
+				return ErrInvalidSnapshot
+			}
+			seenItemIDs[cell.ID] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func validLogin(login string) bool {
+	login = strings.TrimSpace(login)
+	if login == "" || !utf8.ValidString(login) || strings.ContainsRune(login, '\x00') {
+		return false
+	}
+	for _, r := range login {
+		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func characterKey(login string, characterID uint32) string {
+	return strings.TrimSpace(login) + ":" + fmt.Sprintf("%d", characterID)
+}
+
+func cloneCharacterRows(rows []CharacterRow) []CharacterRow {
+	if len(rows) == 0 {
+		return nil
+	}
+	cloned := make([]CharacterRow, len(rows))
+	for i, row := range rows {
+		cloned[i] = CharacterRow{
+			Login:       row.Login,
+			CharacterID: row.CharacterID,
+			Cells:       cloneCells(row.Cells),
+		}
+	}
+	return cloned
+}
+
+func cloneCells(cells []Cell) []Cell {
+	if len(cells) == 0 {
+		return nil
+	}
+	cloned := make([]Cell, len(cells))
+	copy(cloned, cells)
+	return cloned
+}
+
+func rejectCommittedSnapshotSymlink(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("stat safebox snapshot: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: safebox snapshot %q is a symlink", ErrInvalidSnapshot, filepath.Base(path))
+	}
+	return nil
+}
+
+var syncStoreDir = syncDir
+
+func syncDir(path string) error {
+	if durableSyncDisabledForTest {
+		return nil
+	}
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
+}
