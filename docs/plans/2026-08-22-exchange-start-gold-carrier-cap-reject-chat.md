@@ -18,7 +18,7 @@ Fail closed `EXCHANGE START` when either paired side already holds gold at or ab
 - changing the already-owned second-accept / commit-time gold-overflow dual-sided chat (`You cannot carry any more gold.` / partner wording)
 - restart-restored ground ownership / despawn timers
 
-## TDD and validation (implementation follow-up)
+## TDD and validation
 
 Focused coverage:
 
@@ -34,4 +34,4 @@ Focused coverage:
 
 ## Status
 
-Contract frozen; implementation / RED not opened in this docs-only commit.
+Shipped: `EXCHANGE START` self-only gold-carrier-cap reject chat for requester and partner live gold already at or above `1<<31-1`, after busy-window / `ALREADY` gates, with local-first requester-wins ordering when both sides are over the cap. Id-collision / restriction finalize reject chat and player-shop/cube busy rejects stay deferred.

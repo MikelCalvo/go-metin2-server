@@ -563,6 +563,15 @@ func (r *sharedWorldRegistry) StartExchange(originID uint64, targetVID uint32) (
 	if _, busy := r.exchangePartners[target.Entity.ID]; busy {
 		return [][]byte{encodeExchangeAlreadyFrame()}, true
 	}
+	// Gold-carrier-cap gate stays after busy-window / ALREADY so those owned
+	// rejects keep local-first precedence. When both sides are already at or
+	// above the signed point-change carrier max, the requester-side string wins.
+	if origin.Gold >= exchangeGoldPointChangeCarrierMax {
+		return [][]byte{encodeExchangeRequesterGoldCarrierCapInfoFrame()}, true
+	}
+	if target.Character.Gold >= exchangeGoldPointChangeCarrierMax {
+		return [][]byte{encodeExchangePartnerGoldCarrierCapInfoFrame()}, true
+	}
 
 	originFrames := [][]byte{encodeExchangeStartFrame(target.Character.VID)}
 	targetFrames := [][]byte{encodeExchangeStartFrame(origin.VID)}
@@ -5993,6 +6002,24 @@ func encodeExchangeRequesterMerchantBusyInfoFrame() []byte {
 		VID:     0,
 		Empire:  0,
 		Message: exchangeRequesterMerchantBusyInfoMessage,
+	})
+}
+
+func encodeExchangeRequesterGoldCarrierCapInfoFrame() []byte {
+	return chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+		Type:    chatproto.ChatTypeInfo,
+		VID:     0,
+		Empire:  0,
+		Message: exchangeRequesterGoldCarrierCapInfoMessage,
+	})
+}
+
+func encodeExchangePartnerGoldCarrierCapInfoFrame() []byte {
+	return chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+		Type:    chatproto.ChatTypeInfo,
+		VID:     0,
+		Empire:  0,
+		Message: exchangePartnerGoldCarrierCapInfoMessage,
 	})
 }
 

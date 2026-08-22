@@ -580,6 +580,171 @@ func TestGameRuntimeItemExchangeStartRejectsPartnerActiveRefineDialogWithoutMuta
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "partner-refine exchange start peer")
 }
 
+func TestGameRuntimeItemExchangeStartRejectsRequesterGoldCarrierWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchGoldCapOwner", 0x01030201, 0x02040201, 1100, 2100, 0, 101, 201)
+	owner.Gold = exchangeGoldPointChangeCarrierMax
+	owner.Inventory = []inventory.ItemInstance{{ID: 8201, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchGoldCapPeer", 0x01030202, 0x02040202, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 8202, Vnum: 27002, Count: 2, Slot: 6}}
+	ownerLogin := "exch-gold-carrier-start-owner"
+	peerLogin := "exch-gold-carrier-start-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707201, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x70707202, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed requester gold-carrier exchange owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed requester gold-carrier exchange peer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected requester gold-carrier exchange runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707201)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707202)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected requester gold-carrier exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected requester gold-carrier exchange start to emit one info chat frame, got %d", len(startOut))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, startOut[0]))
+	if err != nil {
+		t.Fatalf("decode requester gold-carrier exchange start info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterGoldCarrierCapInfoMessage {
+		t.Fatalf("unexpected requester gold-carrier exchange start info chat: %+v", infoChat)
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected requester gold-carrier exchange start to queue no peer frames, got %d", len(queued))
+	}
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "requester gold-carrier exchange start owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "requester gold-carrier exchange start peer")
+}
+
+func TestGameRuntimeItemExchangeStartRejectsPartnerGoldCarrierWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchGoldCapPartnerOwner", 0x01030203, 0x02040203, 1100, 2100, 0, 101, 201)
+	owner.Gold = 125
+	owner.Inventory = []inventory.ItemInstance{{ID: 8203, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchGoldCapPartnerPeer", 0x01030204, 0x02040204, 1120, 2120, 0, 101, 201)
+	peer.Gold = exchangeGoldPointChangeCarrierMax
+	peer.Inventory = []inventory.ItemInstance{{ID: 8204, Vnum: 27002, Count: 2, Slot: 6}}
+	ownerLogin := "exch-gold-cap-partner-owner"
+	peerLogin := "exch-gold-cap-partner-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707203, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x70707204, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed partner gold-carrier exchange owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed partner gold-carrier exchange peer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected partner gold-carrier exchange runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707203)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707204)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected partner gold-carrier exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected partner gold-carrier exchange start to emit one info chat frame, got %d", len(startOut))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, startOut[0]))
+	if err != nil {
+		t.Fatalf("decode partner gold-carrier exchange start info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangePartnerGoldCarrierCapInfoMessage {
+		t.Fatalf("unexpected partner gold-carrier exchange start info chat: %+v", infoChat)
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected partner gold-carrier exchange start to queue no peer frames, got %d", len(queued))
+	}
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "partner gold-carrier exchange start owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "partner gold-carrier exchange start peer")
+}
+
+func TestGameRuntimeItemExchangeStartRejectsRequesterGoldCarrierWhenBothOverCapWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchGoldCapBothOwner", 0x01030205, 0x02040205, 1100, 2100, 0, 101, 201)
+	owner.Gold = exchangeGoldPointChangeCarrierMax
+	owner.Inventory = []inventory.ItemInstance{{ID: 8205, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchGoldCapBothPeer", 0x01030206, 0x02040206, 1120, 2120, 0, 101, 201)
+	peer.Gold = exchangeGoldPointChangeCarrierMax
+	peer.Inventory = []inventory.ItemInstance{{ID: 8206, Vnum: 27002, Count: 2, Slot: 6}}
+	ownerLogin := "exch-gold-carrier-both-owner"
+	peerLogin := "exch-gold-carrier-both-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707205, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x70707206, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed both gold-carrier exchange owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed both gold-carrier exchange peer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected both gold-carrier exchange runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707205)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707206)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected both gold-carrier exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected both gold-carrier exchange start to emit one info chat frame, got %d", len(startOut))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, startOut[0]))
+	if err != nil {
+		t.Fatalf("decode both gold-carrier exchange start info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterGoldCarrierCapInfoMessage {
+		t.Fatalf("unexpected both gold-carrier exchange start info chat: %+v", infoChat)
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected both gold-carrier exchange start to queue no peer frames, got %d", len(queued))
+	}
+
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "both gold-carrier exchange start owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "both gold-carrier exchange start peer")
+}
+
 func TestGameRuntimeItemExchangeWalkAwayClosesShellWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
