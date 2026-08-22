@@ -4681,6 +4681,8 @@ func TestCanonicalizePveVerticalAuthoringExampleExpandsQuestLoop(t *testing.T) {
 		Level:                 worldruntime.TrainingDummyBootstrapLevel,
 		Rank:                  0,
 		RespawnDelayMs:        2000,
+		AggroRadius:           150,
+		LeashRadius:           350,
 	}
 	if len(canonical.CombatProfiles) != 1 || !reflect.DeepEqual(canonical.CombatProfiles[0], wantProfile) {
 		t.Fatalf("unexpected canonical PvE vertical combat profile:\n got: %#v\nwant: %#v", canonical.CombatProfiles, wantProfile)
@@ -4811,6 +4813,8 @@ func TestCanonicalizeCombatProfileFormulaExampleDerivesDamageAndProfileReward(t 
 		Level:                 worldruntime.TrainingDummyBootstrapLevel,
 		Rank:                  0,
 		RespawnDelayMs:        2000,
+		AggroRadius:           150,
+		LeashRadius:           350,
 		DeathReward: worldruntime.StaticActorDeathReward{
 			Experience: 40,
 			Gold:       25,

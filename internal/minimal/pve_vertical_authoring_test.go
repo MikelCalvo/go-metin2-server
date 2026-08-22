@@ -95,8 +95,8 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if imported.SpawnGroups[0].CombatProfile != "qa_pve_vertical_practice_mob" {
 		t.Fatalf("expected imported PvE vertical mob to use formula combat profile, got %+v", imported.SpawnGroups[0])
 	}
-	if len(imported.CombatProfiles) != 1 || imported.CombatProfiles[0].Profile != "qa_pve_vertical_practice_mob" || imported.CombatProfiles[0].MaxHP != pveVerticalMobMaxHP || imported.CombatProfiles[0].DamagePerNormalAttack != 5 {
-		t.Fatalf("expected imported portable formula combat profile max_hp=20 damage=5, got %+v", imported.CombatProfiles)
+	if len(imported.CombatProfiles) != 1 || imported.CombatProfiles[0].Profile != "qa_pve_vertical_practice_mob" || imported.CombatProfiles[0].MaxHP != pveVerticalMobMaxHP || imported.CombatProfiles[0].DamagePerNormalAttack != 5 || imported.CombatProfiles[0].AggroRadius != 150 || imported.CombatProfiles[0].LeashRadius != 350 {
+		t.Fatalf("expected imported portable formula combat profile max_hp=20 damage=5 aggro_radius=150 leash_radius=350, got %+v", imported.CombatProfiles)
 	}
 
 	var guideVID, hunterVID, merchantVID, warehouseVID, mobVID uint32

@@ -622,9 +622,10 @@ Contract for optional authored `aggro_radius` on portable `combat_profiles` / `S
 
 Current implementation status:
 - optional authored `aggro_radius` is owned on portable `combat_profiles` / `StaticActorCombatProfileDefaults` and round-trips through content-bundle canonicalize/import/export and file-backed static-actor snapshots
-- `EffectiveStaticActorSpawnAggroRadius(profile)` / `EffectiveStaticActorSpawnAggroRadiusForActor(actor)` resolve omitted/zero to `DefaultSpawnAggroRadius` (`200`) and honor positive authored values up to `DefaultSpawnLeashRadius` (`400`)
+- `EffectiveStaticActorSpawnAggroRadius(profile)` / `EffectiveStaticActorSpawnAggroRadiusForActor(actor)` resolve omitted/zero to `DefaultSpawnAggroRadius` (`200`) and honor positive authored values up to the profile's effective leash radius
 - live proximity acquisition, leave-radius release, and death/respawn suppress seeding reuse that effective radius instead of hard-coding the bootstrap default
-- negative radii and radii above the leash fail closed at registration / bundle / static-snapshot validation
+- negative radii and radii above the effective leash fail closed at registration / bundle / static-snapshot validation
+- the checked-in formula and PvE vertical authoring fixtures now author non-default `aggro_radius = 150` on `qa_formula_practice_mob` / `qa_pve_vertical_practice_mob` so manual QA and canonicalize proofs exercise narrowed acquire radius beside formula damage
 
 Explicit non-goals for this profile-authored aggro-radius freeze alone:
 - aggro hysteresis / a drop radius distinct from the acquire radius
@@ -663,6 +664,7 @@ Current implementation status:
 - read-only operator leash GET endpoints keep an explicit query `radius` override and default omitted lookups through the actor's effective leash radius
 - negative leash radii and positive leash radii below the profile's effective aggro fail closed; positive authored aggro must also stay within the profile's effective leash
 - unengaged `within_radius` homeward recovery after chase/engagement release is now owned beside return-step: `PlanStaticActorSpawnLeashHomewardStep` plus the pending-frame homeward executor step the actor toward authored home with same-map retained-viewer `MOVE` while combat remains allowed and engagement stays cleared; `return_required` recovery and operator exact-home `return-home` are unchanged; operator/runtime same-map position `UpdateStaticActor` that leaves a live unengaged spawn-backed actor `within_radius` now re-arms that same pending homeward deadline
+- the checked-in formula and PvE vertical authoring fixtures now author non-default `leash_radius = 350` beside `aggro_radius = 150` so omitted-radius leash GET and proximity smoke can prove profile-effective radii without relying only on bootstrap `400`
 
 Explicit non-goals for this profile-authored leash-radius freeze alone:
 - pathfinding, navmesh, patrol, or continuous interpolation

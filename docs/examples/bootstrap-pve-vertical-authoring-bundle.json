@@ -79,7 +79,9 @@
       "max_hp": 20,
       "attack_value": 9,
       "defense_value": 4,
-      "respawn_delay_ms": 2000
+      "respawn_delay_ms": 2000,
+      "aggro_radius": 150,
+      "leash_radius": 350
     }
   ],
   "regen_spawns": [
