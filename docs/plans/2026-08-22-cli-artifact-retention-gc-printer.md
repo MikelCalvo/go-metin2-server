@@ -71,3 +71,4 @@ Validation for this slice:
 3. ~~Keep ground-item restart durability deferred until operators decide quarantined `0010` exports drive recovery.~~ Done for FileStore rematerialize + backup/restore: see [ground-item process-restart durability](2026-08-22-ground-item-process-restart-durability.md) and [ground-item file-store backup/restore](2026-08-22-ground-item-file-store-backup-restore.md). SQL import/backfill from quarantined `0010` exports remains deferred.
 4. Keep SQL import/backfill deferred until a driver-backed harness exists.
 5. Optional later: systemd/unit samples that only print (never auto-run) this triage script.
+6. ~~Prove the printed `/bin/sh` triage script actually aside-renames aged trees under FreeBSD/GNU date helpers.~~ Done: see [CLI artifact-retention GC script execution proof](2026-08-22-cli-artifact-retention-gc-script-execution-proof.md).
