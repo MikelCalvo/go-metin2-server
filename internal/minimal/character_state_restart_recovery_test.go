@@ -1095,6 +1095,8 @@ func TestGameRuntimePendingGroundItemAndGoldRematerializeAcrossDaemonRestart(t *
 	if len(persisted.GroundItems) != 2 {
 		t.Fatalf("expected 2 persisted pending ground handles before restart, got %#v", persisted.GroundItems)
 	}
+	// Simulate process crash: abandon the live session without persisting Leave-owned deletion.
+	runtime.sharedWorld.SetGroundItemsChangedHook(nil)
 	closeSessionFlow(t, ownerFlow)
 
 	reloaded, err := NewGameRuntime(cfg)

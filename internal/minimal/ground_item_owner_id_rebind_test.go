@@ -209,6 +209,8 @@ func TestPendingGroundItemExclusiveOwnerIDRebindsOnOwnerRejoin(t *testing.T) {
 	if !runtime.sharedWorld.RegisterGroundItemWithPickupRange(ownerID, ownerLogin, owner, itemVID, inventory.ItemInstance{ID: 0x30010095, Vnum: 27001, Count: 2}, 450) {
 		t.Fatal("expected ground-item registration before daemon restart")
 	}
+	// Simulate process crash: abandon the live session without persisting Leave-owned deletion.
+	runtime.sharedWorld.SetGroundItemsChangedHook(nil)
 	closeSessionFlow(t, ownerFlow)
 
 	reloaded, err := NewGameRuntime(cfg)

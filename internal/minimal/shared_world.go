@@ -3282,10 +3282,11 @@ func (r *sharedWorldRegistry) reclaimableStaleDuplicateIDsLocked(character login
 	return staleIDs, false
 }
 
-func (r *sharedWorldRegistry) removeStaleOwnershipLocked(entityIDs []uint64) {
+func (r *sharedWorldRegistry) removeStaleOwnershipLocked(entityIDs []uint64) bool {
 	if r == nil || len(entityIDs) == 0 {
-		return
+		return false
 	}
+	groundChanged := false
 	for _, entityID := range entityIDs {
 		currentCharacter, ok := r.playerCharacter(entityID)
 		if !ok {
@@ -3314,8 +3315,11 @@ func (r *sharedWorldRegistry) removeStaleOwnershipLocked(entityIDs []uint64) {
 			}
 			r.enqueueToCharacterLocked(peerCharacter, [][]byte{removeRaw})
 		}
-		r.removeOwnedGroundItemsLocked(entityID, r.visiblePeersForOwnedGroundItemsLocked(entityID, visibilityDiff.RemovedVisiblePeers))
+		if r.removeOwnedGroundItemsLocked(entityID, r.visiblePeersForOwnedGroundItemsLocked(entityID, visibilityDiff.RemovedVisiblePeers)) {
+			groundChanged = true
+		}
 	}
+	return groundChanged
 }
 
 func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pendingServerFrames, relocate sharedWorldSessionRelocator) (uint64, []loginticket.Character) {
@@ -3324,13 +3328,20 @@ func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pen
 	}
 
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	groundChanged := false
+	defer func() {
+		hook := r.onGroundItemsChanged
+		r.mu.Unlock()
+		if groundChanged && hook != nil {
+			hook()
+		}
+	}()
 
 	staleIDs, liveConflict := r.reclaimableStaleDuplicateIDsLocked(character)
 	if liveConflict {
 		return 0, nil
 	}
-	r.removeStaleOwnershipLocked(staleIDs)
+	groundChanged = r.removeStaleOwnershipLocked(staleIDs)
 
 	visibilityDiff := r.scopesLocked().EnterVisibilityDiff(character)
 	registered := r.entities.RegisterPlayer(character)
@@ -3383,8 +3394,7 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 	}
 
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
+	groundChanged := false
 	currentCharacter, ok := r.playerCharacter(id)
 	if !ok {
 		currentCharacter, ok = r.lastKnownCharacters[id]
@@ -3401,19 +3411,22 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 	r.detachProximityAggroSuppressSubjectLocked(id, currentCharacter.VID)
 	_, _ = r.entities.Remove(id)
 	delete(r.lastKnownCharacters, id)
-	if !ok {
-		return
-	}
-
-	visibilityDiff := r.scopesLocked().LeaveVisibilityDiff(currentCharacter)
-	removeRaw := encodeCharacterDeleteFrame(currentCharacter)
-	for _, peerCharacter := range visibilityDiff.RemovedVisiblePeers {
-		if characterAtBootstrapHPFloor(peerCharacter) {
-			continue
+	if ok {
+		visibilityDiff := r.scopesLocked().LeaveVisibilityDiff(currentCharacter)
+		removeRaw := encodeCharacterDeleteFrame(currentCharacter)
+		for _, peerCharacter := range visibilityDiff.RemovedVisiblePeers {
+			if characterAtBootstrapHPFloor(peerCharacter) {
+				continue
+			}
+			r.enqueueToCharacterLocked(peerCharacter, [][]byte{removeRaw})
 		}
-		r.enqueueToCharacterLocked(peerCharacter, [][]byte{removeRaw})
+		groundChanged = r.removeOwnedGroundItemsLocked(id, r.visiblePeersForOwnedGroundItemsLocked(id, visibilityDiff.RemovedVisiblePeers))
 	}
-	r.removeOwnedGroundItemsLocked(id, r.visiblePeersForOwnedGroundItemsLocked(id, visibilityDiff.RemovedVisiblePeers))
+	hook := r.onGroundItemsChanged
+	r.mu.Unlock()
+	if groundChanged && hook != nil {
+		hook()
+	}
 }
 
 func (r *sharedWorldRegistry) UpdateCharacter(id uint64, character loginticket.Character) {
@@ -3464,9 +3477,9 @@ func (r *sharedWorldRegistry) visiblePeersForOwnedGroundItemsLocked(ownerID uint
 	return peers
 }
 
-func (r *sharedWorldRegistry) removeOwnedGroundItemsLocked(ownerID uint64, visiblePeers []loginticket.Character) {
+func (r *sharedWorldRegistry) removeOwnedGroundItemsLocked(ownerID uint64, visiblePeers []loginticket.Character) bool {
 	if ownerID == 0 || len(r.groundItemsByVID) == 0 {
-		return
+		return false
 	}
 	removed := make([]sharedGroundItem, 0)
 	for vid, ground := range r.groundItemsByVID {
@@ -3477,7 +3490,7 @@ func (r *sharedWorldRegistry) removeOwnedGroundItemsLocked(ownerID uint64, visib
 		delete(r.groundItemsByVID, vid)
 	}
 	if len(removed) == 0 {
-		return
+		return false
 	}
 	sortSharedGroundItemsByVID(removed)
 	frames := make([][]byte, 0, len(removed))
@@ -3490,6 +3503,7 @@ func (r *sharedWorldRegistry) removeOwnedGroundItemsLocked(ownerID uint64, visib
 		}
 		r.enqueueToCharacterLocked(peer, frames)
 	}
+	return true
 }
 
 func (r *sharedWorldRegistry) CanRegisterGroundItem(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, item inventory.ItemInstance) bool {
