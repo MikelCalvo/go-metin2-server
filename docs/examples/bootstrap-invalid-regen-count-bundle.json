@@ -1,0 +1,13 @@
+{
+  "regen_spawns": [
+    {
+      "ref": "practice.qa_invalid_multi_regen_mob",
+      "name": "QAInvalidMultiRegenMob",
+      "map_index": 1,
+      "x": 469900,
+      "y": 964200,
+      "race_num": 20350,
+      "count": 2
+    }
+  ]
+}

@@ -52,6 +52,7 @@ git diff --check
 
 ## Follow-up options
 
-1. Add a checked-in negative invalid-bundle fixture for orphan quest gates /
-   `count != 1` regen rows if QA still improvises reject cases.
+1. ~~Add a checked-in negative invalid-bundle fixture for orphan quest gates /
+   `count != 1` regen rows if QA still improvises reject cases.~~ Done: see
+   [checked-in invalid content-bundle fixtures](2026-08-23-checked-in-invalid-content-bundle-fixtures.md).
 2. Freeze multi-count regen pack placement before widening `regen_spawns.count`.
