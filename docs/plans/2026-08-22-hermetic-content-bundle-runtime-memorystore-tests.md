@@ -42,7 +42,7 @@ git diff --check
 
 ## Follow-up options
 
-1. ~~Optionally widen the same MemoryStore pattern to neighboring interaction-definition runtime create/upsert/remove suites.~~ Done: see [hermetic interaction-definitions runtime MemoryStore tests](2026-08-22-hermetic-interaction-definitions-runtime-memorystore-tests.md). Optionally convert shared `newInteractionDefinitionStore` / `newItemTemplateStore` helpers to MemoryStore once neighboring item gameplay suites are ready for the same coupling reduction.
+1. ~~Optionally widen the same MemoryStore pattern to neighboring interaction-definition runtime create/upsert/remove suites.~~ Done: see [hermetic interaction-definitions runtime MemoryStore tests](2026-08-22-hermetic-interaction-definitions-runtime-memorystore-tests.md). ~~Also done for spawn-homeward content-bundle prune/restore/replace suites.~~ Done: see [hermetic spawn-homeward content-bundle MemoryStore tests](2026-08-22-hermetic-spawn-homeward-content-bundle-memorystore-tests.md). Optionally convert shared `newInteractionDefinitionStore` / `newItemTemplateStore` helpers to MemoryStore once neighboring item gameplay suites are ready for the same coupling reduction.
 2. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
 3. Keep branching quest scripts and multi-count regen deferred.
 4. Persistence/content migration follow-up for portable `combat_profiles[]` remains owned by [PvE vertical authoring 0012 export combat-profile gap](2026-08-22-pve-vertical-authoring-0012-export-combat-profile-gap.md) / [combat-profile content-state migration](2026-08-22-combat-profile-content-state-migration.md).

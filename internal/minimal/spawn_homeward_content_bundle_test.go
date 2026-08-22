@@ -20,8 +20,8 @@ func TestGameRuntimeFailedContentBundleImportRestoresSpawnGroupHomewardStepSched
 	viewer.MapIndex = 42
 	issuePeerTicket(t, store, "spawn-homeward-rollback", 0x55555151, viewer)
 
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	currentTime := time.Unix(1700001060, 0)
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "radius", VisibilityRadius: 500, VisibilitySectorSize: 256},
@@ -136,8 +136,8 @@ func TestGameRuntimeNoOpContentBundleImportPrunesStaleSpawnGroupHomewardStepSche
 	viewer.MapIndex = 42
 	issuePeerTicket(t, store, "spawn-homeward-noop", 0x55555353, viewer)
 
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	currentTime := time.Unix(1700001080, 0)
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "radius", VisibilityRadius: 500, VisibilitySectorSize: 256},
@@ -228,8 +228,8 @@ func TestGameRuntimeSuccessfulContentBundleReplacementClearsStaleSpawnGroupHomew
 	viewer.MapIndex = 42
 	issuePeerTicket(t, store, "spawn-homeward-replace", 0x55555252, viewer)
 
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	currentTime := time.Unix(1700001070, 0)
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "radius", VisibilityRadius: 500, VisibilitySectorSize: 256},
