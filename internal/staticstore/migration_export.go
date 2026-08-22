@@ -242,7 +242,7 @@ func ExportStaticActorContentState(staticSnapshot Snapshot, interactionSnapshot 
 }
 
 // ExportStaticActorContentStateFromStores validates and projects the committed
-// file-store snapshots onto the 0012 static actor PvE interaction-state
+// file-store snapshots onto the 0013 static-actor combat-profile content-state
 // migration shape. It reads the same committed snapshot sets as Load and
 // applies no mutations.
 func ExportStaticActorContentStateFromStores(staticActors Store, interactions interactionstore.Store) (StaticActorContentStateExport, error) {
@@ -258,8 +258,8 @@ func ExportStaticActorContentStateFromStores(staticActors Store, interactions in
 }
 
 // ExportStaticActorContentState projects this FileStore's committed snapshot
-// onto the 0012 static-actor PvE interaction-state migration shape, reading the
-// paired interaction store through the shared FromStores helper.
+// onto the 0013 static-actor combat-profile content-state migration shape,
+// reading the paired interaction store through the shared FromStores helper.
 func (s *FileStore) ExportStaticActorContentState(interactions interactionstore.Store) (StaticActorContentStateExport, error) {
 	return ExportStaticActorContentStateFromStores(s, interactions)
 }

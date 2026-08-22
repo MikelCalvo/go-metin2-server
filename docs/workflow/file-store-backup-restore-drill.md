@@ -299,6 +299,6 @@ Do not use this runbook to justify:
 - daemon startup auto-restore
 - treating content-bundle import as a substitute for manifested per-store backup/restore
 - restoring into backup trees or backing up into live store trees
-- claiming ground-item / ground-gold durability across restart
 - claiming account/character/item/quest/content repositories are DB-backed
 - daemon-local `/local/db/migrations/apply`
+- treating the `0010` migration-shaped live export as a substitute for the durable ground-item FileStore backup/restore path
