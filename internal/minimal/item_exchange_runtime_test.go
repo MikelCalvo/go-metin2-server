@@ -4076,6 +4076,178 @@ func TestSharedWorldCommitExchangeFinalizeRejectsBusyWindowOpenedAfterAcceptPlan
 	}
 }
 
+func TestSharedWorldAcceptExchangeRejectsRequesterGoldCarrierWithoutMutation(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("ExchAcceptGoldCapOwner", 0x01030211, 0x02040211, 1100, 2100, 0, 101, 201)
+	owner.Gold = 500
+	owner.Inventory = []inventory.ItemInstance{{ID: 8211, Vnum: 27001, Count: 1, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchAcceptGoldCapPeer", 0x01030212, 0x02040212, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerPending := newPendingServerFrames()
+	peerPending := newPendingServerFrames()
+	ownerID, _ := registry.Join(owner, ownerPending, nil)
+	peerID, _ := registry.Join(peer, peerPending, nil)
+	if ownerID == 0 || peerID == 0 {
+		t.Fatalf("expected shared-world join to allocate owner/peer ids, got owner=%d peer=%d", ownerID, peerID)
+	}
+	_ = ownerPending.flush()
+	_ = peerPending.flush()
+
+	startFrames, ok := registry.StartExchange(ownerID, peer.VID)
+	if !ok || len(startFrames) != 1 {
+		t.Fatalf("expected exchange start to succeed with one owner frame, ok=%v frames=%d", ok, len(startFrames))
+	}
+	if queued := peerPending.flush(); len(queued) != 1 {
+		t.Fatalf("expected exchange start to queue one peer frame, got %d", len(queued))
+	}
+
+	owner.Gold = exchangeGoldPointChangeCarrierMax
+	registry.UpdateCharacter(ownerID, owner)
+
+	acceptFrames, finalizePlan, ok := registry.AcceptExchange(ownerID, owner.Gold, owner)
+	if !ok || finalizePlan != nil || len(acceptFrames) != 1 {
+		t.Fatalf("expected requester gold-carrier AcceptExchange to emit one info chat frame, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, acceptFrames[0]))
+	if err != nil {
+		t.Fatalf("decode requester gold-carrier AcceptExchange info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterGoldCarrierCapInfoMessage {
+		t.Fatalf("unexpected requester gold-carrier AcceptExchange info chat: %+v", infoChat)
+	}
+	if queued := peerPending.flush(); len(queued) != 0 {
+		t.Fatalf("expected requester gold-carrier AcceptExchange to queue no peer frames, got %d", len(queued))
+	}
+
+	cancelFrames, ok := registry.CancelExchange(ownerID)
+	if !ok || len(cancelFrames) != 1 {
+		t.Fatalf("expected exchange shell to remain cancellable after requester gold-carrier accept reject, ok=%v frames=%d", ok, len(cancelFrames))
+	}
+}
+
+func TestSharedWorldAcceptExchangeRejectsPartnerGoldCarrierWithoutMutation(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("ExchAcceptGoldCapPartnerOwner", 0x01030213, 0x02040213, 1100, 2100, 0, 101, 201)
+	owner.Gold = 500
+	owner.Inventory = []inventory.ItemInstance{{ID: 8213, Vnum: 27001, Count: 1, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchAcceptGoldCapPartnerPeer", 0x01030214, 0x02040214, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerPending := newPendingServerFrames()
+	peerPending := newPendingServerFrames()
+	ownerID, _ := registry.Join(owner, ownerPending, nil)
+	peerID, _ := registry.Join(peer, peerPending, nil)
+	if ownerID == 0 || peerID == 0 {
+		t.Fatalf("expected shared-world join to allocate owner/peer ids, got owner=%d peer=%d", ownerID, peerID)
+	}
+	_ = ownerPending.flush()
+	_ = peerPending.flush()
+
+	startFrames, ok := registry.StartExchange(ownerID, peer.VID)
+	if !ok || len(startFrames) != 1 {
+		t.Fatalf("expected exchange start to succeed with one owner frame, ok=%v frames=%d", ok, len(startFrames))
+	}
+	if queued := peerPending.flush(); len(queued) != 1 {
+		t.Fatalf("expected exchange start to queue one peer frame, got %d", len(queued))
+	}
+
+	peer.Gold = exchangeGoldPointChangeCarrierMax
+	registry.UpdateCharacter(peerID, peer)
+
+	acceptFrames, finalizePlan, ok := registry.AcceptExchange(ownerID, owner.Gold, owner)
+	if !ok || finalizePlan != nil || len(acceptFrames) != 1 {
+		t.Fatalf("expected partner gold-carrier AcceptExchange to emit one info chat frame, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, acceptFrames[0]))
+	if err != nil {
+		t.Fatalf("decode partner gold-carrier AcceptExchange info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangePartnerGoldCarrierCapInfoMessage {
+		t.Fatalf("unexpected partner gold-carrier AcceptExchange info chat: %+v", infoChat)
+	}
+	if queued := peerPending.flush(); len(queued) != 0 {
+		t.Fatalf("expected partner gold-carrier AcceptExchange to queue no peer frames, got %d", len(queued))
+	}
+
+	cancelFrames, ok := registry.CancelExchange(ownerID)
+	if !ok || len(cancelFrames) != 1 {
+		t.Fatalf("expected exchange shell to remain cancellable after partner gold-carrier accept reject, ok=%v frames=%d", ok, len(cancelFrames))
+	}
+}
+
+func TestSharedWorldCommitExchangeFinalizeRejectsRequesterGoldCarrierWithoutMutation(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	registry.SetItemTemplates(map[uint32]itemcatalog.Template{
+		27001: {Vnum: 27001, Name: "Commit Gold Cap Display Potion", Stackable: true, MaxCount: 200},
+	})
+	owner := peerVisibilityCharacter("ExchCommitGoldCapOwner", 0x01030215, 0x02040215, 1100, 2100, 0, 101, 201)
+	owner.Gold = 500
+	owner.Inventory = []inventory.ItemInstance{{ID: 8215, Vnum: 27001, Count: 1, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchCommitGoldCapPeer", 0x01030216, 0x02040216, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerPending := newPendingServerFrames()
+	peerPending := newPendingServerFrames()
+	ownerID, _ := registry.Join(owner, ownerPending, nil)
+	peerID, _ := registry.Join(peer, peerPending, nil)
+	if ownerID == 0 || peerID == 0 {
+		t.Fatalf("expected shared-world join to allocate owner/peer ids, got owner=%d peer=%d", ownerID, peerID)
+	}
+	_ = ownerPending.flush()
+	_ = peerPending.flush()
+
+	startFrames, ok := registry.StartExchange(ownerID, peer.VID)
+	if !ok || len(startFrames) != 1 {
+		t.Fatalf("expected exchange start to succeed with one owner frame, ok=%v frames=%d", ok, len(startFrames))
+	}
+	_ = peerPending.flush()
+
+	display := player.ExchangeItemAddDisplay{Item: owner.Inventory[0]}
+	itemAddFrames, ok := registry.AddExchangeItem(ownerID, 3, display)
+	if !ok || len(itemAddFrames) != 1 {
+		t.Fatalf("expected exchange item-add to succeed with one owner frame, ok=%v frames=%d", ok, len(itemAddFrames))
+	}
+	_ = peerPending.flush()
+
+	firstAcceptFrames, finalizePlan, ok := registry.AcceptExchange(ownerID, owner.Gold, owner)
+	if !ok || finalizePlan != nil || len(firstAcceptFrames) != 1 {
+		t.Fatalf("expected first AcceptExchange to emit accept marker without finalize plan, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(firstAcceptFrames))
+	}
+	_ = peerPending.flush()
+
+	secondAcceptFrames, finalizePlan, ok := registry.AcceptExchange(peerID, peer.Gold, peer)
+	if !ok || finalizePlan == nil || len(secondAcceptFrames) != 0 {
+		t.Fatalf("expected second AcceptExchange to return finalize plan with no frames, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(secondAcceptFrames))
+	}
+
+	// Commit requester is the second accepter (peer / plan.OriginID). Drift that side to the carrier max.
+	updatedOrigin := cloneExchangeCharacter(peer)
+	updatedOrigin.Gold = exchangeGoldPointChangeCarrierMax
+	updatedPartner := cloneExchangeCharacter(owner)
+	registry.UpdateCharacter(peerID, updatedOrigin)
+
+	rejectFrames, committed := registry.CommitExchangeFinalize(finalizePlan, updatedOrigin, updatedPartner, [][]byte{encodeExchangeEndFrame()})
+	if committed {
+		t.Fatal("expected CommitExchangeFinalize to fail closed after commit-requester gold-carrier drift")
+	}
+	if len(rejectFrames) != 1 {
+		t.Fatalf("expected commit-time requester gold-carrier reject to emit one self-only info chat, got %d frames", len(rejectFrames))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, rejectFrames[0]))
+	if err != nil {
+		t.Fatalf("decode commit-time requester gold-carrier info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterGoldCarrierCapInfoMessage {
+		t.Fatalf("unexpected commit-time requester gold-carrier info chat: %+v", infoChat)
+	}
+	if queued := ownerPending.flush(); len(queued) != 0 {
+		t.Fatalf("expected failed CommitExchangeFinalize gold-carrier reject to queue no partner frames, got %d", len(queued))
+	}
+
+	cancelFrames, ok := registry.CancelExchange(peerID)
+	if !ok || len(cancelFrames) != 1 {
+		t.Fatalf("expected exchange shell to remain cancellable after commit-time gold-carrier reject, ok=%v frames=%d", ok, len(cancelFrames))
+	}
+}
+
 func TestGameRuntimeStoragePacketsFailClosedWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

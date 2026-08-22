@@ -785,6 +785,15 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 	if r.hasMerchantWindowOpenLocked(partnerID) || r.hasSafeboxWindowOpenLocked(partnerID) || r.hasRefineWindowOpenLocked(partnerID) {
 		return [][]byte{encodeExchangePartnerMerchantBusyInfoFrame()}, nil, true
 	}
+	// Gold-carrier-cap gate stays after busy-window rejects and ahead of Check /
+	// displayed-gold / finalization preconditions. Local-first requester-wins
+	// matches START / busy ordering when both sides are already over the cap.
+	if origin.Gold >= exchangeGoldPointChangeCarrierMax {
+		return [][]byte{encodeExchangeRequesterGoldCarrierCapInfoFrame()}, nil, true
+	}
+	if partner.Gold >= exchangeGoldPointChangeCarrierMax {
+		return [][]byte{encodeExchangePartnerGoldCarrierCapInfoFrame()}, nil, true
+	}
 	if !exchangeDisplayedItemsStillLive(r.exchangeItems[originID], live, r.itemTemplates) {
 		// Second-accept Check failure is dual-sided; first-side accept stays silent.
 		if r.exchangeAccepted[partnerID] {
@@ -867,6 +876,9 @@ func (r *sharedWorldRegistry) CommitExchangeFinalize(plan *exchangeFinalizePlan,
 	if frames, busy := r.exchangeFinalizeCommitBusyRejectLocked(plan); busy {
 		return frames, false
 	}
+	if frames, capped := r.exchangeFinalizeCommitGoldCarrierRejectLocked(plan); capped {
+		return frames, false
+	}
 	if frames, rejected := r.exchangeFinalizeCommitCheckSpaceRejectLocked(plan); rejected {
 		return frames, false
 	}
@@ -894,6 +906,28 @@ func (r *sharedWorldRegistry) exchangeFinalizeCommitBusyRejectLocked(plan *excha
 	}
 	if r.hasMerchantWindowOpenLocked(plan.PartnerID) || r.hasSafeboxWindowOpenLocked(plan.PartnerID) || r.hasRefineWindowOpenLocked(plan.PartnerID) {
 		return [][]byte{encodeExchangePartnerMerchantBusyInfoFrame()}, true
+	}
+	return nil, false
+}
+
+func (r *sharedWorldRegistry) exchangeFinalizeCommitGoldCarrierRejectLocked(plan *exchangeFinalizePlan) ([][]byte, bool) {
+	if r == nil || plan == nil || plan.OriginID == 0 || plan.PartnerID == 0 {
+		return nil, false
+	}
+	origin, ok := r.playerCharacter(plan.OriginID)
+	if !ok || characterAtBootstrapHPFloor(origin) {
+		return nil, false
+	}
+	partner, ok := r.playerCharacter(plan.PartnerID)
+	if !ok || characterAtBootstrapHPFloor(partner) {
+		return nil, false
+	}
+	// Local-first: commit-requester over-cap wins when both sides drifted.
+	if origin.Gold >= exchangeGoldPointChangeCarrierMax {
+		return [][]byte{encodeExchangeRequesterGoldCarrierCapInfoFrame()}, true
+	}
+	if partner.Gold >= exchangeGoldPointChangeCarrierMax {
+		return [][]byte{encodeExchangePartnerGoldCarrierCapInfoFrame()}, true
 	}
 	return nil, false
 }

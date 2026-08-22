@@ -19,11 +19,11 @@ Mirror the owned `EXCHANGE START` gold-carrier-cap reject chat onto first-side a
 - changing the already-owned second-accept / commit-time gold-overflow dual-sided chat (`You cannot carry any more gold.` / partner wording)
 - restart-restored ground ownership / despawn timers
 
-## TDD and validation (implementation follow-up)
+## TDD and validation
 
 Focused coverage:
 
-- `go test ./internal/minimal -run 'ItemExchangeAcceptRejects.*GoldCarrier|SharedWorldCommitExchangeFinalizeRejects.*GoldCarrier' -count=1`
+- `go test ./internal/minimal -run 'ItemExchangeAcceptRejects.*GoldCarrier|SharedWorldAcceptExchangeRejects.*GoldCarrier|SharedWorldCommitExchangeFinalizeRejects.*GoldCarrier' -count=1`
 - `gofmt` on touched Go files
 - `git diff --check`
 
@@ -35,4 +35,4 @@ Focused coverage:
 
 ## Status
 
-Contract frozen; implementation / RED not opened in this docs-only commit.
+Shipped: `EXCHANGE ACCEPT` and commit-time self-only gold-carrier-cap reject chat when either paired side's live gold is already at or above `1<<31-1`, after busy-window gates and before Check/Space/other finalization preconditions, with local-first requester-wins ordering. Id-collision / restriction finalize reject chat and player-shop/cube busy rejects stay deferred.
