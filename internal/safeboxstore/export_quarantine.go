@@ -8,7 +8,7 @@ import (
 )
 
 // ErrInvalidCharacterSafeboxStateExport reports that a retained safebox-state
-// export failed the 0014 migration-shaped quarantine contract.
+// export failed the 0015 migration-shaped quarantine contract.
 var ErrInvalidCharacterSafeboxStateExport = errors.New("invalid character safebox-state export")
 
 // CharacterSafeboxStateQuarantineSummary is the metadata-only result of
@@ -31,7 +31,7 @@ type CharacterSafeboxStateQuarantineResult struct {
 }
 
 // ValidateCharacterSafeboxStateExport fails closed when a retained export does
-// not match the 0014_character_safebox_state shape. It does not open a database,
+// not match the 0015_character_safebox_money tip. It does not open a database,
 // write safebox snapshots, or mutate the supplied export.
 func ValidateCharacterSafeboxStateExport(export CharacterSafeboxStateExport) (CharacterSafeboxStateQuarantineSummary, error) {
 	canonical, summary, err := canonicalizeCharacterSafeboxStateExport(export)
@@ -80,6 +80,9 @@ func canonicalizeCharacterSafeboxStateExport(export CharacterSafeboxStateExport)
 		if !validPassword(password) {
 			return CharacterSafeboxStateExport{}, CharacterSafeboxStateQuarantineSummary{}, fmt.Errorf("%w: invalid password for character_id=%d", ErrInvalidCharacterSafeboxStateExport, row.CharacterID)
 		}
+		if !validMoney(row.Money) {
+			return CharacterSafeboxStateExport{}, CharacterSafeboxStateQuarantineSummary{}, fmt.Errorf("%w: invalid money for character_id=%d", ErrInvalidCharacterSafeboxStateExport, row.CharacterID)
+		}
 		if previousLogin, ok := seenLoginsByID[row.CharacterID]; ok && previousLogin != login {
 			return CharacterSafeboxStateExport{}, CharacterSafeboxStateQuarantineSummary{}, fmt.Errorf("%w: character_id %d maps to both %q and %q", ErrInvalidCharacterSafeboxStateExport, row.CharacterID, previousLogin, login)
 		}
@@ -97,6 +100,7 @@ func canonicalizeCharacterSafeboxStateExport(export CharacterSafeboxStateExport)
 			CharacterID: row.CharacterID,
 			Login:       login,
 			Password:    password,
+			Money:       row.Money,
 		})
 	}
 

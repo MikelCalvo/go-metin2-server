@@ -6,14 +6,15 @@ import (
 )
 
 const (
-	CharacterSafeboxStateMigrationVersion = 14
-	CharacterSafeboxStateMigrationName    = "character_safebox_state"
+	CharacterSafeboxStateMigrationVersion = 15
+	CharacterSafeboxStateMigrationName    = "character_safebox_money"
 )
 
 // CharacterSafeboxStateExport is a deterministic, schema-shaped projection of
-// the durable safebox FileStore onto the 0014_character_safebox_state migration
-// boundary. It is intentionally an export/backfill contract only: it does not
-// open a database, emit SQL, apply migrations, or mutate the safebox store.
+// the durable safebox FileStore onto the 0015_character_safebox_money migration
+// tip (password + warehouse money + cells). It is intentionally an
+// export/backfill contract only: it does not open a database, emit SQL, apply
+// migrations, or mutate the safebox store.
 type CharacterSafeboxStateExport struct {
 	MigrationVersion int                           `json:"migration_version"`
 	MigrationName    string                        `json:"migration_name"`
@@ -21,13 +22,16 @@ type CharacterSafeboxStateExport struct {
 	Items            []CharacterSafeboxItemRow     `json:"items"`
 }
 
-// CharacterSafeboxPasswordRow mirrors character_safebox_passwords. Login is an
-// operator-aid identity carrier; CharacterID is the durable foreign key.
-// Empty Password means bootstrap DefaultPassword at challenge time.
+// CharacterSafeboxPasswordRow mirrors character_safebox_passwords after the
+// additive 0015 money column. Login is an operator-aid identity carrier;
+// CharacterID is the durable foreign key. Empty Password means bootstrap
+// DefaultPassword at challenge time. Money is warehouse gold in
+// [0, math.MaxInt32]; omitted / zero means 0.
 type CharacterSafeboxPasswordRow struct {
 	CharacterID uint32 `json:"character_id"`
 	Login       string `json:"login"`
 	Password    string `json:"password"`
+	Money       int64  `json:"money,omitempty"`
 }
 
 // CharacterSafeboxItemRow mirrors character_safebox_items for one durable cell.
@@ -42,7 +46,7 @@ type CharacterSafeboxItemRow struct {
 }
 
 // ExportCharacterSafeboxState validates a safebox snapshot and projects every
-// character row onto the 0014 migration shape. Rows are returned in the same
+// character row onto the 0015 migration tip. Rows are returned in the same
 // deterministic order as NormalizeSnapshot (login, character_id, then cell).
 func ExportCharacterSafeboxState(snapshot Snapshot) (CharacterSafeboxStateExport, error) {
 	normalized := normalizeSnapshot(snapshot)
@@ -61,6 +65,7 @@ func ExportCharacterSafeboxState(snapshot Snapshot) (CharacterSafeboxStateExport
 			CharacterID: row.CharacterID,
 			Login:       row.Login,
 			Password:    row.Password,
+			Money:       row.Money,
 		})
 		for _, cell := range row.Cells {
 			export.Items = append(export.Items, CharacterSafeboxItemRow{
@@ -78,7 +83,7 @@ func ExportCharacterSafeboxState(snapshot Snapshot) (CharacterSafeboxStateExport
 }
 
 // ExportCharacterSafeboxState validates and projects the committed file-store
-// snapshot onto the 0014 character safebox-state migration shape. Missing
+// snapshot onto the 0015 character safebox-money migration tip. Missing
 // safebox snapshots are treated as an empty export, matching Validate().
 func (s *FileStore) ExportCharacterSafeboxState() (CharacterSafeboxStateExport, error) {
 	snapshot, err := s.Load()
@@ -92,7 +97,7 @@ func (s *FileStore) ExportCharacterSafeboxState() (CharacterSafeboxStateExport, 
 }
 
 // ExportCharacterSafeboxState projects the committed hermetic snapshot onto the
-// 0014 migration shape. Missing snapshots yield an empty export.
+// 0015 migration tip. Missing snapshots yield an empty export.
 func (s *MemoryStore) ExportCharacterSafeboxState() (CharacterSafeboxStateExport, error) {
 	snapshot, err := s.Load()
 	if err != nil {

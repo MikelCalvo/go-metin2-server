@@ -10,6 +10,7 @@ func TestExportCharacterSafeboxStateBuildsDeterministicRowsMatchingMigrationShap
 		Login:       "Alpha",
 		CharacterID: 7,
 		Password:    "secret",
+		Money:       1500,
 		Cells: []Cell{
 			{Cell: 1, ID: 1002, Vnum: 27002, Count: 1},
 			{Cell: 0, ID: 1001, Vnum: 27001, Count: 2, Locked: true},
@@ -27,13 +28,16 @@ func TestExportCharacterSafeboxStateBuildsDeterministicRowsMatchingMigrationShap
 	if export.MigrationVersion != CharacterSafeboxStateMigrationVersion || export.MigrationName != CharacterSafeboxStateMigrationName {
 		t.Fatalf("unexpected migration boundary: %#v", export)
 	}
+	if export.MigrationVersion != 15 || export.MigrationName != "character_safebox_money" {
+		t.Fatalf("expected 0015 money tip, got %#v", export)
+	}
 	if len(export.Passwords) != 2 {
 		t.Fatalf("unexpected password rows: %#v", export.Passwords)
 	}
-	if export.Passwords[0].CharacterID != 7 || export.Passwords[0].Login != "Alpha" || export.Passwords[0].Password != "secret" {
+	if export.Passwords[0].CharacterID != 7 || export.Passwords[0].Login != "Alpha" || export.Passwords[0].Password != "secret" || export.Passwords[0].Money != 1500 {
 		t.Fatalf("unexpected first password row: %#v", export.Passwords[0])
 	}
-	if export.Passwords[1].CharacterID != 9 || export.Passwords[1].Login != "Beta" || export.Passwords[1].Password != "" {
+	if export.Passwords[1].CharacterID != 9 || export.Passwords[1].Login != "Beta" || export.Passwords[1].Password != "" || export.Passwords[1].Money != 0 {
 		t.Fatalf("unexpected second password row: %#v", export.Passwords[1])
 	}
 	if len(export.Items) != 2 {
@@ -52,6 +56,9 @@ func TestExportCharacterSafeboxStateBuildsDeterministicRowsMatchingMigrationShap
 	}
 	if len(again.Items) != len(export.Items) || again.Items[0] != export.Items[0] || again.Items[1] != export.Items[1] {
 		t.Fatalf("expected deterministic export, first=%#v again=%#v", export.Items, again.Items)
+	}
+	if again.Passwords[0].Money != 1500 || again.Passwords[1].Money != 0 {
+		t.Fatalf("expected deterministic money projection, got %#v", again.Passwords)
 	}
 }
 
@@ -123,8 +130,8 @@ func TestQuarantineCharacterSafeboxStateExportCanonicalizesAndRejectsDrift(t *te
 		MigrationVersion: CharacterSafeboxStateMigrationVersion,
 		MigrationName:    CharacterSafeboxStateMigrationName,
 		Passwords: []CharacterSafeboxPasswordRow{
-			{CharacterID: 9, Login: "Beta", Password: ""},
-			{CharacterID: 7, Login: "Alpha", Password: "secret"},
+			{CharacterID: 9, Login: "Beta", Password: "", Money: 0},
+			{CharacterID: 7, Login: "Alpha", Password: "secret", Money: 2500},
 		},
 		Items: []CharacterSafeboxItemRow{
 			{ID: 1002, CharacterID: 7, Login: "Alpha", Cell: 1, Vnum: 27002, Count: 1},
@@ -142,14 +149,30 @@ func TestQuarantineCharacterSafeboxStateExportCanonicalizesAndRejectsDrift(t *te
 	if quarantined.Passwords[0].CharacterID != 7 || quarantined.Items[0].Cell != 0 {
 		t.Fatalf("expected canonical ordering, got %#v", quarantined)
 	}
+	if quarantined.Passwords[0].Money != 2500 || quarantined.Passwords[1].Money != 0 {
+		t.Fatalf("expected money to survive quarantine, got %#v", quarantined.Passwords)
+	}
 	if _, err := ValidateCharacterSafeboxStateExport(quarantined); err != nil {
 		t.Fatalf("validate quarantined export: %v", err)
 	}
 
 	badVersion := export
-	badVersion.MigrationVersion = 13
+	badVersion.MigrationVersion = 14
 	if _, _, err := QuarantineCharacterSafeboxStateExport(badVersion); err == nil {
 		t.Fatal("expected migration tip mismatch to fail closed")
+	}
+
+	badName := export
+	badName.MigrationName = "character_safebox_state"
+	if _, _, err := QuarantineCharacterSafeboxStateExport(badName); err == nil {
+		t.Fatal("expected migration name tip mismatch to fail closed")
+	}
+
+	badMoney := export
+	badMoney.Passwords = append([]CharacterSafeboxPasswordRow{}, export.Passwords...)
+	badMoney.Passwords[1] = CharacterSafeboxPasswordRow{CharacterID: 7, Login: "Alpha", Password: "secret", Money: -1}
+	if _, _, err := QuarantineCharacterSafeboxStateExport(badMoney); err == nil {
+		t.Fatal("expected negative money to fail closed")
 	}
 
 	orphanItem := export

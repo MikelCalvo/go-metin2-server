@@ -48,7 +48,7 @@ func TestLocalCharacterSafeboxStateExportEndpointReturnsLoopbackJSON(t *testing.
 		t.Fatalf("expected exporter to be called once, got %d", exporter.calls)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`"migration_version":14`, `"migration_name":"character_safebox_state"`, `"character_id":7`, `"login":"Alpha"`, `"password":"secret"`, `"vnum":27001`} {
+	for _, want := range []string{`"migration_version":15`, `"migration_name":"character_safebox_money"`, `"character_id":7`, `"login":"Alpha"`, `"password":"secret"`, `"vnum":27001`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected character safebox-state export body to contain %s, got %s", want, body)
 		}
@@ -129,7 +129,7 @@ func TestLocalCharacterSafeboxStateQuarantineEndpointReturnsCanonicalJSON(t *tes
 
 func TestLocalCharacterSafeboxStateQuarantineEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
 	mux := RegisterLocalCharacterSafeboxStateQuarantineEndpoint(NewPprofMux("gamed"))
-	req := httptest.NewRequest(http.MethodPost, "/local/safebox-store/exports/character-safebox-state/quarantine", strings.NewReader(`{"migration_version":14,"migration_name":"character_safebox_state","passwords":[],"items":[]}`))
+	req := httptest.NewRequest(http.MethodPost, "/local/safebox-store/exports/character-safebox-state/quarantine", strings.NewReader(`{"migration_version":15,"migration_name":"character_safebox_money","passwords":[],"items":[]}`))
 	req.RemoteAddr = "192.0.2.10:12345"
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -151,7 +151,7 @@ func TestLocalCharacterSafeboxStateQuarantineEndpointRejectsWrongMethod(t *testi
 
 func TestLocalCharacterSafeboxStateQuarantineEndpointRejectsInvalidExport(t *testing.T) {
 	mux := RegisterLocalCharacterSafeboxStateQuarantineEndpoint(NewPprofMux("gamed"))
-	req := httptest.NewRequest(http.MethodPost, "/local/safebox-store/exports/character-safebox-state/quarantine", strings.NewReader(`{"migration_version":13,"migration_name":"character_safebox_state","passwords":[],"items":[]}`))
+	req := httptest.NewRequest(http.MethodPost, "/local/safebox-store/exports/character-safebox-state/quarantine", strings.NewReader(`{"migration_version":14,"migration_name":"character_safebox_state","passwords":[],"items":[]}`))
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)

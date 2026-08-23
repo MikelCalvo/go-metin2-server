@@ -112,6 +112,14 @@
       "down_path": "0014_character_safebox_state.down.sql",
       "up_sha256": "d800cec5d07278a6fa0b9d9004a0de3542e57c19b8565336fdbd865a6458caa4",
       "down_sha256": "f5cf1b200457d20c79feaa899098cb7a2718873ae64e4c229ab7581ab86e3ee1"
+    },
+    {
+      "version": 15,
+      "name": "character_safebox_money",
+      "up_path": "0015_character_safebox_money.up.sql",
+      "down_path": "0015_character_safebox_money.down.sql",
+      "up_sha256": "b34a824a3633704b6292bc76ac031e0ef55ebe5bd95a8f13f5a495f42fdc83df",
+      "down_sha256": "36cdb054ea3a6c1e3684187270f1a00700c7bed0ac01ee032ebcfb572f669efd"
     }
   ]
 }

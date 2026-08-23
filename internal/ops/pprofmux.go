@@ -2170,7 +2170,7 @@ func RegisterLocalCharacterQuestStateExportEndpoint(mux *http.ServeMux, exportQu
 }
 
 // RegisterLocalCharacterSafeboxStateQuarantineEndpoint exposes a loopback-only
-// POST quarantine/preflight for retained 0014 character safebox-state exports.
+// POST quarantine/preflight for retained 0015 character safebox-money exports.
 // It validates and canonicalizes the payload without opening a database or
 // mutating safebox snapshots.
 func RegisterLocalCharacterSafeboxStateQuarantineEndpoint(mux *http.ServeMux) *http.ServeMux {

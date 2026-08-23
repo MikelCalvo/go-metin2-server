@@ -373,7 +373,7 @@ Dry-runs an operator-supplied safebox backup source through the same strict mani
 
 ### `POST /local/safebox-store/restore`
 
-Restores the durable safebox FileStore from an operator-supplied manifested backup into an empty destination. Loopback-only `POST` with `{"src_dir":"..."}`. Restore refuses live selected-character sessions, non-empty destinations, and destinations nested under the backup source. After FileStore replacement it rewrites a fresh active backup manifest so the restored store can immediately be validated or backed up again. Password / money / mall remain deferred; this surface preserves already-owned durable cells only.
+Restores the durable safebox FileStore from an operator-supplied manifested backup into an empty destination. Loopback-only `POST` with `{"src_dir":"..."}`. Restore refuses live selected-character sessions, non-empty destinations, and destinations nested under the backup source. After FileStore replacement it rewrites a fresh active backup manifest so the restored store can immediately be validated or backed up again. Mall remains deferred; this surface preserves already-owned durable cells, passwords, and warehouse money.
 
 ### `POST /local/static-actors/backup`
 
@@ -701,13 +701,13 @@ The quarantine contract requires `migration_version = 10`, `migration_name = "bo
 
 ### `GET /local/safebox-store/exports/character-safebox-state`
 
-Returns a loopback-only, read-only JSON projection of the committed durable safebox FileStore onto the `0014_character_safebox_state` migration boundary. This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the committed safebox snapshot is invalid or cannot be projected onto the schema shape.
+Returns a loopback-only, read-only JSON projection of the committed durable safebox FileStore onto the `0015_character_safebox_money` migration tip. This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the committed safebox snapshot is invalid or cannot be projected onto the schema shape.
 
 Successful responses include `migration_version`, `migration_name`, deterministic `passwords` rows (one per durable character key, with empty `password` meaning bootstrap default `000000`), and deterministic `items` rows for durable cells `0..14`. A missing safebox snapshot returns an empty migration-shaped export, matching `/local/safebox-store/validate`. The response deliberately omits executable SQL, account roster rows, live presentation windows, money/mall state, and runtime world state, and it does not apply migrations or mutate the safebox store. Use it as an operator/backfill preflight beside the FileStore rematerialize and `/local/safebox-store/*` backup/restore drill path.
 
 ### `POST /local/safebox-store/exports/character-safebox-state/quarantine`
 
-Validates and canonicalizes a retained `0014_character_safebox_state` export without opening a database or mutating safebox snapshots. This endpoint is registered only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects non-loopback callers with `403`, rejects oversized bodies over 1 MiB with `413`, rejects malformed/invalid-UTF-8/`null` JSON with `400`, and returns `409` when the payload fails the quarantine contract.
+Validates and canonicalizes a retained `0015_character_safebox_money` export without opening a database or mutating safebox snapshots. This endpoint is registered only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects non-loopback callers with `403`, rejects oversized bodies over 1 MiB with `413`, rejects malformed/invalid-UTF-8/`null` JSON with `400`, and returns `409` when the payload fails the quarantine contract.
 
 Successful responses include:
 
@@ -718,7 +718,7 @@ Successful responses include:
 - deterministic sorted `summary.logins`
 - a canonicalized `export` whose password rows are ordered by ascending `character_id` then `login`, and whose item rows are ordered by ascending `character_id` then `cell`
 
-The quarantine contract requires `migration_version = 14`, `migration_name = "character_safebox_state"`, present (possibly empty) `passwords` / `items` arrays, `character_id > 0`, bootstrap-valid `login` / optional alphanumeric password (`<= 6`), unique password `character_id` keys, unique item ids, unique `(character_id, cell)` pairs with `cell < 15`, positive `vnum` / `count`, and a stable `character_id` ↔ `login` mapping with every item referencing a password row. Use this after retaining an export artifact and before any future DB backfill/import tool. It is not a repository write path and never emits SQL or DSNs.
+The quarantine contract requires `migration_version = 15`, `migration_name = "character_safebox_money"`, present (possibly empty) `passwords` / `items` arrays, `character_id > 0`, bootstrap-valid `login` / optional alphanumeric password (`<= 6`) / optional warehouse `money` in `[0, 2147483647]`, unique password `character_id` keys, unique item ids, unique `(character_id, cell)` pairs with `cell < 15`, positive `vnum` / `count`, and a stable `character_id` ↔ `login` mapping with every item referencing a password row. Use this after retaining an export artifact and before any future DB backfill/import tool. It is not a repository write path and never emits SQL or DSNs.
 
 ### `GET /local/build-info`
 

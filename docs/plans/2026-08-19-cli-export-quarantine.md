@@ -26,7 +26,7 @@ Supported `--kind` values:
 | `item-template-state` | `0009_item_template_refine_info` |
 | `static-actor-content-state` | `0013_static_actor_combat_profile_state` |
 | `bootstrap-ground-item-state` | `0010_bootstrap_ground_item_state` |
-| `character-safebox-state` | `0014_character_safebox_state` |
+| `character-safebox-state` | `0015_character_safebox_money` |
 
 Behavior:
 
