@@ -89,17 +89,23 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if len(imported.RegenSpawns) != 0 || len(imported.DropTables) != 0 {
 		t.Fatalf("expected import to canonicalize away authoring-only regen/drop collections, got regen=%+v drop_tables=%+v", imported.RegenSpawns, imported.DropTables)
 	}
-	if len(imported.SpawnGroups) != 1 || imported.SpawnGroups[0].Ref != "practice.qa_pve_vertical_mob" {
-		t.Fatalf("expected imported spawn group practice.qa_pve_vertical_mob, got %+v", imported.SpawnGroups)
+	if len(imported.SpawnGroups) != 3 ||
+		imported.SpawnGroups[0].Ref != "practice.qa_pve_vertical_mob" ||
+		imported.SpawnGroups[1].Ref != "practice.qa_pve_vertical_pack.m01" ||
+		imported.SpawnGroups[2].Ref != "practice.qa_pve_vertical_pack.m02" {
+		t.Fatalf("expected imported spawn groups practice.qa_pve_vertical_mob plus pack members, got %+v", imported.SpawnGroups)
 	}
-	if imported.SpawnGroups[0].CombatProfile != "qa_pve_vertical_practice_mob" {
-		t.Fatalf("expected imported PvE vertical mob to use formula combat profile, got %+v", imported.SpawnGroups[0])
+	if imported.SpawnGroups[0].CombatProfile != "qa_pve_vertical_practice_mob" ||
+		imported.SpawnGroups[1].CombatProfile != "qa_pve_vertical_practice_mob" ||
+		imported.SpawnGroups[2].CombatProfile != "qa_pve_vertical_practice_mob" {
+		t.Fatalf("expected imported PvE vertical mobs to use formula combat profile, got %+v", imported.SpawnGroups)
 	}
 	if len(imported.CombatProfiles) != 1 || imported.CombatProfiles[0].Profile != "qa_pve_vertical_practice_mob" || imported.CombatProfiles[0].MaxHP != pveVerticalMobMaxHP || imported.CombatProfiles[0].DamagePerNormalAttack != 5 || imported.CombatProfiles[0].AggroRadius != 150 || imported.CombatProfiles[0].LeashRadius != 350 {
 		t.Fatalf("expected imported portable formula combat profile max_hp=20 damage=5 aggro_radius=150 leash_radius=350, got %+v", imported.CombatProfiles)
 	}
 
 	var guideVID, hunterVID, merchantVID, warehouseVID, mobVID uint32
+	var foundPackMembers int
 	for _, actor := range runtime.StaticActors() {
 		switch actor.Name {
 		case "QuestGuide":
@@ -112,10 +118,15 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 			warehouseVID = uint32(actor.EntityID)
 		case "QAPveVerticalMob":
 			mobVID = uint32(actor.EntityID)
+		case "QAPveVerticalPack 1", "QAPveVerticalPack 2":
+			foundPackMembers++
 		}
 	}
 	if guideVID == 0 || hunterVID == 0 || merchantVID == 0 || warehouseVID == 0 || mobVID == 0 {
 		t.Fatalf("expected guide/hunter/merchant/warehouse/mob actors after import, got %+v", runtime.StaticActors())
+	}
+	if foundPackMembers != 2 {
+		t.Fatalf("expected denser multi-count pack members QAPveVerticalPack 1/2 after import, found=%d actors=%+v", foundPackMembers, runtime.StaticActors())
 	}
 
 	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pve-vertical", 0x60606060)

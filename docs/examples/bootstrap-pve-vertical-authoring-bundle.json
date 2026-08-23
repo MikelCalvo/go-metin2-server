@@ -95,9 +95,26 @@
       "count": 1,
       "combat_profile": "qa_pve_vertical_practice_mob",
       "reward_drop_table_ref": "loot.qa_pve_vertical_reward"
+    },
+    {
+      "ref": "practice.qa_pve_vertical_pack",
+      "name": "QAPveVerticalPack",
+      "map_index": 1,
+      "x": 469900,
+      "y": 964200,
+      "race_num": 20350,
+      "count": 2,
+      "pack_spacing": 100,
+      "combat_profile": "qa_pve_vertical_practice_mob",
+      "reward_drop_table_ref": "loot.qa_pve_vertical_pack_reward"
     }
   ],
   "drop_tables": [
+    {
+      "ref": "loot.qa_pve_vertical_pack_reward",
+      "reward_experience": 40,
+      "reward_gold": 20
+    },
     {
       "ref": "loot.qa_pve_vertical_reward",
       "reward_experience": 75,

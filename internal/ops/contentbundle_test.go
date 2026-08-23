@@ -798,27 +798,51 @@ func TestLocalContentBundleValidateEndpointExpandsPveVerticalAuthoringExample(t 
 	if len(got.CombatProfiles) != 1 || !reflect.DeepEqual(got.CombatProfiles[0], wantProfile) {
 		t.Fatalf("expected validation response to keep portable PvE vertical formula combat profile, got %+v", got.CombatProfiles)
 	}
-	wantSpawn := contentbundle.SpawnGroup{
-		Ref:              "practice.qa_pve_vertical_mob",
-		Name:             "QAPveVerticalMob",
-		MapIndex:         1,
-		X:                469550,
-		Y:                964200,
-		RaceNum:          20350,
-		CombatProfile:    "qa_pve_vertical_practice_mob",
-		RewardExperience: 75,
-		RewardGold:       60,
-		RewardDropVnums:  []uint32{27001},
-		RewardQuestRef:   "quest:first_steps",
-		RewardQuestFlag:  "killed_qa_mob",
-		RewardQuestTo:    1,
-		RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
-		RequireQuestRef:  "quest:first_steps",
-		RequireQuestFlag: "met_guide",
-		RequireQuestFrom: 1,
+	wantSpawn := []contentbundle.SpawnGroup{
+		{
+			Ref:              "practice.qa_pve_vertical_mob",
+			Name:             "QAPveVerticalMob",
+			MapIndex:         1,
+			X:                469550,
+			Y:                964200,
+			RaceNum:          20350,
+			CombatProfile:    "qa_pve_vertical_practice_mob",
+			RewardExperience: 75,
+			RewardGold:       60,
+			RewardDropVnums:  []uint32{27001},
+			RewardQuestRef:   "quest:first_steps",
+			RewardQuestFlag:  "killed_qa_mob",
+			RewardQuestTo:    1,
+			RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+			RequireQuestRef:  "quest:first_steps",
+			RequireQuestFlag: "met_guide",
+			RequireQuestFrom: 1,
+		},
+		{
+			Ref:              "practice.qa_pve_vertical_pack.m01",
+			Name:             "QAPveVerticalPack 1",
+			MapIndex:         1,
+			X:                469900,
+			Y:                964200,
+			RaceNum:          20350,
+			CombatProfile:    "qa_pve_vertical_practice_mob",
+			RewardExperience: 40,
+			RewardGold:       20,
+		},
+		{
+			Ref:              "practice.qa_pve_vertical_pack.m02",
+			Name:             "QAPveVerticalPack 2",
+			MapIndex:         1,
+			X:                470000,
+			Y:                964200,
+			RaceNum:          20350,
+			CombatProfile:    "qa_pve_vertical_practice_mob",
+			RewardExperience: 40,
+			RewardGold:       20,
+		},
 	}
-	if len(got.SpawnGroups) != 1 || !reflect.DeepEqual(got.SpawnGroups[0], wantSpawn) {
-		t.Fatalf("expected validation response to expand PvE vertical authoring into gated kill-quest spawn group, got %+v", got.SpawnGroups)
+	if !reflect.DeepEqual(got.SpawnGroups, wantSpawn) {
+		t.Fatalf("expected validation response to expand PvE vertical authoring into gated kill-quest spawn plus multi-count pack, got %+v", got.SpawnGroups)
 	}
 	if len(got.StaticActors) != 8 || len(got.InteractionDefinitions) != 8 || len(got.QuestState) != 1 {
 		t.Fatalf("unexpected PvE vertical authoring validation counts: actors=%d defs=%d quest_state=%d", len(got.StaticActors), len(got.InteractionDefinitions), len(got.QuestState))

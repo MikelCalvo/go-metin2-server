@@ -4924,25 +4924,49 @@ func TestCanonicalizePveVerticalAuthoringExampleExpandsQuestLoop(t *testing.T) {
 	if len(canonical.CombatProfiles) != 1 || !reflect.DeepEqual(canonical.CombatProfiles[0], wantProfile) {
 		t.Fatalf("unexpected canonical PvE vertical combat profile:\n got: %#v\nwant: %#v", canonical.CombatProfiles, wantProfile)
 	}
-	wantSpawn := []SpawnGroup{{
-		Ref:              "practice.qa_pve_vertical_mob",
-		Name:             "QAPveVerticalMob",
-		MapIndex:         1,
-		X:                469550,
-		Y:                964200,
-		RaceNum:          20350,
-		CombatProfile:    "qa_pve_vertical_practice_mob",
-		RewardExperience: 75,
-		RewardGold:       60,
-		RewardDropVnums:  []uint32{27001},
-		RewardQuestRef:   "quest:first_steps",
-		RewardQuestFlag:  "killed_qa_mob",
-		RewardQuestTo:    1,
-		RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
-		RequireQuestRef:  "quest:first_steps",
-		RequireQuestFlag: "met_guide",
-		RequireQuestFrom: 1,
-	}}
+	wantSpawn := []SpawnGroup{
+		{
+			Ref:              "practice.qa_pve_vertical_mob",
+			Name:             "QAPveVerticalMob",
+			MapIndex:         1,
+			X:                469550,
+			Y:                964200,
+			RaceNum:          20350,
+			CombatProfile:    "qa_pve_vertical_practice_mob",
+			RewardExperience: 75,
+			RewardGold:       60,
+			RewardDropVnums:  []uint32{27001},
+			RewardQuestRef:   "quest:first_steps",
+			RewardQuestFlag:  "killed_qa_mob",
+			RewardQuestTo:    1,
+			RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+			RequireQuestRef:  "quest:first_steps",
+			RequireQuestFlag: "met_guide",
+			RequireQuestFrom: 1,
+		},
+		{
+			Ref:              "practice.qa_pve_vertical_pack.m01",
+			Name:             "QAPveVerticalPack 1",
+			MapIndex:         1,
+			X:                469900,
+			Y:                964200,
+			RaceNum:          20350,
+			CombatProfile:    "qa_pve_vertical_practice_mob",
+			RewardExperience: 40,
+			RewardGold:       20,
+		},
+		{
+			Ref:              "practice.qa_pve_vertical_pack.m02",
+			Name:             "QAPveVerticalPack 2",
+			MapIndex:         1,
+			X:                470000,
+			Y:                964200,
+			RaceNum:          20350,
+			CombatProfile:    "qa_pve_vertical_practice_mob",
+			RewardExperience: 40,
+			RewardGold:       20,
+		},
+	}
 	if !reflect.DeepEqual(canonical.SpawnGroups, wantSpawn) {
 		t.Fatalf("unexpected canonical PvE vertical spawn groups:\n got: %#v\nwant: %#v", canonical.SpawnGroups, wantSpawn)
 	}
@@ -5276,8 +5300,11 @@ func TestExampleBootstrapPveVerticalAuthoringBundleExportsOnto0013AndQuarantines
 	if len(canonical.RegenSpawns) != 0 || len(canonical.DropTables) != 0 {
 		t.Fatalf("expected canonicalize to strip authoring-only regen/drop collections, got regen=%+v drop_tables=%+v", canonical.RegenSpawns, canonical.DropTables)
 	}
-	if len(canonical.SpawnGroups) != 1 || canonical.SpawnGroups[0].Ref != "practice.qa_pve_vertical_mob" {
-		t.Fatalf("expected expanded spawn group practice.qa_pve_vertical_mob, got %+v", canonical.SpawnGroups)
+	if len(canonical.SpawnGroups) != 3 ||
+		canonical.SpawnGroups[0].Ref != "practice.qa_pve_vertical_mob" ||
+		canonical.SpawnGroups[1].Ref != "practice.qa_pve_vertical_pack.m01" ||
+		canonical.SpawnGroups[2].Ref != "practice.qa_pve_vertical_pack.m02" {
+		t.Fatalf("expected expanded spawn group practice.qa_pve_vertical_mob plus pack members, got %+v", canonical.SpawnGroups)
 	}
 	if len(canonical.CombatProfiles) != 1 || canonical.CombatProfiles[0].Profile != "qa_pve_vertical_practice_mob" {
 		t.Fatalf("expected portable qa_pve_vertical_practice_mob combat profile, got %+v", canonical.CombatProfiles)
@@ -5344,7 +5371,7 @@ func TestExampleBootstrapPveVerticalAuthoringBundleExportsOnto0013AndQuarantines
 	if export.MigrationVersion != staticstore.StaticActorContentStateMigrationVersion || export.MigrationName != staticstore.StaticActorContentStateMigrationName {
 		t.Fatalf("unexpected migration boundary: version=%d name=%q", export.MigrationVersion, export.MigrationName)
 	}
-	if len(export.InteractionDefinitions) != 8 || len(export.MerchantCatalogEntries) != 2 || len(export.QuestFlagRewardItems) != 1 || len(export.QuestFlagConsumeItems) != 1 || len(export.StaticActors) != 9 || len(export.RewardDrops) != 1 {
+	if len(export.InteractionDefinitions) != 8 || len(export.MerchantCatalogEntries) != 2 || len(export.QuestFlagRewardItems) != 1 || len(export.QuestFlagConsumeItems) != 1 || len(export.StaticActors) != 11 || len(export.RewardDrops) != 1 {
 		t.Fatalf("unexpected PvE vertical authoring export counts: defs=%d catalog=%d reward_items=%d consume_items=%d actors=%d drops=%d",
 			len(export.InteractionDefinitions), len(export.MerchantCatalogEntries), len(export.QuestFlagRewardItems), len(export.QuestFlagConsumeItems), len(export.StaticActors), len(export.RewardDrops))
 	}
@@ -5359,6 +5386,8 @@ func TestExampleBootstrapPveVerticalAuthoringBundleExportsOnto0013AndQuarantines
 		foundTurnIn    bool
 		foundWarehouse bool
 		foundKillQuest bool
+		foundPackM01   bool
+		foundPackM02   bool
 	)
 	for _, definition := range export.InteractionDefinitions {
 		switch {
@@ -5387,22 +5416,41 @@ func TestExampleBootstrapPveVerticalAuthoringBundleExportsOnto0013AndQuarantines
 		t.Fatalf("unexpected quest_flag consume item rows: %#v", export.QuestFlagConsumeItems)
 	}
 	for _, actor := range export.StaticActors {
-		if actor.SpawnGroupRef != "practice.qa_pve_vertical_mob" {
-			continue
-		}
-		foundKillQuest = true
-		if actor.Name != "QAPveVerticalMob" || actor.RewardQuestFlag != "killed_qa_mob" || actor.RewardQuestTo != 1 || actor.RequireQuestFlag != "met_guide" || actor.RequireQuestFrom != 1 {
-			t.Fatalf("unexpected kill-quest actor projection: %#v", actor)
-		}
-		if actor.RewardExperience != 75 || actor.RewardGold != 60 {
-			t.Fatalf("unexpected kill-quest combat rewards: %#v", actor)
-		}
-		if actor.CombatProfile != "qa_pve_vertical_practice_mob" {
-			t.Fatalf("unexpected kill-quest combat profile name: %#v", actor)
+		switch actor.SpawnGroupRef {
+		case "practice.qa_pve_vertical_mob":
+			foundKillQuest = true
+			if actor.Name != "QAPveVerticalMob" || actor.RewardQuestFlag != "killed_qa_mob" || actor.RewardQuestTo != 1 || actor.RequireQuestFlag != "met_guide" || actor.RequireQuestFrom != 1 {
+				t.Fatalf("unexpected kill-quest actor projection: %#v", actor)
+			}
+			if actor.RewardExperience != 75 || actor.RewardGold != 60 {
+				t.Fatalf("unexpected kill-quest combat rewards: %#v", actor)
+			}
+			if actor.CombatProfile != "qa_pve_vertical_practice_mob" {
+				t.Fatalf("unexpected kill-quest combat profile name: %#v", actor)
+			}
+		case "practice.qa_pve_vertical_pack.m01":
+			foundPackM01 = true
+			if actor.Name != "QAPveVerticalPack 1" || actor.RewardExperience != 40 || actor.RewardGold != 20 || actor.CombatProfile != "qa_pve_vertical_practice_mob" {
+				t.Fatalf("unexpected pack member m01 projection: %#v", actor)
+			}
+			if actor.RewardQuestFlag != "" || actor.RequireQuestFlag != "" {
+				t.Fatalf("expected denser practice pack members to stay ungated, got %#v", actor)
+			}
+		case "practice.qa_pve_vertical_pack.m02":
+			foundPackM02 = true
+			if actor.Name != "QAPveVerticalPack 2" || actor.RewardExperience != 40 || actor.RewardGold != 20 || actor.CombatProfile != "qa_pve_vertical_practice_mob" {
+				t.Fatalf("unexpected pack member m02 projection: %#v", actor)
+			}
+			if actor.RewardQuestFlag != "" || actor.RequireQuestFlag != "" {
+				t.Fatalf("expected denser practice pack members to stay ungated, got %#v", actor)
+			}
 		}
 	}
 	if !foundKillQuest {
 		t.Fatal("expected practice.qa_pve_vertical_mob kill-quest projection in 0013 export")
+	}
+	if !foundPackM01 || !foundPackM02 {
+		t.Fatal("expected practice.qa_pve_vertical_pack.m01/.m02 denser practice projections in 0013 export")
 	}
 	if export.RewardDrops[0].ItemVnum != 27001 {
 		t.Fatalf("unexpected reward drop rows: %#v", export.RewardDrops)
@@ -5412,7 +5460,7 @@ func TestExampleBootstrapPveVerticalAuthoringBundleExportsOnto0013AndQuarantines
 	if err != nil {
 		t.Fatalf("validate PvE vertical authoring export with combat profiles: %v", err)
 	}
-	if summary.CombatProfileCount != 1 || summary.StaticActorCount != 9 {
+	if summary.CombatProfileCount != 1 || summary.StaticActorCount != 11 {
 		t.Fatalf("unexpected quarantine summary: %#v", summary)
 	}
 	quarantined, quarantinedSummary, err := staticstore.QuarantineStaticActorContentStateExport(export)
