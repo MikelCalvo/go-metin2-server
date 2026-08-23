@@ -313,7 +313,7 @@ The repository now owns that packet shape at the codec level in `internal/proto/
 This is still a codec-only compatibility seam for later private-shop work:
 
 - no accepted private-shop open/close/browse/buy mutation is owned yet
-- `GC::SHOP_SIGN` (`0x0811`) remains deferred
+- `GC::SHOP_SIGN` (`0x0811`) remains deferred (codec contract frozen separately; see Frozen `GC::SHOP_SIGN` codec seam)
 - partner-side open player-shop exchange busy rejects remain deferred until a presentation seam exists
 - template-authored `anti_myshop` continues to project into `ITEM_SET.anti_flags` only; it does not yet drive a live private-shop mutation path
 
@@ -328,6 +328,24 @@ This is still a codec-only compatibility seam for later private-shop work:
 - `GC::SHOP_SIGN`, accepted private-shop open/close/browse/buy, and partner player-shop/cube exchange busy rejects stay deferred
 
 See `docs/plans/2026-08-23-myshop-deny-no-response-dispatch-contract-freeze.md`.
+
+### Frozen `GC::SHOP_SIGN` codec seam
+
+The legacy server publishes private-shop signs as `GC::SHOP_SIGN` (`0x0811`) with a host VID plus a fixed NUL-padded sign field.
+The repository now freezes that packet shape at the codec level only:
+
+- server family: `SHOP_SIGN`, header `0x0811`
+- payload after the common frame envelope: `vid uint32 LE` then `sign[33]` (`SHOP_SIGN_MAX_LEN = 32` plus one NUL pad byte)
+- decode rejects unexpected header and any payload whose length is not `37`
+- empty sign is a valid clear/close companion payload
+
+This is still a codec-only compatibility seam for later private-shop work:
+
+- no `internal/game` emission or session handler is owned yet
+- no accepted private-shop open/close/browse/buy mutation is owned yet
+- partner-side open player-shop exchange busy rejects remain deferred until a presentation seam exists
+
+See `docs/plans/2026-08-23-shop-sign-codec-contract-freeze.md`.
 
 ### Frozen `GC::ITEM_UPDATE` codec seam
 
