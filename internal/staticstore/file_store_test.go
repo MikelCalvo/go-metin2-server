@@ -129,6 +129,65 @@ func TestFileStoreSaveLoadRoundTripIncludesCustomCombatProfiles(t *testing.T) {
 	}
 }
 
+func TestFileStoreSaveLoadExpandsLegacyDamageCombatProfileOmittedAttackValue(t *testing.T) {
+	const profile = "practice_static_store_legacy_damage_wolf"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
+	store := NewFileStore(path)
+	input := Snapshot{
+		StaticActors: []StaticActor{{EntityID: 33, Name: "LegacyDamageWolf", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: profile, SpawnGroupRef: "practice.legacy_damage_wolf"}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               profile,
+			MaxHP:                 24,
+			DamagePerNormalAttack: 5,
+			DefenseValue:          3,
+			RespawnDelayMs:        1500,
+		}},
+	}
+	if err := store.Save(input); err != nil {
+		t.Fatalf("save legacy-damage combat-profile static actor snapshot: %v", err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("load legacy-damage combat-profile static actor snapshot: %v", err)
+	}
+	want := Snapshot{
+		StaticActors: []StaticActor{{EntityID: 33, Name: "LegacyDamageWolf", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: profile, SpawnGroupRef: "practice.legacy_damage_wolf"}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               profile,
+			MaxHP:                 24,
+			DamagePerNormalAttack: 5,
+			AttackValue:           8,
+			DefenseValue:          3,
+			Level:                 worldruntime.TrainingDummyBootstrapLevel,
+			RespawnDelayMs:        1500,
+		}},
+	}
+	if !reflect.DeepEqual(loaded, want) {
+		t.Fatalf("unexpected legacy-damage combat-profile static actor snapshot:\n got: %#v\nwant: %#v", loaded, want)
+	}
+}
+
+func TestFileStoreRejectsLegacyDamageCombatProfileAttackValueDefenseOverflow(t *testing.T) {
+	const profile = "practice_static_store_legacy_overflow_wolf"
+	store := NewFileStore(filepath.Join(t.TempDir(), "state", "static-actors.json"))
+	input := Snapshot{
+		StaticActors: []StaticActor{{EntityID: 34, Name: "LegacyOverflowWolf", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: profile, SpawnGroupRef: "practice.legacy_overflow_wolf"}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               profile,
+			MaxHP:                 24,
+			DamagePerNormalAttack: 5,
+			DefenseValue:          ^uint16(0),
+			RespawnDelayMs:        1500,
+		}},
+	}
+	if err := store.Save(input); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for legacy damage + overflowing defense, got %v", err)
+	}
+}
+
 func TestFileStoreRejectsNonCanonicalCustomCombatProfileSnapshotIdentity(t *testing.T) {
 	const profile = "practice_static_store_padded_wolf"
 	saveStore := NewFileStore(filepath.Join(t.TempDir(), "state", "static-actors.json"))

@@ -200,17 +200,28 @@ func validCombatProfileSnapshot(profile worldruntime.StaticActorCombatProfileSna
 	if !worldruntime.ValidStaticActorCombatProfileLeashRadius(profile.LeashRadius, profile.AggroRadius) {
 		return false
 	}
-	if profile.MaxHP == 0 || profile.AttackValue == 0 || !worldruntime.ValidStaticActorCombatProfileRespawnDelayMs(profile.RespawnDelayMs) {
+	hasLegacyDamage := profile.DamagePerNormalAttack != 0
+	hasExplicitFormula := profile.AttackValue != 0
+	if profile.MaxHP == 0 || (!hasLegacyDamage && !hasExplicitFormula) || !worldruntime.ValidStaticActorCombatProfileRespawnDelayMs(profile.RespawnDelayMs) {
 		return false
 	}
-	if profile.AttackValue > profile.DefenseValue && profile.AttackValue-profile.DefenseValue > uint16(profile.MaxHP) {
+	if hasLegacyDamage && !hasExplicitFormula && uint32(profile.DamagePerNormalAttack)+uint32(profile.DefenseValue) > uint32(^uint16(0)) {
 		return false
 	}
-	if profile.DamagePerNormalAttack != 0 {
-		expectedDamage := combatProfileSnapshotFormulaDamage(profile)
-		if profile.DamagePerNormalAttack != expectedDamage || profile.DamagePerNormalAttack > profile.MaxHP {
+	canonical := normalizeCombatProfileSnapshot(profile)
+	if canonical.AttackValue == 0 {
+		return false
+	}
+	if canonical.AttackValue > canonical.DefenseValue && canonical.AttackValue-canonical.DefenseValue > uint16(canonical.MaxHP) {
+		return false
+	}
+	if hasLegacyDamage {
+		expectedDamage := combatProfileSnapshotFormulaDamage(canonical)
+		if canonical.DamagePerNormalAttack != expectedDamage || canonical.DamagePerNormalAttack > canonical.MaxHP {
 			return false
 		}
+	} else if canonical.DamagePerNormalAttack == 0 || canonical.DamagePerNormalAttack > canonical.MaxHP {
+		return false
 	}
 	return worldruntime.ValidStaticActorDeathReward(profile.DeathReward)
 }
@@ -235,7 +246,12 @@ func combatProfileSnapshotMatchesDefaults(snapshot worldruntime.StaticActorComba
 
 func combatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfileSnapshot) (worldruntime.StaticActorCombatProfileDefaults, bool) {
 	respawnDelay, ok := worldruntime.StaticActorCombatProfileRespawnDelay(snapshot.RespawnDelayMs)
-	if strings.TrimSpace(snapshot.Profile) == "" || snapshot.MaxHP == 0 || snapshot.AttackValue == 0 || !ok {
+	hasLegacyDamage := snapshot.DamagePerNormalAttack != 0
+	hasExplicitFormula := snapshot.AttackValue != 0
+	if strings.TrimSpace(snapshot.Profile) == "" || snapshot.MaxHP == 0 || (!hasLegacyDamage && !hasExplicitFormula) || !ok {
+		return worldruntime.StaticActorCombatProfileDefaults{}, false
+	}
+	if hasLegacyDamage && !hasExplicitFormula && uint32(snapshot.DamagePerNormalAttack)+uint32(snapshot.DefenseValue) > uint32(^uint16(0)) {
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
 	if !worldruntime.ValidStaticActorCombatProfileAggroRadius(snapshot.AggroRadius, snapshot.LeashRadius) {
@@ -257,8 +273,18 @@ func combatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfil
 		RetaliationPointDelta: snapshot.RetaliationPointDelta,
 		DeathReward:           cloneDeathRewardPreservingDropMultiplicity(snapshot.DeathReward),
 	}
+	if defaults.AttackValue == 0 && defaults.DamagePerNormalAttack != 0 {
+		defaults.AttackValue = uint16(defaults.DamagePerNormalAttack) + defaults.DefenseValue
+	}
 	if defaults.DamagePerNormalAttack == 0 {
-		defaults.DamagePerNormalAttack = combatProfileSnapshotFormulaDamage(snapshot)
+		defaults.DamagePerNormalAttack = combatProfileSnapshotFormulaDamage(worldruntime.StaticActorCombatProfileSnapshot{
+			MaxHP:        defaults.MaxHP,
+			AttackValue:  defaults.AttackValue,
+			DefenseValue: defaults.DefenseValue,
+		})
+	}
+	if defaults.AttackValue == 0 {
+		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
 	if defaults.Level == 0 {
 		defaults.Level = worldruntime.TrainingDummyBootstrapLevel
@@ -426,9 +452,8 @@ func normalizeCombatProfiles(profiles []worldruntime.StaticActorCombatProfileSna
 	}
 	normalized := cloneCombatProfileSnapshotsPreservingRewardDropMultiplicity(profiles)
 	for i := range normalized {
+		normalized[i] = normalizeCombatProfileSnapshot(normalized[i])
 		if defaults, ok := combatProfileSnapshotDefaults(normalized[i]); ok {
-			normalized[i].DamagePerNormalAttack = defaults.DamagePerNormalAttack
-			normalized[i].Level = defaults.Level
 			if defaults.RetaliationPointDelta == worldruntime.PracticeMobBootstrapRetaliationPointDelta {
 				normalized[i].RetaliationPointDelta = 0
 			}
@@ -438,6 +463,16 @@ func normalizeCombatProfiles(profiles []worldruntime.StaticActorCombatProfileSna
 		return normalized[i].Profile < normalized[j].Profile
 	})
 	return normalized
+}
+
+func normalizeCombatProfileSnapshot(profile worldruntime.StaticActorCombatProfileSnapshot) worldruntime.StaticActorCombatProfileSnapshot {
+	if defaults, ok := combatProfileSnapshotDefaults(profile); ok {
+		profile.DamagePerNormalAttack = defaults.DamagePerNormalAttack
+		profile.AttackValue = defaults.AttackValue
+		profile.DefenseValue = defaults.DefenseValue
+		profile.Level = defaults.Level
+	}
+	return profile
 }
 
 func cloneCombatProfileSnapshotsPreservingRewardDropMultiplicity(profiles []worldruntime.StaticActorCombatProfileSnapshot) []worldruntime.StaticActorCombatProfileSnapshot {

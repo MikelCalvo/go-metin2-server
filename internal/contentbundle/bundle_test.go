@@ -6177,6 +6177,62 @@ func TestCanonicalizeExpandsFormulaOnlyCombatProfileSnapshotDefaults(t *testing.
 	}
 }
 
+func TestCanonicalizeExpandsLegacyDamageCombatProfileOmittedAttackValueFromDefense(t *testing.T) {
+	const profile = "practice_legacy_damage_export_wolf"
+	bundle, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.legacy_damage_export_wolf",
+			Name:          "Legacy Damage Export Wolf",
+			MapIndex:      42,
+			X:             1775,
+			Y:             2875,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               profile,
+			MaxHP:                 24,
+			DamagePerNormalAttack: 5,
+			DefenseValue:          3,
+			RespawnDelayMs:        1500,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize legacy-damage combat profile snapshot: %v", err)
+	}
+	if len(bundle.CombatProfiles) != 1 {
+		t.Fatalf("expected one canonical combat profile, got %#v", bundle.CombatProfiles)
+	}
+	got := bundle.CombatProfiles[0]
+	if got.Profile != profile || got.DamagePerNormalAttack != 5 || got.AttackValue != 8 || got.DefenseValue != 3 || got.Level != worldruntime.TrainingDummyBootstrapLevel {
+		t.Fatalf("expected omitted attack_value to expand as legacy damage + defense, got %+v", got)
+	}
+}
+
+func TestCanonicalizeRejectsLegacyDamageCombatProfileAttackValueDefenseOverflow(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.legacy_damage_overflow_wolf",
+			Name:          "Legacy Damage Overflow Wolf",
+			MapIndex:      42,
+			X:             1775,
+			Y:             2875,
+			RaceNum:       101,
+			CombatProfile: "practice_legacy_damage_overflow_wolf",
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               "practice_legacy_damage_overflow_wolf",
+			MaxHP:                 24,
+			DamagePerNormalAttack: 5,
+			DefenseValue:          ^uint16(0),
+			RespawnDelayMs:        1500,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for legacy damage + overflowing defense, got %v", err)
+	}
+}
+
 func TestCanonicalizeRollsBackPortableCombatProfileOnLaterValidationFailure(t *testing.T) {
 	const profile = "practice_portable_invalid_wolf"
 	_, err := Canonicalize(Bundle{
