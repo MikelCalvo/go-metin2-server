@@ -102,6 +102,7 @@ The shipped minimal runtime owns only a small in-memory exchange-window shell:
 - If `START` targets a visible connected player that currently has an open same-socket bootstrap merchant window, the requester receives one self-only `CHAT_TYPE_INFO` with `That player cannot trade right now.`; the busy partner receives no frames, no exchange pairing/display state is created, and the partner's merchant window remains open.
 - If `START` targets a visible connected player that currently has an open same-socket bootstrap safebox presentation, the requester receives the same self-only `CHAT_TYPE_INFO` with `That player cannot trade right now.`; the busy partner receives no frames, no exchange pairing/display state is created, and the partner's safebox presentation remains open.
 - If `START` targets a visible connected player that currently has an open same-socket refine-dialog presentation, the requester receives the same self-only `CHAT_TYPE_INFO` with `That player cannot trade right now.`; the busy partner receives no frames, no exchange pairing/display state is created, and the partner's refine dialog remains open.
+- Open private-shop busy rejects for requester/partner `START` / `ACCEPT` / commit are now contract-frozen beside merchant/safebox/refine (`docs/plans/2026-08-24-exchange-myshop-busy-window-reject-chat.md`) but not yet implemented; cube busy rejects stay deferred.
 - If the requester's live gold is already `>=` the owned signed `PLAYER_POINT_CHANGE` / bootstrap gold carrier max (`1<<31-1` / `exchangeGoldPointChangeCarrierMax`), `START` returns one self-only `CHAT_TYPE_INFO` with `You have more than 2 Billion Yang. You cannot trade.`; no exchange frames are emitted, no pairing/display mutation occurs, and any open merchant/safebox/refine presentation is left untouched. This gold-carrier-cap gate is evaluated after the owned busy-window and distance/`ALREADY` gates (`docs/plans/2026-08-22-exchange-start-gold-carrier-cap-reject-chat.md`).
 - If the requester is under that carrier cap but the visible connected target's live gold is already `>= 1<<31-1`, `START` returns one self-only `CHAT_TYPE_INFO` with `The player has more than 2 Billion Yang. You cannot trade with him.`, with the same no-pairing / no-exchange-frame contract. When both sides are over the cap, the requester-side string wins (local-first, matching busy ordering).
 - `CANCEL` succeeds only while the requester is currently paired in that shell.
@@ -203,6 +204,15 @@ Later slices must write a new contract before broadening this packet into real g
 
 - richer trade target eligibility beyond the current visible-player check plus owned exchange-distance gate (`ApproxDistance < 1000`), the requester-side open-merchant / open-safebox / open-refine-dialog PREVENT_TRADE_WINDOW start reject, the partner-side open-merchant / open-safebox / open-refine-dialog busy-window rejection text, the owned `EXCHANGE START` gold-carrier-cap reject chat when either side already holds `>= 1<<31-1` gold, the owned `EXCHANGE ACCEPT` / commit-time gold-carrier-cap reject chat when either paired side drifts to that cap after shell open, and the owned exact-position transfer / warp rebootstrap exchange teardown
 - partner-side open player-shop / cube busy-window rejection text
+
+### Frozen open-private-shop exchange busy-window reject seam
+
+The next exchange busy-window companion is frozen in docs before RED (`docs/plans/2026-08-24-exchange-myshop-busy-window-reject-chat.md`):
+
+- requester-side open private shop rejects `EXCHANGE START` / `ACCEPT` / commit-time busy drift with the already-owned requester busy info-chat string
+- partner-side open private shop rejects those same seams with the already-owned partner busy info-chat string
+- shared-world must publish a peer-visible open-private-shop busy bit beside merchant/safebox/refine window flags
+- no guest browse/buy and no cube busy rejects in that first implementation slice
 - exchange-window item/gold/accept updates beyond the current `START` / display-only `ITEM_ADD` / display-only `ITEM_DEL` / display-only `GOLD_ADD` / display-only `ACCEPT` / accept reset / accept-time displayed-item and displayed-gold revalidation / `LESS_GOLD` / `END` shell
 - trade item removal, carried-item locking/removal, or accepted gold mutation semantics beyond the first mutual-accept finalize described above
 - real finalize/result state machines beyond the first mutual-accept mutation + shell-close contract
