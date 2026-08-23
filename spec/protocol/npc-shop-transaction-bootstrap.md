@@ -27,7 +27,7 @@ This first transaction contract applies only to:
 - deterministic validation against the already-owned item-template catalog
 
 This slice does **not** yet apply to:
-- personal shops / `MYSHOP`
+- personal-shop runtime / accepted `MYSHOP` open mutation (codec shape is frozen separately; see Frozen `CG::MYSHOP` codec seam)
 - safebox / mall / storage
 - multi-tab or drag-drop basket semantics
 - quest-scripted merchant branching
@@ -298,6 +298,26 @@ This is a codec-only compatibility seam for later stock/sold-out/player-shop ref
 The current bootstrap NPC `BUY`, `SELL`, and `SELL2` runtime paths still use the already-owned selected-character inventory refreshes plus their separately frozen merchant companions: packet `SHOP BUY` success is item-refresh-only, sell success is item/currency-refresh-only, and error paths use the owned bare merchant error frames.
 They do not emit `UPDATE_ITEM` yet.
 
+
+### Frozen `CG::MYSHOP` codec seam
+
+The legacy client builds private-shop open requests as `CG::MYSHOP` (`0x0802`) with a fixed sign/count header plus a trailing packed item-table blob.
+The repository now freezes that packet shape at the codec level only:
+
+- client family: `MYSHOP`, header `0x0802`
+- fixed payload after the common frame envelope: `sign[33]` (`SHOP_SIGN_MAX_LEN = 32` plus one NUL pad byte) then `count uint8`
+- trailing blob: exactly `count` packed `TShopItemTable` records
+- each packed table is 13 bytes: `vnum uint32 LE`, `count uint8`, packed `TItemPos` (`window_type uint8`, `cell uint16 LE`), `price uint32 LE`, `display_pos uint8`
+- decode rejects unexpected header, `count > ShopHostItemMax` (`40`), and any payload whose length is not `34 + count*13`
+
+This is still a codec-only compatibility seam for later private-shop work:
+
+- no `internal/game` dispatch or session handler is owned yet
+- no accepted private-shop open/close/browse/buy mutation is owned yet
+- `GC::SHOP_SIGN` (`0x0811`) remains deferred
+- partner-side open player-shop exchange busy rejects remain deferred until a presentation seam exists
+- template-authored `anti_myshop` continues to project into `ITEM_SET.anti_flags` only; it does not yet drive a live private-shop mutation path
+
 ### Frozen `GC::ITEM_UPDATE` codec seam
 
 The legacy client handles `GC::ITEM_UPDATE` as a count/socket/attribute refresh for an already-known item cell.
@@ -405,7 +425,7 @@ This slice owns the state mutation and smallest visible merchant-window companio
 This slice does **not** yet freeze:
 - full compatibility-grade sell-price rules including broader bound item-instance policy and locale-specific tax variants
 - final client-visible sell-result choreography beyond `ITEM_DEL` / `ITEM_UPDATE` plus gold `POINT_CHANGE`
-- personal-shop (`MYSHOP`) behavior
+- personal-shop (`MYSHOP`) runtime open/close/browse/buy behavior beyond the frozen codec shape
 - merchant stock depletion
 - merchant refresh timers
 - multi-tab cash/coin shops
