@@ -50,7 +50,10 @@ git diff --check
 
 ## Follow-up options
 
-1. Freeze multi-count regen pack placement in docs/spec before opening any RED
-   that widens `regen_spawns.count`.
+1. ~~Freeze multi-count regen pack placement in docs/spec before opening any RED
+   that widens `regen_spawns.count`.~~ Done: see
+   [multi-count regen pack placement contract freeze](2026-08-23-multi-count-regen-pack-placement-contract-freeze.md).
 2. Optionally add a third checked-in negative fixture only when a later reject
    case still forces QA to invent JSON.
+3. After the freeze, open the first GREEN that accepts `count` in `2..8` with
+   required `pack_spacing` and updates the invalid-count fixture/docs together.
