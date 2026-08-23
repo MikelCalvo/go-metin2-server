@@ -68,6 +68,7 @@ or packaging that enables timers by default.
 6. ~~Optional later: hermetic `/bin/sh` execution proof of the contrib helper.~~
    Done: see
    [contrib print helper hermetic execution](2026-08-23-contrib-print-helper-hermetic-execution.md).
-7. Optional later: systemd drop-in `.sample` that only documents
+7. ~~Optional later: systemd drop-in `.sample` that only documents
    `EnvironmentFile=` / `METIN2_RUNTIME_CONFIG` for a retained runtime-config
-   path (still print-only; no live curl; no DSN).
+   path (still print-only; no live curl; no DSN).~~ Done: see
+   [contrib runtime-config EnvironmentFile sample](2026-08-23-contrib-runtime-config-envfile-sample.md).

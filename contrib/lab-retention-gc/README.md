@@ -21,6 +21,18 @@ install -m 0644 contrib/lab-retention-gc/systemd/*.sample /etc/systemd/system/
 #   cp /etc/systemd/system/metin2-artifact-retention-gc-print.service.sample \
 #      /etc/systemd/system/metin2-artifact-retention-gc-print.service
 
+# Optional: METIN2_RUNTIME_CONFIG for backup-restore-drill printing
+install -d -m 0750 /etc/metin2
+install -m 0640 contrib/lab-retention-gc/env/metin2-runtime-config.env.sample \
+  /etc/metin2/metin2-runtime-config.env.sample
+# review, edit the retained JSON path, then:
+#   cp /etc/metin2/metin2-runtime-config.env.sample /etc/metin2/metin2-runtime-config.env
+install -d -m 0755 /etc/systemd/system/metin2-artifact-retention-gc-print.service.d
+install -m 0644 \
+  contrib/lab-retention-gc/systemd/metin2-artifact-retention-gc-print.service.d/runtime-config.conf.sample \
+  /etc/systemd/system/metin2-artifact-retention-gc-print.service.d/runtime-config.conf.sample
+# rename without .sample only after review
+
 # FreeBSD / cron.d style
 install -m 0644 \
   contrib/lab-retention-gc/cron.d/metin2-artifact-retention-gc-print.sample \
@@ -41,7 +53,10 @@ Optional (env-gated):
 
 - `backup-restore-drill.sh` when `METIN2_RUNTIME_CONFIG` points at an existing
   non-symlink regular retained runtime-config JSON snapshot. The helper never
-  live-fetches ops JSON and never shells the printed scripts.
+  live-fetches ops JSON and never shells the printed scripts. Tree-owned samples:
+  `env/metin2-runtime-config.env.sample` plus the systemd
+  `EnvironmentFile=` drop-in under
+  `systemd/metin2-artifact-retention-gc-print.service.d/`.
 
 ## Hard rules
 

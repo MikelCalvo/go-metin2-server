@@ -107,6 +107,8 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		"migration-run-retention.sh",
 		"METIN2_RUNTIME_CONFIG",
 		"backup-restore-drill.sh",
+		"metin2-runtime-config.env.sample",
+		"EnvironmentFile=",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Fatalf("contrib README missing %q", want)
@@ -132,8 +134,8 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 	if !strings.Contains(dropIn, "EnvironmentFile=") {
 		t.Fatalf("drop-in sample must set EnvironmentFile=, got:\n%s", dropIn)
 	}
-	if !strings.Contains(dropIn, "metin2-runtime-config.env.sample") && !strings.Contains(dropIn, "metin2-runtime-config.env") {
-		t.Fatalf("drop-in sample must point at the env file sample, got:\n%s", dropIn)
+	if !strings.Contains(dropIn, "metin2-runtime-config.env") {
+		t.Fatalf("drop-in sample must point at the runtime-config env file, got:\n%s", dropIn)
 	}
 	for _, body := range []string{envSample, dropIn} {
 		for _, forbiddenLive := range []string{

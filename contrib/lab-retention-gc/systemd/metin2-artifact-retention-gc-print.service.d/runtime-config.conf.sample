@@ -1,0 +1,7 @@
+# Optional drop-in: load METIN2_RUNTIME_CONFIG for backup-restore-drill printing.
+# Install under:
+#   /etc/systemd/system/metin2-artifact-retention-gc-print.service.d/runtime-config.conf
+# after reviewing and renaming without .sample. Do NOT enable timers from packaging.
+# Never add DSN / password Environment= lines here.
+[Service]
+EnvironmentFile=-/etc/metin2/metin2-runtime-config.env

@@ -16,6 +16,8 @@ See also:
 - [print-only retention / GC unit samples plan](../plans/2026-08-23-print-only-retention-gc-unit-samples.md)
 - [contrib print-only retention / GC unit samples](../plans/2026-08-23-contrib-print-only-retention-gc-unit-samples.md)
 - [contrib companion print retention printers](../plans/2026-08-23-contrib-companion-print-retention-printers.md)
+- [contrib print helper hermetic execution](../plans/2026-08-23-contrib-print-helper-hermetic-execution.md)
+- [contrib runtime-config EnvironmentFile sample](../plans/2026-08-23-contrib-runtime-config-envfile-sample.md)
 - tree fragments under [`contrib/lab-retention-gc/`](../../contrib/lab-retention-gc/) (disabled-by-default `.sample` install copies; never enable from packaging)
 
 ## Hard rules
@@ -169,10 +171,13 @@ WantedBy=timers.target
 The tree-owned helper already prints `migration-run-retention.sh` on every run.
 To also print `backup-restore-drill.sh`, point
 `METIN2_RUNTIME_CONFIG` at a retained runtime-config JSON snapshot before the
-unit/cron fires (for example via a drop-in env file reviewed by an operator —
-never embed DSNs). Do **not** schedule live `curl` of
-`http://127.0.0.1:6060/local/runtime-config` from the unit; prefer a file
-retained during an earlier drained-session window.
+unit/cron fires. Reviewable fragments live under
+[`contrib/lab-retention-gc/env/metin2-runtime-config.env.sample`](../../contrib/lab-retention-gc/env/metin2-runtime-config.env.sample)
+and
+[`contrib/lab-retention-gc/systemd/metin2-artifact-retention-gc-print.service.d/runtime-config.conf.sample`](../../contrib/lab-retention-gc/systemd/metin2-artifact-retention-gc-print.service.d/runtime-config.conf.sample)
+(an `EnvironmentFile=` drop-in). Never embed DSNs. Do **not** schedule live
+`curl` of `http://127.0.0.1:6060/local/runtime-config` from the unit; prefer a
+file retained during an earlier drained-session window.
 
 Manual one-off companion prints (outside the helper) remain allowed for
 triage, still print-only:
