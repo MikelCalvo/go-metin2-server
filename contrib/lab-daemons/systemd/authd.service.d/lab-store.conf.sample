@@ -1,0 +1,7 @@
+# Optional drop-in: load lab store / loopback ops env for authd.
+# Install under:
+#   /etc/systemd/system/authd.service.d/lab-store.conf
+# after reviewing and renaming without .sample. Do NOT systemctl enable --now
+# from packaging. Never add DSN / password Environment= lines here.
+[Service]
+EnvironmentFile=-/etc/metin2/metin2-authd.env

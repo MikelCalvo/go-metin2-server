@@ -1,0 +1,42 @@
+#!/bin/sh
+
+# PROVIDE: authd
+# REQUIRE: NETWORKING FILESYSTEMS
+# KEYWORD: shutdown
+
+# FreeBSD rc.d sample for metin2 authd. Disabled by default.
+# Install as /usr/local/etc/rc.d/authd.sample, review, then rename without
+# .sample and flip authd_enable deliberately. Never embed DSN / SQL / password
+# markers. Ops stay loopback-only. Stop uses SIGTERM via rc.subr (no store wipe).
+
+. /etc/rc.subr
+
+name="authd"
+rcvar="authd_enable"
+desc="metin2 authd (login / ticket issue)"
+
+load_rc_config "$name"
+
+: "${authd_enable:=NO}"
+: "${authd_user:=metin2}"
+: "${authd_bin:=/usr/local/bin/authd}"
+: "${authd_env_file:=/etc/metin2/metin2-authd.env}"
+
+pidfile="/var/run/${name}.pid"
+command="/usr/sbin/daemon"
+procname="${authd_bin}"
+command_args="-f -p ${pidfile} -u ${authd_user} ${procname}"
+start_precmd="${name}_prestart"
+
+authd_prestart()
+{
+	if [ -r "${authd_env_file}" ]; then
+		set -a
+		# shellcheck disable=SC1090
+		. "${authd_env_file}"
+		set +a
+	fi
+	return 0
+}
+
+run_rc_command "$1"

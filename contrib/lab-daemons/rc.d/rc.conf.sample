@@ -1,0 +1,14 @@
+# FreeBSD rc.conf fragment for metin2 lab daemons.
+# Copy reviewed knobs into /etc/rc.conf or /etc/rc.conf.d/*.
+# Keep enable flags NO until an operator deliberately flips them.
+# Never put DSNs, passwords, login keys, or executable SQL here.
+
+# Default stays disabled. Only "YES" (case-insensitive via rc.subr) starts the daemon.
+authd_enable="NO"
+gamed_enable="NO"
+
+# Optional overrides after review (uncomment). Prefer EnvironmentFile-style
+# env files under /etc/metin2/ when using the matching systemd samples; for
+# FreeBSD rc.d, export store paths from a reviewed wrapper or set them here.
+# authd_env="METIN2_LOGIN_TICKET_STORE_DIR=/var/metin2/data/login-tickets METIN2_ACCOUNT_STORE_DIR=/var/metin2/data/accounts METIN2_AUTHD_PPROF_ADDR=127.0.0.1:6061 METIN2_AUTHD_LEGACY_ADDR=:11002"
+# gamed_env="METIN2_LOGIN_TICKET_STORE_DIR=/var/metin2/data/login-tickets METIN2_ACCOUNT_STORE_DIR=/var/metin2/data/accounts METIN2_GAMED_PPROF_ADDR=127.0.0.1:6060 METIN2_GAMED_LEGACY_ADDR=:13000"

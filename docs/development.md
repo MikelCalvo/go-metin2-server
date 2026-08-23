@@ -14,7 +14,7 @@ make test
 make build
 ```
 
-`make build` stamps `internal/buildinfo` via `-ldflags` using a UTC RFC3339 build date plus `VERSION` / `COMMIT` resolved from `GITHUB_REF_NAME` / `GITHUB_SHA` when set, otherwise `git describe` / `git rev-parse` (fallbacks `dev` / `none`). Unstamped `go run` / plain `go build` binaries keep the package defaults (`dev` / `none` / `unknown`). See [release/versioning policy](workflow/release-versioning.md). For the first lab host layout, timestamped artifact trees, daemon JSON logging / secret-redaction conventions, and metadata-only loopback `/local/*` access logs, see [lab deployment topology](workflow/lab-deployment-topology.md) and [production observability](workflow/production-observability.md).
+`make build` stamps `internal/buildinfo` via `-ldflags` using a UTC RFC3339 build date plus `VERSION` / `COMMIT` resolved from `GITHUB_REF_NAME` / `GITHUB_SHA` when set, otherwise `git describe` / `git rev-parse` (fallbacks `dev` / `none`). Unstamped `go run` / plain `go build` binaries keep the package defaults (`dev` / `none` / `unknown`). See [release/versioning policy](workflow/release-versioning.md). For the first lab host layout, timestamped artifact trees, daemon JSON logging / secret-redaction conventions, and metadata-only loopback `/local/*` access logs, see [lab deployment topology](workflow/lab-deployment-topology.md) and [production observability](workflow/production-observability.md). Disabled-by-default FreeBSD `rc.d` / systemd samples for `authd` / `gamed` live under [`contrib/lab-daemons/`](../contrib/lab-daemons/) ([lab daemon unit samples](workflow/lab-daemon-unit-samples.md)); print-only retention/GC unit samples remain under [`contrib/lab-retention-gc/`](../contrib/lab-retention-gc/).
 
 Run locally:
 

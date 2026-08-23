@@ -1,0 +1,19 @@
+[Unit]
+Description=metin2 gamed (world / PvE / persistence ops)
+Documentation=file:///opt/metin2/go-metin2-server/docs/workflow/lab-daemon-unit-samples.md
+After=local-fs.target network-online.target
+RequiresMountsFor=/var/metin2
+
+[Service]
+Type=simple
+User=metin2
+Group=metin2
+ExecStartPre=/usr/bin/test -x /usr/local/bin/gamed
+ExecStart=/usr/local/bin/gamed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+# Explicit non-goals: no Environment=DSN, no metin2-migrate apply, no store wipe.
+Nice=0
+
+[Install]
+WantedBy=multi-user.target

@@ -169,6 +169,7 @@ See also:
 - [file-store backup/restore drill](file-store-backup-restore-drill.md)
 - [CLI artifact-retention GC printer plan](../plans/2026-08-22-cli-artifact-retention-gc-printer.md)
 - [lab retention / GC print-only unit samples](lab-retention-gc-unit-samples.md)
+- [lab daemon rc.d / systemd unit samples](lab-daemon-unit-samples.md)
 - [ops docs ground-item lab topology / tip sync](../plans/2026-08-22-ops-docs-ground-item-lab-topology-tip-sync.md)
 - [safebox file-store backup/restore drill fold-in](../plans/2026-08-23-safebox-file-store-backup-restore-drill.md)
 
@@ -176,7 +177,7 @@ See also:
 
 - multi-host auth/game split
 - load-balanced shards or channel farms
-- Kubernetes / packaging that installs **enabled** systemd units or cron entries by default (print-only `.sample` units that only dump printer stdout are owned in [lab retention / GC print-only unit samples](lab-retention-gc-unit-samples.md); disabled-by-default tree fragments live under [`contrib/lab-retention-gc/`](../../contrib/lab-retention-gc/), including FreeBSD `periodic(8)` weekly + `periodic.conf.sample` gated on `weekly_metin2_artifact_retention_gc_print_enable="NO"`)
+- Kubernetes / packaging that installs **enabled** systemd / `rc.d` units or cron entries by default (print-only `.sample` units that only dump printer stdout are owned in [lab retention / GC print-only unit samples](lab-retention-gc-unit-samples.md); disabled-by-default tree fragments live under [`contrib/lab-retention-gc/`](../../contrib/lab-retention-gc/), including FreeBSD `periodic(8)` weekly + `periodic.conf.sample` gated on `weekly_metin2_artifact_retention_gc_print_enable="NO"`; disabled-by-default `authd` / `gamed` FreeBSD `rc.d` + systemd samples live under [`contrib/lab-daemons/`](../../contrib/lab-daemons/) gated on `authd_enable="NO"` / `gamed_enable="NO"` — see [lab daemon unit samples](lab-daemon-unit-samples.md))
 - remote admin APIs
 - automatic / scheduled artifact GC or lifecycle daemons that invoke deletion
 - automatic stale-lock expiry (lab recovery remains confirmation-gated `apply-lock-aside` / operator aside-rename; see [lab stale-lock recovery](lab-stale-lock-recovery.md))

@@ -20,6 +20,7 @@ See also:
 - [contrib runtime-config EnvironmentFile sample](../plans/2026-08-23-contrib-runtime-config-envfile-sample.md)
 - [contrib FreeBSD periodic retention / GC print sample](../plans/2026-08-23-contrib-freebsd-periodic-retention-gc-print-sample.md)
 - tree fragments under [`contrib/lab-retention-gc/`](../../contrib/lab-retention-gc/) (disabled-by-default `.sample` install copies; never enable from packaging)
+- sibling daemon start samples (not print-only) in [lab daemon unit samples](lab-daemon-unit-samples.md) / [`contrib/lab-daemons/`](../../contrib/lab-daemons/)
 
 ## Hard rules
 

@@ -1,0 +1,7 @@
+# Optional drop-in: load lab store / loopback ops env for gamed.
+# Install under:
+#   /etc/systemd/system/gamed.service.d/lab-store.conf
+# after reviewing and renaming without .sample. Do NOT systemctl enable --now
+# from packaging. Never add DSN / password Environment= lines here.
+[Service]
+EnvironmentFile=-/etc/metin2/metin2-gamed.env
