@@ -612,7 +612,7 @@ Expected result:
 - out-of-range `EXCHANGE ITEM_ADD` display slots stay no-frame/no-mutation even for those guarded templates
 - malformed `EXCHANGE` payload sizes fail at the codec/dispatcher boundary rather than mutating runtime state
 - this is an exchange-window shell plus the first owned mutual-accept finalize path, not a completed exchange, trade, safebox, or player-shop feature
-- `CG::MYSHOP` (`0x0802`) encode/decode plus GAME dispatch are owned in this bootstrap: the default remains deny-no-response, and the first host-only accepted private-shop open presentation is now live (sign/stock/busy gates + same-socket open/busy flag + one `GC::SHOP_SIGN` with host VID + sign, no inventory/gold mutation on open); empty-sign close, guest browse/buy, and partner player-shop/cube exchange busy rejects stay deferred, so keep treating full personal-shop loops as out of scope for playable PvE checks
+- `CG::MYSHOP` (`0x0802`) encode/decode plus GAME dispatch are owned in this bootstrap: the default remains deny-no-response, and the first host-only accepted private-shop open presentation is now live (sign/stock/busy gates + same-socket open/busy flag + one `GC::SHOP_SIGN` with host VID + sign, no inventory/gold mutation on open); host-only empty-sign `GC::SHOP_SIGN` clear/close on lifecycle teardown is now contract-frozen in docs but not yet implemented; guest browse/buy and partner player-shop/cube exchange busy rejects stay deferred, so keep treating full personal-shop loops as out of scope for playable PvE checks
 
 ---
 

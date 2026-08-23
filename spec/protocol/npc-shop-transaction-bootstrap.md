@@ -361,6 +361,18 @@ The first host-only accepted open path is now owned on top of the codec + deny-n
 
 See `docs/plans/2026-08-23-myshop-accepted-open-presentation-contract-freeze.md`.
 
+### Frozen host-only MYSHOP empty-sign close companion seam
+
+The next host-only close path is frozen in docs before RED:
+
+- while the same-socket private-shop open/busy flag is set, lifecycle teardown (`/phase_select` / `/quit` / `/logout`, practice-mob floor, exact-position transfer/warp) clears that flag and emits one owned empty-sign `GC::SHOP_SIGN` (`host VID` + empty sign)
+- emission stays self-only for this bootstrap; peer around-broadcast and guest browse teardown stay deferred
+- already-closed paths emit no MYSHOP empty-sign frame; inventory/gold stay unchanged
+- optional lab `/close_myshop` may reuse the same helper; no new close packet family is invented here
+- guest browse/buy and partner player-shop/cube exchange busy rejects stay deferred
+
+See `docs/plans/2026-08-23-myshop-close-sign-clear-contract-freeze.md`.
+
 ### Frozen `GC::ITEM_UPDATE` codec seam
 
 The legacy client handles `GC::ITEM_UPDATE` as a count/socket/attribute refresh for an already-known item cell.
