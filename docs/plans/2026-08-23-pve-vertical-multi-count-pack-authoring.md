@@ -41,7 +41,9 @@ git diff --check
 
 ## Follow-up options
 
-1. Optionally add a checked-in negative fixture for one-count + positive
-   `pack_spacing` if QA keeps improvising that reject.
+1. ~~Optionally add a checked-in negative fixture for one-count + positive
+   `pack_spacing` if QA keeps improvising that reject.~~ Done:
+   `docs/examples/bootstrap-invalid-regen-one-count-pack-spacing-bundle.json`
+   (`docs/plans/2026-08-23-invalid-regen-one-count-pack-spacing-fixture.md`).
 2. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.

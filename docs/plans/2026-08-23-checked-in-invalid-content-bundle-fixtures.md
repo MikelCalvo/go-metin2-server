@@ -27,13 +27,16 @@ This closes follow-up #1 from
    `regen_spawns` row with `count = 2` and no `pack_spacing`.
 2. `docs/examples/bootstrap-invalid-regen-over-max-count-bundle.json` authors one
    `regen_spawns` row with `count = 9` and `pack_spacing = 100`.
-3. `docs/examples/bootstrap-invalid-orphan-quest-gate-bundle.json` mirrors the
+3. `docs/examples/bootstrap-invalid-regen-one-count-pack-spacing-bundle.json`
+   authors one `regen_spawns` row with `count = 1` and `pack_spacing = 100`
+   (`docs/plans/2026-08-23-invalid-regen-one-count-pack-spacing-fixture.md`).
+4. `docs/examples/bootstrap-invalid-orphan-quest-gate-bundle.json` mirrors the
    gated kill-quest-only drop-table authoring shape, but omits the
    `quest:first_steps.met_guide` `quest_flag` writer.
-4. `Canonicalize(...)` returns `ErrInvalidBundle` for those fixtures.
-5. Loopback `POST /local/content-bundle/validate` returns `400` for those.
-6. Spec / QA docs name the fixtures as the preferred negative dry-runs.
-7. Valid multi-count regen authoring is owned separately via
+5. `Canonicalize(...)` returns `ErrInvalidBundle` for those fixtures.
+6. Loopback `POST /local/content-bundle/validate` returns `400` for those.
+7. Spec / QA docs name the fixtures as the preferred negative dry-runs.
+8. Valid multi-count regen authoring is owned separately via
    [multi-count regen pack placement](2026-08-23-multi-count-regen-pack-placement-contract-freeze.md)
    and `docs/examples/bootstrap-multi-count-regen-authoring-bundle.json`.
 
@@ -62,5 +65,8 @@ git diff --check
    required `pack_spacing` and updates the invalid-count fixture/docs together.~~
    Done on `lane/content` with
    `docs/examples/bootstrap-multi-count-regen-authoring-bundle.json`.
-3. Optionally add another checked-in negative fixture only when a later reject
-   case still forces QA to invent JSON.
+3. ~~Optionally add another checked-in negative fixture only when a later reject
+   case still forces QA to invent JSON.~~ Done for one-count + positive
+   `pack_spacing`:
+   `docs/examples/bootstrap-invalid-regen-one-count-pack-spacing-bundle.json`
+   (`docs/plans/2026-08-23-invalid-regen-one-count-pack-spacing-fixture.md`).

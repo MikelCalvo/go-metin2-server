@@ -4699,6 +4699,25 @@ func TestCanonicalizeRejectsCheckedInMultiCountRegenWithoutPackSpacingExample(t 
 	}
 }
 
+func TestCanonicalizeRejectsCheckedInOneCountRegenWithPackSpacingExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-invalid-regen-one-count-pack-spacing-bundle.json"))
+	if err != nil {
+		t.Fatalf("read invalid one-count regen pack_spacing example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode invalid one-count regen pack_spacing example bundle: %v", err)
+	}
+	if _, err := Canonicalize(bundle); !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for checked-in one-count regen with pack_spacing example, got %v", err)
+	}
+}
+
 func TestCanonicalizeMultiCountRegenAuthoringExample(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {

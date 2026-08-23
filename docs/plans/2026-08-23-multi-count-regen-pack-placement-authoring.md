@@ -23,6 +23,7 @@ runtime still sees only one-actor spawn groups.
 7. Negative fixtures:
    - `docs/examples/bootstrap-invalid-regen-count-bundle.json` (`count = 2`, no spacing)
    - `docs/examples/bootstrap-invalid-regen-over-max-count-bundle.json` (`count = 9`)
+   - `docs/examples/bootstrap-invalid-regen-one-count-pack-spacing-bundle.json` (`count = 1` with `pack_spacing = 100`)
 8. Ops `/local/content-bundle/validate` pretty-prints the expanded members and
    returns `400` for the negative fixtures.
 
@@ -43,12 +44,14 @@ git diff --check
 
 ## Follow-up options
 
-1. ~~Optionally widen a composed PvE authoring fixture with one small multi-count
+1. ~~Widen a composed PvE authoring fixture with one small multi-count
    pack once manual QA wants denser practice mobs beside the NPC loop.~~ Done:
    `docs/examples/bootstrap-pve-vertical-authoring-bundle.json` now authors
    `practice.qa_pve_vertical_pack` (`count = 2`, `pack_spacing = 100`) beside the
    gated one-count kill-quest mob.
 2. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists; do not smuggle linkage through content canonicalization.
-3. Optionally add a checked-in negative fixture for one-count + positive
-   `pack_spacing` if QA keeps improvising that reject.
+3. ~~Optionally add a checked-in negative fixture for one-count + positive
+   `pack_spacing` if QA keeps improvising that reject.~~ Done:
+   `docs/examples/bootstrap-invalid-regen-one-count-pack-spacing-bundle.json`
+   (`docs/plans/2026-08-23-invalid-regen-one-count-pack-spacing-fixture.md`).

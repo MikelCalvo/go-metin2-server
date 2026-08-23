@@ -1,0 +1,14 @@
+{
+  "regen_spawns": [
+    {
+      "ref": "practice.qa_invalid_one_count_pack_spacing_mob",
+      "name": "QAInvalidOneCountPackSpacingMob",
+      "map_index": 1,
+      "x": 469900,
+      "y": 964200,
+      "race_num": 20350,
+      "count": 1,
+      "pack_spacing": 100
+    }
+  ]
+}

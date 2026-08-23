@@ -38,6 +38,8 @@ AI, synchronized respawn, assist calls, or legacy regen timers.
    `count = 2` **without** `pack_spacing` (still a preferred
    `/local/content-bundle/validate` reject dry-run). Over-max reject coverage
    lives in `docs/examples/bootstrap-invalid-regen-over-max-count-bundle.json`.
+   One-count + positive `pack_spacing` reject coverage lives in
+   `docs/examples/bootstrap-invalid-regen-one-count-pack-spacing-bundle.json`.
 
 ### First multi-count authoring expansion (GREEN target — now owned)
 
