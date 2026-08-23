@@ -6322,6 +6322,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								_ = persistDurableSafeboxMoney(selectedPlayer, previousMoney)
 								return gameflow.ChatResult{Accepted: true}
 							}
+							frames = prependMerchantCloseFrame(prependExchangeCloseFrame(frames))
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
 						if amount, ok := slashSafeboxMoneyWithdrawCommand(packet.Message); ok {
@@ -6361,6 +6362,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								_ = persistDurableSafeboxMoney(selectedPlayer, previousMoney)
 								return gameflow.ChatResult{Accepted: true}
 							}
+							frames = prependMerchantCloseFrame(prependExchangeCloseFrame(frames))
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
 						if slashCloseSafeboxCommand(packet.Message) {
