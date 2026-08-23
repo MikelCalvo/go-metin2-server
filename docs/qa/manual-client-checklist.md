@@ -612,7 +612,7 @@ Expected result:
 - out-of-range `EXCHANGE ITEM_ADD` display slots stay no-frame/no-mutation even for those guarded templates
 - malformed `EXCHANGE` payload sizes fail at the codec/dispatcher boundary rather than mutating runtime state
 - this is an exchange-window shell plus the first owned mutual-accept finalize path, not a completed exchange, trade, safebox, or player-shop feature
-- `CG::MYSHOP` (`0x0802`) is codec-owned only in this bootstrap: there is still no accepted private-shop open/close/browse/buy path and no `GC::SHOP_SIGN` companion to exercise in manual client QA; keep treating personal shops as out of scope for playable PvE loop checks
+- `CG::MYSHOP` (`0x0802`) encode/decode is codec-owned only in this bootstrap: the GAME flow still treats the header as unexpected (no deny-no-response dispatch yet), there is still no accepted private-shop open/close/browse/buy path, and no `GC::SHOP_SIGN` companion to exercise in manual client QA; keep treating personal shops as out of scope for playable PvE loop checks
 
 ---
 

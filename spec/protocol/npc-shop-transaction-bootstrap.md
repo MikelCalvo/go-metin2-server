@@ -27,7 +27,7 @@ This first transaction contract applies only to:
 - deterministic validation against the already-owned item-template catalog
 
 This slice does **not** yet apply to:
-- personal-shop runtime / accepted `MYSHOP` open mutation (codec shape is frozen separately; see Frozen `CG::MYSHOP` codec seam)
+- personal-shop runtime / accepted `MYSHOP` open mutation (codec shape is owned separately; see Owned `CG::MYSHOP` codec seam)
 - safebox / mall / storage
 - multi-tab or drag-drop basket semantics
 - quest-scripted merchant branching
@@ -299,10 +299,10 @@ The current bootstrap NPC `BUY`, `SELL`, and `SELL2` runtime paths still use the
 They do not emit `UPDATE_ITEM` yet.
 
 
-### Frozen `CG::MYSHOP` codec seam
+### Owned `CG::MYSHOP` codec seam
 
 The legacy client builds private-shop open requests as `CG::MYSHOP` (`0x0802`) with a fixed sign/count header plus a trailing packed item-table blob.
-The repository now freezes that packet shape at the codec level only:
+The repository now owns that packet shape at the codec level in `internal/proto/shop` (`HeaderClientMyShop`, `EncodeClientMyShop`, `DecodeClientMyShop`):
 
 - client family: `MYSHOP`, header `0x0802`
 - fixed payload after the common frame envelope: `sign[33]` (`SHOP_SIGN_MAX_LEN = 32` plus one NUL pad byte) then `count uint8`
@@ -312,7 +312,7 @@ The repository now freezes that packet shape at the codec level only:
 
 This is still a codec-only compatibility seam for later private-shop work:
 
-- no `internal/game` dispatch or session handler is owned yet
+- no `internal/game` dispatch or session handler is owned yet (`0x0802` still falls through as an unexpected GAME client packet)
 - no accepted private-shop open/close/browse/buy mutation is owned yet
 - `GC::SHOP_SIGN` (`0x0811`) remains deferred
 - partner-side open player-shop exchange busy rejects remain deferred until a presentation seam exists
@@ -425,7 +425,7 @@ This slice owns the state mutation and smallest visible merchant-window companio
 This slice does **not** yet freeze:
 - full compatibility-grade sell-price rules including broader bound item-instance policy and locale-specific tax variants
 - final client-visible sell-result choreography beyond `ITEM_DEL` / `ITEM_UPDATE` plus gold `POINT_CHANGE`
-- personal-shop (`MYSHOP`) runtime open/close/browse/buy behavior beyond the frozen codec shape
+- personal-shop (`MYSHOP`) runtime open/close/browse/buy behavior beyond the owned codec shape
 - merchant stock depletion
 - merchant refresh timers
 - multi-tab cash/coin shops

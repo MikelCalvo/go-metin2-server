@@ -9,8 +9,9 @@ import (
 )
 
 const (
-	HeaderClientShop uint16 = 0x0801
-	HeaderServerShop uint16 = 0x0810
+	HeaderClientShop   uint16 = 0x0801
+	HeaderClientMyShop uint16 = 0x0802
+	HeaderServerShop   uint16 = 0x0810
 
 	ClientSubheaderEnd   uint8 = 0
 	ClientSubheaderBuy   uint8 = 1
@@ -30,8 +31,10 @@ const (
 	ServerSubheaderStartEx          uint8 = 10
 	ServerSubheaderNotEnoughMoneyEx uint8 = 11
 
-	ShopHostItemMax = 40
-	ShopTabNameMax  = 32
+	ShopHostItemMax     = 40
+	ShopTabNameMax      = 32
+	ShopSignMax         = 32
+	MyShopItemTableSize = 13
 
 	attributeSize                = 3
 	itemEntrySize                = 4 + 4 + 1 + 1 + (itemproto.ItemSocketCount * 4) + (itemproto.ItemAttributeCount * attributeSize)
@@ -40,6 +43,7 @@ const (
 	clientEndPayloadSize         = 1
 	clientSellPayloadSize        = 2
 	clientSell2PayloadSize       = 3
+	clientMyShopFixedPayloadSize = ShopSignMax + 1 + 1
 	serverStartPayloadSize       = 1 + 4 + (ShopHostItemMax * itemEntrySize)
 	serverStartExFixedSize       = 1 + 4 + 1
 	serverUpdateItemPayloadSize  = 1 + 1 + itemEntrySize
@@ -71,6 +75,19 @@ type ClientSellPacket struct {
 type ClientSell2Packet struct {
 	Slot  uint8
 	Count uint8
+}
+
+type ClientMyShopItem struct {
+	Vnum       uint32
+	Count      uint8
+	Position   itemproto.Position
+	Price      uint32
+	DisplayPos uint8
+}
+
+type ClientMyShopPacket struct {
+	Sign  string
+	Items []ClientMyShopItem
 }
 
 type ItemEntry struct {
@@ -173,6 +190,44 @@ func DecodeClientSell2(f frame.Frame) (ClientSell2Packet, error) {
 		return ClientSell2Packet{}, ErrUnexpectedSubheader
 	}
 	return ClientSell2Packet{Slot: f.Payload[1], Count: f.Payload[2]}, nil
+}
+
+func EncodeClientMyShop(packet ClientMyShopPacket) []byte {
+	payload := make([]byte, clientMyShopFixedPayloadSize+(len(packet.Items)*MyShopItemTableSize))
+	copy(payload[:ShopSignMax+1], []byte(packet.Sign))
+	payload[ShopSignMax+1] = uint8(len(packet.Items))
+	offset := clientMyShopFixedPayloadSize
+	for _, item := range packet.Items {
+		encodeMyShopItemTable(payload[offset:offset+MyShopItemTableSize], item)
+		offset += MyShopItemTableSize
+	}
+	return frame.Encode(HeaderClientMyShop, payload)
+}
+
+func DecodeClientMyShop(f frame.Frame) (ClientMyShopPacket, error) {
+	if f.Header != HeaderClientMyShop {
+		return ClientMyShopPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) < clientMyShopFixedPayloadSize {
+		return ClientMyShopPacket{}, ErrInvalidPayload
+	}
+	count := int(f.Payload[ShopSignMax+1])
+	if count > ShopHostItemMax {
+		return ClientMyShopPacket{}, ErrInvalidPayload
+	}
+	if len(f.Payload) != clientMyShopFixedPayloadSize+(count*MyShopItemTableSize) {
+		return ClientMyShopPacket{}, ErrInvalidPayload
+	}
+	packet := ClientMyShopPacket{
+		Sign:  fixedString(f.Payload[:ShopSignMax+1]),
+		Items: make([]ClientMyShopItem, count),
+	}
+	offset := clientMyShopFixedPayloadSize
+	for i := range packet.Items {
+		packet.Items[i] = decodeMyShopItemTable(f.Payload[offset : offset+MyShopItemTableSize])
+		offset += MyShopItemTableSize
+	}
+	return packet, nil
 }
 
 func EncodeServerStart(packet ServerStartPacket) []byte {
@@ -384,6 +439,28 @@ func decodeShopTab(src []byte) ShopTab {
 		offset += itemEntrySize
 	}
 	return tab
+}
+
+func encodeMyShopItemTable(dst []byte, item ClientMyShopItem) {
+	binary.LittleEndian.PutUint32(dst[0:], item.Vnum)
+	dst[4] = item.Count
+	dst[5] = item.Position.WindowType
+	binary.LittleEndian.PutUint16(dst[6:], item.Position.Cell)
+	binary.LittleEndian.PutUint32(dst[8:], item.Price)
+	dst[12] = item.DisplayPos
+}
+
+func decodeMyShopItemTable(src []byte) ClientMyShopItem {
+	return ClientMyShopItem{
+		Vnum:  binary.LittleEndian.Uint32(src[0:]),
+		Count: src[4],
+		Position: itemproto.Position{
+			WindowType: src[5],
+			Cell:       binary.LittleEndian.Uint16(src[6:]),
+		},
+		Price:      binary.LittleEndian.Uint32(src[8:]),
+		DisplayPos: src[12],
+	}
 }
 
 func encodeItemEntry(dst []byte, item ItemEntry) {

@@ -2,6 +2,7 @@ package shop
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"os"
@@ -456,6 +457,135 @@ func sampleClientSellPacket() ClientSellPacket {
 
 func sampleClientSell2Packet() ClientSell2Packet {
 	return ClientSell2Packet{Slot: 5, Count: 3}
+}
+
+func TestEncodeClientMyShopBuildsAFrameWithSignAndItemTables(t *testing.T) {
+	packet := sampleClientMyShopPacket()
+	got := EncodeClientMyShop(packet)
+	wantPayload := make([]byte, 34+MyShopItemTableSize)
+	copy(wantPayload[:ShopSignMax+1], []byte(packet.Sign))
+	wantPayload[ShopSignMax+1] = 1
+	binary.LittleEndian.PutUint32(wantPayload[34:], packet.Items[0].Vnum)
+	wantPayload[38] = packet.Items[0].Count
+	wantPayload[39] = packet.Items[0].Position.WindowType
+	binary.LittleEndian.PutUint16(wantPayload[40:], packet.Items[0].Position.Cell)
+	binary.LittleEndian.PutUint32(wantPayload[42:], packet.Items[0].Price)
+	wantPayload[46] = packet.Items[0].DisplayPos
+	want := frame.Encode(HeaderClientMyShop, wantPayload)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected client MYSHOP frame bytes:\n got %x\nwant %x", got, want)
+	}
+}
+
+func TestDecodeClientMyShopReturnsExpectedFields(t *testing.T) {
+	raw := EncodeClientMyShop(sampleClientMyShopPacket())
+	packet, err := DecodeClientMyShop(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet.Sign != "Private Shop" {
+		t.Fatalf("unexpected sign: %q", packet.Sign)
+	}
+	if len(packet.Items) != 1 {
+		t.Fatalf("unexpected item count: %d", len(packet.Items))
+	}
+	got := packet.Items[0]
+	want := sampleClientMyShopPacket().Items[0]
+	if got != want {
+		t.Fatalf("unexpected MYSHOP item: %+v want %+v", got, want)
+	}
+}
+
+func TestEncodeClientMyShopAllowsEmptyItemTables(t *testing.T) {
+	got := EncodeClientMyShop(ClientMyShopPacket{Sign: "Empty"})
+	wantPayload := make([]byte, 34)
+	copy(wantPayload[:ShopSignMax+1], []byte("Empty"))
+	want := frame.Encode(HeaderClientMyShop, wantPayload)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected empty MYSHOP frame bytes:\n got %x\nwant %x", got, want)
+	}
+}
+
+func TestDecodeClientMyShopRoundTripsMultipleItemTables(t *testing.T) {
+	want := ClientMyShopPacket{
+		Sign: "Multi",
+		Items: []ClientMyShopItem{
+			{
+				Vnum:       0x11223344,
+				Count:      3,
+				Position:   itemproto.Position{WindowType: itemproto.WindowInventory, Cell: 7},
+				Price:      1500,
+				DisplayPos: 2,
+			},
+			{
+				Vnum:       0xaabbccdd,
+				Count:      1,
+				Position:   itemproto.Position{WindowType: itemproto.WindowInventory, Cell: 11},
+				Price:      250,
+				DisplayPos: 5,
+			},
+		},
+	}
+	packet, err := DecodeClientMyShop(decodeSingleFrame(t, EncodeClientMyShop(want)))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet.Sign != want.Sign {
+		t.Fatalf("unexpected sign: %q", packet.Sign)
+	}
+	if len(packet.Items) != len(want.Items) {
+		t.Fatalf("unexpected item count: %d", len(packet.Items))
+	}
+	for i := range want.Items {
+		if packet.Items[i] != want.Items[i] {
+			t.Fatalf("unexpected MYSHOP item[%d]: %+v want %+v", i, packet.Items[i], want.Items[i])
+		}
+	}
+}
+
+func TestDecodeClientMyShopRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeClientMyShop(frame.Frame{Header: HeaderClientShop, Length: 38, Payload: make([]byte, 34)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeClientMyShopRejectsTruncatedPayload(t *testing.T) {
+	_, err := DecodeClientMyShop(frame.Frame{Header: HeaderClientMyShop, Length: 20, Payload: make([]byte, 16)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload for truncated payload, got %v", err)
+	}
+}
+
+func TestDecodeClientMyShopRejectsCountLengthMismatch(t *testing.T) {
+	payload := make([]byte, 34)
+	payload[ShopSignMax+1] = 1 // claims one item but trailing blob missing
+	_, err := DecodeClientMyShop(frame.Frame{Header: HeaderClientMyShop, Length: uint16(4 + len(payload)), Payload: payload})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload for count/length mismatch, got %v", err)
+	}
+}
+
+func TestDecodeClientMyShopRejectsOversizedCount(t *testing.T) {
+	payload := make([]byte, 34+MyShopItemTableSize)
+	payload[ShopSignMax+1] = uint8(ShopHostItemMax + 1)
+	_, err := DecodeClientMyShop(frame.Frame{Header: HeaderClientMyShop, Length: uint16(4 + len(payload)), Payload: payload})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload for oversized count, got %v", err)
+	}
+}
+
+func sampleClientMyShopPacket() ClientMyShopPacket {
+	return ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []ClientMyShopItem{{
+			Vnum:       0x11223344,
+			Count:      3,
+			Position:   itemproto.Position{WindowType: itemproto.WindowInventory, Cell: 7},
+			Price:      1500,
+			DisplayPos: 2,
+		}},
+	}
 }
 
 func sampleServerStartPacket() ServerStartPacket {
