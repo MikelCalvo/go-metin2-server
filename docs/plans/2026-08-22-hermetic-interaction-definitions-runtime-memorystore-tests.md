@@ -40,7 +40,7 @@ git diff --check
 
 ## Follow-up options
 
-1. Optionally convert shared `newInteractionDefinitionStore` / `newItemTemplateStore` helpers to MemoryStore once neighboring item gameplay suites are ready for the same coupling reduction.
+1. ~~Optionally convert shared `newInteractionDefinitionStore` / `newItemTemplateStore` helpers to MemoryStore once neighboring item gameplay suites are ready for the same coupling reduction.~~ Done: see [hermetic shared interaction/item template helpers](2026-08-23-hermetic-shared-interaction-item-template-helpers.md).
 2. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
 3. Keep branching quest scripts deferred; multi-count regen authoring is now owned separately.
 4. ~~Keep durable safebox persistence / password load deferred.~~ Done later; see `docs/plans/2026-08-23-open-safebox-npc-password-challenge-docs-sync.md`.

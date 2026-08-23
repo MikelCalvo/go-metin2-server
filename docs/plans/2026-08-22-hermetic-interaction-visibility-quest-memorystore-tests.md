@@ -37,7 +37,7 @@ git diff --check
 
 ## Follow-up options
 
-1. Optionally widen the same MemoryStore pattern to the remaining non-quest interaction-visibility suites that still allocate disposable interaction/item FileStores.
+1. ~~Optionally widen the same MemoryStore pattern to the remaining non-quest interaction-visibility suites that still allocate disposable interaction/item FileStores.~~ Done via the broader interaction-visibility conversion and [hermetic shared interaction/item template helpers](2026-08-23-hermetic-shared-interaction-item-template-helpers.md).
 2. Keep branching quest scripts deferred.
 3. Keep new NPC service kinds deferred until accepted durable safebox/storage mutations exist beyond the owned bootstrap presentation.
 4. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.

@@ -55453,8 +55453,7 @@ func writeRawPeerAccount(t *testing.T, store accountstore.Store, account account
 
 func newInteractionDefinitionStore(t *testing.T, definitions []interactionstore.Definition) interactionstore.Store {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "interaction-definitions.json")
-	store := interactionstore.NewFileStore(path)
+	store := interactionstore.NewMemoryStore()
 	if err := store.Save(interactionstore.Snapshot{Definitions: definitions}); err != nil {
 		t.Fatalf("save interaction definitions: %v", err)
 	}
@@ -55469,8 +55468,7 @@ func antiFlaggedUseToItemTemplate(mutate func(*itemcatalog.Template)) itemcatalo
 
 func newItemTemplateStore(t *testing.T, templates []itemcatalog.Template) itemcatalog.Store {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "item-templates.json")
-	store := itemcatalog.NewFileStore(path)
+	store := itemcatalog.NewMemoryStore()
 	if err := store.Save(itemcatalog.Snapshot{Templates: templates}); err != nil {
 		t.Fatalf("save item templates: %v", err)
 	}

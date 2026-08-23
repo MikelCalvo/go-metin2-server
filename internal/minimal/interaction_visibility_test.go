@@ -1403,18 +1403,10 @@ func TestGameRuntimeInteractionVisibilitySnapshotReturnsExactConnectedCharacter(
 
 func newMemoryInteractionDefinitionStore(t *testing.T, definitions []interactionstore.Definition) interactionstore.Store {
 	t.Helper()
-	store := interactionstore.NewMemoryStore()
-	if err := store.Save(interactionstore.Snapshot{Definitions: definitions}); err != nil {
-		t.Fatalf("save interaction definitions: %v", err)
-	}
-	return store
+	return newInteractionDefinitionStore(t, definitions)
 }
 
 func newMemoryItemTemplateStore(t *testing.T, templates []itemcatalog.Template) itemcatalog.Store {
 	t.Helper()
-	store := itemcatalog.NewMemoryStore()
-	if err := store.Save(itemcatalog.Snapshot{Templates: templates}); err != nil {
-		t.Fatalf("save item templates: %v", err)
-	}
-	return store
+	return newItemTemplateStore(t, templates)
 }

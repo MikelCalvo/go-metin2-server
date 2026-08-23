@@ -40,7 +40,7 @@ git diff --check
 
 ## Follow-up options
 
-1. ~~Optionally widen the same MemoryStore pattern to interaction-definition runtime create/upsert/remove suites.~~ Done: see [hermetic interaction-definitions runtime MemoryStore tests](2026-08-22-hermetic-interaction-definitions-runtime-memorystore-tests.md). Optionally convert shared `newInteractionDefinitionStore` / `newItemTemplateStore` helpers to MemoryStore once neighboring item gameplay suites are ready for the same coupling reduction.
+1. ~~Optionally widen the same MemoryStore pattern to interaction-definition runtime create/upsert/remove suites.~~ Done: see [hermetic interaction-definitions runtime MemoryStore tests](2026-08-22-hermetic-interaction-definitions-runtime-memorystore-tests.md). ~~Optionally convert shared `newInteractionDefinitionStore` / `newItemTemplateStore` helpers to MemoryStore once neighboring item gameplay suites are ready for the same coupling reduction.~~ Done: see [hermetic shared interaction/item template helpers](2026-08-23-hermetic-shared-interaction-item-template-helpers.md).
 2. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
 3. Keep ground-item restart durability deferred until operators decide quarantined `0010` exports drive recovery.
 4. ~~Optional Docker `LABEL` workflow-run metadata remains deferred.~~ Done: see [Docker LABEL workflow-run metadata](2026-08-22-docker-label-workflow-run-metadata.md).
