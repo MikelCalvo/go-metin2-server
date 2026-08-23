@@ -18,6 +18,8 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
+const maxRegenSpawnCount = 8
+
 var ErrInvalidBundle = errors.New("invalid content bundle")
 
 type StaticActor struct {
@@ -62,6 +64,7 @@ type RegenSpawn struct {
 	RaceNum            uint32   `json:"race_num"`
 	CombatProfile      string   `json:"combat_profile,omitempty"`
 	Count              uint16   `json:"count,omitempty"`
+	PackSpacing        int32    `json:"pack_spacing,omitempty"`
 	RewardExperience   uint64   `json:"reward_experience,omitempty"`
 	RewardGold         uint64   `json:"reward_gold,omitempty"`
 	RewardDropVnums    []uint32 `json:"reward_drop_vnums,omitempty"`
@@ -4328,32 +4331,67 @@ func spawnGroupsFromRegenSpawns(regenSpawns []RegenSpawn) ([]SpawnGroup, bool) {
 	}
 	spawnGroups := make([]SpawnGroup, 0, len(regenSpawns))
 	for _, regenSpawn := range regenSpawns {
-		if regenSpawn.Count != 1 {
+		count := regenSpawn.Count
+		if count == 0 || count > maxRegenSpawnCount {
 			return nil, false
 		}
-		spawnGroups = append(spawnGroups, SpawnGroup{
-			Ref:                regenSpawn.Ref,
-			Name:               regenSpawn.Name,
-			MapIndex:           regenSpawn.MapIndex,
-			X:                  regenSpawn.X,
-			Y:                  regenSpawn.Y,
-			RaceNum:            regenSpawn.RaceNum,
-			CombatProfile:      regenSpawn.CombatProfile,
-			RewardExperience:   regenSpawn.RewardExperience,
-			RewardGold:         regenSpawn.RewardGold,
-			RewardDropVnums:    cloneUint32s(regenSpawn.RewardDropVnums),
-			RewardDropTableRef: regenSpawn.RewardDropTableRef,
-			RewardQuestRef:     regenSpawn.RewardQuestRef,
-			RewardQuestFlag:    regenSpawn.RewardQuestFlag,
-			RewardQuestFrom:    regenSpawn.RewardQuestFrom,
-			RewardQuestTo:      regenSpawn.RewardQuestTo,
-			RewardQuestText:    regenSpawn.RewardQuestText,
-			RequireQuestRef:    regenSpawn.RequireQuestRef,
-			RequireQuestFlag:   regenSpawn.RequireQuestFlag,
-			RequireQuestFrom:   regenSpawn.RequireQuestFrom,
-		})
+		if count == 1 {
+			if regenSpawn.PackSpacing != 0 {
+				return nil, false
+			}
+			spawnGroups = append(spawnGroups, spawnGroupFromRegenSpawn(regenSpawn, regenSpawn.Ref, regenSpawn.Name, regenSpawn.X, regenSpawn.Y))
+			continue
+		}
+		if regenSpawn.PackSpacing <= 0 {
+			return nil, false
+		}
+		cols := regenPackColumnCount(int(count))
+		baseName := strings.TrimSpace(regenSpawn.Name)
+		for member := uint16(1); member <= count; member++ {
+			index := int(member - 1)
+			row := index / cols
+			col := index % cols
+			memberRef := fmt.Sprintf("%s.m%02d", regenSpawn.Ref, member)
+			memberName := fmt.Sprintf("%s %d", baseName, member)
+			x := regenSpawn.X + int32(col)*regenSpawn.PackSpacing
+			y := regenSpawn.Y + int32(row)*regenSpawn.PackSpacing
+			spawnGroups = append(spawnGroups, spawnGroupFromRegenSpawn(regenSpawn, memberRef, memberName, x, y))
+		}
 	}
 	return spawnGroups, true
+}
+
+func regenPackColumnCount(count int) int {
+	for cols := 1; cols <= count; cols++ {
+		if cols*cols >= count {
+			return cols
+		}
+	}
+	return count
+}
+
+func spawnGroupFromRegenSpawn(regenSpawn RegenSpawn, ref string, name string, x int32, y int32) SpawnGroup {
+	return SpawnGroup{
+		Ref:                ref,
+		Name:               name,
+		MapIndex:           regenSpawn.MapIndex,
+		X:                  x,
+		Y:                  y,
+		RaceNum:            regenSpawn.RaceNum,
+		CombatProfile:      regenSpawn.CombatProfile,
+		RewardExperience:   regenSpawn.RewardExperience,
+		RewardGold:         regenSpawn.RewardGold,
+		RewardDropVnums:    cloneUint32s(regenSpawn.RewardDropVnums),
+		RewardDropTableRef: regenSpawn.RewardDropTableRef,
+		RewardQuestRef:     regenSpawn.RewardQuestRef,
+		RewardQuestFlag:    regenSpawn.RewardQuestFlag,
+		RewardQuestFrom:    regenSpawn.RewardQuestFrom,
+		RewardQuestTo:      regenSpawn.RewardQuestTo,
+		RewardQuestText:    regenSpawn.RewardQuestText,
+		RequireQuestRef:    regenSpawn.RequireQuestRef,
+		RequireQuestFlag:   regenSpawn.RequireQuestFlag,
+		RequireQuestFrom:   regenSpawn.RequireQuestFrom,
+	}
 }
 
 func validMerchantCatalogCountForTemplate(entry interactionstore.MerchantCatalogEntry, template itemcatalog.Template) bool {

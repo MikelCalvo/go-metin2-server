@@ -56,5 +56,7 @@ git diff --check
    `count != 1` regen rows if QA still improvises reject cases.~~ Done: see
    [checked-in invalid content-bundle fixtures](2026-08-23-checked-in-invalid-content-bundle-fixtures.md).
 2. ~~Freeze multi-count regen pack placement before widening `regen_spawns.count`.~~
-   Done for docs/spec: see
-   [multi-count regen pack placement contract freeze](2026-08-23-multi-count-regen-pack-placement-contract-freeze.md).
+   Done for docs/spec and authoring GREEN: see
+   [multi-count regen pack placement contract freeze](2026-08-23-multi-count-regen-pack-placement-contract-freeze.md)
+   and
+   [multi-count regen pack placement authoring](2026-08-23-multi-count-regen-pack-placement-authoring.md).

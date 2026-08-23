@@ -4544,7 +4544,63 @@ func TestCanonicalizeExpandsAuthoringRegenSpawnsIntoSpawnGroups(t *testing.T) {
 	}
 }
 
-func TestCanonicalizeRejectsUnsupportedMultiCountRegenSpawn(t *testing.T) {
+func TestCanonicalizeExpandsMultiCountRegenSpawnIntoPackMembers(t *testing.T) {
+	bundle, err := Canonicalize(Bundle{
+		DropTables: []DropTable{{Ref: "loot.qa_multi_regen_reward", RewardExperience: 90, RewardGold: 45, DropVnums: []uint32{27002, 27001}}},
+		RegenSpawns: []RegenSpawn{{
+			Ref:                "practice.qa_multi_regen_mob",
+			Name:               "QAMultiRegenMob",
+			MapIndex:           1,
+			X:                  469900,
+			Y:                  964200,
+			RaceNum:            20350,
+			Count:              2,
+			PackSpacing:        100,
+			RewardDropTableRef: "loot.qa_multi_regen_reward",
+		}},
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize multi-count regen-spawn authoring bundle: %v", err)
+	}
+	if len(bundle.RegenSpawns) != 0 {
+		t.Fatalf("expected authoring-only regen spawns to be stripped from canonical bundle, got %+v", bundle.RegenSpawns)
+	}
+	want := []SpawnGroup{
+		{
+			Ref:              "practice.qa_multi_regen_mob.m01",
+			Name:             "QAMultiRegenMob 1",
+			MapIndex:         1,
+			X:                469900,
+			Y:                964200,
+			RaceNum:          20350,
+			CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardExperience: 90,
+			RewardGold:       45,
+			RewardDropVnums:  []uint32{27001, 27002},
+		},
+		{
+			Ref:              "practice.qa_multi_regen_mob.m02",
+			Name:             "QAMultiRegenMob 2",
+			MapIndex:         1,
+			X:                470000,
+			Y:                964200,
+			RaceNum:          20350,
+			CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardExperience: 90,
+			RewardGold:       45,
+			RewardDropVnums:  []uint32{27001, 27002},
+		},
+	}
+	if !reflect.DeepEqual(bundle.SpawnGroups, want) {
+		t.Fatalf("unexpected canonical multi-count regen-spawn expansion:\n got: %#v\nwant: %#v", bundle.SpawnGroups, want)
+	}
+}
+
+func TestCanonicalizeRejectsMultiCountRegenSpawnWithoutPackSpacing(t *testing.T) {
 	_, err := Canonicalize(Bundle{
 		RegenSpawns: []RegenSpawn{{
 			Ref:      "practice.multi_regen_mob",
@@ -4557,11 +4613,74 @@ func TestCanonicalizeRejectsUnsupportedMultiCountRegenSpawn(t *testing.T) {
 		}},
 	})
 	if !errors.Is(err, ErrInvalidBundle) {
-		t.Fatalf("expected ErrInvalidBundle for unsupported multi-count regen spawn, got %v", err)
+		t.Fatalf("expected ErrInvalidBundle for multi-count regen spawn without pack_spacing, got %v", err)
 	}
 }
 
-func TestCanonicalizeRejectsCheckedInMultiCountRegenExample(t *testing.T) {
+func TestCanonicalizeRejectsOneCountRegenSpawnWithPackSpacing(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		RegenSpawns: []RegenSpawn{{
+			Ref:         "practice.one_count_spacing",
+			Name:        "OneCountSpacing",
+			MapIndex:    1,
+			X:           469900,
+			Y:           964200,
+			RaceNum:     20350,
+			Count:       1,
+			PackSpacing: 100,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for one-count regen spawn with pack_spacing, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsOverMaxRegenSpawnCount(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		RegenSpawns: []RegenSpawn{{
+			Ref:         "practice.over_max_regen_mob",
+			Name:        "OverMaxRegenMob",
+			MapIndex:    1,
+			X:           469900,
+			Y:           964200,
+			RaceNum:     20350,
+			Count:       9,
+			PackSpacing: 100,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for regen spawn count above 8, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsCollidingMultiCountRegenMemberRefs(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.multi_regen_mob.m01",
+			Name:          "Existing Member",
+			MapIndex:      1,
+			X:             100,
+			Y:             200,
+			RaceNum:       20350,
+			CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob,
+		}},
+		RegenSpawns: []RegenSpawn{{
+			Ref:         "practice.multi_regen_mob",
+			Name:        "MultiRegenMob",
+			MapIndex:    1,
+			X:           469900,
+			Y:           964200,
+			RaceNum:     20350,
+			Count:       2,
+			PackSpacing: 100,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for colliding synthesized regen member refs, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsCheckedInMultiCountRegenWithoutPackSpacingExample(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("locate contentbundle test file")
@@ -4576,7 +4695,87 @@ func TestCanonicalizeRejectsCheckedInMultiCountRegenExample(t *testing.T) {
 		t.Fatalf("decode invalid multi-count regen example bundle: %v", err)
 	}
 	if _, err := Canonicalize(bundle); !errors.Is(err, ErrInvalidBundle) {
-		t.Fatalf("expected ErrInvalidBundle for checked-in multi-count regen example, got %v", err)
+		t.Fatalf("expected ErrInvalidBundle for checked-in multi-count regen without pack_spacing example, got %v", err)
+	}
+}
+
+func TestCanonicalizeMultiCountRegenAuthoringExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-multi-count-regen-authoring-bundle.json"))
+	if err != nil {
+		t.Fatalf("read multi-count regen authoring example bundle: %v", err)
+	}
+	var authored Bundle
+	if err := json.Unmarshal(raw, &authored); err != nil {
+		t.Fatalf("decode multi-count regen authoring example bundle: %v", err)
+	}
+	if len(authored.RegenSpawns) == 0 || authored.RegenSpawns[0].Count != 2 || authored.RegenSpawns[0].PackSpacing != 100 {
+		t.Fatalf("expected multi-count regen authoring example to keep count/pack_spacing before canonicalize, got %+v", authored.RegenSpawns)
+	}
+	canonical, err := Canonicalize(authored)
+	if err != nil {
+		t.Fatalf("canonicalize multi-count regen authoring example bundle: %v", err)
+	}
+	if len(canonical.RegenSpawns) != 0 || len(canonical.DropTables) != 0 {
+		t.Fatalf("expected multi-count regen authoring example to strip regen_spawns/drop_tables, got regen=%+v drop_tables=%+v", canonical.RegenSpawns, canonical.DropTables)
+	}
+	want := []SpawnGroup{
+		{
+			Ref:              "practice.qa_multi_regen_mob.m01",
+			Name:             "QAMultiRegenMob 1",
+			MapIndex:         1,
+			X:                469900,
+			Y:                964200,
+			RaceNum:          20350,
+			CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardExperience: 90,
+			RewardGold:       45,
+			RewardDropVnums:  []uint32{27001, 27002},
+			RewardQuestRef:   "quest:first_steps",
+			RewardQuestFlag:  "killed_qa_mob",
+			RewardQuestTo:    1,
+			RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+			RequireQuestRef:  "quest:first_steps",
+			RequireQuestFlag: "met_guide",
+			RequireQuestFrom: 1,
+		},
+		{
+			Ref:              "practice.qa_multi_regen_mob.m02",
+			Name:             "QAMultiRegenMob 2",
+			MapIndex:         1,
+			X:                470000,
+			Y:                964200,
+			RaceNum:          20350,
+			CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardExperience: 90,
+			RewardGold:       45,
+			RewardDropVnums:  []uint32{27001, 27002},
+			RewardQuestRef:   "quest:first_steps",
+			RewardQuestFlag:  "killed_qa_mob",
+			RewardQuestTo:    1,
+			RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+			RequireQuestRef:  "quest:first_steps",
+			RequireQuestFlag: "met_guide",
+			RequireQuestFrom: 1,
+		},
+	}
+	if !reflect.DeepEqual(canonical.SpawnGroups, want) {
+		t.Fatalf("unexpected canonical multi-count regen authoring example:\n got: %#v\nwant: %#v", canonical.SpawnGroups, want)
+	}
+	wantWriter := []interactionstore.Definition{{
+		Kind:      interactionstore.KindQuestFlag,
+		Ref:       "quest:first_steps",
+		Text:      "Quest updated: first_steps.met_guide = 1.",
+		QuestRef:  "quest:first_steps",
+		QuestFlag: "met_guide",
+		QuestTo:   1,
+	}}
+	if !reflect.DeepEqual(canonical.InteractionDefinitions, wantWriter) {
+		t.Fatalf("unexpected canonical multi-count regen authoring interaction definitions:\n got: %#v\nwant: %#v", canonical.InteractionDefinitions, wantWriter)
 	}
 }
 

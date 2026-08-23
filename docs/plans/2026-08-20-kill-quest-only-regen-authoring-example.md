@@ -35,5 +35,5 @@ Focused coverage:
 
 ## Follow-up options
 
-1. ~~Keep multi-count regen expansion deferred until pack placement / member identity rules are frozen.~~ Docs/spec freeze landed: see [multi-count regen pack placement contract freeze](2026-08-23-multi-count-regen-pack-placement-contract-freeze.md). Implementation RED/GREEN remains next.
+1. ~~Keep multi-count regen expansion deferred until pack placement / member identity rules are frozen.~~ Docs/spec freeze and authoring GREEN landed: see [multi-count regen pack placement contract freeze](2026-08-23-multi-count-regen-pack-placement-contract-freeze.md) plus `docs/examples/bootstrap-multi-count-regen-authoring-bundle.json`.
 2. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.

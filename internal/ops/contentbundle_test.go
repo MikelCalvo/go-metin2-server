@@ -882,7 +882,7 @@ func TestLocalContentBundleValidateEndpointRejectsInvalidBundle(t *testing.T) {
 	}
 }
 
-func TestLocalContentBundleValidateEndpointRejectsMultiCountRegenExample(t *testing.T) {
+func TestLocalContentBundleValidateEndpointRejectsMultiCountRegenWithoutPackSpacingExample(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("locate ops contentbundle test file")
@@ -901,7 +901,81 @@ func TestLocalContentBundleValidateEndpointRejectsMultiCountRegenExample(t *test
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d for checked-in multi-count regen example, got %d body=%s", http.StatusBadRequest, rec.Code, rec.Body.String())
+		t.Fatalf("expected status %d for checked-in multi-count regen without pack_spacing example, got %d body=%s", http.StatusBadRequest, rec.Code, rec.Body.String())
+	}
+}
+
+func TestLocalContentBundleValidateEndpointRejectsOverMaxRegenCountExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate ops contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-invalid-regen-over-max-count-bundle.json"))
+	if err != nil {
+		t.Fatalf("read invalid over-max regen example bundle: %v", err)
+	}
+	mux := RegisterLocalContentBundleValidateEndpoint(NewPprofMux("gamed"))
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/validate", bytes.NewReader(raw))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for checked-in over-max regen example, got %d body=%s", http.StatusBadRequest, rec.Code, rec.Body.String())
+	}
+}
+
+func TestLocalContentBundleValidateEndpointExpandsMultiCountRegenAuthoringExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate ops contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-multi-count-regen-authoring-bundle.json"))
+	if err != nil {
+		t.Fatalf("read multi-count regen authoring example bundle: %v", err)
+	}
+	mux := RegisterLocalContentBundleValidateEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/validate", bytes.NewReader(raw))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d for multi-count regen authoring example validation, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte(`"regen_spawns"`)) || bytes.Contains(rec.Body.Bytes(), []byte(`"drop_tables"`)) || bytes.Contains(rec.Body.Bytes(), []byte(`"reward_drop_table_ref"`)) || bytes.Contains(rec.Body.Bytes(), []byte(`"pack_spacing"`)) {
+		t.Fatalf("expected validation response to strip authoring-only regen/drop-table fields, got %s", rec.Body.String())
+	}
+	var got contentbundle.Bundle
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode multi-count regen validation response: %v", err)
+	}
+	wantDrops := []uint32{27001, 27002}
+	if len(got.SpawnGroups) != 2 ||
+		got.SpawnGroups[0].Ref != "practice.qa_multi_regen_mob.m01" ||
+		got.SpawnGroups[0].Name != "QAMultiRegenMob 1" ||
+		got.SpawnGroups[0].X != 469900 ||
+		got.SpawnGroups[0].Y != 964200 ||
+		got.SpawnGroups[1].Ref != "practice.qa_multi_regen_mob.m02" ||
+		got.SpawnGroups[1].Name != "QAMultiRegenMob 2" ||
+		got.SpawnGroups[1].X != 470000 ||
+		got.SpawnGroups[1].Y != 964200 ||
+		got.SpawnGroups[0].RewardExperience != 90 ||
+		got.SpawnGroups[0].RewardGold != 45 ||
+		!reflect.DeepEqual(got.SpawnGroups[0].RewardDropVnums, wantDrops) ||
+		!reflect.DeepEqual(got.SpawnGroups[1].RewardDropVnums, wantDrops) ||
+		got.SpawnGroups[0].RewardQuestRef != "quest:first_steps" ||
+		got.SpawnGroups[0].RewardQuestFlag != "killed_qa_mob" ||
+		got.SpawnGroups[0].RewardQuestTo != 1 ||
+		got.SpawnGroups[0].RequireQuestFlag != "met_guide" ||
+		got.SpawnGroups[1].RewardQuestFlag != "killed_qa_mob" ||
+		got.SpawnGroups[1].RequireQuestFrom != 1 {
+		t.Fatalf("expected validation response to expand multi-count regen authoring into independent pack members, got %+v", got.SpawnGroups)
 	}
 }
 

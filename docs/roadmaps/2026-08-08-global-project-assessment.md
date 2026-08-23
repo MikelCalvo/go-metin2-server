@@ -151,7 +151,7 @@ Still missing:
 - richer NPC service kinds,
 - live reload/update policy.
 
-Bootstrap note: one-count `regen_spawns` / fixed `drop_tables` ingestion and the composed authoring-form PvE vertical fixture (`docs/examples/bootstrap-pve-vertical-authoring-bundle.json`) are now owned; weighted/random loot and multi-count packs remain out of scope.
+Bootstrap note: one-count and multi-count `regen_spawns` / fixed `drop_tables` ingestion and the composed authoring-form PvE vertical fixture (`docs/examples/bootstrap-pve-vertical-authoring-bundle.json`) are now owned; multi-count authoring expands into independent one-actor `spawn_groups` only. Weighted/random loot and pack AI / synchronized respawn remain out of scope.
 
 ### Combat, mobs, death, restart, and rewards
 

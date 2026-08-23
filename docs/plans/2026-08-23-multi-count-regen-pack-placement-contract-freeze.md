@@ -27,18 +27,19 @@ AI, synchronized respawn, assist calls, or legacy regen timers.
 ### Still-owned one-count path (unchanged)
 
 1. `count` must be present and equal to `1` for every currently valid
-   `regen_spawns[]` row.
+   `regen_spawns[]` row that does not opt into multi-count.
 2. Canonicalization expands that row into exactly one `spawn_groups[]` row that
    keeps the authored `ref`, `name`, placement, combat profile, and reward /
    kill-quest descriptor fields.
 3. `regen_spawns`, `drop_tables`, and `reward_drop_table_ref` are stripped from
    the canonical bundle before runtime import/export.
 4. Checked-in negative fixture
-   `docs/examples/bootstrap-invalid-regen-count-bundle.json` (`count = 2`) remains
-   the preferred `/local/content-bundle/validate` reject dry-run **until** the
-   GREEN widen lands and fixture/docs are updated together.
+   `docs/examples/bootstrap-invalid-regen-count-bundle.json` now means
+   `count = 2` **without** `pack_spacing` (still a preferred
+   `/local/content-bundle/validate` reject dry-run). Over-max reject coverage
+   lives in `docs/examples/bootstrap-invalid-regen-over-max-count-bundle.json`.
 
-### First multi-count authoring expansion (next GREEN target)
+### First multi-count authoring expansion (GREEN target — now owned)
 
 5. `count` may be an integer in `2..8` inclusive.
 6. Multi-count rows require a new optional integer field `pack_spacing` (world
@@ -98,11 +99,12 @@ AI, synchronized respawn, assist calls, or legacy regen timers.
    - colliding synthesized member refs fail closed
 2. Ops validate endpoint: pretty-printed canonical multi-count expansion and the
    updated negative fixtures return `400` for the owned reject cases.
-3. Optional later QA fixture: one small multi-count regen example beside the
-   existing one-count regen authoring bundle; do not silently rewrite the
+3. Positive QA fixture: `docs/examples/bootstrap-multi-count-regen-authoring-bundle.json`
+   beside the existing one-count regen authoring bundle; do not silently rewrite the
    byte-canonical NPC service fixture.
 
 ## Status
 
-Docs/spec freeze only on `lane/content`. Implementation RED/GREEN that widens
-`regen_spawns.count` is intentionally deferred until this contract is committed.
+Docs/spec freeze landed first; the authoring GREEN that widens
+`regen_spawns.count` with required `pack_spacing` is now owned on `lane/content`.
+Live runtime remains independent one-actor `spawn_groups` with no pack AI object.

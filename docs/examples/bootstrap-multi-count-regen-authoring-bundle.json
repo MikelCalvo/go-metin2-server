@@ -1,0 +1,59 @@
+{
+  "regen_spawns": [
+    {
+      "ref": "practice.qa_multi_regen_mob",
+      "name": "QAMultiRegenMob",
+      "map_index": 1,
+      "x": 469900,
+      "y": 964200,
+      "race_num": 20350,
+      "count": 2,
+      "pack_spacing": 100,
+      "reward_drop_table_ref": "loot.qa_multi_regen_reward"
+    }
+  ],
+  "drop_tables": [
+    {
+      "ref": "loot.qa_multi_regen_reward",
+      "reward_experience": 90,
+      "reward_gold": 45,
+      "drop_vnums": [
+        27002,
+        27001
+      ],
+      "reward_quest_ref": "quest:first_steps",
+      "reward_quest_flag": "killed_qa_mob",
+      "reward_quest_to": 1,
+      "reward_quest_text": "Quest updated: first_steps.killed_qa_mob = 1.",
+      "require_quest_ref": "quest:first_steps",
+      "require_quest_flag": "met_guide",
+      "require_quest_from": 1
+    }
+  ],
+  "item_templates": [
+    {
+      "vnum": 27001,
+      "name": "Small Red Potion",
+      "stackable": true,
+      "max_count": 200,
+      "shop_buy_price": 5,
+      "shop_sell_price": 2
+    },
+    {
+      "vnum": 27002,
+      "name": "Small Blue Potion",
+      "stackable": true,
+      "max_count": 200
+    }
+  ],
+  "interaction_definitions": [
+    {
+      "kind": "quest_flag",
+      "ref": "quest:first_steps",
+      "text": "Quest updated: first_steps.met_guide = 1.",
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "met_guide",
+      "quest_to": 1
+    }
+  ]
+}
