@@ -32,6 +32,7 @@ import (
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
+	"github.com/MikelCalvo/go-metin2-server/internal/safeboxstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
@@ -408,6 +409,45 @@ func TestGameRuntimeExportsCharacterQuestStateThroughMemoryStoreSeam(t *testing.
 	}
 	if _, err := queststate.ValidateCharacterQuestStateExport(export); err != nil {
 		t.Fatalf("quarantine memory quest-state export: %v", err)
+	}
+}
+
+func TestGameRuntimeExportsCharacterSafeboxStateThroughMemoryStoreSeam(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewMemoryStore(),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	safeboxStore := safeboxstore.NewMemoryStore()
+	if err := safeboxStore.Save(safeboxstore.Snapshot{Characters: []safeboxstore.CharacterRow{{
+		Login:       "Alpha",
+		CharacterID: 7,
+		Password:    "secret",
+		Cells:       []safeboxstore.Cell{{Cell: 0, ID: 1001, Vnum: 27001, Count: 2}},
+	}}}); err != nil {
+		t.Fatalf("save memory safebox snapshot: %v", err)
+	}
+	runtime.safeboxStore = safeboxStore
+
+	export, err := runtime.ExportCharacterSafeboxState()
+	if err != nil {
+		t.Fatalf("runtime memory safebox-state export: %v", err)
+	}
+	if export.MigrationVersion != safeboxstore.CharacterSafeboxStateMigrationVersion || export.MigrationName != safeboxstore.CharacterSafeboxStateMigrationName {
+		t.Fatalf("unexpected migration boundary: %#v", export)
+	}
+	if len(export.Passwords) != 1 || export.Passwords[0].CharacterID != 7 || export.Passwords[0].Login != "Alpha" || export.Passwords[0].Password != "secret" {
+		t.Fatalf("unexpected memory safebox password rows: %#v", export.Passwords)
+	}
+	if len(export.Items) != 1 || export.Items[0].ID != 1001 || export.Items[0].Vnum != 27001 || export.Items[0].Count != 2 {
+		t.Fatalf("unexpected memory safebox item rows: %#v", export.Items)
+	}
+	if _, err := safeboxstore.ValidateCharacterSafeboxStateExport(export); err != nil {
+		t.Fatalf("quarantine memory safebox-state export: %v", err)
 	}
 }
 

@@ -39,6 +39,8 @@ const (
 	expectedStaticActorPVEInteractionDownSHA256 = "ebd3d0e36da41f938604f63a42c45afa18a64ae1ceb32de645e2abb34d81819a"
 	expectedStaticActorCombatProfileUpSHA256    = "1ec2fff925f5d67303be45c770e52379a42339ee9d545ec80dd65ff0ddde319e"
 	expectedStaticActorCombatProfileDownSHA256  = "6e704e0fa7b2dc5f7e27e8de33033f6c3210990133d6ba149055426cbecf276d"
+	expectedCharacterSafeboxStateUpSHA256       = "d800cec5d07278a6fa0b9d9004a0de3542e57c19b8565336fdbd865a6458caa4"
+	expectedCharacterSafeboxStateDownSHA256     = "f5cf1b200457d20c79feaa899098cb7a2718873ae64e4c229ab7581ab86e3ee1"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -582,6 +584,45 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 		}
 	}
 
+	if len(catalog) < 14 {
+		t.Fatalf("expected character safebox-state migration after combat-profile-state, got %d", len(catalog))
+	}
+	fourteenth := catalog[13]
+	if fourteenth.Version != 14 || fourteenth.Name != "character_safebox_state" {
+		t.Fatalf("unexpected fourteenth migration: %#v", fourteenth)
+	}
+	if fourteenth.UpPath != "0014_character_safebox_state.up.sql" {
+		t.Fatalf("unexpected fourteenth up path: %q", fourteenth.UpPath)
+	}
+	if fourteenth.DownPath != "0014_character_safebox_state.down.sql" {
+		t.Fatalf("unexpected fourteenth down path: %q", fourteenth.DownPath)
+	}
+	if fourteenth.UpSHA256 != expectedCharacterSafeboxStateUpSHA256 {
+		t.Fatalf("unexpected character-safebox-state up checksum: got %q want %q", fourteenth.UpSHA256, expectedCharacterSafeboxStateUpSHA256)
+	}
+	if fourteenth.DownSHA256 != expectedCharacterSafeboxStateDownSHA256 {
+		t.Fatalf("unexpected character-safebox-state down checksum: got %q want %q", fourteenth.DownSHA256, expectedCharacterSafeboxStateDownSHA256)
+	}
+	for _, want := range []string{
+		"CREATE TABLE character_safebox_passwords",
+		"CREATE TABLE character_safebox_items",
+		"CHECK (cell >= 0 AND cell < 15)",
+		"CHECK (length(password) <= 6)",
+		"CREATE UNIQUE INDEX character_safebox_items_character_cell_unique",
+	} {
+		if !strings.Contains(fourteenth.UpSQL, want) {
+			t.Fatalf("expected character-safebox-state up migration to contain %q, got:\n%s", want, fourteenth.UpSQL)
+		}
+	}
+	for _, want := range []string{
+		"DROP TABLE IF EXISTS character_safebox_items",
+		"DROP TABLE IF EXISTS character_safebox_passwords",
+	} {
+		if !strings.Contains(fourteenth.DownSQL, want) {
+			t.Fatalf("expected character-safebox-state down migration to contain %q, got:\n%s", want, fourteenth.DownSQL)
+		}
+	}
+
 	for i, migration := range catalog {
 		wantVersion := i + 1
 		if migration.Version != wantVersion {
@@ -651,7 +692,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("built-in catalog summary: %v", err)
 	}
-	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 13 {
+	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 14 {
 		t.Fatalf("unexpected built-in catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -661,7 +702,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 		t.Fatalf("unexpected first built-in catalog summary row: %#v", summary.Migrations[0])
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "static_actor_combat_profile_state" {
+	if latest.Version != summary.LatestVersion || latest.Name != "character_safebox_state" {
 		t.Fatalf("unexpected latest built-in catalog summary row: %#v", latest)
 	}
 }

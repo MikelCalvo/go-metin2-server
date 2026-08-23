@@ -329,6 +329,11 @@ func main() {
 		gameRuntime.ExportCharacterQuestState,
 	)
 	opsHandler = ops.RegisterLocalCharacterQuestStateQuarantineEndpoint(opsHandler)
+	opsHandler = ops.RegisterLocalCharacterSafeboxStateExportEndpoint(
+		opsHandler,
+		gameRuntime.ExportCharacterSafeboxState,
+	)
+	opsHandler = ops.RegisterLocalCharacterSafeboxStateQuarantineEndpoint(opsHandler)
 	opsHandler = ops.RegisterLocalItemTemplateStateExportEndpoint(
 		opsHandler,
 		gameRuntime.ExportItemTemplateState,

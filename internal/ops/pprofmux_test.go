@@ -38,6 +38,7 @@ const (
 	expectedCharacterPointStateStatusSHA256       = "2034ab84227eaa0701a257ed1dbd592d18e4d33fa09add30e05e93dcf4c8dc43"
 	expectedStaticActorPVEInteractionStatusSHA256 = "97570fea21e09c8c744601d433ddf0bde0f302e61eb0a9d72c5c55a7d8f5bf60"
 	expectedStaticActorCombatProfileStatusSHA256  = "1ec2fff925f5d67303be45c770e52379a42339ee9d545ec80dd65ff0ddde319e"
+	expectedCharacterSafeboxStateStatusSHA256     = "d800cec5d07278a6fa0b9d9004a0de3542e57c19b8565336fdbd865a6458caa4"
 )
 
 func TestHealthzEndpointIncludesServiceName(t *testing.T) {
@@ -7787,7 +7788,7 @@ func TestLocalStaticActorDeleteEndpointRemovesActorForLoopbackDelete(t *testing.
 func TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet(t *testing.T) {
 	planner := &stubMigrationStatusPlanner{plan: dbmigrations.Plan{
 		CurrentVersion: 0,
-		LatestVersion:  13,
+		LatestVersion:  14,
 		UpToDate:       false,
 		Pending: []dbmigrations.PlanStep{
 			{Version: 1, Name: "bootstrap_schema_migrations", Direction: dbmigrations.DirectionUp, Path: "0001_bootstrap_schema_migrations.up.sql", SHA256: expectedBootstrapMigrationStatusSHA256},
@@ -7803,6 +7804,7 @@ func TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet(t *testing.
 			{Version: 11, Name: "character_point_state", Direction: dbmigrations.DirectionUp, Path: "0011_character_point_state.up.sql", SHA256: expectedCharacterPointStateStatusSHA256},
 			{Version: 12, Name: "static_actor_pve_interaction_state", Direction: dbmigrations.DirectionUp, Path: "0012_static_actor_pve_interaction_state.up.sql", SHA256: expectedStaticActorPVEInteractionStatusSHA256},
 			{Version: 13, Name: "static_actor_combat_profile_state", Direction: dbmigrations.DirectionUp, Path: "0013_static_actor_combat_profile_state.up.sql", SHA256: expectedStaticActorCombatProfileStatusSHA256},
+			{Version: 14, Name: "character_safebox_state", Direction: dbmigrations.DirectionUp, Path: "0014_character_safebox_state.up.sql", SHA256: expectedCharacterSafeboxStateStatusSHA256},
 		},
 	}}
 	mux := RegisterLocalMigrationStatusEndpoint(NewPprofMux("gamed"), planner.Plan)
@@ -7823,7 +7825,7 @@ func TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet(t *testing.
 		t.Fatalf("expected application/json content type, got %q", contentType)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`"current_version":0`, `"latest_version":13`, `"up_to_date":false`, `"direction":"up"`, `"path":"0001_bootstrap_schema_migrations.up.sql"`, `"sha256":"` + expectedBootstrapMigrationStatusSHA256 + `"`, `"path":"0002_account_character_roster.up.sql"`, `"sha256":"` + expectedAccountCharacterRosterStatusSHA256 + `"`, `"path":"0003_character_item_state.up.sql"`, `"sha256":"` + expectedCharacterItemStateStatusSHA256 + `"`, `"path":"0004_character_quest_state.up.sql"`, `"sha256":"` + expectedCharacterQuestStateStatusSHA256 + `"`, `"path":"0005_item_template_state.up.sql"`, `"sha256":"` + expectedItemTemplateStateStatusSHA256 + `"`, `"path":"0006_item_template_safebox_reject_message.up.sql"`, `"sha256":"` + expectedItemTemplateSafeboxRejectStatusSHA256 + `"`, `"path":"0007_auth_login_ticket_handoff.up.sql"`, `"sha256":"` + expectedAuthLoginTicketHandoffStatusSHA256 + `"`, `"path":"0008_static_actor_content_state.up.sql"`, `"sha256":"` + expectedStaticActorContentStateStatusSHA256 + `"`, `"path":"0009_item_template_refine_info.up.sql"`, `"sha256":"` + expectedItemTemplateRefineInfoStatusSHA256 + `"`, `"path":"0010_bootstrap_ground_item_state.up.sql"`, `"sha256":"` + expectedBootstrapGroundItemStateStatusSHA256 + `"`, `"path":"0011_character_point_state.up.sql"`, `"sha256":"` + expectedCharacterPointStateStatusSHA256 + `"`, `"path":"0012_static_actor_pve_interaction_state.up.sql"`, `"sha256":"` + expectedStaticActorPVEInteractionStatusSHA256 + `"`, `"path":"0013_static_actor_combat_profile_state.up.sql"`, `"sha256":"` + expectedStaticActorCombatProfileStatusSHA256 + `"`} {
+	for _, want := range []string{`"current_version":0`, `"latest_version":14`, `"up_to_date":false`, `"direction":"up"`, `"path":"0001_bootstrap_schema_migrations.up.sql"`, `"sha256":"` + expectedBootstrapMigrationStatusSHA256 + `"`, `"path":"0002_account_character_roster.up.sql"`, `"sha256":"` + expectedAccountCharacterRosterStatusSHA256 + `"`, `"path":"0003_character_item_state.up.sql"`, `"sha256":"` + expectedCharacterItemStateStatusSHA256 + `"`, `"path":"0004_character_quest_state.up.sql"`, `"sha256":"` + expectedCharacterQuestStateStatusSHA256 + `"`, `"path":"0005_item_template_state.up.sql"`, `"sha256":"` + expectedItemTemplateStateStatusSHA256 + `"`, `"path":"0006_item_template_safebox_reject_message.up.sql"`, `"sha256":"` + expectedItemTemplateSafeboxRejectStatusSHA256 + `"`, `"path":"0007_auth_login_ticket_handoff.up.sql"`, `"sha256":"` + expectedAuthLoginTicketHandoffStatusSHA256 + `"`, `"path":"0008_static_actor_content_state.up.sql"`, `"sha256":"` + expectedStaticActorContentStateStatusSHA256 + `"`, `"path":"0009_item_template_refine_info.up.sql"`, `"sha256":"` + expectedItemTemplateRefineInfoStatusSHA256 + `"`, `"path":"0010_bootstrap_ground_item_state.up.sql"`, `"sha256":"` + expectedBootstrapGroundItemStateStatusSHA256 + `"`, `"path":"0011_character_point_state.up.sql"`, `"sha256":"` + expectedCharacterPointStateStatusSHA256 + `"`, `"path":"0012_static_actor_pve_interaction_state.up.sql"`, `"sha256":"` + expectedStaticActorPVEInteractionStatusSHA256 + `"`, `"path":"0013_static_actor_combat_profile_state.up.sql"`, `"sha256":"` + expectedStaticActorCombatProfileStatusSHA256 + `"`, `"path":"0014_character_safebox_state.up.sql"`, `"sha256":"` + expectedCharacterSafeboxStateStatusSHA256 + `"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected migration status body to contain %s, got %s", want, body)
 		}
@@ -9965,6 +9967,8 @@ func TestNewPprofMuxDoesNotExposeLocalMigrationStatusByDefault(t *testing.T) {
 		{method: http.MethodGet, path: "/local/static-actors/exports/static-actor-content-state"},
 		{method: http.MethodGet, path: "/local/ground-items/exports/bootstrap-ground-item-state"},
 		{method: http.MethodPost, path: "/local/ground-items/exports/bootstrap-ground-item-state/quarantine"},
+		{method: http.MethodGet, path: "/local/safebox-store/exports/character-safebox-state"},
+		{method: http.MethodPost, path: "/local/safebox-store/exports/character-safebox-state/quarantine"},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			req := httptest.NewRequest(tc.method, tc.path, nil)

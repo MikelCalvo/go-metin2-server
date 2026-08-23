@@ -1781,6 +1781,17 @@ func (r *gameRuntime) ExportCharacterQuestState() (queststate.CharacterQuestStat
 	return exporter.ExportCharacterQuestState(characterIDsByName)
 }
 
+func (r *gameRuntime) ExportCharacterSafeboxState() (safeboxstore.CharacterSafeboxStateExport, error) {
+	if r == nil || r.safeboxStore == nil {
+		return safeboxstore.ExportCharacterSafeboxState(safeboxstore.Snapshot{})
+	}
+	exporter, ok := r.safeboxStore.(safeboxstore.CharacterSafeboxStateExporter)
+	if !ok {
+		return safeboxstore.CharacterSafeboxStateExport{}, fmt.Errorf("character safebox-state export is not supported")
+	}
+	return exporter.ExportCharacterSafeboxState()
+}
+
 func (r *gameRuntime) ExportItemTemplateState() (itemcatalog.ItemTemplateStateExport, error) {
 	if r == nil || r.itemStore == nil {
 		return itemcatalog.ExportItemTemplateState(itemcatalog.Snapshot{})

@@ -15,6 +15,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
+	"github.com/MikelCalvo/go-metin2-server/internal/safeboxstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -28,6 +29,7 @@ var exportQuarantineKinds = []string{
 	"character-item-state",
 	"character-point-state",
 	"character-quest-state",
+	"character-safebox-state",
 	"auth-login-ticket-handoff",
 	"item-template-state",
 	"static-actor-content-state",
@@ -199,6 +201,16 @@ func quarantineExportJSON(kind string, raw []byte) (any, error) {
 			return nil, err
 		}
 		return queststate.CharacterQuestStateQuarantineResult{Summary: summary, Export: quarantined}, nil
+	case "character-safebox-state":
+		var export safeboxstore.CharacterSafeboxStateExport
+		if err := decodeStrictJSON(raw, &export); err != nil {
+			return nil, err
+		}
+		quarantined, summary, err := safeboxstore.QuarantineCharacterSafeboxStateExport(export)
+		if err != nil {
+			return nil, err
+		}
+		return safeboxstore.CharacterSafeboxStateQuarantineResult{Summary: summary, Export: quarantined}, nil
 	case "auth-login-ticket-handoff":
 		var export loginticket.AuthLoginTicketHandoffExport
 		if err := decodeStrictJSON(raw, &export); err != nil {

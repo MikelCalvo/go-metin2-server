@@ -38,6 +38,11 @@ func TestRunQuarantineExportAcceptsEmptyValidExports(t *testing.T) {
 			want:    `"flag_count": 0`,
 		},
 		{
+			kind:    "character-safebox-state",
+			payload: `{"migration_version":14,"migration_name":"character_safebox_state","passwords":[],"items":[]}`,
+			want:    `"password_count": 0`,
+		},
+		{
 			kind:    "auth-login-ticket-handoff",
 			payload: `{"migration_version":7,"migration_name":"auth_login_ticket_handoff","tickets":[]}`,
 			want:    `"ticket_count": 0`,

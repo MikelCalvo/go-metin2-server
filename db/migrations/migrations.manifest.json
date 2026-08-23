@@ -104,6 +104,14 @@
       "down_path": "0013_static_actor_combat_profile_state.down.sql",
       "up_sha256": "1ec2fff925f5d67303be45c770e52379a42339ee9d545ec80dd65ff0ddde319e",
       "down_sha256": "6e704e0fa7b2dc5f7e27e8de33033f6c3210990133d6ba149055426cbecf276d"
+    },
+    {
+      "version": 14,
+      "name": "character_safebox_state",
+      "up_path": "0014_character_safebox_state.up.sql",
+      "down_path": "0014_character_safebox_state.down.sql",
+      "up_sha256": "d800cec5d07278a6fa0b9d9004a0de3542e57c19b8565336fdbd865a6458caa4",
+      "down_sha256": "f5cf1b200457d20c79feaa899098cb7a2718873ae64e4c229ab7581ab86e3ee1"
     }
   ]
 }

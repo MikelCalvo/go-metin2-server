@@ -23,6 +23,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
+	"github.com/MikelCalvo/go-metin2-server/internal/safeboxstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -190,6 +191,7 @@ const (
 	maxLocalStaticActorContentStateQuarantineBodyBytes  = 1 << 20
 	maxLocalItemTemplateStateQuarantineBodyBytes        = 1 << 20
 	maxLocalBootstrapGroundItemStateQuarantineBodyBytes = 1 << 20
+	maxLocalCharacterSafeboxStateQuarantineBodyBytes    = 1 << 20
 )
 
 func NewPprofMux(serviceName string) *http.ServeMux {
@@ -2159,6 +2161,68 @@ func RegisterLocalCharacterQuestStateExportEndpoint(mux *http.ServeMux, exportQu
 		export, err := exportQuestState()
 		if err != nil {
 			slog.Warn("local character quest-state export failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, export, http.StatusOK)
+	})
+	return mux
+}
+
+// RegisterLocalCharacterSafeboxStateQuarantineEndpoint exposes a loopback-only
+// POST quarantine/preflight for retained 0014 character safebox-state exports.
+// It validates and canonicalizes the payload without opening a database or
+// mutating safebox snapshots.
+func RegisterLocalCharacterSafeboxStateQuarantineEndpoint(mux *http.ServeMux) *http.ServeMux {
+	if mux == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/safebox-store/exports/character-safebox-state/quarantine", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		export, status, ok := decodeLocalCharacterSafeboxStateExportRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		quarantined, summary, err := safeboxstore.QuarantineCharacterSafeboxStateExport(export)
+		if err != nil {
+			slog.Warn("local character safebox-state quarantine failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, safeboxstore.CharacterSafeboxStateQuarantineResult{
+			Summary: summary,
+			Export:  quarantined,
+		}, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalCharacterSafeboxStateExportEndpoint(mux *http.ServeMux, exportSafeboxState func() (safeboxstore.CharacterSafeboxStateExport, error)) *http.ServeMux {
+	if mux == nil || exportSafeboxState == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/safebox-store/exports/character-safebox-state", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		export, err := exportSafeboxState()
+		if err != nil {
+			slog.Warn("local character safebox-state export failed", "err", err)
 			w.WriteHeader(http.StatusConflict)
 			return
 		}
@@ -6047,6 +6111,30 @@ func decodeLocalCharacterQuestStateExportRequest(r *http.Request) (queststate.Ch
 	var trailing struct{}
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return queststate.CharacterQuestStateExport{}, http.StatusBadRequest, false
+	}
+	return export, http.StatusOK, true
+}
+
+func decodeLocalCharacterSafeboxStateExportRequest(r *http.Request) (safeboxstore.CharacterSafeboxStateExport, int, bool) {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxLocalCharacterSafeboxStateQuarantineBodyBytes+1))
+	if err != nil {
+		return safeboxstore.CharacterSafeboxStateExport{}, http.StatusBadRequest, false
+	}
+	if len(raw) > maxLocalCharacterSafeboxStateQuarantineBodyBytes {
+		return safeboxstore.CharacterSafeboxStateExport{}, http.StatusRequestEntityTooLarge, false
+	}
+	if !utf8.Valid(raw) || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return safeboxstore.CharacterSafeboxStateExport{}, http.StatusBadRequest, false
+	}
+	var export safeboxstore.CharacterSafeboxStateExport
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&export); err != nil {
+		return safeboxstore.CharacterSafeboxStateExport{}, http.StatusBadRequest, false
+	}
+	var trailing struct{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return safeboxstore.CharacterSafeboxStateExport{}, http.StatusBadRequest, false
 	}
 	return export, http.StatusOK, true
 }
