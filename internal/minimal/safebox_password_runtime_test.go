@@ -3,6 +3,7 @@ package minimal
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
@@ -13,6 +14,7 @@ import (
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
+	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	"github.com/MikelCalvo/go-metin2-server/internal/safeboxstore"
 )
 
@@ -327,5 +329,160 @@ func TestGameSessionFlowWarehousePasswordOpensCustomPasswordAndRematerializesCel
 	}
 	if money != (itemproto.SafeboxMoneyChangePacket{Money: 0}) {
 		t.Fatalf("unexpected rematerialize SAFEBOX_MONEY_CHANGE: %+v", money)
+	}
+}
+
+func TestGameSessionFlowWarehousePasswordHonorsReopenCooldown(t *testing.T) {
+	currentTime := time.Unix(1_700_000_000, 0).UTC()
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PasswordCooldownOwner", 0x01030911, 0x02040911, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "password-cooldown-owner", 0x91919111, peer)
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "password-cooldown-owner", Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed password-cooldown account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+		Kind: interactionstore.KindOpenSafebox,
+		Ref:  "npc:warehouse",
+		Size: 1,
+	}})
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected password-cooldown runtime error: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Warehouse", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindOpenSafebox, "npc:warehouse")
+	if !ok {
+		t.Fatal("expected warehouse registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "password-cooldown-owner", 0x91919111)
+	defer closeSessionFlow(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)}))); err != nil {
+		t.Fatalf("unexpected warehouse interact before first open: %v", err)
+	}
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/safebox_password " + safeboxstore.DefaultPassword,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first password open: %v", err)
+	}
+	if len(openOut) != 2 {
+		t.Fatalf("expected SAFEBOX_SIZE + SAFEBOX_MONEY_CHANGE on first open, got %d", len(openOut))
+	}
+	assertCloseSafeboxCommandChat(t, flow, "/close_safebox", "password-cooldown close")
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)}))); err != nil {
+		t.Fatalf("unexpected warehouse interact during cooldown: %v", err)
+	}
+	blockedOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/safebox_password " + safeboxstore.DefaultPassword,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected cooldown password attempt: %v", err)
+	}
+	if len(blockedOut) != 1 {
+		t.Fatalf("expected cooldown info chat, got %d", len(blockedOut))
+	}
+	blocked, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, blockedOut[0]))
+	if err != nil {
+		t.Fatalf("decode cooldown chat: %v", err)
+	}
+	if blocked.Type != chatproto.ChatTypeInfo || blocked.Message != safeboxReopenCooldownInfoMessage {
+		t.Fatalf("unexpected cooldown chat: %+v", blocked)
+	}
+
+	labOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected lab /open_safebox during cooldown: %v", err)
+	}
+	if len(labOut) != 2 {
+		t.Fatalf("expected lab /open_safebox to stay exempt from cooldown, got %d frames", len(labOut))
+	}
+	assertCloseSafeboxCommandChat(t, flow, "/close_safebox", "password-cooldown lab close")
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)}))); err != nil {
+		t.Fatalf("unexpected warehouse interact after lab close: %v", err)
+	}
+	currentTime = currentTime.Add(bootstrapSafeboxReopenCooldown)
+	openAgainOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/safebox_password " + safeboxstore.DefaultPassword,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected password open after cooldown: %v", err)
+	}
+	if len(openAgainOut) != 2 {
+		t.Fatalf("expected SAFEBOX_SIZE + SAFEBOX_MONEY_CHANGE after cooldown, got %d", len(openAgainOut))
+	}
+}
+
+func TestGameSessionFlowWarehousePasswordHonorsOpenAnchorDistance(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PasswordDistanceOwner", 0x01030912, 0x02040912, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "password-distance-owner", 0x91919112, peer)
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "password-distance-owner", Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed password-distance account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+		Kind: interactionstore.KindOpenSafebox,
+		Ref:  "npc:warehouse",
+		Size: 1,
+	}})
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected password-distance runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Warehouse", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindOpenSafebox, "npc:warehouse")
+	if !ok {
+		t.Fatal("expected warehouse registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "password-distance-owner", 0x91919112)
+	defer closeSessionFlow(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)}))); err != nil {
+		t.Fatalf("unexpected warehouse interact before walk-away: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 3100, Y: 2100, Time: 0x21222329}))); err != nil {
+		t.Fatalf("unexpected walk-away move before password: %v", err)
+	}
+	tooFarOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/safebox_password " + safeboxstore.DefaultPassword,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected too-far password attempt: %v", err)
+	}
+	if len(tooFarOut) != 1 {
+		t.Fatalf("expected too-far info chat, got %d", len(tooFarOut))
+	}
+	tooFar, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, tooFarOut[0]))
+	if err != nil {
+		t.Fatalf("decode too-far chat: %v", err)
+	}
+	if tooFar.Type != chatproto.ChatTypeInfo || tooFar.Message != safeboxOpenTooFarInfoMessage {
+		t.Fatalf("unexpected too-far chat: %+v", tooFar)
+	}
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1100, Y: 2100, Time: 0x2122232a}))); err != nil {
+		t.Fatalf("unexpected walk-back move before password: %v", err)
+	}
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/safebox_password " + safeboxstore.DefaultPassword,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected password open after walk-back: %v", err)
+	}
+	if len(openOut) != 2 {
+		t.Fatalf("expected SAFEBOX_SIZE + SAFEBOX_MONEY_CHANGE after walk-back, got %d", len(openOut))
 	}
 }

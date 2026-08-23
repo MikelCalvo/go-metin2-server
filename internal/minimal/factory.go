@@ -90,7 +90,11 @@ const itemEquipOccupiedWearSlotInfoMessage = "You are already wearing equipment.
 const safeboxPasswordWrongInfoMessage = "You have entered the wrong password."
 const safeboxPasswordChangedInfoMessage = "The warehouse password has been changed."
 const safeboxAlreadyOpenInfoMessage = "The warehouse is already open."
+const safeboxReopenCooldownInfoMessage = "You cannot open the warehouse again so soon after closing it."
+const safeboxOpenTooFarInfoMessage = "You are too far from the warehouse to open it."
 const safeboxShowPasswordCommandMessage = "ShowMeSafeboxPassword"
+const bootstrapSafeboxReopenCooldown = 10 * time.Second
+const bootstrapSafeboxOpenMaxDistance int32 = worldruntime.ExchangeMaxDistance
 const questFlagRewardRestrictedInfoMessage = "You cannot receive this quest reward."
 const questFlagInsufficientGoldInfoMessage = "You do not have enough gold."
 const questFlagInsufficientExperienceInfoMessage = "You do not have enough experience."
@@ -4134,6 +4138,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		activeSafeboxItems := make(map[uint8]inventory.ItemInstance)
 		var pendingSafeboxPasswordChallenge bool
 		var pendingSafeboxPasswordSize uint8
+		var hasSafeboxOpenAnchor bool
+		var safeboxOpenAnchorX int32
+		var safeboxOpenAnchorY int32
+		var safeboxReopenBlockedUntil time.Time
 		var activeRefineDialog refineDialogPresentation
 		var hasActiveRefineDialog bool
 		bootstrapSafeboxCapacity := func(size uint8) uint8 {
@@ -4141,6 +4149,18 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				return 0
 			}
 			return size * bootstrapSafeboxCellsPerPage
+		}
+		rememberSafeboxOpenAnchor := func(selected *player.Runtime) {
+			if selected == nil {
+				hasSafeboxOpenAnchor = false
+				safeboxOpenAnchorX = 0
+				safeboxOpenAnchorY = 0
+				return
+			}
+			live := selected.LiveCharacter()
+			hasSafeboxOpenAnchor = true
+			safeboxOpenAnchorX = live.X
+			safeboxOpenAnchorY = live.Y
 		}
 		// TMP4 SendSafeBoxItemMovePacket packs both TItemPos fields with the
 		// inventory window type and safebox-slot cell bytes. Explicit tooling
@@ -4290,6 +4310,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			}
 			return time.Now()
 		}
+		armSafeboxReopenCooldown := func() {
+			safeboxReopenBlockedUntil = sessionNow().Add(bootstrapSafeboxReopenCooldown)
+		}
 		interactionNow := func() time.Time {
 			return sessionNow()
 		}
@@ -4365,6 +4388,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				return frames
 			}
 			setActiveSafeboxOpen(0, false)
+			armSafeboxReopenCooldown()
 			return append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
 				Type:    chatproto.ChatTypeCommand,
 				Message: "CloseSafebox",
@@ -4402,6 +4426,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				return frames
 			}
 			setActiveSafeboxOpen(0, false)
+			armSafeboxReopenCooldown()
 			return append([][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
 				Type:    chatproto.ChatTypeCommand,
 				Message: "CloseSafebox",
@@ -6185,6 +6210,17 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								// slash does not fall through as ordinary talking chat.
 								return gameflow.ChatResult{Accepted: true}
 							}
+							if !safeboxReopenBlockedUntil.IsZero() && sessionNow().Before(safeboxReopenBlockedUntil) {
+								delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: safeboxReopenCooldownInfoMessage}
+								return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
+							}
+							if hasSafeboxOpenAnchor {
+								live := selectedPlayer.LiveCharacter()
+								if worldruntime.ApproxDistance(live.X-safeboxOpenAnchorX, live.Y-safeboxOpenAnchorY) > bootstrapSafeboxOpenMaxDistance {
+									delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: safeboxOpenTooFarInfoMessage}
+									return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
+								}
+							}
 							if password == "" || len(password) > safeboxstore.MaxPasswordLen {
 								clearPendingSafeboxPasswordChallenge()
 								delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: safeboxPasswordWrongInfoMessage}
@@ -6318,6 +6354,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							}
 							clearPendingSafeboxPasswordChallenge()
 							setActiveSafeboxOpen(0, false)
+							armSafeboxReopenCooldown()
 							delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeCommand, Message: "CloseSafebox"}
 							return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
 						}
@@ -6334,7 +6371,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								sharedWorldID = 0
 							}
 							clearPendingSafeboxPasswordChallenge()
-							setActiveSafeboxOpen(0, false)
+							if hasActiveSafeboxOpen {
+								setActiveSafeboxOpen(0, false)
+								armSafeboxReopenCooldown()
+							} else {
+								setActiveSafeboxOpen(0, false)
+							}
 							clearActiveSafeboxItems()
 							setActiveRefineDialog(refineDialogPresentation{}, false)
 						}
@@ -7929,6 +7971,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					}
 					if resolution.Definition.Kind == interactionstore.KindOpenSafebox {
 						size := interactionstore.EffectiveOpenSafeboxSize(resolution.Definition)
+						selectedPlayer, selectedOK := currentSelectedPlayer()
+						if selectedOK {
+							rememberSafeboxOpenAnchor(selectedPlayer)
+						}
 						setPendingSafeboxPasswordChallenge(size)
 						frames := make([][]byte, 0, 3)
 						if resolution.Delivery != nil {
@@ -8262,7 +8308,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			joinedSharedWorld = false
 			clearActiveMerchantBuy()
 			clearPendingSafeboxPasswordChallenge()
-			setActiveSafeboxOpen(0, false)
+			if hasActiveSafeboxOpen {
+				setActiveSafeboxOpen(0, false)
+				armSafeboxReopenCooldown()
+			} else {
+				setActiveSafeboxOpen(0, false)
+			}
 			clearActiveSafeboxItems()
 			setActiveRefineDialog(refineDialogPresentation{}, false)
 			clearActiveCombatTarget()
