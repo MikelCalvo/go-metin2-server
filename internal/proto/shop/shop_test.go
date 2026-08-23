@@ -575,6 +575,64 @@ func TestDecodeClientMyShopRejectsOversizedCount(t *testing.T) {
 	}
 }
 
+func TestEncodeServerShopSignBuildsAFrameWithVIDAndSign(t *testing.T) {
+	packet := sampleServerShopSignPacket()
+	got := EncodeServerShopSign(packet)
+	wantPayload := make([]byte, 4+ShopSignMax+1)
+	binary.LittleEndian.PutUint32(wantPayload, packet.VID)
+	copy(wantPayload[4:], []byte(packet.Sign))
+	want := frame.Encode(HeaderServerShopSign, wantPayload)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected server SHOP_SIGN frame bytes:\n got %x\nwant %x", got, want)
+	}
+}
+
+func TestDecodeServerShopSignReturnsExpectedFields(t *testing.T) {
+	raw := EncodeServerShopSign(sampleServerShopSignPacket())
+	packet, err := DecodeServerShopSign(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != sampleServerShopSignPacket() {
+		t.Fatalf("unexpected SHOP_SIGN packet: %+v", packet)
+	}
+}
+
+func TestEncodeServerShopSignAllowsEmptyClearSign(t *testing.T) {
+	got := EncodeServerShopSign(ServerShopSignPacket{VID: 0x01020304, Sign: ""})
+	wantPayload := make([]byte, 4+ShopSignMax+1)
+	binary.LittleEndian.PutUint32(wantPayload, 0x01020304)
+	want := frame.Encode(HeaderServerShopSign, wantPayload)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected empty SHOP_SIGN frame bytes:\n got %x\nwant %x", got, want)
+	}
+}
+
+func TestDecodeServerShopSignRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeServerShopSign(frame.Frame{Header: HeaderServerShop, Length: 41, Payload: make([]byte, 37)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeServerShopSignRejectsTruncatedPayload(t *testing.T) {
+	_, err := DecodeServerShopSign(frame.Frame{Header: HeaderServerShopSign, Length: 20, Payload: make([]byte, 16)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload for truncated payload, got %v", err)
+	}
+}
+
+func TestDecodeServerShopSignRejectsOversizedPayload(t *testing.T) {
+	_, err := DecodeServerShopSign(frame.Frame{Header: HeaderServerShopSign, Length: 42, Payload: make([]byte, 38)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload for oversized payload, got %v", err)
+	}
+}
+
+func sampleServerShopSignPacket() ServerShopSignPacket {
+	return ServerShopSignPacket{VID: 0x11223344, Sign: "Private Shop"}
+}
+
 func sampleClientMyShopPacket() ClientMyShopPacket {
 	return ClientMyShopPacket{
 		Sign: "Private Shop",

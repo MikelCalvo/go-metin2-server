@@ -47,4 +47,4 @@ Rules:
 
 ## Status
 
-Docs/spec contract freeze on `lane/items`. Implementation RED/GREEN for encode/decode follows as the next cohesive codec slice; private-shop runtime remains deferred.
+Implemented on `lane/items`: `internal/proto/shop` owns `HeaderServerShopSign` / `EncodeServerShopSign` / `DecodeServerShopSign` with the frozen `vid` + `sign[33]` layout, empty clear/close sign support, and fail-closed decode guards. Private-shop runtime open/close/browse/buy, GAME emission, and partner player-shop/cube exchange busy rejects stay deferred.

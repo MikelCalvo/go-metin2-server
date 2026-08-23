@@ -9,9 +9,10 @@ import (
 )
 
 const (
-	HeaderClientShop   uint16 = 0x0801
-	HeaderClientMyShop uint16 = 0x0802
-	HeaderServerShop   uint16 = 0x0810
+	HeaderClientShop     uint16 = 0x0801
+	HeaderClientMyShop   uint16 = 0x0802
+	HeaderServerShop     uint16 = 0x0810
+	HeaderServerShopSign uint16 = 0x0811
 
 	ClientSubheaderEnd   uint8 = 0
 	ClientSubheaderBuy   uint8 = 1
@@ -44,6 +45,7 @@ const (
 	clientSellPayloadSize        = 2
 	clientSell2PayloadSize       = 3
 	clientMyShopFixedPayloadSize = ShopSignMax + 1 + 1
+	serverShopSignPayloadSize    = 4 + ShopSignMax + 1
 	serverStartPayloadSize       = 1 + 4 + (ShopHostItemMax * itemEntrySize)
 	serverStartExFixedSize       = 1 + 4 + 1
 	serverUpdateItemPayloadSize  = 1 + 1 + itemEntrySize
@@ -88,6 +90,11 @@ type ClientMyShopItem struct {
 type ClientMyShopPacket struct {
 	Sign  string
 	Items []ClientMyShopItem
+}
+
+type ServerShopSignPacket struct {
+	VID  uint32
+	Sign string
 }
 
 type ItemEntry struct {
@@ -339,6 +346,26 @@ func DecodeServerUpdatePrice(f frame.Frame) (ServerUpdatePricePacket, error) {
 		return ServerUpdatePricePacket{}, ErrUnexpectedSubheader
 	}
 	return ServerUpdatePricePacket{ElkAmount: int32(binary.LittleEndian.Uint32(f.Payload[1:]))}, nil
+}
+
+func EncodeServerShopSign(packet ServerShopSignPacket) []byte {
+	payload := make([]byte, serverShopSignPayloadSize)
+	binary.LittleEndian.PutUint32(payload, packet.VID)
+	copy(payload[4:4+ShopSignMax+1], []byte(packet.Sign))
+	return frame.Encode(HeaderServerShopSign, payload)
+}
+
+func DecodeServerShopSign(f frame.Frame) (ServerShopSignPacket, error) {
+	if f.Header != HeaderServerShopSign {
+		return ServerShopSignPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != serverShopSignPayloadSize {
+		return ServerShopSignPacket{}, ErrInvalidPayload
+	}
+	return ServerShopSignPacket{
+		VID:  binary.LittleEndian.Uint32(f.Payload[:4]),
+		Sign: fixedString(f.Payload[4 : 4+ShopSignMax+1]),
+	}, nil
 }
 
 func EncodeServerEnd() []byte {
