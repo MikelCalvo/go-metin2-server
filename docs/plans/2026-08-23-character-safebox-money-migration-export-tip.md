@@ -68,5 +68,5 @@ runtime.
 1. Keep SQL import/backfill deferred until a driver-backed harness exists.
 2. Keep mall schema / TMP4 CG `SAFEBOX_MONEY` deferred on the items lane.
 3. Keep automatic / scheduled artifact GC deletion deferred.
-4. Optional later: print-only systemd/unit samples for retention / GC printers.
+4. ~~Optional later: print-only systemd/unit samples for retention / GC printers.~~ Done: see [print-only retention / GC unit samples](2026-08-23-print-only-retention-gc-unit-samples.md) and [lab retention / GC print-only unit samples](../workflow/lab-retention-gc-unit-samples.md).
 5. ~~Prove warehouse-money rematerialize across full `gamed` process restart beside same-session reopen.~~ Done: see [safebox money process-restart rematerialize](2026-08-23-safebox-money-process-restart-rematerialize.md).

@@ -61,8 +61,7 @@ Validation for this slice:
 
 1. Keep automatic / scheduled artifact GC deletion deferred.
 2. Keep `rm` of aside-renamed trees deferred.
-3. Keep systemd/unit samples that only print (never auto-run) this triage script
-   deferred until a real lab host exercises the topology.
+3. ~~Optional later: systemd/unit samples that only print (never auto-run) this triage script.~~ Done: see [print-only retention / GC unit samples](2026-08-23-print-only-retention-gc-unit-samples.md) and [lab retention / GC print-only unit samples](../workflow/lab-retention-gc-unit-samples.md). Automatic execution remains deferred.
 4. Keep SQL import/backfill deferred until a driver-backed harness exists.
 5. ~~Optional later: fold durable safebox FileStore into the combined
    backup-restore drill after the items-lane rematerialize commit lands on

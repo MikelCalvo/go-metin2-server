@@ -67,4 +67,4 @@ DB-backed runtime or import/backfill execution.
 1. Keep SQL import/backfill deferred until a driver-backed harness exists.
 2. Keep money / mall schema deferred on the items lane.
 3. Keep automatic / scheduled artifact GC deletion deferred.
-4. Optional later: print-only systemd/unit samples for retention / GC printers.
+4. ~~Optional later: print-only systemd/unit samples for retention / GC printers.~~ Done: see [print-only retention / GC unit samples](2026-08-23-print-only-retention-gc-unit-samples.md) and [lab retention / GC print-only unit samples](../workflow/lab-retention-gc-unit-samples.md).

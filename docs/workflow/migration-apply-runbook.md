@@ -93,7 +93,7 @@ Before applying, verify and retain deployment-specific backups outside the migra
 - static actors (`/local/static-actor-store/validate`, `/local/static-actors/backup/validate` when using a store backup);
 - quest state (`/local/quest-state/validate`, `/local/quest-state/backup/validate` when using a store backup);
 - pending ground item/gold handles (`/local/ground-item-store/validate`, `/local/ground-item-store/backup/validate` when using a store backup);
-- durable safebox cells (`/local/safebox-store/validate`, `/local/safebox-store/backup/validate` when using a store backup).
+- durable safebox cells + warehouse gold (`/local/safebox-store/validate`, `/local/safebox-store/backup/validate` when using a store backup; tip `0015_character_safebox_money`).
 
 When the window needs a combined multi-store file backup or a drained-session restore drill across the eight manifested stores, follow the detailed [file-store backup/restore drill](file-store-backup-restore-drill.md) instead of improvising per-store ordering.
 

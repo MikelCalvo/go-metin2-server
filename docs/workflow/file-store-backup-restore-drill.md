@@ -13,7 +13,7 @@ Use this workflow when you need to preserve or replace the current file-backed P
 - authored static actors / spawn content (`staticstore`)
 - standalone quest flags (`queststate`)
 - pending ground item/gold handles (`worldruntime` ground-item FileStore)
-- durable same-account safebox cells (`safeboxstore`)
+- durable same-account safebox cells + warehouse gold (`safeboxstore`; tip `0015_character_safebox_money`)
 
 The current boundary is deliberately narrow:
 
@@ -22,7 +22,7 @@ The current boundary is deliberately narrow:
 - restore refuses live selected-character sessions;
 - restore is a replacement into an empty destination, not an online merge;
 - pending ground item/gold handles rematerialize across `gamed` process restart from `GroundItemStorePath` (see [ground-item process-restart durability](../plans/2026-08-22-ground-item-process-restart-durability.md)); this drill now also covers their FileStore backup/restore and rematerializes the live shared-world pending set on restore;
-- durable safebox cells rematerialize across `gamed` process restart / reconnect from `SafeboxStorePath` (see [durable safebox persistence contract freeze](../plans/2026-08-22-durable-safebox-persistence-contract-freeze.md)); this drill covers their FileStore backup/restore through `/local/safebox-store/*`;
+- durable safebox cells and warehouse gold rematerialize across `gamed` process restart / reconnect from `SafeboxStorePath` (see [durable safebox persistence contract freeze](../plans/2026-08-22-durable-safebox-persistence-contract-freeze.md) and [safebox money process-restart rematerialize](../plans/2026-08-23-safebox-money-process-restart-rematerialize.md)); this drill covers their FileStore backup/restore through `/local/safebox-store/*`;
 - committed account gold/inventory and quest flags rematerialize across `gamed` process restart from the same FileStore paths (see [character-state process-restart recovery](../plans/2026-08-20-character-state-process-restart-recovery.md)); this drill still covers backup/restore, not that rematerialization proof;
 - SQL migration apply remains CLI-only through `metin2-migrate` — see [migration apply runbook](migration-apply-runbook.md).
 
@@ -247,7 +247,7 @@ Restore order prefers authored dependencies and live index reloads before durabl
 3. static actors — reloads the shared-world static-actor set
 4. quest state
 5. ground items — rematerializes pending ground handles into the live shared world
-6. safebox — replaces durable same-account warehouse cells
+6. safebox — replaces durable same-account warehouse cells + warehouse gold
 7. account
 8. login tickets
 

@@ -33,7 +33,7 @@ Prefer explicit absolute paths for durable QA / drill runs instead of process-te
 /var/metin2/data/item-templates/item-templates.json
 /var/metin2/data/quest-state/quest-state.json
 /var/metin2/data/ground-items/ground-items.json          # durable pending ground handles
-/var/metin2/data/safebox/safebox.json                     # durable same-account safebox cells
+/var/metin2/data/safebox/safebox.json                     # durable same-account safebox cells + warehouse gold
 ```
 
 Example environment (service-specific overrides win over globals):
@@ -168,6 +168,7 @@ See also:
 - [lab stale-lock recovery](lab-stale-lock-recovery.md)
 - [file-store backup/restore drill](file-store-backup-restore-drill.md)
 - [CLI artifact-retention GC printer plan](../plans/2026-08-22-cli-artifact-retention-gc-printer.md)
+- [lab retention / GC print-only unit samples](lab-retention-gc-unit-samples.md)
 - [ops docs ground-item lab topology / tip sync](../plans/2026-08-22-ops-docs-ground-item-lab-topology-tip-sync.md)
 - [safebox file-store backup/restore drill fold-in](../plans/2026-08-23-safebox-file-store-backup-restore-drill.md)
 
@@ -175,10 +176,10 @@ See also:
 
 - multi-host auth/game split
 - load-balanced shards or channel farms
-- Kubernetes / systemd unit shipping in-tree
+- Kubernetes / packaging that installs **enabled** systemd units or cron entries by default (print-only `.sample` units that only dump printer stdout are owned in [lab retention / GC print-only unit samples](lab-retention-gc-unit-samples.md))
 - remote admin APIs
 - automatic / scheduled artifact GC or lifecycle daemons that invoke deletion
 - automatic stale-lock expiry (lab recovery remains confirmation-gated `apply-lock-aside` / operator aside-rename; see [lab stale-lock recovery](lab-stale-lock-recovery.md))
-- automatic execution of the printed `migration-run-retention`, `backup-restore-drill`, or `artifact-retention-gc` scripts (the CLI only prints commands; GC remains confirmation-gated aside-rename by the operator)
+- automatic execution of the printed `migration-run-retention`, `backup-restore-drill`, or `artifact-retention-gc` scripts (the CLI and print-only unit samples only print commands; GC remains confirmation-gated aside-rename by the operator)
 - `rm` / unlink of aside-renamed retention trees
 - a claim that bootstrap file stores are the final production persistence layer

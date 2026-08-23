@@ -90,5 +90,5 @@ Validation for this slice:
    [ops docs 0014 safebox quarantine tip sync](2026-08-23-ops-docs-0014-safebox-quarantine-tip-sync.md).
    Money / mall / SQL import remain deferred.
 3. Keep automatic artifact GC deletion deferred.
-4. Optional later: systemd/unit samples that only print (never auto-run)
-   retention / GC triage scripts.
+4. ~~Optional later: systemd/unit samples that only print (never auto-run)
+   retention / GC triage scripts.~~ Done: see [print-only retention / GC unit samples](2026-08-23-print-only-retention-gc-unit-samples.md) and [lab retention / GC print-only unit samples](../workflow/lab-retention-gc-unit-samples.md).
