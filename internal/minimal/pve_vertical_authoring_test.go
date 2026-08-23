@@ -239,7 +239,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if err != nil {
 		t.Fatalf("unexpected unlocked warehouse password open: %v", err)
 	}
-	if len(warehouseOpenOut) != 1 {
+	if len(warehouseOpenOut) != 2 {
 		t.Fatalf("expected SAFEBOX_SIZE after unlocked warehouse password, got %d", len(warehouseOpenOut))
 	}
 	warehouseSize, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, warehouseOpenOut[0]))

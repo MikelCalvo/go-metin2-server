@@ -319,7 +319,7 @@ func TestGameRuntimeItemExchangeStartRejectsActiveSafeboxWithoutMutation(t *test
 	if err != nil {
 		t.Fatalf("unexpected requester /open_safebox error: %v", err)
 	}
-	if len(openOut) != 1 {
+	if len(openOut) != 2 {
 		t.Fatalf("expected requester /open_safebox to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
 	}
 	if _, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, openOut[0])); err != nil {
@@ -388,7 +388,7 @@ func TestGameRuntimeItemExchangeStartRejectsPartnerActiveSafeboxWithoutMutation(
 	if err != nil {
 		t.Fatalf("unexpected partner /open_safebox error: %v", err)
 	}
-	if len(openOut) != 1 {
+	if len(openOut) != 2 {
 		t.Fatalf("expected partner /open_safebox to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
 	}
 	if _, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, openOut[0])); err != nil {
@@ -3296,7 +3296,7 @@ func TestGameRuntimeItemExchangeAcceptRejectsRequesterOpenSafeboxWithoutMutation
 	if err != nil {
 		t.Fatalf("unexpected accept-safebox /open_safebox error: %v", err)
 	}
-	if len(openOut) != 1 {
+	if len(openOut) != 2 {
 		t.Fatalf("expected accept-safebox /open_safebox to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
 	}
 	if _, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, openOut[0])); err != nil {
@@ -3423,7 +3423,7 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsPartnerOpenSafeboxWithoutMuta
 	if err != nil {
 		t.Fatalf("unexpected partner /open_safebox during exchange error: %v", err)
 	}
-	if len(openOut) != 1 {
+	if len(openOut) != 2 {
 		t.Fatalf("expected partner /open_safebox during exchange to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
 	}
 	if _, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, openOut[0])); err != nil {
@@ -3922,7 +3922,7 @@ func TestGameRuntimeItemExchangeAcceptRejectsPartnerOpenSafeboxWithoutMutation(t
 	if err != nil {
 		t.Fatalf("unexpected partner /open_safebox before first accept error: %v", err)
 	}
-	if len(openOut) != 1 {
+	if len(openOut) != 2 {
 		t.Fatalf("expected partner /open_safebox before first accept to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
 	}
 	if _, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, openOut[0])); err != nil {

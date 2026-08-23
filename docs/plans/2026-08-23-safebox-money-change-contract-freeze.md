@@ -51,4 +51,4 @@ This bootstrap freeze intentionally keeps deposit/withdraw rejects silent/no-fra
 
 ## Status
 
-Docs-first freeze on `lane/items`. RED intentionally deferred until this contract is reviewed/landed.
+Implemented on `lane/items`: durable optional `money`, open-burst `SAFEBOX_MONEY_CHANGE`, and `/safebox_money_save` / `/safebox_money_withdraw` with fail-closed guards. Mall / TMP4 CG `SAFEBOX_MONEY` / client change-password packets stay deferred.

@@ -4173,6 +4173,16 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			}
 			return safeboxstore.CharacterPassword(snapshot, sessionTicket.Login, selected.LiveCharacter().ID)
 		}
+		durableSafeboxMoney := func(selected *player.Runtime) int64 {
+			if runtime == nil || runtime.safeboxStore == nil || !hasTicket || selected == nil {
+				return 0
+			}
+			snapshot, err := safeboxstore.LoadOrEmpty(runtime.safeboxStore)
+			if err != nil {
+				return 0
+			}
+			return safeboxstore.CharacterMoney(snapshot, sessionTicket.Login, selected.LiveCharacter().ID)
+		}
 		cloneActiveSafeboxItems := func() map[uint8]inventory.ItemInstance {
 			if len(activeSafeboxItems) == 0 {
 				return make(map[uint8]inventory.ItemInstance)
@@ -4228,6 +4238,22 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				return err
 			}
 			next, err := safeboxstore.ReplaceCharacterPassword(snapshot, sessionTicket.Login, selected.LiveCharacter().ID, password)
+			if err != nil {
+				return err
+			}
+			return runtime.safeboxStore.Save(next)
+		}
+		persistDurableSafeboxMoney := func(selected *player.Runtime, money int64) error {
+			if runtime == nil || runtime.safeboxStore == nil || selected == nil || !hasTicket {
+				return safeboxstore.ErrInvalidSnapshot
+			}
+			runtime.safeboxPersistMu.Lock()
+			defer runtime.safeboxPersistMu.Unlock()
+			snapshot, err := safeboxstore.LoadOrEmpty(runtime.safeboxStore)
+			if err != nil {
+				return err
+			}
+			next, err := safeboxstore.ReplaceCharacterMoney(snapshot, sessionTicket.Login, selected.LiveCharacter().ID, money)
 			if err != nil {
 				return err
 			}
@@ -4302,8 +4328,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		openSafeboxPresentation := func(size uint8) [][]byte {
 			setActiveSafeboxOpen(size, true)
 			hydrateActiveSafeboxFromStore()
+			money := durableSafeboxMoney(selectedPlayer)
 			frames := [][]byte{itemproto.EncodeSafeboxSize(itemproto.SafeboxSizePacket{Size: size})}
 			frames = append(frames, encodeActiveSafeboxSetFrames()...)
+			frames = append(frames, itemproto.EncodeSafeboxMoneyChange(itemproto.SafeboxMoneyChangePacket{Money: int32(money)}))
 			return frames
 		}
 		setActiveRefineDialog := func(dialog refineDialogPresentation, open bool) {
@@ -6148,6 +6176,89 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							}
 							delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: safeboxPasswordChangedInfoMessage}
 							return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
+						}
+						if amount, ok := slashSafeboxMoneySaveCommand(packet.Message); ok {
+							selectedPlayer, selectedOK := currentSelectedPlayer()
+							if !selectedOK || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							// Closed / pending-only / malformed / insufficient / overflow stay
+							// fail-closed-consume: no ordinary talking-chat fallthrough and no frames.
+							if !hasActiveSafeboxOpen || amount == 0 || amount > uint64(math.MaxInt32) {
+								return gameflow.ChatResult{Accepted: true}
+							}
+							previousSelected := selectedPlayer.LiveCharacter()
+							previousMoney := durableSafeboxMoney(selectedPlayer)
+							if previousSelected.Gold < amount {
+								return gameflow.ChatResult{Accepted: true}
+							}
+							nextMoney := previousMoney + int64(amount)
+							if nextMoney < previousMoney || nextMoney > math.MaxInt32 {
+								return gameflow.ChatResult{Accepted: true}
+							}
+							updatedGold, ok := selectedPlayer.DeductLiveGold(amount)
+							if !ok {
+								return gameflow.ChatResult{Accepted: true}
+							}
+							if err := persistDurableSafeboxMoney(selectedPlayer, nextMoney); err != nil {
+								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+								refreshLiveCharacterRegistration()
+								return gameflow.ChatResult{Accepted: true}
+							}
+							frames := [][]byte{
+								worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+									VID:    previousSelected.VID,
+									Type:   bootstrapGoldPointType,
+									Amount: -int32(amount),
+									Value:  int32(updatedGold),
+								}),
+								itemproto.EncodeSafeboxMoneyChange(itemproto.SafeboxMoneyChangePacket{Money: int32(nextMoney)}),
+							}
+							frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+							if !ok {
+								_ = persistDurableSafeboxMoney(selectedPlayer, previousMoney)
+								return gameflow.ChatResult{Accepted: true}
+							}
+							return gameflow.ChatResult{Accepted: true, Frames: frames}
+						}
+						if amount, ok := slashSafeboxMoneyWithdrawCommand(packet.Message); ok {
+							selectedPlayer, selectedOK := currentSelectedPlayer()
+							if !selectedOK || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							if !hasActiveSafeboxOpen || amount == 0 || amount > uint64(math.MaxInt32) {
+								return gameflow.ChatResult{Accepted: true}
+							}
+							previousSelected := selectedPlayer.LiveCharacter()
+							previousMoney := durableSafeboxMoney(selectedPlayer)
+							if previousMoney < int64(amount) {
+								return gameflow.ChatResult{Accepted: true}
+							}
+							updatedGold, ok := selectedPlayer.AddLiveGold(amount)
+							if !ok {
+								return gameflow.ChatResult{Accepted: true}
+							}
+							nextMoney := previousMoney - int64(amount)
+							if err := persistDurableSafeboxMoney(selectedPlayer, nextMoney); err != nil {
+								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+								refreshLiveCharacterRegistration()
+								return gameflow.ChatResult{Accepted: true}
+							}
+							frames := [][]byte{
+								worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+									VID:    previousSelected.VID,
+									Type:   bootstrapGoldPointType,
+									Amount: int32(amount),
+									Value:  int32(updatedGold),
+								}),
+								itemproto.EncodeSafeboxMoneyChange(itemproto.SafeboxMoneyChangePacket{Money: int32(nextMoney)}),
+							}
+							frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+							if !ok {
+								_ = persistDurableSafeboxMoney(selectedPlayer, previousMoney)
+								return gameflow.ChatResult{Accepted: true}
+							}
+							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
 						if slashCloseSafeboxCommand(packet.Message) {
 							if !hasActiveSafeboxOpen {
@@ -8967,6 +9078,39 @@ func slashSafeboxChangePasswordCommand(message string) (string, string, bool) {
 		// Extra args stay recognized so the handler can fail closed instead of
 		// falling through as ordinary talking chat.
 		return "", "", true
+	}
+}
+
+func slashSafeboxMoneySaveCommand(message string) (uint64, bool) {
+	return slashSafeboxMoneyAmountCommand(message, "safebox_money_save")
+}
+
+func slashSafeboxMoneyWithdrawCommand(message string) (uint64, bool) {
+	return slashSafeboxMoneyAmountCommand(message, "safebox_money_withdraw")
+}
+
+func slashSafeboxMoneyAmountCommand(message string, command string) (uint64, bool) {
+	if !strings.HasPrefix(message, "/") {
+		return 0, false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) == 0 || fields[0] != command {
+		return 0, false
+	}
+	switch len(fields) {
+	case 1:
+		// Recognized command with missing amount: consume and reject in handler.
+		return 0, true
+	case 2:
+		parsed, err := strconv.ParseUint(fields[1], 10, 32)
+		if err != nil {
+			return 0, true
+		}
+		return parsed, true
+	default:
+		// Extra args stay recognized so the handler can fail closed instead of
+		// falling through as ordinary talking chat.
+		return 0, true
 	}
 }
 

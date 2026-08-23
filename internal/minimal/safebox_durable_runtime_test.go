@@ -97,7 +97,7 @@ func TestGameRuntimeSafeboxCheckinSurvivesReconnectAndReopenEmitsRememberedSafeb
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox after durable reconnect: %v", err)
 	}
-	if len(reopenOut) != 2 {
+	if len(reopenOut) != 3 {
 		t.Fatalf("expected SAFEBOX_SIZE + remembered SAFEBOX_SET after durable reconnect, got %d", len(reopenOut))
 	}
 	reopenSize, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, reopenOut[0]))
@@ -188,7 +188,7 @@ func TestGameRuntimeSafeboxCheckinSurvivesProcessRestartRematerializeOnOpen(t *t
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox after process restart: %v", err)
 	}
-	if len(reopenOut) != 2 {
+	if len(reopenOut) != 3 {
 		t.Fatalf("expected SAFEBOX_SIZE + remembered SAFEBOX_SET after process restart, got %d", len(reopenOut))
 	}
 	reopenSet, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, reopenOut[1]))
@@ -283,7 +283,7 @@ func TestGameRuntimeSafeboxItemMovePersistsDurableCellsWithoutInventoryMutation(
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox after durable move reconnect: %v", err)
 	}
-	if len(reopenOut) != 2 {
+	if len(reopenOut) != 3 {
 		t.Fatalf("expected SAFEBOX_SIZE + moved SAFEBOX_SET after durable move reconnect, got %d", len(reopenOut))
 	}
 	reopenSet, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, reopenOut[1]))
@@ -394,8 +394,8 @@ func TestGameRuntimeSafeboxDoesNotLeakForeignCharacterRowsOnSameAccount(t *testi
 	if err != nil {
 		t.Fatalf("open safebox on char B: %v", err)
 	}
-	if len(openB) != 1 {
-		t.Fatalf("expected only SAFEBOX_SIZE on char B (no leaked SAFEBOX_SET from char A), got %d frames", len(openB))
+	if len(openB) != 2 {
+		t.Fatalf("expected SAFEBOX_SIZE + SAFEBOX_MONEY_CHANGE on char B (no leaked SAFEBOX_SET from char A), got %d frames", len(openB))
 	}
 	size, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, openB[0]))
 	if err != nil {
@@ -403,5 +403,12 @@ func TestGameRuntimeSafeboxDoesNotLeakForeignCharacterRowsOnSameAccount(t *testi
 	}
 	if size != (itemproto.SafeboxSizePacket{Size: 1}) {
 		t.Fatalf("unexpected char B SAFEBOX_SIZE: %+v", size)
+	}
+	money, err := itemproto.DecodeSafeboxMoneyChange(decodeSingleFrame(t, openB[1]))
+	if err != nil {
+		t.Fatalf("decode char B SAFEBOX_MONEY_CHANGE: %v", err)
+	}
+	if money != (itemproto.SafeboxMoneyChangePacket{Money: 0}) {
+		t.Fatalf("unexpected char B SAFEBOX_MONEY_CHANGE: %+v", money)
 	}
 }

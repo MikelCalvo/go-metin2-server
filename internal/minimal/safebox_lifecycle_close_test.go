@@ -49,7 +49,7 @@ func TestGameSessionFlowTransferTriggerClosesOpenSafeboxWithCloseSafeboxCommand(
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox before transfer: %v", err)
 	}
-	if len(openOut) != 1 {
+	if len(openOut) != 2 {
 		t.Fatalf("expected /open_safebox before transfer to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
 	}
 
@@ -118,7 +118,7 @@ func TestGameSessionFlowPhaseSelectClosesOpenSafeboxWithCloseSafeboxCommand(t *t
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox before phase_select: %v", err)
 	}
-	if len(openOut) != 1 {
+	if len(openOut) != 2 {
 		t.Fatalf("expected /open_safebox before phase_select to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
 	}
 

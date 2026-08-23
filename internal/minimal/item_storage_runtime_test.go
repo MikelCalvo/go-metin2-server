@@ -246,7 +246,7 @@ func TestGameRuntimeOpenSafeboxEmitsSizeWithoutMutation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox error: %v", err)
 	}
-	if len(out) != 1 {
+	if len(out) != 2 {
 		t.Fatalf("expected /open_safebox to emit one SAFEBOX_SIZE frame, got %d", len(out))
 	}
 	size, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, out[0]))
@@ -287,7 +287,7 @@ func TestGameRuntimeCloseSafeboxClearsOpenPresentationWithCommandChat(t *testing
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox before close error: %v", err)
 	}
-	if len(openOut) != 1 {
+	if len(openOut) != 2 {
 		t.Fatalf("expected /open_safebox before close to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
 	}
 	size, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, openOut[0]))
@@ -319,7 +319,7 @@ func TestGameRuntimeCloseSafeboxClearsOpenPresentationWithCommandChat(t *testing
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox before client-slash close error: %v", err)
 	}
-	if len(reopenOut) != 1 {
+	if len(reopenOut) != 2 {
 		t.Fatalf("expected /open_safebox before client-slash close to emit one SAFEBOX_SIZE frame, got %d", len(reopenOut))
 	}
 	assertCloseSafeboxCommandChat(t, flow, "/safebox_close", "close-safebox client slash")
@@ -399,7 +399,7 @@ func TestGameRuntimeOpenSafeboxOutOfRangeFailsClosedWithoutMutation(t *testing.T
 	if err != nil {
 		t.Fatalf("unexpected in-range /open_safebox after out-of-range reject error: %v", err)
 	}
-	if len(validOut) != 1 {
+	if len(validOut) != 2 {
 		t.Fatalf("expected in-range /open_safebox after out-of-range reject to emit one SAFEBOX_SIZE frame, got %d", len(validOut))
 	}
 	size, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, validOut[0]))
@@ -441,7 +441,7 @@ func TestGameRuntimeSafeboxCheckinWhileOpenMovesItemToInMemorySafebox(t *testing
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox before check-in error: %v", err)
 	}
-	if len(openOut) != 1 {
+	if len(openOut) != 2 {
 		t.Fatalf("expected /open_safebox before check-in to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
 	}
 
@@ -495,7 +495,7 @@ func TestGameRuntimeSafeboxCheckinWhileOpenMovesItemToInMemorySafebox(t *testing
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox reopen after check-in error: %v", err)
 	}
-	if len(reopenOut) != 2 {
+	if len(reopenOut) != 3 {
 		t.Fatalf("expected /open_safebox reopen to emit SAFEBOX_SIZE plus remembered SAFEBOX_SET, got %d", len(reopenOut))
 	}
 	reopenSize, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, reopenOut[0]))
@@ -584,7 +584,7 @@ func TestGameRuntimeSafeboxCheckinOccupiedOrOutOfRangeFailsClosedWithoutMutation
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox before bad-slot check-in error: %v", err)
 	}
-	if len(openOut) != 1 {
+	if len(openOut) != 2 {
 		t.Fatalf("expected /open_safebox before bad-slot check-in to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
 	}
 
@@ -678,7 +678,7 @@ func TestGameRuntimeSafeboxCheckinClosesActiveExchangeShellOnSuccess(t *testing.
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox during exchange error: %v", err)
 	}
-	if len(openOut) != 1 {
+	if len(openOut) != 2 {
 		t.Fatalf("expected /open_safebox during exchange to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
 	}
 
@@ -747,7 +747,7 @@ func TestGameRuntimeSafeboxCheckoutWhileOpenMovesItemToCarriedInventory(t *testi
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox before check-out error: %v", err)
 	}
-	if len(openOut) != 1 {
+	if len(openOut) != 2 {
 		t.Fatalf("expected /open_safebox before check-out to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
 	}
 
@@ -802,7 +802,7 @@ func TestGameRuntimeSafeboxCheckoutWhileOpenMovesItemToCarriedInventory(t *testi
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox reopen after check-out error: %v", err)
 	}
-	if len(reopenOut) != 1 {
+	if len(reopenOut) != 2 {
 		t.Fatalf("expected /open_safebox reopen after check-out to emit only SAFEBOX_SIZE, got %d", len(reopenOut))
 	}
 }
@@ -1059,7 +1059,7 @@ func TestGameRuntimeSafeboxCheckoutClosesActiveExchangeShellOnSuccess(t *testing
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox reopen during exchange before check-out error: %v", err)
 	}
-	if len(reopenOut) != 2 {
+	if len(reopenOut) != 3 {
 		t.Fatalf("expected /open_safebox reopen during exchange to emit SAFEBOX_SIZE plus remembered SAFEBOX_SET, got %d", len(reopenOut))
 	}
 
@@ -1176,7 +1176,7 @@ func TestGameRuntimeSafeboxItemMoveWhileOpenRelocatesWholeStack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox reopen after item-move error: %v", err)
 	}
-	if len(reopenOut) != 2 {
+	if len(reopenOut) != 3 {
 		t.Fatalf("expected /open_safebox reopen after item-move to emit SAFEBOX_SIZE plus remembered SAFEBOX_SET, got %d", len(reopenOut))
 	}
 	reopenSet, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, reopenOut[1]))
@@ -1355,7 +1355,7 @@ func TestGameRuntimeSafeboxItemMoveMergesCompatibleDestination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox reopen after merge item-move error: %v", err)
 	}
-	if len(reopenOut) != 2 {
+	if len(reopenOut) != 3 {
 		t.Fatalf("expected /open_safebox reopen after merge item-move to emit SAFEBOX_SIZE plus one SAFEBOX_SET, got %d", len(reopenOut))
 	}
 	reopenSet, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, reopenOut[1]))
@@ -1443,7 +1443,7 @@ func TestGameRuntimeSafeboxItemMovePartialSplitIntoEmptyCell(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox reopen after partial-split error: %v", err)
 	}
-	if len(reopenOut) != 3 {
+	if len(reopenOut) != 4 {
 		t.Fatalf("expected /open_safebox reopen after partial-split to emit SAFEBOX_SIZE plus two SAFEBOX_SET rows, got %d", len(reopenOut))
 	}
 	reopenSource, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, reopenOut[1]))
@@ -1543,7 +1543,7 @@ func TestGameRuntimeSafeboxItemMovePartialMergesCompatibleDestination(t *testing
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox reopen after partial-merge error: %v", err)
 	}
-	if len(reopenOut) != 3 {
+	if len(reopenOut) != 4 {
 		t.Fatalf("expected /open_safebox reopen after partial-merge to emit SAFEBOX_SIZE plus two SAFEBOX_SET rows, got %d", len(reopenOut))
 	}
 	reopenSource, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, reopenOut[1]))
@@ -1706,7 +1706,7 @@ func TestGameRuntimeSafeboxItemMoveWithoutOpenOrBadCellsFailsClosedWithoutMutati
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox reopen after bad item-move error: %v", err)
 	}
-	if len(reopenOut) != 3 {
+	if len(reopenOut) != 4 {
 		t.Fatalf("expected /open_safebox reopen after bad item-move to emit SAFEBOX_SIZE plus two SAFEBOX_SET rows, got %d", len(reopenOut))
 	}
 }
@@ -1775,7 +1775,7 @@ func TestGameRuntimeSafeboxItemMoveClosesActiveExchangeShellOnSuccess(t *testing
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox reopen during exchange before item-move error: %v", err)
 	}
-	if len(reopenOut) != 2 {
+	if len(reopenOut) != 3 {
 		t.Fatalf("expected /open_safebox reopen during exchange to emit SAFEBOX_SIZE plus remembered SAFEBOX_SET, got %d", len(reopenOut))
 	}
 
@@ -1846,7 +1846,7 @@ func TestGameRuntimeSafeboxCheckinClosesActiveMerchantWindowOnSuccess(t *testing
 		Message: "/open_safebox",
 	}))); err != nil {
 		t.Fatalf("unexpected /open_safebox during merchant check-in error: %v", err)
-	} else if len(openOut) != 1 {
+	} else if len(openOut) != 2 {
 		t.Fatalf("expected /open_safebox during merchant check-in to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
 	}
 
@@ -2136,7 +2136,7 @@ func TestGameRuntimeSafeboxCheckinOfDisplayedExchangeItemFailsClosedWithoutClosi
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox during displayed-exchange check-in error: %v", err)
 	}
-	if len(openOut) != 1 {
+	if len(openOut) != 2 {
 		t.Fatalf("expected /open_safebox during displayed-exchange check-in to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
 	}
 	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
@@ -2266,7 +2266,7 @@ func TestGameRuntimeSafeboxCheckoutIntoDisplayedExchangeCellFailsClosedWithoutCl
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox reopen during displayed-exchange before check-out error: %v", err)
 	}
-	if len(reopenOut) != 2 {
+	if len(reopenOut) != 3 {
 		t.Fatalf("expected /open_safebox reopen during displayed-exchange to emit SAFEBOX_SIZE plus remembered SAFEBOX_SET, got %d", len(reopenOut))
 	}
 	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {

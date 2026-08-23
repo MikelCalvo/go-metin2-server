@@ -83,7 +83,7 @@ func TestGameSessionFlowWarehousePasswordChallengeOpensOnDefaultPassword(t *test
 	if err != nil {
 		t.Fatalf("unexpected default password open: %v", err)
 	}
-	if len(openOut) != 1 {
+	if len(openOut) != 2 {
 		t.Fatalf("expected SAFEBOX_SIZE after default password, got %d", len(openOut))
 	}
 	size, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, openOut[0]))
@@ -219,7 +219,7 @@ func TestGameRuntimeSlashOpenSafeboxStillBypassesPasswordChallenge(t *testing.T)
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox bypass: %v", err)
 	}
-	if len(out) != 1 {
+	if len(out) != 2 {
 		t.Fatalf("expected immediate SAFEBOX_SIZE from /open_safebox, got %d", len(out))
 	}
 	size, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, out[0]))
@@ -304,8 +304,8 @@ func TestGameSessionFlowWarehousePasswordOpensCustomPasswordAndRematerializesCel
 	if err != nil {
 		t.Fatalf("unexpected custom password open: %v", err)
 	}
-	if len(openOut) != 2 {
-		t.Fatalf("expected SAFEBOX_SIZE + SAFEBOX_SET after custom password, got %d", len(openOut))
+	if len(openOut) != 3 {
+		t.Fatalf("expected SAFEBOX_SIZE + SAFEBOX_SET + SAFEBOX_MONEY_CHANGE after custom password, got %d", len(openOut))
 	}
 	size, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, openOut[0]))
 	if err != nil {
@@ -320,5 +320,12 @@ func TestGameSessionFlowWarehousePasswordOpensCustomPasswordAndRematerializesCel
 	}
 	if set.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0}) || set.Vnum != 27001 || set.Count != 2 {
 		t.Fatalf("unexpected rematerialize SAFEBOX_SET: %+v", set)
+	}
+	money, err := itemproto.DecodeSafeboxMoneyChange(decodeSingleFrame(t, openOut[2]))
+	if err != nil {
+		t.Fatalf("decode rematerialize SAFEBOX_MONEY_CHANGE: %v", err)
+	}
+	if money != (itemproto.SafeboxMoneyChangePacket{Money: 0}) {
+		t.Fatalf("unexpected rematerialize SAFEBOX_MONEY_CHANGE: %+v", money)
 	}
 }

@@ -85,7 +85,7 @@ func TestGameSessionFlowPracticeMobDeathClearsOpenSafeboxBusyBeforeRestartExchan
 	if err != nil {
 		t.Fatalf("unexpected /open_safebox before death: %v", err)
 	}
-	if len(openOut) != 1 {
+	if len(openOut) != 2 {
 		t.Fatalf("expected /open_safebox before death to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
 	}
 	if _, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, openOut[0])); err != nil {

@@ -2,6 +2,7 @@ package safeboxstore
 
 import (
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -333,5 +334,106 @@ func TestReplaceCharacterPasswordPreservesCellsAndSurvivesEmptyCells(t *testing.
 	}
 	if got := CharacterPassword(cleared, "owner", 1); got != "abc123" {
 		t.Fatalf("CharacterPassword after clear=%q want abc123", got)
+	}
+}
+
+func TestFileStoreRoundTripPersistsMoneyAndOmitsZero(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "safebox.json")
+	store := NewFileStore(path)
+	input := Snapshot{Characters: []CharacterRow{{
+		Login:       "owner-money",
+		CharacterID: 42,
+		Password:    "secret",
+		Money:       1500,
+		Cells:       []Cell{{Cell: 0, ID: 9001, Vnum: 27002, Count: 1}},
+	}}}
+	if err := store.Save(input); err != nil {
+		t.Fatalf("save safebox with money: %v", err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("load safebox with money: %v", err)
+	}
+	if loaded.Characters[0].Money != 1500 {
+		t.Fatalf("unexpected loaded money: %#v", loaded.Characters[0])
+	}
+	if got := CharacterMoney(loaded, "owner-money", 42); got != 1500 {
+		t.Fatalf("CharacterMoney=%d want 1500", got)
+	}
+	if got := CharacterMoney(Snapshot{}, "missing", 1); got != 0 {
+		t.Fatalf("missing row CharacterMoney=%d want 0", got)
+	}
+
+	zero := Snapshot{Characters: []CharacterRow{{
+		Login: "alpha", CharacterID: 1, Password: "vault1", Money: 0, Cells: []Cell{{Cell: 0, ID: 1, Vnum: 20, Count: 2}},
+	}}}
+	if err := store.Save(zero); err != nil {
+		t.Fatalf("save zero-money safebox: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read zero-money safebox: %v", err)
+	}
+	if strings.Contains(string(raw), `"money"`) {
+		t.Fatalf("expected zero money omitted from JSON, got %s", string(raw))
+	}
+}
+
+func TestFileStoreRejectsInvalidMoney(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "safebox.json")
+	store := NewFileStore(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{name: "negative", body: `{"characters":[{"login":"owner","character_id":1,"money":-1,"cells":[]}]}`},
+		{name: "over_max_int32", body: `{"characters":[{"login":"owner","character_id":1,"money":2147483648,"cells":[]}]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(path, []byte(strings.TrimSpace(tc.body)), 0o644); err != nil {
+				t.Fatalf("write %s: %v", tc.name, err)
+			}
+			_, err := store.Load()
+			if !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot for %s, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
+func TestReplaceCharacterMoneyPreservesPasswordAndCells(t *testing.T) {
+	snapshot := Snapshot{Characters: []CharacterRow{{
+		Login: "owner", CharacterID: 1, Password: "abc123", Money: 10,
+		Cells: []Cell{{Cell: 0, ID: 10, Vnum: 27001, Count: 2}},
+	}}}
+	withMoney, err := ReplaceCharacterMoney(snapshot, "owner", 1, 2500)
+	if err != nil {
+		t.Fatalf("replace money: %v", err)
+	}
+	if withMoney.Characters[0].Money != 2500 || withMoney.Characters[0].Password != "abc123" || withMoney.Characters[0].Cells[0].ID != 10 {
+		t.Fatalf("unexpected money upsert: %#v", withMoney)
+	}
+	withPassword, err := ReplaceCharacterPassword(withMoney, "owner", 1, "vault2")
+	if err != nil {
+		t.Fatalf("replace password after money: %v", err)
+	}
+	if withPassword.Characters[0].Money != 2500 || withPassword.Characters[0].Password != "vault2" {
+		t.Fatalf("password replace dropped money: %#v", withPassword)
+	}
+	cleared, err := ReplaceCharacterCells(withPassword, "owner", 1, nil)
+	if err != nil {
+		t.Fatalf("clear cells with money: %v", err)
+	}
+	if len(cleared.Characters) != 1 || cleared.Characters[0].Money != 2500 || cleared.Characters[0].Password != "vault2" || len(cleared.Characters[0].Cells) != 0 {
+		t.Fatalf("expected password+money row after clear, got %#v", cleared)
+	}
+	if _, err := ReplaceCharacterMoney(snapshot, "owner", 1, -1); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected negative money reject, got %v", err)
+	}
+	if _, err := ReplaceCharacterMoney(snapshot, "owner", 1, int64(math.MaxInt32)+1); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected over-MaxInt32 money reject, got %v", err)
 	}
 }

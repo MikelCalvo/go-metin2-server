@@ -102,7 +102,7 @@ func TestGameSessionFlowSafeboxChangePasswordPersistsAndRequiresNewPasswordOnOpe
 	if err != nil {
 		t.Fatalf("unexpected new-password open after change: %v", err)
 	}
-	if len(newOut) != 1 {
+	if len(newOut) != 2 {
 		t.Fatalf("expected SAFEBOX_SIZE after new password, got %d", len(newOut))
 	}
 	size, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, newOut[0]))

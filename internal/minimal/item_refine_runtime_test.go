@@ -929,7 +929,7 @@ func TestGameRuntimeItemRefineConfirmBusySafeboxFailsClosedWithoutMutation(t *te
 	if err != nil {
 		t.Fatalf("unexpected busy-safebox /open_safebox error: %v", err)
 	}
-	if len(openOut) != 1 {
+	if len(openOut) != 2 {
 		t.Fatalf("expected busy-safebox /open_safebox to emit one SAFEBOX_SIZE frame, got %d", len(openOut))
 	}
 	if _, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, openOut[0])); err != nil {
