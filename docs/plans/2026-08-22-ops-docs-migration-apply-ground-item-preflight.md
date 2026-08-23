@@ -41,7 +41,12 @@ No runtime behavior, SQL import, remote admin, or README churn is added.
 
 - SQL import/backfill from quarantined `0010` exports
 - DB driver selection / driver-backed harness
-- durable safebox persistence / password load
+- ~~durable safebox persistence / password load~~ Done for FileStore
+  rematerialize + backup/restore + apply-runbook `/local/safebox-store/*`
+  preflight + `0014` export/quarantine: see
+  [safebox file-store backup/restore drill](2026-08-23-safebox-file-store-backup-restore-drill.md)
+  and [ops docs 0014 safebox quarantine tip sync](2026-08-23-ops-docs-0014-safebox-quarantine-tip-sync.md).
+  Money / mall / SQL import remain deferred.
 - automatic artifact GC deletion
 - remote admin authentication
 - README churn beyond what these operator docs already require
@@ -61,7 +66,10 @@ Validation for this slice:
 ## Follow-up options
 
 1. Keep SQL import/backfill deferred until a driver-backed harness exists.
-2. Keep durable safebox persistence / password load deferred.
+2. ~~Keep durable safebox persistence / password load deferred.~~ Done for
+   FileStore rematerialize + backup/restore + `0014` export/quarantine: see
+   [ops docs 0014 safebox quarantine tip sync](2026-08-23-ops-docs-0014-safebox-quarantine-tip-sync.md).
+   Money / mall / SQL import remain deferred.
 3. Keep automatic artifact GC deletion deferred.
 4. Optional later: systemd/unit samples that only print (never auto-run)
    retention / GC triage scripts.

@@ -26,6 +26,7 @@ Supported `--kind` values:
 | `item-template-state` | `0009_item_template_refine_info` |
 | `static-actor-content-state` | `0013_static_actor_combat_profile_state` |
 | `bootstrap-ground-item-state` | `0010_bootstrap_ground_item_state` |
+| `character-safebox-state` | `0014_character_safebox_state` |
 
 Behavior:
 
@@ -68,3 +69,4 @@ Validation:
 1. ~~Add a dry-run helper that prints backup/restore drill commands from `/local/runtime-config`.~~ Done: `metin2-migrate backup-restore-drill`.
 2. Extract repository seams only after offline quarantine + loopback quarantine both prove the export boundary.
 3. ~~Keep ground-item restart durability deferred until a real world-state repository exists.~~ Done for FileStore rematerialize + backup/restore: see [ground-item process-restart durability](2026-08-22-ground-item-process-restart-durability.md) and [ground-item file-store backup/restore](2026-08-22-ground-item-file-store-backup-restore.md). SQL import/backfill from quarantined `0010` exports remains deferred.
+4. ~~Add `character-safebox-state` once the `0014` export/quarantine seam lands.~~ Done: see [character safebox-state migration export seam](2026-08-23-character-safebox-state-migration-export-seam.md) and [ops docs 0014 safebox quarantine tip sync](2026-08-23-ops-docs-0014-safebox-quarantine-tip-sync.md).
