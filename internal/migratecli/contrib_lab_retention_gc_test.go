@@ -22,12 +22,16 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 	servicePath := filepath.Join(base, "systemd", "metin2-artifact-retention-gc-print.service.sample")
 	timerPath := filepath.Join(base, "systemd", "metin2-artifact-retention-gc-print.timer.sample")
 	cronPath := filepath.Join(base, "cron.d", "metin2-artifact-retention-gc-print.sample")
+	periodicWeeklyPath := filepath.Join(base, "periodic", "weekly", "900.metin2-artifact-retention-gc-print.sample")
+	periodicConfPath := filepath.Join(base, "periodic", "periodic.conf.sample")
 	readmePath := filepath.Join(base, "README.md")
 
 	helper := mustReadContribSample(t, helperPath)
 	service := mustReadContribSample(t, servicePath)
 	timer := mustReadContribSample(t, timerPath)
 	cron := mustReadContribSample(t, cronPath)
+	periodicWeekly := mustReadContribSample(t, periodicWeeklyPath)
+	periodicConf := mustReadContribSample(t, periodicConfPath)
 	readme := mustReadContribSample(t, readmePath)
 
 	for _, want := range []string{
@@ -100,6 +104,56 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 	})
 
 	for _, want := range []string{
+		"weekly_metin2_artifact_retention_gc_print_enable",
+		"/usr/local/libexec/metin2-print-retention-gc.sh",
+		"source_periodic_confs",
+		"[Yy][Ee][Ss]",
+	} {
+		if !strings.Contains(periodicWeekly, want) {
+			t.Fatalf("periodic weekly sample missing %q", want)
+		}
+	}
+	for _, line := range strings.Split(periodicWeekly, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if strings.Contains(trimmed, "| /bin/sh") || strings.Contains(trimmed, "|/bin/sh") {
+			t.Fatalf("periodic weekly sample must not pipe into a shell: %q", trimmed)
+		}
+		if strings.Contains(trimmed, "curl ") {
+			t.Fatalf("periodic weekly sample must not live-fetch ops JSON: %q", trimmed)
+		}
+	}
+	assertNoForbiddenRetentionGCMarkers(t, "periodic-weekly", periodicWeekly, map[string]struct{}{
+		`# Explicit non-goals: no "| /bin/sh", no curl of ops JSON, no rm`: {},
+		`# of retention / .gc-aside trees, no DSN / SQL embedding.`:        {},
+		`# Never pipe helper output into a shell and`:                      {},
+		`# never execute the printed *.sh files from this script.`:         {},
+	})
+
+	if !strings.Contains(periodicConf, `weekly_metin2_artifact_retention_gc_print_enable="NO"`) {
+		t.Fatalf("periodic.conf sample must default enable to NO, got:\n%s", periodicConf)
+	}
+	if strings.Contains(periodicConf, `weekly_metin2_artifact_retention_gc_print_enable="YES"`) {
+		t.Fatalf("periodic.conf sample must not default enable to YES")
+	}
+	for _, forbiddenLive := range []string{
+		"curl ",
+		"| /bin/sh",
+		"|/bin/sh",
+		"password=",
+		"METIN2_DB_DSN",
+		"CREATE TABLE",
+		"DROP TABLE",
+	} {
+		if strings.Contains(periodicConf, forbiddenLive) {
+			t.Fatalf("periodic.conf sample must not contain %q:\n%s", forbiddenLive, periodicConf)
+		}
+	}
+	assertNoForbiddenRetentionGCMarkers(t, "periodic-conf", periodicConf, nil)
+
+	for _, want := range []string{
 		"disabled-by-default",
 		"Never pipe printer stdout",
 		"systemctl enable --now",
@@ -109,14 +163,18 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		"backup-restore-drill.sh",
 		"metin2-runtime-config.env.sample",
 		"EnvironmentFile=",
+		"periodic/weekly/900.metin2-artifact-retention-gc-print.sample",
+		"periodic/periodic.conf.sample",
+		"weekly_metin2_artifact_retention_gc_print_enable",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Fatalf("contrib README missing %q", want)
 		}
 	}
 	assertNoForbiddenRetentionGCMarkers(t, "readme", readme, map[string]struct{}{
-		"Never `ExecStart` / cron-run `rm`, `rmdir`, `unlink`, `find -delete`, or": {},
-		"- `rm` of `.gc-aside-*` trees":                                            {},
+		"Never `ExecStart` / cron-run / periodic-run `rm`, `rmdir`, `unlink`,":   {},
+		"`find -delete`, or aside-rename of retention trees from these samples.": {},
+		"- `rm` of `.gc-aside-*` trees":                                          {},
 	})
 
 	envSamplePath := filepath.Join(base, "env", "metin2-runtime-config.env.sample")

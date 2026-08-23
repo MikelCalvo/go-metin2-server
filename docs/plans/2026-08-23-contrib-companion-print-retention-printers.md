@@ -63,12 +63,15 @@ or packaging that enables timers by default.
 2. Keep `rm` of aside-renamed trees deferred.
 3. Keep SQL import/backfill deferred until a driver-backed harness exists.
 4. Keep FreeBSD port / `pkg` enable defaults deferred.
-5. Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`
+5. ~~Optional later: FreeBSD `periodic(8)` weekly print-only fragment gated on
+   `weekly_metin2_artifact_retention_gc_print_enable="NO"`.~~ Done: see
+   [contrib FreeBSD periodic retention / GC print sample](2026-08-23-contrib-freebsd-periodic-retention-gc-print-sample.md).
+6. Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`
    (printer remains read-only; scheduled helper still prefers retained JSON).
-6. ~~Optional later: hermetic `/bin/sh` execution proof of the contrib helper.~~
+7. ~~Optional later: hermetic `/bin/sh` execution proof of the contrib helper.~~
    Done: see
    [contrib print helper hermetic execution](2026-08-23-contrib-print-helper-hermetic-execution.md).
-7. ~~Optional later: systemd drop-in `.sample` that only documents
+8. ~~Optional later: systemd drop-in `.sample` that only documents
    `EnvironmentFile=` / `METIN2_RUNTIME_CONFIG` for a retained runtime-config
    path (still print-only; no live curl; no DSN).~~ Done: see
    [contrib runtime-config EnvironmentFile sample](2026-08-23-contrib-runtime-config-envfile-sample.md).

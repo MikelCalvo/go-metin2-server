@@ -61,7 +61,10 @@ the hard rules with a focused Go test.
 3. Keep SQL import/backfill deferred until a driver-backed harness exists.
 4. Optional later: FreeBSD port / `pkg` that installs these as `.sample` only
    (still disabled by default; no `ENABLE` defaults).
-5. ~~Optional later: fold companion `migration-run-retention` /
+5. ~~Optional later: FreeBSD `periodic(8)` weekly print-only fragment gated on
+   `weekly_metin2_artifact_retention_gc_print_enable="NO"`.~~ Done: see
+   [contrib FreeBSD periodic retention / GC print sample](2026-08-23-contrib-freebsd-periodic-retention-gc-print-sample.md).
+6. ~~Optional later: fold companion `migration-run-retention` /
    `backup-restore-drill` prints into the helper.~~ Done: see
    [contrib companion print retention printers](2026-08-23-contrib-companion-print-retention-printers.md).
    Live scheduled `curl` of runtime-config remains deferred.

@@ -1,0 +1,36 @@
+#!/bin/sh -
+#
+# Print-only FreeBSD periodic(8) weekly fragment for metin2-migrate retention/GC
+# triage dumps. Disabled by default. Never pipe helper output into a shell and
+# never execute the printed *.sh files from this script.
+#
+
+if [ -r /etc/defaults/periodic.conf ]; then
+	. /etc/defaults/periodic.conf
+	source_periodic_confs
+fi
+
+: "${weekly_metin2_artifact_retention_gc_print_enable:=NO}"
+: "${METIN2_PRINT_RETENTION_GC_HELPER:=/usr/local/libexec/metin2-print-retention-gc.sh}"
+
+case "$weekly_metin2_artifact_retention_gc_print_enable" in
+[Yy][Ee][Ss])
+	echo ""
+	echo "Printing metin2 retention/GC triage scripts:"
+
+	if [ ! -x "$METIN2_PRINT_RETENTION_GC_HELPER" ]; then
+		echo "helper missing or not executable: $METIN2_PRINT_RETENTION_GC_HELPER" >&2
+		rc=2
+	else
+		# Explicit non-goals: no "| /bin/sh", no curl of ops JSON, no rm
+		# of retention / .gc-aside trees, no DSN / SQL embedding.
+		"$METIN2_PRINT_RETENTION_GC_HELPER" || rc=$?
+		: "${rc:=0}"
+	fi
+	;;
+*)
+	rc=0
+	;;
+esac
+
+exit "${rc:-0}"

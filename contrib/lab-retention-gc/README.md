@@ -33,10 +33,24 @@ install -m 0644 \
   /etc/systemd/system/metin2-artifact-retention-gc-print.service.d/runtime-config.conf.sample
 # rename without .sample only after review
 
-# FreeBSD / cron.d style
+# FreeBSD / cron.d style (optional Linux-style companion; FreeBSD hosts prefer periodic)
 install -m 0644 \
   contrib/lab-retention-gc/cron.d/metin2-artifact-retention-gc-print.sample \
   /etc/cron.d/metin2-artifact-retention-gc-print.sample
+
+# FreeBSD periodic(8) weekly (preferred on FreeBSD lab hosts; stays NO until reviewed)
+install -d -m 0755 /usr/local/etc/periodic/weekly
+install -m 0755 \
+  contrib/lab-retention-gc/periodic/weekly/900.metin2-artifact-retention-gc-print.sample \
+  /usr/local/etc/periodic/weekly/900.metin2-artifact-retention-gc-print.sample
+# review, then rename without .sample only after flipping enable deliberately:
+#   cp /usr/local/etc/periodic/weekly/900.metin2-artifact-retention-gc-print.sample \
+#      /usr/local/etc/periodic/weekly/900.metin2-artifact-retention-gc-print
+install -m 0644 \
+  contrib/lab-retention-gc/periodic/periodic.conf.sample \
+  /usr/local/etc/periodic.conf.sample
+# review, keep weekly_metin2_artifact_retention_gc_print_enable="NO", then merge
+# reviewed knobs into /etc/periodic.conf or /usr/local/etc/periodic.conf
 ```
 
 ## What the helper prints
@@ -60,17 +74,21 @@ Optional (env-gated):
 
 ## Hard rules
 
-1. Units / cron may only invoke the print helper / `metin2-migrate` printers.
+1. Units / cron / `periodic` may only invoke the print helper / `metin2-migrate`
+   printers.
 2. Never pipe printer stdout into `/bin/sh`, `bash`, `csh`, or `zsh` from the unit.
-3. Never `ExecStart` / cron-run `rm`, `rmdir`, `unlink`, `find -delete`, or
-   aside-rename of retention trees from these samples.
+3. Never `ExecStart` / cron-run / periodic-run `rm`, `rmdir`, `unlink`,
+   `find -delete`, or aside-rename of retention trees from these samples.
 4. Never embed DSNs, passwords, login keys, or executable SQL.
 5. Ops listeners stay loopback-only; these samples do not change bind policy.
+6. FreeBSD `periodic` stays gated on
+   `weekly_metin2_artifact_retention_gc_print_enable` defaulting to `"NO"`.
 
 ## What this is not
 
-- packaging that installs **enabled** timers / cron entries by default
+- packaging that installs **enabled** timers / cron / `periodic` entries by default
 - automatic execution of printed triage / backup / apply scripts
 - `rm` of `.gc-aside-*` trees
 - FreeBSD port / `pkg` enable defaults
+- flipping `weekly_metin2_artifact_retention_gc_print_enable` to `YES` by default
 - SQL import/backfill or remote admin

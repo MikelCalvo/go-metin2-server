@@ -18,6 +18,7 @@ See also:
 - [contrib companion print retention printers](../plans/2026-08-23-contrib-companion-print-retention-printers.md)
 - [contrib print helper hermetic execution](../plans/2026-08-23-contrib-print-helper-hermetic-execution.md)
 - [contrib runtime-config EnvironmentFile sample](../plans/2026-08-23-contrib-runtime-config-envfile-sample.md)
+- [contrib FreeBSD periodic retention / GC print sample](../plans/2026-08-23-contrib-freebsd-periodic-retention-gc-print-sample.md)
 - tree fragments under [`contrib/lab-retention-gc/`](../../contrib/lab-retention-gc/) (disabled-by-default `.sample` install copies; never enable from packaging)
 
 ## Hard rules
@@ -201,13 +202,55 @@ never live-fetches.
 
 ## FreeBSD cron-style sample (print-only)
 
-`/etc/cron.d/metin2-artifact-retention-gc-print.sample`:
+`/etc/cron.d/metin2-artifact-retention-gc-print.sample` remains an optional
+Linux-style companion:
 
 ```cron
 # Print-only: dumps artifact-retention-gc scripts under /var/metin2/ops-prints.
 # Do NOT append "| /bin/sh" to the helper output or invoke the printed *.sh files here.
 15 4 * * 0  metin2  /usr/local/libexec/metin2-print-retention-gc.sh >/dev/null
 ```
+
+## FreeBSD periodic(8) weekly sample (print-only)
+
+Preferred on FreeBSD lab hosts that already schedule `periodic weekly` from
+`/etc/crontab`. Tree fragments:
+
+- [`contrib/lab-retention-gc/periodic/weekly/900.metin2-artifact-retention-gc-print.sample`](../../contrib/lab-retention-gc/periodic/weekly/900.metin2-artifact-retention-gc-print.sample)
+- [`contrib/lab-retention-gc/periodic/periodic.conf.sample`](../../contrib/lab-retention-gc/periodic/periodic.conf.sample)
+
+Install (manual, review first):
+
+```bash
+install -d -m 0755 /usr/local/etc/periodic/weekly
+install -m 0755 \
+  contrib/lab-retention-gc/periodic/weekly/900.metin2-artifact-retention-gc-print.sample \
+  /usr/local/etc/periodic/weekly/900.metin2-artifact-retention-gc-print.sample
+# rename without .sample only after review:
+#   cp /usr/local/etc/periodic/weekly/900.metin2-artifact-retention-gc-print.sample \
+#      /usr/local/etc/periodic/weekly/900.metin2-artifact-retention-gc-print
+
+install -m 0644 \
+  contrib/lab-retention-gc/periodic/periodic.conf.sample \
+  /usr/local/etc/periodic.conf.sample
+# merge reviewed knobs into /etc/periodic.conf or /usr/local/etc/periodic.conf;
+# keep weekly_metin2_artifact_retention_gc_print_enable="NO" until deliberately flipped
+```
+
+Contract:
+
+1. The weekly script sources `periodic.conf`, gates on
+   `weekly_metin2_artifact_retention_gc_print_enable` matching `YES`
+   (case-insensitive), and otherwise exits `0` without running the helper.
+2. Default remains `"NO"` in `periodic.conf.sample`. Packaging / ports must not
+   flip this to `YES`.
+3. When enabled, the script runs only
+   `/usr/local/libexec/metin2-print-retention-gc.sh` (or
+   `METIN2_PRINT_RETENTION_GC_HELPER`). It never pipes printer stdout into a
+   shell, never `curl`s ops JSON, never embeds DSN / SQL, and never `rm`s
+   retention / `.gc-aside-*` trees.
+
+See also [contrib FreeBSD periodic retention / GC print sample](../plans/2026-08-23-contrib-freebsd-periodic-retention-gc-print-sample.md).
 
 ## Operator review after a print
 
@@ -223,7 +266,11 @@ never live-fetches.
 
 ## What this is not yet
 
-- packaging / FreeBSD port / `pkg` that installs **enabled** timers or cron entries by default (disabled-by-default `.sample` fragments under [`contrib/lab-retention-gc/`](../../contrib/lab-retention-gc/) are owned)
+- packaging / FreeBSD port / `pkg` that installs **enabled** timers, cron, or
+  `periodic` entries by default (disabled-by-default `.sample` fragments under
+  [`contrib/lab-retention-gc/`](../../contrib/lab-retention-gc/) are owned,
+  including FreeBSD `periodic(8)` weekly + `periodic.conf.sample`)
+- flipping `weekly_metin2_artifact_retention_gc_print_enable` to `YES` by default
 - automatic execution of printed aside-rename / backup / apply scripts
 - `rm` of `.gc-aside-*` trees
 - scheduled live `curl` of ops JSON from the print helper / unit

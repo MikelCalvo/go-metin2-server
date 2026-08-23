@@ -1,0 +1,14 @@
+# FreeBSD periodic.conf fragment for metin2 retention/GC print-only dumps.
+# Copy reviewed knobs into /etc/periodic.conf or /usr/local/etc/periodic.conf.
+# Keep the enable flag NO until an operator deliberately flips it.
+
+# Default stays disabled. Only "YES" (case-insensitive) runs the print helper.
+weekly_metin2_artifact_retention_gc_print_enable="NO"
+
+# Optional overrides (uncomment after review). Never put DSNs, passwords,
+# login keys, or executable SQL here.
+# METIN2_MIGRATE_BIN=/usr/local/bin/metin2-migrate
+# METIN2_OPS_PRINTS_ROOT=/var/metin2/ops-prints
+# METIN2_RETENTION_KEEP_DAYS=14
+# METIN2_PRINT_RETENTION_GC_HELPER=/usr/local/libexec/metin2-print-retention-gc.sh
+# METIN2_RUNTIME_CONFIG=/var/metin2/ops-prints/retained-runtime-config.json
