@@ -88,6 +88,7 @@ const itemSellRejectedInfoMessage = "The merchant refuses to buy this item."
 const itemUnequipRejectedInfoMessage = "You cannot remove this item."
 const itemEquipOccupiedWearSlotInfoMessage = "You are already wearing equipment."
 const safeboxPasswordWrongInfoMessage = "You have entered the wrong password."
+const safeboxPasswordChangedInfoMessage = "The warehouse password has been changed."
 const safeboxAlreadyOpenInfoMessage = "The warehouse is already open."
 const safeboxShowPasswordCommandMessage = "ShowMeSafeboxPassword"
 const questFlagRewardRestrictedInfoMessage = "You cannot receive this quest reward."
@@ -4205,6 +4206,22 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			}
 			return runtime.safeboxStore.Save(next)
 		}
+		persistDurableSafeboxPassword := func(selected *player.Runtime, password string) error {
+			if runtime == nil || runtime.safeboxStore == nil || selected == nil || !hasTicket {
+				return safeboxstore.ErrInvalidSnapshot
+			}
+			runtime.safeboxPersistMu.Lock()
+			defer runtime.safeboxPersistMu.Unlock()
+			snapshot, err := safeboxstore.LoadOrEmpty(runtime.safeboxStore)
+			if err != nil {
+				return err
+			}
+			next, err := safeboxstore.ReplaceCharacterPassword(snapshot, sessionTicket.Login, selected.LiveCharacter().ID, password)
+			if err != nil {
+				return err
+			}
+			return runtime.safeboxStore.Save(next)
+		}
 		encodeActiveSafeboxSetFrames := func() [][]byte {
 			if len(activeSafeboxItems) == 0 {
 				return nil
@@ -6095,6 +6112,31 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							}
 							clearPendingSafeboxPasswordChallenge()
 							return gameflow.ChatResult{Accepted: true, Frames: openSafeboxPresentation(size)}
+						}
+						if oldPassword, newPassword, ok := slashSafeboxChangePasswordCommand(packet.Message); ok {
+							selectedPlayer, selectedOK := currentSelectedPlayer()
+							if !selectedOK || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							rejectWrong := func() gameflow.ChatResult {
+								delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: safeboxPasswordWrongInfoMessage}
+								return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
+							}
+							// Change-password never opens/closes presentation and never clears a
+							// pending ShowMeSafeboxPassword challenge; malformed / mismatch /
+							// persist failure stay fail-closed with the same wrong-password chat.
+							if oldPassword == "" || len(oldPassword) > safeboxstore.MaxPasswordLen ||
+								newPassword == "" || len(newPassword) > safeboxstore.MaxPasswordLen {
+								return rejectWrong()
+							}
+							if oldPassword != durableSafeboxPassword(selectedPlayer) {
+								return rejectWrong()
+							}
+							if err := persistDurableSafeboxPassword(selectedPlayer, newPassword); err != nil {
+								return rejectWrong()
+							}
+							delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: safeboxPasswordChangedInfoMessage}
+							return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
 						}
 						if slashCloseSafeboxCommand(packet.Message) {
 							if !hasActiveSafeboxOpen {
@@ -8891,6 +8933,29 @@ func slashSafeboxPasswordCommand(message string) (string, bool) {
 		// Extra args stay recognized so the handler can fail closed instead of
 		// falling through as ordinary talking chat.
 		return "", true
+	}
+}
+
+func slashSafeboxChangePasswordCommand(message string) (string, string, bool) {
+	if !strings.HasPrefix(message, "/") {
+		return "", "", false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) == 0 || fields[0] != "safebox_change_password" {
+		return "", "", false
+	}
+	switch len(fields) {
+	case 1:
+		// Recognized command with missing passwords: consume and reject in handler.
+		return "", "", true
+	case 2:
+		return fields[1], "", true
+	case 3:
+		return fields[1], fields[2], true
+	default:
+		// Extra args stay recognized so the handler can fail closed instead of
+		// falling through as ordinary talking chat.
+		return "", "", true
 	}
 }
 

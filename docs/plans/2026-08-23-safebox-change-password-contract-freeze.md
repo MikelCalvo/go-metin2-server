@@ -39,4 +39,4 @@ Oracle uses `LC_TEXT("<창고> 잘못된 암호를 입력하셨습니다.")` for
 
 ## Status
 
-Docs-first freeze on `lane/items`. RED intentionally deferred until this contract is reviewed/landed.
+Shipped on `lane/items`: `/safebox_change_password` persists durable password with success/wrong-password info chat; money/mall and client `SAFEBOX_CHANGE_PASSWORD` packets stay deferred.
