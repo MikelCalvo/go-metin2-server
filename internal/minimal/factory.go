@@ -4144,6 +4144,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		var safeboxReopenBlockedUntil time.Time
 		var activeRefineDialog refineDialogPresentation
 		var hasActiveRefineDialog bool
+		var hasActiveMyShopOpen bool
 		bootstrapSafeboxCapacity := func(size uint8) uint8 {
 			if size < bootstrapSafeboxOpenMinSize || size > bootstrapSafeboxOpenMaxSize {
 				return 0
@@ -4371,6 +4372,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 {
 				sharedWorld.SetRefineWindowOpen(sharedWorldID, true)
 			}
+		}
+		clearActiveMyShopOpen := func() {
+			hasActiveMyShopOpen = false
+		}
+		setActiveMyShopOpen := func() {
+			hasActiveMyShopOpen = true
 		}
 		appendPostFloorMerchantCloseFrame := func(frames [][]byte, clearTarget bool) [][]byte {
 			if !clearTarget || !hasActiveMerchantBuy || activeMerchantBuy.TargetVID == 0 {
@@ -8305,6 +8312,74 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					clearActiveMerchantBuy()
 					return gameflow.ShopResult{Accepted: true, Frames: [][]byte{shopproto.EncodeServerEnd()}}
 				},
+				HandleMyShop: func(packet shopproto.ClientMyShopPacket) gameflow.ShopResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !ownsLiveSharedWorldSession() {
+						return gameflow.ShopResult{Accepted: false}
+					}
+					sign := strings.TrimRight(packet.Sign, "\x00")
+					if strings.TrimSpace(sign) == "" || len(packet.Items) == 0 {
+						return gameflow.ShopResult{Accepted: false}
+					}
+					if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveMyShopOpen || sharedWorld.hasActiveExchange(sharedWorldID) {
+						return gameflow.ShopResult{
+							Accepted: true,
+							Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+								Type:    chatproto.ChatTypeInfo,
+								VID:     0,
+								Empire:  0,
+								Message: exchangeRequesterMerchantBusyInfoMessage,
+							})},
+						}
+					}
+					seenCells := make(map[uint16]struct{}, len(packet.Items))
+					var listedPriceSum uint64
+					liveGold := selectedPlayer.LiveGold()
+					for _, stock := range packet.Items {
+						if stock.Price == 0 || stock.Position.WindowType != itemproto.WindowInventory || stock.Position.Cell >= itemproto.InventoryMaxCell {
+							return gameflow.ShopResult{Accepted: false}
+						}
+						if _, exists := seenCells[stock.Position.Cell]; exists {
+							return gameflow.ShopResult{Accepted: false}
+						}
+						seenCells[stock.Position.Cell] = struct{}{}
+						slot := inventory.SlotIndex(stock.Position.Cell)
+						template, ok := runtime.resolveRuntimeItemTemplate(selectedPlayer, slot)
+						if !ok || template.AntiGive || template.AntiMyShop {
+							return gameflow.ShopResult{Accepted: false}
+						}
+						found := false
+						for _, item := range selectedPlayer.LiveInventory() {
+							if item.Equipped || item.Slot != slot {
+								continue
+							}
+							if item.Locked || item.Count == 0 || item.Vnum != stock.Vnum || item.Count != uint16(stock.Count) || item.Count > template.MaxCount {
+								return gameflow.ShopResult{Accepted: false}
+							}
+							found = true
+							break
+						}
+						if !found {
+							return gameflow.ShopResult{Accepted: false}
+						}
+						listedPriceSum += uint64(stock.Price)
+						if liveGold+listedPriceSum > uint64(math.MaxInt32) {
+							return gameflow.ShopResult{Accepted: false}
+						}
+					}
+					live := selectedPlayer.LiveCharacter()
+					setActiveMyShopOpen()
+					return gameflow.ShopResult{
+						Accepted: true,
+						Frames: [][]byte{shopproto.EncodeServerShopSign(shopproto.ServerShopSignPacket{
+							VID:  live.VID,
+							Sign: sign,
+						})},
+					}
+				},
 			},
 		})
 		return newQueuedSessionFlow(inner, pending, func() {
@@ -8335,6 +8410,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			}
 			clearActiveSafeboxItems()
 			setActiveRefineDialog(refineDialogPresentation{}, false)
+			clearActiveMyShopOpen()
 			clearActiveCombatTarget()
 			clearLiveCharacterRegistration()
 			stateMu.Unlock()

@@ -1,0 +1,369 @@
+package minimal
+
+import (
+	"math"
+	"testing"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
+	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
+	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
+	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
+	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
+	"github.com/MikelCalvo/go-metin2-server/internal/service"
+)
+
+func TestGameRuntimeMyShopOpenEmitsShopSignWithoutInventoryMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopHost", 0x01030801, 0x02040801, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 801, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	login := "myshop-host"
+	issuePeerTicket(t, ticketStore, login, 0x70707101, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop host account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Shop Potion",
+		Stackable: true,
+		MaxCount:  200,
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop host runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707101)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      3,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted MYSHOP error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected accepted MYSHOP to emit one SHOP_SIGN frame, got %d", len(out))
+	}
+	sign, err := shopproto.DecodeServerShopSign(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode accepted MYSHOP SHOP_SIGN: %v", err)
+	}
+	if sign.VID != owner.VID || sign.Sign != "Private Shop" {
+		t.Fatalf("unexpected accepted MYSHOP SHOP_SIGN: %+v", sign)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected accepted MYSHOP to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "accepted myshop open")
+}
+
+func TestGameRuntimeMyShopOpenRejectsEmptySignAndZeroCountWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopEmpty", 0x01030802, 0x02040802, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 802, Vnum: 27001, Count: 3, Slot: 5}}
+	login := "myshop-empty"
+	issuePeerTicket(t, ticketStore, login, 0x70707102, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop empty account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Shop Potion",
+		Stackable: true,
+		MaxCount:  200,
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop empty runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707102)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	for _, tc := range []struct {
+		name string
+		pkt  shopproto.ClientMyShopPacket
+	}{
+		{name: "empty sign", pkt: shopproto.ClientMyShopPacket{Sign: "", Items: []shopproto.ClientMyShopItem{{Vnum: 27001, Count: 3, Position: itemproto.InventoryPosition(5), Price: 1500}}}},
+		{name: "zero count", pkt: shopproto.ClientMyShopPacket{Sign: "Private Shop"}},
+	} {
+		out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(tc.pkt)))
+		if err != nil {
+			t.Fatalf("unexpected %s MYSHOP error: %v", tc.name, err)
+		}
+		if len(out) != 0 {
+			t.Fatalf("expected %s MYSHOP to emit no frames, got %d", tc.name, len(out))
+		}
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop empty/zero rejects")
+}
+
+func TestGameRuntimeMyShopOpenRejectsInvalidStockWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopStock", 0x01030803, 0x02040803, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 803, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 804, Vnum: 27002, Count: 1, Slot: 6, Locked: true},
+		{ID: 806, Vnum: 27003, Count: 1, Slot: 7},
+		{ID: 807, Vnum: 27004, Count: 1, Slot: 8},
+	}
+	login := "myshop-stock"
+	issuePeerTicket(t, ticketStore, login, 0x70707103, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop stock account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: 27002, Name: "Locked Potion", Stackable: true, MaxCount: 200},
+		{Vnum: 27003, Name: "Anti MyShop Potion", Stackable: true, MaxCount: 200, AntiMyShop: true},
+		{Vnum: 27004, Name: "Anti Give Potion", Stackable: true, MaxCount: 200, AntiGive: true},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop stock runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707103)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	validItem := shopproto.ClientMyShopItem{Vnum: 27001, Count: 3, Position: itemproto.InventoryPosition(5), Price: 1500, DisplayPos: 0}
+	for _, tc := range []struct {
+		name  string
+		items []shopproto.ClientMyShopItem
+	}{
+		{name: "duplicate pos", items: []shopproto.ClientMyShopItem{validItem, {Vnum: 27001, Count: 3, Position: itemproto.InventoryPosition(5), Price: 2000, DisplayPos: 1}}},
+		{name: "missing cell", items: []shopproto.ClientMyShopItem{{Vnum: 27001, Count: 1, Position: itemproto.InventoryPosition(9), Price: 1500}}},
+		{name: "locked cell", items: []shopproto.ClientMyShopItem{{Vnum: 27002, Count: 1, Position: itemproto.InventoryPosition(6), Price: 1500}}},
+		{name: "zero price", items: []shopproto.ClientMyShopItem{{Vnum: 27001, Count: 3, Position: itemproto.InventoryPosition(5), Price: 0}}},
+		{name: "count mismatch", items: []shopproto.ClientMyShopItem{{Vnum: 27001, Count: 2, Position: itemproto.InventoryPosition(5), Price: 1500}}},
+		{name: "vnum mismatch", items: []shopproto.ClientMyShopItem{{Vnum: 27099, Count: 3, Position: itemproto.InventoryPosition(5), Price: 1500}}},
+		{name: "anti_myshop", items: []shopproto.ClientMyShopItem{{Vnum: 27003, Count: 1, Position: itemproto.InventoryPosition(7), Price: 1500}}},
+		{name: "anti_give", items: []shopproto.ClientMyShopItem{{Vnum: 27004, Count: 1, Position: itemproto.InventoryPosition(8), Price: 1500}}},
+	} {
+		out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{Sign: "Private Shop", Items: tc.items})))
+		if err != nil {
+			t.Fatalf("unexpected %s MYSHOP error: %v", tc.name, err)
+		}
+		if len(out) != 0 {
+			t.Fatalf("expected %s MYSHOP to emit no frames, got %d", tc.name, len(out))
+		}
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop invalid stock rejects")
+}
+
+func TestGameRuntimeMyShopOpenRejectsGoldOverflowWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopGoldCap", 0x01030804, 0x02040804, 1100, 2100, 0, 101, 201)
+	owner.Gold = uint64(math.MaxInt32) - 100
+	owner.Inventory = []inventory.ItemInstance{{ID: 808, Vnum: 27001, Count: 1, Slot: 5}}
+	login := "myshop-goldcap"
+	issuePeerTicket(t, ticketStore, login, 0x70707104, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop goldcap account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop goldcap runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707104)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:     27001,
+			Count:    1,
+			Position: itemproto.InventoryPosition(5),
+			Price:    101,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected gold-overflow MYSHOP error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected gold-overflow MYSHOP to emit no frames, got %d", len(out))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop gold overflow")
+}
+
+func TestGameRuntimeMyShopOpenBusyShellRejectsWithInfoChatWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := merchantBuyerCharacter("MyShopBusy", 0x01030805, 0x02040805, 12345, []inventory.ItemInstance{
+		{ID: 809, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 810, Vnum: 11234, Count: 1, Slot: 6},
+		{ID: 811, Vnum: 27001, Count: 2, Slot: 7},
+	})
+	peer := peerVisibilityCharacter("MyShopBusyPeer", 0x01030806, 0x02040806, 1120, 2120, 0, 101, 201)
+	login := "myshop-busy"
+	peerLogin := "myshop-busy-peer"
+	issuePeerTicket(t, ticketStore, login, 0x70707105, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x70707106, peer)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop busy account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed myshop busy peer account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{defaultMerchantCatalogDefinition()})
+	templates := append(defaultMerchantItemTemplates(),
+		itemcatalog.Template{
+			Vnum:       11234,
+			Name:       "Busy Practice Blade",
+			Stackable:  false,
+			MaxCount:   1,
+			Refineable: true,
+			RefineInfo: &itemcatalog.RefineInfo{ResultVnum: 11235, Cost: 1000, Probability: 100, Materials: []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}}},
+		},
+		itemcatalog.Template{Vnum: 11235, Name: "Busy Result Blade", Stackable: false, MaxCount: 1},
+	)
+	itemStore := newItemTemplateStore(t, templates)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected myshop busy runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:merchant")
+	if !ok {
+		t.Fatal("expected merchant static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707105)
+	defer closeSessionFlow(t, flow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707106)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, flow)
+	_ = flushServerFrames(t, peerFlow)
+
+	openPacket := shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:     27001,
+			Count:    3,
+			Position: itemproto.InventoryPosition(5),
+			Price:    1500,
+		}},
+	}
+
+	interactWithMerchantForBuy(t, flow, actor.EntityID)
+	assertMyShopBusyReject(t, flow, openPacket, "merchant busy")
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected merchant close after myshop busy reject: %v", err)
+	}
+	if len(closeOut) != 1 {
+		t.Fatalf("expected merchant close after myshop busy reject to emit SHOP END, got %d", len(closeOut))
+	}
+
+	openSafeboxOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_safebox before myshop busy reject: %v", err)
+	}
+	if len(openSafeboxOut) == 0 {
+		t.Fatal("expected /open_safebox before myshop busy reject to emit frames")
+	}
+	assertMyShopBusyReject(t, flow, openPacket, "safebox busy")
+	closeSafeboxOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/close_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /close_safebox after myshop busy reject: %v", err)
+	}
+	if len(closeSafeboxOut) == 0 {
+		t.Fatal("expected /close_safebox after myshop busy reject to emit frames")
+	}
+
+	previewOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 6, Type: 3})))
+	if err != nil || len(previewOut) != 1 {
+		t.Fatalf("expected refine busy preview to emit one frame, got %d err=%v", len(previewOut), err)
+	}
+	assertMyShopBusyReject(t, flow, openPacket, "refine busy")
+	cancelRefineOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 6, Type: 255})))
+	if err != nil {
+		t.Fatalf("unexpected refine cancel after myshop busy reject: %v", err)
+	}
+	if len(cancelRefineOut) != 0 {
+		t.Fatalf("expected refine cancel after myshop busy reject to emit no frames, got %d", len(cancelRefineOut))
+	}
+
+	startOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected exchange start before myshop busy reject: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected exchange start before myshop busy reject to emit one frame, got %d", len(startOut))
+	}
+	_ = flushServerFrames(t, peerFlow)
+	assertMyShopBusyReject(t, flow, openPacket, "exchange busy")
+	cancelOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected exchange cancel after myshop busy reject: %v", err)
+	}
+	if len(cancelOut) != 1 {
+		t.Fatalf("expected exchange cancel after myshop busy reject to emit one frame, got %d", len(cancelOut))
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	acceptedOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(openPacket)))
+	if err != nil {
+		t.Fatalf("unexpected accepted MYSHOP after busy clears: %v", err)
+	}
+	if len(acceptedOut) != 1 {
+		t.Fatalf("expected accepted MYSHOP after busy clears to emit one SHOP_SIGN frame, got %d", len(acceptedOut))
+	}
+	if _, err := shopproto.DecodeServerShopSign(decodeSingleFrame(t, acceptedOut[0])); err != nil {
+		t.Fatalf("decode accepted MYSHOP SHOP_SIGN after busy clears: %v", err)
+	}
+	assertMyShopBusyReject(t, flow, openPacket, "already-open myshop busy")
+
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop busy rejects")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop busy peer")
+}
+
+func assertMyShopBusyReject(t *testing.T, flow service.SessionFlow, packet shopproto.ClientMyShopPacket, context string) {
+	t.Helper()
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(packet)))
+	if err != nil {
+		t.Fatalf("unexpected %s MYSHOP error: %v", context, err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected %s MYSHOP to emit one busy info-chat frame, got %d", context, len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode %s MYSHOP busy info chat: %v", context, err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != exchangeRequesterMerchantBusyInfoMessage {
+		t.Fatalf("unexpected %s MYSHOP busy chat: %+v", context, delivery)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected %s MYSHOP busy reject to queue no peer frames, got %d", context, len(queued))
+	}
+}

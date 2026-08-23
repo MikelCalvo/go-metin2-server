@@ -310,12 +310,12 @@ The repository now owns that packet shape at the codec level in `internal/proto/
 - each packed table is 13 bytes: `vnum uint32 LE`, `count uint8`, packed `TItemPos` (`window_type uint8`, `cell uint16 LE`), `price uint32 LE`, `display_pos uint8`
 - decode rejects unexpected header, `count > ShopHostItemMax` (`40`), and any payload whose length is not `34 + count*13`
 
-This is still a codec-only compatibility seam for later private-shop work:
+This remains the owned codec seam for private-shop open requests:
 
-- no accepted private-shop open/close/browse/buy mutation is owned yet
-- `GC::SHOP_SIGN` (`0x0811`) encode/decode is owned separately (see Owned `GC::SHOP_SIGN` codec seam); GAME emission stays deferred
-- partner-side open player-shop exchange busy rejects remain deferred until a presentation seam exists
-- template-authored `anti_myshop` continues to project into `ITEM_SET.anti_flags` only; it does not yet drive a live private-shop mutation path
+- accepted host-only open presentation now lives beside this codec (see Owned accepted private-shop open presentation seam)
+- guest browse/buy and empty-sign close companion stay deferred
+- partner-side open player-shop exchange busy rejects remain deferred until a later presentation seam
+- template-authored `anti_myshop` now also fail-closes host-only open stock validation, in addition to projecting into `ITEM_SET.anti_flags`
 
 ### Owned `CG::MYSHOP` deny-no-response GAME dispatch seam
 
@@ -324,8 +324,8 @@ This is still a codec-only compatibility seam for later private-shop work:
 - `HandleClientFrame` decodes `HeaderClientMyShop` via `DecodeClientMyShop` into `HandleMyShop`
 - the default handler returns `ShopResult{Accepted: false}` so valid packets emit no frames, no error, and leave the session in `GAME` (no unexpected-packet disconnect)
 - malformed payloads still fail closed at the codec/dispatcher boundary
-- accepted handler frames remain harness-only until a later presentation/open slice owns real mutation
-- accepted private-shop open/close/browse/buy, live `GC::SHOP_SIGN` emission, and partner player-shop/cube exchange busy rejects stay deferred
+- runtime wiring may now opt into the owned host-only accepted open presentation (see Owned accepted private-shop open presentation seam); the default stays fail-closed until that opt-in
+- guest browse/buy, empty-sign close companion, and partner player-shop/cube exchange busy rejects stay deferred
 
 See `docs/plans/2026-08-23-myshop-deny-no-response-dispatch-contract-freeze.md`.
 
@@ -340,23 +340,24 @@ The repository now owns that packet shape at the codec level in `internal/proto/
 - empty sign is a valid clear/close companion payload
 - encode zero-pads / truncates into the fixed 33-byte field; decode stops at the first embedded NUL
 
-This is still a codec-only compatibility seam for later private-shop work:
+The codec is now also used by the first host-only accepted open presentation:
 
-- no `internal/game` emission or session handler is owned yet
-- no accepted private-shop open/close/browse/buy mutation is owned yet
-- partner-side open player-shop exchange busy rejects remain deferred until a presentation seam exists
+- successful host-only open emits one live `GC::SHOP_SIGN` with host VID + non-empty sign
+- empty-sign clear/close companion emission and guest browse/buy stay deferred
+- partner-side open player-shop exchange busy rejects remain deferred until a later presentation seam
 
 See `docs/plans/2026-08-23-shop-sign-codec-contract-freeze.md`.
 
-### Frozen accepted private-shop open presentation seam
+### Owned accepted private-shop open presentation seam
 
-The next host-only accepted open path is frozen in docs before RED:
+The first host-only accepted open path is now owned on top of the codec + deny-no-response hook:
 
 - valid `CG::MYSHOP` may become `Accepted: true` only after sign/count/stock/busy-shell gates pass
 - success remembers a same-socket private-shop open/busy flag and emits one owned `GC::SHOP_SIGN` (`host VID` + non-empty sign)
-- empty sign / zero count / duplicate or invalid stock / `anti_give|anti_myshop` / open exchange|merchant|safebox|refine stay fail-closed with no `SHOP_SIGN`
+- empty sign / zero count / duplicate or invalid stock / `anti_give|anti_myshop` / open exchange|merchant|safebox|refine|already-open private shop stay fail-closed with no second `SHOP_SIGN`
+- busy shells reject with the same self-only requester busy info-chat already owned by exchange START for merchant/safebox/refine
 - open does not yet remove carried stock, consume a shop bag, polymorph, or invent guest browse/buy frames
-- guest browse/buy and partner player-shop/cube exchange busy rejects stay deferred
+- guest browse/buy, empty-sign close companion, and partner player-shop/cube exchange busy rejects stay deferred
 
 See `docs/plans/2026-08-23-myshop-accepted-open-presentation-contract-freeze.md`.
 
