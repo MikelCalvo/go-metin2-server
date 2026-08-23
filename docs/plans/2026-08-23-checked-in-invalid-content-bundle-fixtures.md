@@ -33,10 +33,14 @@ This closes follow-up #1 from
 4. `docs/examples/bootstrap-invalid-orphan-quest-gate-bundle.json` mirrors the
    gated kill-quest-only drop-table authoring shape, but omits the
    `quest:first_steps.met_guide` `quest_flag` writer.
-5. `Canonicalize(...)` returns `ErrInvalidBundle` for those fixtures.
-6. Loopback `POST /local/content-bundle/validate` returns `400` for those.
-7. Spec / QA docs name the fixtures as the preferred negative dry-runs.
-8. Valid multi-count regen authoring is owned separately via
+5. `docs/examples/bootstrap-invalid-empty-drop-table-bundle.json` authors one
+   completely empty `drop_tables` row (only `ref`) plus a referencing
+   `spawn_groups[].reward_drop_table_ref`
+   (`docs/plans/2026-08-23-invalid-empty-drop-table-fixture.md`).
+6. `Canonicalize(...)` returns `ErrInvalidBundle` for those fixtures.
+7. Loopback `POST /local/content-bundle/validate` returns `400` for those.
+8. Spec / QA docs name the fixtures as the preferred negative dry-runs.
+9. Valid multi-count regen authoring is owned separately via
    [multi-count regen pack placement](2026-08-23-multi-count-regen-pack-placement-contract-freeze.md)
    and `docs/examples/bootstrap-multi-count-regen-authoring-bundle.json`.
 
@@ -70,3 +74,8 @@ git diff --check
    `pack_spacing`:
    `docs/examples/bootstrap-invalid-regen-one-count-pack-spacing-bundle.json`
    (`docs/plans/2026-08-23-invalid-regen-one-count-pack-spacing-fixture.md`).
+4. ~~Optionally add another checked-in negative fixture only when a later reject
+   case still forces QA to invent JSON.~~ Done for completely empty
+   `drop_tables` (no combat channels and no kill-quest credit):
+   `docs/examples/bootstrap-invalid-empty-drop-table-bundle.json`
+   (`docs/plans/2026-08-23-invalid-empty-drop-table-fixture.md`).

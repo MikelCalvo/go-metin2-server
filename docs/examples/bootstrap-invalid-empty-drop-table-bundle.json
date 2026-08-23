@@ -1,0 +1,19 @@
+{
+  "drop_tables": [
+    {
+      "ref": "loot.qa_empty_reward"
+    }
+  ],
+  "spawn_groups": [
+    {
+      "ref": "practice.qa_empty_drop_table_mob",
+      "name": "QAEmptyDropTableMob",
+      "map_index": 1,
+      "x": 469750,
+      "y": 964200,
+      "race_num": 20350,
+      "combat_profile": "practice_mob",
+      "reward_drop_table_ref": "loot.qa_empty_reward"
+    }
+  ]
+}
