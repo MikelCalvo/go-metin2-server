@@ -42,4 +42,4 @@ Successful walk-away close emits only the already-owned `CloseSafebox` command c
 
 ## Status
 
-Docs-first freeze only on `lane/items`. Implementation / RED remain the next items-lane step; mall / TMP4 CG `SAFEBOX_MONEY` / player-shop/cube busy rejects stay deferred.
+Implemented on `lane/items`: already-open MOVE / SyncPosition beyond the remembered open anchor queues self-only `CloseSafebox`, clears pending if present, and arms the owned 10s reopen cooldown. Pending-only challenges stay on the password distance reject path; mall / TMP4 CG `SAFEBOX_MONEY` / player-shop/cube busy rejects stay deferred.

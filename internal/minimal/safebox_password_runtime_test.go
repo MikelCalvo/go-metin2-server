@@ -486,3 +486,160 @@ func TestGameSessionFlowWarehousePasswordHonorsOpenAnchorDistance(t *testing.T) 
 		t.Fatalf("expected SAFEBOX_SIZE + SAFEBOX_MONEY_CHANGE after walk-back, got %d", len(openOut))
 	}
 }
+
+func TestGameSessionFlowOpenSafeboxWalkAwayAutoClosesWithCloseSafeboxCommand(t *testing.T) {
+	currentTime := time.Unix(1_700_000_100, 0).UTC()
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("SafeboxWalkAwayOwner", 0x01030913, 0x02040913, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "safebox-walkaway-owner", 0x91919113, peer)
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "safebox-walkaway-owner", Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed safebox-walkaway account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+		Kind: interactionstore.KindOpenSafebox,
+		Ref:  "npc:warehouse",
+		Size: 1,
+	}})
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected safebox-walkaway runtime error: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Warehouse", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindOpenSafebox, "npc:warehouse")
+	if !ok {
+		t.Fatal("expected warehouse registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "safebox-walkaway-owner", 0x91919113)
+	defer closeSessionFlow(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)}))); err != nil {
+		t.Fatalf("unexpected warehouse interact before open: %v", err)
+	}
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/safebox_password " + safeboxstore.DefaultPassword,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected password open before walk-away: %v", err)
+	}
+	if len(openOut) != 2 {
+		t.Fatalf("expected SAFEBOX_SIZE + SAFEBOX_MONEY_CHANGE before walk-away, got %d", len(openOut))
+	}
+
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 3100, Y: 2100, Time: 0x2122232b})))
+	if err != nil {
+		t.Fatalf("unexpected walk-away move with open safebox: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected walk-away move to keep only the immediate self move ack, got %d frames", len(moveOut))
+	}
+	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, moveOut[0]))
+	if err != nil {
+		t.Fatalf("decode move ack before safebox walk-away close: %v", err)
+	}
+	if moveAck.VID != peer.VID || moveAck.X != 3100 || moveAck.Y != 2100 {
+		t.Fatalf("unexpected move ack before safebox walk-away close: %+v", moveAck)
+	}
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 1 {
+		t.Fatalf("expected queued CloseSafebox after walk-away from open warehouse, got %d frames", len(queued))
+	}
+	assertCloseSafeboxCommandChatFrame(t, queued[0], "safebox walk-away auto-close")
+
+	alreadyClosedOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/close_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-walk-away /close_safebox error: %v", err)
+	}
+	if len(alreadyClosedOut) != 0 {
+		t.Fatalf("expected walk-away auto-close to clear open flag, got %d frames", len(alreadyClosedOut))
+	}
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1100, Y: 2100, Time: 0x2122232c}))); err != nil {
+		t.Fatalf("unexpected walk-back move after walk-away close: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)}))); err != nil {
+		t.Fatalf("unexpected warehouse interact after walk-away close: %v", err)
+	}
+	blockedOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/safebox_password " + safeboxstore.DefaultPassword,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-walk-away cooldown password attempt: %v", err)
+	}
+	if len(blockedOut) != 1 {
+		t.Fatalf("expected walk-away close to arm reopen cooldown, got %d frames", len(blockedOut))
+	}
+	blocked, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, blockedOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-walk-away cooldown chat: %v", err)
+	}
+	if blocked.Type != chatproto.ChatTypeInfo || blocked.Message != safeboxReopenCooldownInfoMessage {
+		t.Fatalf("unexpected post-walk-away cooldown chat: %+v", blocked)
+	}
+}
+
+func TestGameSessionFlowPendingSafeboxPasswordWalkAwayLeavesChallengeIntact(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PendingWalkAwayOwner", 0x01030914, 0x02040914, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "pending-walkaway-owner", 0x91919114, peer)
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "pending-walkaway-owner", Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed pending-walkaway account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+		Kind: interactionstore.KindOpenSafebox,
+		Ref:  "npc:warehouse",
+		Size: 1,
+	}})
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected pending-walkaway runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Warehouse", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindOpenSafebox, "npc:warehouse")
+	if !ok {
+		t.Fatal("expected warehouse registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pending-walkaway-owner", 0x91919114)
+	defer closeSessionFlow(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)}))); err != nil {
+		t.Fatalf("unexpected warehouse interact before pending walk-away: %v", err)
+	}
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 3100, Y: 2100, Time: 0x2122232d})))
+	if err != nil {
+		t.Fatalf("unexpected pending walk-away move: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected pending walk-away move to keep only the immediate self move ack, got %d frames", len(moveOut))
+	}
+	queued := flushServerFrames(t, flow)
+	for _, frame := range queued {
+		delivery, decodeErr := chatproto.DecodeChatDelivery(decodeSingleFrame(t, frame))
+		if decodeErr == nil && delivery.Type == chatproto.ChatTypeCommand && delivery.Message == "CloseSafebox" {
+			t.Fatalf("pending-only challenge must not emit CloseSafebox on walk-away, got %+v", delivery)
+		}
+	}
+	tooFarOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/safebox_password " + safeboxstore.DefaultPassword,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-pending-walk-away password attempt: %v", err)
+	}
+	if len(tooFarOut) != 1 {
+		t.Fatalf("expected pending walk-away to leave challenge intact for distance reject, got %d", len(tooFarOut))
+	}
+	tooFar, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, tooFarOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-pending-walk-away distance chat: %v", err)
+	}
+	if tooFar.Type != chatproto.ChatTypeInfo || tooFar.Message != safeboxOpenTooFarInfoMessage {
+		t.Fatalf("unexpected post-pending-walk-away distance chat: %+v", tooFar)
+	}
+}

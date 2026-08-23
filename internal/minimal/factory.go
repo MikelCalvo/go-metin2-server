@@ -4578,6 +4578,21 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			clearActiveMerchantBuy()
 			pending.Enqueue([][]byte{shopproto.EncodeServerEnd()})
 		}
+		clearInvalidActiveSafeboxOpenAfterMovement := func(x int32, y int32) {
+			if !hasActiveSafeboxOpen || !hasSafeboxOpenAnchor {
+				return
+			}
+			if worldruntime.ApproxDistance(x-safeboxOpenAnchorX, y-safeboxOpenAnchorY) <= bootstrapSafeboxOpenMaxDistance {
+				return
+			}
+			clearPendingSafeboxPasswordChallenge()
+			setActiveSafeboxOpen(0, false)
+			armSafeboxReopenCooldown()
+			pending.Enqueue([][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+				Type:    chatproto.ChatTypeCommand,
+				Message: "CloseSafebox",
+			})})
+		}
 		clearLiveCharacterRegistration := func() {
 			if liveCharacterRegistrationID == 0 {
 				return
@@ -5930,6 +5945,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						clearInvalidActiveCombatTargetAfterMovement()
 						clearInvalidActiveMerchantBuyAfterMovement()
 					}
+					clearInvalidActiveSafeboxOpenAfterMovement(selected.X, selected.Y)
 					return gameflow.Result{Accepted: true, Replication: ack}
 				},
 				HandleSyncPosition: func(packet movep.SyncPositionPacket) gameflow.SyncPositionResult {
@@ -5969,6 +5985,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							clearInvalidActiveCombatTargetAfterMovement()
 							clearInvalidActiveMerchantBuyAfterMovement()
 						}
+						clearInvalidActiveSafeboxOpenAfterMovement(selected.X, selected.Y)
 						return gameflow.SyncPositionResult{Accepted: true, Synchronization: ack}
 					}
 					return gameflow.SyncPositionResult{Accepted: false}
