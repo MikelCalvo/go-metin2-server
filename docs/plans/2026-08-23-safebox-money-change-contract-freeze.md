@@ -51,4 +51,4 @@ This bootstrap freeze intentionally keeps deposit/withdraw rejects silent/no-fra
 
 ## Status
 
-Implemented on `lane/items`: durable optional `money`, open-burst `SAFEBOX_MONEY_CHANGE`, and `/safebox_money_save` / `/safebox_money_withdraw` with fail-closed guards. Mall / TMP4 CG `SAFEBOX_MONEY` / client change-password packets stay deferred.
+Implemented on `lane/items`: durable optional `money`, open-burst `SAFEBOX_MONEY_CHANGE`, and `/safebox_money_save` / `/safebox_money_withdraw` with fail-closed guards. Process-restart rematerialize of warehouse gold is owned on the persistence lane (`TestGameRuntimeSafeboxMoneySurvivesProcessRestartRematerializeOnOpen`; see [safebox money process-restart rematerialize](2026-08-23-safebox-money-process-restart-rematerialize.md)). Mall / TMP4 CG `SAFEBOX_MONEY` / client change-password packets stay deferred.

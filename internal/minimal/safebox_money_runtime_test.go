@@ -396,3 +396,107 @@ func TestGameSessionFlowSafeboxMoneySecondCharacterIsolated(t *testing.T) {
 		t.Fatalf("char B must not see char A warehouse money, got %+v", moneyB)
 	}
 }
+
+func TestGameRuntimeSafeboxMoneySurvivesProcessRestartRematerializeOnOpen(t *testing.T) {
+	root := t.TempDir()
+	ticketDir := filepath.Join(root, "tickets")
+	accountDir := filepath.Join(root, "accounts")
+	safeboxPath := filepath.Join(root, "safebox", "safebox.json")
+	ticketStore := loginticket.NewFileStore(ticketDir)
+	accounts := accountstore.NewFileStore(accountDir)
+	owner := peerVisibilityCharacter("SafeboxMoneyRestart", 0x01030925, 0x02040925, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	login := "safebox-money-restart"
+	const loginKey uint32 = 0x92929325
+	issuePeerTicket(t, ticketStore, login, loginKey, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed safebox money restart owner account: %v", err)
+	}
+	cfg := config.Service{
+		LegacyAddr:       ":13000",
+		PublicAddr:       "127.0.0.1",
+		SafeboxStorePath: safeboxPath,
+	}
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(cfg, ticketStore, accounts, nil)
+	if err != nil {
+		t.Fatalf("unexpected safebox money restart runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	_ = flushServerFrames(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_safebox before money restart deposit: %v", err)
+	}
+	saveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/safebox_money_save 1750",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /safebox_money_save before process restart: %v", err)
+	}
+	if len(saveOut) != 2 {
+		t.Fatalf("expected gold PLAYER_POINT_CHANGE + SAFEBOX_MONEY_CHANGE before restart, got %d", len(saveOut))
+	}
+	moneyChange, err := itemproto.DecodeSafeboxMoneyChange(decodeSingleFrame(t, saveOut[1]))
+	if err != nil {
+		t.Fatalf("decode pre-restart SAFEBOX_MONEY_CHANGE: %v", err)
+	}
+	if moneyChange != (itemproto.SafeboxMoneyChangePacket{Money: 1750}) {
+		t.Fatalf("unexpected pre-restart SAFEBOX_MONEY_CHANGE: %+v", moneyChange)
+	}
+	snapshot, err := safeboxstore.LoadOrEmpty(safeboxstore.NewFileStore(safeboxPath))
+	if err != nil {
+		t.Fatalf("load safebox after money deposit before restart: %v", err)
+	}
+	if got := safeboxstore.CharacterMoney(snapshot, login, owner.ID); got != 1750 {
+		t.Fatalf("durable money before restart=%d want 1750", got)
+	}
+	closeSessionFlow(t, flow)
+
+	const postRestartLoginKey uint32 = 0x92929335
+	reloadedTickets := loginticket.NewFileStore(ticketDir)
+	issuePeerTicket(t, reloadedTickets, login, postRestartLoginKey, owner)
+	reloadedAccounts := accountstore.NewFileStore(accountDir)
+	reloaded, err := newGameRuntimeWithAccountStoreAndInteractionStore(cfg, reloadedTickets, reloadedAccounts, nil)
+	if err != nil {
+		t.Fatalf("reload runtime after safebox money process restart: %v", err)
+	}
+	restartFlow, _ := enterGameWithLoginTicket(t, reloaded.SessionFactory(), login, postRestartLoginKey)
+	defer closeSessionFlow(t, restartFlow)
+	_ = flushServerFrames(t, restartFlow)
+
+	reopenOut, err := restartFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_safebox after money process restart: %v", err)
+	}
+	if len(reopenOut) != 2 {
+		t.Fatalf("expected SAFEBOX_SIZE + SAFEBOX_MONEY_CHANGE after process restart, got %d", len(reopenOut))
+	}
+	reopenMoney, err := itemproto.DecodeSafeboxMoneyChange(decodeSingleFrame(t, reopenOut[1]))
+	if err != nil {
+		t.Fatalf("decode reopen SAFEBOX_MONEY_CHANGE after process restart: %v", err)
+	}
+	if reopenMoney != (itemproto.SafeboxMoneyChangePacket{Money: 1750}) {
+		t.Fatalf("unexpected reopen SAFEBOX_MONEY_CHANGE after process restart: %+v", reopenMoney)
+	}
+	account, err := reloadedAccounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after money process restart: %v", err)
+	}
+	if account.Characters[0].Gold != 3250 {
+		t.Fatalf("carried gold after money process restart=%d want 3250", account.Characters[0].Gold)
+	}
+	reloadedSnapshot, err := safeboxstore.LoadOrEmpty(safeboxstore.NewFileStore(safeboxPath))
+	if err != nil {
+		t.Fatalf("load safebox after money process restart: %v", err)
+	}
+	if got := safeboxstore.CharacterMoney(reloadedSnapshot, login, owner.ID); got != 1750 {
+		t.Fatalf("durable money after process restart=%d want 1750", got)
+	}
+}
