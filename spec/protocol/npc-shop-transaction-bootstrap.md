@@ -348,6 +348,18 @@ This is still a codec-only compatibility seam for later private-shop work:
 
 See `docs/plans/2026-08-23-shop-sign-codec-contract-freeze.md`.
 
+### Frozen accepted private-shop open presentation seam
+
+The next host-only accepted open path is frozen in docs before RED:
+
+- valid `CG::MYSHOP` may become `Accepted: true` only after sign/count/stock/busy-shell gates pass
+- success remembers a same-socket private-shop open/busy flag and emits one owned `GC::SHOP_SIGN` (`host VID` + non-empty sign)
+- empty sign / zero count / duplicate or invalid stock / `anti_give|anti_myshop` / open exchange|merchant|safebox|refine stay fail-closed with no `SHOP_SIGN`
+- open does not yet remove carried stock, consume a shop bag, polymorph, or invent guest browse/buy frames
+- guest browse/buy and partner player-shop/cube exchange busy rejects stay deferred
+
+See `docs/plans/2026-08-23-myshop-accepted-open-presentation-contract-freeze.md`.
+
 ### Frozen `GC::ITEM_UPDATE` codec seam
 
 The legacy client handles `GC::ITEM_UPDATE` as a count/socket/attribute refresh for an already-known item cell.
