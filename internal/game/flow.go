@@ -86,6 +86,8 @@ type HandleShopSellFunc func(shopproto.ClientSellPacket) ShopResult
 
 type HandleShopSell2Func func(shopproto.ClientSell2Packet) ShopResult
 
+type HandleMyShopFunc func(shopproto.ClientMyShopPacket) ShopResult
+
 type Config struct {
 	HandleMove              HandleMoveFunc
 	HandleSyncPosition      HandleSyncPositionFunc
@@ -120,6 +122,7 @@ type Config struct {
 	HandleShopClose         HandleShopCloseFunc
 	HandleShopSell          HandleShopSellFunc
 	HandleShopSell2         HandleShopSell2Func
+	HandleMyShop            HandleMyShopFunc
 }
 
 type Result struct {
@@ -296,6 +299,7 @@ type Flow struct {
 	handleShopClose         HandleShopCloseFunc
 	handleShopSell          HandleShopSellFunc
 	handleShopSell2         HandleShopSell2Func
+	handleMyShop            HandleMyShopFunc
 }
 
 func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
@@ -447,6 +451,10 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 	if shopSell2Handler == nil {
 		shopSell2Handler = func(shopproto.ClientSell2Packet) ShopResult { return ShopResult{Accepted: false} }
 	}
+	myShopHandler := cfg.HandleMyShop
+	if myShopHandler == nil {
+		myShopHandler = func(shopproto.ClientMyShopPacket) ShopResult { return ShopResult{Accepted: false} }
+	}
 	return &Flow{
 		machine:                 machine,
 		handleMove:              handler,
@@ -482,6 +490,7 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 		handleShopClose:         shopCloseHandler,
 		handleShopSell:          shopSellHandler,
 		handleShopSell2:         shopSell2Handler,
+		handleMyShop:            myShopHandler,
 	}
 }
 
@@ -864,6 +873,16 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 		default:
 			return nil, shopproto.ErrUnexpectedSubheader
 		}
+	case shopproto.HeaderClientMyShop:
+		packet, err := shopproto.DecodeClientMyShop(in)
+		if err != nil {
+			return nil, err
+		}
+		result := f.handleMyShop(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return result.Frames, nil
 	default:
 		return nil, ErrUnexpectedClientPacket
 	}

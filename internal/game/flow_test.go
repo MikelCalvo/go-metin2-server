@@ -331,6 +331,119 @@ func TestHandleClientFrameRejectsDeniedItemRefineInGame(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameAcceptsMyShopInGameAndReturnsHandlerFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	wantFrame := []byte("myshop-accepted")
+	flow := NewFlow(machine, Config{
+		HandleMyShop: func(packet shopproto.ClientMyShopPacket) ShopResult {
+			if packet.Sign != "Private Shop" {
+				t.Fatalf("unexpected MYSHOP sign: %q", packet.Sign)
+			}
+			if len(packet.Items) != 1 {
+				t.Fatalf("unexpected MYSHOP item count: %d", len(packet.Items))
+			}
+			got := packet.Items[0]
+			want := shopproto.ClientMyShopItem{
+				Vnum:       0x11223344,
+				Count:      3,
+				Position:   itemproto.Position{WindowType: itemproto.WindowInventory, Cell: 7},
+				Price:      1500,
+				DisplayPos: 2,
+			}
+			if got != want {
+				t.Fatalf("unexpected MYSHOP item: %+v want %+v", got, want)
+			}
+			return ShopResult{Accepted: true, Frames: [][]byte{wantFrame}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       0x11223344,
+			Count:      3,
+			Position:   itemproto.Position{WindowType: itemproto.WindowInventory, Cell: 7},
+			Price:      1500,
+			DisplayPos: 2,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected MYSHOP error: %v", err)
+	}
+	if len(out) != 1 || !bytes.Equal(out[0], wantFrame) {
+		t.Fatalf("expected handler MYSHOP frame, got %#v", out)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameRejectsDeniedMyShopInGame(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	called := false
+	flow := NewFlow(machine, Config{
+		HandleMyShop: func(packet shopproto.ClientMyShopPacket) ShopResult {
+			called = true
+			if packet.Sign != "Denied" {
+				t.Fatalf("unexpected MYSHOP sign: %q", packet.Sign)
+			}
+			return ShopResult{Accepted: false, Frames: [][]byte{[]byte("must-not-send")}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{Sign: "Denied"})))
+	if err != nil {
+		t.Fatalf("unexpected denied MYSHOP error: %v", err)
+	}
+	if !called {
+		t.Fatal("expected MYSHOP handler to be called")
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected denied MYSHOP to emit no frames, got %d", len(out))
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameDefaultsMyShopToDenyNoResponseInGame(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{Sign: "Default"})))
+	if err != nil {
+		t.Fatalf("unexpected default MYSHOP error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected default MYSHOP deny to emit no frames, got %d", len(out))
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameRejectsMalformedMyShopInGame(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	called := false
+	flow := NewFlow(machine, Config{
+		HandleMyShop: func(packet shopproto.ClientMyShopPacket) ShopResult {
+			called = true
+			return ShopResult{Accepted: true, Frames: [][]byte{[]byte("must-not-send")}}
+		},
+	})
+
+	_, err := flow.HandleClientFrame(frame.Frame{Header: shopproto.HeaderClientMyShop, Length: 20, Payload: make([]byte, 16)})
+	if !errors.Is(err, shopproto.ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+	if called {
+		t.Fatal("expected malformed MYSHOP not to invoke the handler")
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameAcceptsSafeboxCheckinInGameAndReturnsHandlerFrames(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	wantFrame := []byte("safebox-checkin")

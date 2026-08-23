@@ -41,4 +41,4 @@ Own in `internal/game`:
 
 ## Status
 
-Docs/spec contract freeze on `lane/items`. Implementation RED/GREEN for deny-no-response GAME dispatch follows as the next cohesive slice; private-shop runtime remains deferred.
+Implemented on `lane/items`: `internal/game` owns `HandleMyShop` deny-no-response GAME dispatch for the owned `CG::MYSHOP` codec (default `Accepted:false`, no frames / no disconnect; malformed payloads fail closed at decode). Private-shop runtime open/close/browse/buy, `GC::SHOP_SIGN`, and partner player-shop/cube exchange busy rejects stay deferred.

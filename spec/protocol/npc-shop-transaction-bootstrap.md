@@ -317,11 +317,11 @@ This is still a codec-only compatibility seam for later private-shop work:
 - partner-side open player-shop exchange busy rejects remain deferred until a presentation seam exists
 - template-authored `anti_myshop` continues to project into `ITEM_SET.anti_flags` only; it does not yet drive a live private-shop mutation path
 
-### Frozen `CG::MYSHOP` deny-no-response GAME dispatch seam
+### Owned `CG::MYSHOP` deny-no-response GAME dispatch seam
 
-The next private-shop slice freezes GAME ingress for the owned codec without opening shops:
+`internal/game` now routes the owned codec through a deny-no-response GAME hook:
 
-- `internal/game` routes `HeaderClientMyShop` through `DecodeClientMyShop` into a `HandleMyShop` hook
+- `HandleClientFrame` decodes `HeaderClientMyShop` via `DecodeClientMyShop` into `HandleMyShop`
 - the default handler returns `ShopResult{Accepted: false}` so valid packets emit no frames, no error, and leave the session in `GAME` (no unexpected-packet disconnect)
 - malformed payloads still fail closed at the codec/dispatcher boundary
 - accepted handler frames remain harness-only until a later presentation/open slice owns real mutation
