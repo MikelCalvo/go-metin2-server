@@ -959,8 +959,8 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	if plan.CurrentVersion != 0 || plan.LatestVersion < 1 || plan.UpToDate {
 		t.Fatalf("unexpected migration plan versions: %#v", plan)
 	}
-	if len(plan.Pending) < 13 {
-		t.Fatalf("expected schema, account/character, item-state, quest-state, item-template-state, safebox-reject, auth login-ticket handoff, static actor content-state, item-template refine-info, bootstrap ground-item state, character point-state, static-actor PvE interaction-state, and static-actor combat-profile-state migrations for empty ledger: %#v", plan)
+	if len(plan.Pending) < 14 {
+		t.Fatalf("expected schema, account/character, item-state, quest-state, item-template-state, safebox-reject, auth login-ticket handoff, static actor content-state, item-template refine-info, bootstrap ground-item state, character point-state, static-actor PvE interaction-state, static-actor combat-profile-state, and character safebox-state migrations for empty ledger: %#v", plan)
 	}
 	first := plan.Pending[0]
 	if first.Version != 1 || first.Name != "bootstrap_schema_migrations" || first.Direction != dbmigrations.DirectionUp || first.Path != "0001_bootstrap_schema_migrations.up.sql" {
@@ -1014,7 +1014,11 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	if thirteenth.Version != 13 || thirteenth.Name != "static_actor_combat_profile_state" || thirteenth.Direction != dbmigrations.DirectionUp || thirteenth.Path != "0013_static_actor_combat_profile_state.up.sql" {
 		t.Fatalf("unexpected thirteenth pending migration step: %#v", thirteenth)
 	}
-	for _, step := range []dbmigrations.PlanStep{first, second, third, fourth, fifth, sixth, seventh, eighth, ninth, tenth, eleventh, twelfth, thirteenth} {
+	fourteenth := plan.Pending[13]
+	if fourteenth.Version != 14 || fourteenth.Name != "character_safebox_state" || fourteenth.Direction != dbmigrations.DirectionUp || fourteenth.Path != "0014_character_safebox_state.up.sql" {
+		t.Fatalf("unexpected fourteenth pending migration step: %#v", fourteenth)
+	}
+	for _, step := range []dbmigrations.PlanStep{first, second, third, fourth, fifth, sixth, seventh, eighth, ninth, tenth, eleventh, twelfth, thirteenth, fourteenth} {
 		if step.SHA256 == "" || strings.Contains(step.Path, "CREATE TABLE") {
 			t.Fatalf("expected metadata-only pending steps with checksums, got %#v", plan.Pending)
 		}
@@ -1039,7 +1043,7 @@ func TestGameRuntimeMigrationCatalogSummaryReturnsMetadataOnlyCatalog(t *testing
 	if err != nil {
 		t.Fatalf("migration catalog summary: %v", err)
 	}
-	if summary.Format != dbmigrations.CatalogSummaryFormat || summary.LatestVersion < 13 {
+	if summary.Format != dbmigrations.CatalogSummaryFormat || summary.LatestVersion < 14 {
 		t.Fatalf("unexpected migration catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -1050,7 +1054,7 @@ func TestGameRuntimeMigrationCatalogSummaryReturnsMetadataOnlyCatalog(t *testing
 		t.Fatalf("unexpected first catalog summary row: %#v", first)
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "static_actor_combat_profile_state" || latest.DownSHA256 == "" {
+	if latest.Version != summary.LatestVersion || latest.Name != "character_safebox_state" || latest.DownSHA256 == "" {
 		t.Fatalf("unexpected latest catalog summary row: %#v", latest)
 	}
 	raw, err := json.Marshal(summary)
