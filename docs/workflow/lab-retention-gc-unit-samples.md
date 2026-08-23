@@ -15,6 +15,7 @@ See also:
 - [CLI artifact-retention GC script execution proof](../plans/2026-08-22-cli-artifact-retention-gc-script-execution-proof.md)
 - [print-only retention / GC unit samples plan](../plans/2026-08-23-print-only-retention-gc-unit-samples.md)
 - [contrib print-only retention / GC unit samples](../plans/2026-08-23-contrib-print-only-retention-gc-unit-samples.md)
+- [contrib companion print retention printers](../plans/2026-08-23-contrib-companion-print-retention-printers.md)
 - tree fragments under [`contrib/lab-retention-gc/`](../../contrib/lab-retention-gc/) (disabled-by-default `.sample` install copies; never enable from packaging)
 
 ## Hard rules
@@ -40,8 +41,8 @@ See also:
     build-info.json
     artifact-retention-gc-backups.sh
     artifact-retention-gc-migration-runs.sh
-    backup-restore-drill.sh          # optional
-    migration-run-retention.sh       # optional
+    migration-run-retention.sh
+    backup-restore-drill.sh          # only when METIN2_RUNTIME_CONFIG is set
     notes.md
 ```
 
@@ -63,6 +64,7 @@ set -eu
 BIN="${METIN2_MIGRATE_BIN:-/usr/local/bin/metin2-migrate}"
 PRINTS_ROOT="${METIN2_OPS_PRINTS_ROOT:-/var/metin2/ops-prints}"
 KEEP_DAYS="${METIN2_RETENTION_KEEP_DAYS:-14}"
+RUNTIME_CONFIG="${METIN2_RUNTIME_CONFIG:-}"
 
 test -x "$BIN"
 test -d "$PRINTS_ROOT"
@@ -86,13 +88,38 @@ cp "$TMP_BUILD" "$OUT/build-info.json"
   --keep-days "$KEEP_DAYS" \
   >"$OUT/artifact-retention-gc-migration-runs.sh"
 
-printf 'printed %s\ncommit=%s\nkeep_days=%s\n' "$OUT" "${COMMIT:-unknown}" "$KEEP_DAYS" >"$OUT/notes.md"
+"$BIN" migration-run-retention \
+  --build-info "$OUT/build-info.json" \
+  >"$OUT/migration-run-retention.sh"
+
+DRILL_NOTE="backup-restore-drill=skipped (set METIN2_RUNTIME_CONFIG to a retained runtime-config JSON snapshot)"
+if [ -n "$RUNTIME_CONFIG" ]; then
+  if [ -L "$RUNTIME_CONFIG" ]; then
+    DRILL_NOTE="backup-restore-drill=skipped (METIN2_RUNTIME_CONFIG must not be a symlink)"
+  elif [ -f "$RUNTIME_CONFIG" ]; then
+    "$BIN" backup-restore-drill \
+      --runtime-config "$RUNTIME_CONFIG" \
+      --build-info "$OUT/build-info.json" \
+      >"$OUT/backup-restore-drill.sh"
+    DRILL_NOTE="backup-restore-drill=printed from METIN2_RUNTIME_CONFIG"
+  else
+    DRILL_NOTE="backup-restore-drill=skipped (METIN2_RUNTIME_CONFIG is not a regular file)"
+  fi
+fi
+
+{
+  printf 'printed %s\ncommit=%s\nkeep_days=%s\n' "$OUT" "${COMMIT:-unknown}" "$KEEP_DAYS"
+  printf '%s\n' "$DRILL_NOTE"
+} >"$OUT/notes.md"
 chmod 0640 "$OUT"/*.sh "$OUT/build-info.json" "$OUT/notes.md"
 printf '%s\n' "$OUT"
 ```
 
 The helper's only `rm` is the temporary `mktemp` build-info copy via `trap` —
-never retention trees or printed scripts.
+never retention trees or printed scripts. Companion printers are owned by this
+helper: `migration-run-retention.sh` always, `backup-restore-drill.sh` only
+when `METIN2_RUNTIME_CONFIG` points at a retained non-symlink regular
+runtime-config snapshot. The helper never live-fetches ops JSON.
 
 ## systemd samples (print-only)
 
@@ -137,27 +164,35 @@ Unit=metin2-artifact-retention-gc-print.service
 WantedBy=timers.target
 ```
 
-### Optional companion print services
+### Optional companion print notes
 
-Operators who want the backup / migration-run **create** printers dumped on the
-same cadence can extend the helper (or add parallel oneshots) that only write:
+The tree-owned helper already prints `migration-run-retention.sh` on every run.
+To also print `backup-restore-drill.sh`, point
+`METIN2_RUNTIME_CONFIG` at a retained runtime-config JSON snapshot before the
+unit/cron fires (for example via a drop-in env file reviewed by an operator —
+never embed DSNs). Do **not** schedule live `curl` of
+`http://127.0.0.1:6060/local/runtime-config` from the unit; prefer a file
+retained during an earlier drained-session window.
+
+Manual one-off companion prints (outside the helper) remain allowed for
+triage, still print-only:
 
 ```bash
 metin2-migrate version >"$OUT/build-info.json"
-curl -sS http://127.0.0.1:6060/local/runtime-config \
-  | metin2-migrate backup-restore-drill \
-      --runtime-config - \
-      --build-info "$OUT/build-info.json" \
+metin2-migrate backup-restore-drill \
+  --runtime-config /var/metin2/ops-prints/retained-runtime-config.json \
+  --build-info "$OUT/build-info.json" \
   >"$OUT/backup-restore-drill.sh"
 
-metin2-migrate version \
-  | metin2-migrate migration-run-retention --build-info - \
+metin2-migrate migration-run-retention \
+  --build-info "$OUT/build-info.json" \
   >"$OUT/migration-run-retention.sh"
 ```
 
 Those companions still must not pipe the resulting scripts into a shell from
-the unit. Loopback `curl` to `127.0.0.1:6060` / `:6061` is allowed only when
-`gamed` / `authd` are up; otherwise prefer retained JSON snapshots on disk.
+the unit. Loopback `curl` to `127.0.0.1:6060` / `:6061` is allowed only for
+interactive operator capture of retained JSON; the scheduled helper itself
+never live-fetches.
 
 ## FreeBSD cron-style sample (print-only)
 
@@ -186,5 +221,6 @@ the unit. Loopback `curl` to `127.0.0.1:6060` / `:6061` is allowed only when
 - packaging / FreeBSD port / `pkg` that installs **enabled** timers or cron entries by default (disabled-by-default `.sample` fragments under [`contrib/lab-retention-gc/`](../../contrib/lab-retention-gc/) are owned)
 - automatic execution of printed aside-rename / backup / apply scripts
 - `rm` of `.gc-aside-*` trees
+- scheduled live `curl` of ops JSON from the print helper / unit
 - multi-host orchestration or remote admin
 - SQL import/backfill from quarantined exports

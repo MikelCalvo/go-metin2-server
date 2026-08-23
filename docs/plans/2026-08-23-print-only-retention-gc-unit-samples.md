@@ -79,3 +79,7 @@ Validation:
    [contrib print-only retention / GC unit samples](2026-08-23-contrib-print-only-retention-gc-unit-samples.md)
    and [`contrib/lab-retention-gc/`](../../contrib/lab-retention-gc/). FreeBSD port /
    `pkg` enable defaults remain deferred.
+5. ~~Optional later: fold companion `migration-run-retention` /
+   `backup-restore-drill` prints into the contrib helper.~~ Done: see
+   [contrib companion print retention printers](2026-08-23-contrib-companion-print-retention-printers.md).
+   Live scheduled `curl` of runtime-config remains deferred.

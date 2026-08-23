@@ -27,6 +27,22 @@ install -m 0644 \
   /etc/cron.d/metin2-artifact-retention-gc-print.sample
 ```
 
+## What the helper prints
+
+Always:
+
+- `build-info.json`
+- `artifact-retention-gc-backups.sh`
+- `artifact-retention-gc-migration-runs.sh`
+- `migration-run-retention.sh`
+- `notes.md`
+
+Optional (env-gated):
+
+- `backup-restore-drill.sh` when `METIN2_RUNTIME_CONFIG` points at an existing
+  non-symlink regular retained runtime-config JSON snapshot. The helper never
+  live-fetches ops JSON and never shells the printed scripts.
+
 ## Hard rules
 
 1. Units / cron may only invoke the print helper / `metin2-migrate` printers.

@@ -6,6 +6,7 @@ set -eu
 BIN="${METIN2_MIGRATE_BIN:-/usr/local/bin/metin2-migrate}"
 PRINTS_ROOT="${METIN2_OPS_PRINTS_ROOT:-/var/metin2/ops-prints}"
 KEEP_DAYS="${METIN2_RETENTION_KEEP_DAYS:-14}"
+RUNTIME_CONFIG="${METIN2_RUNTIME_CONFIG:-}"
 
 test -x "$BIN"
 test -d "$PRINTS_ROOT"
@@ -29,6 +30,28 @@ cp "$TMP_BUILD" "$OUT/build-info.json"
   --keep-days "$KEEP_DAYS" \
   >"$OUT/artifact-retention-gc-migration-runs.sh"
 
-printf 'printed %s\ncommit=%s\nkeep_days=%s\n' "$OUT" "${COMMIT:-unknown}" "$KEEP_DAYS" >"$OUT/notes.md"
+"$BIN" migration-run-retention \
+  --build-info "$OUT/build-info.json" \
+  >"$OUT/migration-run-retention.sh"
+
+DRILL_NOTE="backup-restore-drill=skipped (set METIN2_RUNTIME_CONFIG to a retained runtime-config JSON snapshot)"
+if [ -n "$RUNTIME_CONFIG" ]; then
+  if [ -L "$RUNTIME_CONFIG" ]; then
+    DRILL_NOTE="backup-restore-drill=skipped (METIN2_RUNTIME_CONFIG must not be a symlink)"
+  elif [ -f "$RUNTIME_CONFIG" ]; then
+    "$BIN" backup-restore-drill \
+      --runtime-config "$RUNTIME_CONFIG" \
+      --build-info "$OUT/build-info.json" \
+      >"$OUT/backup-restore-drill.sh"
+    DRILL_NOTE="backup-restore-drill=printed from METIN2_RUNTIME_CONFIG"
+  else
+    DRILL_NOTE="backup-restore-drill=skipped (METIN2_RUNTIME_CONFIG is not a regular file)"
+  fi
+fi
+
+{
+  printf 'printed %s\ncommit=%s\nkeep_days=%s\n' "$OUT" "${COMMIT:-unknown}" "$KEEP_DAYS"
+  printf '%s\n' "$DRILL_NOTE"
+} >"$OUT/notes.md"
 chmod 0640 "$OUT"/*.sh "$OUT/build-info.json" "$OUT/notes.md"
 printf '%s\n' "$OUT"

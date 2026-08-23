@@ -30,6 +30,12 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 
 	for _, want := range []string{
 		"artifact-retention-gc",
+		"migration-run-retention",
+		`>"$OUT/migration-run-retention.sh"`,
+		"--build-info \"$OUT/build-info.json\"",
+		"METIN2_RUNTIME_CONFIG",
+		"backup-restore-drill",
+		`>"$OUT/backup-restore-drill.sh"`,
 		"/var/metin2/ops-prints",
 		"/var/metin2/backups",
 		"/var/metin2/migration-runs",
@@ -37,6 +43,16 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 	} {
 		if !strings.Contains(helper, want) {
 			t.Fatalf("helper missing %q", want)
+		}
+	}
+	for _, forbiddenLive := range []string{
+		"curl ",
+		"http://127.0.0.1:6060",
+		"http://127.0.0.1:6061",
+		"/local/runtime-config",
+	} {
+		if strings.Contains(helper, forbiddenLive) {
+			t.Fatalf("helper must not live-fetch ops JSON (%q):\n%s", forbiddenLive, helper)
 		}
 	}
 	assertNoForbiddenRetentionGCMarkers(t, "helper", helper, map[string]struct{}{
@@ -86,6 +102,9 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		"Never pipe printer stdout",
 		"systemctl enable --now",
 		"docs/workflow/lab-retention-gc-unit-samples.md",
+		"migration-run-retention.sh",
+		"METIN2_RUNTIME_CONFIG",
+		"backup-restore-drill.sh",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Fatalf("contrib README missing %q", want)
