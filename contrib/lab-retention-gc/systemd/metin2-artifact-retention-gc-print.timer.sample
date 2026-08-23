@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly print of metin2 artifact-retention-gc triage scripts
+
+[Timer]
+OnCalendar=Sun *-*-* 04:15:00
+Persistent=true
+Unit=metin2-artifact-retention-gc-print.service
+
+[Install]
+WantedBy=timers.target

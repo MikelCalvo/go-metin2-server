@@ -1,0 +1,34 @@
+#!/bin/sh
+# Print-only retention/GC dump. Never executes the printed triage scripts.
+# Install guidance: /usr/local/libexec/metin2-print-retention-gc.sh, mode 0750, owner root.
+# See docs/workflow/lab-retention-gc-unit-samples.md
+set -eu
+BIN="${METIN2_MIGRATE_BIN:-/usr/local/bin/metin2-migrate}"
+PRINTS_ROOT="${METIN2_OPS_PRINTS_ROOT:-/var/metin2/ops-prints}"
+KEEP_DAYS="${METIN2_RETENTION_KEEP_DAYS:-14}"
+
+test -x "$BIN"
+test -d "$PRINTS_ROOT"
+
+STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+TMP_BUILD=$(mktemp)
+trap 'rm -f "$TMP_BUILD"' EXIT INT TERM
+"$BIN" version >"$TMP_BUILD"
+COMMIT=$("$BIN" version | sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+COMMIT12=$(printf %s "${COMMIT:-unknown}" | cut -c1-12)
+OUT="${PRINTS_ROOT}/${STAMP}-${COMMIT12}"
+mkdir -p "$OUT"
+cp "$TMP_BUILD" "$OUT/build-info.json"
+
+"$BIN" artifact-retention-gc \
+  --retention-base /var/metin2/backups \
+  --keep-days "$KEEP_DAYS" \
+  >"$OUT/artifact-retention-gc-backups.sh"
+"$BIN" artifact-retention-gc \
+  --retention-base /var/metin2/migration-runs \
+  --keep-days "$KEEP_DAYS" \
+  >"$OUT/artifact-retention-gc-migration-runs.sh"
+
+printf 'printed %s\ncommit=%s\nkeep_days=%s\n' "$OUT" "${COMMIT:-unknown}" "$KEEP_DAYS" >"$OUT/notes.md"
+chmod 0640 "$OUT"/*.sh "$OUT/build-info.json" "$OUT/notes.md"
+printf '%s\n' "$OUT"

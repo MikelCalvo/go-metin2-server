@@ -14,6 +14,8 @@ See also:
 - [CLI artifact-retention GC printer plan](../plans/2026-08-22-cli-artifact-retention-gc-printer.md)
 - [CLI artifact-retention GC script execution proof](../plans/2026-08-22-cli-artifact-retention-gc-script-execution-proof.md)
 - [print-only retention / GC unit samples plan](../plans/2026-08-23-print-only-retention-gc-unit-samples.md)
+- [contrib print-only retention / GC unit samples](../plans/2026-08-23-contrib-print-only-retention-gc-unit-samples.md)
+- tree fragments under [`contrib/lab-retention-gc/`](../../contrib/lab-retention-gc/) (disabled-by-default `.sample` install copies; never enable from packaging)
 
 ## Hard rules
 
@@ -49,8 +51,10 @@ Create the parent once on the lab host:
 install -d -m 0750 /var/metin2/ops-prints
 ```
 
-Shared helper used by the samples below (install as
-`/usr/local/libexec/metin2-print-retention-gc.sh`, mode `0750`, owner root):
+Shared helper used by the samples below. The same script ships as
+[`contrib/lab-retention-gc/metin2-print-retention-gc.sh`](../../contrib/lab-retention-gc/metin2-print-retention-gc.sh);
+install it as `/usr/local/libexec/metin2-print-retention-gc.sh`, mode `0750`,
+owner root:
 
 ```bash
 #!/bin/sh
@@ -179,7 +183,7 @@ the unit. Loopback `curl` to `127.0.0.1:6060` / `:6061` is allowed only when
 
 ## What this is not yet
 
-- packaging that installs enabled timers by default
+- packaging / FreeBSD port / `pkg` that installs **enabled** timers or cron entries by default (disabled-by-default `.sample` fragments under [`contrib/lab-retention-gc/`](../../contrib/lab-retention-gc/) are owned)
 - automatic execution of printed aside-rename / backup / apply scripts
 - `rm` of `.gc-aside-*` trees
 - multi-host orchestration or remote admin

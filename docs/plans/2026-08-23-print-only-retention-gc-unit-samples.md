@@ -74,5 +74,8 @@ Validation:
 1. Keep automatic / scheduled execution of printed triage scripts deferred.
 2. Keep `rm` of aside-renamed trees deferred.
 3. Keep SQL import/backfill deferred until a driver-backed harness exists.
-4. Optional later: packaging / `pkg` / port fragments that install these samples
-   as `.sample` files only (still disabled by default).
+4. ~~Optional later: packaging / `pkg` / port fragments that install these samples
+   as `.sample` files only (still disabled by default).~~ Done: see
+   [contrib print-only retention / GC unit samples](2026-08-23-contrib-print-only-retention-gc-unit-samples.md)
+   and [`contrib/lab-retention-gc/`](../../contrib/lab-retention-gc/). FreeBSD port /
+   `pkg` enable defaults remain deferred.

@@ -1,0 +1,17 @@
+[Unit]
+Description=Print metin2-migrate artifact-retention-gc triage scripts (no execution)
+Documentation=file:///opt/metin2/go-metin2-server/docs/workflow/lab-retention-gc-unit-samples.md
+After=local-fs.target
+RequiresMountsFor=/var/metin2
+
+[Service]
+Type=oneshot
+User=metin2
+Group=metin2
+ExecStartPre=/usr/bin/test -x /usr/local/libexec/metin2-print-retention-gc.sh
+ExecStart=/usr/local/libexec/metin2-print-retention-gc.sh
+# Explicit non-goals: no shell of the printed scripts, no Environment=DSN.
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

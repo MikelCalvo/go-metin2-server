@@ -176,7 +176,7 @@ See also:
 
 - multi-host auth/game split
 - load-balanced shards or channel farms
-- Kubernetes / packaging that installs **enabled** systemd units or cron entries by default (print-only `.sample` units that only dump printer stdout are owned in [lab retention / GC print-only unit samples](lab-retention-gc-unit-samples.md))
+- Kubernetes / packaging that installs **enabled** systemd units or cron entries by default (print-only `.sample` units that only dump printer stdout are owned in [lab retention / GC print-only unit samples](lab-retention-gc-unit-samples.md); disabled-by-default tree fragments live under [`contrib/lab-retention-gc/`](../../contrib/lab-retention-gc/))
 - remote admin APIs
 - automatic / scheduled artifact GC or lifecycle daemons that invoke deletion
 - automatic stale-lock expiry (lab recovery remains confirmation-gated `apply-lock-aside` / operator aside-rename; see [lab stale-lock recovery](lab-stale-lock-recovery.md))
