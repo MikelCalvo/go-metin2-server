@@ -117,7 +117,7 @@ Freezing the classification and pure return-step planner first lets later slices
 This slice does **not** yet implement:
 - full autonomous mob movement or chase AI
 - path-aware return cadence beyond the first due return-step applied from the existing pending-frame flush loop
-- cross-map return MOVE / warp choreography beyond the existing delete/readd / direct-home rebuild path
+- inventing cross-map return MOVE / `GC WARP` choreography (cross-map return is frozen as delete/readd / direct-home rebuild in the later section below)
 - pathfinding, patrol routes, sectors, or navmesh logic
 - aggro radius acquisition or target switching
 - persistence of live mob position distinct from authored spawn position
@@ -280,7 +280,7 @@ Current implementation status:
 Explicit non-goals for this return-step MOVE freeze alone:
 - pathfinding, navmesh, patrol, or continuous interpolation beyond one discrete planned return step / exact-home snap
 - converting respawn rebuild or presentation/name/race operator refreshes to MOVE
-- cross-map return MOVE / warp choreography
+- inventing cross-map return MOVE / `GC WARP` choreography (frozen as delete/readd / direct-home rebuild below)
 - a dedicated return packet family distinct from `MOVE`
 - changing the already-owned engagement-release / selected-target-clear semantics of return recovery
 
@@ -304,11 +304,11 @@ Current implementation status:
 - this seam is now live for retained viewers of a successful same-map live spawn-backed operator/runtime position-only update
 - presentation/name/race refreshes, dead trailing-`DEAD` refreshes, respawn rebuild, content-bundle replacement, and cross-map updates remain on delete/readd
 - engagement release, selected-target clear, and pending chase-deadline clear still follow the already-owned operator/runtime update lifecycle
-- the next honest Track A follow-on after owned profile-authored `leash_radius` is deferred cross-map return MOVE / warp packet choreography (still blocked until a client-facing packet boundary is owned); live damaged-HP daemon-restart durability is owned separately by the content-spawn-groups daemon-restart seam
+- cross-map return client choreography is frozen as delete/readd / direct-home rebuild (not a future MOVE/WARP seam); live damaged-HP daemon-restart durability is owned separately by the content-spawn-groups daemon-restart seam
 
 Explicit non-goals for this operator/runtime position MOVE freeze alone:
 - converting presentation/name/race refreshes, dead trailing-`DEAD` refreshes, respawn rebuild, or content-bundle replacement to MOVE
-- cross-map operator MOVE / warp choreography
+- inventing cross-map operator MOVE / `GC WARP` choreography (cross-map return stays on frozen delete/readd)
 - preserving engagement / selected-target ownership across operator position updates
 - pathfinding, navmesh, patrol, or continuous interpolation beyond one discrete operator/runtime coordinate write
 - a dedicated operator-move packet family distinct from `MOVE`
@@ -326,7 +326,7 @@ The full portable-bundle / registration / effective-radius contract lives in `co
 - live classification, return-step / return-home, chase-step planning/execution, and `target_return_required` gating reuse that effective radius
 - operator leash GET endpoints may keep an explicit query `radius` override; defaulted lookups use the actor's effective leash radius
 - positive authored leash below the profile's effective aggro radius fails closed
-- cross-map return MOVE / warp choreography stays deferred below; this seam does not open that packet boundary
+- cross-map return client choreography stays on the frozen delete/readd / direct-home rebuild path below; this seam does not invent MOVE/WARP
 
 Current implementation status:
 - optional authored `leash_radius` is owned on portable `combat_profiles` / `StaticActorCombatProfileDefaults`
@@ -335,32 +335,34 @@ Current implementation status:
 - operator leash GET endpoints keep an explicit query `radius` override; omitted lookups resolve through the actor's effective leash radius
 - positive authored leash below the profile's effective aggro radius fails closed; positive authored aggro must also stay within the profile's effective leash
 
-## Deferred cross-map return MOVE / warp choreography seam
+## Frozen: cross-map return client choreography stays delete/readd
 
 Question frozen here:
 
 **Once same-map chase / return-step / return-home / operator position MOVE already reuse server `MOVE`, what is the smallest honest client-visible choreography for a successful cross-map return-home (or cross-map return-step) without inventing pathfinding, a second AI scheduler, or a guessed warp packet family?**
 
-Interim owned behavior (unchanged by this freeze):
-- cross-map return-home / return-step stay on delete/readd / direct-home rebuild
-- a successful cross-map return still restores exactly one entity to the authored home map and must leave no dual-map occupancy or duplicate `spawn_group_ref` membership behind
-- focused coverage now owns that anti-leak matrix for both operator `return-home` and the automatic pending-frame return-step flush after a cross-map `UpdateStaticActor` displace (foreign-map `CHARACTER_DEL`, home-map add/info/update, cleared pending schedule, persisted authored home, no invented cross-map `MOVE`)
-- engagement release and selected-target clear continue to follow the already-owned return recovery lifecycle
+Answer (now frozen for Track A bootstrap scope):
 
-Why RED is deferred:
-- no client-facing return-warp / cross-map mob MOVE packet seam is owned yet
-- inventing a `GC WARP`, teleport burst, or speculative cross-map `MOVE` shape would invent wire contract rather than land an honest failing test against a frozen packet boundary
-- same-map MOVE choreography remains the owned retained-viewer path; this freeze only records the blocked cross-map follow-on
+Cross-map return keeps the already-owned delete/readd / direct-home rebuild path. It is **not** waiting on a future cross-map mob `MOVE` or `GC WARP` seam.
 
-Contract placeholders that must be decided before opening RED:
-- which already-owned or newly evidenced packet family carries the home-map reappearance for retained / newly visible viewers
-- whether origin-map viewers keep only `CHARACTER_DEL` or also need an explicit warp/teardown companion frame
-- whether the actor's visible `VID` is preserved across the map change or rebuilt through ordinary add/info/update identity
-- that engagement / selected-target / chase / return ownership still fail closed across the map change exactly as delete/readd does today
+Owned packet / membership contract:
+- origin-map / old-position viewers receive ordinary `CHARACTER_DEL` only; no warp/teardown companion frame is owned for non-player return
+- home-map / newly visible viewers receive the ordinary bootstrap reappearance burst: `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE`
+- no cross-map retained-viewer `MOVE` is invented for spawn-backed practice mobs
+- no `GC WARP` / player-teleport packet is emitted for non-player return; legacy `WarpSet` / `TPacketGCWarp` is PC-only (`!IsPC()` fails closed) and carries `x/y/addr/port` for player map-server teleport, not mob leash recovery
+- legacy mob map/sectree relocation evidence aligns with `CHARACTER::Show` remove/view-cleanup + insert/`EncodeInsertPacket` rather than WARP or cross-map MOVE
+- a successful cross-map return restores exactly one runtime entity for the authored `spawn_group_ref` onto the authored home map and must leave no dual-map occupancy or duplicate membership behind
+- engagement / selected-target / chase / return / homeward ownership fail closed across that map change exactly as the owned delete/readd recovery already does
+- same-map retained-viewer `MOVE` choreography stays owned and unchanged
 
-Explicit non-goals until that wire shape is owned:
-- opening a speculative RED that asserts MOVE or WARP frames for cross-map return
-- converting same-map return MOVE back to delete/readd
+Current implementation status:
+- operator `POST .../return-home` and automatic pending-frame return-step flush after a cross-map `UpdateStaticActor` displace already prove foreign-map `CHARACTER_DEL`, home-map add/info/update, cleared pending schedule, persisted authored home, one-ref/one-actor, empty foreign-map occupancy, and no invented cross-map `MOVE` (`TestGameRuntimeFlushServerFramesAppliesDueCrossMapSpawnGroupReturnStepLeavesNoDualMapOccupancy` plus the operator dual-map proof)
+- this freeze closes the earlier “deferred until a packet boundary is owned” placeholder: the packet boundary is the already-owned delete/readd families above
+- speculative RED that asserts cross-map `MOVE` or `WARP` frames for practice-mob return is cancelled for Track A bootstrap scope
+
+Explicit non-goals for this freeze:
+- inventing cross-map mob `MOVE` or `GC WARP` choreography for spawn-backed return
+- converting same-map return / chase / homeward / operator position `MOVE` back to delete/readd
 - pathfinding, patrol, or continuous interpolation
 - live damaged-HP daemon-restart durability (owned separately by `content-spawn-groups-bootstrap.md`)
 
@@ -437,7 +439,7 @@ Current implementation status:
 Explicit non-goals for this homeward freeze alone:
 - auto exact-home correction for every `within_radius` actor without a prior engagement/chase displacement boundary beyond the owned arming rules
 - changing `PlanStaticActorSpawnLeashReturnStep` so `within_radius` starts moving
-- cross-map homeward / warp choreography
+- inventing cross-map homeward MOVE / `GC WARP` choreography (cross-map return stays on frozen delete/readd)
 - pathfinding, patrol, or a second scheduler/goroutine
 - operator POST homeward trigger
 - inventing selected-target ownership or preserving engagement across homeward
@@ -460,4 +462,4 @@ Current implementation status:
 - focused coverage proves arming for unengaged `within_radius` plus due homeward flush that restores `at_home` without arming return-step
 - the older "within_radius never auto-moves" isolation proof is replaced by that homeward-after-update / return-step-idle proof
 
-Automatic pending-frame cross-map return-step dual-map anti-leak after `UpdateStaticActor` is now owned beside operator return-home (`TestGameRuntimeFlushServerFramesAppliesDueCrossMapSpawnGroupReturnStepLeavesNoDualMapOccupancy`). Content-bundle homeward schedule prune/restore is now owned beside the return-step proofs (`TestGameRuntimeFailedContentBundleImportRestoresSpawnGroupHomewardStepSchedule`, `TestGameRuntimeNoOpContentBundleImportPrunesStaleSpawnGroupHomewardStepSchedule`, `TestGameRuntimeSuccessfulContentBundleReplacementClearsStaleSpawnGroupHomewardStepSchedule`). Proximity-armed owner death-floor → same-socket `/restart_here` leave/re-enter suppress is now owned beside `TARGET(0)` / death/respawn suppress seeding (`TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOwnerDeathFloorRestartHere`). That same suppress now also survives `/phase_select` and abrupt reconnect Leave → Join identity changes via VID park/claim before `/restart_here` (`TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOwnerDeathFloorPhaseSelectRestartHere`, `TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOwnerDeathFloorReconnectRestartHere`). Next honest Track A follow-on remains the deferred cross-map return MOVE / warp packet choreography freeze above (RED intentionally blocked until a client-facing packet boundary is owned).
+Automatic pending-frame cross-map return-step dual-map anti-leak after `UpdateStaticActor` is now owned beside operator return-home (`TestGameRuntimeFlushServerFramesAppliesDueCrossMapSpawnGroupReturnStepLeavesNoDualMapOccupancy`). Content-bundle homeward schedule prune/restore is now owned beside the return-step proofs (`TestGameRuntimeFailedContentBundleImportRestoresSpawnGroupHomewardStepSchedule`, `TestGameRuntimeNoOpContentBundleImportPrunesStaleSpawnGroupHomewardStepSchedule`, `TestGameRuntimeSuccessfulContentBundleReplacementClearsStaleSpawnGroupHomewardStepSchedule`). Proximity-armed owner death-floor → same-socket `/restart_here` leave/re-enter suppress is now owned beside `TARGET(0)` / death/respawn suppress seeding (`TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOwnerDeathFloorRestartHere`). That same suppress now also survives `/phase_select` and abrupt reconnect Leave → Join identity changes via VID park/claim before `/restart_here` (`TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOwnerDeathFloorPhaseSelectRestartHere`, `TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOwnerDeathFloorReconnectRestartHere`). Cross-map return client choreography is now frozen as the already-owned delete/readd / direct-home rebuild path above; speculative cross-map `MOVE` / `GC WARP` RED for practice-mob return is cancelled for Track A bootstrap scope.

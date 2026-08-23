@@ -34,8 +34,8 @@ go test ./internal/minimal -run 'TestGameRuntimeProximityAggroSuppressesReacquir
 
 ## What this is not yet
 
-- cross-map return MOVE / warp packet choreography (still blocked behind
-  `spawn-leash-bootstrap.md`)
+- inventing cross-map return MOVE / `GC WARP` choreography (frozen as delete/readd /
+  direct-home rebuild in `spawn-leash-bootstrap.md`)
 - inventing a second permanent suppress store keyed by name/VID
 - remapping suppress across content-bundle replacement or daemon restart
 - broader corpse / revive menus

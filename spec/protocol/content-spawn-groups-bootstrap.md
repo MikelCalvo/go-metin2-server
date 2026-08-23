@@ -423,7 +423,7 @@ Contract for Track A item 6:
    - failed replacement / rollback paths still discard all staged visibility frames
 
 4. **Cross-map return-home / return-step membership**
-   - cross-map return-home / return-step stays outside MOVE choreography and keeps delete/readd / direct-home rebuild; the deferred cross-map return MOVE / warp choreography freeze lives in `spawn-leash-bootstrap.md` and intentionally blocks speculative RED until a client-facing packet boundary is owned
+   - cross-map return-home / return-step stays outside MOVE choreography and keeps delete/readd / direct-home rebuild; `spawn-leash-bootstrap.md` now freezes that delete/readd packet boundary as the Track A bootstrap answer (`CHARACTER_DEL` on origin, ordinary add/info/update on home, no invented cross-map `MOVE` / `GC WARP`)
    - a successful cross-map return restores exactly one entity to the authored home map and must leave no dual-map occupancy or duplicate `spawn_group_ref` membership behind
 
 5. **Leave / transfer ownership cleanup**
@@ -438,7 +438,7 @@ Contract for Track A item 6:
 Current implementation status:
 - due-respawn EnterGame / transfer preflight for content-loaded spawn groups is already owned
 - still-dead trailing `GC DEAD` replay is owned for both `training_dummy` and content-loaded `spawn_groups` EnterGame / reconnect add-style visibility, including fail-closed target/attack while the dead interval remains open and one-ref/one-actor lookup after that still-dead bootstrap
-- same-map return-step / return-home MOVE is live; cross-map return-home remains on delete/readd and now has focused dual-map occupancy coverage (foreign-map delete, home-map add/info/update, one-ref/one-actor, empty foreign-map occupancy, persisted authored home); automatic pending-frame cross-map return-step after `UpdateStaticActor` displace now mirrors that same dual-map anti-leak proof (arms return-step, due flush snaps to authored home via delete/readd with no invented MOVE, clears the pending schedule, restores one-ref/one-actor + empty foreign-map occupancy + persisted authored home); cross-map return MOVE / warp choreography stays deferred until the packet freeze in `spawn-leash-bootstrap.md` is satisfied
+- same-map return-step / return-home MOVE is live; cross-map return-home remains on delete/readd and now has focused dual-map occupancy coverage (foreign-map delete, home-map add/info/update, one-ref/one-actor, empty foreign-map occupancy, persisted authored home); automatic pending-frame cross-map return-step after `UpdateStaticActor` displace now mirrors that same dual-map anti-leak proof (arms return-step, due flush snaps to authored home via delete/readd with no invented MOVE, clears the pending schedule, restores one-ref/one-actor + empty foreign-map occupancy + persisted authored home); `spawn-leash-bootstrap.md` now freezes that delete/readd path as the Track A bootstrap cross-map return contract (no invented cross-map `MOVE` / `GC WARP`)
 - still-dead content-bundle replacement anti-resurrect is now owned: successful non-identical `ImportContentBundle` replacements that keep the same authored `spawn_group_ref` remap pending `HP=0` + absolute respawn deadline onto the newly registered actor before import fanout, so late EnterGame still ends with trailing `GC DEAD` and the actor stays non-targetable through the ordinary timer; engagement / proximity-suppress / selected-target ownership are not remapped across that replacement boundary
 - one-ref/one-actor reconnect / reclaim / fresh EnterGame anti-duplicate coverage is owned beside the existing by-ref fail-closed lookup; session reconnect does not rematerialize a second spawn instance for the same authored `spawn_group_ref`
 - same-map live spawn-backed operator/runtime position updates now reuse retained-viewer `MOVE` instead of delete/readd; presentation/name/race refreshes stay on delete/readd (see `spawn-leash-bootstrap.md`)
@@ -468,7 +468,7 @@ Current implementation status:
 
 Explicit non-goals for this daemon-restart still-dead freeze alone:
 - remapping engagement, selected-target, proximity-suppress, chase, or return schedules across restart
-- cross-map return MOVE / warp packet choreography
+- inventing cross-map return MOVE / `GC WARP` choreography (frozen as delete/readd / direct-home rebuild in `spawn-leash-bootstrap.md`)
 - inventing a second spawn scheduler beyond the existing pending-frame flush path
 - converting presentation refreshes or respawn rebuild away from delete/readd
 
@@ -496,7 +496,7 @@ Explicit non-goals for this daemon-restart live damaged HP freeze alone:
 - remapping engagement, selected-target, proximity-suppress, chase, or return schedules across restart
 - remapping live damaged HP across non-identical content-bundle replacement (frozen separately below)
 - non-spawn `training_dummy` daemon-restart durability
-- cross-map return MOVE / warp packet choreography
+- inventing cross-map return MOVE / `GC WARP` choreography (frozen as delete/readd / direct-home rebuild in `spawn-leash-bootstrap.md`)
 - inventing a second spawn/combat scheduler beyond the existing pending-frame flush path
 
 ## First frozen live damaged spawn-group HP remapping across non-identical content-bundle replacement
@@ -522,11 +522,11 @@ Current implementation status:
 Explicit non-goals for this live damaged replacement remapping freeze alone:
 - remapping engagement, selected-target, proximity-suppress, chase, or return schedules across replacement
 - non-spawn `training_dummy` replacement durability
-- cross-map return MOVE / warp packet choreography
+- inventing cross-map return MOVE / `GC WARP` choreography (frozen as delete/readd / direct-home rebuild in `spawn-leash-bootstrap.md`)
 - inventing a second spawn/combat scheduler beyond the existing pending-frame flush path
 
 Explicit non-goals for this anti-leak freeze alone:
-- cross-map return MOVE / warp packet choreography
+- inventing cross-map return MOVE / `GC WARP` choreography (frozen as delete/readd / direct-home rebuild in `spawn-leash-bootstrap.md`)
 - multi-member spawn packs or pack-wide synchronized respawn
 - inventing a second spawn scheduler beyond the existing pending-frame flush path
 - remapping engagement or chase/return schedules across non-identical content-bundle replacement (live damaged HP remapping across that replacement is frozen above)
@@ -684,7 +684,7 @@ Explicit non-goals for this profile-authored leash-radius freeze alone:
 - pathfinding, navmesh, patrol, or continuous interpolation
 - aggro hysteresis / a drop radius distinct from the acquire radius
 - pack aggro, assist calls, or multi-mob linkage
-- cross-map return MOVE / warp choreography
+- inventing cross-map return MOVE / `GC WARP` choreography (frozen as delete/readd / direct-home rebuild in `spawn-leash-bootstrap.md`)
 - inventing a second return/chase scheduler beyond the existing pending-frame consumers
 - changing the already-owned engagement / chase / retaliation consumers beyond substituting the effective leash radius
 - remapping engagement across non-identical content-bundle replacement (live damaged HP remapping across that replacement is frozen above; live damaged HP across clean daemon restart remains owned)

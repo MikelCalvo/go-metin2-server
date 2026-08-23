@@ -36,5 +36,5 @@ go test ./internal/minimal -run 'TestSharedWorldRegistrySubjectReleaseSeedsProxi
 
 - remapping suppress across content-bundle replacement or daemon restart
 - inventing a second permanent suppress store keyed by name/VID
-- cross-map return MOVE / warp packet choreography
+- inventing cross-map return MOVE / `GC WARP` choreography (frozen as delete/readd / direct-home rebuild in `spawn-leash-bootstrap.md`)
 - broader corpse / revive menus
