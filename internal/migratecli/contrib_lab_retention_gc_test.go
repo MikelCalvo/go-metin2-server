@@ -1,7 +1,9 @@
 package migratecli
 
 import (
+	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -113,6 +115,172 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 	assertNoForbiddenRetentionGCMarkers(t, "readme", readme, map[string]struct{}{
 		"Never `ExecStart` / cron-run `rm`, `rmdir`, `unlink`, `find -delete`, or": {},
 		"- `rm` of `.gc-aside-*` trees":                                            {},
+	})
+}
+
+func TestContribLabRetentionGCHelperHermeticExecution(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve test caller path")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	helperPath := filepath.Join(repoRoot, "contrib", "lab-retention-gc", "metin2-print-retention-gc.sh")
+
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	printsRoot := filepath.Join(root, "ops-prints")
+	mustMkdir(t, binDir)
+	mustMkdir(t, printsRoot)
+
+	stubPath := filepath.Join(binDir, "metin2-migrate")
+	mustWriteFile(t, stubPath, []byte(`#!/bin/sh
+set -eu
+cmd="${1:-}"
+case "$cmd" in
+  version)
+    printf '%s\n' '{"version":"test","commit":"abcdef0123456789","build_date":"2026-08-23T00:00:00Z"}'
+    ;;
+  artifact-retention-gc)
+    printf '%s\n' "# stub artifact-retention-gc"
+    printf '%s\n' "$*"
+    ;;
+  migration-run-retention)
+    printf '%s\n' "# stub migration-run-retention"
+    printf '%s\n' "$*"
+    ;;
+  backup-restore-drill)
+    printf '%s\n' "# stub backup-restore-drill"
+    printf '%s\n' "$*"
+    ;;
+  *)
+    printf 'unexpected metin2-migrate command: %s\n' "$*" >&2
+    exit 2
+    ;;
+esac
+`))
+	if err := os.Chmod(stubPath, 0o750); err != nil {
+		t.Fatalf("chmod stub: %v", err)
+	}
+
+	t.Run("skips_drill_without_runtime_config", func(t *testing.T) {
+		runPrints := filepath.Join(printsRoot, "skip")
+		mustMkdir(t, runPrints)
+		cmd := exec.Command("/bin/sh", helperPath)
+		cmd.Env = []string{
+			"PATH=/usr/bin:/bin",
+			"METIN2_MIGRATE_BIN=" + stubPath,
+			"METIN2_OPS_PRINTS_ROOT=" + runPrints,
+			"METIN2_RETENTION_KEEP_DAYS=14",
+			"HOME=" + root,
+			"TMPDIR=" + root,
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("helper exit error: %v stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+		}
+		outDir := strings.TrimSpace(stdout.String())
+		if outDir == "" {
+			t.Fatalf("expected helper to print OUT path, stderr=%q", stderr.String())
+		}
+		for _, name := range []string{
+			"build-info.json",
+			"artifact-retention-gc-backups.sh",
+			"artifact-retention-gc-migration-runs.sh",
+			"migration-run-retention.sh",
+			"notes.md",
+		} {
+			path := filepath.Join(outDir, name)
+			if _, err := os.Stat(path); err != nil {
+				t.Fatalf("expected %s: %v", path, err)
+			}
+		}
+		if _, err := os.Stat(filepath.Join(outDir, "backup-restore-drill.sh")); !os.IsNotExist(err) {
+			t.Fatalf("backup-restore-drill.sh must be absent without METIN2_RUNTIME_CONFIG, err=%v", err)
+		}
+		notes := mustReadContribSample(t, filepath.Join(outDir, "notes.md"))
+		if !strings.Contains(notes, "backup-restore-drill=skipped") {
+			t.Fatalf("notes must record drill skip, got %q", notes)
+		}
+		migrationBody := mustReadContribSample(t, filepath.Join(outDir, "migration-run-retention.sh"))
+		if !strings.Contains(migrationBody, "# stub migration-run-retention") {
+			t.Fatalf("migration-run-retention.sh must come from stub printer, got %q", migrationBody)
+		}
+	})
+
+	t.Run("prints_drill_from_retained_runtime_config", func(t *testing.T) {
+		runPrints := filepath.Join(printsRoot, "print")
+		mustMkdir(t, runPrints)
+		runtimeConfig := filepath.Join(root, "retained-runtime-config.json")
+		mustWriteFile(t, runtimeConfig, []byte(`{"ok":true}`+"\n"))
+		cmd := exec.Command("/bin/sh", helperPath)
+		cmd.Env = []string{
+			"PATH=/usr/bin:/bin",
+			"METIN2_MIGRATE_BIN=" + stubPath,
+			"METIN2_OPS_PRINTS_ROOT=" + runPrints,
+			"METIN2_RETENTION_KEEP_DAYS=14",
+			"METIN2_RUNTIME_CONFIG=" + runtimeConfig,
+			"HOME=" + root,
+			"TMPDIR=" + root,
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("helper exit error: %v stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+		}
+		outDir := strings.TrimSpace(stdout.String())
+		drillPath := filepath.Join(outDir, "backup-restore-drill.sh")
+		drillBody := mustReadContribSample(t, drillPath)
+		if !strings.Contains(drillBody, "# stub backup-restore-drill") {
+			t.Fatalf("backup-restore-drill.sh must come from stub printer, got %q", drillBody)
+		}
+		if !strings.Contains(drillBody, runtimeConfig) {
+			t.Fatalf("stub drill argv must include runtime-config path %q, got %q", runtimeConfig, drillBody)
+		}
+		notes := mustReadContribSample(t, filepath.Join(outDir, "notes.md"))
+		if !strings.Contains(notes, "backup-restore-drill=printed from METIN2_RUNTIME_CONFIG") {
+			t.Fatalf("notes must record drill print, got %q", notes)
+		}
+	})
+
+	t.Run("skips_symlink_runtime_config", func(t *testing.T) {
+		runPrints := filepath.Join(printsRoot, "symlink")
+		mustMkdir(t, runPrints)
+		target := filepath.Join(root, "runtime-config-target.json")
+		mustWriteFile(t, target, []byte(`{"ok":true}`+"\n"))
+		linkPath := filepath.Join(root, "runtime-config-link.json")
+		if err := os.Symlink(target, linkPath); err != nil {
+			t.Fatalf("symlink runtime-config: %v", err)
+		}
+		cmd := exec.Command("/bin/sh", helperPath)
+		cmd.Env = []string{
+			"PATH=/usr/bin:/bin",
+			"METIN2_MIGRATE_BIN=" + stubPath,
+			"METIN2_OPS_PRINTS_ROOT=" + runPrints,
+			"METIN2_RETENTION_KEEP_DAYS=14",
+			"METIN2_RUNTIME_CONFIG=" + linkPath,
+			"HOME=" + root,
+			"TMPDIR=" + root,
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("helper exit error: %v stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+		}
+		outDir := strings.TrimSpace(stdout.String())
+		if _, err := os.Stat(filepath.Join(outDir, "backup-restore-drill.sh")); !os.IsNotExist(err) {
+			t.Fatalf("symlink METIN2_RUNTIME_CONFIG must skip drill printer, err=%v", err)
+		}
+		notes := mustReadContribSample(t, filepath.Join(outDir, "notes.md"))
+		if !strings.Contains(notes, "must not be a symlink") {
+			t.Fatalf("notes must record symlink skip, got %q", notes)
+		}
 	})
 }
 

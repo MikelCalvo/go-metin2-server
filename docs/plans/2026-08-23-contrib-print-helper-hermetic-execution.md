@@ -57,3 +57,6 @@ shelling printed triage scripts, or inventing SQL import.
 4. Keep FreeBSD port / `pkg` enable defaults deferred.
 5. Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`
    (printer remains read-only; scheduled helper still prefers retained JSON).
+6. Optional later: systemd drop-in `.sample` that only documents
+   `EnvironmentFile=` / `METIN2_RUNTIME_CONFIG` for a retained runtime-config
+   path (still print-only; no live curl; no DSN).
