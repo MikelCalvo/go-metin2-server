@@ -1787,11 +1787,11 @@ func TestGameRuntimeItemMoveEquipRejectTextClosesActiveExchangeShellWithoutMutat
 	assertExchangeAccountUnchanged(t, accounts, "exchange-text-reject-peer", peer, "peer exchange equip rejection")
 }
 
-func TestGameRuntimeItemMoveEquipRejectsOccupiedWearSlotWithoutMutation(t *testing.T) {
+func TestGameRuntimeItemMoveEquipReplacesOccupiedWearSlotWithEffectTransition(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
-	worn := itemcatalog.Template{Vnum: 11520, Name: "Worn Test Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()}
+	worn := itemcatalog.Template{Vnum: 11520, Name: "Worn Test Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 20}}
 	carried := itemcatalog.Template{Vnum: 11521, Name: "Carried Test Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 50}}
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{worn, carried}}); err != nil {
 		t.Fatalf("seed occupied wear equip templates: %v", err)
@@ -1823,35 +1823,61 @@ func TestGameRuntimeItemMoveEquipRejectsOccupiedWearSlotWithoutMutation(t *testi
 	if err != nil {
 		t.Fatalf("unexpected occupied wear equip error: %v", err)
 	}
-	if len(out) != 1 {
-		t.Fatalf("expected occupied wear equip to emit one info-chat frame, got %d", len(out))
+	if len(out) < 5 {
+		t.Fatalf("expected occupied wear swap refresh frames, got %d", len(out))
 	}
-	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	sourceSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[0]))
 	if err != nil {
-		t.Fatalf("decode occupied wear equip info chat: %v", err)
+		t.Fatalf("decode occupied wear swap source set: %v", err)
 	}
-	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != itemEquipOccupiedWearSlotInfoMessage {
-		t.Fatalf("unexpected occupied wear equip chat: %+v", delivery)
+	if sourceSet.Vnum != worn.Vnum || sourceSet.Count != 1 || sourceSet.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected occupied wear swap source set: %+v", sourceSet)
+	}
+	equipSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode occupied wear swap equipment set: %v", err)
+	}
+	if equipSet.Vnum != carried.Vnum || equipSet.Count != 1 || equipSet.Position != bodyPosition {
+		t.Fatalf("unexpected occupied wear swap equipment set: %+v", equipSet)
+	}
+	removedPoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode occupied wear swap removed point change: %v", err)
+	}
+	if removedPoint.Type != 1 || removedPoint.Amount != -20 || removedPoint.Value != 730 {
+		t.Fatalf("unexpected occupied wear swap removed point change: %+v", removedPoint)
+	}
+	appliedPoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode occupied wear swap applied point change: %v", err)
+	}
+	if appliedPoint.Type != 1 || appliedPoint.Amount != 50 || appliedPoint.Value != 780 {
+		t.Fatalf("unexpected occupied wear swap applied point change: %+v", appliedPoint)
+	}
+	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, out[4])); err != nil {
+		t.Fatalf("decode occupied wear swap character update: %v", err)
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
-		t.Fatalf("expected no queued frames after occupied wear equip reject, got %d", len(queued))
+		t.Fatalf("expected no queued frames after occupied wear swap, got %d", len(queued))
 	}
 	account, err := accounts.Load("occupied-wear-equip")
 	if err != nil {
 		t.Fatalf("load occupied wear equip account: %v", err)
 	}
-	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
-		t.Fatalf("occupied wear equip mutated persisted inventory: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+	wantInventory := []inventory.ItemInstance{{ID: 5800, Vnum: worn.Vnum, Count: 1, Slot: 5}}
+	wantEquipment := []inventory.ItemInstance{{ID: 5801, Vnum: carried.Vnum, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("occupied wear swap persisted unexpected inventory: got %#v want %#v", account.Characters[0].Inventory, wantInventory)
 	}
-	if !reflect.DeepEqual(account.Characters[0].Equipment, owner.Equipment) {
-		t.Fatalf("occupied wear equip mutated persisted equipment: got %#v want %#v", account.Characters[0].Equipment, owner.Equipment)
+	if !reflect.DeepEqual(account.Characters[0].Equipment, wantEquipment) {
+		t.Fatalf("occupied wear swap persisted unexpected equipment: got %#v want %#v", account.Characters[0].Equipment, wantEquipment)
 	}
-	if account.Characters[0].Points[1] != owner.Points[1] {
-		t.Fatalf("occupied wear equip mutated points: got %d want %d", account.Characters[0].Points[1], owner.Points[1])
+	if account.Characters[0].Points[1] != 780 {
+		t.Fatalf("occupied wear swap persisted unexpected points: got %d want 780", account.Characters[0].Points[1])
 	}
 }
 
-func TestGameRuntimeSlashEquipRejectsOccupiedWearSlotWithoutMutation(t *testing.T) {
+func TestGameRuntimeSlashEquipReplacesOccupiedWearSlot(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
@@ -1879,26 +1905,39 @@ func TestGameRuntimeSlashEquipRejectsOccupiedWearSlotWithoutMutation(t *testing.
 	if err != nil {
 		t.Fatalf("unexpected slash occupied wear equip error: %v", err)
 	}
-	if len(out) != 1 {
-		t.Fatalf("expected slash occupied wear equip to emit one info-chat frame, got %d", len(out))
+	if len(out) < 3 {
+		t.Fatalf("expected slash occupied wear swap refresh frames, got %d", len(out))
 	}
-	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	sourceSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[0]))
 	if err != nil {
-		t.Fatalf("decode slash occupied wear equip info chat: %v", err)
+		t.Fatalf("decode slash occupied wear swap source set: %v", err)
 	}
-	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != itemEquipOccupiedWearSlotInfoMessage {
-		t.Fatalf("unexpected slash occupied wear equip chat: %+v", delivery)
+	if sourceSet.Vnum != worn.Vnum || sourceSet.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected slash occupied wear swap source set: %+v", sourceSet)
+	}
+	equipSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode slash occupied wear swap equipment set: %v", err)
+	}
+	bodyPosition, err := itemproto.EquipmentPosition(0)
+	if err != nil {
+		t.Fatalf("build body equipment position: %v", err)
+	}
+	if equipSet.Vnum != carried.Vnum || equipSet.Position != bodyPosition {
+		t.Fatalf("unexpected slash occupied wear swap equipment set: %+v", equipSet)
 	}
 	account, err := accounts.Load("slash-occupied-wear-equip")
 	if err != nil {
 		t.Fatalf("load slash occupied wear equip account: %v", err)
 	}
-	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) || !reflect.DeepEqual(account.Characters[0].Equipment, owner.Equipment) {
-		t.Fatalf("slash occupied wear equip mutated persisted state: inventory %#v equipment %#v", account.Characters[0].Inventory, account.Characters[0].Equipment)
+	wantInventory := []inventory.ItemInstance{{ID: 5802, Vnum: worn.Vnum, Count: 1, Slot: 5}}
+	wantEquipment := []inventory.ItemInstance{{ID: 5803, Vnum: carried.Vnum, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, wantInventory) || !reflect.DeepEqual(account.Characters[0].Equipment, wantEquipment) {
+		t.Fatalf("slash occupied wear swap persisted unexpected state: inventory %#v equipment %#v", account.Characters[0].Inventory, account.Characters[0].Equipment)
 	}
 }
 
-func TestGameRuntimeItemMoveEquipOccupiedRejectClosesActiveExchangeShellWithoutMutation(t *testing.T) {
+func TestGameRuntimeItemMoveEquipOccupiedReplaceClosesActiveExchangeShell(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
@@ -1954,24 +1993,93 @@ func TestGameRuntimeItemMoveEquipOccupiedRejectClosesActiveExchangeShellWithoutM
 	if err != nil {
 		t.Fatalf("unexpected exchange occupied wear equip error: %v", err)
 	}
-	if len(out) != 2 {
-		t.Fatalf("expected exchange occupied wear equip to emit END plus info-chat frame, got %d", len(out))
+	if len(out) < 4 {
+		t.Fatalf("expected exchange occupied wear swap to emit END plus refresh frames, got %d", len(out))
 	}
 	assertExchangeEndFrame(t, out[0], "occupied wear exchange owner close")
-	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[1]))
+	sourceSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
 	if err != nil {
-		t.Fatalf("decode exchange occupied wear equip info chat: %v", err)
+		t.Fatalf("decode exchange occupied wear swap source set: %v", err)
 	}
-	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != itemEquipOccupiedWearSlotInfoMessage {
-		t.Fatalf("unexpected exchange occupied wear equip chat: %+v", delivery)
+	if sourceSet.Vnum != worn.Vnum || sourceSet.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected exchange occupied wear swap source set: %+v", sourceSet)
 	}
 	queuedClose := flushServerFrames(t, peerFlow)
-	if len(queuedClose) != 1 {
-		t.Fatalf("expected occupied wear peer to receive one queued END, got %d", len(queuedClose))
+	if len(queuedClose) != 2 {
+		t.Fatalf("expected occupied wear peer to receive END plus appearance update, got %d", len(queuedClose))
 	}
 	assertExchangeEndFrame(t, queuedClose[0], "occupied wear exchange peer close")
-	assertExchangeAccountUnchanged(t, accounts, "ex-occupied-wear-equip", owner, "owner exchange occupied wear equip")
+	peerUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, queuedClose[1]))
+	if err != nil {
+		t.Fatalf("decode occupied wear exchange peer appearance update: %v", err)
+	}
+	if peerUpdate.VID != owner.VID {
+		t.Fatalf("unexpected occupied wear exchange peer appearance update: %+v", peerUpdate)
+	}
+	account, err := accounts.Load("ex-occupied-wear-equip")
+	if err != nil {
+		t.Fatalf("load exchange occupied wear equip account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{{ID: 5804, Vnum: worn.Vnum, Count: 1, Slot: 5}}
+	wantEquipment := []inventory.ItemInstance{{ID: 5805, Vnum: carried.Vnum, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, wantInventory) || !reflect.DeepEqual(account.Characters[0].Equipment, wantEquipment) {
+		t.Fatalf("exchange occupied wear swap persisted unexpected owner state: inventory %#v equipment %#v", account.Characters[0].Inventory, account.Characters[0].Equipment)
+	}
 	assertExchangeAccountUnchanged(t, accounts, "ex-occupied-wear-peer", peer, "peer exchange occupied wear equip")
+}
+
+func TestGameRuntimeItemMoveEquipRejectsLockedOccupiedWearSourceWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	worn := itemcatalog.Template{Vnum: 11526, Name: "Locked Worn Test Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()}
+	carried := itemcatalog.Template{Vnum: 11527, Name: "Locked Carried Test Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()}
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{worn, carried}}); err != nil {
+		t.Fatalf("seed locked occupied wear equip templates: %v", err)
+	}
+	owner := peerVisibilityCharacter("LockedOccupiedWearEquip", 0x01030264, 0x02040264, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 5807, Vnum: carried.Vnum, Count: 1, Slot: 5, Locked: true}}
+	owner.Equipment = []inventory.ItemInstance{{ID: 5808, Vnum: worn.Vnum, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}}
+	issuePeerTicket(t, ticketStore, "locked-occupied-wear-equip", 0x64646464, owner)
+	if err := accounts.Save(accountstore.Account{Login: "locked-occupied-wear-equip", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed locked occupied wear equip account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected locked occupied wear equip runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "locked-occupied-wear-equip", 0x64646464)
+	defer closeSessionFlow(t, flow)
+	bodyPosition, err := itemproto.EquipmentPosition(0)
+	if err != nil {
+		t.Fatalf("build body equipment position: %v", err)
+	}
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(5),
+		Destination: bodyPosition,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected locked occupied wear equip error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected locked occupied wear equip to emit one info-chat frame, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode locked occupied wear equip info chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != itemEquipOccupiedWearSlotInfoMessage {
+		t.Fatalf("unexpected locked occupied wear equip chat: %+v", delivery)
+	}
+	account, err := accounts.Load("locked-occupied-wear-equip")
+	if err != nil {
+		t.Fatalf("load locked occupied wear equip account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) || !reflect.DeepEqual(account.Characters[0].Equipment, owner.Equipment) {
+		t.Fatalf("locked occupied wear equip mutated persisted state: inventory %#v equipment %#v", account.Characters[0].Inventory, account.Characters[0].Equipment)
+	}
 }
 
 func TestGameRuntimeItemMoveUnequipRejectTextClosesActiveExchangeShellWithoutMutation(t *testing.T) {

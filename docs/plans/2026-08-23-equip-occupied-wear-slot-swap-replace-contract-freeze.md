@@ -49,4 +49,4 @@ Successful swap emits no new info-chat string. The occupied reject chat `You are
 
 ## Status
 
-Docs-first freeze on `lane/items`. RED intentionally deferred until this contract is reviewed/landed.
+Implemented on `lane/items`: occupied-wear swap/replace is owned for packet `ITEM_MOVE` / `/equip_item` with effect invert/apply, persistence, exchange teardown, and non-swappable reject chat. Mall / TMP4 CG `SAFEBOX_MONEY` / player-shop/cube busy rejects stay deferred.

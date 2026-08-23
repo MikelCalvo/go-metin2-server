@@ -4883,6 +4883,54 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			}
 			return frames, true
 		}
+		executeOccupiedEquipReplace := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, fromSlot inventory.SlotIndex, equipSlot inventory.EquipmentSlot, newTemplate itemcatalog.Template, requiresTemplate bool) ([][]byte, bool) {
+			if selectedPlayer == nil {
+				return nil, false
+			}
+			if !selectedPlayer.CanReplaceOccupiedEquipItem(fromSlot, equipSlot) {
+				frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemEquipOccupiedWearSlotInfoMessage})}
+				return prependExchangeCloseFrame(frames), true
+			}
+			previousTemplate, hasPreviousTemplate, previousOK := runtime.resolveRuntimeUnequipTemplate(selectedPlayer, equipSlot)
+			if !previousOK {
+				return nil, false
+			}
+			if hasPreviousTemplate && previousTemplate.Irremovable {
+				frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemUnequipRejectText(previousTemplate)})}
+				return prependExchangeCloseFrame(frames), true
+			}
+			var replaceResult player.EquipReplaceResult
+			var ok bool
+			if requiresTemplate {
+				if !hasPreviousTemplate {
+					return nil, false
+				}
+				replaceResult, ok = selectedPlayer.ReplaceOccupiedEquipItemWithTemplates(fromSlot, equipSlot, newTemplate, previousTemplate)
+			} else if hasPreviousTemplate && (previousTemplate.EquipEffect != nil || previousTemplate.Irremovable) {
+				return nil, false
+			} else {
+				replaceResult, ok = selectedPlayer.ReplaceOccupiedEquipItem(fromSlot, equipSlot)
+			}
+			if !ok {
+				return nil, false
+			}
+			frames, err := equipReplaceResultFrames(selectedPlayer.LiveCharacter(), replaceResult, runtime.itemTemplates)
+			if err != nil {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return nil, false
+			}
+			stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equipSlot, runtime.itemTemplates)
+			frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+			if !ok {
+				return nil, false
+			}
+			frames = prependExchangeCloseFrame(frames)
+			if ownsLiveSharedWorldSession() {
+				sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selectedPlayer.LiveCharacter(), stablePeerFrames)
+			}
+			return frames, true
+		}
 		commitSelectedRuntimeOnlyMutationFrames := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte, stablePeerFrames [][]byte) ([][]byte, bool) {
 			if selectedPlayer == nil {
 				return nil, false
@@ -5970,8 +6018,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							return gameflow.ChatResult{Accepted: false}
 						}
 						if selectedPlayer.EquipmentSlotOccupied(equipSlot) {
-							frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemEquipOccupiedWearSlotInfoMessage})}
-							frames = prependExchangeCloseFrame(frames)
+							frames, accepted := executeOccupiedEquipReplace(selectedPlayer, previousSelected, fromSlot, equipSlot, template, requiresTemplate)
+							if !accepted {
+								return gameflow.ChatResult{Accepted: false}
+							}
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
 						var equippedItem inventory.ItemInstance
@@ -7115,8 +7165,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							return gameflow.ItemMoveResult{Accepted: false}
 						}
 						if selectedPlayer.EquipmentSlotOccupied(equipSlot) {
-							frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemEquipOccupiedWearSlotInfoMessage})}
-							frames = prependExchangeCloseFrame(frames)
+							fromSlot := inventory.SlotIndex(packet.Source.Cell)
+							frames, accepted := executeOccupiedEquipReplace(selectedPlayer, previousSelected, fromSlot, equipSlot, template, requiresTemplate)
+							if !accepted {
+								return gameflow.ItemMoveResult{Accepted: false}
+							}
 							return gameflow.ItemMoveResult{Accepted: true, Frames: frames}
 						}
 						fromSlot := inventory.SlotIndex(packet.Source.Cell)
@@ -9466,6 +9519,27 @@ func equipResultFrames(character loginticket.Character, from inventory.SlotIndex
 	)
 	if pointChange != nil {
 		frames = append(frames, encodePlayerPointChangeFrame(character.VID, *pointChange))
+	}
+	frames = append(frames, worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacketWithTemplates(character, templates)))
+	return frames, nil
+}
+
+func equipReplaceResultFrames(character loginticket.Character, result player.EquipReplaceResult, templates map[uint32]itemcatalog.Template) ([][]byte, error) {
+	unequipSetFrame, err := encodeBootstrapInventoryItemFrameWithTemplates(result.UnequippedItem, templates)
+	if err != nil {
+		return nil, err
+	}
+	equipSetFrame, err := encodeBootstrapEquipmentItemFrameWithTemplates(result.EquippedItem, templates)
+	if err != nil {
+		return nil, err
+	}
+	frames := make([][]byte, 0, 5)
+	frames = append(frames, unequipSetFrame, equipSetFrame)
+	if result.RemovedEffect != nil {
+		frames = append(frames, encodePlayerPointChangeFrame(character.VID, *result.RemovedEffect))
+	}
+	if result.AppliedEffect != nil {
+		frames = append(frames, encodePlayerPointChangeFrame(character.VID, *result.AppliedEffect))
 	}
 	frames = append(frames, worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacketWithTemplates(character, templates)))
 	return frames, nil

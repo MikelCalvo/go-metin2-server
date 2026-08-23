@@ -50,6 +50,15 @@ type PointChangeResult struct {
 	PointValue  int32
 }
 
+// EquipReplaceResult captures an atomic occupied-wear swap: the worn item lands
+// on the carried source cell and the source wearable lands on the wear cell.
+type EquipReplaceResult struct {
+	UnequippedItem inventory.ItemInstance
+	EquippedItem   inventory.ItemInstance
+	RemovedEffect  *PointChangeResult
+	AppliedEffect  *PointChangeResult
+}
+
 const ExperiencePointIndex uint8 = 3
 
 type DeathRewardResult struct {
@@ -966,6 +975,100 @@ func (r *Runtime) EquipItemWithTemplate(from inventory.SlotIndex, equipSlot inve
 	return r.equipItem(from, equipSlot)
 }
 
+// ReplaceOccupiedEquipItem swaps a carried wearable onto an already-occupied
+// wear cell when that cell has exactly one unlocked occupant and the source
+// cell can accept the worn item. Point effects are left to the caller.
+func (r *Runtime) ReplaceOccupiedEquipItem(from inventory.SlotIndex, equipSlot inventory.EquipmentSlot) (EquipReplaceResult, bool) {
+	return r.replaceOccupiedEquipItem(from, equipSlot)
+}
+
+// CanReplaceOccupiedEquipItem reports whether an occupied-wear swap can place
+// the worn item onto the carried source cell without mutating live state.
+// Packet / slash equip uses this to keep the occupied reject chat for
+// non-swappable destinations while effect overflow stays silent fail-closed.
+func (r *Runtime) CanReplaceOccupiedEquipItem(from inventory.SlotIndex, equipSlot inventory.EquipmentSlot) bool {
+	if r == nil || !equipSlot.Valid() || countEquipmentSlotOccupancy(r.liveEquipment, equipSlot) != 1 {
+		return false
+	}
+	if countInventorySlotOccupancy(r.liveInventory, from) != 1 {
+		return false
+	}
+	fromIndex := findInventorySlot(r.liveInventory, from)
+	equipIndex := findEquipmentSlot(r.liveEquipment, equipSlot)
+	if fromIndex < 0 || equipIndex < 0 {
+		return false
+	}
+	sourceItem := r.liveInventory[fromIndex]
+	wornItem := r.liveEquipment[equipIndex]
+	if sourceItem.Locked || wornItem.Locked {
+		return false
+	}
+	unequippedItem, err := wornItem.WithInventorySlot(from)
+	if err != nil {
+		return false
+	}
+	equippedItem := sourceItem
+	equippedItem.Slot = 0
+	equippedItem.Equipped = true
+	equippedItem.EquipSlot = equipSlot
+	if err := equippedItem.Validate(); err != nil {
+		return false
+	}
+	return unequippedItem.Validate() == nil
+}
+
+// ReplaceOccupiedEquipItemWithTemplates performs the occupied-wear swap and,
+// when templates author equip_effect metadata, inverts the previous effect
+// then applies the new one. Effect carrier overflow/underflow rolls the whole
+// mutation back fail-closed.
+func (r *Runtime) ReplaceOccupiedEquipItemWithTemplates(from inventory.SlotIndex, equipSlot inventory.EquipmentSlot, newTemplate itemcatalog.Template, previousTemplate itemcatalog.Template) (EquipReplaceResult, bool) {
+	if !templateAuthoredForEquipSlot(newTemplate, equipSlot) || !r.CanUseTemplate(newTemplate) || newTemplate.AntiStack || newTemplate.AntiGet || newTemplate.AntiDrop || newTemplate.AntiGive || newTemplate.AntiSell {
+		return EquipReplaceResult{}, false
+	}
+	if previousTemplate.Vnum == 0 || !itemcatalog.ValidTemplate(previousTemplate) || !templateAuthoredForEquipSlot(previousTemplate, equipSlot) {
+		return EquipReplaceResult{}, false
+	}
+	if previousTemplate.Irremovable {
+		return EquipReplaceResult{}, false
+	}
+	fromIndex := findInventorySlot(r.liveInventory, from)
+	if fromIndex < 0 || r.liveInventory[fromIndex].Vnum != newTemplate.Vnum || r.liveInventory[fromIndex].Count == 0 || r.liveInventory[fromIndex].Count > newTemplate.MaxCount {
+		return EquipReplaceResult{}, false
+	}
+	equipIndex := findEquipmentSlot(r.liveEquipment, equipSlot)
+	if equipIndex < 0 || r.liveEquipment[equipIndex].Vnum != previousTemplate.Vnum || r.liveEquipment[equipIndex].Count == 0 || r.liveEquipment[equipIndex].Count > previousTemplate.MaxCount {
+		return EquipReplaceResult{}, false
+	}
+	previousInventory := cloneItemInstances(r.liveInventory)
+	previousEquipment := cloneItemInstances(r.liveEquipment)
+	previousPoints := r.livePoints
+	result, ok := r.replaceOccupiedEquipItem(from, equipSlot)
+	if !ok {
+		return EquipReplaceResult{}, false
+	}
+	if previousTemplate.EquipEffect != nil {
+		removed, ok := r.RemoveEquipTemplateEffectFromItem(previousTemplate, equipSlot, result.UnequippedItem)
+		if !ok {
+			r.liveInventory = previousInventory
+			r.liveEquipment = previousEquipment
+			r.livePoints = previousPoints
+			return EquipReplaceResult{}, false
+		}
+		result.RemovedEffect = &removed
+	}
+	if newTemplate.EquipEffect != nil {
+		applied, ok := r.ApplyEquipTemplateEffect(newTemplate, equipSlot)
+		if !ok {
+			r.liveInventory = previousInventory
+			r.liveEquipment = previousEquipment
+			r.livePoints = previousPoints
+			return EquipReplaceResult{}, false
+		}
+		result.AppliedEffect = &applied
+	}
+	return result, true
+}
+
 func (r *Runtime) equipItem(from inventory.SlotIndex, equipSlot inventory.EquipmentSlot) (inventory.ItemInstance, bool) {
 	if r == nil || !equipSlot.Valid() || equipmentSlotOccupied(r.liveEquipment, equipSlot) {
 		return inventory.ItemInstance{}, false
@@ -986,6 +1089,44 @@ func (r *Runtime) equipItem(from inventory.SlotIndex, equipSlot inventory.Equipm
 	sortInventoryItems(r.liveInventory)
 	sortEquipmentItems(r.liveEquipment)
 	return item, true
+}
+
+func (r *Runtime) replaceOccupiedEquipItem(from inventory.SlotIndex, equipSlot inventory.EquipmentSlot) (EquipReplaceResult, bool) {
+	if r == nil || !equipSlot.Valid() || countEquipmentSlotOccupancy(r.liveEquipment, equipSlot) != 1 {
+		return EquipReplaceResult{}, false
+	}
+	if countInventorySlotOccupancy(r.liveInventory, from) != 1 {
+		return EquipReplaceResult{}, false
+	}
+	fromIndex := findInventorySlot(r.liveInventory, from)
+	equipIndex := findEquipmentSlot(r.liveEquipment, equipSlot)
+	if fromIndex < 0 || equipIndex < 0 {
+		return EquipReplaceResult{}, false
+	}
+	sourceItem := r.liveInventory[fromIndex]
+	wornItem := r.liveEquipment[equipIndex]
+	if sourceItem.Locked || wornItem.Locked {
+		return EquipReplaceResult{}, false
+	}
+	unequippedItem, err := wornItem.WithInventorySlot(from)
+	if err != nil {
+		return EquipReplaceResult{}, false
+	}
+	equippedItem := sourceItem
+	equippedItem.Slot = 0
+	equippedItem.Equipped = true
+	equippedItem.EquipSlot = equipSlot
+	if err := equippedItem.Validate(); err != nil {
+		return EquipReplaceResult{}, false
+	}
+	if err := unequippedItem.Validate(); err != nil {
+		return EquipReplaceResult{}, false
+	}
+	r.liveInventory[fromIndex] = unequippedItem
+	r.liveEquipment[equipIndex] = equippedItem
+	sortInventoryItems(r.liveInventory)
+	sortEquipmentItems(r.liveEquipment)
+	return EquipReplaceResult{UnequippedItem: unequippedItem, EquippedItem: equippedItem}, true
 }
 
 func (r *Runtime) UnequipItem(equipSlot inventory.EquipmentSlot, to inventory.SlotIndex) (inventory.ItemInstance, bool) {

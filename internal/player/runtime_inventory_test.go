@@ -2524,6 +2524,133 @@ func TestRuntimeEquipItemRejectsOccupiedWearSlotWithoutMutatingState(t *testing.
 	}
 }
 
+func TestRuntimeReplaceOccupiedEquipItemSwapsItemsWithoutMutatingPersistedSnapshot(t *testing.T) {
+	character := loginticket.Character{
+		ID:        1,
+		Name:      "OccupiedWearSwap",
+		Inventory: []inventory.ItemInstance{{ID: 2002, Vnum: 0x11223345, Count: 1, Slot: 8}},
+		Equipment: []inventory.ItemInstance{{ID: 2001, Vnum: 0x11223344, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}},
+	}
+	runtime := NewRuntime(character, SessionLink{Login: "occupied-wear-swap", CharacterIndex: 0})
+
+	if !runtime.CanReplaceOccupiedEquipItem(8, inventory.EquipmentSlotBody) {
+		t.Fatal("expected occupied wear cell with empty-compatible source to be swappable")
+	}
+	result, ok := runtime.ReplaceOccupiedEquipItem(8, inventory.EquipmentSlotBody)
+	if !ok {
+		t.Fatal("expected occupied wear swap to succeed")
+	}
+	if result.UnequippedItem.ID != 2001 || result.UnequippedItem.Slot != 8 || result.UnequippedItem.Equipped {
+		t.Fatalf("unexpected unequipped item after occupied wear swap: %#v", result.UnequippedItem)
+	}
+	if result.EquippedItem.ID != 2002 || !result.EquippedItem.Equipped || result.EquippedItem.EquipSlot != inventory.EquipmentSlotBody {
+		t.Fatalf("unexpected equipped item after occupied wear swap: %#v", result.EquippedItem)
+	}
+	wantInventory := []inventory.ItemInstance{{ID: 2001, Vnum: 0x11223344, Count: 1, Slot: 8}}
+	wantEquipment := []inventory.ItemInstance{{ID: 2002, Vnum: 0x11223345, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}}
+	if !reflect.DeepEqual(runtime.LiveInventory(), wantInventory) {
+		t.Fatalf("unexpected live inventory after occupied wear swap: got %#v want %#v", runtime.LiveInventory(), wantInventory)
+	}
+	if !reflect.DeepEqual(runtime.LiveEquipment(), wantEquipment) {
+		t.Fatalf("unexpected live equipment after occupied wear swap: got %#v want %#v", runtime.LiveEquipment(), wantEquipment)
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, character.Inventory) || !reflect.DeepEqual(runtime.PersistedSnapshot().Equipment, character.Equipment) {
+		t.Fatalf("occupied wear swap mutated persisted snapshot before commit: %#v", runtime.PersistedSnapshot())
+	}
+}
+
+func TestRuntimeReplaceOccupiedEquipItemWithTemplatesAppliesNetEquipEffectTransition(t *testing.T) {
+	character := loginticket.Character{
+		ID:        1,
+		Name:      "OccupiedWearEffectSwap",
+		Inventory: []inventory.ItemInstance{{ID: 2002, Vnum: 0x11223345, Count: 1, Slot: 8}},
+		Equipment: []inventory.ItemInstance{{ID: 2001, Vnum: 0x11223344, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}},
+		Points:    [255]int32{1: 750},
+	}
+	runtime := NewRuntime(character, SessionLink{Login: "occupied-wear-effect-swap", CharacterIndex: 0})
+	previous := itemcatalog.Template{Vnum: 0x11223344, Name: "Worn Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 20}}
+	replacement := itemcatalog.Template{Vnum: 0x11223345, Name: "Replacement Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 50}}
+
+	result, ok := runtime.ReplaceOccupiedEquipItemWithTemplates(8, inventory.EquipmentSlotBody, replacement, previous)
+	if !ok {
+		t.Fatal("expected template-backed occupied wear swap to succeed")
+	}
+	if result.RemovedEffect == nil || result.RemovedEffect.PointAmount != -20 || result.RemovedEffect.PointValue != 730 {
+		t.Fatalf("unexpected removed equip effect after occupied wear swap: %#v", result.RemovedEffect)
+	}
+	if result.AppliedEffect == nil || result.AppliedEffect.PointAmount != 50 || result.AppliedEffect.PointValue != 780 {
+		t.Fatalf("unexpected applied equip effect after occupied wear swap: %#v", result.AppliedEffect)
+	}
+	if runtime.LiveCharacter().Points[1] != 780 {
+		t.Fatalf("expected live points to reflect net equip effect transition, got %d", runtime.LiveCharacter().Points[1])
+	}
+	if runtime.PersistedSnapshot().Points[1] != 750 {
+		t.Fatalf("occupied wear effect swap mutated persisted points before commit: %d", runtime.PersistedSnapshot().Points[1])
+	}
+}
+
+func TestRuntimeReplaceOccupiedEquipItemRejectsLockedSourceWithoutMutatingState(t *testing.T) {
+	character := loginticket.Character{
+		ID:        1,
+		Name:      "OccupiedWearLocked",
+		Inventory: []inventory.ItemInstance{{ID: 2002, Vnum: 0x11223345, Count: 1, Slot: 8, Locked: true}},
+		Equipment: []inventory.ItemInstance{{ID: 2001, Vnum: 0x11223344, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}},
+	}
+	runtime := NewRuntime(character, SessionLink{Login: "occupied-wear-locked", CharacterIndex: 0})
+
+	if runtime.CanReplaceOccupiedEquipItem(8, inventory.EquipmentSlotBody) {
+		t.Fatal("expected locked source cell to report non-swappable occupied wear")
+	}
+	if _, ok := runtime.ReplaceOccupiedEquipItem(8, inventory.EquipmentSlotBody); ok {
+		t.Fatal("expected locked source cell to reject occupied wear swap")
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), character.Inventory) || !reflect.DeepEqual(runtime.LiveEquipment(), character.Equipment) {
+		t.Fatalf("locked occupied wear swap mutated live state: inventory %#v equipment %#v", runtime.LiveInventory(), runtime.LiveEquipment())
+	}
+}
+
+func TestRuntimeReplaceOccupiedEquipItemWithTemplatesRejectsEffectOverflowWithoutMutation(t *testing.T) {
+	character := loginticket.Character{
+		ID:        1,
+		Name:      "OccupiedWearOverflow",
+		Inventory: []inventory.ItemInstance{{ID: 2002, Vnum: 0x11223345, Count: 1, Slot: 8}},
+		Equipment: []inventory.ItemInstance{{ID: 2001, Vnum: 0x11223344, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}},
+		Points:    [255]int32{1: 1<<31 - 5},
+	}
+	runtime := NewRuntime(character, SessionLink{Login: "occupied-wear-overflow", CharacterIndex: 0})
+	previous := itemcatalog.Template{Vnum: 0x11223344, Name: "Worn Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()}
+	replacement := itemcatalog.Template{Vnum: 0x11223345, Name: "Overflow Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 10}}
+
+	if _, ok := runtime.ReplaceOccupiedEquipItemWithTemplates(8, inventory.EquipmentSlotBody, replacement, previous); ok {
+		t.Fatal("expected occupied wear effect overflow to fail closed")
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), character.Inventory) || !reflect.DeepEqual(runtime.LiveEquipment(), character.Equipment) {
+		t.Fatalf("overflow occupied wear swap mutated live item state: inventory %#v equipment %#v", runtime.LiveInventory(), runtime.LiveEquipment())
+	}
+	if runtime.LiveCharacter().Points[1] != character.Points[1] {
+		t.Fatalf("overflow occupied wear swap mutated live points: got %d want %d", runtime.LiveCharacter().Points[1], character.Points[1])
+	}
+}
+
+func TestRuntimeReplaceOccupiedEquipItemWithTemplatesRejectsIrremovablePreviousWithoutMutation(t *testing.T) {
+	character := loginticket.Character{
+		ID:        1,
+		Name:      "OccupiedWearIrremovable",
+		Inventory: []inventory.ItemInstance{{ID: 2002, Vnum: 0x11223345, Count: 1, Slot: 8}},
+		Equipment: []inventory.ItemInstance{{ID: 2001, Vnum: 0x11223344, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}},
+	}
+	runtime := NewRuntime(character, SessionLink{Login: "occupied-wear-irremovable", CharacterIndex: 0})
+	previous := itemcatalog.Template{Vnum: 0x11223344, Name: "Sealed Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), Irremovable: true}
+	replacement := itemcatalog.Template{Vnum: 0x11223345, Name: "Replacement Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()}
+
+	if _, ok := runtime.ReplaceOccupiedEquipItemWithTemplates(8, inventory.EquipmentSlotBody, replacement, previous); ok {
+		t.Fatal("expected irremovable previous worn item to reject occupied wear swap")
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), character.Inventory) || !reflect.DeepEqual(runtime.LiveEquipment(), character.Equipment) {
+		t.Fatalf("irremovable occupied wear swap mutated live state: inventory %#v equipment %#v", runtime.LiveInventory(), runtime.LiveEquipment())
+	}
+}
+
 func TestRuntimeEquipItemWithTemplateRejectsOccupiedWearSlotWithoutMutatingState(t *testing.T) {
 	character := loginticket.Character{
 		ID:        1,
