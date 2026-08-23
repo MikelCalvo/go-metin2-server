@@ -62,9 +62,11 @@ git diff --check
 
 ## Follow-up options
 
-1. Optionally convert remaining direct disposable static/interaction/item
+1. ~~Optionally convert remaining direct disposable static/interaction/item
    FileStore constructions in non-rematerialize suites when those proofs do not
-   require filesystem coupling.
+   require filesystem coupling.~~ Done for the spawn-group operator position
+   MOVE suite: see
+   [hermetic spawn-group operator position MOVE MemoryStore tests](2026-08-24-hermetic-spawn-group-operator-position-move-memorystore-tests.md).
 2. Keep import/backfill execution deferred until a driver-backed harness and
    backup policy exist.
 3. Keep branching quest scripts and pack AI / synchronized respawn deferred.

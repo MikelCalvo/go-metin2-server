@@ -21,8 +21,8 @@ func TestGameRuntimeUpdateStaticActorSameMapSpawnGroupPositionUsesRetainedViewer
 	viewer := peerVisibilityCharacter("OperatorPositionMoveViewer", 0x010301fa, 0x020401fa, 1200, 2200, 0, 110, 210)
 	issuePeerTicket(t, store, "op-position-move-viewer", 0xfafafafa, viewer)
 
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
 		config.Service{
 			LegacyAddr:           ":13000",
@@ -96,8 +96,8 @@ func TestGameRuntimeUpdateStaticActorSameMapSpawnGroupPresentationKeepsDeleteRea
 	viewer := peerVisibilityCharacter("OperatorPresentationViewer", 0x010301fb, 0x020401fb, 1200, 2200, 0, 111, 211)
 	issuePeerTicket(t, store, "op-presentation-viewer", 0xfbfbfbfb, viewer)
 
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
 		config.Service{
 			LegacyAddr:           ":13000",
