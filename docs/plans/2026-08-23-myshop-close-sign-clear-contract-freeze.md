@@ -52,4 +52,4 @@ Own a first host-only empty-sign clear companion on top of the already-owned ope
 
 ## Status
 
-Docs/spec contract freeze on `lane/items`. Implementation RED/GREEN for the host-only empty-sign clear companion follows as the next cohesive slice; guest browse/buy and partner player-shop/cube exchange busy rejects stay deferred.
+Implemented on `lane/items`: host-only empty-sign `GC::SHOP_SIGN` clear/close now runs on lifecycle teardown (`/phase_select` / `/quit` / `/logout`, practice-mob floor, exact-position transfer/warp) and lab `/close_myshop`, clearing the same-socket busy flag without inventory/gold mutation. Guest browse/buy and partner player-shop/cube exchange busy rejects stay deferred.

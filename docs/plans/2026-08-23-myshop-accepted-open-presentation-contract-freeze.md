@@ -62,4 +62,4 @@ Busy-shell reject text must reuse the already-owned English bootstrap strings fo
 
 ## Status
 
-Implemented on `lane/items`: host-only accepted `CG::MYSHOP` open now remembers a same-socket busy flag and emits one live `GC::SHOP_SIGN` after sign/stock/busy-shell gates; inventory/gold stay unchanged on open. Guest browse/buy, empty-sign close companion, and partner player-shop/cube exchange busy rejects stay deferred.
+Implemented on `lane/items`: host-only accepted `CG::MYSHOP` open now remembers a same-socket busy flag and emits one live `GC::SHOP_SIGN` after sign/stock/busy-shell gates; inventory/gold stay unchanged on open. Host-only empty-sign close companion is now owned separately; guest browse/buy and partner player-shop/cube exchange busy rejects stay deferred.

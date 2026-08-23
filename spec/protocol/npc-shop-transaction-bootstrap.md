@@ -313,7 +313,7 @@ The repository now owns that packet shape at the codec level in `internal/proto/
 This remains the owned codec seam for private-shop open requests:
 
 - accepted host-only open presentation now lives beside this codec (see Owned accepted private-shop open presentation seam)
-- guest browse/buy and empty-sign close companion stay deferred
+- guest browse/buy stay deferred; empty-sign close companion is owned separately below
 - partner-side open player-shop exchange busy rejects remain deferred until a later presentation seam
 - template-authored `anti_myshop` now also fail-closes host-only open stock validation, in addition to projecting into `ITEM_SET.anti_flags`
 
@@ -325,7 +325,7 @@ This remains the owned codec seam for private-shop open requests:
 - the default handler returns `ShopResult{Accepted: false}` so valid packets emit no frames, no error, and leave the session in `GAME` (no unexpected-packet disconnect)
 - malformed payloads still fail closed at the codec/dispatcher boundary
 - runtime wiring may now opt into the owned host-only accepted open presentation (see Owned accepted private-shop open presentation seam); the default stays fail-closed until that opt-in
-- guest browse/buy, empty-sign close companion, and partner player-shop/cube exchange busy rejects stay deferred
+- guest browse/buy and partner player-shop/cube exchange busy rejects stay deferred; empty-sign close companion is owned separately below
 
 See `docs/plans/2026-08-23-myshop-deny-no-response-dispatch-contract-freeze.md`.
 
@@ -343,7 +343,7 @@ The repository now owns that packet shape at the codec level in `internal/proto/
 The codec is now also used by the first host-only accepted open presentation:
 
 - successful host-only open emits one live `GC::SHOP_SIGN` with host VID + non-empty sign
-- empty-sign clear/close companion emission and guest browse/buy stay deferred
+- empty-sign clear/close companion emission is owned separately below; guest browse/buy stay deferred
 - partner-side open player-shop exchange busy rejects remain deferred until a later presentation seam
 
 See `docs/plans/2026-08-23-shop-sign-codec-contract-freeze.md`.
@@ -357,18 +357,19 @@ The first host-only accepted open path is now owned on top of the codec + deny-n
 - empty sign / zero count / duplicate or invalid stock / `anti_give|anti_myshop` / open exchange|merchant|safebox|refine|already-open private shop stay fail-closed with no second `SHOP_SIGN`
 - busy shells reject with the same self-only requester busy info-chat already owned by exchange START for merchant/safebox/refine
 - open does not yet remove carried stock, consume a shop bag, polymorph, or invent guest browse/buy frames
-- guest browse/buy, empty-sign close companion, and partner player-shop/cube exchange busy rejects stay deferred
+- guest browse/buy and partner player-shop/cube exchange busy rejects stay deferred; empty-sign close companion is owned separately below
 
 See `docs/plans/2026-08-23-myshop-accepted-open-presentation-contract-freeze.md`.
 
-### Frozen host-only MYSHOP empty-sign close companion seam
+### Owned host-only MYSHOP empty-sign close companion seam
 
-The next host-only close path is frozen in docs before RED:
+Host-only accepted open now also owns the first empty-sign clear/close companion:
 
 - while the same-socket private-shop open/busy flag is set, lifecycle teardown (`/phase_select` / `/quit` / `/logout`, practice-mob floor, exact-position transfer/warp) clears that flag and emits one owned empty-sign `GC::SHOP_SIGN` (`host VID` + empty sign)
 - emission stays self-only for this bootstrap; peer around-broadcast and guest browse teardown stay deferred
 - already-closed paths emit no MYSHOP empty-sign frame; inventory/gold stay unchanged
-- optional lab `/close_myshop` may reuse the same helper; no new close packet family is invented here
+- lab `/close_myshop` reuses the same helper and stays silent when already closed; no new close packet family is invented here
+- ordering beside already-owned busy-shell teardown keeps merchant `GC::SHOP END` before empty-sign `SHOP_SIGN`, and empty-sign before exchange `END` when those shells close together
 - guest browse/buy and partner player-shop/cube exchange busy rejects stay deferred
 
 See `docs/plans/2026-08-23-myshop-close-sign-clear-contract-freeze.md`.

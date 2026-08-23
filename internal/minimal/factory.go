@@ -4379,12 +4379,36 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		setActiveMyShopOpen := func() {
 			hasActiveMyShopOpen = true
 		}
+		closeActiveMyShopOpenFrames := func() [][]byte {
+			if !hasActiveMyShopOpen {
+				return nil
+			}
+			vid := uint32(0)
+			if selectedPlayer != nil {
+				vid = selectedPlayer.LiveCharacter().VID
+			}
+			clearActiveMyShopOpen()
+			return [][]byte{shopproto.EncodeServerShopSign(shopproto.ServerShopSignPacket{
+				VID:  vid,
+				Sign: "",
+			})}
+		}
 		appendPostFloorMerchantCloseFrame := func(frames [][]byte, clearTarget bool) [][]byte {
 			if !clearTarget || !hasActiveMerchantBuy || activeMerchantBuy.TargetVID == 0 {
 				return frames
 			}
 			clearActiveMerchantBuy()
 			return append(frames, shopproto.EncodeServerEnd())
+		}
+		appendPostFloorMyShopCloseFrame := func(frames [][]byte, clearTarget bool) [][]byte {
+			if !clearTarget {
+				return frames
+			}
+			closeFrames := closeActiveMyShopOpenFrames()
+			if len(closeFrames) == 0 {
+				return frames
+			}
+			return append(frames, closeFrames...)
 		}
 		appendPostFloorSafeboxCloseFrame := func(frames [][]byte, clearTarget bool) [][]byte {
 			if !clearTarget {
@@ -4413,6 +4437,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		}
 		appendPostFloorContextCloseFrames := func(frames [][]byte, clearTarget bool) [][]byte {
 			frames = appendPostFloorMerchantCloseFrame(frames, clearTarget)
+			frames = appendPostFloorMyShopCloseFrame(frames, clearTarget)
 			frames = appendPostFloorSafeboxCloseFrame(frames, clearTarget)
 			frames = appendPostFloorExchangeCloseFrame(frames, clearTarget)
 			if clearTarget {
@@ -4426,6 +4451,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			}
 			clearActiveMerchantBuy()
 			return append([][]byte{shopproto.EncodeServerEnd()}, frames...)
+		}
+		prependMyShopCloseFrame := func(frames [][]byte) [][]byte {
+			closeFrames := closeActiveMyShopOpenFrames()
+			if len(closeFrames) == 0 {
+				return frames
+			}
+			return append(closeFrames, frames...)
 		}
 		prependSafeboxCloseFrame := func(frames [][]byte) [][]byte {
 			clearPendingSafeboxPasswordChallenge()
@@ -4473,6 +4505,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				frames = append(append([][]byte{}, exchangeCloseFrames...), frames...)
 			}
 			frames = prependSafeboxCloseFrame(frames)
+			frames = prependMyShopCloseFrame(frames)
 			return prependMerchantCloseFrame(frames)
 		}
 		clearActiveCombatTarget := func() {
@@ -6384,6 +6417,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeCommand, Message: "CloseSafebox"}
 							return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
 						}
+						if slashCloseMyShopCommand(packet.Message) {
+							closeFrames := closeActiveMyShopOpenFrames()
+							return gameflow.ChatResult{Accepted: true, Frames: closeFrames}
+						}
 					}
 
 					if command, ok := slashGameCommand(packet.Message); ok {
@@ -6408,7 +6445,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						}
 						switch command {
 						case "quit":
-							quitFrames := prependMerchantCloseFrame(prependSafeboxCloseFrame(prependExchangeCloseFrame(nil)))
+							quitFrames := prependMerchantCloseFrame(prependMyShopCloseFrame(prependSafeboxCloseFrame(prependExchangeCloseFrame(nil))))
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
@@ -6418,7 +6455,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeCommand, Message: "quit"}
 							return gameflow.ChatResult{Accepted: true, Frames: quitFrames, Delivery: &delivery}
 						case "logout":
-							logoutFrames := prependMerchantCloseFrame(prependSafeboxCloseFrame(prependExchangeCloseFrame(nil)))
+							logoutFrames := prependMerchantCloseFrame(prependMyShopCloseFrame(prependSafeboxCloseFrame(prependExchangeCloseFrame(nil))))
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
@@ -6427,7 +6464,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							clearLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: true, Frames: logoutFrames, NextPhase: session.PhaseClose}
 						case "phase_select":
-							phaseSelectFrames := prependMerchantCloseFrame(prependSafeboxCloseFrame(prependExchangeCloseFrame(nil)))
+							phaseSelectFrames := prependMerchantCloseFrame(prependMyShopCloseFrame(prependSafeboxCloseFrame(prependExchangeCloseFrame(nil))))
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
@@ -9234,6 +9271,17 @@ func slashCloseSafeboxCommand(message string) bool {
 	default:
 		return false
 	}
+}
+
+func slashCloseMyShopCommand(message string) bool {
+	if !strings.HasPrefix(message, "/") {
+		return false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) != 1 {
+		return false
+	}
+	return fields[0] == "close_myshop"
 }
 
 func slashSafeboxPasswordCommand(message string) (string, bool) {

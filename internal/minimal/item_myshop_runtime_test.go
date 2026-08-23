@@ -11,10 +11,12 @@ import (
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
+	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
+	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
 
 func TestGameRuntimeMyShopOpenEmitsShopSignWithoutInventoryMutation(t *testing.T) {
@@ -365,5 +367,225 @@ func assertMyShopBusyReject(t *testing.T, flow service.SessionFlow, packet shopp
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected %s MYSHOP busy reject to queue no peer frames, got %d", context, len(queued))
+	}
+}
+
+func TestGameRuntimeMyShopLifecycleCloseEmitsEmptyShopSignWithoutInventoryMutation(t *testing.T) {
+	cases := []struct {
+		name        string
+		command     string
+		wantCommand string
+		wantPhase   session.Phase
+		login       string
+		ownerName   string
+		ownerID     uint32
+		ownerVID    uint32
+		loginKey    uint32
+	}{
+		{
+			name:        "quit",
+			command:     "/quit",
+			wantCommand: "quit",
+			login:       "myshop-close-quit",
+			ownerName:   "MyShopCloseQuit",
+			ownerID:     0x01030811,
+			ownerVID:    0x02040811,
+			loginKey:    0x70707111,
+		},
+		{
+			name:      "logout",
+			command:   "/logout",
+			wantPhase: session.PhaseClose,
+			login:     "myshop-close-logout",
+			ownerName: "MyShopCloseLogout",
+			ownerID:   0x01030812,
+			ownerVID:  0x02040812,
+			loginKey:  0x70707112,
+		},
+		{
+			name:      "phase_select",
+			command:   "/phase_select",
+			wantPhase: session.PhaseSelect,
+			login:     "myshop-close-select",
+			ownerName: "MyShopCloseSelect",
+			ownerID:   0x01030813,
+			ownerVID:  0x02040813,
+			loginKey:  0x70707113,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter(tc.ownerName, tc.ownerID, tc.ownerVID, 1100, 2100, 0, 101, 201)
+			owner.Gold = 5000
+			owner.Inventory = []inventory.ItemInstance{{ID: uint64(tc.ownerID), Vnum: 27001, Count: 3, Slot: 5}}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			issuePeerTicket(t, ticketStore, tc.login, tc.loginKey, owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed %s myshop close account: %v", tc.name, err)
+			}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+				Vnum:      27001,
+				Name:      "Shop Potion",
+				Stackable: true,
+				MaxCount:  200,
+			}})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected %s myshop close runtime error: %v", tc.name, err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, tc.loginKey)
+			defer closeSessionFlow(t, flow)
+			_ = flushServerFrames(t, flow)
+
+			openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+				Sign: "Private Shop",
+				Items: []shopproto.ClientMyShopItem{{
+					Vnum:       27001,
+					Count:      3,
+					Position:   itemproto.InventoryPosition(5),
+					Price:      1500,
+					DisplayPos: 0,
+				}},
+			})))
+			if err != nil {
+				t.Fatalf("unexpected %s accepted MYSHOP error: %v", tc.name, err)
+			}
+			if len(openOut) != 1 {
+				t.Fatalf("expected %s accepted MYSHOP to emit one SHOP_SIGN frame, got %d", tc.name, len(openOut))
+			}
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+				Type:    chatproto.ChatTypeTalking,
+				Message: tc.command,
+			})))
+			if err != nil {
+				t.Fatalf("unexpected %s myshop lifecycle close error: %v", tc.name, err)
+			}
+			if len(out) != 2 {
+				t.Fatalf("expected %s myshop lifecycle close to emit empty SHOP_SIGN plus lifecycle frame, got %d", tc.name, len(out))
+			}
+			assertMyShopEmptySignFrame(t, out[0], owner.VID, tc.name+" lifecycle empty sign")
+			if tc.wantCommand != "" {
+				delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[1]))
+				if err != nil {
+					t.Fatalf("decode %s lifecycle command after myshop close: %v", tc.name, err)
+				}
+				if delivery.Type != chatproto.ChatTypeCommand || delivery.Message != tc.wantCommand {
+					t.Fatalf("unexpected %s lifecycle command after myshop close: %+v", tc.name, delivery)
+				}
+			} else {
+				phase, err := control.DecodePhase(decodeSingleFrame(t, out[1]))
+				if err != nil {
+					t.Fatalf("decode %s phase after myshop close: %v", tc.name, err)
+				}
+				if phase.Phase != tc.wantPhase {
+					t.Fatalf("expected %s to transition to phase %q after myshop close, got %q", tc.name, tc.wantPhase, phase.Phase)
+				}
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected %s myshop lifecycle close to queue no peer frames, got %d", tc.name, len(queued))
+			}
+			assertExchangeAccountUnchanged(t, accounts, tc.login, owner, tc.name+" myshop lifecycle close")
+		})
+	}
+}
+
+func TestGameRuntimeMyShopCloseSlashClearsOpenSignWithoutInventoryMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopCloseSlash", 0x01030814, 0x02040814, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 814, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	login := "myshop-close-slash"
+	issuePeerTicket(t, ticketStore, login, 0x70707114, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop close slash account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Shop Potion",
+		Stackable: true,
+		MaxCount:  200,
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop close slash runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707114)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      3,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted MYSHOP before close slash: %v", err)
+	}
+	if len(openOut) != 1 {
+		t.Fatalf("expected accepted MYSHOP before close slash to emit one SHOP_SIGN frame, got %d", len(openOut))
+	}
+
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/close_myshop",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /close_myshop error: %v", err)
+	}
+	if len(closeOut) != 1 {
+		t.Fatalf("expected /close_myshop to emit one empty SHOP_SIGN frame, got %d", len(closeOut))
+	}
+	assertMyShopEmptySignFrame(t, closeOut[0], owner.VID, "close_myshop")
+
+	alreadyClosedOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/close_myshop",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected already-closed /close_myshop error: %v", err)
+	}
+	if len(alreadyClosedOut) != 0 {
+		t.Fatalf("expected already-closed /close_myshop to emit no frames, got %d", len(alreadyClosedOut))
+	}
+
+	lifecycleOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/phase_select",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected already-closed phase_select error: %v", err)
+	}
+	if len(lifecycleOut) != 1 {
+		t.Fatalf("expected already-closed phase_select to emit only the phase frame, got %d", len(lifecycleOut))
+	}
+	phase, err := control.DecodePhase(decodeSingleFrame(t, lifecycleOut[0]))
+	if err != nil {
+		t.Fatalf("decode already-closed phase_select: %v", err)
+	}
+	if phase.Phase != session.PhaseSelect {
+		t.Fatalf("expected already-closed phase_select to transition to select, got %q", phase.Phase)
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop close slash")
+}
+
+func assertMyShopEmptySignFrame(t *testing.T, raw []byte, wantVID uint32, context string) {
+	t.Helper()
+	sign, err := shopproto.DecodeServerShopSign(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode %s empty SHOP_SIGN: %v", context, err)
+	}
+	if sign.VID != wantVID || sign.Sign != "" {
+		t.Fatalf("unexpected %s empty SHOP_SIGN: %+v", context, sign)
 	}
 }
