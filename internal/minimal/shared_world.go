@@ -65,6 +65,7 @@ type sharedWorldRegistry struct {
 	sessionMerchantWindows             map[uint64]bool
 	sessionSafeboxWindows              map[uint64]bool
 	sessionRefineWindows               map[uint64]bool
+	sessionMyShopWindows               map[uint64]bool
 	exchangePartners                   map[uint64]uint64
 	exchangeItems                      map[uint64]map[uint8]exchangeDisplayedItem
 	exchangeGold                       map[uint64]uint32
@@ -562,7 +563,7 @@ func (r *sharedWorldRegistry) StartExchange(originID uint64, targetVID uint32) (
 	if _, ok := r.sessionEntryLocked(target.Entity.ID); !ok {
 		return nil, false
 	}
-	if r.hasMerchantWindowOpenLocked(target.Entity.ID) || r.hasSafeboxWindowOpenLocked(target.Entity.ID) || r.hasRefineWindowOpenLocked(target.Entity.ID) {
+	if r.hasMerchantWindowOpenLocked(target.Entity.ID) || r.hasSafeboxWindowOpenLocked(target.Entity.ID) || r.hasRefineWindowOpenLocked(target.Entity.ID) || r.hasMyShopWindowOpenLocked(target.Entity.ID) {
 		return [][]byte{encodeExchangePartnerMerchantBusyInfoFrame()}, true
 	}
 	if _, busy := r.exchangePartners[target.Entity.ID]; busy {
@@ -784,10 +785,10 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 	// Fail closed before accept markers or mutual-accept finalize when either paired
 	// side currently has an open merchant / safebox / refine busy presentation.
 	// Mirror START busy info-chat: requester-local busy wins, otherwise partner busy.
-	if r.hasMerchantWindowOpenLocked(originID) || r.hasSafeboxWindowOpenLocked(originID) || r.hasRefineWindowOpenLocked(originID) {
+	if r.hasMerchantWindowOpenLocked(originID) || r.hasSafeboxWindowOpenLocked(originID) || r.hasRefineWindowOpenLocked(originID) || r.hasMyShopWindowOpenLocked(originID) {
 		return [][]byte{encodeExchangeRequesterMerchantBusyInfoFrame()}, nil, true
 	}
-	if r.hasMerchantWindowOpenLocked(partnerID) || r.hasSafeboxWindowOpenLocked(partnerID) || r.hasRefineWindowOpenLocked(partnerID) {
+	if r.hasMerchantWindowOpenLocked(partnerID) || r.hasSafeboxWindowOpenLocked(partnerID) || r.hasRefineWindowOpenLocked(partnerID) || r.hasMyShopWindowOpenLocked(partnerID) {
 		return [][]byte{encodeExchangePartnerMerchantBusyInfoFrame()}, nil, true
 	}
 	// Gold-carrier-cap gate stays after busy-window rejects and ahead of Check /
@@ -906,10 +907,10 @@ func (r *sharedWorldRegistry) exchangeFinalizeCommitBusyRejectLocked(plan *excha
 	}
 	// Mirror ACCEPT / START busy ordering: commit-requester (plan.OriginID) busy
 	// wins over partner busy when both presentations are open.
-	if r.hasMerchantWindowOpenLocked(plan.OriginID) || r.hasSafeboxWindowOpenLocked(plan.OriginID) || r.hasRefineWindowOpenLocked(plan.OriginID) {
+	if r.hasMerchantWindowOpenLocked(plan.OriginID) || r.hasSafeboxWindowOpenLocked(plan.OriginID) || r.hasRefineWindowOpenLocked(plan.OriginID) || r.hasMyShopWindowOpenLocked(plan.OriginID) {
 		return [][]byte{encodeExchangeRequesterMerchantBusyInfoFrame()}, true
 	}
-	if r.hasMerchantWindowOpenLocked(plan.PartnerID) || r.hasSafeboxWindowOpenLocked(plan.PartnerID) || r.hasRefineWindowOpenLocked(plan.PartnerID) {
+	if r.hasMerchantWindowOpenLocked(plan.PartnerID) || r.hasSafeboxWindowOpenLocked(plan.PartnerID) || r.hasRefineWindowOpenLocked(plan.PartnerID) || r.hasMyShopWindowOpenLocked(plan.PartnerID) {
 		return [][]byte{encodeExchangePartnerMerchantBusyInfoFrame()}, true
 	}
 	return nil, false
@@ -2858,6 +2859,48 @@ func (r *sharedWorldRegistry) clearRefineWindowOpenLocked(entityID uint64) {
 	r.setRefineWindowOpenLocked(entityID, false)
 }
 
+func (r *sharedWorldRegistry) SetMyShopWindowOpen(entityID uint64, open bool) bool {
+	if r == nil || entityID == 0 {
+		return false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.sessionEntryLocked(entityID); !ok {
+		return false
+	}
+	r.setMyShopWindowOpenLocked(entityID, open)
+	return true
+}
+
+func (r *sharedWorldRegistry) setMyShopWindowOpenLocked(entityID uint64, open bool) {
+	if r == nil || entityID == 0 {
+		return
+	}
+	if !open {
+		if r.sessionMyShopWindows != nil {
+			delete(r.sessionMyShopWindows, entityID)
+		}
+		return
+	}
+	if r.sessionMyShopWindows == nil {
+		r.sessionMyShopWindows = make(map[uint64]bool)
+	}
+	r.sessionMyShopWindows[entityID] = true
+}
+
+func (r *sharedWorldRegistry) hasMyShopWindowOpenLocked(entityID uint64) bool {
+	if r == nil || entityID == 0 || r.sessionMyShopWindows == nil {
+		return false
+	}
+	return r.sessionMyShopWindows[entityID]
+}
+
+func (r *sharedWorldRegistry) clearMyShopWindowOpenLocked(entityID uint64) {
+	r.setMyShopWindowOpenLocked(entityID, false)
+}
+
 func (r *sharedWorldRegistry) SetSessionCombatRetaliation(entityID uint64, targetVID uint32, snapshotVersion uint64, readyAt time.Time) bool {
 	if r == nil || entityID == 0 || targetVID == 0 || snapshotVersion == 0 || readyAt.IsZero() {
 		return false
@@ -3311,6 +3354,7 @@ func (r *sharedWorldRegistry) removeStaleOwnershipLocked(entityIDs []uint64) boo
 		r.clearMerchantWindowOpenLocked(entityID)
 		r.clearSafeboxWindowOpenLocked(entityID)
 		r.clearRefineWindowOpenLocked(entityID)
+		r.clearMyShopWindowOpenLocked(entityID)
 		r.clearStaticActorCombatEngagementsBySubjectLocked(entityID)
 		r.clearExchangeLocked(entityID, true)
 		r.detachProximityAggroSuppressSubjectLocked(entityID, currentCharacter.VID)
@@ -3418,6 +3462,7 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 	r.clearMerchantWindowOpenLocked(id)
 	r.clearSafeboxWindowOpenLocked(id)
 	r.clearRefineWindowOpenLocked(id)
+	r.clearMyShopWindowOpenLocked(id)
 	r.clearStaticActorCombatEngagementsBySubjectLocked(id)
 	r.clearExchangeLocked(id, true)
 	r.detachProximityAggroSuppressSubjectLocked(id, currentCharacter.VID)

@@ -42,4 +42,4 @@ Own open-private-shop busy rejects beside the already-owned merchant/safebox/ref
 
 ## Status
 
-Docs/spec contract freeze on `lane/items`. Implementation RED/GREEN for open-private-shop exchange busy rejects follows as the next cohesive slice; guest browse/buy and cube busy rejects stay deferred.
+Implemented on `lane/items`: open private shop publishes a peer-visible busy bit and rejects `EXCHANGE START` / `ACCEPT` / commit-time busy drift with the already-owned merchant/safebox/refine busy chat strings. Guest browse/buy and cube busy rejects stay deferred.

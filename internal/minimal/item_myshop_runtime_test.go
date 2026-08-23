@@ -589,3 +589,156 @@ func assertMyShopEmptySignFrame(t *testing.T, raw []byte, wantVID uint32, contex
 		t.Fatalf("unexpected %s empty SHOP_SIGN: %+v", context, sign)
 	}
 }
+
+func TestGameRuntimeItemExchangeStartRejectsActiveMyShopWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchMyShopStartOwner", 0x01030821, 0x02040821, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 821, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchMyShopStartPeer", 0x01030822, 0x02040822, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerLogin := "exch-myshop-start-owner"
+	peerLogin := "exch-myshop-start-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707121, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x70707122, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop-open exchange owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed myshop-open exchange peer account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Shop Potion",
+		Stackable: true,
+		MaxCount:  200,
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop-open exchange runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707121)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707122)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	openOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      3,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted MYSHOP before exchange start: %v", err)
+	}
+	if len(openOut) != 1 {
+		t.Fatalf("expected accepted MYSHOP before exchange start to emit one SHOP_SIGN frame, got %d", len(openOut))
+	}
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected myshop-open exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected exchange start with open MYSHOP to emit one info chat frame, got %d", len(startOut))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, startOut[0]))
+	if err != nil {
+		t.Fatalf("decode myshop-open exchange start info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterMerchantBusyInfoMessage {
+		t.Fatalf("unexpected myshop-open exchange start info chat: %+v", infoChat)
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected exchange start with open MYSHOP to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop-open exchange start owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop-open exchange start peer")
+}
+
+func TestGameRuntimeItemExchangeStartRejectsPartnerActiveMyShopWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchPartnerMyShopOwner", 0x01030823, 0x02040823, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 823, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchPartnerMyShopPeer", 0x01030824, 0x02040824, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 824, Vnum: 27001, Count: 2, Slot: 6}}
+	ownerLogin := "exch-partner-myshop-owner"
+	peerLogin := "exch-partner-myshop-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707123, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x70707124, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed partner-myshop exchange owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed partner-myshop exchange peer account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Shop Potion",
+		Stackable: true,
+		MaxCount:  200,
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected partner-myshop exchange runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707123)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707124)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	openOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Partner Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      2,
+			Position:   itemproto.InventoryPosition(6),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected partner accepted MYSHOP before exchange start: %v", err)
+	}
+	if len(openOut) != 1 {
+		t.Fatalf("expected partner accepted MYSHOP before exchange start to emit one SHOP_SIGN frame, got %d", len(openOut))
+	}
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected partner-myshop exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected partner-myshop exchange start to emit one info chat frame, got %d", len(startOut))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, startOut[0]))
+	if err != nil {
+		t.Fatalf("decode partner-myshop exchange start info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangePartnerMerchantBusyInfoMessage {
+		t.Fatalf("unexpected partner-myshop exchange start info chat: %+v", infoChat)
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected partner-myshop exchange start to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "partner-myshop exchange start owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "partner-myshop exchange start peer")
+}

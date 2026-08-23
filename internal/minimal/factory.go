@@ -4375,9 +4375,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		}
 		clearActiveMyShopOpen := func() {
 			hasActiveMyShopOpen = false
+			if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 {
+				sharedWorld.SetMyShopWindowOpen(sharedWorldID, false)
+			}
 		}
 		setActiveMyShopOpen := func() {
 			hasActiveMyShopOpen = true
+			if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 {
+				sharedWorld.SetMyShopWindowOpen(sharedWorldID, true)
+			}
 		}
 		closeActiveMyShopOpenFrames := func() [][]byte {
 			if !hasActiveMyShopOpen {
@@ -7445,7 +7451,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						if !ownsLiveSharedWorldSession() {
 							return gameflow.ItemExchangeResult{Accepted: false}
 						}
-						if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog {
+						if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveMyShopOpen {
 							return gameflow.ItemExchangeResult{
 								Accepted: true,
 								Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
@@ -7496,10 +7502,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						}
 						// Same-socket busy presentations already published into shared-world
 						// START eligibility must also fail closed for ACCEPT / mutual-accept
-						// finalize so a later-opened merchant/safebox/refine window cannot
+						// finalize so a later-opened merchant/safebox/refine/myshop window cannot
 						// sneak past the frozen busy-window trade policy. Mirror START's
 						// requester busy info-chat so the reject is client-visible.
-						if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog {
+						if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveMyShopOpen {
 							return gameflow.ItemExchangeResult{
 								Accepted: true,
 								Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
