@@ -87,6 +87,9 @@ const itemBuyRejectedInfoMessage = "The merchant will not sell this item to you.
 const itemSellRejectedInfoMessage = "The merchant refuses to buy this item."
 const itemUnequipRejectedInfoMessage = "You cannot remove this item."
 const itemEquipOccupiedWearSlotInfoMessage = "You are already wearing equipment."
+const safeboxPasswordWrongInfoMessage = "You have entered the wrong password."
+const safeboxAlreadyOpenInfoMessage = "The warehouse is already open."
+const safeboxShowPasswordCommandMessage = "ShowMeSafeboxPassword"
 const questFlagRewardRestrictedInfoMessage = "You cannot receive this quest reward."
 const questFlagInsufficientGoldInfoMessage = "You do not have enough gold."
 const questFlagInsufficientExperienceInfoMessage = "You do not have enough experience."
@@ -4117,6 +4120,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		var hasActiveSafeboxOpen bool
 		var activeSafeboxSize uint8
 		activeSafeboxItems := make(map[uint8]inventory.ItemInstance)
+		var pendingSafeboxPasswordChallenge bool
+		var pendingSafeboxPasswordSize uint8
 		var activeRefineDialog refineDialogPresentation
 		var hasActiveRefineDialog bool
 		bootstrapSafeboxCapacity := func(size uint8) uint8 {
@@ -4137,6 +4142,24 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				return
 			}
 			activeSafeboxItems = make(map[uint8]inventory.ItemInstance)
+		}
+		clearPendingSafeboxPasswordChallenge := func() {
+			pendingSafeboxPasswordChallenge = false
+			pendingSafeboxPasswordSize = 0
+		}
+		setPendingSafeboxPasswordChallenge := func(size uint8) {
+			pendingSafeboxPasswordChallenge = true
+			pendingSafeboxPasswordSize = size
+		}
+		durableSafeboxPassword := func(selected *player.Runtime) string {
+			if runtime == nil || runtime.safeboxStore == nil || !hasTicket || selected == nil {
+				return safeboxstore.DefaultPassword
+			}
+			snapshot, err := safeboxstore.LoadOrEmpty(runtime.safeboxStore)
+			if err != nil {
+				return safeboxstore.DefaultPassword
+			}
+			return safeboxstore.CharacterPassword(snapshot, sessionTicket.Login, selected.LiveCharacter().ID)
 		}
 		cloneActiveSafeboxItems := func() map[uint8]inventory.ItemInstance {
 			if len(activeSafeboxItems) == 0 {
@@ -4248,6 +4271,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				sharedWorld.SetSafeboxWindowOpen(sharedWorldID, true)
 			}
 		}
+		openSafeboxPresentation := func(size uint8) [][]byte {
+			setActiveSafeboxOpen(size, true)
+			hydrateActiveSafeboxFromStore()
+			frames := [][]byte{itemproto.EncodeSafeboxSize(itemproto.SafeboxSizePacket{Size: size})}
+			frames = append(frames, encodeActiveSafeboxSetFrames()...)
+			return frames
+		}
 		setActiveRefineDialog := func(dialog refineDialogPresentation, open bool) {
 			if !open {
 				hasActiveRefineDialog = false
@@ -4271,7 +4301,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			return append(frames, shopproto.EncodeServerEnd())
 		}
 		appendPostFloorSafeboxCloseFrame := func(frames [][]byte, clearTarget bool) [][]byte {
-			if !clearTarget || !hasActiveSafeboxOpen {
+			if !clearTarget {
+				return frames
+			}
+			clearPendingSafeboxPasswordChallenge()
+			if !hasActiveSafeboxOpen {
 				return frames
 			}
 			setActiveSafeboxOpen(0, false)
@@ -4307,6 +4341,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			return append([][]byte{shopproto.EncodeServerEnd()}, frames...)
 		}
 		prependSafeboxCloseFrame := func(frames [][]byte) [][]byte {
+			clearPendingSafeboxPasswordChallenge()
 			if !hasActiveSafeboxOpen {
 				return frames
 			}
@@ -6022,14 +6057,44 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							if hasActiveSafeboxOpen && !sizeExplicit {
 								size = activeSafeboxSize
 							}
-							setActiveSafeboxOpen(size, true)
-							hydrateActiveSafeboxFromStore()
-							frames := [][]byte{itemproto.EncodeSafeboxSize(itemproto.SafeboxSizePacket{Size: size})}
-							frames = append(frames, encodeActiveSafeboxSetFrames()...)
+							clearPendingSafeboxPasswordChallenge()
+							frames := openSafeboxPresentation(size)
 							return gameflow.ChatResult{
 								Accepted: true,
 								Frames:   frames,
 							}
+						}
+						if password, ok := slashSafeboxPasswordCommand(packet.Message); ok {
+							selectedPlayer, selectedOK := currentSelectedPlayer()
+							if !selectedOK || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							if hasActiveSafeboxOpen {
+								clearPendingSafeboxPasswordChallenge()
+								delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: safeboxAlreadyOpenInfoMessage}
+								return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
+							}
+							if !pendingSafeboxPasswordChallenge {
+								// No pending warehouse challenge: consume fail-closed so the
+								// slash does not fall through as ordinary talking chat.
+								return gameflow.ChatResult{Accepted: true}
+							}
+							if password == "" || len(password) > safeboxstore.MaxPasswordLen {
+								clearPendingSafeboxPasswordChallenge()
+								delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: safeboxPasswordWrongInfoMessage}
+								return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
+							}
+							size := pendingSafeboxPasswordSize
+							if size < bootstrapSafeboxOpenMinSize || size > bootstrapSafeboxOpenMaxSize {
+								size = bootstrapSafeboxOpenMinSize
+							}
+							want := durableSafeboxPassword(selectedPlayer)
+							if password != want {
+								clearPendingSafeboxPasswordChallenge()
+								return gameflow.ChatResult{Accepted: true, Frames: [][]byte{itemproto.EncodeSafeboxWrongPassword()}}
+							}
+							clearPendingSafeboxPasswordChallenge()
+							return gameflow.ChatResult{Accepted: true, Frames: openSafeboxPresentation(size)}
 						}
 						if slashCloseSafeboxCommand(packet.Message) {
 							if !hasActiveSafeboxOpen {
@@ -6037,6 +6102,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								// ordinary talking-chat fallthrough and no CloseSafebox echo.
 								return gameflow.ChatResult{Accepted: true}
 							}
+							clearPendingSafeboxPasswordChallenge()
 							setActiveSafeboxOpen(0, false)
 							delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeCommand, Message: "CloseSafebox"}
 							return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
@@ -6053,6 +6119,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								joinedSharedWorld = false
 								sharedWorldID = 0
 							}
+							clearPendingSafeboxPasswordChallenge()
 							setActiveSafeboxOpen(0, false)
 							clearActiveSafeboxItems()
 							setActiveRefineDialog(refineDialogPresentation{}, false)
@@ -7645,14 +7712,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					}
 					if resolution.Definition.Kind == interactionstore.KindOpenSafebox {
 						size := interactionstore.EffectiveOpenSafeboxSize(resolution.Definition)
-						setActiveSafeboxOpen(size, true)
-						hydrateActiveSafeboxFromStore()
-						frames := make([][]byte, 0, 2)
+						setPendingSafeboxPasswordChallenge(size)
+						frames := make([][]byte, 0, 3)
 						if resolution.Delivery != nil {
 							frames = append(frames, chatproto.EncodeChatDelivery(*resolution.Delivery))
 						}
-						frames = append(frames, itemproto.EncodeSafeboxSize(itemproto.SafeboxSizePacket{Size: size}))
-						frames = append(frames, encodeActiveSafeboxSetFrames()...)
+						frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+							Type:    chatproto.ChatTypeCommand,
+							Message: safeboxShowPasswordCommandMessage,
+						}))
 						frames = prependMerchantCloseFrame(frames)
 						markInteractionCooldown(packet.TargetVID)
 						return gameflow.InteractionResult{Accepted: true, Frames: frames}
@@ -7976,6 +8044,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			shouldLeave := joinedSharedWorld
 			joinedSharedWorld = false
 			clearActiveMerchantBuy()
+			clearPendingSafeboxPasswordChallenge()
 			setActiveSafeboxOpen(0, false)
 			clearActiveSafeboxItems()
 			setActiveRefineDialog(refineDialogPresentation{}, false)
@@ -8801,6 +8870,27 @@ func slashCloseSafeboxCommand(message string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func slashSafeboxPasswordCommand(message string) (string, bool) {
+	if !strings.HasPrefix(message, "/") {
+		return "", false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) == 0 || fields[0] != "safebox_password" {
+		return "", false
+	}
+	switch len(fields) {
+	case 1:
+		// Recognized command with missing password: consume and reject in handler.
+		return "", true
+	case 2:
+		return fields[1], true
+	default:
+		// Extra args stay recognized so the handler can fail closed instead of
+		// falling through as ordinary talking chat.
+		return "", true
 	}
 }
 

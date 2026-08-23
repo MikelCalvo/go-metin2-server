@@ -41,11 +41,23 @@ type Cell struct {
 	Locked bool   `json:"locked,omitempty"`
 }
 
+const (
+	// DefaultPassword is the bootstrap effective password when a character row
+	// omits password or stores an empty string (legacy oracle default "000000").
+	DefaultPassword = "000000"
+	// MaxPasswordLen mirrors SAFEBOX_PASSWORD_MAX_LEN from the external oracle.
+	MaxPasswordLen = 6
+)
+
 // CharacterRow is the durable safebox contents for one account login + character id.
 type CharacterRow struct {
 	Login       string `json:"login"`
 	CharacterID uint32 `json:"character_id"`
-	Cells       []Cell `json:"cells"`
+	// Password is the optional durable safebox password. Omitted / empty means
+	// DefaultPassword for challenge matching; persisted JSON omits the field
+	// when empty so existing cell-only snapshots stay byte-compatible.
+	Password string `json:"password,omitempty"`
+	Cells    []Cell `json:"cells"`
 }
 
 // Snapshot is the committed durable safebox FileStore payload.
@@ -320,15 +332,30 @@ func ReplaceCharacterCells(snapshot Snapshot, login string, characterID uint32, 
 		return Snapshot{}, ErrInvalidSnapshot
 	}
 	normalized := normalizeSnapshot(snapshot)
+	existingPassword := ""
 	filtered := make([]CharacterRow, 0, len(normalized.Characters))
 	for _, row := range normalized.Characters {
 		if row.Login == login && row.CharacterID == characterID {
+			existingPassword = row.Password
 			continue
 		}
 		filtered = append(filtered, row)
 	}
 	if len(cells) == 0 {
-		return normalizeSnapshot(Snapshot{Characters: filtered}), nil
+		if existingPassword == "" {
+			return normalizeSnapshot(Snapshot{Characters: filtered}), nil
+		}
+		filtered = append(filtered, CharacterRow{
+			Login:       login,
+			CharacterID: characterID,
+			Password:    existingPassword,
+			Cells:       nil,
+		})
+		next := normalizeSnapshot(Snapshot{Characters: filtered})
+		if err := validateSnapshot(next); err != nil {
+			return Snapshot{}, err
+		}
+		return next, nil
 	}
 	rowCells := make([]Cell, 0, len(cells))
 	for cell, item := range cells {
@@ -346,6 +373,69 @@ func ReplaceCharacterCells(snapshot Snapshot, login string, characterID uint32, 
 	filtered = append(filtered, CharacterRow{
 		Login:       login,
 		CharacterID: characterID,
+		Password:    existingPassword,
+		Cells:       rowCells,
+	})
+	next := normalizeSnapshot(Snapshot{Characters: filtered})
+	if err := validateSnapshot(next); err != nil {
+		return Snapshot{}, err
+	}
+	return next, nil
+}
+
+// CharacterPassword returns the durable password for one login + character id.
+// Missing rows and blank stored passwords resolve to DefaultPassword.
+func CharacterPassword(snapshot Snapshot, login string, characterID uint32) string {
+	login = strings.TrimSpace(login)
+	for _, row := range normalizeSnapshot(snapshot).Characters {
+		if row.Login == login && row.CharacterID == characterID {
+			return EffectivePassword(row.Password)
+		}
+	}
+	return DefaultPassword
+}
+
+// EffectivePassword returns the challenge password for a stored value.
+func EffectivePassword(password string) string {
+	if strings.TrimSpace(password) == "" {
+		return DefaultPassword
+	}
+	return password
+}
+
+// ReplaceCharacterPassword upserts password for one character row while
+// preserving durable cells. Missing rows create an empty-cells row.
+func ReplaceCharacterPassword(snapshot Snapshot, login string, characterID uint32, password string) (Snapshot, error) {
+	login = strings.TrimSpace(login)
+	if !validLogin(login) || characterID == 0 {
+		return Snapshot{}, ErrInvalidSnapshot
+	}
+	if !validPassword(password) {
+		return Snapshot{}, ErrInvalidSnapshot
+	}
+	normalized := normalizeSnapshot(snapshot)
+	cells := CharacterCells(normalized, login, characterID)
+	rowCells := make([]Cell, 0, len(cells))
+	for cell, item := range cells {
+		rowCells = append(rowCells, Cell{
+			Cell:   cell,
+			ID:     item.ID,
+			Vnum:   item.Vnum,
+			Count:  item.Count,
+			Locked: item.Locked,
+		})
+	}
+	filtered := make([]CharacterRow, 0, len(normalized.Characters)+1)
+	for _, row := range normalized.Characters {
+		if row.Login == login && row.CharacterID == characterID {
+			continue
+		}
+		filtered = append(filtered, row)
+	}
+	filtered = append(filtered, CharacterRow{
+		Login:       login,
+		CharacterID: characterID,
+		Password:    password,
 		Cells:       rowCells,
 	})
 	next := normalizeSnapshot(Snapshot{Characters: filtered})
@@ -374,6 +464,7 @@ func normalizeSnapshot(snapshot Snapshot) Snapshot {
 
 func normalizeCharacterRow(row CharacterRow) CharacterRow {
 	row.Login = strings.TrimSpace(row.Login)
+	row.Password = strings.TrimSpace(row.Password)
 	row.Cells = cloneCells(row.Cells)
 	if row.Cells == nil {
 		row.Cells = []Cell{}
@@ -415,7 +506,7 @@ func validateSnapshot(snapshot Snapshot) error {
 	seenItemIDs := make(map[uint64]struct{})
 	for _, row := range snapshot.Characters {
 		row = normalizeCharacterRow(row)
-		if !validLogin(row.Login) || row.CharacterID == 0 {
+		if !validLogin(row.Login) || row.CharacterID == 0 || !validPassword(row.Password) {
 			return ErrInvalidSnapshot
 		}
 		key := characterKey(row.Login, row.CharacterID)
@@ -468,6 +559,25 @@ func validLogin(login string) bool {
 	return true
 }
 
+func validPassword(password string) bool {
+	if password == "" {
+		return true
+	}
+	if !utf8.ValidString(password) || strings.ContainsRune(password, '\x00') {
+		return false
+	}
+	if len(password) > MaxPasswordLen {
+		return false
+	}
+	for _, r := range password {
+		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func characterKey(login string, characterID uint32) string {
 	return strings.TrimSpace(login) + ":" + fmt.Sprintf("%d", characterID)
 }
@@ -481,6 +591,7 @@ func cloneCharacterRows(rows []CharacterRow) []CharacterRow {
 		cloned[i] = CharacterRow{
 			Login:       row.Login,
 			CharacterID: row.CharacterID,
+			Password:    row.Password,
 			Cells:       cloneCells(row.Cells),
 		}
 	}

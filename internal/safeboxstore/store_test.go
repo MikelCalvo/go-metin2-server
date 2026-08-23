@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
@@ -234,5 +235,103 @@ func TestReplaceCharacterCellsUpsertsAndRemovesRows(t *testing.T) {
 	}
 	if len(cleared.Characters) != 0 {
 		t.Fatalf("expected cleared character row, got %#v", cleared)
+	}
+}
+
+func TestFileStoreRoundTripPersistsPasswordAndDefaultsBlank(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "safebox.json")
+	store := NewFileStore(path)
+	input := Snapshot{Characters: []CharacterRow{{
+		Login:       "owner-one",
+		CharacterID: 42,
+		Password:    "secret",
+		Cells:       []Cell{{Cell: 0, ID: 9001, Vnum: 27002, Count: 1}},
+	}}}
+	if err := store.Save(input); err != nil {
+		t.Fatalf("save safebox with password: %v", err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("load safebox with password: %v", err)
+	}
+	if loaded.Characters[0].Password != "secret" {
+		t.Fatalf("unexpected loaded password: %#v", loaded.Characters[0])
+	}
+	if got := CharacterPassword(loaded, "owner-one", 42); got != "secret" {
+		t.Fatalf("CharacterPassword=%q want secret", got)
+	}
+	if got := CharacterPassword(Snapshot{}, "missing", 1); got != DefaultPassword {
+		t.Fatalf("missing row CharacterPassword=%q want %q", got, DefaultPassword)
+	}
+	blank := Snapshot{Characters: []CharacterRow{{Login: "owner-two", CharacterID: 7}}}
+	if got := CharacterPassword(blank, "owner-two", 7); got != DefaultPassword {
+		t.Fatalf("blank password CharacterPassword=%q want %q", got, DefaultPassword)
+	}
+}
+
+func TestFileStoreSaveOmitsBlankPasswordForDeterministicJSON(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "safebox.json")
+	store := NewFileStore(path)
+	input := Snapshot{Characters: []CharacterRow{{
+		Login: "alpha", CharacterID: 1, Password: "", Cells: []Cell{{Cell: 0, ID: 1, Vnum: 20, Count: 2}},
+	}}}
+	if err := store.Save(input); err != nil {
+		t.Fatalf("save blank-password safebox: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read blank-password safebox: %v", err)
+	}
+	if strings.Contains(string(raw), `"password"`) {
+		t.Fatalf("expected blank password omitted from JSON, got %s", string(raw))
+	}
+}
+
+func TestFileStoreRejectsInvalidPassword(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "safebox.json")
+	store := NewFileStore(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{name: "too_long", body: `{"characters":[{"login":"owner","character_id":1,"password":"1234567","cells":[]}]}`},
+		{name: "symbols", body: `{"characters":[{"login":"owner","character_id":1,"password":"ab cd","cells":[]}]}`},
+		{name: "nul", body: "{\"characters\":[{\"login\":\"owner\",\"character_id\":1,\"password\":\"ab\\u0000c\",\"cells\":[]}]} "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(path, []byte(strings.TrimSpace(tc.body)), 0o644); err != nil {
+				t.Fatalf("write %s: %v", tc.name, err)
+			}
+			_, err := store.Load()
+			if !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot for %s, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
+func TestReplaceCharacterPasswordPreservesCellsAndSurvivesEmptyCells(t *testing.T) {
+	snapshot := Snapshot{Characters: []CharacterRow{{
+		Login: "owner", CharacterID: 1, Cells: []Cell{{Cell: 0, ID: 10, Vnum: 27001, Count: 2}},
+	}}}
+	withPassword, err := ReplaceCharacterPassword(snapshot, "owner", 1, "abc123")
+	if err != nil {
+		t.Fatalf("replace password: %v", err)
+	}
+	if withPassword.Characters[0].Password != "abc123" || withPassword.Characters[0].Cells[0].ID != 10 {
+		t.Fatalf("unexpected password upsert: %#v", withPassword)
+	}
+	cleared, err := ReplaceCharacterCells(withPassword, "owner", 1, nil)
+	if err != nil {
+		t.Fatalf("clear cells with password: %v", err)
+	}
+	if len(cleared.Characters) != 1 || cleared.Characters[0].Password != "abc123" || len(cleared.Characters[0].Cells) != 0 {
+		t.Fatalf("expected password-only row after clear, got %#v", cleared)
+	}
+	if got := CharacterPassword(cleared, "owner", 1); got != "abc123" {
+		t.Fatalf("CharacterPassword after clear=%q want abc123", got)
 	}
 }

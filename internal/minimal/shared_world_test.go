@@ -35745,7 +35745,7 @@ func TestGameSessionFlowStaticActorOpenSafeboxInteractionReturnsSafeboxSize(t *t
 		t.Fatalf("unexpected open_safebox interaction error: %v", err)
 	}
 	if len(out) != 2 {
-		t.Fatalf("expected chat + SAFEBOX_SIZE frames, got %d", len(out))
+		t.Fatalf("expected chat + ShowMeSafeboxPassword frames, got %d", len(out))
 	}
 	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
 	if err != nil {
@@ -35754,12 +35754,12 @@ func TestGameSessionFlowStaticActorOpenSafeboxInteractionReturnsSafeboxSize(t *t
 	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != "The warehouse keeper unlocks the vault." {
 		t.Fatalf("unexpected open_safebox chat delivery: %+v", delivery)
 	}
-	size, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, out[1]))
+	prompt, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[1]))
 	if err != nil {
-		t.Fatalf("decode open_safebox SAFEBOX_SIZE: %v", err)
+		t.Fatalf("decode open_safebox ShowMeSafeboxPassword: %v", err)
 	}
-	if size != (itemproto.SafeboxSizePacket{Size: 2}) {
-		t.Fatalf("unexpected open_safebox SAFEBOX_SIZE: %+v", size)
+	if prompt.Type != chatproto.ChatTypeCommand || prompt.VID != 0 || prompt.Empire != 0 || prompt.Message != safeboxShowPasswordCommandMessage {
+		t.Fatalf("unexpected open_safebox password prompt: %+v", prompt)
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued peer frames for open_safebox, got %d", len(queued))
@@ -37288,7 +37288,7 @@ func TestGameSessionFlowInteractingWithOpenSafeboxActorClosesOpenMerchantWindowB
 		t.Fatalf("unexpected open_safebox interaction while merchant is open: %v", err)
 	}
 	if len(out) != 3 {
-		t.Fatalf("expected merchant close plus chat + SAFEBOX_SIZE after interacting with warehouse, got %d frames", len(out))
+		t.Fatalf("expected merchant close plus chat + ShowMeSafeboxPassword after interacting with warehouse, got %d frames", len(out))
 	}
 	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, out[0])); err != nil {
 		t.Fatalf("decode merchant close before open_safebox frames: %v", err)
@@ -37300,12 +37300,12 @@ func TestGameSessionFlowInteractingWithOpenSafeboxActorClosesOpenMerchantWindowB
 	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != "The warehouse keeper unlocks the vault." {
 		t.Fatalf("unexpected open_safebox chat delivery after merchant close: %+v", delivery)
 	}
-	size, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, out[2]))
+	prompt, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[2]))
 	if err != nil {
-		t.Fatalf("decode open_safebox SAFEBOX_SIZE after merchant close: %v", err)
+		t.Fatalf("decode open_safebox ShowMeSafeboxPassword after merchant close: %v", err)
 	}
-	if size != (itemproto.SafeboxSizePacket{Size: 2}) {
-		t.Fatalf("unexpected open_safebox SAFEBOX_SIZE after merchant close: %+v", size)
+	if prompt.Type != chatproto.ChatTypeCommand || prompt.VID != 0 || prompt.Empire != 0 || prompt.Message != safeboxShowPasswordCommandMessage {
+		t.Fatalf("unexpected open_safebox password prompt after merchant close: %+v", prompt)
 	}
 
 	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
