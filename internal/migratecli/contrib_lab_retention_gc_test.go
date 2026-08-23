@@ -116,6 +116,44 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		"Never `ExecStart` / cron-run `rm`, `rmdir`, `unlink`, `find -delete`, or": {},
 		"- `rm` of `.gc-aside-*` trees":                                            {},
 	})
+
+	envSamplePath := filepath.Join(base, "env", "metin2-runtime-config.env.sample")
+	dropInPath := filepath.Join(base, "systemd", "metin2-artifact-retention-gc-print.service.d", "runtime-config.conf.sample")
+	envSample := mustReadContribSample(t, envSamplePath)
+	dropIn := mustReadContribSample(t, dropInPath)
+	for _, want := range []string{
+		"METIN2_RUNTIME_CONFIG=",
+		"/var/metin2/ops-prints/",
+	} {
+		if !strings.Contains(envSample, want) {
+			t.Fatalf("env sample missing %q", want)
+		}
+	}
+	if !strings.Contains(dropIn, "EnvironmentFile=") {
+		t.Fatalf("drop-in sample must set EnvironmentFile=, got:\n%s", dropIn)
+	}
+	if !strings.Contains(dropIn, "metin2-runtime-config.env.sample") && !strings.Contains(dropIn, "metin2-runtime-config.env") {
+		t.Fatalf("drop-in sample must point at the env file sample, got:\n%s", dropIn)
+	}
+	for _, body := range []string{envSample, dropIn} {
+		for _, forbiddenLive := range []string{
+			"curl ",
+			"http://127.0.0.1:6060",
+			"http://127.0.0.1:6061",
+			"| /bin/sh",
+			"|/bin/sh",
+			"password=",
+			"METIN2_DB_DSN",
+			"CREATE TABLE",
+			"DROP TABLE",
+		} {
+			if strings.Contains(body, forbiddenLive) {
+				t.Fatalf("runtime-config sample must not contain %q:\n%s", forbiddenLive, body)
+			}
+		}
+	}
+	assertNoForbiddenRetentionGCMarkers(t, "env-sample", envSample, nil)
+	assertNoForbiddenRetentionGCMarkers(t, "drop-in-sample", dropIn, nil)
 }
 
 func TestContribLabRetentionGCHelperHermeticExecution(t *testing.T) {
