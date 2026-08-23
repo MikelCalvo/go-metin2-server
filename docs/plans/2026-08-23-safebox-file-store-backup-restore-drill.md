@@ -53,3 +53,6 @@ curl was printed. This slice closes that ops gap.
 2. Keep password / money / mall deferred on the items lane.
 3. Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`
    (printer remains read-only).
+4. ~~Prove the already-registered `/local/safebox-store/*` handlers and sync
+   debugging persistence-status docs.~~ Done: see
+   [safebox store ops endpoint + persistence-status docs proof](2026-08-23-safebox-store-ops-endpoint-persistence-status-docs.md).
