@@ -44,5 +44,5 @@ git diff --check
 1. ~~Optionally convert the twin return-step content-bundle prune/restore/replace suites.~~ Done: see [hermetic spawn-return content-bundle MemoryStore tests](2026-08-22-hermetic-spawn-return-content-bundle-memorystore-tests.md).
 2. Optionally convert shared `newInteractionDefinitionStore` / `newItemTemplateStore` helpers to MemoryStore once neighboring item gameplay suites are ready for the same coupling reduction.
 3. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
-4. Keep branching quest scripts and multi-count regen deferred.
-5. Keep durable safebox persistence / password load deferred.
+4. Keep branching quest scripts deferred; multi-count regen authoring is now owned separately.
+5. ~~Keep durable safebox persistence / password load deferred.~~ Done later; see `docs/plans/2026-08-23-open-safebox-npc-password-challenge-docs-sync.md`.

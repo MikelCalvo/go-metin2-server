@@ -20,12 +20,12 @@ Add the already-owned gated `open_safebox` `Warehouse` NPC into `docs/examples/b
 3. Focused canonicalize / validate / gameplay coverage proves:
    - import/canonicalize keeps authoring regen/drop expansion while counting the new warehouse
    - summary exposes one `open_safebox` route for `Warehouse`
-   - gated mismatch before guide unlock returns `Quest requirements are not met.` with no `SAFEBOX_SIZE`
-   - after guide unlock, INTERACT returns authored info chat + `SAFEBOX_SIZE` size `2`
+   - gated mismatch before guide unlock returns `Quest requirements are not met.` with no password prompt / `SAFEBOX_SIZE`
+   - after guide unlock, INTERACT returns authored info chat + `ShowMeSafeboxPassword`; matching `/safebox_password 000000` then opens with `SAFEBOX_SIZE` size `2` (and open-burst money when durable warehouse gold exists)
 
 ## What this is not yet
 
-- durable safebox persistence / password load
+- ~~durable safebox persistence / password load~~ Done later for FileStore rematerialize + password challenge; SQL import/backfill and mall remain deferred.
 - new NPC service kinds
 - branching quest scripts
 - relocating the regen mob away from nearby warehouse coordinates beyond the chosen free `x=469575` cell
@@ -42,6 +42,6 @@ git diff --check
 
 ## Follow-up options
 
-1. Keep durable safebox persistence / password load deferred.
+1. ~~Keep durable safebox persistence / password load deferred.~~ Done later; see `docs/plans/2026-08-23-open-safebox-npc-password-challenge-docs-sync.md`.
 2. Keep branching quest scripts deferred.
 3. Optional: compose warehouse into additional authoring fixtures only if QA still needs a narrower warehouse-only authoring example.
