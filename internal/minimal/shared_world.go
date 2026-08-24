@@ -18,6 +18,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
+	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
@@ -65,19 +66,22 @@ type sharedWorldRegistry struct {
 	sessionMerchantWindows             map[uint64]bool
 	sessionSafeboxWindows              map[uint64]bool
 	sessionRefineWindows               map[uint64]bool
-	sessionMyShopWindows               map[uint64]bool
-	exchangePartners                   map[uint64]uint64
-	exchangeItems                      map[uint64]map[uint8]exchangeDisplayedItem
-	exchangeGold                       map[uint64]uint32
-	exchangeAccepted                   map[uint64]bool
-	nextStaticActorCombatSnapshotID    uint64
-	lastKnownCharacters                map[uint64]loginticket.Character
-	groundItemsByVID                   map[uint32]sharedGroundItem
-	itemTemplates                      map[uint32]itemcatalog.Template
-	suppressStaticActorFanout          bool
-	pendingStaticActorImportDeletes    []worldruntime.StaticEntity
-	now                                func() time.Time
-	onGroundItemsChanged               func()
+	// sessionMyShopWindows remembers open private-shop presentations keyed by
+	// shared-world entity ID. Presence means busy/open; the value is the
+	// accepted non-empty live sign rematerialized on peer view-entry.
+	sessionMyShopWindows            map[uint64]string
+	exchangePartners                map[uint64]uint64
+	exchangeItems                   map[uint64]map[uint8]exchangeDisplayedItem
+	exchangeGold                    map[uint64]uint32
+	exchangeAccepted                map[uint64]bool
+	nextStaticActorCombatSnapshotID uint64
+	lastKnownCharacters             map[uint64]loginticket.Character
+	groundItemsByVID                map[uint32]sharedGroundItem
+	itemTemplates                   map[uint32]itemcatalog.Template
+	suppressStaticActorFanout       bool
+	pendingStaticActorImportDeletes []worldruntime.StaticEntity
+	now                             func() time.Time
+	onGroundItemsChanged            func()
 }
 
 type sharedGroundItem struct {
@@ -2896,7 +2900,7 @@ func (r *sharedWorldRegistry) clearRefineWindowOpenLocked(entityID uint64) {
 	r.setRefineWindowOpenLocked(entityID, false)
 }
 
-func (r *sharedWorldRegistry) SetMyShopWindowOpen(entityID uint64, open bool) bool {
+func (r *sharedWorldRegistry) SetMyShopWindowOpen(entityID uint64, open bool, sign string) bool {
 	if r == nil || entityID == 0 {
 		return false
 	}
@@ -2907,11 +2911,11 @@ func (r *sharedWorldRegistry) SetMyShopWindowOpen(entityID uint64, open bool) bo
 	if _, ok := r.sessionEntryLocked(entityID); !ok {
 		return false
 	}
-	r.setMyShopWindowOpenLocked(entityID, open)
+	r.setMyShopWindowOpenLocked(entityID, open, sign)
 	return true
 }
 
-func (r *sharedWorldRegistry) setMyShopWindowOpenLocked(entityID uint64, open bool) {
+func (r *sharedWorldRegistry) setMyShopWindowOpenLocked(entityID uint64, open bool, sign string) {
 	if r == nil || entityID == 0 {
 		return
 	}
@@ -2921,21 +2925,79 @@ func (r *sharedWorldRegistry) setMyShopWindowOpenLocked(entityID uint64, open bo
 		}
 		return
 	}
-	if r.sessionMyShopWindows == nil {
-		r.sessionMyShopWindows = make(map[uint64]bool)
+	sign = strings.TrimSpace(sign)
+	if sign == "" {
+		if r.sessionMyShopWindows != nil {
+			delete(r.sessionMyShopWindows, entityID)
+		}
+		return
 	}
-	r.sessionMyShopWindows[entityID] = true
+	if r.sessionMyShopWindows == nil {
+		r.sessionMyShopWindows = make(map[uint64]string)
+	}
+	r.sessionMyShopWindows[entityID] = sign
 }
 
 func (r *sharedWorldRegistry) hasMyShopWindowOpenLocked(entityID uint64) bool {
 	if r == nil || entityID == 0 || r.sessionMyShopWindows == nil {
 		return false
 	}
-	return r.sessionMyShopWindows[entityID]
+	_, ok := r.sessionMyShopWindows[entityID]
+	return ok
+}
+
+func (r *sharedWorldRegistry) myShopSignLocked(entityID uint64) (string, bool) {
+	if r == nil || entityID == 0 || r.sessionMyShopWindows == nil {
+		return "", false
+	}
+	sign, ok := r.sessionMyShopWindows[entityID]
+	if !ok || strings.TrimSpace(sign) == "" {
+		return "", false
+	}
+	return sign, true
 }
 
 func (r *sharedWorldRegistry) clearMyShopWindowOpenLocked(entityID uint64) {
-	r.setMyShopWindowOpenLocked(entityID, false)
+	r.setMyShopWindowOpenLocked(entityID, false, "")
+}
+
+func (r *sharedWorldRegistry) encodeMyShopSignRematerializationFrameLocked(host loginticket.Character) ([]byte, bool) {
+	if r == nil || characterAtBootstrapHPFloor(host) {
+		return nil, false
+	}
+	hostEntity, ok := r.playerEntityForCharacterLocked(host)
+	if !ok || hostEntity.Entity.ID == 0 {
+		return nil, false
+	}
+	sign, ok := r.myShopSignLocked(hostEntity.Entity.ID)
+	if !ok {
+		return nil, false
+	}
+	return shopproto.EncodeServerShopSign(shopproto.ServerShopSignPacket{
+		VID:  host.VID,
+		Sign: sign,
+	}), true
+}
+
+func (r *sharedWorldRegistry) appendMyShopSignRematerializationLocked(frames [][]byte, host loginticket.Character) [][]byte {
+	raw, ok := r.encodeMyShopSignRematerializationFrameLocked(host)
+	if !ok {
+		return frames
+	}
+	return append(frames, raw)
+}
+
+// PeerVisibilityBootstrapFramesWithMyShopSign builds ordinary peer add/info/update
+// bootstrap frames and, when the peer still has an open private shop, appends one
+// rematerialized live GC::SHOP_SIGN after those frames.
+func (r *sharedWorldRegistry) PeerVisibilityBootstrapFramesWithMyShopSign(peer loginticket.Character) [][]byte {
+	if r == nil {
+		return encodePeerVisibilityBootstrapFramesWithTemplates(peer, nil)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	frames := encodePeerVisibilityBootstrapFramesWithTemplates(peer, r.itemTemplates)
+	return r.appendMyShopSignRematerializationLocked(frames, peer)
 }
 
 func (r *sharedWorldRegistry) SetSessionCombatRetaliation(entityID uint64, targetVID uint32, snapshotVersion uint64, readyAt time.Time) bool {
@@ -3452,6 +3514,7 @@ func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pen
 	r.rebindExclusiveGroundOwnerIDLocked(id, character)
 
 	peerFrames := encodePeerVisibilityBootstrapFramesWithTemplates(character, r.itemTemplates)
+	peerFrames = r.appendMyShopSignRematerializationLocked(peerFrames, character)
 	for _, peerCharacter := range visibilityDiff.AddedVisiblePeers {
 		if characterAtBootstrapHPFloor(peerCharacter) {
 			continue
@@ -4264,6 +4327,7 @@ func (r *sharedWorldRegistry) UpdateCharacterWithVisibilityTransition(id uint64,
 
 	removedRaw := encodeCharacterDeleteFrame(previous)
 	addedRaw := encodePeerVisibilityBootstrapFramesWithTemplates(current, r.itemTemplates)
+	addedRaw = r.appendMyShopSignRematerializationLocked(addedRaw, current)
 	stablePeerVIDs := make(map[uint32]struct{}, len(visibilityDiff.AddedVisiblePeers))
 	for _, peerCharacter := range visibilityDiff.AddedVisiblePeers {
 		stablePeerVIDs[peerCharacter.VID] = struct{}{}
@@ -4294,6 +4358,9 @@ func (r *sharedWorldRegistry) UpdateCharacterWithVisibilityTransition(id uint64,
 
 	originFrames := append([][]byte(nil), combatTargetClearFrames...)
 	originFrames = append(originFrames, buildTransferOriginFramesWithTemplates(visibilityDiff.RemovedVisiblePeers, originAddedVisiblePeers, r.itemTemplates)...)
+	for _, peerCharacter := range originAddedVisiblePeers {
+		originFrames = r.appendMyShopSignRematerializationLocked(originFrames, peerCharacter)
+	}
 	originFrames = append(originFrames, r.buildStaticActorVisibilityTransitionFramesLocked(staticActorVisibilityDiff.RemovedVisibleActors, originAddedVisibleStaticActors)...)
 	originFrames = append(originFrames, buildGroundItemVisibilityTransitionFrames(groundItemVisibilityDiff.Removed, originAddedGroundItems)...)
 	if len(originFrames) == 0 {
@@ -4383,6 +4450,9 @@ func (r *sharedWorldRegistry) transfer(id uint64, character loginticket.Characte
 	}
 	originFrames := append([][]byte(nil), combatTargetClearFrames...)
 	originFrames = append(originFrames, buildTransferOriginFramesWithTemplates(visibilityDiff.RemovedVisiblePeers, originAddedVisiblePeers, r.itemTemplates)...)
+	for _, peerCharacter := range originAddedVisiblePeers {
+		originFrames = r.appendMyShopSignRematerializationLocked(originFrames, peerCharacter)
+	}
 	originFrames = append(originFrames, r.buildStaticActorVisibilityTransitionFramesLocked(staticActorVisibilityDiff.RemovedVisibleActors, originAddedVisibleStaticActors)...)
 	originFrames = append(originFrames, buildGroundItemVisibilityTransitionFrames(groundItemVisibilityDiff.Removed, originAddedGroundItems)...)
 	originEntry, _ := r.sessionEntryLocked(id)
@@ -4396,6 +4466,7 @@ func (r *sharedWorldRegistry) transfer(id uint64, character loginticket.Characte
 
 	movedDelete := encodeCharacterDeleteFrame(previous)
 	movedFrames := encodePeerVisibilityBootstrapFramesWithTemplates(character, r.itemTemplates)
+	movedFrames = r.appendMyShopSignRematerializationLocked(movedFrames, character)
 	for _, peerCharacter := range visibilityDiff.RemovedVisiblePeers {
 		if characterAtBootstrapHPFloor(peerCharacter) {
 			continue

@@ -925,3 +925,170 @@ func TestGameRuntimeMyShopOpenBroadcastsShopSignToVisiblePeer(t *testing.T) {
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop peer around-broadcast close host")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop peer around-broadcast close peer")
 }
+
+func TestGameRuntimeMyShopOpenRematerializesShopSignOnPeerViewEntry(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopViewEntryHost", 0x01030843, 0x02040843, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 843, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("MyShopViewEntryPeer", 0x01030844, 0x02040844, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerLogin := "myshop-view-entry-host"
+	peerLogin := "myshop-view-entry-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707143, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x70707144, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop view-entry host account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed myshop view-entry peer account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Shop Potion",
+		Stackable: true,
+		MaxCount:  200,
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop view-entry runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707143)
+	defer closeSessionFlow(t, ownerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+
+	openOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      3,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted MYSHOP before peer view-entry: %v", err)
+	}
+	if len(openOut) != 1 {
+		t.Fatalf("expected accepted MYSHOP before peer view-entry to emit one host SHOP_SIGN frame, got %d", len(openOut))
+	}
+
+	peerFlow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707144)
+	defer closeSessionFlow(t, peerFlow)
+
+	var rematerialized *shopproto.ServerShopSignPacket
+	for _, raw := range enterOut {
+		payload := decodeSingleFrame(t, raw)
+		sign, err := shopproto.DecodeServerShopSign(payload)
+		if err != nil {
+			continue
+		}
+		if rematerialized != nil {
+			t.Fatalf("expected exactly one rematerialized live SHOP_SIGN on peer view-entry, got extras")
+		}
+		copied := sign
+		rematerialized = &copied
+	}
+	if rematerialized == nil {
+		queued := flushServerFrames(t, peerFlow)
+		for _, raw := range queued {
+			payload := decodeSingleFrame(t, raw)
+			sign, err := shopproto.DecodeServerShopSign(payload)
+			if err != nil {
+				continue
+			}
+			if rematerialized != nil {
+				t.Fatalf("expected exactly one rematerialized live SHOP_SIGN on peer view-entry queue, got extras")
+			}
+			copied := sign
+			rematerialized = &copied
+		}
+	}
+	if rematerialized == nil {
+		t.Fatal("expected newly visible peer to receive one rematerialized live SHOP_SIGN for already-open host")
+	}
+	if rematerialized.VID != owner.VID || rematerialized.Sign != "Private Shop" {
+		t.Fatalf("unexpected rematerialized MYSHOP SHOP_SIGN: %+v", rematerialized)
+	}
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop peer view-entry rematerialization host")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop peer view-entry rematerialization peer")
+}
+
+func TestGameRuntimeMyShopClosedBeforePeerViewEntryOmitsLiveShopSign(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopClosedViewHost", 0x01030845, 0x02040845, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 845, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("MyShopClosedViewPeer", 0x01030846, 0x02040846, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerLogin := "myshop-closed-view-host"
+	peerLogin := "myshop-closed-view-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707145, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x70707146, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop closed view-entry host account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed myshop closed view-entry peer account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Shop Potion",
+		Stackable: true,
+		MaxCount:  200,
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop closed view-entry runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707145)
+	defer closeSessionFlow(t, ownerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+
+	openOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      3,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted MYSHOP before closed view-entry: %v", err)
+	}
+	if len(openOut) != 1 {
+		t.Fatalf("expected accepted MYSHOP before closed view-entry to emit one host SHOP_SIGN frame, got %d", len(openOut))
+	}
+	closeOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/close_myshop",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /close_myshop before peer view-entry: %v", err)
+	}
+	if len(closeOut) != 1 {
+		t.Fatalf("expected /close_myshop before peer view-entry to emit one empty SHOP_SIGN frame, got %d", len(closeOut))
+	}
+
+	peerFlow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707146)
+	defer closeSessionFlow(t, peerFlow)
+	for _, raw := range enterOut {
+		payload := decodeSingleFrame(t, raw)
+		if sign, err := shopproto.DecodeServerShopSign(payload); err == nil {
+			t.Fatalf("expected closed host not to rematerialize live SHOP_SIGN on peer view-entry, got %+v", sign)
+		}
+	}
+	for _, raw := range flushServerFrames(t, peerFlow) {
+		payload := decodeSingleFrame(t, raw)
+		if sign, err := shopproto.DecodeServerShopSign(payload); err == nil {
+			t.Fatalf("expected closed host not to queue rematerialized SHOP_SIGN on peer view-entry, got %+v", sign)
+		}
+	}
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop closed view-entry host")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop closed view-entry peer")
+}

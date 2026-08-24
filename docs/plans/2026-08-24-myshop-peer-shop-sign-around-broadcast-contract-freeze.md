@@ -54,4 +54,4 @@ Own peer fanout on top of the already-owned host-only open/close helpers:
 
 ## Status
 
-Implemented on `lane/items` for open/close peer around-broadcast of live/empty `GC::SHOP_SIGN`. View-entry rematerialization of a remembered live sign stays an explicit follow-on; guest browse/buy and cube busy rejects stay deferred.
+Implemented on `lane/items` for open/close peer around-broadcast of live/empty `GC::SHOP_SIGN`. View-entry rematerialization of a remembered live sign is owned separately (`docs/plans/2026-08-24-myshop-peer-shop-sign-view-entry-rematerialization-contract-freeze.md`); guest browse/buy and cube busy rejects stay deferred.

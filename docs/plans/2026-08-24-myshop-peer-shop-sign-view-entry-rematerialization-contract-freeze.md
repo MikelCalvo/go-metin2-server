@@ -45,4 +45,4 @@ This freeze is **view-entry rematerialization of an already-open host's remember
 
 ## Status
 
-Docs-first freeze on `lane/items`. Implementation RED intentionally deferred until this contract is committed green on `main`-rebased lane history.
+Implemented on `lane/items`: newly visible peers receive one rematerialized live `GC::SHOP_SIGN` for an already-open host (Join / EnterGame trailing peer bootstrap and relocate/transfer visibility adds), using the remembered non-empty sign stored beside the shared-world MyShop busy bit. Guest browse/buy and cube busy rejects stay deferred.

@@ -4376,13 +4376,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		clearActiveMyShopOpen := func() {
 			hasActiveMyShopOpen = false
 			if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 {
-				sharedWorld.SetMyShopWindowOpen(sharedWorldID, false)
+				sharedWorld.SetMyShopWindowOpen(sharedWorldID, false, "")
 			}
 		}
-		setActiveMyShopOpen := func() {
+		setActiveMyShopOpen := func(sign string) {
 			hasActiveMyShopOpen = true
 			if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 {
-				sharedWorld.SetMyShopWindowOpen(sharedWorldID, true)
+				sharedWorld.SetMyShopWindowOpen(sharedWorldID, true, sign)
 			}
 		}
 		enqueueMyShopSignAroundBroadcast := func(frames [][]byte) {
@@ -5974,7 +5974,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						// deadlines that lost eligibility before encoding visibility.
 						runtime.pruneSpawnGroupChaseStepSchedules()
 						for _, peer := range existingPeers {
-							trailingFrames = append(trailingFrames, encodePeerVisibilityBootstrapFramesWithTemplates(peer, runtime.itemTemplates)...)
+							trailingFrames = append(trailingFrames, sharedWorld.PeerVisibilityBootstrapFramesWithMyShopSign(peer)...)
 						}
 					}
 					trailingFrames = append(trailingFrames, sharedWorld.VisibleStaticActorFrames(selected)...)
@@ -8467,7 +8467,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						}
 					}
 					live := selectedPlayer.LiveCharacter()
-					setActiveMyShopOpen()
+					setActiveMyShopOpen(sign)
 					frames := [][]byte{shopproto.EncodeServerShopSign(shopproto.ServerShopSignPacket{
 						VID:  live.VID,
 						Sign: sign,
