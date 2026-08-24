@@ -56,22 +56,7 @@ func main() {
 		func() any { return gameRuntime.CharacterVisibility() },
 		func() any { return gameRuntime.MapOccupancy() },
 	)
-	opsHandler = ops.RegisterLocalAccountStoreValidateEndpoint(
-		opsHandler,
-		func() (any, error) { return gameRuntime.ValidateAccountStore() },
-	)
-	opsHandler = ops.RegisterLocalAccountStoreCrashTempCleanupEndpoint(
-		opsHandler,
-		func() (any, error) { return gameRuntime.CleanupAccountStoreCrashTempFiles() },
-	)
-	opsHandler = ops.RegisterLocalLoginTicketStoreValidateEndpoint(
-		opsHandler,
-		func() (any, error) { return gameRuntime.ValidateLoginTicketStore() },
-	)
-	opsHandler = ops.RegisterLocalLoginTicketStoreCrashTempCleanupEndpoint(
-		opsHandler,
-		func() (any, error) { return gameRuntime.CleanupLoginTicketStoreCrashTempFiles() },
-	)
+	opsHandler = minimal.RegisterGamedFileStorePersistenceOps(opsHandler, gameRuntime)
 	opsHandler = ops.RegisterLocalLoginTicketStoreIssuedBeforePreviewEndpoint(
 		opsHandler,
 		func(issuedBefore time.Time) (any, error) {
@@ -83,114 +68,6 @@ func main() {
 		func(issuedBefore time.Time) (any, error) {
 			return gameRuntime.CleanupLoginTicketStoreIssuedBefore(issuedBefore)
 		},
-	)
-	opsHandler = ops.RegisterLocalLoginTicketStoreBackupEndpoint(
-		opsHandler,
-		func(dstDir string) (any, error) { return gameRuntime.BackupLoginTicketStore(dstDir) },
-	)
-	opsHandler = ops.RegisterLocalLoginTicketStoreBackupValidateEndpoint(
-		opsHandler,
-		func(srcDir string) (any, error) { return gameRuntime.ValidateLoginTicketStoreBackup(srcDir) },
-	)
-	opsHandler = ops.RegisterLocalLoginTicketStoreRestoreEndpoint(
-		opsHandler,
-		func(srcDir string) (any, error) { return gameRuntime.RestoreLoginTicketStore(srcDir) },
-	)
-	opsHandler = ops.RegisterLocalItemTemplateStoreValidateEndpoint(
-		opsHandler,
-		func() (any, error) { return gameRuntime.ValidateItemTemplateStore() },
-	)
-	opsHandler = ops.RegisterLocalItemTemplateStoreCrashTempCleanupEndpoint(
-		opsHandler,
-		func() (any, error) { return gameRuntime.CleanupItemTemplateStoreCrashTempFiles() },
-	)
-	opsHandler = ops.RegisterLocalStaticActorStoreValidateEndpoint(
-		opsHandler,
-		func() (any, error) { return gameRuntime.ValidateStaticActorStore() },
-	)
-	opsHandler = ops.RegisterLocalStaticActorStoreCrashTempCleanupEndpoint(
-		opsHandler,
-		func() (any, error) { return gameRuntime.CleanupStaticActorStoreCrashTempFiles() },
-	)
-	opsHandler = ops.RegisterLocalStaticActorStoreBackupEndpoint(
-		opsHandler,
-		func(dstDir string) (any, error) { return gameRuntime.BackupStaticActorStore(dstDir) },
-	)
-	opsHandler = ops.RegisterLocalStaticActorStoreBackupValidateEndpoint(
-		opsHandler,
-		func(srcDir string) (any, error) { return gameRuntime.ValidateStaticActorStoreBackup(srcDir) },
-	)
-	opsHandler = ops.RegisterLocalStaticActorStoreRestoreEndpoint(
-		opsHandler,
-		func(srcDir string) (any, error) { return gameRuntime.RestoreStaticActorStore(srcDir) },
-	)
-	opsHandler = ops.RegisterLocalInteractionStoreValidateEndpoint(
-		opsHandler,
-		func() (any, error) { return gameRuntime.ValidateInteractionStore() },
-	)
-	opsHandler = ops.RegisterLocalInteractionStoreCrashTempCleanupEndpoint(
-		opsHandler,
-		func() (any, error) { return gameRuntime.CleanupInteractionStoreCrashTempFiles() },
-	)
-	opsHandler = ops.RegisterLocalInteractionStoreBackupEndpoint(
-		opsHandler,
-		func(dstDir string) (any, error) { return gameRuntime.BackupInteractionStore(dstDir) },
-	)
-	opsHandler = ops.RegisterLocalInteractionStoreBackupValidateEndpoint(
-		opsHandler,
-		func(srcDir string) (any, error) { return gameRuntime.ValidateInteractionStoreBackup(srcDir) },
-	)
-	opsHandler = ops.RegisterLocalInteractionStoreRestoreEndpoint(
-		opsHandler,
-		func(srcDir string) (any, error) { return gameRuntime.RestoreInteractionStore(srcDir) },
-	)
-	opsHandler = ops.RegisterLocalQuestStateStoreValidateEndpoint(
-		opsHandler,
-		func() (any, error) { return gameRuntime.ValidateQuestStateStore() },
-	)
-	opsHandler = ops.RegisterLocalQuestStateStoreCrashTempCleanupEndpoint(
-		opsHandler,
-		func() (any, error) { return gameRuntime.CleanupQuestStateStoreCrashTempFiles() },
-	)
-	opsHandler = ops.RegisterLocalGroundItemStoreValidateEndpoint(
-		opsHandler,
-		func() (any, error) { return gameRuntime.ValidateGroundItemStore() },
-	)
-	opsHandler = ops.RegisterLocalGroundItemStoreCrashTempCleanupEndpoint(
-		opsHandler,
-		func() (any, error) { return gameRuntime.CleanupGroundItemStoreCrashTempFiles() },
-	)
-	opsHandler = ops.RegisterLocalGroundItemStoreBackupEndpoint(
-		opsHandler,
-		func(dstDir string) (any, error) { return gameRuntime.BackupGroundItemStore(dstDir) },
-	)
-	opsHandler = ops.RegisterLocalGroundItemStoreBackupValidateEndpoint(
-		opsHandler,
-		func(srcDir string) (any, error) { return gameRuntime.ValidateGroundItemStoreBackup(srcDir) },
-	)
-	opsHandler = ops.RegisterLocalGroundItemStoreRestoreEndpoint(
-		opsHandler,
-		func(srcDir string) (any, error) { return gameRuntime.RestoreGroundItemStore(srcDir) },
-	)
-	opsHandler = ops.RegisterLocalSafeboxStoreValidateEndpoint(
-		opsHandler,
-		func() (any, error) { return gameRuntime.ValidateSafeboxStore() },
-	)
-	opsHandler = ops.RegisterLocalSafeboxStoreCrashTempCleanupEndpoint(
-		opsHandler,
-		func() (any, error) { return gameRuntime.CleanupSafeboxStoreCrashTempFiles() },
-	)
-	opsHandler = ops.RegisterLocalSafeboxStoreBackupEndpoint(
-		opsHandler,
-		func(dstDir string) (any, error) { return gameRuntime.BackupSafeboxStore(dstDir) },
-	)
-	opsHandler = ops.RegisterLocalSafeboxStoreBackupValidateEndpoint(
-		opsHandler,
-		func(srcDir string) (any, error) { return gameRuntime.ValidateSafeboxStoreBackup(srcDir) },
-	)
-	opsHandler = ops.RegisterLocalSafeboxStoreRestoreEndpoint(
-		opsHandler,
-		func(srcDir string) (any, error) { return gameRuntime.RestoreSafeboxStore(srcDir) },
 	)
 	opsHandler = ops.RegisterLocalQuestStateTransitionEndpoint(
 		opsHandler,
@@ -239,50 +116,6 @@ func main() {
 			}
 			return flag, true, nil
 		},
-	)
-	opsHandler = ops.RegisterLocalQuestStateStoreBackupEndpoint(
-		opsHandler,
-		func(dstDir string) (any, error) { return gameRuntime.BackupQuestStateStore(dstDir) },
-	)
-	opsHandler = ops.RegisterLocalQuestStateStoreBackupValidateEndpoint(
-		opsHandler,
-		func(srcDir string) (any, error) { return gameRuntime.ValidateQuestStateStoreBackup(srcDir) },
-	)
-	opsHandler = ops.RegisterLocalQuestStateStoreRestoreEndpoint(
-		opsHandler,
-		func(srcDir string) (any, error) { return gameRuntime.RestoreQuestStateStore(srcDir) },
-	)
-	opsHandler = ops.RegisterLocalItemTemplateStoreBackupEndpoint(
-		opsHandler,
-		func(dstDir string) (any, error) { return gameRuntime.BackupItemTemplateStore(dstDir) },
-	)
-	opsHandler = ops.RegisterLocalItemTemplateStoreBackupValidateEndpoint(
-		opsHandler,
-		func(srcDir string) (any, error) { return gameRuntime.ValidateItemTemplateStoreBackup(srcDir) },
-	)
-	opsHandler = ops.RegisterLocalItemTemplateStoreRestoreEndpoint(
-		opsHandler,
-		func(srcDir string) (any, error) { return gameRuntime.RestoreItemTemplateStore(srcDir) },
-	)
-	opsHandler = ops.RegisterLocalAccountStoreBackupEndpoint(
-		opsHandler,
-		func(dstDir string) (any, error) { return gameRuntime.BackupAccountStore(dstDir) },
-	)
-	opsHandler = ops.RegisterLocalAccountStoreBackupValidateEndpoint(
-		opsHandler,
-		func(srcDir string) (any, error) { return gameRuntime.ValidateAccountStoreBackup(srcDir) },
-	)
-	opsHandler = ops.RegisterLocalAccountStoreRestoreEndpoint(
-		opsHandler,
-		func(srcDir string) (any, error) { return gameRuntime.RestoreAccountStore(srcDir) },
-	)
-	opsHandler = ops.RegisterLocalRuntimeConfigEndpoint(
-		opsHandler,
-		func() any { return gameRuntime.RuntimeConfigSnapshot() },
-	)
-	opsHandler = ops.RegisterLocalPersistenceStatusEndpoint(
-		opsHandler,
-		func() any { return gameRuntime.PersistenceStatus() },
 	)
 	opsHandler = ops.RegisterLocalMigrationStatusEndpoint(
 		opsHandler,

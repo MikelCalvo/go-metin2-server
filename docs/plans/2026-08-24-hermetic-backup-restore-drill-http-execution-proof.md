@@ -83,5 +83,6 @@ Validation for this slice:
 3. Keep FreeBSD port / `pkg` enable defaults deferred.
 4. Keep remote log shipping / metrics exporters deferred.
 5. Keep SQL import/backfill deferred until a driver-backed harness exists.
-6. Optional later: extract a shared gamed ops registration helper so `cmd/gamed`
-   and the hermetic drill proof stop duplicating endpoint wiring.
+6. ~~Optional later: extract a shared gamed ops registration helper so `cmd/gamed`
+   and the hermetic drill proof stop duplicating endpoint wiring.~~ Done: see
+   [gamed file-store persistence ops registration helper](2026-08-24-gamed-file-store-persistence-ops-registration-helper.md).
