@@ -67,6 +67,9 @@ git diff --check
    require filesystem coupling.~~ Done for the spawn-group operator position
    MOVE suite: see
    [hermetic spawn-group operator position MOVE MemoryStore tests](2026-08-24-hermetic-spawn-group-operator-position-move-memorystore-tests.md).
+   ~~Also done for the neighboring shared-world content-bundle import suites.~~
+   Done: see
+   [hermetic shared-world content-bundle import MemoryStore tests](2026-08-24-hermetic-shared-world-content-bundle-import-memorystore-tests.md).
 2. Keep import/backfill execution deferred until a driver-backed harness and
    backup policy exist.
 3. Keep branching quest scripts and pack AI / synchronized respawn deferred.

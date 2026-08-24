@@ -45,7 +45,7 @@ git diff --check
 
 ## Follow-up options
 
-1. Optionally convert neighboring content-bundle import suites that still seed disposable static/interaction FileStores when those proofs do not require filesystem rematerialize.
+1. ~~Optionally convert neighboring content-bundle import suites that still seed disposable static/interaction FileStores when those proofs do not require filesystem rematerialize.~~ Done: see [hermetic shared-world content-bundle import MemoryStore tests](2026-08-24-hermetic-shared-world-content-bundle-import-memorystore-tests.md).
 2. ~~Optionally convert shared `newInteractionDefinitionStore` / `newItemTemplateStore` helpers to MemoryStore once neighboring item gameplay suites are ready for the same coupling reduction.~~ Done: see [hermetic shared interaction/item template helpers](2026-08-23-hermetic-shared-interaction-item-template-helpers.md).
 3. Keep import/backfill execution deferred until a driver-backed harness and backup policy exists.
 4. Keep branching quest scripts deferred; multi-count regen authoring is now owned separately.

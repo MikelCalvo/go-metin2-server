@@ -57,9 +57,11 @@ git diff --check
 
 ## Follow-up options
 
-1. Optionally convert remaining direct disposable static/interaction FileStore
+1. ~~Optionally convert remaining direct disposable static/interaction FileStore
    constructions in non-rematerialize suites when those proofs do not require
-   filesystem coupling.
+   filesystem coupling.~~ Done for the neighboring shared-world content-bundle
+   import suites: see
+   [hermetic shared-world content-bundle import MemoryStore tests](2026-08-24-hermetic-shared-world-content-bundle-import-memorystore-tests.md).
 2. Keep import/backfill execution deferred until a driver-backed harness and
    backup policy exist.
 3. Keep branching quest scripts and pack AI / synchronized respawn deferred.

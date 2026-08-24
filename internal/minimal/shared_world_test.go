@@ -7492,8 +7492,8 @@ func TestGameRuntimeImportContentBundleQueuesSpawnGroupVisibilityForOnlinePlayer
 	issuePeerTicket(t, store, "spawn-import-near", 0x55550101, near)
 	issuePeerTicket(t, store, "spawn-import-far", 0x55550202, far)
 
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "radius", VisibilityRadius: 500, VisibilitySectorSize: 256}, store, nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -7559,8 +7559,8 @@ func TestGameRuntimeRejectsDuplicateStaticActorContentBundleWithoutMutatingRunti
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		loginticket.NewFileStore(t.TempDir()),
 		accountstore.NewFileStore(t.TempDir()),
-		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
-		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		staticstore.NewMemoryStore(),
+		interactionstore.NewMemoryStore(),
 		nil,
 	)
 	if err != nil {
@@ -7593,9 +7593,9 @@ func TestGameRuntimeImportsContentBundleCombatProfilesBeforeSpawnGroups(t *testi
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		loginticket.NewFileStore(t.TempDir()),
 		accountstore.NewFileStore(t.TempDir()),
-		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
-		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
-		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		staticstore.NewMemoryStore(),
+		interactionstore.NewMemoryStore(),
+		itemcatalog.NewMemoryStore(),
 		nil,
 	)
 	if err != nil {
@@ -7667,9 +7667,9 @@ func TestGameRuntimeImportsExampleFormulaCombatProfileBundleBeforeSpawnGroups(t 
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		loginticket.NewFileStore(t.TempDir()),
 		accountstore.NewFileStore(t.TempDir()),
-		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
-		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
-		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		staticstore.NewMemoryStore(),
+		interactionstore.NewMemoryStore(),
+		itemcatalog.NewMemoryStore(),
 		nil,
 	)
 	if err != nil {
@@ -7828,9 +7828,9 @@ func TestGameRuntimeImportsContentBundleDropTablesAsSpawnGroupRewardDescriptor(t
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		loginticket.NewFileStore(t.TempDir()),
 		accountstore.NewFileStore(t.TempDir()),
-		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
-		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
-		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		staticstore.NewMemoryStore(),
+		interactionstore.NewMemoryStore(),
+		itemcatalog.NewMemoryStore(),
 		nil,
 	)
 	if err != nil {
@@ -7875,9 +7875,9 @@ func TestGameRuntimeImportsContentBundleRegenSpawnsAsSpawnGroups(t *testing.T) {
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		loginticket.NewFileStore(t.TempDir()),
 		accountstore.NewFileStore(t.TempDir()),
-		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
-		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
-		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		staticstore.NewMemoryStore(),
+		interactionstore.NewMemoryStore(),
+		itemcatalog.NewMemoryStore(),
 		nil,
 	)
 	if err != nil {
@@ -7926,8 +7926,8 @@ func TestGameRuntimeReimportsFormulaOnlyCombatProfileBundleIdempotently(t *testi
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		loginticket.NewFileStore(t.TempDir()),
 		accountstore.NewFileStore(t.TempDir()),
-		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
-		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		staticstore.NewMemoryStore(),
+		interactionstore.NewMemoryStore(),
 		nil,
 	)
 	if err != nil {
@@ -8150,8 +8150,8 @@ func TestGameRuntimeFailedContentBundleImportDoesNotLeakSpawnVisibilityFrames(t 
 	near.Y = 2900
 	issuePeerTicket(t, store, "spawn-import-rollback-near", 0x55552121, near)
 
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "radius", VisibilityRadius: 500, VisibilitySectorSize: 256}, store, nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -8247,8 +8247,8 @@ func TestGameRuntimeFailedContentBundleImportDoesNotLeakSelectedTargetClear(t *t
 	near.Y = 2900
 	issuePeerTicket(t, store, "spawn-sel-rb", 0x55553131, near)
 
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "radius", VisibilityRadius: 500, VisibilitySectorSize: 256}, store, nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
