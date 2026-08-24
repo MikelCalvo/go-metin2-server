@@ -1637,10 +1637,11 @@ func (r *sharedWorldRegistry) restoreStaticActorCombatStateLocked(snapshot stati
 	r.nextStaticActorCombatSnapshotID = snapshot.NextSnapshotID
 }
 
-// remapSpawnGroupCombatState overlays pending still-dead / live-damaged combat state from a
-// previous content-bundle snapshot onto newly registered actors that keep the same authored
-// spawn_group_ref. Engagement, proximity suppress, and session combat ownership are intentionally
-// not remapped: replacement is a runtime-reset boundary for those seams.
+// remapSpawnGroupCombatState overlays pending still-dead / live-damaged combat state plus
+// proximity-suppress membership from a previous content-bundle snapshot onto newly registered
+// actors that keep the same authored spawn_group_ref. Engagement and session combat ownership
+// stay intentionally fail-closed across replacement; proximity suppress is remapped only for
+// still-connected subject entity IDs so a still-inside owner cannot instantly reacquire.
 func (r *sharedWorldRegistry) remapSpawnGroupCombatState(previousActors []StaticActorSnapshot, previous staticActorCombatStateSnapshot) {
 	if r == nil || r.entities == nil || len(previousActors) == 0 {
 		return
@@ -1662,10 +1663,23 @@ func (r *sharedWorldRegistry) remapSpawnGroupCombatStateLocked(previousActors []
 	}
 	stillDeadByRef := make(map[string]time.Time)
 	damagedByRef := make(map[string]uint8)
+	suppressByRef := make(map[string]map[uint64]struct{})
 	for _, actor := range previousActors {
 		ref := strings.TrimSpace(actor.SpawnGroupRef)
 		if ref == "" || actor.EntityID == 0 {
 			continue
+		}
+		if subjects := previous.ProximityAggroSuppress[actor.EntityID]; len(subjects) > 0 {
+			cloned := make(map[uint64]struct{}, len(subjects))
+			for subjectID := range subjects {
+				if subjectID == 0 {
+					continue
+				}
+				cloned[subjectID] = struct{}{}
+			}
+			if len(cloned) > 0 {
+				suppressByRef[ref] = cloned
+			}
 		}
 		currentHP, hpOK := previous.HP[actor.EntityID]
 		respawnAt, respawnOK := previous.RespawnAt[actor.EntityID]
@@ -1691,7 +1705,7 @@ func (r *sharedWorldRegistry) remapSpawnGroupCombatStateLocked(previousActors []
 		}
 		damagedByRef[ref] = currentHP
 	}
-	if len(stillDeadByRef) == 0 && len(damagedByRef) == 0 {
+	if len(stillDeadByRef) == 0 && len(damagedByRef) == 0 && len(suppressByRef) == 0 {
 		return
 	}
 	for _, actor := range r.entities.AllStaticActors() {
@@ -1701,11 +1715,34 @@ func (r *sharedWorldRegistry) remapSpawnGroupCombatStateLocked(previousActors []
 		}
 		if respawnAt, ok := stillDeadByRef[ref]; ok {
 			r.restoreStillDeadSpawnGroupCombatStateLocked(actor.Entity.ID, respawnAt)
-			continue
-		}
-		if currentHP, ok := damagedByRef[ref]; ok {
+		} else if currentHP, ok := damagedByRef[ref]; ok {
 			r.restoreDamagedSpawnGroupCombatStateLocked(actor.Entity.ID, currentHP)
 		}
+		if subjects, ok := suppressByRef[ref]; ok {
+			r.restoreProximityAggroSuppressForSpawnGroupLocked(actor.Entity.ID, subjects)
+		}
+	}
+}
+
+func (r *sharedWorldRegistry) restoreProximityAggroSuppressForSpawnGroupLocked(entityID uint64, subjects map[uint64]struct{}) {
+	if r == nil || entityID == 0 || len(subjects) == 0 {
+		return
+	}
+	actor, ok := r.entities.StaticActor(entityID)
+	if !ok || strings.TrimSpace(actor.SpawnGroupRef) == "" {
+		return
+	}
+	for subjectID := range subjects {
+		if subjectID == 0 {
+			continue
+		}
+		if r.sessionDirectory == nil {
+			continue
+		}
+		if _, ok := r.sessionDirectory.Lookup(subjectID); !ok {
+			continue
+		}
+		r.markProximityAggroSuppressLocked(entityID, subjectID)
 	}
 }
 

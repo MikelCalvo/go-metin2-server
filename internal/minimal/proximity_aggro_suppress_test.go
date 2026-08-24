@@ -854,3 +854,152 @@ func TestSharedWorldRegistrySubjectReleaseSeedsProximitySuppressWhenOwnerAlready
 		t.Fatalf("expected leave/re-enter to restore engagement for entity %d", actor.EntityID)
 	}
 }
+
+func TestGameRuntimeProximityAggroSuppressRemapsAcrossContentBundleReplacement(t *testing.T) {
+	// After in-radius engagement release seeds proximity suppress, a non-identical
+	// content-bundle replacement that keeps the same authored spawn_group_ref must
+	// remap that suppress onto the newly registered actor. Still-inside owners must
+	// not instantly reacquire until an explicit leave/re-enter of the effective
+	// aggro radius. Engagement / selected-target ownership stay fail-closed.
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("AggroSuppressReplaceOwner", 0x0103019c, 0x0204019c, 1850, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "aggro-suppress-replace-owner", 0x4c4c4c4c, owner)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	currentTime := time.Unix(1700002800, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for proximity suppress content-bundle remapping: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.aggro_suppress_replace",
+		Name:          "AggroSuppressReplaceMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import initial proximity suppress replacement spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.aggro_suppress_replace")
+	if !ok {
+		t.Fatal("expected proximity suppress replacement spawn group to resolve by ref")
+	}
+	originalEntityID := group.EntityID
+
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "aggro-suppress-replace-owner", 0x4c4c4c4c)
+	defer closeSessionFlow(t, ownerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+
+	ownerEntity, ok := runtime.sharedWorld.playerEntityByName("AggroSuppressReplaceOwner")
+	if !ok {
+		t.Fatal("expected proximity suppress replacement owner entity to remain registered")
+	}
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(originalEntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected pending-frame proximity acquisition to engage owner for entity %d", originalEntityID)
+	}
+
+	clearOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: 0})))
+	if err != nil {
+		t.Fatalf("unexpected owner TARGET(0) clear before content-bundle replacement: %v", err)
+	}
+	if len(clearOut) != 0 {
+		t.Fatalf("expected proximity-only TARGET(0) clear to emit no frames, got %d", len(clearOut))
+	}
+	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(originalEntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected in-radius TARGET(0) clear to release engaged_by for entity %d", originalEntityID)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected suppress to keep acquisition silent before replacement, got %d queued frames", len(queued))
+	}
+
+	replacementBundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.aggro_suppress_replace",
+		Name:          "AggroSuppressReplaceMobRenamed",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}}
+	if _, err := runtime.ImportContentBundle(replacementBundle); err != nil {
+		t.Fatalf("import non-identical proximity suppress replacement spawn-group bundle: %v", err)
+	}
+	afterReplace, ok := runtime.SpawnGroupByRef("practice.aggro_suppress_replace")
+	if !ok {
+		t.Fatal("expected proximity suppress spawn group to remain resolvable by authored ref after replacement")
+	}
+	if afterReplace.Name != "AggroSuppressReplaceMobRenamed" {
+		t.Fatalf("expected replacement presentation name to apply, got %+v", afterReplace)
+	}
+	if afterReplace.EntityID == originalEntityID {
+		t.Fatalf("expected content-bundle replacement to allocate a new entity id, got %d", afterReplace.EntityID)
+	}
+	if len(runtime.sharedWorld.CombatTargetSnapshots()) != 0 {
+		t.Fatalf("expected engagement/selected-target ownership to stay fail-closed across replacement, got %+v", runtime.sharedWorld.CombatTargetSnapshots())
+	}
+
+	_ = flushServerFrames(t, ownerFlow)
+	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(afterReplace.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected remapped proximity suppress to block still-inside reacquire after content-bundle replacement for entity %d", afterReplace.EntityID)
+	}
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected delayed flush to keep remapped suppress silent after replacement, got %d queued frames", len(queued))
+	}
+	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(afterReplace.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected delayed flush not to re-lock remapped-suppressed still-inside owner for entity %d", afterReplace.EntityID)
+	}
+
+	moveOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+		Func: 1,
+		Arg:  0,
+		Rot:  12,
+		X:    1950,
+		Y:    2800,
+		Time: 0x5152535b,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected owner move error while leaving aggro radius after replacement suppress: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 immediate self move ack after leaving aggro radius post-replacement, got %d frames", len(moveOut))
+	}
+	_ = flushServerFrames(t, ownerFlow)
+
+	moveIn, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+		Func: 1,
+		Arg:  0,
+		Rot:  12,
+		X:    1850,
+		Y:    2800,
+		Time: 0x5152535c,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected owner move error while re-entering aggro radius after replacement suppress: %v", err)
+	}
+	if len(moveIn) != 1 {
+		t.Fatalf("expected 1 immediate self move ack after re-entering aggro radius post-replacement, got %d frames", len(moveIn))
+	}
+	_ = flushServerFrames(t, ownerFlow)
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(afterReplace.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected leave/re-enter after remapped replacement suppress to reacquire engagement for entity %d", afterReplace.EntityID)
+	}
+}

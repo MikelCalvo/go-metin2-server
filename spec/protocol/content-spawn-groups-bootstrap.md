@@ -439,7 +439,7 @@ Current implementation status:
 - due-respawn EnterGame / transfer preflight for content-loaded spawn groups is already owned
 - still-dead trailing `GC DEAD` replay is owned for both `training_dummy` and content-loaded `spawn_groups` EnterGame / reconnect add-style visibility, including fail-closed target/attack while the dead interval remains open and one-ref/one-actor lookup after that still-dead bootstrap
 - same-map return-step / return-home MOVE is live; cross-map return-home remains on delete/readd and now has focused dual-map occupancy coverage (foreign-map delete, home-map add/info/update, one-ref/one-actor, empty foreign-map occupancy, persisted authored home); automatic pending-frame cross-map return-step after `UpdateStaticActor` displace now mirrors that same dual-map anti-leak proof (arms return-step, due flush snaps to authored home via delete/readd with no invented MOVE, clears the pending schedule, restores one-ref/one-actor + empty foreign-map occupancy + persisted authored home); `spawn-leash-bootstrap.md` now freezes that delete/readd path as the Track A bootstrap cross-map return contract (no invented cross-map `MOVE` / `GC WARP`)
-- still-dead content-bundle replacement anti-resurrect is now owned: successful non-identical `ImportContentBundle` replacements that keep the same authored `spawn_group_ref` remap pending `HP=0` + absolute respawn deadline onto the newly registered actor before import fanout, so late EnterGame still ends with trailing `GC DEAD` and the actor stays non-targetable through the ordinary timer; engagement / proximity-suppress / selected-target ownership are not remapped across that replacement boundary
+- still-dead content-bundle replacement anti-resurrect is now owned: successful non-identical `ImportContentBundle` replacements that keep the same authored `spawn_group_ref` remap pending `HP=0` + absolute respawn deadline onto the newly registered actor before import fanout, so late EnterGame still ends with trailing `GC DEAD` and the actor stays non-targetable through the ordinary timer; engagement / selected-target ownership stay fail-closed across that replacement boundary, while proximity-suppress membership for still-connected subject entity IDs remaps by the same authored `spawn_group_ref` (see the proximity-suppress remapping seam below)
 - one-ref/one-actor reconnect / reclaim / fresh EnterGame anti-duplicate coverage is owned beside the existing by-ref fail-closed lookup; session reconnect does not rematerialize a second spawn instance for the same authored `spawn_group_ref`
 - same-map live spawn-backed operator/runtime position updates now reuse retained-viewer `MOVE` instead of delete/readd; presentation/name/race refreshes stay on delete/readd (see `spawn-leash-bootstrap.md`)
 - EnterGame reclaim chase-deadline cleanup is now owned: when Join reclaims a stale owner that still held practice-mob engagement, pending chase-step deadlines for those released actors are pruned before visibility bootstrap, matching leave/transfer cleanup and preventing a delayed chase MOVE after ownership was dropped
@@ -510,7 +510,8 @@ Contract for the first live damaged HP content-bundle replacement remapping seam
 - post-replacement `SpawnGroupByRef` / fresh `TARGET` / attack math must continue from that remapped damaged HP / matching `hp_percent` instead of silently resetting to full max HP
 - still-dead remapping stays owned and unchanged: `HP=0` + absolute respawn deadline continue to remap through the existing still-dead replacement path
 - full max HP remains the omit form and does not invent a damaged overlay during replacement
-- engagement / proximity-suppress / selected-target / pending chase / pending return ownership remain fail-closed across that replacement boundary and re-arm only after fresh post-replacement target / hit / proximity acquisition
+- engagement / selected-target / pending chase / pending return ownership remain fail-closed across that replacement boundary and re-arm only after fresh post-replacement target / hit / proximity acquisition
+- proximity-suppress membership for still-connected subject entity IDs remaps by authored `spawn_group_ref` onto the newly registered actor (see the proximity-suppress remapping seam below); it does not restore engagement or invent selected-target ownership
 - identical no-op reimports may continue to short-circuit without mutating lifecycle state; this rule targets non-identical replacements that would otherwise remove and re-register the same authored ref as a fresh live full-HP instance
 - non-spawn standalone `training_dummy` actors, remapping engagement across replacement, and mid-chase / mid-return displacement beyond already-persisted static-actor position remain out of scope
 
@@ -518,18 +519,45 @@ Current implementation status:
 - still-dead content-bundle replacement anti-resurrect is owned
 - daemon-restart live damaged HP persistence is owned
 - live damaged HP remapping across non-identical content-bundle replacement is now owned beside that still-dead remapper: successful non-identical same-`spawn_group_ref` imports restore `1..max_hp-1` onto the newly registered actor before import fanout, while engagement / selected-target ownership stay fail-closed
+- proximity-suppress remapping across the same non-identical replacement boundary is owned beside that HP remapper
 
 Explicit non-goals for this live damaged replacement remapping freeze alone:
-- remapping engagement, selected-target, proximity-suppress, chase, or return schedules across replacement
+- remapping engagement, selected-target, chase, or return schedules across replacement
+- remapping proximity suppress across daemon restart (owned only for live content-bundle replacement below)
 - non-spawn `training_dummy` replacement durability
 - inventing cross-map return MOVE / `GC WARP` choreography (frozen as delete/readd / direct-home rebuild in `spawn-leash-bootstrap.md`)
 - inventing a second spawn/combat scheduler beyond the existing pending-frame flush path
+
+## First frozen proximity-suppress remapping across non-identical content-bundle replacement
+
+Question frozen here:
+
+**Once leave/re-enter proximity suppress already survives in-radius engagement release, death/respawn seed, death-floor `/restart_here`, and Leave→Join identity changes, what is the smallest honest extension that keeps that same still-inside suppress across a successful non-identical `ImportContentBundle` replacement of the same authored `spawn_group_ref` without restoring engagement or inventing a permanent suppress store?**
+
+Contract for the first proximity-suppress content-bundle remapping seam:
+- while a content-loaded spawn-group combatant has proximity-suppress membership for one or more still-connected subject entity IDs, a successful non-identical `ImportContentBundle` / authored replacement that keeps that same authored `spawn_group_ref` must remap those subject IDs onto the newly registered actor before import fanout
+- only still-connected subject entity IDs are remapped; disconnected / missing session subjects are dropped rather than inventing a second permanent suppress store
+- after remapping, a still-inside suppressed owner must not instantly reacquire through pending-frame proximity acquisition until an explicit leave/re-enter of the actor's effective aggro radius
+- engagement / selected-target / pending chase / pending return / delayed-retaliation ownership stay fail-closed across that replacement boundary and re-arm only after fresh post-replacement target / hit / proximity acquisition (after suppress clears)
+- still-dead and live-damaged HP remapping stay owned and unchanged beside this suppress remapper
+- identical no-op reimports may continue to short-circuit without mutating lifecycle state
+- non-spawn standalone `training_dummy` actors and remapping suppress across daemon restart remain out of scope
+
+Current implementation status:
+- `remapSpawnGroupCombatState` now remaps proximity-suppress membership by authored `spawn_group_ref` for still-connected subjects beside still-dead / live-damaged HP remapping
+- focused coverage: `TestGameRuntimeProximityAggroSuppressRemapsAcrossContentBundleReplacement`
+
+Explicit non-goals for this proximity-suppress remapping freeze alone:
+- remapping engagement, selected-target, chase, or return schedules across replacement
+- remapping proximity suppress across daemon restart
+- inventing a second permanent suppress store keyed by name/VID beyond the already-owned Leave→Join VID park/claim handoff
+- inventing cross-map return MOVE / `GC WARP` choreography (frozen as delete/readd / direct-home rebuild in `spawn-leash-bootstrap.md`)
 
 Explicit non-goals for this anti-leak freeze alone:
 - inventing cross-map return MOVE / `GC WARP` choreography (frozen as delete/readd / direct-home rebuild in `spawn-leash-bootstrap.md`)
 - multi-member spawn packs or pack-wide synchronized respawn
 - inventing a second spawn scheduler beyond the existing pending-frame flush path
-- remapping engagement or chase/return schedules across non-identical content-bundle replacement (live damaged HP remapping across that replacement is frozen above)
+- remapping engagement or chase/return schedules across non-identical content-bundle replacement (live damaged HP remapping and proximity-suppress remapping across that replacement are frozen above)
 - converting generic operator actor presentation updates or respawn rebuild to MOVE
 
 ## Explicit non-goals
@@ -601,9 +629,10 @@ First live consumer rules (now implemented on the pending-frame flush path):
 - the live consumer reuses `EvaluateStaticActorSpawnAggroAcquisition` / `SelectStaticActorSpawnAggroCandidate`, syncs the existing chase-step schedule after a newly established engagement, and lets the engaged owner's session arm delayed retaliation without inventing selected-target ownership or immediate retaliation frames; once that proximity-armed chase deadline becomes due, the pending-frame chase executor applies the ordinary delete/readd step while still inventing no selected combat target
 - proximity-only engagement (no selected combat target) must also release when owner `MOVE` / `SYNC_POSITION` leaves `DefaultSpawnAggroRadius`: cancel any pending delayed retaliation beat for that engagement, clear chase schedules for the released actor, mark the ordinary leave/re-enter suppress for that owner, and keep the release silent (no invented self `TARGET(0, 0)` because proximity acquisition never owned selected-target state). Selected-target movement cleanup stays on the existing combat-band / visibility path and is unchanged
 - after an explicit engagement release (owner clear-target, proximity leave-radius walk-away, return-home/return-step, operator update, stale-owner cleanup, owner death-floor release, etc.), the same still-inside-radius candidate stays suppressed until it leaves `DefaultSpawnAggroRadius` and re-enters; death and respawn also seed that suppress set for every currently-inside live candidate so a rebuilt or just-killed life does not instantly re-lock nearby players without leave/re-enter
-- focused shared-world coverage now proves that in-radius `TARGET(0)` release, death/respawn seed, and proximity-armed owner death-floor release followed by same-socket `/restart_here` while still inside radius all keep the same nearby owner suppressed through later pending-frame flushes until an explicit leave/re-enter of `DefaultSpawnAggroRadius`
+- focused shared-world coverage now proves that in-radius `TARGET(0)` release, death/respawn seed, proximity-armed owner death-floor release followed by same-socket `/restart_here` while still inside radius, and non-identical same-`spawn_group_ref` content-bundle replacement all keep the same nearby owner suppressed through later pending-frame flushes until an explicit leave/re-enter of the actor's effective aggro radius
 - subject-side engagement release (`ClearStaticActorCombatEngagementsBySubject`) always marks the releasing subject for proximity suppress even when that subject's shared-world snapshot is already at the bootstrap `0`-HP floor; `seedProximity` still skips floor candidates for bystander seeding, but the releasing owner must remain suppressed across later live-HP recovery (`/restart_here`) without requiring leave/re-enter. Registry coverage: `TestSharedWorldRegistrySubjectReleaseSeedsProximitySuppressWhenOwnerAlreadyAtHPFloor`
 - Leave → fresh Join identity changes (`/phase_select` and abrupt disconnect/reconnect) park that subject suppress under character VID on Leave / stale reclaim and rematerialize it onto the new subject entity ID on Join, so a later `/restart_here` while still inside radius stays suppressed the same way; live suppress remains entity-ID keyed (VID is only the handoff key), and actor-side suppress clear also drops pending VID park entries for that actor
+- non-identical content-bundle replacement that keeps the same authored `spawn_group_ref` remaps proximity-suppress membership for still-connected subject entity IDs onto the newly registered actor before import fanout (`TestGameRuntimeProximityAggroSuppressRemapsAcrossContentBundleReplacement`); engagement stays fail-closed and daemon-restart suppress remapping remains out of scope
 
 Explicit non-goals for this proximity aggro freeze alone:
 - immediate owner-side retaliation piggyback without an accepted hit
@@ -687,7 +716,7 @@ Explicit non-goals for this profile-authored leash-radius freeze alone:
 - inventing cross-map return MOVE / `GC WARP` choreography (frozen as delete/readd / direct-home rebuild in `spawn-leash-bootstrap.md`)
 - inventing a second return/chase scheduler beyond the existing pending-frame consumers
 - changing the already-owned engagement / chase / retaliation consumers beyond substituting the effective leash radius
-- remapping engagement across non-identical content-bundle replacement (live damaged HP remapping across that replacement is frozen above; live damaged HP across clean daemon restart remains owned)
+- remapping engagement across non-identical content-bundle replacement (live damaged HP remapping and proximity-suppress remapping across that replacement are frozen above; live damaged HP across clean daemon restart remains owned; proximity-suppress remapping across daemon restart remains out of scope)
 
 ## Success definition
 

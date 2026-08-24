@@ -34,7 +34,12 @@ go test ./internal/minimal -run 'TestSharedWorldRegistrySubjectReleaseSeedsProxi
 
 ## What this is not yet
 
-- remapping suppress across content-bundle replacement or daemon restart
+- remapping suppress across daemon restart
 - inventing a second permanent suppress store keyed by name/VID
 - inventing cross-map return MOVE / `GC WARP` choreography (frozen as delete/readd / direct-home rebuild in `spawn-leash-bootstrap.md`)
 - broader corpse / revive menus
+
+## Follow-up
+
+- ~~Remap proximity suppress across non-identical same-`spawn_group_ref` content-bundle replacement.~~ Done: see `docs/plans/2026-08-24-proximity-suppress-content-bundle-replacement-remap.md`.
+- Keep daemon-restart suppress remapping deferred.

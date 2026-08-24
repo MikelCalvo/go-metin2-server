@@ -35,5 +35,10 @@ go test ./internal/contentbundle ./internal/staticstore -run 'LegacyDamageCombat
 
 - weighted / random loot tables
 - full legacy combat math beyond `max(1, attack_value - defense_value)`
-- remapping proximity suppress across content-bundle replacement or daemon restart
+- remapping proximity suppress across daemon restart
 - skill / ranged / PvP runtime policy
+
+## Follow-up
+
+- ~~Remap proximity suppress across non-identical same-`spawn_group_ref` content-bundle replacement.~~ Done: see `docs/plans/2026-08-24-proximity-suppress-content-bundle-replacement-remap.md`.
+- Keep daemon-restart suppress remapping deferred.
