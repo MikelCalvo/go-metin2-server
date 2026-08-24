@@ -79,3 +79,7 @@ git diff --check
    `drop_tables` (no combat channels and no kill-quest credit):
    `docs/examples/bootstrap-invalid-empty-drop-table-bundle.json`
    (`docs/plans/2026-08-23-invalid-empty-drop-table-fixture.md`).
+5. ~~Complete the incomplete automated twins for already-checked-in fixtures.~~
+   Done: disk-backed canonicalize for over-max regen plus ops validate for the
+   orphan service-gate fixture
+   (`docs/plans/2026-08-24-checked-in-invalid-fixture-test-twins.md`).
