@@ -358,7 +358,8 @@ The first host-only accepted open path is now owned on top of the codec + deny-n
 - busy shells reject with the same self-only requester busy info-chat already owned by exchange START for merchant/safebox/refine
 - open does not yet remove carried stock, consume a shop bag, polymorph, or invent guest browse/buy frames
 - while the same-socket private-shop open/busy flag is set, host item mutations fail closed with no frames (packet `ITEM_USE` / `ITEM_USE_TO_ITEM` / `ITEM_MOVE` / `ITEM_DROP` / `ITEM_DROP2` / `ITEM_PICKUP` / `ITEM_GIVE`, slash `/use_item` / `/inventory_move` / `/equip_item` / `/unequip_item`, open-presentation safebox check-in/out/move, and refine preview/confirm); empty-sign close clears the lock
-- guest browse/buy, peer `SHOP_SIGN` around-broadcast, and cube busy rejects stay deferred; empty-sign close companion is owned separately below; partner open-private-shop exchange busy rejects are owned separately
+- accepted open also `EnqueueToVisibleSessions` the same live `GC::SHOP_SIGN` bytes to currently visible peer sessions (host still returns exactly one self frame; no second host self frame through the peer queue)
+- guest browse/buy and cube busy rejects stay deferred; empty-sign close companion is owned separately below; partner open-private-shop exchange busy rejects are owned separately; view-entry rematerialization of a remembered live sign stays deferred
 
 See `docs/plans/2026-08-23-myshop-accepted-open-presentation-contract-freeze.md`.
 
@@ -367,13 +368,25 @@ See `docs/plans/2026-08-23-myshop-accepted-open-presentation-contract-freeze.md`
 Host-only accepted open now also owns the first empty-sign clear/close companion:
 
 - while the same-socket private-shop open/busy flag is set, lifecycle teardown (`/phase_select` / `/quit` / `/logout`, practice-mob floor, exact-position transfer/warp) clears that flag and emits one owned empty-sign `GC::SHOP_SIGN` (`host VID` + empty sign)
-- emission stays self-only for this bootstrap; peer around-broadcast and guest browse teardown stay deferred
+- the same empty-sign bytes are also `EnqueueToVisibleSessions` to currently visible peer sessions when the flag was open; already-closed close stays silent for both host and peers
 - already-closed paths emit no MYSHOP empty-sign frame; inventory/gold stay unchanged
 - lab `/close_myshop` reuses the same helper and stays silent when already closed; no new close packet family is invented here
-- ordering beside already-owned busy-shell teardown keeps merchant `GC::SHOP END` before empty-sign `SHOP_SIGN`, and empty-sign before exchange `END` when those shells close together
-- guest browse/buy and partner player-shop/cube exchange busy rejects stay deferred
+- ordering beside already-owned busy-shell teardown keeps merchant `GC::SHOP END` before empty-sign `SHOP_SIGN`, and empty-sign before exchange `END` when those shells close together; peer sign fanout is additive beside those host frames
+- guest browse/buy, view-entry live-sign rematerialization, and partner player-shop/cube exchange busy rejects stay deferred
 
 See `docs/plans/2026-08-23-myshop-close-sign-clear-contract-freeze.md`.
+
+### Owned MYSHOP peer SHOP_SIGN around-broadcast seam
+
+Accepted host-only open/close now also own peer around-broadcast of the already-owned live/empty `GC::SHOP_SIGN` frames:
+
+- accepted open keeps the host-return live `SHOP_SIGN` unchanged and additionally fans the same bytes to currently visible peer sessions via `EnqueueToVisibleSessions`
+- empty-sign close companions keep the host-return empty-sign frame unchanged and additionally fan the same empty-sign bytes to currently visible peers when the open flag was set
+- peer fanout skips bootstrap HP-floor peers the same way other peer item/appearance frames do
+- view-entry rematerialization of a remembered live sign when a peer newly becomes visible to an already-open host stays deferred
+- guest browse/buy and cube busy rejects stay deferred
+
+See `docs/plans/2026-08-24-myshop-peer-shop-sign-around-broadcast-contract-freeze.md`.
 
 ### Frozen `GC::ITEM_UPDATE` codec seam
 

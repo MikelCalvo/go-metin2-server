@@ -54,4 +54,4 @@ Own peer fanout on top of the already-owned host-only open/close helpers:
 
 ## Status
 
-Docs-first freeze on `lane/items`. Implementation RED intentionally deferred until this contract is committed green on `main`-rebased lane history.
+Implemented on `lane/items` for open/close peer around-broadcast of live/empty `GC::SHOP_SIGN`. View-entry rematerialization of a remembered live sign stays an explicit follow-on; guest browse/buy and cube busy rejects stay deferred.

@@ -4385,6 +4385,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				sharedWorld.SetMyShopWindowOpen(sharedWorldID, true)
 			}
 		}
+		enqueueMyShopSignAroundBroadcast := func(frames [][]byte) {
+			if len(frames) == 0 || selectedPlayer == nil || !joinedSharedWorld || sharedWorld == nil || sharedWorldID == 0 {
+				return
+			}
+			if !sharedWorld.HasLiveSession(sharedWorldID) {
+				return
+			}
+			sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selectedPlayer.LiveCharacter(), frames)
+		}
 		closeActiveMyShopOpenFrames := func() [][]byte {
 			if !hasActiveMyShopOpen {
 				return nil
@@ -4394,10 +4403,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				vid = selectedPlayer.LiveCharacter().VID
 			}
 			clearActiveMyShopOpen()
-			return [][]byte{shopproto.EncodeServerShopSign(shopproto.ServerShopSignPacket{
+			frames := [][]byte{shopproto.EncodeServerShopSign(shopproto.ServerShopSignPacket{
 				VID:  vid,
 				Sign: "",
 			})}
+			enqueueMyShopSignAroundBroadcast(frames)
+			return frames
 		}
 		appendPostFloorMerchantCloseFrame := func(frames [][]byte, clearTarget bool) [][]byte {
 			if !clearTarget || !hasActiveMerchantBuy || activeMerchantBuy.TargetVID == 0 {
@@ -8457,12 +8468,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					}
 					live := selectedPlayer.LiveCharacter()
 					setActiveMyShopOpen()
+					frames := [][]byte{shopproto.EncodeServerShopSign(shopproto.ServerShopSignPacket{
+						VID:  live.VID,
+						Sign: sign,
+					})}
+					enqueueMyShopSignAroundBroadcast(frames)
 					return gameflow.ShopResult{
 						Accepted: true,
-						Frames: [][]byte{shopproto.EncodeServerShopSign(shopproto.ServerShopSignPacket{
-							VID:  live.VID,
-							Sign: sign,
-						})},
+						Frames:   frames,
 					}
 				},
 			},

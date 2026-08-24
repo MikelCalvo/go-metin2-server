@@ -641,6 +641,9 @@ func TestGameRuntimeItemExchangeStartRejectsActiveMyShopWithoutMutation(t *testi
 	if len(openOut) != 1 {
 		t.Fatalf("expected accepted MYSHOP before exchange start to emit one SHOP_SIGN frame, got %d", len(openOut))
 	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 1 {
+		t.Fatalf("expected accepted MYSHOP before exchange start to around-broadcast one SHOP_SIGN to peer, got %d", len(queued))
+	}
 
 	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
 		Subheader: itemproto.ExchangeSubheaderStart,
@@ -827,4 +830,98 @@ func TestGameRuntimeMyShopOpenLocksHostItemMutationsWithoutMutation(t *testing.T
 	if len(useOut) == 0 {
 		t.Fatal("expected ITEM_USE after MYSHOP close to emit frames")
 	}
+}
+
+func TestGameRuntimeMyShopOpenBroadcastsShopSignToVisiblePeer(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopAroundHost", 0x01030841, 0x02040841, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 841, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("MyShopAroundPeer", 0x01030842, 0x02040842, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerLogin := "myshop-around-host"
+	peerLogin := "myshop-around-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707141, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x70707142, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop around host account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed myshop around peer account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Shop Potion",
+		Stackable: true,
+		MaxCount:  200,
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop around runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707141)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707142)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	openOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      3,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted MYSHOP before peer around-broadcast: %v", err)
+	}
+	if len(openOut) != 1 {
+		t.Fatalf("expected accepted MYSHOP to emit one host SHOP_SIGN frame, got %d", len(openOut))
+	}
+	hostSign, err := shopproto.DecodeServerShopSign(decodeSingleFrame(t, openOut[0]))
+	if err != nil {
+		t.Fatalf("decode host MYSHOP SHOP_SIGN: %v", err)
+	}
+	if hostSign.VID != owner.VID || hostSign.Sign != "Private Shop" {
+		t.Fatalf("unexpected host MYSHOP SHOP_SIGN: %+v", hostSign)
+	}
+
+	queued := flushServerFrames(t, peerFlow)
+	if len(queued) != 1 {
+		t.Fatalf("expected visible peer to receive one live SHOP_SIGN around-broadcast, got %d", len(queued))
+	}
+	peerSign, err := shopproto.DecodeServerShopSign(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode peer MYSHOP SHOP_SIGN around-broadcast: %v", err)
+	}
+	if peerSign.VID != owner.VID || peerSign.Sign != "Private Shop" {
+		t.Fatalf("unexpected peer MYSHOP SHOP_SIGN around-broadcast: %+v", peerSign)
+	}
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop peer around-broadcast open host")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop peer around-broadcast open peer")
+
+	closeOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/close_myshop",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /close_myshop after peer around-broadcast: %v", err)
+	}
+	if len(closeOut) != 1 {
+		t.Fatalf("expected /close_myshop to emit one empty host SHOP_SIGN frame, got %d", len(closeOut))
+	}
+	assertMyShopEmptySignFrame(t, closeOut[0], owner.VID, "host close after around-broadcast")
+
+	closeQueued := flushServerFrames(t, peerFlow)
+	if len(closeQueued) != 1 {
+		t.Fatalf("expected visible peer to receive one empty SHOP_SIGN around-broadcast on close, got %d", len(closeQueued))
+	}
+	assertMyShopEmptySignFrame(t, closeQueued[0], owner.VID, "peer close around-broadcast")
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop peer around-broadcast close host")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop peer around-broadcast close peer")
 }
