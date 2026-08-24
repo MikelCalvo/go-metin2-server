@@ -40,7 +40,8 @@ shelling printed triage scripts, or inventing SQL import.
 - live scheduled `curl` of ops JSON
 - FreeBSD port / `pkg` enable defaults
 - SQL import/backfill or driver-backed harness
-- hermetic end-to-end HTTP drill against a live drained `gamed`
+- ~~hermetic end-to-end HTTP drill against a live drained `gamed`~~ Done: see
+  [hermetic backup/restore drill HTTP execution proof](2026-08-24-hermetic-backup-restore-drill-http-execution-proof.md)
 - remote admin authentication
 
 ## TDD and validation
@@ -58,8 +59,10 @@ shelling printed triage scripts, or inventing SQL import.
 5. ~~Optional later: FreeBSD `periodic(8)` weekly print-only fragment gated on
    `weekly_metin2_artifact_retention_gc_print_enable="NO"`.~~ Done: see
    [contrib FreeBSD periodic retention / GC print sample](2026-08-23-contrib-freebsd-periodic-retention-gc-print-sample.md).
-6. Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`
-   (printer remains read-only; scheduled helper still prefers retained JSON).
+6. ~~Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`
+   (printer remains read-only; scheduled helper still prefers retained JSON).~~
+   Done: see
+   [hermetic backup/restore drill HTTP execution proof](2026-08-24-hermetic-backup-restore-drill-http-execution-proof.md).
 7. ~~Optional later: systemd drop-in `.sample` that only documents
    `EnvironmentFile=` / `METIN2_RUNTIME_CONFIG` for a retained runtime-config
    path (still print-only; no live curl; no DSN).~~ Done: see

@@ -56,4 +56,6 @@ timers by default, or auto-running printed triage scripts.
 5. ~~Optional later: FreeBSD `periodic(8)` weekly print-only fragment gated on
    `weekly_metin2_artifact_retention_gc_print_enable="NO"`.~~ Done: see
    [contrib FreeBSD periodic retention / GC print sample](2026-08-23-contrib-freebsd-periodic-retention-gc-print-sample.md).
-6. Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`.
+6. ~~Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`.~~
+   Done: see
+   [hermetic backup/restore drill HTTP execution proof](2026-08-24-hermetic-backup-restore-drill-http-execution-proof.md).

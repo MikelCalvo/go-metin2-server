@@ -64,4 +64,6 @@ shell, live-fetching ops JSON, or inventing a FreeBSD port / `pkg` with
 2. Keep `rm` of aside-renamed trees deferred.
 3. Keep SQL import/backfill deferred until a driver-backed harness exists.
 4. Keep FreeBSD port / `pkg` enable defaults deferred.
-5. Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`.
+5. ~~Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`.~~
+   Done: see
+   [hermetic backup/restore drill HTTP execution proof](2026-08-24-hermetic-backup-restore-drill-http-execution-proof.md).

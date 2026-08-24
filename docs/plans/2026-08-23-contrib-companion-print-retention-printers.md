@@ -66,8 +66,10 @@ or packaging that enables timers by default.
 5. ~~Optional later: FreeBSD `periodic(8)` weekly print-only fragment gated on
    `weekly_metin2_artifact_retention_gc_print_enable="NO"`.~~ Done: see
    [contrib FreeBSD periodic retention / GC print sample](2026-08-23-contrib-freebsd-periodic-retention-gc-print-sample.md).
-6. Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`
-   (printer remains read-only; scheduled helper still prefers retained JSON).
+6. ~~Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`
+   (printer remains read-only; scheduled helper still prefers retained JSON).~~
+   Done: see
+   [hermetic backup/restore drill HTTP execution proof](2026-08-24-hermetic-backup-restore-drill-http-execution-proof.md).
 7. ~~Optional later: hermetic `/bin/sh` execution proof of the contrib helper.~~
    Done: see
    [contrib print helper hermetic execution](2026-08-23-contrib-print-helper-hermetic-execution.md).

@@ -53,7 +53,8 @@ production observability already name beside backup / migration evidence.
 - remote log shipping / SIEM / metrics exporters
 - SQL import/backfill or a driver-backed harness
 - inventing a daemon `/local/...` log-download endpoint
-- hermetic end-to-end HTTP drill against a live drained `gamed`
+- ~~hermetic end-to-end HTTP drill against a live drained `gamed`~~ Done: see
+  [hermetic backup/restore drill HTTP execution proof](2026-08-24-hermetic-backup-restore-drill-http-execution-proof.md)
 
 ## TDD and validation
 
@@ -82,6 +83,7 @@ Validation for this slice:
 3. Keep FreeBSD port / `pkg` enable defaults deferred.
 4. Keep remote log shipping / metrics exporters deferred.
 5. Keep SQL import/backfill deferred until a driver-backed harness exists.
-6. Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`
+6. ~~Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`
    (printer / helper remain read-only; scheduled helper still prefers retained
-   JSON).
+   JSON).~~ Done: see
+   [hermetic backup/restore drill HTTP execution proof](2026-08-24-hermetic-backup-restore-drill-http-execution-proof.md).

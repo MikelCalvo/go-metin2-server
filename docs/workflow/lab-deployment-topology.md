@@ -178,6 +178,7 @@ See also:
 - [CLI daemon log retention correlation](../plans/2026-08-24-cli-daemon-log-retention-correlation.md)
 - [ops docs ground-item lab topology / tip sync](../plans/2026-08-22-ops-docs-ground-item-lab-topology-tip-sync.md)
 - [safebox file-store backup/restore drill fold-in](../plans/2026-08-23-safebox-file-store-backup-restore-drill.md)
+- [hermetic backup/restore drill HTTP execution proof](../plans/2026-08-24-hermetic-backup-restore-drill-http-execution-proof.md)
 
 ## Daemon JSON log paths
 
@@ -206,7 +207,7 @@ those files into each retention tree (`--gamed-log-path` /
 - remote admin APIs
 - automatic / scheduled artifact GC or lifecycle daemons that invoke deletion
 - automatic stale-lock expiry (lab recovery remains confirmation-gated `apply-lock-aside` / operator aside-rename; see [lab stale-lock recovery](lab-stale-lock-recovery.md))
-- automatic execution of the printed `migration-run-retention`, `backup-restore-drill`, or `artifact-retention-gc` scripts (the CLI and print-only unit samples only print commands; GC remains confirmation-gated aside-rename by the operator)
+- automatic execution of the printed `migration-run-retention`, `backup-restore-drill`, or `artifact-retention-gc` scripts (the CLI and print-only unit samples only print commands; GC remains confirmation-gated aside-rename by the operator; hermetic `/bin/sh` proof of the printed backup-restore drill against drained loopback ops muxes is owned in [hermetic backup/restore drill HTTP execution proof](../plans/2026-08-24-hermetic-backup-restore-drill-http-execution-proof.md) and does not auto-run from CLI)
 - `rm` / unlink of aside-renamed retention trees
 - remote log shipping / SIEM sinks (local `/var/log/metin2/` file capture is owned; exporters are not)
 - a claim that bootstrap file stores are the final production persistence layer

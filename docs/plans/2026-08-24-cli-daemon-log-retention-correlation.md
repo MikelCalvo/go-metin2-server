@@ -81,4 +81,6 @@ Validation for this slice:
 5. ~~Optional later: fold the same `--gamed-log-path` / `--authd-log-path`
    flags into the tree-owned `contrib/lab-retention-gc` print helper.~~ Done:
    see [contrib retention helper daemon log paths](2026-08-24-contrib-retention-helper-daemon-log-paths.md).
-6. Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`.
+6. ~~Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`.~~
+   Done: see
+   [hermetic backup/restore drill HTTP execution proof](2026-08-24-hermetic-backup-restore-drill-http-execution-proof.md).

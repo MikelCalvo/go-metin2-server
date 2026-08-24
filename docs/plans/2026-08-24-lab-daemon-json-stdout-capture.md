@@ -68,4 +68,6 @@ operators can retain beside backup / migration evidence.
 4. ~~Optional later: fold `/var/log/metin2/{authd,gamed}.log` into the offline
    backup / migration-run retention printers.~~ Done: see
    [CLI daemon log retention correlation](2026-08-24-cli-daemon-log-retention-correlation.md).
-5. Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`.
+5. ~~Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`.~~
+   Done: see
+   [hermetic backup/restore drill HTTP execution proof](2026-08-24-hermetic-backup-restore-drill-http-execution-proof.md).

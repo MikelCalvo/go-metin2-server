@@ -66,5 +66,6 @@ No password/money/mall, SQL import, remote admin, or README churn is added.
 3. Keep automatic / scheduled artifact GC deletion deferred.
 4. ~~Optional later: systemd/unit samples that only print (never auto-run)
    retention / GC triage scripts.~~ Done: see [print-only retention / GC unit samples](2026-08-23-print-only-retention-gc-unit-samples.md) and [lab retention / GC print-only unit samples](../workflow/lab-retention-gc-unit-samples.md).
-5. Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`
-   (printer remains read-only).
+5. ~~Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`
+   (printer remains read-only).~~ Done: see
+   [hermetic backup/restore drill HTTP execution proof](2026-08-24-hermetic-backup-restore-drill-http-execution-proof.md).
