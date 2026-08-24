@@ -30,7 +30,9 @@ go test ./internal/minimal -run 'TestGameSessionFlowPracticeMob(Immediate|Delaye
 
 ## What this is not yet
 
-- guest browse/buy or view-entry live-sign rematerialization
 - inventing a death-specific private-shop packet family
 - remapping proximity suppress across daemon restart
 - weighted/random loot tables or broader corpse / revive menus
+
+Guest-browse `SHOP END` on the practice-mob floor is now owned separately in
+`2026-08-24-myshop-guest-browse-practice-mob-floor-end-proof.md`.
