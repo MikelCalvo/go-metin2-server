@@ -179,6 +179,7 @@ The first bootstrap spawn-group contract freezes these fields:
     - `docs/examples/bootstrap-invalid-regen-count-bundle.json` (`count = 2` without `pack_spacing`)
     - `docs/examples/bootstrap-invalid-regen-over-max-count-bundle.json` (`count = 9` with `pack_spacing`)
     - `docs/examples/bootstrap-invalid-regen-one-count-pack-spacing-bundle.json` (`count = 1` with `pack_spacing = 100`)
+    - `docs/examples/bootstrap-invalid-colliding-regen-member-refs-bundle.json` (authored `spawn_groups` already owns a synthesized `{ref}.m01` member that multi-count expansion would recreate)
   - positive multi-count QA fixture: `docs/examples/bootstrap-multi-count-regen-authoring-bundle.json` (`count = 2`, `pack_spacing = 100`) expands to `.m01` / `.m02` beside the existing one-count regen authoring example
   - omitted `combat_profile` canonicalizes through the ordinary spawn-group default (`practice_mob`)
   - `reward_drop_table_ref` can reference the same fixed authoring-only `drop_tables[]` entries as direct spawn groups, and is expanded before validation/import

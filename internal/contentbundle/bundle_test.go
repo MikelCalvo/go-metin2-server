@@ -4730,6 +4730,25 @@ func TestCanonicalizeRejectsCollidingMultiCountRegenMemberRefs(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeRejectsCheckedInCollidingRegenMemberRefsExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-invalid-colliding-regen-member-refs-bundle.json"))
+	if err != nil {
+		t.Fatalf("read invalid colliding regen member refs example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode invalid colliding regen member refs example bundle: %v", err)
+	}
+	if _, err := Canonicalize(bundle); !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for checked-in colliding regen member refs example, got %v", err)
+	}
+}
+
 func TestCanonicalizeRejectsCheckedInMultiCountRegenWithoutPackSpacingExample(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {

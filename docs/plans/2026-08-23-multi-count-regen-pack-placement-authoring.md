@@ -24,6 +24,7 @@ runtime still sees only one-actor spawn groups.
    - `docs/examples/bootstrap-invalid-regen-count-bundle.json` (`count = 2`, no spacing)
    - `docs/examples/bootstrap-invalid-regen-over-max-count-bundle.json` (`count = 9`)
    - `docs/examples/bootstrap-invalid-regen-one-count-pack-spacing-bundle.json` (`count = 1` with `pack_spacing = 100`)
+   - `docs/examples/bootstrap-invalid-colliding-regen-member-refs-bundle.json` (authored `{ref}.m01` collides with multi-count expansion)
 8. Ops `/local/content-bundle/validate` pretty-prints the expanded members and
    returns `400` for the negative fixtures.
 
@@ -55,3 +56,7 @@ git diff --check
    `pack_spacing` if QA keeps improvising that reject.~~ Done:
    `docs/examples/bootstrap-invalid-regen-one-count-pack-spacing-bundle.json`
    (`docs/plans/2026-08-23-invalid-regen-one-count-pack-spacing-fixture.md`).
+4. ~~Optionally add a checked-in negative fixture for colliding synthesized
+   multi-count member refs if QA keeps improvising that reject.~~ Done:
+   `docs/examples/bootstrap-invalid-colliding-regen-member-refs-bundle.json`
+   (`docs/plans/2026-08-24-invalid-colliding-regen-member-refs-fixture.md`).

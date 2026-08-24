@@ -86,5 +86,5 @@ git diff --check
 6. ~~Optionally add another checked-in negative fixture only when a later reject
    case still forces QA to invent JSON.~~ Done for spawn-group + drop-table
    conflicting kill-quest credit:
-   `docs/examples/bootstrap-invalid-conflicting-kill-quest-credit-bundle.json`
+   `docs/examples/bootstrap-invalid-conflicting-kill-quest-credit-bundle.json`; later also `docs/examples/bootstrap-invalid-colliding-regen-member-refs-bundle.json`
    (`docs/plans/2026-08-24-invalid-conflicting-kill-quest-credit-fixture.md`).

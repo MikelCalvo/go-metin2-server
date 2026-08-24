@@ -40,6 +40,8 @@ AI, synchronized respawn, assist calls, or legacy regen timers.
    lives in `docs/examples/bootstrap-invalid-regen-over-max-count-bundle.json`.
    One-count + positive `pack_spacing` reject coverage lives in
    `docs/examples/bootstrap-invalid-regen-one-count-pack-spacing-bundle.json`.
+   Colliding synthesized member-ref reject coverage lives in
+   `docs/examples/bootstrap-invalid-colliding-regen-member-refs-bundle.json`.
 
 ### First multi-count authoring expansion (GREEN target — now owned)
 

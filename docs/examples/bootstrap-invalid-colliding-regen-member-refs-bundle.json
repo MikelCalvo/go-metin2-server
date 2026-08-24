@@ -1,0 +1,25 @@
+{
+  "spawn_groups": [
+    {
+      "ref": "practice.qa_colliding_regen_mob.m01",
+      "name": "QAExistingCollidingMember",
+      "map_index": 1,
+      "x": 100,
+      "y": 200,
+      "race_num": 20350,
+      "combat_profile": "practice_mob"
+    }
+  ],
+  "regen_spawns": [
+    {
+      "ref": "practice.qa_colliding_regen_mob",
+      "name": "QACollidingRegenMob",
+      "map_index": 1,
+      "x": 469900,
+      "y": 964200,
+      "race_num": 20350,
+      "count": 2,
+      "pack_spacing": 100
+    }
+  ]
+}
