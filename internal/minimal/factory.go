@@ -113,6 +113,7 @@ const exchangeFinalizeGoldOverflowSelfInfoMessage = questFlagRewardGoldOverflowI
 const exchangeFinalizeGoldOverflowOtherInfoMessage = "The other person cannot carry any more gold."
 const exchangeFinalizeOtherInfoMessage = "Unknown error"
 const exchangeFinalizeSuccessInfoMessageFormat = "The trade with %s has been successful."
+const myShopGuestBuyTooFarInfoMessage = "You are too far away from the shop to buy something."
 const bootstrapSafeboxOpenMinSize uint8 = 1
 const bootstrapSafeboxOpenMaxSize uint8 = 3
 const bootstrapSafeboxCellsPerPage uint8 = 5
@@ -5349,6 +5350,41 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			frames = prependExchangeCloseFrame(frames)
 			return frames, true
 		}
+		executeActiveGuestMyShopBuy := func(selectedPlayer *player.Runtime, displayPos uint8) ([][]byte, bool) {
+			if selectedPlayer == nil || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !ownsLiveSharedWorldSession() || sharedWorld == nil || sharedWorldID == 0 {
+				return nil, false
+			}
+			refreshGuestMyShopBrowseFlag()
+			if activeGuestMyShopHostVID == 0 || hasActiveMerchantBuy {
+				return nil, false
+			}
+			plan, failure := sharedWorld.ResolveMyShopGuestBuy(sharedWorldID, activeGuestMyShopHostVID, displayPos)
+			switch failure {
+			case myShopGuestBuyFailureNone:
+			case myShopGuestBuyFailureTooFar:
+				return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+					Type:    chatproto.ChatTypeInfo,
+					VID:     0,
+					Empire:  0,
+					Message: myShopGuestBuyTooFarInfoMessage,
+				})}, true
+			case myShopGuestBuyFailureInvalidPos:
+				return [][]byte{shopproto.EncodeServerInvalidPos()}, true
+			case myShopGuestBuyFailureSoldOut:
+				return [][]byte{shopproto.EncodeServerSoldOut()}, true
+			case myShopGuestBuyFailureInsufficientGold:
+				return [][]byte{shopproto.EncodeServerNotEnoughMoney()}, true
+			case myShopGuestBuyFailureInventoryFull:
+				return [][]byte{shopproto.EncodeServerInventoryFull()}, true
+			default:
+				return nil, false
+			}
+			frames, ok := applyMyShopGuestBuy(runtime, accounts, sharedWorld, selectedPlayer, &sessionTicket, sharedWorldID, plan)
+			if !ok {
+				return nil, false
+			}
+			return frames, true
+		}
 		executeSelectedItemUse := func(position itemproto.Position, emitUseEcho bool) gameflow.ItemUseResult {
 			selectedPlayer, ok := currentSelectedPlayer()
 			if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
@@ -8428,11 +8464,22 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if !ok {
 						return gameflow.ShopResult{Accepted: false}
 					}
-					frames, ok := executeActiveMerchantBuy(selectedPlayer, uint16(packet.CatalogSlot), true)
-					if !ok {
-						return gameflow.ShopResult{Accepted: false}
+					if hasActiveMerchantBuy {
+						frames, ok := executeActiveMerchantBuy(selectedPlayer, uint16(packet.CatalogSlot), true)
+						if !ok {
+							return gameflow.ShopResult{Accepted: false}
+						}
+						return gameflow.ShopResult{Accepted: true, Frames: frames}
 					}
-					return gameflow.ShopResult{Accepted: true, Frames: frames}
+					refreshGuestMyShopBrowseFlag()
+					if activeGuestMyShopHostVID != 0 {
+						frames, ok := executeActiveGuestMyShopBuy(selectedPlayer, packet.CatalogSlot)
+						if !ok {
+							return gameflow.ShopResult{Accepted: false}
+						}
+						return gameflow.ShopResult{Accepted: true, Frames: frames}
+					}
+					return gameflow.ShopResult{Accepted: false}
 				},
 				HandleShopSell: func(packet shopproto.ClientSellPacket) gameflow.ShopResult {
 					stateMu.Lock()
@@ -8857,6 +8904,170 @@ func selectedCharacterSnapshotByIDUpdate(characters []loginticket.Character, cha
 
 func cloneCharacters(characters []loginticket.Character) []loginticket.Character {
 	return loginticket.CloneCharacters(characters)
+}
+
+func applyMyShopGuestBuy(
+	runtime *gameRuntime,
+	accounts accountstore.Store,
+	sharedWorld *sharedWorldRegistry,
+	selectedPlayer *player.Runtime,
+	sessionTicket *loginticket.Ticket,
+	guestEntityID uint64,
+	plan myShopGuestBuyPlan,
+) ([][]byte, bool) {
+	if runtime == nil || accounts == nil || sharedWorld == nil || selectedPlayer == nil || sessionTicket == nil || guestEntityID == 0 || plan.GuestID == 0 || plan.HostID == 0 {
+		return nil, false
+	}
+	selected := selectedPlayer.LiveCharacter()
+	if selected.ID == 0 || selected.ID != plan.Guest.ID {
+		return nil, false
+	}
+	hostLogin, ok := runtime.liveCharacterLogin(plan.Host.Name)
+	if !ok {
+		return nil, false
+	}
+	guestLogin, ok := runtime.liveCharacterLogin(plan.Guest.Name)
+	if !ok {
+		return nil, false
+	}
+	templates := runtime.itemTemplates
+	template, ok := templates[plan.Item.Vnum]
+	if !ok || !itemcatalog.ValidTemplate(template) || template.Vnum != plan.Item.Vnum {
+		return nil, false
+	}
+
+	updatedHost := cloneExchangeCharacter(plan.Host)
+	hostInventory := append([]inventory.ItemInstance(nil), updatedHost.Inventory...)
+	hostIdx := -1
+	for i, item := range hostInventory {
+		if item.ID == plan.Item.ID && item.Slot == plan.Item.Slot && item.Vnum == plan.Item.Vnum && item.Count == plan.Item.Count && !item.Equipped && !item.Locked {
+			hostIdx = i
+			break
+		}
+	}
+	if hostIdx < 0 {
+		return nil, false
+	}
+	removedHostItem := hostInventory[hostIdx]
+	hostAfterRemoval := append([]inventory.ItemInstance(nil), hostInventory[:hostIdx]...)
+	hostAfterRemoval = append(hostAfterRemoval, hostInventory[hostIdx+1:]...)
+	updatedHost.Inventory = hostAfterRemoval
+	price := uint64(plan.Row.Price)
+	if price == 0 || updatedHost.Gold > exchangeGoldPointChangeCarrierMax || price > exchangeGoldPointChangeCarrierMax || updatedHost.Gold > exchangeGoldPointChangeCarrierMax-price {
+		return nil, false
+	}
+	updatedHost.Gold += price
+	updatedHost.NormalizeItemState()
+	hostRuntimeSide := player.NewRuntime(updatedHost, player.SessionLink{})
+	hostQuickslotFrames, ok := itemRemovalQuickslotSyncFrames(hostRuntimeSide, removedHostItem.Slot)
+	if !ok {
+		return nil, false
+	}
+	updatedHost = hostRuntimeSide.LiveCharacter()
+	hostItemFrames, ok := exchangeFinalizeInventoryFrames(plan.Host.Inventory, hostAfterRemoval, updatedHost.Inventory, templates)
+	if !ok {
+		return nil, false
+	}
+	hostFrames := make([][]byte, 0, len(hostItemFrames)+len(hostQuickslotFrames)+1)
+	hostFrames = append(hostFrames, hostItemFrames...)
+	hostFrames = append(hostFrames, hostQuickslotFrames...)
+	hostFrames = append(hostFrames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+		VID:    updatedHost.VID,
+		Type:   bootstrapGoldPointType,
+		Amount: int32(price),
+		Value:  int32(updatedHost.Gold),
+	}))
+
+	updatedGuest := cloneExchangeCharacter(plan.Guest)
+	guestInventory := append([]inventory.ItemInstance(nil), updatedGuest.Inventory...)
+	guestBeforePlace := append([]inventory.ItemInstance(nil), guestInventory...)
+	display := exchangeDisplayedItem{
+		ItemID: plan.Item.ID,
+		Vnum:   plan.Item.Vnum,
+		Count:  plan.Item.Count,
+		Slot:   plan.Item.Slot,
+	}
+	if !exchangePlaceIncomingDisplayedItemPreferringSlots(&guestInventory, display, template, nil) {
+		return nil, false
+	}
+	if updatedGuest.Gold < price {
+		return nil, false
+	}
+	updatedGuest.Gold -= price
+	updatedGuest.Inventory = guestInventory
+	updatedGuest.NormalizeItemState()
+	guestItemFrames, ok := exchangeFinalizeInventoryFrames(plan.Guest.Inventory, guestBeforePlace, updatedGuest.Inventory, templates)
+	if !ok {
+		return nil, false
+	}
+	guestFrames := make([][]byte, 0, len(guestItemFrames)+2)
+	guestFrames = append(guestFrames, guestItemFrames...)
+	guestFrames = append(guestFrames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+		VID:    updatedGuest.VID,
+		Type:   bootstrapGoldPointType,
+		Amount: -int32(price),
+		Value:  int32(updatedGuest.Gold),
+	}))
+	guestFrames = append(guestFrames, shopproto.EncodeServerUpdateItem(shopproto.ServerUpdateItemPacket{
+		Position: plan.DisplayPos,
+		Item:     shopproto.ItemEntry{DisplayPos: plan.DisplayPos},
+	}))
+
+	guestAccount, err := accounts.Load(guestLogin)
+	if err != nil {
+		return nil, false
+	}
+	hostAccount, err := accounts.Load(hostLogin)
+	if err != nil {
+		return nil, false
+	}
+	updatedGuestCharacters, ok := selectedCharacterSnapshotByIDUpdate(guestAccount.Characters, plan.Guest.ID, updatedGuest)
+	if !ok {
+		return nil, false
+	}
+	updatedHostCharacters, ok := selectedCharacterSnapshotByIDUpdate(hostAccount.Characters, plan.Host.ID, updatedHost)
+	if !ok {
+		return nil, false
+	}
+	if !saveAccountSnapshot(accounts, guestAccount.Login, guestAccount.Empire, updatedGuestCharacters) {
+		return nil, false
+	}
+	if !saveAccountSnapshot(accounts, hostAccount.Login, hostAccount.Empire, updatedHostCharacters) {
+		_ = saveAccountSnapshot(accounts, guestAccount.Login, guestAccount.Empire, guestAccount.Characters)
+		return nil, false
+	}
+	rollbackAccounts := func() {
+		_ = saveAccountSnapshot(accounts, guestAccount.Login, guestAccount.Empire, guestAccount.Characters)
+		_ = saveAccountSnapshot(accounts, hostAccount.Login, hostAccount.Empire, hostAccount.Characters)
+	}
+
+	updatedTicketCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, updatedGuest)
+	if !ok {
+		rollbackAccounts()
+		return nil, false
+	}
+	sessionTicket.Characters = updatedTicketCharacters
+	selectedPlayer.ApplyPersistedSnapshot(updatedGuest)
+	if !runtime.applyLiveCharacterPersistedSnapshot(plan.Host.Name, updatedHost) {
+		rollbackAccounts()
+		if restored, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, plan.Guest); ok {
+			sessionTicket.Characters = restored
+		}
+		selectedPlayer.ApplyPersistedSnapshot(plan.Guest)
+		return nil, false
+	}
+	if !sharedWorld.CommitMyShopGuestBuyStockClear(plan.HostID, plan.DisplayPos, guestEntityID, updatedHost) {
+		rollbackAccounts()
+		if restored, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, plan.Guest); ok {
+			sessionTicket.Characters = restored
+		}
+		selectedPlayer.ApplyPersistedSnapshot(plan.Guest)
+		_ = runtime.applyLiveCharacterPersistedSnapshot(plan.Host.Name, plan.Host)
+		return nil, false
+	}
+	sharedWorld.UpdateCharacterWithVisibilityTransition(plan.GuestID, plan.Guest, updatedGuest, nil)
+	sharedWorld.EnqueueToEntity(plan.HostID, hostFrames)
+	return guestFrames, true
 }
 
 func applyExchangeFinalize(runtime *gameRuntime, accounts accountstore.Store, sharedWorld *sharedWorldRegistry, selectedPlayer *player.Runtime, sessionTicket *loginticket.Ticket, plan *exchangeFinalizePlan) ([][]byte, bool) {

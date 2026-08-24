@@ -3165,6 +3165,176 @@ func (r *sharedWorldRegistry) OpenMyShopGuestBrowse(guestID uint64, hostVID uint
 	return [][]byte{shopproto.EncodeServerStart(packet)}, true
 }
 
+type myShopGuestBuyFailure uint8
+
+const (
+	myShopGuestBuyFailureNone myShopGuestBuyFailure = iota
+	myShopGuestBuyFailureSilent
+	myShopGuestBuyFailureTooFar
+	myShopGuestBuyFailureInvalidPos
+	myShopGuestBuyFailureSoldOut
+	myShopGuestBuyFailureInsufficientGold
+	myShopGuestBuyFailureInventoryFull
+	myShopGuestBuyFailureHostGoldOverflow
+)
+
+const myShopGuestBuyMaxDistance int32 = 2000
+
+type myShopGuestBuyPlan struct {
+	GuestID    uint64
+	HostID     uint64
+	Guest      loginticket.Character
+	Host       loginticket.Character
+	Row        myShopStockRow
+	Item       inventory.ItemInstance
+	Template   itemcatalog.Template
+	DisplayPos uint8
+}
+
+// ResolveMyShopGuestBuy validates a browsing guest's BUY against an open host
+// MYSHOP listing without mutating stock. Callers apply inventory/gold/persist,
+// then CommitMyShopGuestBuyStockClear.
+func (r *sharedWorldRegistry) ResolveMyShopGuestBuy(guestID uint64, hostVID uint32, displayPos uint8) (myShopGuestBuyPlan, myShopGuestBuyFailure) {
+	if r == nil || guestID == 0 || hostVID == 0 {
+		return myShopGuestBuyPlan{}, myShopGuestBuyFailureSilent
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.sessionMyShopGuestHost == nil {
+		return myShopGuestBuyPlan{}, myShopGuestBuyFailureSilent
+	}
+	hostID, browsing := r.sessionMyShopGuestHost[guestID]
+	if !browsing || hostID == 0 {
+		return myShopGuestBuyPlan{}, myShopGuestBuyFailureSilent
+	}
+	guest, ok := r.playerCharacter(guestID)
+	if !ok || characterAtBootstrapHPFloor(guest) {
+		return myShopGuestBuyPlan{}, myShopGuestBuyFailureSilent
+	}
+	hostEntity, ok := r.entities.PlayerByVID(hostVID)
+	if !ok || hostEntity.Entity.ID == 0 || hostEntity.Entity.ID != hostID {
+		return myShopGuestBuyPlan{}, myShopGuestBuyFailureTooFar
+	}
+	host, ok := r.playerCharacter(hostID)
+	if !ok || characterAtBootstrapHPFloor(host) || !r.hasMyShopWindowOpenLocked(hostID) {
+		return myShopGuestBuyPlan{}, myShopGuestBuyFailureSoldOut
+	}
+	if guest.MapIndex != host.MapIndex || worldruntime.ApproxDistance(guest.X-host.X, guest.Y-host.Y) > myShopGuestBuyMaxDistance {
+		return myShopGuestBuyPlan{}, myShopGuestBuyFailureTooFar
+	}
+	if int(displayPos) >= shopproto.ShopHostItemMax {
+		return myShopGuestBuyPlan{}, myShopGuestBuyFailureInvalidPos
+	}
+	stock := r.sessionMyShopStock[hostID]
+	rowIdx := -1
+	for i, row := range stock {
+		if row.DisplayPos == displayPos {
+			rowIdx = i
+			break
+		}
+	}
+	if rowIdx < 0 {
+		return myShopGuestBuyPlan{}, myShopGuestBuyFailureInvalidPos
+	}
+	row := stock[rowIdx]
+	if row.Price == 0 || row.Count == 0 || row.Vnum == 0 {
+		return myShopGuestBuyPlan{}, myShopGuestBuyFailureSoldOut
+	}
+	var matched inventory.ItemInstance
+	matches := 0
+	for _, item := range host.Inventory {
+		if item.Equipped || item.Slot != inventory.SlotIndex(row.Cell) {
+			continue
+		}
+		if item.Vnum != row.Vnum || item.Count != uint16(row.Count) || item.Locked || item.Count == 0 || item.ID == 0 {
+			continue
+		}
+		matched = item
+		matches++
+	}
+	if matches != 1 {
+		return myShopGuestBuyPlan{}, myShopGuestBuyFailureSoldOut
+	}
+	template, ok := r.itemTemplates[row.Vnum]
+	if !ok || !itemcatalog.ValidTemplate(template) || template.Vnum != row.Vnum || template.AntiGive || template.AntiMyShop {
+		return myShopGuestBuyPlan{}, myShopGuestBuyFailureSoldOut
+	}
+	if guest.Gold < uint64(row.Price) {
+		return myShopGuestBuyPlan{}, myShopGuestBuyFailureInsufficientGold
+	}
+	if uint64(row.Price) > exchangeGoldPointChangeCarrierMax || host.Gold > exchangeGoldPointChangeCarrierMax || host.Gold > exchangeGoldPointChangeCarrierMax-uint64(row.Price) {
+		return myShopGuestBuyPlan{}, myShopGuestBuyFailureHostGoldOverflow
+	}
+	guestRuntime := player.NewRuntime(guest, player.SessionLink{})
+	// Capacity-only check: PC-shop buy preserves item identity like exchange finalize and
+	// does not invent merchant anti-get / CanUse reject text in this slice.
+	capacityTemplate := itemcatalog.Template{
+		Vnum:      template.Vnum,
+		Name:      template.Name,
+		Stackable: template.Stackable,
+		MaxCount:  template.MaxCount,
+	}
+	if guestRuntime.ValidateCarriedItemGrant(capacityTemplate, uint16(row.Count)) == player.CarriedItemGrantFailureNoValidPlacement {
+		return myShopGuestBuyPlan{}, myShopGuestBuyFailureInventoryFull
+	}
+	return myShopGuestBuyPlan{
+		GuestID:    guestID,
+		HostID:     hostID,
+		Guest:      guest,
+		Host:       host,
+		Row:        row,
+		Item:       matched,
+		Template:   template,
+		DisplayPos: displayPos,
+	}, myShopGuestBuyFailureNone
+}
+
+// CommitMyShopGuestBuyStockClear clears one remembered display row and fans
+// UPDATE_ITEM(vnum=0) to remaining browsing guests except buyerGuestID (buyer
+// receives that frame in the direct buy burst). Host MYSHOP stays open.
+func (r *sharedWorldRegistry) CommitMyShopGuestBuyStockClear(hostID uint64, displayPos uint8, buyerGuestID uint64, host loginticket.Character) bool {
+	if r == nil || hostID == 0 {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.hasMyShopWindowOpenLocked(hostID) {
+		return false
+	}
+	stock := r.sessionMyShopStock[hostID]
+	next := make([]myShopStockRow, 0, len(stock))
+	cleared := false
+	for _, row := range stock {
+		if row.DisplayPos == displayPos {
+			cleared = true
+			continue
+		}
+		next = append(next, row)
+	}
+	if !cleared {
+		return false
+	}
+	if len(next) == 0 {
+		delete(r.sessionMyShopStock, hostID)
+	} else {
+		r.sessionMyShopStock[hostID] = next
+	}
+	_ = r.entities.UpdatePlayer(hostID, host)
+	update := shopproto.EncodeServerUpdateItem(shopproto.ServerUpdateItemPacket{
+		Position: displayPos,
+		Item:     shopproto.ItemEntry{DisplayPos: displayPos},
+	})
+	for guestID := range r.sessionMyShopGuests[hostID] {
+		if guestID == 0 || guestID == buyerGuestID {
+			continue
+		}
+		r.enqueueToEntityLocked(guestID, [][]byte{update})
+	}
+	return true
+}
+
 func (r *sharedWorldRegistry) encodeMyShopSignRematerializationFrameLocked(host loginticket.Character) ([]byte, bool) {
 	if r == nil || characterAtBootstrapHPFloor(host) {
 		return nil, false

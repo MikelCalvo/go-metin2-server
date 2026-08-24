@@ -612,7 +612,7 @@ Expected result:
 - out-of-range `EXCHANGE ITEM_ADD` display slots stay no-frame/no-mutation even for those guarded templates
 - malformed `EXCHANGE` payload sizes fail at the codec/dispatcher boundary rather than mutating runtime state
 - this is an exchange-window shell plus the first owned mutual-accept finalize path, not a completed exchange, trade, safebox, or player-shop feature
-- `CG::MYSHOP` (`0x0802`) encode/decode plus GAME dispatch are owned in this bootstrap: the default remains deny-no-response, and the first host-only accepted private-shop open presentation is now live (sign/stock/busy gates + same-socket open/busy flag + one `GC::SHOP_SIGN` with host VID + sign, no inventory/gold mutation on open); host-only empty-sign `GC::SHOP_SIGN` clear/close is also live on `/phase_select` / `/quit` / `/logout`, practice-mob floor, transfer/warp, and lab `/close_myshop`; visible peers now receive the same live/empty `SHOP_SIGN` around-broadcast on open/close, and newly visible peers rematerialize one live `SHOP_SIGN` for an already-open host; guest browse open is now live via peer `CG::ON_CLICK` on that host VID → one guest-only `GC::SHOP START` stock table (busy merchant/safebox/refine/exchange rejects reuse the owned exchange busy info-chat strings; guest own open MYSHOP / closed host stay silent); guest leave is now live via `CG::SHOP END` → one guest-only `GC::SHOP END` (host empty-sign / guest lifecycle also clear browse with one guest END); guest private-shop buy is docs-frozen (`docs/plans/2026-08-24-myshop-guest-buy-mutation-contract-freeze.md`) with runtime mutation still deferred; guest sell-into-PC-shop and cube busy rejects stay deferred; partner open-private-shop exchange START/ACCEPT/commit busy rejects are now owned beside merchant/safebox/refine; open MYSHOP also locks host item use/move/drop/pickup/give/safebox/refine mutations fail-closed until empty-sign close, so keep treating full personal-shop trading loops as out of scope for playable PvE checks until the buy slice lands
+- `CG::MYSHOP` (`0x0802`) encode/decode plus GAME dispatch are owned in this bootstrap: the default remains deny-no-response, and the first host-only accepted private-shop open presentation is now live (sign/stock/busy gates + same-socket open/busy flag + one `GC::SHOP_SIGN` with host VID + sign, no inventory/gold mutation on open); host-only empty-sign `GC::SHOP_SIGN` clear/close is also live on `/phase_select` / `/quit` / `/logout`, practice-mob floor, transfer/warp, and lab `/close_myshop`; visible peers now receive the same live/empty `SHOP_SIGN` around-broadcast on open/close, and newly visible peers rematerialize one live `SHOP_SIGN` for an already-open host; guest browse open is now live via peer `CG::ON_CLICK` on that host VID → one guest-only `GC::SHOP START` stock table (busy merchant/safebox/refine/exchange rejects reuse the owned exchange busy info-chat strings; guest own open MYSHOP / closed host stay silent); guest leave is now live via `CG::SHOP END` → one guest-only `GC::SHOP END` (host empty-sign / guest lifecycle also clear browse with one guest END); guest private-shop buy is now live (`docs/plans/2026-08-24-myshop-guest-buy-mutation-contract-freeze.md`): browsing `CG::SHOP BUY` transfers live host stock/gold with guest `UPDATE_ITEM(vnum=0)` and fail-closed distance/sold-out/inventory-full/insufficient-gold; guest sell-into-PC-shop and cube busy rejects stay deferred; partner open-private-shop exchange START/ACCEPT/commit busy rejects are now owned beside merchant/safebox/refine; open MYSHOP also locks host item use/move/drop/pickup/give/safebox/refine mutations fail-closed until empty-sign close, so keep treating tax/empire multipliers / guest sell / cube busy as out of scope for playable PvE checks
 
 ### 4.5.14 Guest browse an open private shop (`ON_CLICK` → `SHOP START` / `SHOP END`)
 
@@ -630,22 +630,22 @@ Expected result:
 - host `/close_myshop` while a guest is browsing queues one guest `GC::SHOP END` beside the owned empty-sign path; later guest END stays silent
 - guest open merchant/safebox/refine/exchange returns one self-only busy info-chat `You cannot trade while another trade window is open.` with no START
 - guest own open MYSHOP, closed host, or unknown VID stay silent/no-frame
-- guest private-shop buy is docs-frozen for the next implementation slice; do not expect live buy mutation yet (see 4.5.15 once that slice lands)
+- guest private-shop buy is live; see 4.5.15 for the buy mutation checks
 
-### 4.5.15 Guest buy from an open private shop (`SHOP BUY` while browsing) — docs frozen / runtime deferred
+### 4.5.15 Guest buy from an open private shop (`SHOP BUY` while browsing)
 
 Contract freeze: `docs/plans/2026-08-24-myshop-guest-buy-mutation-contract-freeze.md`.
 
-- [ ] After the guest-buy implementation lands: have player A open `MYSHOP` with one listed carried row and known price, have player B browse, then send `CG::SHOP BUY` for that `display_pos`
+- [ ] Have player A open `MYSHOP` with one listed carried row and known price, have player B browse, then send `CG::SHOP BUY` for that `display_pos`
 - [ ] Confirm guest gold debit + host gold credit + guest item grant + host stack removal + guest `UPDATE_ITEM(vnum=0)` for that slot
 - [ ] Confirm second buy of the same slot fails sold-out / invalid with no further mutation
 - [ ] Confirm distance `> 2000` yields `You are too far away from the shop to buy something.` with no shop error frame
 - [ ] Confirm insufficient gold / full inventory use bare `NOT_ENOUGH_MONEY` / `INVENTORY_FULL`
 - [ ] Confirm guest `SHOP SELL` / `SELL2` while browsing a private shop stay silent/no-frame
 
-Expected result (once implemented):
+Expected result:
 - one successful guest buy transfers live host stock and gold without bare `GC::SHOP OK`, keeps browse open until leave/host close, and clears the sold display slot for remaining guests
-- until that runtime slice lands, treat this checklist item as deferred
+- tax/empire multipliers, guest sell-into-PC-shop, and cube busy rejects stay deferred
 
 ---
 

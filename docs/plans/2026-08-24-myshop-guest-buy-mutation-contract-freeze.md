@@ -80,4 +80,4 @@ Distance reject reuses the English locale string already present in the external
 
 ## Status
 
-Docs-first freeze on `lane/items`. Implementation / RED intentionally deferred to the next items-lane slice.
+Implemented on `lane/items`: guest `CG::SHOP BUY` while browsing an open MYSHOP transfers live host stock, debits/credits gold, persists both sides, emits guest/host inventory+gold refreshes plus buyer `UPDATE_ITEM(vnum=0)`, and fail-closes distance / sold-out / inventory-full / insufficient-gold / host gold-carrier overflow. Guest sell-into-PC-shop, tax/empire multipliers, shop-bag consumption, and cube busy rejects stay deferred.
