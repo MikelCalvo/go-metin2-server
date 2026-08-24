@@ -302,9 +302,12 @@ Contract for the first live operator/runtime position MOVE choreography:
 
 Current implementation status:
 - this seam is now live for retained viewers of a successful same-map live spawn-backed operator/runtime position-only update
+- remove/add visibility membership across that same position MOVE is now owned by focused coverage: old-position-only viewers receive `CHARACTER_DEL`, newly-visible destination viewers receive the ordinary add/info/update burst, and retained midway viewers still receive only `MOVE` (`TestGameRuntimeUpdateStaticActorSameMapSpawnGroupPositionQueuesOldPositionOnlyDeleteAndNewlyVisibleAdd`)
+- chase / return-step / return-home / homeward already reuse the same `RelocateStaticActorTargetDiff` remove/add fanout; dedicated multi-viewer twins for those executors are optional symmetry proofs, not a missing runtime seam
 - presentation/name/race refreshes, dead trailing-`DEAD` refreshes, respawn rebuild, content-bundle replacement, and cross-map updates remain on delete/readd
 - engagement release, selected-target clear, and pending chase-deadline clear still follow the already-owned operator/runtime update lifecycle
 - cross-map return client choreography is frozen as delete/readd / direct-home rebuild (not a future MOVE/WARP seam); live damaged-HP daemon-restart durability is owned separately by the content-spawn-groups daemon-restart seam
+- absolute pending chase / return / homeward deadline persistence across daemon restart stays deferred: restore re-arms eligible schedules from now rather than rematerializing mid-timer due-ats (engagement / selected-target / chase ownership stay fail-closed across restart beside the owned proximity-suppress rematerialize)
 
 Explicit non-goals for this operator/runtime position MOVE freeze alone:
 - converting presentation/name/race refreshes, dead trailing-`DEAD` refreshes, respawn rebuild, or content-bundle replacement to MOVE

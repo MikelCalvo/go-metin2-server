@@ -171,6 +171,187 @@ func TestGameRuntimeUpdateStaticActorSameMapSpawnGroupPresentationKeepsDeleteRea
 	}
 }
 
+// Same-map live spawn-backed position MOVE must also honor AOI membership:
+// old-position-only viewers get CHARACTER_DEL, newly-visible viewers get the
+// ordinary add/info/update burst, and retained viewers still get MOVE only.
+func TestGameRuntimeUpdateStaticActorSameMapSpawnGroupPositionQueuesOldPositionOnlyDeleteAndNewlyVisibleAdd(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	// Geometry with VisibilityRadius=800:
+	//   mob 1200,2200 -> 2100,2200 (distance 900)
+	//   old-only viewer stays near origin and loses visibility
+	//   retained viewer sits midway and keeps visibility
+	//   new-only viewer sits at destination and gains visibility
+	oldViewer := peerVisibilityCharacter("OperatorAOIOld", 0x01030201, 0x02040201, 1200, 2200, 0, 120, 220)
+	retainedViewer := peerVisibilityCharacter("OperatorAOIRetained", 0x01030202, 0x02040202, 1650, 2200, 0, 121, 221)
+	newViewer := peerVisibilityCharacter("OperatorAOINew", 0x01030203, 0x02040203, 2100, 2200, 0, 122, 222)
+	issuePeerTicket(t, store, "op-aoi-old", 0xa0a0a0a1, oldViewer)
+	issuePeerTicket(t, store, "op-aoi-retained", 0xa0a0a0a2, retainedViewer)
+	issuePeerTicket(t, store, "op-aoi-new", 0xa0a0a0a3, newViewer)
+
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     800,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionStore,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.operator_position_aoi_membership",
+		Name:          "OperatorPositionAOIMob",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}); err != nil {
+		t.Fatalf("import spawn group: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.operator_position_aoi_membership")
+	if !ok {
+		t.Fatal("expected spawn group to resolve by ref")
+	}
+	mobVID := uint32(group.EntityID)
+
+	oldFlow, oldEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "op-aoi-old", 0xa0a0a0a1)
+	defer closeSessionFlow(t, oldFlow)
+	if !enterBurstContainsStaticActorVID(t, oldEnter, mobVID) {
+		t.Fatal("expected old-position viewer enter burst to include spawn-backed mob")
+	}
+	retainedFlow, retainedEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "op-aoi-retained", 0xa0a0a0a2)
+	defer closeSessionFlow(t, retainedFlow)
+	if !enterBurstContainsStaticActorVID(t, retainedEnter, mobVID) {
+		t.Fatal("expected retained viewer enter burst to include spawn-backed mob")
+	}
+	newFlow, newEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "op-aoi-new", 0xa0a0a0a3)
+	defer closeSessionFlow(t, newFlow)
+	if enterBurstContainsStaticActorVID(t, newEnter, mobVID) {
+		t.Fatal("expected newly-visible destination viewer enter burst to omit origin-only spawn-backed mob")
+	}
+	flushServerFrames(t, oldFlow)
+	flushServerFrames(t, retainedFlow)
+	flushServerFrames(t, newFlow)
+
+	updated, ok := runtime.UpdateStaticActor(group.EntityID, "OperatorPositionAOIMob", bootstrapMapIndex, 2100, 2200, 101)
+	if !ok {
+		t.Fatal("expected same-map live spawn-backed position update to succeed")
+	}
+	if updated.EntityID != group.EntityID || updated.X != 2100 || updated.Y != 2200 {
+		t.Fatalf("unexpected updated spawn-group snapshot: %+v", updated)
+	}
+
+	oldQueued := flushServerFrames(t, oldFlow)
+	if !queuedFramesContainCharacterDeleteForVID(t, oldQueued, mobVID) {
+		t.Fatalf("expected old-position-only viewer to receive CHARACTER_DEL for mob VID %d, got %d frames", mobVID, len(oldQueued))
+	}
+	if queuedFramesContainMoveForVID(t, oldQueued, mobVID) {
+		t.Fatal("expected old-position-only viewer not to receive retained MOVE for lost visibility")
+	}
+	if queuedFramesContainCharacterAddForVID(t, oldQueued, mobVID) {
+		t.Fatal("expected old-position-only viewer not to receive CHARACTER_ADD after losing visibility")
+	}
+
+	retainedQueued := flushServerFrames(t, retainedFlow)
+	if len(retainedQueued) == 0 {
+		t.Fatal("expected retained viewer to receive MOVE replication")
+	}
+	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, retainedQueued[0]))
+	if err != nil {
+		t.Fatalf("expected retained-viewer MOVE replication instead of delete/readd: %v", err)
+	}
+	if moveAck.VID != mobVID || moveAck.X != 2100 || moveAck.Y != 2200 || moveAck.Duration == 0 {
+		t.Fatalf("unexpected retained-viewer MOVE payload: %+v", moveAck)
+	}
+	if queuedFramesContainCharacterDeleteForVID(t, retainedQueued, mobVID) {
+		t.Fatal("expected retained viewer not to receive CHARACTER_DEL across same-map position MOVE")
+	}
+	if queuedFramesContainCharacterAddForVID(t, retainedQueued, mobVID) {
+		t.Fatal("expected retained viewer not to receive CHARACTER_ADD across same-map position MOVE")
+	}
+
+	newQueued := flushServerFrames(t, newFlow)
+	if len(newQueued) < 3 {
+		t.Fatalf("expected newly-visible viewer to receive add/info/update burst, got %d frames", len(newQueued))
+	}
+	add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, newQueued[0]))
+	if err != nil {
+		t.Fatalf("expected newly-visible CHARACTER_ADD first, got: %v", err)
+	}
+	if add.VID != mobVID || add.X != 2100 || add.Y != 2200 || add.RaceNum != 101 {
+		t.Fatalf("unexpected newly-visible CHARACTER_ADD: %+v", add)
+	}
+	info, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, newQueued[1]))
+	if err != nil {
+		t.Fatalf("decode newly-visible CHAR_ADDITIONAL_INFO: %v", err)
+	}
+	if info.VID != mobVID || info.Name != "OperatorPositionAOIMob" {
+		t.Fatalf("unexpected newly-visible CHAR_ADDITIONAL_INFO: %+v", info)
+	}
+	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, newQueued[2])); err != nil {
+		t.Fatalf("expected newly-visible CHARACTER_UPDATE third: %v", err)
+	}
+	if queuedFramesContainMoveForVID(t, newQueued, mobVID) {
+		t.Fatal("expected newly-visible viewer not to receive retained MOVE")
+	}
+	if queuedFramesContainCharacterDeleteForVID(t, newQueued, mobVID) {
+		t.Fatal("expected newly-visible viewer not to receive CHARACTER_DEL")
+	}
+}
+
+func enterBurstContainsStaticActorVID(t *testing.T, frames [][]byte, vid uint32) bool {
+	t.Helper()
+	for _, raw := range frames {
+		add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, raw))
+		if err == nil && add.VID == vid {
+			return true
+		}
+	}
+	return false
+}
+
+func queuedFramesContainCharacterDeleteForVID(t *testing.T, frames [][]byte, vid uint32) bool {
+	t.Helper()
+	for _, raw := range frames {
+		deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, raw))
+		if err == nil && deleted.VID == vid {
+			return true
+		}
+	}
+	return false
+}
+
+func queuedFramesContainCharacterAddForVID(t *testing.T, frames [][]byte, vid uint32) bool {
+	t.Helper()
+	for _, raw := range frames {
+		add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, raw))
+		if err == nil && add.VID == vid {
+			return true
+		}
+	}
+	return false
+}
+
+func queuedFramesContainMoveForVID(t *testing.T, frames [][]byte, vid uint32) bool {
+	t.Helper()
+	for _, raw := range frames {
+		moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, raw))
+		if err == nil && moveAck.VID == vid {
+			return true
+		}
+	}
+	return false
+}
+
 func TestSharedWorldRegistryUpdateStaticActorSameMapSpawnGroupPositionClearsEngagement(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1)
 	registry := newSharedWorldRegistryWithTopology(topology)
