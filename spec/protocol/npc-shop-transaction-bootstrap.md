@@ -418,6 +418,10 @@ See `docs/plans/2026-08-24-myshop-guest-browse-open-presentation-contract-freeze
 See `docs/plans/2026-08-24-myshop-guest-browse-leave-end-contract-freeze.md`.
 See `docs/plans/2026-08-24-myshop-guest-buy-mutation-contract-freeze.md`.
 
+### Owned lab cube open/close presentation seam
+
+Lab cube open/close is owned outside the MYSHOP family (`docs/plans/2026-08-25-cube-open-close-presentation-busy-bit.md`): `/open_cube` / `/close_cube` command-chat presentation plus peer-visible cube busy bit. Cube busy rejects that would block MYSHOP open / exchange / safebox / refine stay deferred.
+
 ### Owned MYSHOP guest private-shop buy mutation seam
 
 Guest `CG::SHOP BUY` while browsing an already-open private shop is now owned:

@@ -66,6 +66,7 @@ type sharedWorldRegistry struct {
 	sessionMerchantWindows             map[uint64]bool
 	sessionSafeboxWindows              map[uint64]bool
 	sessionRefineWindows               map[uint64]bool
+	sessionCubeWindows                 map[uint64]bool
 	// sessionMyShopWindows remembers open private-shop presentations keyed by
 	// shared-world entity ID. Presence means busy/open; the value is the
 	// accepted non-empty live sign rematerialized on peer view-entry.
@@ -3005,6 +3006,48 @@ func (r *sharedWorldRegistry) clearRefineWindowOpenLocked(entityID uint64) {
 	r.setRefineWindowOpenLocked(entityID, false)
 }
 
+func (r *sharedWorldRegistry) SetCubeWindowOpen(entityID uint64, open bool) bool {
+	if r == nil || entityID == 0 {
+		return false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.sessionEntryLocked(entityID); !ok {
+		return false
+	}
+	r.setCubeWindowOpenLocked(entityID, open)
+	return true
+}
+
+func (r *sharedWorldRegistry) setCubeWindowOpenLocked(entityID uint64, open bool) {
+	if r == nil || entityID == 0 {
+		return
+	}
+	if !open {
+		if r.sessionCubeWindows != nil {
+			delete(r.sessionCubeWindows, entityID)
+		}
+		return
+	}
+	if r.sessionCubeWindows == nil {
+		r.sessionCubeWindows = make(map[uint64]bool)
+	}
+	r.sessionCubeWindows[entityID] = true
+}
+
+func (r *sharedWorldRegistry) hasCubeWindowOpenLocked(entityID uint64) bool {
+	if r == nil || entityID == 0 || r.sessionCubeWindows == nil {
+		return false
+	}
+	return r.sessionCubeWindows[entityID]
+}
+
+func (r *sharedWorldRegistry) clearCubeWindowOpenLocked(entityID uint64) {
+	r.setCubeWindowOpenLocked(entityID, false)
+}
+
 type myShopStockRow struct {
 	DisplayPos uint8
 	Vnum       uint32
@@ -3924,6 +3967,7 @@ func (r *sharedWorldRegistry) removeStaleOwnershipLocked(entityIDs []uint64) boo
 		r.clearMerchantWindowOpenLocked(entityID)
 		r.clearSafeboxWindowOpenLocked(entityID)
 		r.clearRefineWindowOpenLocked(entityID)
+		r.clearCubeWindowOpenLocked(entityID)
 		r.clearMyShopWindowOpenLocked(entityID)
 		r.clearMyShopGuestBrowseLocked(entityID, false)
 		r.clearStaticActorCombatEngagementsBySubjectLocked(entityID)
@@ -4034,6 +4078,7 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 	r.clearMerchantWindowOpenLocked(id)
 	r.clearSafeboxWindowOpenLocked(id)
 	r.clearRefineWindowOpenLocked(id)
+	r.clearCubeWindowOpenLocked(id)
 	r.clearMyShopWindowOpenLocked(id)
 	r.clearMyShopGuestBrowseLocked(id, false)
 	r.clearStaticActorCombatEngagementsBySubjectLocked(id)

@@ -647,7 +647,19 @@ Contract freeze: `docs/plans/2026-08-24-myshop-guest-buy-mutation-contract-freez
 Expected result:
 - one successful guest buy transfers live host stock and gold without bare `GC::SHOP OK`, keeps browse open until leave/host close, and clears the sold display slot for remaining guests
 - a still-browsing second guest sees the sold-slot `UPDATE_ITEM(vnum=0)` fan-out without inventory/gold mutation (`docs/plans/2026-08-24-myshop-guest-buy-multi-guest-update-item-fanout.md`)
-- tax/empire multipliers, guest sell-into-PC-shop, and cube busy rejects stay deferred
+- tax/empire multipliers, guest sell-into-PC-shop, and cube busy rejects stay deferred (lab cube open/close presentation is owned separately; see section 4.5.16)
+
+### 4.5.16 Lab cube open/close presentation
+
+- [ ] Enter GAME with a disposable character above the zero-HP floor
+- [ ] Send `/open_cube` and confirm one self-only command chat `cube open 20022`
+- [ ] Send `/open_cube` again and confirm info chat `The Build window is already open.`
+- [ ] Send `/close_cube` and confirm one self-only command chat `cube close`
+- [ ] With `/open_safebox` already open, confirm `/open_cube` emits `You cannot build something while another trade/storeroom window is open.` and does not open cube
+- [ ] Confirm `/open_cube 0` / invalid args stay silent consume with no open
+
+Expected result:
+- lab cube open/close is command-chat only (no binary cube packet), inventory/gold stay unchanged, and exchange / MYSHOP / safebox / refine cube busy rejects stay deferred (`docs/plans/2026-08-25-cube-open-close-presentation-busy-bit.md`)
 
 ---
 

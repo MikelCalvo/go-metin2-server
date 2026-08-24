@@ -104,7 +104,7 @@ The shipped minimal runtime owns only a small in-memory exchange-window shell:
 - If `START` targets a visible connected player that currently has an open same-socket bootstrap safebox presentation, the requester receives the same self-only `CHAT_TYPE_INFO` with `That player cannot trade right now.`; the busy partner receives no frames, no exchange pairing/display state is created, and the partner's safebox presentation remains open.
 - If `START` targets a visible connected player that currently has an open same-socket refine-dialog presentation, the requester receives the same self-only `CHAT_TYPE_INFO` with `That player cannot trade right now.`; the busy partner receives no frames, no exchange pairing/display state is created, and the partner's refine dialog remains open.
 - If `START` targets a visible connected player that currently has an open same-socket private-shop presentation, the requester receives the same self-only `CHAT_TYPE_INFO` with `That player cannot trade right now.`; the busy partner receives no frames, no exchange pairing/display state is created, and the partner's private shop remains open.
-- Open private-shop busy rejects for requester/partner `START` / `ACCEPT` / commit are now owned beside merchant/safebox/refine (`docs/plans/2026-08-24-exchange-myshop-busy-window-reject-chat.md`); cube busy rejects stay deferred.
+- Open private-shop busy rejects for requester/partner `START` / `ACCEPT` / commit are now owned beside merchant/safebox/refine (`docs/plans/2026-08-24-exchange-myshop-busy-window-reject-chat.md`); lab cube open/close presentation + peer-visible busy bit are now owned (`docs/plans/2026-08-25-cube-open-close-presentation-busy-bit.md`), but cube busy rejects for exchange START/ACCEPT/commit stay deferred.
 - If the requester's live gold is already `>=` the owned signed `PLAYER_POINT_CHANGE` / bootstrap gold carrier max (`1<<31-1` / `exchangeGoldPointChangeCarrierMax`), `START` returns one self-only `CHAT_TYPE_INFO` with `You have more than 2 Billion Yang. You cannot trade.`; no exchange frames are emitted, no pairing/display mutation occurs, and any open merchant/safebox/refine presentation is left untouched. This gold-carrier-cap gate is evaluated after the owned busy-window and distance/`ALREADY` gates (`docs/plans/2026-08-22-exchange-start-gold-carrier-cap-reject-chat.md`).
 - If the requester is under that carrier cap but the visible connected target's live gold is already `>= 1<<31-1`, `START` returns one self-only `CHAT_TYPE_INFO` with `The player has more than 2 Billion Yang. You cannot trade with him.`, with the same no-pairing / no-exchange-frame contract. When both sides are over the cap, the requester-side string wins (local-first, matching busy ordering).
 - `CANCEL` succeeds only while the requester is currently paired in that shell.
@@ -205,7 +205,7 @@ Malformed `EXCHANGE` payload sizes fail at the codec/dispatcher boundary rather 
 Later slices must write a new contract before broadening this packet into real gameplay. In particular, this slice does not freeze:
 
 - richer trade target eligibility beyond the current visible-player check plus owned exchange-distance gate (`ApproxDistance < 1000`), the requester-side open-merchant / open-safebox / open-refine-dialog PREVENT_TRADE_WINDOW start reject, the partner-side open-merchant / open-safebox / open-refine-dialog busy-window rejection text, the owned `EXCHANGE START` gold-carrier-cap reject chat when either side already holds `>= 1<<31-1` gold, the owned `EXCHANGE ACCEPT` / commit-time gold-carrier-cap reject chat when either paired side drifts to that cap after shell open, and the owned exact-position transfer / warp rebootstrap exchange teardown
-- partner-side open cube busy-window rejection text (open private-shop busy rejects are now owned)
+- partner-side open cube busy-window rejection text (open private-shop busy rejects are now owned; lab cube open/close presentation + peer-visible busy bit are owned in `docs/plans/2026-08-25-cube-open-close-presentation-busy-bit.md`)
 
 ### Owned open-private-shop exchange busy-window reject seam
 
@@ -215,6 +215,15 @@ Open private shop now participates in the exchange busy-window gate (`docs/plans
 - partner-side open private shop rejects those same seams with the already-owned partner busy info-chat string
 - shared-world publishes a peer-visible open-private-shop busy bit beside merchant/safebox/refine window flags
 - guest browse/buy and cube busy rejects stay deferred
+
+### Owned cube open/close presentation + busy-bit seam
+
+Lab cube open/close now owns the first presentation seam before exchange busy rejects (`docs/plans/2026-08-25-cube-open-close-presentation-busy-bit.md`):
+
+- `/open_cube` / `/open_cube <npcVnum>` emits one self-only `CHAT_TYPE_COMMAND` `cube open <npcVnum>` (default `20022`) and publishes a peer-visible shared-world cube busy bit
+- `/close_cube`, lifecycle `/quit|/logout|/phase_select`, practice-mob floor, and transfer/warp teardown clear that bit with one self-only `CHAT_TYPE_COMMAND` `cube close` when open
+- already-open and busy merchant/safebox/refine/MYSHOP/exchange shells reject open with oracle EN info-chat and no command frame
+- exchange / MYSHOP / safebox / refine cube busy-window rejects and recipe make/add/list stay deferred
 - exchange-window item/gold/accept updates beyond the current `START` / display-only `ITEM_ADD` / display-only `ITEM_DEL` / display-only `GOLD_ADD` / display-only `ACCEPT` / accept reset / accept-time displayed-item and displayed-gold revalidation / `LESS_GOLD` / `END` shell
 - trade item removal, carried-item locking/removal, or accepted gold mutation semantics beyond the first mutual-accept finalize described above
 - real finalize/result state machines beyond the first mutual-accept mutation + shell-close contract

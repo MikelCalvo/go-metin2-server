@@ -114,6 +114,9 @@ const exchangeFinalizeGoldOverflowOtherInfoMessage = "The other person cannot ca
 const exchangeFinalizeOtherInfoMessage = "Unknown error"
 const exchangeFinalizeSuccessInfoMessageFormat = "The trade with %s has been successful."
 const myShopGuestBuyTooFarInfoMessage = "You are too far away from the shop to buy something."
+const cubeAlreadyOpenInfoMessage = "The Build window is already open."
+const cubeBusyShellInfoMessage = "You cannot build something while another trade/storeroom window is open."
+const bootstrapCubeOpenDefaultNPCVnum uint32 = 20022
 const bootstrapSafeboxOpenMinSize uint8 = 1
 const bootstrapSafeboxOpenMaxSize uint8 = 3
 const bootstrapSafeboxCellsPerPage uint8 = 5
@@ -4153,6 +4156,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		var hasActiveRefineDialog bool
 		var hasActiveMyShopOpen bool
 		var activeGuestMyShopHostVID uint32
+		var hasActiveCubeOpen bool
 		bootstrapSafeboxCapacity := func(size uint8) uint8 {
 			if size < bootstrapSafeboxOpenMinSize || size > bootstrapSafeboxOpenMaxSize {
 				return 0
@@ -4381,6 +4385,36 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				sharedWorld.SetRefineWindowOpen(sharedWorldID, true)
 			}
 		}
+		setActiveCubeOpen := func(open bool) {
+			if !open {
+				hasActiveCubeOpen = false
+				if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 {
+					sharedWorld.SetCubeWindowOpen(sharedWorldID, false)
+				}
+				return
+			}
+			hasActiveCubeOpen = true
+			if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 {
+				sharedWorld.SetCubeWindowOpen(sharedWorldID, true)
+			}
+		}
+		closeActiveCubeOpenFrames := func() [][]byte {
+			if !hasActiveCubeOpen {
+				return nil
+			}
+			setActiveCubeOpen(false)
+			return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+				Type:    chatproto.ChatTypeCommand,
+				Message: "cube close",
+			})}
+		}
+		openActiveCubeOpenFrames := func(npcVnum uint32) [][]byte {
+			setActiveCubeOpen(true)
+			return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+				Type:    chatproto.ChatTypeCommand,
+				Message: fmt.Sprintf("cube open %d", npcVnum),
+			})}
+		}
 		clearActiveMyShopOpen := func() {
 			hasActiveMyShopOpen = false
 			if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 {
@@ -4477,6 +4511,16 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				Message: "CloseSafebox",
 			}))
 		}
+		appendPostFloorCubeCloseFrame := func(frames [][]byte, clearTarget bool) [][]byte {
+			if !clearTarget {
+				return frames
+			}
+			closeFrames := closeActiveCubeOpenFrames()
+			if len(closeFrames) == 0 {
+				return frames
+			}
+			return append(frames, closeFrames...)
+		}
 		appendPostFloorExchangeCloseFrame := func(frames [][]byte, clearTarget bool) [][]byte {
 			if !clearTarget || sharedWorld == nil || !joinedSharedWorld || sharedWorldID == 0 || !sharedWorld.HasLiveSession(sharedWorldID) {
 				return frames
@@ -4490,6 +4534,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		appendPostFloorContextCloseFrames := func(frames [][]byte, clearTarget bool) [][]byte {
 			frames = appendPostFloorMerchantCloseFrame(frames, clearTarget)
 			frames = appendPostFloorMyShopCloseFrame(frames, clearTarget)
+			frames = appendPostFloorCubeCloseFrame(frames, clearTarget)
 			frames = appendPostFloorSafeboxCloseFrame(frames, clearTarget)
 			frames = appendPostFloorExchangeCloseFrame(frames, clearTarget)
 			if clearTarget {
@@ -4514,6 +4559,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				return frames
 			}
 			return append(guestCloseFrames, frames...)
+		}
+		prependCubeCloseFrame := func(frames [][]byte) [][]byte {
+			closeFrames := closeActiveCubeOpenFrames()
+			if len(closeFrames) == 0 {
+				return frames
+			}
+			return append(closeFrames, frames...)
 		}
 		prependSafeboxCloseFrame := func(frames [][]byte) [][]byte {
 			clearPendingSafeboxPasswordChallenge()
@@ -4561,6 +4613,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				frames = append(append([][]byte{}, exchangeCloseFrames...), frames...)
 			}
 			frames = prependSafeboxCloseFrame(frames)
+			frames = prependCubeCloseFrame(frames)
 			frames = prependMyShopCloseFrame(frames)
 			return prependMerchantCloseFrame(frames)
 		}
@@ -6534,6 +6587,30 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeCommand, Message: "CloseSafebox"}
 							return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
 						}
+						if npcVnum, ok := slashOpenCubeCommand(packet.Message); ok {
+							selectedPlayer, selectedOK := currentSelectedPlayer()
+							if !selectedOK || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							if npcVnum == 0 {
+								// Recognized /open_cube with invalid/zero vnum stays
+								// fail-closed-consume: no cube open command and no busy bit.
+								return gameflow.ChatResult{Accepted: true}
+							}
+							if hasActiveCubeOpen {
+								delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: cubeAlreadyOpenInfoMessage}
+								return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
+							}
+							if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveMyShopOpen || (ownsLiveSharedWorldSession() && sharedWorld != nil && sharedWorld.hasActiveExchange(sharedWorldID)) {
+								delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: cubeBusyShellInfoMessage}
+								return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
+							}
+							return gameflow.ChatResult{Accepted: true, Frames: openActiveCubeOpenFrames(npcVnum)}
+						}
+						if slashCloseCubeCommand(packet.Message) {
+							closeFrames := closeActiveCubeOpenFrames()
+							return gameflow.ChatResult{Accepted: true, Frames: closeFrames}
+						}
 						if slashCloseMyShopCommand(packet.Message) {
 							closeFrames := closeActiveMyShopOpenFrames()
 							return gameflow.ChatResult{Accepted: true, Frames: closeFrames}
@@ -6559,10 +6636,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							}
 							clearActiveSafeboxItems()
 							setActiveRefineDialog(refineDialogPresentation{}, false)
+							setActiveCubeOpen(false)
 						}
 						switch command {
 						case "quit":
-							quitFrames := prependMerchantCloseFrame(prependMyShopCloseFrame(prependSafeboxCloseFrame(prependExchangeCloseFrame(nil))))
+							quitFrames := prependMerchantCloseFrame(prependMyShopCloseFrame(prependCubeCloseFrame(prependSafeboxCloseFrame(prependExchangeCloseFrame(nil)))))
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
@@ -6572,7 +6650,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeCommand, Message: "quit"}
 							return gameflow.ChatResult{Accepted: true, Frames: quitFrames, Delivery: &delivery}
 						case "logout":
-							logoutFrames := prependMerchantCloseFrame(prependMyShopCloseFrame(prependSafeboxCloseFrame(prependExchangeCloseFrame(nil))))
+							logoutFrames := prependMerchantCloseFrame(prependMyShopCloseFrame(prependCubeCloseFrame(prependSafeboxCloseFrame(prependExchangeCloseFrame(nil)))))
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
@@ -6581,7 +6659,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							clearLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: true, Frames: logoutFrames, NextPhase: session.PhaseClose}
 						case "phase_select":
-							phaseSelectFrames := prependMerchantCloseFrame(prependMyShopCloseFrame(prependSafeboxCloseFrame(prependExchangeCloseFrame(nil))))
+							phaseSelectFrames := prependMerchantCloseFrame(prependMyShopCloseFrame(prependCubeCloseFrame(prependSafeboxCloseFrame(prependExchangeCloseFrame(nil)))))
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
@@ -6644,6 +6722,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							clearActiveCombatTarget()
 							setActiveSafeboxOpen(0, false)
 							setActiveRefineDialog(refineDialogPresentation{}, false)
+							setActiveCubeOpen(false)
 							staticRefreshFrames := sharedWorld.VisibleStaticActorRefreshFrames(restartedLive)
 							frames := append(append([][]byte(nil), bootstrapFrames...), staticRefreshFrames...)
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
@@ -6696,6 +6775,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							clearActiveCombatTarget()
 							setActiveSafeboxOpen(0, false)
 							setActiveRefineDialog(refineDialogPresentation{}, false)
+							setActiveCubeOpen(false)
 							frames := append(append([][]byte(nil), bootstrapFrames...), transferFrames...)
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
@@ -8648,6 +8728,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			}
 			clearActiveSafeboxItems()
 			setActiveRefineDialog(refineDialogPresentation{}, false)
+			setActiveCubeOpen(false)
 			clearActiveMyShopOpen()
 			clearActiveGuestMyShopBrowse()
 			clearActiveCombatTarget()
@@ -9648,6 +9729,43 @@ func slashCloseMyShopCommand(message string) bool {
 		return false
 	}
 	return fields[0] == "close_myshop"
+}
+
+func slashOpenCubeCommand(message string) (uint32, bool) {
+	if !strings.HasPrefix(message, "/") {
+		return 0, false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) == 0 || fields[0] != "open_cube" {
+		return 0, false
+	}
+	switch len(fields) {
+	case 1:
+		return bootstrapCubeOpenDefaultNPCVnum, true
+	case 2:
+		value, err := strconv.ParseUint(fields[1], 10, 32)
+		if err != nil || value == 0 {
+			// Recognized /open_cube with invalid/zero vnum: consume fail-closed
+			// in the handler rather than falling through as ordinary talking chat.
+			return 0, true
+		}
+		return uint32(value), true
+	default:
+		// Extra args stay recognized so the handler can fail closed instead of
+		// falling through as ordinary talking chat.
+		return 0, true
+	}
+}
+
+func slashCloseCubeCommand(message string) bool {
+	if !strings.HasPrefix(message, "/") {
+		return false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) != 1 {
+		return false
+	}
+	return fields[0] == "close_cube"
 }
 
 func slashSafeboxPasswordCommand(message string) (string, bool) {
