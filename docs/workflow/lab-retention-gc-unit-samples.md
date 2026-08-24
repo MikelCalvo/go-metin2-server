@@ -69,6 +69,8 @@ BIN="${METIN2_MIGRATE_BIN:-/usr/local/bin/metin2-migrate}"
 PRINTS_ROOT="${METIN2_OPS_PRINTS_ROOT:-/var/metin2/ops-prints}"
 KEEP_DAYS="${METIN2_RETENTION_KEEP_DAYS:-14}"
 RUNTIME_CONFIG="${METIN2_RUNTIME_CONFIG:-}"
+GAMED_LOG="${METIN2_GAMED_LOG_PATH:-/var/log/metin2/gamed.log}"
+AUTHD_LOG="${METIN2_AUTHD_LOG_PATH:-/var/log/metin2/authd.log}"
 
 test -x "$BIN"
 test -d "$PRINTS_ROOT"
@@ -94,6 +96,8 @@ cp "$TMP_BUILD" "$OUT/build-info.json"
 
 "$BIN" migration-run-retention \
   --build-info "$OUT/build-info.json" \
+  --gamed-log-path "$GAMED_LOG" \
+  --authd-log-path "$AUTHD_LOG" \
   >"$OUT/migration-run-retention.sh"
 
 DRILL_NOTE="backup-restore-drill=skipped (set METIN2_RUNTIME_CONFIG to a retained runtime-config JSON snapshot)"
@@ -104,6 +108,8 @@ if [ -n "$RUNTIME_CONFIG" ]; then
     "$BIN" backup-restore-drill \
       --runtime-config "$RUNTIME_CONFIG" \
       --build-info "$OUT/build-info.json" \
+      --gamed-log-path "$GAMED_LOG" \
+      --authd-log-path "$AUTHD_LOG" \
       >"$OUT/backup-restore-drill.sh"
     DRILL_NOTE="backup-restore-drill=printed from METIN2_RUNTIME_CONFIG"
   else
@@ -123,8 +129,11 @@ The helper's only `rm` is the temporary `mktemp` build-info copy via `trap` —
 never retention trees or printed scripts. Companion printers are owned by this
 helper: `migration-run-retention.sh` always, `backup-restore-drill.sh` only
 when `METIN2_RUNTIME_CONFIG` points at a retained non-symlink regular
-runtime-config snapshot. The helper never live-fetches ops JSON.
-
+runtime-config snapshot. Both companion printers receive
+`--gamed-log-path` / `--authd-log-path` from `METIN2_GAMED_LOG_PATH` /
+`METIN2_AUTHD_LOG_PATH` (defaults `/var/log/metin2/gamed.log` /
+`/var/log/metin2/authd.log`) so printed retain scripts can optionally copy
+daemon JSON logs when present. The helper never live-fetches ops JSON.
 ## systemd samples (print-only)
 
 Place as `.sample` files under `/etc/systemd/system/` (or a lab overlay). Do
@@ -170,10 +179,13 @@ WantedBy=timers.target
 
 ### Optional companion print notes
 
-The tree-owned helper already prints `migration-run-retention.sh` on every run.
-To also print `backup-restore-drill.sh`, point
-`METIN2_RUNTIME_CONFIG` at a retained runtime-config JSON snapshot before the
-unit/cron fires. Reviewable fragments live under
+The tree-owned helper already prints `migration-run-retention.sh` on every run
+and forwards `--gamed-log-path` / `--authd-log-path` from
+`METIN2_GAMED_LOG_PATH` / `METIN2_AUTHD_LOG_PATH` (defaults
+`/var/log/metin2/gamed.log` / `/var/log/metin2/authd.log`). To also print
+`backup-restore-drill.sh`, point `METIN2_RUNTIME_CONFIG` at a retained
+runtime-config JSON snapshot before the unit/cron fires. Reviewable fragments
+live under
 [`contrib/lab-retention-gc/env/metin2-runtime-config.env.sample`](../../contrib/lab-retention-gc/env/metin2-runtime-config.env.sample)
 and
 [`contrib/lab-retention-gc/systemd/metin2-artifact-retention-gc-print.service.d/runtime-config.conf.sample`](../../contrib/lab-retention-gc/systemd/metin2-artifact-retention-gc-print.service.d/runtime-config.conf.sample)
@@ -189,13 +201,16 @@ metin2-migrate version >"$OUT/build-info.json"
 metin2-migrate backup-restore-drill \
   --runtime-config /var/metin2/ops-prints/retained-runtime-config.json \
   --build-info "$OUT/build-info.json" \
+  --gamed-log-path /var/log/metin2/gamed.log \
+  --authd-log-path /var/log/metin2/authd.log \
   >"$OUT/backup-restore-drill.sh"
 
 metin2-migrate migration-run-retention \
   --build-info "$OUT/build-info.json" \
+  --gamed-log-path /var/log/metin2/gamed.log \
+  --authd-log-path /var/log/metin2/authd.log \
   >"$OUT/migration-run-retention.sh"
 ```
-
 Those companions still must not pipe the resulting scripts into a shell from
 the unit. Loopback `curl` to `127.0.0.1:6060` / `:6061` is allowed only for
 interactive operator capture of retained JSON; the scheduled helper itself

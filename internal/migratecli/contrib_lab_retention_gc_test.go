@@ -40,6 +40,12 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		`>"$OUT/migration-run-retention.sh"`,
 		"--build-info \"$OUT/build-info.json\"",
 		"METIN2_RUNTIME_CONFIG",
+		"METIN2_GAMED_LOG_PATH",
+		"METIN2_AUTHD_LOG_PATH",
+		"--gamed-log-path \"$GAMED_LOG\"",
+		"--authd-log-path \"$AUTHD_LOG\"",
+		"/var/log/metin2/gamed.log",
+		"/var/log/metin2/authd.log",
 		"backup-restore-drill",
 		`>"$OUT/backup-restore-drill.sh"`,
 		"/var/metin2/ops-prints",
@@ -160,6 +166,10 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		"docs/workflow/lab-retention-gc-unit-samples.md",
 		"migration-run-retention.sh",
 		"METIN2_RUNTIME_CONFIG",
+		"METIN2_GAMED_LOG_PATH",
+		"METIN2_AUTHD_LOG_PATH",
+		"/var/log/metin2/gamed.log",
+		"/var/log/metin2/authd.log",
 		"backup-restore-drill.sh",
 		"metin2-runtime-config.env.sample",
 		"EnvironmentFile=",
@@ -184,9 +194,23 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 	for _, want := range []string{
 		"METIN2_RUNTIME_CONFIG=",
 		"/var/metin2/ops-prints/",
+		"METIN2_GAMED_LOG_PATH=",
+		"METIN2_AUTHD_LOG_PATH=",
+		"/var/log/metin2/gamed.log",
+		"/var/log/metin2/authd.log",
 	} {
 		if !strings.Contains(envSample, want) {
 			t.Fatalf("env sample missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		"METIN2_GAMED_LOG_PATH=",
+		"METIN2_AUTHD_LOG_PATH=",
+		"/var/log/metin2/gamed.log",
+		"/var/log/metin2/authd.log",
+	} {
+		if !strings.Contains(periodicConf, want) {
+			t.Fatalf("periodic.conf sample missing %q", want)
 		}
 	}
 	if !strings.Contains(dropIn, "EnvironmentFile=") {
@@ -306,6 +330,16 @@ esac
 		if !strings.Contains(migrationBody, "# stub migration-run-retention") {
 			t.Fatalf("migration-run-retention.sh must come from stub printer, got %q", migrationBody)
 		}
+		for _, want := range []string{
+			"--gamed-log-path",
+			"/var/log/metin2/gamed.log",
+			"--authd-log-path",
+			"/var/log/metin2/authd.log",
+		} {
+			if !strings.Contains(migrationBody, want) {
+				t.Fatalf("migration-run-retention argv must include default log path marker %q, got %q", want, migrationBody)
+			}
+		}
 	})
 
 	t.Run("prints_drill_from_retained_runtime_config", func(t *testing.T) {
@@ -339,9 +373,76 @@ esac
 		if !strings.Contains(drillBody, runtimeConfig) {
 			t.Fatalf("stub drill argv must include runtime-config path %q, got %q", runtimeConfig, drillBody)
 		}
+		for _, want := range []string{
+			"--gamed-log-path",
+			"/var/log/metin2/gamed.log",
+			"--authd-log-path",
+			"/var/log/metin2/authd.log",
+		} {
+			if !strings.Contains(drillBody, want) {
+				t.Fatalf("backup-restore-drill argv must include default log path marker %q, got %q", want, drillBody)
+			}
+		}
+		migrationBody := mustReadContribSample(t, filepath.Join(outDir, "migration-run-retention.sh"))
+		for _, want := range []string{
+			"--gamed-log-path",
+			"/var/log/metin2/gamed.log",
+			"--authd-log-path",
+			"/var/log/metin2/authd.log",
+		} {
+			if !strings.Contains(migrationBody, want) {
+				t.Fatalf("migration-run-retention argv must include default log path marker %q, got %q", want, migrationBody)
+			}
+		}
 		notes := mustReadContribSample(t, filepath.Join(outDir, "notes.md"))
 		if !strings.Contains(notes, "backup-restore-drill=printed from METIN2_RUNTIME_CONFIG") {
 			t.Fatalf("notes must record drill print, got %q", notes)
+		}
+	})
+
+	t.Run("honors_custom_daemon_log_paths", func(t *testing.T) {
+		runPrints := filepath.Join(printsRoot, "custom-logs")
+		mustMkdir(t, runPrints)
+		runtimeConfig := filepath.Join(root, "retained-runtime-config-custom.json")
+		mustWriteFile(t, runtimeConfig, []byte(`{"ok":true}`+"\n"))
+		gamedLog := filepath.Join(root, "custom-gamed.log")
+		authdLog := filepath.Join(root, "custom-authd.log")
+		cmd := exec.Command("/bin/sh", helperPath)
+		cmd.Env = []string{
+			"PATH=/usr/bin:/bin",
+			"METIN2_MIGRATE_BIN=" + stubPath,
+			"METIN2_OPS_PRINTS_ROOT=" + runPrints,
+			"METIN2_RETENTION_KEEP_DAYS=14",
+			"METIN2_RUNTIME_CONFIG=" + runtimeConfig,
+			"METIN2_GAMED_LOG_PATH=" + gamedLog,
+			"METIN2_AUTHD_LOG_PATH=" + authdLog,
+			"HOME=" + root,
+			"TMPDIR=" + root,
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("helper exit error: %v stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+		}
+		outDir := strings.TrimSpace(stdout.String())
+		migrationBody := mustReadContribSample(t, filepath.Join(outDir, "migration-run-retention.sh"))
+		drillBody := mustReadContribSample(t, filepath.Join(outDir, "backup-restore-drill.sh"))
+		for _, body := range []string{migrationBody, drillBody} {
+			for _, want := range []string{
+				"--gamed-log-path",
+				gamedLog,
+				"--authd-log-path",
+				authdLog,
+			} {
+				if !strings.Contains(body, want) {
+					t.Fatalf("printer argv must honor custom log path marker %q, got %q", want, body)
+				}
+			}
+			if strings.Contains(body, "/var/log/metin2/gamed.log") || strings.Contains(body, "/var/log/metin2/authd.log") {
+				t.Fatalf("custom log env must replace lab defaults, got %q", body)
+			}
 		}
 	})
 

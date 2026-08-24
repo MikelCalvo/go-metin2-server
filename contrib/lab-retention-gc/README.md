@@ -71,6 +71,11 @@ Optional (env-gated):
   `env/metin2-runtime-config.env.sample` plus the systemd
   `EnvironmentFile=` drop-in under
   `systemd/metin2-artifact-retention-gc-print.service.d/`.
+- Both `migration-run-retention.sh` and (when printed) `backup-restore-drill.sh`
+  forward `--gamed-log-path` / `--authd-log-path` from
+  `METIN2_GAMED_LOG_PATH` / `METIN2_AUTHD_LOG_PATH` (defaults
+  `/var/log/metin2/gamed.log` and `/var/log/metin2/authd.log`) so the printed
+  retain scripts can optionally copy daemon JSON logs when present.
 
 ## Hard rules
 

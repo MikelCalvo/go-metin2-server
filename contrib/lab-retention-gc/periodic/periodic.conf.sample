@@ -12,3 +12,5 @@ weekly_metin2_artifact_retention_gc_print_enable="NO"
 # METIN2_RETENTION_KEEP_DAYS=14
 # METIN2_PRINT_RETENTION_GC_HELPER=/usr/local/libexec/metin2-print-retention-gc.sh
 # METIN2_RUNTIME_CONFIG=/var/metin2/ops-prints/retained-runtime-config.json
+# METIN2_GAMED_LOG_PATH=/var/log/metin2/gamed.log
+# METIN2_AUTHD_LOG_PATH=/var/log/metin2/authd.log
