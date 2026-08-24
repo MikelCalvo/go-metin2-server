@@ -1,0 +1,18 @@
+# Linux logrotate sample for metin2 lab daemon JSON stdout capture.
+# Install under /etc/logrotate.d/ after review (drop .sample).
+# Matches systemd StandardOutput=append:/var/log/metin2/{authd,gamed}.log.
+# copytruncate avoids requiring daemon reopen support on Linux.
+# Never embed DSNs, passwords, login keys, or executable SQL.
+# Never shell migration CLI, backup, apply, or GC after rotation.
+
+/var/log/metin2/authd.log
+/var/log/metin2/gamed.log {
+    weekly
+    rotate 7
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    create 0640 metin2 metin2
+}

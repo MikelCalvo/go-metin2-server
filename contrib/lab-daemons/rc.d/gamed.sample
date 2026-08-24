@@ -8,6 +8,8 @@
 # Install as /usr/local/etc/rc.d/gamed.sample, review, then rename without
 # .sample and flip gamed_enable deliberately. Never embed DSN / SQL / password
 # markers. Ops stay loopback-only. Stop uses SIGTERM via rc.subr (no store wipe).
+# JSON stdout/stderr append to /var/log/metin2/gamed.log via daemon -o/-H so
+# newsyslog can SIGHUP-reopen without discarding the observability contract.
 
 . /etc/rc.subr
 
@@ -21,11 +23,13 @@ load_rc_config "$name"
 : "${gamed_user:=metin2}"
 : "${gamed_bin:=/usr/local/bin/gamed}"
 : "${gamed_env_file:=/etc/metin2/metin2-gamed.env}"
+: "${gamed_logfile:=/var/log/metin2/gamed.log}"
 
 pidfile="/var/run/${name}.pid"
 command="/usr/sbin/daemon"
 procname="${gamed_bin}"
-command_args="-f -p ${pidfile} -u ${gamed_user} ${procname}"
+# -f closes inherited fds; -o/-H capture JSON stdout after that and reopen on SIGHUP.
+command_args="-f -H -o ${gamed_logfile} -p ${pidfile} -u ${gamed_user} ${procname}"
 start_precmd="${name}_prestart"
 
 gamed_prestart()

@@ -12,3 +12,6 @@ gamed_enable="NO"
 # FreeBSD rc.d, export store paths from a reviewed wrapper or set them here.
 # authd_env="METIN2_LOGIN_TICKET_STORE_DIR=/var/metin2/data/login-tickets METIN2_ACCOUNT_STORE_DIR=/var/metin2/data/accounts METIN2_AUTHD_PPROF_ADDR=127.0.0.1:6061 METIN2_AUTHD_LEGACY_ADDR=:11002"
 # gamed_env="METIN2_LOGIN_TICKET_STORE_DIR=/var/metin2/data/login-tickets METIN2_ACCOUNT_STORE_DIR=/var/metin2/data/accounts METIN2_GAMED_PPROF_ADDR=127.0.0.1:6060 METIN2_GAMED_LEGACY_ADDR=:13000"
+# Optional JSON log path overrides (defaults match contrib/lab-daemons/rc.d samples):
+# authd_logfile="/var/log/metin2/authd.log"
+# gamed_logfile="/var/log/metin2/gamed.log"

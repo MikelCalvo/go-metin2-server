@@ -12,6 +12,9 @@ ExecStartPre=/usr/bin/test -x /usr/local/bin/gamed
 ExecStart=/usr/local/bin/gamed
 KillSignal=SIGTERM
 TimeoutStopSec=30
+# Capture redacted JSON process logs beside lab evidence (journal still receives them).
+StandardOutput=append:/var/log/metin2/gamed.log
+StandardError=append:/var/log/metin2/gamed.log
 # Explicit non-goals: no Environment=DSN, no metin2-migrate apply, no store wipe.
 Nice=0
 

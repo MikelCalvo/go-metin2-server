@@ -25,6 +25,8 @@ func TestContribLabDaemonSamplesStayDisabledByDefault(t *testing.T) {
 	gamedServicePath := filepath.Join(base, "systemd", "gamed.service.sample")
 	authdDropInPath := filepath.Join(base, "systemd", "authd.service.d", "lab-store.conf.sample")
 	gamedDropInPath := filepath.Join(base, "systemd", "gamed.service.d", "lab-store.conf.sample")
+	newsyslogPath := filepath.Join(base, "newsyslog.conf.d", "metin2-daemons.conf.sample")
+	logrotatePath := filepath.Join(base, "logrotate.d", "metin2-daemons.conf.sample")
 
 	readme := mustReadContribSample(t, readmePath)
 	authdEnv := mustReadContribSample(t, authdEnvPath)
@@ -36,6 +38,8 @@ func TestContribLabDaemonSamplesStayDisabledByDefault(t *testing.T) {
 	gamedService := mustReadContribSample(t, gamedServicePath)
 	authdDropIn := mustReadContribSample(t, authdDropInPath)
 	gamedDropIn := mustReadContribSample(t, gamedDropInPath)
+	newsyslog := mustReadContribSample(t, newsyslogPath)
+	logrotate := mustReadContribSample(t, logrotatePath)
 
 	for _, want := range []string{
 		`authd_enable="NO"`,
@@ -62,9 +66,10 @@ func TestContribLabDaemonSamplesStayDisabledByDefault(t *testing.T) {
 		rcvar   string
 		enable  string
 		envFile string
+		logfile string
 	}{
-		{label: "rc.d/authd", body: authdRC, bin: "/usr/local/bin/authd", rcvar: "authd_enable", enable: `: "${authd_enable:=NO}"`, envFile: "/etc/metin2/metin2-authd.env"},
-		{label: "rc.d/gamed", body: gamedRC, bin: "/usr/local/bin/gamed", rcvar: "gamed_enable", enable: `: "${gamed_enable:=NO}"`, envFile: "/etc/metin2/metin2-gamed.env"},
+		{label: "rc.d/authd", body: authdRC, bin: "/usr/local/bin/authd", rcvar: "authd_enable", enable: `: "${authd_enable:=NO}"`, envFile: "/etc/metin2/metin2-authd.env", logfile: "/var/log/metin2/authd.log"},
+		{label: "rc.d/gamed", body: gamedRC, bin: "/usr/local/bin/gamed", rcvar: "gamed_enable", enable: `: "${gamed_enable:=NO}"`, envFile: "/etc/metin2/metin2-gamed.env", logfile: "/var/log/metin2/gamed.log"},
 	} {
 		for _, want := range []string{
 			tc.bin,
@@ -74,6 +79,8 @@ func TestContribLabDaemonSamplesStayDisabledByDefault(t *testing.T) {
 			tc.enable,
 			tc.envFile,
 			"/usr/sbin/daemon",
+			"-f -H -o ",
+			tc.logfile,
 		} {
 			if !strings.Contains(tc.body, want) {
 				t.Fatalf("%s missing %q:\n%s", tc.label, want, tc.body)
@@ -84,16 +91,19 @@ func TestContribLabDaemonSamplesStayDisabledByDefault(t *testing.T) {
 		}
 		assertNoForbiddenLabDaemonMarkers(t, tc.label, tc.body, map[string]struct{}{
 			"# markers. Ops stay loopback-only. Stop uses SIGTERM via rc.subr (no store wipe).": {},
+			"# JSON stdout/stderr append to /var/log/metin2/authd.log via daemon -o/-H so":      {},
+			"# JSON stdout/stderr append to /var/log/metin2/gamed.log via daemon -o/-H so":      {},
 		})
 	}
 
 	for _, tc := range []struct {
-		label string
-		body  string
-		bin   string
+		label   string
+		body    string
+		bin     string
+		logfile string
 	}{
-		{label: "systemd/authd", body: authdService, bin: "/usr/local/bin/authd"},
-		{label: "systemd/gamed", body: gamedService, bin: "/usr/local/bin/gamed"},
+		{label: "systemd/authd", body: authdService, bin: "/usr/local/bin/authd", logfile: "/var/log/metin2/authd.log"},
+		{label: "systemd/gamed", body: gamedService, bin: "/usr/local/bin/gamed", logfile: "/var/log/metin2/gamed.log"},
 	} {
 		for _, want := range []string{
 			"ExecStart=" + tc.bin,
@@ -101,6 +111,8 @@ func TestContribLabDaemonSamplesStayDisabledByDefault(t *testing.T) {
 			"RequiresMountsFor=/var/metin2",
 			"Type=simple",
 			"WantedBy=multi-user.target",
+			"StandardOutput=append:" + tc.logfile,
+			"StandardError=append:" + tc.logfile,
 		} {
 			if !strings.Contains(tc.body, want) {
 				t.Fatalf("%s missing %q:\n%s", tc.label, want, tc.body)
@@ -174,6 +186,71 @@ func TestContribLabDaemonSamplesStayDisabledByDefault(t *testing.T) {
 	}
 
 	for _, want := range []string{
+		"/var/log/metin2/authd.log",
+		"/var/log/metin2/gamed.log",
+		"/var/run/authd.pid",
+		"/var/run/gamed.pid",
+		" JH ",
+	} {
+		if !strings.Contains(newsyslog, want) {
+			t.Fatalf("newsyslog sample missing %q:\n%s", want, newsyslog)
+		}
+	}
+	if !strings.Contains(newsyslog, " 1\n") && !strings.HasSuffix(strings.TrimSpace(newsyslog), " 1") {
+		// Accept trailing signal 1 on each log line.
+		foundSignal := false
+		for _, line := range strings.Split(newsyslog, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "#") || trimmed == "" {
+				continue
+			}
+			if strings.HasSuffix(trimmed, " 1") {
+				foundSignal = true
+				break
+			}
+		}
+		if !foundSignal {
+			t.Fatalf("newsyslog sample must signal pidfiles with 1:\n%s", newsyslog)
+		}
+	}
+	assertNoForbiddenLabDaemonMarkers(t, "newsyslog", newsyslog, map[string]struct{}{
+		"# Never pipe rotated output into /bin/sh / bash / metin2-migrate / GC.": {},
+	})
+
+	for _, want := range []string{
+		"/var/log/metin2/authd.log",
+		"/var/log/metin2/gamed.log",
+		"weekly",
+		"rotate 7",
+		"copytruncate",
+	} {
+		if !strings.Contains(logrotate, want) {
+			t.Fatalf("logrotate sample missing %q:\n%s", want, logrotate)
+		}
+	}
+	for _, forbidden := range []string{
+		"postrotate",
+		"| /bin/sh",
+		"|/bin/sh",
+	} {
+		if strings.Contains(logrotate, forbidden) {
+			t.Fatalf("logrotate sample must not contain %q:\n%s", forbidden, logrotate)
+		}
+	}
+	for _, line := range strings.Split(logrotate, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if strings.Contains(trimmed, "metin2-migrate") {
+			t.Fatalf("logrotate sample must not invoke metin2-migrate: %q", trimmed)
+		}
+	}
+	assertNoForbiddenLabDaemonMarkers(t, "logrotate", logrotate, map[string]struct{}{
+		"# Never shell migration CLI, backup, apply, or GC after rotation.": {},
+	})
+
+	for _, want := range []string{
 		"disabled-by-default",
 		"authd_enable",
 		"gamed_enable",
@@ -183,6 +260,9 @@ func TestContribLabDaemonSamplesStayDisabledByDefault(t *testing.T) {
 		"contrib/lab-retention-gc/",
 		"/usr/local/bin/authd",
 		"/usr/local/bin/gamed",
+		"/var/log/metin2/",
+		"newsyslog.conf.d",
+		"logrotate.d",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Fatalf("contrib README missing %q", want)
@@ -195,6 +275,7 @@ func TestContribLabDaemonSamplesStayDisabledByDefault(t *testing.T) {
 		"5. Never `ExecStart` `metin2-migrate` apply / backup / GC / aside-rename from":  {},
 		"6. Never pipe unit output into `/bin/sh`, `bash`, `csh`, or `zsh`.":             {},
 		"- automatic / scheduled artifact GC deletion (see `contrib/lab-retention-gc/`)": {},
+		"- remote log shipping / SIEM sinks":                                             {},
 	})
 }
 

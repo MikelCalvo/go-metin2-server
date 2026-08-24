@@ -39,6 +39,22 @@ Handler rules:
 3. Keep log excerpts beside the timestamped trees documented in [lab deployment topology](lab-deployment-topology.md).
 4. Do not paste DSNs, passwords, login keys, or ticket payloads into tickets, audits, or chat.
 
+## Lab file capture (optional, reviewable samples)
+
+When using the disabled-by-default unit samples under
+[`contrib/lab-daemons/`](../../contrib/lab-daemons/), operators can retain the
+same redacted JSON lines on disk without inventing a host-local wrapper:
+
+- FreeBSD `rc.d`: `daemon -f -H -o /var/log/metin2/{authd,gamed}.log`
+- systemd: `StandardOutput=append:/var/log/metin2/{authd,gamed}.log` (and matching `StandardError=`)
+- FreeBSD rotation: `newsyslog.conf.d/metin2-daemons.conf.sample` (`JH` + signal `1` to `/var/run/{authd,gamed}.pid`)
+- Linux rotation: `logrotate.d/metin2-daemons.conf.sample` (`copytruncate`)
+
+Create `/var/log/metin2/` before first start. Keep these log files outside
+`/var/metin2/data/` and `/var/metin2/backups/`. See
+[lab daemon unit samples](lab-daemon-unit-samples.md) and
+[lab daemon JSON stdout capture](../plans/2026-08-24-lab-daemon-json-stdout-capture.md).
+
 Example safe startup line shape:
 
 ```json
@@ -85,10 +101,13 @@ Example safe access line shape:
 - log sampling / rate limits
 - changing the migration CLI redaction helper beyond its existing DSN scrub
 - remote admin authentication
+- packaging that installs enabled `newsyslog` / `logrotate` entries by default
 
 ## Related docs
 
 - [lab deployment topology](lab-deployment-topology.md)
+- [lab daemon unit samples](lab-daemon-unit-samples.md)
 - [release/versioning policy](release-versioning.md)
 - [debugging and profiling](../debugging-and-profiling.md)
 - [ops local access logging plan](../plans/2026-08-22-ops-local-access-logging.md)
+- [lab daemon JSON stdout capture plan](../plans/2026-08-24-lab-daemon-json-stdout-capture.md)

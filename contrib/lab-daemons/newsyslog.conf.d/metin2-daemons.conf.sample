@@ -1,0 +1,10 @@
+# FreeBSD newsyslog(8) sample for metin2 lab daemon JSON stdout capture.
+# Install under /usr/local/etc/newsyslog.conf.d/ after review (drop .sample).
+# Requires contrib/lab-daemons/rc.d samples that launch with daemon -H -o
+# /var/log/metin2/{authd,gamed}.log so signal 1 reopens the file.
+# Never embed DSNs, passwords, login keys, or executable SQL.
+# Never pipe rotated output into /bin/sh / bash / metin2-migrate / GC.
+#
+# logfilename                          [owner:group] mode count size when  flags [/pid_file] [sig_num]
+/var/log/metin2/authd.log              metin2:metin2 640  7     *    @T00  JH   /var/run/authd.pid 1
+/var/log/metin2/gamed.log              metin2:metin2 640  7     *    @T00  JH   /var/run/gamed.pid 1

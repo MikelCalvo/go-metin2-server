@@ -170,8 +170,24 @@ See also:
 - [CLI artifact-retention GC printer plan](../plans/2026-08-22-cli-artifact-retention-gc-printer.md)
 - [lab retention / GC print-only unit samples](lab-retention-gc-unit-samples.md)
 - [lab daemon rc.d / systemd unit samples](lab-daemon-unit-samples.md)
+- [lab daemon JSON stdout capture](../plans/2026-08-24-lab-daemon-json-stdout-capture.md)
 - [ops docs ground-item lab topology / tip sync](../plans/2026-08-22-ops-docs-ground-item-lab-topology-tip-sync.md)
 - [safebox file-store backup/restore drill fold-in](../plans/2026-08-23-safebox-file-store-backup-restore-drill.md)
+
+## Daemon JSON log paths
+
+Keep redacted process JSON outside live data and backup trees:
+
+```text
+/var/log/metin2/authd.log
+/var/log/metin2/gamed.log
+```
+
+Disabled-by-default unit samples under [`contrib/lab-daemons/`](../../contrib/lab-daemons/)
+append those paths (FreeBSD `daemon -H -o …`, systemd `StandardOutput=append:…`)
+and ship reviewable `newsyslog` / `logrotate` fragments. See
+[production observability](production-observability.md) and
+[lab daemon unit samples](lab-daemon-unit-samples.md).
 
 ## What this is not yet
 
@@ -183,4 +199,5 @@ See also:
 - automatic stale-lock expiry (lab recovery remains confirmation-gated `apply-lock-aside` / operator aside-rename; see [lab stale-lock recovery](lab-stale-lock-recovery.md))
 - automatic execution of the printed `migration-run-retention`, `backup-restore-drill`, or `artifact-retention-gc` scripts (the CLI and print-only unit samples only print commands; GC remains confirmation-gated aside-rename by the operator)
 - `rm` / unlink of aside-renamed retention trees
+- remote log shipping / SIEM sinks (local `/var/log/metin2/` file capture is owned; exporters are not)
 - a claim that bootstrap file stores are the final production persistence layer

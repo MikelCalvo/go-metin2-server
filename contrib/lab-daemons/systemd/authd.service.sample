@@ -12,6 +12,9 @@ ExecStartPre=/usr/bin/test -x /usr/local/bin/authd
 ExecStart=/usr/local/bin/authd
 KillSignal=SIGTERM
 TimeoutStopSec=30
+# Capture redacted JSON process logs beside lab evidence (journal still receives them).
+StandardOutput=append:/var/log/metin2/authd.log
+StandardError=append:/var/log/metin2/authd.log
 # Explicit non-goals: no Environment=DSN, no metin2-migrate apply, no store wipe.
 Nice=0
 

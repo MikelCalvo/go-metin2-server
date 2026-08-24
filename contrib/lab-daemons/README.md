@@ -11,6 +11,13 @@ DSNs, or auto-runs migration / backup / GC from daemon start. Units expect
 installed binaries at `/usr/local/bin/authd` and `/usr/local/bin/gamed`
 (from `make build` / operator install).
 
+JSON process logs follow
+[`docs/workflow/production-observability.md`](../../docs/workflow/production-observability.md):
+FreeBSD `rc.d` samples append stdout/stderr with `daemon -f -H -o
+/var/log/metin2/{authd,gamed}.log`; systemd samples append the same paths via
+`StandardOutput=` / `StandardError=`. Rotation samples live under
+`newsyslog.conf.d/` (FreeBSD) and `logrotate.d/` (Linux).
+
 Retention / GC print-only samples remain under
 [`contrib/lab-retention-gc/`](../lab-retention-gc/).
 
@@ -25,6 +32,7 @@ install -d -m 0750 /var/metin2/data/item-templates
 install -d -m 0750 /var/metin2/data/quest-state
 install -d -m 0750 /var/metin2/data/ground-items
 install -d -m 0750 /var/metin2/data/safebox
+install -d -m 0750 /var/log/metin2
 install -d -m 0750 /etc/metin2
 
 install -m 0640 contrib/lab-daemons/env/metin2-authd.env.sample \
@@ -47,6 +55,11 @@ install -m 0755 contrib/lab-daemons/rc.d/gamed.sample \
 install -m 0644 contrib/lab-daemons/rc.d/rc.conf.sample \
   /usr/local/etc/rc.conf.metin2.sample
 # merge reviewed knobs into /etc/rc.conf; keep authd_enable="NO" gamed_enable="NO"
+install -d -m 0755 /usr/local/etc/newsyslog.conf.d
+install -m 0644 \
+  contrib/lab-daemons/newsyslog.conf.d/metin2-daemons.conf.sample \
+  /usr/local/etc/newsyslog.conf.d/metin2-daemons.conf.sample
+# rename without .sample only after review
 
 # systemd (do NOT systemctl enable --now until reviewed)
 install -m 0644 contrib/lab-daemons/systemd/*.sample /etc/systemd/system/
@@ -58,6 +71,11 @@ install -m 0644 \
 install -m 0644 \
   contrib/lab-daemons/systemd/gamed.service.d/lab-store.conf.sample \
   /etc/systemd/system/gamed.service.d/lab-store.conf.sample
+# rename without .sample only after review
+install -d -m 0755 /etc/logrotate.d
+install -m 0644 \
+  contrib/lab-daemons/logrotate.d/metin2-daemons.conf.sample \
+  /etc/logrotate.d/metin2-daemons.conf.sample
 # rename without .sample only after review
 ```
 
@@ -76,6 +94,8 @@ install -m 0644 \
 6. Never pipe unit output into `/bin/sh`, `bash`, `csh`, or `zsh`.
 7. Stop path is `SIGTERM` only; units must not wipe `/var/metin2/data`.
 8. File-backed stores keep dedicated parents under `/var/metin2/data/`.
+9. Daemon JSON stdout stays under `/var/log/metin2/` (never under live data /
+   backup trees); rotation samples must not shell migrate / GC / apply.
 
 ## What this is not
 
@@ -85,3 +105,4 @@ install -m 0644 \
 - DB driver/DSN embedding or daemon startup auto-migration
 - remote admin, metrics exporters, or multi-host orchestration
 - automatic / scheduled artifact GC deletion (see `contrib/lab-retention-gc/`)
+- remote log shipping / SIEM sinks
