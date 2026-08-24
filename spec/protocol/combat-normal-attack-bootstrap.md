@@ -37,7 +37,7 @@ This contract currently applies only to:
 - one tiny target-refresh surface that can still describe `current target`, `updated hp percent`, or `no active target`
 - one decode-and-fail-closed skill-intent guard so client `USE_SKILL` traffic cannot fall through as an unknown combat header
 - one decode-and-fail-closed projectile targeting guard so client `FLY_TARGETING` / `ADD_FLY_TARGETING` traffic cannot fall through as unknown combat headers
-- one decode-and-fail-closed `ON_CLICK` guard so legacy click traffic cannot fall through as an unknown target/UI header
+- one decode-owned `ON_CLICK` ingress that fail-closes unsupported click targets while also owning guest private-shop browse open against an already-open peer MYSHOP
 - one narrow character-position ingress seam so client `CHARACTER_POSITION(position=0|3|4)` traffic can drive the first self/peer stance presentation while unsupported/battle-position bytes still fail closed instead of falling through as unknown target/UI headers
 - one read-only runtime snapshot of the session's current selected combat target for local/debug surfaces
 
@@ -140,7 +140,7 @@ The `GAME` dispatcher decodes both fixed-width packets and can route them throug
 
 This preserves the known wire layout for skill/bow target-position traffic without pretending that server-created fly effects, projectile hit resolution, multi-target skills, or ranged combat are already owned.
 
-## First owned on-click ingress guard
+## First owned on-click ingress
 
 Client and legacy-oracle source inspection also shows a client -> server click request in the target/UI family:
 - name: `ON_CLICK`
@@ -150,18 +150,18 @@ Client and legacy-oracle source inspection also shows a client -> server click r
 - payload length: `4`
 - payload: `uint32 vid` (little-endian)
 
-The current bootstrap runtime owns this packet only as a safe ingress guard, not as accepted NPC/shop/quest click gameplay.
-The `GAME` dispatcher decodes the fixed-width packet and can route it through a narrow handler seam, but the shipped minimal runtime leaves it unsupported and fail-closed:
+The current bootstrap runtime owns this packet as a narrow guest private-shop browse open path when the clicked visible peer still has an accepted open `MYSHOP`, while unsupported click targets stay fail-closed:
+- guest browse success emits one guest-only `GC::SHOP START` stock table for that host VID; inventory/gold stay unchanged
+- guest open merchant / safebox / refine / exchange rejects with the already-owned requester busy info-chat string and no START
+- guest own open MYSHOP / unknown / non-open-MyShop / NPC click targets stay silent no-frame
 - no selected-target rewrite
 - no target HP mutation
 - no normal-attack cadence change
 - no immediate or delayed retaliation scheduling side effect
-- no interaction, shop, quest, or target-selection side effect
-- no self response frame
-- no queued peer frame
+- no authored static-actor `INTERACT` / quest side effect beyond the private-shop browse seam
 - no point, inventory, or account-persistence side effect
 
-This prevents real-client click traffic from becoming an unexpected-packet disconnect/error while the project continues to keep the currently owned authored-service interaction path on the separate `INTERACT` contract until an explicit later slice decides whether and how `ON_CLICK` should map to visible static actors, shops, or quests.
+This prevents real-client click traffic from becoming an unexpected-packet disconnect/error while keeping the authored-service interaction path on the separate `INTERACT` contract for NPC/static actors. Guest browse leave/`END` and buy/sell stay deferred.
 
 ## First owned character-position ingress guard
 
@@ -453,7 +453,7 @@ This slice does **not** yet freeze:
 - miss/crit/block results
 - ranged `SHOOT` gameplay beyond the current decode-and-fail-closed guard
 - accepted `USE_SKILL` gameplay beyond the current decode-and-fail-closed guard
-- accepted `ON_CLICK` interaction/shop/quest gameplay beyond the current decode-and-fail-closed guard
+- accepted `ON_CLICK` interaction/shop/quest gameplay beyond the owned guest private-shop browse open seam against an already-open peer MYSHOP
 - broader `CHARACTER_POSITION` / battle-position gameplay beyond the current presentation-only `position=0|3|4` stance echo/no-op guard and unsupported-byte fail-closed guard
 - the broader server-driven respawn/delete-readd choreography details beyond the already-owned fixed timed rebuild that the separate death / respawn doc now freezes
 - broader hostile retaliation beyond the current owner-side self-only point-loss surfaces: one immediate piggyback on accepted practice-mob hits plus one sustained fixed-delay delayed server-origin follow-up cadence at a time
@@ -499,7 +499,7 @@ After this document lands, the repository should be able to say:
 - client `USE_SKILL(0x0402)` is now codec- and dispatch-owned as an unsupported skill-combat guard; the minimal runtime decodes it in `GAME` but returns no frames and leaves selected-target HP, normal-attack cadence, retaliation timers, peer queues, points, inventory, and account persistence unchanged
 - client `SHOOT(0x0403)` is now codec- and dispatch-owned as an unsupported ranged-shot guard; the minimal runtime decodes it in `GAME` but returns no frames and leaves selected-target HP/cadence/peer queues unchanged
 - client `FLY_TARGETING(0x0404)` and `ADD_FLY_TARGETING(0x0405)` are now codec- and dispatch-owned as unsupported projectile-targeting guards; the minimal runtime decodes them in `GAME` but returns no frames and leaves selected-target HP, normal-attack cadence, retaliation timers, peer queues, points, inventory, and account persistence unchanged
-- client `ON_CLICK(0x0A02)` is now codec- and dispatch-owned as an unsupported target/UI click guard; the minimal runtime decodes it in `GAME` but returns no frames and leaves selected-target HP, normal-attack cadence, interaction/shop/quest state, peer queues, points, inventory, and account persistence unchanged
+- client `ON_CLICK(0x0A02)` is now codec- and dispatch-owned as guest private-shop browse open against an already-open peer MYSHOP (one guest-only `GC::SHOP START`, busy-shell rejects reuse exchange merchant/safebox/refine busy info-chat strings, guest own open MYSHOP / unknown targets stay silent no-frame) while leaving selected-target HP, normal-attack cadence, peer queues, points, inventory, and account persistence unchanged; NPC/quest click gameplay beyond that browse seam stays unsupported
 - client `CHARACTER_POSITION(0x0A60)` is now codec- and dispatch-owned as a narrow stance-presentation ingress: while the selected owner is live and above the bootstrap zero-HP floor, `position=0` and `position=4` return `GC CHARACTER_POSITION(selected_vid, position)` to the selected socket and currently visible live peers while leaving selected-target HP, normal-attack cadence, retaliation timers, points, inventory, and account persistence unchanged; after retaliation has driven that owner to the current zero-HP floor, later stance requests fail closed before self/peer position presentation, and unsupported bytes, including the current battle-position byte, still fail closed with no frames or side effects
 - if that engaged owner loses live shared-world ownership, clears or replaces target intent, or the engaged actor dies / rebuilds before a pending delay expires, the queued follow-up beat fails closed and the current cadence stops instead of claiming broader AI cleanup
 - when the engaged actor dies, the killing hit does not append an extra owner-side retaliation point-change, any pending delayed follow-up beat is canceled before respawn, and the respawn rebuild does not resurrect stale retaliation work without a fresh target / accepted hit

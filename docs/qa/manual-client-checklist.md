@@ -612,7 +612,21 @@ Expected result:
 - out-of-range `EXCHANGE ITEM_ADD` display slots stay no-frame/no-mutation even for those guarded templates
 - malformed `EXCHANGE` payload sizes fail at the codec/dispatcher boundary rather than mutating runtime state
 - this is an exchange-window shell plus the first owned mutual-accept finalize path, not a completed exchange, trade, safebox, or player-shop feature
-- `CG::MYSHOP` (`0x0802`) encode/decode plus GAME dispatch are owned in this bootstrap: the default remains deny-no-response, and the first host-only accepted private-shop open presentation is now live (sign/stock/busy gates + same-socket open/busy flag + one `GC::SHOP_SIGN` with host VID + sign, no inventory/gold mutation on open); host-only empty-sign `GC::SHOP_SIGN` clear/close is also live on `/phase_select` / `/quit` / `/logout`, practice-mob floor, transfer/warp, and lab `/close_myshop`; visible peers now receive the same live/empty `SHOP_SIGN` around-broadcast on open/close, and newly visible peers rematerialize one live `SHOP_SIGN` for an already-open host; guest browse/buy stay deferred; partner open-private-shop exchange START/ACCEPT/commit busy rejects are now owned beside merchant/safebox/refine; open MYSHOP also locks host item use/move/drop/pickup/give/safebox/refine mutations fail-closed until empty-sign close; cube busy rejects stay deferred, so keep treating full personal-shop loops as out of scope for playable PvE checks
+- `CG::MYSHOP` (`0x0802`) encode/decode plus GAME dispatch are owned in this bootstrap: the default remains deny-no-response, and the first host-only accepted private-shop open presentation is now live (sign/stock/busy gates + same-socket open/busy flag + one `GC::SHOP_SIGN` with host VID + sign, no inventory/gold mutation on open); host-only empty-sign `GC::SHOP_SIGN` clear/close is also live on `/phase_select` / `/quit` / `/logout`, practice-mob floor, transfer/warp, and lab `/close_myshop`; visible peers now receive the same live/empty `SHOP_SIGN` around-broadcast on open/close, and newly visible peers rematerialize one live `SHOP_SIGN` for an already-open host; guest browse open is now live via peer `CG::ON_CLICK` on that host VID → one guest-only `GC::SHOP START` stock table (busy merchant/safebox/refine/exchange rejects reuse the owned exchange busy info-chat strings; guest own open MYSHOP / closed host stay silent); buy/sell and guest leave/`END` stay deferred; partner open-private-shop exchange START/ACCEPT/commit busy rejects are now owned beside merchant/safebox/refine; open MYSHOP also locks host item use/move/drop/pickup/give/safebox/refine mutations fail-closed until empty-sign close; cube busy rejects stay deferred, so keep treating full personal-shop trading loops as out of scope for playable PvE checks
+
+### 4.5.14 Guest browse an open private shop (`ON_CLICK` → `SHOP START`)
+
+- [ ] Have player A open an accepted host-only `MYSHOP` with at least one listed carried stock row and a visible non-empty sign
+- [ ] From player B (visible same-map peer), click player A / send `CG::ON_CLICK` with player A's VID
+- [ ] Repeat while player B has `/open_safebox`, a merchant window, a refine dialog, or an exchange shell open
+- [ ] Repeat while player B also has their own accepted `MYSHOP` open
+- [ ] Close player A's shop with `/close_myshop`, then repeat the click from player B
+
+Expected result:
+- successful guest browse emits exactly one guest-only `GC::SHOP START` whose `OwnerVID` is player A's VID and whose display table fills the listed `display_pos` with remembered `vnum` / `count` / `price` plus template sockets/attributes when the live carried cell still matches; inventory/gold stay unchanged on both sides and no extra `SHOP_SIGN` is re-emitted by the browse
+- guest open merchant/safebox/refine/exchange returns one self-only busy info-chat `You cannot trade while another trade window is open.` with no START
+- guest own open MYSHOP, closed host, or unknown VID stay silent/no-frame
+- buy/sell and guest leave/`END` remain out of scope for this checklist item
 
 ---
 

@@ -69,7 +69,10 @@ type sharedWorldRegistry struct {
 	// sessionMyShopWindows remembers open private-shop presentations keyed by
 	// shared-world entity ID. Presence means busy/open; the value is the
 	// accepted non-empty live sign rematerialized on peer view-entry.
-	sessionMyShopWindows            map[uint64]string
+	sessionMyShopWindows map[uint64]string
+	// sessionMyShopStock remembers the validated host listing for guest browse
+	// open presentation keyed by the same shared-world entity ID.
+	sessionMyShopStock              map[uint64][]myShopStockRow
 	exchangePartners                map[uint64]uint64
 	exchangeItems                   map[uint64]map[uint8]exchangeDisplayedItem
 	exchangeGold                    map[uint64]uint32
@@ -2900,7 +2903,15 @@ func (r *sharedWorldRegistry) clearRefineWindowOpenLocked(entityID uint64) {
 	r.setRefineWindowOpenLocked(entityID, false)
 }
 
-func (r *sharedWorldRegistry) SetMyShopWindowOpen(entityID uint64, open bool, sign string) bool {
+type myShopStockRow struct {
+	DisplayPos uint8
+	Vnum       uint32
+	Count      uint8
+	Price      uint32
+	Cell       uint16
+}
+
+func (r *sharedWorldRegistry) SetMyShopWindowOpen(entityID uint64, open bool, sign string, stock []myShopStockRow) bool {
 	if r == nil || entityID == 0 {
 		return false
 	}
@@ -2911,17 +2922,20 @@ func (r *sharedWorldRegistry) SetMyShopWindowOpen(entityID uint64, open bool, si
 	if _, ok := r.sessionEntryLocked(entityID); !ok {
 		return false
 	}
-	r.setMyShopWindowOpenLocked(entityID, open, sign)
+	r.setMyShopWindowOpenLocked(entityID, open, sign, stock)
 	return true
 }
 
-func (r *sharedWorldRegistry) setMyShopWindowOpenLocked(entityID uint64, open bool, sign string) {
+func (r *sharedWorldRegistry) setMyShopWindowOpenLocked(entityID uint64, open bool, sign string, stock []myShopStockRow) {
 	if r == nil || entityID == 0 {
 		return
 	}
 	if !open {
 		if r.sessionMyShopWindows != nil {
 			delete(r.sessionMyShopWindows, entityID)
+		}
+		if r.sessionMyShopStock != nil {
+			delete(r.sessionMyShopStock, entityID)
 		}
 		return
 	}
@@ -2930,12 +2944,25 @@ func (r *sharedWorldRegistry) setMyShopWindowOpenLocked(entityID uint64, open bo
 		if r.sessionMyShopWindows != nil {
 			delete(r.sessionMyShopWindows, entityID)
 		}
+		if r.sessionMyShopStock != nil {
+			delete(r.sessionMyShopStock, entityID)
+		}
 		return
 	}
 	if r.sessionMyShopWindows == nil {
 		r.sessionMyShopWindows = make(map[uint64]string)
 	}
 	r.sessionMyShopWindows[entityID] = sign
+	if r.sessionMyShopStock == nil {
+		r.sessionMyShopStock = make(map[uint64][]myShopStockRow)
+	}
+	if len(stock) == 0 {
+		delete(r.sessionMyShopStock, entityID)
+		return
+	}
+	cloned := make([]myShopStockRow, len(stock))
+	copy(cloned, stock)
+	r.sessionMyShopStock[entityID] = cloned
 }
 
 func (r *sharedWorldRegistry) hasMyShopWindowOpenLocked(entityID uint64) bool {
@@ -2958,7 +2985,94 @@ func (r *sharedWorldRegistry) myShopSignLocked(entityID uint64) (string, bool) {
 }
 
 func (r *sharedWorldRegistry) clearMyShopWindowOpenLocked(entityID uint64) {
-	r.setMyShopWindowOpenLocked(entityID, false, "")
+	r.setMyShopWindowOpenLocked(entityID, false, "", nil)
+}
+
+// OpenMyShopGuestBrowse resolves a visible already-open private-shop host and
+// returns either one GC::SHOP START stock table, one partner-busy info-chat
+// frame, or a silent fail-closed miss. started is true only for the START path.
+func (r *sharedWorldRegistry) OpenMyShopGuestBrowse(guestID uint64, hostVID uint32) (frames [][]byte, started bool) {
+	if r == nil || guestID == 0 || hostVID == 0 {
+		return nil, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.sessionEntryLocked(guestID); !ok {
+		return nil, false
+	}
+	guest, ok := r.playerCharacter(guestID)
+	if !ok || characterAtBootstrapHPFloor(guest) {
+		return nil, false
+	}
+
+	var host worldruntime.PlayerEntity
+	found := false
+	for _, candidate := range r.scopesLocked().VisibleTargets(guestID, guest) {
+		if candidate.Character.VID != hostVID {
+			continue
+		}
+		host = candidate
+		found = true
+		break
+	}
+	if !found || host.Entity.ID == 0 || host.Entity.ID == guestID || characterAtBootstrapHPFloor(host.Character) {
+		return nil, false
+	}
+	if _, ok := r.sessionEntryLocked(host.Entity.ID); !ok {
+		return nil, false
+	}
+	if !r.hasMyShopWindowOpenLocked(host.Entity.ID) {
+		return nil, false
+	}
+	stock, ok := r.sessionMyShopStock[host.Entity.ID]
+	if !ok || len(stock) == 0 {
+		return nil, false
+	}
+	if partnerID, busy := r.exchangePartners[host.Entity.ID]; busy && partnerID != 0 ||
+		r.hasSafeboxWindowOpenLocked(host.Entity.ID) ||
+		r.hasRefineWindowOpenLocked(host.Entity.ID) {
+		return [][]byte{encodeExchangePartnerMerchantBusyInfoFrame()}, false
+	}
+
+	hostCharacter, ok := r.playerCharacter(host.Entity.ID)
+	if !ok {
+		return nil, false
+	}
+	packet := shopproto.ServerStartPacket{OwnerVID: hostVID}
+	for _, row := range stock {
+		if int(row.DisplayPos) >= shopproto.ShopHostItemMax {
+			continue
+		}
+		matched := false
+		for _, item := range hostCharacter.Inventory {
+			if item.Equipped || item.Slot != inventory.SlotIndex(row.Cell) {
+				continue
+			}
+			if item.Vnum != row.Vnum || item.Count != uint16(row.Count) || item.Locked || item.Count == 0 {
+				break
+			}
+			matched = true
+			break
+		}
+		if !matched {
+			continue
+		}
+		template, ok := r.itemTemplates[row.Vnum]
+		if !ok || !itemcatalog.ValidTemplate(template) {
+			continue
+		}
+		packet.Items[row.DisplayPos] = shopproto.ItemEntry{
+			Vnum:       row.Vnum,
+			Price:      row.Price,
+			Count:      row.Count,
+			DisplayPos: row.DisplayPos,
+			Sockets:    bootstrapItemSockets(template),
+			Attributes: bootstrapItemAttributes(template),
+		}
+	}
+	return [][]byte{shopproto.EncodeServerStart(packet)}, true
 }
 
 func (r *sharedWorldRegistry) encodeMyShopSignRematerializationFrameLocked(host loginticket.Character) ([]byte, bool) {
