@@ -67,9 +67,11 @@ git diff --check
 
 ## Follow-up options
 
-1. Freeze then implement daemon-restart proximity-suppress rematerialization by
+1. ~~Freeze then implement daemon-restart proximity-suppress rematerialization by
    authored `spawn_group_ref` + character VID park/claim (engagement stays
-   fail-closed across restart).
+   fail-closed across restart).~~ Docs-first freeze landed: see
+   [proximity suppress daemon-restart rematerialize contract freeze](2026-08-24-proximity-suppress-daemon-restart-rematerialize-contract-freeze.md).
+   Next: RED then GREEN `TestGameRuntimeProximityAggroSuppressRematerializesAcrossDaemonRestart`.
 2. Keep pack AI / synchronized respawn / pathfinding deferred.
 3. Keep inventing cross-map return MOVE / `GC WARP` cancelled for Track A
    bootstrap scope.
