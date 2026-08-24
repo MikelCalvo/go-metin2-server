@@ -4386,6 +4386,29 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				sharedWorld.SetMyShopWindowOpen(sharedWorldID, true, sign, stock)
 			}
 		}
+		refreshGuestMyShopBrowseFlag := func() {
+			if activeGuestMyShopHostVID == 0 {
+				return
+			}
+			if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 && sharedWorld.HasMyShopGuestBrowse(sharedWorldID) {
+				return
+			}
+			activeGuestMyShopHostVID = 0
+		}
+		clearActiveGuestMyShopBrowse := func() {
+			activeGuestMyShopHostVID = 0
+			if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 {
+				sharedWorld.ClearMyShopGuestBrowse(sharedWorldID)
+			}
+		}
+		closeActiveGuestMyShopBrowseFrames := func() [][]byte {
+			refreshGuestMyShopBrowseFlag()
+			if activeGuestMyShopHostVID == 0 {
+				return nil
+			}
+			clearActiveGuestMyShopBrowse()
+			return [][]byte{shopproto.EncodeServerEnd()}
+		}
 		enqueueMyShopSignAroundBroadcast := func(frames [][]byte) {
 			if len(frames) == 0 || selectedPlayer == nil || !joinedSharedWorld || sharedWorld == nil || sharedWorldID == 0 {
 				return
@@ -4421,6 +4444,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		appendPostFloorMyShopCloseFrame := func(frames [][]byte, clearTarget bool) [][]byte {
 			if !clearTarget {
 				return frames
+			}
+			guestCloseFrames := closeActiveGuestMyShopBrowseFrames()
+			if len(guestCloseFrames) > 0 {
+				frames = append(frames, guestCloseFrames...)
 			}
 			closeFrames := closeActiveMyShopOpenFrames()
 			if len(closeFrames) == 0 {
@@ -4472,10 +4499,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		}
 		prependMyShopCloseFrame := func(frames [][]byte) [][]byte {
 			closeFrames := closeActiveMyShopOpenFrames()
-			if len(closeFrames) == 0 {
+			if len(closeFrames) > 0 {
+				frames = append(closeFrames, frames...)
+			}
+			guestCloseFrames := closeActiveGuestMyShopBrowseFrames()
+			if len(guestCloseFrames) == 0 {
 				return frames
 			}
-			return append(closeFrames, frames...)
+			return append(guestCloseFrames, frames...)
 		}
 		prependSafeboxCloseFrame := func(frames [][]byte) [][]byte {
 			clearPendingSafeboxPasswordChallenge()
@@ -8140,6 +8171,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !ownsLiveSharedWorldSession() {
 						return gameflow.OnClickResult{Accepted: false}
 					}
+					refreshGuestMyShopBrowseFlag()
 					if hasActiveMyShopOpen || activeGuestMyShopHostVID != 0 {
 						return gameflow.OnClickResult{Accepted: false}
 					}
@@ -8434,10 +8466,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					stateMu.Lock()
 					defer stateMu.Unlock()
 
-					if !hasActiveMerchantBuy || activeMerchantBuy.TargetVID == 0 {
+					if hasActiveMerchantBuy && activeMerchantBuy.TargetVID != 0 {
+						clearActiveMerchantBuy()
+						return gameflow.ShopResult{Accepted: true, Frames: [][]byte{shopproto.EncodeServerEnd()}}
+					}
+					refreshGuestMyShopBrowseFlag()
+					if activeGuestMyShopHostVID == 0 {
 						return gameflow.ShopResult{Accepted: false}
 					}
-					clearActiveMerchantBuy()
+					clearActiveGuestMyShopBrowse()
 					return gameflow.ShopResult{Accepted: true, Frames: [][]byte{shopproto.EncodeServerEnd()}}
 				},
 				HandleMyShop: func(packet shopproto.ClientMyShopPacket) gameflow.ShopResult {
@@ -8557,7 +8594,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			clearActiveSafeboxItems()
 			setActiveRefineDialog(refineDialogPresentation{}, false)
 			clearActiveMyShopOpen()
-			activeGuestMyShopHostVID = 0
+			clearActiveGuestMyShopBrowse()
 			clearActiveCombatTarget()
 			clearLiveCharacterRegistration()
 			stateMu.Unlock()

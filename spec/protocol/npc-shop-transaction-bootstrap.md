@@ -408,10 +408,12 @@ Visible peers may now open a guest-only stock table against an already-open priv
 - success emits exactly one guest-only `GC::SHOP START` (`OwnerVID` = host VID + fixed `[ShopHostItemMax]` table filled by remembered `display_pos`); sockets/attributes project from the host's current live matching carried cell via loaded item templates, otherwise that display slot stays empty
 - guest silent/no-frame when dead / at bootstrap HP floor, or when the guest currently has own open MYSHOP; guest open merchant / safebox / refine / exchange rejects with the already-owned requester busy info-chat string and no START
 - host open exchange / safebox / refine rejects with the already-owned partner busy info-chat string and no START (host open MYSHOP is required for success and is not itself a reject)
-- open still does not remove carried stock or mutate gold; browse does not re-emit `SHOP_SIGN`, invent a distance gate, or productize guest `SHOP END` / buy/sell yet (a same-socket guest-browse-open flag is remembered for a later leave seam)
+- open still does not remove carried stock or mutate gold; browse does not re-emit `SHOP_SIGN`, invent a distance gate, or productize buy/sell yet
+- guest leave is now owned: `CG::SHOP END` while browsing emits one guest-only `GC::SHOP END` and clears the remembered browse association; host empty-sign close / Leave / reclaim queues the same guest END while clearing host stock/busy; guest `/phase_select` / `/quit` / `/logout`, practice-mob floor, and transfer/warp prepend one guest END when browse is open; already-closed END stays silent
 - duplicate / out-of-range host `display_pos` now also fail closed on accepted open so guest START indexing stays unambiguous
 
 See `docs/plans/2026-08-24-myshop-guest-browse-open-presentation-contract-freeze.md`.
+See `docs/plans/2026-08-24-myshop-guest-browse-leave-end-contract-freeze.md`.
 
 ### Frozen `GC::ITEM_UPDATE` codec seam
 

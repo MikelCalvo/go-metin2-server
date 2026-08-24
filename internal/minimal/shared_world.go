@@ -72,7 +72,12 @@ type sharedWorldRegistry struct {
 	sessionMyShopWindows map[uint64]string
 	// sessionMyShopStock remembers the validated host listing for guest browse
 	// open presentation keyed by the same shared-world entity ID.
-	sessionMyShopStock              map[uint64][]myShopStockRow
+	sessionMyShopStock map[uint64][]myShopStockRow
+	// sessionMyShopGuests tracks guests currently browsing a host MYSHOP
+	// (host entity ID → guest entity IDs). sessionMyShopGuestHost is the
+	// reverse index used to clear one guest leave without scanning hosts.
+	sessionMyShopGuests             map[uint64]map[uint64]struct{}
+	sessionMyShopGuestHost          map[uint64]uint64
 	exchangePartners                map[uint64]uint64
 	exchangeItems                   map[uint64]map[uint8]exchangeDisplayedItem
 	exchangeGold                    map[uint64]uint32
@@ -2931,6 +2936,7 @@ func (r *sharedWorldRegistry) setMyShopWindowOpenLocked(entityID uint64, open bo
 		return
 	}
 	if !open {
+		r.removeMyShopGuestsLocked(entityID, true)
 		if r.sessionMyShopWindows != nil {
 			delete(r.sessionMyShopWindows, entityID)
 		}
@@ -2941,6 +2947,7 @@ func (r *sharedWorldRegistry) setMyShopWindowOpenLocked(entityID uint64, open bo
 	}
 	sign = strings.TrimSpace(sign)
 	if sign == "" {
+		r.removeMyShopGuestsLocked(entityID, true)
 		if r.sessionMyShopWindows != nil {
 			delete(r.sessionMyShopWindows, entityID)
 		}
@@ -2988,6 +2995,85 @@ func (r *sharedWorldRegistry) clearMyShopWindowOpenLocked(entityID uint64) {
 	r.setMyShopWindowOpenLocked(entityID, false, "", nil)
 }
 
+func (r *sharedWorldRegistry) registerMyShopGuestLocked(hostID uint64, guestID uint64) {
+	if r == nil || hostID == 0 || guestID == 0 || hostID == guestID {
+		return
+	}
+	r.clearMyShopGuestBrowseLocked(guestID, false)
+	if r.sessionMyShopGuests == nil {
+		r.sessionMyShopGuests = make(map[uint64]map[uint64]struct{})
+	}
+	guests := r.sessionMyShopGuests[hostID]
+	if guests == nil {
+		guests = make(map[uint64]struct{})
+		r.sessionMyShopGuests[hostID] = guests
+	}
+	guests[guestID] = struct{}{}
+	if r.sessionMyShopGuestHost == nil {
+		r.sessionMyShopGuestHost = make(map[uint64]uint64)
+	}
+	r.sessionMyShopGuestHost[guestID] = hostID
+}
+
+func (r *sharedWorldRegistry) clearMyShopGuestBrowseLocked(guestID uint64, enqueueEnd bool) bool {
+	if r == nil || guestID == 0 || r.sessionMyShopGuestHost == nil {
+		return false
+	}
+	hostID, ok := r.sessionMyShopGuestHost[guestID]
+	if !ok || hostID == 0 {
+		return false
+	}
+	delete(r.sessionMyShopGuestHost, guestID)
+	if guests := r.sessionMyShopGuests[hostID]; guests != nil {
+		delete(guests, guestID)
+		if len(guests) == 0 {
+			delete(r.sessionMyShopGuests, hostID)
+		}
+	}
+	if enqueueEnd {
+		r.enqueueToEntityLocked(guestID, [][]byte{shopproto.EncodeServerEnd()})
+	}
+	return true
+}
+
+func (r *sharedWorldRegistry) removeMyShopGuestsLocked(hostID uint64, enqueueEnd bool) {
+	if r == nil || hostID == 0 || r.sessionMyShopGuests == nil {
+		return
+	}
+	guests := r.sessionMyShopGuests[hostID]
+	delete(r.sessionMyShopGuests, hostID)
+	for guestID := range guests {
+		if r.sessionMyShopGuestHost != nil {
+			delete(r.sessionMyShopGuestHost, guestID)
+		}
+		if enqueueEnd {
+			r.enqueueToEntityLocked(guestID, [][]byte{shopproto.EncodeServerEnd()})
+		}
+	}
+}
+
+func (r *sharedWorldRegistry) ClearMyShopGuestBrowse(guestID uint64) bool {
+	if r == nil || guestID == 0 {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.clearMyShopGuestBrowseLocked(guestID, false)
+}
+
+func (r *sharedWorldRegistry) HasMyShopGuestBrowse(guestID uint64) bool {
+	if r == nil || guestID == 0 {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.sessionMyShopGuestHost == nil {
+		return false
+	}
+	hostID, ok := r.sessionMyShopGuestHost[guestID]
+	return ok && hostID != 0
+}
+
 // OpenMyShopGuestBrowse resolves a visible already-open private-shop host and
 // returns either one GC::SHOP START stock table, one partner-busy info-chat
 // frame, or a silent fail-closed miss. started is true only for the START path.
@@ -3004,6 +3090,9 @@ func (r *sharedWorldRegistry) OpenMyShopGuestBrowse(guestID uint64, hostVID uint
 	}
 	guest, ok := r.playerCharacter(guestID)
 	if !ok || characterAtBootstrapHPFloor(guest) {
+		return nil, false
+	}
+	if _, browsing := r.sessionMyShopGuestHost[guestID]; browsing {
 		return nil, false
 	}
 
@@ -3072,6 +3161,7 @@ func (r *sharedWorldRegistry) OpenMyShopGuestBrowse(guestID uint64, hostVID uint
 			Attributes: bootstrapItemAttributes(template),
 		}
 	}
+	r.registerMyShopGuestLocked(host.Entity.ID, guestID)
 	return [][]byte{shopproto.EncodeServerStart(packet)}, true
 }
 
@@ -3568,6 +3658,7 @@ func (r *sharedWorldRegistry) removeStaleOwnershipLocked(entityIDs []uint64) boo
 		r.clearSafeboxWindowOpenLocked(entityID)
 		r.clearRefineWindowOpenLocked(entityID)
 		r.clearMyShopWindowOpenLocked(entityID)
+		r.clearMyShopGuestBrowseLocked(entityID, false)
 		r.clearStaticActorCombatEngagementsBySubjectLocked(entityID)
 		r.clearExchangeLocked(entityID, true)
 		r.detachProximityAggroSuppressSubjectLocked(entityID, currentCharacter.VID)
@@ -3677,6 +3768,7 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 	r.clearSafeboxWindowOpenLocked(id)
 	r.clearRefineWindowOpenLocked(id)
 	r.clearMyShopWindowOpenLocked(id)
+	r.clearMyShopGuestBrowseLocked(id, false)
 	r.clearStaticActorCombatEngagementsBySubjectLocked(id)
 	r.clearExchangeLocked(id, true)
 	r.detachProximityAggroSuppressSubjectLocked(id, currentCharacter.VID)

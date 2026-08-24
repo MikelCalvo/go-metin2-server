@@ -1350,3 +1350,171 @@ func TestGameRuntimeMyShopGuestBrowseRejectsGuestOwnOpenMyShopSilently(t *testin
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop guest browse own-open host")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop guest browse own-open guest")
 }
+
+func TestGameRuntimeMyShopGuestBrowseShopEndClearsPresentationWithoutInventoryMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopLeaveHost", 0x01030861, 0x02040861, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 861, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("MyShopLeaveGuest", 0x01030862, 0x02040862, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerLogin := "myshop-leave-host"
+	peerLogin := "myshop-leave-guest"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707161, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x70707162, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop leave host account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed myshop leave guest account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop leave runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707161)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707162)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	openOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      3,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil || len(openOut) != 1 {
+		t.Fatalf("unexpected accepted MYSHOP before guest leave: out=%d err=%v", len(openOut), err)
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	browseOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: owner.VID})))
+	if err != nil || len(browseOut) != 1 {
+		t.Fatalf("unexpected guest browse before leave: out=%d err=%v", len(browseOut), err)
+	}
+	if _, err := shopproto.DecodeServerStart(decodeSingleFrame(t, browseOut[0])); err != nil {
+		t.Fatalf("decode guest browse SHOP START before leave: %v", err)
+	}
+
+	endOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected guest browse SHOP END: %v", err)
+	}
+	if len(endOut) != 1 {
+		t.Fatalf("expected guest browse SHOP END to emit one GC::SHOP END frame, got %d", len(endOut))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, endOut[0])); err != nil {
+		t.Fatalf("decode guest browse SHOP END: %v", err)
+	}
+	secondEndOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected second guest browse SHOP END: %v", err)
+	}
+	if len(secondEndOut) != 0 {
+		t.Fatalf("expected already-closed guest browse SHOP END to emit no frames, got %d", len(secondEndOut))
+	}
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop guest leave host")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop guest leave guest")
+}
+
+func TestGameRuntimeMyShopHostCloseQueuesGuestBrowseShopEndWithoutInventoryMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopHostCloseHost", 0x01030871, 0x02040871, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 871, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("MyShopHostCloseGuest", 0x01030872, 0x02040872, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerLogin := "myshop-host-close-host"
+	peerLogin := "myshop-host-close-guest"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707171, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x70707172, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop host-close host account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed myshop host-close guest account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop host-close runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707171)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707172)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	openOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      3,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil || len(openOut) != 1 {
+		t.Fatalf("unexpected accepted MYSHOP before host close: out=%d err=%v", len(openOut), err)
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	browseOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: owner.VID})))
+	if err != nil || len(browseOut) != 1 {
+		t.Fatalf("unexpected guest browse before host close: out=%d err=%v", len(browseOut), err)
+	}
+	if _, err := shopproto.DecodeServerStart(decodeSingleFrame(t, browseOut[0])); err != nil {
+		t.Fatalf("decode guest browse SHOP START before host close: %v", err)
+	}
+
+	closeOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/close_myshop"})))
+	if err != nil {
+		t.Fatalf("unexpected host /close_myshop: %v", err)
+	}
+	if len(closeOut) != 1 {
+		t.Fatalf("expected host /close_myshop to emit one empty SHOP_SIGN, got %d", len(closeOut))
+	}
+	closeSign, err := shopproto.DecodeServerShopSign(decodeSingleFrame(t, closeOut[0]))
+	if err != nil {
+		t.Fatalf("decode host empty SHOP_SIGN: %v", err)
+	}
+	if closeSign.VID != owner.VID || closeSign.Sign != "" {
+		t.Fatalf("unexpected host empty SHOP_SIGN: vid=%#x sign=%q", closeSign.VID, closeSign.Sign)
+	}
+
+	guestQueued := flushServerFrames(t, peerFlow)
+	if len(guestQueued) != 2 {
+		t.Fatalf("expected guest queued SHOP END plus empty SHOP_SIGN, got %d", len(guestQueued))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, guestQueued[0])); err != nil {
+		t.Fatalf("decode guest queued SHOP END after host close: %v", err)
+	}
+	peerSign, err := shopproto.DecodeServerShopSign(decodeSingleFrame(t, guestQueued[1]))
+	if err != nil {
+		t.Fatalf("decode guest queued empty SHOP_SIGN: %v", err)
+	}
+	if peerSign.VID != owner.VID || peerSign.Sign != "" {
+		t.Fatalf("unexpected guest queued empty SHOP_SIGN: vid=%#x sign=%q", peerSign.VID, peerSign.Sign)
+	}
+
+	secondEndOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected guest SHOP END after host close: %v", err)
+	}
+	if len(secondEndOut) != 0 {
+		t.Fatalf("expected guest SHOP END after host-forced leave to emit no frames, got %d", len(secondEndOut))
+	}
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop host-close host")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop host-close guest")
+}

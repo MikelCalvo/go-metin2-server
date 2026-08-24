@@ -51,4 +51,4 @@ Own the first guest browse leave path on top of already-owned guest browse open:
 
 ## Status
 
-Docs-first freeze on `lane/items`. Implementation RED intentionally deferred until this contract is committed green on `main`-rebased lane history.
+Implemented on `lane/items`: guest `CG::SHOP END` while browsing emits one guest-only `GC::SHOP END` and clears shared-world browse association; host empty-sign close / Leave / reclaim queues the same guest END; guest lifecycle teardown prepends one guest END when browse is open. Buy/sell and cube busy rejects stay deferred.
