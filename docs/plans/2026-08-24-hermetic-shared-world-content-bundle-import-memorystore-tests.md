@@ -49,8 +49,8 @@ This closes the remaining documented content-lane hermetic follow-up from:
 
 ## Explicit non-goals
 
-- converting remaining FileStores in item/restart/proximity suites that still
-  assert filesystem rematerialize
+- converting remaining FileStores in item/restart suites that still assert
+  filesystem rematerialize
 - production `NewGameRuntime` accepting injected content MemoryStores by default
 - branching quest scripts / pack AI / new NPC service kinds
 - SQL import/backfill execution
@@ -65,9 +65,10 @@ git diff --check
 
 ## Follow-up options
 
-1. Optionally convert remaining direct disposable static/interaction FileStore
+1. ~~Optionally convert remaining direct disposable static/interaction FileStore
    constructions in non-rematerialize suites when those proofs do not require
-   filesystem coupling.
+   filesystem coupling.~~ Done for the proximity aggro suppress suites: see
+   [hermetic proximity aggro suppress MemoryStore tests](2026-08-24-hermetic-proximity-aggro-suppress-memorystore-tests.md).
 2. Keep import/backfill execution deferred until a driver-backed harness and
    backup policy exist.
 3. Keep branching quest scripts and pack AI / synchronized respawn deferred.

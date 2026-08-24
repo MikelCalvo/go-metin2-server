@@ -23,7 +23,7 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterIn
 	owner.MapIndex = 42
 	owner.Points[bootstrapPlayerPointValueIndex] = 50
 	issuePeerTicket(t, store, "aggro-suppress-owner", 0x46464646, owner)
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	staticActorStore := staticstore.NewMemoryStore()
 	currentTime := time.Unix(1700002400, 0)
 
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
@@ -37,7 +37,7 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterIn
 		store,
 		nil,
 		staticActorStore,
-		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		interactionstore.NewMemoryStore(),
 	)
 	if err != nil {
 		t.Fatalf("new game runtime for proximity suppress leave/re-enter: %v", err)
@@ -139,7 +139,7 @@ func TestGameRuntimeProximityAggroDeathAndRespawnSeedSuppressesNearbyReacquireUn
 	owner.MapIndex = 42
 	owner.Points[bootstrapPlayerPointValueIndex] = 50
 	issuePeerTicket(t, store, "aggro-death-suppress-owner", 0x47474747, owner)
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	staticActorStore := staticstore.NewMemoryStore()
 	currentTime := time.Unix(1700002500, 0)
 
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
@@ -153,7 +153,7 @@ func TestGameRuntimeProximityAggroDeathAndRespawnSeedSuppressesNearbyReacquireUn
 		store,
 		nil,
 		staticActorStore,
-		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		interactionstore.NewMemoryStore(),
 	)
 	if err != nil {
 		t.Fatalf("new game runtime for proximity death/respawn suppress: %v", err)
@@ -288,7 +288,7 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOw
 	if err := accounts.Save(accountstore.Account{Login: "aggro-floor-suppress-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed proximity death-floor suppress owner account: %v", err)
 	}
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	staticActorStore := staticstore.NewMemoryStore()
 	currentTime := time.Unix(1700002600, 0)
 
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
@@ -302,7 +302,7 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOw
 		store,
 		accounts,
 		staticActorStore,
-		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		interactionstore.NewMemoryStore(),
 	)
 	if err != nil {
 		t.Fatalf("new game runtime for proximity death-floor suppress restart_here: %v", err)
@@ -430,7 +430,7 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOw
 	if err := accounts.Save(accountstore.Account{Login: "aggro-floor-phase", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed proximity death-floor phase_select suppress owner account: %v", err)
 	}
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	staticActorStore := staticstore.NewMemoryStore()
 	currentTime := time.Unix(1700002700, 0)
 
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
@@ -444,7 +444,7 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOw
 		store,
 		accounts,
 		staticActorStore,
-		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		interactionstore.NewMemoryStore(),
 	)
 	if err != nil {
 		t.Fatalf("new game runtime for proximity death-floor suppress phase_select restart_here: %v", err)
@@ -619,7 +619,7 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOw
 	if err := accounts.Save(accountstore.Account{Login: "aggro-floor-reconnect", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed proximity death-floor reconnect suppress owner account: %v", err)
 	}
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	staticActorStore := staticstore.NewMemoryStore()
 	currentTime := time.Unix(1700002800, 0)
 
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
@@ -633,7 +633,7 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOw
 		store,
 		accounts,
 		staticActorStore,
-		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		interactionstore.NewMemoryStore(),
 	)
 	if err != nil {
 		t.Fatalf("new game runtime for proximity death-floor suppress reconnect restart_here: %v", err)
@@ -866,7 +866,7 @@ func TestGameRuntimeProximityAggroSuppressRemapsAcrossContentBundleReplacement(t
 	owner.MapIndex = 42
 	owner.Points[bootstrapPlayerPointValueIndex] = 50
 	issuePeerTicket(t, store, "aggro-suppress-replace-owner", 0x4c4c4c4c, owner)
-	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	staticActorStore := staticstore.NewMemoryStore()
 	currentTime := time.Unix(1700002800, 0)
 
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
@@ -880,7 +880,7 @@ func TestGameRuntimeProximityAggroSuppressRemapsAcrossContentBundleReplacement(t
 		store,
 		nil,
 		staticActorStore,
-		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		interactionstore.NewMemoryStore(),
 	)
 	if err != nil {
 		t.Fatalf("new game runtime for proximity suppress content-bundle remapping: %v", err)
