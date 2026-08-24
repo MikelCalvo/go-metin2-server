@@ -2737,8 +2737,14 @@ func (r *gameRuntime) flushProximitySpawnGroupAggroAcquisition() {
 	if r == nil || r.sharedWorld == nil {
 		return
 	}
-	for _, entityID := range r.sharedWorld.AcquireProximitySpawnGroupAggro() {
+	acquired, suppressCleared := r.sharedWorld.AcquireProximitySpawnGroupAggro()
+	for _, entityID := range acquired {
 		r.syncSpawnGroupChaseStepScheduleForEntity(entityID)
+		// Engagement acquisition clears any remaining suppress overlay for that actor.
+		_ = r.persistSpawnGroupCombatState(entityID)
+	}
+	for _, entityID := range suppressCleared {
+		_ = r.persistSpawnGroupCombatState(entityID)
 	}
 }
 
@@ -4589,6 +4595,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			runtime.pruneSpawnGroupChaseStepSchedules()
 			for _, entityID := range engagedEntityIDs {
 				runtime.syncSpawnGroupHomewardStepScheduleForEntity(entityID)
+				_ = runtime.persistSpawnGroupCombatState(entityID)
 			}
 			runtime.pruneSpawnGroupHomewardStepSchedules()
 		}
@@ -4653,6 +4660,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			for _, entityID := range released {
 				runtime.clearSpawnGroupChaseStep(entityID)
 				runtime.syncSpawnGroupHomewardStepScheduleForEntity(entityID)
+				_ = runtime.persistSpawnGroupCombatState(entityID)
 			}
 			runtime.pruneSpawnGroupChaseStepSchedules()
 			runtime.pruneSpawnGroupHomewardStepSchedules()
@@ -11540,6 +11548,12 @@ func (r *gameRuntime) loadPersistedStaticActors() error {
 				return fmt.Errorf("%w: restore damaged spawn-group combat state", staticstore.ErrInvalidSnapshot)
 			}
 		}
+		if actor.SpawnGroupRef != "" && len(actor.ProximitySuppressVIDs) > 0 {
+			vids := r.filterKnownCharacterProximitySuppressVIDs(actor.ProximitySuppressVIDs)
+			if len(vids) > 0 && !r.sharedWorld.restorePendingProximityAggroSuppressByVID(registered.EntityID, vids) {
+				return fmt.Errorf("%w: restore proximity-suppress spawn-group state", staticstore.ErrInvalidSnapshot)
+			}
+		}
 		r.syncSpawnGroupReturnStepSchedule(registered)
 		r.syncSpawnGroupHomewardStepScheduleForEntity(registered.EntityID)
 	}
@@ -13046,6 +13060,61 @@ func (r *gameRuntime) persistSpawnGroupCombatState(entityID uint64) bool {
 	return r.persistStaticActorSnapshot(r.sharedWorld.StaticActors())
 }
 
+func (r *gameRuntime) filterKnownCharacterProximitySuppressVIDs(vids []uint32) []uint32 {
+	if len(vids) == 0 {
+		return nil
+	}
+	known, ok := r.knownCharacterVIDs()
+	filtered := make([]uint32, 0, len(vids))
+	seen := make(map[uint32]struct{}, len(vids))
+	for _, vid := range vids {
+		if vid == 0 {
+			continue
+		}
+		if _, exists := seen[vid]; exists {
+			continue
+		}
+		if ok {
+			if _, exists := known[vid]; !exists {
+				continue
+			}
+		}
+		seen[vid] = struct{}{}
+		filtered = append(filtered, vid)
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	sort.Slice(filtered, func(i int, j int) bool {
+		return filtered[i] < filtered[j]
+	})
+	return filtered
+}
+
+func (r *gameRuntime) knownCharacterVIDs() (map[uint32]struct{}, bool) {
+	if r == nil || r.accountStore == nil {
+		return nil, false
+	}
+	lister, ok := r.accountStore.(accountstore.AccountLister)
+	if !ok {
+		return nil, false
+	}
+	accounts, err := lister.List()
+	if err != nil {
+		return nil, false
+	}
+	known := make(map[uint32]struct{})
+	for _, account := range accounts {
+		for _, character := range account.Characters {
+			if character.VID == 0 {
+				continue
+			}
+			known[character.VID] = struct{}{}
+		}
+	}
+	return known, true
+}
+
 func buildStaticActorStoreSnapshot(snapshot []StaticActorSnapshot) staticstore.Snapshot {
 	return buildStaticActorStoreSnapshotWithSpawnGroupCombatState(snapshot, nil)
 }
@@ -13089,6 +13158,9 @@ func buildStaticActorStoreSnapshotWithSpawnGroupCombatState(snapshot []StaticAct
 			} else if state.HP > 0 && state.RespawnAt.IsZero() {
 				currentHP := state.HP
 				actors[len(actors)-1].CombatCurrentHP = &currentHP
+			}
+			if len(state.ProximitySuppressVIDs) > 0 {
+				actors[len(actors)-1].ProximitySuppressVIDs = append([]uint32(nil), state.ProximitySuppressVIDs...)
 			}
 		}
 	}

@@ -1795,8 +1795,9 @@ func (r *sharedWorldRegistry) restoreStillDeadSpawnGroupCombatStateLocked(entity
 }
 
 type spawnGroupCombatPersistenceState struct {
-	HP        uint8
-	RespawnAt time.Time
+	HP                    uint8
+	RespawnAt             time.Time
+	ProximitySuppressVIDs []uint32
 }
 
 func (r *sharedWorldRegistry) spawnGroupCombatPersistenceState() map[uint64]spawnGroupCombatPersistenceState {
@@ -1809,7 +1810,7 @@ func (r *sharedWorldRegistry) spawnGroupCombatPersistenceState() map[uint64]spaw
 }
 
 func (r *sharedWorldRegistry) spawnGroupCombatPersistenceStateLocked() map[uint64]spawnGroupCombatPersistenceState {
-	if r == nil || r.entities == nil || len(r.staticActorCombatHP) == 0 {
+	if r == nil || r.entities == nil {
 		return nil
 	}
 	out := make(map[uint64]spawnGroupCombatPersistenceState)
@@ -1817,34 +1818,121 @@ func (r *sharedWorldRegistry) spawnGroupCombatPersistenceStateLocked() map[uint6
 		if strings.TrimSpace(actor.SpawnGroupRef) == "" || actor.Entity.ID == 0 {
 			continue
 		}
+		state := spawnGroupCombatPersistenceState{}
+		hasState := false
 		currentHP, hpOK := r.staticActorCombatHP[actor.Entity.ID]
-		if !hpOK {
-			continue
-		}
 		respawnAt, respawnOK := r.staticActorCombatRespawnAt[actor.Entity.ID]
-		if currentHP == 0 {
-			if !respawnOK || respawnAt.IsZero() {
-				continue
+		if hpOK {
+			if currentHP == 0 {
+				if respawnOK && !respawnAt.IsZero() {
+					state.HP = 0
+					state.RespawnAt = respawnAt
+					hasState = true
+				}
+			} else if !respawnOK || respawnAt.IsZero() {
+				maxHP, ok := worldruntime.BootstrapStaticActorCurrentHP(actor.CombatKind)
+				if ok && currentHP < maxHP {
+					if _, percentOK := worldruntime.BootstrapStaticActorHPPercent(actor.CombatKind, currentHP); percentOK {
+						state.HP = currentHP
+						hasState = true
+					}
+				}
 			}
-			out[actor.Entity.ID] = spawnGroupCombatPersistenceState{HP: 0, RespawnAt: respawnAt}
-			continue
 		}
-		if respawnOK && !respawnAt.IsZero() {
-			continue
+		if vids := r.proximitySuppressCharacterVIDsLocked(actor.Entity.ID); len(vids) > 0 {
+			state.ProximitySuppressVIDs = vids
+			hasState = true
 		}
-		maxHP, ok := worldruntime.BootstrapStaticActorCurrentHP(actor.CombatKind)
-		if !ok || currentHP >= maxHP {
-			continue
+		if hasState {
+			out[actor.Entity.ID] = state
 		}
-		if _, percentOK := worldruntime.BootstrapStaticActorHPPercent(actor.CombatKind, currentHP); !percentOK {
-			continue
-		}
-		out[actor.Entity.ID] = spawnGroupCombatPersistenceState{HP: currentHP}
 	}
 	if len(out) == 0 {
 		return nil
 	}
 	return out
+}
+
+func (r *sharedWorldRegistry) proximitySuppressCharacterVIDsLocked(entityID uint64) []uint32 {
+	if r == nil || entityID == 0 {
+		return nil
+	}
+	seen := make(map[uint32]struct{})
+	vids := make([]uint32, 0)
+	if subjects := r.staticActorProximityAggroSuppress[entityID]; len(subjects) > 0 {
+		for subjectID := range subjects {
+			character, ok := r.playerCharacter(subjectID)
+			if !ok || character.VID == 0 {
+				character, ok = r.lastKnownCharacters[subjectID]
+			}
+			if !ok || character.VID == 0 {
+				continue
+			}
+			if _, exists := seen[character.VID]; exists {
+				continue
+			}
+			seen[character.VID] = struct{}{}
+			vids = append(vids, character.VID)
+		}
+	}
+	if r.pendingProximityAggroSuppressByVID != nil {
+		for vid, actors := range r.pendingProximityAggroSuppressByVID {
+			if vid == 0 {
+				continue
+			}
+			if _, ok := actors[entityID]; !ok {
+				continue
+			}
+			if _, exists := seen[vid]; exists {
+				continue
+			}
+			seen[vid] = struct{}{}
+			vids = append(vids, vid)
+		}
+	}
+	if len(vids) == 0 {
+		return nil
+	}
+	sort.Slice(vids, func(i int, j int) bool {
+		return vids[i] < vids[j]
+	})
+	return vids
+}
+
+func (r *sharedWorldRegistry) restorePendingProximityAggroSuppressByVID(entityID uint64, vids []uint32) bool {
+	if r == nil || entityID == 0 {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.restorePendingProximityAggroSuppressByVIDLocked(entityID, vids)
+}
+
+func (r *sharedWorldRegistry) restorePendingProximityAggroSuppressByVIDLocked(entityID uint64, vids []uint32) bool {
+	if r == nil || entityID == 0 || len(vids) == 0 {
+		return false
+	}
+	actor, ok := r.entities.StaticActor(entityID)
+	if !ok || strings.TrimSpace(actor.SpawnGroupRef) == "" {
+		return false
+	}
+	if r.pendingProximityAggroSuppressByVID == nil {
+		r.pendingProximityAggroSuppressByVID = make(map[uint32]map[uint64]struct{})
+	}
+	restored := false
+	for _, vid := range vids {
+		if vid == 0 {
+			continue
+		}
+		actors := r.pendingProximityAggroSuppressByVID[vid]
+		if actors == nil {
+			actors = make(map[uint64]struct{})
+			r.pendingProximityAggroSuppressByVID[vid] = actors
+		}
+		actors[entityID] = struct{}{}
+		restored = true
+	}
+	return restored
 }
 
 func (r *sharedWorldRegistry) restoreDamagedSpawnGroupCombatState(entityID uint64, currentHP uint8) bool {
@@ -2157,13 +2245,13 @@ func (r *sharedWorldRegistry) proximityAggroSuppressActiveLocked(entityID uint64
 	return ok
 }
 
-func (r *sharedWorldRegistry) clearProximityAggroSuppressIfOutsideRadiusLocked(actor worldruntime.StaticEntity, candidates []worldruntime.SpawnAggroCandidate) {
+func (r *sharedWorldRegistry) clearProximityAggroSuppressIfOutsideRadiusLocked(actor worldruntime.StaticEntity, candidates []worldruntime.SpawnAggroCandidate) bool {
 	if r == nil || actor.Entity.ID == 0 || r.staticActorProximityAggroSuppress == nil {
-		return
+		return false
 	}
 	subjects := r.staticActorProximityAggroSuppress[actor.Entity.ID]
 	if len(subjects) == 0 {
-		return
+		return false
 	}
 	inside := make(map[uint64]struct{}, len(candidates))
 	for _, candidate := range candidates {
@@ -2176,15 +2264,18 @@ func (r *sharedWorldRegistry) clearProximityAggroSuppressIfOutsideRadiusLocked(a
 		}
 		inside[candidate.EntityID] = struct{}{}
 	}
+	changed := false
 	for subjectID := range subjects {
 		if _, stillInside := inside[subjectID]; stillInside {
 			continue
 		}
 		delete(subjects, subjectID)
+		changed = true
 	}
 	if len(subjects) == 0 {
 		delete(r.staticActorProximityAggroSuppress, actor.Entity.ID)
 	}
+	return changed
 }
 
 func (r *sharedWorldRegistry) seedProximityAggroSuppressForInsideCandidatesLocked(actor worldruntime.StaticEntity) {
@@ -2661,17 +2752,19 @@ func staticActorSpawnGroupAggroLiteCombatKind(combatKind string) bool {
 // owner's session may separately arm the delayed server-origin retaliation
 // cadence from that same engagement. After an explicit engagement release, the
 // same candidate stays suppressed until it leaves the aggro radius and
-// re-enters.
-func (r *sharedWorldRegistry) AcquireProximitySpawnGroupAggro() []uint64 {
+// re-enters. The second return lists spawn-backed actors whose leave/re-enter
+// suppress membership was cleared during this scan so callers can persist that
+// durable overlay without rewriting every spawn actor on every flush.
+func (r *sharedWorldRegistry) AcquireProximitySpawnGroupAggro() (acquired []uint64, suppressCleared []uint64) {
 	if r == nil || r.entities == nil || r.sessionDirectory == nil {
-		return nil
+		return nil, nil
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	sessionIDs := r.sessionDirectory.EntityIDs()
 	if len(sessionIDs) == 0 {
-		return nil
+		return nil, nil
 	}
 	candidates := make([]worldruntime.SpawnAggroCandidate, 0, len(sessionIDs))
 	for _, sessionID := range sessionIDs {
@@ -2685,15 +2778,18 @@ func (r *sharedWorldRegistry) AcquireProximitySpawnGroupAggro() []uint64 {
 		})
 	}
 	if len(candidates) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	acquired := make([]uint64, 0)
+	acquired = make([]uint64, 0)
+	suppressCleared = make([]uint64, 0)
 	for _, actor := range r.entities.AllStaticActors() {
 		if actor.Entity.ID == 0 || actor.SpawnGroupRef == "" || !staticActorSpawnGroupAggroLiteCombatKind(actor.CombatKind) {
 			continue
 		}
-		r.clearProximityAggroSuppressIfOutsideRadiusLocked(actor, candidates)
+		if r.clearProximityAggroSuppressIfOutsideRadiusLocked(actor, candidates) {
+			suppressCleared = append(suppressCleared, actor.Entity.ID)
+		}
 		if existing := r.staticActorCombatEngagedBy[actor.Entity.ID]; existing != 0 {
 			continue
 		}
@@ -2721,7 +2817,8 @@ func (r *sharedWorldRegistry) AcquireProximitySpawnGroupAggro() []uint64 {
 		}
 	}
 	sort.Slice(acquired, func(i, j int) bool { return acquired[i] < acquired[j] })
-	return acquired
+	sort.Slice(suppressCleared, func(i, j int) bool { return suppressCleared[i] < suppressCleared[j] })
+	return acquired, suppressCleared
 }
 
 // EngagedSpawnGroupRetaliationArmTargets returns deterministic delayed-retaliation

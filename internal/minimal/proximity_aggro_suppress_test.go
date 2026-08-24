@@ -831,7 +831,7 @@ func TestSharedWorldRegistrySubjectReleaseSeedsProximitySuppressWhenOwnerAlready
 	recovered.Points[bootstrapPlayerPointValueIndex] = 800
 	registry.UpdateCharacter(ownerID, recovered)
 
-	if acquired := registry.AcquireProximitySpawnGroupAggro(); len(acquired) != 0 {
+	if acquired, _ := registry.AcquireProximitySpawnGroupAggro(); len(acquired) != 0 {
 		t.Fatalf("expected still-inside recovered owner to stay proximity-suppressed after floor-HP subject release, got acquired=%v", acquired)
 	}
 	if registry.StaticActorCombatEngagedBySubject(actor.EntityID, ownerID) {
@@ -841,12 +841,12 @@ func TestSharedWorldRegistrySubjectReleaseSeedsProximitySuppressWhenOwnerAlready
 	outside := recovered
 	outside.X = 1950
 	registry.UpdateCharacter(ownerID, outside)
-	_ = registry.AcquireProximitySpawnGroupAggro()
+	_, _ = registry.AcquireProximitySpawnGroupAggro()
 
 	inside := outside
 	inside.X = 1850
 	registry.UpdateCharacter(ownerID, inside)
-	acquired := registry.AcquireProximitySpawnGroupAggro()
+	acquired, _ := registry.AcquireProximitySpawnGroupAggro()
 	if len(acquired) != 1 || acquired[0] != actor.EntityID {
 		t.Fatalf("expected leave/re-enter after floor-HP subject-release suppress to reacquire entity %d, got %v", actor.EntityID, acquired)
 	}
@@ -1001,5 +1001,182 @@ func TestGameRuntimeProximityAggroSuppressRemapsAcrossContentBundleReplacement(t
 	_ = flushServerFrames(t, ownerFlow)
 	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(afterReplace.EntityID, ownerEntity.Entity.ID) {
 		t.Fatalf("expected leave/re-enter after remapped replacement suppress to reacquire engagement for entity %d", afterReplace.EntityID)
+	}
+}
+
+func TestGameRuntimeProximityAggroSuppressRematerializesAcrossDaemonRestart(t *testing.T) {
+	// After in-radius engagement release seeds proximity suppress, a clean gamed
+	// restart that rematerializes the same authored spawn_group_ref must restore
+	// that suppress for still-valid character VID park entries. Still-inside
+	// owners must not instantly reacquire until an explicit leave/re-enter of
+	// the effective aggro radius. Engagement stays fail-closed across restart.
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("AggroSuppressRestartOwner", 0x0103019d, 0x0204019d, 1850, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "aggro-suppress-restart-owner", 0x4d4d4d4d, owner)
+	if err := accounts.Save(accountstore.Account{Login: "aggro-suppress-restart-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed proximity suppress daemon-restart owner account: %v", err)
+	}
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewMemoryStore()
+	currentTime := time.Unix(1700002900, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		accounts,
+		staticActorStore,
+		interactionStore,
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for proximity suppress daemon restart: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.aggro_suppress_restart",
+		Name:          "AggroSuppressRestartMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import proximity suppress daemon-restart spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.aggro_suppress_restart")
+	if !ok {
+		t.Fatal("expected proximity suppress daemon-restart spawn group to resolve by ref")
+	}
+	originalEntityID := group.EntityID
+
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "aggro-suppress-restart-owner", 0x4d4d4d4d)
+	_ = flushServerFrames(t, ownerFlow)
+
+	ownerEntity, ok := runtime.sharedWorld.playerEntityByName("AggroSuppressRestartOwner")
+	if !ok {
+		t.Fatal("expected proximity suppress daemon-restart owner entity to remain registered")
+	}
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(originalEntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected pending-frame proximity acquisition to engage owner for entity %d", originalEntityID)
+	}
+
+	clearOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: 0})))
+	if err != nil {
+		t.Fatalf("unexpected owner TARGET(0) clear before daemon restart: %v", err)
+	}
+	if len(clearOut) != 0 {
+		t.Fatalf("expected proximity-only TARGET(0) clear to emit no frames, got %d", len(clearOut))
+	}
+	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(originalEntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected in-radius TARGET(0) clear to release engaged_by for entity %d", originalEntityID)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected suppress to keep acquisition silent before daemon restart, got %d queued frames", len(queued))
+	}
+
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted proximity-suppress spawn-group snapshot: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 {
+		t.Fatalf("expected one persisted spawn-group actor after suppress seed, got %+v", persisted.StaticActors)
+	}
+	if got := persisted.StaticActors[0].ProximitySuppressVIDs; len(got) != 1 || got[0] != owner.VID {
+		t.Fatalf("expected persisted proximity_suppress_vids=[%#x], got %+v", owner.VID, got)
+	}
+
+	closeSessionFlow(t, ownerFlow)
+
+	reloaded, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		accounts,
+		staticActorStore,
+		interactionStore,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("reload runtime with persisted proximity suppress: %v", err)
+	}
+	reloaded.now = func() time.Time { return currentTime }
+
+	afterRestart, ok := reloaded.SpawnGroupByRef("practice.aggro_suppress_restart")
+	if !ok {
+		t.Fatal("expected proximity suppress spawn group to remain resolvable by authored ref after daemon restart")
+	}
+	if afterRestart.EntityID == 0 {
+		t.Fatalf("expected rematerialized spawn-group entity id, got %+v", afterRestart)
+	}
+	if len(reloaded.sharedWorld.CombatTargetSnapshots()) != 0 {
+		t.Fatalf("expected engagement/selected-target ownership to stay fail-closed across daemon restart, got %+v", reloaded.sharedWorld.CombatTargetSnapshots())
+	}
+
+	restartFlow, _ := enterGameWithLoginTicket(t, reloaded.SessionFactory(), "aggro-suppress-restart-owner", 0x4d4d4d4d)
+	defer closeSessionFlow(t, restartFlow)
+	_ = flushServerFrames(t, restartFlow)
+
+	restartOwner, ok := reloaded.sharedWorld.playerEntityByName("AggroSuppressRestartOwner")
+	if !ok {
+		t.Fatal("expected proximity suppress daemon-restart owner entity after rejoin")
+	}
+	if reloaded.sharedWorld.StaticActorCombatEngagedBySubject(afterRestart.EntityID, restartOwner.Entity.ID) {
+		t.Fatalf("expected rematerialized proximity suppress to block still-inside reacquire after daemon restart for entity %d", afterRestart.EntityID)
+	}
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if queued := flushServerFrames(t, restartFlow); len(queued) != 0 {
+		t.Fatalf("expected delayed flush to keep rematerialized suppress silent after daemon restart, got %d queued frames", len(queued))
+	}
+	if reloaded.sharedWorld.StaticActorCombatEngagedBySubject(afterRestart.EntityID, restartOwner.Entity.ID) {
+		t.Fatalf("expected delayed flush not to re-lock rematerialized-suppressed still-inside owner for entity %d", afterRestart.EntityID)
+	}
+
+	moveOut, err := restartFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+		Func: 1,
+		Arg:  0,
+		Rot:  12,
+		X:    1950,
+		Y:    2800,
+		Time: 0x5152535d,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected owner move error while leaving aggro radius after daemon-restart suppress: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 immediate self move ack after leaving aggro radius post-restart, got %d frames", len(moveOut))
+	}
+	_ = flushServerFrames(t, restartFlow)
+
+	moveIn, err := restartFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+		Func: 1,
+		Arg:  0,
+		Rot:  12,
+		X:    1850,
+		Y:    2800,
+		Time: 0x5152535e,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected owner move error while re-entering aggro radius after daemon-restart suppress: %v", err)
+	}
+	if len(moveIn) != 1 {
+		t.Fatalf("expected 1 immediate self move ack after re-entering aggro radius post-restart, got %d frames", len(moveIn))
+	}
+	_ = flushServerFrames(t, restartFlow)
+	if !reloaded.sharedWorld.StaticActorCombatEngagedBySubject(afterRestart.EntityID, restartOwner.Entity.ID) {
+		t.Fatalf("expected leave/re-enter after rematerialized daemon-restart suppress to reacquire engagement for entity %d", afterRestart.EntityID)
 	}
 }

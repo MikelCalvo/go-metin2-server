@@ -328,6 +328,68 @@ func TestFileStoreRoundTripsDamagedSpawnGroupCombatState(t *testing.T) {
 	}
 }
 
+func TestFileStoreRoundTripsProximitySuppressVIDs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
+	store := NewFileStore(path)
+	input := Snapshot{StaticActors: []StaticActor{{
+		EntityID:              39,
+		Name:                  "SuppressPersistMob",
+		MapIndex:              42,
+		X:                     1200,
+		Y:                     2200,
+		RaceNum:               101,
+		CombatProfile:         worldruntime.StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef:         "practice.suppress_persist",
+		SpawnHome:             &worldruntime.PositionSnapshot{MapIndex: 42, X: 1200, Y: 2200},
+		ProximitySuppressVIDs: []uint32{0x0103019d, 0x0204019e},
+	}}}
+
+	if err := store.Save(input); err != nil {
+		t.Fatalf("save proximity-suppress spawn-group snapshot: %v", err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("load proximity-suppress spawn-group snapshot: %v", err)
+	}
+	if !reflect.DeepEqual(loaded, input) {
+		t.Fatalf("expected proximity-suppress vids to round-trip:\n got: %#v\nwant: %#v", loaded, input)
+	}
+}
+
+func TestFileStoreRejectsMalformedProximitySuppressVIDs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
+	store := NewFileStore(path)
+
+	err := store.Save(Snapshot{StaticActors: []StaticActor{{
+		EntityID:              40,
+		Name:                  "ZeroSuppressVIDMob",
+		MapIndex:              42,
+		X:                     1200,
+		Y:                     2200,
+		RaceNum:               101,
+		CombatProfile:         worldruntime.StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef:         "practice.zero_suppress_vid",
+		ProximitySuppressVIDs: []uint32{0},
+	}}})
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for zero proximity suppress vid, got %v", err)
+	}
+
+	err = store.Save(Snapshot{StaticActors: []StaticActor{{
+		EntityID:              7,
+		Name:                  "TrainingDummy",
+		MapIndex:              42,
+		X:                     1800,
+		Y:                     2900,
+		RaceNum:               20350,
+		CombatProfile:         worldruntime.StaticActorCombatProfileTrainingDummy,
+		ProximitySuppressVIDs: []uint32{0x0103019d},
+	}}})
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for non-spawn proximity suppress overlay, got %v", err)
+	}
+}
+
 func TestFileStoreRejectsMalformedSpawnGroupCombatPersistenceState(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
 	store := NewFileStore(path)

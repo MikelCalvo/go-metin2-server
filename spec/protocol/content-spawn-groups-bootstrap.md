@@ -542,15 +542,15 @@ Contract for the first proximity-suppress content-bundle remapping seam:
 - engagement / selected-target / pending chase / pending return / delayed-retaliation ownership stay fail-closed across that replacement boundary and re-arm only after fresh post-replacement target / hit / proximity acquisition (after suppress clears)
 - still-dead and live-damaged HP remapping stay owned and unchanged beside this suppress remapper
 - identical no-op reimports may continue to short-circuit without mutating lifecycle state
-- non-spawn standalone `training_dummy` actors remain out of scope; remapping suppress across daemon restart is frozen separately below and not yet GREEN
+- non-spawn standalone `training_dummy` actors remain out of scope; remapping suppress across daemon restart is now owned beside this remapper
 
 Current implementation status:
 - `remapSpawnGroupCombatState` now remaps proximity-suppress membership by authored `spawn_group_ref` for still-connected subjects beside still-dead / live-damaged HP remapping
 - focused coverage: `TestGameRuntimeProximityAggroSuppressRemapsAcrossContentBundleReplacement`
+- daemon-restart proximity-suppress rematerialize is owned separately below
 
 Explicit non-goals for this proximity-suppress remapping freeze alone:
 - remapping engagement, selected-target, chase, or return schedules across replacement
-- remapping proximity suppress across daemon restart (frozen separately below; not yet implemented)
 - inventing a second permanent suppress store keyed by name/VID beyond the already-owned Leave→Join VID park/claim handoff
 - inventing cross-map return MOVE / `GC WARP` choreography (frozen as delete/readd / direct-home rebuild in `spawn-leash-bootstrap.md`)
 
@@ -574,7 +574,9 @@ Contract for the first daemon-restart proximity-suppress rematerialization seam:
 
 Current implementation status:
 
-- contract frozen; production save/restore / focused rematerialize proof not yet GREEN
+- `loadPersistedStaticActors` restores optional `proximity_suppress_vids` into the existing Leave→Join `pendingProximityAggroSuppressByVID` park map for still-valid character VIDs
+- writers persist that overlay through the ordinary static-actor snapshot path whenever suppress membership is marked / cleared for spawn-backed actors
+- focused coverage: `TestGameRuntimeProximityAggroSuppressRematerializesAcrossDaemonRestart`
 - Leave→Join VID park/claim, content-bundle suppress remapping, and still-dead / live-damaged HP daemon-restart persistence remain owned
 
 Explicit non-goals for this daemon-restart proximity-suppress freeze alone:
@@ -664,7 +666,7 @@ First live consumer rules (now implemented on the pending-frame flush path):
 - focused shared-world coverage now proves that in-radius `TARGET(0)` release, death/respawn seed, proximity-armed owner death-floor release followed by same-socket `/restart_here` while still inside radius, and non-identical same-`spawn_group_ref` content-bundle replacement all keep the same nearby owner suppressed through later pending-frame flushes until an explicit leave/re-enter of the actor's effective aggro radius
 - subject-side engagement release (`ClearStaticActorCombatEngagementsBySubject`) always marks the releasing subject for proximity suppress even when that subject's shared-world snapshot is already at the bootstrap `0`-HP floor; `seedProximity` still skips floor candidates for bystander seeding, but the releasing owner must remain suppressed across later live-HP recovery (`/restart_here`) without requiring leave/re-enter. Registry coverage: `TestSharedWorldRegistrySubjectReleaseSeedsProximitySuppressWhenOwnerAlreadyAtHPFloor`
 - Leave → fresh Join identity changes (`/phase_select` and abrupt disconnect/reconnect) park that subject suppress under character VID on Leave / stale reclaim and rematerialize it onto the new subject entity ID on Join, so a later `/restart_here` while still inside radius stays suppressed the same way; live suppress remains entity-ID keyed (VID is only the handoff key), and actor-side suppress clear also drops pending VID park entries for that actor
-- non-identical content-bundle replacement that keeps the same authored `spawn_group_ref` remaps proximity-suppress membership for still-connected subject entity IDs onto the newly registered actor before import fanout (`TestGameRuntimeProximityAggroSuppressRemapsAcrossContentBundleReplacement`); engagement stays fail-closed and daemon-restart suppress rematerialization is frozen separately above (not yet GREEN)
+- non-identical content-bundle replacement that keeps the same authored `spawn_group_ref` remaps proximity-suppress membership for still-connected subject entity IDs onto the newly registered actor before import fanout (`TestGameRuntimeProximityAggroSuppressRemapsAcrossContentBundleReplacement`); engagement stays fail-closed and daemon-restart suppress rematerialization is owned separately above (`TestGameRuntimeProximityAggroSuppressRematerializesAcrossDaemonRestart`)
 
 Explicit non-goals for this proximity aggro freeze alone:
 - immediate owner-side retaliation piggyback without an accepted hit
@@ -748,7 +750,7 @@ Explicit non-goals for this profile-authored leash-radius freeze alone:
 - inventing cross-map return MOVE / `GC WARP` choreography (frozen as delete/readd / direct-home rebuild in `spawn-leash-bootstrap.md`)
 - inventing a second return/chase scheduler beyond the existing pending-frame consumers
 - changing the already-owned engagement / chase / retaliation consumers beyond substituting the effective leash radius
-- remapping engagement across non-identical content-bundle replacement (live damaged HP remapping and proximity-suppress remapping across that replacement are frozen above; live damaged HP across clean daemon restart remains owned; proximity-suppress rematerialization across daemon restart is frozen above and not yet GREEN)
+- remapping engagement across non-identical content-bundle replacement (live damaged HP remapping and proximity-suppress remapping across that replacement are frozen above; live damaged HP across clean daemon restart remains owned; proximity-suppress rematerialization across daemon restart is owned above)
 
 ## Success definition
 

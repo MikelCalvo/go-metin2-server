@@ -19,30 +19,31 @@ var (
 )
 
 type StaticActor struct {
-	EntityID         uint64                         `json:"entity_id"`
-	Name             string                         `json:"name"`
-	MapIndex         uint32                         `json:"map_index"`
-	X                int32                          `json:"x"`
-	Y                int32                          `json:"y"`
-	RaceNum          uint32                         `json:"race_num"`
-	SpawnHome        *worldruntime.PositionSnapshot `json:"spawn_home,omitempty"`
-	CombatProfile    string                         `json:"combat_profile,omitempty"`
-	InteractionKind  string                         `json:"interaction_kind,omitempty"`
-	InteractionRef   string                         `json:"interaction_ref,omitempty"`
-	SpawnGroupRef    string                         `json:"spawn_group_ref,omitempty"`
-	CombatCurrentHP  *uint8                         `json:"combat_current_hp,omitempty"`
-	RespawnReadyAt   *time.Time                     `json:"respawn_ready_at,omitempty"`
-	RewardExperience uint64                         `json:"reward_experience,omitempty"`
-	RewardGold       uint64                         `json:"reward_gold,omitempty"`
-	RewardDropVnums  []uint32                       `json:"reward_drop_vnums,omitempty"`
-	RewardQuestRef   string                         `json:"reward_quest_ref,omitempty"`
-	RewardQuestFlag  string                         `json:"reward_quest_flag,omitempty"`
-	RewardQuestFrom  uint32                         `json:"reward_quest_from,omitempty"`
-	RewardQuestTo    uint32                         `json:"reward_quest_to,omitempty"`
-	RewardQuestText  string                         `json:"reward_quest_text,omitempty"`
-	RequireQuestRef  string                         `json:"require_quest_ref,omitempty"`
-	RequireQuestFlag string                         `json:"require_quest_flag,omitempty"`
-	RequireQuestFrom uint32                         `json:"require_quest_from,omitempty"`
+	EntityID              uint64                         `json:"entity_id"`
+	Name                  string                         `json:"name"`
+	MapIndex              uint32                         `json:"map_index"`
+	X                     int32                          `json:"x"`
+	Y                     int32                          `json:"y"`
+	RaceNum               uint32                         `json:"race_num"`
+	SpawnHome             *worldruntime.PositionSnapshot `json:"spawn_home,omitempty"`
+	CombatProfile         string                         `json:"combat_profile,omitempty"`
+	InteractionKind       string                         `json:"interaction_kind,omitempty"`
+	InteractionRef        string                         `json:"interaction_ref,omitempty"`
+	SpawnGroupRef         string                         `json:"spawn_group_ref,omitempty"`
+	CombatCurrentHP       *uint8                         `json:"combat_current_hp,omitempty"`
+	RespawnReadyAt        *time.Time                     `json:"respawn_ready_at,omitempty"`
+	ProximitySuppressVIDs []uint32                       `json:"proximity_suppress_vids,omitempty"`
+	RewardExperience      uint64                         `json:"reward_experience,omitempty"`
+	RewardGold            uint64                         `json:"reward_gold,omitempty"`
+	RewardDropVnums       []uint32                       `json:"reward_drop_vnums,omitempty"`
+	RewardQuestRef        string                         `json:"reward_quest_ref,omitempty"`
+	RewardQuestFlag       string                         `json:"reward_quest_flag,omitempty"`
+	RewardQuestFrom       uint32                         `json:"reward_quest_from,omitempty"`
+	RewardQuestTo         uint32                         `json:"reward_quest_to,omitempty"`
+	RewardQuestText       string                         `json:"reward_quest_text,omitempty"`
+	RequireQuestRef       string                         `json:"require_quest_ref,omitempty"`
+	RequireQuestFlag      string                         `json:"require_quest_flag,omitempty"`
+	RequireQuestFrom      uint32                         `json:"require_quest_from,omitempty"`
 }
 
 type Snapshot struct {
@@ -119,12 +120,15 @@ func validateSnapshot(snapshot Snapshot) error {
 			if !validSpawnGroupCombatPersistenceState(actor, profileSnapshots) {
 				return ErrInvalidSnapshot
 			}
+			if !validProximitySuppressVIDs(actor.ProximitySuppressVIDs) {
+				return ErrInvalidSnapshot
+			}
 			if _, ok := spawnGroupRefs[actor.SpawnGroupRef]; ok {
 				return ErrInvalidSnapshot
 			}
 			spawnGroupRefs[actor.SpawnGroupRef] = struct{}{}
 		}
-		if actor.SpawnGroupRef == "" && !stillDeadCombatStateEmpty(actor) {
+		if actor.SpawnGroupRef == "" && (!stillDeadCombatStateEmpty(actor) || len(actor.ProximitySuppressVIDs) > 0) {
 			return ErrInvalidSnapshot
 		}
 		if _, ok := seen[actor.EntityID]; ok {
@@ -336,6 +340,47 @@ func stillDeadCombatStateEmpty(actor StaticActor) bool {
 	return actor.CombatCurrentHP == nil && (actor.RespawnReadyAt == nil || actor.RespawnReadyAt.IsZero())
 }
 
+func validProximitySuppressVIDs(vids []uint32) bool {
+	if len(vids) == 0 {
+		return true
+	}
+	seen := make(map[uint32]struct{}, len(vids))
+	prev := uint32(0)
+	for i, vid := range vids {
+		if vid == 0 {
+			return false
+		}
+		if _, ok := seen[vid]; ok {
+			return false
+		}
+		if i > 0 && vid < prev {
+			return false
+		}
+		seen[vid] = struct{}{}
+		prev = vid
+	}
+	return true
+}
+
+func normalizeProximitySuppressVIDs(vids []uint32) []uint32 {
+	if len(vids) == 0 {
+		return nil
+	}
+	seen := make(map[uint32]struct{}, len(vids))
+	normalized := make([]uint32, 0, len(vids))
+	for _, vid := range vids {
+		if _, ok := seen[vid]; ok {
+			continue
+		}
+		seen[vid] = struct{}{}
+		normalized = append(normalized, vid)
+	}
+	sort.Slice(normalized, func(i int, j int) bool {
+		return normalized[i] < normalized[j]
+	})
+	return normalized
+}
+
 func validSpawnGroupCombatPersistenceState(actor StaticActor, profileSnapshots map[string]worldruntime.StaticActorCombatProfileSnapshot) bool {
 	if stillDeadCombatStateEmpty(actor) {
 		return true
@@ -443,6 +488,7 @@ func normalizeStaticActor(actor StaticActor) StaticActor {
 		actor.CombatCurrentHP = nil
 		actor.RespawnReadyAt = nil
 	}
+	actor.ProximitySuppressVIDs = normalizeProximitySuppressVIDs(actor.ProximitySuppressVIDs)
 	return actor
 }
 
@@ -534,6 +580,9 @@ func cloneStaticActors(actors []StaticActor) []StaticActor {
 		if actor.RespawnReadyAt != nil {
 			readyAt := *actor.RespawnReadyAt
 			actor.RespawnReadyAt = &readyAt
+		}
+		if len(actor.ProximitySuppressVIDs) > 0 {
+			actor.ProximitySuppressVIDs = append([]uint32(nil), actor.ProximitySuppressVIDs...)
 		}
 		cloned[i] = actor
 	}
