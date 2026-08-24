@@ -297,6 +297,7 @@ The repository now owns that packet shape at the codec level:
 This is a codec-only compatibility seam for later stock/sold-out/player-shop refresh work.
 The current bootstrap NPC `BUY`, `SELL`, and `SELL2` runtime paths still use the already-owned selected-character inventory refreshes plus their separately frozen merchant companions: packet `SHOP BUY` success is item-refresh-only, sell success is item/currency-refresh-only, and error paths use the owned bare merchant error frames.
 They do not emit `UPDATE_ITEM` yet.
+Guest private-shop buy is docs-frozen to emit this `UPDATE_ITEM` companion with `vnum = 0` for sold display slots once the implementation slice lands (`docs/plans/2026-08-24-myshop-guest-buy-mutation-contract-freeze.md`).
 
 
 ### Owned `CG::MYSHOP` codec seam
@@ -408,12 +409,26 @@ Visible peers may now open a guest-only stock table against an already-open priv
 - success emits exactly one guest-only `GC::SHOP START` (`OwnerVID` = host VID + fixed `[ShopHostItemMax]` table filled by remembered `display_pos`); sockets/attributes project from the host's current live matching carried cell via loaded item templates, otherwise that display slot stays empty
 - guest silent/no-frame when dead / at bootstrap HP floor, or when the guest currently has own open MYSHOP; guest open merchant / safebox / refine / exchange rejects with the already-owned requester busy info-chat string and no START
 - host open exchange / safebox / refine rejects with the already-owned partner busy info-chat string and no START (host open MYSHOP is required for success and is not itself a reject)
-- open still does not remove carried stock or mutate gold; browse does not re-emit `SHOP_SIGN`, invent a distance gate, or productize buy/sell yet
+- open still does not remove carried stock or mutate gold on browse; browse does not re-emit `SHOP_SIGN` or invent a distance gate on open
 - guest leave is now owned: `CG::SHOP END` while browsing emits one guest-only `GC::SHOP END` and clears the remembered browse association; host empty-sign close / Leave / reclaim queues the same guest END while clearing host stock/busy; guest `/phase_select` / `/quit` / `/logout`, practice-mob floor, and transfer/warp prepend one guest END when browse is open; already-closed END stays silent
 - duplicate / out-of-range host `display_pos` now also fail closed on accepted open so guest START indexing stays unambiguous
+- guest private-shop buy is frozen for the next implementation slice (see Owned MYSHOP guest private-shop buy mutation seam below); runtime buy/sell mutation stays deferred until that slice lands
 
 See `docs/plans/2026-08-24-myshop-guest-browse-open-presentation-contract-freeze.md`.
 See `docs/plans/2026-08-24-myshop-guest-browse-leave-end-contract-freeze.md`.
+See `docs/plans/2026-08-24-myshop-guest-buy-mutation-contract-freeze.md`.
+
+### Owned MYSHOP guest private-shop buy mutation seam (docs freeze)
+
+Guest `CG::SHOP BUY` while browsing an already-open private shop is frozen before RED:
+
+- ingress reuses owned `HandleShopBuy` / `ClientBuyPacket.CatalogSlot` as the host `display_pos` when `activeGuestMyShopHostVID != 0` and no same-socket NPC merchant window is open; merchant buy keeps the already-owned path; no-browse / no-merchant stays silent
+- distance `ApproxDistance > 2000` (or host no longer a live same-map peer) rejects with one self-only `CHAT_TYPE_INFO` `You are too far away from the shop to buy something.` and no shop error frame / no mutation; browse stays open
+- success transfers the matched live host carried stack into the guest, debits guest gold and credits host gold by the remembered listed price (no empire `*3`, tax deferred at full price), clears that remembered stock row, persists both account snapshots, emits guest/host inventory + gold refreshes (no bare `GC::SHOP OK`), and emits `GC::SHOP UPDATE_ITEM` with `vnum = 0` for that display slot to remaining browsing guests
+- insufficient gold → bare `GC::SHOP NOT_ENOUGH_MONEY`; no placement → bare `GC::SHOP INVENTORY_FULL`; never-listed / out-of-range → bare `GC::SHOP INVALID_POS`; already-cleared / live stock mismatch → bare `GC::SHOP SOLD_OUT` / `SOLDOUT`; host gold-carrier overflow stays silent fail-closed
+- guest `SHOP SELL` / `SELL2` while browsing a private shop stay fail-closed with no frames; tax/empire multipliers, shop-bag consumption, and cube busy rejects stay deferred
+
+See `docs/plans/2026-08-24-myshop-guest-buy-mutation-contract-freeze.md`.
 
 ### Frozen `GC::ITEM_UPDATE` codec seam
 
