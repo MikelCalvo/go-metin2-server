@@ -157,3 +157,7 @@ Linux `logrotate.d/metin2-daemons.conf.sample`:
 - remote admin, metrics exporters, or multi-host orchestration
 - automatic / scheduled artifact GC deletion
 - remote log shipping / SIEM sinks
+
+Operators can still fold the optional `/var/log/metin2/{authd,gamed}.log`
+files into backup / migration retention trees through the offline printers
+documented in [CLI daemon log retention correlation](../plans/2026-08-24-cli-daemon-log-retention-correlation.md).

@@ -43,6 +43,8 @@ func TestRunMigrationRunRetentionPrintsLabTreeCommands(t *testing.T) {
 		`OPS='http://127.0.0.1:6060'`,
 		`AUTH_OPS='http://127.0.0.1:6061'`,
 		`RUNS_BASE='/var/metin2/migration-runs'`,
+		`GAMED_LOG='/var/log/metin2/gamed.log'`,
+		`AUTHD_LOG='/var/log/metin2/authd.log'`,
 		`TARGET_VERSION='latest'`,
 		`LOCK_FILE='migration-apply.lock'`,
 		`COMMIT12='abcdef012345'`,
@@ -53,6 +55,8 @@ func TestRunMigrationRunRetentionPrintsLabTreeCommands(t *testing.T) {
 		`curl -sS "$OPS/local/runtime-config" > "$RUN/runtime-config.json"`,
 		`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-before.json"`,
 		`curl -sS "$OPS/local/db/migrations/status" > "$RUN/daemon-migrations-status.json"`,
+		`if [ -f "$GAMED_LOG" ]; then cp -p "$GAMED_LOG" "$RUN/gamed.log"; fi`,
+		`if [ -f "$AUTHD_LOG" ]; then cp -p "$AUTHD_LOG" "$RUN/authd.log"; fi`,
 		`cat > "$RUN/notes.md" <<'EOF'`,
 		`metin2-migrate catalog > "$RUN/migration-catalog.json"`,
 		`metin2-migrate ledger-snapshot`,
@@ -92,6 +96,8 @@ func TestRunMigrationRunRetentionPrintsLabTreeCommands(t *testing.T) {
 	idxAuthd := strings.Index(body, `curl -sS "$AUTH_OPS/local/build-info" > "$RUN/authd-build-info.json"`)
 	idxRuntime := strings.Index(body, `curl -sS "$OPS/local/runtime-config" > "$RUN/runtime-config.json"`)
 	idxStatusBefore := strings.Index(body, `> "$RUN/persistence-status-before.json"`)
+	idxGamedLog := strings.Index(body, `cp -p "$GAMED_LOG" "$RUN/gamed.log"`)
+	idxAuthdLog := strings.Index(body, `cp -p "$AUTHD_LOG" "$RUN/authd.log"`)
 	idxNotes := strings.Index(body, `cat > "$RUN/notes.md" <<'EOF'`)
 	idxCatalog := strings.Index(body, `metin2-migrate catalog > "$RUN/migration-catalog.json"`)
 	idxPreflight := strings.Index(body, `> "$RUN/apply-preflight.json"`)
@@ -99,12 +105,12 @@ func TestRunMigrationRunRetentionPrintsLabTreeCommands(t *testing.T) {
 	idxPostStatus := strings.Index(body, `> "$RUN/post-apply-status.json"`)
 	idxStatusAfter := strings.Index(body, `> "$RUN/persistence-status-after.json"`)
 	idxLockStatus := strings.Index(body, `apply-lock-status --lock-file "$RUN/$LOCK_FILE"`)
-	if idxMkdir < 0 || idxAuthd < 0 || idxRuntime < 0 || idxStatusBefore < 0 || idxNotes < 0 || idxCatalog < 0 || idxPreflight < 0 || idxApply < 0 || idxPostStatus < 0 || idxStatusAfter < 0 || idxLockStatus < 0 {
+	if idxMkdir < 0 || idxAuthd < 0 || idxRuntime < 0 || idxStatusBefore < 0 || idxGamedLog < 0 || idxAuthdLog < 0 || idxNotes < 0 || idxCatalog < 0 || idxPreflight < 0 || idxApply < 0 || idxPostStatus < 0 || idxStatusAfter < 0 || idxLockStatus < 0 {
 		t.Fatalf("missing expected ordering markers in stdout:\n%s", body)
 	}
-	if !(idxMkdir < idxAuthd && idxAuthd < idxRuntime && idxRuntime < idxStatusBefore && idxStatusBefore < idxNotes && idxNotes < idxCatalog && idxCatalog < idxPreflight && idxPreflight < idxApply && idxApply < idxPostStatus && idxPostStatus < idxStatusAfter) {
-		t.Fatalf("expected mkdir -> authd/runtime/status-before/notes -> catalog -> preflight -> apply -> post-status -> status-after ordering, got idxs mkdir=%d authd=%d runtime=%d before=%d notes=%d catalog=%d preflight=%d apply=%d post=%d after=%d\n%s",
-			idxMkdir, idxAuthd, idxRuntime, idxStatusBefore, idxNotes, idxCatalog, idxPreflight, idxApply, idxPostStatus, idxStatusAfter, body)
+	if !(idxMkdir < idxAuthd && idxAuthd < idxRuntime && idxRuntime < idxStatusBefore && idxStatusBefore < idxGamedLog && idxGamedLog < idxAuthdLog && idxAuthdLog < idxNotes && idxNotes < idxCatalog && idxCatalog < idxPreflight && idxPreflight < idxApply && idxApply < idxPostStatus && idxPostStatus < idxStatusAfter) {
+		t.Fatalf("expected mkdir -> authd/runtime/status-before -> daemon logs -> notes -> catalog -> preflight -> apply -> post-status -> status-after ordering, got idxs mkdir=%d authd=%d runtime=%d before=%d gamedLog=%d authdLog=%d notes=%d catalog=%d preflight=%d apply=%d post=%d after=%d\n%s",
+			idxMkdir, idxAuthd, idxRuntime, idxStatusBefore, idxGamedLog, idxAuthdLog, idxNotes, idxCatalog, idxPreflight, idxApply, idxPostStatus, idxStatusAfter, body)
 	}
 }
 
@@ -262,6 +268,9 @@ func TestRunMigrationRunRetentionUsageErrors(t *testing.T) {
 			}
 			if !strings.Contains(stderr.String(), "--authd-ops-base-url") {
 				t.Fatalf("expected usage to list --authd-ops-base-url, got %q", stderr.String())
+			}
+			if !strings.Contains(stderr.String(), "--gamed-log-path") || !strings.Contains(stderr.String(), "--authd-log-path") {
+				t.Fatalf("expected usage to list daemon log path flags, got %q", stderr.String())
 			}
 		})
 	}
@@ -483,5 +492,69 @@ func TestRunMigrationRunRetentionForwardPathOmitsAllowRollback(t *testing.T) {
 	}
 	if !strings.Contains(body, `LOCK_FILE='migration-apply.lock'`) {
 		t.Fatalf("expected forward default lock file, got:\n%s", body)
+	}
+}
+
+func TestRunMigrationRunRetentionHonorsCustomDaemonLogPaths(t *testing.T) {
+	payload := `{"version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-21T15:30:45Z"}`
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"migration-run-retention",
+			"--build-info", "-",
+			"--gamed-log-path", "/tmp/custom-gamed.jsonl",
+			"--authd-log-path", "/tmp/custom-authd.jsonl",
+		},
+		strings.NewReader(payload),
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d stderr=%q", code, stderr.String())
+	}
+	body := stdout.String()
+	for _, want := range []string{
+		`GAMED_LOG='/tmp/custom-gamed.jsonl'`,
+		`AUTHD_LOG='/tmp/custom-authd.jsonl'`,
+		`cp -p "$GAMED_LOG" "$RUN/gamed.log"`,
+		`cp -p "$AUTHD_LOG" "$RUN/authd.log"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected %q in stdout:\n%s", want, body)
+		}
+	}
+}
+
+func TestRunMigrationRunRetentionRejectsRelativeDaemonLogPaths(t *testing.T) {
+	payload := `{"version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-21T15:30:45Z"}`
+	cases := []struct {
+		name string
+		flag string
+		path string
+	}{
+		{name: "relative-gamed", flag: "--gamed-log-path", path: "var/log/metin2/gamed.log"},
+		{name: "blank-authd", flag: "--authd-log-path", path: "   "},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			code := Run(
+				[]string{"migration-run-retention", "--build-info", "-", tc.flag, tc.path},
+				strings.NewReader(payload),
+				&stdout,
+				&stderr,
+			)
+			if code != 1 {
+				t.Fatalf("expected exit 1, got %d stderr=%q", code, stderr.String())
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("expected no stdout, got %q", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), strings.TrimPrefix(tc.flag, "--")) {
+				t.Fatalf("expected %s reason, got %q", tc.flag, stderr.String())
+			}
+		})
 	}
 }

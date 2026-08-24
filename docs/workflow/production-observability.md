@@ -51,9 +51,13 @@ same redacted JSON lines on disk without inventing a host-local wrapper:
 - Linux rotation: `logrotate.d/metin2-daemons.conf.sample` (`copytruncate`)
 
 Create `/var/log/metin2/` before first start. Keep these log files outside
-`/var/metin2/data/` and `/var/metin2/backups/`. See
-[lab daemon unit samples](lab-daemon-unit-samples.md) and
-[lab daemon JSON stdout capture](../plans/2026-08-24-lab-daemon-json-stdout-capture.md).
+`/var/metin2/data/` and `/var/metin2/backups/`. The offline
+`backup-restore-drill` and `migration-run-retention` printers optionally copy
+those files into each retention tree (`--gamed-log-path` /
+`--authd-log-path`; missing files stay non-fatal). See
+[lab daemon unit samples](lab-daemon-unit-samples.md),
+[lab daemon JSON stdout capture](../plans/2026-08-24-lab-daemon-json-stdout-capture.md),
+and [CLI daemon log retention correlation](../plans/2026-08-24-cli-daemon-log-retention-correlation.md).
 
 Example safe startup line shape:
 

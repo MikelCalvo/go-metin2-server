@@ -62,6 +62,8 @@ Keep operator evidence outside live data trees:
   YYYYMMDDTHHMMSSZ-<commit12>/
     gamed-build-info.json
     authd-build-info.json
+    gamed.log
+    authd.log
     accounts/
     login-tickets/
     item-templates/
@@ -79,6 +81,8 @@ Keep operator evidence outside live data trees:
   YYYYMMDDTHHMMSSZ-<commit12>/
     gamed-build-info.json
     authd-build-info.json
+    gamed.log
+    authd.log
     runtime-config.json
     persistence-status-before.json
     daemon-migrations-status.json
@@ -158,7 +162,7 @@ For any reconnect/restart or migration window, retain:
 2. `GET /local/runtime-config` and `GET /local/persistence/status` before mutation.
 3. Migration metadata artifacts listed above when applying SQL.
 4. File-store backup manifests produced by `/local/*/backup` endpoints when preserving JSON stores.
-5. Matching stdout JSON logs that include the same `service` / `version` / `commit` / `build_date` attrs.
+5. Matching stdout JSON logs that include the same `service` / `version` / `commit` / `build_date` attrs (optional `gamed.log` / `authd.log` copies from `/var/log/metin2/` when the disabled-by-default unit samples are in use; printers emit non-fatal `cp -p` retains).
 
 See also:
 
@@ -171,6 +175,7 @@ See also:
 - [lab retention / GC print-only unit samples](lab-retention-gc-unit-samples.md)
 - [lab daemon rc.d / systemd unit samples](lab-daemon-unit-samples.md)
 - [lab daemon JSON stdout capture](../plans/2026-08-24-lab-daemon-json-stdout-capture.md)
+- [CLI daemon log retention correlation](../plans/2026-08-24-cli-daemon-log-retention-correlation.md)
 - [ops docs ground-item lab topology / tip sync](../plans/2026-08-22-ops-docs-ground-item-lab-topology-tip-sync.md)
 - [safebox file-store backup/restore drill fold-in](../plans/2026-08-23-safebox-file-store-backup-restore-drill.md)
 
@@ -185,9 +190,13 @@ Keep redacted process JSON outside live data and backup trees:
 
 Disabled-by-default unit samples under [`contrib/lab-daemons/`](../../contrib/lab-daemons/)
 append those paths (FreeBSD `daemon -H -o …`, systemd `StandardOutput=append:…`)
-and ship reviewable `newsyslog` / `logrotate` fragments. See
-[production observability](production-observability.md) and
-[lab daemon unit samples](lab-daemon-unit-samples.md).
+and ship reviewable `newsyslog` / `logrotate` fragments. The offline
+`backup-restore-drill` and `migration-run-retention` printers optionally copy
+those files into each retention tree (`--gamed-log-path` /
+`--authd-log-path`, defaults above; missing files stay non-fatal). See
+[production observability](production-observability.md),
+[lab daemon unit samples](lab-daemon-unit-samples.md), and
+[CLI daemon log retention correlation](../plans/2026-08-24-cli-daemon-log-retention-correlation.md).
 
 ## What this is not yet
 

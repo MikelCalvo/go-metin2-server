@@ -65,4 +65,7 @@ operators can retain beside backup / migration evidence.
 1. Keep FreeBSD port / `pkg` enable defaults deferred.
 2. Keep remote log shipping / metrics exporters deferred.
 3. Keep automatic / scheduled artifact GC deletion deferred.
-4. Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`.
+4. ~~Optional later: fold `/var/log/metin2/{authd,gamed}.log` into the offline
+   backup / migration-run retention printers.~~ Done: see
+   [CLI daemon log retention correlation](2026-08-24-cli-daemon-log-retention-correlation.md).
+5. Optional later: hermetic end-to-end HTTP drill against a live drained `gamed`.

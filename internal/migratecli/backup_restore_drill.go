@@ -20,6 +20,8 @@ const (
 	defaultBackupRestoreOpsBaseURL      = "http://127.0.0.1:6060"
 	defaultBackupRestoreAuthdOpsBaseURL = "http://127.0.0.1:6061"
 	defaultBackupRestoreBackupBase      = "/var/metin2/backups"
+	defaultBackupRestoreGamedLogPath    = "/var/log/metin2/gamed.log"
+	defaultBackupRestoreAuthdLogPath    = "/var/log/metin2/authd.log"
 	backupRestoreCommitSuffixMax        = 12
 )
 
@@ -61,6 +63,8 @@ type backupRestoreDrillPlan struct {
 	OpsBaseURL            string
 	AuthdOpsBaseURL       string
 	BackupBase            string
+	GamedLogPath          string
+	AuthdLogPath          string
 	Commit12              string
 	BuildVersion          string
 	BuildCommit           string
@@ -83,11 +87,15 @@ func runBackupRestoreDrill(args []string, stdin io.Reader, stdout io.Writer, std
 	var opsBaseURL string
 	var authdOpsBaseURL string
 	var backupBase string
+	var gamedLogPath string
+	var authdLogPath string
 	flags.StringVar(&runtimeConfigPath, "runtime-config", "", "path to retained /local/runtime-config JSON, or - for stdin")
 	flags.StringVar(&buildInfoPath, "build-info", "", "path to retained /local/build-info or metin2-migrate version JSON, or - for stdin")
 	flags.StringVar(&opsBaseURL, "ops-base-url", defaultBackupRestoreOpsBaseURL, "loopback gamed ops base URL used in printed curl commands")
 	flags.StringVar(&authdOpsBaseURL, "authd-ops-base-url", defaultBackupRestoreAuthdOpsBaseURL, "loopback authd ops base URL used in printed curl commands")
 	flags.StringVar(&backupBase, "backup-base", defaultBackupRestoreBackupBase, "absolute backup root used in printed drill commands")
+	flags.StringVar(&gamedLogPath, "gamed-log-path", defaultBackupRestoreGamedLogPath, "absolute gamed JSON log path optionally copied into the retention tree")
+	flags.StringVar(&authdLogPath, "authd-log-path", defaultBackupRestoreAuthdLogPath, "absolute authd JSON log path optionally copied into the retention tree")
 	flags.Usage = func() { printBackupRestoreDrillUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
@@ -141,7 +149,7 @@ func runBackupRestoreDrill(args []string, stdin io.Reader, stdout io.Writer, std
 		return exitError
 	}
 
-	plan, err := buildBackupRestoreDrillPlan(runtimeRaw, buildInfoRaw, opsBaseURL, authdOpsBaseURL, backupBase)
+	plan, err := buildBackupRestoreDrillPlan(runtimeRaw, buildInfoRaw, opsBaseURL, authdOpsBaseURL, backupBase, gamedLogPath, authdLogPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "backup-restore-drill: %v\n", err)
 		return exitError
@@ -255,7 +263,7 @@ func readBoundedBackupRestoreBuildInfo(reader io.Reader) ([]byte, error) {
 	return raw, nil
 }
 
-func buildBackupRestoreDrillPlan(runtimeRaw, buildInfoRaw []byte, opsBaseURL, authdOpsBaseURL, backupBase string) (backupRestoreDrillPlan, error) {
+func buildBackupRestoreDrillPlan(runtimeRaw, buildInfoRaw []byte, opsBaseURL, authdOpsBaseURL, backupBase, gamedLogPath, authdLogPath string) (backupRestoreDrillPlan, error) {
 	var snapshot backupRestoreRuntimeConfig
 	if err := decodeStrictRuntimeConfigJSON(runtimeRaw, &snapshot); err != nil {
 		return backupRestoreDrillPlan{}, err
@@ -283,6 +291,14 @@ func buildBackupRestoreDrillPlan(runtimeRaw, buildInfoRaw []byte, opsBaseURL, au
 		return backupRestoreDrillPlan{}, err
 	}
 	normalizedBackupBase, err := normalizeAbsoluteCleanPath(backupBase, "backup-base")
+	if err != nil {
+		return backupRestoreDrillPlan{}, err
+	}
+	normalizedGamedLog, err := normalizeAbsoluteCleanPath(gamedLogPath, "gamed-log-path")
+	if err != nil {
+		return backupRestoreDrillPlan{}, err
+	}
+	normalizedAuthdLog, err := normalizeAbsoluteCleanPath(authdLogPath, "authd-log-path")
 	if err != nil {
 		return backupRestoreDrillPlan{}, err
 	}
@@ -344,6 +360,8 @@ func buildBackupRestoreDrillPlan(runtimeRaw, buildInfoRaw []byte, opsBaseURL, au
 		OpsBaseURL:            normalizedOps,
 		AuthdOpsBaseURL:       normalizedAuthdOps,
 		BackupBase:            normalizedBackupBase,
+		GamedLogPath:          normalizedGamedLog,
+		AuthdLogPath:          normalizedAuthdLog,
 		Commit12:              commit12,
 		BuildVersion:          strings.TrimSpace(buildInfo.Version),
 		BuildCommit:           commit,
@@ -453,6 +471,8 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	fmt.Fprintf(&b, "OPS=%s\n", shellSingleQuote(plan.OpsBaseURL))
 	fmt.Fprintf(&b, "AUTH_OPS=%s\n", shellSingleQuote(plan.AuthdOpsBaseURL))
 	fmt.Fprintf(&b, "BACKUPS_BASE=%s\n", shellSingleQuote(plan.BackupBase))
+	fmt.Fprintf(&b, "GAMED_LOG=%s\n", shellSingleQuote(plan.GamedLogPath))
+	fmt.Fprintf(&b, "AUTHD_LOG=%s\n", shellSingleQuote(plan.AuthdLogPath))
 	fmt.Fprintf(&b, "COMMIT12=%s\n", shellSingleQuote(plan.Commit12))
 	fmt.Fprintf(&b, "BUILD_VERSION=%s\n", shellSingleQuote(plan.BuildVersion))
 	fmt.Fprintf(&b, "BUILD_COMMIT=%s\n", shellSingleQuote(plan.BuildCommit))
@@ -478,6 +498,11 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	b.WriteString(`curl -sS "$OPS/local/runtime-config" > "$BASE/runtime-config.json"` + "\n")
 	b.WriteString(`curl -sS "$OPS/healthz"` + "\n")
 	b.WriteString(`curl -sS "$OPS/local/persistence/status" > "$BASE/persistence-status-before.json"` + "\n")
+	b.WriteString("\n")
+	b.WriteString("echo '== optional retain daemon JSON logs =='\n")
+	b.WriteString(`# Missing files are non-fatal when unit samples have not been renamed yet.` + "\n")
+	b.WriteString(`if [ -f "$GAMED_LOG" ]; then cp -p "$GAMED_LOG" "$BASE/gamed.log"; fi` + "\n")
+	b.WriteString(`if [ -f "$AUTHD_LOG" ]; then cp -p "$AUTHD_LOG" "$BASE/authd.log"; fi` + "\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== operator notes stub =='\n")
 	b.WriteString(`cat > "$BASE/notes.md" <<'EOF'` + "\n")
@@ -571,5 +596,5 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 
 func printBackupRestoreDrillUsage(w io.Writer) {
 	fmt.Fprintln(w, "backup-restore-drill usage:")
-	fmt.Fprintln(w, "  metin2-migrate backup-restore-drill --runtime-config <path|-> --build-info <path|-> [--ops-base-url http://127.0.0.1:6060] [--authd-ops-base-url http://127.0.0.1:6061] [--backup-base /var/metin2/backups]")
+	fmt.Fprintln(w, "  metin2-migrate backup-restore-drill --runtime-config <path|-> --build-info <path|-> [--ops-base-url http://127.0.0.1:6060] [--authd-ops-base-url http://127.0.0.1:6061] [--backup-base /var/metin2/backups] [--gamed-log-path /var/log/metin2/gamed.log] [--authd-log-path /var/log/metin2/authd.log]")
 }
