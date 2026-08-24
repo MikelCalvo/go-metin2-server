@@ -13,7 +13,7 @@ The current `main` branch owns:
 - real `authd` and `gamed` daemon entrypoints,
 - secure legacy handshake, auth/login, character selection, loading, and game-entry flows,
 - a shared in-process world runtime with player visibility, movement, chat, transfer, reconnect, and static/non-player actor seams,
-- broad bootstrap inventory, equipment, quickslot, item-use, ground-item, shop, exchange/refine/storage fail-closed, and reward slices,
+- broad bootstrap inventory, equipment, quickslot, item-use, ground-item, shop, exchange/refine, durable safebox, first host-only `MYSHOP` presentation, and reward slices,
 - authored static actors, interactions, merchant catalogs, content bundles, spawn groups, and stationary practice-mob profiles,
 - first combat/death/respawn/restart/reward behavior around practice mobs,
 - loopback-only debug/operator endpoints for runtime inspection, content/state validation, quest-state validation, backup/restore preflights, and local QA,
@@ -22,13 +22,13 @@ The current `main` branch owns:
 
 Latest repository scan for this refresh:
 
-- Go version: `1.26`
-- Go packages: `38`
-- Go files: `133`
-- Go test files: `78`
-- Markdown docs after this refresh: `130`
-- protocol docs under `spec/protocol`: `76`
-- current refreshed baseline: `3abdb852 feat: add item exchange fail-closed guard`
+- Go version: `1.26.2`
+- Go packages: `45`
+- Go files: `273`
+- Go test files: `159`
+- Markdown docs after this refresh: `344`
+- protocol docs under `spec/protocol`: `81`
+- current refreshed baseline: `4fa78924 ops: ship disabled-by-default lab daemon rc.d/systemd samples`
 
 Legend used below:
 
@@ -45,7 +45,7 @@ Legend used below:
   - Multiple connected sessions can exist in the same in-process world, see each other, move, chat, transfer through bootstrap seams, reconnect, and rebuild visibility. This is still a single-process bootstrap runtime, not a production channel/shard architecture.
 
 - `[~]` **M2 — Character, inventory, equipment, and economy bootstrap**
-  - Inventory/equipment replay, item move/split/merge/use/drop/pickup, quickslots, merchant buy/sell, gold mutation, a first exchange open/cancel shell plus mutual-accept finalize with fail-closed origin/partner persistence rollback, refine reject/preview plus confirm-after-preview success (`probability = 100`), destroy-failure (`probability = 0` + `RefineFailed`), and injected-roll (`probability` in `1..99`) paths, authored item-template guards, and persistence validation exist. Bootstrap ground-item exclusive ownership timers (30s owner-only, then blank public ownership) are owned for the in-memory path. Storage, item sockets/bonuses, full restrictions, refine keep-grade/catalyst outcomes, restart-restored ownership timer state, and DB-backed item persistence remain future work.
+  - Inventory/equipment replay, item move/split/merge/use/drop/pickup, quickslots, merchant buy/sell, gold mutation, a first exchange open/cancel shell plus mutual-accept finalize with fail-closed origin/partner persistence rollback, refine reject/preview plus confirm-after-preview success (`probability = 100`), destroy-failure (`probability = 0` + `RefineFailed`), and injected-roll (`probability` in `1..99`) paths, authored item-template guards, and persistence validation exist. Durable character safebox cells/password/money plus warehouse `open_safebox` password-challenge / reopen cooldown-distance / walk-away autoclose seams are owned on the file-backed path. Host-only accepted `MYSHOP` open presentation plus empty-sign close and open-MYSHOP exchange busy rejects exist; peer shop broadcast / browse / buy remain pending. Bootstrap ground-item exclusive ownership timers (30s owner-only, then blank public ownership) are owned for the in-memory path. Mall, full player-shop commerce, item sockets/bonuses, full restrictions, refine keep-grade/catalyst outcomes, restart-restored ownership timer state, and DB-backed item persistence remain future work.
 
 - `[~]` **M3 — Content and NPC authoring seam**
   - Static actors, interaction definitions, `info`/`talk`/`warp`/`shop_preview`, merchant catalogs, content bundle import/export, portable combat profiles, reward descriptors, authoring-only fixed reward tables for EXP/gold/drop descriptors, and spawn groups can drive current bootstrap content. This is useful content infrastructure, not a quest scripting system yet.
@@ -130,12 +130,12 @@ Already present:
 - item move/swap/split/merge, consumable use with optional template-authored self-only `SPECIAL_EFFECT`, drag-to-item stack merge, drop/pickup, merchant buy/sell, gold mutation, and quickslot persistence,
 - authored item-template metadata for selected display/guard behavior, including template-backed refine-dialog preview metadata that now stays fail-closed when selected-character restrictions or transfer guards disallow the carried item, template-authored direct item-use rejection feedback that tears down active merchant/exchange presentation shells before the self rejection chat, and projection into the current migration-shaped item-template export, plus content-bundle summary projection of template-authored `use_effect`, `equip_effect`, and refine guard metadata before import,
 - fail-closed validation for malformed templates, snapshots, quickslots, item windows, duplicate instances, and persistence edge cases,
-- client packet ownership for `ITEM_GIVE`, `EXCHANGE`, `REFINE`, and first safebox/mall storage requests plus codec ownership for safebox/mall responses and server refine-information frames, including visible-target-gated `ITEM_GIVE` anti-give feedback, the first visible-peer exchange open/cancel/busy-target shell plus active-shell display-only exchange item-add/item-del/gold-add/accept frames with duplicate display-slot/source-item suppression, active-shell anti-give reject text, accept-marker reset on later display changes, accept-time stale requester and already-accepted-partner displayed-item/gold plus displayed-item template-metadata revalidation, second-accept receiver item-id collision, over-template-max compatible-stack, inventory-capacity, and gold-overflow precondition guards before any accepted trade mutation, the first mutual-accept finalize with fail-closed origin/partner persistence rollback that leaves the shell cancellable, `/quit` / `/logout` / `/phase_select` exchange-window teardown, successful carried-item-use / carried item-move / slash inventory-move / carried-equipment move / slash equipment-mutation / drag-to-item stack-consolidation / drop / merchant buy/sell and template-backed direct item-use rejection / drop-rejection / equipment-rejection / safebox-rejection / refine-feedback / item-give anti-give feedback exchange teardown, template-backed direct item-use rejection / safebox-rejection / refine-feedback / item-give anti-give merchant-window teardown, and self-only template-backed `REFINE_INFORMATION_NEW` previews plus confirm-after-preview success (`probability = 100`), destroy-failure (`probability = 0` + `RefineFailed`), and injected-roll (`probability` in `1..99`) paths while richer trade-target eligibility, refine keep-grade/catalyst outcomes, and storage mutations remain intentionally narrow or fail-closed.
+- client packet ownership for `ITEM_GIVE`, `EXCHANGE`, `REFINE`, safebox/mall storage requests, and first `CG::MYSHOP` / `GC::SHOP_SIGN` presentation seams, plus codec ownership for safebox/mall responses and server refine-information frames, including visible-target-gated `ITEM_GIVE` anti-give feedback, the first visible-peer exchange open/cancel/busy-target shell plus active-shell display-only exchange item-add/item-del/gold-add/accept frames with duplicate display-slot/source-item suppression, active-shell anti-give reject text, accept-marker reset on later display changes, accept-time stale requester and already-accepted-partner displayed-item/gold plus displayed-item template-metadata revalidation, second-accept receiver item-id collision, over-template-max compatible-stack, inventory-capacity, and gold-overflow precondition guards before any accepted trade mutation, the first mutual-accept finalize with fail-closed origin/partner persistence rollback that leaves the shell cancellable, `/quit` / `/logout` / `/phase_select` exchange-window teardown, successful carried-item-use / carried item-move / slash inventory-move / carried-equipment move / slash equipment-mutation / drag-to-item stack-consolidation / drop / merchant buy/sell and template-backed direct item-use rejection / drop-rejection / equipment-rejection / safebox-rejection / refine-feedback / item-give anti-give feedback exchange teardown, template-backed direct item-use rejection / safebox-rejection / refine-feedback / item-give anti-give merchant-window teardown, durable character safebox open/move/password/money/walk-away/reopen-gate seams with restart rematerialization, and host-only accepted `MYSHOP` open presentation plus empty-sign close with open-MYSHOP exchange busy rejects, while richer trade-target eligibility, refine keep-grade/catalyst outcomes, mall, and peer player-shop browse/buy remain intentionally narrow or fail-closed.
 
 Still missing:
 
 - richer trade-target eligibility beyond distance/merchant busy gates and stronger exchange rollback/audit policy beyond the current fail-closed mutual-accept persistence seam,
-- storage/safebox/mall and player shops,
+- mall and full player-shop commerce beyond the owned host-only `MYSHOP` open/close presentation (peer `SHOP_SIGN` around-broadcast, browse, and buy remain pending),
 - item sockets/metins/bonuses/books/scrolls,
 - complete anti-flag/class/sex/level/equipment restrictions,
 - accepted refine keep-grade/catalyst outcomes beyond the owned `probability = 100` success, `probability = 0` destroy-failure, and `probability` in `1..99` injected-roll confirm seams,
@@ -292,7 +292,7 @@ The next challenge is no longer proving that the client can talk to a clean-room
 Near-term priorities:
 
 1. **Playable PvE vertical** — content-loaded mobs with lifecycle, targetability, death/respawn, basic AI, rewards, reconnect/restart safety, and stable visibility.
-2. **Items and economy** — finish trade/exchange boundaries, ownership timers, item restrictions, storage/refine foundations, and item/economy persistence edges.
+2. **Items and economy** — finish remaining trade/exchange edges, complete peer `MYSHOP` broadcast/browse/buy, mall, ownership timers, item restrictions, refine keep-grade/catalyst outcomes, and item/economy persistence edges.
 3. **Content and quests** — move beyond static interactions into quest state, richer NPC services, regen/drop tables, and validated content workflows.
 4. **DB and production ops** — introduce migration contracts, repository seams, backup/restore runbooks, crash recovery, release/deploy docs, and production-safe observability.
 5. **Social systems** — replace bootstrap party/guild fanout with membership, permissions, persistence, and gameplay effects after the PvE loop is stable.
