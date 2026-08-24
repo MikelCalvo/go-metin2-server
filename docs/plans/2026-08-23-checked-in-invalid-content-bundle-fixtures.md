@@ -83,3 +83,8 @@ git diff --check
    Done: disk-backed canonicalize for over-max regen plus ops validate for the
    orphan service-gate fixture
    (`docs/plans/2026-08-24-checked-in-invalid-fixture-test-twins.md`).
+6. ~~Optionally add another checked-in negative fixture only when a later reject
+   case still forces QA to invent JSON.~~ Done for spawn-group + drop-table
+   conflicting kill-quest credit:
+   `docs/examples/bootstrap-invalid-conflicting-kill-quest-credit-bundle.json`
+   (`docs/plans/2026-08-24-invalid-conflicting-kill-quest-credit-fixture.md`).
