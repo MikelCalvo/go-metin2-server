@@ -52,7 +52,8 @@ drained drill proof.
 
 ## What this is not yet
 
-- extracting the full `cmd/gamed` ops surface (quest/migration/content-bundle)
+- extracting the remaining `cmd/gamed` ops surface (quest mutation / spawn /
+  content-bundle / world introspection)
 - automatic / scheduled execution of printed triage scripts
 - `rm` of aside-renamed trees
 - FreeBSD port / `pkg` enable defaults
@@ -60,6 +61,18 @@ drained drill proof.
 - SQL import/backfill or a driver-backed harness
 - inventing a daemon `/local/...` log-download endpoint
 - remote admin authentication
+
+## Follow-up options
+
+1. Keep automatic / scheduled execution of printed triage scripts deferred.
+2. Keep `rm` of aside-renamed trees deferred.
+3. Keep FreeBSD port / `pkg` enable defaults deferred.
+4. Keep remote log shipping / metrics exporters deferred.
+5. Keep SQL import/backfill deferred until a driver-backed harness exists.
+6. ~~Optional later: extract the inline migration + tip-`0015` quarantine/export
+   registration into a shared helper beside this file-store owner.~~ Done: see
+   [gamed migration + quarantine/export ops registration helper](2026-08-24-gamed-migration-quarantine-export-ops-registration-helper.md).
+7. Keep extracting quest / spawn / content-bundle / world ops deferred.
 
 ## Likely files to change
 

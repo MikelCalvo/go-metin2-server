@@ -10,8 +10,10 @@ import (
 // validate / crash-temp cleanup / backup / backup-validate / restore surface
 // plus runtime-config and persistence-status. It is the single owner shared by
 // cmd/gamed and the hermetic backup-restore drill proof so those routes cannot
-// drift. Broader gamed ops (quest mutation, migration, content-bundle, spawn
-// groups, login-ticket issued-before triage) stay at the call site.
+// drift. Migration + tip-0015 quarantine/export registration lives in
+// RegisterGamedMigrationQuarantineExportOps. Broader gamed ops (quest mutation,
+// content-bundle, spawn groups, login-ticket issued-before triage) stay at the
+// call site.
 func RegisterGamedFileStorePersistenceOps(mux *http.ServeMux, runtime *gameRuntime) *http.ServeMux {
 	if mux == nil {
 		mux = ops.NewPprofMux("gamed")

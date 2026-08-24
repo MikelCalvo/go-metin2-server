@@ -117,71 +117,7 @@ func main() {
 			return flag, true, nil
 		},
 	)
-	opsHandler = ops.RegisterLocalMigrationStatusEndpoint(
-		opsHandler,
-		gameRuntime.MigrationStatus,
-	)
-	opsHandler = ops.RegisterLocalMigrationCatalogEndpoint(
-		opsHandler,
-		gameRuntime.MigrationCatalogSummary,
-	)
-	opsHandler = ops.RegisterLocalMigrationPlanEndpoint(
-		opsHandler,
-		gameRuntime.MigrationPlanToVersion,
-	)
-	opsHandler = ops.RegisterLocalMigrationLedgerSnapshotEndpoint(
-		opsHandler,
-		gameRuntime.MigrationLedgerSnapshot,
-	)
-	opsHandler = ops.RegisterLocalMigrationLedgerSnapshotPlanEndpoint(
-		opsHandler,
-		gameRuntime.MigrationPlanFromLedgerSnapshot,
-	)
-	opsHandler = ops.RegisterLocalAccountCharacterRosterExportEndpoint(
-		opsHandler,
-		gameRuntime.ExportAccountCharacterRoster,
-	)
-	opsHandler = ops.RegisterLocalAccountCharacterRosterQuarantineEndpoint(opsHandler)
-	opsHandler = ops.RegisterLocalCharacterItemStateExportEndpoint(
-		opsHandler,
-		gameRuntime.ExportCharacterItemState,
-	)
-	opsHandler = ops.RegisterLocalCharacterItemStateQuarantineEndpoint(opsHandler)
-	opsHandler = ops.RegisterLocalCharacterPointStateExportEndpoint(
-		opsHandler,
-		gameRuntime.ExportCharacterPointState,
-	)
-	opsHandler = ops.RegisterLocalCharacterPointStateQuarantineEndpoint(opsHandler)
-	opsHandler = ops.RegisterLocalAuthLoginTicketHandoffExportEndpoint(
-		opsHandler,
-		gameRuntime.ExportAuthLoginTicketHandoff,
-	)
-	opsHandler = ops.RegisterLocalAuthLoginTicketHandoffQuarantineEndpoint(opsHandler)
-	opsHandler = ops.RegisterLocalCharacterQuestStateExportEndpoint(
-		opsHandler,
-		gameRuntime.ExportCharacterQuestState,
-	)
-	opsHandler = ops.RegisterLocalCharacterQuestStateQuarantineEndpoint(opsHandler)
-	opsHandler = ops.RegisterLocalCharacterSafeboxStateExportEndpoint(
-		opsHandler,
-		gameRuntime.ExportCharacterSafeboxState,
-	)
-	opsHandler = ops.RegisterLocalCharacterSafeboxStateQuarantineEndpoint(opsHandler)
-	opsHandler = ops.RegisterLocalItemTemplateStateExportEndpoint(
-		opsHandler,
-		gameRuntime.ExportItemTemplateState,
-	)
-	opsHandler = ops.RegisterLocalItemTemplateStateQuarantineEndpoint(opsHandler)
-	opsHandler = ops.RegisterLocalStaticActorContentStateExportEndpoint(
-		opsHandler,
-		gameRuntime.ExportStaticActorContentState,
-	)
-	opsHandler = ops.RegisterLocalStaticActorContentStateQuarantineEndpoint(opsHandler)
-	opsHandler = ops.RegisterLocalBootstrapGroundItemStateExportEndpoint(
-		opsHandler,
-		gameRuntime.ExportBootstrapGroundItemState,
-	)
-	opsHandler = ops.RegisterLocalBootstrapGroundItemStateQuarantineEndpoint(opsHandler)
+	opsHandler = minimal.RegisterGamedMigrationQuarantineExportOps(opsHandler, gameRuntime)
 	opsHandler = ops.RegisterLocalStaticActorRespawnsEndpoint(
 		opsHandler,
 		func() any { return gameRuntime.StaticActorRespawns() },
