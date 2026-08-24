@@ -357,7 +357,8 @@ The first host-only accepted open path is now owned on top of the codec + deny-n
 - empty sign / zero count / duplicate or invalid stock / `anti_give|anti_myshop` / open exchange|merchant|safebox|refine|already-open private shop stay fail-closed with no second `SHOP_SIGN`
 - busy shells reject with the same self-only requester busy info-chat already owned by exchange START for merchant/safebox/refine
 - open does not yet remove carried stock, consume a shop bag, polymorph, or invent guest browse/buy frames
-- guest browse/buy and partner player-shop/cube exchange busy rejects stay deferred; empty-sign close companion is owned separately below
+- while the same-socket private-shop open/busy flag is set, host item mutations fail closed with no frames (packet `ITEM_USE` / `ITEM_USE_TO_ITEM` / `ITEM_MOVE` / `ITEM_DROP` / `ITEM_DROP2` / `ITEM_PICKUP` / `ITEM_GIVE`, slash `/use_item` / `/inventory_move` / `/equip_item` / `/unequip_item`, open-presentation safebox check-in/out/move, and refine preview/confirm); empty-sign close clears the lock
+- guest browse/buy, peer `SHOP_SIGN` around-broadcast, and cube busy rejects stay deferred; empty-sign close companion is owned separately below; partner open-private-shop exchange busy rejects are owned separately
 
 See `docs/plans/2026-08-23-myshop-accepted-open-presentation-contract-freeze.md`.
 

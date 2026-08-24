@@ -5311,6 +5311,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
 				return gameflow.ItemUseResult{Accepted: false}
 			}
+			if hasActiveMyShopOpen {
+				return gameflow.ItemUseResult{Accepted: false}
+			}
 			if position.WindowType != itemproto.WindowInventory || position.Cell >= itemproto.InventoryMaxCell {
 				return gameflow.ItemUseResult{Accepted: false}
 			}
@@ -5374,6 +5377,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
 				return gameflow.ItemUseToItemResult{Accepted: false}
 			}
+			if hasActiveMyShopOpen {
+				return gameflow.ItemUseToItemResult{Accepted: false}
+			}
 			sourceSlot := inventory.SlotIndex(source.Cell)
 			targetSlot := inventory.SlotIndex(target.Cell)
 			if exchangeDisplaysCarriedSlot(sourceSlot) || exchangeDisplaysCarriedSlot(targetSlot) {
@@ -5419,6 +5425,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
 				return nil, false
 			}
+			if hasActiveMyShopOpen {
+				return nil, false
+			}
 			previousSelected := selectedPlayer.LiveCharacter()
 			if previousSelected.ID == 0 || uint64(amount) > selectedPlayer.LiveGold() || selectedPlayer.LiveGold() > uint64(math.MaxInt32) {
 				return nil, false
@@ -5459,6 +5468,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			}
 			selectedPlayer, ok := currentSelectedPlayer()
 			if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+				return nil, false
+			}
+			if hasActiveMyShopOpen {
 				return nil, false
 			}
 			if exchangeDisplaysCarriedSlot(slot) {
@@ -5549,6 +5561,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			}
 			selectedPlayer, ok := currentSelectedPlayer()
 			if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+				return nil, false
+			}
+			if hasActiveMyShopOpen {
 				return nil, false
 			}
 			previousSelected := selectedPlayer.LiveCharacter()
@@ -6045,6 +6060,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
 							return gameflow.ChatResult{Accepted: false}
 						}
+						if hasActiveMyShopOpen {
+							return gameflow.ChatResult{Accepted: false}
+						}
 						if exchangeDisplaysCarriedSlot(fromSlot) || exchangeDisplaysCarriedSlot(toSlot) {
 							return gameflow.ChatResult{Accepted: false}
 						}
@@ -6087,6 +6105,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if fromSlot, equipSlot, ok := slashEquipItemCommand(packet.Message); ok {
 						selectedPlayer, ok := currentSelectedPlayer()
 						if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+							return gameflow.ChatResult{Accepted: false}
+						}
+						if hasActiveMyShopOpen {
 							return gameflow.ChatResult{Accepted: false}
 						}
 						if exchangeDisplaysCarriedSlot(fromSlot) {
@@ -6162,6 +6183,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if equipSlot, toSlot, ok := slashUnequipItemCommand(packet.Message); ok {
 						selectedPlayer, ok := currentSelectedPlayer()
 						if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+							return gameflow.ChatResult{Accepted: false}
+						}
+						if hasActiveMyShopOpen {
 							return gameflow.ChatResult{Accepted: false}
 						}
 						if exchangeDisplaysCarriedSlot(toSlot) {
@@ -6660,6 +6684,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || packet.Position >= uint8(inventory.CarriedInventorySlotCount) {
 						return gameflow.ItemRefineResult{Accepted: false}
 					}
+					if packet.Type != 255 && hasActiveMyShopOpen {
+						return gameflow.ItemRefineResult{Accepted: false}
+					}
 					if packet.Type == 255 {
 						if !hasActiveRefineDialog {
 							return gameflow.ItemRefineResult{Accepted: false}
@@ -6668,7 +6695,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						return gameflow.ItemRefineResult{Accepted: true}
 					}
 					if hasActiveRefineDialog && packet.Position == activeRefineDialog.Pos && packet.Type == activeRefineDialog.Type {
-						busy := hasActiveMerchantBuy || hasActiveSafeboxOpen || (ownsLiveSharedWorldSession() && sharedWorld != nil && sharedWorld.hasActiveExchange(sharedWorldID))
+						busy := hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveMyShopOpen || (ownsLiveSharedWorldSession() && sharedWorld != nil && sharedWorld.hasActiveExchange(sharedWorldID))
 						if busy {
 							return gameflow.ItemRefineResult{Accepted: false}
 						}
@@ -6885,6 +6912,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || packet.Position.WindowType != itemproto.WindowInventory || packet.Position.Cell >= itemproto.InventoryMaxCell {
 						return gameflow.SafeboxCheckinResult{Accepted: false}
 					}
+					if hasActiveMyShopOpen {
+						return gameflow.SafeboxCheckinResult{Accepted: false}
+					}
 					template, ok := runtime.resolveRuntimeItemTemplate(selectedPlayer, inventory.SlotIndex(packet.Position.Cell))
 					if !ok {
 						return gameflow.SafeboxCheckinResult{Accepted: false}
@@ -6954,6 +6984,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveSafeboxOpen || packet.Position.WindowType != itemproto.WindowInventory || packet.Position.Cell >= itemproto.InventoryMaxCell {
 						return gameflow.SafeboxCheckoutResult{Accepted: false}
 					}
+					if hasActiveMyShopOpen {
+						return gameflow.SafeboxCheckoutResult{Accepted: false}
+					}
 					capacity := bootstrapSafeboxCapacity(activeSafeboxSize)
 					if capacity == 0 || packet.SafeSlot >= capacity {
 						return gameflow.SafeboxCheckoutResult{Accepted: false}
@@ -7017,6 +7050,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 
 					selectedPlayer, ok := currentSelectedPlayer()
 					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveSafeboxOpen {
+						return gameflow.SafeboxItemMoveResult{Accepted: false}
+					}
+					if hasActiveMyShopOpen {
 						return gameflow.SafeboxItemMoveResult{Accepted: false}
 					}
 					if !acceptedSafeboxItemMoveWindow(packet.Source.WindowType) || !acceptedSafeboxItemMoveWindow(packet.Destination.WindowType) {
@@ -7186,6 +7222,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					stateMu.Lock()
 					defer stateMu.Unlock()
 
+					if hasActiveMyShopOpen {
+						return gameflow.ItemMoveResult{Accepted: false}
+					}
 					if packet.Source.WindowType != itemproto.WindowInventory {
 						return gameflow.ItemMoveResult{Accepted: false}
 					}
@@ -7426,6 +7465,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 
 					selectedPlayer, ok := currentSelectedPlayer()
 					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || packet.Position.WindowType != itemproto.WindowInventory || packet.Position.Cell >= itemproto.InventoryMaxCell {
+						return gameflow.ItemGiveResult{Accepted: false}
+					}
+					if hasActiveMyShopOpen {
 						return gameflow.ItemGiveResult{Accepted: false}
 					}
 					if !ownsLiveSharedWorldSession() || !sharedWorld.HasVisiblePlayerTarget(sharedWorldID, packet.TargetVID) {
