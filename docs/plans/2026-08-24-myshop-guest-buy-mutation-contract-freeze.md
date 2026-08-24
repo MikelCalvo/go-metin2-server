@@ -80,4 +80,4 @@ Distance reject reuses the English locale string already present in the external
 
 ## Status
 
-Implemented on `lane/items`: guest `CG::SHOP BUY` while browsing an open MYSHOP transfers live host stock, debits/credits gold, persists both sides, emits guest/host inventory+gold refreshes plus buyer `UPDATE_ITEM(vnum=0)`, and fail-closes distance / sold-out / inventory-full / insufficient-gold / host gold-carrier overflow. Guest sell-into-PC-shop, tax/empire multipliers, shop-bag consumption, and cube busy rejects stay deferred.
+Implemented on `lane/items`: guest `CG::SHOP BUY` while browsing an open MYSHOP transfers live host stock, debits/credits gold, persists both sides, emits guest/host inventory+gold refreshes plus buyer `UPDATE_ITEM(vnum=0)`, and fail-closes distance / sold-out / inventory-full / insufficient-gold / host gold-carrier overflow. Multi-guest sold-slot `UPDATE_ITEM` fan-out is owned separately (`docs/plans/2026-08-24-myshop-guest-buy-multi-guest-update-item-fanout.md`). Guest sell-into-PC-shop, tax/empire multipliers, shop-bag consumption, and cube busy rejects stay deferred.

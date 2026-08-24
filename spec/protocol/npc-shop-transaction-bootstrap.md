@@ -425,10 +425,11 @@ Guest `CG::SHOP BUY` while browsing an already-open private shop is now owned:
 - ingress reuses owned `HandleShopBuy` / `ClientBuyPacket.CatalogSlot` as the host `display_pos` when `activeGuestMyShopHostVID != 0` and no same-socket NPC merchant window is open; merchant buy keeps the already-owned path; no-browse / no-merchant stays silent
 - distance `ApproxDistance > 2000` (or host no longer a live same-map peer) rejects with one self-only `CHAT_TYPE_INFO` `You are too far away from the shop to buy something.` and no shop error frame / no mutation; browse stays open
 - success transfers the matched live host carried stack into the guest, debits guest gold and credits host gold by the remembered listed price (no empire `*3`, tax deferred at full price), clears that remembered stock row, persists both account snapshots, emits guest/host inventory + gold refreshes (no bare `GC::SHOP OK`), and emits `GC::SHOP UPDATE_ITEM` with `vnum = 0` for that display slot to remaining browsing guests (buyer receives it in the direct buy burst; other guests via shared-world fanout)
+- multi-guest fan-out is now session-proven: when a second guest is still browsing the same open host, that watcher receives exactly one queued `UPDATE_ITEM(vnum=0)` for the sold `display_pos` with no watcher inventory/gold mutation, and a later watcher buy of that cleared slot fails sold-out/invalid (`docs/plans/2026-08-24-myshop-guest-buy-multi-guest-update-item-fanout.md`)
 - insufficient gold → bare `GC::SHOP NOT_ENOUGH_MONEY`; no placement → bare `GC::SHOP INVENTORY_FULL`; never-listed / out-of-range → bare `GC::SHOP INVALID_POS`; already-cleared / live stock mismatch → bare `GC::SHOP SOLD_OUT` / `SOLDOUT`; host gold-carrier overflow stays silent fail-closed
 - guest `SHOP SELL` / `SELL2` while browsing a private shop stay fail-closed with no frames; tax/empire multipliers, shop-bag consumption, and cube busy rejects stay deferred
 
-See `docs/plans/2026-08-24-myshop-guest-buy-mutation-contract-freeze.md`.
+See `docs/plans/2026-08-24-myshop-guest-buy-mutation-contract-freeze.md` and `docs/plans/2026-08-24-myshop-guest-buy-multi-guest-update-item-fanout.md`.
 
 ### Frozen `GC::ITEM_UPDATE` codec seam
 

@@ -1706,6 +1706,161 @@ func TestGameRuntimeMyShopGuestBuyTransfersStockGoldAndClearsDisplaySlot(t *test
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, persistedPeer, "myshop guest buy second guest")
 }
 
+func TestGameRuntimeMyShopGuestBuyFansUpdateItemToOtherBrowsingGuest(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopFanHost", 0x01030871, 0x02040871, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 871, Vnum: 27001, Count: 3, Slot: 5}}
+	buyer := peerVisibilityCharacter("MyShopFanBuyer", 0x01030872, 0x02040872, 1120, 2120, 0, 101, 201)
+	buyer.Gold = 22222
+	watcher := peerVisibilityCharacter("MyShopFanWatch", 0x01030873, 0x02040873, 1140, 2140, 0, 101, 201)
+	watcher.Gold = 33333
+	ownerLogin := "myshop-fan-host"
+	buyerLogin := "myshop-fan-buyer"
+	watcherLogin := "myshop-fan-watch"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707171, owner)
+	issuePeerTicket(t, ticketStore, buyerLogin, 0x70707172, buyer)
+	issuePeerTicket(t, ticketStore, watcherLogin, 0x70707173, watcher)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop fan host account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: buyerLogin, Empire: buyer.Empire, Characters: cloneCharacters([]loginticket.Character{buyer})}); err != nil {
+		t.Fatalf("seed myshop fan buyer account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: watcherLogin, Empire: watcher.Empire, Characters: cloneCharacters([]loginticket.Character{watcher})}); err != nil {
+		t.Fatalf("seed myshop fan watcher account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:       27001,
+		Name:       "Shop Potion",
+		Stackable:  true,
+		MaxCount:   200,
+		Sockets:    itemcatalog.SocketValues{11, -22, 33},
+		Attributes: itemcatalog.AttributeValues{{Type: 3, Value: 30}, {Type: 4, Value: -5}},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop fan runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707171)
+	defer closeSessionFlow(t, ownerFlow)
+	buyerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), buyerLogin, 0x70707172)
+	defer closeSessionFlow(t, buyerFlow)
+	watcherFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), watcherLogin, 0x70707173)
+	defer closeSessionFlow(t, watcherFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, buyerFlow)
+	_ = flushServerFrames(t, watcherFlow)
+
+	const listedPrice uint32 = 1500
+	const displayPos uint8 = 7
+	openOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      3,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      listedPrice,
+			DisplayPos: displayPos,
+		}},
+	})))
+	if err != nil || len(openOut) != 1 {
+		t.Fatalf("unexpected accepted MYSHOP before multi-guest buy: out=%d err=%v", len(openOut), err)
+	}
+	_ = flushServerFrames(t, buyerFlow)
+	_ = flushServerFrames(t, watcherFlow)
+
+	buyerBrowseOut, err := buyerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: owner.VID})))
+	if err != nil || len(buyerBrowseOut) != 1 {
+		t.Fatalf("unexpected buyer browse before multi-guest buy: out=%d err=%v", len(buyerBrowseOut), err)
+	}
+	if _, err := shopproto.DecodeServerStart(decodeSingleFrame(t, buyerBrowseOut[0])); err != nil {
+		t.Fatalf("decode buyer browse SHOP START before multi-guest buy: %v", err)
+	}
+	watcherBrowseOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: owner.VID})))
+	if err != nil || len(watcherBrowseOut) != 1 {
+		t.Fatalf("unexpected watcher browse before multi-guest buy: out=%d err=%v", len(watcherBrowseOut), err)
+	}
+	if _, err := shopproto.DecodeServerStart(decodeSingleFrame(t, watcherBrowseOut[0])); err != nil {
+		t.Fatalf("decode watcher browse SHOP START before multi-guest buy: %v", err)
+	}
+	_ = flushServerFrames(t, watcherFlow)
+
+	buyOut, err := buyerFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{
+		RawLeadingByte: 1,
+		CatalogSlot:    displayPos,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected multi-guest private-shop SHOP BUY: %v", err)
+	}
+	var sawBuyerUpdateItem bool
+	for _, raw := range buyOut {
+		if update, err := shopproto.DecodeServerUpdateItem(decodeSingleFrame(t, raw)); err == nil {
+			if update.Position != displayPos || update.Item.Vnum != 0 {
+				t.Fatalf("unexpected buyer UPDATE_ITEM after multi-guest buy: %+v", update)
+			}
+			sawBuyerUpdateItem = true
+		}
+	}
+	if !sawBuyerUpdateItem {
+		t.Fatalf("expected buyer UPDATE_ITEM(vnum=0) for sold display slot %d in buy burst, frames=%d", displayPos, len(buyOut))
+	}
+
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) == 0 {
+		t.Fatalf("expected watcher queued UPDATE_ITEM after other guest buy, got none")
+	}
+	var sawWatcherUpdateItem bool
+	for _, raw := range watcherQueued {
+		f := decodeSingleFrame(t, raw)
+		if update, err := shopproto.DecodeServerUpdateItem(f); err == nil {
+			if update.Position != displayPos || update.Item.Vnum != 0 {
+				t.Fatalf("unexpected watcher UPDATE_ITEM after other guest buy: %+v", update)
+			}
+			sawWatcherUpdateItem = true
+			continue
+		}
+		if _, err := itemproto.DecodeSet(f); err == nil {
+			t.Fatalf("watcher must not receive inventory ITEM_SET after other guest buy")
+		}
+		if _, err := itemproto.DecodeUpdate(f); err == nil {
+			t.Fatalf("watcher must not receive inventory ITEM_UPDATE after other guest buy")
+		}
+		if _, err := itemproto.DecodeDel(f); err == nil {
+			t.Fatalf("watcher must not receive inventory ITEM_DEL after other guest buy")
+		}
+		if point, err := worldproto.DecodePlayerPointChange(f); err == nil && point.Type == bootstrapGoldPointType {
+			t.Fatalf("watcher must not receive gold PLAYER_POINT_CHANGE after other guest buy: %+v", point)
+		}
+	}
+	if !sawWatcherUpdateItem {
+		t.Fatalf("expected watcher UPDATE_ITEM(vnum=0) for sold display slot %d after other guest buy, frames=%d", displayPos, len(watcherQueued))
+	}
+
+	assertExchangeAccountUnchanged(t, accounts, watcherLogin, watcher, "myshop multi-guest watcher")
+
+	watcherBuyOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{
+		RawLeadingByte: 1,
+		CatalogSlot:    displayPos,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected watcher private-shop SHOP BUY of sold slot: %v", err)
+	}
+	if len(watcherBuyOut) != 1 {
+		t.Fatalf("expected watcher buy of sold slot to emit one sold-out/invalid frame, got %d", len(watcherBuyOut))
+	}
+	watcherBuyFrame := decodeSingleFrame(t, watcherBuyOut[0])
+	if err := shopproto.DecodeServerSoldOut(watcherBuyFrame); err != nil {
+		if err := shopproto.DecodeServerSoldout(watcherBuyFrame); err != nil {
+			if err := shopproto.DecodeServerInvalidPos(watcherBuyFrame); err != nil {
+				t.Fatalf("expected watcher sold-out/invalid companion, decode errors: %v", err)
+			}
+		}
+	}
+	assertExchangeAccountUnchanged(t, accounts, watcherLogin, watcher, "myshop multi-guest watcher sold-out retry")
+}
+
 func findPersistedCharacter(t *testing.T, account accountstore.Account, name string) loginticket.Character {
 	t.Helper()
 	for _, character := range account.Characters {
