@@ -1,0 +1,40 @@
+{
+  "static_actors": [
+    {
+      "name": "GatedMerchant",
+      "map_index": 1,
+      "x": 469500,
+      "y": 964200,
+      "race_num": 20301,
+      "interaction_kind": "shop_preview",
+      "interaction_ref": "npc:gated_merchant"
+    }
+  ],
+  "item_templates": [
+    {
+      "vnum": 27001,
+      "name": "Small Red Potion",
+      "stackable": true,
+      "max_count": 200,
+      "shop_buy_price": 5
+    }
+  ],
+  "interaction_definitions": [
+    {
+      "kind": "shop_preview",
+      "ref": "npc:gated_merchant",
+      "title": "Gated Merchant",
+      "catalog": [
+        {
+          "slot": 0,
+          "item_vnum": 27001,
+          "price": 50,
+          "count": 1
+        }
+      ],
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "met_guide",
+      "quest_from": 1
+    }
+  ]
+}

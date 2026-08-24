@@ -80,6 +80,56 @@ func TestCanonicalJSONMatchesBootstrapNPCServiceExample(t *testing.T) {
 	}
 }
 
+func TestCanonicalJSONMatchesBootstrapPveVerticalCanonicalExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-pve-vertical-canonical-bundle.json"))
+	if err != nil {
+		t.Fatalf("read PvE vertical canonical example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode PvE vertical canonical example bundle: %v", err)
+	}
+	canonical, err := CanonicalJSON(bundle)
+	if err != nil {
+		t.Fatalf("canonicalize PvE vertical canonical example bundle: %v", err)
+	}
+	if !bytes.Equal(canonical, raw) {
+		t.Fatalf("PvE vertical canonical example is not byte-for-byte canonical\n--- got ---\n%s\n--- want ---\n%s", string(raw), string(canonical))
+	}
+}
+
+func TestCanonicalJSONExpandsPveVerticalAuthoringExampleToCheckedInTwin(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	authoringRaw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-pve-vertical-authoring-bundle.json"))
+	if err != nil {
+		t.Fatalf("read PvE vertical authoring example bundle: %v", err)
+	}
+	wantRaw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-pve-vertical-canonical-bundle.json"))
+	if err != nil {
+		t.Fatalf("read PvE vertical canonical example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(authoringRaw, &bundle); err != nil {
+		t.Fatalf("decode PvE vertical authoring example bundle: %v", err)
+	}
+	got, err := CanonicalJSON(bundle)
+	if err != nil {
+		t.Fatalf("canonicalize PvE vertical authoring example bundle: %v", err)
+	}
+	if !bytes.Equal(got, wantRaw) {
+		t.Fatalf("PvE vertical authoring example did not expand to checked-in canonical twin\n--- got ---\n%s\n--- want ---\n%s", string(got), string(wantRaw))
+	}
+}
+
 func TestCanonicalJSONEmitsEmptyArraysForContractCollections(t *testing.T) {
 	got, err := CanonicalJSON(Bundle{})
 	if err != nil {
@@ -4814,6 +4864,25 @@ func TestCanonicalizeRejectsCheckedInOrphanQuestGateExample(t *testing.T) {
 	}
 	if _, err := Canonicalize(bundle); !errors.Is(err, ErrInvalidBundle) {
 		t.Fatalf("expected ErrInvalidBundle for checked-in orphan quest-gate example, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsCheckedInOrphanServiceQuestGateExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-invalid-orphan-service-quest-gate-bundle.json"))
+	if err != nil {
+		t.Fatalf("read invalid orphan service quest-gate example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode invalid orphan service quest-gate example bundle: %v", err)
+	}
+	if _, err := Canonicalize(bundle); !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for checked-in orphan service quest-gate example, got %v", err)
 	}
 }
 
