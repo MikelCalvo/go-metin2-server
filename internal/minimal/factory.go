@@ -8624,7 +8624,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if strings.TrimSpace(sign) == "" || len(packet.Items) == 0 {
 						return gameflow.ShopResult{Accepted: false}
 					}
-					if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveMyShopOpen || sharedWorld.hasActiveExchange(sharedWorldID) {
+					if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveMyShopOpen || hasActiveCubeOpen || sharedWorld.hasActiveExchange(sharedWorldID) {
 						return gameflow.ShopResult{
 							Accepted: true,
 							Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{

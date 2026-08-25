@@ -65,6 +65,6 @@ chat for these shells:
 
 ## Status
 
-Docs-first contract freeze on `lane/items`. RED for host MYSHOP open with open
-cube is the first implementation seam; safebox/refine/guest-browse proofs follow
-in the same GREEN slice or immediately adjacent tiny commits.
+Partial GREEN on `lane/items`: host `CG::MYSHOP` open now rejects open cube with
+the already-owned requester busy info-chat and no `SHOP_SIGN`. Guest browse,
+safebox open, and refine confirm cube busy rejects remain the next seams.

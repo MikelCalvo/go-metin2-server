@@ -354,6 +354,56 @@ func TestGameRuntimeMyShopOpenBusyShellRejectsWithInfoChatWithoutMutation(t *tes
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop busy peer")
 }
 
+func TestGameRuntimeMyShopOpenRejectsActiveCubeWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopCubeBusy", 0x010308c1, 0x020408c1, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 1901, Vnum: 27001, Count: 3, Slot: 5}}
+	login := "myshop-cube-busy"
+	issuePeerTicket(t, ticketStore, login, 0x707071c1, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop-cube busy account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Shop Potion",
+		Stackable: true,
+		MaxCount:  200,
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop-cube busy runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707071c1)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	openCubeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_cube",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_cube before myshop open: %v", err)
+	}
+	if len(openCubeOut) != 1 {
+		t.Fatalf("expected /open_cube before myshop open to emit one command chat frame, got %d", len(openCubeOut))
+	}
+	assertCubeCommandChatFrame(t, openCubeOut[0], "cube open 20022", "cube before myshop open")
+
+	assertMyShopBusyReject(t, flow, shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      3,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	}, "cube busy")
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop-cube busy")
+}
+
 func assertMyShopBusyReject(t *testing.T, flow service.SessionFlow, packet shopproto.ClientMyShopPacket, context string) {
 	t.Helper()
 	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(packet)))

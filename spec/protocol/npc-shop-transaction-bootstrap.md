@@ -355,7 +355,7 @@ The first host-only accepted open path is now owned on top of the codec + deny-n
 
 - valid `CG::MYSHOP` may become `Accepted: true` only after sign/count/stock/busy-shell gates pass
 - success remembers a same-socket private-shop open/busy flag and emits one owned `GC::SHOP_SIGN` (`host VID` + non-empty sign)
-- empty sign / zero count / duplicate or invalid stock / `anti_give|anti_myshop` / open exchange|merchant|safebox|refine|already-open private shop stay fail-closed with no second `SHOP_SIGN`
+- empty sign / zero count / duplicate or invalid stock / `anti_give|anti_myshop` / open exchange|merchant|safebox|refine|cube|already-open private shop stay fail-closed with no second `SHOP_SIGN`
 - busy shells reject with the same self-only requester busy info-chat already owned by exchange START for merchant/safebox/refine
 - open does not yet remove carried stock, consume a shop bag, polymorph, or invent guest browse/buy frames
 - while the same-socket private-shop open/busy flag is set, host item mutations fail closed with no frames (packet `ITEM_USE` / `ITEM_USE_TO_ITEM` / `ITEM_MOVE` / `ITEM_DROP` / `ITEM_DROP2` / `ITEM_PICKUP` / `ITEM_GIVE`, slash `/use_item` / `/inventory_move` / `/equip_item` / `/unequip_item`, open-presentation safebox check-in/out/move, and refine preview/confirm); empty-sign close clears the lock

@@ -659,9 +659,10 @@ Expected result:
 - [ ] Confirm `/open_cube 0` / invalid args stay silent consume with no open
 - [ ] With `/open_cube` already open on the requester, confirm `EXCHANGE START` against a living visible peer returns one self-only info chat `You cannot trade while another trade window is open.` with no pairing
 - [ ] With `/open_cube` already open on the partner, confirm requester `EXCHANGE START` returns one self-only info chat `That player cannot trade right now.` with no pairing and the partner cube stays open
+- [ ] With `/open_cube` already open, confirm `CG::MYSHOP` returns one self-only info chat `You cannot trade while another trade window is open.` with no `SHOP_SIGN`
 
 Expected result:
-- lab cube open/close is command-chat only (no binary cube packet), inventory/gold stay unchanged, and open cube rejects exchange `START` / `ACCEPT` / commit with the already-owned merchant/safebox/refine/MYSHOP busy chat strings (`docs/plans/2026-08-25-exchange-cube-busy-window-reject-chat.md`); MYSHOP/safebox/refine open/confirm cube rejects are frozen for the next implementation slice (`docs/plans/2026-08-25-myshop-safebox-refine-cube-busy-rejects.md`); recipe make/add/list stay deferred
+- lab cube open/close is command-chat only (no binary cube packet), inventory/gold stay unchanged, and open cube rejects exchange `START` / `ACCEPT` / commit plus host `CG::MYSHOP` open with the already-owned requester/partner busy chat strings (`docs/plans/2026-08-25-exchange-cube-busy-window-reject-chat.md`, `docs/plans/2026-08-25-myshop-safebox-refine-cube-busy-rejects.md`); guest browse / safebox open / refine confirm cube rejects and recipe make/add/list stay deferred
 
 ---
 
