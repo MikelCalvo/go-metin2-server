@@ -39,6 +39,6 @@ go test ./internal/minimal -run 'TestGameRuntimeFlushServerFramesAppliesMultiSte
 
 ## What this is not yet
 
-- chase replan twin that moves the owner between arm and first due step
+- ~~chase replan twin that moves the owner between arm and first due step~~ Done: see [chase replan owner-moved twin](2026-08-25-chase-replan-owner-moved-between-arm-and-due.md)
 - absolute chase / return / homeward deadline rematerialize across daemon restart
 - cross-map MOVE / `GC WARP`, pack AI, pathfinding, target switching
