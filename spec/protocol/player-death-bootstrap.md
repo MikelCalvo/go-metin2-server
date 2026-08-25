@@ -279,8 +279,8 @@ The current bootstrap player-death contract now also owns one narrow host-only p
 ## First owned guest-browse SHOP END at the retaliation floor
 
 The same retaliation floor now also owns the guest-browse leave companion that was already frozen for host empty-sign / lifecycle teardown:
-- if a visible peer was browsing the dying host's open MYSHOP when that host reached `0` HP, the guest receives one queued self-only `GC::SHOP END` beside the host empty-sign around-broadcast and clears browse association (`TestGameSessionFlowPracticeMobImmediateRetaliationFloorQueuesGuestBrowseShopEnd`)
-- if the dying session itself was browsing another visible peer's open MYSHOP when immediate retaliation reached `0` HP, the owner/guest appends one self-only `GC::SHOP END` after death/clear and clears browse without host empty-sign or inventory/gold mutation (`TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesGuestBrowseOnDeadGuest`)
+- if a visible peer was browsing the dying host's open MYSHOP when that host reached `0` HP, the guest receives one queued self-only `GC::SHOP END` beside the host empty-sign around-broadcast and clears browse association (`TestGameSessionFlowPracticeMobImmediateRetaliationFloorQueuesGuestBrowseShopEnd`, `TestGameSessionFlowPracticeMobDelayedRetaliationFloorQueuesGuestBrowseShopEnd`)
+- if the dying session itself was browsing another visible peer's open MYSHOP when immediate or delayed retaliation reached `0` HP, the owner/guest appends one self-only `GC::SHOP END` after death/clear and clears browse without host empty-sign or inventory/gold mutation (`TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesGuestBrowseOnDeadGuest`, `TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesGuestBrowseOnDeadGuest`)
 - later guest `SHOP END` / dead-guest `ON_CLICK` stay silent/no-frame after either path
 
 Why this is the current owned boundary:

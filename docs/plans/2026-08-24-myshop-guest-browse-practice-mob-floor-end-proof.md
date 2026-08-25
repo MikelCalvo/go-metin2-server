@@ -23,9 +23,11 @@ exchange / safebox teardown, but only explicit guest `SHOP END` and host
 
 - `TestGameSessionFlowPracticeMobImmediateRetaliationFloorQueuesGuestBrowseShopEnd`
 - `TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesGuestBrowseOnDeadGuest`
+- `TestGameSessionFlowPracticeMobDelayedRetaliationFloorQueuesGuestBrowseShopEnd`
+- `TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesGuestBrowseOnDeadGuest`
 
 ```bash
-go test ./internal/minimal -run 'TestGameSessionFlowPracticeMobImmediateRetaliationFloor(QueuesGuestBrowseShopEnd|ClosesGuestBrowseOnDeadGuest)$' -count=1
+go test ./internal/minimal -run 'TestGameSessionFlowPracticeMob(Immediate|Delayed)RetaliationFloor(QueuesGuestBrowseShopEnd|ClosesGuestBrowseOnDeadGuest)$' -count=1
 ```
 
 ## What this is not yet

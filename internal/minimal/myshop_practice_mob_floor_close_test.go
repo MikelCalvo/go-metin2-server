@@ -676,3 +676,370 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesGuestBrowseOnD
 	assertExchangeAccountUnchanged(t, accounts, hostLogin, host, "myshop dead-guest floor-close host")
 	assertExchangeAccountUnchanged(t, accounts, guestLogin, guest, "myshop dead-guest floor-close guest")
 }
+
+func TestGameSessionFlowPracticeMobDelayedRetaliationFloorQueuesGuestBrowseShopEnd(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopGuestDelayedFloorHost", 0x010308A1, 0x020408A1, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 2
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 2209, Vnum: 27001, Count: 3, Slot: 5}}
+	guest := peerVisibilityCharacter("MyShopGuestDelayedFloorGuest", 0x010308A2, 0x020408A2, 1120, 2120, 0, 101, 201)
+	guest.Gold = 22222
+	ownerLogin := "myshop-gdelay-host"
+	guestLogin := "myshop-gdelay-guest"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70708aa1, owner)
+	issuePeerTicket(t, ticketStore, guestLogin, 0x70708aa2, guest)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop guest delayed floor-close host account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: guestLogin, Empire: guest.Empire, Characters: cloneCharacters([]loginticket.Character{guest})}); err != nil {
+		t.Fatalf("seed myshop guest delayed floor-close guest account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Shop Potion",
+		Stackable: true,
+		MaxCount:  200,
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop guest delayed floor-close runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000501, 0)
+	runtime.now = func() time.Time { return currentTime }
+	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_myshop_guest_delayed_floor_close",
+		Name:          "PracticeMobMyShopGuestDelayedFloorClose",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}); err != nil {
+		t.Fatalf("import myshop guest delayed floor-close content bundle: %v", err)
+	}
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70708aa1)
+	if len(ownerEnter) < 8 {
+		t.Fatalf("expected host bootstrap with visible practice mob, got %d frames", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	guestFlow, guestEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), guestLogin, 0x70708aa2)
+	if len(guestEnter) < 11 {
+		t.Fatalf("expected guest bootstrap with visible host and mob, got %d frames", len(guestEnter))
+	}
+	defer closeSessionFlow(t, guestFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected host to receive guest-entry frames before myshop guest delayed floor-close, got %d", len(queued))
+	}
+	_ = flushServerFrames(t, guestFlow)
+
+	actors := runtime.StaticActors()
+	var targetVID uint32
+	for _, actor := range actors {
+		if actor.Name == "PracticeMobMyShopGuestDelayedFloorClose" {
+			targetVID = uint32(actor.EntityID)
+			break
+		}
+	}
+	if targetVID == 0 {
+		t.Fatalf("expected practice mob actor after import, got %+v", actors)
+	}
+
+	openOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      3,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted MYSHOP before guest delayed floor-close: %v", err)
+	}
+	if len(openOut) != 1 {
+		t.Fatalf("expected accepted MYSHOP before guest delayed floor-close to emit one SHOP_SIGN frame, got %d", len(openOut))
+	}
+	if queued := flushServerFrames(t, guestFlow); len(queued) != 1 {
+		t.Fatalf("expected guest to receive one live SHOP_SIGN around-broadcast before delayed floor, got %d", len(queued))
+	}
+
+	browseOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: owner.VID})))
+	if err != nil || len(browseOut) != 1 {
+		t.Fatalf("unexpected guest browse before host delayed floor-close: out=%d err=%v", len(browseOut), err)
+	}
+	if _, err := shopproto.DecodeServerStart(decodeSingleFrame(t, browseOut[0])); err != nil {
+		t.Fatalf("decode guest browse SHOP START before host delayed floor-close: %v", err)
+	}
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before myshop guest delayed floor-close: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target-selection frame before myshop guest delayed floor-close, got %d", len(selectOut))
+	}
+
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before myshop guest delayed floor-close: %v", err)
+	}
+	if len(attackOut) != 4 {
+		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before delayed floor, got %d frames", len(attackOut))
+	}
+	if queued := flushServerFrames(t, guestFlow); len(queued) == 0 {
+		t.Fatal("expected guest to receive live-hit retaliation fanout before delayed floor")
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	queued := flushServerFrames(t, ownerFlow)
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation floor to queue point-loss, self dead, clear-target, and empty MYSHOP SHOP_SIGN, got %d", len(queued))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode myshop guest delayed floor-close point-change: %v", err)
+	}
+	if pointChange.Value != 0 {
+		t.Fatalf("expected delayed retaliation floor to drop host HP to 0, got %+v", pointChange)
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, queued[1]))
+	if err != nil {
+		t.Fatalf("decode myshop guest delayed floor-close self dead: %v", err)
+	}
+	if dead.VID != owner.VID {
+		t.Fatalf("expected myshop guest delayed floor-close DEAD for host VID %d, got %+v", owner.VID, dead)
+	}
+	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queued[2]))
+	if err != nil {
+		t.Fatalf("decode myshop guest delayed floor-close clear target: %v", err)
+	}
+	if clear.TargetVID != 0 || clear.HPPercent != 0 {
+		t.Fatalf("expected myshop guest delayed floor-close clear target, got %+v", clear)
+	}
+	assertMyShopEmptySignFrame(t, queued[3], owner.VID, "myshop guest delayed floor-close host empty sign")
+
+	guestQueued := flushServerFrames(t, guestFlow)
+	if len(guestQueued) != 3 {
+		t.Fatalf("expected guest DEAD, SHOP END, and empty MYSHOP SHOP_SIGN after host delayed floor, got %d", len(guestQueued))
+	}
+	guestDead, err := worldproto.DecodeDead(decodeSingleFrame(t, guestQueued[0]))
+	if err != nil {
+		t.Fatalf("decode guest DEAD after myshop guest delayed floor-close: %v", err)
+	}
+	if guestDead.VID != owner.VID {
+		t.Fatalf("expected guest DEAD for host VID %d, got %+v", owner.VID, guestDead)
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, guestQueued[1])); err != nil {
+		t.Fatalf("decode guest SHOP END after myshop guest delayed floor-close: %v", err)
+	}
+	assertMyShopEmptySignFrame(t, guestQueued[2], owner.VID, "myshop guest delayed floor-close guest empty sign")
+
+	secondEndOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected guest SHOP END after host delayed floor-close: %v", err)
+	}
+	if len(secondEndOut) != 0 {
+		t.Fatalf("expected already-closed guest SHOP END after host delayed floor to emit no frames, got %d", len(secondEndOut))
+	}
+	rebrowseOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: owner.VID})))
+	if err != nil {
+		t.Fatalf("unexpected post-delayed-floor guest ON_CLICK: %v", err)
+	}
+	if len(rebrowseOut) != 0 {
+		t.Fatalf("expected post-delayed-floor guest ON_CLICK against closed host to emit no frames, got %d", len(rebrowseOut))
+	}
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop guest delayed floor-close host")
+	assertExchangeAccountUnchanged(t, accounts, guestLogin, guest, "myshop guest delayed floor-close guest")
+}
+
+func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesGuestBrowseOnDeadGuest(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	// Keep the host outside DefaultSpawnAggroRadius of the practice mob so proximity
+	// engagement does not silently block the browsing guest's TARGET / ATTACK path.
+	host := peerVisibilityCharacter("MyShopDeadGuestDelayedHost", 0x010308A3, 0x020408A3, 900, 1900, 0, 101, 201)
+	host.Gold = 5000
+	host.Inventory = []inventory.ItemInstance{{ID: 2211, Vnum: 27001, Count: 3, Slot: 5}}
+	guest := peerVisibilityCharacter("MyShopDeadGuestDelayedGuest", 0x010308A4, 0x020408A4, 1120, 2120, 0, 101, 201)
+	guest.Points[bootstrapPlayerPointValueIndex] = 2
+	guest.Gold = 22222
+	hostLogin := "myshop-dgdelay-host"
+	guestLogin := "myshop-dgdelay-guest"
+	issuePeerTicket(t, ticketStore, hostLogin, 0x70708aa3, host)
+	issuePeerTicket(t, ticketStore, guestLogin, 0x70708aa4, guest)
+	if err := accounts.Save(accountstore.Account{Login: hostLogin, Empire: host.Empire, Characters: cloneCharacters([]loginticket.Character{host})}); err != nil {
+		t.Fatalf("seed myshop dead-guest delayed host account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: guestLogin, Empire: guest.Empire, Characters: cloneCharacters([]loginticket.Character{guest})}); err != nil {
+		t.Fatalf("seed myshop dead-guest delayed guest account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Shop Potion",
+		Stackable: true,
+		MaxCount:  200,
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop dead-guest delayed floor-close runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000503, 0)
+	runtime.now = func() time.Time { return currentTime }
+	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_myshop_dead_guest_delayed_floor_close",
+		Name:          "PracticeMobMyShopDeadGuestDelayedFloorClose",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}); err != nil {
+		t.Fatalf("import myshop dead-guest delayed floor-close content bundle: %v", err)
+	}
+
+	hostFlow, hostEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), hostLogin, 0x70708aa3)
+	if len(hostEnter) < 8 {
+		t.Fatalf("expected host bootstrap with visible practice mob, got %d frames", len(hostEnter))
+	}
+	defer closeSessionFlow(t, hostFlow)
+	guestFlow, guestEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), guestLogin, 0x70708aa4)
+	if len(guestEnter) < 11 {
+		t.Fatalf("expected guest bootstrap with visible host and mob, got %d frames", len(guestEnter))
+	}
+	defer closeSessionFlow(t, guestFlow)
+	if queued := flushServerFrames(t, hostFlow); len(queued) != 3 {
+		t.Fatalf("expected host to receive guest-entry frames before dead-guest delayed floor-close, got %d", len(queued))
+	}
+	_ = flushServerFrames(t, guestFlow)
+
+	actors := runtime.StaticActors()
+	var targetVID uint32
+	for _, actor := range actors {
+		if actor.Name == "PracticeMobMyShopDeadGuestDelayedFloorClose" {
+			targetVID = uint32(actor.EntityID)
+			break
+		}
+	}
+	if targetVID == 0 {
+		t.Fatalf("expected practice mob actor after import, got %+v", actors)
+	}
+
+	openOut, err := hostFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      3,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil || len(openOut) != 1 {
+		t.Fatalf("unexpected accepted MYSHOP before dead-guest delayed floor-close: out=%d err=%v", len(openOut), err)
+	}
+	if queued := flushServerFrames(t, guestFlow); len(queued) != 1 {
+		t.Fatalf("expected guest to receive one live SHOP_SIGN around-broadcast before dead-guest delayed floor, got %d", len(queued))
+	}
+
+	browseOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: host.VID})))
+	if err != nil || len(browseOut) != 1 {
+		t.Fatalf("unexpected guest browse before dead-guest delayed floor-close: out=%d err=%v", len(browseOut), err)
+	}
+	if _, err := shopproto.DecodeServerStart(decodeSingleFrame(t, browseOut[0])); err != nil {
+		t.Fatalf("decode guest browse SHOP START before dead-guest delayed floor-close: %v", err)
+	}
+
+	selectOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before dead-guest delayed floor-close: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target-selection frame before dead-guest delayed floor-close, got %d", len(selectOut))
+	}
+
+	attackOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before dead-guest delayed floor-close: %v", err)
+	}
+	if len(attackOut) != 4 {
+		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before delayed floor, got %d frames", len(attackOut))
+	}
+	if queued := flushServerFrames(t, hostFlow); len(queued) == 0 {
+		t.Fatal("expected host to receive live-hit retaliation fanout before delayed floor")
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	queued := flushServerFrames(t, guestFlow)
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation floor to queue point-loss, self dead, clear-target, and guest SHOP END, got %d", len(queued))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode dead-guest delayed floor-close point-change: %v", err)
+	}
+	if pointChange.Value != 0 {
+		t.Fatalf("expected delayed retaliation floor to drop guest HP to 0, got %+v", pointChange)
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, queued[1]))
+	if err != nil {
+		t.Fatalf("decode dead-guest delayed floor-close self dead: %v", err)
+	}
+	if dead.VID != guest.VID {
+		t.Fatalf("expected dead-guest delayed floor-close DEAD for guest VID %d, got %+v", guest.VID, dead)
+	}
+	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queued[2]))
+	if err != nil {
+		t.Fatalf("decode dead-guest delayed floor-close clear target: %v", err)
+	}
+	if clear.TargetVID != 0 || clear.HPPercent != 0 {
+		t.Fatalf("expected dead-guest delayed floor-close clear target, got %+v", clear)
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, queued[3])); err != nil {
+		t.Fatalf("decode dead-guest delayed floor-close guest SHOP END: %v", err)
+	}
+
+	hostQueued := flushServerFrames(t, hostFlow)
+	if len(hostQueued) != 1 {
+		t.Fatalf("expected host to receive only guest DEAD after dead-guest delayed floor, got %d", len(hostQueued))
+	}
+	hostDead, err := worldproto.DecodeDead(decodeSingleFrame(t, hostQueued[0]))
+	if err != nil {
+		t.Fatalf("decode host DEAD after dead-guest delayed floor-close: %v", err)
+	}
+	if hostDead.VID != guest.VID {
+		t.Fatalf("expected host DEAD for guest VID %d, got %+v", guest.VID, hostDead)
+	}
+
+	secondEndOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected guest SHOP END after dead-guest delayed floor: %v", err)
+	}
+	if len(secondEndOut) != 0 {
+		t.Fatalf("expected already-closed guest SHOP END after dead-guest delayed floor to emit no frames, got %d", len(secondEndOut))
+	}
+	rebrowseOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: host.VID})))
+	if err != nil {
+		t.Fatalf("unexpected post-delayed-floor dead guest ON_CLICK: %v", err)
+	}
+	if len(rebrowseOut) != 0 {
+		t.Fatalf("expected post-delayed-floor dead guest ON_CLICK to emit no frames, got %d", len(rebrowseOut))
+	}
+	assertExchangeAccountUnchanged(t, accounts, hostLogin, host, "myshop dead-guest delayed floor-close host")
+	assertExchangeAccountUnchanged(t, accounts, guestLogin, guest, "myshop dead-guest delayed floor-close guest")
+}
