@@ -76,7 +76,8 @@ See `docs/plans/2026-08-25-cube-r-info-result-list-contract-freeze.md` and
 
 ### Still deferred
 
-- `/cube r_info <index> [count]` → `cube m_info ...`
+- `/cube r_info <index> [count]` → `cube m_info ...` (contract-frozen:
+  `docs/plans/2026-08-25-cube-m-info-material-info-contract-freeze.md`; not yet GREEN)
 - `cube add` / `delete` / `list` / `cancel` / `make` / `make all`
 - quest-NPC interact open / distance gate beyond lab `/open_cube`
 - binary cube packet headers
@@ -87,5 +88,6 @@ See `docs/plans/2026-08-25-cube-r-info-result-list-contract-freeze.md` and
 - `docs/plans/2026-08-25-cube-open-close-presentation-busy-bit.md`
 - `docs/plans/2026-08-25-cube-r-info-result-list-contract-freeze.md`
 - `docs/plans/2026-08-25-cube-r-info-result-list-implementation.md`
+- `docs/plans/2026-08-25-cube-m-info-material-info-contract-freeze.md`
 - `docs/qa/manual-client-checklist.md` section 4.5.16
 - `spec/protocol/packet-matrix.md` (command-chat cube family note)

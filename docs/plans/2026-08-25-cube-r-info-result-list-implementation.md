@@ -43,5 +43,5 @@ from authored bootstrap recipes with no inventory/gold mutation.
 ## Status
 
 Implemented on `lane/items`. Next Track C seam: freeze then implement
-`/cube r_info <index> [count]` → `cube m_info` (or the smallest honest add/list
-mutation contract) before inventing craft `make`.
+`/cube r_info <index> [count]` → `cube m_info` before inventing craft `make`
+(`docs/plans/2026-08-25-cube-m-info-material-info-contract-freeze.md`).
