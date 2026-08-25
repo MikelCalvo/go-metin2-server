@@ -399,6 +399,7 @@ Current implementation status:
 - pure planner `PlanStaticActorSpawnLeashHomewardStep` is owned in `internal/worldruntime`
 - pending-frame homeward executor, engagement-release arming, chase mutual exclusion, and same-map retained-viewer `MOVE` are live in `internal/minimal`
 - focused coverage now also freezes owner death-floor engagement release after chase leaves the mob `within_radius`: immediate and delayed floor paths keep the homeward schedule armed by `clearActiveCombatTarget` instead of clearing it, the still-connected dead owner is skipped for retained homeward `MOVE`, and a living retained watcher receives the due homeward `MOVE` back to authored home
+- focused multi-step homeward cadence coverage now freezes chase displace beyond one `max_step=100` beat: engagement release arms homeward, the first due homeward `MOVE` re-arms while still `within_radius`, and the second due lands on authored home / `at_home` and clears the deadline (`TestGameRuntimeFlushServerFramesAppliesMultiStepSpawnGroupHomewardCadenceAfterChaseDisplaceBeyondMaxStep`)
 - focused EnterGame / MOVE-transfer / `/restart_here` / `/restart_town` due-homeward preflight coverage now mirrors the owned chase/return preflight proofs
 - daemon-restart rematerialization of live unengaged `within_radius` spawn-backed actors now arms pending homeward through `loadPersistedStaticActors`
 - operator `POST .../return-step` still no-ops `within_radius`; exact-home snap remains the controlled `return-home` trigger
@@ -436,6 +437,7 @@ Current implementation status:
 - the pending-frame homeward executor is now live in `internal/minimal`
 - engagement-release paths that clear chase after a `within_radius` displace arm the `1s` homeward deadline
 - due homeward steps persist position, queue retained-viewer `MOVE` replication (with remove/add visibility still using delete/bootstrap), keep the actor unengaged, and re-arm while the actor remains eligible `within_radius`
+- focused multi-step homeward cadence coverage now freezes that re-arm path after chase displace beyond one `max_step` (`TestGameRuntimeFlushServerFramesAppliesMultiStepSpawnGroupHomewardCadenceAfterChaseDisplaceBeyondMaxStep`)
 - re-engage / chase eligibility, return-step, respawn, remove, return-home, operator/runtime `UpdateStaticActor`, and content-bundle prune/restore paths clear or restore homeward deadlines alongside the chase/return schedules
 - `ImportContentBundle` now mirrors return/chase schedule ownership for homeward: identical no-op reimports prune stale ineligible homeward deadlines while preserving still-eligible due times, successful non-identical replacements prune removed/stale homeward deadlines before import fanout, and failed replacement rollback restores the pre-import homeward due-at snapshot for still-eligible actors
 - the read-only pending homeward inspection endpoints above are now live over that already-owned schedule
