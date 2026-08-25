@@ -11,6 +11,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
+	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
@@ -25,10 +26,15 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenCube(t *te
 	peer := peerVisibilityCharacter("CubeImmediateFloorPeer", 0x010308a6, 0x020408a6, 1120, 2120, 0, 101, 201)
 	login := "cube-immediate-floor"
 	loginKey := uint32(0x70708aa5)
+	peerLogin := "cube-immediate-floor-peer"
+	peerLoginKey := uint32(0x70708aa6)
 	issuePeerTicket(t, ticketStore, login, loginKey, owner)
-	issuePeerTicket(t, ticketStore, "cube-immediate-floor-peer", 0x70708aa6, peer)
+	issuePeerTicket(t, ticketStore, peerLogin, peerLoginKey, peer)
 	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed cube immediate floor-close owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed cube immediate floor-close peer account: %v", err)
 	}
 
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
@@ -56,7 +62,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenCube(t *te
 		t.Fatalf("expected owner bootstrap with visible practice mob, got %d frames", len(ownerEnter))
 	}
 	defer closeSessionFlow(t, ownerFlow)
-	peerFlow, peerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "cube-immediate-floor-peer", 0x70708aa6)
+	peerFlow, peerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, peerLoginKey)
 	if len(peerEnter) < 11 {
 		t.Fatalf("expected peer bootstrap with visible owner and mob, got %d frames", len(peerEnter))
 	}
@@ -157,6 +163,38 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenCube(t *te
 	if len(alreadyClosedOut) != 0 {
 		t.Fatalf("expected already-closed /close_cube after immediate floor to emit no frames, got %d", len(alreadyClosedOut))
 	}
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_here",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here after cube immediate floor: %v", err)
+	}
+	if len(restartOut) < 4 {
+		t.Fatalf("expected /restart_here recovery frames after cube immediate floor, got %d", len(restartOut))
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart exchange start after cube immediate floor: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected post-restart exchange start to succeed after cube immediate floor clear, got %d frames", len(startOut))
+	}
+	if infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, startOut[0])); err == nil {
+		t.Fatalf("expected post-restart exchange start after cube immediate floor clear, got busy info chat %+v", infoChat)
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "post-restart exchange start after cube immediate floor clear")
+	peerStart := flushServerFrames(t, peerFlow)
+	if len(peerStart) != 1 {
+		t.Fatalf("expected peer exchange start after cube immediate floor clear, got %d", len(peerStart))
+	}
+	assertExchangeStartFrame(t, peerStart[0], owner.VID, "peer exchange start after cube immediate floor clear")
 	assertExchangeAccountUnchanged(t, accounts, login, owner, "cube immediate floor close")
 }
 
@@ -169,10 +207,15 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenCube(t *test
 	peer := peerVisibilityCharacter("CubeDelayedFloorPeer", 0x010308a8, 0x020408a8, 1120, 2120, 0, 101, 201)
 	login := "cube-delayed-floor"
 	loginKey := uint32(0x70708aa7)
+	peerLogin := "cube-delayed-floor-peer"
+	peerLoginKey := uint32(0x70708aa8)
 	issuePeerTicket(t, ticketStore, login, loginKey, owner)
-	issuePeerTicket(t, ticketStore, "cube-delayed-floor-peer", 0x70708aa8, peer)
+	issuePeerTicket(t, ticketStore, peerLogin, peerLoginKey, peer)
 	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed cube delayed floor-close owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed cube delayed floor-close peer account: %v", err)
 	}
 
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
@@ -200,7 +243,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenCube(t *test
 		t.Fatalf("expected owner bootstrap with visible practice mob, got %d frames", len(ownerEnter))
 	}
 	defer closeSessionFlow(t, ownerFlow)
-	peerFlow, peerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "cube-delayed-floor-peer", 0x70708aa8)
+	peerFlow, peerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, peerLoginKey)
 	if len(peerEnter) < 11 {
 		t.Fatalf("expected peer bootstrap with visible owner and mob, got %d frames", len(peerEnter))
 	}
@@ -306,5 +349,37 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenCube(t *test
 	if len(alreadyClosedOut) != 0 {
 		t.Fatalf("expected already-closed /close_cube after delayed floor to emit no frames, got %d", len(alreadyClosedOut))
 	}
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_here",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here after cube delayed floor: %v", err)
+	}
+	if len(restartOut) < 4 {
+		t.Fatalf("expected /restart_here recovery frames after cube delayed floor, got %d", len(restartOut))
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart exchange start after cube delayed floor: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected post-restart exchange start to succeed after cube delayed floor clear, got %d frames", len(startOut))
+	}
+	if infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, startOut[0])); err == nil {
+		t.Fatalf("expected post-restart exchange start after cube delayed floor clear, got busy info chat %+v", infoChat)
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "post-restart exchange start after cube delayed floor clear")
+	peerStart := flushServerFrames(t, peerFlow)
+	if len(peerStart) != 1 {
+		t.Fatalf("expected peer exchange start after cube delayed floor clear, got %d", len(peerStart))
+	}
+	assertExchangeStartFrame(t, peerStart[0], owner.VID, "peer exchange start after cube delayed floor clear")
 	assertExchangeAccountUnchanged(t, accounts, login, owner, "cube delayed floor close")
 }
