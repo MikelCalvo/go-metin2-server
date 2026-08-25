@@ -32,10 +32,15 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMyShop(t *
 	peer := peerVisibilityCharacter("MyShopImmediateFloorPeer", 0x01030892, 0x02040892, 1120, 2120, 0, 101, 201)
 	login := "myshop-immediate-floor"
 	loginKey := uint32(0x70708991)
+	peerLogin := "myshop-immediate-floor-peer"
+	peerLoginKey := uint32(0x70708992)
 	issuePeerTicket(t, ticketStore, login, loginKey, owner)
-	issuePeerTicket(t, ticketStore, "myshop-immediate-floor-peer", 0x70708992, peer)
+	issuePeerTicket(t, ticketStore, peerLogin, peerLoginKey, peer)
 	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed myshop immediate floor-close owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed myshop immediate floor-close peer account: %v", err)
 	}
 
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
@@ -69,7 +74,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMyShop(t *
 		t.Fatalf("expected owner bootstrap with visible practice mob, got %d frames", len(ownerEnter))
 	}
 	defer closeSessionFlow(t, ownerFlow)
-	peerFlow, peerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "myshop-immediate-floor-peer", 0x70708992)
+	peerFlow, peerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, peerLoginKey)
 	if len(peerEnter) < 11 {
 		t.Fatalf("expected peer bootstrap with visible owner and mob, got %d frames", len(peerEnter))
 	}
@@ -180,6 +185,38 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMyShop(t *
 	if len(alreadyClosedOut) != 0 {
 		t.Fatalf("expected already-closed /close_myshop after immediate floor to emit no frames, got %d", len(alreadyClosedOut))
 	}
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_here",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here after myshop immediate floor: %v", err)
+	}
+	if len(restartOut) < 4 {
+		t.Fatalf("expected /restart_here recovery frames after myshop immediate floor, got %d", len(restartOut))
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart exchange start after myshop immediate floor: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected post-restart exchange start to succeed after myshop immediate floor clear, got %d frames", len(startOut))
+	}
+	if infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, startOut[0])); err == nil {
+		t.Fatalf("expected post-restart exchange start after myshop immediate floor clear, got busy info chat %+v", infoChat)
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "post-restart exchange start after myshop immediate floor clear")
+	peerStart := flushServerFrames(t, peerFlow)
+	if len(peerStart) != 1 {
+		t.Fatalf("expected peer exchange start after myshop immediate floor clear, got %d", len(peerStart))
+	}
+	assertExchangeStartFrame(t, peerStart[0], owner.VID, "peer exchange start after myshop immediate floor clear")
 	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop immediate floor close")
 }
 
@@ -194,10 +231,15 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMyShop(t *te
 	peer := peerVisibilityCharacter("MyShopDelayedFloorPeer", 0x01030894, 0x02040894, 1120, 2120, 0, 101, 201)
 	login := "myshop-delayed-floor"
 	loginKey := uint32(0x70708993)
+	peerLogin := "myshop-delayed-floor-peer"
+	peerLoginKey := uint32(0x70708994)
 	issuePeerTicket(t, ticketStore, login, loginKey, owner)
-	issuePeerTicket(t, ticketStore, "myshop-delayed-floor-peer", 0x70708994, peer)
+	issuePeerTicket(t, ticketStore, peerLogin, peerLoginKey, peer)
 	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed myshop delayed floor-close owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed myshop delayed floor-close peer account: %v", err)
 	}
 
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
@@ -231,7 +273,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMyShop(t *te
 		t.Fatalf("expected owner bootstrap with visible practice mob, got %d frames", len(ownerEnter))
 	}
 	defer closeSessionFlow(t, ownerFlow)
-	peerFlow, peerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "myshop-delayed-floor-peer", 0x70708994)
+	peerFlow, peerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, peerLoginKey)
 	if len(peerEnter) < 11 {
 		t.Fatalf("expected peer bootstrap with visible owner and mob, got %d frames", len(peerEnter))
 	}
@@ -346,6 +388,38 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMyShop(t *te
 	if len(alreadyClosedOut) != 0 {
 		t.Fatalf("expected already-closed /close_myshop after delayed floor to emit no frames, got %d", len(alreadyClosedOut))
 	}
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_here",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here after myshop delayed floor: %v", err)
+	}
+	if len(restartOut) < 4 {
+		t.Fatalf("expected /restart_here recovery frames after myshop delayed floor, got %d", len(restartOut))
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart exchange start after myshop delayed floor: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected post-restart exchange start to succeed after myshop delayed floor clear, got %d frames", len(startOut))
+	}
+	if infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, startOut[0])); err == nil {
+		t.Fatalf("expected post-restart exchange start after myshop delayed floor clear, got busy info chat %+v", infoChat)
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "post-restart exchange start after myshop delayed floor clear")
+	peerStart := flushServerFrames(t, peerFlow)
+	if len(peerStart) != 1 {
+		t.Fatalf("expected peer exchange start after myshop delayed floor clear, got %d", len(peerStart))
+	}
+	assertExchangeStartFrame(t, peerStart[0], owner.VID, "peer exchange start after myshop delayed floor clear")
 	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop delayed floor close")
 }
 

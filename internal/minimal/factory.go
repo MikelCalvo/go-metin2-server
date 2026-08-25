@@ -6795,6 +6795,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							setActiveSafeboxOpen(0, false)
 							setActiveRefineDialog(refineDialogPresentation{}, false)
 							setActiveCubeOpen(false, 0)
+							clearActiveMyShopOpen()
+							clearActiveGuestMyShopBrowse()
 							staticRefreshFrames := sharedWorld.VisibleStaticActorRefreshFrames(restartedLive)
 							frames := append(append([][]byte(nil), bootstrapFrames...), staticRefreshFrames...)
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
@@ -6848,6 +6850,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							setActiveSafeboxOpen(0, false)
 							setActiveRefineDialog(refineDialogPresentation{}, false)
 							setActiveCubeOpen(false, 0)
+							clearActiveMyShopOpen()
+							clearActiveGuestMyShopBrowse()
 							frames := append(append([][]byte(nil), bootstrapFrames...), transferFrames...)
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
