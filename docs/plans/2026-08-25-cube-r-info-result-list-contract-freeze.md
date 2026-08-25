@@ -83,6 +83,6 @@ open NPC vnum (oracle uses `GetQuestNPC()->GetRaceNum()` after open).
 
 ## Status
 
-Docs-first freeze only on `lane/items`. RED for remembered `activeCubeNPCVnum`
-+ `/cube r_info` → `cube r_list` is intentionally deferred to the next
-implementation run so `main` / lane stay green.
+Docs-first freeze landed first on `lane/items`. Implementation is now owned by
+`docs/plans/2026-08-25-cube-r-info-result-list-implementation.md`
+(`activeCubeNPCVnum` + `/cube r_info` → `cube r_list`).

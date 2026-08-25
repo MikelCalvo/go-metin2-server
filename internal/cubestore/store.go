@@ -1,0 +1,199 @@
+package cubestore
+
+import (
+	"errors"
+	"fmt"
+	"sort"
+	"strings"
+)
+
+var (
+	ErrStorePathRequired = errors.New("cube recipe store path is required")
+	ErrSnapshotNotFound  = errors.New("cube recipe snapshot not found")
+	ErrInvalidSnapshot   = errors.New("invalid cube recipe snapshot")
+)
+
+const (
+	// ChatMaxLen mirrors the external oracle CHAT_MAX_LEN used by cube r_list.
+	ChatMaxLen = 512
+	// ResultListTextOverheadReserve mirrors the oracle's
+	// `resultText.size() - 20 >= CHAT_MAX_LEN` oversize gate.
+	ResultListTextOverheadReserve = 20
+	// BootstrapDefaultNPCVnum is the lab /open_cube default NPC race.
+	BootstrapDefaultNPCVnum uint32 = 20022
+)
+
+// Reward is one craftable result row for cube r_list.
+type Reward struct {
+	Vnum  uint32 `json:"vnum"`
+	Count uint16 `json:"count"`
+}
+
+// Material is optional authored material detail reserved for a later m_info seam.
+type Material struct {
+	Vnum  uint32 `json:"vnum"`
+	Count uint16 `json:"count"`
+}
+
+// Recipe is one NPC craftable result. Materials/gold may be present for later
+// material-info but are unused by the list-only seam.
+type Recipe struct {
+	Reward    Reward     `json:"reward"`
+	Materials []Material `json:"materials,omitempty"`
+	Gold      uint64     `json:"gold,omitempty"`
+}
+
+// NPCRecipes is the authored recipe list for one cube NPC vnum.
+type NPCRecipes struct {
+	NPCVnum uint32   `json:"npc_vnum"`
+	Recipes []Recipe `json:"recipes"`
+}
+
+// Snapshot is the committed cube-recipe FileStore / MemoryStore payload.
+type Snapshot struct {
+	NPCs []NPCRecipes `json:"npcs"`
+}
+
+// Store is the Load/Save seam used by gamed bootstrap and focused tests.
+type Store interface {
+	Load() (Snapshot, error)
+	Save(Snapshot) error
+}
+
+// BootstrapSnapshot returns the deterministic lab default recipe list for NPC
+// 20022. Runtime boot uses this when no authored cube-recipe file is present.
+func BootstrapSnapshot() Snapshot {
+	return Snapshot{NPCs: []NPCRecipes{{
+		NPCVnum: BootstrapDefaultNPCVnum,
+		Recipes: []Recipe{{
+			Reward: Reward{Vnum: 27001, Count: 1},
+			Materials: []Material{
+				{Vnum: 27002, Count: 2},
+			},
+			Gold: 100,
+		}},
+	}}}
+}
+
+// RecipesForNPC returns a cloned recipe slice for npcVnum, or nil when missing/empty.
+func RecipesForNPC(snapshot Snapshot, npcVnum uint32) []Recipe {
+	for _, npc := range normalizeSnapshot(snapshot).NPCs {
+		if npc.NPCVnum == npcVnum {
+			if len(npc.Recipes) == 0 {
+				return nil
+			}
+			return cloneRecipes(npc.Recipes)
+		}
+	}
+	return nil
+}
+
+// FormatResultListCommand builds the self-only CHAT_TYPE_COMMAND payload
+// `cube r_list <npcVnum> <resultCount> <vnum,count/...>`.
+// ok is false for empty recipes or oversize entry text (fail-closed; no partial list).
+func FormatResultListCommand(npcVnum uint32, recipes []Recipe) (string, bool) {
+	if len(recipes) == 0 {
+		return "", false
+	}
+	entries := make([]string, 0, len(recipes))
+	for _, recipe := range recipes {
+		entries = append(entries, fmt.Sprintf("%d,%d", recipe.Reward.Vnum, recipe.Reward.Count))
+	}
+	entryText := strings.Join(entries, "/")
+	if len(entryText) >= ChatMaxLen+ResultListTextOverheadReserve {
+		return "", false
+	}
+	return fmt.Sprintf("cube r_list %d %d %s", npcVnum, len(recipes), entryText), true
+}
+
+func normalizeSnapshot(snapshot Snapshot) Snapshot {
+	normalized := Snapshot{NPCs: cloneNPCRecipes(snapshot.NPCs)}
+	if normalized.NPCs == nil {
+		normalized.NPCs = []NPCRecipes{}
+	}
+	for i := range normalized.NPCs {
+		normalized.NPCs[i].Recipes = cloneRecipes(normalized.NPCs[i].Recipes)
+		if normalized.NPCs[i].Recipes == nil {
+			normalized.NPCs[i].Recipes = []Recipe{}
+		}
+		for j := range normalized.NPCs[i].Recipes {
+			normalized.NPCs[i].Recipes[j].Materials = cloneMaterials(normalized.NPCs[i].Recipes[j].Materials)
+			if normalized.NPCs[i].Recipes[j].Materials == nil {
+				normalized.NPCs[i].Recipes[j].Materials = []Material{}
+			}
+		}
+	}
+	sort.SliceStable(normalized.NPCs, func(i, j int) bool {
+		return normalized.NPCs[i].NPCVnum < normalized.NPCs[j].NPCVnum
+	})
+	return normalized
+}
+
+func validateSnapshot(snapshot Snapshot) error {
+	seen := make(map[uint32]struct{}, len(snapshot.NPCs))
+	for _, npc := range snapshot.NPCs {
+		if npc.NPCVnum == 0 {
+			return fmt.Errorf("%w: npc_vnum must be non-zero", ErrInvalidSnapshot)
+		}
+		if _, exists := seen[npc.NPCVnum]; exists {
+			return fmt.Errorf("%w: duplicate npc_vnum %d", ErrInvalidSnapshot, npc.NPCVnum)
+		}
+		seen[npc.NPCVnum] = struct{}{}
+		if npc.Recipes == nil {
+			return fmt.Errorf("%w: recipes collection must not be null for npc_vnum %d", ErrInvalidSnapshot, npc.NPCVnum)
+		}
+		for i, recipe := range npc.Recipes {
+			if recipe.Reward.Vnum == 0 {
+				return fmt.Errorf("%w: recipe[%d] reward.vnum must be non-zero for npc_vnum %d", ErrInvalidSnapshot, i, npc.NPCVnum)
+			}
+			if recipe.Reward.Count == 0 {
+				return fmt.Errorf("%w: recipe[%d] reward.count must be non-zero for npc_vnum %d", ErrInvalidSnapshot, i, npc.NPCVnum)
+			}
+			if recipe.Materials == nil {
+				return fmt.Errorf("%w: recipe[%d] materials collection must not be null for npc_vnum %d", ErrInvalidSnapshot, i, npc.NPCVnum)
+			}
+			for j, material := range recipe.Materials {
+				if material.Vnum == 0 {
+					return fmt.Errorf("%w: recipe[%d] materials[%d].vnum must be non-zero for npc_vnum %d", ErrInvalidSnapshot, i, j, npc.NPCVnum)
+				}
+				if material.Count == 0 {
+					return fmt.Errorf("%w: recipe[%d] materials[%d].count must be non-zero for npc_vnum %d", ErrInvalidSnapshot, i, j, npc.NPCVnum)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func cloneNPCRecipes(npcs []NPCRecipes) []NPCRecipes {
+	if npcs == nil {
+		return nil
+	}
+	cloned := make([]NPCRecipes, len(npcs))
+	copy(cloned, npcs)
+	for i := range cloned {
+		cloned[i].Recipes = cloneRecipes(cloned[i].Recipes)
+	}
+	return cloned
+}
+
+func cloneRecipes(recipes []Recipe) []Recipe {
+	if recipes == nil {
+		return nil
+	}
+	cloned := make([]Recipe, len(recipes))
+	copy(cloned, recipes)
+	for i := range cloned {
+		cloned[i].Materials = cloneMaterials(cloned[i].Materials)
+	}
+	return cloned
+}
+
+func cloneMaterials(materials []Material) []Material {
+	if materials == nil {
+		return nil
+	}
+	cloned := make([]Material, len(materials))
+	copy(cloned, materials)
+	return cloned
+}

@@ -104,8 +104,8 @@ Planned rows may temporarily use `Header = TBD` when the project freezes the fam
 There is **no** dedicated `HEADER_CG/GC_CUBE` in the TMP4-compatible client. Lab cube traffic is owned as talking-chat / `CHAT_TYPE_COMMAND` companions documented in `spec/protocol/item-cube-bootstrap.md`:
 
 - owned: `/open_cube` / `/close_cube` → `cube open <npcVnum>` / `cube close`, plus open-cube busy rejects for exchange / MYSHOP / safebox / refine
-- contract-frozen (not yet GREEN): `/cube r_info` → `cube r_list <npcVnum> <resultCount> <vnum,count/...>` (`docs/plans/2026-08-25-cube-r-info-result-list-contract-freeze.md`)
-- deferred: `m_info`, `add`, `delete`, `list`, `make`
+- owned: `/cube r_info` → `cube r_list <npcVnum> <resultCount> <vnum,count/...>` from remembered open NPC + authored `cubestore` recipes (`docs/plans/2026-08-25-cube-r-info-result-list-implementation.md`)
+- deferred: `/cube r_info <index> [count]` → `cube m_info ...`; `cube add` / `delete` / `list` / `make`
 
 ## Items, inventory, and equipment
 

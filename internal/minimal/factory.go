@@ -28,6 +28,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/boot"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	contentbundle "github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
+	"github.com/MikelCalvo/go-metin2-server/internal/cubestore"
 	gameflow "github.com/MikelCalvo/go-metin2-server/internal/game"
 	"github.com/MikelCalvo/go-metin2-server/internal/handshake"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
@@ -116,7 +117,7 @@ const exchangeFinalizeSuccessInfoMessageFormat = "The trade with %s has been suc
 const myShopGuestBuyTooFarInfoMessage = "You are too far away from the shop to buy something."
 const cubeAlreadyOpenInfoMessage = "The Build window is already open."
 const cubeBusyShellInfoMessage = "You cannot build something while another trade/storeroom window is open."
-const bootstrapCubeOpenDefaultNPCVnum uint32 = 20022
+const bootstrapCubeOpenDefaultNPCVnum uint32 = cubestore.BootstrapDefaultNPCVnum
 const bootstrapSafeboxOpenMinSize uint8 = 1
 const bootstrapSafeboxOpenMaxSize uint8 = 3
 const bootstrapSafeboxCellsPerPage uint8 = 5
@@ -524,6 +525,8 @@ type gameRuntime struct {
 	groundItemPersistMu     sync.Mutex
 	safeboxStore            safeboxstore.Store
 	safeboxPersistMu        sync.Mutex
+	cubeStore               cubestore.Store
+	cubeRecipes             cubestore.Snapshot
 	itemTemplates           map[uint32]itemcatalog.Template
 	itemTemplatesAuthored   bool
 	liveCharacterMu         sync.RWMutex
@@ -4080,6 +4083,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		safeboxPath = filepath.Join(os.TempDir(), fmt.Sprintf("go-metin2-safebox-%d-%d", os.Getpid(), time.Now().UnixNano()), "safebox.json")
 	}
 	safeboxItems := safeboxstore.NewFileStore(safeboxPath)
+	// Cube recipes stay hermetic MemoryStore + bootstrap fallback until a later
+	// slice wires an explicit CubeRecipeStorePath / FileStore config knob.
+	cubeRecipes := cubestore.NewMemoryStore()
+	_ = cubeRecipes.Save(cubestore.BootstrapSnapshot())
 	sharedWorld := newSharedWorldRegistryWithTopology(topology)
 	runtime := &gameRuntime{
 		sharedWorld:            sharedWorld,
@@ -4092,6 +4099,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		questStateStore:        questState,
 		groundItemStore:        groundItems,
 		safeboxStore:           safeboxItems,
+		cubeStore:              cubeRecipes,
 		liveCharactersByName:   make(map[string]liveCharacterRegistration),
 		spawnReturnStepDueAt:   make(map[uint64]time.Time),
 		spawnChaseStepDueAt:    make(map[uint64]time.Time),
@@ -4109,6 +4117,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		return nil, err
 	}
 	sharedWorld.SetItemTemplates(runtime.itemTemplates)
+	if err := runtime.loadCubeRecipes(); err != nil {
+		return nil, err
+	}
 	if err := runtime.loadInteractionDefinitions(); err != nil {
 		return nil, err
 	}
@@ -4157,6 +4168,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		var hasActiveMyShopOpen bool
 		var activeGuestMyShopHostVID uint32
 		var hasActiveCubeOpen bool
+		var activeCubeNPCVnum uint32
 		bootstrapSafeboxCapacity := func(size uint8) uint8 {
 			if size < bootstrapSafeboxOpenMinSize || size > bootstrapSafeboxOpenMaxSize {
 				return 0
@@ -4385,15 +4397,17 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				sharedWorld.SetRefineWindowOpen(sharedWorldID, true)
 			}
 		}
-		setActiveCubeOpen := func(open bool) {
+		setActiveCubeOpen := func(open bool, npcVnum uint32) {
 			if !open {
 				hasActiveCubeOpen = false
+				activeCubeNPCVnum = 0
 				if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 {
 					sharedWorld.SetCubeWindowOpen(sharedWorldID, false)
 				}
 				return
 			}
 			hasActiveCubeOpen = true
+			activeCubeNPCVnum = npcVnum
 			if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 {
 				sharedWorld.SetCubeWindowOpen(sharedWorldID, true)
 			}
@@ -4402,14 +4416,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			if !hasActiveCubeOpen {
 				return nil
 			}
-			setActiveCubeOpen(false)
+			setActiveCubeOpen(false, 0)
 			return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
 				Type:    chatproto.ChatTypeCommand,
 				Message: "cube close",
 			})}
 		}
 		openActiveCubeOpenFrames := func(npcVnum uint32) [][]byte {
-			setActiveCubeOpen(true)
+			setActiveCubeOpen(true, npcVnum)
 			return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
 				Type:    chatproto.ChatTypeCommand,
 				Message: fmt.Sprintf("cube open %d", npcVnum),
@@ -6621,6 +6635,28 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							closeFrames := closeActiveCubeOpenFrames()
 							return gameflow.ChatResult{Accepted: true, Frames: closeFrames}
 						}
+						if slashCubeRInfoCommand(packet.Message) {
+							selectedPlayer, selectedOK := currentSelectedPlayer()
+							if !selectedOK || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveCubeOpen || activeCubeNPCVnum == 0 {
+								// Cube closed / floor / no remembered NPC: silent fail-closed consume.
+								return gameflow.ChatResult{Accepted: true}
+							}
+							fields := strings.Fields(strings.TrimSpace(packet.Message[1:]))
+							if len(fields) != 2 {
+								// Extra args stay silent fail-closed until a later m_info slice owns them.
+								return gameflow.ChatResult{Accepted: true}
+							}
+							recipes := cubestore.RecipesForNPC(runtime.cubeRecipes, activeCubeNPCVnum)
+							message, ok := cubestore.FormatResultListCommand(activeCubeNPCVnum, recipes)
+							if !ok {
+								// Missing/empty NPC recipes or oversize list: silent fail-closed.
+								return gameflow.ChatResult{Accepted: true}
+							}
+							return gameflow.ChatResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+								Type:    chatproto.ChatTypeCommand,
+								Message: message,
+							})}}
+						}
 						if slashCloseMyShopCommand(packet.Message) {
 							closeFrames := closeActiveMyShopOpenFrames()
 							return gameflow.ChatResult{Accepted: true, Frames: closeFrames}
@@ -6646,7 +6682,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							}
 							clearActiveSafeboxItems()
 							setActiveRefineDialog(refineDialogPresentation{}, false)
-							setActiveCubeOpen(false)
+							setActiveCubeOpen(false, 0)
 						}
 						switch command {
 						case "quit":
@@ -6732,7 +6768,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							clearActiveCombatTarget()
 							setActiveSafeboxOpen(0, false)
 							setActiveRefineDialog(refineDialogPresentation{}, false)
-							setActiveCubeOpen(false)
+							setActiveCubeOpen(false, 0)
 							staticRefreshFrames := sharedWorld.VisibleStaticActorRefreshFrames(restartedLive)
 							frames := append(append([][]byte(nil), bootstrapFrames...), staticRefreshFrames...)
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
@@ -6785,7 +6821,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							clearActiveCombatTarget()
 							setActiveSafeboxOpen(0, false)
 							setActiveRefineDialog(refineDialogPresentation{}, false)
-							setActiveCubeOpen(false)
+							setActiveCubeOpen(false, 0)
 							frames := append(append([][]byte(nil), bootstrapFrames...), transferFrames...)
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
@@ -8738,7 +8774,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			}
 			clearActiveSafeboxItems()
 			setActiveRefineDialog(refineDialogPresentation{}, false)
-			setActiveCubeOpen(false)
+			setActiveCubeOpen(false, 0)
 			clearActiveMyShopOpen()
 			clearActiveGuestMyShopBrowse()
 			clearActiveCombatTarget()
@@ -9776,6 +9812,19 @@ func slashCloseCubeCommand(message string) bool {
 		return false
 	}
 	return fields[0] == "close_cube"
+}
+
+// slashCubeRInfoCommand recognizes talking-chat /cube r_info. Extra args stay
+// recognized so the handler can fail closed until a later m_info slice owns them.
+func slashCubeRInfoCommand(message string) bool {
+	if !strings.HasPrefix(message, "/") {
+		return false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) < 2 || fields[0] != "cube" || fields[1] != "r_info" {
+		return false
+	}
+	return true
 }
 
 func slashSafeboxPasswordCommand(message string) (string, bool) {
@@ -11605,6 +11654,30 @@ func (r *gameRuntime) loadItemTemplates() error {
 	r.itemTemplates = buildItemTemplateIndex(snapshot)
 	r.itemTemplatesAuthored = true
 	r.sharedWorld.SetItemTemplates(r.itemTemplates)
+	return nil
+}
+
+func (r *gameRuntime) loadCubeRecipes() error {
+	if r == nil {
+		return nil
+	}
+	if r.cubeStore == nil {
+		r.cubeRecipes = cubestore.BootstrapSnapshot()
+		return nil
+	}
+	snapshot, err := r.cubeStore.Load()
+	if err != nil {
+		if errors.Is(err, cubestore.ErrSnapshotNotFound) {
+			r.cubeRecipes = cubestore.BootstrapSnapshot()
+			return nil
+		}
+		return err
+	}
+	if len(snapshot.NPCs) == 0 {
+		r.cubeRecipes = cubestore.BootstrapSnapshot()
+		return nil
+	}
+	r.cubeRecipes = snapshot
 	return nil
 }
 

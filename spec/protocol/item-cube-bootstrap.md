@@ -7,8 +7,8 @@ The goal is deliberately conservative:
 
 - own command-chat open/close presentation plus a peer-visible busy bit
 - own open-cube busy rejects for exchange / MYSHOP / safebox / refine shells
-- freeze the first recipe **result-list** request (`/cube r_info` →
-  `cube r_list`) before any material-info or craft mutation lands
+- own the first recipe **result-list** request (`/cube r_info` →
+  `cube r_list`) from remembered open NPC vnum + authored `cubestore` recipes
 - keep `m_info`, slot add/delete/list, and `make` deferred until a later cube
   slice owns those semantics
 
@@ -48,9 +48,7 @@ silent refine confirm fail-closed.
 See `docs/plans/2026-08-25-exchange-cube-busy-window-reject-chat.md` and
 `docs/plans/2026-08-25-myshop-safebox-refine-cube-busy-rejects.md`.
 
-## Frozen recipe result-list request (not yet GREEN)
-
-Contract freeze only: `docs/plans/2026-08-25-cube-r-info-result-list-contract-freeze.md`.
+## Frozen recipe result-list request
 
 While the cube presentation is open:
 
@@ -66,8 +64,15 @@ Fail-closed (no frames / no mutation):
 - oversize encoded list that would exceed the chat command budget
 - `/cube r_info` with extra args until a later `m_info` slice owns that shape
 
-Authored bootstrap recipes are keyed by NPC vnum. The first fixture targets lab
-default NPC `20022`.
+Authored bootstrap recipes are keyed by NPC vnum through `internal/cubestore`.
+Runtime boot falls back to a deterministic lab snapshot for default NPC `20022`
+(`reward {27001,1}`) until an explicit FileStore path is wired.
+
+Successful `/open_cube` remembers `activeCubeNPCVnum` beside the busy flag so
+`r_list` can echo that vnum. The remembered vnum clears with the busy flag.
+
+See `docs/plans/2026-08-25-cube-r-info-result-list-contract-freeze.md` and
+`docs/plans/2026-08-25-cube-r-info-result-list-implementation.md`.
 
 ### Still deferred
 
@@ -81,5 +86,6 @@ default NPC `20022`.
 
 - `docs/plans/2026-08-25-cube-open-close-presentation-busy-bit.md`
 - `docs/plans/2026-08-25-cube-r-info-result-list-contract-freeze.md`
+- `docs/plans/2026-08-25-cube-r-info-result-list-implementation.md`
 - `docs/qa/manual-client-checklist.md` section 4.5.16
 - `spec/protocol/packet-matrix.md` (command-chat cube family note)
