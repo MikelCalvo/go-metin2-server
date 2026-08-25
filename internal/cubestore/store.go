@@ -29,14 +29,14 @@ type Reward struct {
 	Count uint16 `json:"count"`
 }
 
-// Material is optional authored material detail reserved for a later m_info seam.
+// Material is authored material detail consumed by cube m_info encoding.
 type Material struct {
 	Vnum  uint32 `json:"vnum"`
 	Count uint16 `json:"count"`
 }
 
-// Recipe is one NPC craftable result. Materials/gold may be present for later
-// material-info but are unused by the list-only seam.
+// Recipe is one NPC craftable result. Materials/gold drive cube m_info text;
+// Reward drives cube r_list.
 type Recipe struct {
 	Reward    Reward     `json:"reward"`
 	Materials []Material `json:"materials,omitempty"`
@@ -104,6 +104,54 @@ func FormatResultListCommand(npcVnum uint32, recipes []Recipe) (string, bool) {
 		return "", false
 	}
 	return fmt.Sprintf("cube r_list %d %d %s", npcVnum, len(recipes), entryText), true
+}
+
+// FormatRecipeMaterialInfoText encodes one simple (non-complicated) recipe's
+// materials+gold as `vnum,count[&vnum,count...][/gold]`.
+// ok is false when there are no materials (empty infoText).
+func FormatRecipeMaterialInfoText(recipe Recipe) (string, bool) {
+	if len(recipe.Materials) == 0 {
+		return "", false
+	}
+	parts := make([]string, 0, len(recipe.Materials))
+	for _, material := range recipe.Materials {
+		parts = append(parts, fmt.Sprintf("%d,%d", material.Vnum, material.Count))
+	}
+	text := strings.Join(parts, "&")
+	if recipe.Gold > 0 {
+		text += fmt.Sprintf("/%d", recipe.Gold)
+	}
+	return text, true
+}
+
+// FormatMaterialInfoCommand builds the self-only CHAT_TYPE_COMMAND payload
+// `cube m_info <startIndex> <requestCount> <infoText[@infoText...]>`.
+// ok is false when the window is empty/past-end, any selected recipe lacks
+// material text, or the encoded entry text is oversize (fail-closed).
+func FormatMaterialInfoCommand(startIndex int, requestCount int, recipes []Recipe) (string, bool) {
+	if requestCount <= 0 || startIndex < 0 || startIndex >= len(recipes) {
+		return "", false
+	}
+	end := startIndex + requestCount
+	if end > len(recipes) {
+		end = len(recipes)
+	}
+	entries := make([]string, 0, end-startIndex)
+	for _, recipe := range recipes[startIndex:end] {
+		infoText, ok := FormatRecipeMaterialInfoText(recipe)
+		if !ok {
+			return "", false
+		}
+		entries = append(entries, infoText)
+	}
+	if len(entries) == 0 {
+		return "", false
+	}
+	entryText := strings.Join(entries, "@")
+	if len(entryText) >= ChatMaxLen+ResultListTextOverheadReserve {
+		return "", false
+	}
+	return fmt.Sprintf("cube m_info %d %d %s", startIndex, requestCount, entryText), true
 }
 
 func normalizeSnapshot(snapshot Snapshot) Snapshot {

@@ -105,7 +105,7 @@ There is **no** dedicated `HEADER_CG/GC_CUBE` in the TMP4-compatible client. Lab
 
 - owned: `/open_cube` / `/close_cube` → `cube open <npcVnum>` / `cube close`, plus open-cube busy rejects for exchange / MYSHOP / safebox / refine
 - owned: `/cube r_info` → `cube r_list <npcVnum> <resultCount> <vnum,count/...>` from remembered open NPC + authored `cubestore` recipes (`docs/plans/2026-08-25-cube-r-info-result-list-implementation.md`)
-- contract-frozen (not yet GREEN): `/cube r_info <index> [count]` → `cube m_info <startIndex> <count> <infoText[@...]>` (`docs/plans/2026-08-25-cube-m-info-material-info-contract-freeze.md`)
+- owned: `/cube r_info <index> [count]` → `cube m_info <startIndex> <requestCount> <infoText[@...]>` from authored materials/gold (`docs/plans/2026-08-25-cube-m-info-material-info-implementation.md`)
 - deferred: `cube add` / `delete` / `list` / `make`
 
 ## Items, inventory, and equipment

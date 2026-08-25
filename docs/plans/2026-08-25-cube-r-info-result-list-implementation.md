@@ -21,7 +21,7 @@ from authored bootstrap recipes with no inventory/gold mutation.
    - cube not open / remembered vnum cleared
    - missing or empty NPC recipe list
    - oversize encoded entry text (`CHAT_MAX_LEN` gate)
-   - `/cube r_info` with extra args until a later `m_info` slice owns them
+   - non-digit / unexpected-arity `/cube r_info` args (digit index/count owned by `m_info`)
 5. No inventory / gold / quickslot / ground / cube-slot mutation.
 
 ## Proofs
@@ -42,6 +42,7 @@ from authored bootstrap recipes with no inventory/gold mutation.
 
 ## Status
 
-Implemented on `lane/items`. Next Track C seam: freeze then implement
-`/cube r_info <index> [count]` → `cube m_info` before inventing craft `make`
-(`docs/plans/2026-08-25-cube-m-info-material-info-contract-freeze.md`).
+Implemented on `lane/items`. Material-info follow-on is now owned
+(`docs/plans/2026-08-25-cube-m-info-material-info-implementation.md`).
+Next Track C seam: freeze then implement craft-slot `add` / `delete` / `list`
+before inventing `make`.

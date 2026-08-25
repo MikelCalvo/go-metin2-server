@@ -154,3 +154,73 @@ func TestFormatResultListCommandRejectsEmptyAndOversizeFailClosed(t *testing.T) 
 		t.Fatal("expected oversize entry text to fail closed")
 	}
 }
+
+func TestFormatRecipeMaterialInfoTextMatchesBootstrapFixture(t *testing.T) {
+	text, ok := FormatRecipeMaterialInfoText(BootstrapSnapshot().NPCs[0].Recipes[0])
+	if !ok {
+		t.Fatal("expected bootstrap recipe materials to encode")
+	}
+	if text != "27002,2/100" {
+		t.Fatalf("unexpected material infoText: %q", text)
+	}
+}
+
+func TestFormatRecipeMaterialInfoTextJoinsMaterialsAndOmitsZeroGold(t *testing.T) {
+	text, ok := FormatRecipeMaterialInfoText(Recipe{
+		Reward: Reward{Vnum: 1, Count: 1},
+		Materials: []Material{
+			{Vnum: 10, Count: 1},
+			{Vnum: 11, Count: 2},
+		},
+	})
+	if !ok {
+		t.Fatal("expected multi-material recipe to encode")
+	}
+	if text != "10,1&11,2" {
+		t.Fatalf("unexpected multi-material infoText: %q", text)
+	}
+	if _, ok := FormatRecipeMaterialInfoText(Recipe{Reward: Reward{Vnum: 1, Count: 1}, Materials: []Material{}, Gold: 50}); ok {
+		t.Fatal("expected empty materials to fail closed even with gold")
+	}
+}
+
+func TestFormatMaterialInfoCommandMatchesBootstrapFixture(t *testing.T) {
+	message, ok := FormatMaterialInfoCommand(0, 1, BootstrapSnapshot().NPCs[0].Recipes)
+	if !ok {
+		t.Fatal("expected bootstrap material info to encode")
+	}
+	if message != "cube m_info 0 1 27002,2/100" {
+		t.Fatalf("unexpected m_info command: %q", message)
+	}
+}
+
+func TestFormatMaterialInfoCommandJoinsWindowAndRejectsPastEndOrOversize(t *testing.T) {
+	recipes := []Recipe{
+		{Reward: Reward{Vnum: 1, Count: 1}, Materials: []Material{{Vnum: 10, Count: 1}}, Gold: 5},
+		{Reward: Reward{Vnum: 2, Count: 1}, Materials: []Material{{Vnum: 20, Count: 2}}},
+	}
+	message, ok := FormatMaterialInfoCommand(0, 2, recipes)
+	if !ok {
+		t.Fatal("expected two-recipe window to encode")
+	}
+	if message != "cube m_info 0 2 10,1/5@20,2" {
+		t.Fatalf("unexpected multi m_info command: %q", message)
+	}
+	if _, ok := FormatMaterialInfoCommand(2, 1, recipes); ok {
+		t.Fatal("expected past-end start index to fail closed")
+	}
+	if _, ok := FormatMaterialInfoCommand(0, 0, recipes); ok {
+		t.Fatal("expected zero request count to fail closed")
+	}
+	oversize := make([]Recipe, 0, 40)
+	for i := 0; i < 40; i++ {
+		oversize = append(oversize, Recipe{
+			Reward:    Reward{Vnum: 1, Count: 1},
+			Materials: []Material{{Vnum: 100000 + uint32(i), Count: 9999}, {Vnum: 200000 + uint32(i), Count: 9999}},
+			Gold:      99999999,
+		})
+	}
+	if _, ok := FormatMaterialInfoCommand(0, 40, oversize); ok {
+		t.Fatal("expected oversize material entry text to fail closed")
+	}
+}

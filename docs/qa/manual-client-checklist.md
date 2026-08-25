@@ -666,11 +666,12 @@ Expected result:
 - [ ] With `/open_cube` already open, `/cube r_info` emits one self-only command chat `cube r_list 20022 1 27001,1` with no inventory/gold mutation (`docs/plans/2026-08-25-cube-r-info-result-list-implementation.md`)
 - [ ] Confirm `/cube r_info` while cube is closed stays silent/no-frame
 - [ ] Confirm `/open_cube 20017` then `/cube r_info` stays silent when that NPC has no authored recipes
-- [ ] Confirm `/cube r_info 0` (extra args) stays silent until `m_info` is owned
-- [ ] (contract-frozen / not yet GREEN) With `/open_cube` already open, `/cube r_info 0` should later emit one self-only command chat `cube m_info 0 1 27002,2/100` with no inventory/gold mutation (`docs/plans/2026-08-25-cube-m-info-material-info-contract-freeze.md`)
+- [ ] With `/open_cube` already open, `/cube r_info 0` emits one self-only command chat `cube m_info 0 1 27002,2/100` with no inventory/gold mutation (`docs/plans/2026-08-25-cube-m-info-material-info-implementation.md`)
+- [ ] Confirm `/cube r_info 0 1` likewise emits `cube m_info 0 1 27002,2/100`
+- [ ] Confirm `/cube r_info 99` / `/cube r_info abc` / closed-cube `/cube r_info 0` stay silent/no-frame
 
 Expected result:
-- lab cube open/close is command-chat only (no binary cube packet), inventory/gold stay unchanged, and open cube rejects exchange `START` / `ACCEPT` / commit, host `CG::MYSHOP` open, guest browse open, `/open_safebox` / successful `/safebox_password`, and refine confirm with the already-owned requester/partner busy chat strings or silent confirm fail-closed (`docs/plans/2026-08-25-exchange-cube-busy-window-reject-chat.md`, `docs/plans/2026-08-25-myshop-safebox-refine-cube-busy-rejects.md`); guest `SHOP SELL` / `SELL2` while browsing are owned fail-closed (`docs/plans/2026-08-25-myshop-guest-sell-while-browsing-fail-closed.md`); open cube `/cube r_info` emits authored `cube r_list` without mutation (`docs/plans/2026-08-25-cube-r-info-result-list-implementation.md`); cube material-info (`/cube r_info <index> [count]` → `cube m_info`) is contract-frozen (`docs/plans/2026-08-25-cube-m-info-material-info-contract-freeze.md`) but not yet GREEN; add / delete / make stay deferred
+- lab cube open/close is command-chat only (no binary cube packet), inventory/gold stay unchanged, and open cube rejects exchange `START` / `ACCEPT` / commit, host `CG::MYSHOP` open, guest browse open, `/open_safebox` / successful `/safebox_password`, and refine confirm with the already-owned requester/partner busy chat strings or silent confirm fail-closed (`docs/plans/2026-08-25-exchange-cube-busy-window-reject-chat.md`, `docs/plans/2026-08-25-myshop-safebox-refine-cube-busy-rejects.md`); guest `SHOP SELL` / `SELL2` while browsing are owned fail-closed (`docs/plans/2026-08-25-myshop-guest-sell-while-browsing-fail-closed.md`); open cube `/cube r_info` emits authored `cube r_list` without mutation (`docs/plans/2026-08-25-cube-r-info-result-list-implementation.md`); `/cube r_info <index> [count]` emits authored `cube m_info` without mutation (`docs/plans/2026-08-25-cube-m-info-material-info-implementation.md`); add / delete / make stay deferred
 
 ---
 

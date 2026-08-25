@@ -79,6 +79,5 @@ this material-info seam is owned.
 
 ## Status
 
-Docs-first freeze only on `lane/items`. RED for `/cube r_info <index> [count]`
-→ `cube m_info` is intentionally deferred to the next implementation run so
-`main` / lane stay green.
+Implemented on `lane/items` (`docs/plans/2026-08-25-cube-m-info-material-info-implementation.md`).
+Add / delete / list / make stay deferred.

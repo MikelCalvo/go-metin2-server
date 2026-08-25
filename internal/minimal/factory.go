@@ -6642,20 +6642,46 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								return gameflow.ChatResult{Accepted: true}
 							}
 							fields := strings.Fields(strings.TrimSpace(packet.Message[1:]))
-							if len(fields) != 2 {
-								// Extra args stay silent fail-closed until a later m_info slice owns them.
-								return gameflow.ChatResult{Accepted: true}
-							}
 							recipes := cubestore.RecipesForNPC(runtime.cubeRecipes, activeCubeNPCVnum)
-							message, ok := cubestore.FormatResultListCommand(activeCubeNPCVnum, recipes)
-							if !ok {
-								// Missing/empty NPC recipes or oversize list: silent fail-closed.
+							switch len(fields) {
+							case 2:
+								message, ok := cubestore.FormatResultListCommand(activeCubeNPCVnum, recipes)
+								if !ok {
+									// Missing/empty NPC recipes or oversize list: silent fail-closed.
+									return gameflow.ChatResult{Accepted: true}
+								}
+								return gameflow.ChatResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+									Type:    chatproto.ChatTypeCommand,
+									Message: message,
+								})}}
+							case 3, 4:
+								startIndex, err := strconv.ParseUint(fields[2], 10, 32)
+								if err != nil {
+									// Non-digit index: silent fail-closed consume.
+									return gameflow.ChatResult{Accepted: true}
+								}
+								requestCount := uint64(1)
+								if len(fields) == 4 {
+									parsedCount, err := strconv.ParseUint(fields[3], 10, 32)
+									if err != nil {
+										// Non-digit count: silent fail-closed consume.
+										return gameflow.ChatResult{Accepted: true}
+									}
+									requestCount = parsedCount
+								}
+								message, ok := cubestore.FormatMaterialInfoCommand(int(startIndex), int(requestCount), recipes)
+								if !ok {
+									// Past-end / empty window / missing materials / oversize: silent fail-closed.
+									return gameflow.ChatResult{Accepted: true}
+								}
+								return gameflow.ChatResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+									Type:    chatproto.ChatTypeCommand,
+									Message: message,
+								})}}
+							default:
+								// Unexpected arity stays silent fail-closed consume.
 								return gameflow.ChatResult{Accepted: true}
 							}
-							return gameflow.ChatResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
-								Type:    chatproto.ChatTypeCommand,
-								Message: message,
-							})}}
 						}
 						if slashCloseMyShopCommand(packet.Message) {
 							closeFrames := closeActiveMyShopOpenFrames()
@@ -9814,8 +9840,9 @@ func slashCloseCubeCommand(message string) bool {
 	return fields[0] == "close_cube"
 }
 
-// slashCubeRInfoCommand recognizes talking-chat /cube r_info. Extra args stay
-// recognized so the handler can fail closed until a later m_info slice owns them.
+// slashCubeRInfoCommand recognizes talking-chat /cube r_info and the material-info
+// forms `/cube r_info <index>` / `/cube r_info <index> <count>`. Extra/non-digit
+// args stay recognized so the handler can fail closed instead of talking-chat fallthrough.
 func slashCubeRInfoCommand(message string) bool {
 	if !strings.HasPrefix(message, "/") {
 		return false

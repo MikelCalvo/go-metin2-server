@@ -9,8 +9,10 @@ The goal is deliberately conservative:
 - own open-cube busy rejects for exchange / MYSHOP / safebox / refine shells
 - own the first recipe **result-list** request (`/cube r_info` →
   `cube r_list`) from remembered open NPC vnum + authored `cubestore` recipes
-- keep `m_info`, slot add/delete/list, and `make` deferred until a later cube
-  slice owns those semantics
+- own the first recipe **material-info** request (`/cube r_info <index> [count]`
+  → `cube m_info`) from the same authored materials/gold rows
+- keep slot add/delete/list and `make` deferred until a later cube slice owns
+  those mutation semantics
 
 This is not a completed cube / craft system.
 
@@ -62,22 +64,48 @@ Fail-closed (no frames / no mutation):
 - cube not open
 - missing/empty authored recipe list for the remembered NPC vnum
 - oversize encoded list that would exceed the chat command budget
-- `/cube r_info` with extra args until a later `m_info` slice owns that shape
 
 Authored bootstrap recipes are keyed by NPC vnum through `internal/cubestore`.
 Runtime boot falls back to a deterministic lab snapshot for default NPC `20022`
-(`reward {27001,1}`) until an explicit FileStore path is wired.
+(`reward {27001,1}`, materials `{27002,2}`, gold `100`) until an explicit
+FileStore path is wired.
 
 Successful `/open_cube` remembers `activeCubeNPCVnum` beside the busy flag so
-`r_list` can echo that vnum. The remembered vnum clears with the busy flag.
+`r_list` / `m_info` can echo that NPC's authored rows. The remembered vnum
+clears with the busy flag.
 
 See `docs/plans/2026-08-25-cube-r-info-result-list-contract-freeze.md` and
 `docs/plans/2026-08-25-cube-r-info-result-list-implementation.md`.
 
+## Frozen recipe material-info request
+
+While the cube presentation is open:
+
+| Direction | Command chat | Policy |
+| --- | --- | --- |
+| client → server | `/cube r_info <index>` | request materials for one result at that index (default count `1`) |
+| client → server | `/cube r_info <index> <count>` | request that many consecutive results starting at `<index>` |
+| server → client | `cube m_info <startIndex> <requestCount> <infoText[@...]>` | self-only; echoes parsed args; no inventory/gold/slot mutation |
+
+Bootstrap simple-recipe `infoText` is `vnum,count[&vnum,count...][/gold]`
+(gold appended only when authored gold is non-zero). Multiple recipes in the
+requested window join with `@` and no trailing `@`.
+
+Fail-closed (no frames / no mutation):
+
+- cube not open / remembered vnum cleared / zero-HP / no selected character
+- start index past the end of the NPC recipe list
+- empty materials / empty encoded window
+- oversize encoded entry text (`CHAT_MAX_LEN` + overhead reserve)
+- non-digit index/count or unexpected arity
+
+See `docs/plans/2026-08-25-cube-m-info-material-info-contract-freeze.md` and
+`docs/plans/2026-08-25-cube-m-info-material-info-implementation.md`.
+
 ### Still deferred
 
-- `/cube r_info <index> [count]` → `cube m_info ...` (contract-frozen:
-  `docs/plans/2026-08-25-cube-m-info-material-info-contract-freeze.md`; not yet GREEN)
+- complicated OR-material text (`vnum,count|...`) / name-level merge of
+  alternate recipes into one result row
 - `cube add` / `delete` / `list` / `cancel` / `make` / `make all`
 - quest-NPC interact open / distance gate beyond lab `/open_cube`
 - binary cube packet headers
@@ -89,5 +117,6 @@ See `docs/plans/2026-08-25-cube-r-info-result-list-contract-freeze.md` and
 - `docs/plans/2026-08-25-cube-r-info-result-list-contract-freeze.md`
 - `docs/plans/2026-08-25-cube-r-info-result-list-implementation.md`
 - `docs/plans/2026-08-25-cube-m-info-material-info-contract-freeze.md`
+- `docs/plans/2026-08-25-cube-m-info-material-info-implementation.md`
 - `docs/qa/manual-client-checklist.md` section 4.5.16
 - `spec/protocol/packet-matrix.md` (command-chat cube family note)
