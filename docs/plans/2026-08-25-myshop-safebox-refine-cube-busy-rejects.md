@@ -59,12 +59,14 @@ chat for these shells:
    requester busy chat and no `SHOP START`.
 3. Runtime/session: `/open_cube` → `/open_safebox` emits requester busy chat and
    no safebox open frames.
-4. Runtime/session: refine preview then `/open_cube` → matching confirm stays
-   fail-closed with no mutation.
+4. Runtime/session: `/open_cube` → refine preview → matching confirm stays
+   fail-closed with no mutation; `/close_cube` then allows confirm.
 5. Docs/spec/QA name these beside the owned exchange open-cube busy rejects.
 
 ## Status
 
-Partial GREEN on `lane/items`: host `CG::MYSHOP` open now rejects open cube with
-the already-owned requester busy info-chat and no `SHOP_SIGN`. Guest browse,
-safebox open, and refine confirm cube busy rejects remain the next seams.
+Implemented on `lane/items`: host `CG::MYSHOP` open, guest MYSHOP browse
+open, `/open_safebox` / successful `/safebox_password`, and matching refine
+confirm all reject open lab cube with the already-owned requester busy
+info-chat (or silent confirm fail-closed for refine) and no presentation /
+mutation. Recipe make/add/list and guest sell-into-PC-shop stay deferred.

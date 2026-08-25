@@ -6412,6 +6412,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								// the same-socket open/busy presentation flag untouched.
 								return gameflow.ChatResult{Accepted: true}
 							}
+							if hasActiveCubeOpen {
+								delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: exchangeRequesterMerchantBusyInfoMessage}
+								return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
+							}
 							if hasActiveSafeboxOpen && !sizeExplicit {
 								size = activeSafeboxSize
 							}
@@ -6461,6 +6465,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							if password != want {
 								clearPendingSafeboxPasswordChallenge()
 								return gameflow.ChatResult{Accepted: true, Frames: [][]byte{itemproto.EncodeSafeboxWrongPassword()}}
+							}
+							if hasActiveCubeOpen {
+								// Keep the pending challenge so closing cube still allows a later
+								// matching password retry; do not open presentation while cube is busy.
+								delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: exchangeRequesterMerchantBusyInfoMessage}
+								return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
 							}
 							clearPendingSafeboxPasswordChallenge()
 							return gameflow.ChatResult{Accepted: true, Frames: openSafeboxPresentation(size)}
@@ -6862,7 +6872,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						return gameflow.ItemRefineResult{Accepted: true}
 					}
 					if hasActiveRefineDialog && packet.Position == activeRefineDialog.Pos && packet.Type == activeRefineDialog.Type {
-						busy := hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveMyShopOpen || (ownsLiveSharedWorldSession() && sharedWorld != nil && sharedWorld.hasActiveExchange(sharedWorldID))
+						busy := hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveMyShopOpen || hasActiveCubeOpen || (ownsLiveSharedWorldSession() && sharedWorld != nil && sharedWorld.hasActiveExchange(sharedWorldID))
 						if busy {
 							return gameflow.ItemRefineResult{Accepted: false}
 						}
@@ -8299,7 +8309,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if hasActiveMyShopOpen || activeGuestMyShopHostVID != 0 {
 						return gameflow.OnClickResult{Accepted: false}
 					}
-					if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || sharedWorld.hasActiveExchange(sharedWorldID) {
+					if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveCubeOpen || sharedWorld.hasActiveExchange(sharedWorldID) {
 						return gameflow.OnClickResult{
 							Accepted: true,
 							Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{

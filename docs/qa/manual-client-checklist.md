@@ -647,7 +647,7 @@ Contract freeze: `docs/plans/2026-08-24-myshop-guest-buy-mutation-contract-freez
 Expected result:
 - one successful guest buy transfers live host stock and gold without bare `GC::SHOP OK`, keeps browse open until leave/host close, and clears the sold display slot for remaining guests
 - a still-browsing second guest sees the sold-slot `UPDATE_ITEM(vnum=0)` fan-out without inventory/gold mutation (`docs/plans/2026-08-24-myshop-guest-buy-multi-guest-update-item-fanout.md`)
-- tax/empire multipliers, guest sell-into-PC-shop, and MYSHOP/safebox/refine open/confirm cube rejects stay deferred (exchange open-cube busy rejects are owned; see section 4.5.16)
+- tax/empire multipliers, guest sell-into-PC-shop, and recipe make/add/list stay deferred (exchange / MYSHOP / safebox / refine open-cube busy rejects are owned; see section 4.5.16)
 
 ### 4.5.16 Lab cube open/close presentation + exchange busy rejects
 
@@ -660,9 +660,12 @@ Expected result:
 - [ ] With `/open_cube` already open on the requester, confirm `EXCHANGE START` against a living visible peer returns one self-only info chat `You cannot trade while another trade window is open.` with no pairing
 - [ ] With `/open_cube` already open on the partner, confirm requester `EXCHANGE START` returns one self-only info chat `That player cannot trade right now.` with no pairing and the partner cube stays open
 - [ ] With `/open_cube` already open, confirm `CG::MYSHOP` returns one self-only info chat `You cannot trade while another trade window is open.` with no `SHOP_SIGN`
+- [ ] With `/open_cube` already open on the guest, confirm guest browse `ON_CLICK` against an open private shop returns one self-only info chat `You cannot trade while another trade window is open.` with no `SHOP START`
+- [ ] With `/open_cube` already open, confirm `/open_safebox` returns one self-only info chat `You cannot trade while another trade window is open.` with no `SAFEBOX_SIZE`
+- [ ] With `/open_cube` already open, open a refine preview and confirm matching refine confirm stays silent/no-mutation until `/close_cube`
 
 Expected result:
-- lab cube open/close is command-chat only (no binary cube packet), inventory/gold stay unchanged, and open cube rejects exchange `START` / `ACCEPT` / commit plus host `CG::MYSHOP` open with the already-owned requester/partner busy chat strings (`docs/plans/2026-08-25-exchange-cube-busy-window-reject-chat.md`, `docs/plans/2026-08-25-myshop-safebox-refine-cube-busy-rejects.md`); guest browse / safebox open / refine confirm cube rejects and recipe make/add/list stay deferred
+- lab cube open/close is command-chat only (no binary cube packet), inventory/gold stay unchanged, and open cube rejects exchange `START` / `ACCEPT` / commit, host `CG::MYSHOP` open, guest browse open, `/open_safebox` / successful `/safebox_password`, and refine confirm with the already-owned requester/partner busy chat strings or silent confirm fail-closed (`docs/plans/2026-08-25-exchange-cube-busy-window-reject-chat.md`, `docs/plans/2026-08-25-myshop-safebox-refine-cube-busy-rejects.md`); recipe make/add/list and guest sell-into-PC-shop stay deferred
 
 ---
 

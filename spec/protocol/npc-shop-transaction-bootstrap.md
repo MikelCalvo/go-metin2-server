@@ -326,7 +326,7 @@ This remains the owned codec seam for private-shop open requests:
 - the default handler returns `ShopResult{Accepted: false}` so valid packets emit no frames, no error, and leave the session in `GAME` (no unexpected-packet disconnect)
 - malformed payloads still fail closed at the codec/dispatcher boundary
 - runtime wiring may now opt into the owned host-only accepted open presentation (see Owned accepted private-shop open presentation seam); the default stays fail-closed until that opt-in
-- guest browse open/leave/buy are owned separately; partner player-shop exchange busy rejects are owned separately; exchange open-cube busy rejects are owned separately; MYSHOP/safebox/refine open/confirm cube rejects stay deferred; empty-sign close companion is owned separately below
+- guest browse open/leave/buy are owned separately; partner player-shop exchange busy rejects are owned separately; exchange open-cube busy rejects are owned separately; MYSHOP/safebox/refine open/confirm cube rejects are owned; recipe make/add/list stay deferred; empty-sign close companion is owned separately below
 
 See `docs/plans/2026-08-23-myshop-deny-no-response-dispatch-contract-freeze.md`.
 
@@ -360,7 +360,7 @@ The first host-only accepted open path is now owned on top of the codec + deny-n
 - open does not yet remove carried stock, consume a shop bag, polymorph, or invent guest browse/buy frames
 - while the same-socket private-shop open/busy flag is set, host item mutations fail closed with no frames (packet `ITEM_USE` / `ITEM_USE_TO_ITEM` / `ITEM_MOVE` / `ITEM_DROP` / `ITEM_DROP2` / `ITEM_PICKUP` / `ITEM_GIVE`, slash `/use_item` / `/inventory_move` / `/equip_item` / `/unequip_item`, open-presentation safebox check-in/out/move, and refine preview/confirm); empty-sign close clears the lock
 - accepted open also `EnqueueToVisibleSessions` the same live `GC::SHOP_SIGN` bytes to currently visible peer sessions (host still returns exactly one self frame; no second host self frame through the peer queue)
-- guest browse open/leave/buy are owned separately below; exchange open-cube busy rejects are owned separately; MYSHOP/safebox/refine open/confirm cube rejects stay deferred; empty-sign close companion is owned separately below; partner open-private-shop exchange busy rejects are owned separately; view-entry rematerialization of a remembered live sign is owned separately below
+- guest browse open/leave/buy are owned separately below; exchange open-cube busy rejects are owned separately; MYSHOP/safebox/refine open/confirm cube rejects are owned; recipe make/add/list stay deferred; empty-sign close companion is owned separately below; partner open-private-shop exchange busy rejects are owned separately; view-entry rematerialization of a remembered live sign is owned separately below
 
 See `docs/plans/2026-08-23-myshop-accepted-open-presentation-contract-freeze.md`.
 
@@ -373,7 +373,7 @@ Host-only accepted open now also owns the first empty-sign clear/close companion
 - already-closed paths emit no MYSHOP empty-sign frame; inventory/gold stay unchanged
 - lab `/close_myshop` reuses the same helper and stays silent when already closed; no new close packet family is invented here
 - ordering beside already-owned busy-shell teardown keeps merchant `GC::SHOP END` before empty-sign `SHOP_SIGN`, and empty-sign before exchange `END` when those shells close together; peer sign fanout is additive beside those host frames
-- guest browse open/leave/buy are owned separately below; partner player-shop exchange busy rejects are owned separately; exchange open-cube busy rejects are owned separately; MYSHOP/safebox/refine open/confirm cube rejects stay deferred; view-entry rematerialization of a remembered live sign is owned separately below
+- guest browse open/leave/buy are owned separately below; partner player-shop exchange busy rejects are owned separately; exchange open-cube busy rejects are owned separately; MYSHOP/safebox/refine open/confirm cube rejects are owned; recipe make/add/list stay deferred; view-entry rematerialization of a remembered live sign is owned separately below
 
 See `docs/plans/2026-08-23-myshop-close-sign-clear-contract-freeze.md`.
 
@@ -384,7 +384,7 @@ Accepted host-only open/close now also own peer around-broadcast of the already-
 - accepted open keeps the host-return live `SHOP_SIGN` unchanged and additionally fans the same bytes to currently visible peer sessions via `EnqueueToVisibleSessions`
 - empty-sign close companions keep the host-return empty-sign frame unchanged and additionally fan the same empty-sign bytes to currently visible peers when the open flag was set
 - peer fanout skips bootstrap HP-floor peers the same way other peer item/appearance frames do
-- guest browse open/leave/buy are owned separately; exchange open-cube busy rejects are owned separately; MYSHOP/safebox/refine open/confirm cube rejects stay deferred
+- guest browse open/leave/buy are owned separately; exchange open-cube busy rejects are owned separately; MYSHOP/safebox/refine open/confirm cube rejects are owned; recipe make/add/list stay deferred
 
 See `docs/plans/2026-08-24-myshop-peer-shop-sign-around-broadcast-contract-freeze.md`.
 
@@ -396,7 +396,7 @@ Already-open private shops now also rematerialize one live `GC::SHOP_SIGN` when 
 - Join / EnterGame trailing peer bootstrap and relocate/transfer visibility adds deliver exactly one rematerialized live `SHOP_SIGN` (`host VID` + remembered sign) after ordinary peer character add/info/update frames
 - empty-sign close / Leave / reclaim clear the remembered sign with the busy bit; closed hosts rematerialize nothing on later view-entry
 - bootstrap HP-floor peers are skipped the same way other peer item/appearance frames are
-- guest browse open/leave/buy are owned separately; exchange open-cube busy rejects are owned separately; MYSHOP/safebox/refine open/confirm cube rejects stay deferred
+- guest browse open/leave/buy are owned separately; exchange open-cube busy rejects are owned separately; MYSHOP/safebox/refine open/confirm cube rejects are owned; recipe make/add/list stay deferred
 
 See `docs/plans/2026-08-24-myshop-peer-shop-sign-view-entry-rematerialization-contract-freeze.md`.
 
@@ -407,7 +407,7 @@ Visible peers may now open a guest-only stock table against an already-open priv
 - guest ingress is `CG::ON_CLICK` (`0x0A02`) targeting the host VID; non-open-MyShop / unsupported click targets keep the existing silent fail-closed no-frame guard
 - accepted host open remembers the validated stock listing (`display_pos`, `vnum`, `count`, `price`, source carried cell) beside the shared-world MyShop busy bit / sign; empty-sign close / Leave / reclaim clear that listing with the busy bit
 - success emits exactly one guest-only `GC::SHOP START` (`OwnerVID` = host VID + fixed `[ShopHostItemMax]` table filled by remembered `display_pos`); sockets/attributes project from the host's current live matching carried cell via loaded item templates, otherwise that display slot stays empty
-- guest silent/no-frame when dead / at bootstrap HP floor, or when the guest currently has own open MYSHOP; guest open merchant / safebox / refine / exchange rejects with the already-owned requester busy info-chat string and no START
+- guest silent/no-frame when dead / at bootstrap HP floor, or when the guest currently has own open MYSHOP; guest open merchant / safebox / refine / exchange / cube rejects with the already-owned requester busy info-chat string and no START
 - host open exchange / safebox / refine rejects with the already-owned partner busy info-chat string and no START (host open MYSHOP is required for success and is not itself a reject)
 - open still does not remove carried stock or mutate gold on browse; browse does not re-emit `SHOP_SIGN` or invent a distance gate on open
 - guest leave is now owned: `CG::SHOP END` while browsing emits one guest-only `GC::SHOP END` and clears the remembered browse association; host empty-sign close / Leave / reclaim queues the same guest END while clearing host stock/busy; guest `/phase_select` / `/quit` / `/logout`, practice-mob floor, and transfer/warp prepend one guest END when browse is open; already-closed END stays silent
@@ -420,7 +420,7 @@ See `docs/plans/2026-08-24-myshop-guest-buy-mutation-contract-freeze.md`.
 
 ### Owned lab cube open/close presentation seam
 
-Lab cube open/close is owned outside the MYSHOP family (`docs/plans/2026-08-25-cube-open-close-presentation-busy-bit.md`): `/open_cube` / `/close_cube` command-chat presentation plus peer-visible cube busy bit. Cube busy rejects that would block MYSHOP open / exchange / safebox / refine stay deferred.
+Lab cube open/close is owned outside the MYSHOP family (`docs/plans/2026-08-25-cube-open-close-presentation-busy-bit.md`): `/open_cube` / `/close_cube` command-chat presentation plus peer-visible cube busy bit. Open cube now also rejects host `CG::MYSHOP` open, guest browse open, `/open_safebox` / successful `/safebox_password`, and refine confirm beside the already-owned exchange busy rejects (`docs/plans/2026-08-25-myshop-safebox-refine-cube-busy-rejects.md`). Recipe make/add/list and guest sell-into-PC-shop stay deferred.
 
 ### Owned MYSHOP guest private-shop buy mutation seam
 
@@ -431,7 +431,7 @@ Guest `CG::SHOP BUY` while browsing an already-open private shop is now owned:
 - success transfers the matched live host carried stack into the guest, debits guest gold and credits host gold by the remembered listed price (no empire `*3`, tax deferred at full price), clears that remembered stock row, persists both account snapshots, emits guest/host inventory + gold refreshes (no bare `GC::SHOP OK`), and emits `GC::SHOP UPDATE_ITEM` with `vnum = 0` for that display slot to remaining browsing guests (buyer receives it in the direct buy burst; other guests via shared-world fanout)
 - multi-guest fan-out is now session-proven: when a second guest is still browsing the same open host, that watcher receives exactly one queued `UPDATE_ITEM(vnum=0)` for the sold `display_pos` with no watcher inventory/gold mutation, and a later watcher buy of that cleared slot fails sold-out/invalid (`docs/plans/2026-08-24-myshop-guest-buy-multi-guest-update-item-fanout.md`)
 - insufficient gold → bare `GC::SHOP NOT_ENOUGH_MONEY`; no placement → bare `GC::SHOP INVENTORY_FULL`; never-listed / out-of-range → bare `GC::SHOP INVALID_POS`; already-cleared / live stock mismatch → bare `GC::SHOP SOLD_OUT` / `SOLDOUT`; host gold-carrier overflow stays silent fail-closed
-- guest `SHOP SELL` / `SELL2` while browsing a private shop stay fail-closed with no frames; tax/empire multipliers, shop-bag consumption, and MYSHOP/safebox/refine open/confirm cube rejects stay deferred
+- guest `SHOP SELL` / `SELL2` while browsing a private shop stay fail-closed with no frames; tax/empire multipliers, shop-bag consumption, and recipe make/add/list stay deferred
 
 See `docs/plans/2026-08-24-myshop-guest-buy-mutation-contract-freeze.md` and `docs/plans/2026-08-24-myshop-guest-buy-multi-guest-update-item-fanout.md`.
 

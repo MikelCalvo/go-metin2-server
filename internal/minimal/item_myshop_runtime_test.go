@@ -404,6 +404,84 @@ func TestGameRuntimeMyShopOpenRejectsActiveCubeWithoutMutation(t *testing.T) {
 	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop-cube busy")
 }
 
+func TestGameRuntimeMyShopGuestBrowseRejectsActiveCubeWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopBrowseCubeHost", 0x010308c3, 0x020408c3, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 1903, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("MyShopBrowseCubeGuest", 0x010308c4, 0x020408c4, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerLogin := "myshop-browse-cube-host"
+	peerLogin := "myshop-browse-cube-guest"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707071c3, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707071c4, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop browse cube host account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed myshop browse cube guest account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop browse cube runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707071c3)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707071c4)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	openOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      3,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil || len(openOut) != 1 {
+		t.Fatalf("unexpected accepted MYSHOP before guest cube browse: out=%d err=%v", len(openOut), err)
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	openCubeOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_cube",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected guest /open_cube before browse: %v", err)
+	}
+	if len(openCubeOut) != 1 {
+		t.Fatalf("expected guest /open_cube before browse to emit one command chat frame, got %d", len(openCubeOut))
+	}
+	assertCubeCommandChatFrame(t, openCubeOut[0], "cube open 20022", "guest cube before browse")
+
+	busyOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: owner.VID})))
+	if err != nil {
+		t.Fatalf("unexpected cube-busy guest browse ON_CLICK: %v", err)
+	}
+	if len(busyOut) != 1 {
+		t.Fatalf("expected cube-busy guest browse to emit one info-chat frame, got %d", len(busyOut))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, busyOut[0]))
+	if err != nil {
+		t.Fatalf("decode cube-busy guest browse info chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != exchangeRequesterMerchantBusyInfoMessage {
+		t.Fatalf("unexpected cube-busy guest browse chat: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected cube-busy guest browse to queue no host frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop guest browse cube host")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop guest browse cube guest")
+}
+
 func assertMyShopBusyReject(t *testing.T, flow service.SessionFlow, packet shopproto.ClientMyShopPacket, context string) {
 	t.Helper()
 	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(packet)))

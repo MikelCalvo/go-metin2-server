@@ -881,6 +881,111 @@ func TestGameRuntimeItemRefineConfirmBusyWindowsFailClosedWithoutMutation(t *tes
 	assertExchangeAccountUnchanged(t, accounts, "item-refine-busy", owner, "busy refine cancel")
 }
 
+func TestGameRuntimeItemRefineConfirmBusyCubeFailsClosedWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("RefineBusyCube", 0x010307d2, 0x020407d2, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 654, Vnum: 11240, Count: 1, Slot: 5},
+		{ID: 655, Vnum: 27001, Count: 2, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	ownerLogin := "item-refine-busy-cube"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070d2, owner)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-refine busy-cube account: %v", err)
+	}
+	sourceTemplate := itemcatalog.Template{
+		Vnum:       11240,
+		Name:       "Busy Cube Practice Blade",
+		Stackable:  false,
+		MaxCount:   1,
+		Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{ResultVnum: 11241, Cost: 1000, Probability: 100, Materials: []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}}},
+	}
+	resultTemplate := itemcatalog.Template{Vnum: 11241, Name: "Busy Cube Result Blade", Stackable: false, MaxCount: 1}
+	material := itemcatalog.Template{Vnum: 27001, Name: "Refine Material A", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{sourceTemplate, resultTemplate, material})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-refine busy-cube runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070d2)
+	defer closeSessionFlow(t, flow)
+
+	openCubeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_cube",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected busy-cube /open_cube error: %v", err)
+	}
+	if len(openCubeOut) != 1 {
+		t.Fatalf("expected busy-cube /open_cube to emit one command chat frame, got %d", len(openCubeOut))
+	}
+	assertCubeCommandChatFrame(t, openCubeOut[0], "cube open 20022", "refine busy-cube open")
+
+	previewOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
+	if err != nil || len(previewOut) != 1 {
+		t.Fatalf("expected refine busy-cube preview to emit one frame, got %d err=%v", len(previewOut), err)
+	}
+	if _, err := itemproto.DecodeRefineInformationNew(decodeSingleFrame(t, previewOut[0])); err != nil {
+		t.Fatalf("decode refine busy-cube preview: %v", err)
+	}
+
+	busyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
+	if err != nil {
+		t.Fatalf("unexpected busy-cube refine confirm packet error: %v", err)
+	}
+	if len(busyOut) != 0 {
+		t.Fatalf("expected busy-cube refine confirm to fail closed with no frames, got %d", len(busyOut))
+	}
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "busy-cube refine confirm")
+
+	closeCubeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/close_cube",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected busy-cube /close_cube error: %v", err)
+	}
+	if len(closeCubeOut) != 1 {
+		t.Fatalf("expected busy-cube /close_cube to emit one command chat frame, got %d", len(closeCubeOut))
+	}
+	assertCubeCommandChatFrame(t, closeCubeOut[0], "cube close", "refine busy-cube close")
+
+	confirmOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
+	if err != nil {
+		t.Fatalf("unexpected post-cube-close refine confirm packet error: %v", err)
+	}
+	if len(confirmOut) != 4 {
+		t.Fatalf("expected post-cube-close refine confirm burst of 4 frames, got %d", len(confirmOut))
+	}
+	materialDel, err := itemproto.DecodeDel(decodeSingleFrame(t, confirmOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-cube-close material ITEM_DEL: %v", err)
+	}
+	if materialDel.Position.WindowType != itemproto.WindowInventory || materialDel.Position.Cell != 6 {
+		t.Fatalf("unexpected post-cube-close material delete position: %+v", materialDel.Position)
+	}
+	resultSet, err := itemproto.DecodeSet(decodeSingleFrame(t, confirmOut[1]))
+	if err != nil {
+		t.Fatalf("decode post-cube-close result ITEM_SET: %v", err)
+	}
+	if resultSet.Position.WindowType != itemproto.WindowInventory || resultSet.Position.Cell != 5 || resultSet.Vnum != 11241 || resultSet.Count != 1 {
+		t.Fatalf("unexpected post-cube-close result ITEM_SET: %+v", resultSet)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, confirmOut[2]))
+	if err != nil {
+		t.Fatalf("decode post-cube-close gold PLAYER_POINT_CHANGE: %v", err)
+	}
+	if goldChange.VID != owner.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != -1000 || goldChange.Value != 4000 {
+		t.Fatalf("unexpected post-cube-close gold point change: %+v", goldChange)
+	}
+	assertRefineSucceededCommandChat(t, confirmOut[3], 3, "post-cube-close refine confirm")
+}
+
 func TestGameRuntimeItemRefineConfirmBusySafeboxFailsClosedWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

@@ -412,6 +412,59 @@ func TestGameRuntimeOpenSafeboxOutOfRangeFailsClosedWithoutMutation(t *testing.T
 	assertExchangeAccountUnchanged(t, accounts, login, owner, "in-range open-safebox after out-of-range reject")
 }
 
+func TestGameRuntimeOpenSafeboxRejectsActiveCubeWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("OpenSafeboxCubeBusy", 0x010307cd, 0x020407cd, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4242
+	owner.Inventory = []inventory.ItemInstance{{ID: 773, Vnum: 27001, Count: 2, Slot: 5}}
+	login := "open-safebox-cube-busy"
+	issuePeerTicket(t, ticketStore, login, 0x707070cd, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed cube-busy open-safebox owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected cube-busy open-safebox runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707070cd)
+	defer closeSessionFlow(t, flow)
+
+	openCubeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_cube",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_cube before safebox open: %v", err)
+	}
+	if len(openCubeOut) != 1 {
+		t.Fatalf("expected /open_cube before safebox open to emit one command chat frame, got %d", len(openCubeOut))
+	}
+	assertCubeCommandChatFrame(t, openCubeOut[0], "cube open 20022", "cube before safebox open")
+
+	busyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected cube-busy /open_safebox error: %v", err)
+	}
+	if len(busyOut) != 1 {
+		t.Fatalf("expected cube-busy /open_safebox to emit one info-chat frame, got %d", len(busyOut))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, busyOut[0]))
+	if err != nil {
+		t.Fatalf("decode cube-busy /open_safebox info chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != exchangeRequesterMerchantBusyInfoMessage {
+		t.Fatalf("unexpected cube-busy /open_safebox chat: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected cube-busy /open_safebox to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "cube-busy open-safebox owner")
+}
+
 func TestGameRuntimeSafeboxCheckinWhileOpenMovesItemToInMemorySafebox(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
