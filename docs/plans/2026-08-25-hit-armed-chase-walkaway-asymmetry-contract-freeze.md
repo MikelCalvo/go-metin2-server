@@ -41,13 +41,11 @@ After this freeze lands green on `lane/world`, the next implementation slice can
 add the twin proof as ordinary GREEN coverage (or stop at RED only if a real
 missing-implementation gap appears while writing it).
 
-## Focused follow-on coverage (next slice, not this freeze)
+## Focused follow-on coverage
 
-- `TestGameRuntimeHitArmedSpawnGroupChaseSurvivesOwnerWalkOutsideAggroRadius`
-
-```bash
-go test ./internal/minimal -run 'TestGameRuntimeHitArmedSpawnGroupChaseSurvivesOwnerWalkOutsideAggroRadius$' -count=1
-```
+Landed as ordinary GREEN twin (not dishonest RED):
+`TestGameRuntimeHitArmedSpawnGroupChaseSurvivesOwnerWalkOutsideAggroRadius`.
+See [hit-armed chase walkaway twin](2026-08-25-hit-armed-chase-walkaway-twin.md).
 
 ## What this is not yet
 
