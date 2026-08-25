@@ -15,7 +15,8 @@ The goal is deliberately conservative:
   `cube info`) as same-socket inventory pointers + gold hint, with no inventory
   mutation until a later `make` slice
 - keep `list` / `cancel` / `make` deferred until a later cube slice owns those
-  mutation semantics
+  mutation semantics; `/cube make` (`percent = 100`) is now contract-frozen
+  separately
 
 This is not a completed cube / craft system.
 
@@ -135,7 +136,9 @@ See `docs/plans/2026-08-25-cube-add-del-slot-binding-contract-freeze.md` and
 
 - complicated OR-material text (`vnum,count|...`) / name-level merge of
   alternate recipes into one result row
-- `cube list` / `cancel` / `make` / `make all`
+- `/cube make` deterministic `percent = 100` success (contract-frozen:
+  `docs/plans/2026-08-25-cube-make-percent-100-contract-freeze.md`; not yet GREEN)
+- `cube list` / `cancel` / `make all` / fail rolls (`percent` in `0..99`)
 - quest-NPC interact open / distance gate beyond lab `/open_cube`
 - binary cube packet headers
 - full `cube.txt` complicated-material parity
@@ -149,5 +152,6 @@ See `docs/plans/2026-08-25-cube-add-del-slot-binding-contract-freeze.md` and
 - `docs/plans/2026-08-25-cube-m-info-material-info-implementation.md`
 - `docs/plans/2026-08-25-cube-add-del-slot-binding-contract-freeze.md`
 - `docs/plans/2026-08-25-cube-add-del-slot-binding-implementation.md`
+- `docs/plans/2026-08-25-cube-make-percent-100-contract-freeze.md`
 - `docs/qa/manual-client-checklist.md` section 4.5.16
 - `spec/protocol/packet-matrix.md` (command-chat cube family note)

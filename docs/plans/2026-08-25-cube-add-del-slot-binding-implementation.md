@@ -43,6 +43,7 @@ simple-recipe material matching, with **no** inventory/gold/quickslot mutation.
 
 ## Status
 
-Implemented on `lane/items`. Next Track C seam: freeze then implement
-`cube make` (or `cube list` INFO dump) from bound slots + authored recipes;
-`cancel` / complicated materials stay deferred.
+Implemented on `lane/items`. Next Track C seam is contract-frozen:
+`/cube make` deterministic `percent = 100`
+(`docs/plans/2026-08-25-cube-make-percent-100-contract-freeze.md`);
+`list` / `cancel` / `make all` / fail rolls stay deferred.
