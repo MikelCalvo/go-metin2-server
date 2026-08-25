@@ -187,7 +187,7 @@ metin2-migrate version \
   | metin2-migrate export-quarantine-drill --build-info -
 ```
 
-The printer emits a path-aware shell script that creates `YYYYMMDDTHHMMSSZ-<commit12>/`, retains both-daemon build-info, `runtime-config.json`, migration catalog, optional daemon JSON logs, a `notes.md` stub, and one subdirectory per tip-`0015` migration-shaped export kind with retained `export.json` plus offline `quarantine-export` output. It never executes the curls itself, never opens a database, never embeds a DSN, and never imports SQL from quarantined artifacts. Hermetic HTTP → offline CLI coverage for roster + tip-`0015` safebox money is owned by [hermetic export → offline quarantine-export CLI proof](../plans/2026-08-25-hermetic-export-quarantine-offline-cli-proof.md); the printer itself is owned by [CLI export → offline quarantine drill printer](../plans/2026-08-25-cli-export-quarantine-drill-printer.md).
+The printer emits a path-aware shell script that creates `YYYYMMDDTHHMMSSZ-<commit12>/`, retains both-daemon build-info, `runtime-config.json`, migration catalog, optional daemon JSON logs, a `notes.md` stub, and one subdirectory per tip-`0015` migration-shaped export kind with retained `export.json` plus offline `quarantine-export` output. It never executes the curls itself, never opens a database, never embeds a DSN, and never imports SQL from quarantined artifacts. Hermetic HTTP → offline CLI coverage for roster + tip-`0015` safebox money is owned by [hermetic export → offline quarantine-export CLI proof](../plans/2026-08-25-hermetic-export-quarantine-offline-cli-proof.md); the printer itself is owned by [CLI export → offline quarantine drill printer](../plans/2026-08-25-cli-export-quarantine-drill-printer.md); hermetic `/bin/sh` execution of the printed script against drained loopback `gamed`/`authd` ops muxes is owned by [hermetic export-quarantine drill HTTP execution proof](../plans/2026-08-25-hermetic-export-quarantine-drill-http-execution-proof.md).
 
 Aged retention trees can be triage-printed without deletion via:
 
@@ -227,6 +227,7 @@ See also:
 - [hermetic backup/restore drill HTTP execution proof](../plans/2026-08-24-hermetic-backup-restore-drill-http-execution-proof.md)
 - [hermetic export → offline quarantine-export CLI proof](../plans/2026-08-25-hermetic-export-quarantine-offline-cli-proof.md)
 - [CLI export → offline quarantine drill printer](../plans/2026-08-25-cli-export-quarantine-drill-printer.md)
+- [hermetic export-quarantine drill HTTP execution proof](../plans/2026-08-25-hermetic-export-quarantine-drill-http-execution-proof.md)
 
 ## Daemon JSON log paths
 
@@ -257,7 +258,7 @@ See
 - remote admin APIs
 - automatic / scheduled artifact GC or lifecycle daemons that invoke deletion
 - automatic stale-lock expiry (lab recovery remains confirmation-gated `apply-lock-aside` / operator aside-rename; see [lab stale-lock recovery](lab-stale-lock-recovery.md))
-- automatic execution of the printed `migration-run-retention`, `backup-restore-drill`, `export-quarantine-drill`, or `artifact-retention-gc` scripts (the CLI and print-only unit samples only print commands; GC remains confirmation-gated aside-rename by the operator; hermetic `/bin/sh` proof of the printed backup-restore drill against drained loopback ops muxes is owned in [hermetic backup/restore drill HTTP execution proof](../plans/2026-08-24-hermetic-backup-restore-drill-http-execution-proof.md) and does not auto-run from CLI)
+- automatic execution of the printed `migration-run-retention`, `backup-restore-drill`, `export-quarantine-drill`, or `artifact-retention-gc` scripts (the CLI and print-only unit samples only print commands; GC remains confirmation-gated aside-rename by the operator; hermetic `/bin/sh` proof of the printed backup-restore drill against drained loopback ops muxes is owned in [hermetic backup/restore drill HTTP execution proof](../plans/2026-08-24-hermetic-backup-restore-drill-http-execution-proof.md) and does not auto-run from CLI; hermetic `/bin/sh` proof of the printed export-quarantine drill is owned in [hermetic export-quarantine drill HTTP execution proof](../plans/2026-08-25-hermetic-export-quarantine-drill-http-execution-proof.md) and likewise does not auto-run from CLI)
 - `rm` / unlink of aside-renamed retention trees
 - remote log shipping / SIEM sinks (local `/var/log/metin2/` file capture is owned; exporters are not)
 - a claim that bootstrap file stores are the final production persistence layer

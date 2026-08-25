@@ -55,6 +55,9 @@ or a retained file).
 
 - ~~a `metin2-migrate export-quarantine-drill` printer that emits curl scripts~~ Done: see
   [CLI export → offline quarantine drill printer](2026-08-25-cli-export-quarantine-drill-printer.md)
+- ~~hermetic `/bin/sh` execution proof of the printed export-quarantine drill against drained
+  loopback ops muxes~~ Done: see
+  [hermetic export-quarantine drill HTTP execution proof](2026-08-25-hermetic-export-quarantine-drill-http-execution-proof.md)
 - automatic / scheduled execution of printed triage scripts
 - covering every empty export kind in the hermetic HTTP proof (roster + tip
   safebox are the seeded non-empty gate; other kinds remain unit-covered)

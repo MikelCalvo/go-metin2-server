@@ -82,7 +82,8 @@ Behavior:
 ## What this is not yet
 
 - automatic / scheduled execution of the printed script
-- hermetic `/bin/sh` execution proof against drained loopback ops muxes
+- ~~hermetic `/bin/sh` execution proof against drained loopback ops muxes~~ Done: see
+  [hermetic export-quarantine drill HTTP execution proof](2026-08-25-hermetic-export-quarantine-drill-http-execution-proof.md)
 - folding the printer into `contrib/lab-retention-gc` print-only samples
 - SQL import/backfill from quarantined exports
 - `rm` of aside-renamed trees
