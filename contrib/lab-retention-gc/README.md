@@ -60,7 +60,9 @@ Always:
 - `build-info.json`
 - `artifact-retention-gc-backups.sh`
 - `artifact-retention-gc-migration-runs.sh`
+- `artifact-retention-gc-exports.sh` (triage for `/var/metin2/exports`)
 - `migration-run-retention.sh`
+- `export-quarantine-drill.sh`
 - `notes.md`
 
 Optional (env-gated):
@@ -71,8 +73,8 @@ Optional (env-gated):
   `env/metin2-runtime-config.env.sample` plus the systemd
   `EnvironmentFile=` drop-in under
   `systemd/metin2-artifact-retention-gc-print.service.d/`.
-- Both `migration-run-retention.sh` and (when printed) `backup-restore-drill.sh`
-  forward `--gamed-log-path` / `--authd-log-path` from
+- `migration-run-retention.sh`, `export-quarantine-drill.sh`, and (when printed)
+  `backup-restore-drill.sh` forward `--gamed-log-path` / `--authd-log-path` from
   `METIN2_GAMED_LOG_PATH` / `METIN2_AUTHD_LOG_PATH` (defaults
   `/var/log/metin2/gamed.log` and `/var/log/metin2/authd.log`) so the printed
   retain scripts can optionally copy daemon JSON logs when present.

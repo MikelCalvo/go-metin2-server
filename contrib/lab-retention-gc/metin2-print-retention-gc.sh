@@ -31,12 +31,22 @@ cp "$TMP_BUILD" "$OUT/build-info.json"
   --retention-base /var/metin2/migration-runs \
   --keep-days "$KEEP_DAYS" \
   >"$OUT/artifact-retention-gc-migration-runs.sh"
+"$BIN" artifact-retention-gc \
+  --retention-base /var/metin2/exports \
+  --keep-days "$KEEP_DAYS" \
+  >"$OUT/artifact-retention-gc-exports.sh"
 
 "$BIN" migration-run-retention \
   --build-info "$OUT/build-info.json" \
   --gamed-log-path "$GAMED_LOG" \
   --authd-log-path "$AUTHD_LOG" \
   >"$OUT/migration-run-retention.sh"
+
+"$BIN" export-quarantine-drill \
+  --build-info "$OUT/build-info.json" \
+  --gamed-log-path "$GAMED_LOG" \
+  --authd-log-path "$AUTHD_LOG" \
+  >"$OUT/export-quarantine-drill.sh"
 
 DRILL_NOTE="backup-restore-drill=skipped (set METIN2_RUNTIME_CONFIG to a retained runtime-config JSON snapshot)"
 if [ -n "$RUNTIME_CONFIG" ]; then
@@ -57,6 +67,7 @@ fi
 
 {
   printf 'printed %s\ncommit=%s\nkeep_days=%s\n' "$OUT" "${COMMIT:-unknown}" "$KEEP_DAYS"
+  printf 'export-quarantine-drill=printed from build-info\n'
   printf '%s\n' "$DRILL_NOTE"
 } >"$OUT/notes.md"
 chmod 0640 "$OUT"/*.sh "$OUT/build-info.json" "$OUT/notes.md"

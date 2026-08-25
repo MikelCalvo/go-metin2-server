@@ -58,6 +58,8 @@ or a retained file).
 - ~~hermetic `/bin/sh` execution proof of the printed export-quarantine drill against drained
   loopback ops muxes~~ Done: see
   [hermetic export-quarantine drill HTTP execution proof](2026-08-25-hermetic-export-quarantine-drill-http-execution-proof.md)
+- ~~folding `export-quarantine-drill` into `contrib/lab-retention-gc` print-only samples~~ Done: see
+  [contrib export-quarantine drill print helper](2026-08-25-contrib-export-quarantine-drill-print-helper.md)
 - automatic / scheduled execution of printed triage scripts
 - covering every empty export kind in the hermetic HTTP proof (roster + tip
   safebox are the seeded non-empty gate; other kinds remain unit-covered)

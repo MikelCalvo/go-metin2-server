@@ -198,7 +198,7 @@ metin2-migrate artifact-retention-gc \
   --now 2026-08-22T12:00:00Z
 ```
 
-The printer emits a path-aware shell script that aside-renames matching `YYYYMMDDTHHMMSSZ-<commit12>/` children older than `--keep-days` to `<name>.gc-aside-<NOW_UTC>`, refuses destination collisions, never deletes trees, never opens a database, and never embeds a DSN. The same command works against `/var/metin2/migration-runs`. Hermetic `/bin/sh` execution coverage owns the aged rename / young keep / collision fail-closed contract (see [CLI artifact-retention GC script execution proof](../plans/2026-08-22-cli-artifact-retention-gc-script-execution-proof.md)).
+The printer emits a path-aware shell script that aside-renames matching `YYYYMMDDTHHMMSSZ-<commit12>/` children older than `--keep-days` to `<name>.gc-aside-<NOW_UTC>`, refuses destination collisions, never deletes trees, never opens a database, and never embeds a DSN. The same command works against `/var/metin2/migration-runs` and `/var/metin2/exports`. The print-only contrib helper always dumps GC triage for all three roots plus `export-quarantine-drill.sh` (see [contrib export-quarantine drill print helper](../plans/2026-08-25-contrib-export-quarantine-drill-print-helper.md)). Hermetic `/bin/sh` execution coverage owns the aged rename / young keep / collision fail-closed contract (see [CLI artifact-retention GC script execution proof](../plans/2026-08-22-cli-artifact-retention-gc-script-execution-proof.md)).
 
 ## Operator correlation checklist
 
@@ -228,6 +228,7 @@ See also:
 - [hermetic export → offline quarantine-export CLI proof](../plans/2026-08-25-hermetic-export-quarantine-offline-cli-proof.md)
 - [CLI export → offline quarantine drill printer](../plans/2026-08-25-cli-export-quarantine-drill-printer.md)
 - [hermetic export-quarantine drill HTTP execution proof](../plans/2026-08-25-hermetic-export-quarantine-drill-http-execution-proof.md)
+- [contrib export-quarantine drill print helper](../plans/2026-08-25-contrib-export-quarantine-drill-print-helper.md)
 
 ## Daemon JSON log paths
 

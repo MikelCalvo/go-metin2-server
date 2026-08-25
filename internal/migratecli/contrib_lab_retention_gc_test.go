@@ -38,6 +38,8 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		"artifact-retention-gc",
 		"migration-run-retention",
 		`>"$OUT/migration-run-retention.sh"`,
+		"export-quarantine-drill",
+		`>"$OUT/export-quarantine-drill.sh"`,
 		"--build-info \"$OUT/build-info.json\"",
 		"METIN2_RUNTIME_CONFIG",
 		"METIN2_GAMED_LOG_PATH",
@@ -48,9 +50,11 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		"/var/log/metin2/authd.log",
 		"backup-restore-drill",
 		`>"$OUT/backup-restore-drill.sh"`,
+		`>"$OUT/artifact-retention-gc-exports.sh"`,
 		"/var/metin2/ops-prints",
 		"/var/metin2/backups",
 		"/var/metin2/migration-runs",
+		"/var/metin2/exports",
 		`trap 'rm -f "$TMP_BUILD"'`,
 	} {
 		if !strings.Contains(helper, want) {
@@ -165,6 +169,9 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		"systemctl enable --now",
 		"docs/workflow/lab-retention-gc-unit-samples.md",
 		"migration-run-retention.sh",
+		"export-quarantine-drill.sh",
+		"artifact-retention-gc-exports.sh",
+		"/var/metin2/exports",
 		"METIN2_RUNTIME_CONFIG",
 		"METIN2_GAMED_LOG_PATH",
 		"METIN2_AUTHD_LOG_PATH",
@@ -270,6 +277,10 @@ case "$cmd" in
     printf '%s\n' "# stub migration-run-retention"
     printf '%s\n' "$*"
     ;;
+  export-quarantine-drill)
+    printf '%s\n' "# stub export-quarantine-drill"
+    printf '%s\n' "$*"
+    ;;
   backup-restore-drill)
     printf '%s\n' "# stub backup-restore-drill"
     printf '%s\n' "$*"
@@ -311,7 +322,9 @@ esac
 			"build-info.json",
 			"artifact-retention-gc-backups.sh",
 			"artifact-retention-gc-migration-runs.sh",
+			"artifact-retention-gc-exports.sh",
 			"migration-run-retention.sh",
+			"export-quarantine-drill.sh",
 			"notes.md",
 		} {
 			path := filepath.Join(outDir, name)
@@ -326,18 +339,31 @@ esac
 		if !strings.Contains(notes, "backup-restore-drill=skipped") {
 			t.Fatalf("notes must record drill skip, got %q", notes)
 		}
+		if !strings.Contains(notes, "export-quarantine-drill=printed from build-info") {
+			t.Fatalf("notes must record export-quarantine-drill print, got %q", notes)
+		}
 		migrationBody := mustReadContribSample(t, filepath.Join(outDir, "migration-run-retention.sh"))
 		if !strings.Contains(migrationBody, "# stub migration-run-retention") {
 			t.Fatalf("migration-run-retention.sh must come from stub printer, got %q", migrationBody)
 		}
-		for _, want := range []string{
-			"--gamed-log-path",
-			"/var/log/metin2/gamed.log",
-			"--authd-log-path",
-			"/var/log/metin2/authd.log",
-		} {
-			if !strings.Contains(migrationBody, want) {
-				t.Fatalf("migration-run-retention argv must include default log path marker %q, got %q", want, migrationBody)
+		exportBody := mustReadContribSample(t, filepath.Join(outDir, "export-quarantine-drill.sh"))
+		if !strings.Contains(exportBody, "# stub export-quarantine-drill") {
+			t.Fatalf("export-quarantine-drill.sh must come from stub printer, got %q", exportBody)
+		}
+		exportsGCBody := mustReadContribSample(t, filepath.Join(outDir, "artifact-retention-gc-exports.sh"))
+		if !strings.Contains(exportsGCBody, "/var/metin2/exports") {
+			t.Fatalf("artifact-retention-gc-exports.sh must target /var/metin2/exports, got %q", exportsGCBody)
+		}
+		for _, body := range []string{migrationBody, exportBody} {
+			for _, want := range []string{
+				"--gamed-log-path",
+				"/var/log/metin2/gamed.log",
+				"--authd-log-path",
+				"/var/log/metin2/authd.log",
+			} {
+				if !strings.Contains(body, want) {
+					t.Fatalf("printer argv must include default log path marker %q, got %q", want, body)
+				}
 			}
 		}
 	})
@@ -384,19 +410,25 @@ esac
 			}
 		}
 		migrationBody := mustReadContribSample(t, filepath.Join(outDir, "migration-run-retention.sh"))
-		for _, want := range []string{
-			"--gamed-log-path",
-			"/var/log/metin2/gamed.log",
-			"--authd-log-path",
-			"/var/log/metin2/authd.log",
-		} {
-			if !strings.Contains(migrationBody, want) {
-				t.Fatalf("migration-run-retention argv must include default log path marker %q, got %q", want, migrationBody)
+		exportBody := mustReadContribSample(t, filepath.Join(outDir, "export-quarantine-drill.sh"))
+		for _, body := range []string{migrationBody, exportBody} {
+			for _, want := range []string{
+				"--gamed-log-path",
+				"/var/log/metin2/gamed.log",
+				"--authd-log-path",
+				"/var/log/metin2/authd.log",
+			} {
+				if !strings.Contains(body, want) {
+					t.Fatalf("printer argv must include default log path marker %q, got %q", want, body)
+				}
 			}
 		}
 		notes := mustReadContribSample(t, filepath.Join(outDir, "notes.md"))
 		if !strings.Contains(notes, "backup-restore-drill=printed from METIN2_RUNTIME_CONFIG") {
 			t.Fatalf("notes must record drill print, got %q", notes)
+		}
+		if !strings.Contains(notes, "export-quarantine-drill=printed from build-info") {
+			t.Fatalf("notes must record export-quarantine-drill print, got %q", notes)
 		}
 	})
 
@@ -428,8 +460,9 @@ esac
 		}
 		outDir := strings.TrimSpace(stdout.String())
 		migrationBody := mustReadContribSample(t, filepath.Join(outDir, "migration-run-retention.sh"))
+		exportBody := mustReadContribSample(t, filepath.Join(outDir, "export-quarantine-drill.sh"))
 		drillBody := mustReadContribSample(t, filepath.Join(outDir, "backup-restore-drill.sh"))
-		for _, body := range []string{migrationBody, drillBody} {
+		for _, body := range []string{migrationBody, exportBody, drillBody} {
 			for _, want := range []string{
 				"--gamed-log-path",
 				gamedLog,
@@ -476,9 +509,15 @@ esac
 		if _, err := os.Stat(filepath.Join(outDir, "backup-restore-drill.sh")); !os.IsNotExist(err) {
 			t.Fatalf("symlink METIN2_RUNTIME_CONFIG must skip drill printer, err=%v", err)
 		}
+		if _, err := os.Stat(filepath.Join(outDir, "export-quarantine-drill.sh")); err != nil {
+			t.Fatalf("export-quarantine-drill.sh must still print when runtime-config is a symlink: %v", err)
+		}
 		notes := mustReadContribSample(t, filepath.Join(outDir, "notes.md"))
 		if !strings.Contains(notes, "must not be a symlink") {
 			t.Fatalf("notes must record symlink skip, got %q", notes)
+		}
+		if !strings.Contains(notes, "export-quarantine-drill=printed from build-info") {
+			t.Fatalf("notes must still record export-quarantine-drill print, got %q", notes)
 		}
 	})
 }

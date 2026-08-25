@@ -45,7 +45,9 @@ See also:
     build-info.json
     artifact-retention-gc-backups.sh
     artifact-retention-gc-migration-runs.sh
+    artifact-retention-gc-exports.sh
     migration-run-retention.sh
+    export-quarantine-drill.sh
     backup-restore-drill.sh          # only when METIN2_RUNTIME_CONFIG is set
     notes.md
 ```
@@ -93,12 +95,22 @@ cp "$TMP_BUILD" "$OUT/build-info.json"
   --retention-base /var/metin2/migration-runs \
   --keep-days "$KEEP_DAYS" \
   >"$OUT/artifact-retention-gc-migration-runs.sh"
+"$BIN" artifact-retention-gc \
+  --retention-base /var/metin2/exports \
+  --keep-days "$KEEP_DAYS" \
+  >"$OUT/artifact-retention-gc-exports.sh"
 
 "$BIN" migration-run-retention \
   --build-info "$OUT/build-info.json" \
   --gamed-log-path "$GAMED_LOG" \
   --authd-log-path "$AUTHD_LOG" \
   >"$OUT/migration-run-retention.sh"
+
+"$BIN" export-quarantine-drill \
+  --build-info "$OUT/build-info.json" \
+  --gamed-log-path "$GAMED_LOG" \
+  --authd-log-path "$AUTHD_LOG" \
+  >"$OUT/export-quarantine-drill.sh"
 
 DRILL_NOTE="backup-restore-drill=skipped (set METIN2_RUNTIME_CONFIG to a retained runtime-config JSON snapshot)"
 if [ -n "$RUNTIME_CONFIG" ]; then
@@ -119,6 +131,7 @@ fi
 
 {
   printf 'printed %s\ncommit=%s\nkeep_days=%s\n' "$OUT" "${COMMIT:-unknown}" "$KEEP_DAYS"
+  printf 'export-quarantine-drill=printed from build-info\n'
   printf '%s\n' "$DRILL_NOTE"
 } >"$OUT/notes.md"
 chmod 0640 "$OUT"/*.sh "$OUT/build-info.json" "$OUT/notes.md"
@@ -127,13 +140,15 @@ printf '%s\n' "$OUT"
 
 The helper's only `rm` is the temporary `mktemp` build-info copy via `trap` —
 never retention trees or printed scripts. Companion printers are owned by this
-helper: `migration-run-retention.sh` always, `backup-restore-drill.sh` only
-when `METIN2_RUNTIME_CONFIG` points at a retained non-symlink regular
-runtime-config snapshot. Both companion printers receive
-`--gamed-log-path` / `--authd-log-path` from `METIN2_GAMED_LOG_PATH` /
-`METIN2_AUTHD_LOG_PATH` (defaults `/var/log/metin2/gamed.log` /
-`/var/log/metin2/authd.log`) so printed retain scripts can optionally copy
-daemon JSON logs when present. The helper never live-fetches ops JSON.
+helper: `migration-run-retention.sh` and `export-quarantine-drill.sh` always,
+`artifact-retention-gc-exports.sh` always beside the backups / migration-runs
+GC scripts, and `backup-restore-drill.sh` only when `METIN2_RUNTIME_CONFIG`
+points at a retained non-symlink regular runtime-config snapshot. Always-on
+companions and the optional backup drill receive `--gamed-log-path` /
+`--authd-log-path` from `METIN2_GAMED_LOG_PATH` / `METIN2_AUTHD_LOG_PATH`
+(defaults `/var/log/metin2/gamed.log` / `/var/log/metin2/authd.log`) so printed
+retain scripts can optionally copy daemon JSON logs when present. The helper
+never live-fetches ops JSON.
 ## systemd samples (print-only)
 
 Place as `.sample` files under `/etc/systemd/system/` (or a lab overlay). Do
@@ -179,13 +194,14 @@ WantedBy=timers.target
 
 ### Optional companion print notes
 
-The tree-owned helper already prints `migration-run-retention.sh` on every run
-and forwards `--gamed-log-path` / `--authd-log-path` from
-`METIN2_GAMED_LOG_PATH` / `METIN2_AUTHD_LOG_PATH` (defaults
-`/var/log/metin2/gamed.log` / `/var/log/metin2/authd.log`). To also print
-`backup-restore-drill.sh`, point `METIN2_RUNTIME_CONFIG` at a retained
-runtime-config JSON snapshot before the unit/cron fires. Reviewable fragments
-live under
+The tree-owned helper already prints `migration-run-retention.sh` and
+`export-quarantine-drill.sh` on every run (plus
+`artifact-retention-gc-exports.sh` for `/var/metin2/exports`) and forwards
+`--gamed-log-path` / `--authd-log-path` from `METIN2_GAMED_LOG_PATH` /
+`METIN2_AUTHD_LOG_PATH` (defaults `/var/log/metin2/gamed.log` /
+`/var/log/metin2/authd.log`). To also print `backup-restore-drill.sh`, point
+`METIN2_RUNTIME_CONFIG` at a retained runtime-config JSON snapshot before the
+unit/cron fires. Reviewable fragments live under
 [`contrib/lab-retention-gc/env/metin2-runtime-config.env.sample`](../../contrib/lab-retention-gc/env/metin2-runtime-config.env.sample)
 and
 [`contrib/lab-retention-gc/systemd/metin2-artifact-retention-gc-print.service.d/runtime-config.conf.sample`](../../contrib/lab-retention-gc/systemd/metin2-artifact-retention-gc-print.service.d/runtime-config.conf.sample)
@@ -210,6 +226,12 @@ metin2-migrate migration-run-retention \
   --gamed-log-path /var/log/metin2/gamed.log \
   --authd-log-path /var/log/metin2/authd.log \
   >"$OUT/migration-run-retention.sh"
+
+metin2-migrate export-quarantine-drill \
+  --build-info "$OUT/build-info.json" \
+  --gamed-log-path /var/log/metin2/gamed.log \
+  --authd-log-path /var/log/metin2/authd.log \
+  >"$OUT/export-quarantine-drill.sh"
 ```
 Those companions still must not pipe the resulting scripts into a shell from
 the unit. Loopback `curl` to `127.0.0.1:6060` / `:6061` is allowed only for

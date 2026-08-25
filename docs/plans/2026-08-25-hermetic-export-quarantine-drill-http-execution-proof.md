@@ -65,8 +65,9 @@ PATH wiring succeed together.
 ## What this is not yet
 
 - automatic / scheduled execution of the printed export-quarantine script
-- folding `export-quarantine-drill` into `contrib/lab-retention-gc` print-only
-  samples
+- ~~folding `export-quarantine-drill` into `contrib/lab-retention-gc` print-only
+  samples~~ Done: see
+  [contrib export-quarantine drill print helper](2026-08-25-contrib-export-quarantine-drill-print-helper.md)
 - SQL import/backfill from quarantined exports
 - `rm` of aside-renamed trees
 - FreeBSD port / `pkg` enable defaults

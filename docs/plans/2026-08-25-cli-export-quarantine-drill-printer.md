@@ -84,7 +84,8 @@ Behavior:
 - automatic / scheduled execution of the printed script
 - ~~hermetic `/bin/sh` execution proof against drained loopback ops muxes~~ Done: see
   [hermetic export-quarantine drill HTTP execution proof](2026-08-25-hermetic-export-quarantine-drill-http-execution-proof.md)
-- folding the printer into `contrib/lab-retention-gc` print-only samples
+- ~~folding the printer into `contrib/lab-retention-gc` print-only samples~~ Done: see
+  [contrib export-quarantine drill print helper](2026-08-25-contrib-export-quarantine-drill-print-helper.md)
 - SQL import/backfill from quarantined exports
 - `rm` of aside-renamed trees
 - FreeBSD port / `pkg` enable defaults
