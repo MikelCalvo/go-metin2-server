@@ -215,7 +215,7 @@ Open private shop now participates in the exchange busy-window gate (`docs/plans
 - requester-side open private shop rejects `EXCHANGE START` / `ACCEPT` / commit-time busy drift with the already-owned requester busy info-chat string
 - partner-side open private shop rejects those same seams with the already-owned partner busy info-chat string
 - shared-world publishes a peer-visible open-private-shop busy bit beside merchant/safebox/refine window flags
-- guest sell-into-PC-shop stays deferred; MYSHOP/safebox/refine open/confirm cube rejects are owned in `docs/plans/2026-08-25-myshop-safebox-refine-cube-busy-rejects.md`
+- guest sell-into-PC-shop while browsing is owned fail-closed (`docs/plans/2026-08-25-myshop-guest-sell-while-browsing-fail-closed.md`); MYSHOP/safebox/refine open/confirm cube rejects are owned in `docs/plans/2026-08-25-myshop-safebox-refine-cube-busy-rejects.md`
 
 ### Owned open-cube exchange busy-window reject seam
 

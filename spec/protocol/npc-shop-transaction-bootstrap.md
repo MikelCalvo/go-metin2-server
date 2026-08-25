@@ -412,7 +412,7 @@ Visible peers may now open a guest-only stock table against an already-open priv
 - open still does not remove carried stock or mutate gold on browse; browse does not re-emit `SHOP_SIGN` or invent a distance gate on open
 - guest leave is now owned: `CG::SHOP END` while browsing emits one guest-only `GC::SHOP END` and clears the remembered browse association; host empty-sign close / Leave / reclaim queues the same guest END while clearing host stock/busy; guest `/phase_select` / `/quit` / `/logout`, practice-mob floor, and transfer/warp prepend one guest END when browse is open; already-closed END stays silent
 - duplicate / out-of-range host `display_pos` now also fail closed on accepted open so guest START indexing stays unambiguous
-- guest private-shop buy is now owned (see Owned MYSHOP guest private-shop buy mutation seam below); guest sell-into-PC-shop stays fail-closed / deferred
+- guest private-shop buy is now owned (see Owned MYSHOP guest private-shop buy mutation seam below); guest `SHOP SELL` / `SELL2` while browsing a private shop are now owned as fail-closed silent/no-mutation rejects (`docs/plans/2026-08-25-myshop-guest-sell-while-browsing-fail-closed.md`)
 
 See `docs/plans/2026-08-24-myshop-guest-browse-open-presentation-contract-freeze.md`.
 See `docs/plans/2026-08-24-myshop-guest-browse-leave-end-contract-freeze.md`.
@@ -420,7 +420,7 @@ See `docs/plans/2026-08-24-myshop-guest-buy-mutation-contract-freeze.md`.
 
 ### Owned lab cube open/close presentation seam
 
-Lab cube open/close is owned outside the MYSHOP family (`docs/plans/2026-08-25-cube-open-close-presentation-busy-bit.md`): `/open_cube` / `/close_cube` command-chat presentation plus peer-visible cube busy bit. Open cube now also rejects host `CG::MYSHOP` open, guest browse open, `/open_safebox` / successful `/safebox_password`, and refine confirm beside the already-owned exchange busy rejects (`docs/plans/2026-08-25-myshop-safebox-refine-cube-busy-rejects.md`). Recipe make/add/list and guest sell-into-PC-shop stay deferred.
+Lab cube open/close is owned outside the MYSHOP family (`docs/plans/2026-08-25-cube-open-close-presentation-busy-bit.md`): `/open_cube` / `/close_cube` command-chat presentation plus peer-visible cube busy bit. Open cube now also rejects host `CG::MYSHOP` open, guest browse open, `/open_safebox` / successful `/safebox_password`, and refine confirm beside the already-owned exchange busy rejects (`docs/plans/2026-08-25-myshop-safebox-refine-cube-busy-rejects.md`). Guest `SHOP SELL` / `SELL2` while browsing are owned fail-closed (`docs/plans/2026-08-25-myshop-guest-sell-while-browsing-fail-closed.md`); recipe make/add/list stay deferred.
 
 ### Owned MYSHOP guest private-shop buy mutation seam
 
@@ -431,9 +431,9 @@ Guest `CG::SHOP BUY` while browsing an already-open private shop is now owned:
 - success transfers the matched live host carried stack into the guest, debits guest gold and credits host gold by the remembered listed price (no empire `*3`, tax deferred at full price), clears that remembered stock row, persists both account snapshots, emits guest/host inventory + gold refreshes (no bare `GC::SHOP OK`), and emits `GC::SHOP UPDATE_ITEM` with `vnum = 0` for that display slot to remaining browsing guests (buyer receives it in the direct buy burst; other guests via shared-world fanout)
 - multi-guest fan-out is now session-proven: when a second guest is still browsing the same open host, that watcher receives exactly one queued `UPDATE_ITEM(vnum=0)` for the sold `display_pos` with no watcher inventory/gold mutation, and a later watcher buy of that cleared slot fails sold-out/invalid (`docs/plans/2026-08-24-myshop-guest-buy-multi-guest-update-item-fanout.md`)
 - insufficient gold → bare `GC::SHOP NOT_ENOUGH_MONEY`; no placement → bare `GC::SHOP INVENTORY_FULL`; never-listed / out-of-range → bare `GC::SHOP INVALID_POS`; already-cleared / live stock mismatch → bare `GC::SHOP SOLD_OUT` / `SOLDOUT`; host gold-carrier overflow stays silent fail-closed
-- guest `SHOP SELL` / `SELL2` while browsing a private shop stay fail-closed with no frames; tax/empire multipliers, shop-bag consumption, and recipe make/add/list stay deferred
+- guest `SHOP SELL` / `SELL2` while browsing a private shop are owned fail-closed with no frames and no inventory/gold/host mutation (`docs/plans/2026-08-25-myshop-guest-sell-while-browsing-fail-closed.md`); tax/empire multipliers, shop-bag consumption, and recipe make/add/list stay deferred
 
-See `docs/plans/2026-08-24-myshop-guest-buy-mutation-contract-freeze.md` and `docs/plans/2026-08-24-myshop-guest-buy-multi-guest-update-item-fanout.md`.
+See `docs/plans/2026-08-24-myshop-guest-buy-mutation-contract-freeze.md`, `docs/plans/2026-08-24-myshop-guest-buy-multi-guest-update-item-fanout.md`, and `docs/plans/2026-08-25-myshop-guest-sell-while-browsing-fail-closed.md`.
 
 ### Frozen `GC::ITEM_UPDATE` codec seam
 
