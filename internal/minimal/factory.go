@@ -7660,7 +7660,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						if !ownsLiveSharedWorldSession() {
 							return gameflow.ItemExchangeResult{Accepted: false}
 						}
-						if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveMyShopOpen {
+						if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveMyShopOpen || hasActiveCubeOpen {
 							return gameflow.ItemExchangeResult{
 								Accepted: true,
 								Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
@@ -7711,10 +7711,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						}
 						// Same-socket busy presentations already published into shared-world
 						// START eligibility must also fail closed for ACCEPT / mutual-accept
-						// finalize so a later-opened merchant/safebox/refine/myshop window cannot
+						// finalize so a later-opened merchant/safebox/refine/myshop/cube window cannot
 						// sneak past the frozen busy-window trade policy. Mirror START's
 						// requester busy info-chat so the reject is client-visible.
-						if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveMyShopOpen {
+						if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveMyShopOpen || hasActiveCubeOpen {
 							return gameflow.ItemExchangeResult{
 								Accepted: true,
 								Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{

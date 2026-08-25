@@ -576,7 +576,7 @@ func (r *sharedWorldRegistry) StartExchange(originID uint64, targetVID uint32) (
 	if _, ok := r.sessionEntryLocked(target.Entity.ID); !ok {
 		return nil, false
 	}
-	if r.hasMerchantWindowOpenLocked(target.Entity.ID) || r.hasSafeboxWindowOpenLocked(target.Entity.ID) || r.hasRefineWindowOpenLocked(target.Entity.ID) || r.hasMyShopWindowOpenLocked(target.Entity.ID) {
+	if r.hasMerchantWindowOpenLocked(target.Entity.ID) || r.hasSafeboxWindowOpenLocked(target.Entity.ID) || r.hasRefineWindowOpenLocked(target.Entity.ID) || r.hasMyShopWindowOpenLocked(target.Entity.ID) || r.hasCubeWindowOpenLocked(target.Entity.ID) {
 		return [][]byte{encodeExchangePartnerMerchantBusyInfoFrame()}, true
 	}
 	if _, busy := r.exchangePartners[target.Entity.ID]; busy {
@@ -796,12 +796,12 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 		return nil, nil, false
 	}
 	// Fail closed before accept markers or mutual-accept finalize when either paired
-	// side currently has an open merchant / safebox / refine busy presentation.
+	// side currently has an open merchant / safebox / refine / MYSHOP / cube busy presentation.
 	// Mirror START busy info-chat: requester-local busy wins, otherwise partner busy.
-	if r.hasMerchantWindowOpenLocked(originID) || r.hasSafeboxWindowOpenLocked(originID) || r.hasRefineWindowOpenLocked(originID) || r.hasMyShopWindowOpenLocked(originID) {
+	if r.hasMerchantWindowOpenLocked(originID) || r.hasSafeboxWindowOpenLocked(originID) || r.hasRefineWindowOpenLocked(originID) || r.hasMyShopWindowOpenLocked(originID) || r.hasCubeWindowOpenLocked(originID) {
 		return [][]byte{encodeExchangeRequesterMerchantBusyInfoFrame()}, nil, true
 	}
-	if r.hasMerchantWindowOpenLocked(partnerID) || r.hasSafeboxWindowOpenLocked(partnerID) || r.hasRefineWindowOpenLocked(partnerID) || r.hasMyShopWindowOpenLocked(partnerID) {
+	if r.hasMerchantWindowOpenLocked(partnerID) || r.hasSafeboxWindowOpenLocked(partnerID) || r.hasRefineWindowOpenLocked(partnerID) || r.hasMyShopWindowOpenLocked(partnerID) || r.hasCubeWindowOpenLocked(partnerID) {
 		return [][]byte{encodeExchangePartnerMerchantBusyInfoFrame()}, nil, true
 	}
 	// Gold-carrier-cap gate stays after busy-window rejects and ahead of Check /
@@ -920,10 +920,10 @@ func (r *sharedWorldRegistry) exchangeFinalizeCommitBusyRejectLocked(plan *excha
 	}
 	// Mirror ACCEPT / START busy ordering: commit-requester (plan.OriginID) busy
 	// wins over partner busy when both presentations are open.
-	if r.hasMerchantWindowOpenLocked(plan.OriginID) || r.hasSafeboxWindowOpenLocked(plan.OriginID) || r.hasRefineWindowOpenLocked(plan.OriginID) || r.hasMyShopWindowOpenLocked(plan.OriginID) {
+	if r.hasMerchantWindowOpenLocked(plan.OriginID) || r.hasSafeboxWindowOpenLocked(plan.OriginID) || r.hasRefineWindowOpenLocked(plan.OriginID) || r.hasMyShopWindowOpenLocked(plan.OriginID) || r.hasCubeWindowOpenLocked(plan.OriginID) {
 		return [][]byte{encodeExchangeRequesterMerchantBusyInfoFrame()}, true
 	}
-	if r.hasMerchantWindowOpenLocked(plan.PartnerID) || r.hasSafeboxWindowOpenLocked(plan.PartnerID) || r.hasRefineWindowOpenLocked(plan.PartnerID) || r.hasMyShopWindowOpenLocked(plan.PartnerID) {
+	if r.hasMerchantWindowOpenLocked(plan.PartnerID) || r.hasSafeboxWindowOpenLocked(plan.PartnerID) || r.hasRefineWindowOpenLocked(plan.PartnerID) || r.hasMyShopWindowOpenLocked(plan.PartnerID) || r.hasCubeWindowOpenLocked(plan.PartnerID) {
 		return [][]byte{encodeExchangePartnerMerchantBusyInfoFrame()}, true
 	}
 	return nil, false

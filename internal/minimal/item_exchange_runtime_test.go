@@ -4040,6 +4040,78 @@ func TestSharedWorldAcceptExchangeRejectsOpenRefineWindowWithoutMutation(t *test
 	}
 }
 
+func TestSharedWorldAcceptExchangeRejectsOpenCubeWindowWithoutMutation(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("ExchAcceptCubeOwner", 0x010308b5, 0x020408b5, 1100, 2100, 0, 101, 201)
+	owner.Gold = 500
+	peer := peerVisibilityCharacter("ExchAcceptCubePeer", 0x010308b6, 0x020408b6, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerPending := newPendingServerFrames()
+	peerPending := newPendingServerFrames()
+	ownerID, _ := registry.Join(owner, ownerPending, nil)
+	peerID, _ := registry.Join(peer, peerPending, nil)
+	if ownerID == 0 || peerID == 0 {
+		t.Fatalf("expected shared-world join to allocate owner/peer ids, got owner=%d peer=%d", ownerID, peerID)
+	}
+	_ = ownerPending.flush()
+	_ = peerPending.flush()
+
+	startFrames, ok := registry.StartExchange(ownerID, peer.VID)
+	if !ok || len(startFrames) != 1 {
+		t.Fatalf("expected exchange start to succeed with one owner frame, ok=%v frames=%d", ok, len(startFrames))
+	}
+	if queued := peerPending.flush(); len(queued) != 1 {
+		t.Fatalf("expected exchange start to queue one peer frame, got %d", len(queued))
+	}
+
+	if !registry.SetCubeWindowOpen(ownerID, true) {
+		t.Fatal("expected SetCubeWindowOpen(owner) to succeed")
+	}
+	acceptFrames, finalizePlan, ok := registry.AcceptExchange(ownerID, owner.Gold, owner)
+	if !ok || finalizePlan != nil || len(acceptFrames) != 1 {
+		t.Fatalf("expected requester open-cube AcceptExchange to emit one busy info chat frame, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, acceptFrames[0]))
+	if err != nil {
+		t.Fatalf("decode requester open-cube AcceptExchange busy info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterMerchantBusyInfoMessage {
+		t.Fatalf("unexpected requester open-cube AcceptExchange busy info chat: %+v", infoChat)
+	}
+	if queued := peerPending.flush(); len(queued) != 0 {
+		t.Fatalf("expected requester open-cube AcceptExchange to queue no peer frames, got %d", len(queued))
+	}
+
+	if !registry.SetCubeWindowOpen(ownerID, false) {
+		t.Fatal("expected SetCubeWindowOpen(owner,false) to succeed")
+	}
+	if !registry.SetCubeWindowOpen(peerID, true) {
+		t.Fatal("expected SetCubeWindowOpen(peer) to succeed")
+	}
+	acceptFrames, finalizePlan, ok = registry.AcceptExchange(ownerID, owner.Gold, owner)
+	if !ok || finalizePlan != nil || len(acceptFrames) != 1 {
+		t.Fatalf("expected partner open-cube AcceptExchange to emit one busy info chat frame, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
+	}
+	infoChat, err = chatproto.DecodeChatDelivery(decodeSingleFrame(t, acceptFrames[0]))
+	if err != nil {
+		t.Fatalf("decode partner open-cube AcceptExchange busy info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangePartnerMerchantBusyInfoMessage {
+		t.Fatalf("unexpected partner open-cube AcceptExchange busy info chat: %+v", infoChat)
+	}
+	if queued := peerPending.flush(); len(queued) != 0 {
+		t.Fatalf("expected partner open-cube AcceptExchange to queue no peer frames, got %d", len(queued))
+	}
+
+	cancelFrames, ok := registry.CancelExchange(ownerID)
+	if !ok || len(cancelFrames) != 1 {
+		t.Fatalf("expected exchange shell to remain cancellable after cube busy rejects, ok=%v frames=%d", ok, len(cancelFrames))
+	}
+	if queued := peerPending.flush(); len(queued) != 1 {
+		t.Fatalf("expected cancel to queue one peer END, got %d", len(queued))
+	}
+}
+
 func TestSharedWorldCommitExchangeFinalizeRejectsBusyWindowOpenedAfterAcceptPlan(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	registry.SetItemTemplates(map[uint32]itemcatalog.Template{
@@ -4140,6 +4212,30 @@ func TestSharedWorldCommitExchangeFinalizeRejectsBusyWindowOpenedAfterAcceptPlan
 	}
 	if queued := peerPending.flush(); len(queued) != 0 {
 		t.Fatalf("expected failed CommitExchangeFinalize requester busy reject to queue no peer frames, got %d", len(queued))
+	}
+
+	if !registry.SetSafeboxWindowOpen(peerID, false) {
+		t.Fatal("expected SetSafeboxWindowOpen(peer,false) to succeed")
+	}
+	if !registry.SetCubeWindowOpen(ownerID, true) {
+		t.Fatal("expected SetCubeWindowOpen(owner) after accept plan to succeed")
+	}
+	busyFrames, committed = registry.CommitExchangeFinalize(finalizePlan, updatedOrigin, updatedPartner, [][]byte{encodeExchangeEndFrame()})
+	if committed {
+		t.Fatal("expected CommitExchangeFinalize to fail closed after post-plan partner cube open")
+	}
+	if len(busyFrames) != 1 {
+		t.Fatalf("expected commit-time partner cube busy reject to emit one self-only info chat, got %d frames", len(busyFrames))
+	}
+	infoChat, err = chatproto.DecodeChatDelivery(decodeSingleFrame(t, busyFrames[0]))
+	if err != nil {
+		t.Fatalf("decode commit-time partner cube busy info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangePartnerMerchantBusyInfoMessage {
+		t.Fatalf("unexpected commit-time partner cube busy info chat: %+v", infoChat)
+	}
+	if queued := peerPending.flush(); len(queued) != 0 {
+		t.Fatalf("expected failed CommitExchangeFinalize partner cube busy reject to queue no peer frames, got %d", len(queued))
 	}
 
 	cancelFrames, ok := registry.CancelExchange(peerID)

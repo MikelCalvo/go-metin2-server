@@ -8,6 +8,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
+	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 )
 
@@ -214,6 +215,137 @@ func TestSharedWorldRegistrySetCubeWindowOpenRoundTripsBusyBit(t *testing.T) {
 		t.Fatal("expected cube busy bit to clear after SetCubeWindowOpen(false)")
 	}
 	registry.Leave(ownerID)
+}
+
+func TestGameRuntimeItemExchangeStartRejectsActiveCubeWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchCubeStartOwner", 0x010308b1, 0x020408b1, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 1811, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchCubeStartPeer", 0x010308b2, 0x020408b2, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerLogin := "exch-cube-start-owner"
+	peerLogin := "exch-cube-start-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707071b1, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707071b2, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed cube-open exchange owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed cube-open exchange peer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected cube-open exchange runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707071b1)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707071b2)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	openOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_cube",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_cube before exchange start: %v", err)
+	}
+	if len(openOut) != 1 {
+		t.Fatalf("expected /open_cube before exchange start to emit one command chat frame, got %d", len(openOut))
+	}
+	assertCubeCommandChatFrame(t, openOut[0], "cube open 20022", "requester open before start")
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected cube-open exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected exchange start with open cube to emit one info chat frame, got %d", len(startOut))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, startOut[0]))
+	if err != nil {
+		t.Fatalf("decode cube-open exchange start info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterMerchantBusyInfoMessage {
+		t.Fatalf("unexpected cube-open exchange start info chat: %+v", infoChat)
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected exchange start with open cube to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "cube-open exchange start owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "cube-open exchange start peer")
+}
+
+func TestGameRuntimeItemExchangeStartRejectsPartnerActiveCubeWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ExchPartnerCubeOwner", 0x010308b3, 0x020408b3, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 1813, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("ExchPartnerCubePeer", 0x010308b4, 0x020408b4, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	peer.Inventory = []inventory.ItemInstance{{ID: 1814, Vnum: 27001, Count: 2, Slot: 6}}
+	ownerLogin := "exch-partner-cube-owner"
+	peerLogin := "exch-partner-cube-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707071b3, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707071b4, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed partner-cube exchange owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed partner-cube exchange peer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected partner-cube exchange runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707071b3)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707071b4)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	openOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_cube",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected partner /open_cube before exchange start: %v", err)
+	}
+	if len(openOut) != 1 {
+		t.Fatalf("expected partner /open_cube before exchange start to emit one command chat frame, got %d", len(openOut))
+	}
+	assertCubeCommandChatFrame(t, openOut[0], "cube open 20022", "partner open before start")
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected partner-cube exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected partner-cube exchange start to emit one info chat frame, got %d", len(startOut))
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, startOut[0]))
+	if err != nil {
+		t.Fatalf("decode partner-cube exchange start info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangePartnerMerchantBusyInfoMessage {
+		t.Fatalf("unexpected partner-cube exchange start info chat: %+v", infoChat)
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected partner-cube exchange start to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "partner-cube exchange start owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "partner-cube exchange start peer")
 }
 
 func assertCloseCubeCommandChat(t *testing.T, flow service.SessionFlow, slash string, label string) {
