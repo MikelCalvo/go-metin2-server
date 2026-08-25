@@ -15,6 +15,7 @@ Land a deterministic checked-in authoring fixture for the already-owned kill-que
 3. Focused tests:
    - `TestCanonicalizeKillQuestOnlyDropTableAuthoringExampleExpandsWithoutCombatChannels`
    - `TestLocalContentBundleValidateEndpointExpandsKillQuestOnlyDropTableAuthoringExample`
+   - `TestGameRuntimeImportsKillQuestOnlyDropTableAuthoringExample`
 4. Specs / QA checklist reference the fixture beside the combat+kill-quest authoring examples.
 
 ## What this is not yet
@@ -38,3 +39,6 @@ Focused coverage:
 1. ~~Add a matching one-count `regen_spawns` kill-quest-only authoring fixture beside this spawn-group example.~~ Done in `2026-08-20-kill-quest-only-regen-authoring-example.md`.
 2. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
 3. Optionally migrate selected content-bundle / NPC gameplay tests onto hermetic MemoryStores once callers want less temp-dir coupling.
+4. ~~Add a focused runtime-import twin for the checked-in kill-quest-only drop-table fixture.~~ Done:
+   `TestGameRuntimeImportsKillQuestOnlyDropTableAuthoringExample`
+   (`docs/plans/2026-08-25-kill-quest-only-authoring-runtime-import-twins.md`).

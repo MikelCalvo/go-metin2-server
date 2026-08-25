@@ -15,6 +15,7 @@ Land a deterministic checked-in authoring fixture for the already-owned kill-que
 3. Focused tests:
    - `TestCanonicalizeKillQuestOnlyRegenAuthoringExampleExpandsWithoutCombatChannels`
    - `TestLocalContentBundleValidateEndpointExpandsKillQuestOnlyRegenAuthoringExample`
+   - `TestGameRuntimeImportsKillQuestOnlyRegenAuthoringExample`
 4. Specs / QA checklist reference the fixture beside the spawn-group kill-quest-only and combat+kill-quest regen authoring examples.
 
 ## What this is not yet
@@ -37,3 +38,6 @@ Focused coverage:
 
 1. ~~Keep multi-count regen expansion deferred until pack placement / member identity rules are frozen.~~ Docs/spec freeze and authoring GREEN landed: see [multi-count regen pack placement contract freeze](2026-08-23-multi-count-regen-pack-placement-contract-freeze.md) plus `docs/examples/bootstrap-multi-count-regen-authoring-bundle.json`.
 2. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
+3. ~~Add a focused runtime-import twin for the checked-in kill-quest-only regen fixture.~~ Done:
+   `TestGameRuntimeImportsKillQuestOnlyRegenAuthoringExample`
+   (`docs/plans/2026-08-25-kill-quest-only-authoring-runtime-import-twins.md`).
