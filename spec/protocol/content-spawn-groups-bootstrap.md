@@ -181,6 +181,7 @@ The first bootstrap spawn-group contract freezes these fields:
     - `docs/examples/bootstrap-invalid-regen-one-count-pack-spacing-bundle.json` (`count = 1` with `pack_spacing = 100`)
     - `docs/examples/bootstrap-invalid-colliding-regen-member-refs-bundle.json` (authored `spawn_groups` already owns a synthesized `{ref}.m01` member that multi-count expansion would recreate)
   - positive multi-count QA fixture: `docs/examples/bootstrap-multi-count-regen-authoring-bundle.json` (`count = 2`, `pack_spacing = 100`) expands to `.m01` / `.m02` beside the existing one-count regen authoring example
+  - that same fixture is also bound by a focused runtime-import twin (`TestGameRuntimeImportsMultiCountRegenAuthoringExample`) so live spawn materialization carries the expanded pack-member refs, grid placement, reward descriptor, and gated kill-quest credit without relying only on the composed PvE vertical suite
   - omitted `combat_profile` canonicalizes through the ordinary spawn-group default (`practice_mob`)
   - `reward_drop_table_ref` can reference the same fixed authoring-only `drop_tables[]` entries as direct spawn groups, and is expanded before validation/import
   - canonicalization appends each valid expanded regen member to the canonical `spawn_groups[]` collection, then strips `regen_spawns`, `drop_tables`, and `reward_drop_table_ref`

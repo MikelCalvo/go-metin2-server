@@ -60,3 +60,9 @@ git diff --check
    multi-count member refs if QA keeps improvising that reject.~~ Done:
    `docs/examples/bootstrap-invalid-colliding-regen-member-refs-bundle.json`
    (`docs/plans/2026-08-24-invalid-colliding-regen-member-refs-fixture.md`).
+5. ~~Add a focused runtime-import twin for
+   `docs/examples/bootstrap-multi-count-regen-authoring-bundle.json` so live
+   spawn materialization matches canonicalize / ops validate without relying only
+   on the composed PvE vertical suite.~~ Done:
+   `TestGameRuntimeImportsMultiCountRegenAuthoringExample`
+   (`docs/plans/2026-08-25-multi-count-regen-authoring-runtime-import-twin.md`).
