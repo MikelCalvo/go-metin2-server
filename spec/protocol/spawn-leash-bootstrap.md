@@ -179,6 +179,8 @@ Preflight rules:
 
 Cleanup / fail-closed rules:
 - clear pending chase deadlines on owner disconnect/logout/close, phase-select leave, EnterGame reclaim that drops stale engagement ownership, owner death floor, owner transfer/warp to a different map, client-originated `TARGET(0)` clear-target that releases the current engagement, actor death, successful return-home / return-step, operator/runtime `UpdateStaticActor` (including same-map position-only MOVE updates that release engagement), content-bundle replacement that removes or replaces the actor, and any other engagement release that drops the actor's `engaged_by` ownership
+- proximity-only leave-radius walk-away (no selected combat target) is one of those engagement-release boundaries: walking outside the actor's effective aggro radius releases `engaged_by`, clears pending chase, and cancels delayed retaliation without inventing self `TARGET(0, 0)`
+- hit-armed / still-selected engagement is intentionally asymmetric: walking outside aggro while the owner still holds a selected combat target for that actor and remains inside combat-target range / leash / visibility must **not** release engagement or clear pending chase solely because aggro radius was left; chase / retaliation continue under the owned hit-engagement rules until an explicit release boundary such as `TARGET(0)`, death floor, disconnect/transfer, return recovery, operator update, or combat-range loss clear
 - dead actors waiting on respawn do not arm chase; a respawn rebuild starts unengaged at authored home and therefore does not inherit a pre-death chase deadline
 - no new operator chase-step POST surface is required for this first executor freeze
 
