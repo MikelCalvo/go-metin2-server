@@ -28,7 +28,10 @@ MYSHOP / cube already owned both immediate and delayed twins.
 
 - inventing a death-specific safebox packet family
 - durable safebox cell/money mutation on the close companion
-- refine-dialog delayed twin beyond the already-owned silent busy clear
+
+The refine-dialog delayed twin later landed separately as
+`docs/plans/2026-08-25-refine-delayed-retaliation-floor-close-proof.md`
+(`TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenRefine`).
 
 ## Validation
 
