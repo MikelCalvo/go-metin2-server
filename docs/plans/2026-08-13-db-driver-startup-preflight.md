@@ -43,6 +43,6 @@ Full validation remains `gofmt -l`, `go test ./... -count=1 -timeout=120s`, `go 
 
 ## Follow-up options
 
-1. Add a build-tagged or injected-driver test harness for a real `schema_migrations` status read.
+1. ~~Add a build-tagged or injected-driver test harness for a real `schema_migrations` status read.~~ Done for the build-tagged SQLite harness (`go test -tags=sqlite_harness ./db/migrations -run SQLiteHarness`) that applies the catalog on a temp DB and proves live ledger/status/snapshot round-trips — see [SQLite schema_migrations driver-backed harness](2026-08-25-sqlite-schema-migrations-driver-harness.md). Stock binaries still do not register/link a production driver.
 2. Choose and document a production DB driver/engine only when repository or migrator work needs it.
-3. Keep apply/rollback commands out of scope until driver-backed preflight and recovery semantics are proven.
+3. ~~Keep apply/rollback commands out of scope until driver-backed preflight and recovery semantics are proven.~~ The programmatic apply primitive and CLI `apply` already exist; keep production-engine selection / SQL import-backfill deferred until operators choose an engine on top of the harness gate.

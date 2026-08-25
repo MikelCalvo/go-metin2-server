@@ -10,7 +10,7 @@ The current boundary is deliberately narrow:
 
 - mutating migration execution is CLI-only through `metin2-migrate apply`;
 - shipped daemon ops endpoints remain read-only (`catalog`, `status`, `ledger-snapshot`, and offline plan helpers);
-- the CLI does not bundle or select a production DB engine/driver;
+- stock CLI/daemon binaries do not register or select a production DB engine/driver (a build-tagged SQLite harness proves live ledger apply/read/snapshot only under `go test -tags=sqlite_harness`; see [SQLite schema_migrations driver-backed harness](../plans/2026-08-25-sqlite-schema-migrations-driver-harness.md));
 - account, character, item, quest, content, login-ticket, and world runtime stores are still bootstrap/file-backed unless a later repository slice says otherwise;
 - executable SQL and DSNs must not be copied into logs, tickets, or audit summaries.
 
