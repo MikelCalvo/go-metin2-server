@@ -101,6 +101,43 @@ Keep operator evidence outside live data trees:
     apply-audit-status.json
     post-apply-status.json
     persistence-status-after.json
+
+/var/metin2/exports/
+  YYYYMMDDTHHMMSSZ-<commit12>/
+    gamed-build-info.json
+    authd-build-info.json
+    gamed.log
+    authd.log
+    runtime-config.json
+    migration-catalog.json
+    notes.md
+    account-character-roster/
+      export.json
+      quarantine.json
+    character-item-state/
+      export.json
+      quarantine.json
+    character-point-state/
+      export.json
+      quarantine.json
+    auth-login-ticket-handoff/
+      export.json
+      quarantine.json
+    character-quest-state/
+      export.json
+      quarantine.json
+    character-safebox-state/
+      export.json
+      quarantine.json
+    item-template-state/
+      export.json
+      quarantine.json
+    static-actor-content-state/
+      export.json
+      quarantine.json
+    bootstrap-ground-item-state/
+      export.json
+      quarantine.json
 ```
 
 Naming rules:
@@ -143,6 +180,15 @@ metin2-migrate version \
 
 That mode prints rollback artifact names (`rollback-plan-artifact.json`, `rollback-apply-preflight.json`, `migration-rollback-audit.json`, `post-rollback-status.json`), includes `--allow-rollback` on the printed preflight/apply lines, defaults `--lock-file` to `migration-rollback.lock` when omitted, and keeps the same correlation checklist retains.
 
+Default export/quarantine printer base is `/var/metin2/exports` via:
+
+```bash
+metin2-migrate version \
+  | metin2-migrate export-quarantine-drill --build-info -
+```
+
+The printer emits a path-aware shell script that creates `YYYYMMDDTHHMMSSZ-<commit12>/`, retains both-daemon build-info, `runtime-config.json`, migration catalog, optional daemon JSON logs, a `notes.md` stub, and one subdirectory per tip-`0015` migration-shaped export kind with retained `export.json` plus offline `quarantine-export` output. It never executes the curls itself, never opens a database, never embeds a DSN, and never imports SQL from quarantined artifacts. Hermetic HTTP → offline CLI coverage for roster + tip-`0015` safebox money is owned by [hermetic export → offline quarantine-export CLI proof](../plans/2026-08-25-hermetic-export-quarantine-offline-cli-proof.md); the printer itself is owned by [CLI export → offline quarantine drill printer](../plans/2026-08-25-cli-export-quarantine-drill-printer.md).
+
 Aged retention trees can be triage-printed without deletion via:
 
 ```bash
@@ -179,6 +225,8 @@ See also:
 - [ops docs ground-item lab topology / tip sync](../plans/2026-08-22-ops-docs-ground-item-lab-topology-tip-sync.md)
 - [safebox file-store backup/restore drill fold-in](../plans/2026-08-23-safebox-file-store-backup-restore-drill.md)
 - [hermetic backup/restore drill HTTP execution proof](../plans/2026-08-24-hermetic-backup-restore-drill-http-execution-proof.md)
+- [hermetic export → offline quarantine-export CLI proof](../plans/2026-08-25-hermetic-export-quarantine-offline-cli-proof.md)
+- [CLI export → offline quarantine drill printer](../plans/2026-08-25-cli-export-quarantine-drill-printer.md)
 
 ## Daemon JSON log paths
 
@@ -194,7 +242,9 @@ append those paths (FreeBSD `daemon -H -o …`, systemd `StandardOutput=append:�
 and ship reviewable `newsyslog` / `logrotate` fragments. The offline
 `backup-restore-drill` and `migration-run-retention` printers optionally copy
 those files into each retention tree (`--gamed-log-path` /
-`--authd-log-path`, defaults above; missing files stay non-fatal). See
+`--authd-log-path`, defaults above; missing files stay non-fatal). The
+`export-quarantine-drill` printer uses the same optional log retain contract.
+See
 [production observability](production-observability.md),
 [lab daemon unit samples](lab-daemon-unit-samples.md), and
 [CLI daemon log retention correlation](../plans/2026-08-24-cli-daemon-log-retention-correlation.md).
@@ -207,7 +257,7 @@ those files into each retention tree (`--gamed-log-path` /
 - remote admin APIs
 - automatic / scheduled artifact GC or lifecycle daemons that invoke deletion
 - automatic stale-lock expiry (lab recovery remains confirmation-gated `apply-lock-aside` / operator aside-rename; see [lab stale-lock recovery](lab-stale-lock-recovery.md))
-- automatic execution of the printed `migration-run-retention`, `backup-restore-drill`, or `artifact-retention-gc` scripts (the CLI and print-only unit samples only print commands; GC remains confirmation-gated aside-rename by the operator; hermetic `/bin/sh` proof of the printed backup-restore drill against drained loopback ops muxes is owned in [hermetic backup/restore drill HTTP execution proof](../plans/2026-08-24-hermetic-backup-restore-drill-http-execution-proof.md) and does not auto-run from CLI)
+- automatic execution of the printed `migration-run-retention`, `backup-restore-drill`, `export-quarantine-drill`, or `artifact-retention-gc` scripts (the CLI and print-only unit samples only print commands; GC remains confirmation-gated aside-rename by the operator; hermetic `/bin/sh` proof of the printed backup-restore drill against drained loopback ops muxes is owned in [hermetic backup/restore drill HTTP execution proof](../plans/2026-08-24-hermetic-backup-restore-drill-http-execution-proof.md) and does not auto-run from CLI)
 - `rm` / unlink of aside-renamed retention trees
 - remote log shipping / SIEM sinks (local `/var/log/metin2/` file capture is owned; exporters are not)
 - a claim that bootstrap file stores are the final production persistence layer

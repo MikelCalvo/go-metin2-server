@@ -53,7 +53,8 @@ or a retained file).
 
 ## What this is not yet
 
-- a `metin2-migrate export-quarantine-drill` printer that emits curl scripts
+- ~~a `metin2-migrate export-quarantine-drill` printer that emits curl scripts~~ Done: see
+  [CLI export → offline quarantine drill printer](2026-08-25-cli-export-quarantine-drill-printer.md)
 - automatic / scheduled execution of printed triage scripts
 - covering every empty export kind in the hermetic HTTP proof (roster + tip
   safebox are the seeded non-empty gate; other kinds remain unit-covered)
@@ -95,7 +96,8 @@ Validation for this slice:
 
 ## Anti-goals / ordering constraints
 
-- Do not add a printer in this slice.
+- Do not add a printer in this slice. (Later done: see
+  [CLI export → offline quarantine drill printer](2026-08-25-cli-export-quarantine-drill-printer.md).)
 - Do not widen registration helpers or change endpoint paths/bodies.
 - Do not auto-run printed scripts from CLI.
 - Do not push `origin/main`; push only `origin/lane/persistence`.

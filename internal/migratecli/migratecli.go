@@ -39,8 +39,8 @@ const (
 // code. The catalog, status, empty-ledger-snapshot, ledger-snapshot,
 // ledger-snapshot-status, plan, plan-artifact, plan-artifact-status,
 // apply-preflight, apply-preflight-status, apply-lock-status, apply-audit-status,
-// quarantine-export, backup-restore-drill, migration-run-retention, and
-// artifact-retention-gc commands are read-only.
+// quarantine-export, export-quarantine-drill, backup-restore-drill,
+// migration-run-retention, and artifact-retention-gc commands are read-only.
 // The apply command is an explicit CLI-only mutation surface: it requires an
 // operator-supplied database driver, DSN, strict offline ledger snapshot, and
 // target version, and it remains deliberately separate from daemon startup and
@@ -102,6 +102,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runApply(args[1:], stdin, stdout, stderr)
 	case "quarantine-export":
 		return runQuarantineExport(args[1:], stdin, stdout, stderr)
+	case "export-quarantine-drill":
+		return runExportQuarantineDrill(args[1:], stdin, stdout, stderr)
 	case "backup-restore-drill":
 		return runBackupRestoreDrill(args[1:], stdin, stdout, stderr)
 	case "migration-run-retention":
@@ -2122,6 +2124,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  apply-audit-status     inspect a migration apply audit file without mutating it")
 	fmt.Fprintln(w, "  apply                  apply a target plan using a database/sql driver and offline ledger snapshot")
 	fmt.Fprintln(w, "  quarantine-export      validate and canonicalize a retained migration-shaped export offline")
+	fmt.Fprintln(w, "  export-quarantine-drill print path-aware lab export retention + offline quarantine-export commands from build-info")
 	fmt.Fprintln(w, "  backup-restore-drill   print path-aware lab backup retention + file-store drill commands from runtime-config and build-info")
 	fmt.Fprintln(w, "  migration-run-retention print path-aware migration-runs retention + correlation checklist commands from build-info")
 	fmt.Fprintln(w, "  artifact-retention-gc  print path-aware lab retention aside-rename triage for aged YYYYMMDDTHHMMSSZ-<commit12> trees")
@@ -2156,6 +2159,8 @@ func printUsage(w io.Writer) {
 	printApplyUsage(w)
 	fmt.Fprintln(w, "")
 	printQuarantineExportUsage(w)
+	fmt.Fprintln(w, "")
+	printExportQuarantineDrillUsage(w)
 	fmt.Fprintln(w, "")
 	printBackupRestoreDrillUsage(w)
 	fmt.Fprintln(w, "")
