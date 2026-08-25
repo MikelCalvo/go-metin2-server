@@ -35,8 +35,8 @@ go test ./internal/minimal -run 'TestGameRuntimeUpdateStaticActorSameMapSpawnGro
 
 ## What this is not yet
 
-- dedicated multi-viewer chase / return / homeward AOI twins (optional symmetry;
-  runtime path already shared)
+- ~~dedicated multi-viewer chase / return / homeward AOI twins (optional symmetry;
+  runtime path already shared)~~ Done: see [spawn step AOI membership](2026-08-25-spawn-step-aoi-membership.md).
 - absolute schedule rematerialize for chase / return / homeward across restart
 - cross-map MOVE / `GC WARP`
 - pack AI / synchronized respawn / pathfinding
