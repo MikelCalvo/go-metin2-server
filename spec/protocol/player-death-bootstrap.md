@@ -300,10 +300,12 @@ The current bootstrap player-death contract now also owns one narrow busy-window
 - after `/restart_here` or `/restart_town` recovers from that floor, a later same-socket `EXCHANGE START` against a living visible peer must no longer be rejected by the orphaned safebox/refine busy-window policy; the recovered owner may open a fresh trade shell normally
 - accepted `/restart_here` / `/restart_town` also clear any still-open same-socket safebox/refine busy presentation as part of recovery so a revived owner does not keep a pre-death busy lock
 - leave / `/logout` / `/quit` / `/phase_select` already clear the safebox busy presentation (with the same `CloseSafebox` companion when the presentation was open); the same leave teardown now also clears an open refine-dialog busy presentation so session exit does not leave a shared-world refine busy orphan either
+- focused coverage freezes the immediate hit-piggyback floor path plus post-restart exchange recovery (`TestGameSessionFlowPracticeMobDeathClearsOpenSafeboxBusyBeforeRestartExchange`) and the delayed server-origin floor path (`TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenSafebox`)
 
 Why this is the current owned boundary:
 - merchant and exchange already had explicit close companions on the death edge, but the quieter safebox/refine busy presentations could still survive into `/restart_here` and incorrectly block later exchange `START`
 - reusing the already-owned `/close_safebox` `CloseSafebox` companion and silent `REFINE type = 255` cancel semantics keeps the teardown honest without inventing death-specific safebox/refine packet families
+- guest MYSHOP browse and lab cube already owned both immediate and delayed combat-lane floor proofs; the delayed safebox twin closes the same gap for warehouse presentation close
 
 ## First owned lab cube close at the retaliation floor
 
