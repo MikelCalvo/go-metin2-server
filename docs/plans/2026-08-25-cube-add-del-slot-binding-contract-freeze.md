@@ -95,6 +95,5 @@ stay deferred.
 
 ## Status
 
-Docs-first freeze only on `lane/items`. RED for `/cube add` / `/cube del` →
-`cube info` is intentionally deferred to the next implementation run so `main`
-/ lane stay green.
+Docs-first freeze landed on `lane/items`. Implementation is owned separately in
+`docs/plans/2026-08-25-cube-add-del-slot-binding-implementation.md`.

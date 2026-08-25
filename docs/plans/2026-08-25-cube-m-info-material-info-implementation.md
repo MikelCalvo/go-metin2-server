@@ -45,7 +45,7 @@ while cube is open, `/cube r_info <index>` (default count `1`) or
 
 ## Status
 
-Implemented on `lane/items`. Next Track C seam is contract-frozen:
+Implemented on `lane/items`. Next Track C seam is now owned:
 `/cube add` / `/cube del` → `cube info`
-(`docs/plans/2026-08-25-cube-add-del-slot-binding-contract-freeze.md`);
+(`docs/plans/2026-08-25-cube-add-del-slot-binding-implementation.md`);
 `list` / `cancel` / `make` stay deferred.

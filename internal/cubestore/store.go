@@ -21,6 +21,8 @@ const (
 	ResultListTextOverheadReserve = 20
 	// BootstrapDefaultNPCVnum is the lab /open_cube default NPC race.
 	BootstrapDefaultNPCVnum uint32 = 20022
+	// CubeMaxNum mirrors the external oracle CUBE_MAX_NUM craft-slot bound.
+	CubeMaxNum = 24
 )
 
 // Reward is one craftable result row for cube r_list.
@@ -152,6 +154,72 @@ func FormatMaterialInfoCommand(startIndex int, requestCount int, recipes []Recip
 		return "", false
 	}
 	return fmt.Sprintf("cube m_info %d %d %s", startIndex, requestCount, entryText), true
+}
+
+// BoundMaterial is one live inventory cell contribution used by craft-slot
+// `cube info` gold resolution.
+type BoundMaterial struct {
+	Vnum  uint32
+	Count uint16
+}
+
+// MatchSimpleRecipeGold returns the authored gold for the first simple recipe
+// whose material multiset exactly matches the bound live cells
+// (order-insensitive, aggregated by vnum). ok is false when no recipe matches.
+func MatchSimpleRecipeGold(recipes []Recipe, bound []BoundMaterial) (uint64, bool) {
+	boundCounts := aggregateMaterialCounts(bound)
+	if len(boundCounts) == 0 {
+		return 0, false
+	}
+	for _, recipe := range recipes {
+		if len(recipe.Materials) == 0 {
+			continue
+		}
+		needCounts := make(map[uint32]uint32, len(recipe.Materials))
+		for _, material := range recipe.Materials {
+			if material.Vnum == 0 || material.Count == 0 {
+				needCounts = nil
+				break
+			}
+			needCounts[material.Vnum] += uint32(material.Count)
+		}
+		if needCounts == nil || len(needCounts) == 0 {
+			continue
+		}
+		if materialCountsEqual(boundCounts, needCounts) {
+			return recipe.Gold, true
+		}
+	}
+	return 0, false
+}
+
+// FormatCubeInfoCommand builds the self-only CHAT_TYPE_COMMAND payload
+// `cube info <gold> 0 0` used after successful craft-slot add/del.
+func FormatCubeInfoCommand(gold uint64) string {
+	return fmt.Sprintf("cube info %d 0 0", gold)
+}
+
+func aggregateMaterialCounts(bound []BoundMaterial) map[uint32]uint32 {
+	counts := make(map[uint32]uint32)
+	for _, material := range bound {
+		if material.Vnum == 0 || material.Count == 0 {
+			continue
+		}
+		counts[material.Vnum] += uint32(material.Count)
+	}
+	return counts
+}
+
+func materialCountsEqual(left, right map[uint32]uint32) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for vnum, count := range left {
+		if right[vnum] != count {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeSnapshot(snapshot Snapshot) Snapshot {

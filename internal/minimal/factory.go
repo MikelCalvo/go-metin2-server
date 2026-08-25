@@ -4169,6 +4169,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		var activeGuestMyShopHostVID uint32
 		var hasActiveCubeOpen bool
 		var activeCubeNPCVnum uint32
+		activeCubeSlots := make([]uint16, cubestore.CubeMaxNum)
+		for i := range activeCubeSlots {
+			activeCubeSlots[i] = cubeSlotUnbound
+		}
 		bootstrapSafeboxCapacity := func(size uint8) uint8 {
 			if size < bootstrapSafeboxOpenMinSize || size > bootstrapSafeboxOpenMaxSize {
 				return 0
@@ -4397,10 +4401,16 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				sharedWorld.SetRefineWindowOpen(sharedWorldID, true)
 			}
 		}
+		clearActiveCubeSlots := func() {
+			for i := range activeCubeSlots {
+				activeCubeSlots[i] = cubeSlotUnbound
+			}
+		}
 		setActiveCubeOpen := func(open bool, npcVnum uint32) {
 			if !open {
 				hasActiveCubeOpen = false
 				activeCubeNPCVnum = 0
+				clearActiveCubeSlots()
 				if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 {
 					sharedWorld.SetCubeWindowOpen(sharedWorldID, false)
 				}
@@ -4408,9 +4418,57 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			}
 			hasActiveCubeOpen = true
 			activeCubeNPCVnum = npcVnum
+			clearActiveCubeSlots()
 			if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 {
 				sharedWorld.SetCubeWindowOpen(sharedWorldID, true)
 			}
+		}
+		boundCubeMaterials := func(selected *player.Runtime) []cubestore.BoundMaterial {
+			if selected == nil {
+				return nil
+			}
+			liveBySlot := make(map[inventory.SlotIndex]inventory.ItemInstance)
+			for _, item := range selected.LiveInventory() {
+				if item.Equipped || item.ID == 0 || item.Vnum == 0 || item.Count == 0 {
+					continue
+				}
+				liveBySlot[item.Slot] = item
+			}
+			bound := make([]cubestore.BoundMaterial, 0, cubestore.CubeMaxNum)
+			for _, invenIndex := range activeCubeSlots {
+				if invenIndex == cubeSlotUnbound {
+					continue
+				}
+				item, ok := liveBySlot[inventory.SlotIndex(invenIndex)]
+				if !ok {
+					continue
+				}
+				bound = append(bound, cubestore.BoundMaterial{Vnum: item.Vnum, Count: item.Count})
+			}
+			return bound
+		}
+		cubeInfoCommandFrames := func(selected *player.Runtime) [][]byte {
+			recipes := cubestore.RecipesForNPC(runtime.cubeRecipes, activeCubeNPCVnum)
+			gold := uint64(0)
+			if matchedGold, ok := cubestore.MatchSimpleRecipeGold(recipes, boundCubeMaterials(selected)); ok {
+				gold = matchedGold
+			}
+			return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+				Type:    chatproto.ChatTypeCommand,
+				Message: cubestore.FormatCubeInfoCommand(gold),
+			})}
+		}
+		findLiveInventoryCell := func(selected *player.Runtime, cell uint16) (inventory.ItemInstance, bool) {
+			if selected == nil || cell >= uint16(inventory.CarriedInventorySlotCount) {
+				return inventory.ItemInstance{}, false
+			}
+			for _, item := range selected.LiveInventory() {
+				if item.Equipped || item.Slot != inventory.SlotIndex(cell) || item.ID == 0 || item.Vnum == 0 || item.Count == 0 {
+					continue
+				}
+				return item, true
+			}
+			return inventory.ItemInstance{}, false
 		}
 		closeActiveCubeOpenFrames := func() [][]byte {
 			if !hasActiveCubeOpen {
@@ -6682,6 +6740,39 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								// Unexpected arity stays silent fail-closed consume.
 								return gameflow.ChatResult{Accepted: true}
 							}
+						}
+						if cubeIndex, invenIndex, ok := slashCubeAddCommand(packet.Message); ok {
+							selectedPlayer, selectedOK := currentSelectedPlayer()
+							if !selectedOK || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveCubeOpen || activeCubeNPCVnum == 0 {
+								return gameflow.ChatResult{Accepted: true}
+							}
+							if cubeIndex >= cubestore.CubeMaxNum {
+								return gameflow.ChatResult{Accepted: true}
+							}
+							if _, ok := findLiveInventoryCell(selectedPlayer, invenIndex); !ok {
+								return gameflow.ChatResult{Accepted: true}
+							}
+							for i := range activeCubeSlots {
+								if activeCubeSlots[i] == invenIndex {
+									activeCubeSlots[i] = cubeSlotUnbound
+								}
+							}
+							activeCubeSlots[cubeIndex] = invenIndex
+							return gameflow.ChatResult{Accepted: true, Frames: cubeInfoCommandFrames(selectedPlayer)}
+						}
+						if cubeIndex, ok := slashCubeDelCommand(packet.Message); ok {
+							selectedPlayer, selectedOK := currentSelectedPlayer()
+							if !selectedOK || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveCubeOpen || activeCubeNPCVnum == 0 {
+								return gameflow.ChatResult{Accepted: true}
+							}
+							if cubeIndex >= cubestore.CubeMaxNum {
+								return gameflow.ChatResult{Accepted: true}
+							}
+							if activeCubeSlots[cubeIndex] == cubeSlotUnbound {
+								return gameflow.ChatResult{Accepted: true}
+							}
+							activeCubeSlots[cubeIndex] = cubeSlotUnbound
+							return gameflow.ChatResult{Accepted: true, Frames: cubeInfoCommandFrames(selectedPlayer)}
 						}
 						if slashCloseMyShopCommand(packet.Message) {
 							closeFrames := closeActiveMyShopOpenFrames()
@@ -9844,6 +9935,8 @@ func slashCloseCubeCommand(message string) bool {
 	return fields[0] == "close_cube"
 }
 
+const cubeSlotUnbound uint16 = 0xffff
+
 // slashCubeRInfoCommand recognizes talking-chat /cube r_info and the material-info
 // forms `/cube r_info <index>` / `/cube r_info <index> <count>`. Extra/non-digit
 // args stay recognized so the handler can fail closed instead of talking-chat fallthrough.
@@ -9856,6 +9949,58 @@ func slashCubeRInfoCommand(message string) bool {
 		return false
 	}
 	return true
+}
+
+// slashCubeAddCommand recognizes talking-chat `/cube add <cubeIndex> <invenIndex>`.
+// Wrong-arity / non-digit args stay recognized with unbound sentinels so the
+// handler can fail closed without binding inventory cell 0 by accident.
+func slashCubeAddCommand(message string) (cubeIndex uint16, invenIndex uint16, ok bool) {
+	if !strings.HasPrefix(message, "/") {
+		return 0, 0, false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) == 0 || fields[0] != "cube" || len(fields) < 2 || fields[1] != "add" {
+		return 0, 0, false
+	}
+	if len(fields) != 4 {
+		return cubeSlotUnbound, cubeSlotUnbound, true
+	}
+	parsedCube, err := strconv.ParseUint(fields[2], 10, 16)
+	if err != nil {
+		return cubeSlotUnbound, cubeSlotUnbound, true
+	}
+	parsedInven, err := strconv.ParseUint(fields[3], 10, 16)
+	if err != nil {
+		return cubeSlotUnbound, cubeSlotUnbound, true
+	}
+	return uint16(parsedCube), uint16(parsedInven), true
+}
+
+// slashCubeDelCommand recognizes talking-chat `/cube del <cubeIndex>` and
+// `/cube delete <cubeIndex>` (oracle first-letter dispatch). Wrong-arity /
+// non-digit args stay recognized with an unbound sentinel so the handler can
+// fail closed without clearing cube slot 0 by accident.
+func slashCubeDelCommand(message string) (cubeIndex uint16, ok bool) {
+	if !strings.HasPrefix(message, "/") {
+		return 0, false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) == 0 || fields[0] != "cube" || len(fields) < 2 {
+		return 0, false
+	}
+	switch fields[1] {
+	case "del", "delete":
+	default:
+		return 0, false
+	}
+	if len(fields) != 3 {
+		return cubeSlotUnbound, true
+	}
+	parsedCube, err := strconv.ParseUint(fields[2], 10, 16)
+	if err != nil {
+		return cubeSlotUnbound, true
+	}
+	return uint16(parsedCube), true
 }
 
 func slashSafeboxPasswordCommand(message string) (string, bool) {

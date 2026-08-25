@@ -674,6 +674,196 @@ func TestGameRuntimeCubeRInfoIndexFailsClosedWhenClosedPastEndOrMalformed(t *tes
 	assertExchangeAccountUnchanged(t, accounts, login, owner, "cube-m-info negative owner")
 }
 
+func TestGameRuntimeCubeAddDelEmitsAuthoredCubeInfoWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("CubeAddDelOwner", 0x010308c5, 0x020408c5, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4242
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1905, Vnum: 27002, Count: 1, Slot: 5},
+		{ID: 1906, Vnum: 27002, Count: 1, Slot: 6},
+	}
+	login := "cube-add-del-owner"
+	issuePeerTicket(t, ticketStore, login, 0x707071c5, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed cube-add-del owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected cube-add-del runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707071c5)
+	defer closeSessionFlow(t, flow)
+
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_cube",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_cube before cube add: %v", err)
+	}
+	if len(openOut) != 1 {
+		t.Fatalf("expected /open_cube before cube add to emit one command chat frame, got %d", len(openOut))
+	}
+	assertCubeCommandChatFrame(t, openOut[0], "cube open 20022", "open before cube add")
+
+	firstAddOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/cube add 0 5",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /cube add 0 5 error: %v", err)
+	}
+	if len(firstAddOut) != 1 {
+		t.Fatalf("expected /cube add 0 5 to emit one command chat frame, got %d", len(firstAddOut))
+	}
+	assertCubeCommandChatFrame(t, firstAddOut[0], "cube info 0 0 0", "partial cube add")
+
+	secondAddOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/cube add 1 6",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /cube add 1 6 error: %v", err)
+	}
+	if len(secondAddOut) != 1 {
+		t.Fatalf("expected /cube add 1 6 to emit one command chat frame, got %d", len(secondAddOut))
+	}
+	assertCubeCommandChatFrame(t, secondAddOut[0], "cube info 100 0 0", "matched cube add")
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected /cube add to queue no peer frames, got %d", len(queued))
+	}
+
+	delOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/cube del 0",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /cube del 0 error: %v", err)
+	}
+	if len(delOut) != 1 {
+		t.Fatalf("expected /cube del 0 to emit one command chat frame, got %d", len(delOut))
+	}
+	assertCubeCommandChatFrame(t, delOut[0], "cube info 0 0 0", "incomplete after del")
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "cube-add-del owner")
+}
+
+func TestGameRuntimeCubeAddDelFailsClosedWhenClosedOutOfRangeOrMalformed(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("CubeAddDelNegOwner", 0x010308c6, 0x020408c6, 1100, 2100, 0, 101, 201)
+	owner.Gold = 3333
+	owner.Inventory = []inventory.ItemInstance{{ID: 1907, Vnum: 27002, Count: 2, Slot: 5}}
+	login := "cube-add-del-neg-owner"
+	issuePeerTicket(t, ticketStore, login, 0x707071c6, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed cube-add-del negative owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected cube-add-del negative runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707071c6)
+	defer closeSessionFlow(t, flow)
+
+	for _, message := range []string{"/cube add 0 5", "/cube del 0", "/cube delete 0"} {
+		out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+			Type:    chatproto.ChatTypeTalking,
+			Message: message,
+		})))
+		if err != nil {
+			t.Fatalf("unexpected closed %s error: %v", message, err)
+		}
+		if len(out) != 0 {
+			t.Fatalf("expected closed %s to emit no frames, got %d", message, len(out))
+		}
+	}
+
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_cube",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_cube before cube add negatives: %v", err)
+	}
+	if len(openOut) != 1 {
+		t.Fatalf("expected /open_cube before cube add negatives to emit one command chat frame, got %d", len(openOut))
+	}
+	assertCubeCommandChatFrame(t, openOut[0], "cube open 20022", "open before cube add negatives")
+
+	for _, message := range []string{
+		"/cube add 99 5",
+		"/cube add 0 90",
+		"/cube add 0 abc",
+		"/cube add 0",
+		"/cube add 0 5 extra",
+		"/cube del 99",
+		"/cube del abc",
+		"/cube delete",
+		"/cube del 0",
+	} {
+		out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+			Type:    chatproto.ChatTypeTalking,
+			Message: message,
+		})))
+		if err != nil {
+			t.Fatalf("unexpected %s error: %v", message, err)
+		}
+		if len(out) != 0 {
+			t.Fatalf("expected %s to emit no frames, got %d", message, len(out))
+		}
+	}
+
+	emptyCellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/cube add 0 7",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected empty-cell /cube add 0 7 error: %v", err)
+	}
+	if len(emptyCellOut) != 0 {
+		t.Fatalf("expected empty-cell /cube add 0 7 to emit no frames, got %d", len(emptyCellOut))
+	}
+
+	addOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/cube add 0 5",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /cube add 0 5 before close: %v", err)
+	}
+	if len(addOut) != 1 {
+		t.Fatalf("expected /cube add 0 5 before close to emit one command chat frame, got %d", len(addOut))
+	}
+	assertCubeCommandChatFrame(t, addOut[0], "cube info 100 0 0", "matched single-cell cube add")
+
+	assertCloseCubeCommandChat(t, flow, "/close_cube", "cube-add-del negative")
+
+	reopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_cube",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected reopen /open_cube after close: %v", err)
+	}
+	if len(reopenOut) != 1 {
+		t.Fatalf("expected reopen /open_cube to emit one command chat frame, got %d", len(reopenOut))
+	}
+	assertCubeCommandChatFrame(t, reopenOut[0], "cube open 20022", "reopen after close")
+
+	emptyDelOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/cube del 0",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected reopen empty /cube del 0 error: %v", err)
+	}
+	if len(emptyDelOut) != 0 {
+		t.Fatalf("expected reopen empty /cube del 0 to emit no frames, got %d", len(emptyDelOut))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "cube-add-del negative owner")
+}
+
 func assertCubeCommandChatFrame(t *testing.T, frame []byte, wantMessage string, label string) {
 	t.Helper()
 	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, frame))

@@ -224,3 +224,39 @@ func TestFormatMaterialInfoCommandJoinsWindowAndRejectsPastEndOrOversize(t *test
 		t.Fatal("expected oversize material entry text to fail closed")
 	}
 }
+
+func TestMatchSimpleRecipeGoldMatchesBootstrapAndRejectsPartialExtra(t *testing.T) {
+	recipes := BootstrapSnapshot().NPCs[0].Recipes
+	gold, ok := MatchSimpleRecipeGold(recipes, []BoundMaterial{{Vnum: 27002, Count: 2}})
+	if !ok || gold != 100 {
+		t.Fatalf("expected bootstrap bound materials to match gold 100, got gold=%d ok=%v", gold, ok)
+	}
+	gold, ok = MatchSimpleRecipeGold(recipes, []BoundMaterial{
+		{Vnum: 27002, Count: 1},
+		{Vnum: 27002, Count: 1},
+	})
+	if !ok || gold != 100 {
+		t.Fatalf("expected aggregated bootstrap materials to match gold 100, got gold=%d ok=%v", gold, ok)
+	}
+	if _, ok := MatchSimpleRecipeGold(recipes, []BoundMaterial{{Vnum: 27002, Count: 1}}); ok {
+		t.Fatal("expected partial materials to fail closed")
+	}
+	if _, ok := MatchSimpleRecipeGold(recipes, []BoundMaterial{
+		{Vnum: 27002, Count: 2},
+		{Vnum: 27003, Count: 1},
+	}); ok {
+		t.Fatal("expected extra materials to fail closed for exact match")
+	}
+	if _, ok := MatchSimpleRecipeGold(recipes, nil); ok {
+		t.Fatal("expected empty bindings to fail closed")
+	}
+}
+
+func TestFormatCubeInfoCommand(t *testing.T) {
+	if got := FormatCubeInfoCommand(100); got != "cube info 100 0 0" {
+		t.Fatalf("unexpected cube info command: %q", got)
+	}
+	if got := FormatCubeInfoCommand(0); got != "cube info 0 0 0" {
+		t.Fatalf("unexpected zero cube info command: %q", got)
+	}
+}
