@@ -11,8 +11,8 @@ The goal is deliberately conservative:
   `cube r_list`) from remembered open NPC vnum + authored `cubestore` recipes
 - own the first recipe **material-info** request (`/cube r_info <index> [count]`
   → `cube m_info`) from the same authored materials/gold rows
-- keep slot add/delete/list and `make` deferred until a later cube slice owns
-  those mutation semantics
+- keep craft-slot add/del binding, list/cancel, and `make` deferred until a
+  later cube slice owns those mutation semantics
 
 This is not a completed cube / craft system.
 
@@ -106,7 +106,9 @@ See `docs/plans/2026-08-25-cube-m-info-material-info-contract-freeze.md` and
 
 - complicated OR-material text (`vnum,count|...`) / name-level merge of
   alternate recipes into one result row
-- `cube add` / `delete` / `list` / `cancel` / `make` / `make all`
+- `/cube add` / `/cube del` craft-slot binding + `cube info` (contract-frozen:
+  `docs/plans/2026-08-25-cube-add-del-slot-binding-contract-freeze.md`; not yet GREEN)
+- `cube list` / `cancel` / `make` / `make all`
 - quest-NPC interact open / distance gate beyond lab `/open_cube`
 - binary cube packet headers
 - full `cube.txt` complicated-material parity
@@ -118,5 +120,6 @@ See `docs/plans/2026-08-25-cube-m-info-material-info-contract-freeze.md` and
 - `docs/plans/2026-08-25-cube-r-info-result-list-implementation.md`
 - `docs/plans/2026-08-25-cube-m-info-material-info-contract-freeze.md`
 - `docs/plans/2026-08-25-cube-m-info-material-info-implementation.md`
+- `docs/plans/2026-08-25-cube-add-del-slot-binding-contract-freeze.md`
 - `docs/qa/manual-client-checklist.md` section 4.5.16
 - `spec/protocol/packet-matrix.md` (command-chat cube family note)

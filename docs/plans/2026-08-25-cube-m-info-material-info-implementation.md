@@ -45,5 +45,7 @@ while cube is open, `/cube r_info <index>` (default count `1`) or
 
 ## Status
 
-Implemented on `lane/items`. Next Track C seam: freeze then implement the first
-craft-slot mutation (`cube add` / `delete` / `list`) before inventing `make`.
+Implemented on `lane/items`. Next Track C seam is contract-frozen:
+`/cube add` / `/cube del` → `cube info`
+(`docs/plans/2026-08-25-cube-add-del-slot-binding-contract-freeze.md`);
+`list` / `cancel` / `make` stay deferred.
