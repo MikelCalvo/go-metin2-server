@@ -107,7 +107,7 @@ There is **no** dedicated `HEADER_CG/GC_CUBE` in the TMP4-compatible client. Lab
 - owned: `/cube r_info` → `cube r_list <npcVnum> <resultCount> <vnum,count/...>` from remembered open NPC + authored `cubestore` recipes (`docs/plans/2026-08-25-cube-r-info-result-list-implementation.md`)
 - owned: `/cube r_info <index> [count]` → `cube m_info <startIndex> <requestCount> <infoText[@...]>` from authored materials/gold (`docs/plans/2026-08-25-cube-m-info-material-info-implementation.md`)
 - owned: `/cube add <cubeIndex> <invenIndex>` / `/cube del <cubeIndex>` → `cube info <gold> 0 0` craft-slot binding without inventory mutation (`docs/plans/2026-08-25-cube-add-del-slot-binding-implementation.md`)
-- contract-frozen (not yet GREEN): `/cube make` deterministic `percent = 100` success → material/gold consume + `cube success <vnum> <count>` (`docs/plans/2026-08-25-cube-make-percent-100-contract-freeze.md`)
+- owned: `/cube make` deterministic `percent = 100` success → material/gold consume + `cube success <vnum> <count>` (`docs/plans/2026-08-25-cube-make-percent-100-implementation.md`)
 - deferred: `cube list` / `cancel` / `make all` / fail rolls
 
 ## Items, inventory, and equipment

@@ -14,9 +14,11 @@ The goal is deliberately conservative:
 - own the first craft-slot **binding** seam (`/cube add` / `/cube del` →
   `cube info`) as same-socket inventory pointers + gold hint, with no inventory
   mutation until a later `make` slice
-- keep `list` / `cancel` / `make` deferred until a later cube slice owns those
-  mutation semantics; `/cube make` (`percent = 100`) is now contract-frozen
-  separately
+- own the first deterministic craft **consume** seam (`/cube make` with authored
+  `percent = 100`) that consumes bound materials/gold, grants the reward, and
+  emits `cube success`
+- keep `list` / `cancel` / `make all` / fail rolls deferred until a later cube
+  slice owns those semantics
 
 This is not a completed cube / craft system.
 
@@ -71,8 +73,8 @@ Fail-closed (no frames / no mutation):
 
 Authored bootstrap recipes are keyed by NPC vnum through `internal/cubestore`.
 Runtime boot falls back to a deterministic lab snapshot for default NPC `20022`
-(`reward {27001,1}`, materials `{27002,2}`, gold `100`) until an explicit
-FileStore path is wired.
+(`reward {27001,1}`, materials `{27002,2}`, gold `100`, `percent: 100`) until an
+explicit FileStore path is wired.
 
 Successful `/open_cube` remembers `activeCubeNPCVnum` beside the busy flag so
 `r_list` / `m_info` can echo that NPC's authored rows. The remembered vnum
@@ -132,12 +134,36 @@ Fail-closed (no frames / no binding change unless noted):
 See `docs/plans/2026-08-25-cube-add-del-slot-binding-contract-freeze.md` and
 `docs/plans/2026-08-25-cube-add-del-slot-binding-implementation.md`.
 
+## Owned `/cube make` (`percent = 100`)
+
+While the cube presentation is open and craft slots exact-match one authored
+simple recipe for `activeCubeNPCVnum` with `percent = 100`:
+
+| Direction | Command chat | Policy |
+| --- | --- | --- |
+| client → server | `/cube make` (no args) | consume bound materials + recipe gold; grant reward |
+| server → client | material `ITEM_UPDATE` / `ITEM_DEL`, emptied-cell `QUICKSLOT_DEL`, reward `ITEM_SET` / `ITEM_UPDATE`, gold `PLAYER_POINT_CHANGE`, `cube success <vnum> <count>`, follow-up `cube info <gold> 0 0` | self-only; persist inventory/gold/quickslots |
+
+Fail-closed:
+
+- cube not open / remembered vnum cleared / zero-HP / no selected character →
+  silent consume
+- `/cube make all` / extra args → silent recognized consume
+- unmatched bindings → self-only `CHAT_TYPE_INFO`
+  `You do not have enough materials.`
+- insufficient gold → self-only `CHAT_TYPE_INFO`
+  `Not enough Yang or the item is not in place.`
+- reward cannot place → self-only `CHAT_TYPE_INFO`
+  `You have too many items.` (no material/gold mutation)
+- authored `percent != 100` → silent until a later roll slice
+
+See `docs/plans/2026-08-25-cube-make-percent-100-contract-freeze.md` and
+`docs/plans/2026-08-25-cube-make-percent-100-implementation.md`.
+
 ### Still deferred
 
 - complicated OR-material text (`vnum,count|...`) / name-level merge of
   alternate recipes into one result row
-- `/cube make` deterministic `percent = 100` success (contract-frozen:
-  `docs/plans/2026-08-25-cube-make-percent-100-contract-freeze.md`; not yet GREEN)
 - `cube list` / `cancel` / `make all` / fail rolls (`percent` in `0..99`)
 - quest-NPC interact open / distance gate beyond lab `/open_cube`
 - binary cube packet headers
@@ -153,5 +179,6 @@ See `docs/plans/2026-08-25-cube-add-del-slot-binding-contract-freeze.md` and
 - `docs/plans/2026-08-25-cube-add-del-slot-binding-contract-freeze.md`
 - `docs/plans/2026-08-25-cube-add-del-slot-binding-implementation.md`
 - `docs/plans/2026-08-25-cube-make-percent-100-contract-freeze.md`
+- `docs/plans/2026-08-25-cube-make-percent-100-implementation.md`
 - `docs/qa/manual-client-checklist.md` section 4.5.16
 - `spec/protocol/packet-matrix.md` (command-chat cube family note)

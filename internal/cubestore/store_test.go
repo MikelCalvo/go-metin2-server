@@ -20,9 +20,11 @@ func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 			Reward:    Reward{Vnum: 27001, Count: 1},
 			Materials: []Material{{Vnum: 27002, Count: 2}},
 			Gold:      100,
+			Percent:   100,
 		}, {
 			Reward:    Reward{Vnum: 11200, Count: 1},
 			Materials: []Material{},
+			Percent:   100,
 		}},
 	}}}
 	if err := store.Save(want); err != nil {
@@ -61,28 +63,42 @@ func TestFileStoreRejectsMalformedRecipesFailClosed(t *testing.T) {
 			name: "zero npc vnum",
 			snapshot: Snapshot{NPCs: []NPCRecipes{{
 				NPCVnum: 0,
-				Recipes: []Recipe{{Reward: Reward{Vnum: 1, Count: 1}, Materials: []Material{}}},
+				Recipes: []Recipe{{Reward: Reward{Vnum: 1, Count: 1}, Materials: []Material{}, Percent: 100}},
 			}}},
 		},
 		{
 			name: "zero reward vnum",
 			snapshot: Snapshot{NPCs: []NPCRecipes{{
 				NPCVnum: 20022,
-				Recipes: []Recipe{{Reward: Reward{Vnum: 0, Count: 1}, Materials: []Material{}}},
+				Recipes: []Recipe{{Reward: Reward{Vnum: 0, Count: 1}, Materials: []Material{}, Percent: 100}},
 			}}},
 		},
 		{
 			name: "zero reward count",
 			snapshot: Snapshot{NPCs: []NPCRecipes{{
 				NPCVnum: 20022,
-				Recipes: []Recipe{{Reward: Reward{Vnum: 1, Count: 0}, Materials: []Material{}}},
+				Recipes: []Recipe{{Reward: Reward{Vnum: 1, Count: 0}, Materials: []Material{}, Percent: 100}},
+			}}},
+		},
+		{
+			name: "zero percent",
+			snapshot: Snapshot{NPCs: []NPCRecipes{{
+				NPCVnum: 20022,
+				Recipes: []Recipe{{Reward: Reward{Vnum: 1, Count: 1}, Materials: []Material{}, Percent: 0}},
+			}}},
+		},
+		{
+			name: "percent above 100",
+			snapshot: Snapshot{NPCs: []NPCRecipes{{
+				NPCVnum: 20022,
+				Recipes: []Recipe{{Reward: Reward{Vnum: 1, Count: 1}, Materials: []Material{}, Percent: 101}},
 			}}},
 		},
 		{
 			name: "duplicate npc",
 			snapshot: Snapshot{NPCs: []NPCRecipes{
-				{NPCVnum: 20022, Recipes: []Recipe{{Reward: Reward{Vnum: 1, Count: 1}, Materials: []Material{}}}},
-				{NPCVnum: 20022, Recipes: []Recipe{{Reward: Reward{Vnum: 2, Count: 1}, Materials: []Material{}}}},
+				{NPCVnum: 20022, Recipes: []Recipe{{Reward: Reward{Vnum: 1, Count: 1}, Materials: []Material{}, Percent: 100}}},
+				{NPCVnum: 20022, Recipes: []Recipe{{Reward: Reward{Vnum: 2, Count: 1}, Materials: []Material{}, Percent: 100}}},
 			}},
 		},
 	}
@@ -128,7 +144,10 @@ func TestMemoryStoreRoundTripsBootstrapSnapshot(t *testing.T) {
 	}
 	recipes := RecipesForNPC(got, BootstrapDefaultNPCVnum)
 	if len(recipes) != 1 || recipes[0].Reward.Vnum != 27001 || recipes[0].Reward.Count != 1 {
-		t.Fatalf("unexpected bootstrap recipes: %#v", recipes)
+		t.Fatalf("unexpected bootstrap recipes for default NPC: %+v", recipes)
+	}
+	if recipes[0].Percent != 100 || recipes[0].Gold != 100 {
+		t.Fatalf("expected bootstrap recipe percent 100 gold 100, got percent=%d gold=%d", recipes[0].Percent, recipes[0].Gold)
 	}
 }
 
@@ -258,5 +277,25 @@ func TestFormatCubeInfoCommand(t *testing.T) {
 	}
 	if got := FormatCubeInfoCommand(0); got != "cube info 0 0 0" {
 		t.Fatalf("unexpected zero cube info command: %q", got)
+	}
+}
+
+func TestFormatCubeSuccessCommand(t *testing.T) {
+	if got := FormatCubeSuccessCommand(27001, 1); got != "cube success 27001 1" {
+		t.Fatalf("unexpected cube success command: %q", got)
+	}
+}
+
+func TestMatchSimpleRecipeReturnsBootstrapPercent100(t *testing.T) {
+	recipes := BootstrapSnapshot().NPCs[0].Recipes
+	recipe, ok := MatchSimpleRecipe(recipes, []BoundMaterial{{Vnum: 27002, Count: 2}})
+	if !ok {
+		t.Fatal("expected bootstrap bound materials to match")
+	}
+	if recipe.Percent != 100 || recipe.Gold != 100 || recipe.Reward.Vnum != 27001 || recipe.Reward.Count != 1 {
+		t.Fatalf("unexpected matched recipe: %+v", recipe)
+	}
+	if _, ok := MatchSimpleRecipe(recipes, []BoundMaterial{{Vnum: 27002, Count: 1}}); ok {
+		t.Fatal("expected partial materials to fail closed")
 	}
 }

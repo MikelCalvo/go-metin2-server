@@ -117,6 +117,7 @@ const exchangeFinalizeSuccessInfoMessageFormat = "The trade with %s has been suc
 const myShopGuestBuyTooFarInfoMessage = "You are too far away from the shop to buy something."
 const cubeAlreadyOpenInfoMessage = "The Build window is already open."
 const cubeBusyShellInfoMessage = "You cannot build something while another trade/storeroom window is open."
+const cubeMakeInsufficientMaterialsInfoMessage = "You do not have enough materials."
 const bootstrapCubeOpenDefaultNPCVnum uint32 = cubestore.BootstrapDefaultNPCVnum
 const bootstrapSafeboxOpenMinSize uint8 = 1
 const bootstrapSafeboxOpenMaxSize uint8 = 3
@@ -6774,6 +6775,124 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							activeCubeSlots[cubeIndex] = cubeSlotUnbound
 							return gameflow.ChatResult{Accepted: true, Frames: cubeInfoCommandFrames(selectedPlayer)}
 						}
+						if slashCubeMakeCommand(packet.Message) {
+							selectedPlayer, selectedOK := currentSelectedPlayer()
+							if !selectedOK || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveCubeOpen || activeCubeNPCVnum == 0 {
+								return gameflow.ChatResult{Accepted: true}
+							}
+							fields := strings.Fields(strings.TrimSpace(packet.Message[1:]))
+							if len(fields) != 2 {
+								// /cube make all and extra args stay recognized fail-closed consume.
+								return gameflow.ChatResult{Accepted: true}
+							}
+							recipes := cubestore.RecipesForNPC(runtime.cubeRecipes, activeCubeNPCVnum)
+							recipe, matched := cubestore.MatchSimpleRecipe(recipes, boundCubeMaterials(selectedPlayer))
+							if !matched {
+								delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: cubeMakeInsufficientMaterialsInfoMessage}
+								return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
+							}
+							if recipe.Percent != 100 {
+								// Non-100 percent stays fail-closed until a later roll slice.
+								return gameflow.ChatResult{Accepted: true}
+							}
+							if recipe.Gold > 0 && selectedPlayer.LiveGold() < recipe.Gold {
+								delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: exchangeFinalizeCheckSelfInfoMessage}
+								return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
+							}
+							rewardTemplate, rewardOK := runtime.itemTemplates[recipe.Reward.Vnum]
+							if !rewardOK || !itemcatalog.ValidTemplate(rewardTemplate) {
+								return gameflow.ChatResult{Accepted: true}
+							}
+							if failure := selectedPlayer.ValidateCarriedItemGrant(rewardTemplate, recipe.Reward.Count); failure != "" {
+								if failure == player.CarriedItemGrantFailureNoValidPlacement {
+									delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: itemPickupInventoryFullInfoMessage}
+									return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
+								}
+								return gameflow.ChatResult{Accepted: true}
+							}
+							previousSelected := selectedPlayer.LiveCharacter()
+							previousCubeSlots := append([]uint16(nil), activeCubeSlots...)
+							rollbackCubeMake := func() {
+								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+								refreshLiveCharacterRegistration()
+								copy(activeCubeSlots, previousCubeSlots)
+							}
+							consumeResult, emptiedSlots, consumeOK := consumeBoundCubeMaterials(selectedPlayer, activeCubeSlots, recipe.Materials)
+							if !consumeOK {
+								rollbackCubeMake()
+								return gameflow.ChatResult{Accepted: true}
+							}
+							for _, emptiedSlot := range emptiedSlots {
+								for i := range activeCubeSlots {
+									if activeCubeSlots[i] == uint16(emptiedSlot) {
+										activeCubeSlots[i] = cubeSlotUnbound
+									}
+								}
+							}
+							var goldAfter uint64
+							if recipe.Gold > 0 {
+								updatedGold, ok := selectedPlayer.DeductLiveGold(recipe.Gold)
+								if !ok {
+									rollbackCubeMake()
+									return gameflow.ChatResult{Accepted: true}
+								}
+								goldAfter = updatedGold
+							} else {
+								goldAfter = selectedPlayer.LiveGold()
+							}
+							grant, grantOK := selectedPlayer.GrantCarriedItem(rewardTemplate, recipe.Reward.Count)
+							if !grantOK {
+								rollbackCubeMake()
+								return gameflow.ChatResult{Accepted: true}
+							}
+							materialFrames, err := carriedItemConsumeResultFrames(consumeResult, runtime.itemTemplates)
+							if err != nil {
+								rollbackCubeMake()
+								return gameflow.ChatResult{Accepted: true}
+							}
+							frames := append([][]byte{}, materialFrames...)
+							for _, change := range consumeResult.Changes {
+								if !change.ItemRemoved {
+									continue
+								}
+								quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, change.Slot)
+								if !ok {
+									rollbackCubeMake()
+									return gameflow.ChatResult{Accepted: true}
+								}
+								frames = append(frames, quickslotFrames...)
+							}
+							rewardFrames, err := merchantBuyResultFrames(player.MerchantBuyResult{Items: grant.Items, ItemChanges: grant.ItemChanges}, runtime.itemTemplates)
+							if err != nil {
+								rollbackCubeMake()
+								return gameflow.ChatResult{Accepted: true}
+							}
+							frames = append(frames, rewardFrames...)
+							if recipe.Gold > 0 {
+								if previousSelected.Gold < recipe.Gold || previousSelected.Gold-recipe.Gold != goldAfter || goldAfter > uint64(math.MaxInt32) || recipe.Gold > uint64(math.MaxInt32) {
+									rollbackCubeMake()
+									return gameflow.ChatResult{Accepted: true}
+								}
+								frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+									VID:    previousSelected.VID,
+									Type:   bootstrapGoldPointType,
+									Amount: -int32(recipe.Gold),
+									Value:  int32(goldAfter),
+								}))
+							}
+							frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+								Type:    chatproto.ChatTypeCommand,
+								Message: cubestore.FormatCubeSuccessCommand(recipe.Reward.Vnum, recipe.Reward.Count),
+							}))
+							frames = append(frames, cubeInfoCommandFrames(selectedPlayer)...)
+							frames = prependMerchantCloseFrame(prependExchangeCloseFrame(frames))
+							committed, ok := commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+							if !ok {
+								copy(activeCubeSlots, previousCubeSlots)
+								return gameflow.ChatResult{Accepted: true}
+							}
+							return gameflow.ChatResult{Accepted: true, Frames: committed}
+						}
 						if slashCloseMyShopCommand(packet.Message) {
 							closeFrames := closeActiveMyShopOpenFrames()
 							return gameflow.ChatResult{Accepted: true, Frames: closeFrames}
@@ -10001,6 +10120,97 @@ func slashCubeDelCommand(message string) (cubeIndex uint16, ok bool) {
 		return cubeSlotUnbound, true
 	}
 	return uint16(parsedCube), true
+}
+
+// slashCubeMakeCommand recognizes talking-chat `/cube make` and `/cube make all`
+// (extra args stay recognized so the handler can fail closed without talking-chat
+// fallthrough). Exact one-attempt make is `fields == [cube make]`.
+func slashCubeMakeCommand(message string) bool {
+	if !strings.HasPrefix(message, "/") {
+		return false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) < 2 || fields[0] != "cube" || fields[1] != "make" {
+		return false
+	}
+	return true
+}
+
+// consumeBoundCubeMaterials subtracts recipe material counts from currently bound
+// craft-slot inventory cells in cube-slot order. Emptied cells are removed from
+// live inventory and reported so the caller can clear those bindings.
+func consumeBoundCubeMaterials(selected *player.Runtime, cubeSlots []uint16, materials []cubestore.Material) (player.CarriedItemConsumeResult, []inventory.SlotIndex, bool) {
+	if selected == nil || len(materials) == 0 {
+		return player.CarriedItemConsumeResult{}, nil, false
+	}
+	needCounts := make(map[uint32]uint32, len(materials))
+	for _, material := range materials {
+		if material.Vnum == 0 || material.Count == 0 {
+			return player.CarriedItemConsumeResult{}, nil, false
+		}
+		needCounts[material.Vnum] += uint32(material.Count)
+	}
+	if len(needCounts) == 0 {
+		return player.CarriedItemConsumeResult{}, nil, false
+	}
+	liveBySlot := make(map[inventory.SlotIndex]inventory.ItemInstance)
+	for _, item := range selected.LiveInventory() {
+		if item.Equipped || item.ID == 0 || item.Vnum == 0 || item.Count == 0 {
+			continue
+		}
+		liveBySlot[item.Slot] = item
+	}
+	type debit struct {
+		slot    inventory.SlotIndex
+		vnum    uint32
+		consume uint16
+	}
+	debits := make([]debit, 0, len(cubeSlots))
+	for _, invenIndex := range cubeSlots {
+		if invenIndex == cubeSlotUnbound {
+			continue
+		}
+		item, ok := liveBySlot[inventory.SlotIndex(invenIndex)]
+		if !ok {
+			continue
+		}
+		need := needCounts[item.Vnum]
+		if need == 0 {
+			continue
+		}
+		take := uint32(item.Count)
+		if take > need {
+			take = need
+		}
+		if take == 0 {
+			continue
+		}
+		debits = append(debits, debit{slot: item.Slot, vnum: item.Vnum, consume: uint16(take)})
+		needCounts[item.Vnum] = need - take
+		if needCounts[item.Vnum] == 0 {
+			delete(needCounts, item.Vnum)
+		}
+	}
+	if len(needCounts) != 0 {
+		return player.CarriedItemConsumeResult{}, nil, false
+	}
+	changes := make([]player.CarriedItemConsumeChange, 0, len(debits))
+	emptied := make([]inventory.SlotIndex, 0, len(debits))
+	for _, planned := range debits {
+		result, ok := selected.DropInventoryItem(planned.slot, planned.consume)
+		if !ok || !result.Changed {
+			return player.CarriedItemConsumeResult{}, nil, false
+		}
+		change := player.CarriedItemConsumeChange{Slot: planned.slot}
+		if result.FromOccupied {
+			change.Item = result.FromItem
+		} else {
+			change.ItemRemoved = true
+			emptied = append(emptied, planned.slot)
+		}
+		changes = append(changes, change)
+	}
+	return player.CarriedItemConsumeResult{Changes: changes}, emptied, true
 }
 
 func slashSafeboxPasswordCommand(message string) (string, bool) {

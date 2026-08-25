@@ -108,6 +108,6 @@ rolls (`percent` in `0..99`), `list`, and `cancel` stay deferred.
 
 ## Status
 
-Docs-first freeze only on `lane/items`. RED for `/cube make` (`percent = 100`)
-is intentionally deferred to the next implementation run so `main` / lane stay
-green.
+Docs-first freeze landed on `lane/items`. GREEN implementation now owns
+`/cube make` (`percent = 100`) via
+`docs/plans/2026-08-25-cube-make-percent-100-implementation.md`.

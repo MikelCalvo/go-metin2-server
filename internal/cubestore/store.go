@@ -38,11 +38,12 @@ type Material struct {
 }
 
 // Recipe is one NPC craftable result. Materials/gold drive cube m_info text;
-// Reward drives cube r_list.
+// Reward drives cube r_list. Percent gates /cube make (bootstrap owns 100 only).
 type Recipe struct {
 	Reward    Reward     `json:"reward"`
 	Materials []Material `json:"materials,omitempty"`
 	Gold      uint64     `json:"gold,omitempty"`
+	Percent   uint8      `json:"percent,omitempty"`
 }
 
 // NPCRecipes is the authored recipe list for one cube NPC vnum.
@@ -72,7 +73,8 @@ func BootstrapSnapshot() Snapshot {
 			Materials: []Material{
 				{Vnum: 27002, Count: 2},
 			},
-			Gold: 100,
+			Gold:    100,
+			Percent: 100,
 		}},
 	}}}
 }
@@ -163,13 +165,13 @@ type BoundMaterial struct {
 	Count uint16
 }
 
-// MatchSimpleRecipeGold returns the authored gold for the first simple recipe
-// whose material multiset exactly matches the bound live cells
-// (order-insensitive, aggregated by vnum). ok is false when no recipe matches.
-func MatchSimpleRecipeGold(recipes []Recipe, bound []BoundMaterial) (uint64, bool) {
+// MatchSimpleRecipe returns the first simple recipe whose material multiset
+// exactly matches the bound live cells (order-insensitive, aggregated by vnum).
+// ok is false when no recipe matches.
+func MatchSimpleRecipe(recipes []Recipe, bound []BoundMaterial) (Recipe, bool) {
 	boundCounts := aggregateMaterialCounts(bound)
 	if len(boundCounts) == 0 {
-		return 0, false
+		return Recipe{}, false
 	}
 	for _, recipe := range recipes {
 		if len(recipe.Materials) == 0 {
@@ -187,16 +189,33 @@ func MatchSimpleRecipeGold(recipes []Recipe, bound []BoundMaterial) (uint64, boo
 			continue
 		}
 		if materialCountsEqual(boundCounts, needCounts) {
-			return recipe.Gold, true
+			return recipe, true
 		}
 	}
-	return 0, false
+	return Recipe{}, false
+}
+
+// MatchSimpleRecipeGold returns the authored gold for the first simple recipe
+// whose material multiset exactly matches the bound live cells
+// (order-insensitive, aggregated by vnum). ok is false when no recipe matches.
+func MatchSimpleRecipeGold(recipes []Recipe, bound []BoundMaterial) (uint64, bool) {
+	recipe, ok := MatchSimpleRecipe(recipes, bound)
+	if !ok {
+		return 0, false
+	}
+	return recipe.Gold, true
 }
 
 // FormatCubeInfoCommand builds the self-only CHAT_TYPE_COMMAND payload
 // `cube info <gold> 0 0` used after successful craft-slot add/del.
 func FormatCubeInfoCommand(gold uint64) string {
 	return fmt.Sprintf("cube info %d 0 0", gold)
+}
+
+// FormatCubeSuccessCommand builds the self-only CHAT_TYPE_COMMAND payload
+// `cube success <rewardVnum> <rewardCount>` emitted after percent=100 make.
+func FormatCubeSuccessCommand(rewardVnum uint32, rewardCount uint16) string {
+	return fmt.Sprintf("cube success %d %d", rewardVnum, rewardCount)
 }
 
 func aggregateMaterialCounts(bound []BoundMaterial) map[uint32]uint32 {
@@ -264,6 +283,9 @@ func validateSnapshot(snapshot Snapshot) error {
 			}
 			if recipe.Reward.Count == 0 {
 				return fmt.Errorf("%w: recipe[%d] reward.count must be non-zero for npc_vnum %d", ErrInvalidSnapshot, i, npc.NPCVnum)
+			}
+			if recipe.Percent == 0 || recipe.Percent > 100 {
+				return fmt.Errorf("%w: recipe[%d] percent must be in 1..100 for npc_vnum %d", ErrInvalidSnapshot, i, npc.NPCVnum)
 			}
 			if recipe.Materials == nil {
 				return fmt.Errorf("%w: recipe[%d] materials collection must not be null for npc_vnum %d", ErrInvalidSnapshot, i, npc.NPCVnum)
