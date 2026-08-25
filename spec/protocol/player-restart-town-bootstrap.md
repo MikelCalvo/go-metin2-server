@@ -130,6 +130,16 @@ After accepted `/restart_town`:
 - the previously engaged practice mob, if still alive, remains at its current runtime-owned HP rather than resetting because of the owner's recovery
 - source-map live sessions that can still see that mob may freshly `TARGET` it and observe the current runtime-owned HP percentage
 
+## Post-restart busy-window / exchange recovery
+
+Accepted `/restart_town` also clears any still-open same-socket safebox / refine / cube / MYSHOP busy presentation as part of recovery, matching the already-owned `/restart_here` busy-clear rule in `player-death-bootstrap.md`.
+
+Focused combat-lane coverage now freezes the MYSHOP empty-sign floor path through town recovery:
+- immediate and delayed practice-mob floors still emit the empty-sign `GC::SHOP_SIGN` close companion before `/restart_town`
+- after the town-return transfer rebuild, a fresh `EXCHANGE START` against a living destination-map peer succeeds with ordinary paired start frames instead of the open-private-shop busy reject
+- inventory/gold stay unchanged across the floor close; only the owned town-return position and recovered race create MaxHP persist
+- named twins: `TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMyShopBeforeRestartTownExchange`, `TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMyShopBeforeRestartTownExchange`
+
 ## Why this is the next honest slice
 
 The repo already owns:
