@@ -52,7 +52,7 @@ printed curl ordering and path wiring succeed against real loopback handlers.
 ## What this is not yet
 
 - automatic / scheduled execution of printed backup / apply / GC scripts
-- `rm` of aside-renamed trees
+- ~~`rm` of aside-renamed trees~~ Done for confirmation-gated print-only `artifact-gc-aside-purge` — see [CLI artifact GC-aside purge printer](2026-08-25-cli-artifact-gc-aside-purge-printer.md). Automatic / scheduled purge execution and folding purge into `contrib/lab-retention-gc` remain deferred.
 - FreeBSD port / `pkg` enable defaults
 - remote log shipping / SIEM / metrics exporters
 - SQL import/backfill or a driver-backed harness
@@ -79,7 +79,7 @@ Validation for this slice:
 ## Follow-up options
 
 1. Keep automatic / scheduled execution of printed triage scripts deferred.
-2. Keep `rm` of aside-renamed trees deferred.
+2. ~~Keep `rm` of aside-renamed trees deferred.~~ Done for the confirmation-gated print-only `artifact-gc-aside-purge` surface — see [CLI artifact GC-aside purge printer](2026-08-25-cli-artifact-gc-aside-purge-printer.md). Automatic / scheduled purge execution and folding purge into `contrib/lab-retention-gc` remain deferred.
 3. Keep FreeBSD port / `pkg` enable defaults deferred.
 4. Keep remote log shipping / metrics exporters deferred.
 5. Keep SQL import/backfill deferred until a driver-backed harness exists.

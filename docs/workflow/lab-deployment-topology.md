@@ -200,6 +200,18 @@ metin2-migrate artifact-retention-gc \
 
 The printer emits a path-aware shell script that aside-renames matching `YYYYMMDDTHHMMSSZ-<commit12>/` children older than `--keep-days` to `<name>.gc-aside-<NOW_UTC>`, refuses destination collisions, never deletes trees, never opens a database, and never embeds a DSN. The same command works against `/var/metin2/migration-runs` and `/var/metin2/exports`. The print-only contrib helper always dumps GC triage for all three roots plus `export-quarantine-drill.sh` (see [contrib export-quarantine drill print helper](../plans/2026-08-25-contrib-export-quarantine-drill-print-helper.md)). Hermetic `/bin/sh` execution coverage owns the aged rename / young keep / collision fail-closed contract (see [CLI artifact-retention GC script execution proof](../plans/2026-08-22-cli-artifact-retention-gc-script-execution-proof.md)).
 
+Aged `.gc-aside-*` trees can later be purge-printed without scheduled deletion via:
+
+```bash
+metin2-migrate artifact-gc-aside-purge \
+  --retention-base /var/metin2/backups \
+  --i-confirm-lab-gc-aside-purge \
+  --min-aside-age-days 7 \
+  --now 2026-08-25T12:00:00Z
+```
+
+The printer emits a confirmation-gated path-aware shell script that `rm -rf`s only immediate child directories ending in `.gc-aside-YYYYMMDDTHHMMSSZ` whose aside stamp is at least `--min-aside-age-days` old, leaves live retention trees untouched, never opens a database, and never embeds a DSN. The CLI still does not execute the printed purge; folding purge into scheduled print helpers remains deferred so unit dumps stay free of `rm` (see [CLI artifact GC-aside purge printer](../plans/2026-08-25-cli-artifact-gc-aside-purge-printer.md)).
+
 ## Operator correlation checklist
 
 For any reconnect/restart or migration window, retain:
@@ -218,6 +230,7 @@ See also:
 - [lab stale-lock recovery](lab-stale-lock-recovery.md)
 - [file-store backup/restore drill](file-store-backup-restore-drill.md)
 - [CLI artifact-retention GC printer plan](../plans/2026-08-22-cli-artifact-retention-gc-printer.md)
+- [CLI artifact GC-aside purge printer](../plans/2026-08-25-cli-artifact-gc-aside-purge-printer.md)
 - [lab retention / GC print-only unit samples](lab-retention-gc-unit-samples.md)
 - [lab daemon rc.d / systemd unit samples](lab-daemon-unit-samples.md)
 - [lab daemon JSON stdout capture](../plans/2026-08-24-lab-daemon-json-stdout-capture.md)
@@ -260,6 +273,6 @@ See
 - automatic / scheduled artifact GC or lifecycle daemons that invoke deletion
 - automatic stale-lock expiry (lab recovery remains confirmation-gated `apply-lock-aside` / operator aside-rename; see [lab stale-lock recovery](lab-stale-lock-recovery.md))
 - automatic execution of the printed `migration-run-retention`, `backup-restore-drill`, `export-quarantine-drill`, or `artifact-retention-gc` scripts (the CLI and print-only unit samples only print commands; GC remains confirmation-gated aside-rename by the operator; hermetic `/bin/sh` proof of the printed backup-restore drill against drained loopback ops muxes is owned in [hermetic backup/restore drill HTTP execution proof](../plans/2026-08-24-hermetic-backup-restore-drill-http-execution-proof.md) and does not auto-run from CLI; hermetic `/bin/sh` proof of the printed export-quarantine drill is owned in [hermetic export-quarantine drill HTTP execution proof](../plans/2026-08-25-hermetic-export-quarantine-drill-http-execution-proof.md) and likewise does not auto-run from CLI)
-- `rm` / unlink of aside-renamed retention trees
+- ~~`rm` / unlink of aside-renamed retention trees~~ Done for the confirmation-gated print-only `artifact-gc-aside-purge` surface (CLI still never auto-executes the printed purge; folding purge into scheduled print helpers remains deferred) — see [CLI artifact GC-aside purge printer](../plans/2026-08-25-cli-artifact-gc-aside-purge-printer.md)
 - remote log shipping / SIEM sinks (local `/var/log/metin2/` file capture is owned; exporters are not)
 - a claim that bootstrap file stores are the final production persistence layer

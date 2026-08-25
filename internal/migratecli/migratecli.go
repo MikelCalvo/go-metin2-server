@@ -41,6 +41,9 @@ const (
 // apply-preflight, apply-preflight-status, apply-lock-status, apply-audit-status,
 // quarantine-export, export-quarantine-drill, backup-restore-drill,
 // migration-run-retention, and artifact-retention-gc commands are read-only.
+// artifact-gc-aside-purge is a confirmation-gated print-only companion that emits
+// a shell script for deleting aged .gc-aside-* trees; the CLI still never executes
+// that purge itself and never opens a database target.
 // The apply command is an explicit CLI-only mutation surface: it requires an
 // operator-supplied database driver, DSN, strict offline ledger snapshot, and
 // target version, and it remains deliberately separate from daemon startup and
@@ -110,6 +113,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runMigrationRunRetention(args[1:], stdin, stdout, stderr)
 	case "artifact-retention-gc":
 		return runArtifactRetentionGC(args[1:], stdout, stderr)
+	case "artifact-gc-aside-purge":
+		return runArtifactGCAsidePurge(args[1:], stdout, stderr)
 	case "version", "--version":
 		return runVersion(args[1:], stdout, stderr)
 	case "help", "-h", "--help":
@@ -2128,6 +2133,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  backup-restore-drill   print path-aware lab backup retention + file-store drill commands from runtime-config and build-info")
 	fmt.Fprintln(w, "  migration-run-retention print path-aware migration-runs retention + correlation checklist commands from build-info")
 	fmt.Fprintln(w, "  artifact-retention-gc  print path-aware lab retention aside-rename triage for aged YYYYMMDDTHHMMSSZ-<commit12> trees")
+	fmt.Fprintln(w, "  artifact-gc-aside-purge print confirmation-gated lab purge script for aged .gc-aside-* retention trees")
 	fmt.Fprintln(w, "  version                print metadata-only binary build identity")
 	fmt.Fprintln(w, "")
 	printVersionUsage(w)

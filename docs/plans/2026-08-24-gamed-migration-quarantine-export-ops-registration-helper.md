@@ -64,7 +64,7 @@ migration routes and nine tip-`0015` export/quarantine pairs.
 - ~~hermetic HTTP drill that drives export → offline `quarantine-export`~~ Done: see
   [hermetic export → offline quarantine-export CLI proof](2026-08-25-hermetic-export-quarantine-offline-cli-proof.md)
 - automatic / scheduled execution of printed triage scripts
-- `rm` of aside-renamed trees
+- ~~`rm` of aside-renamed trees~~ Done for confirmation-gated print-only `artifact-gc-aside-purge` — see [CLI artifact GC-aside purge printer](2026-08-25-cli-artifact-gc-aside-purge-printer.md). Automatic / scheduled purge execution and folding purge into `contrib/lab-retention-gc` remain deferred.
 - FreeBSD port / `pkg` enable defaults
 - remote log shipping / metrics exporters
 - SQL import/backfill or a driver-backed harness

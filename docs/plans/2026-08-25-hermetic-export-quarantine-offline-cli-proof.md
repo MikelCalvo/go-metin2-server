@@ -64,7 +64,7 @@ or a retained file).
 - covering every empty export kind in the hermetic HTTP proof (roster + tip
   safebox are the seeded non-empty gate; other kinds remain unit-covered)
 - SQL import/backfill from quarantined exports
-- `rm` of aside-renamed trees
+- ~~`rm` of aside-renamed trees~~ Done for confirmation-gated print-only `artifact-gc-aside-purge` — see [CLI artifact GC-aside purge printer](2026-08-25-cli-artifact-gc-aside-purge-printer.md). Automatic / scheduled purge execution and folding purge into `contrib/lab-retention-gc` remain deferred.
 - FreeBSD port / `pkg` enable defaults
 - remote log shipping / metrics exporters
 - remote admin authentication

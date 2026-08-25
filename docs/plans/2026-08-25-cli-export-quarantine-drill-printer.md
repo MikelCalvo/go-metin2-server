@@ -87,7 +87,7 @@ Behavior:
 - ~~folding the printer into `contrib/lab-retention-gc` print-only samples~~ Done: see
   [contrib export-quarantine drill print helper](2026-08-25-contrib-export-quarantine-drill-print-helper.md)
 - SQL import/backfill from quarantined exports
-- `rm` of aside-renamed trees
+- ~~`rm` of aside-renamed trees~~ Done for confirmation-gated print-only `artifact-gc-aside-purge` — see [CLI artifact GC-aside purge printer](2026-08-25-cli-artifact-gc-aside-purge-printer.md). Automatic / scheduled purge execution and folding purge into `contrib/lab-retention-gc` remain deferred.
 - FreeBSD port / `pkg` enable defaults
 - remote log shipping / metrics exporters
 - remote admin authentication

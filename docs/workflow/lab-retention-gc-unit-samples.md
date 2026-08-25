@@ -295,7 +295,10 @@ See also [contrib FreeBSD periodic retention / GC print sample](../plans/2026-08
 1. Open `$OUT/notes.md` and `$OUT/build-info.json`; confirm stamp / commit match
    the intended lab binary (`metin2-migrate version` / `GET /local/build-info`).
 2. Read the printed `.sh` files. Confirm they still only aside-rename aged
-   trees and never contain `rm` / DSN / SQL markers.
+   trees and never contain `rm` / DSN / SQL markers. Destructive purge of
+   already-aside trees is a separate interactive command
+   (`metin2-migrate artifact-gc-aside-purge --i-confirm-lab-gc-aside-purge`) and
+   must not appear in these scheduled print dumps.
 3. If triage is desired, run **interactively** under an operator shell after
    draining sessions / confirming no concurrent retention writers — never from
    the timer / cron line.
@@ -310,7 +313,10 @@ See also [contrib FreeBSD periodic retention / GC print sample](../plans/2026-08
   including FreeBSD `periodic(8)` weekly + `periodic.conf.sample`)
 - flipping `weekly_metin2_artifact_retention_gc_print_enable` to `YES` by default
 - automatic execution of printed aside-rename / backup / apply scripts
-- `rm` of `.gc-aside-*` trees
+- folding confirmation-gated `artifact-gc-aside-purge` into these print-only
+  samples / timers / cron / periodic (scheduled dumps must stay free of `rm`;
+  the interactive purge printer is owned separately — see
+  [CLI artifact GC-aside purge printer](../plans/2026-08-25-cli-artifact-gc-aside-purge-printer.md))
 - scheduled live `curl` of ops JSON from the print helper / unit
 - multi-host orchestration or remote admin
 - SQL import/backfill from quarantined exports
