@@ -50,5 +50,4 @@ QA/spec stop calling the seam deferred.
 
 Implemented on `lane/items`:
 `TestGameRuntimeMyShopGuestSellWhileBrowsingFailsClosedWithoutMutation` proves
-guest `SELL` / `SELL2` while browsing stay silent/no-mutation. Recipe
-make/add/list, tax/empire multipliers, and shop-bag consumption stay deferred.
+guest `SELL` / `SELL2` while browsing stay silent/no-mutation. Cube `r_info`/`r_list` is contract-frozen separately (`docs/plans/2026-08-25-cube-r-info-result-list-contract-freeze.md`). Tax/empire multipliers, shop-bag consumption, and `m_info` / add / delete / make stay deferred.
