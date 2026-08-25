@@ -34,4 +34,5 @@ go test ./internal/minimal -run 'TestGameRuntimeHitArmedSpawnGroupChaseSurvivesO
 - ~~absolute chase / return / homeward deadline rematerialize across daemon restart~~ Cancelled for Track A bootstrap as re-arm-from-now: see [absolute deadline rematerialize contract freeze](2026-08-25-absolute-chase-return-homeward-deadline-rematerialize-contract-freeze.md)
 - ~~multi-step homeward cadence when displace > `max_step`~~ Done: see [multi-step homeward cadence twin](2026-08-25-multi-step-homeward-cadence-twin.md)
 - ~~chase replan twin that moves the owner between arm and first due step~~ Done: see [chase replan owner-moved twin](2026-08-25-chase-replan-owner-moved-between-arm-and-due.md)
+- ~~optional GREEN composite twin asserting restart leaves chase unarmed beside return/homeward restore-arm~~ Done: see [daemon-restart chase-unarmed re-arm-from-now twin](2026-08-25-daemon-restart-chase-unarmed-rearm-from-now-twin.md)
 - cross-map MOVE / `GC WARP`, pack AI, pathfinding, target switching

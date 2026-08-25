@@ -42,4 +42,5 @@ go test ./internal/minimal -run 'TestGameRuntimeFlushServerFramesReplansSpawnGro
 ## What this is not yet
 
 - ~~absolute chase / return / homeward deadline rematerialize across daemon restart~~ Cancelled for Track A bootstrap as re-arm-from-now: see [absolute deadline rematerialize contract freeze](2026-08-25-absolute-chase-return-homeward-deadline-rematerialize-contract-freeze.md)
+- ~~optional GREEN composite twin asserting restart leaves chase unarmed beside return/homeward restore-arm~~ Done: see [daemon-restart chase-unarmed re-arm-from-now twin](2026-08-25-daemon-restart-chase-unarmed-rearm-from-now-twin.md)
 - cross-map MOVE / `GC WARP`, pack AI, pathfinding, target switching

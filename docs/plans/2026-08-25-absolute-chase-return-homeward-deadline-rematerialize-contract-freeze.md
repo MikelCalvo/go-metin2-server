@@ -79,7 +79,8 @@ git diff --check
    - `TestGameRuntimeLoadPersistedStaticActorsArmsHomewardForUnengagedWithinRadiusSpawn`
    - `TestGameRuntimeRestoreReturnRequiredSpawnGroupSchedulesReturnStep` (and its
      due-preflight siblings)
-   An optional ordinary GREEN composite twin that also asserts chase stays
-   unarmed across restart may land later if useful, but is not required to keep
-   the cancelled absolute rematerialize posture honest.
+   The optional ordinary GREEN composite twin that also asserts chase stays
+   unarmed across restart is now owned by
+   `TestGameRuntimeDaemonRestartRearmsReturnAndHomewardFromNowAndLeavesChaseUnarmed`
+   — see [daemon-restart chase-unarmed re-arm-from-now twin](2026-08-25-daemon-restart-chase-unarmed-rearm-from-now-twin.md).
 3. Keep pack AI / pathfinding / cross-map MOVE cancelled for Track A bootstrap.
