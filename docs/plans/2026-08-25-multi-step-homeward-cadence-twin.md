@@ -40,5 +40,5 @@ go test ./internal/minimal -run 'TestGameRuntimeFlushServerFramesAppliesMultiSte
 ## What this is not yet
 
 - ~~chase replan twin that moves the owner between arm and first due step~~ Done: see [chase replan owner-moved twin](2026-08-25-chase-replan-owner-moved-between-arm-and-due.md)
-- absolute chase / return / homeward deadline rematerialize across daemon restart
+- ~~absolute chase / return / homeward deadline rematerialize across daemon restart~~ Cancelled for Track A bootstrap as re-arm-from-now: see [absolute deadline rematerialize contract freeze](2026-08-25-absolute-chase-return-homeward-deadline-rematerialize-contract-freeze.md)
 - cross-map MOVE / `GC WARP`, pack AI, pathfinding, target switching

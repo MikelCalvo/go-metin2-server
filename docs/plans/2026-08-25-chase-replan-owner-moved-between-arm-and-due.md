@@ -13,8 +13,9 @@ character at flush (`playerCharacter` → `PlanSpawnGroupChaseStep`). Spec alrea
 says a due chase step “resolves the current engaged owner's live position”.
 Opening this as RED would be dishonest against already-live gating.
 
-Absolute chase/return/homeward deadline rematerialize across daemon restart
-stays deferred (re-arm-from-now) and would need a docs freeze before any RED.
+Absolute chase/return/homeward deadline rematerialize across daemon restart is
+now frozen as re-arm-from-now (absolute mid-timer due-at RED cancelled for Track
+A bootstrap). See [absolute deadline rematerialize contract freeze](2026-08-25-absolute-chase-return-homeward-deadline-rematerialize-contract-freeze.md).
 
 ## Focused coverage
 
@@ -40,5 +41,5 @@ go test ./internal/minimal -run 'TestGameRuntimeFlushServerFramesReplansSpawnGro
 
 ## What this is not yet
 
-- absolute chase / return / homeward deadline rematerialize across daemon restart
+- ~~absolute chase / return / homeward deadline rematerialize across daemon restart~~ Cancelled for Track A bootstrap as re-arm-from-now: see [absolute deadline rematerialize contract freeze](2026-08-25-absolute-chase-return-homeward-deadline-rematerialize-contract-freeze.md)
 - cross-map MOVE / `GC WARP`, pack AI, pathfinding, target switching
