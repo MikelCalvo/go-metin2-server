@@ -224,7 +224,7 @@ Open lab cube now participates in the exchange busy-window gate (`docs/plans/202
 - requester-side open cube rejects `EXCHANGE START` / `ACCEPT` / commit-time busy drift with the already-owned requester busy info-chat string
 - partner-side open cube rejects those same seams with the already-owned partner busy info-chat string
 - shared-world `hasCubeWindowOpenLocked` participates beside merchant/safebox/refine/MYSHOP busy flags
-- MYSHOP/safebox/refine open/confirm cube rejects and recipe make/add/list stay deferred
+- MYSHOP/safebox/refine open/confirm cube rejects are frozen for implementation in `docs/plans/2026-08-25-myshop-safebox-refine-cube-busy-rejects.md`; recipe make/add/list stay deferred
 
 ### Owned cube open/close presentation + busy-bit seam
 

@@ -661,7 +661,7 @@ Expected result:
 - [ ] With `/open_cube` already open on the partner, confirm requester `EXCHANGE START` returns one self-only info chat `That player cannot trade right now.` with no pairing and the partner cube stays open
 
 Expected result:
-- lab cube open/close is command-chat only (no binary cube packet), inventory/gold stay unchanged, and open cube rejects exchange `START` / `ACCEPT` / commit with the already-owned merchant/safebox/refine/MYSHOP busy chat strings (`docs/plans/2026-08-25-exchange-cube-busy-window-reject-chat.md`); MYSHOP/safebox/refine open/confirm cube rejects and recipe make/add/list stay deferred
+- lab cube open/close is command-chat only (no binary cube packet), inventory/gold stay unchanged, and open cube rejects exchange `START` / `ACCEPT` / commit with the already-owned merchant/safebox/refine/MYSHOP busy chat strings (`docs/plans/2026-08-25-exchange-cube-busy-window-reject-chat.md`); MYSHOP/safebox/refine open/confirm cube rejects are frozen for the next implementation slice (`docs/plans/2026-08-25-myshop-safebox-refine-cube-busy-rejects.md`); recipe make/add/list stay deferred
 
 ---
 
