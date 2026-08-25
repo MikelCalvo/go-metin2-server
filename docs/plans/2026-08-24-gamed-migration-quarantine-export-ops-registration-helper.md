@@ -61,7 +61,8 @@ migration routes and nine tip-`0015` export/quarantine pairs.
 ## What this is not yet
 
 - extracting quest / spawn / content-bundle / world ops into more helpers
-- hermetic HTTP drill that drives export → offline `quarantine-export`
+- ~~hermetic HTTP drill that drives export → offline `quarantine-export`~~ Done: see
+  [hermetic export → offline quarantine-export CLI proof](2026-08-25-hermetic-export-quarantine-offline-cli-proof.md)
 - automatic / scheduled execution of printed triage scripts
 - `rm` of aside-renamed trees
 - FreeBSD port / `pkg` enable defaults
