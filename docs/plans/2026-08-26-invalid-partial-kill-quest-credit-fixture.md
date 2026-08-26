@@ -46,3 +46,6 @@ git diff --check
    QA to invent JSON.~~ Done for kill-quest `from == to`:
    `docs/examples/bootstrap-invalid-kill-quest-from-equals-to-bundle.json`
    (`docs/plans/2026-08-26-invalid-kill-quest-from-equals-to-fixture.md`).
+   Also done for partial drop-table kill-quest credit:
+   `docs/examples/bootstrap-invalid-partial-drop-table-kill-quest-credit-bundle.json`
+   (`docs/plans/2026-08-26-invalid-partial-drop-table-kill-quest-credit-fixture.md`).

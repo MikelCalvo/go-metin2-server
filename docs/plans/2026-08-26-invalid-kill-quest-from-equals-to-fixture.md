@@ -41,5 +41,7 @@ git diff --check
 
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
-2. Add further checked-in negatives only when a later reject case still forces
-   QA to invent JSON (for example partial drop-table kill-quest credit).
+2. ~~Add further checked-in negatives only when a later reject case still forces
+   QA to invent JSON.~~ Done for partial drop-table kill-quest credit:
+   `docs/examples/bootstrap-invalid-partial-drop-table-kill-quest-credit-bundle.json`
+   (`docs/plans/2026-08-26-invalid-partial-drop-table-kill-quest-credit-fixture.md`).
