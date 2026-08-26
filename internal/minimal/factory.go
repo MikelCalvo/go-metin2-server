@@ -118,6 +118,7 @@ const myShopGuestBuyTooFarInfoMessage = "You are too far away from the shop to b
 const cubeAlreadyOpenInfoMessage = "The Build window is already open."
 const cubeBusyShellInfoMessage = "You cannot build something while another trade/storeroom window is open."
 const cubeMakeInsufficientMaterialsInfoMessage = "You do not have enough materials."
+const cubeMakeFailedInfoMessage = "You have failed to craft the item."
 const bootstrapCubeOpenDefaultNPCVnum uint32 = cubestore.BootstrapDefaultNPCVnum
 const bootstrapSafeboxOpenMinSize uint8 = 1
 const bootstrapSafeboxOpenMaxSize uint8 = 3
@@ -150,6 +151,8 @@ var (
 
 	refineConfirmRollMu       sync.Mutex
 	refineConfirmRollOverride []int
+	cubeMakeRollMu            sync.Mutex
+	cubeMakeRollOverride      []int
 )
 
 // QueueRefineConfirmRollForTest appends one injected refine confirm roll in
@@ -176,6 +179,38 @@ func takeRefineConfirmRoll() (int, bool) {
 		return roll, true
 	}
 	refineConfirmRollMu.Unlock()
+
+	var buf [8]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return 0, false
+	}
+	return int(binary.BigEndian.Uint64(buf[:])%100) + 1, true
+}
+
+// QueueCubeMakeRollForTest appends one injected cube make roll in 1..100 for
+// the next percent 1..99 craft. Tests should restore via the returned cleanup
+// so leftover injections cannot leak across cases.
+func QueueCubeMakeRollForTest(roll int) func() {
+	cubeMakeRollMu.Lock()
+	defer cubeMakeRollMu.Unlock()
+	previous := append([]int(nil), cubeMakeRollOverride...)
+	cubeMakeRollOverride = append(cubeMakeRollOverride, roll)
+	return func() {
+		cubeMakeRollMu.Lock()
+		defer cubeMakeRollMu.Unlock()
+		cubeMakeRollOverride = previous
+	}
+}
+
+func takeCubeMakeRoll() (int, bool) {
+	cubeMakeRollMu.Lock()
+	if len(cubeMakeRollOverride) > 0 {
+		roll := cubeMakeRollOverride[0]
+		cubeMakeRollOverride = append([]int(nil), cubeMakeRollOverride[1:]...)
+		cubeMakeRollMu.Unlock()
+		return roll, true
+	}
+	cubeMakeRollMu.Unlock()
 
 	var buf [8]byte
 	if _, err := rand.Read(buf[:]); err != nil {
@@ -6791,8 +6826,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: cubeMakeInsufficientMaterialsInfoMessage}
 								return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
 							}
-							if recipe.Percent != 100 {
-								// Non-100 percent stays fail-closed until a later roll slice.
+							if recipe.Percent == 0 || recipe.Percent > 100 {
 								return gameflow.ChatResult{Accepted: true}
 							}
 							if recipe.Gold > 0 && selectedPlayer.LiveGold() < recipe.Gold {
@@ -6809,6 +6843,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 									return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
 								}
 								return gameflow.ChatResult{Accepted: true}
+							}
+							craftSucceeded := recipe.Percent == 100
+							if recipe.Percent < 100 {
+								roll, rollOK := takeCubeMakeRoll()
+								if !rollOK || roll < 1 || roll > 100 {
+									return gameflow.ChatResult{Accepted: true}
+								}
+								craftSucceeded = roll <= int(recipe.Percent)
 							}
 							previousSelected := selectedPlayer.LiveCharacter()
 							previousCubeSlots := append([]uint16(nil), activeCubeSlots...)
@@ -6840,11 +6882,6 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							} else {
 								goldAfter = selectedPlayer.LiveGold()
 							}
-							grant, grantOK := selectedPlayer.GrantCarriedItem(rewardTemplate, recipe.Reward.Count)
-							if !grantOK {
-								rollbackCubeMake()
-								return gameflow.ChatResult{Accepted: true}
-							}
 							materialFrames, err := carriedItemConsumeResultFrames(consumeResult, runtime.itemTemplates)
 							if err != nil {
 								rollbackCubeMake()
@@ -6862,12 +6899,19 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								}
 								frames = append(frames, quickslotFrames...)
 							}
-							rewardFrames, err := merchantBuyResultFrames(player.MerchantBuyResult{Items: grant.Items, ItemChanges: grant.ItemChanges}, runtime.itemTemplates)
-							if err != nil {
-								rollbackCubeMake()
-								return gameflow.ChatResult{Accepted: true}
+							if craftSucceeded {
+								grant, grantOK := selectedPlayer.GrantCarriedItem(rewardTemplate, recipe.Reward.Count)
+								if !grantOK {
+									rollbackCubeMake()
+									return gameflow.ChatResult{Accepted: true}
+								}
+								rewardFrames, err := merchantBuyResultFrames(player.MerchantBuyResult{Items: grant.Items, ItemChanges: grant.ItemChanges}, runtime.itemTemplates)
+								if err != nil {
+									rollbackCubeMake()
+									return gameflow.ChatResult{Accepted: true}
+								}
+								frames = append(frames, rewardFrames...)
 							}
-							frames = append(frames, rewardFrames...)
 							if recipe.Gold > 0 {
 								if previousSelected.Gold < recipe.Gold || previousSelected.Gold-recipe.Gold != goldAfter || goldAfter > uint64(math.MaxInt32) || recipe.Gold > uint64(math.MaxInt32) {
 									rollbackCubeMake()
@@ -6880,10 +6924,21 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 									Value:  int32(goldAfter),
 								}))
 							}
-							frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
-								Type:    chatproto.ChatTypeCommand,
-								Message: cubestore.FormatCubeSuccessCommand(recipe.Reward.Vnum, recipe.Reward.Count),
-							}))
+							if craftSucceeded {
+								frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+									Type:    chatproto.ChatTypeCommand,
+									Message: cubestore.FormatCubeSuccessCommand(recipe.Reward.Vnum, recipe.Reward.Count),
+								}))
+							} else {
+								frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+									Type:    chatproto.ChatTypeInfo,
+									Message: cubeMakeFailedInfoMessage,
+								}))
+								frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+									Type:    chatproto.ChatTypeCommand,
+									Message: cubestore.FormatCubeFailCommand(),
+								}))
+							}
 							frames = append(frames, cubeInfoCommandFrames(selectedPlayer)...)
 							frames = prependMerchantCloseFrame(prependExchangeCloseFrame(frames))
 							committed, ok := commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)

@@ -17,8 +17,11 @@ The goal is deliberately conservative:
 - own the first deterministic craft **consume** seam (`/cube make` with authored
   `percent = 100`) that consumes bound materials/gold, grants the reward, and
   emits `cube success`
-- keep `list` / `cancel` / `make all` / fail rolls deferred until a later cube
-  slice owns those semantics
+- own the first injected-roll craft seam (`/cube make` with authored `percent`
+  in `1..99`) that consumes materials/gold then either grants the reward
+  (`cube success`) or emits fail info + `cube fail`
+- keep `list` / `cancel` / `make all` deferred until a later cube slice owns
+  those semantics
 
 This is not a completed cube / craft system.
 
@@ -134,15 +137,24 @@ Fail-closed (no frames / no binding change unless noted):
 See `docs/plans/2026-08-25-cube-add-del-slot-binding-contract-freeze.md` and
 `docs/plans/2026-08-25-cube-add-del-slot-binding-implementation.md`.
 
-## Owned `/cube make` (`percent = 100`)
+## Owned `/cube make` (`percent = 100` and injected-roll `1..99`)
 
 While the cube presentation is open and craft slots exact-match one authored
-simple recipe for `activeCubeNPCVnum` with `percent = 100`:
+simple recipe for `activeCubeNPCVnum`:
 
 | Direction | Command chat | Policy |
 | --- | --- | --- |
-| client → server | `/cube make` (no args) | consume bound materials + recipe gold; grant reward |
-| server → client | material `ITEM_UPDATE` / `ITEM_DEL`, emptied-cell `QUICKSLOT_DEL`, reward `ITEM_SET` / `ITEM_UPDATE`, gold `PLAYER_POINT_CHANGE`, `cube success <vnum> <count>`, follow-up `cube info <gold> 0 0` | self-only; persist inventory/gold/quickslots |
+| client → server | `/cube make` (no args) | consume bound materials + recipe gold; grant reward on success |
+| server → client (success) | material `ITEM_UPDATE` / `ITEM_DEL`, emptied-cell `QUICKSLOT_DEL`, reward `ITEM_SET` / `ITEM_UPDATE`, gold `PLAYER_POINT_CHANGE`, `cube success <vnum> <count>`, follow-up `cube info <gold> 0 0` | self-only; persist inventory/gold/quickslots |
+| server → client (fail roll) | material `ITEM_UPDATE` / `ITEM_DEL`, emptied-cell `QUICKSLOT_DEL`, gold `PLAYER_POINT_CHANGE`, `CHAT_TYPE_INFO` `You have failed to craft the item.`, `cube fail`, follow-up `cube info <gold> 0 0` | self-only; materials/gold already consumed; no reward |
+
+Outcome policy:
+
+- authored `percent = 100` → deterministic success without drawing a roll
+- authored `percent` in `1..99` → one roll in `1..100` via `takeCubeMakeRoll()`
+  (`crypto/rand` production; `QueueCubeMakeRollForTest` for tests);
+  `roll <= percent` → success burst; `roll > percent` → fail burst;
+  roll outside `1..100` → silent fail-closed with no mutation
 
 Fail-closed:
 
@@ -155,16 +167,17 @@ Fail-closed:
   `Not enough Yang or the item is not in place.`
 - reward cannot place → self-only `CHAT_TYPE_INFO`
   `You have too many items.` (no material/gold mutation)
-- authored `percent != 100` → silent until a later roll slice
 
-See `docs/plans/2026-08-25-cube-make-percent-100-contract-freeze.md` and
-`docs/plans/2026-08-25-cube-make-percent-100-implementation.md`.
+See `docs/plans/2026-08-25-cube-make-percent-100-contract-freeze.md`,
+`docs/plans/2026-08-25-cube-make-percent-100-implementation.md`, and
+`docs/plans/2026-08-26-cube-make-percent-1-99-injected-roll.md`.
 
 ### Still deferred
 
 - complicated OR-material text (`vnum,count|...`) / name-level merge of
   alternate recipes into one result row
-- `cube list` / `cancel` / `make all` / fail rolls (`percent` in `0..99`)
+- `cube list` / `cancel` / `make all`
+- store-validated `percent = 0` always-fail recipes
 - quest-NPC interact open / distance gate beyond lab `/open_cube`
 - binary cube packet headers
 - full `cube.txt` complicated-material parity
@@ -180,5 +193,6 @@ See `docs/plans/2026-08-25-cube-make-percent-100-contract-freeze.md` and
 - `docs/plans/2026-08-25-cube-add-del-slot-binding-implementation.md`
 - `docs/plans/2026-08-25-cube-make-percent-100-contract-freeze.md`
 - `docs/plans/2026-08-25-cube-make-percent-100-implementation.md`
+- `docs/plans/2026-08-26-cube-make-percent-1-99-injected-roll.md`
 - `docs/qa/manual-client-checklist.md` section 4.5.16
 - `spec/protocol/packet-matrix.md` (command-chat cube family note)

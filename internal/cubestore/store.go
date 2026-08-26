@@ -38,7 +38,8 @@ type Material struct {
 }
 
 // Recipe is one NPC craftable result. Materials/gold drive cube m_info text;
-// Reward drives cube r_list. Percent gates /cube make (bootstrap owns 100 only).
+// Reward drives cube r_list. Percent gates /cube make (bootstrap owns
+// deterministic 100 plus injected-roll 1..99).
 type Recipe struct {
 	Reward    Reward     `json:"reward"`
 	Materials []Material `json:"materials,omitempty"`
@@ -213,9 +214,15 @@ func FormatCubeInfoCommand(gold uint64) string {
 }
 
 // FormatCubeSuccessCommand builds the self-only CHAT_TYPE_COMMAND payload
-// `cube success <rewardVnum> <rewardCount>` emitted after percent=100 make.
+// `cube success <rewardVnum> <rewardCount>` emitted after a successful make.
 func FormatCubeSuccessCommand(rewardVnum uint32, rewardCount uint16) string {
 	return fmt.Sprintf("cube success %d %d", rewardVnum, rewardCount)
+}
+
+// FormatCubeFailCommand builds the self-only CHAT_TYPE_COMMAND payload
+// `cube fail` emitted after a failed make roll (materials/gold already consumed).
+func FormatCubeFailCommand() string {
+	return "cube fail"
 }
 
 func aggregateMaterialCounts(bound []BoundMaterial) map[uint32]uint32 {

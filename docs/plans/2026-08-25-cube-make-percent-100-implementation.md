@@ -52,4 +52,5 @@ persists inventory/gold/quickslots, and emits self-only refresh frames ending in
 ## Status
 
 Implemented on `lane/items`. Next Track C cube seam candidates:
-fail-roll `percent` in `0..99`, `make all`, or `cube list` / `cancel`.
+`make all`, or `cube list` / `cancel`. Injected-roll `percent` in `1..99`
+is now owned via `docs/plans/2026-08-26-cube-make-percent-1-99-injected-roll.md`.

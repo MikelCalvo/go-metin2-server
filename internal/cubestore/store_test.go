@@ -286,6 +286,12 @@ func TestFormatCubeSuccessCommand(t *testing.T) {
 	}
 }
 
+func TestFormatCubeFailCommand(t *testing.T) {
+	if got := FormatCubeFailCommand(); got != "cube fail" {
+		t.Fatalf("unexpected cube fail command: %q", got)
+	}
+}
+
 func TestMatchSimpleRecipeReturnsBootstrapPercent100(t *testing.T) {
 	recipes := BootstrapSnapshot().NPCs[0].Recipes
 	recipe, ok := MatchSimpleRecipe(recipes, []BoundMaterial{{Vnum: 27002, Count: 2}})
