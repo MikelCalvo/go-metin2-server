@@ -4,10 +4,11 @@
 
 Close the remaining combat-lane proof gap after open bootstrap `EXCHANGE`
 already emits self/peer `GC::EXCHANGE END` on the practice-mob `0`-HP floor and
-`/restart_here` already recovers a fresh same-map `EXCHANGE START`: prove that
-same immediate / delayed floor clear also lets `/restart_town` succeed at
-destination-map `EXCHANGE START` against a living town peer, matching the
-already-owned merchant / MYSHOP / cube / safebox / refine town recovery twins.
+the `/restart_here` twin already proves same-map recovery: prove that same
+immediate / delayed floor clear also lets `/restart_town` then succeed at a
+fresh destination-map `EXCHANGE START` against a living empire-town peer,
+matching the already-owned merchant / MYSHOP / cube / safebox / refine town
+twins.
 
 ## Contract frozen by this slice
 
@@ -18,10 +19,11 @@ already-owned merchant / MYSHOP / cube / safebox / refine town recovery twins.
 2. Later `EXCHANGE CANCEL` / display requests stay silent/no-frame;
    inventory/gold stay unchanged.
 3. After `/restart_town` from that same floor, the owner rebuilds at the owned
-   empire town-return position and a fresh requester `EXCHANGE START` against a
-   living destination-map peer succeeds with ordinary paired start frames
-   instead of operating on a stale exchange pairing or busy reject.
-4. Spec/QA name the same focused tests as the town recovery twin:
+   empire town position with recovered race create MaxHP, destination visibility
+   includes the living town peer, and a fresh requester `EXCHANGE START` against
+   that town peer succeeds with ordinary paired start frames instead of operating
+   on a stale exchange pairing or busy reject.
+4. Spec/QA name the same focused tests as the recovery twin:
    - `TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenExchangeShellBeforeRestartTownExchange`
    - `TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenExchangeShellBeforeRestartTownExchange`
 
@@ -29,12 +31,12 @@ already-owned merchant / MYSHOP / cube / safebox / refine town recovery twins.
 
 - inventing a death-specific exchange packet family
 - widening exchange mutation beyond the already-owned floor close
-- shop-bag consume / require-bag / OR-materials / binary cube headers
+- reopening the already-owned `/restart_here` same-map twin
 
 ## Validation
 
 ```bash
-go test ./internal/minimal -run 'TestGameSessionFlowPracticeMob.*(Immediate|Delayed)RetaliationFloorClosesOpenExchangeShell(BeforeRestartExchange|BeforeRestartTownExchange)$' -count=1
+go test ./internal/minimal -run 'TestGameSessionFlowPracticeMob.*(Immediate|Delayed)RetaliationFloorClosesOpenExchangeShellBeforeRestartTownExchange$' -count=1
 gofmt -w internal/minimal/exchange_practice_mob_floor_restart_town_exchange_test.go
 git diff --check
 ```
