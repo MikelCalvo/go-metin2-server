@@ -28,8 +28,7 @@ that reject during `/local/content-bundle/validate`.
 - new NPC service kinds
 - changing the already-owned canonicalize reject rule
 - further checked-in negatives unless a later reject case still forces QA to
-  invent JSON (for example `reward_quest_from == reward_quest_to`, or partial
-  drop-table kill-quest credit)
+  invent JSON (for example partial drop-table kill-quest credit)
 
 ## Validation
 
@@ -43,6 +42,7 @@ git diff --check
 
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
-2. Add further checked-in negatives only when a later reject case still forces
-   QA to invent JSON (for example kill-quest `from == to`, or partial
-   drop-table kill-quest credit).
+2. ~~Add further checked-in negatives only when a later reject case still forces
+   QA to invent JSON.~~ Done for kill-quest `from == to`:
+   `docs/examples/bootstrap-invalid-kill-quest-from-equals-to-bundle.json`
+   (`docs/plans/2026-08-26-invalid-kill-quest-from-equals-to-fixture.md`).
