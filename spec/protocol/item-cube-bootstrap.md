@@ -180,7 +180,7 @@ See `docs/plans/2026-08-25-cube-make-percent-100-contract-freeze.md`,
 - complicated OR-material text (`vnum,count|...`) / name-level merge of
   alternate recipes into one result row
 - `cube list` / `cancel`
-- store-validated `percent = 0` always-fail recipes
+- store-validated `percent = 0` always-fail recipes (contract frozen in `docs/plans/2026-08-26-cube-make-percent-0-always-fail.md`; GREEN pending)
 - quest-NPC interact open / distance gate beyond lab `/open_cube`
 - binary cube packet headers
 - full `cube.txt` complicated-material parity
@@ -198,5 +198,6 @@ See `docs/plans/2026-08-25-cube-make-percent-100-contract-freeze.md`,
 - `docs/plans/2026-08-25-cube-make-percent-100-implementation.md`
 - `docs/plans/2026-08-26-cube-make-percent-1-99-injected-roll.md`
 - `docs/plans/2026-08-26-cube-make-all-loop.md`
+- `docs/plans/2026-08-26-cube-make-percent-0-always-fail.md`
 - `docs/qa/manual-client-checklist.md` section 4.5.16
 - `spec/protocol/packet-matrix.md` (command-chat cube family note)

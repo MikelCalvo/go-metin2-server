@@ -74,5 +74,6 @@ non-success outcome.
 
 ## Status
 
-Implemented on `lane/items` together with this freeze. Next Track C cube seam
-candidates: `cube list` / `cancel`, or store-level `percent = 0` always-fail.
+Implemented on `lane/items` together with this freeze. Store-level `percent = 0`
+always-fail is docs-frozen in `docs/plans/2026-08-26-cube-make-percent-0-always-fail.md`.
+Next Track C cube seam candidates after that GREEN: `cube list` / `cancel`.
