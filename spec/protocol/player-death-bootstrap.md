@@ -317,12 +317,14 @@ The current bootstrap player-death contract now also owns one narrow lab cube te
 - that close companion arrives only after the already-owned owner-side floor ordering completes first (`GC PLAYER_POINT_CHANGE(value=0)` -> `GC DEAD(owner_vid)` -> `GC TARGET(0, 0)`), after any merchant `GC::SHOP END` / MYSHOP empty-sign, and before any safebox `CloseSafebox` or exchange `END` frames
 - later `/close_cube` stays silent and inventory/gold stay unchanged
 - after `/restart_here` recovery from that same floor, a fresh `EXCHANGE START` against a living visible peer succeeds instead of returning the open-cube busy reject, matching the already-owned safebox / refine post-restart exchange-recovery twins
-- focused coverage freezes both the immediate hit-piggyback floor and the delayed server-origin floor paths, including that post-`/restart_here` exchange-recovery twin (`TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenCube`, `TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenCube`)
+- after `/restart_town` recovery from that same floor, a fresh `EXCHANGE START` against a living destination-map peer also succeeds instead of returning the open-cube busy reject, so the town-return busy-clear path matches the same-socket `/restart_here` twin and the already-owned MYSHOP town recovery twin
+- focused coverage freezes both the immediate hit-piggyback floor and the delayed server-origin floor paths, including that post-`/restart_here` exchange-recovery twin (`TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenCube`, `TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenCube`) and the post-`/restart_town` destination-peer twin (`TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenCubeBeforeRestartTownExchange`, `TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenCubeBeforeRestartTownExchange`)
 
 Why this is the current owned boundary:
 - merchant, MYSHOP, safebox, and exchange already had explicit close companions on the death edge, but an open lab cube presentation could still survive into `/restart_here` without a combat-lane proof
 - reusing the already-owned `/close_cube` command-chat companion keeps the teardown honest without inventing a death-specific cube packet family
 - proving the post-restart exchange path closes the same orphan-busy hole already owned for safebox / refine without widening cube recipe gameplay
+- the town-return twin closes the same orphan-busy hole across the owned empire town-return transfer rebuild already frozen for MYSHOP
 
 ## First owned post-floor item-family denial
 

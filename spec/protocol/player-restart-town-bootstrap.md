@@ -134,11 +134,12 @@ After accepted `/restart_town`:
 
 Accepted `/restart_town` also clears any still-open same-socket safebox / refine / cube / MYSHOP busy presentation as part of recovery, matching the already-owned `/restart_here` busy-clear rule in `player-death-bootstrap.md`.
 
-Focused combat-lane coverage now freezes the MYSHOP empty-sign floor path through town recovery:
-- immediate and delayed practice-mob floors still emit the empty-sign `GC::SHOP_SIGN` close companion before `/restart_town`
-- after the town-return transfer rebuild, a fresh `EXCHANGE START` against a living destination-map peer succeeds with ordinary paired start frames instead of the open-private-shop busy reject
+Focused combat-lane coverage now freezes the MYSHOP empty-sign and lab cube floor paths through town recovery:
+- immediate and delayed practice-mob floors still emit the empty-sign `GC::SHOP_SIGN` or self-only `cube close` companion before `/restart_town`
+- after the town-return transfer rebuild, a fresh `EXCHANGE START` against a living destination-map peer succeeds with ordinary paired start frames instead of the open-private-shop or open-cube busy reject
 - inventory/gold stay unchanged across the floor close; only the owned town-return position and recovered race create MaxHP persist
-- named twins: `TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMyShopBeforeRestartTownExchange`, `TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMyShopBeforeRestartTownExchange`
+- named MYSHOP twins: `TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMyShopBeforeRestartTownExchange`, `TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMyShopBeforeRestartTownExchange`
+- named cube twins: `TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenCubeBeforeRestartTownExchange`, `TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenCubeBeforeRestartTownExchange`
 
 ## Why this is the next honest slice
 
