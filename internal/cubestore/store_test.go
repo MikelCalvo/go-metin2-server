@@ -49,6 +49,86 @@ func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFileStoreRoundTripsExplicitPercentZeroAlwaysFail(t *testing.T) {
+	restore := DisableDurableSyncForTest()
+	defer restore()
+
+	path := filepath.Join(t.TempDir(), "state", "cube-recipes.json")
+	store := NewFileStore(path)
+	want := Snapshot{NPCs: []NPCRecipes{{
+		NPCVnum: BootstrapDefaultNPCVnum,
+		Recipes: []Recipe{{
+			Reward:    Reward{Vnum: 27001, Count: 1},
+			Materials: []Material{{Vnum: 27002, Count: 2}},
+			Gold:      100,
+			Percent:   0,
+		}},
+	}}}
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save percent-0 snapshot: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load percent-0 snapshot: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected percent-0 snapshot:\n got: %#v\nwant: %#v", got, want)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read percent-0 snapshot: %v", err)
+	}
+	if !strings.Contains(string(raw), `"percent": 0`) {
+		t.Fatalf("expected explicit percent 0 to persist, got:\n%s", raw)
+	}
+}
+
+func TestFileStoreLoadTreatsOmittedPercentAsZeroAlwaysFail(t *testing.T) {
+	restore := DisableDurableSyncForTest()
+	defer restore()
+
+	path := filepath.Join(t.TempDir(), "state", "cube-recipes.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir for omitted-percent fixture: %v", err)
+	}
+	raw := `{
+  "npcs": [
+    {
+      "npc_vnum": 20022,
+      "recipes": [
+        {
+          "reward": {
+            "vnum": 27001,
+            "count": 1
+          },
+          "materials": [
+            {
+              "vnum": 27002,
+              "count": 2
+            }
+          ],
+          "gold": 100
+        }
+      ]
+    }
+  ]
+}
+`
+	if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
+		t.Fatalf("write omitted-percent fixture: %v", err)
+	}
+	got, err := NewFileStore(path).Load()
+	if err != nil {
+		t.Fatalf("load omitted-percent snapshot: %v", err)
+	}
+	if len(got.NPCs) != 1 || len(got.NPCs[0].Recipes) != 1 {
+		t.Fatalf("unexpected omitted-percent snapshot shape: %+v", got)
+	}
+	if got.NPCs[0].Recipes[0].Percent != 0 {
+		t.Fatalf("expected omitted percent to load as 0, got %d", got.NPCs[0].Recipes[0].Percent)
+	}
+}
+
 func TestFileStoreRejectsMalformedRecipesFailClosed(t *testing.T) {
 	restore := DisableDurableSyncForTest()
 	defer restore()
@@ -78,13 +158,6 @@ func TestFileStoreRejectsMalformedRecipesFailClosed(t *testing.T) {
 			snapshot: Snapshot{NPCs: []NPCRecipes{{
 				NPCVnum: 20022,
 				Recipes: []Recipe{{Reward: Reward{Vnum: 1, Count: 0}, Materials: []Material{}, Percent: 100}},
-			}}},
-		},
-		{
-			name: "zero percent",
-			snapshot: Snapshot{NPCs: []NPCRecipes{{
-				NPCVnum: 20022,
-				Recipes: []Recipe{{Reward: Reward{Vnum: 1, Count: 1}, Materials: []Material{}, Percent: 0}},
 			}}},
 		},
 		{

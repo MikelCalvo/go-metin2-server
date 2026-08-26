@@ -20,6 +20,8 @@ The goal is deliberately conservative:
 - own the first injected-roll craft seam (`/cube make` with authored `percent`
   in `1..99`) that consumes materials/gold then either grants the reward
   (`cube success`) or emits fail info + `cube fail`
+- own store-accepted authored `percent = 0` as always-fail consume (no roll) on
+  `/cube make` / `/cube make all`
 - keep `list` / `cancel` deferred until a later cube slice owns
   those semantics
 
@@ -137,7 +139,7 @@ Fail-closed (no frames / no binding change unless noted):
 See `docs/plans/2026-08-25-cube-add-del-slot-binding-contract-freeze.md` and
 `docs/plans/2026-08-25-cube-add-del-slot-binding-implementation.md`.
 
-## Owned `/cube make` / `/cube make all` (`percent = 100` and injected-roll `1..99`)
+## Owned `/cube make` / `/cube make all` (`percent = 100`, injected-roll `1..99`, always-fail `0`)
 
 While the cube presentation is open and craft slots cover one authored
 simple recipe for `activeCubeNPCVnum` (oracle-shaped `bound >= need`):
@@ -155,15 +157,19 @@ Outcome policy:
   (`crypto/rand` production; `QueueCubeMakeRollForTest` for tests);
   `roll <= percent` → success burst; `roll > percent` → fail burst;
   roll outside `1..100` → silent fail-closed with no mutation
+- authored `percent = 0` (including omitted JSON percent loaded as `0`) →
+  always-fail consume without drawing a roll; emit the owned fail burst and
+  stop `/cube make all`
 
 Fail-closed:
 
 - cube not open / remembered vnum cleared / zero-HP / no selected character →
   silent consume
 - `/cube make all` → oracle-shaped loop of the one-attempt make path while each
-  attempt succeeds; stop on the first fail-roll or pre-mutation reject (including
-  unmatched / insufficient gold / inventory-full), concatenating each attempt's
-  owned frames; other `/cube make` extra args stay silent recognized consume
+  attempt succeeds; stop on the first fail-roll / always-fail `percent = 0` or
+  pre-mutation reject (including unmatched / insufficient gold / inventory-full),
+  concatenating each attempt's owned frames; other `/cube make` extra args stay
+  silent recognized consume
 - bindings that do not cover any authored simple recipe → self-only `CHAT_TYPE_INFO`
   `You do not have enough materials.`
 - insufficient gold → self-only `CHAT_TYPE_INFO`
@@ -172,15 +178,16 @@ Fail-closed:
   `You have too many items.` (no material/gold mutation)
 
 See `docs/plans/2026-08-25-cube-make-percent-100-contract-freeze.md`,
-`docs/plans/2026-08-25-cube-make-percent-100-implementation.md`, and
-`docs/plans/2026-08-26-cube-make-percent-1-99-injected-roll.md`.
+`docs/plans/2026-08-25-cube-make-percent-100-implementation.md`,
+`docs/plans/2026-08-26-cube-make-percent-1-99-injected-roll.md`,
+`docs/plans/2026-08-26-cube-make-all-loop.md`, and
+`docs/plans/2026-08-26-cube-make-percent-0-always-fail.md`.
 
 ### Still deferred
 
 - complicated OR-material text (`vnum,count|...`) / name-level merge of
   alternate recipes into one result row
 - `cube list` / `cancel`
-- store-validated `percent = 0` always-fail recipes (contract frozen in `docs/plans/2026-08-26-cube-make-percent-0-always-fail.md`; GREEN pending)
 - quest-NPC interact open / distance gate beyond lab `/open_cube`
 - binary cube packet headers
 - full `cube.txt` complicated-material parity

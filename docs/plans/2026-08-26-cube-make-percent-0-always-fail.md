@@ -62,5 +62,7 @@ path without inventing a new fail burst or loosening the already-owned
 
 ## Status
 
-Docs-first freeze only on this handoff. RED store/runtime tests are prepared in
-the working tree and intentionally not committed until GREEN.
+Implemented on `lane/items` together with this freeze. `cubestore` accepts
+`percent` in `0..100` (explicit `0` persists; omitted JSON percent loads as
+`0`). `/cube make` / `/cube make all` treat `percent = 0` as always-fail without
+drawing a roll. Next Track C cube seam candidates: `cube list` / `cancel`.

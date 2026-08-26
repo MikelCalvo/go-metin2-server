@@ -6830,7 +6830,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 										Message: cubeMakeInsufficientMaterialsInfoMessage,
 									})}, false
 								}
-								if recipe.Percent == 0 || recipe.Percent > 100 {
+								if recipe.Percent > 100 {
 									return nil, false
 								}
 								if recipe.Gold > 0 && selectedPlayer.LiveGold() < recipe.Gold {
@@ -6852,8 +6852,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 									}
 									return nil, false
 								}
-								craftSucceeded := recipe.Percent == 100
-								if recipe.Percent < 100 {
+								// percent=0 is store-accepted always-fail: consume without drawing a roll.
+								craftSucceeded := false
+								switch {
+								case recipe.Percent == 100:
+									craftSucceeded = true
+								case recipe.Percent > 0:
 									roll, rollOK := takeCubeMakeRoll()
 									if !rollOK || roll < 1 || roll > 100 {
 										return nil, false

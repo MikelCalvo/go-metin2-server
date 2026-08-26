@@ -1696,6 +1696,201 @@ func TestGameRuntimeCubeMakeAllStopsAfterFailRoll(t *testing.T) {
 	}
 }
 
+func cubeMakePercent0RecipeSnapshot() cubestore.Snapshot {
+	return cubestore.Snapshot{NPCs: []cubestore.NPCRecipes{{
+		NPCVnum: bootstrapCubeOpenDefaultNPCVnum,
+		Recipes: []cubestore.Recipe{{
+			Reward: cubestore.Reward{Vnum: 27001, Count: 1},
+			Materials: []cubestore.Material{
+				{Vnum: 27002, Count: 2},
+			},
+			Gold:    100,
+			Percent: 0,
+		}},
+	}}}
+}
+
+func TestGameRuntimeCubeMakePercent0AlwaysFailsWithoutRoll(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("CubeMakePct0", 0x010308d3, 0x020408d3, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4242
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1960, Vnum: 27002, Count: 1, Slot: 5},
+		{ID: 1961, Vnum: 27002, Count: 1, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 6},
+	}
+	login := "cube-make-pct0"
+	issuePeerTicket(t, ticketStore, login, 0x707071d3, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed cube-make percent-0 owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, cubeMakeItemTemplates(t), nil)
+	if err != nil {
+		t.Fatalf("unexpected cube-make percent-0 runtime error: %v", err)
+	}
+	runtime.cubeRecipes = cubeMakePercent0RecipeSnapshot()
+	restore := QueueCubeMakeRollForTest(1)
+	defer restore()
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707071d3)
+	defer closeSessionFlow(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_cube",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_cube before percent-0 make: %v", err)
+	}
+	for _, message := range []string{"/cube add 0 5", "/cube add 1 6"} {
+		if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+			Type:    chatproto.ChatTypeTalking,
+			Message: message,
+		}))); err != nil {
+			t.Fatalf("unexpected %s before percent-0 make: %v", message, err)
+		}
+	}
+
+	makeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/cube make",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected percent-0 /cube make error: %v", err)
+	}
+	if len(makeOut) != 8 {
+		t.Fatalf("expected percent-0 /cube make fail burst of 8 frames, got %d", len(makeOut))
+	}
+	failInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, makeOut[5]))
+	if err != nil {
+		t.Fatalf("decode percent-0 fail info chat: %v", err)
+	}
+	if failInfo.Type != chatproto.ChatTypeInfo || failInfo.Message != cubeMakeFailedInfoMessage {
+		t.Fatalf("unexpected percent-0 fail info chat: %+v", failInfo)
+	}
+	assertCubeCommandChatFrame(t, makeOut[6], cubestore.FormatCubeFailCommand(), "cube make percent-0")
+	assertCubeCommandChatFrame(t, makeOut[7], "cube info 0 0 0", "post percent-0 cube info")
+	cubeMakeRollMu.Lock()
+	leftover := append([]int(nil), cubeMakeRollOverride...)
+	cubeMakeRollMu.Unlock()
+	if len(leftover) != 1 || leftover[0] != 1 {
+		t.Fatalf("expected percent-0 make to leave queued roll untouched, got %+v", leftover)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected percent-0 /cube make to queue no peer frames, got %d", len(queued))
+	}
+
+	persisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted cube-make percent-0 account: %v", err)
+	}
+	if persisted.Characters[0].Gold != 4142 {
+		t.Fatalf("unexpected persisted gold after percent-0 make: %d", persisted.Characters[0].Gold)
+	}
+	if len(persisted.Characters[0].Inventory) != 0 {
+		t.Fatalf("unexpected persisted inventory after percent-0 make: %+v", persisted.Characters[0].Inventory)
+	}
+}
+
+func TestGameRuntimeCubeMakeAllStopsAfterPercent0AlwaysFail(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("CubeMakeAllPct0", 0x010308d4, 0x020408d4, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4242
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1970, Vnum: 27002, Count: 2, Slot: 5},
+		{ID: 1971, Vnum: 27002, Count: 2, Slot: 6},
+	}
+	login := "cube-make-all-pct0"
+	issuePeerTicket(t, ticketStore, login, 0x707071d4, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed cube-make-all percent-0 owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, cubeMakeItemTemplates(t), nil)
+	if err != nil {
+		t.Fatalf("unexpected cube-make-all percent-0 runtime error: %v", err)
+	}
+	runtime.cubeRecipes = cubeMakePercent0RecipeSnapshot()
+	restore := QueueCubeMakeRollForTest(1)
+	defer restore()
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707071d4)
+	defer closeSessionFlow(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_cube",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_cube before make-all percent-0: %v", err)
+	}
+	for _, message := range []string{"/cube add 0 5", "/cube add 1 6"} {
+		if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+			Type:    chatproto.ChatTypeTalking,
+			Message: message,
+		}))); err != nil {
+			t.Fatalf("unexpected %s before make-all percent-0: %v", message, err)
+		}
+	}
+
+	makeAllOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/cube make all",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected percent-0 /cube make all error: %v", err)
+	}
+	if len(makeAllOut) < 4 {
+		t.Fatalf("expected percent-0 /cube make all to emit a fail burst, got %d frames", len(makeAllOut))
+	}
+	foundFail := false
+	foundSuccess := false
+	for _, frame := range makeAllOut {
+		delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, frame))
+		if err != nil {
+			continue
+		}
+		if delivery.Type == chatproto.ChatTypeCommand && delivery.Message == cubestore.FormatCubeFailCommand() {
+			foundFail = true
+		}
+		if delivery.Type == chatproto.ChatTypeCommand && delivery.Message == cubestore.FormatCubeSuccessCommand(27001, 1) {
+			foundSuccess = true
+		}
+	}
+	if !foundFail {
+		t.Fatalf("expected percent-0 /cube make all to include cube fail command")
+	}
+	if foundSuccess {
+		t.Fatalf("expected percent-0 /cube make all to stop without a later success")
+	}
+	cubeMakeRollMu.Lock()
+	leftover := append([]int(nil), cubeMakeRollOverride...)
+	cubeMakeRollMu.Unlock()
+	if len(leftover) != 1 || leftover[0] != 1 {
+		t.Fatalf("expected percent-0 make all to leave queued roll untouched, got %+v", leftover)
+	}
+
+	persisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted cube-make-all percent-0 account: %v", err)
+	}
+	if persisted.Characters[0].Gold != 4142 {
+		t.Fatalf("unexpected persisted gold after percent-0 make all: %d", persisted.Characters[0].Gold)
+	}
+	totalMaterial := 0
+	for _, item := range persisted.Characters[0].Inventory {
+		if item.Vnum == 27002 {
+			totalMaterial += int(item.Count)
+		}
+		if item.Vnum == 27001 {
+			t.Fatalf("unexpected reward after percent-0 make all: %+v", persisted.Characters[0].Inventory)
+		}
+	}
+	if totalMaterial != 2 {
+		t.Fatalf("unexpected remaining material count after percent-0 make all: %d inventory=%+v", totalMaterial, persisted.Characters[0].Inventory)
+	}
+}
+
 func assertCubeCommandChatFrame(t *testing.T, frame []byte, wantMessage string, label string) {
 	t.Helper()
 	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, frame))

@@ -39,12 +39,14 @@ type Material struct {
 
 // Recipe is one NPC craftable result. Materials/gold drive cube m_info text;
 // Reward drives cube r_list. Percent gates /cube make (bootstrap owns
-// deterministic 100 plus injected-roll 1..99).
+// deterministic 100, injected-roll 1..99, and store-accepted always-fail 0).
 type Recipe struct {
 	Reward    Reward     `json:"reward"`
 	Materials []Material `json:"materials,omitempty"`
 	Gold      uint64     `json:"gold,omitempty"`
-	Percent   uint8      `json:"percent,omitempty"`
+	// Percent is persisted explicitly (including 0) so authored always-fail
+	// recipes round-trip instead of collapsing through omitempty.
+	Percent uint8 `json:"percent"`
 }
 
 // NPCRecipes is the authored recipe list for one cube NPC vnum.
@@ -294,8 +296,8 @@ func validateSnapshot(snapshot Snapshot) error {
 			if recipe.Reward.Count == 0 {
 				return fmt.Errorf("%w: recipe[%d] reward.count must be non-zero for npc_vnum %d", ErrInvalidSnapshot, i, npc.NPCVnum)
 			}
-			if recipe.Percent == 0 || recipe.Percent > 100 {
-				return fmt.Errorf("%w: recipe[%d] percent must be in 1..100 for npc_vnum %d", ErrInvalidSnapshot, i, npc.NPCVnum)
+			if recipe.Percent > 100 {
+				return fmt.Errorf("%w: recipe[%d] percent must be in 0..100 for npc_vnum %d", ErrInvalidSnapshot, i, npc.NPCVnum)
 			}
 			if recipe.Materials == nil {
 				return fmt.Errorf("%w: recipe[%d] materials collection must not be null for npc_vnum %d", ErrInvalidSnapshot, i, npc.NPCVnum)
