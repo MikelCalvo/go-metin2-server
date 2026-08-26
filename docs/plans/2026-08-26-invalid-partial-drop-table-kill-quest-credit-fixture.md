@@ -30,7 +30,9 @@ reject during `/local/content-bundle/validate`.
 - new NPC service kinds
 - changing the already-owned canonicalize reject rule
 - further checked-in negatives unless a later reject case still forces QA to
-  invent JSON (for example quest_state seed alone as a gate writer)
+  invent JSON (for example quest_state seed alone as a gate writer); that case
+  is now landed as
+  `docs/examples/bootstrap-invalid-quest-state-seed-alone-gate-writer-bundle.json`
 
 ## Validation
 
@@ -44,5 +46,8 @@ git diff --check
 
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
-2. Add further checked-in negatives only when a later reject case still forces
-   QA to invent JSON (for example quest_state seed alone as a gate writer).
+2. ~~Add further checked-in negatives only when a later reject case still forces
+   QA to invent JSON (for example quest_state seed alone as a gate writer).~~
+   Done for quest_state seed alone as a gate writer:
+   `docs/examples/bootstrap-invalid-quest-state-seed-alone-gate-writer-bundle.json`
+   (`docs/plans/2026-08-26-invalid-quest-state-seed-alone-gate-writer-fixture.md`).
