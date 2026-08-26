@@ -119,6 +119,7 @@ const myShopOpenArmorRequiredInfoMessage = "You must unequip your armor to open 
 const myShopOpenCashItemInfoMessage = "Cash items cannot be sold in a private shop."
 const myShopOpenLockedItemInfoMessage = "Items currently in use cannot be sold in a private shop."
 const myShopOpenGoldOverflowInfoMessage = "You cannot open a private shop because it would exceed 2 Billion Yang."
+const myShopOpenShopBagVnum uint32 = 50200
 const cubeAlreadyOpenInfoMessage = "The Build window is already open."
 const cubeBusyShellInfoMessage = "You cannot build something while another trade/storeroom window is open."
 const cubeMakeInsufficientMaterialsInfoMessage = "You do not have enough materials."
@@ -9132,13 +9133,57 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							Cell:       stockItem.Position.Cell,
 						})
 					}
+					listedCells := make(map[inventory.SlotIndex]struct{}, len(stock))
+					for _, row := range stock {
+						listedCells[inventory.SlotIndex(row.Cell)] = struct{}{}
+					}
+					previousSelected := selectedPlayer.LiveCharacter()
+					bagConsume, ok := selectedPlayer.ConsumeCarriedItemsExcludingSlots(
+						[]player.CarriedItemConsumeRequirement{{ItemVnum: myShopOpenShopBagVnum, Count: 1}},
+						listedCells,
+					)
+					if !ok {
+						return gameflow.ShopResult{Accepted: false}
+					}
+					bagFrames, err := carriedItemConsumeResultFrames(bagConsume, runtime.itemTemplates)
+					if err != nil {
+						selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+						return gameflow.ShopResult{Accepted: false}
+					}
+					for _, change := range bagConsume.Changes {
+						if !change.ItemRemoved {
+							continue
+						}
+						quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, change.Slot)
+						if !ok {
+							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+							return gameflow.ShopResult{Accepted: false}
+						}
+						bagFrames = append(bagFrames, quickslotFrames...)
+					}
+					updatedSelected := selectedPlayer.LiveCharacter()
+					persistedSelected := selectedPlayer.PersistedSnapshot()
+					persistedSelected.Inventory = updatedSelected.Inventory
+					persistedSelected.Quickslots = updatedSelected.Quickslots
+					updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, persistedSelected)
+					if !ok || !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
+						selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+						return gameflow.ShopResult{Accepted: false}
+					}
+					sessionTicket.Characters = updatedCharacters
+					selectedPlayer.SetPersistedSnapshot(persistedSelected)
+					refreshLiveCharacterRegistration()
+					if ownsLiveSharedWorldSession() {
+						sharedWorld.UpdateCharacter(sharedWorldID, updatedSelected)
+					}
 					live := selectedPlayer.LiveCharacter()
 					setActiveMyShopOpen(sign, stock)
-					frames := [][]byte{shopproto.EncodeServerShopSign(shopproto.ServerShopSignPacket{
+					signFrame := shopproto.EncodeServerShopSign(shopproto.ServerShopSignPacket{
 						VID:  live.VID,
 						Sign: sign,
-					})}
-					enqueueMyShopSignAroundBroadcast(frames)
+					})
+					frames := append(bagFrames, signFrame)
+					enqueueMyShopSignAroundBroadcast([][]byte{signFrame})
 					return gameflow.ShopResult{
 						Accepted: true,
 						Frames:   frames,

@@ -2093,7 +2093,7 @@ func (r *Runtime) ValidateCarriedItemConsume(requirements []CarriedItemConsumeRe
 	if r == nil {
 		return CarriedItemConsumeFailureInvalid
 	}
-	if _, ok := planCarriedItemConsumeChanges(r.liveInventory, requirements); !ok {
+	if _, ok := planCarriedItemConsumeChanges(r.liveInventory, requirements, nil); !ok {
 		if len(requirements) == 0 {
 			return ""
 		}
@@ -2111,11 +2111,29 @@ func (r *Runtime) ConsumeCarriedItems(requirements []CarriedItemConsumeRequireme
 	if failure := r.ValidateCarriedItemConsume(requirements); failure != "" {
 		return CarriedItemConsumeResult{}, false
 	}
-	return r.consumeCarriedItems(requirements)
+	return r.consumeCarriedItems(requirements, nil)
 }
 
-func (r *Runtime) consumeCarriedItems(requirements []CarriedItemConsumeRequirement) (CarriedItemConsumeResult, bool) {
-	plan, ok := planCarriedItemConsumeChanges(r.liveInventory, requirements)
+// ConsumeCarriedItemsExcludingSlots debits by-vnum carried stacks while skipping
+// the given inventory cells. Used by MYSHOP open so a listed stock cell cannot
+// also pay the shop-bag cost.
+func (r *Runtime) ConsumeCarriedItemsExcludingSlots(requirements []CarriedItemConsumeRequirement, exclude map[inventory.SlotIndex]struct{}) (CarriedItemConsumeResult, bool) {
+	if r == nil {
+		return CarriedItemConsumeResult{}, false
+	}
+	if len(requirements) == 0 {
+		return CarriedItemConsumeResult{}, true
+	}
+	for _, requirement := range requirements {
+		if requirement.ItemVnum == 0 || requirement.Count == 0 {
+			return CarriedItemConsumeResult{}, false
+		}
+	}
+	return r.consumeCarriedItems(requirements, exclude)
+}
+
+func (r *Runtime) consumeCarriedItems(requirements []CarriedItemConsumeRequirement, exclude map[inventory.SlotIndex]struct{}) (CarriedItemConsumeResult, bool) {
+	plan, ok := planCarriedItemConsumeChanges(r.liveInventory, requirements, exclude)
 	if !ok {
 		return CarriedItemConsumeResult{}, false
 	}
@@ -2132,6 +2150,11 @@ func (r *Runtime) consumeCarriedItems(requirements []CarriedItemConsumeRequireme
 		item := inventoryItems[currentIndex]
 		if item.Equipped || item.Locked || item.Vnum != planned.Vnum || item.Count < planned.Consume {
 			return CarriedItemConsumeResult{}, false
+		}
+		if exclude != nil {
+			if _, blocked := exclude[planned.Slot]; blocked {
+				return CarriedItemConsumeResult{}, false
+			}
 		}
 		change := CarriedItemConsumeChange{Slot: planned.Slot}
 		if item.Count == planned.Consume {
@@ -2152,7 +2175,7 @@ func (r *Runtime) consumeCarriedItems(requirements []CarriedItemConsumeRequireme
 	return CarriedItemConsumeResult{Changes: changes}, true
 }
 
-func planCarriedItemConsumeChanges(items []inventory.ItemInstance, requirements []CarriedItemConsumeRequirement) ([]refineMaterialPlanEntry, bool) {
+func planCarriedItemConsumeChanges(items []inventory.ItemInstance, requirements []CarriedItemConsumeRequirement, exclude map[inventory.SlotIndex]struct{}) ([]refineMaterialPlanEntry, bool) {
 	if len(requirements) == 0 {
 		return nil, true
 	}
@@ -2163,8 +2186,36 @@ func planCarriedItemConsumeChanges(items []inventory.ItemInstance, requirements 
 		}
 		materials = append(materials, itemcatalog.RefineMaterial{Vnum: requirement.ItemVnum, Count: int32(requirement.Count)})
 	}
-	// Reuse refine planning with an impossible source slot so every carried stack remains eligible.
-	return planRefineMaterialChanges(items, inventory.CarriedInventorySlotCount, materials)
+	// Reuse refine planning with an impossible source slot so every carried stack remains eligible,
+	// then drop any plan entries that land on excluded MYSHOP-listed cells.
+	plan, ok := planRefineMaterialChanges(items, inventory.CarriedInventorySlotCount, materials)
+	if !ok {
+		return nil, false
+	}
+	if len(exclude) == 0 {
+		return plan, true
+	}
+	filtered := make([]refineMaterialPlanEntry, 0, len(plan))
+	remainingByVnum := make(map[uint32]uint64, len(materials))
+	for _, material := range materials {
+		remainingByVnum[material.Vnum] += uint64(material.Count)
+	}
+	for _, entry := range plan {
+		if _, blocked := exclude[entry.Slot]; blocked {
+			continue
+		}
+		filtered = append(filtered, entry)
+		if remainingByVnum[entry.Vnum] < uint64(entry.Consume) {
+			return nil, false
+		}
+		remainingByVnum[entry.Vnum] -= uint64(entry.Consume)
+	}
+	for _, material := range materials {
+		if remainingByVnum[material.Vnum] != 0 {
+			return nil, false
+		}
+	}
+	return filtered, true
 }
 
 func (r *Runtime) SellMerchantItem(slot inventory.SlotIndex, count uint16, unitPrice uint64) (MerchantSellResult, bool) {

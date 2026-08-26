@@ -26,7 +26,7 @@ func TestGameRuntimeMyShopOpenEmitsShopSignWithoutInventoryMutation(t *testing.T
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("MyShopHost", 0x01030801, 0x02040801, 1100, 2100, 0, 101, 201)
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 801, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 801, Vnum: 27001, Count: 3, Slot: 5}, {ID: 851, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
 	login := "myshop-host"
 	issuePeerTicket(t, ticketStore, login, 0x70707101, owner)
@@ -38,7 +38,7 @@ func TestGameRuntimeMyShopOpenEmitsShopSignWithoutInventoryMutation(t *testing.T
 		Name:      "Shop Potion",
 		Stackable: true,
 		MaxCount:  200,
-	}})
+	}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop host runtime error: %v", err)
@@ -60,20 +60,13 @@ func TestGameRuntimeMyShopOpenEmitsShopSignWithoutInventoryMutation(t *testing.T
 	if err != nil {
 		t.Fatalf("unexpected accepted MYSHOP error: %v", err)
 	}
-	if len(out) != 1 {
-		t.Fatalf("expected accepted MYSHOP to emit one SHOP_SIGN frame, got %d", len(out))
-	}
-	sign, err := shopproto.DecodeServerShopSign(decodeSingleFrame(t, out[0]))
-	if err != nil {
-		t.Fatalf("decode accepted MYSHOP SHOP_SIGN: %v", err)
-	}
-	if sign.VID != owner.VID || sign.Sign != "Private Shop" {
-		t.Fatalf("unexpected accepted MYSHOP SHOP_SIGN: %+v", sign)
-	}
+	assertMyShopOpenSuccessBagAndSign(t, out, owner.VID, 4, "accepted myshop open")
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected accepted MYSHOP to queue no peer frames, got %d", len(queued))
 	}
-	assertExchangeAccountUnchanged(t, accounts, login, owner, "accepted myshop open")
+	want := owner
+	want.Inventory = []inventory.ItemInstance{{ID: 801, Vnum: 27001, Count: 3, Slot: 5}}
+	assertExchangeAccountUnchanged(t, accounts, login, want, "accepted myshop open after bag consume")
 }
 
 func TestGameRuntimeMyShopOpenRejectsEmptySignAndZeroCountWithoutMutation(t *testing.T) {
@@ -81,7 +74,7 @@ func TestGameRuntimeMyShopOpenRejectsEmptySignAndZeroCountWithoutMutation(t *tes
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("MyShopEmpty", 0x01030802, 0x02040802, 1100, 2100, 0, 101, 201)
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 802, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 802, Vnum: 27001, Count: 3, Slot: 5}, {ID: 852, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	login := "myshop-empty"
 	issuePeerTicket(t, ticketStore, login, 0x70707102, owner)
 	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
@@ -92,7 +85,7 @@ func TestGameRuntimeMyShopOpenRejectsEmptySignAndZeroCountWithoutMutation(t *tes
 		Name:      "Shop Potion",
 		Stackable: true,
 		MaxCount:  200,
-	}})
+	}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop empty runtime error: %v", err)
@@ -130,6 +123,7 @@ func TestGameRuntimeMyShopOpenRejectsInvalidStockWithoutMutation(t *testing.T) {
 		{ID: 806, Vnum: 27003, Count: 1, Slot: 7},
 		{ID: 807, Vnum: 27004, Count: 1, Slot: 8},
 		{ID: 808, Vnum: 27001, Count: 3, Slot: 9},
+		{ID: 858, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
 	}
 	login := "myshop-stock"
 	issuePeerTicket(t, ticketStore, login, 0x70707103, owner)
@@ -141,6 +135,7 @@ func TestGameRuntimeMyShopOpenRejectsInvalidStockWithoutMutation(t *testing.T) {
 		{Vnum: 27002, Name: "Locked Potion", Stackable: true, MaxCount: 200},
 		{Vnum: 27003, Name: "Anti MyShop Potion", Stackable: true, MaxCount: 200, AntiMyShop: true},
 		{Vnum: 27004, Name: "Anti Give Potion", Stackable: true, MaxCount: 200, AntiGive: true},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
 	})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
@@ -187,13 +182,13 @@ func TestGameRuntimeMyShopOpenRejectsGoldOverflowWithoutMutation(t *testing.T) {
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("MyShopGoldCap", 0x01030804, 0x02040804, 1100, 2100, 0, 101, 201)
 	owner.Gold = uint64(math.MaxInt32) - 100
-	owner.Inventory = []inventory.ItemInstance{{ID: 808, Vnum: 27001, Count: 1, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 808, Vnum: 27001, Count: 1, Slot: 5}, {ID: 858, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	login := "myshop-goldcap"
 	issuePeerTicket(t, ticketStore, login, 0x70707104, owner)
 	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed myshop goldcap account: %v", err)
 	}
-	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200}})
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop goldcap runtime error: %v", err)
@@ -223,7 +218,7 @@ func TestGameRuntimeMyShopOpenRejectsWornBodyArmorWithInfoChatWithoutMutation(t 
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("MyShopArmor", 0x01030807, 0x02040807, 1100, 2100, 0, 101, 201)
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 820, Vnum: 27001, Count: 1, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 820, Vnum: 27001, Count: 1, Slot: 5}, {ID: 870, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	owner.Equipment = []inventory.ItemInstance{{ID: 821, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}}
 	login := "myshop-armor"
 	issuePeerTicket(t, ticketStore, login, 0x70707107, owner)
@@ -233,6 +228,7 @@ func TestGameRuntimeMyShopOpenRejectsWornBodyArmorWithInfoChatWithoutMutation(t 
 	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
 		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
 		{Vnum: 11200, Name: "Shop Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
 	})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
@@ -258,6 +254,89 @@ func TestGameRuntimeMyShopOpenRejectsWornBodyArmorWithInfoChatWithoutMutation(t 
 	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop armor reject")
 }
 
+func TestGameRuntimeMyShopOpenRejectsMissingShopBagSilentlyWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopNoBag", 0x01030808, 0x02040808, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 830, Vnum: 27001, Count: 1, Slot: 5}}
+	login := "myshop-nobag"
+	issuePeerTicket(t, ticketStore, login, 0x70707108, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop nobag account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop nobag runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707108)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:     27001,
+			Count:    1,
+			Position: itemproto.InventoryPosition(5),
+			Price:    1500,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected missing-bag MYSHOP error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected missing-bag MYSHOP to emit no frames, got %d", len(out))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop missing bag")
+}
+
+func TestGameRuntimeMyShopOpenRejectsListedOnlyShopBagSilentlyWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopListedBag", 0x01030809, 0x02040809, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 831, Vnum: 27001, Count: 1, Slot: 5},
+		{ID: 832, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	login := "myshop-listed-bag"
+	issuePeerTicket(t, ticketStore, login, 0x70707109, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop listed-bag account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop listed-bag runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707109)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{
+			{Vnum: 27001, Count: 1, Position: itemproto.InventoryPosition(5), Price: 1500, DisplayPos: 0},
+			{Vnum: myShopOpenShopBagVnum, Count: 1, Position: itemproto.InventoryPosition(4), Price: 100, DisplayPos: 1},
+		},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected listed-bag MYSHOP error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected listed-only bag MYSHOP to emit no frames, got %d", len(out))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop listed-only bag")
+}
+
 func TestGameRuntimeMyShopOpenBusyShellRejectsWithInfoChatWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -265,6 +344,7 @@ func TestGameRuntimeMyShopOpenBusyShellRejectsWithInfoChatWithoutMutation(t *tes
 		{ID: 809, Vnum: 27001, Count: 3, Slot: 5},
 		{ID: 810, Vnum: 11234, Count: 1, Slot: 6},
 		{ID: 811, Vnum: 27001, Count: 2, Slot: 7},
+		{ID: 861, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
 	})
 	peer := peerVisibilityCharacter("MyShopBusyPeer", 0x01030806, 0x02040806, 1120, 2120, 0, 101, 201)
 	login := "myshop-busy"
@@ -288,6 +368,7 @@ func TestGameRuntimeMyShopOpenBusyShellRejectsWithInfoChatWithoutMutation(t *tes
 			RefineInfo: &itemcatalog.RefineInfo{ResultVnum: 11235, Cost: 1000, Probability: 100, Materials: []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}}},
 		},
 		itemcatalog.Template{Vnum: 11235, Name: "Busy Result Blade", Stackable: false, MaxCount: 1},
+		itemcatalog.Template{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
 	)
 	itemStore := newItemTemplateStore(t, templates)
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, interactionStore, itemStore)
@@ -385,15 +466,10 @@ func TestGameRuntimeMyShopOpenBusyShellRejectsWithInfoChatWithoutMutation(t *tes
 	if err != nil {
 		t.Fatalf("unexpected accepted MYSHOP after busy clears: %v", err)
 	}
-	if len(acceptedOut) != 1 {
-		t.Fatalf("expected accepted MYSHOP after busy clears to emit one SHOP_SIGN frame, got %d", len(acceptedOut))
-	}
-	if _, err := shopproto.DecodeServerShopSign(decodeSingleFrame(t, acceptedOut[0])); err != nil {
-		t.Fatalf("decode accepted MYSHOP SHOP_SIGN after busy clears: %v", err)
-	}
+	assertMyShopOpenSuccessBagAndSign(t, acceptedOut, owner.VID, 4, `expected accepted MYSHOP after busy clears to emit one SHOP_SIGN frame, got %d`)
 	assertMyShopBusyReject(t, flow, openPacket, "already-open myshop busy")
 
-	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop busy rejects")
+	assertExchangeAccountUnchanged(t, accounts, login, characterAfterMyShopBagConsume(owner), "myshop busy rejects")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop busy peer")
 }
 
@@ -402,7 +478,7 @@ func TestGameRuntimeMyShopOpenRejectsActiveCubeWithoutMutation(t *testing.T) {
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("MyShopCubeBusy", 0x010308c1, 0x020408c1, 1100, 2100, 0, 101, 201)
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 1901, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 1901, Vnum: 27001, Count: 3, Slot: 5}, {ID: 1951, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	login := "myshop-cube-busy"
 	issuePeerTicket(t, ticketStore, login, 0x707071c1, owner)
 	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
@@ -413,7 +489,7 @@ func TestGameRuntimeMyShopOpenRejectsActiveCubeWithoutMutation(t *testing.T) {
 		Name:      "Shop Potion",
 		Stackable: true,
 		MaxCount:  200,
-	}})
+	}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop-cube busy runtime error: %v", err)
@@ -452,7 +528,7 @@ func TestGameRuntimeMyShopGuestBrowseRejectsActiveCubeWithoutMutation(t *testing
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("MyShopBrowseCubeHost", 0x010308c3, 0x020408c3, 1100, 2100, 0, 101, 201)
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 1903, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 1903, Vnum: 27001, Count: 3, Slot: 5}, {ID: 1953, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	peer := peerVisibilityCharacter("MyShopBrowseCubeGuest", 0x010308c4, 0x020408c4, 1120, 2120, 0, 101, 201)
 	peer.Gold = 22222
 	ownerLogin := "myshop-browse-cube-host"
@@ -465,7 +541,7 @@ func TestGameRuntimeMyShopGuestBrowseRejectsActiveCubeWithoutMutation(t *testing
 	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
 		t.Fatalf("seed myshop browse cube guest account: %v", err)
 	}
-	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200}})
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop browse cube runtime error: %v", err)
@@ -487,9 +563,10 @@ func TestGameRuntimeMyShopGuestBrowseRejectsActiveCubeWithoutMutation(t *testing
 			DisplayPos: 0,
 		}},
 	})))
-	if err != nil || len(openOut) != 1 {
-		t.Fatalf("unexpected accepted MYSHOP before guest cube browse: out=%d err=%v", len(openOut), err)
+	if err != nil {
+		t.Fatalf("unexpected MYSHOP open error: %v", err)
 	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `unexpected accepted MYSHOP before guest cube browse: out=%d err=%v`)
 	_ = flushServerFrames(t, peerFlow)
 
 	openCubeOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
@@ -521,7 +598,7 @@ func TestGameRuntimeMyShopGuestBrowseRejectsActiveCubeWithoutMutation(t *testing
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected cube-busy guest browse to queue no host frames, got %d", len(queued))
 	}
-	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop guest browse cube host")
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, characterAfterMyShopBagConsume(owner), "myshop guest browse cube host")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop guest browse cube guest")
 }
 
@@ -558,6 +635,77 @@ func assertMyShopOpenRejectInfoChat(t *testing.T, out [][]byte, wantMessage, con
 	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != wantMessage {
 		t.Fatalf("unexpected %s MYSHOP reject chat: %+v", context, delivery)
 	}
+}
+
+func assertMyShopOpenSuccessBagAndSign(t *testing.T, out [][]byte, wantVID uint32, bagSlot uint16, context string) {
+	assertMyShopOpenSuccessBagAndSignWithText(t, out, wantVID, "Private Shop", bagSlot, context)
+}
+
+func assertMyShopOpenSuccessBagAndSignWithText(t *testing.T, out [][]byte, wantVID uint32, wantSign string, bagSlot uint16, context string) {
+	t.Helper()
+	if len(out) < 2 {
+		t.Fatalf("expected %s MYSHOP to emit bag refresh then SHOP_SIGN, got %d", context, len(out))
+	}
+	del, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode %s MYSHOP bag ITEM_DEL: %v", context, err)
+	}
+	if del.Position != itemproto.InventoryPosition(bagSlot) {
+		t.Fatalf("unexpected %s MYSHOP bag ITEM_DEL position: %+v", context, del.Position)
+	}
+	sign, err := shopproto.DecodeServerShopSign(decodeSingleFrame(t, out[len(out)-1]))
+	if err != nil {
+		t.Fatalf("decode %s MYSHOP SHOP_SIGN: %v", context, err)
+	}
+	if sign.VID != wantVID || sign.Sign != wantSign {
+		t.Fatalf("unexpected %s MYSHOP SHOP_SIGN: %+v", context, sign)
+	}
+}
+
+func characterAfterMyShopBagConsume(character loginticket.Character) loginticket.Character {
+	updated := character
+	updated.Inventory = cloneItemInstancesWithoutVnum(character.Inventory, myShopOpenShopBagVnum)
+	updated.Quickslots = cloneQuickslotsWithoutItemSlot(character.Quickslots, character.Inventory, myShopOpenShopBagVnum)
+	return updated
+}
+
+func cloneItemInstancesWithoutVnum(items []inventory.ItemInstance, vnum uint32) []inventory.ItemInstance {
+	out := make([]inventory.ItemInstance, 0, len(items))
+	removed := false
+	for _, item := range items {
+		if !removed && !item.Equipped && item.Vnum == vnum && item.Count > 0 {
+			removed = true
+			if item.Count > 1 {
+				item.Count--
+				out = append(out, item)
+			}
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func cloneQuickslotsWithoutItemSlot(slots []loginticket.Quickslot, items []inventory.ItemInstance, vnum uint32) []loginticket.Quickslot {
+	bagSlots := make(map[uint8]struct{})
+	for _, item := range items {
+		if !item.Equipped && item.Vnum == vnum {
+			bagSlots[uint8(item.Slot)] = struct{}{}
+		}
+	}
+	if len(bagSlots) == 0 {
+		return append([]loginticket.Quickslot(nil), slots...)
+	}
+	out := make([]loginticket.Quickslot, 0, len(slots))
+	for _, slot := range slots {
+		if slot.Type == quickslotproto.TypeItem {
+			if _, ok := bagSlots[slot.Slot]; ok {
+				continue
+			}
+		}
+		out = append(out, slot)
+	}
+	return out
 }
 
 func TestGameRuntimeMyShopLifecycleCloseEmitsEmptyShopSignWithoutInventoryMutation(t *testing.T) {
@@ -610,7 +758,7 @@ func TestGameRuntimeMyShopLifecycleCloseEmitsEmptyShopSignWithoutInventoryMutati
 			accounts := accountstore.NewFileStore(t.TempDir())
 			owner := peerVisibilityCharacter(tc.ownerName, tc.ownerID, tc.ownerVID, 1100, 2100, 0, 101, 201)
 			owner.Gold = 5000
-			owner.Inventory = []inventory.ItemInstance{{ID: uint64(tc.ownerID), Vnum: 27001, Count: 3, Slot: 5}}
+			owner.Inventory = []inventory.ItemInstance{{ID: uint64(tc.ownerID), Vnum: 27001, Count: 3, Slot: 5}, {ID: 9000, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
 			issuePeerTicket(t, ticketStore, tc.login, tc.loginKey, owner)
 			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
@@ -621,7 +769,7 @@ func TestGameRuntimeMyShopLifecycleCloseEmitsEmptyShopSignWithoutInventoryMutati
 				Name:      "Shop Potion",
 				Stackable: true,
 				MaxCount:  200,
-			}})
+			}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 			if err != nil {
 				t.Fatalf("unexpected %s myshop close runtime error: %v", tc.name, err)
@@ -643,9 +791,7 @@ func TestGameRuntimeMyShopLifecycleCloseEmitsEmptyShopSignWithoutInventoryMutati
 			if err != nil {
 				t.Fatalf("unexpected %s accepted MYSHOP error: %v", tc.name, err)
 			}
-			if len(openOut) != 1 {
-				t.Fatalf("expected %s accepted MYSHOP to emit one SHOP_SIGN frame, got %d", tc.name, len(openOut))
-			}
+			assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, tc.name+" accepted myshop open")
 
 			out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
 				Type:    chatproto.ChatTypeTalking,
@@ -678,7 +824,7 @@ func TestGameRuntimeMyShopLifecycleCloseEmitsEmptyShopSignWithoutInventoryMutati
 			if queued := flushServerFrames(t, flow); len(queued) != 0 {
 				t.Fatalf("expected %s myshop lifecycle close to queue no peer frames, got %d", tc.name, len(queued))
 			}
-			assertExchangeAccountUnchanged(t, accounts, tc.login, owner, tc.name+" myshop lifecycle close")
+			assertExchangeAccountUnchanged(t, accounts, tc.login, characterAfterMyShopBagConsume(owner), tc.name+" myshop lifecycle close")
 		})
 	}
 }
@@ -688,7 +834,7 @@ func TestGameRuntimeMyShopCloseSlashClearsOpenSignWithoutInventoryMutation(t *te
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("MyShopCloseSlash", 0x01030814, 0x02040814, 1100, 2100, 0, 101, 201)
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 814, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 814, Vnum: 27001, Count: 3, Slot: 5}, {ID: 864, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
 	login := "myshop-close-slash"
 	issuePeerTicket(t, ticketStore, login, 0x70707114, owner)
@@ -700,7 +846,7 @@ func TestGameRuntimeMyShopCloseSlashClearsOpenSignWithoutInventoryMutation(t *te
 		Name:      "Shop Potion",
 		Stackable: true,
 		MaxCount:  200,
-	}})
+	}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop close slash runtime error: %v", err)
@@ -722,9 +868,7 @@ func TestGameRuntimeMyShopCloseSlashClearsOpenSignWithoutInventoryMutation(t *te
 	if err != nil {
 		t.Fatalf("unexpected accepted MYSHOP before close slash: %v", err)
 	}
-	if len(openOut) != 1 {
-		t.Fatalf("expected accepted MYSHOP before close slash to emit one SHOP_SIGN frame, got %d", len(openOut))
-	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `expected accepted MYSHOP before close slash to emit one SHOP_SIGN frame, got %d`)
 
 	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
 		Type:    chatproto.ChatTypeTalking,
@@ -766,7 +910,7 @@ func TestGameRuntimeMyShopCloseSlashClearsOpenSignWithoutInventoryMutation(t *te
 	if phase.Phase != session.PhaseSelect {
 		t.Fatalf("expected already-closed phase_select to transition to select, got %q", phase.Phase)
 	}
-	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop close slash")
+	assertExchangeAccountUnchanged(t, accounts, login, characterAfterMyShopBagConsume(owner), "myshop close slash")
 }
 
 func assertMyShopEmptySignFrame(t *testing.T, raw []byte, wantVID uint32, context string) {
@@ -785,7 +929,7 @@ func TestGameRuntimeItemExchangeStartRejectsActiveMyShopWithoutMutation(t *testi
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("ExchMyShopStartOwner", 0x01030821, 0x02040821, 1100, 2100, 0, 101, 201)
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 821, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 821, Vnum: 27001, Count: 3, Slot: 5}, {ID: 871, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	peer := peerVisibilityCharacter("ExchMyShopStartPeer", 0x01030822, 0x02040822, 1120, 2120, 0, 101, 201)
 	peer.Gold = 22222
 	ownerLogin := "exch-myshop-start-owner"
@@ -803,7 +947,7 @@ func TestGameRuntimeItemExchangeStartRejectsActiveMyShopWithoutMutation(t *testi
 		Name:      "Shop Potion",
 		Stackable: true,
 		MaxCount:  200,
-	}})
+	}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop-open exchange runtime error: %v", err)
@@ -828,9 +972,7 @@ func TestGameRuntimeItemExchangeStartRejectsActiveMyShopWithoutMutation(t *testi
 	if err != nil {
 		t.Fatalf("unexpected accepted MYSHOP before exchange start: %v", err)
 	}
-	if len(openOut) != 1 {
-		t.Fatalf("expected accepted MYSHOP before exchange start to emit one SHOP_SIGN frame, got %d", len(openOut))
-	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `expected accepted MYSHOP before exchange start to emit one SHOP_SIGN frame, got %d`)
 	if queued := flushServerFrames(t, peerFlow); len(queued) != 1 {
 		t.Fatalf("expected accepted MYSHOP before exchange start to around-broadcast one SHOP_SIGN to peer, got %d", len(queued))
 	}
@@ -855,7 +997,7 @@ func TestGameRuntimeItemExchangeStartRejectsActiveMyShopWithoutMutation(t *testi
 	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
 		t.Fatalf("expected exchange start with open MYSHOP to queue no peer frames, got %d", len(queued))
 	}
-	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop-open exchange start owner")
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, characterAfterMyShopBagConsume(owner), "myshop-open exchange start owner")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop-open exchange start peer")
 }
 
@@ -864,10 +1006,10 @@ func TestGameRuntimeItemExchangeStartRejectsPartnerActiveMyShopWithoutMutation(t
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("ExchPartnerMyShopOwner", 0x01030823, 0x02040823, 1100, 2100, 0, 101, 201)
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 823, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 823, Vnum: 27001, Count: 3, Slot: 5}, {ID: 873, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	peer := peerVisibilityCharacter("ExchPartnerMyShopPeer", 0x01030824, 0x02040824, 1120, 2120, 0, 101, 201)
 	peer.Gold = 22222
-	peer.Inventory = []inventory.ItemInstance{{ID: 824, Vnum: 27001, Count: 2, Slot: 6}}
+	peer.Inventory = []inventory.ItemInstance{{ID: 824, Vnum: 27001, Count: 2, Slot: 6}, {ID: 874, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	ownerLogin := "exch-partner-myshop-owner"
 	peerLogin := "exch-partner-myshop-peer"
 	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707123, owner)
@@ -883,7 +1025,7 @@ func TestGameRuntimeItemExchangeStartRejectsPartnerActiveMyShopWithoutMutation(t
 		Name:      "Shop Potion",
 		Stackable: true,
 		MaxCount:  200,
-	}})
+	}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected partner-myshop exchange runtime error: %v", err)
@@ -908,9 +1050,7 @@ func TestGameRuntimeItemExchangeStartRejectsPartnerActiveMyShopWithoutMutation(t
 	if err != nil {
 		t.Fatalf("unexpected partner accepted MYSHOP before exchange start: %v", err)
 	}
-	if len(openOut) != 1 {
-		t.Fatalf("expected partner accepted MYSHOP before exchange start to emit one SHOP_SIGN frame, got %d", len(openOut))
-	}
+	assertMyShopOpenSuccessBagAndSignWithText(t, openOut, peer.VID, "Partner Shop", 4, "partner accepted MYSHOP before exchange start")
 
 	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
 		Subheader: itemproto.ExchangeSubheaderStart,
@@ -933,7 +1073,7 @@ func TestGameRuntimeItemExchangeStartRejectsPartnerActiveMyShopWithoutMutation(t
 		t.Fatalf("expected partner-myshop exchange start to queue no peer frames, got %d", len(queued))
 	}
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "partner-myshop exchange start owner")
-	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "partner-myshop exchange start peer")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, characterAfterMyShopBagConsume(peer), "partner-myshop exchange start peer")
 }
 
 func TestGameRuntimeMyShopOpenLocksHostItemMutationsWithoutMutation(t *testing.T) {
@@ -944,6 +1084,7 @@ func TestGameRuntimeMyShopOpenLocksHostItemMutationsWithoutMutation(t *testing.T
 	owner.Inventory = []inventory.ItemInstance{
 		{ID: 831, Vnum: 27001, Count: 3, Slot: 5},
 		{ID: 832, Vnum: 27002, Count: 1, Slot: 6},
+		{ID: 882, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
 	}
 	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
 	login := "myshop-lock-host"
@@ -976,9 +1117,7 @@ func TestGameRuntimeMyShopOpenLocksHostItemMutationsWithoutMutation(t *testing.T
 	if err != nil {
 		t.Fatalf("unexpected accepted MYSHOP before mutation lock: %v", err)
 	}
-	if len(openOut) != 1 {
-		t.Fatalf("expected accepted MYSHOP before mutation lock to emit one SHOP_SIGN frame, got %d", len(openOut))
-	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `expected accepted MYSHOP before mutation lock to emit one SHOP_SIGN frame, got %d`)
 
 	for _, tc := range []struct {
 		name string
@@ -1000,7 +1139,7 @@ func TestGameRuntimeMyShopOpenLocksHostItemMutationsWithoutMutation(t *testing.T
 			t.Fatalf("expected %s while MYSHOP open to emit no frames, got %d", tc.name, len(out))
 		}
 	}
-	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop open host mutation lock")
+	assertExchangeAccountUnchanged(t, accounts, login, characterAfterMyShopBagConsume(owner), "myshop open host mutation lock")
 
 	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
 		Type:    chatproto.ChatTypeTalking,
@@ -1027,7 +1166,7 @@ func TestGameRuntimeMyShopOpenBroadcastsShopSignToVisiblePeer(t *testing.T) {
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("MyShopAroundHost", 0x01030841, 0x02040841, 1100, 2100, 0, 101, 201)
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 841, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 841, Vnum: 27001, Count: 3, Slot: 5}, {ID: 891, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	peer := peerVisibilityCharacter("MyShopAroundPeer", 0x01030842, 0x02040842, 1120, 2120, 0, 101, 201)
 	peer.Gold = 22222
 	ownerLogin := "myshop-around-host"
@@ -1045,7 +1184,7 @@ func TestGameRuntimeMyShopOpenBroadcastsShopSignToVisiblePeer(t *testing.T) {
 		Name:      "Shop Potion",
 		Stackable: true,
 		MaxCount:  200,
-	}})
+	}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop around runtime error: %v", err)
@@ -1070,16 +1209,7 @@ func TestGameRuntimeMyShopOpenBroadcastsShopSignToVisiblePeer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected accepted MYSHOP before peer around-broadcast: %v", err)
 	}
-	if len(openOut) != 1 {
-		t.Fatalf("expected accepted MYSHOP to emit one host SHOP_SIGN frame, got %d", len(openOut))
-	}
-	hostSign, err := shopproto.DecodeServerShopSign(decodeSingleFrame(t, openOut[0]))
-	if err != nil {
-		t.Fatalf("decode host MYSHOP SHOP_SIGN: %v", err)
-	}
-	if hostSign.VID != owner.VID || hostSign.Sign != "Private Shop" {
-		t.Fatalf("unexpected host MYSHOP SHOP_SIGN: %+v", hostSign)
-	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `expected accepted MYSHOP to emit one host SHOP_SIGN frame, got %d`)
 
 	queued := flushServerFrames(t, peerFlow)
 	if len(queued) != 1 {
@@ -1092,7 +1222,7 @@ func TestGameRuntimeMyShopOpenBroadcastsShopSignToVisiblePeer(t *testing.T) {
 	if peerSign.VID != owner.VID || peerSign.Sign != "Private Shop" {
 		t.Fatalf("unexpected peer MYSHOP SHOP_SIGN around-broadcast: %+v", peerSign)
 	}
-	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop peer around-broadcast open host")
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, characterAfterMyShopBagConsume(owner), "myshop peer around-broadcast open host")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop peer around-broadcast open peer")
 
 	closeOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
@@ -1112,7 +1242,7 @@ func TestGameRuntimeMyShopOpenBroadcastsShopSignToVisiblePeer(t *testing.T) {
 		t.Fatalf("expected visible peer to receive one empty SHOP_SIGN around-broadcast on close, got %d", len(closeQueued))
 	}
 	assertMyShopEmptySignFrame(t, closeQueued[0], owner.VID, "peer close around-broadcast")
-	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop peer around-broadcast close host")
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, characterAfterMyShopBagConsume(owner), "myshop peer around-broadcast close host")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop peer around-broadcast close peer")
 }
 
@@ -1121,7 +1251,7 @@ func TestGameRuntimeMyShopOpenRematerializesShopSignOnPeerViewEntry(t *testing.T
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("MyShopViewEntryHost", 0x01030843, 0x02040843, 1100, 2100, 0, 101, 201)
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 843, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 843, Vnum: 27001, Count: 3, Slot: 5}, {ID: 893, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	peer := peerVisibilityCharacter("MyShopViewEntryPeer", 0x01030844, 0x02040844, 1120, 2120, 0, 101, 201)
 	peer.Gold = 22222
 	ownerLogin := "myshop-view-entry-host"
@@ -1139,7 +1269,7 @@ func TestGameRuntimeMyShopOpenRematerializesShopSignOnPeerViewEntry(t *testing.T
 		Name:      "Shop Potion",
 		Stackable: true,
 		MaxCount:  200,
-	}})
+	}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop view-entry runtime error: %v", err)
@@ -1161,9 +1291,7 @@ func TestGameRuntimeMyShopOpenRematerializesShopSignOnPeerViewEntry(t *testing.T
 	if err != nil {
 		t.Fatalf("unexpected accepted MYSHOP before peer view-entry: %v", err)
 	}
-	if len(openOut) != 1 {
-		t.Fatalf("expected accepted MYSHOP before peer view-entry to emit one host SHOP_SIGN frame, got %d", len(openOut))
-	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `expected accepted MYSHOP before peer view-entry to emit one host SHOP_SIGN frame, got %d`)
 
 	peerFlow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707144)
 	defer closeSessionFlow(t, peerFlow)
@@ -1202,7 +1330,7 @@ func TestGameRuntimeMyShopOpenRematerializesShopSignOnPeerViewEntry(t *testing.T
 	if rematerialized.VID != owner.VID || rematerialized.Sign != "Private Shop" {
 		t.Fatalf("unexpected rematerialized MYSHOP SHOP_SIGN: %+v", rematerialized)
 	}
-	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop peer view-entry rematerialization host")
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, characterAfterMyShopBagConsume(owner), "myshop peer view-entry rematerialization host")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop peer view-entry rematerialization peer")
 }
 
@@ -1211,7 +1339,7 @@ func TestGameRuntimeMyShopClosedBeforePeerViewEntryOmitsLiveShopSign(t *testing.
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("MyShopClosedViewHost", 0x01030845, 0x02040845, 1100, 2100, 0, 101, 201)
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 845, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 845, Vnum: 27001, Count: 3, Slot: 5}, {ID: 895, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	peer := peerVisibilityCharacter("MyShopClosedViewPeer", 0x01030846, 0x02040846, 1120, 2120, 0, 101, 201)
 	peer.Gold = 22222
 	ownerLogin := "myshop-closed-view-host"
@@ -1229,7 +1357,7 @@ func TestGameRuntimeMyShopClosedBeforePeerViewEntryOmitsLiveShopSign(t *testing.
 		Name:      "Shop Potion",
 		Stackable: true,
 		MaxCount:  200,
-	}})
+	}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop closed view-entry runtime error: %v", err)
@@ -1251,9 +1379,7 @@ func TestGameRuntimeMyShopClosedBeforePeerViewEntryOmitsLiveShopSign(t *testing.
 	if err != nil {
 		t.Fatalf("unexpected accepted MYSHOP before closed view-entry: %v", err)
 	}
-	if len(openOut) != 1 {
-		t.Fatalf("expected accepted MYSHOP before closed view-entry to emit one host SHOP_SIGN frame, got %d", len(openOut))
-	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `expected accepted MYSHOP before closed view-entry to emit one host SHOP_SIGN frame, got %d`)
 	closeOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
 		Type:    chatproto.ChatTypeTalking,
 		Message: "/close_myshop",
@@ -1279,7 +1405,7 @@ func TestGameRuntimeMyShopClosedBeforePeerViewEntryOmitsLiveShopSign(t *testing.
 			t.Fatalf("expected closed host not to queue rematerialized SHOP_SIGN on peer view-entry, got %+v", sign)
 		}
 	}
-	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop closed view-entry host")
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, characterAfterMyShopBagConsume(owner), "myshop closed view-entry host")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop closed view-entry peer")
 }
 
@@ -1288,7 +1414,7 @@ func TestGameRuntimeMyShopGuestBrowseOpenEmitsShopStartWithoutInventoryMutation(
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("MyShopBrowseHost", 0x01030851, 0x02040851, 1100, 2100, 0, 101, 201)
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 851, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 851, Vnum: 27001, Count: 3, Slot: 5}, {ID: 901, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	peer := peerVisibilityCharacter("MyShopBrowseGuest", 0x01030852, 0x02040852, 1120, 2120, 0, 101, 201)
 	peer.Gold = 22222
 	ownerLogin := "myshop-browse-host"
@@ -1333,9 +1459,7 @@ func TestGameRuntimeMyShopGuestBrowseOpenEmitsShopStartWithoutInventoryMutation(
 	if err != nil {
 		t.Fatalf("unexpected accepted MYSHOP before guest browse: %v", err)
 	}
-	if len(openOut) != 1 {
-		t.Fatalf("expected accepted MYSHOP before guest browse to emit one SHOP_SIGN frame, got %d", len(openOut))
-	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `expected accepted MYSHOP before guest browse to emit one SHOP_SIGN frame, got %d`)
 	_ = flushServerFrames(t, peerFlow)
 
 	browseOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: owner.VID})))
@@ -1374,7 +1498,7 @@ func TestGameRuntimeMyShopGuestBrowseOpenEmitsShopStartWithoutInventoryMutation(
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected guest browse to queue no host frames, got %d", len(queued))
 	}
-	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop guest browse host")
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, characterAfterMyShopBagConsume(owner), "myshop guest browse host")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop guest browse guest")
 }
 
@@ -1383,7 +1507,7 @@ func TestGameRuntimeMyShopGuestBrowseRejectsBusyGuestAndSilentMisses(t *testing.
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("MyShopBrowseBusyHost", 0x01030853, 0x02040853, 1100, 2100, 0, 101, 201)
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 853, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 853, Vnum: 27001, Count: 3, Slot: 5}, {ID: 903, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	peer := peerVisibilityCharacter("MyShopBrowseBusyGuest", 0x01030854, 0x02040854, 1120, 2120, 0, 101, 201)
 	peer.Gold = 22222
 	ownerLogin := "myshop-browse-busy-host"
@@ -1396,7 +1520,7 @@ func TestGameRuntimeMyShopGuestBrowseRejectsBusyGuestAndSilentMisses(t *testing.
 	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
 		t.Fatalf("seed myshop browse busy guest account: %v", err)
 	}
-	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200}})
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop browse busy runtime error: %v", err)
@@ -1418,9 +1542,10 @@ func TestGameRuntimeMyShopGuestBrowseRejectsBusyGuestAndSilentMisses(t *testing.
 			DisplayPos: 0,
 		}},
 	})))
-	if err != nil || len(openOut) != 1 {
-		t.Fatalf("unexpected accepted MYSHOP before busy guest browse: out=%d err=%v", len(openOut), err)
+	if err != nil {
+		t.Fatalf("unexpected MYSHOP open error: %v", err)
 	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `unexpected accepted MYSHOP before busy guest browse: out=%d err=%v`)
 	_ = flushServerFrames(t, peerFlow)
 
 	openSafeboxOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
@@ -1475,7 +1600,7 @@ func TestGameRuntimeMyShopGuestBrowseRejectsBusyGuestAndSilentMisses(t *testing.
 	if len(closedOut) != 0 {
 		t.Fatalf("expected closed-host browse to emit no frames, got %d", len(closedOut))
 	}
-	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop guest browse busy host")
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, characterAfterMyShopBagConsume(owner), "myshop guest browse busy host")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop guest browse busy guest")
 }
 
@@ -1484,10 +1609,10 @@ func TestGameRuntimeMyShopGuestBrowseRejectsGuestOwnOpenMyShopSilently(t *testin
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("MyShopBrowseOwnHost", 0x01030855, 0x02040855, 1100, 2100, 0, 101, 201)
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 855, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 855, Vnum: 27001, Count: 3, Slot: 5}, {ID: 905, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	peer := peerVisibilityCharacter("MyShopBrowseOwnGuest", 0x01030856, 0x02040856, 1120, 2120, 0, 101, 201)
 	peer.Gold = 5000
-	peer.Inventory = []inventory.ItemInstance{{ID: 856, Vnum: 27001, Count: 1, Slot: 5}}
+	peer.Inventory = []inventory.ItemInstance{{ID: 856, Vnum: 27001, Count: 1, Slot: 5}, {ID: 906, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	ownerLogin := "myshop-browse-own-host"
 	peerLogin := "myshop-browse-own-guest"
 	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707155, owner)
@@ -1498,7 +1623,7 @@ func TestGameRuntimeMyShopGuestBrowseRejectsGuestOwnOpenMyShopSilently(t *testin
 	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
 		t.Fatalf("seed myshop browse own guest account: %v", err)
 	}
-	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200}})
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop browse own runtime error: %v", err)
@@ -1519,9 +1644,15 @@ func TestGameRuntimeMyShopGuestBrowseRejectsGuestOwnOpenMyShopSilently(t *testin
 		{flow: peerFlow, login: peerLogin, pkt: shopproto.ClientMyShopPacket{Sign: "Guest Shop", Items: []shopproto.ClientMyShopItem{{Vnum: 27001, Count: 1, Position: itemproto.InventoryPosition(5), Price: 900, DisplayPos: 1}}}},
 	} {
 		out, err := tc.flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(tc.pkt)))
-		if err != nil || len(out) != 1 {
-			t.Fatalf("unexpected accepted MYSHOP for %s before own-open browse: out=%d err=%v", tc.login, len(out), err)
+		if err != nil {
+			t.Fatalf("unexpected accepted MYSHOP for %s before own-open browse: %v", tc.login, err)
 		}
+		wantVID := owner.VID
+		wantSign := tc.pkt.Sign
+		if tc.login == peerLogin {
+			wantVID = peer.VID
+		}
+		assertMyShopOpenSuccessBagAndSignWithText(t, out, wantVID, wantSign, 4, "accepted MYSHOP for "+tc.login+" before own-open browse")
 	}
 	_ = flushServerFrames(t, ownerFlow)
 	_ = flushServerFrames(t, peerFlow)
@@ -1533,8 +1664,8 @@ func TestGameRuntimeMyShopGuestBrowseRejectsGuestOwnOpenMyShopSilently(t *testin
 	if len(ownOut) != 0 {
 		t.Fatalf("expected own-open guest browse to emit no frames, got %d", len(ownOut))
 	}
-	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop guest browse own-open host")
-	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop guest browse own-open guest")
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, characterAfterMyShopBagConsume(owner), "myshop guest browse own-open host")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, characterAfterMyShopBagConsume(peer), "myshop guest browse own-open guest")
 }
 
 func TestGameRuntimeMyShopGuestBrowseShopEndClearsPresentationWithoutInventoryMutation(t *testing.T) {
@@ -1542,7 +1673,7 @@ func TestGameRuntimeMyShopGuestBrowseShopEndClearsPresentationWithoutInventoryMu
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("MyShopLeaveHost", 0x01030861, 0x02040861, 1100, 2100, 0, 101, 201)
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 861, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 861, Vnum: 27001, Count: 3, Slot: 5}, {ID: 911, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	peer := peerVisibilityCharacter("MyShopLeaveGuest", 0x01030862, 0x02040862, 1120, 2120, 0, 101, 201)
 	peer.Gold = 22222
 	ownerLogin := "myshop-leave-host"
@@ -1555,7 +1686,7 @@ func TestGameRuntimeMyShopGuestBrowseShopEndClearsPresentationWithoutInventoryMu
 	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
 		t.Fatalf("seed myshop leave guest account: %v", err)
 	}
-	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200}})
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop leave runtime error: %v", err)
@@ -1577,9 +1708,10 @@ func TestGameRuntimeMyShopGuestBrowseShopEndClearsPresentationWithoutInventoryMu
 			DisplayPos: 0,
 		}},
 	})))
-	if err != nil || len(openOut) != 1 {
-		t.Fatalf("unexpected accepted MYSHOP before guest leave: out=%d err=%v", len(openOut), err)
+	if err != nil {
+		t.Fatalf("unexpected MYSHOP open error: %v", err)
 	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `unexpected accepted MYSHOP before guest leave: out=%d err=%v`)
 	_ = flushServerFrames(t, peerFlow)
 
 	browseOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: owner.VID})))
@@ -1607,7 +1739,7 @@ func TestGameRuntimeMyShopGuestBrowseShopEndClearsPresentationWithoutInventoryMu
 	if len(secondEndOut) != 0 {
 		t.Fatalf("expected already-closed guest browse SHOP END to emit no frames, got %d", len(secondEndOut))
 	}
-	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop guest leave host")
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, characterAfterMyShopBagConsume(owner), "myshop guest leave host")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop guest leave guest")
 }
 
@@ -1616,7 +1748,7 @@ func TestGameRuntimeMyShopHostCloseQueuesGuestBrowseShopEndWithoutInventoryMutat
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("MyShopHostCloseHost", 0x01030871, 0x02040871, 1100, 2100, 0, 101, 201)
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 871, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 871, Vnum: 27001, Count: 3, Slot: 5}, {ID: 921, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	peer := peerVisibilityCharacter("MyShopHostCloseGuest", 0x01030872, 0x02040872, 1120, 2120, 0, 101, 201)
 	peer.Gold = 22222
 	ownerLogin := "myshop-host-close-host"
@@ -1629,7 +1761,7 @@ func TestGameRuntimeMyShopHostCloseQueuesGuestBrowseShopEndWithoutInventoryMutat
 	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
 		t.Fatalf("seed myshop host-close guest account: %v", err)
 	}
-	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200}})
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop host-close runtime error: %v", err)
@@ -1651,9 +1783,10 @@ func TestGameRuntimeMyShopHostCloseQueuesGuestBrowseShopEndWithoutInventoryMutat
 			DisplayPos: 0,
 		}},
 	})))
-	if err != nil || len(openOut) != 1 {
-		t.Fatalf("unexpected accepted MYSHOP before host close: out=%d err=%v", len(openOut), err)
+	if err != nil {
+		t.Fatalf("unexpected MYSHOP open error: %v", err)
 	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `unexpected accepted MYSHOP before host close: out=%d err=%v`)
 	_ = flushServerFrames(t, peerFlow)
 
 	browseOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: owner.VID})))
@@ -1701,7 +1834,7 @@ func TestGameRuntimeMyShopHostCloseQueuesGuestBrowseShopEndWithoutInventoryMutat
 	if len(secondEndOut) != 0 {
 		t.Fatalf("expected guest SHOP END after host-forced leave to emit no frames, got %d", len(secondEndOut))
 	}
-	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop host-close host")
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, characterAfterMyShopBagConsume(owner), "myshop host-close host")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop host-close guest")
 }
 
@@ -1710,7 +1843,7 @@ func TestGameRuntimeMyShopGuestBuyTransfersStockGoldAndClearsDisplaySlot(t *test
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("MyShopBuyHost", 0x01030861, 0x02040861, 1100, 2100, 0, 101, 201)
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 861, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 861, Vnum: 27001, Count: 3, Slot: 5}, {ID: 911, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	peer := peerVisibilityCharacter("MyShopBuyGuest", 0x01030862, 0x02040862, 1120, 2120, 0, 101, 201)
 	peer.Gold = 22222
 	ownerLogin := "myshop-buy-host"
@@ -1754,9 +1887,10 @@ func TestGameRuntimeMyShopGuestBuyTransfersStockGoldAndClearsDisplaySlot(t *test
 			DisplayPos: displayPos,
 		}},
 	})))
-	if err != nil || len(openOut) != 1 {
-		t.Fatalf("unexpected accepted MYSHOP before guest buy: out=%d err=%v", len(openOut), err)
+	if err != nil {
+		t.Fatalf("unexpected MYSHOP open error: %v", err)
 	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `unexpected accepted MYSHOP before guest buy: out=%d err=%v`)
 	_ = flushServerFrames(t, peerFlow)
 
 	browseOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: owner.VID})))
@@ -1896,7 +2030,7 @@ func TestGameRuntimeMyShopGuestBuyFansUpdateItemToOtherBrowsingGuest(t *testing.
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("MyShopFanHost", 0x01030871, 0x02040871, 1100, 2100, 0, 101, 201)
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 871, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 871, Vnum: 27001, Count: 3, Slot: 5}, {ID: 921, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	buyer := peerVisibilityCharacter("MyShopFanBuyer", 0x01030872, 0x02040872, 1120, 2120, 0, 101, 201)
 	buyer.Gold = 22222
 	watcher := peerVisibilityCharacter("MyShopFanWatch", 0x01030873, 0x02040873, 1140, 2140, 0, 101, 201)
@@ -1950,9 +2084,10 @@ func TestGameRuntimeMyShopGuestBuyFansUpdateItemToOtherBrowsingGuest(t *testing.
 			DisplayPos: displayPos,
 		}},
 	})))
-	if err != nil || len(openOut) != 1 {
-		t.Fatalf("unexpected accepted MYSHOP before multi-guest buy: out=%d err=%v", len(openOut), err)
+	if err != nil {
+		t.Fatalf("unexpected MYSHOP open error: %v", err)
 	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `unexpected accepted MYSHOP before multi-guest buy: out=%d err=%v`)
 	_ = flushServerFrames(t, buyerFlow)
 	_ = flushServerFrames(t, watcherFlow)
 
@@ -2051,10 +2186,10 @@ func TestGameRuntimeMyShopGuestSellWhileBrowsingFailsClosedWithoutMutation(t *te
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("MyShopSellHost", 0x01030881, 0x02040881, 1100, 2100, 0, 101, 201)
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 881, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 881, Vnum: 27001, Count: 3, Slot: 5}, {ID: 931, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	peer := peerVisibilityCharacter("MyShopSellGuest", 0x01030882, 0x02040882, 1120, 2120, 0, 101, 201)
 	peer.Gold = 22222
-	peer.Inventory = []inventory.ItemInstance{{ID: 882, Vnum: 27002, Count: 4, Slot: 6}}
+	peer.Inventory = []inventory.ItemInstance{{ID: 882, Vnum: 27002, Count: 4, Slot: 6}, {ID: 932, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	ownerLogin := "myshop-sell-host"
 	peerLogin := "myshop-sell-guest"
 	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707181, owner)
@@ -2092,9 +2227,10 @@ func TestGameRuntimeMyShopGuestSellWhileBrowsingFailsClosedWithoutMutation(t *te
 			DisplayPos: displayPos,
 		}},
 	})))
-	if err != nil || len(openOut) != 1 {
-		t.Fatalf("unexpected accepted MYSHOP before guest sell reject: out=%d err=%v", len(openOut), err)
+	if err != nil {
+		t.Fatalf("unexpected MYSHOP open error: %v", err)
 	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `unexpected accepted MYSHOP before guest sell reject: out=%d err=%v`)
 	_ = flushServerFrames(t, peerFlow)
 
 	browseOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: owner.VID})))
@@ -2124,7 +2260,7 @@ func TestGameRuntimeMyShopGuestSellWhileBrowsingFailsClosedWithoutMutation(t *te
 		}
 	}
 
-	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop guest sell reject host")
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, characterAfterMyShopBagConsume(owner), "myshop guest sell reject host")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop guest sell reject guest")
 }
 

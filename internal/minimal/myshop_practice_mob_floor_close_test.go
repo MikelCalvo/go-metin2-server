@@ -27,7 +27,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMyShop(t *
 	owner := peerVisibilityCharacter("MyShopImmediateFloorOwner", 0x01030891, 0x02040891, 1100, 2100, 0, 101, 201)
 	owner.Points[bootstrapPlayerPointValueIndex] = 1
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 891, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 891, Vnum: 27001, Count: 3, Slot: 5}, {ID: 941, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
 	peer := peerVisibilityCharacter("MyShopImmediateFloorPeer", 0x01030892, 0x02040892, 1120, 2120, 0, 101, 201)
 	login := "myshop-immediate-floor"
@@ -50,7 +50,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMyShop(t *
 		Name:      "Shop Potion",
 		Stackable: true,
 		MaxCount:  200,
-	}})
+	}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticActorStore, interactionStore, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop immediate floor-close runtime error: %v", err)
@@ -109,9 +109,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMyShop(t *
 	if err != nil {
 		t.Fatalf("unexpected accepted MYSHOP before immediate floor-close: %v", err)
 	}
-	if len(openOut) != 1 {
-		t.Fatalf("expected accepted MYSHOP before immediate floor-close to emit one SHOP_SIGN frame, got %d", len(openOut))
-	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `expected accepted MYSHOP before immediate floor-close to emit one SHOP_SIGN frame, got %d`)
 	livePeerSign := flushServerFrames(t, peerFlow)
 	if len(livePeerSign) != 1 {
 		t.Fatalf("expected peer to receive one live SHOP_SIGN around-broadcast before floor, got %d", len(livePeerSign))
@@ -217,7 +215,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMyShop(t *
 		t.Fatalf("expected peer exchange start after myshop immediate floor clear, got %d", len(peerStart))
 	}
 	assertExchangeStartFrame(t, peerStart[0], owner.VID, "peer exchange start after myshop immediate floor clear")
-	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop immediate floor close")
+	assertExchangeAccountUnchanged(t, accounts, login, characterAfterMyShopBagConsume(owner), "myshop immediate floor close")
 }
 
 func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMyShop(t *testing.T) {
@@ -226,7 +224,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMyShop(t *te
 	owner := peerVisibilityCharacter("MyShopDelayedFloorOwner", 0x01030893, 0x02040893, 1100, 2100, 0, 101, 201)
 	owner.Points[bootstrapPlayerPointValueIndex] = 2
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 893, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 893, Vnum: 27001, Count: 3, Slot: 5}, {ID: 943, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
 	peer := peerVisibilityCharacter("MyShopDelayedFloorPeer", 0x01030894, 0x02040894, 1120, 2120, 0, 101, 201)
 	login := "myshop-delayed-floor"
@@ -249,7 +247,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMyShop(t *te
 		Name:      "Shop Potion",
 		Stackable: true,
 		MaxCount:  200,
-	}})
+	}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticActorStore, interactionStore, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop delayed floor-close runtime error: %v", err)
@@ -308,9 +306,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMyShop(t *te
 	if err != nil {
 		t.Fatalf("unexpected accepted MYSHOP before delayed floor-close: %v", err)
 	}
-	if len(openOut) != 1 {
-		t.Fatalf("expected accepted MYSHOP before delayed floor-close to emit one SHOP_SIGN frame, got %d", len(openOut))
-	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `expected accepted MYSHOP before delayed floor-close to emit one SHOP_SIGN frame, got %d`)
 	if queued := flushServerFrames(t, peerFlow); len(queued) != 1 {
 		t.Fatalf("expected peer to receive one live SHOP_SIGN around-broadcast before delayed floor, got %d", len(queued))
 	}
@@ -420,7 +416,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMyShop(t *te
 		t.Fatalf("expected peer exchange start after myshop delayed floor clear, got %d", len(peerStart))
 	}
 	assertExchangeStartFrame(t, peerStart[0], owner.VID, "peer exchange start after myshop delayed floor clear")
-	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop delayed floor close")
+	assertExchangeAccountUnchanged(t, accounts, login, characterAfterMyShopBagConsume(owner), "myshop delayed floor close")
 }
 
 func TestGameSessionFlowPracticeMobImmediateRetaliationFloorQueuesGuestBrowseShopEnd(t *testing.T) {
@@ -429,7 +425,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorQueuesGuestBrowseSho
 	owner := peerVisibilityCharacter("MyShopGuestFloorHost", 0x01030895, 0x02040895, 1100, 2100, 0, 101, 201)
 	owner.Points[bootstrapPlayerPointValueIndex] = 1
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 895, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 895, Vnum: 27001, Count: 3, Slot: 5}, {ID: 945, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	guest := peerVisibilityCharacter("MyShopGuestFloorGuest", 0x01030896, 0x02040896, 1120, 2120, 0, 101, 201)
 	guest.Gold = 22222
 	ownerLogin := "myshop-guest-floor-host"
@@ -450,7 +446,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorQueuesGuestBrowseSho
 		Name:      "Shop Potion",
 		Stackable: true,
 		MaxCount:  200,
-	}})
+	}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticActorStore, interactionStore, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop guest floor-close runtime error: %v", err)
@@ -509,9 +505,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorQueuesGuestBrowseSho
 	if err != nil {
 		t.Fatalf("unexpected accepted MYSHOP before guest floor-close: %v", err)
 	}
-	if len(openOut) != 1 {
-		t.Fatalf("expected accepted MYSHOP before guest floor-close to emit one SHOP_SIGN frame, got %d", len(openOut))
-	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `expected accepted MYSHOP before guest floor-close to emit one SHOP_SIGN frame, got %d`)
 	if queued := flushServerFrames(t, guestFlow); len(queued) != 1 {
 		t.Fatalf("expected guest to receive one live SHOP_SIGN around-broadcast before floor, got %d", len(queued))
 	}
@@ -574,7 +568,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorQueuesGuestBrowseSho
 	if len(rebrowseOut) != 0 {
 		t.Fatalf("expected post-floor guest ON_CLICK against closed host to emit no frames, got %d", len(rebrowseOut))
 	}
-	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop guest floor-close host")
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, characterAfterMyShopBagConsume(owner), "myshop guest floor-close host")
 	assertExchangeAccountUnchanged(t, accounts, guestLogin, guest, "myshop guest floor-close guest")
 }
 
@@ -585,7 +579,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesGuestBrowseOnD
 	// engagement does not silently block the browsing guest's TARGET / ATTACK path.
 	host := peerVisibilityCharacter("MyShopDeadGuestHost", 0x01030897, 0x02040897, 900, 1900, 0, 101, 201)
 	host.Gold = 5000
-	host.Inventory = []inventory.ItemInstance{{ID: 897, Vnum: 27001, Count: 3, Slot: 5}}
+	host.Inventory = []inventory.ItemInstance{{ID: 897, Vnum: 27001, Count: 3, Slot: 5}, {ID: 947, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	guest := peerVisibilityCharacter("MyShopDeadGuestGuest", 0x01030898, 0x02040898, 1120, 2120, 0, 101, 201)
 	guest.Points[bootstrapPlayerPointValueIndex] = 1
 	guest.Gold = 22222
@@ -607,7 +601,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesGuestBrowseOnD
 		Name:      "Shop Potion",
 		Stackable: true,
 		MaxCount:  200,
-	}})
+	}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticActorStore, interactionStore, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop dead-guest floor-close runtime error: %v", err)
@@ -663,9 +657,10 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesGuestBrowseOnD
 			DisplayPos: 0,
 		}},
 	})))
-	if err != nil || len(openOut) != 1 {
-		t.Fatalf("unexpected accepted MYSHOP before dead-guest floor-close: out=%d err=%v", len(openOut), err)
+	if err != nil {
+		t.Fatalf("unexpected MYSHOP open error: %v", err)
 	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, host.VID, 4, `unexpected accepted MYSHOP before dead-guest floor-close: out=%d err=%v`)
 	if queued := flushServerFrames(t, guestFlow); len(queued) != 1 {
 		t.Fatalf("expected guest to receive one live SHOP_SIGN around-broadcast before dead-guest floor, got %d", len(queued))
 	}
@@ -747,7 +742,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesGuestBrowseOnD
 	if len(rebrowseOut) != 0 {
 		t.Fatalf("expected post-floor dead guest ON_CLICK to emit no frames, got %d", len(rebrowseOut))
 	}
-	assertExchangeAccountUnchanged(t, accounts, hostLogin, host, "myshop dead-guest floor-close host")
+	assertExchangeAccountUnchanged(t, accounts, hostLogin, characterAfterMyShopBagConsume(host), "myshop dead-guest floor-close host")
 	assertExchangeAccountUnchanged(t, accounts, guestLogin, guest, "myshop dead-guest floor-close guest")
 }
 
@@ -757,7 +752,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorQueuesGuestBrowseShopE
 	owner := peerVisibilityCharacter("MyShopGuestDelayedFloorHost", 0x010308A1, 0x020408A1, 1100, 2100, 0, 101, 201)
 	owner.Points[bootstrapPlayerPointValueIndex] = 2
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 2209, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 2209, Vnum: 27001, Count: 3, Slot: 5}, {ID: 2259, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	guest := peerVisibilityCharacter("MyShopGuestDelayedFloorGuest", 0x010308A2, 0x020408A2, 1120, 2120, 0, 101, 201)
 	guest.Gold = 22222
 	ownerLogin := "myshop-gdelay-host"
@@ -778,7 +773,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorQueuesGuestBrowseShopE
 		Name:      "Shop Potion",
 		Stackable: true,
 		MaxCount:  200,
-	}})
+	}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticActorStore, interactionStore, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop guest delayed floor-close runtime error: %v", err)
@@ -837,9 +832,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorQueuesGuestBrowseShopE
 	if err != nil {
 		t.Fatalf("unexpected accepted MYSHOP before guest delayed floor-close: %v", err)
 	}
-	if len(openOut) != 1 {
-		t.Fatalf("expected accepted MYSHOP before guest delayed floor-close to emit one SHOP_SIGN frame, got %d", len(openOut))
-	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `expected accepted MYSHOP before guest delayed floor-close to emit one SHOP_SIGN frame, got %d`)
 	if queued := flushServerFrames(t, guestFlow); len(queued) != 1 {
 		t.Fatalf("expected guest to receive one live SHOP_SIGN around-broadcast before delayed floor, got %d", len(queued))
 	}
@@ -932,7 +925,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorQueuesGuestBrowseShopE
 	if len(rebrowseOut) != 0 {
 		t.Fatalf("expected post-delayed-floor guest ON_CLICK against closed host to emit no frames, got %d", len(rebrowseOut))
 	}
-	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "myshop guest delayed floor-close host")
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, characterAfterMyShopBagConsume(owner), "myshop guest delayed floor-close host")
 	assertExchangeAccountUnchanged(t, accounts, guestLogin, guest, "myshop guest delayed floor-close guest")
 }
 
@@ -943,7 +936,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesGuestBrowseOnDea
 	// engagement does not silently block the browsing guest's TARGET / ATTACK path.
 	host := peerVisibilityCharacter("MyShopDeadGuestDelayedHost", 0x010308A3, 0x020408A3, 900, 1900, 0, 101, 201)
 	host.Gold = 5000
-	host.Inventory = []inventory.ItemInstance{{ID: 2211, Vnum: 27001, Count: 3, Slot: 5}}
+	host.Inventory = []inventory.ItemInstance{{ID: 2211, Vnum: 27001, Count: 3, Slot: 5}, {ID: 2261, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	guest := peerVisibilityCharacter("MyShopDeadGuestDelayedGuest", 0x010308A4, 0x020408A4, 1120, 2120, 0, 101, 201)
 	guest.Points[bootstrapPlayerPointValueIndex] = 2
 	guest.Gold = 22222
@@ -965,7 +958,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesGuestBrowseOnDea
 		Name:      "Shop Potion",
 		Stackable: true,
 		MaxCount:  200,
-	}})
+	}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticActorStore, interactionStore, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop dead-guest delayed floor-close runtime error: %v", err)
@@ -1021,9 +1014,10 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesGuestBrowseOnDea
 			DisplayPos: 0,
 		}},
 	})))
-	if err != nil || len(openOut) != 1 {
-		t.Fatalf("unexpected accepted MYSHOP before dead-guest delayed floor-close: out=%d err=%v", len(openOut), err)
+	if err != nil {
+		t.Fatalf("unexpected MYSHOP open error: %v", err)
 	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, host.VID, 4, `unexpected accepted MYSHOP before dead-guest delayed floor-close: out=%d err=%v`)
 	if queued := flushServerFrames(t, guestFlow); len(queued) != 1 {
 		t.Fatalf("expected guest to receive one live SHOP_SIGN around-broadcast before dead-guest delayed floor, got %d", len(queued))
 	}
@@ -1114,7 +1108,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesGuestBrowseOnDea
 	if len(rebrowseOut) != 0 {
 		t.Fatalf("expected post-delayed-floor dead guest ON_CLICK to emit no frames, got %d", len(rebrowseOut))
 	}
-	assertExchangeAccountUnchanged(t, accounts, hostLogin, host, "myshop dead-guest delayed floor-close host")
+	assertExchangeAccountUnchanged(t, accounts, hostLogin, characterAfterMyShopBagConsume(host), "myshop dead-guest delayed floor-close host")
 	assertExchangeAccountUnchanged(t, accounts, guestLogin, guest, "myshop dead-guest delayed floor-close guest")
 }
 
@@ -1124,7 +1118,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMyShopBefo
 	owner := peerVisibilityCharacter("MyShopTownImmediateOwner", 0x010308a1, 0x020408a1, 1100, 2100, 0, 101, 201)
 	owner.Points[bootstrapPlayerPointValueIndex] = 1
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 0x8a1, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 0x8a1, Vnum: 27001, Count: 3, Slot: 5}, {ID: 2259, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
 	sourcePeer := peerVisibilityCharacter("MyShopTownImmediateSource", 0x010308a2, 0x020408a2, 1120, 2120, 0, 101, 201)
 	townPeer := peerVisibilityCharacter("MyShopTownImmediateTown", 0x010308a3, 0x020408a3, 52070, 166600, 4, 103, 203)
@@ -1155,7 +1149,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMyShopBefo
 		Name:      "Shop Potion",
 		Stackable: true,
 		MaxCount:  200,
-	}})
+	}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticActorStore, interactionStore, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop town immediate floor-close runtime error: %v", err)
@@ -1225,9 +1219,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMyShopBefo
 	if err != nil {
 		t.Fatalf("unexpected accepted MYSHOP before town immediate floor-close: %v", err)
 	}
-	if len(openOut) != 1 {
-		t.Fatalf("expected accepted MYSHOP before town immediate floor-close to emit one SHOP_SIGN frame, got %d", len(openOut))
-	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `expected accepted MYSHOP before town immediate floor-close to emit one SHOP_SIGN frame, got %d`)
 	liveSourceSign := flushServerFrames(t, sourceFlow)
 	if len(liveSourceSign) != 1 {
 		t.Fatalf("expected source peer to receive one live SHOP_SIGN around-broadcast before floor, got %d", len(liveSourceSign))
@@ -1368,7 +1360,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMyShopBefo
 		t.Fatalf("expected town peer exchange start after myshop immediate floor clear, got %d", len(townStart))
 	}
 	assertExchangeStartFrame(t, townStart[0], owner.VID, "town peer exchange start after myshop immediate floor clear")
-	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop town immediate floor close inventory/gold")
+	assertExchangeAccountUnchanged(t, accounts, login, characterAfterMyShopBagConsume(owner), "myshop town immediate floor close inventory/gold")
 	persisted, err := accounts.Load(login)
 	if err != nil {
 		t.Fatalf("load persisted owner after myshop town immediate /restart_town: %v", err)
@@ -1390,7 +1382,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMyShopBefore
 	owner := peerVisibilityCharacter("MyShopTownDelayedOwner", 0x010308a4, 0x020408a4, 1100, 2100, 0, 101, 201)
 	owner.Points[bootstrapPlayerPointValueIndex] = 2
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 0x8a4, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 0x8a4, Vnum: 27001, Count: 3, Slot: 5}, {ID: 2262, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
 	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
 	sourcePeer := peerVisibilityCharacter("MyShopTownDelayedSource", 0x010308a5, 0x020408a5, 1120, 2120, 0, 101, 201)
 	townPeer := peerVisibilityCharacter("MyShopTownDelayedTown", 0x010308a6, 0x020408a6, 52070, 166600, 4, 103, 203)
@@ -1421,7 +1413,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMyShopBefore
 		Name:      "Shop Potion",
 		Stackable: true,
 		MaxCount:  200,
-	}})
+	}, {Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticActorStore, interactionStore, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected myshop town delayed floor-close runtime error: %v", err)
@@ -1491,9 +1483,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMyShopBefore
 	if err != nil {
 		t.Fatalf("unexpected accepted MYSHOP before town delayed floor-close: %v", err)
 	}
-	if len(openOut) != 1 {
-		t.Fatalf("expected accepted MYSHOP before town delayed floor-close to emit one SHOP_SIGN frame, got %d", len(openOut))
-	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `expected accepted MYSHOP before town delayed floor-close to emit one SHOP_SIGN frame, got %d`)
 	if queued := flushServerFrames(t, sourceFlow); len(queued) != 1 {
 		t.Fatalf("expected source peer to receive one live SHOP_SIGN around-broadcast before delayed floor, got %d", len(queued))
 	}
@@ -1642,7 +1632,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMyShopBefore
 		t.Fatalf("expected town peer exchange start after myshop delayed floor clear, got %d", len(townStart))
 	}
 	assertExchangeStartFrame(t, townStart[0], owner.VID, "town peer exchange start after myshop delayed floor clear")
-	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop town delayed floor close inventory/gold")
+	assertExchangeAccountUnchanged(t, accounts, login, characterAfterMyShopBagConsume(owner), "myshop town delayed floor close inventory/gold")
 	persisted, err := accounts.Load(login)
 	if err != nil {
 		t.Fatalf("load persisted owner after myshop town delayed /restart_town: %v", err)
