@@ -40,5 +40,8 @@ git diff --check
 
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
-2. Add further checked-in negatives only when a later reject case still forces
-   QA to invent JSON.
+2. ~~Add further checked-in negatives only when a later reject case still forces
+   QA to invent JSON.~~ Done for orphan kill-quest `require_quest_from`
+   without both require identities:
+   `docs/examples/bootstrap-invalid-orphan-require-quest-from-bundle.json`
+   (`docs/plans/2026-08-26-invalid-orphan-require-quest-from-fixture.md`).
