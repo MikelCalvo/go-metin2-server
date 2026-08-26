@@ -22,8 +22,10 @@ The goal is deliberately conservative:
   (`cube success`) or emits fail info + `cube fail`
 - own store-accepted authored `percent = 0` as always-fail consume (no roll) on
   `/cube make` / `/cube make all`
-- keep `list` / `cancel` deferred until a later cube slice owns
-  those semantics
+- own `/cube list` bound-slot INFO dump and `/cube cancel` / `/cube close` as
+  aliases of the owned `/close_cube` presentation close
+- keep complicated OR-materials / binary cube headers deferred until a later
+  cube slice owns those semantics
 
 This is not a completed cube / craft system.
 
@@ -183,11 +185,34 @@ See `docs/plans/2026-08-25-cube-make-percent-100-contract-freeze.md`,
 `docs/plans/2026-08-26-cube-make-all-loop.md`, and
 `docs/plans/2026-08-26-cube-make-percent-0-always-fail.md`.
 
+## Owned `/cube list` + `/cube cancel` / `/cube close`
+
+While the lab cube presentation is open:
+
+| Direction | Command | Behavior |
+| --- | --- | --- |
+| client → server | `/cube list` | dump currently bound craft slots as self-only INFO chat |
+| client → server | `/cube cancel` / `/cube close` | same presentation close as `/close_cube` |
+
+`/cube list` walks cube indices in order and, for each binding that still
+resolves to one live carried inventory cell, emits one self-only
+`CHAT_TYPE_INFO` shaped
+`cube[<cubeIndex>]: inventory[<invenCell>]: <template.name>` from the loaded
+item-template snapshot. Empty / stale bindings are skipped. Extra args, closed
+cube, zero-HP, and missing selected character stay silent fail-closed consume
+with no mutation.
+
+`/cube cancel` and `/cube close` clear the open flag, remembered NPC vnum,
+craft-slot bindings, and peer-visible cube busy bit, then emit one self-only
+`CHAT_TYPE_COMMAND` `cube close`. Already-closed cancel/close stay silent
+consume, matching `/close_cube`.
+
+See `docs/plans/2026-08-26-cube-list-cancel.md`.
+
 ### Still deferred
 
 - complicated OR-material text (`vnum,count|...`) / name-level merge of
   alternate recipes into one result row
-- `cube list` / `cancel`
 - quest-NPC interact open / distance gate beyond lab `/open_cube`
 - binary cube packet headers
 - full `cube.txt` complicated-material parity
@@ -206,5 +231,6 @@ See `docs/plans/2026-08-25-cube-make-percent-100-contract-freeze.md`,
 - `docs/plans/2026-08-26-cube-make-percent-1-99-injected-roll.md`
 - `docs/plans/2026-08-26-cube-make-all-loop.md`
 - `docs/plans/2026-08-26-cube-make-percent-0-always-fail.md`
+- `docs/plans/2026-08-26-cube-list-cancel.md`
 - `docs/qa/manual-client-checklist.md` section 4.5.16
 - `spec/protocol/packet-matrix.md` (command-chat cube family note)

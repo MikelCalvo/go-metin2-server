@@ -6810,6 +6810,40 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							activeCubeSlots[cubeIndex] = cubeSlotUnbound
 							return gameflow.ChatResult{Accepted: true, Frames: cubeInfoCommandFrames(selectedPlayer)}
 						}
+						if slashCubeListCommand(packet.Message) {
+							selectedPlayer, selectedOK := currentSelectedPlayer()
+							if !selectedOK || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveCubeOpen || activeCubeNPCVnum == 0 {
+								return gameflow.ChatResult{Accepted: true}
+							}
+							fields := strings.Fields(strings.TrimSpace(packet.Message[1:]))
+							if len(fields) != 2 {
+								// Extra /cube list args stay recognized fail-closed consume.
+								return gameflow.ChatResult{Accepted: true}
+							}
+							frames := make([][]byte, 0, cubestore.CubeMaxNum)
+							for cubeIndex, invenIndex := range activeCubeSlots {
+								if invenIndex == cubeSlotUnbound {
+									continue
+								}
+								item, ok := findLiveInventoryCell(selectedPlayer, invenIndex)
+								if !ok {
+									continue
+								}
+								itemName := ""
+								if template, ok := runtime.itemTemplates[item.Vnum]; ok {
+									itemName = strings.TrimSpace(template.Name)
+								}
+								frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+									Type:    chatproto.ChatTypeInfo,
+									Message: cubestore.FormatCubeListInfoMessage(uint16(cubeIndex), invenIndex, itemName),
+								}))
+							}
+							return gameflow.ChatResult{Accepted: true, Frames: frames}
+						}
+						if slashCubeCancelOrCloseCommand(packet.Message) {
+							closeFrames := closeActiveCubeOpenFrames()
+							return gameflow.ChatResult{Accepted: true, Frames: closeFrames}
+						}
 						if slashCubeMakeCommand(packet.Message) {
 							selectedPlayer, selectedOK := currentSelectedPlayer()
 							if !selectedOK || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveCubeOpen || activeCubeNPCVnum == 0 {
@@ -10201,6 +10235,38 @@ func slashCubeDelCommand(message string) (cubeIndex uint16, ok bool) {
 		return cubeSlotUnbound, true
 	}
 	return uint16(parsedCube), true
+}
+
+// slashCubeListCommand recognizes talking-chat `/cube list` (extra args stay
+// recognized so the handler can fail closed without talking-chat fallthrough).
+func slashCubeListCommand(message string) bool {
+	if !strings.HasPrefix(message, "/") {
+		return false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) < 2 || fields[0] != "cube" || fields[1] != "list" {
+		return false
+	}
+	return true
+}
+
+// slashCubeCancelOrCloseCommand recognizes talking-chat `/cube cancel` and
+// `/cube close` as aliases of the owned `/close_cube` presentation close path.
+// Extra args stay unrecognized so ordinary talking-chat fallthrough remains.
+func slashCubeCancelOrCloseCommand(message string) bool {
+	if !strings.HasPrefix(message, "/") {
+		return false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) != 2 || fields[0] != "cube" {
+		return false
+	}
+	switch fields[1] {
+	case "cancel", "close":
+		return true
+	default:
+		return false
+	}
 }
 
 // slashCubeMakeCommand recognizes talking-chat `/cube make` and `/cube make all`

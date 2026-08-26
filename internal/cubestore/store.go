@@ -228,6 +228,12 @@ func FormatCubeFailCommand() string {
 	return "cube fail"
 }
 
+// FormatCubeListInfoMessage builds one self-only CHAT_TYPE_INFO payload for
+// `/cube list`: `cube[<cubeIndex>]: inventory[<invenCell>]: <itemName>`.
+func FormatCubeListInfoMessage(cubeIndex uint16, invenCell uint16, itemName string) string {
+	return fmt.Sprintf("cube[%d]: inventory[%d]: %s", cubeIndex, invenCell, itemName)
+}
+
 func aggregateMaterialCounts(bound []BoundMaterial) map[uint32]uint32 {
 	counts := make(map[uint32]uint32)
 	for _, material := range bound {

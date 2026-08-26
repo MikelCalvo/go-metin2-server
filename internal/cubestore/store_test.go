@@ -370,6 +370,15 @@ func TestFormatCubeFailCommand(t *testing.T) {
 	}
 }
 
+func TestFormatCubeListInfoMessage(t *testing.T) {
+	if got := FormatCubeListInfoMessage(0, 5, "Small Blue Potion"); got != "cube[0]: inventory[5]: Small Blue Potion" {
+		t.Fatalf("unexpected cube list info: %q", got)
+	}
+	if got := FormatCubeListInfoMessage(3, 12, ""); got != "cube[3]: inventory[12]: " {
+		t.Fatalf("unexpected empty-name cube list info: %q", got)
+	}
+}
+
 func TestMatchSimpleRecipeReturnsBootstrapPercent100(t *testing.T) {
 	recipes := BootstrapSnapshot().NPCs[0].Recipes
 	recipe, ok := MatchSimpleRecipe(recipes, []BoundMaterial{{Vnum: 27002, Count: 2}})
