@@ -27,8 +27,6 @@ improvise that reject during `/local/content-bundle/validate`.
 - weighted/random loot or branching quest scripts
 - new NPC service kinds
 - changing the already-owned canonicalize reject rule
-- a second reverse partial (`require_quest_flag` without `require_quest_ref`)
-  fixture unless QA still invents that JSON after this slice
 
 ## Validation
 
@@ -42,5 +40,9 @@ git diff --check
 
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
-2. Add further checked-in negatives only when a later reject case still forces
-   QA to invent JSON (for example the reverse partial require-gate twin).
+2. ~~Add further checked-in negatives only when a later reject case still forces
+   QA to invent JSON (for example the reverse partial require-gate twin).~~
+   Done for reverse partial kill-quest require gate (`require_quest_flag`
+   without `require_quest_ref`):
+   `docs/examples/bootstrap-invalid-reverse-partial-require-quest-gate-bundle.json`
+   (`docs/plans/2026-08-26-invalid-reverse-partial-require-quest-gate-fixture.md`).

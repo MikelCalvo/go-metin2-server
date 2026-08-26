@@ -456,6 +456,28 @@ func TestCanonicalizeRejectsPartialSpawnGroupKillQuestRequireGate(t *testing.T) 
 	}
 }
 
+func TestCanonicalizeRejectsReversePartialSpawnGroupKillQuestRequireGate(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:              "practice.reverse_partial_gated_kill_quest_mob",
+			Name:             "ReversePartialGatedKillQuestMob",
+			MapIndex:         42,
+			X:                1800,
+			Y:                2900,
+			RaceNum:          101,
+			CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardQuestRef:   "quest:first_steps",
+			RewardQuestFlag:  "killed_qa_mob",
+			RewardQuestTo:    1,
+			RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+			RequireQuestFlag: "met_guide",
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for reverse partial require gate, got %v", err)
+	}
+}
+
 func TestCanonicalizeRejectsOrphanRequireQuestFromWithoutGate(t *testing.T) {
 	_, err := Canonicalize(Bundle{
 		SpawnGroups: []SpawnGroup{{
