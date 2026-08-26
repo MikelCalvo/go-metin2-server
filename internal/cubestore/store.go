@@ -166,9 +166,10 @@ type BoundMaterial struct {
 	Count uint16
 }
 
-// MatchSimpleRecipe returns the first simple recipe whose material multiset
-// exactly matches the bound live cells (order-insensitive, aggregated by vnum).
-// ok is false when no recipe matches.
+// MatchSimpleRecipe returns the first simple recipe whose required materials
+// are covered by the bound live cells (order-insensitive, aggregated by vnum,
+// oracle-shaped `count >= need` per required vnum). Extra bound vnums are
+// allowed. ok is false when no recipe is covered.
 func MatchSimpleRecipe(recipes []Recipe, bound []BoundMaterial) (Recipe, bool) {
 	boundCounts := aggregateMaterialCounts(bound)
 	if len(boundCounts) == 0 {
@@ -189,7 +190,7 @@ func MatchSimpleRecipe(recipes []Recipe, bound []BoundMaterial) (Recipe, bool) {
 		if needCounts == nil || len(needCounts) == 0 {
 			continue
 		}
-		if materialCountsEqual(boundCounts, needCounts) {
+		if materialCountsCover(boundCounts, needCounts) {
 			return recipe, true
 		}
 	}
@@ -197,7 +198,7 @@ func MatchSimpleRecipe(recipes []Recipe, bound []BoundMaterial) (Recipe, bool) {
 }
 
 // MatchSimpleRecipeGold returns the authored gold for the first simple recipe
-// whose material multiset exactly matches the bound live cells
+// whose required materials are covered by the bound live cells
 // (order-insensitive, aggregated by vnum). ok is false when no recipe matches.
 func MatchSimpleRecipeGold(recipes []Recipe, bound []BoundMaterial) (uint64, bool) {
 	recipe, ok := MatchSimpleRecipe(recipes, bound)
@@ -236,12 +237,14 @@ func aggregateMaterialCounts(bound []BoundMaterial) map[uint32]uint32 {
 	return counts
 }
 
-func materialCountsEqual(left, right map[uint32]uint32) bool {
-	if len(left) != len(right) {
+// materialCountsCover reports whether boundCounts provides at least needCounts
+// for every required vnum (oracle FN_check_item_count). Extra bound vnums ok.
+func materialCountsCover(boundCounts, needCounts map[uint32]uint32) bool {
+	if len(needCounts) == 0 {
 		return false
 	}
-	for vnum, count := range left {
-		if right[vnum] != count {
+	for vnum, need := range needCounts {
+		if boundCounts[vnum] < need {
 			return false
 		}
 	}

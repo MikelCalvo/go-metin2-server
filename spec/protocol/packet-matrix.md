@@ -109,7 +109,8 @@ There is **no** dedicated `HEADER_CG/GC_CUBE` in the TMP4-compatible client. Lab
 - owned: `/cube add <cubeIndex> <invenIndex>` / `/cube del <cubeIndex>` → `cube info <gold> 0 0` craft-slot binding without inventory mutation (`docs/plans/2026-08-25-cube-add-del-slot-binding-implementation.md`)
 - owned: `/cube make` deterministic `percent = 100` success → material/gold consume + `cube success <vnum> <count>` (`docs/plans/2026-08-25-cube-make-percent-100-implementation.md`)
 - owned: `/cube make` injected-roll `percent` in `1..99` → success (`cube success`) or fail info + `cube fail` (`docs/plans/2026-08-26-cube-make-percent-1-99-injected-roll.md`)
-- deferred: `cube list` / `cancel` / `make all`
+- owned: `/cube make all` loops the one-attempt make path while each attempt succeeds and stops on the first fail-roll or pre-mutation reject (`docs/plans/2026-08-26-cube-make-all-loop.md`)
+- deferred: `cube list` / `cancel`
 
 ## Items, inventory, and equipment
 

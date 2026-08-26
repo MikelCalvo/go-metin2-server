@@ -79,6 +79,6 @@ deterministic without drawing a roll.
 
 ## Status
 
-Implemented on `lane/items` together with this freeze. Next Track C cube seam
-candidates: `make all`, `cube list` / `cancel`, or store-level `percent = 0`
-always-fail.
+Implemented on `lane/items` together with this freeze. `/cube make all` is now
+owned via `docs/plans/2026-08-26-cube-make-all-loop.md`. Next Track C cube seam
+candidates: `cube list` / `cancel`, or store-level `percent = 0` always-fail.

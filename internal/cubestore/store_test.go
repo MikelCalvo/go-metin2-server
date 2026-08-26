@@ -244,7 +244,7 @@ func TestFormatMaterialInfoCommandJoinsWindowAndRejectsPastEndOrOversize(t *test
 	}
 }
 
-func TestMatchSimpleRecipeGoldMatchesBootstrapAndRejectsPartialExtra(t *testing.T) {
+func TestMatchSimpleRecipeGoldMatchesBootstrapCoversSurplusAndRejectsPartial(t *testing.T) {
 	recipes := BootstrapSnapshot().NPCs[0].Recipes
 	gold, ok := MatchSimpleRecipeGold(recipes, []BoundMaterial{{Vnum: 27002, Count: 2}})
 	if !ok || gold != 100 {
@@ -260,11 +260,16 @@ func TestMatchSimpleRecipeGoldMatchesBootstrapAndRejectsPartialExtra(t *testing.
 	if _, ok := MatchSimpleRecipeGold(recipes, []BoundMaterial{{Vnum: 27002, Count: 1}}); ok {
 		t.Fatal("expected partial materials to fail closed")
 	}
-	if _, ok := MatchSimpleRecipeGold(recipes, []BoundMaterial{
+	gold, ok = MatchSimpleRecipeGold(recipes, []BoundMaterial{
 		{Vnum: 27002, Count: 2},
 		{Vnum: 27003, Count: 1},
-	}); ok {
-		t.Fatal("expected extra materials to fail closed for exact match")
+	})
+	if !ok || gold != 100 {
+		t.Fatalf("expected surplus/extra bound materials to still cover recipe gold 100, got gold=%d ok=%v", gold, ok)
+	}
+	gold, ok = MatchSimpleRecipeGold(recipes, []BoundMaterial{{Vnum: 27002, Count: 4}})
+	if !ok || gold != 100 {
+		t.Fatalf("expected surplus same-vnum materials to cover recipe gold 100, got gold=%d ok=%v", gold, ok)
 	}
 	if _, ok := MatchSimpleRecipeGold(recipes, nil); ok {
 		t.Fatal("expected empty bindings to fail closed")
@@ -303,5 +308,9 @@ func TestMatchSimpleRecipeReturnsBootstrapPercent100(t *testing.T) {
 	}
 	if _, ok := MatchSimpleRecipe(recipes, []BoundMaterial{{Vnum: 27002, Count: 1}}); ok {
 		t.Fatal("expected partial materials to fail closed")
+	}
+	recipe, ok = MatchSimpleRecipe(recipes, []BoundMaterial{{Vnum: 27002, Count: 4}})
+	if !ok || recipe.Percent != 100 {
+		t.Fatalf("expected surplus materials to cover bootstrap recipe, got ok=%v recipe=%+v", ok, recipe)
 	}
 }

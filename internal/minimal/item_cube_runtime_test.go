@@ -1108,10 +1108,29 @@ func TestGameRuntimeCubeMakeFailsClosedWhenClosedUnmatchedGoldOrInventoryFull(t 
 	if err != nil {
 		t.Fatalf("unexpected open /cube make all error: %v", err)
 	}
-	if len(makeAllOut) != 0 {
-		t.Fatalf("expected open /cube make all to emit no frames, got %d", len(makeAllOut))
+	if len(makeAllOut) != 1 {
+		t.Fatalf("expected open insufficient-gold /cube make all to emit one info chat frame, got %d", len(makeAllOut))
+	}
+	makeAllInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, makeAllOut[0]))
+	if err != nil {
+		t.Fatalf("decode insufficient-gold /cube make all info chat: %v", err)
+	}
+	if makeAllInfo.Type != chatproto.ChatTypeInfo || makeAllInfo.Message != exchangeFinalizeCheckSelfInfoMessage {
+		t.Fatalf("unexpected insufficient-gold /cube make all info chat: %+v", makeAllInfo)
 	}
 	assertExchangeAccountUnchanged(t, accounts, login, owner, "cube-make negative owner after make all")
+
+	extraOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/cube make extra",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected open /cube make extra error: %v", err)
+	}
+	if len(extraOut) != 0 {
+		t.Fatalf("expected open /cube make extra to emit no frames, got %d", len(extraOut))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "cube-make negative owner after make extra")
 }
 
 func TestGameRuntimeCubeMakeRejectsInventoryFullWithoutMutation(t *testing.T) {
@@ -1498,6 +1517,183 @@ func TestGameRuntimeCubeMakePercent75RejectsOutOfRangeRollWithoutMutation(t *tes
 		t.Fatalf("expected out-of-range roll /cube make to emit no frames, got %d", len(makeOut))
 	}
 	assertExchangeAccountUnchanged(t, accounts, login, owner, "cube-make bad-roll owner")
+}
+
+func TestGameRuntimeCubeMakeAllLoopsTwoPercent100CraftsThenStopsOnUnmatched(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("CubeMakeAllOwner", 0x010308d1, 0x020408d1, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4242
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1940, Vnum: 27002, Count: 2, Slot: 5},
+		{ID: 1941, Vnum: 27002, Count: 2, Slot: 6},
+	}
+	login := "cube-make-all-owner"
+	issuePeerTicket(t, ticketStore, login, 0x707071d1, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed cube-make-all owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, cubeMakeItemTemplates(t), nil)
+	if err != nil {
+		t.Fatalf("unexpected cube-make-all runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707071d1)
+	defer closeSessionFlow(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_cube",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_cube before make all: %v", err)
+	}
+	for _, message := range []string{"/cube add 0 5", "/cube add 1 6"} {
+		addOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+			Type:    chatproto.ChatTypeTalking,
+			Message: message,
+		})))
+		if err != nil {
+			t.Fatalf("unexpected %s before make all: %v", message, err)
+		}
+		if len(addOut) != 1 {
+			t.Fatalf("expected %s before make all to emit one frame, got %d", message, len(addOut))
+		}
+	}
+
+	makeAllOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/cube make all",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /cube make all error: %v", err)
+	}
+	successCount := 0
+	stopInfoSeen := false
+	for _, frame := range makeAllOut {
+		delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, frame))
+		if err != nil {
+			continue
+		}
+		if delivery.Type == chatproto.ChatTypeCommand && delivery.Message == cubestore.FormatCubeSuccessCommand(27001, 1) {
+			successCount++
+		}
+		if delivery.Type == chatproto.ChatTypeInfo && delivery.Message == cubeMakeInsufficientMaterialsInfoMessage {
+			stopInfoSeen = true
+		}
+	}
+	if successCount != 2 {
+		t.Fatalf("expected /cube make all to emit two cube success commands, got %d in %d frames", successCount, len(makeAllOut))
+	}
+	if !stopInfoSeen {
+		t.Fatalf("expected /cube make all to end with unmatched-materials info chat")
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected /cube make all to queue no peer frames, got %d", len(queued))
+	}
+
+	persisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted cube-make-all account: %v", err)
+	}
+	if persisted.Characters[0].Gold != 4042 {
+		t.Fatalf("unexpected persisted gold after make all: %d", persisted.Characters[0].Gold)
+	}
+	if len(persisted.Characters[0].Inventory) != 1 || persisted.Characters[0].Inventory[0].Vnum != 27001 || persisted.Characters[0].Inventory[0].Count != 2 {
+		t.Fatalf("unexpected persisted inventory after make all: %+v", persisted.Characters[0].Inventory)
+	}
+}
+
+func TestGameRuntimeCubeMakeAllStopsAfterFailRoll(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("CubeMakeAllFail", 0x010308d2, 0x020408d2, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4242
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1950, Vnum: 27002, Count: 2, Slot: 5},
+		{ID: 1951, Vnum: 27002, Count: 2, Slot: 6},
+	}
+	login := "cube-make-all-fail"
+	issuePeerTicket(t, ticketStore, login, 0x707071d2, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed cube-make-all fail owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, cubeMakeItemTemplates(t), nil)
+	if err != nil {
+		t.Fatalf("unexpected cube-make-all fail runtime error: %v", err)
+	}
+	runtime.cubeRecipes = cubeMakePercent75RecipeSnapshot()
+	restore := QueueCubeMakeRollForTest(76)
+	defer restore()
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707071d2)
+	defer closeSessionFlow(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_cube",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_cube before make-all fail: %v", err)
+	}
+	for _, message := range []string{"/cube add 0 5", "/cube add 1 6"} {
+		if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+			Type:    chatproto.ChatTypeTalking,
+			Message: message,
+		}))); err != nil {
+			t.Fatalf("unexpected %s before make-all fail: %v", message, err)
+		}
+	}
+
+	makeAllOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/cube make all",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected fail-roll /cube make all error: %v", err)
+	}
+	// One fail burst: 2 ITEM_UPDATE/DEL + optional quickslot dels + gold + info + cube fail + cube info.
+	// Materials are two count-2 stacks consuming 2 total => each stack updates (or one empties depending on consume order).
+	// Mirror one-shot fail test shape: use command markers rather than exact length from uncertain quickslots.
+	if len(makeAllOut) < 4 {
+		t.Fatalf("expected fail-roll /cube make all to emit a fail burst, got %d frames", len(makeAllOut))
+	}
+	foundFail := false
+	foundSuccess := false
+	for _, frame := range makeAllOut {
+		delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, frame))
+		if err != nil {
+			continue
+		}
+		if delivery.Type == chatproto.ChatTypeCommand && delivery.Message == cubestore.FormatCubeFailCommand() {
+			foundFail = true
+		}
+		if delivery.Type == chatproto.ChatTypeCommand && delivery.Message == cubestore.FormatCubeSuccessCommand(27001, 1) {
+			foundSuccess = true
+		}
+	}
+	if !foundFail {
+		t.Fatalf("expected fail-roll /cube make all to include cube fail command")
+	}
+	if foundSuccess {
+		t.Fatalf("expected fail-roll /cube make all to stop without a later success")
+	}
+
+	persisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted cube-make-all fail account: %v", err)
+	}
+	if persisted.Characters[0].Gold != 4142 {
+		t.Fatalf("unexpected persisted gold after fail-roll make all: %d", persisted.Characters[0].Gold)
+	}
+	totalMaterial := 0
+	for _, item := range persisted.Characters[0].Inventory {
+		if item.Vnum == 27002 {
+			totalMaterial += int(item.Count)
+		}
+		if item.Vnum == 27001 {
+			t.Fatalf("unexpected reward after fail-roll make all: %+v", persisted.Characters[0].Inventory)
+		}
+	}
+	if totalMaterial != 2 {
+		t.Fatalf("unexpected remaining material count after fail-roll make all: %d inventory=%+v", totalMaterial, persisted.Characters[0].Inventory)
+	}
 }
 
 func assertCubeCommandChatFrame(t *testing.T, frame []byte, wantMessage string, label string) {
