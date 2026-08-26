@@ -1,0 +1,16 @@
+{
+  "spawn_groups": [
+    {
+      "ref": "practice.qa_partial_kill_quest_credit_mob",
+      "name": "QAPartialKillQuestCreditMob",
+      "map_index": 1,
+      "x": 469750,
+      "y": 964200,
+      "race_num": 20350,
+      "combat_profile": "practice_mob",
+      "reward_quest_ref": "quest:first_steps",
+      "reward_quest_flag": "killed_qa_mob",
+      "reward_quest_to": 1
+    }
+  ]
+}

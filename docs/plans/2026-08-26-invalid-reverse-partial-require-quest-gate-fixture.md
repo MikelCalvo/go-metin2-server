@@ -44,5 +44,8 @@ git diff --check
 
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
-2. Add further checked-in negatives only when a later reject case still forces
-   QA to invent JSON.
+2. ~~Add further checked-in negatives only when a later reject case still forces
+   QA to invent JSON.~~ Done for partial kill-quest credit (missing
+   `reward_quest_text`):
+   `docs/examples/bootstrap-invalid-partial-kill-quest-credit-bundle.json`
+   (`docs/plans/2026-08-26-invalid-partial-kill-quest-credit-fixture.md`).
