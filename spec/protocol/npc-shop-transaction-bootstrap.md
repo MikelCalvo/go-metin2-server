@@ -357,12 +357,17 @@ The first host-only accepted open path is now owned on top of the codec + deny-n
 - success remembers a same-socket private-shop open/busy flag and emits one owned `GC::SHOP_SIGN` (`host VID` + non-empty sign)
 - empty sign / zero count / duplicate or invalid stock / `anti_give|anti_myshop` / open exchange|merchant|safebox|refine|cube|already-open private shop stay fail-closed with no second `SHOP_SIGN`
 - busy shells reject with the same self-only requester busy info-chat already owned by exchange START for merchant/safebox/refine
+- worn `EquipmentSlotBody` rejects with self-only `CHAT_TYPE_INFO` `You must unequip your armor to open a private shop.`
+- listed `anti_give|anti_myshop` stock rejects with self-only `CHAT_TYPE_INFO` `Cash items cannot be sold in a private shop.`
+- listed locked stock rejects with self-only `CHAT_TYPE_INFO` `Items currently in use cannot be sold in a private shop.`
+- listed-price gold overflow past `math.MaxInt32` rejects with self-only `CHAT_TYPE_INFO` `You cannot open a private shop because it would exceed 2 Billion Yang.`
+- structural stock fails (empty sign / zero count / missing cell / count-vnum mismatch / duplicate display) stay silent/no-frame
 - open does not yet remove carried stock, consume a shop bag, polymorph, or invent guest browse/buy frames
 - while the same-socket private-shop open/busy flag is set, host item mutations fail closed with no frames (packet `ITEM_USE` / `ITEM_USE_TO_ITEM` / `ITEM_MOVE` / `ITEM_DROP` / `ITEM_DROP2` / `ITEM_PICKUP` / `ITEM_GIVE`, slash `/use_item` / `/inventory_move` / `/equip_item` / `/unequip_item`, open-presentation safebox check-in/out/move, and refine preview/confirm); empty-sign close clears the lock
 - accepted open also `EnqueueToVisibleSessions` the same live `GC::SHOP_SIGN` bytes to currently visible peer sessions (host still returns exactly one self frame; no second host self frame through the peer queue)
-- guest browse open/leave/buy are owned separately below; exchange open-cube busy rejects are owned separately; MYSHOP/safebox/refine open/confirm cube rejects are owned; cube `r_info`/`r_list`/`m_info` are owned (`docs/plans/2026-08-25-cube-r-info-result-list-implementation.md`, `docs/plans/2026-08-25-cube-m-info-material-info-implementation.md`); craft-slot add/del → `cube info` is owned (`docs/plans/2026-08-25-cube-add-del-slot-binding-implementation.md`); list / cancel / make stay deferred; empty-sign close companion is owned separately below; partner open-private-shop exchange busy rejects are owned separately; view-entry rematerialization of a remembered live sign is owned separately below
+- guest browse open/leave/buy are owned separately below; exchange open-cube busy rejects are owned separately; MYSHOP/safebox/refine open/confirm cube rejects are owned; cube `r_info`/`r_list`/`m_info` are owned (`docs/plans/2026-08-25-cube-r-info-result-list-implementation.md`, `docs/plans/2026-08-25-cube-m-info-material-info-implementation.md`); craft-slot add/del → `cube info` is owned (`docs/plans/2026-08-25-cube-add-del-slot-binding-implementation.md`); `/cube list` / `/cube cancel` / `/cube close` / make / make-all / percent seams are owned (`docs/plans/2026-08-26-cube-list-cancel.md`); empty-sign close companion is owned separately below; partner open-private-shop exchange busy rejects are owned separately; view-entry rematerialization of a remembered live sign is owned separately below
 
-See `docs/plans/2026-08-23-myshop-accepted-open-presentation-contract-freeze.md`.
+See `docs/plans/2026-08-23-myshop-accepted-open-presentation-contract-freeze.md` and `docs/plans/2026-08-26-myshop-open-reject-chat-hardening.md`.
 
 ### Owned host-only MYSHOP empty-sign close companion seam
 

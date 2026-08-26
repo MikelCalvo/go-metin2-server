@@ -115,6 +115,10 @@ const exchangeFinalizeGoldOverflowOtherInfoMessage = "The other person cannot ca
 const exchangeFinalizeOtherInfoMessage = "Unknown error"
 const exchangeFinalizeSuccessInfoMessageFormat = "The trade with %s has been successful."
 const myShopGuestBuyTooFarInfoMessage = "You are too far away from the shop to buy something."
+const myShopOpenArmorRequiredInfoMessage = "You must unequip your armor to open a private shop."
+const myShopOpenCashItemInfoMessage = "Cash items cannot be sold in a private shop."
+const myShopOpenLockedItemInfoMessage = "Items currently in use cannot be sold in a private shop."
+const myShopOpenGoldOverflowInfoMessage = "You cannot open a private shop because it would exceed 2 Billion Yang."
 const cubeAlreadyOpenInfoMessage = "The Build window is already open."
 const cubeBusyShellInfoMessage = "You cannot build something while another trade/storeroom window is open."
 const cubeMakeInsufficientMaterialsInfoMessage = "You do not have enough materials."
@@ -9036,6 +9040,17 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							})},
 						}
 					}
+					if selectedPlayer.EquipmentSlotOccupied(inventory.EquipmentSlotBody) {
+						return gameflow.ShopResult{
+							Accepted: true,
+							Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+								Type:    chatproto.ChatTypeInfo,
+								VID:     0,
+								Empire:  0,
+								Message: myShopOpenArmorRequiredInfoMessage,
+							})},
+						}
+					}
 					seenCells := make(map[uint16]struct{}, len(packet.Items))
 					seenDisplay := make(map[uint8]struct{}, len(packet.Items))
 					stock := make([]myShopStockRow, 0, len(packet.Items))
@@ -9058,16 +9073,38 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						seenDisplay[stockItem.DisplayPos] = struct{}{}
 						slot := inventory.SlotIndex(stockItem.Position.Cell)
 						template, ok := runtime.resolveRuntimeItemTemplate(selectedPlayer, slot)
-						if !ok || template.AntiGive || template.AntiMyShop {
+						if !ok {
 							return gameflow.ShopResult{Accepted: false}
+						}
+						if template.AntiGive || template.AntiMyShop {
+							return gameflow.ShopResult{
+								Accepted: true,
+								Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+									Type:    chatproto.ChatTypeInfo,
+									VID:     0,
+									Empire:  0,
+									Message: myShopOpenCashItemInfoMessage,
+								})},
+							}
 						}
 						found := false
 						for _, item := range selectedPlayer.LiveInventory() {
 							if item.Equipped || item.Slot != slot {
 								continue
 							}
-							if item.Locked || item.Count == 0 || item.Vnum != stockItem.Vnum || item.Count != uint16(stockItem.Count) || item.Count > template.MaxCount {
+							if item.Count == 0 || item.Vnum != stockItem.Vnum || item.Count != uint16(stockItem.Count) || item.Count > template.MaxCount {
 								return gameflow.ShopResult{Accepted: false}
+							}
+							if item.Locked {
+								return gameflow.ShopResult{
+									Accepted: true,
+									Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+										Type:    chatproto.ChatTypeInfo,
+										VID:     0,
+										Empire:  0,
+										Message: myShopOpenLockedItemInfoMessage,
+									})},
+								}
 							}
 							found = true
 							break
@@ -9077,7 +9114,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						}
 						listedPriceSum += uint64(stockItem.Price)
 						if liveGold+listedPriceSum > uint64(math.MaxInt32) {
-							return gameflow.ShopResult{Accepted: false}
+							return gameflow.ShopResult{
+								Accepted: true,
+								Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+									Type:    chatproto.ChatTypeInfo,
+									VID:     0,
+									Empire:  0,
+									Message: myShopOpenGoldOverflowInfoMessage,
+								})},
+							}
 						}
 						stock = append(stock, myShopStockRow{
 							DisplayPos: stockItem.DisplayPos,

@@ -45,4 +45,4 @@ While the same-socket private-shop open/busy flag is set:
 
 ## Status
 
-Implemented on `lane/items`: open private shop fails closed for host item use/move/drop/pickup/give/safebox/refine mutations with no frames and no inventory/gold mutation; shop stays open until empty-sign close. Guest browse/buy, peer `SHOP_SIGN` around-broadcast, and cube busy rejects stay deferred.
+Implemented on `lane/items`: open private shop fails closed for host item use/move/drop/pickup/give/safebox/refine mutations with no frames and no inventory/gold mutation; shop stays open until empty-sign close. Guest browse/buy, peer `SHOP_SIGN` around-broadcast, and cube busy rejects stay deferred. Host open reject-chat for armor / cash-item / locked / gold-overflow is owned separately (`docs/plans/2026-08-26-myshop-open-reject-chat-hardening.md`).

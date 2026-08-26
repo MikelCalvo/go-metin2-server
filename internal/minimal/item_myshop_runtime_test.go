@@ -152,17 +152,18 @@ func TestGameRuntimeMyShopOpenRejectsInvalidStockWithoutMutation(t *testing.T) {
 
 	validItem := shopproto.ClientMyShopItem{Vnum: 27001, Count: 3, Position: itemproto.InventoryPosition(5), Price: 1500, DisplayPos: 0}
 	for _, tc := range []struct {
-		name  string
-		items []shopproto.ClientMyShopItem
+		name        string
+		items       []shopproto.ClientMyShopItem
+		wantMessage string
 	}{
 		{name: "duplicate pos", items: []shopproto.ClientMyShopItem{validItem, {Vnum: 27001, Count: 3, Position: itemproto.InventoryPosition(5), Price: 2000, DisplayPos: 1}}},
 		{name: "missing cell", items: []shopproto.ClientMyShopItem{{Vnum: 27001, Count: 1, Position: itemproto.InventoryPosition(9), Price: 1500}}},
-		{name: "locked cell", items: []shopproto.ClientMyShopItem{{Vnum: 27002, Count: 1, Position: itemproto.InventoryPosition(6), Price: 1500}}},
+		{name: "locked cell", items: []shopproto.ClientMyShopItem{{Vnum: 27002, Count: 1, Position: itemproto.InventoryPosition(6), Price: 1500}}, wantMessage: myShopOpenLockedItemInfoMessage},
 		{name: "zero price", items: []shopproto.ClientMyShopItem{{Vnum: 27001, Count: 3, Position: itemproto.InventoryPosition(5), Price: 0}}},
 		{name: "count mismatch", items: []shopproto.ClientMyShopItem{{Vnum: 27001, Count: 2, Position: itemproto.InventoryPosition(5), Price: 1500}}},
 		{name: "vnum mismatch", items: []shopproto.ClientMyShopItem{{Vnum: 27099, Count: 3, Position: itemproto.InventoryPosition(5), Price: 1500}}},
-		{name: "anti_myshop", items: []shopproto.ClientMyShopItem{{Vnum: 27003, Count: 1, Position: itemproto.InventoryPosition(7), Price: 1500}}},
-		{name: "anti_give", items: []shopproto.ClientMyShopItem{{Vnum: 27004, Count: 1, Position: itemproto.InventoryPosition(8), Price: 1500}}},
+		{name: "anti_myshop", items: []shopproto.ClientMyShopItem{{Vnum: 27003, Count: 1, Position: itemproto.InventoryPosition(7), Price: 1500}}, wantMessage: myShopOpenCashItemInfoMessage},
+		{name: "anti_give", items: []shopproto.ClientMyShopItem{{Vnum: 27004, Count: 1, Position: itemproto.InventoryPosition(8), Price: 1500}}, wantMessage: myShopOpenCashItemInfoMessage},
 		{name: "duplicate display_pos", items: []shopproto.ClientMyShopItem{validItem, {Vnum: 27001, Count: 3, Position: itemproto.InventoryPosition(9), Price: 2000, DisplayPos: 0}}},
 		{name: "out-of-range display_pos", items: []shopproto.ClientMyShopItem{{Vnum: 27001, Count: 3, Position: itemproto.InventoryPosition(5), Price: 1500, DisplayPos: 40}}},
 	} {
@@ -170,9 +171,13 @@ func TestGameRuntimeMyShopOpenRejectsInvalidStockWithoutMutation(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected %s MYSHOP error: %v", tc.name, err)
 		}
-		if len(out) != 0 {
-			t.Fatalf("expected %s MYSHOP to emit no frames, got %d", tc.name, len(out))
+		if tc.wantMessage == "" {
+			if len(out) != 0 {
+				t.Fatalf("expected %s MYSHOP to emit no frames, got %d", tc.name, len(out))
+			}
+			continue
 		}
+		assertMyShopOpenRejectInfoChat(t, out, tc.wantMessage, tc.name)
 	}
 	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop invalid stock rejects")
 }
@@ -209,10 +214,48 @@ func TestGameRuntimeMyShopOpenRejectsGoldOverflowWithoutMutation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected gold-overflow MYSHOP error: %v", err)
 	}
-	if len(out) != 0 {
-		t.Fatalf("expected gold-overflow MYSHOP to emit no frames, got %d", len(out))
-	}
+	assertMyShopOpenRejectInfoChat(t, out, myShopOpenGoldOverflowInfoMessage, "gold overflow")
 	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop gold overflow")
+}
+
+func TestGameRuntimeMyShopOpenRejectsWornBodyArmorWithInfoChatWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopArmor", 0x01030807, 0x02040807, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 820, Vnum: 27001, Count: 1, Slot: 5}}
+	owner.Equipment = []inventory.ItemInstance{{ID: 821, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}}
+	login := "myshop-armor"
+	issuePeerTicket(t, ticketStore, login, 0x70707107, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop armor account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: 11200, Name: "Shop Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop armor runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707107)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:     27001,
+			Count:    1,
+			Position: itemproto.InventoryPosition(5),
+			Price:    1500,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected armor MYSHOP error: %v", err)
+	}
+	assertMyShopOpenRejectInfoChat(t, out, myShopOpenArmorRequiredInfoMessage, "worn body armor")
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop armor reject")
 }
 
 func TestGameRuntimeMyShopOpenBusyShellRejectsWithInfoChatWithoutMutation(t *testing.T) {
@@ -500,6 +543,20 @@ func assertMyShopBusyReject(t *testing.T, flow service.SessionFlow, packet shopp
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected %s MYSHOP busy reject to queue no peer frames, got %d", context, len(queued))
+	}
+}
+
+func assertMyShopOpenRejectInfoChat(t *testing.T, out [][]byte, wantMessage, context string) {
+	t.Helper()
+	if len(out) != 1 {
+		t.Fatalf("expected %s MYSHOP reject to emit one info-chat frame, got %d", context, len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode %s MYSHOP reject info chat: %v", context, err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != wantMessage {
+		t.Fatalf("unexpected %s MYSHOP reject chat: %+v", context, delivery)
 	}
 }
 
