@@ -26,8 +26,8 @@ already-owned merchant / MYSHOP / cube / safebox / refine recovery twins.
 
 - inventing a death-specific exchange packet family
 - widening exchange mutation beyond the already-owned floor close
-- `/restart_town` destination-peer twin in this slice (follow the merchant /
-  MYSHOP / cube / safebox / refine town twins later if still needed)
+- `/restart_town` destination-peer twin in this slice (owned separately in
+  `docs/plans/2026-08-26-exchange-practice-mob-floor-restart-town-exchange-recovery.md`)
 
 ## Validation
 
