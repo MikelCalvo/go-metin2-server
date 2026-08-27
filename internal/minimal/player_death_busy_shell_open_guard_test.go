@@ -109,6 +109,47 @@ func TestGameSessionFlowPostFloorMyShopOpenFailsClosed(t *testing.T) {
 	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor MYSHOP open")
 }
 
+func TestGameSessionFlowPostFloorRefinePreviewOpenFailsClosed(t *testing.T) {
+	login := "post-floor-open-refine"
+	loginKey := uint32(0x19191b35)
+	owner := peerVisibilityCharacter("DeadOpenRefineOwner", 0x01030b35, 0x02040b35, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 935, Vnum: 11250, Count: 1, Slot: 5}}
+	sourceTemplate := itemcatalog.Template{
+		Vnum:       11250,
+		Name:       "Dead Guard Refine Preview Blade",
+		Stackable:  false,
+		MaxCount:   1,
+		Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{
+			ResultVnum:  11251,
+			Cost:        1000,
+			Probability: 100,
+			Materials:   []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 1}},
+		},
+	}
+	resultTemplate := itemcatalog.Template{Vnum: 11251, Name: "Dead Guard Refine Result Blade", Stackable: false, MaxCount: 1}
+	materialTemplate := itemcatalog.Template{Vnum: 27001, Name: "Dead Guard Refine Material", Stackable: true, MaxCount: 200}
+	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, []itemcatalog.Template{sourceTemplate, resultTemplate, materialTemplate})
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor refineable REFINE preview dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor refineable REFINE preview to fail closed with no REFINE_INFORMATION_NEW, got %d frames", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor refineable REFINE preview to queue no frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor refineable REFINE preview")
+}
+
 func TestGameSessionFlowPostFloorExchangeStartFailsClosed(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

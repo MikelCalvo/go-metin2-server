@@ -65,7 +65,7 @@ This contract currently applies only to:
 This contract does **not** yet claim:
 - corpse state, knockdown animations, or corpse interaction
 - broader player respawn, revive menus, or compatibility-grade death return rules beyond the currently owned same-socket `/restart_here` and `/restart_town` bootstrap recovery seams
-- broader full input gating after death beyond the now-owned combat `TARGET` / `ATTACK`, relocation `MOVE` / `SYNC_POSITION`, stance `CHARACTER_POSITION`, static-actor `INTERACT`, merchant-buy / merchant-sell rejection, client/slash item-use / use-to-item rejection, item/gold drop rejection, packet storage safebox/mall rejection, slash `/open_safebox` / `/open_cube` open rejection, host-only `CG::MYSHOP` open rejection, packet exchange-shell open/rejection/close (including living-peer start against a zero-HP partner), slash inventory-move rejection, slash equipment-mutation rejection, quickslot mutation rejection, peer-facing `CHAT` / `WHISPER` rejection, self-only `CHAT_TYPE_INFO` rejection, and recipient-side server-origin `CHAT_TYPE_NOTICE` skip at `0` HP
+- broader full input gating after death beyond the now-owned combat `TARGET` / `ATTACK`, relocation `MOVE` / `SYNC_POSITION`, stance `CHARACTER_POSITION`, static-actor `INTERACT`, merchant-buy / merchant-sell rejection, client/slash item-use / use-to-item rejection, item/gold drop rejection, packet storage safebox/mall rejection, slash `/open_safebox` / `/open_cube` open rejection, host-only `CG::MYSHOP` open rejection, refineable `REFINE` preview open rejection, packet exchange-shell open/rejection/close (including living-peer start against a zero-HP partner), slash inventory-move rejection, slash equipment-mutation rejection, quickslot mutation rejection, peer-facing `CHAT` / `WHISPER` rejection, self-only `CHAT_TYPE_INFO` rejection, and recipient-side server-origin `CHAT_TYPE_NOTICE` skip at `0` HP
 - PvP death semantics or non-combat causes of player death
 
 ## Current implementation status
@@ -93,6 +93,7 @@ The repository now implements this narrow bootstrap contract:
 - once this floor is reached, later owner-side storage-facing `SAFEBOX_CHECKIN`, `SAFEBOX_CHECKOUT`, `SAFEBOX_ITEM_MOVE`, and `MALL_CHECKOUT` attempts also fail closed with no safebox/mall response frames, no authored `anti_safebox` info-chat feedback, and no runtime or persisted carried inventory / equipment / quickslot / point / gold mutation
 - once this floor is reached, later owner-side slash `/open_safebox` and `/open_cube` attempts also fail closed with no `SAFEBOX_SIZE` / `cube open` companions and without setting safebox or cube busy presentation flags (`TestGameSessionFlowPostFloorOpenSafeboxFailsClosed`, `TestGameSessionFlowPostFloorOpenCubeFailsClosed`)
 - once this floor is reached, later owner-side host-only `CG::MYSHOP` open attempts also fail closed with no `GC::SHOP_SIGN` and without setting the private-shop busy flag (`TestGameSessionFlowPostFloorMyShopOpenFailsClosed`)
+- once this floor is reached, later owner-side refineable `REFINE` preview attempts also fail closed with no `REFINE_INFORMATION_NEW` and without setting the refine-dialog busy flag (`TestGameSessionFlowPostFloorRefinePreviewOpenFailsClosed`)
 - once this floor is reached, later owner-side `EXCHANGE START` against a living visible peer also fails closed with no self/peer exchange start frames and without creating exchange pairing/display state (`TestGameSessionFlowPostFloorExchangeStartFailsClosed`); a living peer's `EXCHANGE START` aimed at that same still-connected zero-HP owner likewise fails closed (`TestGameSessionFlowPostFloorExchangeStartAgainstDeadPartnerFailsClosed`)
 - once this floor is reached, later owner-side slash `/equip_item` and `/unequip_item` attempts also fail closed with no item-delete / item-set / point-change / character-update success burst and no runtime or persisted inventory / equipment / point mutation
 - once this floor is reached, later owner-side packet quickslot add/delete/swap attempts also fail closed with no quickslot refresh frames and no runtime or persisted quickslot or inventory mutation
@@ -362,6 +363,7 @@ The current bootstrap player-death contract now also owns one narrow busy-shell 
 - later slash `/open_safebox` attempts fail closed with no `SAFEBOX_SIZE` / money companion and without setting the same-socket safebox busy presentation flag (`TestGameSessionFlowPostFloorOpenSafeboxFailsClosed`)
 - later slash `/open_cube` attempts fail closed with no `cube open` command chat and without setting the peer-visible cube busy bit (`TestGameSessionFlowPostFloorOpenCubeFailsClosed`)
 - later host-only `CG::MYSHOP` open attempts fail closed with no `GC::SHOP_SIGN` and without setting the private-shop busy flag (`TestGameSessionFlowPostFloorMyShopOpenFailsClosed`)
+- later refineable `REFINE` preview attempts fail closed with no `REFINE_INFORMATION_NEW` and without setting the same-socket refine-dialog busy flag (`TestGameSessionFlowPostFloorRefinePreviewOpenFailsClosed`); this is distinct from the already-owned non-refineable reject-feedback denial (`TestGameSessionFlowPostFloorItemRefineFailsClosedBeforeRejectFeedback`)
 - later requester `EXCHANGE START` against a living visible peer fails closed with no self/peer exchange start frames and without creating exchange pairing/display state (`TestGameSessionFlowPostFloorExchangeStartFailsClosed`)
 - a living peer's `EXCHANGE START` aimed at that same still-connected zero-HP owner also fails closed with no requester/partner exchange frames (`TestGameSessionFlowPostFloorExchangeStartAgainstDeadPartnerFailsClosed`)
 - those denials stay intentionally quiet: no busy info-chat reject, no synthetic revive/open packet, and no inventory/gold/persistence mutation
@@ -369,7 +371,7 @@ The current bootstrap player-death contract now also owns one narrow busy-shell 
 
 Why this is the current owned boundary:
 - after mutation/deny coverage for already-open item and storage packets, fresh busy-shell opens were the next smallest owner-origin surface that could still create new busy locks or peer trade UI while the selected character remained at the bootstrap `0`-HP floor
-- reusing the already-live HP-floor gates in the chat / MYSHOP / exchange seams keeps the proof honest without inventing a second death-specific busy packet family
+- reusing the already-live HP-floor gates in the chat / MYSHOP / exchange / refine seams keeps the proof honest without inventing a second death-specific busy packet family
 
 ## First owned post-floor peer-facing chat / whisper denial
 
