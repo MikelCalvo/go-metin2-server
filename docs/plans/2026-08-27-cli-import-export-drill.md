@@ -74,7 +74,7 @@ Behavior:
 
 - automatic / scheduled execution of the printed import script
 - ~~folding `import-export-drill` into `contrib/lab-retention-gc` print-only samples~~ Done — see [contrib import-export drill print helper](2026-08-27-contrib-import-export-drill-print-helper.md)
-- hermetic `/bin/sh` execution proof against a real driver-backed database
+- ~~hermetic `/bin/sh` execution proof against a real driver-backed database~~ Done — see [hermetic import-export drill SQLite execution proof](2026-08-27-hermetic-import-export-drill-sqlite-execution-proof.md)
 - upsert / merge / truncate-and-reload policy
 - production DB engine selection as a stock default
 - loopback ops mutation endpoint
