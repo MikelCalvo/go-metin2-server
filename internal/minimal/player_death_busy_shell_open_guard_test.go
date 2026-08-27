@@ -16,6 +16,7 @@ import (
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
+	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/safeboxstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
@@ -221,6 +222,155 @@ func TestGameSessionFlowPostFloorSafeboxChangePasswordFailsClosed(t *testing.T) 
 	}
 	if got := safeboxstore.CharacterPassword(snapshot, login, owner.ID); got != "vault2" {
 		t.Fatalf("durable password after post-restart change=%q want vault2", got)
+	}
+}
+
+func TestGameSessionFlowPostFloorSafeboxMoneyFailsClosed(t *testing.T) {
+	login := "pf-safebox-money"
+	loginKey := uint32(0x19191b17)
+	owner := peerVisibilityCharacter("DeadSafeboxMoneyOwner", 0x01030b17, 0x02040b17, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Gold = 5000
+	root := t.TempDir()
+	safeboxPath := filepath.Join(root, "state", "safebox.json")
+	runtime, accounts, targetVID := newPostFloorSafeboxChangePasswordRuntime(t, root, safeboxPath, login, loginKey, owner)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_safebox before post-floor money seed: %v", err)
+	}
+	saveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/safebox_money_save 1500",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected pre-floor /safebox_money_save: %v", err)
+	}
+	if len(saveOut) != 2 {
+		t.Fatalf("expected gold PLAYER_POINT_CHANGE + SAFEBOX_MONEY_CHANGE before floor, got %d", len(saveOut))
+	}
+	preFloorGold, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, saveOut[0]))
+	if err != nil {
+		t.Fatalf("decode pre-floor gold PLAYER_POINT_CHANGE: %v", err)
+	}
+	if preFloorGold.VID != owner.VID || preFloorGold.Type != bootstrapGoldPointType || preFloorGold.Amount != -1500 || preFloorGold.Value != 3500 {
+		t.Fatalf("unexpected pre-floor gold PLAYER_POINT_CHANGE: %+v", preFloorGold)
+	}
+	preFloorMoney, err := itemproto.DecodeSafeboxMoneyChange(decodeSingleFrame(t, saveOut[1]))
+	if err != nil {
+		t.Fatalf("decode pre-floor SAFEBOX_MONEY_CHANGE: %v", err)
+	}
+	if preFloorMoney != (itemproto.SafeboxMoneyChangePacket{Money: 1500}) {
+		t.Fatalf("unexpected pre-floor SAFEBOX_MONEY_CHANGE: %+v", preFloorMoney)
+	}
+	owner.Gold = 3500
+	assertCloseSafeboxCommandChat(t, flow, "/close_safebox", "pre-floor money close")
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor before money deny")
+	snapshot, err := safeboxstore.LoadOrEmpty(safeboxstore.NewFileStore(safeboxPath))
+	if err != nil {
+		t.Fatalf("load durable safebox after floor before money deny: %v", err)
+	}
+	if got := safeboxstore.CharacterMoney(snapshot, login, owner.ID); got != 1500 {
+		t.Fatalf("durable money after floor before money deny=%d want 1500", got)
+	}
+
+	for _, message := range []string{"/safebox_money_save 100", "/safebox_money_withdraw 100"} {
+		out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+			Type:    chatproto.ChatTypeTalking,
+			Message: message,
+		})))
+		if err != nil {
+			t.Fatalf("unexpected post-floor %s dispatch error: %v", message, err)
+		}
+		if len(out) != 0 {
+			t.Fatalf("expected post-floor %s to fail closed with no frames, got %d", message, len(out))
+		}
+		if queued := flushServerFrames(t, flow); len(queued) != 0 {
+			t.Fatalf("expected post-floor %s to queue no frames, got %d", message, len(queued))
+		}
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor safebox money")
+	snapshot, err = safeboxstore.LoadOrEmpty(safeboxstore.NewFileStore(safeboxPath))
+	if err != nil {
+		t.Fatalf("load durable safebox after post-floor money deny: %v", err)
+	}
+	if got := safeboxstore.CharacterMoney(snapshot, login, owner.ID); got != 1500 {
+		t.Fatalf("post-floor safebox money mutated durable gold: got %d want 1500", got)
+	}
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_here",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here after post-floor safebox money: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_here recovery frames after post-floor safebox money, got %d", len(restartOut))
+	}
+	_ = flushServerFrames(t, flow)
+
+	reopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart /open_safebox: %v", err)
+	}
+	if len(reopenOut) != 2 {
+		t.Fatalf("expected SAFEBOX_SIZE + SAFEBOX_MONEY_CHANGE after restart, got %d", len(reopenOut))
+	}
+	reopenMoney, err := itemproto.DecodeSafeboxMoneyChange(decodeSingleFrame(t, reopenOut[1]))
+	if err != nil {
+		t.Fatalf("decode post-restart SAFEBOX_MONEY_CHANGE: %v", err)
+	}
+	if reopenMoney != (itemproto.SafeboxMoneyChangePacket{Money: 1500}) {
+		t.Fatalf("unexpected post-restart SAFEBOX_MONEY_CHANGE: %+v", reopenMoney)
+	}
+
+	withdrawOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/safebox_money_withdraw 500",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart /safebox_money_withdraw: %v", err)
+	}
+	if len(withdrawOut) != 2 {
+		t.Fatalf("expected gold PLAYER_POINT_CHANGE + SAFEBOX_MONEY_CHANGE after restart withdraw, got %d", len(withdrawOut))
+	}
+	withdrawGold, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, withdrawOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-restart withdraw gold PLAYER_POINT_CHANGE: %v", err)
+	}
+	if withdrawGold.VID != owner.VID || withdrawGold.Type != bootstrapGoldPointType || withdrawGold.Amount != 500 || withdrawGold.Value != 4000 {
+		t.Fatalf("unexpected post-restart withdraw gold PLAYER_POINT_CHANGE: %+v", withdrawGold)
+	}
+	withdrawMoney, err := itemproto.DecodeSafeboxMoneyChange(decodeSingleFrame(t, withdrawOut[1]))
+	if err != nil {
+		t.Fatalf("decode post-restart withdraw SAFEBOX_MONEY_CHANGE: %v", err)
+	}
+	if withdrawMoney != (itemproto.SafeboxMoneyChangePacket{Money: 1000}) {
+		t.Fatalf("unexpected post-restart withdraw SAFEBOX_MONEY_CHANGE: %+v", withdrawMoney)
+	}
+	snapshot, err = safeboxstore.LoadOrEmpty(safeboxstore.NewFileStore(safeboxPath))
+	if err != nil {
+		t.Fatalf("load durable safebox after post-restart withdraw: %v", err)
+	}
+	if got := safeboxstore.CharacterMoney(snapshot, login, owner.ID); got != 1000 {
+		t.Fatalf("durable money after post-restart withdraw=%d want 1000", got)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart withdraw: %v", err)
+	}
+	if account.Characters[0].Gold != 4000 {
+		t.Fatalf("carried gold after post-restart withdraw=%d want 4000", account.Characters[0].Gold)
 	}
 }
 
