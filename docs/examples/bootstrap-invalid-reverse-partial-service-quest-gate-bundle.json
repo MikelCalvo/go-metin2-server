@@ -1,0 +1,21 @@
+{
+  "static_actors": [
+    {
+      "name": "ReversePartialGatedGuide",
+      "map_index": 1,
+      "x": 469400,
+      "y": 964200,
+      "race_num": 20302,
+      "interaction_kind": "talk",
+      "interaction_ref": "npc:reverse_partial_gated_guide"
+    }
+  ],
+  "interaction_definitions": [
+    {
+      "kind": "talk",
+      "ref": "npc:reverse_partial_gated_guide",
+      "text": "Welcome.",
+      "quest_flag": "met_guide"
+    }
+  ]
+}

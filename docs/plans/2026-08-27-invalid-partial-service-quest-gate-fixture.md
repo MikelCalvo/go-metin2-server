@@ -44,6 +44,9 @@ git diff --check
 
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
-2. Add further checked-in negatives only when a later reject case still forces
+2. ~~Add further checked-in negatives only when a later reject case still forces
    QA to invent JSON (for example reverse partial service gate or orphan
-   service `quest_from`).
+   service `quest_from`).~~ Done for reverse partial service quest gate
+   (`quest_flag` without `quest_ref`):
+   `docs/examples/bootstrap-invalid-reverse-partial-service-quest-gate-bundle.json`
+   (`docs/plans/2026-08-27-invalid-reverse-partial-service-quest-gate-fixture.md`).

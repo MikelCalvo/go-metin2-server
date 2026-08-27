@@ -61,6 +61,23 @@ func TestCanonicalizeRejectsPartialServiceQuestGate(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeRejectsReversePartialServiceQuestGate(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		StaticActors: []StaticActor{
+			{Name: "ReversePartialGatedGuide", MapIndex: 1, X: 469400, Y: 964200, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:reverse_partial_gated_guide"},
+		},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:      interactionstore.KindTalk,
+			Ref:       "npc:reverse_partial_gated_guide",
+			Text:      "Welcome.",
+			QuestFlag: "met_guide",
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for reverse partial service quest gate, got %v", err)
+	}
+}
+
 func TestCanonicalizeAcceptsServiceQuestGateWhenQuestFlagWriterPresent(t *testing.T) {
 	if _, err := Canonicalize(Bundle{
 		StaticActors: []StaticActor{
