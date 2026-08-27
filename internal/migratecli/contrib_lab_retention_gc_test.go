@@ -47,6 +47,9 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		"METIN2_IMPORT_EXPORT_TREE",
 		"METIN2_IMPORT_DRIVER",
 		"METIN2_IMPORT_DSN_ENV",
+		"METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE",
+		"METIN2_GC_ASIDE_MIN_AGE_DAYS",
+		"METIN2_GC_ASIDE_NOW",
 		"--gamed-log-path \"$GAMED_LOG\"",
 		"--authd-log-path \"$AUTHD_LOG\"",
 		"/var/log/metin2/gamed.log",
@@ -59,6 +62,11 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		"--export-tree \"$IMPORT_EXPORT_TREE\"",
 		"--driver \"$IMPORT_DRIVER\"",
 		"--dsn-env \"$IMPORT_DSN_ENV\"",
+		"artifact-gc-aside-purge",
+		"--i-confirm-lab-gc-aside-purge",
+		`>"$OUT/artifact-gc-aside-purge-backups.sh"`,
+		`>"$OUT/artifact-gc-aside-purge-migration-runs.sh"`,
+		`>"$OUT/artifact-gc-aside-purge-exports.sh"`,
 		`>"$OUT/artifact-retention-gc-exports.sh"`,
 		"/var/metin2/ops-prints",
 		"/var/metin2/backups",
@@ -187,10 +195,16 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		"METIN2_IMPORT_EXPORT_TREE",
 		"METIN2_IMPORT_DRIVER",
 		"METIN2_IMPORT_DSN_ENV",
+		"METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE",
+		"METIN2_GC_ASIDE_MIN_AGE_DAYS",
+		"METIN2_GC_ASIDE_NOW",
 		"/var/log/metin2/gamed.log",
 		"/var/log/metin2/authd.log",
 		"backup-restore-drill.sh",
 		"import-export-drill.sh",
+		"artifact-gc-aside-purge-backups.sh",
+		"artifact-gc-aside-purge-migration-runs.sh",
+		"artifact-gc-aside-purge-exports.sh",
 		"metin2-runtime-config.env.sample",
 		"EnvironmentFile=",
 		"periodic/weekly/900.metin2-artifact-retention-gc-print.sample",
@@ -202,9 +216,9 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		}
 	}
 	assertNoForbiddenRetentionGCMarkers(t, "readme", readme, map[string]struct{}{
-		"Never `ExecStart` / cron-run / periodic-run `rm`, `rmdir`, `unlink`,":   {},
-		"`find -delete`, or aside-rename of retention trees from these samples.": {},
-		"- `rm` of `.gc-aside-*` trees":                                          {},
+		"Never `ExecStart` / cron-run / periodic-run `rm`, `rmdir`, `unlink`,":           {},
+		"`find -delete`, or aside-rename of retention trees from these samples.":         {},
+		"- automatic / scheduled `rm` of aged aside-renamed retention trees (print-only": {},
 	})
 
 	envSamplePath := filepath.Join(base, "env", "metin2-runtime-config.env.sample")
@@ -222,6 +236,9 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		"METIN2_IMPORT_DRIVER=",
 		"METIN2_IMPORT_DSN_ENV=",
 		"METIN2_IMPORT_DSN",
+		"METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE=",
+		"METIN2_GC_ASIDE_MIN_AGE_DAYS=",
+		"METIN2_GC_ASIDE_NOW=",
 	} {
 		if !strings.Contains(envSample, want) {
 			t.Fatalf("env sample missing %q", want)
@@ -235,6 +252,9 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		"METIN2_IMPORT_EXPORT_TREE=",
 		"METIN2_IMPORT_DRIVER=",
 		"METIN2_IMPORT_DSN_ENV=",
+		"METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE=",
+		"METIN2_GC_ASIDE_MIN_AGE_DAYS=",
+		"METIN2_GC_ASIDE_NOW=",
 	} {
 		if !strings.Contains(periodicConf, want) {
 			t.Fatalf("periodic.conf sample missing %q", want)
@@ -309,6 +329,10 @@ case "$cmd" in
     printf '%s\n' "# stub import-export-drill"
     printf '%s\n' "$*"
     ;;
+  artifact-gc-aside-purge)
+    printf '%s\n' "# stub artifact-gc-aside-purge"
+    printf '%s\n' "$*"
+    ;;
   *)
     printf 'unexpected metin2-migrate command: %s\n' "$*" >&2
     exit 2
@@ -362,6 +386,15 @@ esac
 		if _, err := os.Stat(filepath.Join(outDir, "import-export-drill.sh")); !os.IsNotExist(err) {
 			t.Fatalf("import-export-drill.sh must be absent without METIN2_IMPORT_EXPORT_TREE, err=%v", err)
 		}
+		for _, name := range []string{
+			"artifact-gc-aside-purge-backups.sh",
+			"artifact-gc-aside-purge-migration-runs.sh",
+			"artifact-gc-aside-purge-exports.sh",
+		} {
+			if _, err := os.Stat(filepath.Join(outDir, name)); !os.IsNotExist(err) {
+				t.Fatalf("%s must be absent without METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE=YES, err=%v", name, err)
+			}
+		}
 		notes := mustReadContribSample(t, filepath.Join(outDir, "notes.md"))
 		if !strings.Contains(notes, "backup-restore-drill=skipped") {
 			t.Fatalf("notes must record drill skip, got %q", notes)
@@ -371,6 +404,9 @@ esac
 		}
 		if !strings.Contains(notes, "import-export-drill=skipped") {
 			t.Fatalf("notes must record import-export-drill skip, got %q", notes)
+		}
+		if !strings.Contains(notes, "artifact-gc-aside-purge=skipped") {
+			t.Fatalf("notes must record artifact-gc-aside-purge skip, got %q", notes)
 		}
 		migrationBody := mustReadContribSample(t, filepath.Join(outDir, "migration-run-retention.sh"))
 		if !strings.Contains(migrationBody, "# stub migration-run-retention") {
@@ -747,6 +783,138 @@ esac
 		notes := mustReadContribSample(t, filepath.Join(outDir, "notes.md"))
 		if !strings.Contains(notes, "METIN2_IMPORT_EXPORT_TREE must not be a symlink") {
 			t.Fatalf("notes must record import tree symlink skip, got %q", notes)
+		}
+	})
+
+	t.Run("prints_artifact_gc_aside_purge_when_enabled", func(t *testing.T) {
+		runPrints := filepath.Join(printsRoot, "aside-purge-print")
+		mustMkdir(t, runPrints)
+		cmd := exec.Command("/bin/sh", helperPath)
+		cmd.Env = []string{
+			"PATH=/usr/bin:/bin",
+			"METIN2_MIGRATE_BIN=" + stubPath,
+			"METIN2_OPS_PRINTS_ROOT=" + runPrints,
+			"METIN2_RETENTION_KEEP_DAYS=14",
+			"METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE=YES",
+			"HOME=" + root,
+			"TMPDIR=" + root,
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("helper exit error: %v stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+		}
+		outDir := strings.TrimSpace(stdout.String())
+		for _, name := range []string{
+			"artifact-gc-aside-purge-backups.sh",
+			"artifact-gc-aside-purge-migration-runs.sh",
+			"artifact-gc-aside-purge-exports.sh",
+		} {
+			body := mustReadContribSample(t, filepath.Join(outDir, name))
+			if !strings.Contains(body, "# stub artifact-gc-aside-purge") {
+				t.Fatalf("%s must come from stub printer, got %q", name, body)
+			}
+			for _, want := range []string{
+				"--i-confirm-lab-gc-aside-purge",
+				"--min-aside-age-days",
+				"7",
+			} {
+				if !strings.Contains(body, want) {
+					t.Fatalf("%s argv must include %q, got %q", name, want, body)
+				}
+			}
+		}
+		backupsBody := mustReadContribSample(t, filepath.Join(outDir, "artifact-gc-aside-purge-backups.sh"))
+		migrationBody := mustReadContribSample(t, filepath.Join(outDir, "artifact-gc-aside-purge-migration-runs.sh"))
+		exportsBody := mustReadContribSample(t, filepath.Join(outDir, "artifact-gc-aside-purge-exports.sh"))
+		if !strings.Contains(backupsBody, "/var/metin2/backups") {
+			t.Fatalf("backups purge argv must target /var/metin2/backups, got %q", backupsBody)
+		}
+		if !strings.Contains(migrationBody, "/var/metin2/migration-runs") {
+			t.Fatalf("migration-runs purge argv must target /var/metin2/migration-runs, got %q", migrationBody)
+		}
+		if !strings.Contains(exportsBody, "/var/metin2/exports") {
+			t.Fatalf("exports purge argv must target /var/metin2/exports, got %q", exportsBody)
+		}
+		notes := mustReadContribSample(t, filepath.Join(outDir, "notes.md"))
+		if !strings.Contains(notes, "artifact-gc-aside-purge=printed for backups/migration-runs/exports") {
+			t.Fatalf("notes must record artifact-gc-aside-purge print, got %q", notes)
+		}
+	})
+
+	t.Run("skips_invalid_aside_min_age_days", func(t *testing.T) {
+		runPrints := filepath.Join(printsRoot, "aside-purge-invalid-age")
+		mustMkdir(t, runPrints)
+		cmd := exec.Command("/bin/sh", helperPath)
+		cmd.Env = []string{
+			"PATH=/usr/bin:/bin",
+			"METIN2_MIGRATE_BIN=" + stubPath,
+			"METIN2_OPS_PRINTS_ROOT=" + runPrints,
+			"METIN2_RETENTION_KEEP_DAYS=14",
+			"METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE=YES",
+			"METIN2_GC_ASIDE_MIN_AGE_DAYS=0",
+			"HOME=" + root,
+			"TMPDIR=" + root,
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("helper exit error: %v stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+		}
+		outDir := strings.TrimSpace(stdout.String())
+		for _, name := range []string{
+			"artifact-gc-aside-purge-backups.sh",
+			"artifact-gc-aside-purge-migration-runs.sh",
+			"artifact-gc-aside-purge-exports.sh",
+		} {
+			if _, err := os.Stat(filepath.Join(outDir, name)); !os.IsNotExist(err) {
+				t.Fatalf("invalid min age must skip %s, err=%v", name, err)
+			}
+		}
+		notes := mustReadContribSample(t, filepath.Join(outDir, "notes.md"))
+		if !strings.Contains(notes, "METIN2_GC_ASIDE_MIN_AGE_DAYS must be an integer >= 1") {
+			t.Fatalf("notes must record invalid min-age skip, got %q", notes)
+		}
+	})
+
+	t.Run("honors_custom_aside_min_age_and_now", func(t *testing.T) {
+		runPrints := filepath.Join(printsRoot, "aside-purge-custom")
+		mustMkdir(t, runPrints)
+		cmd := exec.Command("/bin/sh", helperPath)
+		cmd.Env = []string{
+			"PATH=/usr/bin:/bin",
+			"METIN2_MIGRATE_BIN=" + stubPath,
+			"METIN2_OPS_PRINTS_ROOT=" + runPrints,
+			"METIN2_RETENTION_KEEP_DAYS=14",
+			"METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE=yes",
+			"METIN2_GC_ASIDE_MIN_AGE_DAYS=14",
+			"METIN2_GC_ASIDE_NOW=20260827T120000Z",
+			"HOME=" + root,
+			"TMPDIR=" + root,
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("helper exit error: %v stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+		}
+		outDir := strings.TrimSpace(stdout.String())
+		body := mustReadContribSample(t, filepath.Join(outDir, "artifact-gc-aside-purge-backups.sh"))
+		for _, want := range []string{
+			"--min-aside-age-days",
+			"14",
+			"--now",
+			"20260827T120000Z",
+			"--i-confirm-lab-gc-aside-purge",
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("custom aside purge argv must include %q, got %q", want, body)
+			}
 		}
 	})
 }

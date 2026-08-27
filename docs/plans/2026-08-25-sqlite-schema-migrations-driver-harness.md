@@ -53,7 +53,10 @@ exports into SQL, or folding destructive purge into scheduled helpers.
    so catalog FK constraints are exercised.
 8. Docs mark migration-contract follow-up #3 and the driver-startup-preflight
    harness follow-up done; SQL import/backfill, production engine selection,
-   scheduled purge fold, and FreeBSD port enable defaults remain deferred.
+   automatic / scheduled purge execution, and FreeBSD port enable defaults
+   remain deferred. ~~Folding `artifact-gc-aside-purge` into
+   `contrib/lab-retention-gc`~~ Done — see
+   [contrib artifact GC-aside purge print helper](2026-08-27-contrib-artifact-gc-aside-purge-print-helper.md).
 
 ## What this is not yet
 
@@ -61,7 +64,8 @@ exports into SQL, or folding destructive purge into scheduled helpers.
 - production DB engine selection as a stock default / bundled release driver
 - new catalog tip `0016+`
 - SQL-backed runtime repositories
-- folding `artifact-gc-aside-purge` into `contrib/lab-retention-gc`
+- ~~folding `artifact-gc-aside-purge` into `contrib/lab-retention-gc`~~ Done — see
+  [contrib artifact GC-aside purge print helper](2026-08-27-contrib-artifact-gc-aside-purge-print-helper.md)
 - automatic/scheduled purge or GC deletion daemons
 - FreeBSD port / `pkg` enable defaults
 - remote admin, secrets in git, metrics/tracing, multi-host orchestration

@@ -51,6 +51,9 @@ See also:
     export-quarantine-drill.sh
     backup-restore-drill.sh          # only when METIN2_RUNTIME_CONFIG is set
     import-export-drill.sh           # only when METIN2_IMPORT_EXPORT_TREE + METIN2_IMPORT_DRIVER are set
+    artifact-gc-aside-purge-backups.sh         # only when METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE=YES
+    artifact-gc-aside-purge-migration-runs.sh  # only when METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE=YES
+    artifact-gc-aside-purge-exports.sh         # only when METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE=YES
     notes.md
 ```
 
@@ -78,6 +81,9 @@ AUTHD_LOG="${METIN2_AUTHD_LOG_PATH:-/var/log/metin2/authd.log}"
 IMPORT_EXPORT_TREE="${METIN2_IMPORT_EXPORT_TREE:-}"
 IMPORT_DRIVER="${METIN2_IMPORT_DRIVER:-}"
 IMPORT_DSN_ENV="${METIN2_IMPORT_DSN_ENV:-METIN2_IMPORT_DSN}"
+PRINT_ASIDE_PURGE="${METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE:-}"
+ASIDE_MIN_AGE_DAYS="${METIN2_GC_ASIDE_MIN_AGE_DAYS:-7}"
+ASIDE_NOW="${METIN2_GC_ASIDE_NOW:-}"
 
 test -x "$BIN"
 test -d "$PRINTS_ROOT"
@@ -174,11 +180,74 @@ case "$IMPORT_EXPORT_TREE" in
     ;;
 esac
 
+PURGE_NOTE="artifact-gc-aside-purge=skipped (set METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE=YES to print confirmation-gated purge scripts)"
+case "$PRINT_ASIDE_PURGE" in
+  [Yy][Ee][Ss])
+    ASIDE_AGE_OK=0
+    case "$ASIDE_MIN_AGE_DAYS" in
+      ""|*[!0-9]*|0*)
+        ;;
+      *)
+        if [ "$ASIDE_MIN_AGE_DAYS" -ge 1 ] 2>/dev/null; then
+          ASIDE_AGE_OK=1
+        fi
+        ;;
+    esac
+    if [ "$ASIDE_AGE_OK" -ne 1 ]; then
+      PURGE_NOTE="artifact-gc-aside-purge=skipped (METIN2_GC_ASIDE_MIN_AGE_DAYS must be an integer >= 1)"
+    else
+      if [ -n "$ASIDE_NOW" ]; then
+        "$BIN" artifact-gc-aside-purge \
+          --retention-base /var/metin2/backups \
+          --min-aside-age-days "$ASIDE_MIN_AGE_DAYS" \
+          --now "$ASIDE_NOW" \
+          --i-confirm-lab-gc-aside-purge \
+          >"$OUT/artifact-gc-aside-purge-backups.sh"
+        "$BIN" artifact-gc-aside-purge \
+          --retention-base /var/metin2/migration-runs \
+          --min-aside-age-days "$ASIDE_MIN_AGE_DAYS" \
+          --now "$ASIDE_NOW" \
+          --i-confirm-lab-gc-aside-purge \
+          >"$OUT/artifact-gc-aside-purge-migration-runs.sh"
+        "$BIN" artifact-gc-aside-purge \
+          --retention-base /var/metin2/exports \
+          --min-aside-age-days "$ASIDE_MIN_AGE_DAYS" \
+          --now "$ASIDE_NOW" \
+          --i-confirm-lab-gc-aside-purge \
+          >"$OUT/artifact-gc-aside-purge-exports.sh"
+      else
+        "$BIN" artifact-gc-aside-purge \
+          --retention-base /var/metin2/backups \
+          --min-aside-age-days "$ASIDE_MIN_AGE_DAYS" \
+          --i-confirm-lab-gc-aside-purge \
+          >"$OUT/artifact-gc-aside-purge-backups.sh"
+        "$BIN" artifact-gc-aside-purge \
+          --retention-base /var/metin2/migration-runs \
+          --min-aside-age-days "$ASIDE_MIN_AGE_DAYS" \
+          --i-confirm-lab-gc-aside-purge \
+          >"$OUT/artifact-gc-aside-purge-migration-runs.sh"
+        "$BIN" artifact-gc-aside-purge \
+          --retention-base /var/metin2/exports \
+          --min-aside-age-days "$ASIDE_MIN_AGE_DAYS" \
+          --i-confirm-lab-gc-aside-purge \
+          >"$OUT/artifact-gc-aside-purge-exports.sh"
+      fi
+      PURGE_NOTE="artifact-gc-aside-purge=printed for backups/migration-runs/exports (METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE=YES)"
+    fi
+    ;;
+  "")
+    ;;
+  *)
+    PURGE_NOTE="artifact-gc-aside-purge=skipped (METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE must be YES to print)"
+    ;;
+esac
+
 {
   printf 'printed %s\ncommit=%s\nkeep_days=%s\n' "$OUT" "${COMMIT:-unknown}" "$KEEP_DAYS"
   printf 'export-quarantine-drill=printed from build-info\n'
   printf '%s\n' "$DRILL_NOTE"
   printf '%s\n' "$IMPORT_NOTE"
+  printf '%s\n' "$PURGE_NOTE"
 } >"$OUT/notes.md"
 chmod 0640 "$OUT"/*.sh "$OUT/build-info.json" "$OUT/notes.md"
 printf '%s\n' "$OUT"
@@ -189,16 +258,19 @@ never retention trees or printed scripts. Companion printers are owned by this
 helper: `migration-run-retention.sh` and `export-quarantine-drill.sh` always,
 `artifact-retention-gc-exports.sh` always beside the backups / migration-runs
 GC scripts, `backup-restore-drill.sh` only when `METIN2_RUNTIME_CONFIG`
-points at a retained non-symlink regular runtime-config snapshot, and
+points at a retained non-symlink regular runtime-config snapshot,
 `import-export-drill.sh` only when `METIN2_IMPORT_EXPORT_TREE` is an absolute
 non-symlink directory **and** `METIN2_IMPORT_DRIVER` is set (optional
 `METIN2_IMPORT_DSN_ENV` defaults to `METIN2_IMPORT_DSN` and is forwarded only as
-the `--dsn-env` name). Always-on companions and the optional backup drill receive
+the `--dsn-env` name), and the three `artifact-gc-aside-purge-*.sh` companions
+only when `METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE=YES` (optional
+`METIN2_GC_ASIDE_MIN_AGE_DAYS` defaults to `7`; optional `METIN2_GC_ASIDE_NOW`
+forwards `--now`). Always-on companions and the optional backup drill receive
 `--gamed-log-path` / `--authd-log-path` from `METIN2_GAMED_LOG_PATH` /
 `METIN2_AUTHD_LOG_PATH` (defaults `/var/log/metin2/gamed.log` /
 `/var/log/metin2/authd.log`) so printed retain scripts can optionally copy daemon
-JSON logs when present. The helper never live-fetches ops JSON and never embeds a
-DSN value.
+JSON logs when present. The helper never live-fetches ops JSON, never embeds a
+DSN value, and never executes printed purge scripts.
 ## systemd samples (print-only)
 
 Place as `.sample` files under `/etc/systemd/system/` (or a lab overlay). Do
@@ -254,8 +326,11 @@ The tree-owned helper already prints `migration-run-retention.sh` and
 unit/cron fires. To also print `import-export-drill.sh`, set
 `METIN2_IMPORT_EXPORT_TREE` to a retained absolute export/quarantine directory
 and `METIN2_IMPORT_DRIVER` to an opaque `database/sql` driver name (optional
-`METIN2_IMPORT_DSN_ENV`, default `METIN2_IMPORT_DSN`, is only a name). Reviewable
-fragments live under
+`METIN2_IMPORT_DSN_ENV`, default `METIN2_IMPORT_DSN`, is only a name). To also
+print the three `artifact-gc-aside-purge-*.sh` companions, set
+`METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE=YES` (optional
+`METIN2_GC_ASIDE_MIN_AGE_DAYS`, default `7`; optional `METIN2_GC_ASIDE_NOW`).
+Reviewable fragments live under
 [`contrib/lab-retention-gc/env/metin2-runtime-config.env.sample`](../../contrib/lab-retention-gc/env/metin2-runtime-config.env.sample)
 and
 [`contrib/lab-retention-gc/systemd/metin2-artifact-retention-gc-print.service.d/runtime-config.conf.sample`](../../contrib/lab-retention-gc/systemd/metin2-artifact-retention-gc-print.service.d/runtime-config.conf.sample)
@@ -354,14 +429,14 @@ See also [contrib FreeBSD periodic retention / GC print sample](../plans/2026-08
 
 1. Open `$OUT/notes.md` and `$OUT/build-info.json`; confirm stamp / commit match
    the intended lab binary (`metin2-migrate version` / `GET /local/build-info`).
-2. Read the printed `.sh` files. Confirm they still only aside-rename aged
-   trees and never contain `rm` / DSN / SQL markers. Destructive purge of
-   already-aside trees is a separate interactive command
-   (`metin2-migrate artifact-gc-aside-purge --i-confirm-lab-gc-aside-purge`) and
-   must not appear in these scheduled print dumps.
-3. If triage is desired, run **interactively** under an operator shell after
-   draining sessions / confirming no concurrent retention writers — never from
-   the timer / cron line.
+2. Read the printed `.sh` files. Confirm always-on / optional drill scripts still
+   only aside-rename aged trees and never contain live `rm` / DSN / SQL markers.
+   When `METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE=YES`, the optional
+   `artifact-gc-aside-purge-*.sh` companions are confirmation-gated review dumps
+   only — the helper / timer / cron / periodic still must not execute them.
+3. If triage or purge is desired, run **interactively** under an operator shell
+   after draining sessions / confirming no concurrent retention writers — never
+   from the timer / cron line.
 4. Retain the printed scripts beside migration-run / backup evidence when the
    print coincides with a reconnect/restart or apply window.
 
@@ -372,11 +447,14 @@ See also [contrib FreeBSD periodic retention / GC print sample](../plans/2026-08
   [`contrib/lab-retention-gc/`](../../contrib/lab-retention-gc/) are owned,
   including FreeBSD `periodic(8)` weekly + `periodic.conf.sample`)
 - flipping `weekly_metin2_artifact_retention_gc_print_enable` to `YES` by default
-- automatic execution of printed aside-rename / backup / apply / import scripts
-- folding confirmation-gated `artifact-gc-aside-purge` into these print-only
-  samples / timers / cron / periodic (scheduled dumps must stay free of `rm`;
-  the interactive purge printer is owned separately — see
-  [CLI artifact GC-aside purge printer](../plans/2026-08-25-cli-artifact-gc-aside-purge-printer.md))
+- automatic execution of printed aside-rename / backup / apply / import / purge
+  scripts
+- ~~folding confirmation-gated `artifact-gc-aside-purge` into these print-only
+  samples~~ Done for env-gated print-only companions under
+  `METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE=YES` — see
+  [contrib artifact GC-aside purge print helper](../plans/2026-08-27-contrib-artifact-gc-aside-purge-print-helper.md).
+  Automatic / scheduled *execution* of those printed purge scripts remains
+  deferred.
 - scheduled live `curl` of ops JSON from the print helper / unit
 - multi-host orchestration or remote admin
 - automatic / scheduled execution of printed `import-export` mutations (env-gated

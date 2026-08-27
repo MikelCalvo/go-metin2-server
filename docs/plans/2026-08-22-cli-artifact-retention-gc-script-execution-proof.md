@@ -34,7 +34,7 @@ lab topology runbook claims.
 ## What this is not yet
 
 - automatic / scheduled artifact GC or lifecycle daemons
-- ~~`rm` / unlink of aside-renamed trees~~ Done for confirmation-gated print-only `artifact-gc-aside-purge` — see [CLI artifact GC-aside purge printer](2026-08-25-cli-artifact-gc-aside-purge-printer.md). Automatic / scheduled purge execution and folding purge into `contrib/lab-retention-gc` remain deferred.
+- ~~`rm` / unlink of aside-renamed trees~~ Done for confirmation-gated print-only `artifact-gc-aside-purge` — see [CLI artifact GC-aside purge printer](2026-08-25-cli-artifact-gc-aside-purge-printer.md). Automatic / scheduled purge execution remains deferred. ~~Folding purge into `contrib/lab-retention-gc`~~ Done — see [contrib artifact GC-aside purge print helper](2026-08-27-contrib-artifact-gc-aside-purge-print-helper.md).
 - systemd / cron unit shipping that invokes this printer
 - recursive scanning below immediate retention-base children
 - SQL import/backfill or DB-engine dump GC
@@ -60,7 +60,7 @@ Validation for this slice:
 ## Follow-up options
 
 1. Keep automatic / scheduled artifact GC deletion deferred.
-2. ~~Keep `rm` of aside-renamed trees deferred.~~ Done for the confirmation-gated print-only `artifact-gc-aside-purge` surface — see [CLI artifact GC-aside purge printer](2026-08-25-cli-artifact-gc-aside-purge-printer.md). Automatic / scheduled purge execution and folding purge into `contrib/lab-retention-gc` remain deferred.
+2. ~~Keep `rm` of aside-renamed trees deferred.~~ Done for the confirmation-gated print-only `artifact-gc-aside-purge` surface — see [CLI artifact GC-aside purge printer](2026-08-25-cli-artifact-gc-aside-purge-printer.md). Automatic / scheduled purge execution remains deferred. ~~Folding purge into `contrib/lab-retention-gc`~~ Done — see [contrib artifact GC-aside purge print helper](2026-08-27-contrib-artifact-gc-aside-purge-print-helper.md).
 3. ~~Optional later: systemd/unit samples that only print (never auto-run) this triage script.~~ Done: see [print-only retention / GC unit samples](2026-08-23-print-only-retention-gc-unit-samples.md) and [lab retention / GC print-only unit samples](../workflow/lab-retention-gc-unit-samples.md). Automatic execution remains deferred.
 4. Keep SQL import/backfill deferred until a driver-backed harness exists.
 5. ~~Optional later: fold durable safebox FileStore into the combined

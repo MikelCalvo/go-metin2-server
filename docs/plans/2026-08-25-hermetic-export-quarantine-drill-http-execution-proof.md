@@ -69,7 +69,7 @@ PATH wiring succeed together.
   samples~~ Done: see
   [contrib export-quarantine drill print helper](2026-08-25-contrib-export-quarantine-drill-print-helper.md)
 - SQL import/backfill from quarantined exports
-- ~~`rm` of aside-renamed trees~~ Done for confirmation-gated print-only `artifact-gc-aside-purge` — see [CLI artifact GC-aside purge printer](2026-08-25-cli-artifact-gc-aside-purge-printer.md). Automatic / scheduled purge execution and folding purge into `contrib/lab-retention-gc` remain deferred.
+- ~~`rm` of aside-renamed trees~~ Done for confirmation-gated print-only `artifact-gc-aside-purge` — see [CLI artifact GC-aside purge printer](2026-08-25-cli-artifact-gc-aside-purge-printer.md). Automatic / scheduled purge execution remains deferred. ~~Folding purge into `contrib/lab-retention-gc`~~ Done — see [contrib artifact GC-aside purge print helper](2026-08-27-contrib-artifact-gc-aside-purge-print-helper.md).
 - FreeBSD port / `pkg` enable defaults
 - remote log shipping / metrics exporters
 - remote admin authentication

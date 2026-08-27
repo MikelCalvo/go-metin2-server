@@ -90,8 +90,8 @@ claiming DB-backed live static-actor / interaction loading.
 8. Docs mark Track E / migration-contract SQL-import follow-ups as owned for
    `0002` + `0003` + `0004` + `0007` + `0009` + `0010` + `0011` + `0013` tip
    (`0008`/`0012` historical content tips included via tip-`0013`) +
-   `0014`/`0015`; CLI wiring, production-engine selection, upsert policy, and
-   scheduled purge fold remain deferred.
+   `0014`/`0015`; CLI wiring, production-engine selection, upsert policy, and automatic /
+   scheduled purge execution remain deferred. ~~Folding purge into `contrib/lab-retention-gc`~~ Done — see [contrib artifact GC-aside purge print helper](2026-08-27-contrib-artifact-gc-aside-purge-print-helper.md).
 
 ## What this is not yet
 

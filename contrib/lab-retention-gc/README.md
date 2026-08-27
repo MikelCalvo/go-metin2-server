@@ -80,6 +80,14 @@ Optional (env-gated):
   forwarded only as the `--dsn-env` name (never a DSN value). The helper always
   passes `--i-confirm-print-sql-import-drill` when printing and still never
   opens a database or executes `import-export`.
+- `artifact-gc-aside-purge-backups.sh`,
+  `artifact-gc-aside-purge-migration-runs.sh`, and
+  `artifact-gc-aside-purge-exports.sh` when
+  `METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE=YES` (case-insensitive). Optional
+  `METIN2_GC_ASIDE_MIN_AGE_DAYS` defaults to `7`; optional `METIN2_GC_ASIDE_NOW`
+  forwards `--now` for deterministic review. The helper always passes
+  `--i-confirm-lab-gc-aside-purge` when printing and still never executes the
+  printed purge scripts.
 - `migration-run-retention.sh`, `export-quarantine-drill.sh`, and (when printed)
   `backup-restore-drill.sh` forward `--gamed-log-path` / `--authd-log-path` from
   `METIN2_GAMED_LOG_PATH` / `METIN2_AUTHD_LOG_PATH` (defaults
@@ -101,8 +109,9 @@ Optional (env-gated):
 ## What this is not
 
 - packaging that installs **enabled** timers / cron / `periodic` entries by default
-- automatic execution of printed triage / backup / apply scripts
-- `rm` of `.gc-aside-*` trees
+- automatic execution of printed triage / backup / apply / purge scripts
+- automatic / scheduled `rm` of aged aside-renamed retention trees (print-only
+  `artifact-gc-aside-purge-*.sh` under the YES gate remains review-only)
 - FreeBSD port / `pkg` enable defaults
 - flipping `weekly_metin2_artifact_retention_gc_print_enable` to `YES` by default
 - SQL import/backfill execution or remote admin (print-only

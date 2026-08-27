@@ -12,6 +12,9 @@ AUTHD_LOG="${METIN2_AUTHD_LOG_PATH:-/var/log/metin2/authd.log}"
 IMPORT_EXPORT_TREE="${METIN2_IMPORT_EXPORT_TREE:-}"
 IMPORT_DRIVER="${METIN2_IMPORT_DRIVER:-}"
 IMPORT_DSN_ENV="${METIN2_IMPORT_DSN_ENV:-METIN2_IMPORT_DSN}"
+PRINT_ASIDE_PURGE="${METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE:-}"
+ASIDE_MIN_AGE_DAYS="${METIN2_GC_ASIDE_MIN_AGE_DAYS:-7}"
+ASIDE_NOW="${METIN2_GC_ASIDE_NOW:-}"
 
 test -x "$BIN"
 test -d "$PRINTS_ROOT"
@@ -108,11 +111,74 @@ case "$IMPORT_EXPORT_TREE" in
     ;;
 esac
 
+PURGE_NOTE="artifact-gc-aside-purge=skipped (set METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE=YES to print confirmation-gated purge scripts)"
+case "$PRINT_ASIDE_PURGE" in
+  [Yy][Ee][Ss])
+    ASIDE_AGE_OK=0
+    case "$ASIDE_MIN_AGE_DAYS" in
+      ""|*[!0-9]*|0*)
+        ;;
+      *)
+        if [ "$ASIDE_MIN_AGE_DAYS" -ge 1 ] 2>/dev/null; then
+          ASIDE_AGE_OK=1
+        fi
+        ;;
+    esac
+    if [ "$ASIDE_AGE_OK" -ne 1 ]; then
+      PURGE_NOTE="artifact-gc-aside-purge=skipped (METIN2_GC_ASIDE_MIN_AGE_DAYS must be an integer >= 1)"
+    else
+      if [ -n "$ASIDE_NOW" ]; then
+        "$BIN" artifact-gc-aside-purge \
+          --retention-base /var/metin2/backups \
+          --min-aside-age-days "$ASIDE_MIN_AGE_DAYS" \
+          --now "$ASIDE_NOW" \
+          --i-confirm-lab-gc-aside-purge \
+          >"$OUT/artifact-gc-aside-purge-backups.sh"
+        "$BIN" artifact-gc-aside-purge \
+          --retention-base /var/metin2/migration-runs \
+          --min-aside-age-days "$ASIDE_MIN_AGE_DAYS" \
+          --now "$ASIDE_NOW" \
+          --i-confirm-lab-gc-aside-purge \
+          >"$OUT/artifact-gc-aside-purge-migration-runs.sh"
+        "$BIN" artifact-gc-aside-purge \
+          --retention-base /var/metin2/exports \
+          --min-aside-age-days "$ASIDE_MIN_AGE_DAYS" \
+          --now "$ASIDE_NOW" \
+          --i-confirm-lab-gc-aside-purge \
+          >"$OUT/artifact-gc-aside-purge-exports.sh"
+      else
+        "$BIN" artifact-gc-aside-purge \
+          --retention-base /var/metin2/backups \
+          --min-aside-age-days "$ASIDE_MIN_AGE_DAYS" \
+          --i-confirm-lab-gc-aside-purge \
+          >"$OUT/artifact-gc-aside-purge-backups.sh"
+        "$BIN" artifact-gc-aside-purge \
+          --retention-base /var/metin2/migration-runs \
+          --min-aside-age-days "$ASIDE_MIN_AGE_DAYS" \
+          --i-confirm-lab-gc-aside-purge \
+          >"$OUT/artifact-gc-aside-purge-migration-runs.sh"
+        "$BIN" artifact-gc-aside-purge \
+          --retention-base /var/metin2/exports \
+          --min-aside-age-days "$ASIDE_MIN_AGE_DAYS" \
+          --i-confirm-lab-gc-aside-purge \
+          >"$OUT/artifact-gc-aside-purge-exports.sh"
+      fi
+      PURGE_NOTE="artifact-gc-aside-purge=printed for backups/migration-runs/exports (METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE=YES)"
+    fi
+    ;;
+  "")
+    ;;
+  *)
+    PURGE_NOTE="artifact-gc-aside-purge=skipped (METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE must be YES to print)"
+    ;;
+esac
+
 {
   printf 'printed %s\ncommit=%s\nkeep_days=%s\n' "$OUT" "${COMMIT:-unknown}" "$KEEP_DAYS"
   printf 'export-quarantine-drill=printed from build-info\n'
   printf '%s\n' "$DRILL_NOTE"
   printf '%s\n' "$IMPORT_NOTE"
+  printf '%s\n' "$PURGE_NOTE"
 } >"$OUT/notes.md"
 chmod 0640 "$OUT"/*.sh "$OUT/build-info.json" "$OUT/notes.md"
 printf '%s\n' "$OUT"

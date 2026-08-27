@@ -64,7 +64,8 @@ quarantine existence checks, and insert-only imports succeed together on a real
   contrib / cron / periodic
 - upsert / merge / truncate-and-reload policy
 - production DB engine selection as a stock default
-- folding `artifact-gc-aside-purge` into scheduled print helpers
+- ~~folding `artifact-gc-aside-purge` into scheduled print helpers~~ Done — see
+  [contrib artifact GC-aside purge print helper](2026-08-27-contrib-artifact-gc-aside-purge-print-helper.md)
 - loopback ops mutation endpoint
 - remote admin, secrets in git, metrics/tracing
 - non-empty seeded import payloads in this hermetic drill (empty tip-kind

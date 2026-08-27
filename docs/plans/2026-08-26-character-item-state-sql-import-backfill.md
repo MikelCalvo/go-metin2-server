@@ -66,8 +66,8 @@ importing `0004+` domains.
    item-state export, and `SELECT`s the durable rows back. Default untagged
    `go test ./...` stays free of the SQLite dependency.
 9. Docs mark Track E / migration-contract SQL-import follow-ups as owned for
-   `0002` + `0003`; `0004+` imports, CLI wiring, production-engine selection,
-   and scheduled purge fold remain deferred.
+   `0002` + `0003`; `0004+` imports, CLI wiring, production-engine selection, and automatic / scheduled
+   purge execution remain deferred. ~~Folding purge into `contrib/lab-retention-gc`~~ Done — see [contrib artifact GC-aside purge print helper](2026-08-27-contrib-artifact-gc-aside-purge-print-helper.md).
 
 ## What this is not yet
 

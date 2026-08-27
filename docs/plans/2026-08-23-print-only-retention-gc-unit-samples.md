@@ -72,7 +72,7 @@ Validation:
 ## Follow-up options
 
 1. Keep automatic / scheduled execution of printed triage scripts deferred.
-2. ~~Keep `rm` of aside-renamed trees deferred.~~ Done for the confirmation-gated print-only `artifact-gc-aside-purge` surface — see [CLI artifact GC-aside purge printer](2026-08-25-cli-artifact-gc-aside-purge-printer.md). Automatic / scheduled purge execution and folding purge into `contrib/lab-retention-gc` remain deferred.
+2. ~~Keep `rm` of aside-renamed trees deferred.~~ Done for the confirmation-gated print-only `artifact-gc-aside-purge` surface — see [CLI artifact GC-aside purge printer](2026-08-25-cli-artifact-gc-aside-purge-printer.md). Automatic / scheduled purge execution remains deferred. ~~Folding purge into `contrib/lab-retention-gc`~~ Done — see [contrib artifact GC-aside purge print helper](2026-08-27-contrib-artifact-gc-aside-purge-print-helper.md).
 3. Keep SQL import/backfill deferred until a driver-backed harness exists.
 4. ~~Optional later: packaging / `pkg` / port fragments that install these samples
    as `.sample` files only (still disabled by default).~~ Done: see

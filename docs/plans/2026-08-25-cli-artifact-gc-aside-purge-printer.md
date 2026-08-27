@@ -77,13 +77,16 @@ Rules:
    - printer stdout still omits SQL / DSN markers.
 10. Docs mark the recurring "`rm` of `.gc-aside-*`" follow-up done for this
     print-only confirmation-gated surface; automatic / scheduled purge execution
-    and folding into `contrib/lab-retention-gc` remain deferred.
+    remains deferred. ~~Folding into `contrib/lab-retention-gc`~~ Done — see
+    [contrib artifact GC-aside purge print helper](2026-08-27-contrib-artifact-gc-aside-purge-print-helper.md).
 
 ## What this is not yet
 
 - automatic / scheduled execution of the printed purge script
-- folding `artifact-gc-aside-purge` into `contrib/lab-retention-gc` print-only
-  samples / timers / cron / periodic (those dumps must stay free of `rm`)
+- ~~folding `artifact-gc-aside-purge` into `contrib/lab-retention-gc` print-only
+  samples / timers / cron / periodic~~ Done — see
+  [contrib artifact GC-aside purge print helper](2026-08-27-contrib-artifact-gc-aside-purge-print-helper.md)
+  (helper / units still never execute the printed purge scripts)
 - FreeBSD port / `pkg` enable defaults
 - SQL import/backfill from quarantined exports
 - recursive scanning below immediate retention-base children
