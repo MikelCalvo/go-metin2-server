@@ -177,6 +177,60 @@ func TestGameRuntimeMyShopOpenRejectsInvalidStockWithoutMutation(t *testing.T) {
 	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop invalid stock rejects")
 }
 
+func TestGameRuntimeMyShopOpenUsesAuthoredMyShopRejectMessageWithoutMutation(t *testing.T) {
+	const authoredAntiMyShop = "This cash item cannot be listed in a private shop."
+	const authoredAntiGive = "You cannot list this bound item in a private shop."
+
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopRejectMsg", 0x01030814, 0x02040814, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 930, Vnum: 27003, Count: 1, Slot: 7},
+		{ID: 931, Vnum: 27004, Count: 1, Slot: 8},
+		{ID: 932, Vnum: 27005, Count: 1, Slot: 9},
+		{ID: 933, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	login := "myshop-reject-msg"
+	issuePeerTicket(t, ticketStore, login, 0x70707114, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop reject-message account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27003, Name: "Anti MyShop Potion", Stackable: true, MaxCount: 200, AntiMyShop: true, MyShopRejectText: authoredAntiMyShop},
+		{Vnum: 27004, Name: "Anti Give Potion", Stackable: true, MaxCount: 200, AntiGive: true, MyShopRejectText: authoredAntiGive},
+		{Vnum: 27005, Name: "Plain Cash Potion", Stackable: true, MaxCount: 200, AntiMyShop: true},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop reject-message runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707114)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	for _, tc := range []struct {
+		name        string
+		item        shopproto.ClientMyShopItem
+		wantMessage string
+	}{
+		{name: "anti_myshop authored", item: shopproto.ClientMyShopItem{Vnum: 27003, Count: 1, Position: itemproto.InventoryPosition(7), Price: 1500}, wantMessage: authoredAntiMyShop},
+		{name: "anti_give authored", item: shopproto.ClientMyShopItem{Vnum: 27004, Count: 1, Position: itemproto.InventoryPosition(8), Price: 1500}, wantMessage: authoredAntiGive},
+		{name: "anti_myshop omitted keeps fixed English", item: shopproto.ClientMyShopItem{Vnum: 27005, Count: 1, Position: itemproto.InventoryPosition(9), Price: 1500}, wantMessage: myShopOpenCashItemInfoMessage},
+	} {
+		out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+			Sign:  "Private Shop",
+			Items: []shopproto.ClientMyShopItem{tc.item},
+		})))
+		if err != nil {
+			t.Fatalf("unexpected %s MYSHOP error: %v", tc.name, err)
+		}
+		assertMyShopOpenRejectInfoChat(t, out, tc.wantMessage, tc.name)
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop authored reject messages")
+}
+
 func TestGameRuntimeMyShopOpenRejectsGoldOverflowWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

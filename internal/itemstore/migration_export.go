@@ -62,6 +62,7 @@ type ItemTemplateRow struct {
 	AntiSave          bool   `json:"anti_save,omitempty"`
 	AntiPKDrop        bool   `json:"anti_pk_drop,omitempty"`
 	AntiMyShop        bool   `json:"anti_myshop,omitempty"`
+	MyShopRejectText  string `json:"myshop_reject_message,omitempty"`
 	AntiSafebox       bool   `json:"anti_safebox,omitempty"`
 	SafeboxRejectText string `json:"safebox_reject_message,omitempty"`
 	MinLevel          uint8  `json:"min_level,omitempty"`
@@ -235,6 +236,7 @@ func itemTemplateRowForExport(template Template) ItemTemplateRow {
 		AntiSave:          template.AntiSave,
 		AntiPKDrop:        template.AntiPKDrop,
 		AntiMyShop:        template.AntiMyShop,
+		MyShopRejectText:  template.MyShopRejectText,
 		AntiSafebox:       template.AntiSafebox,
 		SafeboxRejectText: template.SafeboxRejectText,
 		MinLevel:          template.MinLevel,

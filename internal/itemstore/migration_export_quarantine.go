@@ -424,6 +424,7 @@ func templateFromExportRow(row ItemTemplateRow) (Template, error) {
 		AntiSave:          row.AntiSave,
 		AntiPKDrop:        row.AntiPKDrop,
 		AntiMyShop:        row.AntiMyShop,
+		MyShopRejectText:  strings.TrimSpace(row.MyShopRejectText),
 		AntiSafebox:       row.AntiSafebox,
 		SafeboxRejectText: strings.TrimSpace(row.SafeboxRejectText),
 		MinLevel:          row.MinLevel,

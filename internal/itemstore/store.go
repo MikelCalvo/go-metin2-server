@@ -78,6 +78,7 @@ type Template struct {
 	AntiSave          bool            `json:"anti_save,omitempty"`
 	AntiPKDrop        bool            `json:"anti_pk_drop,omitempty"`
 	AntiMyShop        bool            `json:"anti_myshop,omitempty"`
+	MyShopRejectText  string          `json:"myshop_reject_message,omitempty"`
 	AntiSafebox       bool            `json:"anti_safebox,omitempty"`
 	SafeboxRejectText string          `json:"safebox_reject_message,omitempty"`
 	MinLevel          uint8           `json:"min_level,omitempty"`
@@ -147,6 +148,7 @@ type templateJSON struct {
 	AntiSave          bool             `json:"anti_save,omitempty"`
 	AntiPKDrop        bool             `json:"anti_pk_drop,omitempty"`
 	AntiMyShop        bool             `json:"anti_myshop,omitempty"`
+	MyShopRejectText  string           `json:"myshop_reject_message,omitempty"`
 	AntiSafebox       bool             `json:"anti_safebox,omitempty"`
 	SafeboxRejectText string           `json:"safebox_reject_message,omitempty"`
 	MinLevel          uint8            `json:"min_level,omitempty"`
@@ -208,6 +210,7 @@ func (template Template) MarshalJSON() ([]byte, error) {
 		AntiSave:          template.AntiSave,
 		AntiPKDrop:        template.AntiPKDrop,
 		AntiMyShop:        template.AntiMyShop,
+		MyShopRejectText:  template.MyShopRejectText,
 		AntiSafebox:       template.AntiSafebox,
 		SafeboxRejectText: template.SafeboxRejectText,
 		MinLevel:          template.MinLevel,
@@ -281,6 +284,7 @@ func (template *Template) UnmarshalJSON(raw []byte) error {
 		AntiSave:          jsonTemplate.AntiSave,
 		AntiPKDrop:        jsonTemplate.AntiPKDrop,
 		AntiMyShop:        jsonTemplate.AntiMyShop,
+		MyShopRejectText:  jsonTemplate.MyShopRejectText,
 		AntiSafebox:       jsonTemplate.AntiSafebox,
 		SafeboxRejectText: jsonTemplate.SafeboxRejectText,
 		MinLevel:          jsonTemplate.MinLevel,
@@ -417,6 +421,7 @@ func normalizeTemplate(template Template) Template {
 	template.SellRejectText = strings.TrimSpace(template.SellRejectText)
 	template.EquipRejectText = strings.TrimSpace(template.EquipRejectText)
 	template.UnequipRejectText = strings.TrimSpace(template.UnequipRejectText)
+	template.MyShopRejectText = strings.TrimSpace(template.MyShopRejectText)
 	template.SafeboxRejectText = strings.TrimSpace(template.SafeboxRejectText)
 	if template.UseEffect != nil {
 		effect := *template.UseEffect
@@ -521,6 +526,9 @@ func validTemplate(template Template) bool {
 	if !validTemplateMessage(template.UnequipRejectText) {
 		return false
 	}
+	if !validTemplateMessage(template.MyShopRejectText) {
+		return false
+	}
 	if !validTemplateMessage(template.SafeboxRejectText) {
 		return false
 	}
@@ -546,6 +554,9 @@ func validTemplate(template Template) bool {
 		return false
 	}
 	if template.UnequipRejectText != "" && (template.EquipSlot == "" || !template.Irremovable) {
+		return false
+	}
+	if template.MyShopRejectText != "" && !templateHasMyShopRejectGuard(template) {
 		return false
 	}
 	if template.SafeboxRejectText != "" && !templateHasSafeboxRejectGuard(template) {
@@ -624,6 +635,10 @@ func templateHasDropRejectGuard(template Template) bool {
 
 func templateHasGiveRejectGuard(template Template) bool {
 	return templateHasSelectedCharacterGuard(template) || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack
+}
+
+func templateHasMyShopRejectGuard(template Template) bool {
+	return template.AntiMyShop || template.AntiGive
 }
 
 func templateHasSafeboxRejectGuard(template Template) bool {

@@ -4124,6 +4124,7 @@ func validItemTemplateStrings(template itemcatalog.Template) bool {
 		!validAuthoredContentString(template.SellRejectText) ||
 		!validAuthoredContentString(template.EquipRejectText) ||
 		!validAuthoredContentString(template.UnequipRejectText) ||
+		!validAuthoredContentString(template.MyShopRejectText) ||
 		!validAuthoredContentString(template.SafeboxRejectText) {
 		return false
 	}

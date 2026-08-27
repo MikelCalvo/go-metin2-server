@@ -1554,6 +1554,115 @@ func TestFileStoreRejectsInvalidSafeboxRejectTextMetadata(t *testing.T) {
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripPreservesMyShopRejectText(t *testing.T) {
+	cases := []struct {
+		name     string
+		template Template
+		wantJSON string
+	}{
+		{
+			name: "anti_myshop",
+			template: Template{
+				Vnum:             27061,
+				Name:             "Cash MyShop Potion",
+				Stackable:        true,
+				MaxCount:         200,
+				AntiMyShop:       true,
+				MyShopRejectText: "This cash item cannot be listed in a private shop.",
+			},
+			wantJSON: "{\n  \"templates\": [\n    {\n      \"vnum\": 27061,\n      \"name\": \"Cash MyShop Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"anti_myshop\": true,\n      \"myshop_reject_message\": \"This cash item cannot be listed in a private shop.\"\n    }\n  ]\n}\n",
+		},
+		{
+			name: "anti_give",
+			template: Template{
+				Vnum:             27062,
+				Name:             "Bound MyShop Potion",
+				Stackable:        true,
+				MaxCount:         200,
+				AntiGive:         true,
+				MyShopRejectText: "You cannot list this bound item in a private shop.",
+			},
+			wantJSON: "{\n  \"templates\": [\n    {\n      \"vnum\": 27062,\n      \"name\": \"Bound MyShop Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"anti_give\": true,\n      \"myshop_reject_message\": \"You cannot list this bound item in a private shop.\"\n    }\n  ]\n}\n",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+			store := NewFileStore(path)
+			want := Snapshot{Templates: []Template{tc.template}}
+			if err := store.Save(want); err != nil {
+				t.Fatalf("save snapshot with myshop_reject_message: %v", err)
+			}
+			got, err := store.Load()
+			if err != nil {
+				t.Fatalf("load snapshot with myshop_reject_message: %v", err)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("unexpected snapshot with myshop_reject_message:\n got: %#v\nwant: %#v", got, want)
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read persisted snapshot with myshop_reject_message: %v", err)
+			}
+			if string(raw) != tc.wantJSON {
+				t.Fatalf("unexpected deterministic snapshot with myshop_reject_message:\n got: %s\nwant: %s", string(raw), tc.wantJSON)
+			}
+		})
+	}
+}
+
+func TestFileStoreRejectsInvalidMyShopRejectTextMetadata(t *testing.T) {
+	cases := []struct {
+		name     string
+		snapshot Snapshot
+		rawJSON  string
+	}{
+		{
+			name: "embedded NUL",
+			snapshot: Snapshot{Templates: []Template{{
+				Vnum:             27061,
+				Name:             "Broken MyShop Message Potion",
+				Stackable:        true,
+				MaxCount:         200,
+				AntiMyShop:       true,
+				MyShopRejectText: "myshop\x00blocked",
+			}}},
+			rawJSON: `{"templates":[{"vnum":27061,"name":"Broken MyShop Message Potion","stackable":true,"max_count":200,"anti_myshop":true,"myshop_reject_message":"myshop\u0000blocked"}]}`,
+		},
+		{
+			name: "missing anti_myshop|anti_give guard",
+			snapshot: Snapshot{Templates: []Template{{
+				Vnum:             27063,
+				Name:             "Unguarded MyShop Message Potion",
+				Stackable:        true,
+				MaxCount:         200,
+				MyShopRejectText: "This item has no owned myshop rejection guard.",
+			}}},
+			rawJSON: `{"templates":[{"vnum":27063,"name":"Unguarded MyShop Message Potion","stackable":true,"max_count":200,"myshop_reject_message":"This item has no owned myshop rejection guard."}]}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+			store := NewFileStore(path)
+			if err := store.Save(tc.snapshot); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot when saving invalid myshop_reject_message metadata, got %v", err)
+			}
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatalf("mkdir state dir: %v", err)
+			}
+			if err := os.WriteFile(path, []byte(tc.rawJSON), 0o644); err != nil {
+				t.Fatalf("write invalid myshop rejection snapshot: %v", err)
+			}
+			if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot when loading invalid myshop_reject_message metadata, got %v", err)
+			}
+		})
+	}
+}
+
 func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)

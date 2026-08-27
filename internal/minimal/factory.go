@@ -9099,13 +9099,17 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							return gameflow.ShopResult{Accepted: false}
 						}
 						if template.AntiGive || template.AntiMyShop {
+							message := myShopOpenCashItemInfoMessage
+							if authored := strings.TrimSpace(template.MyShopRejectText); authored != "" {
+								message = authored
+							}
 							return gameflow.ShopResult{
 								Accepted: true,
 								Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
 									Type:    chatproto.ChatTypeInfo,
 									VID:     0,
 									Empire:  0,
-									Message: myShopOpenCashItemInfoMessage,
+									Message: message,
 								})},
 							}
 						}

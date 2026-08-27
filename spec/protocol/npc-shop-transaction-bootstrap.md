@@ -359,8 +359,8 @@ The first host-only accepted open path is now owned on top of the codec + deny-n
 - busy shells reject with the same self-only requester busy info-chat already owned by exchange START for merchant/safebox/refine
 - worn `EquipmentSlotBody` rejects with self-only `CHAT_TYPE_INFO` `You must unequip your armor to open a private shop.`
 - non-empty signs that match the bootstrap banword list reject with self-only `CHAT_TYPE_INFO` `You can't give your shop an invalid name.` after armor and before stock walk, with no bag debit / no open (`docs/plans/2026-08-27-myshop-open-banword-sign-reject.md`)
-- listed `anti_give|anti_myshop` stock rejects with self-only `CHAT_TYPE_INFO` `Cash items cannot be sold in a private shop.`
-- **next frozen (not yet live):** listed `anti_give|anti_myshop` stock may instead emit template-authored `myshop_reject_message` when present; omitted text keeps the fixed English cash-item chat (`docs/plans/2026-08-27-myshop-open-myshop-reject-message.md`)
+- listed `anti_give|anti_myshop` stock rejects with self-only `CHAT_TYPE_INFO` `Cash items cannot be sold in a private shop.` when the template omits `myshop_reject_message`
+- listed `anti_give|anti_myshop` stock with non-empty template-authored `myshop_reject_message` emits that trimmed text instead (`docs/plans/2026-08-27-myshop-open-myshop-reject-message.md`)
 - listed locked stock rejects with self-only `CHAT_TYPE_INFO` `Items currently in use cannot be sold in a private shop.`
 - listed equipped stock rejects with self-only `CHAT_TYPE_INFO` `Equipped items cannot be sold in a private shop.` after cash-item and before locked (`docs/plans/2026-08-27-myshop-open-equipped-stock-reject-chat.md`)
 - listed-price gold overflow past `math.MaxInt32` rejects with self-only `CHAT_TYPE_INFO` `You cannot open a private shop because it would exceed 2 Billion Yang.`

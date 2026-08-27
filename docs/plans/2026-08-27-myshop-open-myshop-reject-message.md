@@ -73,5 +73,8 @@ a later RED once this freeze lands.
 
 ## Status
 
-Docs/spec freeze only on `lane/items`. Runtime RED/GREEN intentionally deferred
-to the next implementation slice.
+Implemented on `lane/items`: optional template-authored `myshop_reject_message`
+round-trips through the file-backed itemstore (requires `anti_myshop` and/or
+`anti_give`), and host-only `CG::MYSHOP` open cash-item stock emits that text
+when present, otherwise the fixed English cash-item chat. Quest-running /
+`MYSHOP_PRICELIST` / OR-materials stay deferred.
