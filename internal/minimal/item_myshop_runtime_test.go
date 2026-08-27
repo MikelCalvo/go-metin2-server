@@ -1120,28 +1120,24 @@ func TestGameRuntimeMyShopOpenBusyShellRejectsWithInfoChatWithoutMutation(t *tes
 		Arg1:      peer.VID,
 	})))
 	if err != nil {
-		t.Fatalf("unexpected exchange start before myshop busy reject: %v", err)
+		t.Fatalf("unexpected exchange start before myshop open cancel: %v", err)
 	}
 	if len(startOut) != 1 {
-		t.Fatalf("expected exchange start before myshop busy reject to emit one frame, got %d", len(startOut))
-	}
-	_ = flushServerFrames(t, peerFlow)
-	assertMyShopBusyReject(t, flow, openPacket, "exchange busy")
-	cancelOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
-	if err != nil {
-		t.Fatalf("unexpected exchange cancel after myshop busy reject: %v", err)
-	}
-	if len(cancelOut) != 1 {
-		t.Fatalf("expected exchange cancel after myshop busy reject to emit one frame, got %d", len(cancelOut))
+		t.Fatalf("expected exchange start before myshop open cancel to emit one frame, got %d", len(startOut))
 	}
 	_ = flushServerFrames(t, peerFlow)
 
 	acceptedOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(openPacket)))
 	if err != nil {
-		t.Fatalf("unexpected accepted MYSHOP after busy clears: %v", err)
+		t.Fatalf("unexpected accepted MYSHOP while exchange open: %v", err)
 	}
-	assertMyShopOpenSuccessBagAndSign(t, acceptedOut, owner.VID, 4, `expected accepted MYSHOP after busy clears to emit one SHOP_SIGN frame, got %d`)
-	_ = flushServerFrames(t, peerFlow)
+	assertMyShopOpenSuccessBagExchangeEndAndSign(t, acceptedOut, owner.VID, 4, `expected accepted MYSHOP while exchange open to emit bag refresh, EXCHANGE END, then SHOP_SIGN, got %d`)
+	peerQueuedAfterOpen := flushServerFrames(t, peerFlow)
+	if len(peerQueuedAfterOpen) != 2 {
+		t.Fatalf("expected peer to receive EXCHANGE END then live SHOP_SIGN after myshop open cancel, got %d", len(peerQueuedAfterOpen))
+	}
+	assertExchangeEndFrame(t, peerQueuedAfterOpen[0], "peer exchange END after myshop open cancel")
+	assertMyShopLiveSignFrame(t, peerQueuedAfterOpen[1], owner.VID, "Private Shop", "peer live SHOP_SIGN after myshop open cancel")
 
 	secondOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(openPacket)))
 	if err != nil {
@@ -1159,6 +1155,157 @@ func TestGameRuntimeMyShopOpenBusyShellRejectsWithInfoChatWithoutMutation(t *tes
 
 	assertExchangeAccountUnchanged(t, accounts, login, characterAfterMyShopBagConsume(owner), "myshop busy rejects")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop busy peer")
+}
+
+func TestGameRuntimeMyShopOpenWithSilkBagCancelsActiveExchangeBeforeShopSign(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopSilkExch", 0x010308e1, 0x020408e1, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 2001, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 2002, Vnum: myShopOpenSilkBagVnum, Count: 1, Slot: 3},
+	}
+	peer := peerVisibilityCharacter("MyShopSilkExchPeer", 0x010308e2, 0x020408e2, 1120, 2120, 0, 101, 201)
+	login := "myshop-silk-exch"
+	peerLogin := "myshop-silk-exch-peer"
+	issuePeerTicket(t, ticketStore, login, 0x707071e1, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707071e2, peer)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop silk-exchange account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed myshop silk-exchange peer account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenSilkBagVnum, Name: "Silk Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop silk-exchange runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707071e1)
+	defer closeSessionFlow(t, flow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707071e2)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, flow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil || len(startOut) != 1 {
+		t.Fatalf("expected exchange start before silk myshop open, got %d err=%v", len(startOut), err)
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      3,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected silk myshop open while exchange active: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected silk myshop open to emit EXCHANGE END then SHOP_SIGN, got %d", len(out))
+	}
+	assertExchangeEndFrame(t, out[0], "silk myshop open self exchange END")
+	assertMyShopLiveSignFrame(t, out[1], owner.VID, "Private Shop", "silk myshop open SHOP_SIGN")
+	peerQueued := flushServerFrames(t, peerFlow)
+	if len(peerQueued) != 2 {
+		t.Fatalf("expected peer EXCHANGE END then live SHOP_SIGN after silk myshop open, got %d", len(peerQueued))
+	}
+	assertExchangeEndFrame(t, peerQueued[0], "silk myshop open peer exchange END")
+	assertMyShopLiveSignFrame(t, peerQueued[1], owner.VID, "Private Shop", "silk myshop open peer SHOP_SIGN")
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "silk myshop open cancel leaves inventory unchanged")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "silk myshop open cancel peer")
+}
+
+func TestGameRuntimeMyShopOpenRejectWhileExchangeOpenLeavesShellCancellable(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopRejectExch", 0x010308e3, 0x020408e3, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 2101, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 2102, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	owner.Equipment = []inventory.ItemInstance{{ID: 2103, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}}
+	peer := peerVisibilityCharacter("MyShopRejectExchPeer", 0x010308e4, 0x020408e4, 1120, 2120, 0, 101, 201)
+	login := "myshop-reject-exch"
+	peerLogin := "myshop-reject-exch-peer"
+	issuePeerTicket(t, ticketStore, login, 0x707071e3, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707071e4, peer)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop reject-exchange account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed myshop reject-exchange peer account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+		{Vnum: 11200, Name: "Body Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop reject-exchange runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707071e3)
+	defer closeSessionFlow(t, flow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707071e4)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, flow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      peer.VID,
+	})))
+	if err != nil || len(startOut) != 1 {
+		t.Fatalf("expected exchange start before armored myshop reject, got %d err=%v", len(startOut), err)
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      3,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected armored MYSHOP while exchange open: %v", err)
+	}
+	assertMyShopOpenRejectInfoChat(t, out, myShopOpenArmorRequiredInfoMessage, "armored MYSHOP while exchange open")
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected armored MYSHOP reject to leave peer exchange untouched, got %d queued frames", len(queued))
+	}
+
+	cancelOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil || len(cancelOut) != 1 {
+		t.Fatalf("expected exchange cancel after armored myshop reject to emit one END, got %d err=%v", len(cancelOut), err)
+	}
+	assertExchangeEndFrame(t, cancelOut[0], "owner cancel after armored myshop reject")
+	peerQueued := flushServerFrames(t, peerFlow)
+	if len(peerQueued) != 1 {
+		t.Fatalf("expected peer END after cancel following armored myshop reject, got %d", len(peerQueued))
+	}
+	assertExchangeEndFrame(t, peerQueued[0], "peer cancel after armored myshop reject")
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "armored myshop reject leaves account unchanged")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "armored myshop reject peer")
 }
 
 func TestGameRuntimeMyShopAlreadyOpenSecondOpenClearsWithEmptySignWithoutBagRefund(t *testing.T) {
@@ -1617,6 +1764,33 @@ func assertMyShopOpenSuccessBagAndSignWithText(t *testing.T, out [][]byte, wantV
 	}
 	if sign.VID != wantVID || sign.Sign != wantSign {
 		t.Fatalf("unexpected %s MYSHOP SHOP_SIGN: %+v", context, sign)
+	}
+}
+
+func assertMyShopOpenSuccessBagExchangeEndAndSign(t *testing.T, out [][]byte, wantVID uint32, bagSlot uint16, context string) {
+	t.Helper()
+	if len(out) < 3 {
+		t.Fatalf(context, len(out))
+	}
+	del, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode %s MYSHOP bag ITEM_DEL: %v", context, err)
+	}
+	if del.Position != itemproto.InventoryPosition(bagSlot) {
+		t.Fatalf("unexpected %s MYSHOP bag ITEM_DEL position: %+v", context, del.Position)
+	}
+	assertExchangeEndFrame(t, out[len(out)-2], context+" exchange END")
+	assertMyShopLiveSignFrame(t, out[len(out)-1], wantVID, "Private Shop", context+" SHOP_SIGN")
+}
+
+func assertMyShopLiveSignFrame(t *testing.T, raw []byte, wantVID uint32, wantSign, context string) {
+	t.Helper()
+	sign, err := shopproto.DecodeServerShopSign(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode %s live SHOP_SIGN: %v", context, err)
+	}
+	if sign.VID != wantVID || sign.Sign != wantSign {
+		t.Fatalf("unexpected %s live SHOP_SIGN: %+v", context, sign)
 	}
 }
 

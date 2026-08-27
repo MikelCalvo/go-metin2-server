@@ -9036,7 +9036,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if strings.TrimSpace(sign) == "" || len(packet.Items) == 0 {
 						return gameflow.ShopResult{Accepted: false}
 					}
-					if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveCubeOpen || sharedWorld.hasActiveExchange(sharedWorldID) {
+					if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveCubeOpen {
 						return gameflow.ShopResult{
 							Accepted: true,
 							Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
@@ -9175,10 +9175,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							VID:  live.VID,
 							Sign: sign,
 						})
+						frames := prependExchangeCloseFrame([][]byte{signFrame})
 						enqueueMyShopSignAroundBroadcast([][]byte{signFrame})
 						return gameflow.ShopResult{
 							Accepted: true,
-							Frames:   [][]byte{signFrame},
+							Frames:   frames,
 						}
 					}
 					previousSelected := selectedPlayer.LiveCharacter()
@@ -9226,7 +9227,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						VID:  live.VID,
 						Sign: sign,
 					})
-					frames := append(bagFrames, signFrame)
+					frames := append(append([][]byte{}, bagFrames...), prependExchangeCloseFrame([][]byte{signFrame})...)
 					enqueueMyShopSignAroundBroadcast([][]byte{signFrame})
 					return gameflow.ShopResult{
 						Accepted: true,
