@@ -121,11 +121,24 @@ func TestSQLiteHarnessRollbackToZeroThenReapplyBootstrap(t *testing.T) {
 
 	emptyLedger, err := dbmigrations.ReadSQLLedgerEntries(ctx, db)
 	if err != nil {
-		// After rolling back through 0001, schema_migrations itself is dropped.
-		// A missing table is acceptable here; re-apply of 0001 recreates it.
-		t.Logf("ReadSQLLedgerEntries after rollback-to-zero (may be missing table): %v", err)
-	} else if len(emptyLedger) != 0 {
-		t.Fatalf("ledger after rollback-to-zero = %#v, want empty or missing table", emptyLedger)
+		t.Fatalf("ReadSQLLedgerEntries after rollback-to-zero: %v", err)
+	}
+	if len(emptyLedger) != 0 {
+		t.Fatalf("ledger after rollback-to-zero = %#v, want empty", emptyLedger)
+	}
+	emptySnapshot, err := dbmigrations.LedgerSnapshotFromSQLLedger(ctx, db)
+	if err != nil {
+		t.Fatalf("LedgerSnapshotFromSQLLedger after rollback-to-zero: %v", err)
+	}
+	if emptySnapshot.Format != dbmigrations.LedgerSnapshotFormat || len(emptySnapshot.Entries) != 0 {
+		t.Fatalf("snapshot after rollback-to-zero = %+v, want empty %q", emptySnapshot, dbmigrations.LedgerSnapshotFormat)
+	}
+	emptyPlan, err := dbmigrations.PlanUpToLatestFromSQLLedger(ctx, db)
+	if err != nil {
+		t.Fatalf("PlanUpToLatestFromSQLLedger after rollback-to-zero: %v", err)
+	}
+	if emptyPlan.CurrentVersion != 0 || emptyPlan.UpToDate || len(emptyPlan.Pending) == 0 {
+		t.Fatalf("unexpected empty-ledger plan after rollback-to-zero: %#v", emptyPlan)
 	}
 
 	reapply, err := dbmigrations.ApplyToVersion(ctx, db, nil, 1)

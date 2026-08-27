@@ -98,6 +98,53 @@ func TestReadSQLLedgerEntriesRejectsNilQuerierAndQueryFailures(t *testing.T) {
 	}
 }
 
+func TestReadSQLLedgerEntriesTreatsMissingSchemaMigrationsTableAsEmpty(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{
+			name: "sqlite no such table",
+			err:  errors.New("SQL logic error: no such table: schema_migrations (1)"),
+		},
+		{
+			name: "postgres undefined table",
+			err:  errors.New(`pq: relation "schema_migrations" does not exist`),
+		},
+		{
+			name: "mysql unknown table",
+			err:  errors.New("Error 1146 (42S02): Table 'lab.schema_migrations' doesn't exist"),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			entries, err := ReadSQLLedgerEntries(context.Background(), &stubSQLLedgerQuerier{err: tc.err})
+			if err != nil {
+				t.Fatalf("expected missing schema_migrations to read as empty ledger, got %v", err)
+			}
+			if entries == nil {
+				t.Fatal("expected non-nil empty ledger slice")
+			}
+			if len(entries) != 0 {
+				t.Fatalf("expected empty ledger, got %#v", entries)
+			}
+		})
+	}
+
+	t.Run("unrelated query failure still fails closed", func(t *testing.T) {
+		_, err := ReadSQLLedgerEntries(context.Background(), &stubSQLLedgerQuerier{
+			err: errors.New("SQL logic error: no such table: accounts (1)"),
+		})
+		if err == nil {
+			t.Fatal("expected unrelated missing-table error to fail closed")
+		}
+		if !strings.Contains(err.Error(), "accounts") {
+			t.Fatalf("expected wrapped accounts error, got %v", err)
+		}
+	})
+}
+
 func TestReadLedgerEntriesFromRowsFailsClosedOnRowErrors(t *testing.T) {
 	cases := []struct {
 		name    string

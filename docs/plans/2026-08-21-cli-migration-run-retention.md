@@ -30,7 +30,7 @@ Rules:
    - sets `OPS`, `RUNS_BASE`, `TARGET_VERSION`, `LOCK_FILE`, and `COMMIT12` from the validated inputs;
    - creates `$RUNS_BASE/<UTC compact timestamp>-$COMMIT12` as `$RUN`;
    - prints metadata-safe retention redirects for catalog, ledger-snapshot(-status), plan-artifact(-status), apply-preflight(-status), apply, apply-audit-status, post-apply status, and optional daemon curls (`/local/build-info`, `/local/db/migrations/status`);
-   - prints apply-lock-status / apply-lock-aside retention into `$RUN` with the documented aside destination naming;
+   - prints leftover-lock triage into `$RUN` only when `"$RUN/$LOCK_FILE"` still exists after apply (`apply-lock-status` live; `apply-lock-aside` as a commented / echoed operator-run hint with `--i-confirm-lab-aside-rename`), so successful apply under `set -eu` does not fail closed on an expected missing lock;
    - requires operator-exported `$DRIVER` / `$DSN` shell variables for DB-touching commands and never embeds a concrete DSN value;
    - never executes HTTP, never writes files, never opens a database, never prints executable SQL.
 9. On contract failure, exit `1` with a short stderr reason and **no** stdout script.
@@ -70,3 +70,4 @@ Validation for this slice:
 2. Add DB-engine-specific advisory lock coverage once a production driver is selected.
 3. Keep ground-item restart durability deferred until operators decide that quarantined `0010` exports should drive recovery.
 4. ~~Optional rollback-direction retention printer variant remains deferred; operators can still pass an explicit `--target-version` plus manual `--allow-rollback` when executing the printed apply block.~~ Done: see [CLI migration rollback-run retention](2026-08-21-cli-migration-rollback-run-retention.md).
+5. ~~Hermetic `/bin/sh` execution of the printed forward/rollback retention script against build-tagged SQLite, plus soft-fail leftover-lock triage under `set -eu`.~~ Done: see [hermetic migration-run-retention SQLite apply](2026-08-28-hermetic-migration-run-retention-sqlite-apply.md).

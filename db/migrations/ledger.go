@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 )
 
 const SchemaMigrationsLedgerQuery = `SELECT version, name, up_sha256
@@ -39,9 +40,31 @@ func ReadSQLLedgerEntries(ctx context.Context, querier SQLLedgerQuerier) ([]Ledg
 
 	rows, err := querier.QueryContext(ctx, SchemaMigrationsLedgerQuery)
 	if err != nil {
+		if isMissingSchemaMigrationsTable(err) {
+			// First-time targets and post-rollback-to-zero ledgers have no
+			// schema_migrations relation yet. Treat that as an empty applied
+			// ledger so snapshot/status/preflight can plan from version zero
+			// without inventing a separate empty-ledger CLI path.
+			return []LedgerEntry{}, nil
+		}
 		return nil, fmt.Errorf("query schema_migrations ledger: %w", err)
 	}
 	return readLedgerEntriesFromRows(rows)
+}
+
+func isMissingSchemaMigrationsTable(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	if !strings.Contains(message, "schema_migrations") {
+		return false
+	}
+	return strings.Contains(message, "no such table") ||
+		strings.Contains(message, "does not exist") ||
+		strings.Contains(message, "doesn't exist") ||
+		strings.Contains(message, "undefined_table") ||
+		strings.Contains(message, "unknown table")
 }
 
 func readLedgerEntriesFromRows(rows ledgerRows) (entries []LedgerEntry, err error) {

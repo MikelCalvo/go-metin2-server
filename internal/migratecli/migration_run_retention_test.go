@@ -79,8 +79,11 @@ func TestRunMigrationRunRetentionPrintsLabTreeCommands(t *testing.T) {
 		`metin2-migrate status`,
 		`> "$RUN/post-apply-status.json"`,
 		`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-after.json"`,
-		`metin2-migrate apply-lock-status --lock-file "$RUN/$LOCK_FILE" > "$RUN/apply-lock-status.json"`,
-		`metin2-migrate apply-lock-aside --lock-file "$RUN/$LOCK_FILE" --i-confirm-lab-aside-rename > "$RUN/apply-lock-aside.json"`,
+		`if [ -e "$RUN/$LOCK_FILE" ]; then`,
+		`  metin2-migrate apply-lock-status --lock-file "$RUN/$LOCK_FILE" > "$RUN/apply-lock-status.json"`,
+		`  echo "  metin2-migrate apply-lock-aside --lock-file \"$RUN/$LOCK_FILE\" --i-confirm-lab-aside-rename > \"$RUN/apply-lock-aside.json\""`,
+		`  echo "No leftover lock at $RUN/$LOCK_FILE (expected after successful apply)."`,
+		`# Successful apply removes the lock; do not fail the runbook script on that path.`,
 		`# require operator-exported DRIVER/DSN; printer never embeds a DSN`,
 		`docs/workflow/migration-apply-runbook.md`,
 		`docs/workflow/lab-deployment-topology.md`,
@@ -88,6 +91,9 @@ func TestRunMigrationRunRetentionPrintsLabTreeCommands(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in stdout:\n%s", want, body)
 		}
+	}
+	if strings.Contains(body, "\nmetin2-migrate apply-lock-aside --lock-file") {
+		t.Fatalf("successful-path printer must not auto-run apply-lock-aside under set -eu, got:\n%s", body)
 	}
 	if strings.Contains(body, "CREATE TABLE") || strings.Contains(body, "DROP TABLE") || strings.Contains(body, "password=") || strings.Contains(body, "memory://") {
 		t.Fatalf("migration-run-retention must not expose SQL or concrete DSN text, got %s", body)
@@ -108,9 +114,9 @@ func TestRunMigrationRunRetentionPrintsLabTreeCommands(t *testing.T) {
 	if idxMkdir < 0 || idxAuthd < 0 || idxRuntime < 0 || idxStatusBefore < 0 || idxGamedLog < 0 || idxAuthdLog < 0 || idxNotes < 0 || idxCatalog < 0 || idxPreflight < 0 || idxApply < 0 || idxPostStatus < 0 || idxStatusAfter < 0 || idxLockStatus < 0 {
 		t.Fatalf("missing expected ordering markers in stdout:\n%s", body)
 	}
-	if !(idxMkdir < idxAuthd && idxAuthd < idxRuntime && idxRuntime < idxStatusBefore && idxStatusBefore < idxGamedLog && idxGamedLog < idxAuthdLog && idxAuthdLog < idxNotes && idxNotes < idxCatalog && idxCatalog < idxPreflight && idxPreflight < idxApply && idxApply < idxPostStatus && idxPostStatus < idxStatusAfter) {
-		t.Fatalf("expected mkdir -> authd/runtime/status-before -> daemon logs -> notes -> catalog -> preflight -> apply -> post-status -> status-after ordering, got idxs mkdir=%d authd=%d runtime=%d before=%d gamedLog=%d authdLog=%d notes=%d catalog=%d preflight=%d apply=%d post=%d after=%d\n%s",
-			idxMkdir, idxAuthd, idxRuntime, idxStatusBefore, idxGamedLog, idxAuthdLog, idxNotes, idxCatalog, idxPreflight, idxApply, idxPostStatus, idxStatusAfter, body)
+	if !(idxMkdir < idxAuthd && idxAuthd < idxRuntime && idxRuntime < idxStatusBefore && idxStatusBefore < idxGamedLog && idxGamedLog < idxAuthdLog && idxAuthdLog < idxNotes && idxNotes < idxCatalog && idxCatalog < idxPreflight && idxPreflight < idxApply && idxApply < idxPostStatus && idxPostStatus < idxStatusAfter && idxStatusAfter < idxLockStatus) {
+		t.Fatalf("expected mkdir -> authd/runtime/status-before -> daemon logs -> notes -> catalog -> preflight -> apply -> post-status -> status-after -> conditional lock triage ordering, got idxs mkdir=%d authd=%d runtime=%d before=%d gamedLog=%d authdLog=%d notes=%d catalog=%d preflight=%d apply=%d post=%d after=%d lock=%d\n%s",
+			idxMkdir, idxAuthd, idxRuntime, idxStatusBefore, idxGamedLog, idxAuthdLog, idxNotes, idxCatalog, idxPreflight, idxApply, idxPostStatus, idxStatusAfter, idxLockStatus, body)
 	}
 }
 
@@ -395,14 +401,20 @@ func TestRunMigrationRunRetentionPrintsRollbackTreeCommands(t *testing.T) {
 		`> "$RUN/rollback-apply-audit-status.json"`,
 		`> "$RUN/post-rollback-status.json"`,
 		`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-after.json"`,
-		`metin2-migrate apply-lock-status --lock-file "$RUN/$LOCK_FILE" > "$RUN/apply-lock-status.json"`,
-		`metin2-migrate apply-lock-aside --lock-file "$RUN/$LOCK_FILE" --i-confirm-lab-aside-rename > "$RUN/apply-lock-aside.json"`,
+		`if [ -e "$RUN/$LOCK_FILE" ]; then`,
+		`  metin2-migrate apply-lock-status --lock-file "$RUN/$LOCK_FILE" > "$RUN/apply-lock-status.json"`,
+		`  echo "  metin2-migrate apply-lock-aside --lock-file \"$RUN/$LOCK_FILE\" --i-confirm-lab-aside-rename > \"$RUN/apply-lock-aside.json\""`,
+		`  echo "No leftover lock at $RUN/$LOCK_FILE (expected after successful apply)."`,
+		`# Successful apply removes the lock; do not fail the runbook script on that path.`,
 		`# require operator-exported DRIVER/DSN; printer never embeds a DSN`,
 		`docs/workflow/migration-apply-runbook.md`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in stdout:\n%s", want, body)
 		}
+	}
+	if strings.Contains(body, "\nmetin2-migrate apply-lock-aside --lock-file") {
+		t.Fatalf("successful-path printer must not auto-run apply-lock-aside under set -eu, got:\n%s", body)
 	}
 	for _, banned := range []string{
 		`> "$RUN/migration-plan-artifact.json"`,
