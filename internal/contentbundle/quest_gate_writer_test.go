@@ -78,6 +78,23 @@ func TestCanonicalizeRejectsReversePartialServiceQuestGate(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeRejectsOrphanServiceQuestFrom(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		StaticActors: []StaticActor{
+			{Name: "OrphanQuestFromGuide", MapIndex: 1, X: 469400, Y: 964200, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:orphan_quest_from_guide"},
+		},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:      interactionstore.KindTalk,
+			Ref:       "npc:orphan_quest_from_guide",
+			Text:      "Welcome.",
+			QuestFrom: 1,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for orphan service quest_from, got %v", err)
+	}
+}
+
 func TestCanonicalizeAcceptsServiceQuestGateWhenQuestFlagWriterPresent(t *testing.T) {
 	if _, err := Canonicalize(Bundle{
 		StaticActors: []StaticActor{
