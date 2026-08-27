@@ -2,6 +2,7 @@ package minimal
 
 import (
 	"testing"
+	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
@@ -11,8 +12,10 @@ import (
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
+	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
+	"github.com/MikelCalvo/go-metin2-server/internal/safeboxstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -43,6 +46,106 @@ func TestGameSessionFlowPostFloorOpenSafeboxFailsClosed(t *testing.T) {
 		t.Fatalf("expected post-floor /open_safebox to queue no frames, got %d", len(queued))
 	}
 	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor /open_safebox")
+}
+
+func TestGameSessionFlowPostFloorSafeboxPasswordOpenFailsClosed(t *testing.T) {
+	login := "pf-open-safebox-pwd"
+	loginKey := uint32(0x19191b15)
+	owner := peerVisibilityCharacter("DeadOpenSafeboxPwdOwner", 0x01030b15, 0x02040b15, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Gold = 12345
+	runtime, accounts, targetVID, warehouseVID := newPostFloorSafeboxPasswordRuntime(t, login, loginKey, owner)
+	currentTime := time.Unix(1700002715, 0)
+	runtime.now = func() time.Time { return currentTime }
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	if len(enterOut) < 8 {
+		t.Fatalf("expected owner bootstrap with visible practice mob and warehouse, got %d frames", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	interactOut, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: warehouseVID})))
+	if err != nil {
+		t.Fatalf("unexpected warehouse interact before post-floor password open: %v", err)
+	}
+	if len(interactOut) != 1 {
+		t.Fatalf("expected ShowMeSafeboxPassword before post-floor password open, got %d frames", len(interactOut))
+	}
+	prompt, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, interactOut[0]))
+	if err != nil {
+		t.Fatalf("decode ShowMeSafeboxPassword before post-floor password open: %v", err)
+	}
+	if prompt.Type != chatproto.ChatTypeCommand || prompt.Message != safeboxShowPasswordCommandMessage {
+		t.Fatalf("unexpected password prompt before post-floor password open: %+v", prompt)
+	}
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/safebox_password " + safeboxstore.DefaultPassword,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor /safebox_password dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor /safebox_password to fail closed with no SAFEBOX_SIZE frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor /safebox_password to queue no frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor /safebox_password")
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_here",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here after pending-password floor: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_here recovery frames after pending-password floor, got %d", len(restartOut))
+	}
+	_ = flushServerFrames(t, flow)
+
+	staleOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/safebox_password " + safeboxstore.DefaultPassword,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart stale /safebox_password dispatch error: %v", err)
+	}
+	if len(staleOut) != 0 {
+		t.Fatalf("expected post-restart stale /safebox_password to stay fail-closed until fresh warehouse interact, got %d frames", len(staleOut))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-restart stale /safebox_password to queue no frames, got %d", len(queued))
+	}
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown + time.Nanosecond)
+	rechallengeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: warehouseVID})))
+	if err != nil {
+		t.Fatalf("unexpected warehouse re-interact after restart: %v", err)
+	}
+	if len(rechallengeOut) != 1 {
+		t.Fatalf("expected fresh ShowMeSafeboxPassword after restart, got %d frames", len(rechallengeOut))
+	}
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/safebox_password " + safeboxstore.DefaultPassword,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart fresh /safebox_password open: %v", err)
+	}
+	if len(openOut) < 2 {
+		t.Fatalf("expected SAFEBOX_SIZE + SAFEBOX_MONEY_CHANGE after fresh post-restart password, got %d", len(openOut))
+	}
+	size, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, openOut[0]))
+	if err != nil {
+		t.Fatalf("decode SAFEBOX_SIZE after fresh post-restart password: %v", err)
+	}
+	if size != (itemproto.SafeboxSizePacket{Size: 2}) {
+		t.Fatalf("unexpected SAFEBOX_SIZE after fresh post-restart password: %+v", size)
+	}
 }
 
 func TestGameSessionFlowPostFloorOpenCubeFailsClosed(t *testing.T) {
@@ -310,4 +413,65 @@ func TestGameSessionFlowPostFloorExchangeStartAgainstDeadPartnerFailsClosed(t *t
 		t.Fatalf("expected living-peer EXCHANGE START against dead partner to queue no dead-owner frames, got %d", len(queued))
 	}
 	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "living-peer EXCHANGE START against dead partner")
+}
+
+func newPostFloorSafeboxPasswordRuntime(t *testing.T, login string, loginKey uint32, owner loginticket.Character) (*gameRuntime, accountstore.Store, uint32, uint32) {
+	t.Helper()
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	issuePeerTicket(t, ticketStore, login, loginKey, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed post-floor safebox-password account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	itemStore := newItemTemplateStore(t, nil)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected post-floor safebox-password runtime error: %v", err)
+	}
+
+	bundle := contentbundle.Bundle{
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind: interactionstore.KindOpenSafebox,
+			Ref:  "npc:warehouse",
+			Size: 2,
+		}},
+		StaticActors: []contentbundle.StaticActor{{
+			Name:            "Warehouse",
+			MapIndex:        bootstrapMapIndex,
+			X:               1150,
+			Y:               2150,
+			RaceNum:         20300,
+			InteractionKind: interactionstore.KindOpenSafebox,
+			InteractionRef:  "npc:warehouse",
+		}},
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:           "practice.mob_post_floor_safebox_password",
+			Name:          "PracticeMobPostFloorSafeboxPassword",
+			MapIndex:      bootstrapMapIndex,
+			X:             1200,
+			Y:             2200,
+			RaceNum:       101,
+			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		}},
+	}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import post-floor safebox-password content bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	var targetVID, warehouseVID uint32
+	for _, actor := range actors {
+		switch actor.Name {
+		case "PracticeMobPostFloorSafeboxPassword":
+			targetVID = uint32(actor.EntityID)
+		case "Warehouse":
+			warehouseVID = uint32(actor.EntityID)
+		}
+	}
+	if targetVID == 0 || warehouseVID == 0 {
+		t.Fatalf("expected practice mob and warehouse after post-floor safebox-password import, got %#v", actors)
+	}
+	return runtime, accounts, targetVID, warehouseVID
 }

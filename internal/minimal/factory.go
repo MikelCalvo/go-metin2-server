@@ -7126,6 +7126,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, restartedLive, peerRefreshFrames)
 							activeCharacterPosition = bootstrapCharacterPositionGeneral
 							clearActiveCombatTarget()
+							clearPendingSafeboxPasswordChallenge()
 							setActiveSafeboxOpen(0, false)
 							setActiveRefineDialog(refineDialogPresentation{}, false)
 							setActiveCubeOpen(false, 0)
@@ -7181,6 +7182,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							refreshLiveCharacterRegistration()
 							activeCharacterPosition = bootstrapCharacterPositionGeneral
 							clearActiveCombatTarget()
+							clearPendingSafeboxPasswordChallenge()
 							setActiveSafeboxOpen(0, false)
 							setActiveRefineDialog(refineDialogPresentation{}, false)
 							setActiveCubeOpen(false, 0)
