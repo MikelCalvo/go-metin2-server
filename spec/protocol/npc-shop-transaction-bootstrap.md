@@ -360,6 +360,7 @@ The first host-only accepted open path is now owned on top of the codec + deny-n
 - worn `EquipmentSlotBody` rejects with self-only `CHAT_TYPE_INFO` `You must unequip your armor to open a private shop.`
 - non-empty signs that match the bootstrap banword list reject with self-only `CHAT_TYPE_INFO` `You can't give your shop an invalid name.` after armor and before stock walk, with no bag debit / no open (`docs/plans/2026-08-27-myshop-open-banword-sign-reject.md`)
 - listed `anti_give|anti_myshop` stock rejects with self-only `CHAT_TYPE_INFO` `Cash items cannot be sold in a private shop.`
+- **next frozen (not yet live):** listed `anti_give|anti_myshop` stock may instead emit template-authored `myshop_reject_message` when present; omitted text keeps the fixed English cash-item chat (`docs/plans/2026-08-27-myshop-open-myshop-reject-message.md`)
 - listed locked stock rejects with self-only `CHAT_TYPE_INFO` `Items currently in use cannot be sold in a private shop.`
 - listed equipped stock rejects with self-only `CHAT_TYPE_INFO` `Equipped items cannot be sold in a private shop.` after cash-item and before locked (`docs/plans/2026-08-27-myshop-open-equipped-stock-reject-chat.md`)
 - listed-price gold overflow past `math.MaxInt32` rejects with self-only `CHAT_TYPE_INFO` `You cannot open a private shop because it would exceed 2 Billion Yang.`
@@ -371,7 +372,7 @@ The first host-only accepted open path is now owned on top of the codec + deny-n
 - accepted open also `EnqueueToVisibleSessions` the same live `GC::SHOP_SIGN` bytes to currently visible peer sessions (host still returns bag refresh frames when the ordinary `50200` path ran, otherwise bag-less silk success is exactly one self `SHOP_SIGN`; no second host self sign through the peer queue)
 - guest browse open/leave/buy are owned separately below; exchange open-cube busy rejects are owned separately; MYSHOP/safebox/refine open/confirm cube rejects are owned; cube `r_info`/`r_list`/`m_info` are owned (`docs/plans/2026-08-25-cube-r-info-result-list-implementation.md`, `docs/plans/2026-08-25-cube-m-info-material-info-implementation.md`); craft-slot add/del → `cube info` is owned (`docs/plans/2026-08-25-cube-add-del-slot-binding-implementation.md`); `/cube list` / `/cube cancel` / `/cube close` / make / make-all / percent seams are owned (`docs/plans/2026-08-26-cube-list-cancel.md`); empty-sign close companion is owned separately below; partner open-private-shop exchange busy rejects are owned separately; view-entry rematerialization of a remembered live sign is owned separately below
 
-See `docs/plans/2026-08-23-myshop-accepted-open-presentation-contract-freeze.md`, `docs/plans/2026-08-26-myshop-open-reject-chat-hardening.md`, `docs/plans/2026-08-27-myshop-shop-bag-50200-require-consume.md`, `docs/plans/2026-08-27-myshop-silk-bag-71049-consume-skip.md`, and `docs/plans/2026-08-27-myshop-open-banword-sign-reject.md`.
+See `docs/plans/2026-08-23-myshop-accepted-open-presentation-contract-freeze.md`, `docs/plans/2026-08-26-myshop-open-reject-chat-hardening.md`, `docs/plans/2026-08-27-myshop-shop-bag-50200-require-consume.md`, `docs/plans/2026-08-27-myshop-silk-bag-71049-consume-skip.md`, `docs/plans/2026-08-27-myshop-open-banword-sign-reject.md`, and `docs/plans/2026-08-27-myshop-open-myshop-reject-message.md`.
 
 ### Owned host-only MYSHOP empty-sign close companion seam
 
