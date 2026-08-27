@@ -68,9 +68,10 @@ quarantine existence checks, and insert-only imports succeed together on a real
   [contrib artifact GC-aside purge print helper](2026-08-27-contrib-artifact-gc-aside-purge-print-helper.md)
 - loopback ops mutation endpoint
 - remote admin, secrets in git, metrics/tracing
-- non-empty seeded import payloads in this hermetic drill (empty tip-kind
-  payloads remain the portable gate; seeded non-empty coverage stays owned by
-  per-package `SQLiteHarness*Import` tests)
+- ~~non-empty seeded import payloads in this hermetic drill~~ Done — see
+  [hermetic import-export drill SQLite seeded tree](2026-08-27-hermetic-import-export-drill-sqlite-seeded-tree.md)
+  (empty tip-kind payloads remain the portable gate; per-package
+  `SQLiteHarness*Import` tests still own deeper per-kind insert coverage)
 
 ## Likely files to change
 
