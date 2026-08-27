@@ -2114,6 +2114,17 @@ func (r *Runtime) ConsumeCarriedItems(requirements []CarriedItemConsumeRequireme
 	return r.consumeCarriedItems(requirements, nil)
 }
 
+// HasCarriedItemExcludingSlots reports whether at least one carried unlocked
+// unequipped stack of vnum exists outside exclude. Used by MYSHOP open so a
+// listed stock cell or locked/equipped silk bag cannot unlock the silk path.
+func (r *Runtime) HasCarriedItemExcludingSlots(vnum uint32, exclude map[inventory.SlotIndex]struct{}) bool {
+	if r == nil || vnum == 0 {
+		return false
+	}
+	_, ok := planCarriedItemConsumeChanges(r.liveInventory, []CarriedItemConsumeRequirement{{ItemVnum: vnum, Count: 1}}, exclude)
+	return ok
+}
+
 // ConsumeCarriedItemsExcludingSlots debits by-vnum carried stacks while skipping
 // the given inventory cells. Used by MYSHOP open so a listed stock cell cannot
 // also pay the shop-bag cost.

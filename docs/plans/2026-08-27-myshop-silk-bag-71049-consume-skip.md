@@ -81,5 +81,4 @@ No new INFO chat is invented for the silk path. Success is bag-less
 
 ## Status
 
-Docs/spec freeze only on `lane/items`. Runtime RED/GREEN intentionally deferred
-to the next implementation slice.
+Implemented on `lane/items` together with this freeze.

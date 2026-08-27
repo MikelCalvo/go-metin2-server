@@ -121,6 +121,7 @@ const myShopOpenEquippedItemInfoMessage = "Equipped items cannot be sold in a pr
 const myShopOpenLockedItemInfoMessage = "Items currently in use cannot be sold in a private shop."
 const myShopOpenGoldOverflowInfoMessage = "You cannot open a private shop because it would exceed 2 Billion Yang."
 const myShopOpenShopBagVnum uint32 = 50200
+const myShopOpenSilkBagVnum uint32 = 71049
 const cubeAlreadyOpenInfoMessage = "The Build window is already open."
 const cubeBusyShellInfoMessage = "You cannot build something while another trade/storeroom window is open."
 const cubeMakeInsufficientMaterialsInfoMessage = "You do not have enough materials."
@@ -9140,6 +9141,19 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					listedCells := make(map[inventory.SlotIndex]struct{}, len(stock))
 					for _, row := range stock {
 						listedCells[inventory.SlotIndex(row.Cell)] = struct{}{}
+					}
+					if selectedPlayer.HasCarriedItemExcludingSlots(myShopOpenSilkBagVnum, listedCells) {
+						live := selectedPlayer.LiveCharacter()
+						setActiveMyShopOpen(sign, stock)
+						signFrame := shopproto.EncodeServerShopSign(shopproto.ServerShopSignPacket{
+							VID:  live.VID,
+							Sign: sign,
+						})
+						enqueueMyShopSignAroundBroadcast([][]byte{signFrame})
+						return gameflow.ShopResult{
+							Accepted: true,
+							Frames:   [][]byte{signFrame},
+						}
 					}
 					previousSelected := selectedPlayer.LiveCharacter()
 					bagConsume, ok := selectedPlayer.ConsumeCarriedItemsExcludingSlots(

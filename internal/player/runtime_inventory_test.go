@@ -3014,6 +3014,34 @@ func TestRuntimeConsumeCarriedItemsRemovesAscendingStacksAndSkipsLocked(t *testi
 	}
 }
 
+func TestRuntimeHasCarriedItemExcludingSlotsSkipsLockedEquippedAndExcluded(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = []inventory.ItemInstance{
+		{ID: 1, Vnum: 71049, Count: 1, Slot: 2, Locked: true},
+		{ID: 2, Vnum: 71049, Count: 1, Slot: 3},
+		{ID: 3, Vnum: 71049, Count: 1, Slot: 5, Equipped: true, EquipSlot: inventory.EquipmentSlotBody},
+		{ID: 4, Vnum: 50200, Count: 1, Slot: 6},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	if !runtime.HasCarriedItemExcludingSlots(71049, nil) {
+		t.Fatal("expected unlocked unequipped silk bag to count")
+	}
+	if runtime.HasCarriedItemExcludingSlots(71049, map[inventory.SlotIndex]struct{}{3: {}}) {
+		t.Fatal("expected listed-only silk bag cell to be excluded")
+	}
+	if runtime.HasCarriedItemExcludingSlots(71049, map[inventory.SlotIndex]struct{}{2: {}, 3: {}, 5: {}}) {
+		t.Fatal("expected locked/equipped/listed silk bags to fail closed")
+	}
+	if runtime.HasCarriedItemExcludingSlots(0, nil) {
+		t.Fatal("expected zero vnum to fail closed")
+	}
+	before := cloneItemInstances(runtime.LiveInventory())
+	_ = runtime.HasCarriedItemExcludingSlots(71049, nil)
+	if !reflect.DeepEqual(runtime.LiveInventory(), before) {
+		t.Fatalf("presence check mutated inventory: got %#v want %#v", runtime.LiveInventory(), before)
+	}
+}
+
 func TestRuntimeConsumeCarriedItemsRejectsInsufficientMaterialsWithoutMutation(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	persisted.Inventory = []inventory.ItemInstance{{ID: 1, Vnum: 27001, Count: 1, Slot: 0}}

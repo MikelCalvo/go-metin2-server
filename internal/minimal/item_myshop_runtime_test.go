@@ -409,6 +409,213 @@ func TestGameRuntimeMyShopOpenRejectsListedOnlyShopBagSilentlyWithoutMutation(t 
 	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop listed-only bag")
 }
 
+func TestGameRuntimeMyShopOpenWithSilkBagSkipsShopBagConsume(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopSilk", 0x0103080a, 0x0204080a, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 841, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 842, Vnum: myShopOpenSilkBagVnum, Count: 1, Slot: 3},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	login := "myshop-silk"
+	issuePeerTicket(t, ticketStore, login, 0x7070710a, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop silk account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenSilkBagVnum, Name: "Silk Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop silk runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x7070710a)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      3,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected silk-bag MYSHOP error: %v", err)
+	}
+	assertMyShopOpenSuccessSignOnly(t, out, owner.VID, "silk-bag myshop open")
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected silk-bag MYSHOP to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "silk-bag myshop open leaves inventory unchanged")
+}
+
+func TestGameRuntimeMyShopOpenWithSilkBagPrefersSilkOverShopBagConsume(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopSilkPref", 0x0103080b, 0x0204080b, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 851, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 852, Vnum: myShopOpenSilkBagVnum, Count: 1, Slot: 3},
+		{ID: 853, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	login := "myshop-silk-pref"
+	issuePeerTicket(t, ticketStore, login, 0x7070710b, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop silk-pref account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenSilkBagVnum, Name: "Silk Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop silk-pref runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x7070710b)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      3,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected silk-pref MYSHOP error: %v", err)
+	}
+	assertMyShopOpenSuccessSignOnly(t, out, owner.VID, "silk-pref myshop open")
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "silk path must not debit ordinary shop bag")
+}
+
+func TestGameRuntimeMyShopOpenRejectsListedOnlyOrLockedOnlySilkBagWithoutUnlocking(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		login     string
+		handle    uint32
+		vidBase   uint32
+		inventory []inventory.ItemInstance
+		items     []shopproto.ClientMyShopItem
+		wantOpen  bool
+	}{
+		{
+			name:    "listed-only silk falls through to shop bag consume",
+			login:   "myshop-listed-silk",
+			handle:  0x7070710c,
+			vidBase: 0x0103080c,
+			inventory: []inventory.ItemInstance{
+				{ID: 861, Vnum: 27001, Count: 1, Slot: 5},
+				{ID: 862, Vnum: myShopOpenSilkBagVnum, Count: 1, Slot: 3},
+				{ID: 863, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+			},
+			items: []shopproto.ClientMyShopItem{
+				{Vnum: 27001, Count: 1, Position: itemproto.InventoryPosition(5), Price: 1500, DisplayPos: 0},
+				{Vnum: myShopOpenSilkBagVnum, Count: 1, Position: itemproto.InventoryPosition(3), Price: 100, DisplayPos: 1},
+			},
+			wantOpen: true,
+		},
+		{
+			name:    "locked-only silk falls through to shop bag consume",
+			login:   "myshop-locked-silk",
+			handle:  0x7070710d,
+			vidBase: 0x0103080d,
+			inventory: []inventory.ItemInstance{
+				{ID: 871, Vnum: 27001, Count: 1, Slot: 5},
+				{ID: 872, Vnum: myShopOpenSilkBagVnum, Count: 1, Slot: 3, Locked: true},
+				{ID: 873, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+			},
+			items: []shopproto.ClientMyShopItem{
+				{Vnum: 27001, Count: 1, Position: itemproto.InventoryPosition(5), Price: 1500, DisplayPos: 0},
+			},
+			wantOpen: true,
+		},
+		{
+			name:    "listed-only silk without shop bag stays silent",
+			login:   "myshop-listed-silk-miss",
+			handle:  0x7070710e,
+			vidBase: 0x0103080e,
+			inventory: []inventory.ItemInstance{
+				{ID: 881, Vnum: 27001, Count: 1, Slot: 5},
+				{ID: 882, Vnum: myShopOpenSilkBagVnum, Count: 1, Slot: 3},
+			},
+			items: []shopproto.ClientMyShopItem{
+				{Vnum: 27001, Count: 1, Position: itemproto.InventoryPosition(5), Price: 1500, DisplayPos: 0},
+				{Vnum: myShopOpenSilkBagVnum, Count: 1, Position: itemproto.InventoryPosition(3), Price: 100, DisplayPos: 1},
+			},
+			wantOpen: false,
+		},
+		{
+			name:    "locked-only silk without shop bag stays silent",
+			login:   "myshop-locked-silk-miss",
+			handle:  0x7070710f,
+			vidBase: 0x0103080f,
+			inventory: []inventory.ItemInstance{
+				{ID: 891, Vnum: 27001, Count: 1, Slot: 5},
+				{ID: 892, Vnum: myShopOpenSilkBagVnum, Count: 1, Slot: 3, Locked: true},
+			},
+			items: []shopproto.ClientMyShopItem{
+				{Vnum: 27001, Count: 1, Position: itemproto.InventoryPosition(5), Price: 1500, DisplayPos: 0},
+			},
+			wantOpen: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("MyShopSilkNeg", tc.vidBase, tc.vidBase+0x01010000, 1100, 2100, 0, 101, 201)
+			owner.Gold = 5000
+			owner.Inventory = tc.inventory
+			issuePeerTicket(t, ticketStore, tc.login, tc.handle, owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed %s account: %v", tc.name, err)
+			}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+				{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+				{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+				{Vnum: myShopOpenSilkBagVnum, Name: "Silk Bag", Stackable: true, MaxCount: 200},
+			})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected %s runtime error: %v", tc.name, err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, tc.handle)
+			defer closeSessionFlow(t, flow)
+			_ = flushServerFrames(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+				Sign:  "Private Shop",
+				Items: tc.items,
+			})))
+			if err != nil {
+				t.Fatalf("unexpected %s MYSHOP error: %v", tc.name, err)
+			}
+			if !tc.wantOpen {
+				if len(out) != 0 {
+					t.Fatalf("expected %s MYSHOP to emit no frames, got %d", tc.name, len(out))
+				}
+				assertExchangeAccountUnchanged(t, accounts, tc.login, owner, tc.name)
+				return
+			}
+			assertMyShopOpenSuccessBagAndSign(t, out, owner.VID, 4, tc.name)
+			assertExchangeAccountUnchanged(t, accounts, tc.login, characterAfterMyShopBagConsume(owner), tc.name)
+		})
+	}
+}
+
 func TestGameRuntimeMyShopOpenBusyShellRejectsWithInfoChatWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -713,6 +920,24 @@ func assertMyShopOpenSuccessBagAndSign(t *testing.T, out [][]byte, wantVID uint3
 	assertMyShopOpenSuccessBagAndSignWithText(t, out, wantVID, "Private Shop", bagSlot, context)
 }
 
+func assertMyShopOpenSuccessSignOnly(t *testing.T, out [][]byte, wantVID uint32, context string) {
+	assertMyShopOpenSuccessSignOnlyWithText(t, out, wantVID, "Private Shop", context)
+}
+
+func assertMyShopOpenSuccessSignOnlyWithText(t *testing.T, out [][]byte, wantVID uint32, wantSign string, context string) {
+	t.Helper()
+	if len(out) != 1 {
+		t.Fatalf("expected %s MYSHOP to emit exactly one SHOP_SIGN with no bag refresh, got %d", context, len(out))
+	}
+	sign, err := shopproto.DecodeServerShopSign(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode %s MYSHOP SHOP_SIGN: %v", context, err)
+	}
+	if sign.VID != wantVID || sign.Sign != wantSign {
+		t.Fatalf("unexpected %s MYSHOP SHOP_SIGN: %+v", context, sign)
+	}
+}
+
 func assertMyShopOpenSuccessBagAndSignWithText(t *testing.T, out [][]byte, wantVID uint32, wantSign string, bagSlot uint16, context string) {
 	t.Helper()
 	if len(out) < 2 {
@@ -737,6 +962,7 @@ func assertMyShopOpenSuccessBagAndSignWithText(t *testing.T, out [][]byte, wantV
 func characterAfterMyShopBagConsume(character loginticket.Character) loginticket.Character {
 	updated := character
 	updated.Inventory = cloneItemInstancesWithoutVnum(character.Inventory, myShopOpenShopBagVnum)
+	sortInventoryItemsBySlot(updated.Inventory)
 	updated.Quickslots = cloneQuickslotsWithoutItemSlot(character.Quickslots, character.Inventory, myShopOpenShopBagVnum)
 	return updated
 }
