@@ -201,3 +201,7 @@ Do not use this runbook to justify:
 - treating `apply-audit-status` as proof that a database is currently migrated; it validates a retained metadata artifact only.
 - treating `ledger-snapshot-status` as proof that a live database still matches the retained snapshot; it validates a retained offline artifact against the embedded catalog only.
 - treating `apply --apply-preflight` as a substitute for deployment-specific DB/file-store backup validation or transaction-local ledger verification.
+
+## Related: quarantined export SQL import
+
+After schema migrations are applied, operators can backfill retained migration-shaped exports with `metin2-migrate import-export --kind <kind> --export <path> --driver <driver> --dsn <dsn> --i-confirm-sql-import`. This reuses the programmatic `Import*` seams (insert-only, no upsert) and still does not register a stock production driver. See [CLI import-export](../plans/2026-08-27-cli-import-export.md).

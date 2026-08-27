@@ -48,6 +48,10 @@ const (
 // operator-supplied database driver, DSN, strict offline ledger snapshot, and
 // target version, and it remains deliberately separate from daemon startup and
 // local ops endpoints.
+// import-export is a second CLI-only mutation surface: it requires an
+// operator-supplied database driver, DSN, retained migration-shaped export, and
+// --i-confirm-sql-import, then dispatches to the landed programmatic Import*
+// seams without inventing upsert policy or registering a stock production driver.
 // apply-lock-aside is a separate confirmation-gated local filesystem mutation: it
 // only aside-renames a leftover apply lock after recomputing the lab stale-lock
 // gate and never opens a database target.
@@ -105,6 +109,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runApply(args[1:], stdin, stdout, stderr)
 	case "quarantine-export":
 		return runQuarantineExport(args[1:], stdin, stdout, stderr)
+	case "import-export":
+		return runImportExport(args[1:], stdin, stdout, stderr)
 	case "export-quarantine-drill":
 		return runExportQuarantineDrill(args[1:], stdin, stdout, stderr)
 	case "backup-restore-drill":
@@ -2129,6 +2135,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  apply-audit-status     inspect a migration apply audit file without mutating it")
 	fmt.Fprintln(w, "  apply                  apply a target plan using a database/sql driver and offline ledger snapshot")
 	fmt.Fprintln(w, "  quarantine-export      validate and canonicalize a retained migration-shaped export offline")
+	fmt.Fprintln(w, "  import-export          import a retained migration-shaped export through the programmatic SQL import seams")
 	fmt.Fprintln(w, "  export-quarantine-drill print path-aware lab export retention + offline quarantine-export commands from build-info")
 	fmt.Fprintln(w, "  backup-restore-drill   print path-aware lab backup retention + file-store drill commands from runtime-config and build-info")
 	fmt.Fprintln(w, "  migration-run-retention print path-aware migration-runs retention + correlation checklist commands from build-info")
@@ -2165,6 +2172,8 @@ func printUsage(w io.Writer) {
 	printApplyUsage(w)
 	fmt.Fprintln(w, "")
 	printQuarantineExportUsage(w)
+	fmt.Fprintln(w, "")
+	printImportExportUsage(w)
 	fmt.Fprintln(w, "")
 	printExportQuarantineDrillUsage(w)
 	fmt.Fprintln(w, "")
