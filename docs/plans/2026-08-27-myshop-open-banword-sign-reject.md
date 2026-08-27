@@ -79,5 +79,8 @@ copy oracle source comments or Korean keys into runtime code.
 
 ## Status
 
-Docs/spec freeze only on `lane/items`. Runtime RED/GREEN intentionally deferred
-to the next implementation slice.
+Implemented on `lane/items`: host-only `CG::MYSHOP` open rejects bootstrap
+banword sign hits with self-only INFO
+`You can't give your shop an invalid name.` after armor and before stock walk,
+with no bag debit / no `SHOP_SIGN`. Canada skip / DB banword reload /
+quest-running / `MYSHOP_PRICELIST` stay deferred.

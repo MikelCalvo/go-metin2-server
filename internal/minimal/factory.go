@@ -122,6 +122,8 @@ const myShopOpenLockedItemInfoMessage = "Items currently in use cannot be sold i
 const myShopOpenGoldOverflowInfoMessage = "You cannot open a private shop because it would exceed 2 Billion Yang."
 const myShopOpenShopBagVnum uint32 = 50200
 const myShopOpenSilkBagVnum uint32 = 71049
+
+// myShopOpenBanwordInfoMessage lives in myshop_banword.go beside the bootstrap list.
 const cubeAlreadyOpenInfoMessage = "The Build window is already open."
 const cubeBusyShellInfoMessage = "You cannot build something while another trade/storeroom window is open."
 const cubeMakeInsufficientMaterialsInfoMessage = "You do not have enough materials."
@@ -9051,6 +9053,17 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								VID:     0,
 								Empire:  0,
 								Message: myShopOpenArmorRequiredInfoMessage,
+							})},
+						}
+					}
+					if myShopOpenSignContainsBanword(sign) {
+						return gameflow.ShopResult{
+							Accepted: true,
+							Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+								Type:    chatproto.ChatTypeInfo,
+								VID:     0,
+								Empire:  0,
+								Message: myShopOpenBanwordInfoMessage,
 							})},
 						}
 					}

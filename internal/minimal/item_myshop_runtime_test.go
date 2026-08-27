@@ -254,6 +254,206 @@ func TestGameRuntimeMyShopOpenRejectsWornBodyArmorWithInfoChatWithoutMutation(t 
 	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop armor reject")
 }
 
+func TestGameRuntimeMyShopOpenRejectsBanwordSignWithInfoChatWithoutMutation(t *testing.T) {
+	cleanup := SetMyShopOpenBanwordsForTest([]string{"banme", "금지어"})
+	defer cleanup()
+
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopBanword", 0x01030812, 0x02040812, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 912, Vnum: 27001, Count: 1, Slot: 5},
+		{ID: 913, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+		{ID: 914, Vnum: myShopOpenSilkBagVnum, Count: 1, Slot: 3},
+	}
+	login := "myshop-banword"
+	issuePeerTicket(t, ticketStore, login, 0x70707112, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop banword account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenSilkBagVnum, Name: "Silk Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop banword runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707112)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	for _, tc := range []struct {
+		name string
+		sign string
+	}{
+		{name: "ascii substring", sign: "My banme Shop"},
+		{name: "multibyte substring", sign: "상점 금지어"},
+	} {
+		out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+			Sign: tc.sign,
+			Items: []shopproto.ClientMyShopItem{{
+				Vnum:       27001,
+				Count:      1,
+				Position:   itemproto.InventoryPosition(5),
+				Price:      1500,
+				DisplayPos: 0,
+			}},
+		})))
+		if err != nil {
+			t.Fatalf("unexpected %s MYSHOP error: %v", tc.name, err)
+		}
+		assertMyShopOpenRejectInfoChat(t, out, myShopOpenBanwordInfoMessage, tc.name)
+		if queued := flushServerFrames(t, flow); len(queued) != 0 {
+			t.Fatalf("expected %s banword reject to queue no peer frames, got %d", tc.name, len(queued))
+		}
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop banword rejects")
+}
+
+func TestGameRuntimeMyShopOpenBanwordGateFiresAfterArmorAndBeforeStock(t *testing.T) {
+	cleanup := SetMyShopOpenBanwordsForTest([]string{"banme"})
+	defer cleanup()
+
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopBanOrder", 0x01030813, 0x02040813, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 920, Vnum: 27001, Count: 1, Slot: 5},
+		{ID: 921, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	owner.Equipment = []inventory.ItemInstance{{ID: 922, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}}
+	login := "myshop-ban-order"
+	issuePeerTicket(t, ticketStore, login, 0x70707113, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop ban-order account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: 11200, Name: "Shop Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop ban-order runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707113)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "My banme Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      1,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected armor-before-banword MYSHOP error: %v", err)
+	}
+	assertMyShopOpenRejectInfoChat(t, out, myShopOpenArmorRequiredInfoMessage, "armor must win before banword")
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop armor-before-banword")
+}
+
+func TestGameRuntimeMyShopOpenEmptyBanwordListAllowsCleanAndWouldBeBannedSigns(t *testing.T) {
+	cleanup := SetMyShopOpenBanwordsForTest([]string{})
+	defer cleanup()
+
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopBanEmpty", 0x01030814, 0x02040814, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 930, Vnum: 27001, Count: 1, Slot: 5},
+		{ID: 931, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	login := "myshop-ban-empty"
+	issuePeerTicket(t, ticketStore, login, 0x70707114, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop ban-empty account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop ban-empty runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707114)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "My banme Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      1,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected empty-banword-list MYSHOP error: %v", err)
+	}
+	assertMyShopOpenSuccessBagAndSignWithText(t, out, owner.VID, "My banme Shop", 4, "empty banword list must allow open")
+	want := characterAfterMyShopBagConsume(owner)
+	assertExchangeAccountUnchanged(t, accounts, login, want, "empty banword list accepted open")
+}
+
+func TestGameRuntimeMyShopOpenCleanSignStillOpensAfterBanwordGate(t *testing.T) {
+	cleanup := SetMyShopOpenBanwordsForTest([]string{"banme", "금지어"})
+	defer cleanup()
+
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopBanClean", 0x01030815, 0x02040815, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 940, Vnum: 27001, Count: 1, Slot: 5},
+		{ID: 941, Vnum: myShopOpenSilkBagVnum, Count: 1, Slot: 3},
+	}
+	login := "myshop-ban-clean"
+	issuePeerTicket(t, ticketStore, login, 0x70707115, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop ban-clean account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenSilkBagVnum, Name: "Silk Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop ban-clean runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707115)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      1,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected clean-sign MYSHOP error: %v", err)
+	}
+	assertMyShopOpenSuccessSignOnly(t, out, owner.VID, "clean sign after banword gate")
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "clean sign silk open after banword gate")
+}
+
 func TestGameRuntimeMyShopOpenRejectsEquippedStockWithInfoChatWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
