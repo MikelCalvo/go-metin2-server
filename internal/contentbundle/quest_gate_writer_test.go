@@ -44,6 +44,23 @@ func TestCanonicalizeRejectsServiceQuestGateWithoutInBundleWriter(t *testing.T) 
 	}
 }
 
+func TestCanonicalizeRejectsPartialServiceQuestGate(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		StaticActors: []StaticActor{
+			{Name: "GatedGuide", MapIndex: 1, X: 469400, Y: 964200, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:gated_guide"},
+		},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:     interactionstore.KindTalk,
+			Ref:      "npc:gated_guide",
+			Text:     "Welcome.",
+			QuestRef: "quest:first_steps",
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for partial service quest gate, got %v", err)
+	}
+}
+
 func TestCanonicalizeAcceptsServiceQuestGateWhenQuestFlagWriterPresent(t *testing.T) {
 	if _, err := Canonicalize(Bundle{
 		StaticActors: []StaticActor{
