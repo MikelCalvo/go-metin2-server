@@ -1141,10 +1141,276 @@ func TestGameRuntimeMyShopOpenBusyShellRejectsWithInfoChatWithoutMutation(t *tes
 		t.Fatalf("unexpected accepted MYSHOP after busy clears: %v", err)
 	}
 	assertMyShopOpenSuccessBagAndSign(t, acceptedOut, owner.VID, 4, `expected accepted MYSHOP after busy clears to emit one SHOP_SIGN frame, got %d`)
-	assertMyShopBusyReject(t, flow, openPacket, "already-open myshop busy")
+	_ = flushServerFrames(t, peerFlow)
+
+	secondOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(openPacket)))
+	if err != nil {
+		t.Fatalf("unexpected already-open second MYSHOP after busy clears: %v", err)
+	}
+	if len(secondOut) != 1 {
+		t.Fatalf("expected already-open second MYSHOP to emit one empty SHOP_SIGN, got %d", len(secondOut))
+	}
+	assertMyShopEmptySignFrame(t, secondOut[0], owner.VID, "already-open second MYSHOP after busy clears")
+	peerQueued := flushServerFrames(t, peerFlow)
+	if len(peerQueued) != 1 {
+		t.Fatalf("expected already-open second MYSHOP to around-broadcast one empty SHOP_SIGN to peer, got %d", len(peerQueued))
+	}
+	assertMyShopEmptySignFrame(t, peerQueued[0], owner.VID, "already-open second MYSHOP peer around-broadcast")
 
 	assertExchangeAccountUnchanged(t, accounts, login, characterAfterMyShopBagConsume(owner), "myshop busy rejects")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop busy peer")
+}
+
+func TestGameRuntimeMyShopAlreadyOpenSecondOpenClearsWithEmptySignWithoutBagRefund(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopSecondOpen", 0x010308d1, 0x020408d1, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1901, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 1951, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	peer := peerVisibilityCharacter("MyShopSecondOpenPeer", 0x010308d2, 0x020408d2, 1120, 2120, 0, 101, 201)
+	login := "myshop-second-open"
+	peerLogin := "myshop-second-open-peer"
+	issuePeerTicket(t, ticketStore, login, 0x707071d1, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707071d2, peer)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop second-open account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed myshop second-open peer account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop second-open runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707071d1)
+	defer closeSessionFlow(t, flow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707071d2)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, flow)
+	_ = flushServerFrames(t, peerFlow)
+
+	openPacket := shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:     27001,
+			Count:    3,
+			Position: itemproto.InventoryPosition(5),
+			Price:    1500,
+		}},
+	}
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(openPacket)))
+	if err != nil {
+		t.Fatalf("unexpected first MYSHOP open: %v", err)
+	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `expected first MYSHOP to emit bag refresh then SHOP_SIGN, got %d`)
+	_ = flushServerFrames(t, peerFlow)
+
+	afterOpen := characterAfterMyShopBagConsume(owner)
+	assertExchangeAccountUnchanged(t, accounts, login, afterOpen, "myshop second-open after first open")
+
+	secondOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(openPacket)))
+	if err != nil {
+		t.Fatalf("unexpected second MYSHOP open: %v", err)
+	}
+	if len(secondOut) != 1 {
+		t.Fatalf("expected second MYSHOP to emit one empty SHOP_SIGN, got %d", len(secondOut))
+	}
+	assertMyShopEmptySignFrame(t, secondOut[0], owner.VID, "second MYSHOP empty sign")
+	peerQueued := flushServerFrames(t, peerFlow)
+	if len(peerQueued) != 1 {
+		t.Fatalf("expected second MYSHOP to around-broadcast one empty SHOP_SIGN, got %d", len(peerQueued))
+	}
+	assertMyShopEmptySignFrame(t, peerQueued[0], owner.VID, "second MYSHOP peer empty sign")
+	assertExchangeAccountUnchanged(t, accounts, login, afterOpen, "myshop second-open no bag refund")
+
+	alreadyClosedOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/close_myshop",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /close_myshop after second-open clear: %v", err)
+	}
+	if len(alreadyClosedOut) != 0 {
+		t.Fatalf("expected /close_myshop after second-open clear to stay silent, got %d", len(alreadyClosedOut))
+	}
+
+	reopenSeed := afterOpen
+	reopenSeed.Inventory = append(cloneInventoryItems(afterOpen.Inventory), inventory.ItemInstance{
+		ID: 1952, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4,
+	})
+	sortInventoryItemsBySlot(reopenSeed.Inventory)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{reopenSeed})}); err != nil {
+		t.Fatalf("persist myshop second-open reopen bag seed: %v", err)
+	}
+	if !runtime.applyLiveCharacterPersistedSnapshot(owner.Name, reopenSeed) {
+		t.Fatal("expected live reopen bag seed after second-open clear")
+	}
+
+	reopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(openPacket)))
+	if err != nil {
+		t.Fatalf("unexpected reopen MYSHOP after second-open clear: %v", err)
+	}
+	assertMyShopOpenSuccessBagAndSign(t, reopenOut, owner.VID, 4, `expected reopen MYSHOP after second-open clear to emit bag refresh then SHOP_SIGN, got %d`)
+	assertExchangeAccountUnchanged(t, accounts, login, characterAfterMyShopBagConsume(reopenSeed), "myshop second-open reopen")
+}
+
+func TestGameRuntimeMyShopAlreadyOpenSecondOpenKeepsArmorRejectBeforeClose(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopSecondArmor", 0x010308d3, 0x020408d3, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1911, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 1961, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	login := "myshop-second-armor"
+	issuePeerTicket(t, ticketStore, login, 0x707071d3, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop second-armor account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: 11200, Name: "Shop Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop second-armor runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707071d3)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	openPacket := shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:     27001,
+			Count:    3,
+			Position: itemproto.InventoryPosition(5),
+			Price:    1500,
+		}},
+	}
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(openPacket)))
+	if err != nil {
+		t.Fatalf("unexpected first MYSHOP open before armor second-open: %v", err)
+	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `expected first MYSHOP before armor second-open to emit bag refresh then SHOP_SIGN, got %d`)
+	afterOpen := characterAfterMyShopBagConsume(owner)
+
+	// Inject worn body armor into the still-open live session (host item
+	// mutation stays locked while MYSHOP is open, so this uses the live
+	// snapshotter hook already owned by exchange/drop drift proofs).
+	armored := afterOpen
+	armored.Equipment = []inventory.ItemInstance{{
+		ID: 1921, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody,
+	}}
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{armored})}); err != nil {
+		t.Fatalf("persist armored myshop second-open account: %v", err)
+	}
+	if !runtime.applyLiveCharacterPersistedSnapshot(owner.Name, armored) {
+		t.Fatal("expected live armored snapshot inject while MYSHOP stays open")
+	}
+
+	secondOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(openPacket)))
+	if err != nil {
+		t.Fatalf("unexpected armored already-open second MYSHOP: %v", err)
+	}
+	assertMyShopOpenRejectInfoChat(t, secondOut, myShopOpenArmorRequiredInfoMessage, "armor must win before already-open empty-sign close")
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected armored already-open second MYSHOP to queue no peer frames, got %d", len(queued))
+	}
+
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/close_myshop",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /close_myshop after armored second-open reject: %v", err)
+	}
+	if len(closeOut) != 1 {
+		t.Fatalf("expected /close_myshop after armored second-open reject to emit one empty SHOP_SIGN, got %d", len(closeOut))
+	}
+	assertMyShopEmptySignFrame(t, closeOut[0], owner.VID, "close after armored second-open reject")
+	assertExchangeAccountUnchanged(t, accounts, login, armored, "myshop second-armor armored second-open")
+}
+
+func TestGameRuntimeMyShopAlreadyOpenEmptySignOrZeroCountSecondPacketStaysSilent(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopSecondSilent", 0x010308d4, 0x020408d4, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1931, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 1981, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	login := "myshop-second-silent"
+	issuePeerTicket(t, ticketStore, login, 0x707071d4, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop second-silent account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop second-silent runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707071d4)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	openPacket := shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:     27001,
+			Count:    3,
+			Position: itemproto.InventoryPosition(5),
+			Price:    1500,
+		}},
+	}
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(openPacket)))
+	if err != nil {
+		t.Fatalf("unexpected first MYSHOP open before silent second packets: %v", err)
+	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, `expected first MYSHOP before silent second packets to emit bag refresh then SHOP_SIGN, got %d`)
+	afterOpen := characterAfterMyShopBagConsume(owner)
+
+	for _, tc := range []struct {
+		name string
+		pkt  shopproto.ClientMyShopPacket
+	}{
+		{name: "empty sign", pkt: shopproto.ClientMyShopPacket{Sign: "", Items: []shopproto.ClientMyShopItem{{Vnum: 27001, Count: 3, Position: itemproto.InventoryPosition(5), Price: 1500}}}},
+		{name: "zero count", pkt: shopproto.ClientMyShopPacket{Sign: "Private Shop"}},
+	} {
+		out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(tc.pkt)))
+		if err != nil {
+			t.Fatalf("unexpected %s second MYSHOP error: %v", tc.name, err)
+		}
+		if len(out) != 0 {
+			t.Fatalf("expected %s second MYSHOP to stay silent while open, got %d", tc.name, len(out))
+		}
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, afterOpen, "myshop second-silent while open")
+
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/close_myshop",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /close_myshop after silent second packets: %v", err)
+	}
+	if len(closeOut) != 1 {
+		t.Fatalf("expected /close_myshop after silent second packets to emit one empty SHOP_SIGN, got %d", len(closeOut))
+	}
+	assertMyShopEmptySignFrame(t, closeOut[0], owner.VID, "close after silent second packets")
 }
 
 func TestGameRuntimeMyShopOpenRejectsActiveCubeWithoutMutation(t *testing.T) {

@@ -9036,7 +9036,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if strings.TrimSpace(sign) == "" || len(packet.Items) == 0 {
 						return gameflow.ShopResult{Accepted: false}
 					}
-					if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveMyShopOpen || hasActiveCubeOpen || sharedWorld.hasActiveExchange(sharedWorldID) {
+					if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveCubeOpen || sharedWorld.hasActiveExchange(sharedWorldID) {
 						return gameflow.ShopResult{
 							Accepted: true,
 							Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
@@ -9056,6 +9056,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								Empire:  0,
 								Message: myShopOpenArmorRequiredInfoMessage,
 							})},
+						}
+					}
+					if hasActiveMyShopOpen {
+						return gameflow.ShopResult{
+							Accepted: true,
+							Frames:   closeActiveMyShopOpenFrames(),
 						}
 					}
 					var listedPriceSum uint64

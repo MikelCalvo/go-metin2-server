@@ -81,5 +81,8 @@ into runtime code.
 
 ## Status
 
-Docs/spec freeze only on `lane/items`. Runtime RED/GREEN intentionally deferred
-to the next implementation slice.
+Shipped on `lane/items`: runtime now clears already-open second `CG::MYSHOP`
+with the owned empty-sign companion after other busy shells and body-armor,
+before gold/banword/stock. Focused proofs cover empty-sign close + peer fanout
+with no bag refund, armor-before-close ordering, and silent empty-sign/zero-count
+second packets while open.
