@@ -1,0 +1,20 @@
+{
+  "static_actors": [
+    {
+      "name": "DanglingGuard",
+      "map_index": 1,
+      "x": 469400,
+      "y": 964200,
+      "race_num": 20302,
+      "interaction_kind": "talk",
+      "interaction_ref": "npc:dangling_guard"
+    }
+  ],
+  "interaction_definitions": [
+    {
+      "kind": "info",
+      "ref": "lore:alchemist",
+      "text": "The alchemist studies forgotten herbs."
+    }
+  ]
+}

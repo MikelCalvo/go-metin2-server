@@ -132,5 +132,6 @@ After this slice, the repository should be able to say:
 - `gamed` now loads that catalog before boot-restoring persisted static actors and before accepting new interaction metadata on static-actor create/update paths
 - loopback-only CRUD endpoints now author that catalog while preserving stable `kind + ref` identity on update and rejecting deletes for referenced definitions
 - static actors that point at missing interaction definitions are now rejected fail closed at boot and on runtime create/update
+- content-bundle canonicalization likewise rejects dangling interaction refs before import; the checked-in negative fixture `docs/examples/bootstrap-invalid-dangling-interaction-ref-bundle.json` is the preferred `/local/content-bundle/validate` dry-run for that reject without improvising JSON
 - visible actors can now answer the interacting player with self-only `info` / `talk`, can apply one persisted selected-character `quest_flag`, can reuse the same metadata seam for the current merchant-window `shop_preview` flow, and can still power QA/debug preview rendering without redesigning the actor model first
 - the same metadata seam now also powers the current service-style NPC `warp` interaction family
