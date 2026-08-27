@@ -95,6 +95,23 @@ func TestCanonicalizeRejectsOrphanServiceQuestFrom(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeRejectsOrphanServiceQuestTo(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		StaticActors: []StaticActor{
+			{Name: "OrphanQuestToGuide", MapIndex: 1, X: 469400, Y: 964200, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:orphan_quest_to_guide"},
+		},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:    interactionstore.KindTalk,
+			Ref:     "npc:orphan_quest_to_guide",
+			Text:    "Welcome.",
+			QuestTo: 1,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for orphan service quest_to, got %v", err)
+	}
+}
+
 func TestCanonicalizeAcceptsServiceQuestGateWhenQuestFlagWriterPresent(t *testing.T) {
 	if _, err := Canonicalize(Bundle{
 		StaticActors: []StaticActor{

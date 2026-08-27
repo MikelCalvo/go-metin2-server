@@ -855,6 +855,14 @@ func TestFileStoreRejectsInvalidQuestGatedServiceDefinitions(t *testing.T) {
 			name:       "ungated talk with orphan quest_from",
 			definition: Definition{Kind: KindTalk, Ref: "npc:guide", Text: "Welcome.", QuestFrom: 1},
 		},
+		{
+			name:       "ungated talk with orphan quest_to",
+			definition: Definition{Kind: KindTalk, Ref: "npc:guide", Text: "Welcome.", QuestTo: 1},
+		},
+		{
+			name:       "ungated warp with orphan quest_to",
+			definition: Definition{Kind: KindWarp, Ref: "npc:teleporter", Text: "Step through the gate.", MapIndex: 42, X: 1700, Y: 2800, QuestTo: 1},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

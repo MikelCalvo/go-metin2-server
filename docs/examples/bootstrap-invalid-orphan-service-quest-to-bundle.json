@@ -1,0 +1,21 @@
+{
+  "static_actors": [
+    {
+      "name": "OrphanQuestToGuide",
+      "map_index": 1,
+      "x": 469400,
+      "y": 964200,
+      "race_num": 20302,
+      "interaction_kind": "talk",
+      "interaction_ref": "npc:orphan_quest_to_guide"
+    }
+  ],
+  "interaction_definitions": [
+    {
+      "kind": "talk",
+      "ref": "npc:orphan_quest_to_guide",
+      "text": "Welcome.",
+      "quest_to": 1
+    }
+  ]
+}
