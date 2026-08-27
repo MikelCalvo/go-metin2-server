@@ -117,6 +117,7 @@ const exchangeFinalizeSuccessInfoMessageFormat = "The trade with %s has been suc
 const myShopGuestBuyTooFarInfoMessage = "You are too far away from the shop to buy something."
 const myShopOpenArmorRequiredInfoMessage = "You must unequip your armor to open a private shop."
 const myShopOpenCashItemInfoMessage = "Cash items cannot be sold in a private shop."
+const myShopOpenEquippedItemInfoMessage = "Equipped items cannot be sold in a private shop."
 const myShopOpenLockedItemInfoMessage = "Items currently in use cannot be sold in a private shop."
 const myShopOpenGoldOverflowInfoMessage = "You cannot open a private shop because it would exceed 2 Billion Yang."
 const myShopOpenShopBagVnum uint32 = 50200
@@ -9058,23 +9059,29 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					var listedPriceSum uint64
 					liveGold := selectedPlayer.LiveGold()
 					for _, stockItem := range packet.Items {
-						if stockItem.Price == 0 || stockItem.Position.WindowType != itemproto.WindowInventory || stockItem.Position.Cell >= itemproto.InventoryMaxCell {
+						if stockItem.Price == 0 {
+							return gameflow.ShopResult{Accepted: false}
+						}
+						liveItem, stockCell, equippedStock, ok := resolveMyShopOpenStockItem(selectedPlayer, stockItem.Position)
+						if !ok {
 							return gameflow.ShopResult{Accepted: false}
 						}
 						if int(stockItem.DisplayPos) >= shopproto.ShopHostItemMax {
 							return gameflow.ShopResult{Accepted: false}
 						}
-						if _, exists := seenCells[stockItem.Position.Cell]; exists {
+						if _, exists := seenCells[stockCell]; exists {
 							return gameflow.ShopResult{Accepted: false}
 						}
 						if _, exists := seenDisplay[stockItem.DisplayPos]; exists {
 							return gameflow.ShopResult{Accepted: false}
 						}
-						seenCells[stockItem.Position.Cell] = struct{}{}
+						seenCells[stockCell] = struct{}{}
 						seenDisplay[stockItem.DisplayPos] = struct{}{}
-						slot := inventory.SlotIndex(stockItem.Position.Cell)
-						template, ok := runtime.resolveRuntimeItemTemplate(selectedPlayer, slot)
-						if !ok {
+						template, ok := runtime.itemTemplates[liveItem.Vnum]
+						if !ok || !itemcatalog.ValidTemplate(template) {
+							return gameflow.ShopResult{Accepted: false}
+						}
+						if liveItem.Count == 0 || liveItem.Vnum != stockItem.Vnum || liveItem.Count != uint16(stockItem.Count) || liveItem.Count > template.MaxCount {
 							return gameflow.ShopResult{Accepted: false}
 						}
 						if template.AntiGive || template.AntiMyShop {
@@ -9088,30 +9095,27 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								})},
 							}
 						}
-						found := false
-						for _, item := range selectedPlayer.LiveInventory() {
-							if item.Equipped || item.Slot != slot {
-								continue
+						if equippedStock || liveItem.Equipped {
+							return gameflow.ShopResult{
+								Accepted: true,
+								Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+									Type:    chatproto.ChatTypeInfo,
+									VID:     0,
+									Empire:  0,
+									Message: myShopOpenEquippedItemInfoMessage,
+								})},
 							}
-							if item.Count == 0 || item.Vnum != stockItem.Vnum || item.Count != uint16(stockItem.Count) || item.Count > template.MaxCount {
-								return gameflow.ShopResult{Accepted: false}
-							}
-							if item.Locked {
-								return gameflow.ShopResult{
-									Accepted: true,
-									Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
-										Type:    chatproto.ChatTypeInfo,
-										VID:     0,
-										Empire:  0,
-										Message: myShopOpenLockedItemInfoMessage,
-									})},
-								}
-							}
-							found = true
-							break
 						}
-						if !found {
-							return gameflow.ShopResult{Accepted: false}
+						if liveItem.Locked {
+							return gameflow.ShopResult{
+								Accepted: true,
+								Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+									Type:    chatproto.ChatTypeInfo,
+									VID:     0,
+									Empire:  0,
+									Message: myShopOpenLockedItemInfoMessage,
+								})},
+							}
 						}
 						listedPriceSum += uint64(stockItem.Price)
 						if liveGold+listedPriceSum > uint64(math.MaxInt32) {
@@ -9130,7 +9134,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							Vnum:       stockItem.Vnum,
 							Count:      stockItem.Count,
 							Price:      stockItem.Price,
-							Cell:       stockItem.Position.Cell,
+							Cell:       stockCell,
 						})
 					}
 					listedCells := make(map[inventory.SlotIndex]struct{}, len(stock))
@@ -12453,6 +12457,59 @@ func (r *gameRuntime) resolveRuntimeUseTemplate(selectedPlayer *player.Runtime, 
 		return itemcatalog.Template{}, false
 	}
 	return template, true
+}
+
+func resolveMyShopOpenStockItem(selectedPlayer *player.Runtime, position itemproto.Position) (inventory.ItemInstance, uint16, bool, bool) {
+	if selectedPlayer == nil {
+		return inventory.ItemInstance{}, 0, false, false
+	}
+	switch position.WindowType {
+	case itemproto.WindowInventory:
+		if position.Cell >= itemproto.InventoryMaxCell {
+			// Legacy combined inventory namespace: wear cells are InventoryMaxCell+wearIndex.
+			wearIndex := position.Cell - itemproto.InventoryMaxCell
+			equipSlot, ok := equipmentBootstrapSlot(wearIndex)
+			if !ok {
+				return inventory.ItemInstance{}, 0, false, false
+			}
+			for _, item := range selectedPlayer.LiveEquipment() {
+				if !item.Equipped || item.EquipSlot != equipSlot {
+					continue
+				}
+				return item, position.Cell, true, true
+			}
+			return inventory.ItemInstance{}, 0, false, false
+		}
+		slot := inventory.SlotIndex(position.Cell)
+		for _, item := range selectedPlayer.LiveInventory() {
+			if item.Equipped || item.Slot != slot {
+				continue
+			}
+			return item, position.Cell, false, true
+		}
+		for _, item := range selectedPlayer.LiveInventory() {
+			if !item.Equipped || item.Slot != slot {
+				continue
+			}
+			return item, position.Cell, true, true
+		}
+		return inventory.ItemInstance{}, 0, false, false
+	case itemproto.WindowEquipment:
+		equipSlot, ok := equipmentBootstrapSlot(position.Cell)
+		if !ok {
+			return inventory.ItemInstance{}, 0, false, false
+		}
+		for _, item := range selectedPlayer.LiveEquipment() {
+			if !item.Equipped || item.EquipSlot != equipSlot {
+				continue
+			}
+			stockCell := itemproto.InventoryMaxCell + position.Cell
+			return item, stockCell, true, true
+		}
+		return inventory.ItemInstance{}, 0, false, false
+	default:
+		return inventory.ItemInstance{}, 0, false, false
+	}
 }
 
 func (r *gameRuntime) resolveRuntimeItemTemplate(selectedPlayer *player.Runtime, slot inventory.SlotIndex) (itemcatalog.Template, bool) {

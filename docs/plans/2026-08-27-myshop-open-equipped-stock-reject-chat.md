@@ -71,5 +71,6 @@ cash-item / locked / gold-overflow freezes). Do not copy oracle source strings.
 
 ## Status
 
-Docs/spec freeze only on `lane/items`. Runtime RED/GREEN intentionally deferred
-to the next implementation slice.
+Implemented on `lane/items`: listed equipped / equipment-window stock rejects
+with self-only INFO chat after cash-item and before locked; no bag debit / no
+`SHOP_SIGN`; silk-bag `71049` and other deferred open gates stay out of scope.

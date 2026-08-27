@@ -254,6 +254,78 @@ func TestGameRuntimeMyShopOpenRejectsWornBodyArmorWithInfoChatWithoutMutation(t 
 	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop armor reject")
 }
 
+func TestGameRuntimeMyShopOpenRejectsEquippedStockWithInfoChatWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopEquipped", 0x0103080a, 0x0204080a, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 840, Vnum: 27001, Count: 1, Slot: 5},
+		{ID: 890, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	owner.Equipment = []inventory.ItemInstance{
+		{ID: 841, Vnum: 11210, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+		{ID: 842, Vnum: 11220, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotHead},
+	}
+	login := "myshop-equipped"
+	issuePeerTicket(t, ticketStore, login, 0x7070710a, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop equipped account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: 11210, Name: "Shop Weapon", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotWeapon.String()},
+		{Vnum: 11220, Name: "Shop Helmet", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotHead.String()},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop equipped runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x7070710a)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	headCombined, err := itemproto.EquipmentPosition(1)
+	if err != nil {
+		t.Fatalf("equipment head combined position: %v", err)
+	}
+	weaponWindow := itemproto.Position{WindowType: itemproto.WindowEquipment, Cell: 4}
+	for _, tc := range []struct {
+		name  string
+		items []shopproto.ClientMyShopItem
+	}{
+		{
+			name: "combined inventory equipment namespace head",
+			items: []shopproto.ClientMyShopItem{{
+				Vnum:     11220,
+				Count:    1,
+				Position: headCombined,
+				Price:    1500,
+			}},
+		},
+		{
+			name: "window-equipment weapon",
+			items: []shopproto.ClientMyShopItem{{
+				Vnum:     11210,
+				Count:    1,
+				Position: weaponWindow,
+				Price:    1500,
+			}},
+		},
+	} {
+		out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+			Sign:  "Private Shop",
+			Items: tc.items,
+		})))
+		if err != nil {
+			t.Fatalf("unexpected %s MYSHOP error: %v", tc.name, err)
+		}
+		assertMyShopOpenRejectInfoChat(t, out, myShopOpenEquippedItemInfoMessage, tc.name)
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop equipped stock rejects")
+}
+
 func TestGameRuntimeMyShopOpenRejectsMissingShopBagSilentlyWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
