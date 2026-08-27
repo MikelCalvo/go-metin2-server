@@ -1,0 +1,20 @@
+{
+  "static_actors": [
+    {
+      "name": "QuestBoard",
+      "map_index": 1,
+      "x": 469400,
+      "y": 964200,
+      "race_num": 20302,
+      "interaction_kind": "quest",
+      "interaction_ref": "quest:first_steps"
+    }
+  ],
+  "interaction_definitions": [
+    {
+      "kind": "info",
+      "ref": "quest:first_steps",
+      "text": "Quest text should not make an unsupported actor kind importable."
+    }
+  ]
+}

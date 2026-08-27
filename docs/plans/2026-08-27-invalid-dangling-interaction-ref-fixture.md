@@ -44,6 +44,8 @@ git diff --check
 
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
-2. Add further checked-in negatives only when a later reject case still forces
+2. ~~Add further checked-in negatives only when a later reject case still forces
    QA to invent JSON (for example unsupported future interaction kinds such as
-   unfrozen `quest` actor metadata).
+   unfrozen `quest` actor metadata).~~ Done for unsupported interaction kinds:
+   `docs/examples/bootstrap-invalid-unsupported-interaction-kind-bundle.json`
+   (`docs/plans/2026-08-28-invalid-unsupported-interaction-kind-fixture.md`).
