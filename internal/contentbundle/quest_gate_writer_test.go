@@ -112,6 +112,30 @@ func TestCanonicalizeRejectsOrphanServiceQuestTo(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeRejectsGatedServiceQuestTo(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		StaticActors: []StaticActor{
+			{Name: "GatedQuestToGuide", MapIndex: 1, X: 469400, Y: 964200, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:gated_quest_to_guide"},
+			{Name: "QuestGuide", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20302, InteractionKind: interactionstore.KindQuestFlag, InteractionRef: "quest:first_steps"},
+		},
+		InteractionDefinitions: []interactionstore.Definition{
+			metGuideQuestFlagWriterDefinition(),
+			{
+				Kind:      interactionstore.KindTalk,
+				Ref:       "npc:gated_quest_to_guide",
+				Text:      "Welcome.",
+				QuestRef:  "quest:first_steps",
+				QuestFlag: "met_guide",
+				QuestFrom: 1,
+				QuestTo:   2,
+			},
+		},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for gated service quest_to mutate, got %v", err)
+	}
+}
+
 func TestCanonicalizeAcceptsServiceQuestGateWhenQuestFlagWriterPresent(t *testing.T) {
 	if _, err := Canonicalize(Bundle{
 		StaticActors: []StaticActor{

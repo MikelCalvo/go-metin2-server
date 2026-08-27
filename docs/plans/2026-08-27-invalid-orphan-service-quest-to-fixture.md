@@ -30,7 +30,7 @@ during `/local/content-bundle/validate`.
 - new NPC service kinds
 - changing the already-owned canonicalize reject rule
 - further checked-in negatives unless a later reject case still forces QA to
-  invent JSON
+  invent JSON (for example gated service `quest_to` mutate)
 
 ## Validation
 
@@ -44,5 +44,8 @@ git diff --check
 
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
-2. Add further checked-in negatives only when a later reject case still forces
-   QA to invent JSON.
+2. ~~Add further checked-in negatives only when a later reject case still forces
+   QA to invent JSON (for example gated service `quest_to` mutate).~~ Done for
+   gated service `quest_to` mutate:
+   `docs/examples/bootstrap-invalid-gated-service-quest-to-bundle.json`
+   (`docs/plans/2026-08-27-invalid-gated-service-quest-to-fixture.md`).

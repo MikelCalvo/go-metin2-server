@@ -1,0 +1,41 @@
+{
+  "static_actors": [
+    {
+      "name": "GatedQuestToGuide",
+      "map_index": 1,
+      "x": 469400,
+      "y": 964200,
+      "race_num": 20302,
+      "interaction_kind": "talk",
+      "interaction_ref": "npc:gated_quest_to_guide"
+    },
+    {
+      "name": "QuestGuide",
+      "map_index": 1,
+      "x": 469300,
+      "y": 964200,
+      "race_num": 20302,
+      "interaction_kind": "quest_flag",
+      "interaction_ref": "quest:first_steps"
+    }
+  ],
+  "interaction_definitions": [
+    {
+      "kind": "quest_flag",
+      "ref": "quest:first_steps",
+      "text": "Quest updated: first_steps.met_guide = 1.",
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "met_guide",
+      "quest_to": 1
+    },
+    {
+      "kind": "talk",
+      "ref": "npc:gated_quest_to_guide",
+      "text": "Welcome.",
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "met_guide",
+      "quest_from": 1,
+      "quest_to": 2
+    }
+  ]
+}
