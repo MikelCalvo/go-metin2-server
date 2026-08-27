@@ -14,3 +14,6 @@ weekly_metin2_artifact_retention_gc_print_enable="NO"
 # METIN2_RUNTIME_CONFIG=/var/metin2/ops-prints/retained-runtime-config.json
 # METIN2_GAMED_LOG_PATH=/var/log/metin2/gamed.log
 # METIN2_AUTHD_LOG_PATH=/var/log/metin2/authd.log
+# METIN2_IMPORT_EXPORT_TREE=/var/metin2/exports/20260827T120000Z-abcdef012345
+# METIN2_IMPORT_DRIVER=sqlite3
+# METIN2_IMPORT_DSN_ENV=METIN2_IMPORT_DSN

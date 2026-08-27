@@ -73,6 +73,13 @@ Optional (env-gated):
   `env/metin2-runtime-config.env.sample` plus the systemd
   `EnvironmentFile=` drop-in under
   `systemd/metin2-artifact-retention-gc-print.service.d/`.
+- `import-export-drill.sh` when `METIN2_IMPORT_EXPORT_TREE` points at an existing
+  absolute non-symlink retained export/quarantine directory **and**
+  `METIN2_IMPORT_DRIVER` is a non-empty opaque `database/sql` driver name.
+  Optional `METIN2_IMPORT_DSN_ENV` defaults to `METIN2_IMPORT_DSN` and is
+  forwarded only as the `--dsn-env` name (never a DSN value). The helper always
+  passes `--i-confirm-print-sql-import-drill` when printing and still never
+  opens a database or executes `import-export`.
 - `migration-run-retention.sh`, `export-quarantine-drill.sh`, and (when printed)
   `backup-restore-drill.sh` forward `--gamed-log-path` / `--authd-log-path` from
   `METIN2_GAMED_LOG_PATH` / `METIN2_AUTHD_LOG_PATH` (defaults
@@ -98,4 +105,5 @@ Optional (env-gated):
 - `rm` of `.gc-aside-*` trees
 - FreeBSD port / `pkg` enable defaults
 - flipping `weekly_metin2_artifact_retention_gc_print_enable` to `YES` by default
-- SQL import/backfill or remote admin
+- SQL import/backfill execution or remote admin (print-only
+  `import-export-drill.sh` under the env gate remains review-only)

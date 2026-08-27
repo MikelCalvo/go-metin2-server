@@ -73,7 +73,7 @@ Behavior:
 ## What this is not yet
 
 - automatic / scheduled execution of the printed import script
-- folding `import-export-drill` into `contrib/lab-retention-gc` print-only samples
+- ~~folding `import-export-drill` into `contrib/lab-retention-gc` print-only samples~~ Done — see [contrib import-export drill print helper](2026-08-27-contrib-import-export-drill-print-helper.md)
 - hermetic `/bin/sh` execution proof against a real driver-backed database
 - upsert / merge / truncate-and-reload policy
 - production DB engine selection as a stock default

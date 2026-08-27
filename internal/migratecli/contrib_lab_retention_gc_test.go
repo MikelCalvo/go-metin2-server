@@ -44,12 +44,21 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		"METIN2_RUNTIME_CONFIG",
 		"METIN2_GAMED_LOG_PATH",
 		"METIN2_AUTHD_LOG_PATH",
+		"METIN2_IMPORT_EXPORT_TREE",
+		"METIN2_IMPORT_DRIVER",
+		"METIN2_IMPORT_DSN_ENV",
 		"--gamed-log-path \"$GAMED_LOG\"",
 		"--authd-log-path \"$AUTHD_LOG\"",
 		"/var/log/metin2/gamed.log",
 		"/var/log/metin2/authd.log",
 		"backup-restore-drill",
 		`>"$OUT/backup-restore-drill.sh"`,
+		"import-export-drill",
+		`>"$OUT/import-export-drill.sh"`,
+		"--i-confirm-print-sql-import-drill",
+		"--export-tree \"$IMPORT_EXPORT_TREE\"",
+		"--driver \"$IMPORT_DRIVER\"",
+		"--dsn-env \"$IMPORT_DSN_ENV\"",
 		`>"$OUT/artifact-retention-gc-exports.sh"`,
 		"/var/metin2/ops-prints",
 		"/var/metin2/backups",
@@ -175,9 +184,13 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		"METIN2_RUNTIME_CONFIG",
 		"METIN2_GAMED_LOG_PATH",
 		"METIN2_AUTHD_LOG_PATH",
+		"METIN2_IMPORT_EXPORT_TREE",
+		"METIN2_IMPORT_DRIVER",
+		"METIN2_IMPORT_DSN_ENV",
 		"/var/log/metin2/gamed.log",
 		"/var/log/metin2/authd.log",
 		"backup-restore-drill.sh",
+		"import-export-drill.sh",
 		"metin2-runtime-config.env.sample",
 		"EnvironmentFile=",
 		"periodic/weekly/900.metin2-artifact-retention-gc-print.sample",
@@ -205,6 +218,10 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		"METIN2_AUTHD_LOG_PATH=",
 		"/var/log/metin2/gamed.log",
 		"/var/log/metin2/authd.log",
+		"METIN2_IMPORT_EXPORT_TREE=",
+		"METIN2_IMPORT_DRIVER=",
+		"METIN2_IMPORT_DSN_ENV=",
+		"METIN2_IMPORT_DSN",
 	} {
 		if !strings.Contains(envSample, want) {
 			t.Fatalf("env sample missing %q", want)
@@ -215,6 +232,9 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		"METIN2_AUTHD_LOG_PATH=",
 		"/var/log/metin2/gamed.log",
 		"/var/log/metin2/authd.log",
+		"METIN2_IMPORT_EXPORT_TREE=",
+		"METIN2_IMPORT_DRIVER=",
+		"METIN2_IMPORT_DSN_ENV=",
 	} {
 		if !strings.Contains(periodicConf, want) {
 			t.Fatalf("periodic.conf sample missing %q", want)
@@ -285,6 +305,10 @@ case "$cmd" in
     printf '%s\n' "# stub backup-restore-drill"
     printf '%s\n' "$*"
     ;;
+  import-export-drill)
+    printf '%s\n' "# stub import-export-drill"
+    printf '%s\n' "$*"
+    ;;
   *)
     printf 'unexpected metin2-migrate command: %s\n' "$*" >&2
     exit 2
@@ -335,12 +359,18 @@ esac
 		if _, err := os.Stat(filepath.Join(outDir, "backup-restore-drill.sh")); !os.IsNotExist(err) {
 			t.Fatalf("backup-restore-drill.sh must be absent without METIN2_RUNTIME_CONFIG, err=%v", err)
 		}
+		if _, err := os.Stat(filepath.Join(outDir, "import-export-drill.sh")); !os.IsNotExist(err) {
+			t.Fatalf("import-export-drill.sh must be absent without METIN2_IMPORT_EXPORT_TREE, err=%v", err)
+		}
 		notes := mustReadContribSample(t, filepath.Join(outDir, "notes.md"))
 		if !strings.Contains(notes, "backup-restore-drill=skipped") {
 			t.Fatalf("notes must record drill skip, got %q", notes)
 		}
 		if !strings.Contains(notes, "export-quarantine-drill=printed from build-info") {
 			t.Fatalf("notes must record export-quarantine-drill print, got %q", notes)
+		}
+		if !strings.Contains(notes, "import-export-drill=skipped") {
+			t.Fatalf("notes must record import-export-drill skip, got %q", notes)
 		}
 		migrationBody := mustReadContribSample(t, filepath.Join(outDir, "migration-run-retention.sh"))
 		if !strings.Contains(migrationBody, "# stub migration-run-retention") {
@@ -430,6 +460,168 @@ esac
 		if !strings.Contains(notes, "export-quarantine-drill=printed from build-info") {
 			t.Fatalf("notes must record export-quarantine-drill print, got %q", notes)
 		}
+		if !strings.Contains(notes, "import-export-drill=skipped") {
+			t.Fatalf("notes must still record import-export-drill skip without import env, got %q", notes)
+		}
+		if _, err := os.Stat(filepath.Join(outDir, "import-export-drill.sh")); !os.IsNotExist(err) {
+			t.Fatalf("import-export-drill.sh must stay absent without import env, err=%v", err)
+		}
+	})
+
+	t.Run("prints_import_export_drill_from_retained_tree", func(t *testing.T) {
+		runPrints := filepath.Join(printsRoot, "import-print")
+		mustMkdir(t, runPrints)
+		exportTree := filepath.Join(root, "exports", "20260827T120000Z-abcdef012345")
+		mustMkdir(t, exportTree)
+		cmd := exec.Command("/bin/sh", helperPath)
+		cmd.Env = []string{
+			"PATH=/usr/bin:/bin",
+			"METIN2_MIGRATE_BIN=" + stubPath,
+			"METIN2_OPS_PRINTS_ROOT=" + runPrints,
+			"METIN2_RETENTION_KEEP_DAYS=14",
+			"METIN2_IMPORT_EXPORT_TREE=" + exportTree,
+			"METIN2_IMPORT_DRIVER=sqlite3",
+			"HOME=" + root,
+			"TMPDIR=" + root,
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("helper exit error: %v stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+		}
+		outDir := strings.TrimSpace(stdout.String())
+		importPath := filepath.Join(outDir, "import-export-drill.sh")
+		importBody := mustReadContribSample(t, importPath)
+		if !strings.Contains(importBody, "# stub import-export-drill") {
+			t.Fatalf("import-export-drill.sh must come from stub printer, got %q", importBody)
+		}
+		for _, want := range []string{
+			"--export-tree",
+			exportTree,
+			"--driver",
+			"sqlite3",
+			"--dsn-env",
+			"METIN2_IMPORT_DSN",
+			"--i-confirm-print-sql-import-drill",
+		} {
+			if !strings.Contains(importBody, want) {
+				t.Fatalf("import-export-drill argv must include %q, got %q", want, importBody)
+			}
+		}
+		for _, forbidden := range []string{
+			"postgres://",
+			"memory://",
+			"CREATE TABLE",
+			"DROP TABLE",
+			"password=",
+		} {
+			if strings.Contains(importBody, forbidden) {
+				t.Fatalf("import-export-drill print must not embed %q, got %q", forbidden, importBody)
+			}
+		}
+		notes := mustReadContribSample(t, filepath.Join(outDir, "notes.md"))
+		if !strings.Contains(notes, "import-export-drill=printed from METIN2_IMPORT_EXPORT_TREE") {
+			t.Fatalf("notes must record import-export-drill print, got %q", notes)
+		}
+	})
+
+	t.Run("skips_incomplete_import_export_env", func(t *testing.T) {
+		runPrints := filepath.Join(printsRoot, "import-incomplete")
+		mustMkdir(t, runPrints)
+		exportTree := filepath.Join(root, "exports", "20260827T130000Z-abcdef012345")
+		mustMkdir(t, exportTree)
+		cmd := exec.Command("/bin/sh", helperPath)
+		cmd.Env = []string{
+			"PATH=/usr/bin:/bin",
+			"METIN2_MIGRATE_BIN=" + stubPath,
+			"METIN2_OPS_PRINTS_ROOT=" + runPrints,
+			"METIN2_RETENTION_KEEP_DAYS=14",
+			"METIN2_IMPORT_EXPORT_TREE=" + exportTree,
+			"HOME=" + root,
+			"TMPDIR=" + root,
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("helper exit error: %v stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+		}
+		outDir := strings.TrimSpace(stdout.String())
+		if _, err := os.Stat(filepath.Join(outDir, "import-export-drill.sh")); !os.IsNotExist(err) {
+			t.Fatalf("incomplete import env must skip import-export-drill.sh, err=%v", err)
+		}
+		notes := mustReadContribSample(t, filepath.Join(outDir, "notes.md"))
+		if !strings.Contains(notes, "METIN2_IMPORT_DRIVER is required") {
+			t.Fatalf("notes must record missing driver skip, got %q", notes)
+		}
+	})
+
+	t.Run("skips_relative_import_export_tree", func(t *testing.T) {
+		runPrints := filepath.Join(printsRoot, "import-relative")
+		mustMkdir(t, runPrints)
+		cmd := exec.Command("/bin/sh", helperPath)
+		cmd.Env = []string{
+			"PATH=/usr/bin:/bin",
+			"METIN2_MIGRATE_BIN=" + stubPath,
+			"METIN2_OPS_PRINTS_ROOT=" + runPrints,
+			"METIN2_RETENTION_KEEP_DAYS=14",
+			"METIN2_IMPORT_EXPORT_TREE=relative/exports/20260827T120000Z-abcdef012345",
+			"METIN2_IMPORT_DRIVER=sqlite3",
+			"HOME=" + root,
+			"TMPDIR=" + root,
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("helper exit error: %v stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+		}
+		outDir := strings.TrimSpace(stdout.String())
+		if _, err := os.Stat(filepath.Join(outDir, "import-export-drill.sh")); !os.IsNotExist(err) {
+			t.Fatalf("relative METIN2_IMPORT_EXPORT_TREE must skip import-export-drill.sh, err=%v", err)
+		}
+		notes := mustReadContribSample(t, filepath.Join(outDir, "notes.md"))
+		if !strings.Contains(notes, "METIN2_IMPORT_EXPORT_TREE must be an absolute path") {
+			t.Fatalf("notes must record relative tree skip, got %q", notes)
+		}
+	})
+
+	t.Run("honors_custom_import_dsn_env_name", func(t *testing.T) {
+		runPrints := filepath.Join(printsRoot, "import-custom-dsn-env")
+		mustMkdir(t, runPrints)
+		exportTree := filepath.Join(root, "exports", "20260827T140000Z-abcdef012345")
+		mustMkdir(t, exportTree)
+		cmd := exec.Command("/bin/sh", helperPath)
+		cmd.Env = []string{
+			"PATH=/usr/bin:/bin",
+			"METIN2_MIGRATE_BIN=" + stubPath,
+			"METIN2_OPS_PRINTS_ROOT=" + runPrints,
+			"METIN2_RETENTION_KEEP_DAYS=14",
+			"METIN2_IMPORT_EXPORT_TREE=" + exportTree,
+			"METIN2_IMPORT_DRIVER=sqlite3",
+			"METIN2_IMPORT_DSN_ENV=LAB_SQL_IMPORT_DSN",
+			"HOME=" + root,
+			"TMPDIR=" + root,
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("helper exit error: %v stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+		}
+		outDir := strings.TrimSpace(stdout.String())
+		importBody := mustReadContribSample(t, filepath.Join(outDir, "import-export-drill.sh"))
+		if !strings.Contains(importBody, "LAB_SQL_IMPORT_DSN") {
+			t.Fatalf("custom METIN2_IMPORT_DSN_ENV must appear in stub argv, got %q", importBody)
+		}
+		if strings.Contains(importBody, "postgres://") || strings.Contains(importBody, "password=") {
+			t.Fatalf("custom dsn-env must remain a name only, got %q", importBody)
+		}
 	})
 
 	t.Run("honors_custom_daemon_log_paths", func(t *testing.T) {
@@ -518,6 +710,43 @@ esac
 		}
 		if !strings.Contains(notes, "export-quarantine-drill=printed from build-info") {
 			t.Fatalf("notes must still record export-quarantine-drill print, got %q", notes)
+		}
+	})
+
+	t.Run("skips_symlink_import_export_tree", func(t *testing.T) {
+		runPrints := filepath.Join(printsRoot, "import-symlink")
+		mustMkdir(t, runPrints)
+		target := filepath.Join(root, "exports", "20260827T150000Z-abcdef012345")
+		mustMkdir(t, target)
+		linkPath := filepath.Join(root, "exports", "import-tree-link")
+		if err := os.Symlink(target, linkPath); err != nil {
+			t.Fatalf("symlink import export tree: %v", err)
+		}
+		cmd := exec.Command("/bin/sh", helperPath)
+		cmd.Env = []string{
+			"PATH=/usr/bin:/bin",
+			"METIN2_MIGRATE_BIN=" + stubPath,
+			"METIN2_OPS_PRINTS_ROOT=" + runPrints,
+			"METIN2_RETENTION_KEEP_DAYS=14",
+			"METIN2_IMPORT_EXPORT_TREE=" + linkPath,
+			"METIN2_IMPORT_DRIVER=sqlite3",
+			"HOME=" + root,
+			"TMPDIR=" + root,
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("helper exit error: %v stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+		}
+		outDir := strings.TrimSpace(stdout.String())
+		if _, err := os.Stat(filepath.Join(outDir, "import-export-drill.sh")); !os.IsNotExist(err) {
+			t.Fatalf("symlink METIN2_IMPORT_EXPORT_TREE must skip import-export-drill printer, err=%v", err)
+		}
+		notes := mustReadContribSample(t, filepath.Join(outDir, "notes.md"))
+		if !strings.Contains(notes, "METIN2_IMPORT_EXPORT_TREE must not be a symlink") {
+			t.Fatalf("notes must record import tree symlink skip, got %q", notes)
 		}
 	})
 }

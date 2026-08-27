@@ -216,4 +216,4 @@ metin2-migrate import-export-drill \
   --i-confirm-print-sql-import-drill
 ```
 
-The printer never executes the imports, never opens a database, and never embeds the DSN value; each printed `import-export` line still requires `--i-confirm-sql-import` at execution time. See [CLI import-export drill printer](../plans/2026-08-27-cli-import-export-drill.md).
+The printer never executes the imports, never opens a database, and never embeds the DSN value; each printed `import-export` line still requires `--i-confirm-sql-import` at execution time. The tree-owned print-only helper under `contrib/lab-retention-gc/` can optionally dump the same script as `import-export-drill.sh` when `METIN2_IMPORT_EXPORT_TREE` and `METIN2_IMPORT_DRIVER` are set — see [contrib import-export drill print helper](../plans/2026-08-27-contrib-import-export-drill-print-helper.md) and [lab retention / GC print-only unit samples](lab-retention-gc-unit-samples.md). See also [CLI import-export drill printer](../plans/2026-08-27-cli-import-export-drill.md).

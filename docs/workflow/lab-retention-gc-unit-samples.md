@@ -25,7 +25,8 @@ See also:
 ## Hard rules
 
 1. Units / cron entries may only invoke printer commands (`artifact-retention-gc`,
-   `backup-restore-drill`, `migration-run-retention`, optionally `version`).
+   `backup-restore-drill`, `migration-run-retention`, `export-quarantine-drill`,
+   `import-export-drill`, optionally `version`).
 2. Stdout must land in a dated review path under `/var/metin2/ops-prints/` (or an
    operator-chosen absolute sibling outside live data / retention trees).
 3. Never pipe printer stdout into `/bin/sh`, `bash`, `csh`, or `zsh` from the
@@ -49,6 +50,7 @@ See also:
     migration-run-retention.sh
     export-quarantine-drill.sh
     backup-restore-drill.sh          # only when METIN2_RUNTIME_CONFIG is set
+    import-export-drill.sh           # only when METIN2_IMPORT_EXPORT_TREE + METIN2_IMPORT_DRIVER are set
     notes.md
 ```
 
@@ -73,6 +75,9 @@ KEEP_DAYS="${METIN2_RETENTION_KEEP_DAYS:-14}"
 RUNTIME_CONFIG="${METIN2_RUNTIME_CONFIG:-}"
 GAMED_LOG="${METIN2_GAMED_LOG_PATH:-/var/log/metin2/gamed.log}"
 AUTHD_LOG="${METIN2_AUTHD_LOG_PATH:-/var/log/metin2/authd.log}"
+IMPORT_EXPORT_TREE="${METIN2_IMPORT_EXPORT_TREE:-}"
+IMPORT_DRIVER="${METIN2_IMPORT_DRIVER:-}"
+IMPORT_DSN_ENV="${METIN2_IMPORT_DSN_ENV:-METIN2_IMPORT_DSN}"
 
 test -x "$BIN"
 test -d "$PRINTS_ROOT"
@@ -129,10 +134,51 @@ if [ -n "$RUNTIME_CONFIG" ]; then
   fi
 fi
 
+IMPORT_NOTE="import-export-drill=skipped (set METIN2_IMPORT_EXPORT_TREE to a retained export tree and METIN2_IMPORT_DRIVER to a database/sql driver name)"
+case "$IMPORT_EXPORT_TREE" in
+  /*)
+    case "$IMPORT_DRIVER" in
+      "")
+        if [ -n "$IMPORT_EXPORT_TREE" ]; then
+          IMPORT_NOTE="import-export-drill=skipped (METIN2_IMPORT_DRIVER is required with METIN2_IMPORT_EXPORT_TREE)"
+        fi
+        ;;
+      *)
+        if [ -L "$IMPORT_EXPORT_TREE" ]; then
+          IMPORT_NOTE="import-export-drill=skipped (METIN2_IMPORT_EXPORT_TREE must not be a symlink)"
+        elif [ -d "$IMPORT_EXPORT_TREE" ]; then
+          case "$IMPORT_DSN_ENV" in
+            "")
+              IMPORT_NOTE="import-export-drill=skipped (METIN2_IMPORT_DSN_ENV must be a non-empty environment variable name)"
+              ;;
+            *)
+              "$BIN" import-export-drill \
+                --export-tree "$IMPORT_EXPORT_TREE" \
+                --driver "$IMPORT_DRIVER" \
+                --dsn-env "$IMPORT_DSN_ENV" \
+                --i-confirm-print-sql-import-drill \
+                >"$OUT/import-export-drill.sh"
+              IMPORT_NOTE="import-export-drill=printed from METIN2_IMPORT_EXPORT_TREE"
+              ;;
+          esac
+        else
+          IMPORT_NOTE="import-export-drill=skipped (METIN2_IMPORT_EXPORT_TREE is not a directory)"
+        fi
+        ;;
+    esac
+    ;;
+  "")
+    ;;
+  *)
+    IMPORT_NOTE="import-export-drill=skipped (METIN2_IMPORT_EXPORT_TREE must be an absolute path)"
+    ;;
+esac
+
 {
   printf 'printed %s\ncommit=%s\nkeep_days=%s\n' "$OUT" "${COMMIT:-unknown}" "$KEEP_DAYS"
   printf 'export-quarantine-drill=printed from build-info\n'
   printf '%s\n' "$DRILL_NOTE"
+  printf '%s\n' "$IMPORT_NOTE"
 } >"$OUT/notes.md"
 chmod 0640 "$OUT"/*.sh "$OUT/build-info.json" "$OUT/notes.md"
 printf '%s\n' "$OUT"
@@ -142,13 +188,17 @@ The helper's only `rm` is the temporary `mktemp` build-info copy via `trap` —
 never retention trees or printed scripts. Companion printers are owned by this
 helper: `migration-run-retention.sh` and `export-quarantine-drill.sh` always,
 `artifact-retention-gc-exports.sh` always beside the backups / migration-runs
-GC scripts, and `backup-restore-drill.sh` only when `METIN2_RUNTIME_CONFIG`
-points at a retained non-symlink regular runtime-config snapshot. Always-on
-companions and the optional backup drill receive `--gamed-log-path` /
-`--authd-log-path` from `METIN2_GAMED_LOG_PATH` / `METIN2_AUTHD_LOG_PATH`
-(defaults `/var/log/metin2/gamed.log` / `/var/log/metin2/authd.log`) so printed
-retain scripts can optionally copy daemon JSON logs when present. The helper
-never live-fetches ops JSON.
+GC scripts, `backup-restore-drill.sh` only when `METIN2_RUNTIME_CONFIG`
+points at a retained non-symlink regular runtime-config snapshot, and
+`import-export-drill.sh` only when `METIN2_IMPORT_EXPORT_TREE` is an absolute
+non-symlink directory **and** `METIN2_IMPORT_DRIVER` is set (optional
+`METIN2_IMPORT_DSN_ENV` defaults to `METIN2_IMPORT_DSN` and is forwarded only as
+the `--dsn-env` name). Always-on companions and the optional backup drill receive
+`--gamed-log-path` / `--authd-log-path` from `METIN2_GAMED_LOG_PATH` /
+`METIN2_AUTHD_LOG_PATH` (defaults `/var/log/metin2/gamed.log` /
+`/var/log/metin2/authd.log`) so printed retain scripts can optionally copy daemon
+JSON logs when present. The helper never live-fetches ops JSON and never embeds a
+DSN value.
 ## systemd samples (print-only)
 
 Place as `.sample` files under `/etc/systemd/system/` (or a lab overlay). Do
@@ -201,7 +251,11 @@ The tree-owned helper already prints `migration-run-retention.sh` and
 `METIN2_AUTHD_LOG_PATH` (defaults `/var/log/metin2/gamed.log` /
 `/var/log/metin2/authd.log`). To also print `backup-restore-drill.sh`, point
 `METIN2_RUNTIME_CONFIG` at a retained runtime-config JSON snapshot before the
-unit/cron fires. Reviewable fragments live under
+unit/cron fires. To also print `import-export-drill.sh`, set
+`METIN2_IMPORT_EXPORT_TREE` to a retained absolute export/quarantine directory
+and `METIN2_IMPORT_DRIVER` to an opaque `database/sql` driver name (optional
+`METIN2_IMPORT_DSN_ENV`, default `METIN2_IMPORT_DSN`, is only a name). Reviewable
+fragments live under
 [`contrib/lab-retention-gc/env/metin2-runtime-config.env.sample`](../../contrib/lab-retention-gc/env/metin2-runtime-config.env.sample)
 and
 [`contrib/lab-retention-gc/systemd/metin2-artifact-retention-gc-print.service.d/runtime-config.conf.sample`](../../contrib/lab-retention-gc/systemd/metin2-artifact-retention-gc-print.service.d/runtime-config.conf.sample)
@@ -232,6 +286,12 @@ metin2-migrate export-quarantine-drill \
   --gamed-log-path /var/log/metin2/gamed.log \
   --authd-log-path /var/log/metin2/authd.log \
   >"$OUT/export-quarantine-drill.sh"
+
+metin2-migrate import-export-drill \
+  --export-tree /var/metin2/exports/YYYYMMDDTHHMMSSZ-<commit12> \
+  --driver <database/sql-driver> \
+  --i-confirm-print-sql-import-drill \
+  >"$OUT/import-export-drill.sh"
 ```
 Those companions still must not pipe the resulting scripts into a shell from
 the unit. Loopback `curl` to `127.0.0.1:6060` / `:6061` is allowed only for
@@ -312,11 +372,13 @@ See also [contrib FreeBSD periodic retention / GC print sample](../plans/2026-08
   [`contrib/lab-retention-gc/`](../../contrib/lab-retention-gc/) are owned,
   including FreeBSD `periodic(8)` weekly + `periodic.conf.sample`)
 - flipping `weekly_metin2_artifact_retention_gc_print_enable` to `YES` by default
-- automatic execution of printed aside-rename / backup / apply scripts
+- automatic execution of printed aside-rename / backup / apply / import scripts
 - folding confirmation-gated `artifact-gc-aside-purge` into these print-only
   samples / timers / cron / periodic (scheduled dumps must stay free of `rm`;
   the interactive purge printer is owned separately — see
   [CLI artifact GC-aside purge printer](../plans/2026-08-25-cli-artifact-gc-aside-purge-printer.md))
 - scheduled live `curl` of ops JSON from the print helper / unit
 - multi-host orchestration or remote admin
-- SQL import/backfill from quarantined exports
+- automatic / scheduled execution of printed `import-export` mutations (env-gated
+  print-only `import-export-drill.sh` is owned — see
+  [contrib import-export drill print helper](../plans/2026-08-27-contrib-import-export-drill-print-helper.md))

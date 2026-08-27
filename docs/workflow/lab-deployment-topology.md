@@ -199,7 +199,7 @@ metin2-migrate import-export-drill \
   --i-confirm-print-sql-import-drill
 ```
 
-The printer never executes `import-export`, never opens a database, and never embeds the DSN value. See [CLI import-export drill printer](../plans/2026-08-27-cli-import-export-drill.md) and [migration apply runbook](migration-apply-runbook.md).
+The printer never executes `import-export`, never opens a database, and never embeds the DSN value. The tree-owned print-only helper under `contrib/lab-retention-gc/` can optionally dump the same script as `import-export-drill.sh` when `METIN2_IMPORT_EXPORT_TREE` and `METIN2_IMPORT_DRIVER` are set — see [contrib import-export drill print helper](../plans/2026-08-27-contrib-import-export-drill-print-helper.md). See also [CLI import-export drill printer](../plans/2026-08-27-cli-import-export-drill.md) and [migration apply runbook](migration-apply-runbook.md).
 
 Aged retention trees can be triage-printed without deletion via:
 
@@ -210,7 +210,7 @@ metin2-migrate artifact-retention-gc \
   --now 2026-08-22T12:00:00Z
 ```
 
-The printer emits a path-aware shell script that aside-renames matching `YYYYMMDDTHHMMSSZ-<commit12>/` children older than `--keep-days` to `<name>.gc-aside-<NOW_UTC>`, refuses destination collisions, never deletes trees, never opens a database, and never embeds a DSN. The same command works against `/var/metin2/migration-runs` and `/var/metin2/exports`. The print-only contrib helper always dumps GC triage for all three roots plus `export-quarantine-drill.sh` (see [contrib export-quarantine drill print helper](../plans/2026-08-25-contrib-export-quarantine-drill-print-helper.md)). Hermetic `/bin/sh` execution coverage owns the aged rename / young keep / collision fail-closed contract (see [CLI artifact-retention GC script execution proof](../plans/2026-08-22-cli-artifact-retention-gc-script-execution-proof.md)).
+The printer emits a path-aware shell script that aside-renames matching `YYYYMMDDTHHMMSSZ-<commit12>/` children older than `--keep-days` to `<name>.gc-aside-<NOW_UTC>`, refuses destination collisions, never deletes trees, never opens a database, and never embeds a DSN. The same command works against `/var/metin2/migration-runs` and `/var/metin2/exports`. The print-only contrib helper always dumps GC triage for all three roots plus `export-quarantine-drill.sh`, and can optionally dump `import-export-drill.sh` when `METIN2_IMPORT_EXPORT_TREE` and `METIN2_IMPORT_DRIVER` are set (see [contrib export-quarantine drill print helper](../plans/2026-08-25-contrib-export-quarantine-drill-print-helper.md) and [contrib import-export drill print helper](../plans/2026-08-27-contrib-import-export-drill-print-helper.md)). Hermetic `/bin/sh` execution coverage owns the aged rename / young keep / collision fail-closed contract (see [CLI artifact-retention GC script execution proof](../plans/2026-08-22-cli-artifact-retention-gc-script-execution-proof.md)).
 
 Aged `.gc-aside-*` trees can later be purge-printed without scheduled deletion via:
 
@@ -256,6 +256,7 @@ See also:
 - [contrib export-quarantine drill print helper](../plans/2026-08-25-contrib-export-quarantine-drill-print-helper.md)
 - [CLI import-export](../plans/2026-08-27-cli-import-export.md)
 - [CLI import-export drill printer](../plans/2026-08-27-cli-import-export-drill.md)
+- [contrib import-export drill print helper](../plans/2026-08-27-contrib-import-export-drill-print-helper.md)
 
 ## Daemon JSON log paths
 
@@ -286,7 +287,7 @@ See
 - remote admin APIs
 - automatic / scheduled artifact GC or lifecycle daemons that invoke deletion
 - automatic stale-lock expiry (lab recovery remains confirmation-gated `apply-lock-aside` / operator aside-rename; see [lab stale-lock recovery](lab-stale-lock-recovery.md))
-- automatic execution of the printed `migration-run-retention`, `backup-restore-drill`, `export-quarantine-drill`, or `artifact-retention-gc` scripts (the CLI and print-only unit samples only print commands; GC remains confirmation-gated aside-rename by the operator; hermetic `/bin/sh` proof of the printed backup-restore drill against drained loopback ops muxes is owned in [hermetic backup/restore drill HTTP execution proof](../plans/2026-08-24-hermetic-backup-restore-drill-http-execution-proof.md) and does not auto-run from CLI; hermetic `/bin/sh` proof of the printed export-quarantine drill is owned in [hermetic export-quarantine drill HTTP execution proof](../plans/2026-08-25-hermetic-export-quarantine-drill-http-execution-proof.md) and likewise does not auto-run from CLI)
+- automatic execution of the printed `migration-run-retention`, `backup-restore-drill`, `export-quarantine-drill`, `import-export-drill`, or `artifact-retention-gc` scripts (the CLI and print-only unit samples only print commands; GC remains confirmation-gated aside-rename by the operator; hermetic `/bin/sh` proof of the printed backup-restore drill against drained loopback ops muxes is owned in [hermetic backup/restore drill HTTP execution proof](../plans/2026-08-24-hermetic-backup-restore-drill-http-execution-proof.md) and does not auto-run from CLI; hermetic `/bin/sh` proof of the printed export-quarantine drill is owned in [hermetic export-quarantine drill HTTP execution proof](../plans/2026-08-25-hermetic-export-quarantine-drill-http-execution-proof.md) and likewise does not auto-run from CLI; env-gated print-only `import-export-drill.sh` is owned by [contrib import-export drill print helper](../plans/2026-08-27-contrib-import-export-drill-print-helper.md) and likewise does not auto-run)
 - ~~`rm` / unlink of aside-renamed retention trees~~ Done for the confirmation-gated print-only `artifact-gc-aside-purge` surface (CLI still never auto-executes the printed purge; folding purge into scheduled print helpers remains deferred) — see [CLI artifact GC-aside purge printer](../plans/2026-08-25-cli-artifact-gc-aside-purge-printer.md)
 - remote log shipping / SIEM sinks (local `/var/log/metin2/` file capture is owned; exporters are not)
 - a claim that bootstrap file stores are the final production persistence layer

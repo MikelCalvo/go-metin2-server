@@ -9,6 +9,9 @@ KEEP_DAYS="${METIN2_RETENTION_KEEP_DAYS:-14}"
 RUNTIME_CONFIG="${METIN2_RUNTIME_CONFIG:-}"
 GAMED_LOG="${METIN2_GAMED_LOG_PATH:-/var/log/metin2/gamed.log}"
 AUTHD_LOG="${METIN2_AUTHD_LOG_PATH:-/var/log/metin2/authd.log}"
+IMPORT_EXPORT_TREE="${METIN2_IMPORT_EXPORT_TREE:-}"
+IMPORT_DRIVER="${METIN2_IMPORT_DRIVER:-}"
+IMPORT_DSN_ENV="${METIN2_IMPORT_DSN_ENV:-METIN2_IMPORT_DSN}"
 
 test -x "$BIN"
 test -d "$PRINTS_ROOT"
@@ -65,10 +68,51 @@ if [ -n "$RUNTIME_CONFIG" ]; then
   fi
 fi
 
+IMPORT_NOTE="import-export-drill=skipped (set METIN2_IMPORT_EXPORT_TREE to a retained export tree and METIN2_IMPORT_DRIVER to a database/sql driver name)"
+case "$IMPORT_EXPORT_TREE" in
+  /*)
+    case "$IMPORT_DRIVER" in
+      "")
+        if [ -n "$IMPORT_EXPORT_TREE" ]; then
+          IMPORT_NOTE="import-export-drill=skipped (METIN2_IMPORT_DRIVER is required with METIN2_IMPORT_EXPORT_TREE)"
+        fi
+        ;;
+      *)
+        if [ -L "$IMPORT_EXPORT_TREE" ]; then
+          IMPORT_NOTE="import-export-drill=skipped (METIN2_IMPORT_EXPORT_TREE must not be a symlink)"
+        elif [ -d "$IMPORT_EXPORT_TREE" ]; then
+          case "$IMPORT_DSN_ENV" in
+            "")
+              IMPORT_NOTE="import-export-drill=skipped (METIN2_IMPORT_DSN_ENV must be a non-empty environment variable name)"
+              ;;
+            *)
+              "$BIN" import-export-drill \
+                --export-tree "$IMPORT_EXPORT_TREE" \
+                --driver "$IMPORT_DRIVER" \
+                --dsn-env "$IMPORT_DSN_ENV" \
+                --i-confirm-print-sql-import-drill \
+                >"$OUT/import-export-drill.sh"
+              IMPORT_NOTE="import-export-drill=printed from METIN2_IMPORT_EXPORT_TREE"
+              ;;
+          esac
+        else
+          IMPORT_NOTE="import-export-drill=skipped (METIN2_IMPORT_EXPORT_TREE is not a directory)"
+        fi
+        ;;
+    esac
+    ;;
+  "")
+    ;;
+  *)
+    IMPORT_NOTE="import-export-drill=skipped (METIN2_IMPORT_EXPORT_TREE must be an absolute path)"
+    ;;
+esac
+
 {
   printf 'printed %s\ncommit=%s\nkeep_days=%s\n' "$OUT" "${COMMIT:-unknown}" "$KEEP_DAYS"
   printf 'export-quarantine-drill=printed from build-info\n'
   printf '%s\n' "$DRILL_NOTE"
+  printf '%s\n' "$IMPORT_NOTE"
 } >"$OUT/notes.md"
 chmod 0640 "$OUT"/*.sh "$OUT/build-info.json" "$OUT/notes.md"
 printf '%s\n' "$OUT"
