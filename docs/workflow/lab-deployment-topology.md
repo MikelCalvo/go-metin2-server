@@ -189,6 +189,18 @@ metin2-migrate version \
 
 The printer emits a path-aware shell script that creates `YYYYMMDDTHHMMSSZ-<commit12>/`, retains both-daemon build-info, `runtime-config.json`, migration catalog, optional daemon JSON logs, a `notes.md` stub, and one subdirectory per tip-`0015` migration-shaped export kind with retained `export.json` plus offline `quarantine-export` output. It never executes the curls itself, never opens a database, never embeds a DSN, and never imports SQL from quarantined artifacts. Hermetic HTTP → offline CLI coverage for roster + tip-`0015` safebox money is owned by [hermetic export → offline quarantine-export CLI proof](../plans/2026-08-25-hermetic-export-quarantine-offline-cli-proof.md); the printer itself is owned by [CLI export → offline quarantine drill printer](../plans/2026-08-25-cli-export-quarantine-drill-printer.md); hermetic `/bin/sh` execution of the printed script against drained loopback `gamed`/`authd` ops muxes is owned by [hermetic export-quarantine drill HTTP execution proof](../plans/2026-08-25-hermetic-export-quarantine-drill-http-execution-proof.md).
 
+After that tree exists, operators can print a confirmation-gated SQL import walk that reads the DSN only from an environment variable:
+
+```bash
+export METIN2_IMPORT_DSN='<operator-supplied-dsn>'
+metin2-migrate import-export-drill \
+  --export-tree /var/metin2/exports/YYYYMMDDTHHMMSSZ-<commit12> \
+  --driver <database/sql-driver> \
+  --i-confirm-print-sql-import-drill
+```
+
+The printer never executes `import-export`, never opens a database, and never embeds the DSN value. See [CLI import-export drill printer](../plans/2026-08-27-cli-import-export-drill.md) and [migration apply runbook](migration-apply-runbook.md).
+
 Aged retention trees can be triage-printed without deletion via:
 
 ```bash
@@ -242,6 +254,8 @@ See also:
 - [CLI export → offline quarantine drill printer](../plans/2026-08-25-cli-export-quarantine-drill-printer.md)
 - [hermetic export-quarantine drill HTTP execution proof](../plans/2026-08-25-hermetic-export-quarantine-drill-http-execution-proof.md)
 - [contrib export-quarantine drill print helper](../plans/2026-08-25-contrib-export-quarantine-drill-print-helper.md)
+- [CLI import-export](../plans/2026-08-27-cli-import-export.md)
+- [CLI import-export drill printer](../plans/2026-08-27-cli-import-export-drill.md)
 
 ## Daemon JSON log paths
 

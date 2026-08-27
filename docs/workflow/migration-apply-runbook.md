@@ -205,3 +205,15 @@ Do not use this runbook to justify:
 ## Related: quarantined export SQL import
 
 After schema migrations are applied, operators can backfill retained migration-shaped exports with `metin2-migrate import-export --kind <kind> --export <path> --driver <driver> --dsn <dsn> --i-confirm-sql-import`. This reuses the programmatic `Import*` seams (insert-only, no upsert) and still does not register a stock production driver. See [CLI import-export](../plans/2026-08-27-cli-import-export.md).
+
+For a retained `export-quarantine-drill` tree, print the reviewable import walk without embedding a DSN via:
+
+```bash
+export METIN2_IMPORT_DSN='<operator-supplied-dsn>'
+metin2-migrate import-export-drill \
+  --export-tree /var/metin2/exports/YYYYMMDDTHHMMSSZ-<commit12> \
+  --driver <database/sql-driver> \
+  --i-confirm-print-sql-import-drill
+```
+
+The printer never executes the imports, never opens a database, and never embeds the DSN value; each printed `import-export` line still requires `--i-confirm-sql-import` at execution time. See [CLI import-export drill printer](../plans/2026-08-27-cli-import-export-drill.md).

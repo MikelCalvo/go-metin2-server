@@ -1,0 +1,222 @@
+package migratecli
+
+import (
+	"bytes"
+	"strings"
+	"testing"
+)
+
+func TestRunImportExportDrillPrintsConfirmationGatedImportCommands(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"import-export-drill",
+			"--export-tree", "/var/metin2/exports/20260827T120000Z-abcdef012345",
+			"--driver", "sqlite3",
+			"--i-confirm-print-sql-import-drill",
+		},
+		nil,
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr, got %q", stderr.String())
+	}
+
+	body := stdout.String()
+	for _, want := range []string{
+		`# confirmation-gated printer: does not execute import-export or open a database`,
+		`docs/workflow/migration-apply-runbook.md`,
+		`docs/plans/2026-08-27-cli-import-export.md`,
+		`EXPORT_TREE='/var/metin2/exports/20260827T120000Z-abcdef012345'`,
+		`DRIVER='sqlite3'`,
+		`DSN_ENV='METIN2_IMPORT_DSN'`,
+		`DSN="${METIN2_IMPORT_DSN:?METIN2_IMPORT_DSN must be set to the import target DSN}"`,
+		`test -f "$EXPORT_TREE/account-character-roster/quarantine.json"`,
+		`metin2-migrate import-export --kind account-character-roster --export "$EXPORT_TREE/account-character-roster/quarantine.json" --driver "$DRIVER" --dsn "$DSN" --i-confirm-sql-import > "$EXPORT_TREE/account-character-roster/import-result.json"`,
+		`test -f "$EXPORT_TREE/character-item-state/quarantine.json"`,
+		`metin2-migrate import-export --kind character-item-state --export "$EXPORT_TREE/character-item-state/quarantine.json" --driver "$DRIVER" --dsn "$DSN" --i-confirm-sql-import > "$EXPORT_TREE/character-item-state/import-result.json"`,
+		`test -f "$EXPORT_TREE/character-point-state/quarantine.json"`,
+		`metin2-migrate import-export --kind character-point-state --export "$EXPORT_TREE/character-point-state/quarantine.json" --driver "$DRIVER" --dsn "$DSN" --i-confirm-sql-import > "$EXPORT_TREE/character-point-state/import-result.json"`,
+		`test -f "$EXPORT_TREE/character-quest-state/quarantine.json"`,
+		`metin2-migrate import-export --kind character-quest-state --export "$EXPORT_TREE/character-quest-state/quarantine.json" --driver "$DRIVER" --dsn "$DSN" --i-confirm-sql-import > "$EXPORT_TREE/character-quest-state/import-result.json"`,
+		`test -f "$EXPORT_TREE/character-safebox-state/quarantine.json"`,
+		`metin2-migrate import-export --kind character-safebox-state --export "$EXPORT_TREE/character-safebox-state/quarantine.json" --driver "$DRIVER" --dsn "$DSN" --i-confirm-sql-import > "$EXPORT_TREE/character-safebox-state/import-result.json"`,
+		`test -f "$EXPORT_TREE/auth-login-ticket-handoff/quarantine.json"`,
+		`metin2-migrate import-export --kind auth-login-ticket-handoff --export "$EXPORT_TREE/auth-login-ticket-handoff/quarantine.json" --driver "$DRIVER" --dsn "$DSN" --i-confirm-sql-import > "$EXPORT_TREE/auth-login-ticket-handoff/import-result.json"`,
+		`test -f "$EXPORT_TREE/item-template-state/quarantine.json"`,
+		`metin2-migrate import-export --kind item-template-state --export "$EXPORT_TREE/item-template-state/quarantine.json" --driver "$DRIVER" --dsn "$DSN" --i-confirm-sql-import > "$EXPORT_TREE/item-template-state/import-result.json"`,
+		`test -f "$EXPORT_TREE/static-actor-content-state/quarantine.json"`,
+		`metin2-migrate import-export --kind static-actor-content-state --export "$EXPORT_TREE/static-actor-content-state/quarantine.json" --driver "$DRIVER" --dsn "$DSN" --i-confirm-sql-import > "$EXPORT_TREE/static-actor-content-state/import-result.json"`,
+		`test -f "$EXPORT_TREE/bootstrap-ground-item-state/quarantine.json"`,
+		`metin2-migrate import-export --kind bootstrap-ground-item-state --export "$EXPORT_TREE/bootstrap-ground-item-state/quarantine.json" --driver "$DRIVER" --dsn "$DSN" --i-confirm-sql-import > "$EXPORT_TREE/bootstrap-ground-item-state/import-result.json"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected %q in stdout:\n%s", want, body)
+		}
+	}
+	for _, forbidden := range []string{
+		"CREATE TABLE",
+		"DROP TABLE",
+		"postgres://",
+		"memory://",
+		"sqlite://",
+		"--dsn 'sqlite3'",
+		"--dsn sqlite",
+		"password=",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("import-export-drill must not expose %q, got %s", forbidden, body)
+		}
+	}
+
+	idxRoster := strings.Index(body, `import-export --kind account-character-roster`)
+	idxItem := strings.Index(body, `import-export --kind character-item-state`)
+	idxPoint := strings.Index(body, `import-export --kind character-point-state`)
+	idxQuest := strings.Index(body, `import-export --kind character-quest-state`)
+	idxSafebox := strings.Index(body, `import-export --kind character-safebox-state`)
+	idxTicket := strings.Index(body, `import-export --kind auth-login-ticket-handoff`)
+	idxTemplate := strings.Index(body, `import-export --kind item-template-state`)
+	idxStatic := strings.Index(body, `import-export --kind static-actor-content-state`)
+	idxGround := strings.Index(body, `import-export --kind bootstrap-ground-item-state`)
+	if !(idxRoster < idxItem && idxItem < idxPoint && idxPoint < idxQuest && idxQuest < idxSafebox && idxSafebox < idxTicket && idxTicket < idxTemplate && idxTemplate < idxStatic && idxStatic < idxGround) {
+		t.Fatalf("expected tip-kind import ordering, got idxs roster=%d item=%d point=%d quest=%d safebox=%d ticket=%d template=%d static=%d ground=%d\n%s",
+			idxRoster, idxItem, idxPoint, idxQuest, idxSafebox, idxTicket, idxTemplate, idxStatic, idxGround, body)
+	}
+}
+
+func TestRunImportExportDrillHonorsCustomDSNEnv(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"import-export-drill",
+			"--export-tree", "/tmp/metin2-exports/tree",
+			"--driver", "pgx",
+			"--dsn-env", "LAB_SQL_IMPORT_DSN",
+			"--i-confirm-print-sql-import-drill",
+		},
+		nil,
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d stderr=%q", code, stderr.String())
+	}
+	body := stdout.String()
+	for _, want := range []string{
+		`EXPORT_TREE='/tmp/metin2-exports/tree'`,
+		`DRIVER='pgx'`,
+		`DSN_ENV='LAB_SQL_IMPORT_DSN'`,
+		`DSN="${LAB_SQL_IMPORT_DSN:?LAB_SQL_IMPORT_DSN must be set to the import target DSN}"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected %q in stdout:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "METIN2_IMPORT_DSN") {
+		t.Fatalf("custom dsn-env must replace the default env name, got %s", body)
+	}
+}
+
+func TestRunImportExportDrillRequiresConfirmation(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"import-export-drill",
+			"--export-tree", "/var/metin2/exports/tree",
+			"--driver", "sqlite3",
+		},
+		nil,
+		&stdout,
+		&stderr,
+	)
+	if code != 1 {
+		t.Fatalf("expected exit 1, got %d stderr=%q", code, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout without confirmation, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "--i-confirm-print-sql-import-drill") {
+		t.Fatalf("expected confirmation error, got %q", stderr.String())
+	}
+}
+
+func TestRunImportExportDrillRejectsRelativeExportTree(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"import-export-drill",
+			"--export-tree", "exports/tree",
+			"--driver", "sqlite3",
+			"--i-confirm-print-sql-import-drill",
+		},
+		nil,
+		&stdout,
+		&stderr,
+	)
+	if code != 1 {
+		t.Fatalf("expected exit 1, got %d stderr=%q", code, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout on failure, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "export-tree must be an absolute path") {
+		t.Fatalf("expected absolute path error, got %q", stderr.String())
+	}
+}
+
+func TestRunImportExportDrillUsageErrors(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing-flags", args: []string{"import-export-drill"}, want: "--export-tree and --driver are required"},
+		{name: "missing-driver", args: []string{"import-export-drill", "--export-tree", "/var/metin2/exports/tree"}, want: "--export-tree and --driver are required"},
+		{name: "unexpected-arg", args: []string{"import-export-drill", "--export-tree", "/var/metin2/exports/tree", "--driver", "sqlite3", "--i-confirm-print-sql-import-drill", "extra"}, want: "unexpected import-export-drill argument"},
+		{name: "unknown-flag", args: []string{"import-export-drill", "--nope"}, want: "import-export-drill usage:"},
+		{name: "blank-dsn-env", args: []string{"import-export-drill", "--export-tree", "/var/metin2/exports/tree", "--driver", "sqlite3", "--dsn-env", "   ", "--i-confirm-print-sql-import-drill"}, want: "dsn-env"},
+		{name: "unsafe-dsn-env-metachar", args: []string{"import-export-drill", "--export-tree", "/var/metin2/exports/tree", "--driver", "sqlite3", "--dsn-env", "FOO;rm", "--i-confirm-print-sql-import-drill"}, want: "shell-safe environment variable name"},
+		{name: "unsafe-dsn-env-leading-digit", args: []string{"import-export-drill", "--export-tree", "/var/metin2/exports/tree", "--driver", "sqlite3", "--dsn-env", "1BAD", "--i-confirm-print-sql-import-drill"}, want: "shell-safe environment variable name"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			code := Run(tc.args, nil, &stdout, &stderr)
+			wantCode := 2
+			switch tc.name {
+			case "blank-dsn-env", "unsafe-dsn-env-metachar", "unsafe-dsn-env-leading-digit":
+				wantCode = 1
+			}
+			if code != wantCode {
+				t.Fatalf("expected exit %d, got %d stderr=%q", wantCode, code, stderr.String())
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("expected no stdout, got %q", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), tc.want) {
+				t.Fatalf("expected %q in stderr, got %q", tc.want, stderr.String())
+			}
+		})
+	}
+}
+
+func TestRunRejectsUnknownCommandMentionsImportExportDrill(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"nope"}, nil, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("expected exit 2, got %d", code)
+	}
+	if !strings.Contains(stderr.String(), "import-export-drill") {
+		t.Fatalf("expected usage to mention import-export-drill, got %q", stderr.String())
+	}
+}
