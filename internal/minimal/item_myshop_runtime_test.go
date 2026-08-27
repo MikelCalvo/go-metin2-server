@@ -267,6 +267,147 @@ func TestGameRuntimeMyShopOpenRejectsGoldOverflowWithoutMutation(t *testing.T) {
 	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop gold overflow")
 }
 
+func TestGameRuntimeMyShopOpenGoldOverflowGateFiresBeforeCashAndAuthoredReject(t *testing.T) {
+	const authoredAntiMyShop = "This cash item cannot be listed in a private shop."
+
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopGoldCash", 0x01030816, 0x02040816, 1100, 2100, 0, 101, 201)
+	owner.Gold = uint64(math.MaxInt32) - 100
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 950, Vnum: 27003, Count: 1, Slot: 7},
+		{ID: 951, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	login := "myshop-gold-cash"
+	issuePeerTicket(t, ticketStore, login, 0x70707116, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop gold-before-cash account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27003, Name: "Anti MyShop Potion", Stackable: true, MaxCount: 200, AntiMyShop: true, MyShopRejectText: authoredAntiMyShop},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop gold-before-cash runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707116)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27003,
+			Count:      1,
+			Position:   itemproto.InventoryPosition(7),
+			Price:      101,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected gold-before-cash MYSHOP error: %v", err)
+	}
+	assertMyShopOpenRejectInfoChat(t, out, myShopOpenGoldOverflowInfoMessage, "gold must win before cash/authored reject")
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop gold-before-cash")
+}
+
+func TestGameRuntimeMyShopOpenGoldOverflowGateFiresBeforeBanword(t *testing.T) {
+	cleanup := SetMyShopOpenBanwordsForTest([]string{"banme"})
+	defer cleanup()
+
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopGoldBan", 0x01030817, 0x02040817, 1100, 2100, 0, 101, 201)
+	owner.Gold = uint64(math.MaxInt32) - 100
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 960, Vnum: 27001, Count: 1, Slot: 5},
+		{ID: 961, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+		{ID: 962, Vnum: myShopOpenSilkBagVnum, Count: 1, Slot: 3},
+	}
+	login := "myshop-gold-ban"
+	issuePeerTicket(t, ticketStore, login, 0x70707117, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop gold-before-banword account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenSilkBagVnum, Name: "Silk Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop gold-before-banword runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707117)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "My banme Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      1,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      101,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected gold-before-banword MYSHOP error: %v", err)
+	}
+	assertMyShopOpenRejectInfoChat(t, out, myShopOpenGoldOverflowInfoMessage, "gold must win before banword")
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected gold-before-banword reject to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop gold-before-banword")
+}
+
+func TestGameRuntimeMyShopOpenGoldOverflowGateFiresAfterArmor(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopGoldArmor", 0x01030818, 0x02040818, 1100, 2100, 0, 101, 201)
+	owner.Gold = uint64(math.MaxInt32) - 100
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 970, Vnum: 27001, Count: 1, Slot: 5},
+		{ID: 971, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	owner.Equipment = []inventory.ItemInstance{{ID: 972, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}}
+	login := "myshop-gold-armor"
+	issuePeerTicket(t, ticketStore, login, 0x70707118, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop armor-before-gold account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: 11200, Name: "Shop Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop armor-before-gold runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707118)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      1,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      101,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected armor-before-gold MYSHOP error: %v", err)
+	}
+	assertMyShopOpenRejectInfoChat(t, out, myShopOpenArmorRequiredInfoMessage, "armor must win before gold")
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "myshop armor-before-gold")
+}
+
 func TestGameRuntimeMyShopOpenRejectsWornBodyArmorWithInfoChatWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

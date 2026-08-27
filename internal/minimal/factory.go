@@ -9056,6 +9056,21 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							})},
 						}
 					}
+					var listedPriceSum uint64
+					for _, stockItem := range packet.Items {
+						listedPriceSum += uint64(stockItem.Price)
+					}
+					if selectedPlayer.LiveGold()+listedPriceSum > uint64(math.MaxInt32) {
+						return gameflow.ShopResult{
+							Accepted: true,
+							Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+								Type:    chatproto.ChatTypeInfo,
+								VID:     0,
+								Empire:  0,
+								Message: myShopOpenGoldOverflowInfoMessage,
+							})},
+						}
+					}
 					if myShopOpenSignContainsBanword(sign) {
 						return gameflow.ShopResult{
 							Accepted: true,
@@ -9070,8 +9085,6 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					seenCells := make(map[uint16]struct{}, len(packet.Items))
 					seenDisplay := make(map[uint8]struct{}, len(packet.Items))
 					stock := make([]myShopStockRow, 0, len(packet.Items))
-					var listedPriceSum uint64
-					liveGold := selectedPlayer.LiveGold()
 					for _, stockItem := range packet.Items {
 						if stockItem.Price == 0 {
 							return gameflow.ShopResult{Accepted: false}
@@ -9132,18 +9145,6 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 									VID:     0,
 									Empire:  0,
 									Message: myShopOpenLockedItemInfoMessage,
-								})},
-							}
-						}
-						listedPriceSum += uint64(stockItem.Price)
-						if liveGold+listedPriceSum > uint64(math.MaxInt32) {
-							return gameflow.ShopResult{
-								Accepted: true,
-								Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
-									Type:    chatproto.ChatTypeInfo,
-									VID:     0,
-									Empire:  0,
-									Message: myShopOpenGoldOverflowInfoMessage,
 								})},
 							}
 						}

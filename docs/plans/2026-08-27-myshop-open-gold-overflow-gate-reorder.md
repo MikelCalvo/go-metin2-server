@@ -76,5 +76,8 @@ comments or Korean keys into runtime code.
 
 ## Status
 
-Docs/spec freeze only on `lane/items`. Runtime RED/GREEN intentionally deferred
-to the next implementation slice.
+GREEN on `lane/items`: host `CG::MYSHOP` open now sums request-table listed
+prices after armor and before banword/stock walk, emitting the owned gold-
+overflow INFO when `liveGold + Σ(prices) > math.MaxInt32` without waiting for
+cash/equipped/locked row resolution. Quest-running / `MYSHOP_PRICELIST` /
+OR-materials stay deferred.
