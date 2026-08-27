@@ -1,6 +1,7 @@
 package minimal
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -145,6 +146,81 @@ func TestGameSessionFlowPostFloorSafeboxPasswordOpenFailsClosed(t *testing.T) {
 	}
 	if size != (itemproto.SafeboxSizePacket{Size: 2}) {
 		t.Fatalf("unexpected SAFEBOX_SIZE after fresh post-restart password: %+v", size)
+	}
+}
+
+func TestGameSessionFlowPostFloorSafeboxChangePasswordFailsClosed(t *testing.T) {
+	login := "pf-change-safebox-pwd"
+	loginKey := uint32(0x19191b16)
+	owner := peerVisibilityCharacter("DeadChangeSafeboxPwdOwner", 0x01030b16, 0x02040b16, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Gold = 12345
+	root := t.TempDir()
+	safeboxPath := filepath.Join(root, "state", "safebox.json")
+	runtime, accounts, targetVID := newPostFloorSafeboxChangePasswordRuntime(t, root, safeboxPath, login, loginKey, owner)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/safebox_change_password " + safeboxstore.DefaultPassword + " vault2",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor /safebox_change_password dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor /safebox_change_password to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor /safebox_change_password to queue no frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor /safebox_change_password")
+
+	snapshot, err := safeboxstore.LoadOrEmpty(safeboxstore.NewFileStore(safeboxPath))
+	if err != nil {
+		t.Fatalf("load durable safebox after post-floor change-password: %v", err)
+	}
+	if got := safeboxstore.CharacterPassword(snapshot, login, owner.ID); got != safeboxstore.DefaultPassword {
+		t.Fatalf("post-floor /safebox_change_password mutated durable password: got %q want %q", got, safeboxstore.DefaultPassword)
+	}
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_here",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here after post-floor change-password: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_here recovery frames after post-floor change-password, got %d", len(restartOut))
+	}
+	_ = flushServerFrames(t, flow)
+
+	changeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/safebox_change_password " + safeboxstore.DefaultPassword + " vault2",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart /safebox_change_password: %v", err)
+	}
+	if len(changeOut) != 1 {
+		t.Fatalf("expected one post-restart change-password success chat, got %d", len(changeOut))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, changeOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-restart change-password success chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != safeboxPasswordChangedInfoMessage {
+		t.Fatalf("unexpected post-restart change-password success chat: %+v", delivery)
+	}
+	snapshot, err = safeboxstore.LoadOrEmpty(safeboxstore.NewFileStore(safeboxPath))
+	if err != nil {
+		t.Fatalf("load durable safebox after post-restart change-password: %v", err)
+	}
+	if got := safeboxstore.CharacterPassword(snapshot, login, owner.ID); got != "vault2" {
+		t.Fatalf("durable password after post-restart change=%q want vault2", got)
 	}
 }
 
@@ -474,4 +550,44 @@ func newPostFloorSafeboxPasswordRuntime(t *testing.T, login string, loginKey uin
 		t.Fatalf("expected practice mob and warehouse after post-floor safebox-password import, got %#v", actors)
 	}
 	return runtime, accounts, targetVID, warehouseVID
+}
+
+func newPostFloorSafeboxChangePasswordRuntime(t *testing.T, root, safeboxPath, login string, loginKey uint32, owner loginticket.Character) (*gameRuntime, accountstore.Store, uint32) {
+	t.Helper()
+	ticketStore := loginticket.NewFileStore(filepath.Join(root, "tickets"))
+	accounts := accountstore.NewFileStore(filepath.Join(root, "accounts"))
+	issuePeerTicket(t, ticketStore, login, loginKey, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed post-floor safebox-change-password account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(filepath.Join(root, "static-actors.json"))
+	interactionStore := interactionstore.NewFileStore(filepath.Join(root, "interaction-definitions.json"))
+	itemStore := newItemTemplateStore(t, nil)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{
+		LegacyAddr:       ":13000",
+		PublicAddr:       "127.0.0.1",
+		SafeboxStorePath: safeboxPath,
+	}, ticketStore, accounts, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected post-floor safebox-change-password runtime error: %v", err)
+	}
+
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_post_floor_safebox_change_password",
+		Name:          "PracticeMobPostFloorSafeboxChangePassword",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import post-floor safebox-change-password practice mob: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one post-floor safebox-change-password practice mob, got %#v", actors)
+	}
+	return runtime, accounts, uint32(actors[0].EntityID)
 }
