@@ -5369,6 +5369,25 @@ func TestCanonicalizeRejectsCheckedInCombatProfileDeathRewardItemMissingFromItem
 	}
 }
 
+func TestCanonicalizeRejectsCheckedInCombatProfileDeathRewardWithoutItemTemplatesExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-invalid-combat-profile-death-reward-without-item-templates-bundle.json"))
+	if err != nil {
+		t.Fatalf("read invalid combat-profile death-reward without item templates example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode invalid combat-profile death-reward without item templates example bundle: %v", err)
+	}
+	if _, err := Canonicalize(bundle); !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for checked-in combat-profile death-reward without item templates example, got %v", err)
+	}
+}
+
 func TestCanonicalizeKillQuestCreditAuthoringExample(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {

@@ -54,3 +54,9 @@ git diff --check
    templates collection:
    `docs/examples/bootstrap-invalid-combat-profile-death-reward-item-missing-from-item-templates-bundle.json`
    (`docs/plans/2026-08-28-invalid-combat-profile-death-reward-item-missing-from-item-templates-fixture.md`).
+   ~~Also: combat-profile default death-reward drop that omits top-level
+   `item_templates` entirely.~~ Done for portable
+   `combat_profiles[].death_reward.drop_vnums` that omit bundled
+   `item_templates`:
+   `docs/examples/bootstrap-invalid-combat-profile-death-reward-without-item-templates-bundle.json`
+   (`docs/plans/2026-08-28-invalid-combat-profile-death-reward-without-item-templates-fixture.md`).

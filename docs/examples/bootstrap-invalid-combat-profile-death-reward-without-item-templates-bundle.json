@@ -1,0 +1,27 @@
+{
+  "combat_profiles": [
+    {
+      "profile": "qa_death_reward_without_templates",
+      "max_hp": 20,
+      "attack_value": 9,
+      "defense_value": 4,
+      "respawn_delay_ms": 2000,
+      "death_reward": {
+        "drop_vnums": [
+          27001
+        ]
+      }
+    }
+  ],
+  "spawn_groups": [
+    {
+      "ref": "practice.qa_combat_profile_death_reward_without_templates",
+      "name": "QACombatProfileDeathRewardWithoutTemplates",
+      "map_index": 1,
+      "x": 469850,
+      "y": 964200,
+      "race_num": 20350,
+      "combat_profile": "qa_death_reward_without_templates"
+    }
+  ]
+}
