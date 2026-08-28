@@ -241,6 +241,9 @@ func TestPlanUpToLatestUsesBuiltInCatalog(t *testing.T) {
 	if plan.Pending[16].Version != 17 || plan.Pending[16].Name != "static_actor_combat_profile_return_delay" || plan.Pending[16].Direction != DirectionUp || plan.Pending[16].Path != "0017_static_actor_combat_profile_return_delay.up.sql" {
 		t.Fatalf("unexpected seventeenth built-in pending step: %#v", plan.Pending[16])
 	}
+	if plan.Pending[17].Version != 18 || plan.Pending[17].Name != "static_actor_combat_profile_homeward_delay" || plan.Pending[17].Direction != DirectionUp || plan.Pending[17].Path != "0018_static_actor_combat_profile_homeward_delay.up.sql" {
+		t.Fatalf("unexpected eighteenth built-in pending step: %#v", plan.Pending[17])
+	}
 }
 
 func TestPlanJSONShapeIsStableForFuturePreflightOutput(t *testing.T) {

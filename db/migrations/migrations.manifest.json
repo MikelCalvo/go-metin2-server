@@ -136,6 +136,14 @@
       "down_path": "0017_static_actor_combat_profile_return_delay.down.sql",
       "up_sha256": "8bd010e58d13ddbe1648d3ba5856f9ab8928b7884d016700fb7c1319d98099e0",
       "down_sha256": "c97dfb810f2ebfb6cbb22a5e427e2651dc62a59eb290df72551d7a1bc0186606"
+    },
+    {
+      "version": 18,
+      "name": "static_actor_combat_profile_homeward_delay",
+      "up_path": "0018_static_actor_combat_profile_homeward_delay.up.sql",
+      "down_path": "0018_static_actor_combat_profile_homeward_delay.down.sql",
+      "up_sha256": "406280f0b2015794eedb71b996af0ea3c46fc7c175d90c5c0b2e35b5d318e7eb",
+      "down_sha256": "1b940149c1cc637b4f242254c537eea07de79eb145d1143a5ba8dd7ef6f27585"
     }
   ]
 }

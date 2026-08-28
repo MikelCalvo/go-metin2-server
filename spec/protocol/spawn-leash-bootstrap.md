@@ -391,7 +391,7 @@ Contract for `PlanStaticActorSpawnLeashHomewardStep(actor, radius, max_step)`:
 
 Live pending-frame executor rules:
 - arm one pending homeward deadline (`1s`, fixed `max_step = 100`) only for a live spawn-backed practice mob that currently lacks `engaged_by` ownership and classifies `within_radius`
-- profile-authored per-mob homeward-step arming delay beyond the bootstrap `1s` default is frozen separately as optional `combat_profiles.homeward_delay_ms` in `content-spawn-groups-bootstrap.md`; until that seam is GREEN, live homeward arming / re-arm keep using `bootstrapSpawnGroupHomewardStepDelay`
+- profile-authored per-mob homeward-step arming delay beyond the bootstrap `1s` default is owned as optional `combat_profiles.homeward_delay_ms` in `content-spawn-groups-bootstrap.md`; live homeward arming / re-arm consume `EffectiveStaticActorSpawnHomewardDelay` for the actor's combat profile (omit/zero keeps bootstrap `1s`)
 - arm from engagement-release paths that also clear chase (client `TARGET(0)`, proximity leave-radius walk-away, leave/logout/close, phase-select, transfer, EnterGame reclaim, owner death floor, and other owned engagement releases) after the actor is already displaced `within_radius`
 - arm on runtime startup / daemon rematerialization when a persisted live spawn-backed actor already classifies unengaged `within_radius`, mirroring how `return_required` rematerialization arms return-step
 - never arm while still engaged, `at_home`, `return_required`, dead/waiting on respawn, or non-spawn

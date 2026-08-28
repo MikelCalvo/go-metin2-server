@@ -35,6 +35,15 @@ const (
 	// MaxSpawnReturnDelay is the bootstrap upper bound for optional authored
 	// combat_profiles.return_delay_ms on this Track A seam.
 	MaxSpawnReturnDelay = 60 * time.Second
+	// DefaultSpawnHomewardDelay is the bootstrap homeward-step arming / re-arm delay.
+	DefaultSpawnHomewardDelay = time.Second
+	// MinSpawnHomewardDelay is the bootstrap lower bound for optional authored
+	// combat_profiles.homeward_delay_ms so homeward cadence stays independently
+	// observable beside the owned flush order.
+	MinSpawnHomewardDelay = 250 * time.Millisecond
+	// MaxSpawnHomewardDelay is the bootstrap upper bound for optional authored
+	// combat_profiles.homeward_delay_ms on this Track A seam.
+	MaxSpawnHomewardDelay = 60 * time.Second
 )
 
 // SpawnLeashEvaluation is a pure planning result for the first mob lifecycle

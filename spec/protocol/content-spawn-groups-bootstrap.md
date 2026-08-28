@@ -841,7 +841,7 @@ Question frozen here:
 
 **Once profile-authored `return_delay_ms` already owns live return arming / re-arm, and the live homeward-step executor still hard-codes bootstrap `1s` (`bootstrapSpawnGroupHomewardStepDelay`), what is the smallest honest authored combat-profile extension that can widen or narrow that homeward-step arming delay per registered profile without inventing a second scheduler, homeward packets, or absolute deadline rematerialize?**
 
-This is the next Track A follow-on after owned profile-authored `return_delay_ms`. Cross-map return MOVE / warp choreography remains deferred behind the packet freeze in `spawn-leash-bootstrap.md` and must not be opened as speculative RED. Absolute chase / return / homeward due-at rematerialize across daemon restart stays cancelled as re-arm-from-now. Chase-step and return-step delays stay on their already-owned seams and are not reopened by this freeze.
+This Track A follow-on after owned profile-authored `return_delay_ms` is now GREEN. Cross-map return MOVE / warp choreography remains deferred behind the packet freeze in `spawn-leash-bootstrap.md` and must not be opened as speculative RED. Absolute chase / return / homeward due-at rematerialize across daemon restart stays cancelled as re-arm-from-now. Chase-step and return-step delays stay on their already-owned seams and are not reopened by this freeze.
 
 Contract for optional authored `homeward_delay_ms` on portable `combat_profiles` / `StaticActorCombatProfileDefaults`:
 
