@@ -2195,7 +2195,7 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsStaleAcceptedPartnerGoldWitho
 	if err != nil {
 		t.Fatalf("unexpected partner-gold peer accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 1 {
+	if len(peerAcceptOut) != 2 {
 		t.Fatalf("expected second accept stale partner-gold reject to emit one CheckOther info chat, got %d", len(peerAcceptOut))
 	}
 	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
@@ -2206,7 +2206,7 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsStaleAcceptedPartnerGoldWitho
 		t.Fatalf("unexpected partner-gold peer CheckOther info chat: %+v", infoChat)
 	}
 	queuedAccept := flushServerFrames(t, ownerFlow)
-	if len(queuedAccept) != 1 {
+	if len(queuedAccept) != 2 {
 		t.Fatalf("expected stale accepted partner-gold rejection to queue one owner CheckSelf info chat, got %d", len(queuedAccept))
 	}
 	queuedInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queuedAccept[0]))
@@ -2217,19 +2217,19 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsStaleAcceptedPartnerGoldWitho
 		t.Fatalf("unexpected partner-gold owner CheckSelf info chat: %+v", queuedInfo)
 	}
 
+	assertExchangeEndFrame(t, peerAcceptOut[1], "second-accept finalize reject auto-cancel self END")
+	assertExchangeEndFrame(t, queuedAccept[1], "second-accept finalize reject auto-cancel peer END")
+
 	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
 	if err != nil {
-		t.Fatalf("unexpected partner-gold cancel after rejected peer accept: %v", err)
+		t.Fatalf("unexpected cancel after auto-cancelled finalize reject: %v", err)
 	}
-	if len(cancelOut) != 1 {
-		t.Fatalf("expected partner-gold shell to remain cancellable, got %d frames", len(cancelOut))
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected finalize-reject auto-cancel to clear the shell so CANCEL fails closed, got %d frames", len(cancelOut))
 	}
-	assertExchangeEndFrame(t, cancelOut[0], "partner-gold peer cancel")
-	queuedCancel := flushServerFrames(t, ownerFlow)
-	if len(queuedCancel) != 1 {
-		t.Fatalf("expected partner-gold peer cancel to queue one owner END, got %d", len(queuedCancel))
+	if queuedCancel := flushServerFrames(t, ownerFlow); len(queuedCancel) != 0 {
+		t.Fatalf("expected no further peer frames after finalize-reject auto-cancel, got %d", len(queuedCancel))
 	}
-	assertExchangeEndFrame(t, queuedCancel[0], "partner-gold owner queued cancel")
 
 	wantOwner := owner
 	wantOwner.Gold = 300
@@ -2337,7 +2337,7 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsStaleAcceptedPartnerItemWitho
 	if err != nil {
 		t.Fatalf("unexpected partner-item peer accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 1 {
+	if len(peerAcceptOut) != 2 {
 		t.Fatalf("expected second accept stale partner-item reject to emit one CheckOther info chat, got %d", len(peerAcceptOut))
 	}
 	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
@@ -2348,7 +2348,7 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsStaleAcceptedPartnerItemWitho
 		t.Fatalf("unexpected partner-item peer CheckOther info chat: %+v", infoChat)
 	}
 	queuedAccept := flushServerFrames(t, ownerFlow)
-	if len(queuedAccept) != 1 {
+	if len(queuedAccept) != 2 {
 		t.Fatalf("expected stale accepted partner-item rejection to queue one owner CheckSelf info chat, got %d", len(queuedAccept))
 	}
 	queuedInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queuedAccept[0]))
@@ -2359,19 +2359,19 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsStaleAcceptedPartnerItemWitho
 		t.Fatalf("unexpected partner-item owner CheckSelf info chat: %+v", queuedInfo)
 	}
 
+	assertExchangeEndFrame(t, peerAcceptOut[1], "second-accept finalize reject auto-cancel self END")
+	assertExchangeEndFrame(t, queuedAccept[1], "second-accept finalize reject auto-cancel peer END")
+
 	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
 	if err != nil {
-		t.Fatalf("unexpected partner-item cancel after rejected peer accept: %v", err)
+		t.Fatalf("unexpected cancel after auto-cancelled finalize reject: %v", err)
 	}
-	if len(cancelOut) != 1 {
-		t.Fatalf("expected partner-item shell to remain cancellable, got %d frames", len(cancelOut))
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected finalize-reject auto-cancel to clear the shell so CANCEL fails closed, got %d frames", len(cancelOut))
 	}
-	assertExchangeEndFrame(t, cancelOut[0], "partner-item peer cancel")
-	queuedCancel := flushServerFrames(t, ownerFlow)
-	if len(queuedCancel) != 1 {
-		t.Fatalf("expected partner-item peer cancel to queue one owner END, got %d", len(queuedCancel))
+	if queuedCancel := flushServerFrames(t, ownerFlow); len(queuedCancel) != 0 {
+		t.Fatalf("expected no further peer frames after finalize-reject auto-cancel, got %d", len(queuedCancel))
 	}
-	assertExchangeEndFrame(t, queuedCancel[0], "partner-item owner queued cancel")
 
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, driftedOwner, "stale accepted partner-item owner")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "stale accepted partner-item peer")
@@ -2457,8 +2457,8 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverInventoryCapacityBefo
 	if err != nil {
 		t.Fatalf("unexpected capacity peer accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 1 {
-		t.Fatalf("expected second accept inventory-capacity reject to emit one self Space info chat, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 2 {
+		t.Fatalf("expected second accept inventory-capacity reject to emit self Space info chat then END, got %d", len(peerAcceptOut))
 	}
 	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
 	if err != nil {
@@ -2468,8 +2468,8 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverInventoryCapacityBefo
 		t.Fatalf("unexpected capacity peer Space info chat: %+v", infoChat)
 	}
 	queuedAccept := flushServerFrames(t, ownerFlow)
-	if len(queuedAccept) != 1 {
-		t.Fatalf("expected receiver inventory-capacity reject to queue one owner SpaceOther info chat, got %d", len(queuedAccept))
+	if len(queuedAccept) != 2 {
+		t.Fatalf("expected receiver inventory-capacity reject to queue owner SpaceOther info chat then END, got %d", len(queuedAccept))
 	}
 	queuedInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queuedAccept[0]))
 	if err != nil {
@@ -2479,19 +2479,19 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverInventoryCapacityBefo
 		t.Fatalf("unexpected capacity owner SpaceOther info chat: %+v", queuedInfo)
 	}
 
+	assertExchangeEndFrame(t, peerAcceptOut[1], "second-accept finalize reject auto-cancel self END")
+	assertExchangeEndFrame(t, queuedAccept[1], "second-accept finalize reject auto-cancel peer END")
+
 	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
 	if err != nil {
-		t.Fatalf("unexpected capacity cancel after rejected peer accept: %v", err)
+		t.Fatalf("unexpected cancel after auto-cancelled finalize reject: %v", err)
 	}
-	if len(cancelOut) != 1 {
-		t.Fatalf("expected capacity shell to remain cancellable, got %d frames", len(cancelOut))
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected finalize-reject auto-cancel to clear the shell so CANCEL fails closed, got %d frames", len(cancelOut))
 	}
-	assertExchangeEndFrame(t, cancelOut[0], "capacity peer cancel")
-	queuedCancel := flushServerFrames(t, ownerFlow)
-	if len(queuedCancel) != 1 {
-		t.Fatalf("expected capacity peer cancel to queue one owner END, got %d", len(queuedCancel))
+	if queuedCancel := flushServerFrames(t, ownerFlow); len(queuedCancel) != 0 {
+		t.Fatalf("expected no further peer frames after finalize-reject auto-cancel, got %d", len(queuedCancel))
 	}
-	assertExchangeEndFrame(t, queuedCancel[0], "capacity owner queued cancel")
 
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "receiver inventory-capacity owner")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "receiver inventory-capacity peer")
@@ -2575,8 +2575,8 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverGoldOverflowBeforeFin
 	if err != nil {
 		t.Fatalf("unexpected gold-overflow peer accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 1 {
-		t.Fatalf("expected second accept gold-overflow reject to emit one self gold-overflow info chat, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 2 {
+		t.Fatalf("expected second accept gold-overflow reject to emit self gold-overflow info chat then END, got %d", len(peerAcceptOut))
 	}
 	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
 	if err != nil {
@@ -2586,8 +2586,8 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverGoldOverflowBeforeFin
 		t.Fatalf("unexpected gold-overflow peer self info chat: %+v", infoChat)
 	}
 	queuedAccept := flushServerFrames(t, ownerFlow)
-	if len(queuedAccept) != 1 {
-		t.Fatalf("expected receiver gold-overflow reject to queue one owner gold-overflow Other info chat, got %d", len(queuedAccept))
+	if len(queuedAccept) != 2 {
+		t.Fatalf("expected receiver gold-overflow reject to queue owner gold-overflow Other info chat then END, got %d", len(queuedAccept))
 	}
 	queuedInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queuedAccept[0]))
 	if err != nil {
@@ -2597,19 +2597,19 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverGoldOverflowBeforeFin
 		t.Fatalf("unexpected gold-overflow owner Other info chat: %+v", queuedInfo)
 	}
 
+	assertExchangeEndFrame(t, peerAcceptOut[1], "second-accept finalize reject auto-cancel self END")
+	assertExchangeEndFrame(t, queuedAccept[1], "second-accept finalize reject auto-cancel peer END")
+
 	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
 	if err != nil {
-		t.Fatalf("unexpected gold-overflow cancel after rejected peer accept: %v", err)
+		t.Fatalf("unexpected cancel after auto-cancelled finalize reject: %v", err)
 	}
-	if len(cancelOut) != 1 {
-		t.Fatalf("expected gold-overflow shell to remain cancellable, got %d frames", len(cancelOut))
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected finalize-reject auto-cancel to clear the shell so CANCEL fails closed, got %d frames", len(cancelOut))
 	}
-	assertExchangeEndFrame(t, cancelOut[0], "gold-overflow peer cancel")
-	queuedCancel := flushServerFrames(t, ownerFlow)
-	if len(queuedCancel) != 1 {
-		t.Fatalf("expected gold-overflow peer cancel to queue one owner END, got %d", len(queuedCancel))
+	if queuedCancel := flushServerFrames(t, ownerFlow); len(queuedCancel) != 0 {
+		t.Fatalf("expected no further peer frames after finalize-reject auto-cancel, got %d", len(queuedCancel))
 	}
-	assertExchangeEndFrame(t, queuedCancel[0], "gold-overflow owner queued cancel")
 
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "receiver gold-overflow owner")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "receiver gold-overflow peer")
@@ -2698,8 +2698,8 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverEquipmentIDCollisionB
 	if err != nil {
 		t.Fatalf("unexpected equipment-collision peer accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 1 {
-		t.Fatalf("expected second accept equipment-id collision Other reject to emit one self Unknown error info chat, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 2 {
+		t.Fatalf("expected second accept equipment-id collision Other reject to emit self Unknown error info chat then END, got %d", len(peerAcceptOut))
 	}
 	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
 	if err != nil {
@@ -2709,8 +2709,8 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverEquipmentIDCollisionB
 		t.Fatalf("unexpected equipment-collision peer self info chat: %+v", infoChat)
 	}
 	queuedAccept := flushServerFrames(t, ownerFlow)
-	if len(queuedAccept) != 1 {
-		t.Fatalf("expected receiver equipment-id collision Other reject to queue one owner Unknown error info chat, got %d", len(queuedAccept))
+	if len(queuedAccept) != 2 {
+		t.Fatalf("expected receiver equipment-id collision Other reject to queue owner Unknown error info chat then END, got %d", len(queuedAccept))
 	}
 	queuedInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queuedAccept[0]))
 	if err != nil {
@@ -2720,19 +2720,19 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverEquipmentIDCollisionB
 		t.Fatalf("unexpected equipment-collision owner Other info chat: %+v", queuedInfo)
 	}
 
+	assertExchangeEndFrame(t, peerAcceptOut[1], "second-accept finalize reject auto-cancel self END")
+	assertExchangeEndFrame(t, queuedAccept[1], "second-accept finalize reject auto-cancel peer END")
+
 	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
 	if err != nil {
-		t.Fatalf("unexpected equipment-collision cancel after rejected peer accept: %v", err)
+		t.Fatalf("unexpected cancel after auto-cancelled finalize reject: %v", err)
 	}
-	if len(cancelOut) != 1 {
-		t.Fatalf("expected equipment-collision shell to remain cancellable, got %d frames", len(cancelOut))
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected finalize-reject auto-cancel to clear the shell so CANCEL fails closed, got %d frames", len(cancelOut))
 	}
-	assertExchangeEndFrame(t, cancelOut[0], "equipment-collision peer cancel")
-	queuedCancel := flushServerFrames(t, ownerFlow)
-	if len(queuedCancel) != 1 {
-		t.Fatalf("expected equipment-collision peer cancel to queue one owner END, got %d", len(queuedCancel))
+	if queuedCancel := flushServerFrames(t, ownerFlow); len(queuedCancel) != 0 {
+		t.Fatalf("expected no further peer frames after finalize-reject auto-cancel, got %d", len(queuedCancel))
 	}
-	assertExchangeEndFrame(t, queuedCancel[0], "equipment-collision owner queued cancel")
 
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "receiver equipment-id collision owner")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "receiver equipment-id collision peer")
@@ -2821,8 +2821,8 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverInventoryIDCollisionB
 	if err != nil {
 		t.Fatalf("unexpected inventory-collision peer accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 1 {
-		t.Fatalf("expected second accept inventory-id collision Other reject to emit one self Unknown error info chat, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 2 {
+		t.Fatalf("expected second accept inventory-id collision Other reject to emit self Unknown error info chat then END, got %d", len(peerAcceptOut))
 	}
 	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
 	if err != nil {
@@ -2832,8 +2832,8 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverInventoryIDCollisionB
 		t.Fatalf("unexpected inventory-collision peer self info chat: %+v", infoChat)
 	}
 	queuedAccept := flushServerFrames(t, ownerFlow)
-	if len(queuedAccept) != 1 {
-		t.Fatalf("expected receiver inventory-id collision Other reject to queue one owner Unknown error info chat, got %d", len(queuedAccept))
+	if len(queuedAccept) != 2 {
+		t.Fatalf("expected receiver inventory-id collision Other reject to queue owner Unknown error info chat then END, got %d", len(queuedAccept))
 	}
 	queuedInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queuedAccept[0]))
 	if err != nil {
@@ -2843,19 +2843,19 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverInventoryIDCollisionB
 		t.Fatalf("unexpected inventory-collision owner Other info chat: %+v", queuedInfo)
 	}
 
+	assertExchangeEndFrame(t, peerAcceptOut[1], "second-accept finalize reject auto-cancel self END")
+	assertExchangeEndFrame(t, queuedAccept[1], "second-accept finalize reject auto-cancel peer END")
+
 	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
 	if err != nil {
-		t.Fatalf("unexpected inventory-collision cancel after rejected peer accept: %v", err)
+		t.Fatalf("unexpected cancel after auto-cancelled finalize reject: %v", err)
 	}
-	if len(cancelOut) != 1 {
-		t.Fatalf("expected inventory-collision shell to remain cancellable, got %d frames", len(cancelOut))
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected finalize-reject auto-cancel to clear the shell so CANCEL fails closed, got %d frames", len(cancelOut))
 	}
-	assertExchangeEndFrame(t, cancelOut[0], "inventory-collision peer cancel")
-	queuedCancel := flushServerFrames(t, ownerFlow)
-	if len(queuedCancel) != 1 {
-		t.Fatalf("expected inventory-collision peer cancel to queue one owner END, got %d", len(queuedCancel))
+	if queuedCancel := flushServerFrames(t, ownerFlow); len(queuedCancel) != 0 {
+		t.Fatalf("expected no further peer frames after finalize-reject auto-cancel, got %d", len(queuedCancel))
 	}
-	assertExchangeEndFrame(t, queuedCancel[0], "inventory-collision owner queued cancel")
 
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "receiver inventory-id collision owner")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "receiver inventory-id collision peer")
@@ -2949,8 +2949,8 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverLockedCompatibleStack
 	if err != nil {
 		t.Fatalf("unexpected locked-stack peer accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 1 {
-		t.Fatalf("expected second accept locked-compatible-stack Other reject to emit one self Unknown error info chat, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 2 {
+		t.Fatalf("expected second accept locked-compatible-stack Other reject to emit self Unknown error info chat then END, got %d", len(peerAcceptOut))
 	}
 	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
 	if err != nil {
@@ -2960,8 +2960,8 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverLockedCompatibleStack
 		t.Fatalf("unexpected locked-stack peer self info chat: %+v", infoChat)
 	}
 	queuedAccept := flushServerFrames(t, ownerFlow)
-	if len(queuedAccept) != 1 {
-		t.Fatalf("expected receiver locked-compatible-stack Other reject to queue one owner Unknown error info chat, got %d", len(queuedAccept))
+	if len(queuedAccept) != 2 {
+		t.Fatalf("expected receiver locked-compatible-stack Other reject to queue owner Unknown error info chat then END, got %d", len(queuedAccept))
 	}
 	queuedInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queuedAccept[0]))
 	if err != nil {
@@ -2971,19 +2971,19 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverLockedCompatibleStack
 		t.Fatalf("unexpected locked-stack owner Other info chat: %+v", queuedInfo)
 	}
 
+	assertExchangeEndFrame(t, peerAcceptOut[1], "second-accept finalize reject auto-cancel self END")
+	assertExchangeEndFrame(t, queuedAccept[1], "second-accept finalize reject auto-cancel peer END")
+
 	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
 	if err != nil {
-		t.Fatalf("unexpected locked-stack cancel after rejected peer accept: %v", err)
+		t.Fatalf("unexpected cancel after auto-cancelled finalize reject: %v", err)
 	}
-	if len(cancelOut) != 1 {
-		t.Fatalf("expected locked-stack shell to remain cancellable, got %d frames", len(cancelOut))
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected finalize-reject auto-cancel to clear the shell so CANCEL fails closed, got %d frames", len(cancelOut))
 	}
-	assertExchangeEndFrame(t, cancelOut[0], "locked-stack peer cancel")
-	queuedCancel := flushServerFrames(t, ownerFlow)
-	if len(queuedCancel) != 1 {
-		t.Fatalf("expected locked-stack peer cancel to queue one owner END, got %d", len(queuedCancel))
+	if queuedCancel := flushServerFrames(t, ownerFlow); len(queuedCancel) != 0 {
+		t.Fatalf("expected no further peer frames after finalize-reject auto-cancel, got %d", len(queuedCancel))
 	}
-	assertExchangeEndFrame(t, queuedCancel[0], "locked-stack owner queued cancel")
 
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "receiver locked-compatible-stack owner")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "receiver locked-compatible-stack peer")
@@ -3069,8 +3069,8 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverOverTemplateMaxCompat
 	if err != nil {
 		t.Fatalf("unexpected over-max-stack peer accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 1 {
-		t.Fatalf("expected second accept over-template-max Other reject to emit one self Unknown error info chat, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 2 {
+		t.Fatalf("expected second accept over-template-max Other reject to emit self Unknown error info chat then END, got %d", len(peerAcceptOut))
 	}
 	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
 	if err != nil {
@@ -3080,8 +3080,8 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverOverTemplateMaxCompat
 		t.Fatalf("unexpected over-max-stack peer self info chat: %+v", infoChat)
 	}
 	queuedAccept := flushServerFrames(t, ownerFlow)
-	if len(queuedAccept) != 1 {
-		t.Fatalf("expected receiver over-template-max Other reject to queue one owner Unknown error info chat, got %d", len(queuedAccept))
+	if len(queuedAccept) != 2 {
+		t.Fatalf("expected receiver over-template-max Other reject to queue owner Unknown error info chat then END, got %d", len(queuedAccept))
 	}
 	queuedInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queuedAccept[0]))
 	if err != nil {
@@ -3091,19 +3091,19 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverOverTemplateMaxCompat
 		t.Fatalf("unexpected over-max-stack owner Other info chat: %+v", queuedInfo)
 	}
 
+	assertExchangeEndFrame(t, peerAcceptOut[1], "second-accept finalize reject auto-cancel self END")
+	assertExchangeEndFrame(t, queuedAccept[1], "second-accept finalize reject auto-cancel peer END")
+
 	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
 	if err != nil {
-		t.Fatalf("unexpected over-max-stack cancel after rejected peer accept: %v", err)
+		t.Fatalf("unexpected cancel after auto-cancelled finalize reject: %v", err)
 	}
-	if len(cancelOut) != 1 {
-		t.Fatalf("expected over-max-stack shell to remain cancellable, got %d frames", len(cancelOut))
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected finalize-reject auto-cancel to clear the shell so CANCEL fails closed, got %d frames", len(cancelOut))
 	}
-	assertExchangeEndFrame(t, cancelOut[0], "over-max-stack peer cancel")
-	queuedCancel := flushServerFrames(t, ownerFlow)
-	if len(queuedCancel) != 1 {
-		t.Fatalf("expected over-max-stack peer cancel to queue one owner END, got %d", len(queuedCancel))
+	if queuedCancel := flushServerFrames(t, ownerFlow); len(queuedCancel) != 0 {
+		t.Fatalf("expected no further peer frames after finalize-reject auto-cancel, got %d", len(queuedCancel))
 	}
-	assertExchangeEndFrame(t, queuedCancel[0], "over-max-stack owner queued cancel")
 
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "receiver over-template-max owner")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "receiver over-template-max peer")
@@ -3189,8 +3189,8 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverSelectedCharacterRest
 	if err != nil {
 		t.Fatalf("unexpected receiver-restriction peer accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 1 {
-		t.Fatalf("expected second accept selected-character restriction Other reject to emit one self Unknown error info chat, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 2 {
+		t.Fatalf("expected second accept selected-character restriction Other reject to emit self Unknown error info chat then END, got %d", len(peerAcceptOut))
 	}
 	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
 	if err != nil {
@@ -3200,8 +3200,8 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverSelectedCharacterRest
 		t.Fatalf("unexpected receiver-restriction peer self info chat: %+v", infoChat)
 	}
 	queuedAccept := flushServerFrames(t, ownerFlow)
-	if len(queuedAccept) != 1 {
-		t.Fatalf("expected receiver selected-character restriction Other reject to queue one owner Unknown error info chat, got %d", len(queuedAccept))
+	if len(queuedAccept) != 2 {
+		t.Fatalf("expected receiver selected-character restriction Other reject to queue owner Unknown error info chat then END, got %d", len(queuedAccept))
 	}
 	queuedInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queuedAccept[0]))
 	if err != nil {
@@ -3211,19 +3211,19 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsReceiverSelectedCharacterRest
 		t.Fatalf("unexpected receiver-restriction owner Other info chat: %+v", queuedInfo)
 	}
 
+	assertExchangeEndFrame(t, peerAcceptOut[1], "second-accept finalize reject auto-cancel self END")
+	assertExchangeEndFrame(t, queuedAccept[1], "second-accept finalize reject auto-cancel peer END")
+
 	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
 	if err != nil {
-		t.Fatalf("unexpected receiver-restriction cancel after rejected peer accept: %v", err)
+		t.Fatalf("unexpected cancel after auto-cancelled finalize reject: %v", err)
 	}
-	if len(cancelOut) != 1 {
-		t.Fatalf("expected receiver-restriction shell to remain cancellable, got %d frames", len(cancelOut))
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected finalize-reject auto-cancel to clear the shell so CANCEL fails closed, got %d frames", len(cancelOut))
 	}
-	assertExchangeEndFrame(t, cancelOut[0], "receiver-restriction peer cancel")
-	queuedCancel := flushServerFrames(t, ownerFlow)
-	if len(queuedCancel) != 1 {
-		t.Fatalf("expected receiver-restriction peer cancel to queue one owner END, got %d", len(queuedCancel))
+	if queuedCancel := flushServerFrames(t, ownerFlow); len(queuedCancel) != 0 {
+		t.Fatalf("expected no further peer frames after finalize-reject auto-cancel, got %d", len(queuedCancel))
 	}
-	assertExchangeEndFrame(t, queuedCancel[0], "receiver-restriction owner queued cancel")
 
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "receiver selected-character restriction owner")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "receiver selected-character restriction peer")

@@ -17,7 +17,7 @@ Make the remaining second-accept / commit-time receiver finalization preconditio
 ## What this is not yet
 
 - partner-side open player-shop / cube busy-window rejection text
-- auto-cancel / shell teardown on Other reject (legacy Cancel-on-failure stays deferred; bootstrap keeps the shell cancellable)
+- ~~auto-cancel / shell teardown on Other reject~~ Done: `docs/plans/2026-08-28-exchange-finalize-reject-auto-cancel.md`
 - distinct per-reason Other chat strings beyond `Unknown error`
 - optional authored/template-backed overrides for these strings
 - durable safebox persistence / password / money

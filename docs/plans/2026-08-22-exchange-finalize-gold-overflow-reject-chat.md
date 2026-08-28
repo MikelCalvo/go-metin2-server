@@ -19,7 +19,7 @@ Make mutual-accept finalization receiver gold-overflow precondition failures cli
 
 - dual-sided chat for item-id collision / over-template-max / locked-compatible-stack / selected-character / transfer-guard finalization rejects
 - partner-side open player-shop / cube busy-window rejection text
-- auto-cancel / shell teardown on gold-overflow reject
+- ~~auto-cancel / shell teardown on gold-overflow reject~~ Done: `docs/plans/2026-08-28-exchange-finalize-reject-auto-cancel.md`
 - optional authored/template-backed overrides for these strings
 - restart-restored ground ownership / despawn timers
 

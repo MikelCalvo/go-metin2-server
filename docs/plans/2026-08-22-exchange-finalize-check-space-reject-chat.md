@@ -22,7 +22,7 @@ Make mutual-accept finalization precondition failures client-visible by emitting
 ## What this is not yet
 
 - partner-side open player-shop / cube busy-window rejection text
-- auto-cancel / shell teardown on Check/Space reject (legacy Cancel-on-failure stays deferred; bootstrap keeps the shell cancellable like busy rejects)
+- ~~auto-cancel / shell teardown on Check/Space reject~~ Done: `docs/plans/2026-08-28-exchange-finalize-reject-auto-cancel.md`
 - chat for gold-overflow / item-id collision / selected-character restriction finalization rejects
 - optional authored/template-backed overrides for these strings
 - restart-restored ground ownership / despawn timers

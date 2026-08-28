@@ -8146,8 +8146,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						}
 						selfFrames, applied := applyExchangeFinalize(runtime, accounts, sharedWorld, selectedPlayer, &sessionTicket, finalizePlan)
 						if !applied {
-							// Commit-time busy-window or Check/Space drift returns
-							// reject info-chat while leaving the shell open.
+							// Commit-time busy / gold-carrier reject chat leaves the
+							// shell open. Check/Space/gold-overflow/Other reject chat
+							// already auto-cancelled with trailing END frames.
 							if len(selfFrames) > 0 {
 								return gameflow.ItemExchangeResult{Accepted: true, Frames: selfFrames}
 							}

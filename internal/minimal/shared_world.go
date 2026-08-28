@@ -866,8 +866,10 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 // partner-notify END (caller supplies END frames), and enqueues peer finalize frames.
 // On commit-time busy-window drift it returns the same self-only START/ACCEPT busy
 // info-chat frames for the commit requester (plan.OriginID) and leaves the shell open.
-// On commit-time Check/Space/gold-overflow drift it returns dual-sided info-chat
-// (self return + peer enqueue) and leaves the shell open.
+// On commit-time gold-carrier-cap drift it likewise returns self-only info-chat and
+// leaves the shell open. On commit-time Check/Space/gold-overflow/Other drift it
+// returns dual-sided info-chat then self/peer GC::EXCHANGE END and clears the shell
+// (oracle Cancel-on-failure; docs/plans/2026-08-28-exchange-finalize-reject-auto-cancel.md).
 func (r *sharedWorldRegistry) CommitExchangeFinalize(plan *exchangeFinalizePlan, updatedOrigin loginticket.Character, updatedPartner loginticket.Character, peerFrames [][]byte) ([][]byte, bool) {
 	if r == nil || plan == nil || plan.OriginID == 0 || plan.PartnerID == 0 {
 		return nil, false
@@ -953,7 +955,8 @@ func (r *sharedWorldRegistry) exchangeFinalizeCommitGoldCarrierRejectLocked(plan
 
 // exchangeFinalizeCommitCheckSpaceRejectLocked revalidates displayed item/gold and
 // receiver preconditions. Check/Space/gold-overflow/Other failures emit dual-sided
-// info-chat. Returns rejected=true when commit must fail closed (with or without frames).
+// info-chat then auto-cancel the shell with self/peer END. Returns rejected=true when
+// commit must fail closed (with or without frames).
 func (r *sharedWorldRegistry) exchangeFinalizeCommitCheckSpaceRejectLocked(plan *exchangeFinalizePlan) ([][]byte, bool) {
 	if r == nil || plan == nil || plan.OriginID == 0 || plan.PartnerID == 0 {
 		return nil, true
@@ -1035,7 +1038,8 @@ func (r *sharedWorldRegistry) exchangeFinalizationRejectLocked(originID uint64, 
 // Check failures. failedID receives CheckSelf; otherID receives CheckOther via
 // queued frames. Returned frames go to the AcceptExchange caller (failedID when
 // the caller's own Check failed, or the peer when the already-accepted partner
-// Check failed — callers pass accordingly and return the self slice).
+// Check failed — callers pass accordingly and return the self slice). Mutual-accept
+// Check rejects then auto-cancel with self/peer END.
 func (r *sharedWorldRegistry) exchangeEmitFinalizeCheckRejectLocked(failedID uint64, otherID uint64) ([][]byte, *exchangeFinalizePlan, bool) {
 	frames, ok := r.exchangeEmitFinalizeCheckRejectForCallerLocked(failedID, failedID, otherID)
 	if !ok {
@@ -1045,70 +1049,89 @@ func (r *sharedWorldRegistry) exchangeEmitFinalizeCheckRejectLocked(failedID uin
 }
 
 // exchangeEmitFinalizeCheckRejectForCallerLocked delivers CheckSelf to failedID
-// and CheckOther to otherID. The slice returned is always the caller's self frame.
+// and CheckOther to otherID, then auto-cancels the shell. The slice returned is
+// always the caller's self frames (info-chat then END).
 func (r *sharedWorldRegistry) exchangeEmitFinalizeCheckRejectForCallerLocked(callerID uint64, failedID uint64, otherID uint64) ([][]byte, bool) {
 	selfFrame := encodeExchangeFinalizeCheckSelfInfoFrame()
 	otherFrame := encodeExchangeFinalizeCheckOtherInfoFrame()
+	var selfFrames [][]byte
+	var peerID uint64
 	switch callerID {
 	case failedID:
 		if !r.enqueueToEntityLocked(otherID, [][]byte{otherFrame}) {
 			return nil, false
 		}
-		return [][]byte{selfFrame}, true
+		selfFrames = [][]byte{selfFrame}
+		peerID = otherID
 	case otherID:
 		if !r.enqueueToEntityLocked(failedID, [][]byte{selfFrame}) {
 			return nil, false
 		}
-		return [][]byte{otherFrame}, true
+		selfFrames = [][]byte{otherFrame}
+		peerID = failedID
 	default:
 		return nil, false
 	}
+	return r.exchangeFinalizeRejectAutoCancelLocked(callerID, peerID, selfFrames)
 }
 
 // exchangeEmitFinalizeSpaceRejectForCallerLocked delivers SpaceSelf to the full
-// receiver and SpaceOther to the paired side. Returned frames are for callerID.
+// receiver and SpaceOther to the paired side, then auto-cancels the shell.
+// Returned frames are for callerID (info-chat then END).
 func (r *sharedWorldRegistry) exchangeEmitFinalizeSpaceRejectForCallerLocked(callerID uint64, fullReceiverID uint64, otherID uint64) ([][]byte, bool) {
 	selfFrame := encodeExchangeFinalizeSpaceSelfInfoFrame()
 	otherFrame := encodeExchangeFinalizeSpaceOtherInfoFrame()
+	var selfFrames [][]byte
+	var peerID uint64
 	switch callerID {
 	case fullReceiverID:
 		if !r.enqueueToEntityLocked(otherID, [][]byte{otherFrame}) {
 			return nil, false
 		}
-		return [][]byte{selfFrame}, true
+		selfFrames = [][]byte{selfFrame}
+		peerID = otherID
 	case otherID:
 		if !r.enqueueToEntityLocked(fullReceiverID, [][]byte{selfFrame}) {
 			return nil, false
 		}
-		return [][]byte{otherFrame}, true
+		selfFrames = [][]byte{otherFrame}
+		peerID = fullReceiverID
 	default:
 		return nil, false
 	}
+	return r.exchangeFinalizeRejectAutoCancelLocked(callerID, peerID, selfFrames)
 }
 
 // exchangeEmitFinalizeGoldOverflowRejectForCallerLocked delivers GoldOverflowSelf
-// to the overflow receiver and GoldOverflowOther to the paired side.
+// to the overflow receiver and GoldOverflowOther to the paired side, then
+// auto-cancels the shell. Returned frames are for callerID (info-chat then END).
 func (r *sharedWorldRegistry) exchangeEmitFinalizeGoldOverflowRejectForCallerLocked(callerID uint64, overflowReceiverID uint64, otherID uint64) ([][]byte, bool) {
 	selfFrame := encodeExchangeFinalizeGoldOverflowSelfInfoFrame()
 	otherFrame := encodeExchangeFinalizeGoldOverflowOtherInfoFrame()
+	var selfFrames [][]byte
+	var peerID uint64
 	switch callerID {
 	case overflowReceiverID:
 		if !r.enqueueToEntityLocked(otherID, [][]byte{otherFrame}) {
 			return nil, false
 		}
-		return [][]byte{selfFrame}, true
+		selfFrames = [][]byte{selfFrame}
+		peerID = otherID
 	case otherID:
 		if !r.enqueueToEntityLocked(overflowReceiverID, [][]byte{selfFrame}) {
 			return nil, false
 		}
-		return [][]byte{otherFrame}, true
+		selfFrames = [][]byte{otherFrame}
+		peerID = overflowReceiverID
 	default:
 		return nil, false
 	}
+	return r.exchangeFinalizeRejectAutoCancelLocked(callerID, peerID, selfFrames)
 }
 
 // exchangeEmitFinalizeOtherRejectForCallerLocked delivers the same catch-all
-// Unknown error info-chat to both paired sides (oracle DB-dead / non-Check/Space abort wording).
+// Unknown error info-chat to both paired sides (oracle DB-dead / non-Check/Space
+// abort wording), then auto-cancels the shell with self/peer END.
 func (r *sharedWorldRegistry) exchangeEmitFinalizeOtherRejectForCallerLocked(callerID uint64, partnerID uint64) ([][]byte, bool) {
 	frame := encodeExchangeFinalizeOtherInfoFrame()
 	if callerID == 0 || partnerID == 0 || callerID == partnerID {
@@ -1117,7 +1140,28 @@ func (r *sharedWorldRegistry) exchangeEmitFinalizeOtherRejectForCallerLocked(cal
 	if !r.enqueueToEntityLocked(partnerID, [][]byte{frame}) {
 		return nil, false
 	}
-	return [][]byte{frame}, true
+	return r.exchangeFinalizeRejectAutoCancelLocked(callerID, partnerID, [][]byte{frame})
+}
+
+// exchangeFinalizeRejectAutoCancelLocked appends oracle Cancel-on-failure END
+// frames after an owned mutual-accept finalize reject chat: peer gets one queued
+// GC::EXCHANGE END, the shell is cleared without a second partner notify, and
+// caller self frames gain one trailing END. No inventory/gold/trade mutation.
+func (r *sharedWorldRegistry) exchangeFinalizeRejectAutoCancelLocked(callerID uint64, peerID uint64, selfFrames [][]byte) ([][]byte, bool) {
+	if r == nil || callerID == 0 || peerID == 0 || callerID == peerID {
+		return nil, false
+	}
+	end := encodeExchangeEndFrame()
+	if !r.enqueueToEntityLocked(peerID, [][]byte{end}) {
+		return nil, false
+	}
+	if !r.clearExchangeLocked(callerID, false) {
+		return nil, false
+	}
+	out := make([][]byte, 0, len(selfFrames)+1)
+	out = append(out, selfFrames...)
+	out = append(out, end)
+	return out, true
 }
 
 func cloneExchangeCharacter(character loginticket.Character) loginticket.Character {
