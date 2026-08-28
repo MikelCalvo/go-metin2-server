@@ -194,6 +194,13 @@ func newPostFloorItemGuardRuntime(t *testing.T, login string, loginKey uint32, o
 	if _, err := runtime.ImportContentBundle(bundle); err != nil {
 		t.Fatalf("import post-floor item-guard practice mob: %v", err)
 	}
+	// ImportContentBundle replaces item templates from the bundle; re-seed the
+	// authored templates needed by post-floor reopen recovery proofs.
+	if len(templates) > 0 {
+		if err := runtime.replaceItemTemplates(itemcatalog.Snapshot{Templates: templates}); err != nil {
+			t.Fatalf("restore post-floor item-guard templates after content import: %v", err)
+		}
+	}
 	actors := runtime.StaticActors()
 	if len(actors) != 1 {
 		t.Fatalf("expected one post-floor item-guard practice mob, got %#v", actors)
