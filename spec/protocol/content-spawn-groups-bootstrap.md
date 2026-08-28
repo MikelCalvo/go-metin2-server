@@ -773,6 +773,36 @@ Explicit non-goals for this profile-authored leash-radius freeze alone:
 - changing the already-owned engagement / chase / retaliation consumers beyond substituting the effective leash radius
 - remapping engagement across non-identical content-bundle replacement (live damaged HP remapping and proximity-suppress remapping across that replacement are frozen above; live damaged HP across clean daemon restart remains owned; proximity-suppress rematerialization across daemon restart is owned above)
 
+## First owned profile-authored chase-delay seam
+
+Question frozen here:
+
+**Once proximity acquisition, chase-step arming, and profile-authored `aggro_radius` / `leash_radius` already exist, and the live chase executor still hard-codes bootstrap `5s` (`bootstrapSpawnGroupChaseStepDelay`), what is the smallest honest authored combat-profile extension that can widen or narrow that chase arming delay per registered profile without inventing a second scheduler, chase packets, or absolute deadline rematerialize?**
+
+This is the next Track A follow-on after owned profile-authored `leash_radius` and the homeward / anti-leak bootstrap matrix. Cross-map return MOVE / warp choreography remains deferred behind the packet freeze in `spawn-leash-bootstrap.md` and must not be opened as speculative RED. Absolute chase / return / homeward due-at rematerialize across daemon restart stays cancelled as re-arm-from-now.
+
+Contract for optional authored `chase_delay_ms` on portable `combat_profiles` / `StaticActorCombatProfileDefaults`:
+
+- field name: `chase_delay_ms` (JSON) / `ChaseDelay` (`time.Duration` on Go defaults) / `ChaseDelayMs` (int64 on snapshots)
+- omitempty / zero means "use bootstrap default": effective delay = `5s` (`bootstrapSpawnGroupChaseStepDelay`)
+- when present and positive, the effective chase arming / re-arm delay for that registered profile is exactly the authored duration
+- validation fails closed when `chase_delay_ms < 0`
+- validation fails closed when a positive authored delay is `<= 1000` ms, so multi-beat hostility cadence remains independently observable before the first chase step relative to the owned `1s` delayed retaliation beat
+- validation fails closed when a positive authored delay exceeds `60000` ms (bootstrap upper bound for this seam)
+- built-in `practice_mob` / `training_dummy` profiles keep effective delay `5s` and do not require an authored field
+- the pure resolver is `EffectiveStaticActorSpawnChaseDelay(profile)` (plus `EffectiveStaticActorSpawnChaseDelayForActor(actor)` / `...FromDefaults`) in `internal/worldruntime`: it returns the effective duration without mutating actor state, engagement, timers, or packets
+- live chase arming and post-step re-arm for a spawn-backed actor must reuse that same effective delay for the actor's current combat profile; they must not keep hard-coding `bootstrapSpawnGroupChaseStepDelay` once a profile authors a different value
+- content-bundle import/export and file-backed static-actor combat-profile snapshots must round-trip a non-default authored `chase_delay_ms` the same way `aggro_radius` / `leash_radius` / `respawn_delay_ms` already round-trip
+- pending chase inspection endpoints continue to report absolute `ready_at` / `remaining_ms` derived from the armed deadline; they do not invent a separate authored-delay field on the schedule row
+
+Explicit non-goals for this profile-authored chase-delay freeze alone:
+
+- changing `max_step`, return-step delay, or homeward-step delay in the same slice
+- inventing chase packets, a second scheduler/goroutine, or operator chase POST
+- absolute chase / return / homeward due-at rematerialize across daemon restart (cancelled as re-arm-from-now)
+- pack AI, pathfinding, target switching, or cross-map MOVE / `GC WARP`
+- aggro hysteresis / a drop radius distinct from the acquire radius
+
 ## Success definition
 
 After this document lands, the repository should be able to say:

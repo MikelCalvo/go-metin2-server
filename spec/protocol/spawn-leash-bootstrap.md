@@ -185,6 +185,7 @@ Cleanup / fail-closed rules:
 - focused shared-world coverage now freezes that hit-armed asymmetry twin beside the proximity-only release proof: `TestGameRuntimeHitArmedSpawnGroupChaseSurvivesOwnerWalkOutsideAggroRadius` keeps `engaged_by`, selected combat target, and the pending chase deadline after the owner walks outside aggro, continues delayed retaliation, and still applies the due retained-viewer chase `MOVE`
 - dead actors waiting on respawn do not arm chase; a respawn rebuild starts unengaged at authored home and therefore does not inherit a pre-death chase deadline
 - no new operator chase-step POST surface is required for this first executor freeze
+- profile-authored per-mob chase arming delay beyond the bootstrap `5s` default is frozen separately as optional `combat_profiles.chase_delay_ms` in `content-spawn-groups-bootstrap.md`; until that seam is GREEN, live arming / re-arm keep using `bootstrapSpawnGroupChaseStepDelay`
 
 ## First owned pending chase-step inspection seam
 
