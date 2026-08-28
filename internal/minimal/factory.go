@@ -122,6 +122,8 @@ const myShopOpenLockedItemInfoMessage = "Items currently in use cannot be sold i
 const myShopOpenGoldOverflowInfoMessage = "You cannot open a private shop because it would exceed 2 Billion Yang."
 const myShopOpenShopBagVnum uint32 = 50200
 const myShopOpenSilkBagVnum uint32 = 71049
+const myShopBagUseBusyInfoMessage = "You cannot use a shop bag or silk bag while another trade window is open."
+const myShopOpenPrivateShopCommandMessage = "OpenPrivateShop"
 
 // myShopOpenBanwordInfoMessage lives in myshop_banword.go beside the bootstrap list.
 const cubeAlreadyOpenInfoMessage = "The Build window is already open."
@@ -4226,6 +4228,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		var hasActiveRefineDialog bool
 		var hasActiveMyShopOpen bool
 		var activeGuestMyShopHostVID uint32
+		var myShopRememberedUnitPrices map[uint32]uint32
+		var myShopPriceListRematerialized bool
 		var hasActiveCubeOpen bool
 		var activeCubeNPCVnum uint32
 		activeCubeSlots := make([]uint16, cubestore.CubeMaxNum)
@@ -4557,6 +4561,17 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			if joinedSharedWorld && sharedWorld != nil && sharedWorldID != 0 {
 				sharedWorld.SetMyShopWindowOpen(sharedWorldID, true, sign, stock)
 			}
+		}
+		rememberMyShopUnitPricesFromStock := func(stock []myShopStockRow) {
+			next := make(map[uint32]uint32, len(stock))
+			for _, row := range stock {
+				if row.Vnum == 0 || row.Count == 0 {
+					continue
+				}
+				next[row.Vnum] = row.Price / uint32(row.Count)
+			}
+			myShopRememberedUnitPrices = next
+			myShopPriceListRematerialized = false
 		}
 		refreshGuestMyShopBrowseFlag := func() {
 			if activeGuestMyShopHostVID == 0 {
@@ -4988,6 +5003,93 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		}
 		ownsLiveSharedWorldSession := func() bool {
 			return joinedSharedWorld && sharedWorldID != 0 && sharedWorld.HasLiveSession(sharedWorldID)
+		}
+		myShopBagUseBusyOpen := func() bool {
+			return hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveMyShopOpen || hasActiveCubeOpen ||
+				(ownsLiveSharedWorldSession() && sharedWorld != nil && sharedWorld.hasActiveExchange(sharedWorldID))
+		}
+		encodeMyShopBagUseCommandFrames := func(vnum uint32) [][]byte {
+			frames := make([][]byte, 0, 2)
+			if vnum == myShopOpenSilkBagVnum && !myShopPriceListRematerialized {
+				if len(myShopRememberedUnitPrices) == 0 {
+					frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+						Type:    chatproto.ChatTypeCommand,
+						Message: fmt.Sprintf("MyShopPriceList %d %d", 1, 0),
+					}))
+				} else {
+					vnums := make([]uint32, 0, len(myShopRememberedUnitPrices))
+					for rememberedVnum := range myShopRememberedUnitPrices {
+						vnums = append(vnums, rememberedVnum)
+					}
+					sort.Slice(vnums, func(i, j int) bool { return vnums[i] < vnums[j] })
+					for _, rememberedVnum := range vnums {
+						frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+							Type:    chatproto.ChatTypeCommand,
+							Message: fmt.Sprintf("MyShopPriceList %d %d", rememberedVnum, myShopRememberedUnitPrices[rememberedVnum]),
+						}))
+					}
+				}
+				myShopPriceListRematerialized = true
+			}
+			frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+				Type:    chatproto.ChatTypeCommand,
+				Message: myShopOpenPrivateShopCommandMessage,
+			}))
+			return frames
+		}
+		tryExecuteMyShopBagUse := func(slot inventory.SlotIndex) (gameflow.ItemUseResult, bool) {
+			selectedPlayer, ok := currentSelectedPlayer()
+			if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+				return gameflow.ItemUseResult{}, false
+			}
+			if exchangeDisplaysCarriedSlot(slot) {
+				return gameflow.ItemUseResult{Accepted: false}, true
+			}
+			occupancy := 0
+			var bag inventory.ItemInstance
+			for _, item := range selectedPlayer.LiveInventory() {
+				if item.Equipped || item.Slot != slot {
+					continue
+				}
+				occupancy++
+				bag = item
+			}
+			if occupancy != 1 || bag.Locked || (bag.Vnum != myShopOpenShopBagVnum && bag.Vnum != myShopOpenSilkBagVnum) || bag.Count == 0 {
+				return gameflow.ItemUseResult{}, false
+			}
+			if err := bag.Validate(); err != nil {
+				return gameflow.ItemUseResult{}, false
+			}
+			template, ok := runtime.itemTemplates[bag.Vnum]
+			if !ok || !itemcatalog.ValidTemplate(template) || template.EquipSlot != "" {
+				return gameflow.ItemUseResult{}, false
+			}
+			if myShopBagUseBusyOpen() {
+				return gameflow.ItemUseResult{
+					Accepted: true,
+					Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+						Type:    chatproto.ChatTypeInfo,
+						VID:     0,
+						Empire:  0,
+						Message: myShopBagUseBusyInfoMessage,
+					})},
+				}, true
+			}
+			if selectedPlayer.EquipmentSlotOccupied(inventory.EquipmentSlotBody) {
+				return gameflow.ItemUseResult{
+					Accepted: true,
+					Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+						Type:    chatproto.ChatTypeInfo,
+						VID:     0,
+						Empire:  0,
+						Message: myShopOpenArmorRequiredInfoMessage,
+					})},
+				}, true
+			}
+			return gameflow.ItemUseResult{
+				Accepted: true,
+				Frames:   encodeMyShopBagUseCommandFrames(bag.Vnum),
+			}, true
 		}
 		armPracticeMobServerOriginRetaliationFromProximityEngagement = func() {
 			if !ownsLiveSharedWorldSession() || sharedWorld == nil || sharedWorldID == 0 {
@@ -5582,13 +5684,16 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
 				return gameflow.ItemUseResult{Accepted: false}
 			}
-			if hasActiveMyShopOpen {
-				return gameflow.ItemUseResult{Accepted: false}
-			}
 			if position.WindowType != itemproto.WindowInventory || position.Cell >= itemproto.InventoryMaxCell {
 				return gameflow.ItemUseResult{Accepted: false}
 			}
 			slot := inventory.SlotIndex(position.Cell)
+			if result, handled := tryExecuteMyShopBagUse(slot); handled {
+				return result
+			}
+			if hasActiveMyShopOpen {
+				return gameflow.ItemUseResult{Accepted: false}
+			}
 			if exchangeDisplaysCarriedSlot(slot) {
 				return gameflow.ItemUseResult{Accepted: false}
 			}
@@ -9205,6 +9310,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							}
 						}
 						live := selectedPlayer.LiveCharacter()
+						rememberMyShopUnitPricesFromStock(stock)
 						setActiveMyShopOpen(sign, stock)
 						signFrame := shopproto.EncodeServerShopSign(shopproto.ServerShopSignPacket{
 							VID:  live.VID,
