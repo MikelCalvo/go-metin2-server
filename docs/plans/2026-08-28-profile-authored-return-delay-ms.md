@@ -2,24 +2,17 @@
 
 ## Objective
 
-Freeze the next Track A authored combat-profile seam after `chase_delay_ms`:
-optional `return_delay_ms` so registered practice-mob profiles can widen or
-narrow the live return-step arming / re-arm delay without inventing a second
-scheduler or return packets.
+Land the Track A authored combat-profile seam after `chase_delay_ms`: optional
+`return_delay_ms` so registered practice-mob profiles can widen or narrow the
+live return-step arming / re-arm delay without inventing a second scheduler or
+return packets.
 
-## Why freeze first
+## Status
 
-1. Live return-step arming still hard-codes `bootstrapSpawnGroupReturnStepDelay = 1s`
-   in `internal/minimal/factory.go`.
-2. Profile-authored chase delay already round-trips through `combat_profiles`;
-   return delay is the smallest matching timing extension on that same portable
-   surface for the return-step executor.
-3. Homeward-step delay stays on its own bootstrap `1s` seam and must not be
-   opened by this freeze.
-4. Absolute chase / return / homeward due-at rematerialize across daemon restart
-   stays cancelled as re-arm-from-now and must not be reopened by this seam.
+GREEN. Pure helpers, content-bundle / staticstore wiring, migration `0017`, and
+live factory arming / re-arm now consume `EffectiveStaticActorSpawnReturnDelay`.
 
-## Contract frozen
+## Contract
 
 See `spec/protocol/content-spawn-groups-bootstrap.md` § "First owned
 profile-authored return-delay seam" and the return-executor pointer in
@@ -33,20 +26,22 @@ Summary:
 - `EffectiveStaticActorSpawnReturnDelay(profile)` (+ actor / defaults helpers)
 - live return arming + post-step re-arm consume the effective delay
 - content-bundle / static-actor snapshot round-trip matches chase_delay / radii
+- SQL column via migration `0017_static_actor_combat_profile_return_delay`
 
-## Validation for this docs-only freeze
+## Validation
 
 ```bash
+go test ./internal/worldruntime/ -run 'ReturnDelay|ChaseDelay' -count=1
+go test ./internal/contentbundle/ -run 'ReturnDelay|ChaseDelay' -count=1
+go test ./internal/minimal/ -run 'AuthoredReturnDelay|AuthoredChaseDelay' -count=1
+go test ./db/migrations/ -run 'TestBuiltInCatalogIsValid|TestCatalogSummaryUsesBuiltInCatalog|TestPlan' -count=1
+gofmt -w $(git diff --name-only -- '*.go')
 git diff --check
-# no production code / failing tests in this freeze commit
 ```
 
-## Follow-up RED → GREEN
+## Explicit non-goals kept cancelled
 
-1. RED pure helpers + registration validation in `internal/worldruntime`.
-2. RED live consumer: authored `return_delay_ms = 2000` arms / re-arms at `2s`
-   instead of hard-coded `1s`.
-3. GREEN: defaults/snapshot/contentbundle/staticstore wiring + factory arming
-   consumes `EffectiveStaticActorSpawnReturnDelay`.
-4. Keep pack AI / pathfinding / cross-map MOVE / absolute schedule rematerialize
-   / homeward-delay authorship cancelled for Track A bootstrap.
+- pack AI / pathfinding / target switching
+- cross-map MOVE / `GC WARP`
+- absolute chase / return / homeward due-at rematerialize across daemon restart
+- homeward-step delay authorship (stays on bootstrap `1s`)

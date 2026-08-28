@@ -128,6 +128,14 @@
       "down_path": "0016_static_actor_combat_profile_chase_delay.down.sql",
       "up_sha256": "46a250eb43cf8c028e8e3c3c51796b5a7a4ad0bc1a48c842eaf6b497dc500f26",
       "down_sha256": "78ce07b720b72291e90450399e447eb36f5360028542a848af6571d53c8cc26f"
+    },
+    {
+      "version": 17,
+      "name": "static_actor_combat_profile_return_delay",
+      "up_path": "0017_static_actor_combat_profile_return_delay.up.sql",
+      "down_path": "0017_static_actor_combat_profile_return_delay.down.sql",
+      "up_sha256": "8bd010e58d13ddbe1648d3ba5856f9ab8928b7884d016700fb7c1319d98099e0",
+      "down_sha256": "c97dfb810f2ebfb6cbb22a5e427e2651dc62a59eb290df72551d7a1bc0186606"
     }
   ]
 }

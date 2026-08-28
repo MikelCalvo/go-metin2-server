@@ -6594,6 +6594,86 @@ func TestCanonicalizeRejectsCombatProfileChaseDelayAboveBootstrapCap(t *testing.
 	}
 }
 
+func TestCanonicalizeRoundTripsAuthoredCombatProfileReturnDelay(t *testing.T) {
+	const profile = "practice_authored_return_delay_wolf"
+
+	canonical, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.authored_return_delay_wolf",
+			Name:          "Authored Return Delay Wolf",
+			MapIndex:      42,
+			X:             1775,
+			Y:             2875,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        profile,
+			MaxHP:          24,
+			AttackValue:    8,
+			DefenseValue:   2,
+			RespawnDelayMs: 1500,
+			ReturnDelayMs:  2000,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize authored return-delay combat profile: %v", err)
+	}
+	if len(canonical.CombatProfiles) != 1 || canonical.CombatProfiles[0].ReturnDelayMs != 2000 {
+		t.Fatalf("expected canonical combat profile to preserve return_delay_ms 2000, got %#v", canonical.CombatProfiles)
+	}
+}
+
+func TestCanonicalizeRejectsCombatProfileReturnDelayBelowBootstrapFloor(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.too_fast_return_delay_wolf",
+			Name:          "Too Fast Return Delay Wolf",
+			MapIndex:      42,
+			X:             1800,
+			Y:             2900,
+			RaceNum:       101,
+			CombatProfile: "practice_too_fast_return_delay_wolf",
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        "practice_too_fast_return_delay_wolf",
+			MaxHP:          24,
+			AttackValue:    8,
+			DefenseValue:   2,
+			RespawnDelayMs: 1500,
+			ReturnDelayMs:  249,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for combat-profile return delay < 250ms, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsCombatProfileReturnDelayAboveBootstrapCap(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.too_slow_return_delay_wolf",
+			Name:          "Too Slow Return Delay Wolf",
+			MapIndex:      42,
+			X:             1800,
+			Y:             2900,
+			RaceNum:       101,
+			CombatProfile: "practice_too_slow_return_delay_wolf",
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        "practice_too_slow_return_delay_wolf",
+			MaxHP:          24,
+			AttackValue:    8,
+			DefenseValue:   2,
+			RespawnDelayMs: 1500,
+			ReturnDelayMs:  61000,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for combat-profile return delay above 60s, got %v", err)
+	}
+}
+
 func TestCanonicalizeRejectsOverflowingCombatProfileRespawnDelay(t *testing.T) {
 	_, err := Canonicalize(Bundle{
 		SpawnGroups: []SpawnGroup{{

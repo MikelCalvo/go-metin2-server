@@ -4202,6 +4202,9 @@ func validCombatProfileSnapshot(profile worldruntime.StaticActorCombatProfileSna
 	if _, ok := worldruntime.StaticActorCombatProfileChaseDelay(profile.ChaseDelayMs); !ok {
 		return false
 	}
+	if _, ok := worldruntime.StaticActorCombatProfileReturnDelay(profile.ReturnDelayMs); !ok {
+		return false
+	}
 	hasLegacyDamage := profile.DamagePerNormalAttack != 0
 	hasExplicitFormula := profile.AttackValue != 0
 	if profile.MaxHP == 0 || (!hasLegacyDamage && !hasExplicitFormula) || !worldruntime.ValidStaticActorCombatProfileRespawnDelayMs(profile.RespawnDelayMs) {
@@ -4241,6 +4244,7 @@ func combatProfileSnapshotMatchesDefaults(snapshot worldruntime.StaticActorComba
 		candidateDefaults.AggroRadius == defaults.AggroRadius &&
 		candidateDefaults.LeashRadius == defaults.LeashRadius &&
 		candidateDefaults.ChaseDelay == defaults.ChaseDelay &&
+		candidateDefaults.ReturnDelay == defaults.ReturnDelay &&
 		candidateDefaults.RetaliationPointDelta == defaults.RetaliationPointDelta &&
 		reflect.DeepEqual(candidateDefaults.DeathReward.Clone(), defaults.DeathReward.Clone())
 }
@@ -4253,6 +4257,10 @@ func combatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfil
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
 	chaseDelay, ok := worldruntime.StaticActorCombatProfileChaseDelay(snapshot.ChaseDelayMs)
+	if !ok {
+		return worldruntime.StaticActorCombatProfileDefaults{}, false
+	}
+	returnDelay, ok := worldruntime.StaticActorCombatProfileReturnDelay(snapshot.ReturnDelayMs)
 	if !ok {
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
@@ -4276,6 +4284,7 @@ func combatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfil
 		AggroRadius:           snapshot.AggroRadius,
 		LeashRadius:           snapshot.LeashRadius,
 		ChaseDelay:            chaseDelay,
+		ReturnDelay:           returnDelay,
 		RetaliationPointDelta: snapshot.RetaliationPointDelta,
 		DeathReward:           snapshot.DeathReward.Clone(),
 	}

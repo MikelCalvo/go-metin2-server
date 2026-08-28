@@ -16,7 +16,7 @@ var ErrStaticActorContentStateImportExecutorRequired = errors.New("static-actor 
 
 // ErrStaticActorContentStateImportSchemaRequired reports that the target
 // database has not applied the tip-0013 static-actor content-state boundary
-// and/or the additive 0016_static_actor_combat_profile_chase_delay column that
+// and/or the additive chase-delay (0016) / return-delay (0017) columns that
 // ImportStaticActorContentState inserts into static_actor_combat_profiles.
 var ErrStaticActorContentStateImportSchemaRequired = errors.New("static-actor content-state schema is not applied")
 
@@ -48,10 +48,11 @@ type StaticActorContentStateImportResult struct {
 // canonicalized rows into the tip-0013 interaction / static-actor / combat-profile
 // tables inside one transaction.
 //
-// Schema preflight requires both ledger version 13
-// (static_actor_combat_profile_state) and additive version 16
-// (static_actor_combat_profile_chase_delay) because combat-profile inserts bind
-// chase_delay_ms. Export / quarantine identity stays tip-0013.
+// Schema preflight requires ledger version 13
+// (static_actor_combat_profile_state) plus additive versions 16
+// (static_actor_combat_profile_chase_delay) and 17
+// (static_actor_combat_profile_return_delay) because combat-profile inserts bind
+// chase_delay_ms and return_delay_ms. Export / quarantine identity stays tip-0013.
 //
 // The caller still owns driver selection and DSN loading. This primitive does
 // not mutate bootstrap file stores or live content indexes, does not rewrite
@@ -156,6 +157,7 @@ func requireStaticActorContentStateSchema(ctx context.Context, querier dbmigrati
 	}
 	hasContentState := false
 	hasChaseDelay := false
+	hasReturnDelay := false
 	latest := 0
 	for _, entry := range ledger {
 		if entry.Version > latest {
@@ -167,14 +169,20 @@ func requireStaticActorContentStateSchema(ctx context.Context, querier dbmigrati
 		if entry.Version == StaticActorCombatProfileChaseDelayMigrationVersion && entry.Name == StaticActorCombatProfileChaseDelayMigrationName {
 			hasChaseDelay = true
 		}
+		if entry.Version == StaticActorCombatProfileReturnDelayMigrationVersion && entry.Name == StaticActorCombatProfileReturnDelayMigrationName {
+			hasReturnDelay = true
+		}
 	}
-	if hasContentState && hasChaseDelay {
+	if hasContentState && hasChaseDelay && hasReturnDelay {
 		return nil
 	}
 	if !hasContentState {
 		return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrStaticActorContentStateImportSchemaRequired, latest, StaticActorContentStateMigrationVersion, StaticActorContentStateMigrationName)
 	}
-	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrStaticActorContentStateImportSchemaRequired, latest, StaticActorCombatProfileChaseDelayMigrationVersion, StaticActorCombatProfileChaseDelayMigrationName)
+	if !hasChaseDelay {
+		return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrStaticActorContentStateImportSchemaRequired, latest, StaticActorCombatProfileChaseDelayMigrationVersion, StaticActorCombatProfileChaseDelayMigrationName)
+	}
+	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrStaticActorContentStateImportSchemaRequired, latest, StaticActorCombatProfileReturnDelayMigrationVersion, StaticActorCombatProfileReturnDelayMigrationName)
 }
 
 func insertInteractionDefinition(ctx context.Context, tx *sql.Tx, row InteractionDefinitionRow) error {
@@ -316,8 +324,8 @@ func insertStaticActorCombatProfile(ctx context.Context, tx *sql.Tx, row StaticA
 	result, err := tx.ExecContext(ctx, `
 INSERT INTO static_actor_combat_profiles (
     profile, max_hp, damage_per_normal_attack, attack_value, defense_value, level, rank,
-    respawn_delay_ms, aggro_radius, leash_radius, chase_delay_ms, retaliation_point_delta, death_reward_experience, death_reward_gold
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    respawn_delay_ms, aggro_radius, leash_radius, chase_delay_ms, return_delay_ms, retaliation_point_delta, death_reward_experience, death_reward_gold
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		row.Profile,
 		int(row.MaxHP),
 		int(row.DamagePerNormalAttack),
@@ -329,6 +337,7 @@ INSERT INTO static_actor_combat_profiles (
 		int64(row.AggroRadius),
 		int64(row.LeashRadius),
 		row.ChaseDelayMs,
+		row.ReturnDelayMs,
 		int64(row.RetaliationPointDelta),
 		int64(row.DeathRewardExperience),
 		int64(row.DeathRewardGold),

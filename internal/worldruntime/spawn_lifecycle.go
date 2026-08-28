@@ -26,6 +26,15 @@ const (
 	// MaxSpawnChaseDelay is the bootstrap upper bound for optional authored
 	// combat_profiles.chase_delay_ms on this Track A seam.
 	MaxSpawnChaseDelay = 60 * time.Second
+	// DefaultSpawnReturnDelay is the bootstrap return-step arming / re-arm delay.
+	DefaultSpawnReturnDelay = time.Second
+	// MinSpawnReturnDelay is the bootstrap lower bound for optional authored
+	// combat_profiles.return_delay_ms so return cadence stays independently
+	// observable beside the owned flush order.
+	MinSpawnReturnDelay = 250 * time.Millisecond
+	// MaxSpawnReturnDelay is the bootstrap upper bound for optional authored
+	// combat_profiles.return_delay_ms on this Track A seam.
+	MaxSpawnReturnDelay = 60 * time.Second
 )
 
 // SpawnLeashEvaluation is a pure planning result for the first mob lifecycle

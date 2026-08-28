@@ -12,39 +12,41 @@ import (
 )
 
 const (
-	testManifestFilename                                 = "migrations.manifest.json"
-	expectedBootstrapUpSHA256                            = "76ab086217590515cb9b1eb72d78f49abf766da977998c4c60b41825c8e92f78"
-	expectedBootstrapDownSHA256                          = "140e8ba3c7a1c89cd942c13ef40160c74df5619093fe8c287c69cb978dba822d"
-	expectedAccountCharacterRosterUpSHA256               = "5385c65b2f00b6c64567d604176f99f84b39afae62d840939e49ab2994b053af"
-	expectedAccountCharacterRosterDownSHA256             = "cd8877ab1e88c4fe9a55d350bd5a89e1961ac88bd01423c5c1a1b0b8af37dc94"
-	expectedCharacterItemStateUpSHA256                   = "122e94f3d39975a6d1cf7e2d9321177a408e195be484e5ea2ffd5a8fa61c9a24"
-	expectedCharacterItemStateDownSHA256                 = "1a4dbc6d32c52a85eab837e00a9a63cc6c811b153a6054e5b568bdc3027592ee"
-	expectedCharacterQuestStateUpSHA256                  = "d67b53bc4f6aeaf74e9721f760ab05279037293f4de9e7b0079813984de56862"
-	expectedCharacterQuestStateDownSHA256                = "70d2a9c4db6a47acd6574975c96449efd4eb6d3076db53c3eb6e21221936282f"
-	expectedItemTemplateStateUpSHA256                    = "6b615d308f7a0b3a0c8a67ebd16661a3fe7d7c5e608ee397127398f4e6fa2e4c"
-	expectedItemTemplateStateDownSHA256                  = "28d0adc265466bcfccaa683b7a777a3fbfb5aff146c962709532b0bb40bf3fce"
-	expectedItemTemplateSafeboxRejectUpSHA256            = "83b5af7214706ffe8884d1ec841a190c2f6bf220b3899f11aa3850340643c280"
-	expectedItemTemplateSafeboxRejectDownSHA256          = "7f04a66fc85f5e5b70be54c7ad8afae47d1b4e63004716e8814fdf141d3f1d81"
-	expectedAuthLoginTicketHandoffUpSHA256               = "e42ae108f6b12938f4f622cc6c71f1d091ad5fc51c9892df78c6f05f3207eae9"
-	expectedAuthLoginTicketHandoffDownSHA256             = "eec9767c316afeefe6319861e0a193df7b77c8e9eac6b42a2d6cf8f396127268"
-	expectedStaticActorContentStateUpSHA256              = "303d4608766de8147c676e4d93f27e53a3744bf09343b060ec662d9c2378d9ad"
-	expectedStaticActorContentStateDownSHA256            = "8a58559911600f73c9f8c0e23bd4b4df8919a0c0dbe19c2ede6a2771ac43a2d7"
-	expectedItemTemplateRefineInfoUpSHA256               = "89ff5fd8c8e7f4c97a580b59d5b80196d5200aa0f19e1a3281691104e906788d"
-	expectedItemTemplateRefineInfoDownSHA256             = "446ab6e77951ed82c7ca5eadb41c27855cf7eb10ad7c807939e58f4f23450ec6"
-	expectedBootstrapGroundItemStateUpSHA256             = "7c7c3b9e20c680224777955be2d15dd86326d511208fa17e4048ec41beaf4abb"
-	expectedBootstrapGroundItemStateDownSHA256           = "1509b9ae5105449c4ef1317b68d1ad8d05c120f2188b7c0fe110c84515381042"
-	expectedCharacterPointStateUpSHA256                  = "2034ab84227eaa0701a257ed1dbd592d18e4d33fa09add30e05e93dcf4c8dc43"
-	expectedCharacterPointStateDownSHA256                = "a77745e16a6066f5acaa905699176b8e57ef809b4ae61383dd20fdd0fb8eeafa"
-	expectedStaticActorPVEInteractionUpSHA256            = "97570fea21e09c8c744601d433ddf0bde0f302e61eb0a9d72c5c55a7d8f5bf60"
-	expectedStaticActorPVEInteractionDownSHA256          = "ebd3d0e36da41f938604f63a42c45afa18a64ae1ceb32de645e2abb34d81819a"
-	expectedStaticActorCombatProfileUpSHA256             = "1ec2fff925f5d67303be45c770e52379a42339ee9d545ec80dd65ff0ddde319e"
-	expectedStaticActorCombatProfileDownSHA256           = "6e704e0fa7b2dc5f7e27e8de33033f6c3210990133d6ba149055426cbecf276d"
-	expectedCharacterSafeboxStateUpSHA256                = "d800cec5d07278a6fa0b9d9004a0de3542e57c19b8565336fdbd865a6458caa4"
-	expectedCharacterSafeboxStateDownSHA256              = "f5cf1b200457d20c79feaa899098cb7a2718873ae64e4c229ab7581ab86e3ee1"
-	expectedCharacterSafeboxMoneyUpSHA256                = "b34a824a3633704b6292bc76ac031e0ef55ebe5bd95a8f13f5a495f42fdc83df"
-	expectedCharacterSafeboxMoneyDownSHA256              = "36cdb054ea3a6c1e3684187270f1a00700c7bed0ac01ee032ebcfb572f669efd"
-	expectedStaticActorCombatProfileChaseDelayUpSHA256   = "46a250eb43cf8c028e8e3c3c51796b5a7a4ad0bc1a48c842eaf6b497dc500f26"
-	expectedStaticActorCombatProfileChaseDelayDownSHA256 = "78ce07b720b72291e90450399e447eb36f5360028542a848af6571d53c8cc26f"
+	testManifestFilename                                  = "migrations.manifest.json"
+	expectedBootstrapUpSHA256                             = "76ab086217590515cb9b1eb72d78f49abf766da977998c4c60b41825c8e92f78"
+	expectedBootstrapDownSHA256                           = "140e8ba3c7a1c89cd942c13ef40160c74df5619093fe8c287c69cb978dba822d"
+	expectedAccountCharacterRosterUpSHA256                = "5385c65b2f00b6c64567d604176f99f84b39afae62d840939e49ab2994b053af"
+	expectedAccountCharacterRosterDownSHA256              = "cd8877ab1e88c4fe9a55d350bd5a89e1961ac88bd01423c5c1a1b0b8af37dc94"
+	expectedCharacterItemStateUpSHA256                    = "122e94f3d39975a6d1cf7e2d9321177a408e195be484e5ea2ffd5a8fa61c9a24"
+	expectedCharacterItemStateDownSHA256                  = "1a4dbc6d32c52a85eab837e00a9a63cc6c811b153a6054e5b568bdc3027592ee"
+	expectedCharacterQuestStateUpSHA256                   = "d67b53bc4f6aeaf74e9721f760ab05279037293f4de9e7b0079813984de56862"
+	expectedCharacterQuestStateDownSHA256                 = "70d2a9c4db6a47acd6574975c96449efd4eb6d3076db53c3eb6e21221936282f"
+	expectedItemTemplateStateUpSHA256                     = "6b615d308f7a0b3a0c8a67ebd16661a3fe7d7c5e608ee397127398f4e6fa2e4c"
+	expectedItemTemplateStateDownSHA256                   = "28d0adc265466bcfccaa683b7a777a3fbfb5aff146c962709532b0bb40bf3fce"
+	expectedItemTemplateSafeboxRejectUpSHA256             = "83b5af7214706ffe8884d1ec841a190c2f6bf220b3899f11aa3850340643c280"
+	expectedItemTemplateSafeboxRejectDownSHA256           = "7f04a66fc85f5e5b70be54c7ad8afae47d1b4e63004716e8814fdf141d3f1d81"
+	expectedAuthLoginTicketHandoffUpSHA256                = "e42ae108f6b12938f4f622cc6c71f1d091ad5fc51c9892df78c6f05f3207eae9"
+	expectedAuthLoginTicketHandoffDownSHA256              = "eec9767c316afeefe6319861e0a193df7b77c8e9eac6b42a2d6cf8f396127268"
+	expectedStaticActorContentStateUpSHA256               = "303d4608766de8147c676e4d93f27e53a3744bf09343b060ec662d9c2378d9ad"
+	expectedStaticActorContentStateDownSHA256             = "8a58559911600f73c9f8c0e23bd4b4df8919a0c0dbe19c2ede6a2771ac43a2d7"
+	expectedItemTemplateRefineInfoUpSHA256                = "89ff5fd8c8e7f4c97a580b59d5b80196d5200aa0f19e1a3281691104e906788d"
+	expectedItemTemplateRefineInfoDownSHA256              = "446ab6e77951ed82c7ca5eadb41c27855cf7eb10ad7c807939e58f4f23450ec6"
+	expectedBootstrapGroundItemStateUpSHA256              = "7c7c3b9e20c680224777955be2d15dd86326d511208fa17e4048ec41beaf4abb"
+	expectedBootstrapGroundItemStateDownSHA256            = "1509b9ae5105449c4ef1317b68d1ad8d05c120f2188b7c0fe110c84515381042"
+	expectedCharacterPointStateUpSHA256                   = "2034ab84227eaa0701a257ed1dbd592d18e4d33fa09add30e05e93dcf4c8dc43"
+	expectedCharacterPointStateDownSHA256                 = "a77745e16a6066f5acaa905699176b8e57ef809b4ae61383dd20fdd0fb8eeafa"
+	expectedStaticActorPVEInteractionUpSHA256             = "97570fea21e09c8c744601d433ddf0bde0f302e61eb0a9d72c5c55a7d8f5bf60"
+	expectedStaticActorPVEInteractionDownSHA256           = "ebd3d0e36da41f938604f63a42c45afa18a64ae1ceb32de645e2abb34d81819a"
+	expectedStaticActorCombatProfileUpSHA256              = "1ec2fff925f5d67303be45c770e52379a42339ee9d545ec80dd65ff0ddde319e"
+	expectedStaticActorCombatProfileDownSHA256            = "6e704e0fa7b2dc5f7e27e8de33033f6c3210990133d6ba149055426cbecf276d"
+	expectedCharacterSafeboxStateUpSHA256                 = "d800cec5d07278a6fa0b9d9004a0de3542e57c19b8565336fdbd865a6458caa4"
+	expectedCharacterSafeboxStateDownSHA256               = "f5cf1b200457d20c79feaa899098cb7a2718873ae64e4c229ab7581ab86e3ee1"
+	expectedCharacterSafeboxMoneyUpSHA256                 = "b34a824a3633704b6292bc76ac031e0ef55ebe5bd95a8f13f5a495f42fdc83df"
+	expectedCharacterSafeboxMoneyDownSHA256               = "36cdb054ea3a6c1e3684187270f1a00700c7bed0ac01ee032ebcfb572f669efd"
+	expectedStaticActorCombatProfileChaseDelayUpSHA256    = "46a250eb43cf8c028e8e3c3c51796b5a7a4ad0bc1a48c842eaf6b497dc500f26"
+	expectedStaticActorCombatProfileChaseDelayDownSHA256  = "78ce07b720b72291e90450399e447eb36f5360028542a848af6571d53c8cc26f"
+	expectedStaticActorCombatProfileReturnDelayUpSHA256   = "8bd010e58d13ddbe1648d3ba5856f9ab8928b7884d016700fb7c1319d98099e0"
+	expectedStaticActorCombatProfileReturnDelayDownSHA256 = "c97dfb810f2ebfb6cbb22a5e427e2651dc62a59eb290df72551d7a1bc0186606"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -691,6 +693,38 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 		t.Fatalf("expected combat-profile chase-delay down migration to drop chase_delay_ms, got:\n%s", sixteenth.DownSQL)
 	}
 
+	if len(catalog) < 17 {
+		t.Fatalf("expected combat-profile return-delay migration after chase-delay, got %d", len(catalog))
+	}
+	seventeenth := catalog[16]
+	if seventeenth.Version != 17 || seventeenth.Name != "static_actor_combat_profile_return_delay" {
+		t.Fatalf("unexpected seventeenth migration: %#v", seventeenth)
+	}
+	if seventeenth.UpPath != "0017_static_actor_combat_profile_return_delay.up.sql" {
+		t.Fatalf("unexpected seventeenth up path: %q", seventeenth.UpPath)
+	}
+	if seventeenth.DownPath != "0017_static_actor_combat_profile_return_delay.down.sql" {
+		t.Fatalf("unexpected seventeenth down path: %q", seventeenth.DownPath)
+	}
+	if seventeenth.UpSHA256 != expectedStaticActorCombatProfileReturnDelayUpSHA256 {
+		t.Fatalf("unexpected combat-profile return-delay up checksum: got %q want %q", seventeenth.UpSHA256, expectedStaticActorCombatProfileReturnDelayUpSHA256)
+	}
+	if seventeenth.DownSHA256 != expectedStaticActorCombatProfileReturnDelayDownSHA256 {
+		t.Fatalf("unexpected combat-profile return-delay down checksum: got %q want %q", seventeenth.DownSHA256, expectedStaticActorCombatProfileReturnDelayDownSHA256)
+	}
+	for _, want := range []string{
+		"ALTER TABLE static_actor_combat_profiles",
+		"ADD COLUMN return_delay_ms BIGINT NOT NULL DEFAULT 0",
+		"CHECK (return_delay_ms = 0 OR (return_delay_ms >= 250 AND return_delay_ms <= 60000))",
+	} {
+		if !strings.Contains(seventeenth.UpSQL, want) {
+			t.Fatalf("expected combat-profile return-delay up migration to contain %q, got:\n%s", want, seventeenth.UpSQL)
+		}
+	}
+	if !strings.Contains(seventeenth.DownSQL, "ALTER TABLE static_actor_combat_profiles DROP COLUMN return_delay_ms") {
+		t.Fatalf("expected combat-profile return-delay down migration to drop return_delay_ms, got:\n%s", seventeenth.DownSQL)
+	}
+
 	for i, migration := range catalog {
 		wantVersion := i + 1
 		if migration.Version != wantVersion {
@@ -760,7 +794,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("built-in catalog summary: %v", err)
 	}
-	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 16 {
+	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 17 {
 		t.Fatalf("unexpected built-in catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -770,7 +804,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 		t.Fatalf("unexpected first built-in catalog summary row: %#v", summary.Migrations[0])
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "static_actor_combat_profile_chase_delay" {
+	if latest.Version != summary.LatestVersion || latest.Name != "static_actor_combat_profile_return_delay" {
 		t.Fatalf("unexpected latest built-in catalog summary row: %#v", latest)
 	}
 }
