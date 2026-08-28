@@ -20,9 +20,11 @@ additive `0016_static_actor_combat_profile_chase_delay`, so operators get
   `table static_actor_combat_profiles has no column named chase_delay_ms`
   and `errors.Is(..., ErrStaticActorContentStateImportSchemaRequired) == false`.
 - Track E prefers explicit migration/preflight safety over opaque driver errors.
-- Safe, lane-scoped, one-commit, and testable without inventing upsert policy,
-  registering a stock production driver, or opening return_delay / `0017` (still
-  world-lane ahead of `main`).
+- Safe, lane-scoped, one-commit, and testable without inventing upsert policy or
+  registering a stock production driver. Return-delay / `0017` later landed on
+  `main` with the world-lane GREEN; the matching import schema gate + Track E
+  docs sync is owned by
+  [static-actor import require return-delay schema](2026-08-28-static-actor-import-require-return-delay-schema.md).
 
 ## Contract frozen by this slice
 
@@ -30,23 +32,28 @@ additive `0016_static_actor_combat_profile_chase_delay`, so operators get
    (`migration_version=13`, `migration_name=static_actor_combat_profile_state`).
 2. `ImportStaticActorContentState` still inserts `chase_delay_ms` into
    `static_actor_combat_profiles`.
-3. Schema preflight must require **both**:
-   - ledger version `13` / `static_actor_combat_profile_state`
-   - ledger version `16` / `static_actor_combat_profile_chase_delay`
-4. Missing either boundary returns
+3. Schema preflight must require tip-`0013` plus additive chase-delay `0016`.
+   Live import after return-delay landed also requires additive `0017`; that
+   three-boundary gate is owned by
+   [static-actor import require return-delay schema](2026-08-28-static-actor-import-require-return-delay-schema.md).
+4. Missing either tip-`0013` or chase-delay `0016` returns
    `ErrStaticActorContentStateImportSchemaRequired` (wrapped with the missing
    version/name and observed tip) **before** any INSERT.
 5. Existing empty-DB missing-schema coverage stays green.
-6. Existing tip-apply import proofs keep applying through catalog tip `16`.
-7. Upsert / auto-run / stock production driver / return_delay `0017` remain
-   explicitly deferred.
+6. Existing tip-apply import proofs for this chase-delay slice applied through
+   catalog tip `16`; current catalog tip after return-delay is `17`.
+7. Upsert / auto-run / stock production driver remain explicitly deferred.
+   ~~Return-delay / `0017` import schema gate~~ Done — see
+   [static-actor import require return-delay schema](2026-08-28-static-actor-import-require-return-delay-schema.md).
 
 ## What this is not yet
 
 - retipping static-actor exports to `migration_version=16`
 - inventing upsert / merge / truncate-and-reload policy
 - production DB engine selection as a stock default
-- world-lane `return_delay_ms` / migration `0017`
+- ~~world-lane `return_delay_ms` / migration `0017`~~ Done on `main` plus the
+  import schema gate docs sync — see
+  [static-actor import require return-delay schema](2026-08-28-static-actor-import-require-return-delay-schema.md)
 - DB-backed runtime repositories replacing FileStores
 - loopback ops mutation endpoint / remote admin / secrets in git
 
@@ -86,11 +93,13 @@ git diff --check
 - schema gate requires tip-`0013` **and** chase-delay `0016`
 - tip-`0013`-only ledger fails closed with `SchemaRequired`, not raw SQL
 - prior tip-`0016` import proofs remain green
-- upsert / auto-run / stock driver / `0017` remain explicitly deferred
+- upsert / auto-run / stock driver remain explicitly deferred
+- return-delay / `0017` follow-up is owned by
+  [static-actor import require return-delay schema](2026-08-28-static-actor-import-require-return-delay-schema.md)
 
 ## Anti-goals / ordering constraints
 
 - Do not retip export identity to version `16` in this slice.
-- Do not land world-lane `return_delay_ms` / `0017` on `lane/persistence`.
+- Do not invent upsert / merge policy in this slice.
 - Do not register a production driver in stock binaries.
 - Do not push `origin/main`; push only `origin/lane/persistence`.

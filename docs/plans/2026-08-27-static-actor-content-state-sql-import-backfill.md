@@ -36,12 +36,16 @@ claiming DB-backed live static-actor / interaction loading.
    - runs `QuarantineStaticActorContentStateExport` (fail closed on shape drift);
    - opens one transaction;
    - reads `schema_migrations` through `db/migrations.ReadSQLLedgerEntries` and
-     requires applied ledger entries for both version `13` /
-     `static_actor_combat_profile_state` **and** additive version `16` /
-     `static_actor_combat_profile_chase_delay` (empty/missing ledger, tip
-     `< 13`, or tip-`0013`-only without `0016` fail closed with
-     `ErrStaticActorContentStateImportSchemaRequired` before INSERT; see
-     [static-actor import require chase-delay schema](2026-08-28-static-actor-import-require-chase-delay-schema.md));
+     requires applied ledger entries for version `13` /
+     `static_actor_combat_profile_state`, additive version `16` /
+     `static_actor_combat_profile_chase_delay`, **and** additive version `17` /
+     `static_actor_combat_profile_return_delay` (empty/missing ledger, tip
+     `< 13`, tip-`0013`-only without `0016`, or tip-`0016`-only without `0017`
+     fail closed with `ErrStaticActorContentStateImportSchemaRequired` before
+     INSERT; see
+     [static-actor import require chase-delay schema](2026-08-28-static-actor-import-require-chase-delay-schema.md)
+     and
+     [static-actor import require return-delay schema](2026-08-28-static-actor-import-require-return-delay-schema.md));
    - inserts rows with parameterized `INSERT` statements (no `OR REPLACE` /
      upsert) in FK-safe order using durable columns only:
      1. `interaction_definitions`
@@ -122,13 +126,15 @@ claiming DB-backed live static-actor / interaction loading.
 Focused coverage:
 
 - nil executor / invalid export → error, no panic / no BeginTx
-- sqlite harness: apply to catalog tip (`>= 16`) → import sample tip-`0013`
+- sqlite harness: apply to catalog tip (`>= 17`) → import sample tip-`0013`
   export → SELECT matches definitions / merchant / quest-flag children /
   actors / reward drops / combat profiles / death-reward drops
 - sqlite harness: second import of the same primary keys fails closed (unique conflict)
 - sqlite harness: import before migrations / without `0013` fails closed
 - sqlite harness: apply to tip-`0013` only (no `0016`) fails closed with
   `SchemaRequired` naming missing chase-delay version/name and inserts no rows
+- sqlite harness: apply to tip-`0016` only (no `0017`) fails closed with
+  `SchemaRequired` naming missing return-delay version/name and inserts no rows
 - sqlite harness: empty export succeeds as no-op after ledger gate
 - stdout/result never embeds DSN / executable SQL
 
