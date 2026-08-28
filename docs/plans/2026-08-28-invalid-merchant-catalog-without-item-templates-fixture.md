@@ -46,7 +46,11 @@ git diff --check
 
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
-2. Add further checked-in negatives only when a later reject case still forces
+2. ~~Add further checked-in negatives only when a later reject case still forces
    QA to invent JSON (for example reward drop missing from a present but
    incomplete `item_templates` collection, or merchant catalog entry whose
-   `item_vnum` is absent from a present templates collection).
+   `item_vnum` is absent from a present templates collection).~~ Done for
+   merchant catalog entries whose `item_vnum` is absent from a present
+   templates collection:
+   `docs/examples/bootstrap-invalid-merchant-catalog-item-missing-from-item-templates-bundle.json`
+   (`docs/plans/2026-08-28-invalid-merchant-catalog-item-missing-from-item-templates-fixture.md`).

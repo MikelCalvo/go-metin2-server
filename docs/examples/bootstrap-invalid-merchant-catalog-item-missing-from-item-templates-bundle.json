@@ -1,0 +1,32 @@
+{
+  "item_templates": [
+    {
+      "vnum": 27001,
+      "name": "Small Red Potion",
+      "stackable": true,
+      "max_count": 200,
+      "shop_buy_price": 5
+    }
+  ],
+  "interaction_definitions": [
+    {
+      "kind": "shop_preview",
+      "ref": "npc:qa_merchant_item_missing_from_templates",
+      "title": "QA Merchant Item Missing From Templates",
+      "catalog": [
+        {
+          "slot": 0,
+          "item_vnum": 27001,
+          "price": 50,
+          "count": 1
+        },
+        {
+          "slot": 1,
+          "item_vnum": 11200,
+          "price": 500,
+          "count": 1
+        }
+      ]
+    }
+  ]
+}
