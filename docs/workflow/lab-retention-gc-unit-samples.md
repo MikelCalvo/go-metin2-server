@@ -84,6 +84,8 @@ IMPORT_DSN_ENV="${METIN2_IMPORT_DSN_ENV:-METIN2_IMPORT_DSN}"
 PRINT_ASIDE_PURGE="${METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE:-}"
 ASIDE_MIN_AGE_DAYS="${METIN2_GC_ASIDE_MIN_AGE_DAYS:-7}"
 ASIDE_NOW="${METIN2_GC_ASIDE_NOW:-}"
+MIGRATION_TARGET_VERSION="${METIN2_MIGRATION_TARGET_VERSION:-}"
+MIGRATION_ALLOW_ROLLBACK="${METIN2_MIGRATION_ALLOW_ROLLBACK:-}"
 
 test -x "$BIN"
 test -d "$PRINTS_ROOT"
@@ -111,11 +113,38 @@ cp "$TMP_BUILD" "$OUT/build-info.json"
   --keep-days "$KEEP_DAYS" \
   >"$OUT/artifact-retention-gc-exports.sh"
 
-"$BIN" migration-run-retention \
+# Optional migration-run-retention target / rollback posture. Empty target keeps
+# the CLI default (latest). --allow-rollback is only forwarded when the operator
+# sets METIN2_MIGRATION_ALLOW_ROLLBACK=YES and a non-empty non-latest target.
+MIGRATION_TARGET_VERSION=$(printf %s "$MIGRATION_TARGET_VERSION" | tr -d '[:space:]')
+MIGRATION_NOTE="migration-run-retention=printed with CLI default target (latest)"
+set -- migration-run-retention \
   --build-info "$OUT/build-info.json" \
   --gamed-log-path "$GAMED_LOG" \
-  --authd-log-path "$AUTHD_LOG" \
-  >"$OUT/migration-run-retention.sh"
+  --authd-log-path "$AUTHD_LOG"
+if [ -n "$MIGRATION_TARGET_VERSION" ]; then
+  set -- "$@" --target-version "$MIGRATION_TARGET_VERSION"
+  MIGRATION_NOTE="migration-run-retention=printed with --target-version ${MIGRATION_TARGET_VERSION}"
+fi
+case "$MIGRATION_ALLOW_ROLLBACK" in
+  [Yy][Ee][Ss])
+    case "$MIGRATION_TARGET_VERSION" in
+      ""|latest)
+        MIGRATION_NOTE="${MIGRATION_NOTE}; --allow-rollback skipped (requires METIN2_MIGRATION_TARGET_VERSION non-empty and not latest)"
+        ;;
+      *)
+        set -- "$@" --allow-rollback
+        MIGRATION_NOTE="${MIGRATION_NOTE} --allow-rollback"
+        ;;
+    esac
+    ;;
+  "")
+    ;;
+  *)
+    MIGRATION_NOTE="${MIGRATION_NOTE}; --allow-rollback skipped (METIN2_MIGRATION_ALLOW_ROLLBACK must be YES to print)"
+    ;;
+esac
+"$BIN" "$@" >"$OUT/migration-run-retention.sh"
 
 "$BIN" export-quarantine-drill \
   --build-info "$OUT/build-info.json" \
@@ -244,6 +273,7 @@ esac
 
 {
   printf 'printed %s\ncommit=%s\nkeep_days=%s\n' "$OUT" "${COMMIT:-unknown}" "$KEEP_DAYS"
+  printf '%s\n' "$MIGRATION_NOTE"
   printf 'export-quarantine-drill=printed from build-info\n'
   printf '%s\n' "$DRILL_NOTE"
   printf '%s\n' "$IMPORT_NOTE"
@@ -269,7 +299,12 @@ forwards `--now`). Always-on companions and the optional backup drill receive
 `--gamed-log-path` / `--authd-log-path` from `METIN2_GAMED_LOG_PATH` /
 `METIN2_AUTHD_LOG_PATH` (defaults `/var/log/metin2/gamed.log` /
 `/var/log/metin2/authd.log`) so printed retain scripts can optionally copy daemon
-JSON logs when present. The helper never live-fetches ops JSON, never embeds a
+JSON logs when present. `migration-run-retention.sh` optionally forwards
+`--target-version` from `METIN2_MIGRATION_TARGET_VERSION` (empty keeps the CLI
+default `latest`) and `--allow-rollback` only when
+`METIN2_MIGRATION_ALLOW_ROLLBACK=YES` and the target is a non-empty non-`latest`
+value; invalid rollback combos are recorded in `notes.md` and still never
+execute apply/rollback. The helper never live-fetches ops JSON, never embeds a
 DSN value, and never executes printed purge scripts.
 ## systemd samples (print-only)
 

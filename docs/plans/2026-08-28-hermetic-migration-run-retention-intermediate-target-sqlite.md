@@ -54,8 +54,10 @@ proof for mid-catalog targets.
      `static_actor_content_state`.
 4. Untagged `go test ./internal/migratecli` stays free of the SQLite dependency.
 5. Docs mark the intermediate-target hermetic follow-up done on the
-   migration-run-retention / Track E / migration-contract tips; upsert /
-   auto-run / stock production driver remain explicitly deferred.
+   migration-run-retention / Track E / migration-contract tips;
+   ~~contrib print-helper target/rollback env forwarding~~ Done — see
+   [contrib migration-run retention target env](2026-08-28-contrib-migration-run-retention-target-env.md).
+   Upsert / auto-run / stock production driver remain explicitly deferred.
 
 ## What this is not yet
 

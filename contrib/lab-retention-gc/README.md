@@ -93,6 +93,12 @@ Optional (env-gated):
   `METIN2_GAMED_LOG_PATH` / `METIN2_AUTHD_LOG_PATH` (defaults
   `/var/log/metin2/gamed.log` and `/var/log/metin2/authd.log`) so the printed
   retain scripts can optionally copy daemon JSON logs when present.
+- `migration-run-retention.sh` optionally forwards `--target-version` from
+  `METIN2_MIGRATION_TARGET_VERSION` (empty keeps the CLI default `latest`) and
+  `--allow-rollback` only when `METIN2_MIGRATION_ALLOW_ROLLBACK=YES`
+  (case-insensitive) **and** the target is a non-empty non-`latest` value.
+  Invalid rollback combos stay print-only and are recorded in `notes.md`; the
+  helper still never executes apply/rollback.
 
 ## Hard rules
 

@@ -78,6 +78,8 @@ say the aside step is optional and only for leftover-lock recovery.
    tips; upsert / auto-run / stock production driver remain explicitly deferred.
    ~~Intermediate-target hermetic follow-up (empty→`7`, tip→`8`).~~ Done: see
    [hermetic migration-run-retention intermediate-target SQLite](2026-08-28-hermetic-migration-run-retention-intermediate-target-sqlite.md).
+   ~~Contrib print-helper target/rollback env forwarding.~~ Done: see
+   [contrib migration-run retention target env](2026-08-28-contrib-migration-run-retention-target-env.md).
 
 ## What this is not yet
 

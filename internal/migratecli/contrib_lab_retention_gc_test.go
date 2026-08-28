@@ -50,6 +50,10 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		"METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE",
 		"METIN2_GC_ASIDE_MIN_AGE_DAYS",
 		"METIN2_GC_ASIDE_NOW",
+		"METIN2_MIGRATION_TARGET_VERSION",
+		"METIN2_MIGRATION_ALLOW_ROLLBACK",
+		"--target-version",
+		"--allow-rollback",
 		"--gamed-log-path \"$GAMED_LOG\"",
 		"--authd-log-path \"$AUTHD_LOG\"",
 		"/var/log/metin2/gamed.log",
@@ -198,6 +202,8 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		"METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE",
 		"METIN2_GC_ASIDE_MIN_AGE_DAYS",
 		"METIN2_GC_ASIDE_NOW",
+		"METIN2_MIGRATION_TARGET_VERSION",
+		"METIN2_MIGRATION_ALLOW_ROLLBACK",
 		"/var/log/metin2/gamed.log",
 		"/var/log/metin2/authd.log",
 		"backup-restore-drill.sh",
@@ -239,6 +245,8 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		"METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE=",
 		"METIN2_GC_ASIDE_MIN_AGE_DAYS=",
 		"METIN2_GC_ASIDE_NOW=",
+		"METIN2_MIGRATION_TARGET_VERSION=",
+		"METIN2_MIGRATION_ALLOW_ROLLBACK=",
 	} {
 		if !strings.Contains(envSample, want) {
 			t.Fatalf("env sample missing %q", want)
@@ -255,6 +263,8 @@ func TestContribLabRetentionGCSamplesStayPrintOnly(t *testing.T) {
 		"METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE=",
 		"METIN2_GC_ASIDE_MIN_AGE_DAYS=",
 		"METIN2_GC_ASIDE_NOW=",
+		"METIN2_MIGRATION_TARGET_VERSION=",
+		"METIN2_MIGRATION_ALLOW_ROLLBACK=",
 	} {
 		if !strings.Contains(periodicConf, want) {
 			t.Fatalf("periodic.conf sample missing %q", want)
@@ -408,9 +418,18 @@ esac
 		if !strings.Contains(notes, "artifact-gc-aside-purge=skipped") {
 			t.Fatalf("notes must record artifact-gc-aside-purge skip, got %q", notes)
 		}
+		if !strings.Contains(notes, "migration-run-retention=printed with CLI default target (latest)") {
+			t.Fatalf("notes must record default migration-run-retention posture, got %q", notes)
+		}
 		migrationBody := mustReadContribSample(t, filepath.Join(outDir, "migration-run-retention.sh"))
 		if !strings.Contains(migrationBody, "# stub migration-run-retention") {
 			t.Fatalf("migration-run-retention.sh must come from stub printer, got %q", migrationBody)
+		}
+		if strings.Contains(migrationBody, "--target-version") {
+			t.Fatalf("default migration-run-retention argv must omit --target-version, got %q", migrationBody)
+		}
+		if strings.Contains(migrationBody, "--allow-rollback") {
+			t.Fatalf("default migration-run-retention argv must omit --allow-rollback, got %q", migrationBody)
 		}
 		exportBody := mustReadContribSample(t, filepath.Join(outDir, "export-quarantine-drill.sh"))
 		if !strings.Contains(exportBody, "# stub export-quarantine-drill") {
@@ -915,6 +934,120 @@ esac
 			if !strings.Contains(body, want) {
 				t.Fatalf("custom aside purge argv must include %q, got %q", want, body)
 			}
+		}
+	})
+
+	t.Run("forwards_intermediate_migration_target_version", func(t *testing.T) {
+		runPrints := filepath.Join(printsRoot, "migration-target-forward")
+		mustMkdir(t, runPrints)
+		cmd := exec.Command("/bin/sh", helperPath)
+		cmd.Env = []string{
+			"PATH=/usr/bin:/bin",
+			"METIN2_MIGRATE_BIN=" + stubPath,
+			"METIN2_OPS_PRINTS_ROOT=" + runPrints,
+			"METIN2_RETENTION_KEEP_DAYS=14",
+			"METIN2_MIGRATION_TARGET_VERSION=7",
+			"HOME=" + root,
+			"TMPDIR=" + root,
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("helper exit error: %v stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+		}
+		outDir := strings.TrimSpace(stdout.String())
+		migrationBody := mustReadContribSample(t, filepath.Join(outDir, "migration-run-retention.sh"))
+		for _, want := range []string{
+			"--target-version",
+			"7",
+		} {
+			if !strings.Contains(migrationBody, want) {
+				t.Fatalf("intermediate forward argv must include %q, got %q", want, migrationBody)
+			}
+		}
+		if strings.Contains(migrationBody, "--allow-rollback") {
+			t.Fatalf("intermediate forward argv must omit --allow-rollback, got %q", migrationBody)
+		}
+		notes := mustReadContribSample(t, filepath.Join(outDir, "notes.md"))
+		if !strings.Contains(notes, "migration-run-retention=printed with --target-version 7") {
+			t.Fatalf("notes must record intermediate forward posture, got %q", notes)
+		}
+		if strings.Contains(notes, "--allow-rollback") {
+			t.Fatalf("forward notes must not claim --allow-rollback, got %q", notes)
+		}
+	})
+
+	t.Run("forwards_rollback_migration_target_version", func(t *testing.T) {
+		runPrints := filepath.Join(printsRoot, "migration-target-rollback")
+		mustMkdir(t, runPrints)
+		cmd := exec.Command("/bin/sh", helperPath)
+		cmd.Env = []string{
+			"PATH=/usr/bin:/bin",
+			"METIN2_MIGRATE_BIN=" + stubPath,
+			"METIN2_OPS_PRINTS_ROOT=" + runPrints,
+			"METIN2_RETENTION_KEEP_DAYS=14",
+			"METIN2_MIGRATION_TARGET_VERSION=8",
+			"METIN2_MIGRATION_ALLOW_ROLLBACK=yes",
+			"HOME=" + root,
+			"TMPDIR=" + root,
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("helper exit error: %v stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+		}
+		outDir := strings.TrimSpace(stdout.String())
+		migrationBody := mustReadContribSample(t, filepath.Join(outDir, "migration-run-retention.sh"))
+		for _, want := range []string{
+			"--target-version",
+			"8",
+			"--allow-rollback",
+		} {
+			if !strings.Contains(migrationBody, want) {
+				t.Fatalf("intermediate rollback argv must include %q, got %q", want, migrationBody)
+			}
+		}
+		notes := mustReadContribSample(t, filepath.Join(outDir, "notes.md"))
+		if !strings.Contains(notes, "migration-run-retention=printed with --target-version 8 --allow-rollback") {
+			t.Fatalf("notes must record intermediate rollback posture, got %q", notes)
+		}
+	})
+
+	t.Run("skips_allow_rollback_without_non_latest_target", func(t *testing.T) {
+		runPrints := filepath.Join(printsRoot, "migration-target-rollback-skip")
+		mustMkdir(t, runPrints)
+		cmd := exec.Command("/bin/sh", helperPath)
+		cmd.Env = []string{
+			"PATH=/usr/bin:/bin",
+			"METIN2_MIGRATE_BIN=" + stubPath,
+			"METIN2_OPS_PRINTS_ROOT=" + runPrints,
+			"METIN2_RETENTION_KEEP_DAYS=14",
+			"METIN2_MIGRATION_ALLOW_ROLLBACK=YES",
+			"HOME=" + root,
+			"TMPDIR=" + root,
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("helper exit error: %v stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+		}
+		outDir := strings.TrimSpace(stdout.String())
+		migrationBody := mustReadContribSample(t, filepath.Join(outDir, "migration-run-retention.sh"))
+		if strings.Contains(migrationBody, "--allow-rollback") {
+			t.Fatalf("rollback without non-latest target must omit --allow-rollback, got %q", migrationBody)
+		}
+		if strings.Contains(migrationBody, "--target-version") {
+			t.Fatalf("rollback without target must omit --target-version, got %q", migrationBody)
+		}
+		notes := mustReadContribSample(t, filepath.Join(outDir, "notes.md"))
+		if !strings.Contains(notes, "--allow-rollback skipped (requires METIN2_MIGRATION_TARGET_VERSION non-empty and not latest)") {
+			t.Fatalf("notes must record rollback skip reason, got %q", notes)
 		}
 	})
 }
