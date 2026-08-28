@@ -2180,12 +2180,26 @@ func TestGameRuntimeItemExchangeAcceptRevalidatesDisplayedGoldAgainstLiveGoldWit
 	if err != nil {
 		t.Fatalf("unexpected stale-gold exchange accept error: %v", err)
 	}
-	if len(acceptOut) != 1 {
-		t.Fatalf("expected stale-gold exchange accept to emit one self status frame, got %d", len(acceptOut))
+	if len(acceptOut) != 2 {
+		t.Fatalf("expected stale-gold exchange accept to emit LESS_GOLD then END, got %d", len(acceptOut))
 	}
-	assertExchangeLessGoldFrame(t, acceptOut[0], "stale displayed-gold accept self response")
-	if queuedAccept := flushServerFrames(t, peerFlow); len(queuedAccept) != 0 {
-		t.Fatalf("expected stale-gold exchange accept to queue no peer accept frames, got %d", len(queuedAccept))
+	assertExchangeLessGoldFrame(t, acceptOut[0], "stale displayed-gold accept self LESS_GOLD")
+	assertExchangeEndFrame(t, acceptOut[1], "stale displayed-gold accept self END")
+	queuedAccept := flushServerFrames(t, peerFlow)
+	if len(queuedAccept) != 1 {
+		t.Fatalf("expected stale-gold exchange accept to queue one peer END, got %d", len(queuedAccept))
+	}
+	assertExchangeEndFrame(t, queuedAccept[0], "stale displayed-gold accept peer END")
+
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected cancel after stale-gold accept auto-cancel error: %v", err)
+	}
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected cancel after stale-gold accept auto-cancel to fail closed, got %d frames", len(cancelOut))
+	}
+	if queuedCancel := flushServerFrames(t, peerFlow); len(queuedCancel) != 0 {
+		t.Fatalf("expected cancel after stale-gold accept auto-cancel to queue no peer frames, got %d", len(queuedCancel))
 	}
 
 	wantOwner := owner

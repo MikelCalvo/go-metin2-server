@@ -71,5 +71,8 @@ runtime code.
 
 ## Status
 
-Docs/spec freeze for `lane/items`. RED scaffolding may sit dirty until GREEN;
-do not commit failing tests unless explicitly requested.
+GREEN on `lane/items`: accept-time requester `LESS_GOLD` emits self
+`GC::EXCHANGE LESS_GOLD` then self/peer `GC::EXCHANGE END` and clears the shell;
+over-budget `ELK_ADD` `LESS_GOLD` still leaves the shell cancellable. GD/DB
+`MYSHOP_PRICELIST` / quest-running / bag-missing INFO / refine keep-grade stay
+deferred.

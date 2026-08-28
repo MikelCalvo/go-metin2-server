@@ -840,7 +840,14 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 		return nil, nil, false
 	}
 	if displayedGold := r.exchangeGold[originID]; displayedGold != 0 && uint64(displayedGold) > availableGold {
-		return [][]byte{encodeExchangeLessGoldFrame()}, nil, true
+		// Accept-time LESS_GOLD keeps the status frame, then Cancel-on-failure
+		// tears the shell down (docs/plans/2026-08-29-exchange-less-gold-accept-auto-cancel.md).
+		// Over-budget ELK_ADD LESS_GOLD stays shell-open above in AddExchangeGold.
+		frames, ok := r.exchangeFinalizeRejectAutoCancelLocked(originID, partnerID, [][]byte{encodeExchangeLessGoldFrame()})
+		if !ok {
+			return nil, nil, false
+		}
+		return frames, nil, true
 	}
 	if r.exchangeAccepted[partnerID] {
 		if !exchangeDisplayedItemsStillLive(r.exchangeItems[partnerID], partner, r.itemTemplates) {

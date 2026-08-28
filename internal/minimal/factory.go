@@ -8261,9 +8261,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						selfFrames, applied := applyExchangeFinalize(runtime, accounts, sharedWorld, selectedPlayer, &sessionTicket, finalizePlan)
 						if !applied {
 							// Busy / gold-carrier / Check/Space/gold-overflow/Other /
-							// persist-fail reject chat already auto-cancelled with
-							// trailing END frames when apply/commit returned selfFrames;
-							// LESS_GOLD stays silent-or-cancellable without END teardown.
+							// persist-fail / accept-time LESS_GOLD reject paths already
+							// auto-cancelled with trailing END frames when apply/commit
+							// or AcceptExchange returned selfFrames. Over-budget
+							// ELK_ADD LESS_GOLD still leaves the shell cancellable.
 							if len(selfFrames) > 0 {
 								return gameflow.ItemExchangeResult{Accepted: true, Frames: selfFrames}
 							}
