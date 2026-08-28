@@ -834,6 +834,36 @@ Explicit non-goals for this profile-authored return-delay freeze alone:
 - pack AI, pathfinding, target switching, or cross-map MOVE / `GC WARP`
 - aggro hysteresis / a drop radius distinct from the acquire radius
 
+## First owned profile-authored homeward-delay seam
+
+Question frozen here:
+
+**Once profile-authored `return_delay_ms` already owns live return arming / re-arm, and the live homeward-step executor still hard-codes bootstrap `1s` (`bootstrapSpawnGroupHomewardStepDelay`), what is the smallest honest authored combat-profile extension that can widen or narrow that homeward-step arming delay per registered profile without inventing a second scheduler, homeward packets, or absolute deadline rematerialize?**
+
+This is the next Track A follow-on after owned profile-authored `return_delay_ms`. Cross-map return MOVE / warp choreography remains deferred behind the packet freeze in `spawn-leash-bootstrap.md` and must not be opened as speculative RED. Absolute chase / return / homeward due-at rematerialize across daemon restart stays cancelled as re-arm-from-now. Chase-step and return-step delays stay on their already-owned seams and are not reopened by this freeze.
+
+Contract for optional authored `homeward_delay_ms` on portable `combat_profiles` / `StaticActorCombatProfileDefaults`:
+
+- field name: `homeward_delay_ms` (JSON) / `HomewardDelay` (`time.Duration` on Go defaults) / `HomewardDelayMs` (int64 on snapshots)
+- omitempty / zero means "use bootstrap default": effective delay = `1s` (`bootstrapSpawnGroupHomewardStepDelay`)
+- when present and positive, the effective homeward-step arming / re-arm delay for that registered profile is exactly the authored duration
+- validation fails closed when `homeward_delay_ms < 0`
+- validation fails closed when a positive authored delay is `< 250` ms (bootstrap lower bound so homeward cadence stays independently observable beside the owned flush order)
+- validation fails closed when a positive authored delay exceeds `60000` ms (bootstrap upper bound for this seam)
+- built-in `practice_mob` / `training_dummy` profiles keep effective delay `1s` and do not require an authored field
+- the pure resolver is `EffectiveStaticActorSpawnHomewardDelay(profile)` (plus `EffectiveStaticActorSpawnHomewardDelayForActor(actor)` / `...FromDefaults`) in `internal/worldruntime`: it returns the effective duration without mutating actor state, engagement, timers, or packets
+- live homeward-step arming and post-step re-arm for a spawn-backed actor must reuse that same effective delay for the actor's current combat profile; they must not keep hard-coding `bootstrapSpawnGroupHomewardStepDelay` once a profile authors a different value
+- content-bundle import/export and file-backed static-actor combat-profile snapshots must round-trip a non-default authored `homeward_delay_ms` the same way `aggro_radius` / `leash_radius` / `chase_delay_ms` / `return_delay_ms` / `respawn_delay_ms` already round-trip
+- pending homeward inspection endpoints continue to report absolute `ready_at` / `remaining_ms` derived from the armed deadline; they do not invent a separate authored-delay field on the schedule row
+
+Explicit non-goals for this profile-authored homeward-delay freeze alone:
+
+- changing `max_step`, chase-step delay, or return-step delay in the same slice
+- inventing homeward packets, a second scheduler/goroutine, or operator homeward POST beyond the already-owned surfaces
+- absolute chase / return / homeward due-at rematerialize across daemon restart (cancelled as re-arm-from-now)
+- pack AI, pathfinding, target switching, or cross-map MOVE / `GC WARP`
+- aggro hysteresis / a drop radius distinct from the acquire radius
+
 ## Success definition
 
 After this document lands, the repository should be able to say:
