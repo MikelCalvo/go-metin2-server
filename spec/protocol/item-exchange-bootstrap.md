@@ -202,6 +202,10 @@ Templates that author `give_reject_message` without one of those owned exchange-
 
 Malformed `EXCHANGE` payload sizes fail at the codec/dispatcher boundary rather than reaching runtime mutation code.
 
+## Next staged Cancel-on-failure companion
+
+Busy-window and gold-carrier-cap mutual-accept / commit rejects still leave the shell cancellable after their owned self-only info-chat. The next items-lane slice freezes and implements chat-then-self/peer `GC::EXCHANGE END` auto-cancel for those paths (`docs/plans/2026-08-28-exchange-busy-gold-carrier-reject-auto-cancel.md`). `LESS_GOLD` and persistence-failure silent fail-closed stay out of that companion.
+
 ## Deferred behavior
 
 Later slices must write a new contract before broadening this packet into real gameplay. In particular, this slice does not freeze:
