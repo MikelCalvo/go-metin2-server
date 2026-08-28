@@ -865,6 +865,38 @@ Explicit non-goals for this profile-authored homeward-delay freeze alone:
 - pack AI, pathfinding, target switching, or cross-map MOVE / `GC WARP`
 - aggro hysteresis / a drop radius distinct from the acquire radius
 
+## First owned profile-authored max-step seam
+
+Question frozen here:
+
+**Once profile-authored chase / return / homeward delays already own live arming / re-arm, and the live chase / return / homeward planners still hard-code bootstrap `max_step = 100`, what is the smallest honest authored combat-profile extension that can widen or narrow that shared step cap per registered profile without inventing pathfinding, a second planner family, or absolute deadline rematerialize?**
+
+This is the next Track A follow-on after owned profile-authored `homeward_delay_ms`. Cross-map return MOVE / warp choreography remains deferred behind the packet freeze in `spawn-leash-bootstrap.md` and must not be opened as speculative RED. Absolute chase / return / homeward due-at rematerialize across daemon restart stays cancelled as re-arm-from-now. Chase / return / homeward delay authorship stay on their already-owned seams and are not reopened by this freeze.
+
+Contract for optional authored `max_step` on portable `combat_profiles` / `StaticActorCombatProfileDefaults`:
+
+- field name: `max_step` (JSON) / `MaxStep` (`int32` on Go defaults and snapshots)
+- omitempty / zero means "use bootstrap default": effective step = `100` (`bootstrapSpawnGroupChaseStepMaxStep` / return / homeward twin constants)
+- when present and positive, the effective chase / return / homeward planner step for that registered profile is exactly the authored distance
+- validation fails closed when `max_step < 0`
+- validation fails closed when a positive authored step is `< 1`
+- validation fails closed when a positive authored step exceeds `1000` (bootstrap upper bound for this seam)
+- built-in `practice_mob` / `training_dummy` profiles keep effective step `100` and do not require an authored field
+- the pure resolver is `EffectiveStaticActorSpawnMaxStep(profile)` (plus `EffectiveStaticActorSpawnMaxStepForActor(actor)` / `...FromDefaults`) in `internal/worldruntime`: it returns the effective step without mutating actor state, engagement, timers, or packets
+- live chase / return / homeward planning and due-step execution for a spawn-backed actor must reuse that same effective step for the actor's current combat profile; they must not keep hard-coding `bootstrapSpawnGroup*MaxStep` once a profile authors a different value
+- operator `POST /local/spawn-groups/{entity_id}/return-step?max_step=<positive-int>` remains an explicit override when the query is present and valid; when the query is omitted, the operator path uses the same effective profile step
+- content-bundle import/export and file-backed static-actor combat-profile snapshots must round-trip a non-default authored `max_step` the same way `aggro_radius` / `leash_radius` / `chase_delay_ms` / `return_delay_ms` / `homeward_delay_ms` / `respawn_delay_ms` already round-trip
+- pending chase / return / homeward inspection endpoints continue to report the planned `step` derived from the armed deadline + effective planner inputs; they do not invent a separate authored-max-step field on the schedule row
+
+Explicit non-goals for this profile-authored max-step freeze alone:
+
+- changing chase / return / homeward delay authorship in the same slice
+- inventing per-executor authored step fields (`chase_max_step` / `return_max_step` / `homeward_max_step`)
+- inventing pathfinding, patrol, pack AI, or a second scheduler/goroutine
+- absolute chase / return / homeward due-at rematerialize across daemon restart (cancelled as re-arm-from-now)
+- cross-map MOVE / `GC WARP`
+- aggro hysteresis / a drop radius distinct from the acquire radius
+
 ## Success definition
 
 After this document lands, the repository should be able to say:
