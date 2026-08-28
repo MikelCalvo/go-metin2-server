@@ -45,6 +45,8 @@ git diff --check
 
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
-2. Add further checked-in negatives only when a later reject case still forces
+2. ~~Add further checked-in negatives only when a later reject case still forces
    QA to invent JSON (for example duplicate authored static-actor rows after
-   canonical trimming).
+   canonical trimming).~~ Done for duplicate authored static-actor rows:
+   `docs/examples/bootstrap-invalid-duplicate-static-actor-bundle.json`
+   (`docs/plans/2026-08-28-invalid-duplicate-static-actor-fixture.md`).

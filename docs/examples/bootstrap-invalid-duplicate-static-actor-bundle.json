@@ -1,0 +1,29 @@
+{
+  "static_actors": [
+    {
+      "name": "VillageGuard",
+      "map_index": 1,
+      "x": 469400,
+      "y": 964200,
+      "race_num": 20302,
+      "interaction_kind": "talk",
+      "interaction_ref": "npc:village_guard"
+    },
+    {
+      "name": " VillageGuard ",
+      "map_index": 1,
+      "x": 469400,
+      "y": 964200,
+      "race_num": 20302,
+      "interaction_kind": " talk ",
+      "interaction_ref": " npc:village_guard "
+    }
+  ],
+  "interaction_definitions": [
+    {
+      "kind": "talk",
+      "ref": "npc:village_guard",
+      "text": "Keep your blade sharp."
+    }
+  ]
+}
