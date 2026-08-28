@@ -136,6 +136,7 @@ func renderImportExportDrillScript(plan importExportDrillPlan) string {
 	for _, kind := range plan.Kinds {
 		fmt.Fprintf(&b, "test -f \"$EXPORT_TREE/%s/quarantine.json\"\n", kind)
 		fmt.Fprintf(&b, "metin2-migrate import-export --kind %s --export \"$EXPORT_TREE/%s/quarantine.json\" --driver \"$DRIVER\" --dsn \"$DSN\" --i-confirm-sql-import > \"$EXPORT_TREE/%s/import-result.json\"\n", kind, kind, kind)
+		fmt.Fprintf(&b, "metin2-migrate import-export-status --kind %s --import-result \"$EXPORT_TREE/%s/import-result.json\" > \"$EXPORT_TREE/%s/import-result-status.json\"\n", kind, kind, kind)
 	}
 	return b.String()
 }

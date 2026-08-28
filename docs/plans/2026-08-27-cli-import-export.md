@@ -63,6 +63,7 @@ daemon mutation route.
 - upsert / merge / truncate-and-reload policy
 - production DB engine selection as a stock default
 - ~~scheduled / automatic import drill printer~~ Done for the confirmation-gated print-only `import-export-drill` surface — see [CLI import-export drill printer](2026-08-27-cli-import-export-drill.md). Automatic / scheduled execution of the printed import script remains deferred.
+- ~~read-only status helper for retained `import-result.json`~~ Done — see [CLI import-export status](2026-08-28-cli-import-export-status.md).
 - DB-backed live runtime repositories
 - loopback ops mutation endpoint
 - remote admin, secrets in git, metrics/tracing

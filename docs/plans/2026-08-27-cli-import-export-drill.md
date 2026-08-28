@@ -52,6 +52,7 @@ Behavior:
    - for each tip kind in the fixed `exportQuarantineKinds` order, prints:
      - existence check for `$EXPORT_TREE/<kind>/quarantine.json`;
      - `metin2-migrate import-export --kind <kind> --export ... --driver ... --dsn "$DSN" --i-confirm-sql-import > "$EXPORT_TREE/<kind>/import-result.json"`;
+     - `metin2-migrate import-export-status --kind <kind> --import-result "$EXPORT_TREE/<kind>/import-result.json" > "$EXPORT_TREE/<kind>/import-result-status.json"`;
    - never executes HTTP/SQL, never writes files itself, never opens a database,
      never embeds a DSN value or executable SQL DDL/DML.
 6. Covered kinds (order fixed, same vocabulary as `quarantine-export` /
@@ -75,6 +76,7 @@ Behavior:
 - automatic / scheduled execution of the printed import script
 - ~~folding `import-export-drill` into `contrib/lab-retention-gc` print-only samples~~ Done — see [contrib import-export drill print helper](2026-08-27-contrib-import-export-drill-print-helper.md)
 - ~~hermetic `/bin/sh` execution proof against a real driver-backed database~~ Done — see [hermetic import-export drill SQLite execution proof](2026-08-27-hermetic-import-export-drill-sqlite-execution-proof.md)
+- ~~read-only status helper for retained `import-result.json` beside each drill import~~ Done — see [CLI import-export status](2026-08-28-cli-import-export-status.md)
 - upsert / merge / truncate-and-reload policy
 - production DB engine selection as a stock default
 - loopback ops mutation endpoint

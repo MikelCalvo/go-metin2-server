@@ -39,9 +39,9 @@ const (
 // code. The catalog, status, empty-ledger-snapshot, ledger-snapshot,
 // ledger-snapshot-status, plan, plan-artifact, plan-artifact-status,
 // apply-preflight, apply-preflight-status, apply-lock-status, apply-audit-status,
-// quarantine-export, export-quarantine-drill, backup-restore-drill,
-// migration-run-retention, and artifact-retention-gc commands are
-// read-only/print-only.
+// import-export-status, quarantine-export, export-quarantine-drill,
+// backup-restore-drill, migration-run-retention, and artifact-retention-gc
+// commands are read-only/print-only.
 // artifact-gc-aside-purge is a confirmation-gated print-only companion that emits
 // a shell script for deleting aged .gc-aside-* trees; the CLI still never executes
 // that purge itself and never opens a database target.
@@ -116,6 +116,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runQuarantineExport(args[1:], stdin, stdout, stderr)
 	case "import-export":
 		return runImportExport(args[1:], stdin, stdout, stderr)
+	case "import-export-status":
+		return runImportExportStatus(args[1:], stdout, stderr)
 	case "import-export-drill":
 		return runImportExportDrill(args[1:], stdout, stderr)
 	case "export-quarantine-drill":
@@ -2143,6 +2145,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  apply                  apply a target plan using a database/sql driver and offline ledger snapshot")
 	fmt.Fprintln(w, "  quarantine-export      validate and canonicalize a retained migration-shaped export offline")
 	fmt.Fprintln(w, "  import-export          import a retained migration-shaped export through the programmatic SQL import seams")
+	fmt.Fprintln(w, "  import-export-status   inspect a retained import-export result without mutating it")
 	fmt.Fprintln(w, "  import-export-drill    print confirmation-gated lab SQL import-export commands from a retained export/quarantine tree")
 	fmt.Fprintln(w, "  export-quarantine-drill print path-aware lab export retention + offline quarantine-export commands from build-info")
 	fmt.Fprintln(w, "  backup-restore-drill   print path-aware lab backup retention + file-store drill commands from runtime-config and build-info")
@@ -2182,6 +2185,8 @@ func printUsage(w io.Writer) {
 	printQuarantineExportUsage(w)
 	fmt.Fprintln(w, "")
 	printImportExportUsage(w)
+	fmt.Fprintln(w, "")
+	printImportExportStatusUsage(w)
 	fmt.Fprintln(w, "")
 	printImportExportDrillUsage(w)
 	fmt.Fprintln(w, "")
