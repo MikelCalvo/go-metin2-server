@@ -225,6 +225,118 @@ func TestGameSessionFlowPostFloorSafeboxChangePasswordFailsClosed(t *testing.T) 
 	}
 }
 
+func TestGameSessionFlowPostFloorSafeboxChangePasswordFailsClosedBeforeRestartTown(t *testing.T) {
+	login := "pf-change-safebox-pwd-town"
+	loginKey := uint32(0x19191b19)
+	owner := peerVisibilityCharacter("DeadChangeSafeboxPwdTownOwner", 0x01030b19, 0x02040b19, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Gold = 12345
+	root := t.TempDir()
+	safeboxPath := filepath.Join(root, "state", "safebox.json")
+	runtime, accounts, targetVID := newPostFloorSafeboxChangePasswordRuntime(t, root, safeboxPath, login, loginKey, owner)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/safebox_change_password " + safeboxstore.DefaultPassword + " vault2",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor town /safebox_change_password dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor town /safebox_change_password to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor town /safebox_change_password to queue no frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor town /safebox_change_password")
+
+	snapshot, err := safeboxstore.LoadOrEmpty(safeboxstore.NewFileStore(safeboxPath))
+	if err != nil {
+		t.Fatalf("load durable safebox after post-floor town change-password: %v", err)
+	}
+	if got := safeboxstore.CharacterPassword(snapshot, login, owner.ID); got != safeboxstore.DefaultPassword {
+		t.Fatalf("post-floor town /safebox_change_password mutated durable password: got %q want %q", got, safeboxstore.DefaultPassword)
+	}
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_town",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_town after post-floor change-password: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_town recovery frames after post-floor change-password, got %d", len(restartOut))
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[0]))
+	if err != nil {
+		t.Fatalf("decode self character add after post-floor change-password /restart_town: %v", err)
+	}
+	if selfAdd.VID != owner.VID || selfAdd.X != 52070 || selfAdd.Y != 166600 {
+		t.Fatalf("expected /restart_town self bootstrap at empire town position after change-password floor, got %+v", selfAdd)
+	}
+	var (
+		selfPoints  worldproto.PlayerPointChangePacket
+		foundPoints bool
+	)
+	for _, raw := range restartOut {
+		fr := decodeSingleFrame(t, raw)
+		if !foundPoints {
+			if points, err := worldproto.DecodePlayerPointChange(fr); err == nil {
+				selfPoints = points
+				foundPoints = true
+			}
+		}
+	}
+	if !foundPoints {
+		t.Fatal("expected /restart_town recovery to include self PLAYER_POINT_CHANGE after change-password floor")
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if selfPoints.Value != wantHP {
+		t.Fatalf("expected /restart_town to rebuild recovered owner HP %d after change-password floor, got %+v", wantHP, selfPoints)
+	}
+	_ = flushServerFrames(t, flow)
+
+	changeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/safebox_change_password " + safeboxstore.DefaultPassword + " vault2",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart_town /safebox_change_password: %v", err)
+	}
+	if len(changeOut) != 1 {
+		t.Fatalf("expected one post-restart_town change-password success chat, got %d", len(changeOut))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, changeOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-restart_town change-password success chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != safeboxPasswordChangedInfoMessage {
+		t.Fatalf("unexpected post-restart_town change-password success chat: %+v", delivery)
+	}
+	snapshot, err = safeboxstore.LoadOrEmpty(safeboxstore.NewFileStore(safeboxPath))
+	if err != nil {
+		t.Fatalf("load durable safebox after post-restart_town change-password: %v", err)
+	}
+	if got := safeboxstore.CharacterPassword(snapshot, login, owner.ID); got != "vault2" {
+		t.Fatalf("durable password after post-restart_town change=%q want vault2", got)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart_town change-password: %v", err)
+	}
+	if account.Characters[0].MapIndex != 21 || account.Characters[0].X != 52070 || account.Characters[0].Y != 166600 {
+		t.Fatalf("expected /restart_town to persist empire town position after change-password floor, got %+v", account.Characters[0])
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_town to persist recovered owner HP %d after change-password floor, got %+v", wantHP, account.Characters[0])
+	}
+}
+
 func TestGameSessionFlowPostFloorSafeboxMoneyFailsClosed(t *testing.T) {
 	login := "pf-safebox-money"
 	loginKey := uint32(0x19191b17)
