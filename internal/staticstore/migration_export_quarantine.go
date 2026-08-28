@@ -436,6 +436,7 @@ func combatProfileFromContentStateRow(row StaticActorCombatProfileRow) (worldrun
 		RespawnDelayMs:        row.RespawnDelayMs,
 		AggroRadius:           row.AggroRadius,
 		LeashRadius:           row.LeashRadius,
+		ChaseDelayMs:          row.ChaseDelayMs,
 		RetaliationPointDelta: row.RetaliationPointDelta,
 		DeathReward: worldruntime.StaticActorDeathReward{
 			Experience: row.DeathRewardExperience,

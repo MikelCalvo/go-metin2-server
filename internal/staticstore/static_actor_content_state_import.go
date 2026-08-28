@@ -301,8 +301,8 @@ func insertStaticActorCombatProfile(ctx context.Context, tx *sql.Tx, row StaticA
 	result, err := tx.ExecContext(ctx, `
 INSERT INTO static_actor_combat_profiles (
     profile, max_hp, damage_per_normal_attack, attack_value, defense_value, level, rank,
-    respawn_delay_ms, aggro_radius, leash_radius, retaliation_point_delta, death_reward_experience, death_reward_gold
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    respawn_delay_ms, aggro_radius, leash_radius, chase_delay_ms, retaliation_point_delta, death_reward_experience, death_reward_gold
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		row.Profile,
 		int(row.MaxHP),
 		int(row.DamagePerNormalAttack),
@@ -313,6 +313,7 @@ INSERT INTO static_actor_combat_profiles (
 		row.RespawnDelayMs,
 		int64(row.AggroRadius),
 		int64(row.LeashRadius),
+		row.ChaseDelayMs,
 		int64(row.RetaliationPointDelta),
 		int64(row.DeathRewardExperience),
 		int64(row.DeathRewardGold),

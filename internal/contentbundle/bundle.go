@@ -4199,6 +4199,9 @@ func validCombatProfileSnapshot(profile worldruntime.StaticActorCombatProfileSna
 	if !worldruntime.ValidStaticActorCombatProfileLeashRadius(profile.LeashRadius, profile.AggroRadius) {
 		return false
 	}
+	if _, ok := worldruntime.StaticActorCombatProfileChaseDelay(profile.ChaseDelayMs); !ok {
+		return false
+	}
 	hasLegacyDamage := profile.DamagePerNormalAttack != 0
 	hasExplicitFormula := profile.AttackValue != 0
 	if profile.MaxHP == 0 || (!hasLegacyDamage && !hasExplicitFormula) || !worldruntime.ValidStaticActorCombatProfileRespawnDelayMs(profile.RespawnDelayMs) {
@@ -4237,6 +4240,7 @@ func combatProfileSnapshotMatchesDefaults(snapshot worldruntime.StaticActorComba
 		candidateDefaults.RespawnDelay == defaults.RespawnDelay &&
 		candidateDefaults.AggroRadius == defaults.AggroRadius &&
 		candidateDefaults.LeashRadius == defaults.LeashRadius &&
+		candidateDefaults.ChaseDelay == defaults.ChaseDelay &&
 		candidateDefaults.RetaliationPointDelta == defaults.RetaliationPointDelta &&
 		reflect.DeepEqual(candidateDefaults.DeathReward.Clone(), defaults.DeathReward.Clone())
 }
@@ -4246,6 +4250,10 @@ func combatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfil
 	hasLegacyDamage := snapshot.DamagePerNormalAttack != 0
 	hasExplicitFormula := snapshot.AttackValue != 0
 	if strings.TrimSpace(snapshot.Profile) == "" || snapshot.MaxHP == 0 || (!hasLegacyDamage && !hasExplicitFormula) || !ok {
+		return worldruntime.StaticActorCombatProfileDefaults{}, false
+	}
+	chaseDelay, ok := worldruntime.StaticActorCombatProfileChaseDelay(snapshot.ChaseDelayMs)
+	if !ok {
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
 	if hasLegacyDamage && !hasExplicitFormula && uint32(snapshot.DamagePerNormalAttack)+uint32(snapshot.DefenseValue) > uint32(^uint16(0)) {
@@ -4267,6 +4275,7 @@ func combatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfil
 		RespawnDelay:          respawnDelay,
 		AggroRadius:           snapshot.AggroRadius,
 		LeashRadius:           snapshot.LeashRadius,
+		ChaseDelay:            chaseDelay,
 		RetaliationPointDelta: snapshot.RetaliationPointDelta,
 		DeathReward:           snapshot.DeathReward.Clone(),
 	}

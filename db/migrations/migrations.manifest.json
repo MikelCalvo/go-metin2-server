@@ -120,6 +120,14 @@
       "down_path": "0015_character_safebox_money.down.sql",
       "up_sha256": "b34a824a3633704b6292bc76ac031e0ef55ebe5bd95a8f13f5a495f42fdc83df",
       "down_sha256": "36cdb054ea3a6c1e3684187270f1a00700c7bed0ac01ee032ebcfb572f669efd"
+    },
+    {
+      "version": 16,
+      "name": "static_actor_combat_profile_chase_delay",
+      "up_path": "0016_static_actor_combat_profile_chase_delay.up.sql",
+      "down_path": "0016_static_actor_combat_profile_chase_delay.down.sql",
+      "up_sha256": "46a250eb43cf8c028e8e3c3c51796b5a7a4ad0bc1a48c842eaf6b497dc500f26",
+      "down_sha256": "78ce07b720b72291e90450399e447eb36f5360028542a848af6571d53c8cc26f"
     }
   ]
 }

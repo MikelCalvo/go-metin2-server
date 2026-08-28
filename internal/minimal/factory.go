@@ -2180,7 +2180,14 @@ func (r *gameRuntime) spawnGroupReturnStepStillRequired(entityID uint64) bool {
 }
 
 func (r *gameRuntime) scheduleSpawnGroupChaseStep(entityID uint64) {
-	if r == nil || entityID == 0 || bootstrapSpawnGroupChaseStepDelay <= 0 {
+	if r == nil || entityID == 0 {
+		return
+	}
+	delay := bootstrapSpawnGroupChaseStepDelay
+	if actor, ok := r.SpawnGroup(entityID); ok {
+		delay = worldruntime.EffectiveStaticActorSpawnChaseDelay(actor.CombatProfile)
+	}
+	if delay <= 0 {
 		return
 	}
 	now := time.Now()
@@ -2192,7 +2199,7 @@ func (r *gameRuntime) scheduleSpawnGroupChaseStep(entityID uint64) {
 	if r.spawnChaseStepDueAt == nil {
 		r.spawnChaseStepDueAt = make(map[uint64]time.Time)
 	}
-	r.spawnChaseStepDueAt[entityID] = now.Add(bootstrapSpawnGroupChaseStepDelay)
+	r.spawnChaseStepDueAt[entityID] = now.Add(delay)
 }
 
 func (r *gameRuntime) clearSpawnGroupChaseStep(entityID uint64) {
@@ -12947,6 +12954,7 @@ func contentBundleCombatProfileSnapshotMatchesDefaults(snapshot worldruntime.Sta
 		normalized.RespawnDelay == defaults.RespawnDelay &&
 		normalized.AggroRadius == defaults.AggroRadius &&
 		normalized.LeashRadius == defaults.LeashRadius &&
+		normalized.ChaseDelay == defaults.ChaseDelay &&
 		normalized.RetaliationPointDelta == defaults.RetaliationPointDelta &&
 		reflect.DeepEqual(normalized.DeathReward.Clone(), defaults.DeathReward.Clone())
 }
@@ -12954,6 +12962,10 @@ func contentBundleCombatProfileSnapshotMatchesDefaults(snapshot worldruntime.Sta
 func contentBundleCombatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfileSnapshot) (worldruntime.StaticActorCombatProfileDefaults, bool) {
 	respawnDelay, ok := worldruntime.StaticActorCombatProfileRespawnDelay(snapshot.RespawnDelayMs)
 	if strings.TrimSpace(snapshot.Profile) == "" || snapshot.MaxHP == 0 || snapshot.AttackValue == 0 || !ok {
+		return worldruntime.StaticActorCombatProfileDefaults{}, false
+	}
+	chaseDelay, ok := worldruntime.StaticActorCombatProfileChaseDelay(snapshot.ChaseDelayMs)
+	if !ok {
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
 	if !worldruntime.ValidStaticActorCombatProfileAggroRadius(snapshot.AggroRadius, snapshot.LeashRadius) {
@@ -12972,6 +12984,7 @@ func contentBundleCombatProfileSnapshotDefaults(snapshot worldruntime.StaticActo
 		RespawnDelay:          respawnDelay,
 		AggroRadius:           snapshot.AggroRadius,
 		LeashRadius:           snapshot.LeashRadius,
+		ChaseDelay:            chaseDelay,
 		RetaliationPointDelta: snapshot.RetaliationPointDelta,
 		DeathReward:           snapshot.DeathReward.Clone(),
 	}
@@ -13072,6 +13085,11 @@ func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorComb
 			rollback()
 			return nil, contentbundle.ErrInvalidBundle
 		}
+		chaseDelay, ok := worldruntime.StaticActorCombatProfileChaseDelay(snapshot.ChaseDelayMs)
+		if !ok {
+			rollback()
+			return nil, contentbundle.ErrInvalidBundle
+		}
 		if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
 			MaxHP:                 snapshot.MaxHP,
 			DamagePerNormalAttack: snapshot.DamagePerNormalAttack,
@@ -13082,6 +13100,7 @@ func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorComb
 			RespawnDelay:          respawnDelay,
 			AggroRadius:           snapshot.AggroRadius,
 			LeashRadius:           snapshot.LeashRadius,
+			ChaseDelay:            chaseDelay,
 			RetaliationPointDelta: snapshot.RetaliationPointDelta,
 			DeathReward:           snapshot.DeathReward,
 		}) {

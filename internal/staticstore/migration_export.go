@@ -127,6 +127,7 @@ type StaticActorCombatProfileRow struct {
 	RespawnDelayMs        int64  `json:"respawn_delay_ms"`
 	AggroRadius           int32  `json:"aggro_radius"`
 	LeashRadius           int32  `json:"leash_radius"`
+	ChaseDelayMs          int64  `json:"chase_delay_ms"`
 	RetaliationPointDelta int32  `json:"retaliation_point_delta"`
 	DeathRewardExperience uint64 `json:"death_reward_experience"`
 	DeathRewardGold       uint64 `json:"death_reward_gold"`
@@ -400,6 +401,7 @@ func staticActorCombatProfileRowForExport(profile worldruntime.StaticActorCombat
 		RespawnDelayMs:        profile.RespawnDelayMs,
 		AggroRadius:           profile.AggroRadius,
 		LeashRadius:           profile.LeashRadius,
+		ChaseDelayMs:          profile.ChaseDelayMs,
 		RetaliationPointDelta: profile.RetaliationPointDelta,
 		DeathRewardExperience: profile.DeathReward.Experience,
 		DeathRewardGold:       profile.DeathReward.Gold,

@@ -21,8 +21,8 @@ func TestSQLiteHarnessStaticActorContentStateImportInsertsTip0013Rows(t *testing
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, StaticActorContentStateMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", StaticActorContentStateMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, 16); err != nil {
+		t.Fatalf("ApplyToVersion(16): %v", err)
 	}
 
 	export := sampleTip0013StaticActorContentStateImportExport(t)
@@ -68,7 +68,7 @@ func TestSQLiteHarnessStaticActorContentStateImportInsertsTip0013Rows(t *testing
 
 	assertStaticActorRewardDrop(t, db, 7, 0, 27001)
 	assertStaticActorRewardDrop(t, db, 7, 1, 27002)
-	assertCombatProfileRow(t, db, "practice_static_store_import_wolf", 24, 5, 9, 4, int(worldruntime.TrainingDummyBootstrapLevel), 0, 1500, 0, 0, 0, 15, 7)
+	assertCombatProfileRow(t, db, "practice_static_store_import_wolf", 24, 5, 9, 4, int(worldruntime.TrainingDummyBootstrapLevel), 0, 1500, 0, 0, 0, 0, 15, 7)
 	assertCombatProfileDeathRewardDrop(t, db, "practice_static_store_import_wolf", 0, 27001)
 	assertCombatProfileDeathRewardDrop(t, db, "practice_static_store_import_wolf", 1, 27002)
 }
@@ -78,8 +78,8 @@ func TestSQLiteHarnessStaticActorContentStateImportRejectsDuplicatePrimaryKey(t 
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, StaticActorContentStateMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", StaticActorContentStateMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, 16); err != nil {
+		t.Fatalf("ApplyToVersion(16): %v", err)
 	}
 
 	export := sampleTip0013StaticActorContentStateImportExport(t)
@@ -118,8 +118,8 @@ func TestSQLiteHarnessStaticActorContentStateImportAcceptsEmptyExport(t *testing
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, StaticActorContentStateMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", StaticActorContentStateMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, 16); err != nil {
+		t.Fatalf("ApplyToVersion(16): %v", err)
 	}
 
 	result, err := ImportStaticActorContentState(ctx, db, emptyStaticActorContentStateExport())
@@ -369,7 +369,7 @@ func assertCombatProfileRow(
 	profile string,
 	maxHP, damage, attack, defense, level, rank int,
 	respawnDelayMs int64,
-	aggro, leash, retaliation int64,
+	aggro, leash, chaseDelayMs, retaliation int64,
 	deathExperience, deathGold int64,
 ) {
 	t.Helper()
@@ -377,21 +377,21 @@ func assertCombatProfileRow(
 		gotProfile                                                    string
 		gotMaxHP, gotDamage, gotAttack, gotDefense, gotLevel, gotRank int
 		gotRespawn                                                    int64
-		gotAggro, gotLeash, gotRetaliation                            int64
+		gotAggro, gotLeash, gotChaseDelay, gotRetaliation             int64
 		gotDeathExperience, gotDeathGold                              int64
 	)
 	if err := db.QueryRowContext(context.Background(), `
 SELECT profile, max_hp, damage_per_normal_attack, attack_value, defense_value, level, rank,
-       respawn_delay_ms, aggro_radius, leash_radius, retaliation_point_delta, death_reward_experience, death_reward_gold
+       respawn_delay_ms, aggro_radius, leash_radius, chase_delay_ms, retaliation_point_delta, death_reward_experience, death_reward_gold
 FROM static_actor_combat_profiles WHERE profile = ?`, profile).Scan(
 		&gotProfile, &gotMaxHP, &gotDamage, &gotAttack, &gotDefense, &gotLevel, &gotRank,
-		&gotRespawn, &gotAggro, &gotLeash, &gotRetaliation, &gotDeathExperience, &gotDeathGold,
+		&gotRespawn, &gotAggro, &gotLeash, &gotChaseDelay, &gotRetaliation, &gotDeathExperience, &gotDeathGold,
 	); err != nil {
 		t.Fatalf("select combat profile %q: %v", profile, err)
 	}
 	if gotProfile != profile || gotMaxHP != maxHP || gotDamage != damage || gotAttack != attack || gotDefense != defense ||
 		gotLevel != level || gotRank != rank || gotRespawn != respawnDelayMs || gotAggro != aggro || gotLeash != leash ||
-		gotRetaliation != retaliation || gotDeathExperience != deathExperience || gotDeathGold != deathGold {
+		gotChaseDelay != chaseDelayMs || gotRetaliation != retaliation || gotDeathExperience != deathExperience || gotDeathGold != deathGold {
 		t.Fatalf("combat profile mismatch for %q", profile)
 	}
 }

@@ -1,6 +1,9 @@
 package worldruntime
 
-import "math"
+import (
+	"math"
+	"time"
+)
 
 // SpawnLeashStatus describes the first bootstrap-owned position-vs-authored-home
 // classification for stationary spawn-backed combatants.
@@ -16,6 +19,13 @@ const (
 	// player can enter proximity acquisition without immediately forcing leash/return
 	// pressure at the outer leash boundary.
 	DefaultSpawnAggroRadius int32 = 200
+	// DefaultSpawnChaseDelay is the bootstrap chase arming / re-arm delay. It stays
+	// longer than the owned 1s delayed retaliation beat so multi-beat hostility
+	// remains independently observable before the first chase step.
+	DefaultSpawnChaseDelay = 5 * time.Second
+	// MaxSpawnChaseDelay is the bootstrap upper bound for optional authored
+	// combat_profiles.chase_delay_ms on this Track A seam.
+	MaxSpawnChaseDelay = 60 * time.Second
 )
 
 // SpawnLeashEvaluation is a pure planning result for the first mob lifecycle

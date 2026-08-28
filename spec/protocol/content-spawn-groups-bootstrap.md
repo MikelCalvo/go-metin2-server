@@ -777,9 +777,9 @@ Explicit non-goals for this profile-authored leash-radius freeze alone:
 
 Question frozen here:
 
-**Once proximity acquisition, chase-step arming, and profile-authored `aggro_radius` / `leash_radius` already exist, and the live chase executor still hard-codes bootstrap `5s` (`bootstrapSpawnGroupChaseStepDelay`), what is the smallest honest authored combat-profile extension that can widen or narrow that chase arming delay per registered profile without inventing a second scheduler, chase packets, or absolute deadline rematerialize?**
+**Once proximity acquisition, chase-step arming, and profile-authored `aggro_radius` / `leash_radius` already exist, what is the smallest honest authored combat-profile extension that can widen or narrow that chase arming delay per registered profile without inventing a second scheduler, chase packets, or absolute deadline rematerialize?**
 
-This is the next Track A follow-on after owned profile-authored `leash_radius` and the homeward / anti-leak bootstrap matrix. Cross-map return MOVE / warp choreography remains deferred behind the packet freeze in `spawn-leash-bootstrap.md` and must not be opened as speculative RED. Absolute chase / return / homeward due-at rematerialize across daemon restart stays cancelled as re-arm-from-now.
+This Track A follow-on after owned profile-authored `leash_radius` is now GREEN. Cross-map return MOVE / warp choreography remains deferred behind the packet freeze in `spawn-leash-bootstrap.md` and must not be opened as speculative RED. Absolute chase / return / homeward due-at rematerialize across daemon restart stays cancelled as re-arm-from-now.
 
 Contract for optional authored `chase_delay_ms` on portable `combat_profiles` / `StaticActorCombatProfileDefaults`:
 
