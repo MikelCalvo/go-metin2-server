@@ -4178,6 +4178,33 @@ func TestCanonicalizeRejectsCombatProfileRewardDropWithoutBundledItemTemplates(t
 	}
 }
 
+func TestCanonicalizeRejectsCombatProfileRewardDropMissingFromBundledItemTemplates(t *testing.T) {
+	const profile = "practice_reward_drop_missing_defaults"
+	_, err := Canonicalize(Bundle{
+		ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}},
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.reward_default_missing_mob",
+			Name:          "Reward Default Missing Mob",
+			MapIndex:      42,
+			X:             1785,
+			Y:             2885,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        profile,
+			MaxHP:          24,
+			AttackValue:    8,
+			DefenseValue:   3,
+			RespawnDelayMs: 1500,
+			DeathReward:    worldruntime.StaticActorDeathReward{DropVnums: []uint32{27002}},
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for combat-profile reward drop missing from bundled item templates, got %v", err)
+	}
+}
+
 func TestCanonicalizeRejectsCombatProfileRewardDuplicateDropVnums(t *testing.T) {
 	const profile = "practice_duplicate_reward_defaults"
 	_, err := Canonicalize(Bundle{
@@ -5320,6 +5347,25 @@ func TestCanonicalizeRejectsCheckedInRewardDropItemMissingFromItemTemplatesExamp
 	}
 	if _, err := Canonicalize(bundle); !errors.Is(err, ErrInvalidBundle) {
 		t.Fatalf("expected ErrInvalidBundle for checked-in reward drop item missing from item templates example, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsCheckedInCombatProfileDeathRewardItemMissingFromItemTemplatesExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-invalid-combat-profile-death-reward-item-missing-from-item-templates-bundle.json"))
+	if err != nil {
+		t.Fatalf("read invalid combat-profile death-reward item missing from item templates example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode invalid combat-profile death-reward item missing from item templates example bundle: %v", err)
+	}
+	if _, err := Canonicalize(bundle); !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for checked-in combat-profile death-reward item missing from item templates example, got %v", err)
 	}
 }
 

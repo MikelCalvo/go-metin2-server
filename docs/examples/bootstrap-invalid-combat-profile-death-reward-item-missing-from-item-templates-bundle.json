@@ -1,0 +1,35 @@
+{
+  "item_templates": [
+    {
+      "vnum": 27001,
+      "name": "Small Red Potion",
+      "stackable": true,
+      "max_count": 200
+    }
+  ],
+  "combat_profiles": [
+    {
+      "profile": "qa_death_reward_item_missing_from_templates",
+      "max_hp": 20,
+      "attack_value": 9,
+      "defense_value": 4,
+      "respawn_delay_ms": 2000,
+      "death_reward": {
+        "drop_vnums": [
+          27002
+        ]
+      }
+    }
+  ],
+  "spawn_groups": [
+    {
+      "ref": "practice.qa_combat_profile_death_reward_item_missing_from_templates",
+      "name": "QACombatProfileDeathRewardItemMissingFromTemplates",
+      "map_index": 1,
+      "x": 469850,
+      "y": 964200,
+      "race_num": 20350,
+      "combat_profile": "qa_death_reward_item_missing_from_templates"
+    }
+  ]
+}
