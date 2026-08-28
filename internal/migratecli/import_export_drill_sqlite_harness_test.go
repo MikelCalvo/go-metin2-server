@@ -112,6 +112,7 @@ func TestImportExportDrillSQLiteHermeticPrintedScriptImportsEmptyTipKinds(t *tes
 			}
 		}
 	}
+	assertImportExportDrillStatusArtifacts(t, exportTree, wantMarkers, dsn)
 }
 
 func TestImportExportDrillSQLiteHermeticPrintedScriptImportsSeededTipKinds(t *testing.T) {
@@ -196,6 +197,7 @@ func TestImportExportDrillSQLiteHermeticPrintedScriptImportsSeededTipKinds(t *te
 			}
 		}
 	}
+	assertImportExportDrillStatusArtifacts(t, exportTree, wantMarkers, dsn)
 
 	assertSeededImportExportDrillSQLiteRows(t, dsn)
 }
@@ -319,6 +321,47 @@ func mustReadFileString(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(body)
+}
+
+func assertImportExportDrillStatusArtifacts(t *testing.T, exportTree string, wantMarkers map[string]string, dsn string) {
+	t.Helper()
+	for _, kind := range exportQuarantineKinds {
+		resultPath := filepath.Join(exportTree, kind, "import-result.json")
+		statusPath := filepath.Join(exportTree, kind, "import-result-status.json")
+		resultRaw, err := os.ReadFile(resultPath)
+		if err != nil {
+			t.Fatalf("read import-result for %s: %v", kind, err)
+		}
+		statusBody := mustReadFileString(t, statusPath)
+		var got importExportStatus
+		if err := json.Unmarshal([]byte(statusBody), &got); err != nil {
+			t.Fatalf("decode import-result-status for %s: %v\nbody:\n%s", kind, err, statusBody)
+		}
+		if got.Format != importExportStatusFormat || !got.Present || got.Kind != kind {
+			t.Fatalf("unexpected import-result-status envelope for %s: %#v", kind, got)
+		}
+		wantSHA := sha256Hex(resultRaw)
+		if got.ImportResultSHA256 != wantSHA {
+			t.Fatalf("unexpected import_result_sha256 for %s: got %s want %s", kind, got.ImportResultSHA256, wantSHA)
+		}
+		want, ok := wantMarkers[kind]
+		if !ok {
+			t.Fatalf("missing expected marker for kind %q", kind)
+		}
+		resultBytes, err := json.Marshal(got.Result)
+		if err != nil {
+			t.Fatalf("marshal nested status result for %s: %v", kind, err)
+		}
+		resultJSON := string(resultBytes)
+		if !strings.Contains(resultJSON, want) && !strings.Contains(compactJSONForAssert(resultJSON), compactJSONForAssert(want)) {
+			t.Fatalf("kind %s import-result-status missing %s, got %s", kind, want, statusBody)
+		}
+		for _, forbidden := range []string{"postgres://", "CREATE TABLE", "DROP TABLE", dsn, "password="} {
+			if strings.Contains(statusBody, forbidden) {
+				t.Fatalf("import-result-status for %s must not contain %q, got %s", kind, forbidden, statusBody)
+			}
+		}
+	}
 }
 
 func compactJSONForAssert(raw string) string {

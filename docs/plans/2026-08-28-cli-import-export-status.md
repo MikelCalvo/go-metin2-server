@@ -142,6 +142,7 @@ git diff --check
 - drill printer emits status redirects for every tip kind
 - Track E / migration-contract mark the import-result status helper done
 - untagged `go test ./internal/migratecli` stays green without SQLite
+- hermetic `/bin/sh` status-redirect proof against SQLite is owned by [hermetic import-export status SQLite proof](2026-08-28-hermetic-import-export-status-sqlite.md)
 - upsert / auto-run / stock production driver remain explicitly deferred
 
 ## Anti-goals / ordering constraints

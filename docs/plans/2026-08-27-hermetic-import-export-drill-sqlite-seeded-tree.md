@@ -112,6 +112,7 @@ go test ./internal/migratecli -run 'ImportExportDrill|ContribLabRetentionGC' -co
 - prior deferred seeded-tree follow-up marked done
 - empty hermetic proof remains green and unchanged in intent
 - stock binaries remain free of a registered production driver
+- matching hermetic `import-result-status.json` redirect proof is owned by [hermetic import-export status SQLite proof](2026-08-28-hermetic-import-export-status-sqlite.md)
 - upsert / auto-run remain explicitly deferred
 
 ## Anti-goals / ordering constraints
