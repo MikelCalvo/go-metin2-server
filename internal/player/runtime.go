@@ -1490,7 +1490,8 @@ func (r *Runtime) ExchangeItemAddDisplay(slot inventory.SlotIndex, template item
 	if !ok {
 		return ExchangeItemAddDisplay{}, false
 	}
-	return ExchangeItemAddDisplay{Item: item, Sockets: template.Sockets, Attributes: template.Attributes}, true
+	sockets := itemcatalog.SocketValues(item.EffectiveSockets(inventory.SocketValues(template.Sockets)))
+	return ExchangeItemAddDisplay{Item: item, Sockets: sockets, Attributes: template.Attributes}, true
 }
 
 func (r *Runtime) templateBackedAntiGiveInventoryItem(slot inventory.SlotIndex, template itemcatalog.Template) (inventory.ItemInstance, bool) {

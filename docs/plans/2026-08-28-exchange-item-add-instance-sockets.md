@@ -44,5 +44,8 @@ INFO, or refine keep-grade.
 
 ## Status
 
-Docs/spec freeze for `lane/items`. RED scaffolding may sit dirty until GREEN;
-do not commit failing tests unless explicitly requested.
+GREEN on `lane/items`: active-shell `ITEM_ADD` prefers instance
+`EffectiveSockets` (including explicit zero) over template sockets; omitted
+instance sockets keep template sockets; attributes stay template-authored;
+display remains non-mutating. `LESS_GOLD` auto-cancel / GD/DB `MYSHOP_PRICELIST`
+/ quest-running / bag-missing INFO / refine keep-grade stay deferred.

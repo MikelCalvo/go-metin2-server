@@ -3577,7 +3577,7 @@ func TestRuntimeExchangeItemAddDisplayUsesTemplateMetadataWithoutMutation(t *tes
 		t.Fatalf("unexpected exchange item display item: got %#v want %#v", display.Item, persisted.Inventory[0])
 	}
 	if display.Sockets != template.Sockets {
-		t.Fatalf("expected template-authored exchange sockets %+v, got %+v", template.Sockets, display.Sockets)
+		t.Fatalf("expected omitted-instance exchange sockets to keep template %+v, got %+v", template.Sockets, display.Sockets)
 	}
 	if display.Attributes != template.Attributes {
 		t.Fatalf("expected template-authored exchange attributes %+v, got %+v", template.Attributes, display.Attributes)
@@ -3587,6 +3587,61 @@ func TestRuntimeExchangeItemAddDisplayUsesTemplateMetadataWithoutMutation(t *tes
 	}
 	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) || got.Gold != persisted.Gold || got.Points != persisted.Points {
 		t.Fatalf("exchange item display mutated persisted character: got %#v want %#v", got, persisted)
+	}
+}
+
+func TestRuntimeExchangeItemAddDisplayPrefersInstanceEffectiveSocketsWithoutMutation(t *testing.T) {
+	templateSockets := itemcatalog.SocketValues{11, 22, 33}
+	zeroSockets := inventory.SocketValues{}
+	seededSockets := inventory.SocketValues{7, 8, 9}
+	cases := []struct {
+		name        string
+		instance    *inventory.SocketValues
+		wantSockets itemcatalog.SocketValues
+	}{
+		{name: "explicit zero wins over template", instance: &zeroSockets, wantSockets: itemcatalog.SocketValues{}},
+		{name: "seeded instance sockets win", instance: &seededSockets, wantSockets: itemcatalog.SocketValues{7, 8, 9}},
+		{name: "omitted instance keeps template", instance: nil, wantSockets: templateSockets},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			item := inventory.ItemInstance{ID: 105, Vnum: 27045, Count: 3, Slot: 8, Sockets: tc.instance}
+			persisted := loginticket.Character{
+				ID:         0x01030116,
+				VID:        0x02040116,
+				Name:       "PeerSocket",
+				Level:      1,
+				Inventory:  []inventory.ItemInstance{item},
+				Quickslots: []loginticket.Quickslot{{Position: 4, Type: quickslotproto.TypeItem, Slot: 8}},
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-socket", CharacterIndex: 1})
+			template := itemcatalog.Template{
+				Vnum:       27045,
+				Name:       "Displayed Exchange Potion",
+				Stackable:  true,
+				MaxCount:   200,
+				Sockets:    templateSockets,
+				Attributes: itemcatalog.AttributeValues{{Type: 3, Value: 30}},
+			}
+
+			display, ok := runtime.ExchangeItemAddDisplay(8, template)
+			if !ok {
+				t.Fatal("expected valid carried item and template to produce exchange item display")
+			}
+			if display.Sockets != tc.wantSockets {
+				t.Fatalf("expected exchange sockets %+v, got %+v", tc.wantSockets, display.Sockets)
+			}
+			if display.Attributes != template.Attributes {
+				t.Fatalf("expected template-authored exchange attributes %+v, got %+v", template.Attributes, display.Attributes)
+			}
+			if got := runtime.LiveCharacter(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) || got.Gold != persisted.Gold || got.Points != persisted.Points {
+				t.Fatalf("exchange item display mutated live character: got %#v want %#v", got, persisted)
+			}
+			if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) || got.Gold != persisted.Gold || got.Points != persisted.Points {
+				t.Fatalf("exchange item display mutated persisted character: got %#v want %#v", got, persisted)
+			}
+		})
 	}
 }
 
