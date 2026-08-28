@@ -68,11 +68,15 @@ Korean keys into runtime code.
    gold-carrier chat then self/peer `END`; shell cleared.
 3. Shared-world commit: post-plan busy or gold-carrier drift → same
    chat-then-`END` teardown + owned rollbacks; shell cleared.
-4. Negative: `LESS_GOLD` and persist-fail still leave the shell cancellable;
+4. Negative: `LESS_GOLD` still leaves the shell cancellable;
    Check/Space/gold-overflow/Other remain chat-then-`END` (regression).
+   Persist-fail Cancel-on-failure is owned separately
+   (`docs/plans/2026-08-28-exchange-persist-fail-reject-auto-cancel.md`).
 
 ## Status
 
 GREEN on `lane/items`: ACCEPT and commit-time busy-window / gold-carrier-cap
 rejects emit owned self-only info-chat then self/peer `GC::EXCHANGE END` and clear
-the shell; `LESS_GOLD` and persist-fail paths still leave the shell cancellable.
+the shell; `LESS_GOLD` still leaves the shell cancellable. Persist-fail
+Cancel-on-failure is owned by
+`docs/plans/2026-08-28-exchange-persist-fail-reject-auto-cancel.md`.

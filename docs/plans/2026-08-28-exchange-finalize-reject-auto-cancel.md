@@ -73,12 +73,15 @@ not copy oracle source comments or Korean keys into runtime code.
 2. Shared-world commit: post-plan Check/Space/gold-overflow/Other drift emits the
    same chat-then-`END` teardown and rolls back any already-written finalize
    snapshots (already owned); shell cleared.
-3. Negative regression: busy / gold-carrier / `LESS_GOLD` / persist-fail still
-   leave the shell cancellable as already owned.
+3. Negative regression: busy / gold-carrier / `LESS_GOLD` still
+   leave the shell cancellable as already owned for this slice's
+   non-goals. Persist-fail Cancel-on-failure is owned separately
+   (`docs/plans/2026-08-28-exchange-persist-fail-reject-auto-cancel.md`).
 
 ## Status
 
 GREEN on `lane/items`: second-accept and commit-time Check/Space/gold-overflow/Other
 rejects emit owned dual-sided info-chat then self/peer `GC::EXCHANGE END` and clear
-the shell; busy / gold-carrier / `LESS_GOLD` / persist-fail paths still leave the
-shell cancellable.
+the shell; busy / gold-carrier / `LESS_GOLD` paths still leave the shell cancellable
+in this plan's original non-goals (busy/gold-carrier Cancel-on-failure and
+persist-fail Cancel-on-failure are owned by companion plans).

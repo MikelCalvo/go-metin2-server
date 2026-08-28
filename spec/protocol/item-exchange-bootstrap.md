@@ -153,7 +153,7 @@ The display-only `ACCEPT` path is accepted only when the requester is currently 
 - emit dual-sided self-facing `CHAT_TYPE_INFO` success chat (`The trade with <partner_name> has been successful.` with `vid = 0`, naming the other side's normalized live character name) after that side's inventory / quickslot / gold refresh frames and before shell `END` (`docs/plans/2026-08-22-exchange-finalize-success-chat.md`)
 - close the exchange shell immediately afterward with self `GC::EXCHANGE END` for the second accepter and one queued `GC::EXCHANGE END` for the first accepter
 
-No richer finalize/result packet family is introduced in this slice. If either persistence write fails (origin save or partner save, including the partner-save rollback of an already-written origin snapshot), the mutual-accept finalize fails closed with no trade mutation, emits no finalize/result frames, leaves live inventory/equipment/quickslot/gold state unchanged on both sides, and leaves the shell cancellable until a later slice owns stronger rollback/audit policy. Mutual-accept Check/Space/gold-overflow/Other reject chat paths instead auto-cancel with self/peer `GC::EXCHANGE END` after that chat (`docs/plans/2026-08-28-exchange-finalize-reject-auto-cancel.md`).
+No richer finalize/result packet family is introduced in this slice. If either persistence write fails (origin save or partner save, including the partner-save rollback of an already-written origin snapshot), the mutual-accept finalize fails closed with no trade mutation, leaves live inventory/equipment/quickslot/gold state unchanged on both sides, and emits dual-sided `CHAT_TYPE_INFO` `Unknown error` then self/peer `GC::EXCHANGE END` (oracle DB-dead Cancel-on-failure companion; `docs/plans/2026-08-28-exchange-persist-fail-reject-auto-cancel.md`). Mutual-accept Check/Space/gold-overflow/Other reject chat paths likewise auto-cancel with self/peer `GC::EXCHANGE END` after that chat (`docs/plans/2026-08-28-exchange-finalize-reject-auto-cancel.md`).
 
 Commit-time revalidation is part of that same fail-closed finalize gate. After `AcceptExchange` returns a mutual-accept finalize plan, and before the shared-world commit applies live character updates, enqueues finalize/accept/`END` frames, or clears the shell, the runtime re-checks under the shared-world lock:
 
@@ -204,7 +204,7 @@ Malformed `EXCHANGE` payload sizes fail at the codec/dispatcher boundary rather 
 
 ## Cancel-on-failure coverage
 
-Busy-window and gold-carrier-cap mutual-accept / commit rejects now emit owned self-only info-chat then self/peer `GC::EXCHANGE END` and clear the shell (`docs/plans/2026-08-28-exchange-busy-gold-carrier-reject-auto-cancel.md`), matching Check/Space/gold-overflow/Other Cancel-on-failure. `LESS_GOLD` and persistence-failure silent fail-closed still leave the shell cancellable.
+Busy-window and gold-carrier-cap mutual-accept / commit rejects now emit owned self-only info-chat then self/peer `GC::EXCHANGE END` and clear the shell (`docs/plans/2026-08-28-exchange-busy-gold-carrier-reject-auto-cancel.md`), matching Check/Space/gold-overflow/Other Cancel-on-failure. Mutual-accept account persistence failures likewise emit dual-sided `Unknown error` then self/peer `GC::EXCHANGE END` (`docs/plans/2026-08-28-exchange-persist-fail-reject-auto-cancel.md`). `LESS_GOLD` still leaves the shell cancellable.
 
 ## Deferred behavior
 

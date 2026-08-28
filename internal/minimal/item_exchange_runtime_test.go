@@ -4787,12 +4787,29 @@ func TestGameRuntimeItemExchangeMutualAcceptFailsClosedWhenPartnerPersistenceFai
 	if err != nil {
 		t.Fatalf("unexpected persist-fail peer accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 0 {
-		t.Fatalf("expected partner persistence failure to fail closed with no finalize frames, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 2 {
+		t.Fatalf("expected partner persistence failure to emit self Unknown error info chat then END, got %d", len(peerAcceptOut))
 	}
-	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
-		t.Fatalf("expected partner persistence failure to queue no owner frames, got %d", len(queued))
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
+	if err != nil {
+		t.Fatalf("decode persist-fail peer self info chat: %v", err)
 	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeFinalizeOtherInfoMessage {
+		t.Fatalf("unexpected persist-fail peer self info chat: %+v", infoChat)
+	}
+	assertExchangeEndFrame(t, peerAcceptOut[1], "persist-fail partner auto-cancel self END")
+	queued := flushServerFrames(t, ownerFlow)
+	if len(queued) != 2 {
+		t.Fatalf("expected partner persistence failure to queue owner Unknown error info chat then END, got %d", len(queued))
+	}
+	queuedInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode persist-fail owner Other info chat: %v", err)
+	}
+	if queuedInfo.Type != chatproto.ChatTypeInfo || queuedInfo.VID != 0 || queuedInfo.Message != exchangeFinalizeOtherInfoMessage {
+		t.Fatalf("unexpected persist-fail owner Other info chat: %+v", queuedInfo)
+	}
+	assertExchangeEndFrame(t, queued[1], "persist-fail partner auto-cancel peer END")
 
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "persist-fail owner")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "persist-fail peer")
@@ -4801,17 +4818,11 @@ func TestGameRuntimeItemExchangeMutualAcceptFailsClosedWhenPartnerPersistenceFai
 
 	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
 	if err != nil {
-		t.Fatalf("unexpected persist-fail cancel after failed finalize error: %v", err)
+		t.Fatalf("unexpected persist-fail cancel after auto-cancelled finalize error: %v", err)
 	}
-	if len(cancelOut) != 1 {
-		t.Fatalf("expected failed mutual-accept finalize to leave the shell cancellable with one self END, got %d", len(cancelOut))
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected persist-fail auto-cancel to clear the shell so later cancel is a no-op, got %d", len(cancelOut))
 	}
-	assertExchangeEndFrame(t, cancelOut[0], "persist-fail owner cancel")
-	queuedCancel := flushServerFrames(t, peerFlow)
-	if len(queuedCancel) != 1 {
-		t.Fatalf("expected failed mutual-accept finalize cancel to queue one peer END, got %d", len(queuedCancel))
-	}
-	assertExchangeEndFrame(t, queuedCancel[0], "persist-fail peer cancel")
 }
 
 func TestGameRuntimeItemExchangeMutualAcceptFailsClosedWhenOriginPersistenceFails(t *testing.T) {
@@ -4877,12 +4888,29 @@ func TestGameRuntimeItemExchangeMutualAcceptFailsClosedWhenOriginPersistenceFail
 	if err != nil {
 		t.Fatalf("unexpected origin persist-fail peer accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 0 {
-		t.Fatalf("expected origin persistence failure to fail closed with no finalize frames, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 2 {
+		t.Fatalf("expected origin persistence failure to emit self Unknown error info chat then END, got %d", len(peerAcceptOut))
 	}
-	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
-		t.Fatalf("expected origin persistence failure to queue no owner frames, got %d", len(queued))
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
+	if err != nil {
+		t.Fatalf("decode origin persist-fail peer self info chat: %v", err)
 	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeFinalizeOtherInfoMessage {
+		t.Fatalf("unexpected origin persist-fail peer self info chat: %+v", infoChat)
+	}
+	assertExchangeEndFrame(t, peerAcceptOut[1], "origin persist-fail auto-cancel self END")
+	queued := flushServerFrames(t, ownerFlow)
+	if len(queued) != 2 {
+		t.Fatalf("expected origin persistence failure to queue owner Unknown error info chat then END, got %d", len(queued))
+	}
+	queuedInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode origin persist-fail owner Other info chat: %v", err)
+	}
+	if queuedInfo.Type != chatproto.ChatTypeInfo || queuedInfo.VID != 0 || queuedInfo.Message != exchangeFinalizeOtherInfoMessage {
+		t.Fatalf("unexpected origin persist-fail owner Other info chat: %+v", queuedInfo)
+	}
+	assertExchangeEndFrame(t, queued[1], "origin persist-fail auto-cancel peer END")
 
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "origin persist-fail owner")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "origin persist-fail peer")
@@ -4891,17 +4919,11 @@ func TestGameRuntimeItemExchangeMutualAcceptFailsClosedWhenOriginPersistenceFail
 
 	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
 	if err != nil {
-		t.Fatalf("unexpected origin persist-fail cancel after failed finalize error: %v", err)
+		t.Fatalf("unexpected origin persist-fail cancel after auto-cancelled finalize error: %v", err)
 	}
-	if len(cancelOut) != 1 {
-		t.Fatalf("expected failed origin mutual-accept finalize to leave the shell cancellable with one self END, got %d", len(cancelOut))
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected origin persist-fail auto-cancel to clear the shell so later cancel is a no-op, got %d", len(cancelOut))
 	}
-	assertExchangeEndFrame(t, cancelOut[0], "origin persist-fail owner cancel")
-	queuedCancel := flushServerFrames(t, peerFlow)
-	if len(queuedCancel) != 1 {
-		t.Fatalf("expected failed origin mutual-accept finalize cancel to queue one peer END, got %d", len(queuedCancel))
-	}
-	assertExchangeEndFrame(t, queuedCancel[0], "origin persist-fail peer cancel")
 }
 
 func TestGameRuntimeItemExchangeAcceptDisplaysWithoutFinalizingTrade(t *testing.T) {

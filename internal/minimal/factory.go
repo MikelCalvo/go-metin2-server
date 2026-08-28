@@ -8134,10 +8134,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						}
 						selfFrames, applied := applyExchangeFinalize(runtime, accounts, sharedWorld, selectedPlayer, &sessionTicket, finalizePlan)
 						if !applied {
-							// Busy / gold-carrier / Check/Space/gold-overflow/Other reject
-							// chat already auto-cancelled with trailing END frames when
-							// commit returned selfFrames; LESS_GOLD / persist-fail stay
-							// silent or leave the shell cancellable.
+							// Busy / gold-carrier / Check/Space/gold-overflow/Other /
+							// persist-fail reject chat already auto-cancelled with
+							// trailing END frames when apply/commit returned selfFrames;
+							// LESS_GOLD stays silent-or-cancellable without END teardown.
 							if len(selfFrames) > 0 {
 								return gameflow.ItemExchangeResult{Accepted: true, Frames: selfFrames}
 							}
@@ -9728,10 +9728,18 @@ func applyExchangeFinalize(runtime *gameRuntime, accounts accountstore.Store, sh
 		return nil, false
 	}
 	if !saveAccountSnapshot(accounts, originAccount.Login, originAccount.Empire, updatedOriginCharacters) {
+		// Oracle DB-dead Cancel-on-failure: dual Unknown error then self/peer END
+		// (docs/plans/2026-08-28-exchange-persist-fail-reject-auto-cancel.md).
+		if frames, ok := sharedWorld.EmitExchangePersistFailReject(plan.OriginID, plan.PartnerID); ok {
+			return frames, false
+		}
 		return nil, false
 	}
 	if !saveAccountSnapshot(accounts, partnerAccount.Login, partnerAccount.Empire, updatedPartnerCharacters) {
 		_ = saveAccountSnapshot(accounts, originAccount.Login, originAccount.Empire, originAccount.Characters)
+		if frames, ok := sharedWorld.EmitExchangePersistFailReject(plan.OriginID, plan.PartnerID); ok {
+			return frames, false
+		}
 		return nil, false
 	}
 

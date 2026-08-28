@@ -1150,6 +1150,20 @@ func (r *sharedWorldRegistry) exchangeEmitFinalizeGoldOverflowRejectForCallerLoc
 	return r.exchangeFinalizeRejectAutoCancelLocked(callerID, peerID, selfFrames)
 }
 
+// EmitExchangePersistFailReject delivers dual-sided Unknown error info-chat then
+// auto-cancels the bootstrap exchange shell after mutual-accept account
+// persistence failure (oracle DB-dead Cancel-on-failure companion).
+// Returned frames are for callerID (info-chat then END); peer gets queued
+// info-chat then END. No inventory/gold/trade mutation.
+func (r *sharedWorldRegistry) EmitExchangePersistFailReject(callerID uint64, partnerID uint64) ([][]byte, bool) {
+	if r == nil {
+		return nil, false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.exchangeEmitFinalizeOtherRejectForCallerLocked(callerID, partnerID)
+}
+
 // exchangeEmitFinalizeOtherRejectForCallerLocked delivers the same catch-all
 // Unknown error info-chat to both paired sides (oracle DB-dead / non-Check/Space
 // abort wording), then auto-cancels the shell with self/peer END.
