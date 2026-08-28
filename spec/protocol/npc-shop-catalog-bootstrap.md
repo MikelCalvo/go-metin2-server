@@ -75,6 +75,7 @@ The structured merchant contract must validate all of the following:
 - slots must form a dense zero-based sequence after sorting (`0..n-1`) so later transaction addressing stays deterministic
 - each `item_vnum` must be non-zero and must resolve to a valid template in the loaded `internal/itemstore` catalog
 - portable content bundles that include `shop_preview` definitions must also include the referenced `item_templates`; canonicalization rejects merchant bundles that omit the item-template section instead of deferring that failure to runtime import
+- the checked-in negative fixture `docs/examples/bootstrap-invalid-merchant-catalog-without-item-templates-bundle.json` is the preferred `/local/content-bundle/validate` dry-run for a structured merchant catalog that omits top-level `item_templates` entirely
 - each `price` must be greater than zero and no larger than `4294967295` (`uint32` max), matching the owned `GC::SHOP START` item-entry price field
 - each `count` must be greater than zero and no larger than `255` (`uint8` max), matching the owned `GC::SHOP START` item-entry count field
 - if the referenced template is non-stackable, `count` must equal `1`
