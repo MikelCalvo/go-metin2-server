@@ -48,6 +48,161 @@ func TestGameSessionFlowPostFloorOpenSafeboxFailsClosed(t *testing.T) {
 		t.Fatalf("expected post-floor /open_safebox to queue no frames, got %d", len(queued))
 	}
 	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor /open_safebox")
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_here",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here after post-floor /open_safebox: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_here recovery frames after post-floor /open_safebox, got %d", len(restartOut))
+	}
+	_ = flushServerFrames(t, flow)
+
+	reopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart /open_safebox: %v", err)
+	}
+	if len(reopenOut) != 2 {
+		t.Fatalf("expected SAFEBOX_SIZE + SAFEBOX_MONEY_CHANGE after restart, got %d", len(reopenOut))
+	}
+	size, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, reopenOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-restart SAFEBOX_SIZE: %v", err)
+	}
+	if size != (itemproto.SafeboxSizePacket{Size: bootstrapSafeboxOpenMinSize}) {
+		t.Fatalf("unexpected post-restart SAFEBOX_SIZE: %+v", size)
+	}
+	money, err := itemproto.DecodeSafeboxMoneyChange(decodeSingleFrame(t, reopenOut[1]))
+	if err != nil {
+		t.Fatalf("decode post-restart SAFEBOX_MONEY_CHANGE: %v", err)
+	}
+	if money != (itemproto.SafeboxMoneyChangePacket{Money: 0}) {
+		t.Fatalf("unexpected post-restart SAFEBOX_MONEY_CHANGE: %+v", money)
+	}
+	assertCloseSafeboxCommandChat(t, flow, "/close_safebox", "post-restart open-safebox close")
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart /open_safebox: %v", err)
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_here to persist recovered owner HP %d after open-safebox floor, got %+v", wantHP, account.Characters[0])
+	}
+	if account.Characters[0].Gold != owner.Gold {
+		t.Fatalf("carried gold after post-restart /open_safebox=%d want %d", account.Characters[0].Gold, owner.Gold)
+	}
+}
+
+func TestGameSessionFlowPostFloorOpenSafeboxFailsClosedBeforeRestartTown(t *testing.T) {
+	login := "pf-open-safebox-town"
+	loginKey := uint32(0x19191b11)
+	owner := peerVisibilityCharacter("DeadOpenSafeboxTownOwner", 0x01030b11, 0x02040b11, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Gold = 12345
+	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, nil)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor town /open_safebox dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor town /open_safebox to fail closed with no SAFEBOX_SIZE frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor town /open_safebox to queue no frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor town /open_safebox")
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_town",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_town after post-floor /open_safebox: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_town recovery frames after post-floor /open_safebox, got %d", len(restartOut))
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[0]))
+	if err != nil {
+		t.Fatalf("decode self character add after post-floor /open_safebox /restart_town: %v", err)
+	}
+	if selfAdd.VID != owner.VID || selfAdd.X != 52070 || selfAdd.Y != 166600 {
+		t.Fatalf("expected /restart_town self bootstrap at empire town position after open-safebox floor, got %+v", selfAdd)
+	}
+	var (
+		selfPoints  worldproto.PlayerPointChangePacket
+		foundPoints bool
+	)
+	for _, raw := range restartOut {
+		fr := decodeSingleFrame(t, raw)
+		if !foundPoints {
+			if points, err := worldproto.DecodePlayerPointChange(fr); err == nil {
+				selfPoints = points
+				foundPoints = true
+			}
+		}
+	}
+	if !foundPoints {
+		t.Fatal("expected /restart_town recovery to include self PLAYER_POINT_CHANGE after open-safebox floor")
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if selfPoints.Value != wantHP {
+		t.Fatalf("expected /restart_town to rebuild recovered owner HP %d after open-safebox floor, got %+v", wantHP, selfPoints)
+	}
+	_ = flushServerFrames(t, flow)
+
+	reopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart_town /open_safebox: %v", err)
+	}
+	if len(reopenOut) != 2 {
+		t.Fatalf("expected SAFEBOX_SIZE + SAFEBOX_MONEY_CHANGE after restart_town, got %d", len(reopenOut))
+	}
+	size, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, reopenOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-restart_town SAFEBOX_SIZE: %v", err)
+	}
+	if size != (itemproto.SafeboxSizePacket{Size: bootstrapSafeboxOpenMinSize}) {
+		t.Fatalf("unexpected post-restart_town SAFEBOX_SIZE: %+v", size)
+	}
+	money, err := itemproto.DecodeSafeboxMoneyChange(decodeSingleFrame(t, reopenOut[1]))
+	if err != nil {
+		t.Fatalf("decode post-restart_town SAFEBOX_MONEY_CHANGE: %v", err)
+	}
+	if money != (itemproto.SafeboxMoneyChangePacket{Money: 0}) {
+		t.Fatalf("unexpected post-restart_town SAFEBOX_MONEY_CHANGE: %+v", money)
+	}
+	assertCloseSafeboxCommandChat(t, flow, "/close_safebox", "post-restart_town open-safebox close")
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart_town /open_safebox: %v", err)
+	}
+	if account.Characters[0].MapIndex != 21 || account.Characters[0].X != 52070 || account.Characters[0].Y != 166600 {
+		t.Fatalf("expected /restart_town to persist empire town position after open-safebox floor, got %+v", account.Characters[0])
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_town to persist recovered owner HP %d after open-safebox floor, got %+v", wantHP, account.Characters[0])
+	}
+	if account.Characters[0].Gold != owner.Gold {
+		t.Fatalf("carried gold after post-restart_town /open_safebox=%d want %d", account.Characters[0].Gold, owner.Gold)
+	}
 }
 
 func TestGameSessionFlowPostFloorSafeboxPasswordOpenFailsClosed(t *testing.T) {
