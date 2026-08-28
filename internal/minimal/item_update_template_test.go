@@ -57,6 +57,59 @@ func TestMerchantBuyCountOnlyUpdateCarriesTemplateDisplayMetadata(t *testing.T) 
 	}
 }
 
+func TestInventoryItemUpdatePrefersInstanceSocketsIncludingExplicitZero(t *testing.T) {
+	template := itemcatalog.Template{
+		Vnum:      72723,
+		Name:      "Auto HP Recovery S",
+		Stackable: true,
+		MaxCount:  200,
+		Sockets:   itemcatalog.SocketValues{9, 8, 7},
+		Attributes: itemcatalog.AttributeValues{
+			{Type: 1, Value: 25},
+		},
+	}
+	zero := inventory.SocketValues{}
+	item := inventory.ItemInstance{ID: 42, Vnum: 72723, Count: 1, Slot: 5, Sockets: &zero}
+	frame, err := encodeInventoryItemUpdateFrameWithTemplates(item, map[uint32]itemcatalog.Template{72723: template})
+	if err != nil {
+		t.Fatalf("encode instance-socket update: %v", err)
+	}
+	update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, frame))
+	if err != nil {
+		t.Fatalf("decode instance-socket update: %v", err)
+	}
+	if update.Sockets != ([itemproto.ItemSocketCount]int32{}) {
+		t.Fatalf("expected explicit zero instance sockets to win over template, got %+v", update.Sockets)
+	}
+
+	active := inventory.SocketValues{1, 2, 3}
+	item.Sockets = &active
+	frame, err = encodeInventoryItemUpdateFrameWithTemplates(item, map[uint32]itemcatalog.Template{72723: template})
+	if err != nil {
+		t.Fatalf("encode active instance-socket update: %v", err)
+	}
+	update, err = itemproto.DecodeUpdate(decodeSingleFrame(t, frame))
+	if err != nil {
+		t.Fatalf("decode active instance-socket update: %v", err)
+	}
+	if update.Sockets != ([itemproto.ItemSocketCount]int32{1, 2, 3}) {
+		t.Fatalf("expected instance sockets, got %+v", update.Sockets)
+	}
+
+	item.Sockets = nil
+	frame, err = encodeInventoryItemUpdateFrameWithTemplates(item, map[uint32]itemcatalog.Template{72723: template})
+	if err != nil {
+		t.Fatalf("encode template-fallback update: %v", err)
+	}
+	update, err = itemproto.DecodeUpdate(decodeSingleFrame(t, frame))
+	if err != nil {
+		t.Fatalf("decode template-fallback update: %v", err)
+	}
+	if update.Sockets != ([itemproto.ItemSocketCount]int32{9, 8, 7}) {
+		t.Fatalf("expected template fallback sockets, got %+v", update.Sockets)
+	}
+}
+
 func TestGroundPickupCountOnlyUpdateCarriesTemplateDisplayMetadata(t *testing.T) {
 	template := itemcatalog.Template{
 		Vnum:      27006,

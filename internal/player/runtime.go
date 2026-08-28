@@ -2125,6 +2125,29 @@ func (r *Runtime) HasCarriedItemExcludingSlots(vnum uint32, exclude map[inventor
 	return ok
 }
 
+// SetCarriedItemSockets replaces the authoritative per-instance sockets on a
+// carried unlocked unequipped cell. Presence is always set (including all-zero).
+func (r *Runtime) SetCarriedItemSockets(slot inventory.SlotIndex, sockets inventory.SocketValues) (inventory.ItemInstance, bool) {
+	if r == nil {
+		return inventory.ItemInstance{}, false
+	}
+	index := findInventorySlot(r.liveInventory, slot)
+	if index < 0 {
+		return inventory.ItemInstance{}, false
+	}
+	item := r.liveInventory[index]
+	if item.Equipped || item.Locked || item.Count == 0 {
+		return inventory.ItemInstance{}, false
+	}
+	if err := item.Validate(); err != nil {
+		return inventory.ItemInstance{}, false
+	}
+	copied := sockets
+	item.Sockets = &copied
+	r.liveInventory[index] = item
+	return item, true
+}
+
 // ConsumeCarriedItemsExcludingSlots debits by-vnum carried stacks while skipping
 // the given inventory cells. Used by MYSHOP open so a listed stock cell cannot
 // also pay the shop-bag cost.
@@ -2425,7 +2448,11 @@ func cloneItemInstances(items []inventory.ItemInstance) []inventory.ItemInstance
 	if items == nil {
 		return []inventory.ItemInstance{}
 	}
-	return append([]inventory.ItemInstance(nil), items...)
+	cloned := append([]inventory.ItemInstance(nil), items...)
+	for i := range cloned {
+		cloned[i].Sockets = items[i].CloneSockets()
+	}
+	return cloned
 }
 
 func cloneQuickslots(quickslots []loginticket.Quickslot) []loginticket.Quickslot {

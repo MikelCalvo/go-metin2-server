@@ -9166,13 +9166,44 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						listedCells[inventory.SlotIndex(row.Cell)] = struct{}{}
 					}
 					if selectedPlayer.HasCarriedItemExcludingSlots(myShopOpenSilkBagVnum, listedCells) {
+						previousSelected := selectedPlayer.LiveCharacter()
+						deactivated, ok := deactivateMyShopOpenAutoPotionSockets(selectedPlayer, stock, runtime.itemTemplates)
+						if !ok {
+							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+							return gameflow.ShopResult{Accepted: false}
+						}
+						deactivateFrames := make([][]byte, 0, len(deactivated))
+						for _, item := range deactivated {
+							frame, err := encodeInventoryItemUpdateFrameWithTemplates(item, runtime.itemTemplates)
+							if err != nil {
+								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+								return gameflow.ShopResult{Accepted: false}
+							}
+							deactivateFrames = append(deactivateFrames, frame)
+						}
+						if len(deactivated) > 0 {
+							updatedSelected := selectedPlayer.LiveCharacter()
+							persistedSelected := selectedPlayer.PersistedSnapshot()
+							persistedSelected.Inventory = updatedSelected.Inventory
+							updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, persistedSelected)
+							if !ok || !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
+								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+								return gameflow.ShopResult{Accepted: false}
+							}
+							sessionTicket.Characters = updatedCharacters
+							selectedPlayer.SetPersistedSnapshot(persistedSelected)
+							refreshLiveCharacterRegistration()
+							if ownsLiveSharedWorldSession() {
+								sharedWorld.UpdateCharacter(sharedWorldID, updatedSelected)
+							}
+						}
 						live := selectedPlayer.LiveCharacter()
 						setActiveMyShopOpen(sign, stock)
 						signFrame := shopproto.EncodeServerShopSign(shopproto.ServerShopSignPacket{
 							VID:  live.VID,
 							Sign: sign,
 						})
-						frames := prependExchangeCloseFrame([][]byte{signFrame})
+						frames := append(append([][]byte{}, deactivateFrames...), prependExchangeCloseFrame([][]byte{signFrame})...)
 						enqueueMyShopSignAroundBroadcast([][]byte{signFrame})
 						return gameflow.ShopResult{
 							Accepted: true,
@@ -9202,6 +9233,19 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							return gameflow.ShopResult{Accepted: false}
 						}
 						bagFrames = append(bagFrames, quickslotFrames...)
+					}
+					deactivated, ok := deactivateMyShopOpenAutoPotionSockets(selectedPlayer, stock, runtime.itemTemplates)
+					if !ok {
+						selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+						return gameflow.ShopResult{Accepted: false}
+					}
+					for _, item := range deactivated {
+						frame, err := encodeInventoryItemUpdateFrameWithTemplates(item, runtime.itemTemplates)
+						if err != nil {
+							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+							return gameflow.ShopResult{Accepted: false}
+						}
+						bagFrames = append(bagFrames, frame)
 					}
 					updatedSelected := selectedPlayer.LiveCharacter()
 					persistedSelected := selectedPlayer.PersistedSnapshot()
@@ -10892,7 +10936,7 @@ func encodeInventoryItemUpdateFrameWithTemplates(item inventory.ItemInstance, te
 	return itemproto.EncodeUpdate(itemproto.UpdatePacket{
 		Position:   position,
 		Count:      uint8(item.Count),
-		Sockets:    bootstrapItemSockets(template),
+		Sockets:    resolveItemSockets(item, template),
 		Attributes: bootstrapItemAttributes(template),
 	}), nil
 }
@@ -11708,7 +11752,7 @@ func bootstrapItemSetPacket(position itemproto.Position, instance inventory.Item
 		Flags:      bootstrapItemFlags(template),
 		AntiFlags:  bootstrapItemAntiFlags(template),
 		Highlight:  bootstrapItemHighlight(template),
-		Sockets:    bootstrapItemSockets(template),
+		Sockets:    resolveItemSockets(instance, template),
 		Attributes: bootstrapItemAttributes(template),
 	}, nil
 }
@@ -11769,6 +11813,55 @@ func bootstrapItemHighlight(template itemcatalog.Template) uint8 {
 
 func bootstrapItemSockets(template itemcatalog.Template) [itemproto.ItemSocketCount]int32 {
 	return [itemproto.ItemSocketCount]int32(template.Sockets)
+}
+
+func resolveItemSockets(instance inventory.ItemInstance, template itemcatalog.Template) [itemproto.ItemSocketCount]int32 {
+	fallback := inventory.SocketValues(template.Sockets)
+	return [itemproto.ItemSocketCount]int32(instance.EffectiveSockets(fallback))
+}
+
+func isMyShopAutoPotionVnum(vnum uint32) bool {
+	return vnum >= 72723 && vnum <= 72730
+}
+
+// deactivateMyShopOpenAutoPotionSockets clears socket0 on listed auto-potion
+// cells whose effective socket0 is 1. Returns the updated instances in stock
+// order for ITEM_UPDATE emission. ok is false only on unexpected live-state
+// failure; callers should roll back the open mutation.
+func deactivateMyShopOpenAutoPotionSockets(
+	selectedPlayer *player.Runtime,
+	stock []myShopStockRow,
+	templates map[uint32]itemcatalog.Template,
+) (updated []inventory.ItemInstance, ok bool) {
+	if selectedPlayer == nil {
+		return nil, false
+	}
+	updated = make([]inventory.ItemInstance, 0)
+	for _, row := range stock {
+		if !isMyShopAutoPotionVnum(row.Vnum) {
+			continue
+		}
+		template, found := templates[row.Vnum]
+		if !found || !itemcatalog.ValidTemplate(template) {
+			continue
+		}
+		liveItem, _, equippedStock, found := resolveMyShopOpenStockItem(selectedPlayer, itemproto.InventoryPosition(row.Cell))
+		if !found || equippedStock || liveItem.Vnum != row.Vnum || liveItem.Count != uint16(row.Count) {
+			continue
+		}
+		effective := resolveItemSockets(liveItem, template)
+		if effective[0] != 1 {
+			continue
+		}
+		sockets := inventory.SocketValues(effective)
+		sockets[0] = 0
+		changed, applied := selectedPlayer.SetCarriedItemSockets(inventory.SlotIndex(row.Cell), sockets)
+		if !applied {
+			return nil, false
+		}
+		updated = append(updated, changed)
+	}
+	return updated, true
 }
 
 func bootstrapItemAttributes(template itemcatalog.Template) [itemproto.ItemAttributeCount]itemproto.Attribute {
@@ -11850,7 +11943,7 @@ func encodeBootstrapItemUpdateFrameWithTemplates(position itemproto.Position, in
 	return itemproto.EncodeUpdate(itemproto.UpdatePacket{
 		Position:   position,
 		Count:      uint8(instance.Count),
-		Sockets:    bootstrapItemSockets(template),
+		Sockets:    resolveItemSockets(instance, template),
 		Attributes: bootstrapItemAttributes(template),
 	}), nil
 }

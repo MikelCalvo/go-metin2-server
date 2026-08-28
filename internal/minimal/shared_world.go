@@ -3354,6 +3354,7 @@ func (r *sharedWorldRegistry) OpenMyShopGuestBrowse(guestID uint64, hostVID uint
 			continue
 		}
 		matched := false
+		var liveMatched inventory.ItemInstance
 		for _, item := range hostCharacter.Inventory {
 			if item.Equipped || item.Slot != inventory.SlotIndex(row.Cell) {
 				continue
@@ -3362,6 +3363,7 @@ func (r *sharedWorldRegistry) OpenMyShopGuestBrowse(guestID uint64, hostVID uint
 				break
 			}
 			matched = true
+			liveMatched = item
 			break
 		}
 		if !matched {
@@ -3376,7 +3378,7 @@ func (r *sharedWorldRegistry) OpenMyShopGuestBrowse(guestID uint64, hostVID uint
 			Price:      row.Price,
 			Count:      row.Count,
 			DisplayPos: row.DisplayPos,
-			Sockets:    bootstrapItemSockets(template),
+			Sockets:    resolveItemSockets(liveMatched, template),
 			Attributes: bootstrapItemAttributes(template),
 		}
 	}

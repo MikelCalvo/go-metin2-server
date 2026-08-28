@@ -108,9 +108,15 @@ func CloneCharacters(characters []Character) []Character {
 	for i := range cloned {
 		if cloned[i].Inventory != nil {
 			cloned[i].Inventory = append(cloned[i].Inventory[:0:0], cloned[i].Inventory...)
+			for j := range cloned[i].Inventory {
+				cloned[i].Inventory[j].Sockets = cloned[i].Inventory[j].CloneSockets()
+			}
 		}
 		if cloned[i].Equipment != nil {
 			cloned[i].Equipment = append(cloned[i].Equipment[:0:0], cloned[i].Equipment...)
+			for j := range cloned[i].Equipment {
+				cloned[i].Equipment[j].Sockets = cloned[i].Equipment[j].CloneSockets()
+			}
 		}
 		if cloned[i].Quickslots != nil {
 			cloned[i].Quickslots = append(cloned[i].Quickslots[:0:0], cloned[i].Quickslots...)

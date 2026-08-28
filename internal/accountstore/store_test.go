@@ -1,6 +1,7 @@
 package accountstore
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -2282,6 +2283,53 @@ func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected account:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestFileStoreSaveThenLoadRoundTripInstanceSocketsIncludingZero(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	zero := inventory.SocketValues{}
+	active := inventory.SocketValues{1, 2, 3}
+	want := Account{
+		Login:  "socket-host",
+		Empire: 2,
+		Characters: []loginticket.Character{{
+			ID:       1,
+			VID:      0x01020304,
+			Name:     "SocketWar",
+			Job:      0,
+			Level:    15,
+			MapIndex: 21,
+			Empire:   2,
+			Gold:     1000,
+			Inventory: []inventory.ItemInstance{
+				{ID: 1001, Vnum: 72723, Count: 1, Slot: 5, Sockets: &active},
+				{ID: 1002, Vnum: 72727, Count: 1, Slot: 6, Sockets: &zero},
+				{ID: 1003, Vnum: 27001, Count: 2, Slot: 7},
+			},
+			Equipment:  []inventory.ItemInstance{},
+			Quickslots: []loginticket.Quickslot{},
+		}},
+	}
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save account with instance sockets: %v", err)
+	}
+	got, err := store.Load("socket-host")
+	if err != nil {
+		t.Fatalf("load account with instance sockets: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected account with instance sockets:\n got: %#v\nwant: %#v", got, want)
+	}
+	raw, err := os.ReadFile(store.accountPath("socket-host"))
+	if err != nil {
+		t.Fatalf("read persisted account: %v", err)
+	}
+	if !bytes.Contains(raw, []byte(`"sockets":[1,2,3]`)) {
+		t.Fatalf("expected persisted active sockets array in JSON, got %s", string(raw))
+	}
+	if !bytes.Contains(raw, []byte(`"sockets":[0,0,0]`)) {
+		t.Fatalf("expected persisted explicit-zero sockets array in JSON, got %s", string(raw))
 	}
 }
 

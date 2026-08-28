@@ -115,5 +115,8 @@ runtime code.
 
 ## Status
 
-Docs/spec freeze only on `lane/items`. Implementation RED/GREEN is intentionally
-deferred to the next items-lane run so this commit stays green.
+GREEN on `lane/items`: minimal per-instance inventory sockets substrate plus
+accepted MYSHOP open auto-potion `socket0` deactivate (bag + silk success paths)
+with focused store/encode/runtime coverage. `MYSHOP_PRICELIST` / quest-running /
+bag-missing INFO / shopkeeper polymorph / refine keep-grade stay deferred;
+`LESS_GOLD` auto-cancel stays out.

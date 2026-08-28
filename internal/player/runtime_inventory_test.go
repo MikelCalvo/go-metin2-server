@@ -3042,6 +3042,36 @@ func TestRuntimeHasCarriedItemExcludingSlotsSkipsLockedEquippedAndExcluded(t *te
 	}
 }
 
+func TestRuntimeSetCarriedItemSocketsSeedsPresenceAndRejectsLockedEquipped(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = []inventory.ItemInstance{
+		{ID: 1, Vnum: 72723, Count: 1, Slot: 5},
+		{ID: 2, Vnum: 72724, Count: 1, Slot: 6, Locked: true},
+		{ID: 3, Vnum: 72725, Count: 1, Slot: 7, Equipped: true, EquipSlot: inventory.EquipmentSlotBody},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "socket-host", CharacterIndex: 0})
+	updated, ok := runtime.SetCarriedItemSockets(5, inventory.SocketValues{0, 9, 8})
+	if !ok {
+		t.Fatal("expected SetCarriedItemSockets to succeed for unlocked carried cell")
+	}
+	if !updated.HasSockets() || *updated.Sockets != (inventory.SocketValues{0, 9, 8}) {
+		t.Fatalf("unexpected updated sockets: %+v", updated)
+	}
+	live := runtime.LiveInventory()
+	if !live[0].HasSockets() || *live[0].Sockets != (inventory.SocketValues{0, 9, 8}) {
+		t.Fatalf("live inventory sockets not updated: %#v", live[0])
+	}
+	if _, ok := runtime.SetCarriedItemSockets(6, inventory.SocketValues{0, 0, 0}); ok {
+		t.Fatal("expected locked cell SetCarriedItemSockets to fail closed")
+	}
+	if _, ok := runtime.SetCarriedItemSockets(7, inventory.SocketValues{0, 0, 0}); ok {
+		t.Fatal("expected equipped cell SetCarriedItemSockets to fail closed")
+	}
+	if live[1].HasSockets() || live[2].HasSockets() {
+		t.Fatalf("reject paths must not seed sockets: %#v", live)
+	}
+}
+
 func TestRuntimeConsumeCarriedItemsRejectsInsufficientMaterialsWithoutMutation(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	persisted.Inventory = []inventory.ItemInstance{{ID: 1, Vnum: 27001, Count: 1, Slot: 0}}

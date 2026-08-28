@@ -14,7 +14,13 @@ var (
 	ErrInventorySlotOutOfRange      = errors.New("inventory slot is out of range")
 )
 
-const CarriedInventorySlotCount SlotIndex = 90
+const (
+	CarriedInventorySlotCount SlotIndex = 90
+	ItemSocketCount                     = 3
+)
+
+// SocketValues is the fixed wire-width per-instance socket array.
+type SocketValues [ItemSocketCount]int32
 
 type ItemInstance struct {
 	ID        uint64
@@ -24,6 +30,31 @@ type ItemInstance struct {
 	Equipped  bool
 	EquipSlot EquipmentSlot
 	Locked    bool
+	// Sockets is optional per-instance socket state. nil means "fall back to
+	// template sockets"; a non-nil pointer (including all-zero) is authoritative.
+	Sockets *SocketValues `json:"sockets,omitempty"`
+}
+
+// HasSockets reports whether this instance carries authoritative socket state.
+func (i ItemInstance) HasSockets() bool {
+	return i.Sockets != nil
+}
+
+// CloneSockets returns an independent copy of the instance sockets pointer.
+func (i ItemInstance) CloneSockets() *SocketValues {
+	if i.Sockets == nil {
+		return nil
+	}
+	copied := *i.Sockets
+	return &copied
+}
+
+// EffectiveSockets prefers instance sockets when present; otherwise fallback.
+func (i ItemInstance) EffectiveSockets(fallback SocketValues) SocketValues {
+	if i.Sockets != nil {
+		return *i.Sockets
+	}
+	return fallback
 }
 
 type MoveResult struct {
@@ -69,6 +100,7 @@ func (i ItemInstance) WithInventorySlot(slot SlotIndex) (ItemInstance, error) {
 	updated.Slot = slot
 	updated.Equipped = false
 	updated.EquipSlot = EquipmentSlotNone
+	updated.Sockets = i.CloneSockets()
 	if err := updated.Validate(); err != nil {
 		return ItemInstance{}, err
 	}

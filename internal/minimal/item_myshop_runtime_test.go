@@ -69,6 +69,230 @@ func TestGameRuntimeMyShopOpenEmitsShopSignWithoutInventoryMutation(t *testing.T
 	assertExchangeAccountUnchanged(t, accounts, login, want, "accepted myshop open after bag consume")
 }
 
+func TestGameRuntimeMyShopOpenDeactivatesListedAutoPotionSocket0WithBagPath(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopAutoHP", 0x01030841, 0x02040841, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	active := inventory.SocketValues{1, 9, 8}
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 901, Vnum: 72723, Count: 1, Slot: 5, Sockets: &active},
+		{ID: 951, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	login := "myshop-auto-hp"
+	issuePeerTicket(t, ticketStore, login, 0x70707141, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop auto-hp account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 72723, Name: "Auto HP Recovery S", Stackable: true, MaxCount: 200, Sockets: itemcatalog.SocketValues{1, 0, 0}},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop auto-hp runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707141)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       72723,
+			Count:      1,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted MYSHOP auto-hp error: %v", err)
+	}
+	if len(out) < 3 {
+		t.Fatalf("expected bag refresh, auto-potion ITEM_UPDATE, then SHOP_SIGN, got %d", len(out))
+	}
+	del, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode bag ITEM_DEL: %v", err)
+	}
+	if del.Position != itemproto.InventoryPosition(4) {
+		t.Fatalf("unexpected bag ITEM_DEL position: %+v", del.Position)
+	}
+	update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode auto-potion ITEM_UPDATE: %v", err)
+	}
+	if update.Position != itemproto.InventoryPosition(5) || update.Count != 1 || update.Sockets != ([itemproto.ItemSocketCount]int32{0, 9, 8}) {
+		t.Fatalf("unexpected auto-potion ITEM_UPDATE: %+v", update)
+	}
+	assertMyShopLiveSignFrame(t, out[len(out)-1], owner.VID, "Private Shop", "auto-hp SHOP_SIGN")
+
+	wantSockets := inventory.SocketValues{0, 9, 8}
+	want := owner
+	want.Inventory = []inventory.ItemInstance{{ID: 901, Vnum: 72723, Count: 1, Slot: 5, Sockets: &wantSockets}}
+	assertExchangeAccountUnchanged(t, accounts, login, want, "accepted myshop open auto-hp deactivate")
+}
+
+func TestGameRuntimeMyShopOpenDeactivatesListedAutoPotionSocket0WithSilkPath(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopAutoSP", 0x01030842, 0x02040842, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	active := inventory.SocketValues{1, 4, 5}
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 902, Vnum: 72727, Count: 1, Slot: 5, Sockets: &active},
+		{ID: 952, Vnum: myShopOpenSilkBagVnum, Count: 1, Slot: 3},
+	}
+	login := "myshop-auto-sp"
+	issuePeerTicket(t, ticketStore, login, 0x70707142, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop auto-sp account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 72727, Name: "Auto SP Recovery S", Stackable: true, MaxCount: 200, Sockets: itemcatalog.SocketValues{1, 0, 0}},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenSilkBagVnum, Name: "Silk Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop auto-sp runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707142)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       72727,
+			Count:      1,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted MYSHOP auto-sp error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected auto-potion ITEM_UPDATE then SHOP_SIGN on silk path, got %d", len(out))
+	}
+	update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode silk auto-potion ITEM_UPDATE: %v", err)
+	}
+	if update.Position != itemproto.InventoryPosition(5) || update.Count != 1 || update.Sockets != ([itemproto.ItemSocketCount]int32{0, 4, 5}) {
+		t.Fatalf("unexpected silk auto-potion ITEM_UPDATE: %+v", update)
+	}
+	assertMyShopLiveSignFrame(t, out[1], owner.VID, "Private Shop", "auto-sp SHOP_SIGN")
+
+	wantSockets := inventory.SocketValues{0, 4, 5}
+	want := owner
+	want.Inventory = []inventory.ItemInstance{
+		{ID: 952, Vnum: myShopOpenSilkBagVnum, Count: 1, Slot: 3},
+		{ID: 902, Vnum: 72727, Count: 1, Slot: 5, Sockets: &wantSockets},
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, want, "accepted myshop silk open auto-sp deactivate")
+}
+
+func TestGameRuntimeMyShopOpenSkipsAutoPotionDeactivateWhenSocket0NotOne(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopAutoSkip", 0x01030843, 0x02040843, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	inactive := inventory.SocketValues{0, 2, 3}
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 903, Vnum: 72723, Count: 1, Slot: 5, Sockets: &inactive},
+		{ID: 953, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	login := "myshop-auto-skip"
+	issuePeerTicket(t, ticketStore, login, 0x70707143, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop auto-skip account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 72723, Name: "Auto HP Recovery S", Stackable: true, MaxCount: 200, Sockets: itemcatalog.SocketValues{1, 0, 0}},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop auto-skip runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707143)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       72723,
+			Count:      1,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted MYSHOP auto-skip error: %v", err)
+	}
+	assertMyShopOpenSuccessBagAndSign(t, out, owner.VID, 4, "socket0!=1 myshop open")
+	for i := 0; i < len(out)-1; i++ {
+		if _, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[i])); err == nil {
+			t.Fatalf("expected no auto-potion ITEM_UPDATE when socket0!=1, frame %d decoded as UPDATE", i)
+		}
+	}
+	want := owner
+	want.Inventory = []inventory.ItemInstance{{ID: 903, Vnum: 72723, Count: 1, Slot: 5, Sockets: &inactive}}
+	assertExchangeAccountUnchanged(t, accounts, login, want, "socket0!=1 myshop open leaves sockets")
+}
+
+func TestGameRuntimeMyShopOpenRejectDoesNotMutateAutoPotionSockets(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopAutoArmor", 0x01030844, 0x02040844, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	active := inventory.SocketValues{1, 2, 3}
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 904, Vnum: 72723, Count: 1, Slot: 5, Sockets: &active},
+		{ID: 954, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	owner.Equipment = []inventory.ItemInstance{{ID: 955, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}}
+	login := "myshop-auto-armor"
+	issuePeerTicket(t, ticketStore, login, 0x70707144, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop auto-armor account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 72723, Name: "Auto HP Recovery S", Stackable: true, MaxCount: 200},
+		{Vnum: 11200, Name: "Body Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop auto-armor runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707144)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       72723,
+			Count:      1,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected armor-reject MYSHOP error: %v", err)
+	}
+	assertMyShopOpenRejectInfoChat(t, out, myShopOpenArmorRequiredInfoMessage, "armor reject must win before auto-potion mutate")
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "armor reject leaves auto-potion sockets")
+}
+
 func TestGameRuntimeMyShopOpenRejectsEmptySignAndZeroCountWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

@@ -115,3 +115,46 @@ func TestItemInstanceWithInventorySlotRejectsOutOfRangeSlot(t *testing.T) {
 		t.Fatalf("expected ErrInventorySlotOutOfRange, got %v", err)
 	}
 }
+
+func TestItemInstanceEffectiveSocketsPreferInstancePresenceIncludingZero(t *testing.T) {
+	fallback := SocketValues{9, 8, 7}
+	item := ItemInstance{ID: 1, Vnum: 72723, Count: 1, Slot: 5}
+	if got := item.EffectiveSockets(fallback); got != fallback {
+		t.Fatalf("expected omitted sockets to fall back, got %+v", got)
+	}
+	if item.HasSockets() {
+		t.Fatal("expected omitted sockets to report HasSockets=false")
+	}
+
+	zero := SocketValues{}
+	item.Sockets = &zero
+	if !item.HasSockets() {
+		t.Fatal("expected explicit zero sockets to report HasSockets=true")
+	}
+	if got := item.EffectiveSockets(fallback); got != zero {
+		t.Fatalf("expected explicit zero sockets to win over template fallback, got %+v", got)
+	}
+
+	active := SocketValues{1, 2, 3}
+	item.Sockets = &active
+	if got := item.EffectiveSockets(fallback); got != active {
+		t.Fatalf("expected instance sockets %+v, got %+v", active, got)
+	}
+
+	cloned := item.CloneSockets()
+	if cloned == nil || *cloned != active || cloned == item.Sockets {
+		t.Fatalf("CloneSockets() = %v want independent copy of %+v", cloned, active)
+	}
+	cloned[0] = 0
+	if item.Sockets[0] != 1 {
+		t.Fatalf("expected CloneSockets to leave original unchanged, got %+v", *item.Sockets)
+	}
+
+	moved, err := item.WithInventorySlot(8)
+	if err != nil {
+		t.Fatalf("WithInventorySlot() unexpected error: %v", err)
+	}
+	if !moved.HasSockets() || moved.Sockets == item.Sockets || *moved.Sockets != active {
+		t.Fatalf("expected WithInventorySlot to clone sockets, got %+v", moved)
+	}
+}
