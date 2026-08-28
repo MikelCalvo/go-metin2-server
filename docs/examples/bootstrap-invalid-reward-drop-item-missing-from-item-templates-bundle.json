@@ -1,0 +1,24 @@
+{
+  "item_templates": [
+    {
+      "vnum": 27001,
+      "name": "Small Red Potion",
+      "stackable": true,
+      "max_count": 200
+    }
+  ],
+  "spawn_groups": [
+    {
+      "ref": "practice.qa_reward_drop_item_missing_from_templates",
+      "name": "QARewardDropItemMissingFromTemplates",
+      "map_index": 1,
+      "x": 469850,
+      "y": 964200,
+      "race_num": 20350,
+      "combat_profile": "practice_mob",
+      "reward_drop_vnums": [
+        27002
+      ]
+    }
+  ]
+}
