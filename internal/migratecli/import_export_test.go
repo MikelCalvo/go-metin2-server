@@ -9,6 +9,7 @@ import (
 
 	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 )
 
 func TestRunImportExportRejectsUsageErrorsWithoutOpeningDatabase(t *testing.T) {
@@ -202,7 +203,16 @@ func TestRunImportExportImportsEmptyExportsAgainstRegisteredDriver(t *testing.T)
 		t.Run(tc.kind, func(t *testing.T) {
 			driverName := registerMigrateCLITestSQLDriver(t)
 			driver := currentMigrateCLITestDriver(t)
-			driver.setLedger([]dbmigrations.LedgerEntry{ledgerEntry(tc.version)})
+			// Static-actor SQL import keeps tip-0013 export identity but requires
+			// additive 0016 chase_delay_ms in the ledger before INSERT.
+			ledger := []dbmigrations.LedgerEntry{ledgerEntry(tc.version)}
+			if tc.kind == "static-actor-content-state" {
+				ledger = []dbmigrations.LedgerEntry{
+					ledgerEntry(staticstore.StaticActorContentStateMigrationVersion),
+					ledgerEntry(staticstore.StaticActorCombatProfileChaseDelayMigrationVersion),
+				}
+			}
+			driver.setLedger(ledger)
 
 			dsn := "memory://import-export-" + tc.kind
 			var stdout bytes.Buffer

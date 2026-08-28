@@ -12,6 +12,12 @@ import (
 const (
 	StaticActorContentStateMigrationVersion = 13
 	StaticActorContentStateMigrationName    = "static_actor_combat_profile_state"
+
+	// StaticActorCombatProfileChaseDelayMigrationVersion / Name pin the additive
+	// 0016 column that ImportStaticActorContentState writes beside tip-0013 rows.
+	// Export identity stays tip-0013; SQL import preflight requires both.
+	StaticActorCombatProfileChaseDelayMigrationVersion = 16
+	StaticActorCombatProfileChaseDelayMigrationName    = "static_actor_combat_profile_chase_delay"
 )
 
 // StaticActorContentStateExport is a deterministic, schema-shaped projection of

@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -110,6 +111,33 @@ func TestSQLiteHarnessStaticActorContentStateImportRejectsMissingSchema(t *testi
 	_, err := ImportStaticActorContentState(ctx, db, export)
 	if !errors.Is(err, ErrStaticActorContentStateImportSchemaRequired) {
 		t.Fatalf("ImportStaticActorContentState on empty DB error = %v, want %v", err, ErrStaticActorContentStateImportSchemaRequired)
+	}
+}
+
+func TestSQLiteHarnessStaticActorContentStateImportRejectsTip0013WithoutChaseDelaySchema(t *testing.T) {
+	db := openSQLiteStaticActorContentStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, StaticActorContentStateMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", StaticActorContentStateMigrationVersion, err)
+	}
+
+	export := sampleTip0013StaticActorContentStateImportExport(t)
+	_, err := ImportStaticActorContentState(ctx, db, export)
+	if !errors.Is(err, ErrStaticActorContentStateImportSchemaRequired) {
+		t.Fatalf("ImportStaticActorContentState after tip-0013-only apply error = %v, want %v", err, ErrStaticActorContentStateImportSchemaRequired)
+	}
+	if !strings.Contains(err.Error(), "16") || !strings.Contains(err.Error(), StaticActorCombatProfileChaseDelayMigrationName) {
+		t.Fatalf("SchemaRequired error = %v, want missing chase-delay version/name", err)
+	}
+
+	var profileRows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM static_actor_combat_profiles`).Scan(&profileRows); err != nil {
+		t.Fatalf("count combat profiles after fail-closed import: %v", err)
+	}
+	if profileRows != 0 {
+		t.Fatalf("combat profile rows after tip-0013-only reject = %d, want 0", profileRows)
 	}
 }
 
