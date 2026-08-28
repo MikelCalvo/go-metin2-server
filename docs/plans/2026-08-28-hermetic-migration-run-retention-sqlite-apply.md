@@ -76,6 +76,8 @@ say the aside step is optional and only for leftover-lock recovery.
 7. Docs mark the hermetic printed-script apply/rollback follow-up done on the
    migration-run-retention / rollback-retention / Track E / migration-contract
    tips; upsert / auto-run / stock production driver remain explicitly deferred.
+   ~~Intermediate-target hermetic follow-up (empty→`7`, tip→`8`).~~ Done: see
+   [hermetic migration-run-retention intermediate-target SQLite](2026-08-28-hermetic-migration-run-retention-intermediate-target-sqlite.md).
 
 ## What this is not yet
 

@@ -507,6 +507,123 @@ func TestRunMigrationRunRetentionForwardPathOmitsAllowRollback(t *testing.T) {
 	}
 }
 
+func TestRunMigrationRunRetentionPrintsIntermediateForwardTarget(t *testing.T) {
+	payload := `{
+  "version": "v0.1.0",
+  "commit": "abcdef0123456789deadbeef",
+  "build_date": "2026-08-28T16:00:00Z"
+}`
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"migration-run-retention",
+			"--build-info", "-",
+			"--ops-base-url", "http://127.0.0.1:6060",
+			"--migration-runs-base", "/var/metin2/migration-runs",
+			"--target-version", "7",
+		},
+		strings.NewReader(payload),
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr, got %q", stderr.String())
+	}
+
+	body := stdout.String()
+	for _, want := range []string{
+		`TARGET_VERSION='7'`,
+		`LOCK_FILE='migration-apply.lock'`,
+		`> "$RUN/migration-plan-artifact.json"`,
+		`> "$RUN/apply-preflight.json"`,
+		`--audit-file "$RUN/migration-apply-audit.json"`,
+		`> "$RUN/post-apply-status.json"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected %q in intermediate forward stdout:\n%s", want, body)
+		}
+	}
+	for _, banned := range []string{
+		`--allow-rollback`,
+		`rollback-plan-artifact.json`,
+		`migration-rollback.lock`,
+		`post-rollback-status.json`,
+		`CREATE TABLE`,
+		`DROP TABLE`,
+		`password=`,
+		`memory://`,
+	} {
+		if strings.Contains(body, banned) {
+			t.Fatalf("intermediate forward retention must not contain %q, got:\n%s", banned, body)
+		}
+	}
+}
+
+func TestRunMigrationRunRetentionPrintsIntermediateRollbackTarget(t *testing.T) {
+	payload := `{
+  "version": "v0.1.0",
+  "commit": "abcdef0123456789deadbeef",
+  "build_date": "2026-08-28T16:15:00Z"
+}`
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"migration-run-retention",
+			"--build-info", "-",
+			"--ops-base-url", "http://127.0.0.1:6060",
+			"--migration-runs-base", "/var/metin2/migration-runs",
+			"--target-version", "8",
+			"--allow-rollback",
+		},
+		strings.NewReader(payload),
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr, got %q", stderr.String())
+	}
+
+	body := stdout.String()
+	for _, want := range []string{
+		`TARGET_VERSION='8'`,
+		`LOCK_FILE='migration-rollback.lock'`,
+		`> "$RUN/rollback-plan-artifact.json"`,
+		`> "$RUN/rollback-apply-preflight.json"`,
+		`--allow-rollback`,
+		`--audit-file "$RUN/migration-rollback-audit.json"`,
+		`> "$RUN/post-rollback-status.json"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected %q in intermediate rollback stdout:\n%s", want, body)
+		}
+	}
+	for _, banned := range []string{
+		`> "$RUN/migration-plan-artifact.json"`,
+		`> "$RUN/apply-preflight.json"`,
+		`--audit-file "$RUN/migration-apply-audit.json"`,
+		`> "$RUN/post-apply-status.json"`,
+		`LOCK_FILE='migration-apply.lock'`,
+		`CREATE TABLE`,
+		`DROP TABLE`,
+		`password=`,
+		`memory://`,
+	} {
+		if strings.Contains(body, banned) {
+			t.Fatalf("intermediate rollback retention must not contain %q, got:\n%s", banned, body)
+		}
+	}
+}
+
 func TestRunMigrationRunRetentionHonorsCustomDaemonLogPaths(t *testing.T) {
 	payload := `{"version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-21T15:30:45Z"}`
 	var stdout bytes.Buffer

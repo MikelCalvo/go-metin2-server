@@ -53,7 +53,7 @@ metin2-migrate version \
 ```
 
 The printer never opens a database, never embeds a DSN, and never executes
-apply itself. It retains both-daemon build-info, optional
+apply itself. Hermetic `/bin/sh` proofs cover forward apply-to-tip, rollback-to-zero, and intermediate targets empty→`7` / tip→`8` under `go test -tags=sqlite_harness ./internal/migratecli -run MigrationRunRetentionSQLite` — see [hermetic migration-run-retention SQLite apply](../plans/2026-08-28-hermetic-migration-run-retention-sqlite-apply.md) and [intermediate-target twin](../plans/2026-08-28-hermetic-migration-run-retention-intermediate-target-sqlite.md). It retains both-daemon build-info, optional
 `/var/log/metin2/{gamed,authd}.log` copies when present (`--gamed-log-path` /
 `--authd-log-path`; missing files stay non-fatal), runtime-config, persistence
 status before/after mutation, and a `notes.md` stub beside the migration

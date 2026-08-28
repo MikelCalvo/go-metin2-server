@@ -212,6 +212,201 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToZero(t *test
 	assertPostStatusCurrentVersion(t, filepath.Join(runDir, "post-rollback-status.json"), 0)
 }
 
+func TestMigrationRunRetentionSQLiteHermeticPrintedScriptAppliesToIntermediateTarget(t *testing.T) {
+	binDir := t.TempDir()
+	_ = mustBuildMetin2MigrateWithSQLiteHarness(t, binDir)
+	mustInstallMigrationRunRetentionCurlStub(t, binDir)
+
+	runsBase := filepath.Join(t.TempDir(), "migration-runs-intermediate-forward")
+	if err := os.MkdirAll(runsBase, 0o755); err != nil {
+		t.Fatalf("mkdir migration-runs base: %v", err)
+	}
+
+	dbPath := filepath.Join(t.TempDir(), "migration-run-retention-intermediate-forward.sqlite")
+	dsn := "file:" + filepath.ToSlash(dbPath) + "?_pragma=foreign_keys(1)"
+
+	buildInfoPath := filepath.Join(t.TempDir(), "build-info.json")
+	mustWriteFile(t, buildInfoPath, []byte(`{
+  "version": "v0.1.0-retention",
+  "commit": "interfwd0123456789abcd",
+  "build_date": "2026-08-28T16:00:00Z"
+}
+`))
+
+	var printStdout bytes.Buffer
+	var printStderr bytes.Buffer
+	printCode := Run(
+		[]string{
+			"migration-run-retention",
+			"--build-info", buildInfoPath,
+			"--ops-base-url", "http://127.0.0.1:6060",
+			"--authd-ops-base-url", "http://127.0.0.1:6061",
+			"--migration-runs-base", runsBase,
+			"--target-version", "7",
+			"--gamed-log-path", filepath.Join(t.TempDir(), "missing-gamed.log"),
+			"--authd-log-path", filepath.Join(t.TempDir(), "missing-authd.log"),
+		},
+		nil,
+		&printStdout,
+		&printStderr,
+	)
+	if printCode != exitOK {
+		t.Fatalf("expected migration-run-retention exit %d, got %d stderr=%q", exitOK, printCode, printStderr.String())
+	}
+	if printStderr.Len() != 0 {
+		t.Fatalf("expected no stderr from migration-run-retention, got %q", printStderr.String())
+	}
+	script := printStdout.String()
+	assertMigrationRunRetentionScriptOmitsDSN(t, script, dsn)
+	for _, want := range []string{
+		`TARGET_VERSION='7'`,
+		`LOCK_FILE='migration-apply.lock'`,
+		`> "$RUN/migration-plan-artifact.json"`,
+		`> "$RUN/apply-preflight.json"`,
+		`--audit-file "$RUN/migration-apply-audit.json"`,
+		`> "$RUN/post-apply-status.json"`,
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("expected %q in intermediate forward script:\n%s", want, script)
+		}
+	}
+	if strings.Contains(script, `--allow-rollback`) {
+		t.Fatalf("intermediate forward script must omit --allow-rollback:\n%s", script)
+	}
+
+	env := append([]string{}, os.Environ()...)
+	env = append(env,
+		"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"DRIVER=sqlite",
+		"DSN="+dsn,
+	)
+	stdout, stderr, code := runPrintedShellScriptWithEnv(t, script, env)
+	if code != 0 {
+		t.Fatalf("expected printed intermediate forward retention script exit 0, got %d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "No leftover lock at") {
+		t.Fatalf("expected successful-path leftover-lock note in script stdout, got %q", stdout)
+	}
+
+	runDir := mustFindSingleRetentionTree(t, runsBase, "interfwd0123")
+	for _, name := range []string{
+		"migration-catalog.json",
+		"ledger-snapshot.json",
+		"ledger-snapshot-status.json",
+		"migration-plan-artifact.json",
+		"plan-artifact-status.json",
+		"apply-preflight.json",
+		"apply-preflight-status.json",
+		"migration-apply-audit.json",
+		"apply-audit-status.json",
+		"post-apply-status.json",
+		"persistence-status-after.json",
+	} {
+		assertRegularFileExists(t, filepath.Join(runDir, name))
+	}
+	if _, err := os.Lstat(filepath.Join(runDir, "migration-apply.lock")); !os.IsNotExist(err) {
+		t.Fatalf("expected successful apply to remove lock file, lstat err=%v", err)
+	}
+
+	assertSQLiteLedgerAtVersion(t, dsn, 7, "auth_login_ticket_handoff")
+	assertPostStatusCurrentVersion(t, filepath.Join(runDir, "post-apply-status.json"), 7)
+}
+
+func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToIntermediateTarget(t *testing.T) {
+	binDir := t.TempDir()
+	migrateBin := mustBuildMetin2MigrateWithSQLiteHarness(t, binDir)
+	mustInstallMigrationRunRetentionCurlStub(t, binDir)
+
+	runsBase := filepath.Join(t.TempDir(), "migration-runs-intermediate-rollback")
+	if err := os.MkdirAll(runsBase, 0o755); err != nil {
+		t.Fatalf("mkdir migration-runs base: %v", err)
+	}
+
+	dbPath := filepath.Join(t.TempDir(), "migration-run-retention-intermediate-rollback.sqlite")
+	dsn := "file:" + filepath.ToSlash(dbPath) + "?_pragma=foreign_keys(1)"
+	mustApplyCatalogToTipWithSQLiteMigrate(t, migrateBin, dsn)
+	assertSQLiteLedgerAtCatalogTip(t, dsn)
+
+	buildInfoPath := filepath.Join(t.TempDir(), "build-info.json")
+	mustWriteFile(t, buildInfoPath, []byte(`{
+  "version": "v0.1.0-retention",
+  "commit": "interrollb0123456789ab",
+  "build_date": "2026-08-28T16:30:00Z"
+}
+`))
+
+	var printStdout bytes.Buffer
+	var printStderr bytes.Buffer
+	printCode := Run(
+		[]string{
+			"migration-run-retention",
+			"--build-info", buildInfoPath,
+			"--ops-base-url", "http://127.0.0.1:6060",
+			"--authd-ops-base-url", "http://127.0.0.1:6061",
+			"--migration-runs-base", runsBase,
+			"--target-version", "8",
+			"--allow-rollback",
+			"--gamed-log-path", filepath.Join(t.TempDir(), "missing-gamed.log"),
+			"--authd-log-path", filepath.Join(t.TempDir(), "missing-authd.log"),
+		},
+		nil,
+		&printStdout,
+		&printStderr,
+	)
+	if printCode != exitOK {
+		t.Fatalf("expected migration-run-retention exit %d, got %d stderr=%q", exitOK, printCode, printStderr.String())
+	}
+	script := printStdout.String()
+	assertMigrationRunRetentionScriptOmitsDSN(t, script, dsn)
+	for _, want := range []string{
+		`TARGET_VERSION='8'`,
+		`LOCK_FILE='migration-rollback.lock'`,
+		`> "$RUN/rollback-plan-artifact.json"`,
+		`> "$RUN/rollback-apply-preflight.json"`,
+		`--allow-rollback`,
+		`--audit-file "$RUN/migration-rollback-audit.json"`,
+		`> "$RUN/post-rollback-status.json"`,
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("expected %q in intermediate rollback script:\n%s", want, script)
+		}
+	}
+
+	env := append([]string{}, os.Environ()...)
+	env = append(env,
+		"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"DRIVER=sqlite",
+		"DSN="+dsn,
+	)
+	stdout, stderr, code := runPrintedShellScriptWithEnv(t, script, env)
+	if code != 0 {
+		t.Fatalf("expected printed intermediate rollback retention script exit 0, got %d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "No leftover lock at") {
+		t.Fatalf("expected successful-path leftover-lock note in script stdout, got %q", stdout)
+	}
+
+	runDir := mustFindSingleRetentionTree(t, runsBase, "interrollb01")
+	for _, name := range []string{
+		"rollback-plan-artifact.json",
+		"rollback-plan-artifact-status.json",
+		"rollback-apply-preflight.json",
+		"rollback-apply-preflight-status.json",
+		"migration-rollback-audit.json",
+		"rollback-apply-audit-status.json",
+		"post-rollback-status.json",
+		"persistence-status-after.json",
+	} {
+		assertRegularFileExists(t, filepath.Join(runDir, name))
+	}
+	if _, err := os.Lstat(filepath.Join(runDir, "migration-rollback.lock")); !os.IsNotExist(err) {
+		t.Fatalf("expected successful rollback to remove lock file, lstat err=%v", err)
+	}
+
+	assertSQLiteLedgerAtVersion(t, dsn, 8, "static_actor_content_state")
+	assertPostStatusCurrentVersion(t, filepath.Join(runDir, "post-rollback-status.json"), 8)
+}
+
 func mustInstallMigrationRunRetentionCurlStub(t *testing.T, binDir string) {
 	t.Helper()
 	path := filepath.Join(binDir, "curl")
@@ -304,6 +499,27 @@ func assertSQLiteLedgerAtCatalogTip(t *testing.T, dsn string) {
 	}
 	if ledger[len(ledger)-1].Version != wantTip {
 		t.Fatalf("ledger tip = %d, want %d", ledger[len(ledger)-1].Version, wantTip)
+	}
+}
+
+func assertSQLiteLedgerAtVersion(t *testing.T, dsn string, wantVersion int, wantName string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		t.Fatalf("sql.Open(sqlite): %v", err)
+	}
+	defer db.Close()
+
+	ledger, err := dbmigrations.ReadSQLLedgerEntries(context.Background(), db)
+	if err != nil {
+		t.Fatalf("ReadSQLLedgerEntries: %v", err)
+	}
+	if len(ledger) != wantVersion {
+		t.Fatalf("ledger rows = %d, want %d", len(ledger), wantVersion)
+	}
+	tip := ledger[len(ledger)-1]
+	if tip.Version != wantVersion || tip.Name != wantName {
+		t.Fatalf("ledger tip = %d/%s, want %d/%s", tip.Version, tip.Name, wantVersion, wantName)
 	}
 }
 
