@@ -798,20 +798,39 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 	// Fail closed before accept markers or mutual-accept finalize when either paired
 	// side currently has an open merchant / safebox / refine / MYSHOP / cube busy presentation.
 	// Mirror START busy info-chat: requester-local busy wins, otherwise partner busy.
+	// Oracle Cancel-on-failure then tears the shell down with self/peer END
+	// (docs/plans/2026-08-28-exchange-busy-gold-carrier-reject-auto-cancel.md).
 	if r.hasMerchantWindowOpenLocked(originID) || r.hasSafeboxWindowOpenLocked(originID) || r.hasRefineWindowOpenLocked(originID) || r.hasMyShopWindowOpenLocked(originID) || r.hasCubeWindowOpenLocked(originID) {
-		return [][]byte{encodeExchangeRequesterMerchantBusyInfoFrame()}, nil, true
+		frames, ok := r.exchangeFinalizeRejectAutoCancelLocked(originID, partnerID, [][]byte{encodeExchangeRequesterMerchantBusyInfoFrame()})
+		if !ok {
+			return nil, nil, false
+		}
+		return frames, nil, true
 	}
 	if r.hasMerchantWindowOpenLocked(partnerID) || r.hasSafeboxWindowOpenLocked(partnerID) || r.hasRefineWindowOpenLocked(partnerID) || r.hasMyShopWindowOpenLocked(partnerID) || r.hasCubeWindowOpenLocked(partnerID) {
-		return [][]byte{encodeExchangePartnerMerchantBusyInfoFrame()}, nil, true
+		frames, ok := r.exchangeFinalizeRejectAutoCancelLocked(originID, partnerID, [][]byte{encodeExchangePartnerMerchantBusyInfoFrame()})
+		if !ok {
+			return nil, nil, false
+		}
+		return frames, nil, true
 	}
 	// Gold-carrier-cap gate stays after busy-window rejects and ahead of Check /
 	// displayed-gold / finalization preconditions. Local-first requester-wins
 	// matches START / busy ordering when both sides are already over the cap.
+	// Same Cancel-on-failure companion as busy-window ACCEPT rejects.
 	if origin.Gold >= exchangeGoldPointChangeCarrierMax {
-		return [][]byte{encodeExchangeRequesterGoldCarrierCapInfoFrame()}, nil, true
+		frames, ok := r.exchangeFinalizeRejectAutoCancelLocked(originID, partnerID, [][]byte{encodeExchangeRequesterGoldCarrierCapInfoFrame()})
+		if !ok {
+			return nil, nil, false
+		}
+		return frames, nil, true
 	}
 	if partner.Gold >= exchangeGoldPointChangeCarrierMax {
-		return [][]byte{encodeExchangePartnerGoldCarrierCapInfoFrame()}, nil, true
+		frames, ok := r.exchangeFinalizeRejectAutoCancelLocked(originID, partnerID, [][]byte{encodeExchangePartnerGoldCarrierCapInfoFrame()})
+		if !ok {
+			return nil, nil, false
+		}
+		return frames, nil, true
 	}
 	if !exchangeDisplayedItemsStillLive(r.exchangeItems[originID], live, r.itemTemplates) {
 		// Second-accept Check failure is dual-sided; first-side accept stays silent.
@@ -864,11 +883,12 @@ func (r *sharedWorldRegistry) AcceptExchange(originID uint64, availableGold uint
 
 // CommitExchangeFinalize updates both characters, clears the exchange shell without
 // partner-notify END (caller supplies END frames), and enqueues peer finalize frames.
-// On commit-time busy-window drift it returns the same self-only START/ACCEPT busy
-// info-chat frames for the commit requester (plan.OriginID) and leaves the shell open.
-// On commit-time gold-carrier-cap drift it likewise returns self-only info-chat and
-// leaves the shell open. On commit-time Check/Space/gold-overflow/Other drift it
-// returns dual-sided info-chat then self/peer GC::EXCHANGE END and clears the shell
+// On commit-time busy-window or gold-carrier-cap drift it returns the same self-only
+// START/ACCEPT busy or gold-carrier info-chat for the commit requester (plan.OriginID)
+// then auto-cancels with self/peer GC::EXCHANGE END
+// (docs/plans/2026-08-28-exchange-busy-gold-carrier-reject-auto-cancel.md).
+// On commit-time Check/Space/gold-overflow/Other drift it returns dual-sided info-chat
+// then self/peer GC::EXCHANGE END and clears the shell
 // (oracle Cancel-on-failure; docs/plans/2026-08-28-exchange-finalize-reject-auto-cancel.md).
 func (r *sharedWorldRegistry) CommitExchangeFinalize(plan *exchangeFinalizePlan, updatedOrigin loginticket.Character, updatedPartner loginticket.Character, peerFrames [][]byte) ([][]byte, bool) {
 	if r == nil || plan == nil || plan.OriginID == 0 || plan.PartnerID == 0 {
@@ -921,12 +941,12 @@ func (r *sharedWorldRegistry) exchangeFinalizeCommitBusyRejectLocked(plan *excha
 		return nil, false
 	}
 	// Mirror ACCEPT / START busy ordering: commit-requester (plan.OriginID) busy
-	// wins over partner busy when both presentations are open.
+	// wins over partner busy when both presentations are open. Then Cancel-on-failure.
 	if r.hasMerchantWindowOpenLocked(plan.OriginID) || r.hasSafeboxWindowOpenLocked(plan.OriginID) || r.hasRefineWindowOpenLocked(plan.OriginID) || r.hasMyShopWindowOpenLocked(plan.OriginID) || r.hasCubeWindowOpenLocked(plan.OriginID) {
-		return [][]byte{encodeExchangeRequesterMerchantBusyInfoFrame()}, true
+		return r.exchangeFinalizeRejectAutoCancelLocked(plan.OriginID, plan.PartnerID, [][]byte{encodeExchangeRequesterMerchantBusyInfoFrame()})
 	}
 	if r.hasMerchantWindowOpenLocked(plan.PartnerID) || r.hasSafeboxWindowOpenLocked(plan.PartnerID) || r.hasRefineWindowOpenLocked(plan.PartnerID) || r.hasMyShopWindowOpenLocked(plan.PartnerID) || r.hasCubeWindowOpenLocked(plan.PartnerID) {
-		return [][]byte{encodeExchangePartnerMerchantBusyInfoFrame()}, true
+		return r.exchangeFinalizeRejectAutoCancelLocked(plan.OriginID, plan.PartnerID, [][]byte{encodeExchangePartnerMerchantBusyInfoFrame()})
 	}
 	return nil, false
 }
@@ -944,11 +964,12 @@ func (r *sharedWorldRegistry) exchangeFinalizeCommitGoldCarrierRejectLocked(plan
 		return nil, false
 	}
 	// Local-first: commit-requester over-cap wins when both sides drifted.
+	// Then Cancel-on-failure companion for owned gold-carrier chat.
 	if origin.Gold >= exchangeGoldPointChangeCarrierMax {
-		return [][]byte{encodeExchangeRequesterGoldCarrierCapInfoFrame()}, true
+		return r.exchangeFinalizeRejectAutoCancelLocked(plan.OriginID, plan.PartnerID, [][]byte{encodeExchangeRequesterGoldCarrierCapInfoFrame()})
 	}
 	if partner.Gold >= exchangeGoldPointChangeCarrierMax {
-		return [][]byte{encodeExchangePartnerGoldCarrierCapInfoFrame()}, true
+		return r.exchangeFinalizeRejectAutoCancelLocked(plan.OriginID, plan.PartnerID, [][]byte{encodeExchangePartnerGoldCarrierCapInfoFrame()})
 	}
 	return nil, false
 }

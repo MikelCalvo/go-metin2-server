@@ -8121,22 +8121,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !ownsLiveSharedWorldSession() {
 							return gameflow.ItemExchangeResult{Accepted: false}
 						}
-						// Same-socket busy presentations already published into shared-world
-						// START eligibility must also fail closed for ACCEPT / mutual-accept
-						// finalize so a later-opened merchant/safebox/refine/myshop/cube window cannot
-						// sneak past the frozen busy-window trade policy. Mirror START's
-						// requester busy info-chat so the reject is client-visible.
-						if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveMyShopOpen || hasActiveCubeOpen {
-							return gameflow.ItemExchangeResult{
-								Accepted: true,
-								Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
-									Type:    chatproto.ChatTypeInfo,
-									VID:     0,
-									Empire:  0,
-									Message: exchangeRequesterMerchantBusyInfoMessage,
-								})},
-							}
-						}
+						// Same-socket busy presentations are already published into the
+						// shared-world busy bits; AcceptExchange owns requester/partner
+						// busy + gold-carrier reject chat and Cancel-on-failure END
+						// teardown (docs/plans/2026-08-28-exchange-busy-gold-carrier-reject-auto-cancel.md).
 						frames, finalizePlan, ok := sharedWorld.AcceptExchange(sharedWorldID, selectedPlayer.LiveGold(), selectedPlayer.LiveCharacter())
 						if !ok {
 							return gameflow.ItemExchangeResult{Accepted: false}
@@ -8146,9 +8134,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						}
 						selfFrames, applied := applyExchangeFinalize(runtime, accounts, sharedWorld, selectedPlayer, &sessionTicket, finalizePlan)
 						if !applied {
-							// Commit-time busy / gold-carrier reject chat leaves the
-							// shell open. Check/Space/gold-overflow/Other reject chat
-							// already auto-cancelled with trailing END frames.
+							// Busy / gold-carrier / Check/Space/gold-overflow/Other reject
+							// chat already auto-cancelled with trailing END frames when
+							// commit returned selfFrames; LESS_GOLD / persist-fail stay
+							// silent or leave the shell cancellable.
 							if len(selfFrames) > 0 {
 								return gameflow.ItemExchangeResult{Accepted: true, Frames: selfFrames}
 							}

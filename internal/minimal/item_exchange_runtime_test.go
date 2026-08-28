@@ -3310,8 +3310,8 @@ func TestGameRuntimeItemExchangeAcceptRejectsRequesterOpenSafeboxWithoutMutation
 	if err != nil {
 		t.Fatalf("unexpected accept-safebox owner accept error: %v", err)
 	}
-	if len(acceptOut) != 1 {
-		t.Fatalf("expected requester open-safebox accept to emit one busy info chat frame, got %d", len(acceptOut))
+	if len(acceptOut) != 2 {
+		t.Fatalf("expected requester open-safebox accept to emit busy info chat then END, got %d", len(acceptOut))
 	}
 	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, acceptOut[0]))
 	if err != nil {
@@ -3320,23 +3320,23 @@ func TestGameRuntimeItemExchangeAcceptRejectsRequesterOpenSafeboxWithoutMutation
 	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterMerchantBusyInfoMessage {
 		t.Fatalf("unexpected requester open-safebox accept busy info chat: %+v", infoChat)
 	}
-	if queuedAccept := flushServerFrames(t, peerFlow); len(queuedAccept) != 0 {
-		t.Fatalf("expected requester open-safebox accept to queue no peer frames, got %d", len(queuedAccept))
+	assertExchangeEndFrame(t, acceptOut[1], "accept-safebox busy reject auto-cancel self END")
+	queuedAccept := flushServerFrames(t, peerFlow)
+	if len(queuedAccept) != 1 {
+		t.Fatalf("expected requester open-safebox accept to queue one peer END, got %d", len(queuedAccept))
 	}
+	assertExchangeEndFrame(t, queuedAccept[0], "accept-safebox busy reject auto-cancel peer END")
 
 	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
 	if err != nil {
-		t.Fatalf("unexpected accept-safebox cancel after rejected accept: %v", err)
+		t.Fatalf("unexpected cancel after auto-cancelled busy reject: %v", err)
 	}
-	if len(cancelOut) != 1 {
-		t.Fatalf("expected accept-safebox shell to remain cancellable, got %d frames", len(cancelOut))
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected busy-reject auto-cancel to clear the shell so CANCEL fails closed, got %d frames", len(cancelOut))
 	}
-	assertExchangeEndFrame(t, cancelOut[0], "accept-safebox owner cancel")
-	queuedCancel := flushServerFrames(t, peerFlow)
-	if len(queuedCancel) != 1 {
-		t.Fatalf("expected accept-safebox owner cancel to queue one peer END, got %d", len(queuedCancel))
+	if queuedCancel := flushServerFrames(t, peerFlow); len(queuedCancel) != 0 {
+		t.Fatalf("expected no further peer frames after busy-reject auto-cancel, got %d", len(queuedCancel))
 	}
-	assertExchangeEndFrame(t, queuedCancel[0], "accept-safebox peer queued cancel")
 
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "requester open-safebox accept owner")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "requester open-safebox accept peer")
@@ -3437,8 +3437,8 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsPartnerOpenSafeboxWithoutMuta
 	if err != nil {
 		t.Fatalf("unexpected partner-safebox second accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 1 {
-		t.Fatalf("expected second accept to reject partner open-safebox with one busy info chat frame, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 2 {
+		t.Fatalf("expected second accept to reject partner open-safebox with busy info chat then END, got %d", len(peerAcceptOut))
 	}
 	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
 	if err != nil {
@@ -3447,23 +3447,23 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsPartnerOpenSafeboxWithoutMuta
 	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterMerchantBusyInfoMessage {
 		t.Fatalf("unexpected partner open-safebox second accept busy info chat: %+v", infoChat)
 	}
-	if queuedAccept := flushServerFrames(t, ownerFlow); len(queuedAccept) != 0 {
-		t.Fatalf("expected partner open-safebox second accept to queue no owner frames, got %d", len(queuedAccept))
+	assertExchangeEndFrame(t, peerAcceptOut[1], "partner-safebox busy reject auto-cancel self END")
+	queuedAccept := flushServerFrames(t, ownerFlow)
+	if len(queuedAccept) != 1 {
+		t.Fatalf("expected partner open-safebox second accept to queue one owner END, got %d", len(queuedAccept))
 	}
+	assertExchangeEndFrame(t, queuedAccept[0], "partner-safebox busy reject auto-cancel peer END")
 
 	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
 	if err != nil {
-		t.Fatalf("unexpected partner-safebox cancel after rejected second accept: %v", err)
+		t.Fatalf("unexpected cancel after auto-cancelled busy reject: %v", err)
 	}
-	if len(cancelOut) != 1 {
-		t.Fatalf("expected partner-safebox shell to remain cancellable, got %d frames", len(cancelOut))
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected busy-reject auto-cancel to clear the shell so CANCEL fails closed, got %d frames", len(cancelOut))
 	}
-	assertExchangeEndFrame(t, cancelOut[0], "partner-safebox peer cancel")
-	queuedCancel := flushServerFrames(t, ownerFlow)
-	if len(queuedCancel) != 1 {
-		t.Fatalf("expected partner-safebox peer cancel to queue one owner END, got %d", len(queuedCancel))
+	if queuedCancel := flushServerFrames(t, ownerFlow); len(queuedCancel) != 0 {
+		t.Fatalf("expected no further peer frames after busy-reject auto-cancel, got %d", len(queuedCancel))
 	}
-	assertExchangeEndFrame(t, queuedCancel[0], "partner-safebox owner queued cancel")
 
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "partner open-safebox second accept owner")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "partner open-safebox second accept peer")
@@ -3575,8 +3575,8 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsPartnerOpenMerchantWithoutMut
 	if err != nil {
 		t.Fatalf("unexpected partner-merchant second accept error: %v", err)
 	}
-	if len(peerAcceptOut) != 1 {
-		t.Fatalf("expected second accept to reject partner open-merchant with one busy info chat frame, got %d", len(peerAcceptOut))
+	if len(peerAcceptOut) != 2 {
+		t.Fatalf("expected second accept to reject partner open-merchant with busy info chat then END, got %d", len(peerAcceptOut))
 	}
 	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerAcceptOut[0]))
 	if err != nil {
@@ -3585,23 +3585,23 @@ func TestGameRuntimeItemExchangeSecondAcceptRejectsPartnerOpenMerchantWithoutMut
 	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterMerchantBusyInfoMessage {
 		t.Fatalf("unexpected partner open-merchant second accept busy info chat: %+v", infoChat)
 	}
-	if queuedAccept := flushServerFrames(t, ownerFlow); len(queuedAccept) != 0 {
-		t.Fatalf("expected partner open-merchant second accept to queue no owner frames, got %d", len(queuedAccept))
+	assertExchangeEndFrame(t, peerAcceptOut[1], "partner-merchant busy reject auto-cancel self END")
+	queuedAccept := flushServerFrames(t, ownerFlow)
+	if len(queuedAccept) != 1 {
+		t.Fatalf("expected partner open-merchant second accept to queue one owner END, got %d", len(queuedAccept))
 	}
+	assertExchangeEndFrame(t, queuedAccept[0], "partner-merchant busy reject auto-cancel peer END")
 
 	cancelOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
 	if err != nil {
-		t.Fatalf("unexpected partner-merchant cancel after rejected second accept: %v", err)
+		t.Fatalf("unexpected cancel after auto-cancelled busy reject: %v", err)
 	}
-	if len(cancelOut) != 1 {
-		t.Fatalf("expected partner-merchant shell to remain cancellable, got %d frames", len(cancelOut))
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected busy-reject auto-cancel to clear the shell so CANCEL fails closed, got %d frames", len(cancelOut))
 	}
-	assertExchangeEndFrame(t, cancelOut[0], "partner-merchant peer cancel")
-	queuedCancel := flushServerFrames(t, ownerFlow)
-	if len(queuedCancel) != 1 {
-		t.Fatalf("expected partner-merchant peer cancel to queue one owner END, got %d", len(queuedCancel))
+	if queuedCancel := flushServerFrames(t, ownerFlow); len(queuedCancel) != 0 {
+		t.Fatalf("expected no further peer frames after busy-reject auto-cancel, got %d", len(queuedCancel))
 	}
-	assertExchangeEndFrame(t, queuedCancel[0], "partner-merchant owner queued cancel")
 
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "partner open-merchant second accept owner")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "partner open-merchant second accept peer")
@@ -3699,8 +3699,8 @@ func TestGameRuntimeItemExchangeAcceptRejectsRequesterOpenMerchantWithoutMutatio
 	if err != nil {
 		t.Fatalf("unexpected accept-merchant owner accept error: %v", err)
 	}
-	if len(acceptOut) != 1 {
-		t.Fatalf("expected requester open-merchant accept to emit one busy info chat frame, got %d", len(acceptOut))
+	if len(acceptOut) != 2 {
+		t.Fatalf("expected requester open-merchant accept to emit busy info chat then END, got %d", len(acceptOut))
 	}
 	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, acceptOut[0]))
 	if err != nil {
@@ -3709,23 +3709,23 @@ func TestGameRuntimeItemExchangeAcceptRejectsRequesterOpenMerchantWithoutMutatio
 	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterMerchantBusyInfoMessage {
 		t.Fatalf("unexpected requester open-merchant accept busy info chat: %+v", infoChat)
 	}
-	if queuedAccept := flushServerFrames(t, peerFlow); len(queuedAccept) != 0 {
-		t.Fatalf("expected requester open-merchant accept to queue no peer frames, got %d", len(queuedAccept))
+	assertExchangeEndFrame(t, acceptOut[1], "accept-merchant busy reject auto-cancel self END")
+	queuedAccept := flushServerFrames(t, peerFlow)
+	if len(queuedAccept) != 1 {
+		t.Fatalf("expected requester open-merchant accept to queue one peer END, got %d", len(queuedAccept))
 	}
+	assertExchangeEndFrame(t, queuedAccept[0], "accept-merchant busy reject auto-cancel peer END")
 
 	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
 	if err != nil {
-		t.Fatalf("unexpected accept-merchant cancel after rejected accept: %v", err)
+		t.Fatalf("unexpected cancel after auto-cancelled busy reject: %v", err)
 	}
-	if len(cancelOut) != 1 {
-		t.Fatalf("expected accept-merchant shell to remain cancellable, got %d frames", len(cancelOut))
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected busy-reject auto-cancel to clear the shell so CANCEL fails closed, got %d frames", len(cancelOut))
 	}
-	assertExchangeEndFrame(t, cancelOut[0], "accept-merchant owner cancel")
-	queuedCancel := flushServerFrames(t, peerFlow)
-	if len(queuedCancel) != 1 {
-		t.Fatalf("expected accept-merchant owner cancel to queue one peer END, got %d", len(queuedCancel))
+	if queuedCancel := flushServerFrames(t, peerFlow); len(queuedCancel) != 0 {
+		t.Fatalf("expected no further peer frames after busy-reject auto-cancel, got %d", len(queuedCancel))
 	}
-	assertExchangeEndFrame(t, queuedCancel[0], "accept-merchant peer queued cancel")
 
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "requester open-merchant accept owner")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "requester open-merchant accept peer")
@@ -3823,8 +3823,8 @@ func TestGameRuntimeItemExchangeAcceptRejectsPartnerOpenMerchantWithoutMutation(
 	if err != nil {
 		t.Fatalf("unexpected partner-merchant first-accept owner accept error: %v", err)
 	}
-	if len(acceptOut) != 1 {
-		t.Fatalf("expected first accept to reject partner open-merchant with one busy info chat frame, got %d", len(acceptOut))
+	if len(acceptOut) != 2 {
+		t.Fatalf("expected first accept to reject partner open-merchant with busy info chat then END, got %d", len(acceptOut))
 	}
 	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, acceptOut[0]))
 	if err != nil {
@@ -3833,23 +3833,23 @@ func TestGameRuntimeItemExchangeAcceptRejectsPartnerOpenMerchantWithoutMutation(
 	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangePartnerMerchantBusyInfoMessage {
 		t.Fatalf("unexpected partner open-merchant accept busy info chat: %+v", infoChat)
 	}
-	if queuedAccept := flushServerFrames(t, peerFlow); len(queuedAccept) != 0 {
-		t.Fatalf("expected partner open-merchant first accept to queue no peer frames, got %d", len(queuedAccept))
+	assertExchangeEndFrame(t, acceptOut[1], "partner-merchant first-accept busy reject auto-cancel self END")
+	queuedAccept := flushServerFrames(t, peerFlow)
+	if len(queuedAccept) != 1 {
+		t.Fatalf("expected partner open-merchant first accept to queue one peer END, got %d", len(queuedAccept))
 	}
+	assertExchangeEndFrame(t, queuedAccept[0], "partner-merchant first-accept busy reject auto-cancel peer END")
 
 	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
 	if err != nil {
-		t.Fatalf("unexpected partner-merchant first-accept cancel after rejected accept: %v", err)
+		t.Fatalf("unexpected cancel after auto-cancelled busy reject: %v", err)
 	}
-	if len(cancelOut) != 1 {
-		t.Fatalf("expected partner-merchant first-accept shell to remain cancellable, got %d frames", len(cancelOut))
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected busy-reject auto-cancel to clear the shell so CANCEL fails closed, got %d frames", len(cancelOut))
 	}
-	assertExchangeEndFrame(t, cancelOut[0], "partner-merchant first-accept owner cancel")
-	queuedCancel := flushServerFrames(t, peerFlow)
-	if len(queuedCancel) != 1 {
-		t.Fatalf("expected partner-merchant first-accept owner cancel to queue one peer END, got %d", len(queuedCancel))
+	if queuedCancel := flushServerFrames(t, peerFlow); len(queuedCancel) != 0 {
+		t.Fatalf("expected no further peer frames after busy-reject auto-cancel, got %d", len(queuedCancel))
 	}
-	assertExchangeEndFrame(t, queuedCancel[0], "partner-merchant first-accept peer queued cancel")
 
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "partner open-merchant first accept owner")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "partner open-merchant first accept peer")
@@ -3936,8 +3936,8 @@ func TestGameRuntimeItemExchangeAcceptRejectsPartnerOpenSafeboxWithoutMutation(t
 	if err != nil {
 		t.Fatalf("unexpected partner-safebox first-accept owner accept error: %v", err)
 	}
-	if len(acceptOut) != 1 {
-		t.Fatalf("expected first accept to reject partner open-safebox with one busy info chat frame, got %d", len(acceptOut))
+	if len(acceptOut) != 2 {
+		t.Fatalf("expected first accept to reject partner open-safebox with busy info chat then END, got %d", len(acceptOut))
 	}
 	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, acceptOut[0]))
 	if err != nil {
@@ -3946,23 +3946,23 @@ func TestGameRuntimeItemExchangeAcceptRejectsPartnerOpenSafeboxWithoutMutation(t
 	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangePartnerMerchantBusyInfoMessage {
 		t.Fatalf("unexpected partner open-safebox accept busy info chat: %+v", infoChat)
 	}
-	if queuedAccept := flushServerFrames(t, peerFlow); len(queuedAccept) != 0 {
-		t.Fatalf("expected partner open-safebox first accept to queue no peer frames, got %d", len(queuedAccept))
+	assertExchangeEndFrame(t, acceptOut[1], "partner-safebox first-accept busy reject auto-cancel self END")
+	queuedAccept := flushServerFrames(t, peerFlow)
+	if len(queuedAccept) != 1 {
+		t.Fatalf("expected partner open-safebox first accept to queue one peer END, got %d", len(queuedAccept))
 	}
+	assertExchangeEndFrame(t, queuedAccept[0], "partner-safebox first-accept busy reject auto-cancel peer END")
 
 	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
 	if err != nil {
-		t.Fatalf("unexpected partner-safebox first-accept cancel after rejected accept: %v", err)
+		t.Fatalf("unexpected cancel after auto-cancelled busy reject: %v", err)
 	}
-	if len(cancelOut) != 1 {
-		t.Fatalf("expected partner-safebox first-accept shell to remain cancellable, got %d frames", len(cancelOut))
+	if len(cancelOut) != 0 {
+		t.Fatalf("expected busy-reject auto-cancel to clear the shell so CANCEL fails closed, got %d frames", len(cancelOut))
 	}
-	assertExchangeEndFrame(t, cancelOut[0], "partner-safebox first-accept owner cancel")
-	queuedCancel := flushServerFrames(t, peerFlow)
-	if len(queuedCancel) != 1 {
-		t.Fatalf("expected partner-safebox first-accept owner cancel to queue one peer END, got %d", len(queuedCancel))
+	if queuedCancel := flushServerFrames(t, peerFlow); len(queuedCancel) != 0 {
+		t.Fatalf("expected no further peer frames after busy-reject auto-cancel, got %d", len(queuedCancel))
 	}
-	assertExchangeEndFrame(t, queuedCancel[0], "partner-safebox first-accept peer queued cancel")
 
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "partner open-safebox first accept owner")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "partner open-safebox first accept peer")
@@ -3996,8 +3996,8 @@ func TestSharedWorldAcceptExchangeRejectsOpenRefineWindowWithoutMutation(t *test
 		t.Fatal("expected SetRefineWindowOpen(owner) to succeed")
 	}
 	acceptFrames, finalizePlan, ok := registry.AcceptExchange(ownerID, owner.Gold, owner)
-	if !ok || finalizePlan != nil || len(acceptFrames) != 1 {
-		t.Fatalf("expected requester open-refine AcceptExchange to emit one busy info chat frame, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
+	if !ok || finalizePlan != nil || len(acceptFrames) != 2 {
+		t.Fatalf("expected requester open-refine AcceptExchange to emit busy info chat then END, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
 	}
 	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, acceptFrames[0]))
 	if err != nil {
@@ -4006,10 +4006,25 @@ func TestSharedWorldAcceptExchangeRejectsOpenRefineWindowWithoutMutation(t *test
 	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterMerchantBusyInfoMessage {
 		t.Fatalf("unexpected requester open-refine AcceptExchange busy info chat: %+v", infoChat)
 	}
-	if queued := peerPending.flush(); len(queued) != 0 {
-		t.Fatalf("expected requester open-refine AcceptExchange to queue no peer frames, got %d", len(queued))
+	assertExchangeEndFrame(t, acceptFrames[1], "requester open-refine busy reject auto-cancel self END")
+	queued := peerPending.flush()
+	if len(queued) != 1 {
+		t.Fatalf("expected requester open-refine AcceptExchange to queue one peer END, got %d", len(queued))
+	}
+	assertExchangeEndFrame(t, queued[0], "requester open-refine busy reject auto-cancel peer END")
+
+	cancelFrames, ok := registry.CancelExchange(ownerID)
+	if ok || len(cancelFrames) != 0 {
+		t.Fatalf("expected busy-reject auto-cancel to clear the shell so CANCEL fails closed, ok=%v frames=%d", ok, len(cancelFrames))
 	}
 
+	startFrames, ok = registry.StartExchange(ownerID, peer.VID)
+	if !ok || len(startFrames) != 1 {
+		t.Fatalf("expected re-open exchange after refine busy auto-cancel to succeed, ok=%v frames=%d", ok, len(startFrames))
+	}
+	if queued := peerPending.flush(); len(queued) != 1 {
+		t.Fatalf("expected re-open exchange start to queue one peer frame, got %d", len(queued))
+	}
 	if !registry.SetRefineWindowOpen(ownerID, false) {
 		t.Fatal("expected SetRefineWindowOpen(owner,false) to succeed")
 	}
@@ -4017,8 +4032,8 @@ func TestSharedWorldAcceptExchangeRejectsOpenRefineWindowWithoutMutation(t *test
 		t.Fatal("expected SetRefineWindowOpen(peer) to succeed")
 	}
 	acceptFrames, finalizePlan, ok = registry.AcceptExchange(ownerID, owner.Gold, owner)
-	if !ok || finalizePlan != nil || len(acceptFrames) != 1 {
-		t.Fatalf("expected partner open-refine AcceptExchange to emit one busy info chat frame, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
+	if !ok || finalizePlan != nil || len(acceptFrames) != 2 {
+		t.Fatalf("expected partner open-refine AcceptExchange to emit busy info chat then END, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
 	}
 	infoChat, err = chatproto.DecodeChatDelivery(decodeSingleFrame(t, acceptFrames[0]))
 	if err != nil {
@@ -4027,16 +4042,16 @@ func TestSharedWorldAcceptExchangeRejectsOpenRefineWindowWithoutMutation(t *test
 	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangePartnerMerchantBusyInfoMessage {
 		t.Fatalf("unexpected partner open-refine AcceptExchange busy info chat: %+v", infoChat)
 	}
-	if queued := peerPending.flush(); len(queued) != 0 {
-		t.Fatalf("expected partner open-refine AcceptExchange to queue no peer frames, got %d", len(queued))
+	assertExchangeEndFrame(t, acceptFrames[1], "partner open-refine busy reject auto-cancel self END")
+	queued = peerPending.flush()
+	if len(queued) != 1 {
+		t.Fatalf("expected partner open-refine AcceptExchange to queue one peer END, got %d", len(queued))
 	}
+	assertExchangeEndFrame(t, queued[0], "partner open-refine busy reject auto-cancel peer END")
 
-	cancelFrames, ok := registry.CancelExchange(ownerID)
-	if !ok || len(cancelFrames) != 1 {
-		t.Fatalf("expected exchange shell to remain cancellable after refine busy rejects, ok=%v frames=%d", ok, len(cancelFrames))
-	}
-	if queued := peerPending.flush(); len(queued) != 1 {
-		t.Fatalf("expected cancel to queue one peer END, got %d", len(queued))
+	cancelFrames, ok = registry.CancelExchange(ownerID)
+	if ok || len(cancelFrames) != 0 {
+		t.Fatalf("expected busy-reject auto-cancel to clear the shell so CANCEL fails closed, ok=%v frames=%d", ok, len(cancelFrames))
 	}
 }
 
@@ -4068,8 +4083,8 @@ func TestSharedWorldAcceptExchangeRejectsOpenCubeWindowWithoutMutation(t *testin
 		t.Fatal("expected SetCubeWindowOpen(owner) to succeed")
 	}
 	acceptFrames, finalizePlan, ok := registry.AcceptExchange(ownerID, owner.Gold, owner)
-	if !ok || finalizePlan != nil || len(acceptFrames) != 1 {
-		t.Fatalf("expected requester open-cube AcceptExchange to emit one busy info chat frame, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
+	if !ok || finalizePlan != nil || len(acceptFrames) != 2 {
+		t.Fatalf("expected requester open-cube AcceptExchange to emit busy info chat then END, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
 	}
 	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, acceptFrames[0]))
 	if err != nil {
@@ -4078,10 +4093,25 @@ func TestSharedWorldAcceptExchangeRejectsOpenCubeWindowWithoutMutation(t *testin
 	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterMerchantBusyInfoMessage {
 		t.Fatalf("unexpected requester open-cube AcceptExchange busy info chat: %+v", infoChat)
 	}
-	if queued := peerPending.flush(); len(queued) != 0 {
-		t.Fatalf("expected requester open-cube AcceptExchange to queue no peer frames, got %d", len(queued))
+	assertExchangeEndFrame(t, acceptFrames[1], "requester open-cube busy reject auto-cancel self END")
+	queued := peerPending.flush()
+	if len(queued) != 1 {
+		t.Fatalf("expected requester open-cube AcceptExchange to queue one peer END, got %d", len(queued))
+	}
+	assertExchangeEndFrame(t, queued[0], "requester open-cube busy reject auto-cancel peer END")
+
+	cancelFrames, ok := registry.CancelExchange(ownerID)
+	if ok || len(cancelFrames) != 0 {
+		t.Fatalf("expected busy-reject auto-cancel to clear the shell so CANCEL fails closed, ok=%v frames=%d", ok, len(cancelFrames))
 	}
 
+	startFrames, ok = registry.StartExchange(ownerID, peer.VID)
+	if !ok || len(startFrames) != 1 {
+		t.Fatalf("expected re-open exchange after cube busy auto-cancel to succeed, ok=%v frames=%d", ok, len(startFrames))
+	}
+	if queued := peerPending.flush(); len(queued) != 1 {
+		t.Fatalf("expected re-open exchange start to queue one peer frame, got %d", len(queued))
+	}
 	if !registry.SetCubeWindowOpen(ownerID, false) {
 		t.Fatal("expected SetCubeWindowOpen(owner,false) to succeed")
 	}
@@ -4089,8 +4119,8 @@ func TestSharedWorldAcceptExchangeRejectsOpenCubeWindowWithoutMutation(t *testin
 		t.Fatal("expected SetCubeWindowOpen(peer) to succeed")
 	}
 	acceptFrames, finalizePlan, ok = registry.AcceptExchange(ownerID, owner.Gold, owner)
-	if !ok || finalizePlan != nil || len(acceptFrames) != 1 {
-		t.Fatalf("expected partner open-cube AcceptExchange to emit one busy info chat frame, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
+	if !ok || finalizePlan != nil || len(acceptFrames) != 2 {
+		t.Fatalf("expected partner open-cube AcceptExchange to emit busy info chat then END, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
 	}
 	infoChat, err = chatproto.DecodeChatDelivery(decodeSingleFrame(t, acceptFrames[0]))
 	if err != nil {
@@ -4099,16 +4129,16 @@ func TestSharedWorldAcceptExchangeRejectsOpenCubeWindowWithoutMutation(t *testin
 	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangePartnerMerchantBusyInfoMessage {
 		t.Fatalf("unexpected partner open-cube AcceptExchange busy info chat: %+v", infoChat)
 	}
-	if queued := peerPending.flush(); len(queued) != 0 {
-		t.Fatalf("expected partner open-cube AcceptExchange to queue no peer frames, got %d", len(queued))
+	assertExchangeEndFrame(t, acceptFrames[1], "partner open-cube busy reject auto-cancel self END")
+	queued = peerPending.flush()
+	if len(queued) != 1 {
+		t.Fatalf("expected partner open-cube AcceptExchange to queue one peer END, got %d", len(queued))
 	}
+	assertExchangeEndFrame(t, queued[0], "partner open-cube busy reject auto-cancel peer END")
 
-	cancelFrames, ok := registry.CancelExchange(ownerID)
-	if !ok || len(cancelFrames) != 1 {
-		t.Fatalf("expected exchange shell to remain cancellable after cube busy rejects, ok=%v frames=%d", ok, len(cancelFrames))
-	}
-	if queued := peerPending.flush(); len(queued) != 1 {
-		t.Fatalf("expected cancel to queue one peer END, got %d", len(queued))
+	cancelFrames, ok = registry.CancelExchange(ownerID)
+	if ok || len(cancelFrames) != 0 {
+		t.Fatalf("expected busy-reject auto-cancel to clear the shell so CANCEL fails closed, ok=%v frames=%d", ok, len(cancelFrames))
 	}
 }
 
@@ -4132,119 +4162,97 @@ func TestSharedWorldCommitExchangeFinalizeRejectsBusyWindowOpenedAfterAcceptPlan
 	_ = ownerPending.flush()
 	_ = peerPending.flush()
 
-	startFrames, ok := registry.StartExchange(ownerID, peer.VID)
-	if !ok || len(startFrames) != 1 {
-		t.Fatalf("expected exchange start to succeed with one owner frame, ok=%v frames=%d", ok, len(startFrames))
-	}
-	if queued := peerPending.flush(); len(queued) != 1 {
-		t.Fatalf("expected exchange start to queue one peer frame, got %d", len(queued))
+	buildPlan := func(label string) *exchangeFinalizePlan {
+		t.Helper()
+		startFrames, ok := registry.StartExchange(ownerID, peer.VID)
+		if !ok || len(startFrames) != 1 {
+			t.Fatalf("%s: expected exchange start to succeed with one owner frame, ok=%v frames=%d", label, ok, len(startFrames))
+		}
+		if queued := peerPending.flush(); len(queued) != 1 {
+			t.Fatalf("%s: expected exchange start to queue one peer frame, got %d", label, len(queued))
+		}
+		display := player.ExchangeItemAddDisplay{Item: owner.Inventory[0]}
+		itemAddFrames, ok := registry.AddExchangeItem(ownerID, 3, display)
+		if !ok || len(itemAddFrames) != 1 {
+			t.Fatalf("%s: expected exchange item-add to succeed with one owner frame, ok=%v frames=%d", label, ok, len(itemAddFrames))
+		}
+		if queued := peerPending.flush(); len(queued) != 1 {
+			t.Fatalf("%s: expected exchange item-add to queue one peer frame, got %d", label, len(queued))
+		}
+		firstAcceptFrames, finalizePlan, ok := registry.AcceptExchange(ownerID, owner.Gold, owner)
+		if !ok || finalizePlan != nil || len(firstAcceptFrames) != 1 {
+			t.Fatalf("%s: expected first AcceptExchange to emit accept marker without finalize plan, ok=%v plan=%v frames=%d", label, ok, finalizePlan != nil, len(firstAcceptFrames))
+		}
+		if queued := peerPending.flush(); len(queued) != 1 {
+			t.Fatalf("%s: expected first AcceptExchange to queue one peer accept frame, got %d", label, len(queued))
+		}
+		secondAcceptFrames, finalizePlan, ok := registry.AcceptExchange(peerID, peer.Gold, peer)
+		if !ok || finalizePlan == nil || len(secondAcceptFrames) != 0 {
+			t.Fatalf("%s: expected second AcceptExchange to return finalize plan with no frames, ok=%v plan=%v frames=%d", label, ok, finalizePlan != nil, len(secondAcceptFrames))
+		}
+		if queued := peerPending.flush(); len(queued) != 0 {
+			t.Fatalf("%s: expected second AcceptExchange to queue no frames before commit, got %d", label, len(queued))
+		}
+		return finalizePlan
 	}
 
-	display := player.ExchangeItemAddDisplay{Item: owner.Inventory[0]}
-	itemAddFrames, ok := registry.AddExchangeItem(ownerID, 3, display)
-	if !ok || len(itemAddFrames) != 1 {
-		t.Fatalf("expected exchange item-add to succeed with one owner frame, ok=%v frames=%d", ok, len(itemAddFrames))
-	}
-	if queued := peerPending.flush(); len(queued) != 1 {
-		t.Fatalf("expected exchange item-add to queue one peer frame, got %d", len(queued))
+	assertBusyAutoCancel := func(label string, finalizePlan *exchangeFinalizePlan, wantMessage string) {
+		t.Helper()
+		updatedOrigin := cloneExchangeCharacter(owner)
+		updatedPartner := cloneExchangeCharacter(peer)
+		busyFrames, committed := registry.CommitExchangeFinalize(finalizePlan, updatedOrigin, updatedPartner, [][]byte{encodeExchangeEndFrame()})
+		if committed {
+			t.Fatalf("%s: expected CommitExchangeFinalize to fail closed after post-plan busy-window open", label)
+		}
+		if len(busyFrames) != 2 {
+			t.Fatalf("%s: expected commit-time busy reject to emit info chat then END, got %d frames", label, len(busyFrames))
+		}
+		infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, busyFrames[0]))
+		if err != nil {
+			t.Fatalf("%s: decode commit-time busy info chat: %v", label, err)
+		}
+		if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != wantMessage {
+			t.Fatalf("%s: unexpected commit-time busy info chat: %+v", label, infoChat)
+		}
+		assertExchangeEndFrame(t, busyFrames[1], label+" busy reject auto-cancel self END")
+		queued := ownerPending.flush()
+		if len(queued) != 1 {
+			t.Fatalf("%s: expected commit-time busy reject to queue one partner END, got %d", label, len(queued))
+		}
+		assertExchangeEndFrame(t, queued[0], label+" busy reject auto-cancel peer END")
+		if queued := peerPending.flush(); len(queued) != 0 {
+			t.Fatalf("%s: expected no extra peer frames after busy auto-cancel, got %d", label, len(queued))
+		}
+		cancelFrames, ok := registry.CancelExchange(peerID)
+		if ok || len(cancelFrames) != 0 {
+			t.Fatalf("%s: expected busy-reject auto-cancel to clear the shell so CANCEL fails closed, ok=%v frames=%d", label, ok, len(cancelFrames))
+		}
 	}
 
-	firstAcceptFrames, finalizePlan, ok := registry.AcceptExchange(ownerID, owner.Gold, owner)
-	if !ok || finalizePlan != nil || len(firstAcceptFrames) != 1 {
-		t.Fatalf("expected first AcceptExchange to emit accept marker without finalize plan, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(firstAcceptFrames))
-	}
-	if queued := peerPending.flush(); len(queued) != 1 {
-		t.Fatalf("expected first AcceptExchange to queue one peer accept frame, got %d", len(queued))
-	}
-
-	secondAcceptFrames, finalizePlan, ok := registry.AcceptExchange(peerID, peer.Gold, peer)
-	if !ok || finalizePlan == nil || len(secondAcceptFrames) != 0 {
-		t.Fatalf("expected second AcceptExchange to return finalize plan with no frames, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(secondAcceptFrames))
-	}
-	if queued := peerPending.flush(); len(queued) != 0 {
-		t.Fatalf("expected second AcceptExchange to queue no frames before commit, got %d", len(queued))
-	}
-
+	finalizePlan := buildPlan("partner-safebox")
 	if !registry.SetSafeboxWindowOpen(ownerID, true) {
 		t.Fatal("expected SetSafeboxWindowOpen(owner) after accept plan to succeed")
 	}
-
-	updatedOrigin := cloneExchangeCharacter(owner)
-	updatedPartner := cloneExchangeCharacter(peer)
 	// Second accepter is peer (plan.OriginID); owner safebox is partner busy.
-	busyFrames, committed := registry.CommitExchangeFinalize(finalizePlan, updatedOrigin, updatedPartner, [][]byte{encodeExchangeEndFrame()})
-	if committed {
-		t.Fatal("expected CommitExchangeFinalize to fail closed after post-plan busy-window open")
-	}
-	if len(busyFrames) != 1 {
-		t.Fatalf("expected commit-time partner busy reject to emit one self-only info chat, got %d frames", len(busyFrames))
-	}
-	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, busyFrames[0]))
-	if err != nil {
-		t.Fatalf("decode commit-time partner busy info chat: %v", err)
-	}
-	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangePartnerMerchantBusyInfoMessage {
-		t.Fatalf("unexpected commit-time partner busy info chat: %+v", infoChat)
-	}
-	if queued := peerPending.flush(); len(queued) != 0 {
-		t.Fatalf("expected failed CommitExchangeFinalize to queue no peer frames, got %d", len(queued))
-	}
-
+	assertBusyAutoCancel("partner-safebox", finalizePlan, exchangePartnerMerchantBusyInfoMessage)
 	if !registry.SetSafeboxWindowOpen(ownerID, false) {
 		t.Fatal("expected SetSafeboxWindowOpen(owner,false) to succeed")
 	}
+
+	finalizePlan = buildPlan("requester-safebox")
 	if !registry.SetSafeboxWindowOpen(peerID, true) {
 		t.Fatal("expected SetSafeboxWindowOpen(peer) after accept plan to succeed")
 	}
-	busyFrames, committed = registry.CommitExchangeFinalize(finalizePlan, updatedOrigin, updatedPartner, [][]byte{encodeExchangeEndFrame()})
-	if committed {
-		t.Fatal("expected CommitExchangeFinalize to fail closed after commit-requester busy-window open")
-	}
-	if len(busyFrames) != 1 {
-		t.Fatalf("expected commit-time requester busy reject to emit one self-only info chat, got %d frames", len(busyFrames))
-	}
-	infoChat, err = chatproto.DecodeChatDelivery(decodeSingleFrame(t, busyFrames[0]))
-	if err != nil {
-		t.Fatalf("decode commit-time requester busy info chat: %v", err)
-	}
-	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterMerchantBusyInfoMessage {
-		t.Fatalf("unexpected commit-time requester busy info chat: %+v", infoChat)
-	}
-	if queued := peerPending.flush(); len(queued) != 0 {
-		t.Fatalf("expected failed CommitExchangeFinalize requester busy reject to queue no peer frames, got %d", len(queued))
-	}
-
+	assertBusyAutoCancel("requester-safebox", finalizePlan, exchangeRequesterMerchantBusyInfoMessage)
 	if !registry.SetSafeboxWindowOpen(peerID, false) {
 		t.Fatal("expected SetSafeboxWindowOpen(peer,false) to succeed")
 	}
+
+	finalizePlan = buildPlan("partner-cube")
 	if !registry.SetCubeWindowOpen(ownerID, true) {
 		t.Fatal("expected SetCubeWindowOpen(owner) after accept plan to succeed")
 	}
-	busyFrames, committed = registry.CommitExchangeFinalize(finalizePlan, updatedOrigin, updatedPartner, [][]byte{encodeExchangeEndFrame()})
-	if committed {
-		t.Fatal("expected CommitExchangeFinalize to fail closed after post-plan partner cube open")
-	}
-	if len(busyFrames) != 1 {
-		t.Fatalf("expected commit-time partner cube busy reject to emit one self-only info chat, got %d frames", len(busyFrames))
-	}
-	infoChat, err = chatproto.DecodeChatDelivery(decodeSingleFrame(t, busyFrames[0]))
-	if err != nil {
-		t.Fatalf("decode commit-time partner cube busy info chat: %v", err)
-	}
-	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangePartnerMerchantBusyInfoMessage {
-		t.Fatalf("unexpected commit-time partner cube busy info chat: %+v", infoChat)
-	}
-	if queued := peerPending.flush(); len(queued) != 0 {
-		t.Fatalf("expected failed CommitExchangeFinalize partner cube busy reject to queue no peer frames, got %d", len(queued))
-	}
-
-	cancelFrames, ok := registry.CancelExchange(peerID)
-	if !ok || len(cancelFrames) != 1 {
-		t.Fatalf("expected exchange shell to remain cancellable after commit-time busy reject, ok=%v frames=%d", ok, len(cancelFrames))
-	}
-	if queued := ownerPending.flush(); len(queued) != 1 {
-		t.Fatalf("expected cancel after commit-time busy reject to queue one owner END, got %d", len(queued))
-	}
+	assertBusyAutoCancel("partner-cube", finalizePlan, exchangePartnerMerchantBusyInfoMessage)
 }
 
 func TestSharedWorldAcceptExchangeRejectsRequesterGoldCarrierWithoutMutation(t *testing.T) {
@@ -4276,8 +4284,8 @@ func TestSharedWorldAcceptExchangeRejectsRequesterGoldCarrierWithoutMutation(t *
 	registry.UpdateCharacter(ownerID, owner)
 
 	acceptFrames, finalizePlan, ok := registry.AcceptExchange(ownerID, owner.Gold, owner)
-	if !ok || finalizePlan != nil || len(acceptFrames) != 1 {
-		t.Fatalf("expected requester gold-carrier AcceptExchange to emit one info chat frame, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
+	if !ok || finalizePlan != nil || len(acceptFrames) != 2 {
+		t.Fatalf("expected requester gold-carrier AcceptExchange to emit info chat then END, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
 	}
 	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, acceptFrames[0]))
 	if err != nil {
@@ -4286,13 +4294,16 @@ func TestSharedWorldAcceptExchangeRejectsRequesterGoldCarrierWithoutMutation(t *
 	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterGoldCarrierCapInfoMessage {
 		t.Fatalf("unexpected requester gold-carrier AcceptExchange info chat: %+v", infoChat)
 	}
-	if queued := peerPending.flush(); len(queued) != 0 {
-		t.Fatalf("expected requester gold-carrier AcceptExchange to queue no peer frames, got %d", len(queued))
+	assertExchangeEndFrame(t, acceptFrames[1], "requester gold-carrier reject auto-cancel self END")
+	queued := peerPending.flush()
+	if len(queued) != 1 {
+		t.Fatalf("expected requester gold-carrier AcceptExchange to queue one peer END, got %d", len(queued))
 	}
+	assertExchangeEndFrame(t, queued[0], "requester gold-carrier reject auto-cancel peer END")
 
 	cancelFrames, ok := registry.CancelExchange(ownerID)
-	if !ok || len(cancelFrames) != 1 {
-		t.Fatalf("expected exchange shell to remain cancellable after requester gold-carrier accept reject, ok=%v frames=%d", ok, len(cancelFrames))
+	if ok || len(cancelFrames) != 0 {
+		t.Fatalf("expected gold-carrier reject auto-cancel to clear the shell so CANCEL fails closed, ok=%v frames=%d", ok, len(cancelFrames))
 	}
 }
 
@@ -4325,8 +4336,8 @@ func TestSharedWorldAcceptExchangeRejectsPartnerGoldCarrierWithoutMutation(t *te
 	registry.UpdateCharacter(peerID, peer)
 
 	acceptFrames, finalizePlan, ok := registry.AcceptExchange(ownerID, owner.Gold, owner)
-	if !ok || finalizePlan != nil || len(acceptFrames) != 1 {
-		t.Fatalf("expected partner gold-carrier AcceptExchange to emit one info chat frame, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
+	if !ok || finalizePlan != nil || len(acceptFrames) != 2 {
+		t.Fatalf("expected partner gold-carrier AcceptExchange to emit info chat then END, ok=%v plan=%v frames=%d", ok, finalizePlan != nil, len(acceptFrames))
 	}
 	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, acceptFrames[0]))
 	if err != nil {
@@ -4335,13 +4346,16 @@ func TestSharedWorldAcceptExchangeRejectsPartnerGoldCarrierWithoutMutation(t *te
 	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangePartnerGoldCarrierCapInfoMessage {
 		t.Fatalf("unexpected partner gold-carrier AcceptExchange info chat: %+v", infoChat)
 	}
-	if queued := peerPending.flush(); len(queued) != 0 {
-		t.Fatalf("expected partner gold-carrier AcceptExchange to queue no peer frames, got %d", len(queued))
+	assertExchangeEndFrame(t, acceptFrames[1], "partner gold-carrier reject auto-cancel self END")
+	queued := peerPending.flush()
+	if len(queued) != 1 {
+		t.Fatalf("expected partner gold-carrier AcceptExchange to queue one peer END, got %d", len(queued))
 	}
+	assertExchangeEndFrame(t, queued[0], "partner gold-carrier reject auto-cancel peer END")
 
 	cancelFrames, ok := registry.CancelExchange(ownerID)
-	if !ok || len(cancelFrames) != 1 {
-		t.Fatalf("expected exchange shell to remain cancellable after partner gold-carrier accept reject, ok=%v frames=%d", ok, len(cancelFrames))
+	if ok || len(cancelFrames) != 0 {
+		t.Fatalf("expected gold-carrier reject auto-cancel to clear the shell so CANCEL fails closed, ok=%v frames=%d", ok, len(cancelFrames))
 	}
 }
 
@@ -4399,8 +4413,8 @@ func TestSharedWorldCommitExchangeFinalizeRejectsRequesterGoldCarrierWithoutMuta
 	if committed {
 		t.Fatal("expected CommitExchangeFinalize to fail closed after commit-requester gold-carrier drift")
 	}
-	if len(rejectFrames) != 1 {
-		t.Fatalf("expected commit-time requester gold-carrier reject to emit one self-only info chat, got %d frames", len(rejectFrames))
+	if len(rejectFrames) != 2 {
+		t.Fatalf("expected commit-time requester gold-carrier reject to emit info chat then END, got %d frames", len(rejectFrames))
 	}
 	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, rejectFrames[0]))
 	if err != nil {
@@ -4409,13 +4423,16 @@ func TestSharedWorldCommitExchangeFinalizeRejectsRequesterGoldCarrierWithoutMuta
 	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != exchangeRequesterGoldCarrierCapInfoMessage {
 		t.Fatalf("unexpected commit-time requester gold-carrier info chat: %+v", infoChat)
 	}
-	if queued := ownerPending.flush(); len(queued) != 0 {
-		t.Fatalf("expected failed CommitExchangeFinalize gold-carrier reject to queue no partner frames, got %d", len(queued))
+	assertExchangeEndFrame(t, rejectFrames[1], "commit-time gold-carrier reject auto-cancel self END")
+	queued := ownerPending.flush()
+	if len(queued) != 1 {
+		t.Fatalf("expected commit-time gold-carrier reject to queue one partner END, got %d", len(queued))
 	}
+	assertExchangeEndFrame(t, queued[0], "commit-time gold-carrier reject auto-cancel peer END")
 
 	cancelFrames, ok := registry.CancelExchange(peerID)
-	if !ok || len(cancelFrames) != 1 {
-		t.Fatalf("expected exchange shell to remain cancellable after commit-time gold-carrier reject, ok=%v frames=%d", ok, len(cancelFrames))
+	if ok || len(cancelFrames) != 0 {
+		t.Fatalf("expected gold-carrier reject auto-cancel to clear the shell so CANCEL fails closed, ok=%v frames=%d", ok, len(cancelFrames))
 	}
 }
 

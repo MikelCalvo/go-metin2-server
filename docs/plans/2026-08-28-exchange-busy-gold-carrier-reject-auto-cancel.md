@@ -73,5 +73,6 @@ Korean keys into runtime code.
 
 ## Status
 
-Docs freeze for `lane/items`; RED intentionally deferred until this contract is
-the source of truth and the next worker opens failing proofs against it.
+GREEN on `lane/items`: ACCEPT and commit-time busy-window / gold-carrier-cap
+rejects emit owned self-only info-chat then self/peer `GC::EXCHANGE END` and clear
+the shell; `LESS_GOLD` and persist-fail paths still leave the shell cancellable.
