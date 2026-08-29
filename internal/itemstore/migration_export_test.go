@@ -42,7 +42,7 @@ func TestExportItemTemplateStateBuildsDeterministicRowsMatchingMigrationShape(t 
 			Stackable:         false,
 			MaxCount:          1,
 			Refineable:        true,
-			RefineInfo:        &RefineInfo{ResultVnum: 11201, Cost: 2500, Probability: 75, Materials: []RefineMaterial{{Vnum: 27001, Count: 2}, {Vnum: 27002, Count: 3}}},
+			RefineInfo:        &RefineInfo{ResultVnum: 11201, Cost: 2500, Probability: 75, KeepOnFail: true, Materials: []RefineMaterial{{Vnum: 27001, Count: 2}, {Vnum: 27002, Count: 3}}},
 			Save:              true,
 			Irremovable:       true,
 			AntiMale:          true,
@@ -92,7 +92,7 @@ func TestExportItemTemplateStateBuildsDeterministicRowsMatchingMigrationShape(t 
 	if !reflect.DeepEqual(export.EquipEffects, wantEquipEffects) {
 		t.Fatalf("unexpected item-template equip-effect rows:\n got: %#v\nwant: %#v", export.EquipEffects, wantEquipEffects)
 	}
-	wantRefineInfos := []ItemTemplateRefineInfoRow{{Vnum: 11200, ResultVnum: 11201, Cost: 2500, Probability: 75}}
+	wantRefineInfos := []ItemTemplateRefineInfoRow{{Vnum: 11200, ResultVnum: 11201, Cost: 2500, Probability: 75, KeepOnFail: true}}
 	if !reflect.DeepEqual(export.RefineInfos, wantRefineInfos) {
 		t.Fatalf("unexpected item-template refine-info rows:\n got: %#v\nwant: %#v", export.RefineInfos, wantRefineInfos)
 	}

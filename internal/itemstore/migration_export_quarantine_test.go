@@ -27,7 +27,7 @@ func TestValidateItemTemplateStateExportAcceptsCanonicalExport(t *testing.T) {
 			Stackable:      false,
 			MaxCount:       1,
 			Refineable:     true,
-			RefineInfo:     &RefineInfo{ResultVnum: 11201, Cost: 2500, Probability: 75, Materials: []RefineMaterial{{Vnum: 27001, Count: 2}, {Vnum: 27002, Count: 3}}},
+			RefineInfo:     &RefineInfo{ResultVnum: 11201, Cost: 2500, Probability: 75, KeepOnFail: true, Materials: []RefineMaterial{{Vnum: 27001, Count: 2}, {Vnum: 27002, Count: 3}}},
 			AppearanceVnum: 11201,
 			EquipSlot:      "weapon",
 			EquipEffect:    &PointEffect{PointType: 1, PointIndex: 0, PointDelta: 4},

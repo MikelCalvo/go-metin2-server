@@ -53,6 +53,8 @@ const (
 	expectedStaticActorCombatProfileMaxStepDownSHA256       = "4df2bcd8f33129949bc4e55d23516b236a5d9f79b0e8eb85f22363c50d6186cb"
 	expectedStaticActorCombatProfileReactionDelayUpSHA256   = "406145d66bdeaf91828ffde4dda055eee4cb646cd49e6d2f335e6828af902701"
 	expectedStaticActorCombatProfileReactionDelayDownSHA256 = "fb73fac5fa47749811e1195bc28808af9ce2590e43839d7f33fc7e37d906d839"
+	expectedItemTemplateRefineKeepOnFailUpSHA256            = "d30200655fde0196ed58133a10731313b3e78f95075bc96f10195f1543270ec0"
+	expectedItemTemplateRefineKeepOnFailDownSHA256          = "3f9bc552194cde79abc99196670e7cf0c3b08578763a7ecca072e6e6f48068c8"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -827,6 +829,39 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 		t.Fatalf("expected combat-profile reaction-delay down migration to drop reaction_delay_ms, got:\n%s", twentieth.DownSQL)
 	}
 
+	if len(catalog) < 21 {
+		t.Fatalf("expected item-template refine keep_on_fail migration after reaction-delay, got %d", len(catalog))
+	}
+	twentyFirst := catalog[20]
+	if twentyFirst.Version != 21 || twentyFirst.Name != "item_template_refine_keep_on_fail" {
+		t.Fatalf("unexpected twenty-first migration: %#v", twentyFirst)
+	}
+	if twentyFirst.UpPath != "0021_item_template_refine_keep_on_fail.up.sql" {
+		t.Fatalf("unexpected twenty-first up path: %q", twentyFirst.UpPath)
+	}
+	if twentyFirst.DownPath != "0021_item_template_refine_keep_on_fail.down.sql" {
+		t.Fatalf("unexpected twenty-first down path: %q", twentyFirst.DownPath)
+	}
+	if twentyFirst.UpSHA256 != expectedItemTemplateRefineKeepOnFailUpSHA256 {
+		t.Fatalf("unexpected item-template refine keep_on_fail up checksum: got %q want %q", twentyFirst.UpSHA256, expectedItemTemplateRefineKeepOnFailUpSHA256)
+	}
+	if twentyFirst.DownSHA256 != expectedItemTemplateRefineKeepOnFailDownSHA256 {
+		t.Fatalf("unexpected item-template refine keep_on_fail down checksum: got %q want %q", twentyFirst.DownSHA256, expectedItemTemplateRefineKeepOnFailDownSHA256)
+	}
+	for _, want := range []string{
+		"ALTER TABLE item_template_refine_infos",
+		"ADD COLUMN keep_on_fail INTEGER NOT NULL DEFAULT 0",
+		"keep_on_fail = 0",
+		"keep_on_fail = 1 AND probability >= 1 AND probability <= 99",
+	} {
+		if !strings.Contains(twentyFirst.UpSQL, want) {
+			t.Fatalf("expected item-template refine keep_on_fail up migration to contain %q, got:\n%s", want, twentyFirst.UpSQL)
+		}
+	}
+	if !strings.Contains(twentyFirst.DownSQL, "ALTER TABLE item_template_refine_infos DROP COLUMN keep_on_fail") {
+		t.Fatalf("expected item-template refine keep_on_fail down migration to drop keep_on_fail, got:\n%s", twentyFirst.DownSQL)
+	}
+
 	for i, migration := range catalog {
 		wantVersion := i + 1
 		if migration.Version != wantVersion {
@@ -896,7 +931,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("built-in catalog summary: %v", err)
 	}
-	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 20 {
+	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 21 {
 		t.Fatalf("unexpected built-in catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -906,7 +941,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 		t.Fatalf("unexpected first built-in catalog summary row: %#v", summary.Migrations[0])
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "static_actor_combat_profile_reaction_delay" {
+	if latest.Version != summary.LatestVersion || latest.Name != "item_template_refine_keep_on_fail" {
 		t.Fatalf("unexpected latest built-in catalog summary row: %#v", latest)
 	}
 }

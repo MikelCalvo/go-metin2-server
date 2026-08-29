@@ -9,6 +9,7 @@ import (
 
 	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 )
 
@@ -206,6 +207,8 @@ func TestRunImportExportImportsEmptyExportsAgainstRegisteredDriver(t *testing.T)
 			// Static-actor SQL import keeps tip-0013 export identity but requires
 			// additive 0016 chase_delay_ms, 0017 return_delay_ms, 0018
 			// homeward_delay_ms, 0019 max_step, and 0020 reaction_delay_ms before INSERT.
+			// Item-template SQL import keeps tip-0009 export identity but requires
+			// additive 0021 keep_on_fail before INSERT.
 			ledger := []dbmigrations.LedgerEntry{ledgerEntry(tc.version)}
 			if tc.kind == "static-actor-content-state" {
 				ledger = []dbmigrations.LedgerEntry{
@@ -215,6 +218,12 @@ func TestRunImportExportImportsEmptyExportsAgainstRegisteredDriver(t *testing.T)
 					ledgerEntry(staticstore.StaticActorCombatProfileHomewardDelayMigrationVersion),
 					ledgerEntry(staticstore.StaticActorCombatProfileMaxStepMigrationVersion),
 					ledgerEntry(staticstore.StaticActorCombatProfileReactionDelayMigrationVersion),
+				}
+			}
+			if tc.kind == "item-template-state" {
+				ledger = []dbmigrations.LedgerEntry{
+					ledgerEntry(itemstore.ItemTemplateStateMigrationVersion),
+					ledgerEntry(itemstore.ItemTemplateRefineKeepOnFailMigrationVersion),
 				}
 			}
 			driver.setLedger(ledger)

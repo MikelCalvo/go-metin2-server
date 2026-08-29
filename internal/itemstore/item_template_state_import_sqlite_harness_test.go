@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -19,8 +20,8 @@ func TestSQLiteHarnessItemTemplateStateImportInsertsTemplatesAndChildren(t *test
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, ItemTemplateStateMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", ItemTemplateStateMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, ItemTemplateRefineKeepOnFailMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", ItemTemplateRefineKeepOnFailMigrationVersion, err)
 	}
 
 	snapshot := Snapshot{Templates: []Template{
@@ -42,7 +43,7 @@ func TestSQLiteHarnessItemTemplateStateImportInsertsTemplatesAndChildren(t *test
 			Refineable: true, Save: true, Irremovable: true, AntiMale: true,
 			AppearanceVnum: 11201, EquipSlot: "weapon",
 			RefineInfo: &RefineInfo{
-				ResultVnum: 11201, Cost: 2500, Probability: 75,
+				ResultVnum: 11201, Cost: 2500, Probability: 75, KeepOnFail: true,
 				Materials: []RefineMaterial{{Vnum: 27001, Count: 2}, {Vnum: 27002, Count: 3}},
 			},
 			EquipEffect:       &PointEffect{PointType: 1, PointIndex: 0, PointDelta: 4},
@@ -84,7 +85,7 @@ func TestSQLiteHarnessItemTemplateStateImportInsertsTemplatesAndChildren(t *test
 	assertItemTemplateAttribute(t, db, 27001, 0, 1, 10)
 	assertItemTemplateUseEffect(t, db, 27001, 7, 1, 25, 2, "Recovered HP", "You feel better.", 3)
 	assertItemTemplateEquipEffect(t, db, 11200, 1, 0, 4)
-	assertItemTemplateRefineInfo(t, db, 11200, 11201, 2500, 75)
+	assertItemTemplateRefineInfo(t, db, 11200, 11201, 2500, 75, true)
 	assertItemTemplateRefineMaterial(t, db, 11200, 0, 27001, 2)
 	assertItemTemplateRefineMaterial(t, db, 11200, 1, 27002, 3)
 }
@@ -94,8 +95,8 @@ func TestSQLiteHarnessItemTemplateStateImportRejectsDuplicatePrimaryKey(t *testi
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, ItemTemplateStateMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", ItemTemplateStateMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, ItemTemplateRefineKeepOnFailMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", ItemTemplateRefineKeepOnFailMigrationVersion, err)
 	}
 
 	export, err := ExportItemTemplateState(Snapshot{Templates: []Template{{
@@ -145,13 +146,39 @@ func TestSQLiteHarnessItemTemplateStateImportRejectsMissingSchema(t *testing.T) 
 	}
 }
 
-func TestSQLiteHarnessItemTemplateStateImportAcceptsEmptyExport(t *testing.T) {
+func TestSQLiteHarnessItemTemplateStateImportRejectsTip0009WithoutKeepOnFailSchema(t *testing.T) {
 	db := openSQLiteItemTemplateStateImportDB(t)
 	defer db.Close()
 
 	ctx := context.Background()
 	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, ItemTemplateStateMigrationVersion); err != nil {
 		t.Fatalf("ApplyToVersion(%d): %v", ItemTemplateStateMigrationVersion, err)
+	}
+
+	export, err := ExportItemTemplateState(Snapshot{Templates: []Template{{
+		Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, Refineable: true,
+		RefineInfo: &RefineInfo{ResultVnum: 11201, Cost: 2500, Probability: 75, KeepOnFail: true},
+	}}})
+	if err != nil {
+		t.Fatalf("ExportItemTemplateState: %v", err)
+	}
+
+	_, err = ImportItemTemplateState(ctx, db, export)
+	if !errors.Is(err, ErrItemTemplateStateImportSchemaRequired) {
+		t.Fatalf("ImportItemTemplateState tip-0009-only error = %v, want %v", err, ErrItemTemplateStateImportSchemaRequired)
+	}
+	if err == nil || !strings.Contains(err.Error(), "21") || !strings.Contains(err.Error(), ItemTemplateRefineKeepOnFailMigrationName) {
+		t.Fatalf("expected tip-0009-only reject to name keep_on_fail schema 21, got %v", err)
+	}
+}
+
+func TestSQLiteHarnessItemTemplateStateImportAcceptsEmptyExport(t *testing.T) {
+	db := openSQLiteItemTemplateStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, ItemTemplateRefineKeepOnFailMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", ItemTemplateRefineKeepOnFailMigrationVersion, err)
 	}
 
 	export := ItemTemplateStateExport{
@@ -302,17 +329,21 @@ SELECT vnum, point_type, point_index, point_delta FROM item_template_equip_effec
 	}
 }
 
-func assertItemTemplateRefineInfo(t *testing.T, db *sql.DB, vnum, resultVnum uint32, cost, probability int32) {
+func assertItemTemplateRefineInfo(t *testing.T, db *sql.DB, vnum, resultVnum uint32, cost, probability int32, keepOnFail bool) {
 	t.Helper()
 	var gotVnum, gotResult int64
-	var gotCost, gotProbability int
+	var gotCost, gotProbability, gotKeepOnFail int
 	if err := db.QueryRowContext(context.Background(), `
-SELECT vnum, result_vnum, cost, probability FROM item_template_refine_infos WHERE vnum = ?`,
-		vnum).Scan(&gotVnum, &gotResult, &gotCost, &gotProbability); err != nil {
+SELECT vnum, result_vnum, cost, probability, keep_on_fail FROM item_template_refine_infos WHERE vnum = ?`,
+		vnum).Scan(&gotVnum, &gotResult, &gotCost, &gotProbability, &gotKeepOnFail); err != nil {
 		t.Fatalf("select refine info vnum %d: %v", vnum, err)
 	}
-	if gotVnum != int64(vnum) || gotResult != int64(resultVnum) || gotCost != int(cost) || gotProbability != int(probability) {
-		t.Fatalf("refine info mismatch for vnum %d", vnum)
+	wantKeep := 0
+	if keepOnFail {
+		wantKeep = 1
+	}
+	if gotVnum != int64(vnum) || gotResult != int64(resultVnum) || gotCost != int(cost) || gotProbability != int(probability) || gotKeepOnFail != wantKeep {
+		t.Fatalf("refine info mismatch for vnum %d: got keep_on_fail=%d want %d", vnum, gotKeepOnFail, wantKeep)
 	}
 }
 

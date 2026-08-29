@@ -269,6 +269,7 @@ func canonicalizeItemTemplateStateExport(export ItemTemplateStateExport) (ItemTe
 				ResultVnum:  info.ResultVnum,
 				Cost:        info.Cost,
 				Probability: info.Probability,
+				KeepOnFail:  info.KeepOnFail,
 				Materials:   materials,
 			}
 		} else if len(refineMaterialsByVnum[vnum]) > 0 {
@@ -334,6 +335,7 @@ func canonicalizeItemTemplateStateExport(export ItemTemplateStateExport) (ItemTe
 				ResultVnum:  template.RefineInfo.ResultVnum,
 				Cost:        template.RefineInfo.Cost,
 				Probability: template.RefineInfo.Probability,
+				KeepOnFail:  template.RefineInfo.KeepOnFail,
 			})
 			for i, material := range template.RefineInfo.Materials {
 				canonicalRefineMaterials = append(canonicalRefineMaterials, ItemTemplateRefineMaterialRow{

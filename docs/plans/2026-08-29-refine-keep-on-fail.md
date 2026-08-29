@@ -41,9 +41,10 @@ rolls; this slice makes the keep outcome template-authored and client-visible.
    `probability = 100` stays success-only; neither reads `keep_on_fail` at
    runtime (store already rejects `true` on those probabilities).
 5. Spec/QA/packet-matrix/roadmap name this beside owned refine confirm. Do **not**
-   invent catalysts, downgrade `fail_result_vnum`, guild/money-only, or SQL
-   `keep_on_fail` columns in this slice (file-backed JSON round-trip is enough;
-   SQL import continues to default the flag false).
+   invent catalysts, downgrade `fail_result_vnum`, or guild/money-only in this
+   slice (file-backed JSON round-trip is enough for the items-lane GREEN). SQL
+   migration column / import for `keep_on_fail` is now Done on `lane/persistence`
+   via additive `0021` — see [item-template refine keep-on-fail migration](2026-08-29-item-template-refine-keep-on-fail-migration.md).
 
 ## Locale / wording note
 
@@ -56,7 +57,8 @@ string. Do not copy oracle source comments or Korean keys into runtime code.
 - downgrade / `fail_result_vnum` / safe-refine variants
 - guild / money-only refine
 - peer-facing refine notifications
-- SQL migration column / import for `keep_on_fail`
+- ~~SQL migration column / import for `keep_on_fail`~~ Done on `lane/persistence`
+  via additive `0021` — see [item-template refine keep-on-fail migration](2026-08-29-item-template-refine-keep-on-fail-migration.md); `fail_result_vnum` SQL stays deferred
 - GD/DB `MYSHOP_PRICELIST` / quest-running / bag-missing INFO
 
 ## Proof shape
@@ -71,5 +73,7 @@ string. Do not copy oracle source comments or Korean keys into runtime code.
 ## Status
 
 GREEN on `lane/items`: template-authored `refine_info.keep_on_fail` owns the
-keep-on-fail `1..99` roll outcome. Catalysts / downgrade / SQL column stay
-deferred.
+keep-on-fail `1..99` roll outcome. SQL migration column / import for
+`keep_on_fail` is now Done on `lane/persistence` via additive `0021` — see
+[item-template refine keep-on-fail migration](2026-08-29-item-template-refine-keep-on-fail-migration.md).
+Catalysts / downgrade / `fail_result_vnum` SQL stay deferred.

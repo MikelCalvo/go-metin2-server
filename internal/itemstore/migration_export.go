@@ -6,8 +6,17 @@ import (
 )
 
 const (
+	// ItemTemplateStateMigrationVersion / Name pin the tip-0009 export /
+	// quarantine / import-result identity. Additive 0021 adds keep_on_fail onto
+	// item_template_refine_infos without retipping that identity.
 	ItemTemplateStateMigrationVersion = 9
 	ItemTemplateStateMigrationName    = "item_template_refine_info"
+
+	// ItemTemplateRefineKeepOnFailMigrationVersion / Name pin the additive
+	// schema boundary that SQL import must require beside tip-0009 before
+	// inserting keep_on_fail.
+	ItemTemplateRefineKeepOnFailMigrationVersion = 21
+	ItemTemplateRefineKeepOnFailMigrationName    = "item_template_refine_keep_on_fail"
 )
 
 type ItemTemplateStateExport struct {
@@ -114,6 +123,7 @@ type ItemTemplateRefineInfoRow struct {
 	ResultVnum  uint32 `json:"result_vnum"`
 	Cost        int32  `json:"cost"`
 	Probability int32  `json:"probability"`
+	KeepOnFail  bool   `json:"keep_on_fail,omitempty"`
 }
 
 type ItemTemplateRefineMaterialRow struct {
@@ -172,7 +182,13 @@ func ExportItemTemplateState(snapshot Snapshot) (ItemTemplateStateExport, error)
 			export.EquipEffects = append(export.EquipEffects, ItemTemplateEquipEffectRow{Vnum: template.Vnum, PointType: template.EquipEffect.PointType, PointIndex: template.EquipEffect.PointIndex, PointDelta: template.EquipEffect.PointDelta})
 		}
 		if template.RefineInfo != nil {
-			export.RefineInfos = append(export.RefineInfos, ItemTemplateRefineInfoRow{Vnum: template.Vnum, ResultVnum: template.RefineInfo.ResultVnum, Cost: template.RefineInfo.Cost, Probability: template.RefineInfo.Probability})
+			export.RefineInfos = append(export.RefineInfos, ItemTemplateRefineInfoRow{
+				Vnum:        template.Vnum,
+				ResultVnum:  template.RefineInfo.ResultVnum,
+				Cost:        template.RefineInfo.Cost,
+				Probability: template.RefineInfo.Probability,
+				KeepOnFail:  template.RefineInfo.KeepOnFail,
+			})
 			for i, material := range template.RefineInfo.Materials {
 				export.RefineMaterials = append(export.RefineMaterials, ItemTemplateRefineMaterialRow{Vnum: template.Vnum, Position: uint8(i), ItemVnum: material.Vnum, Count: material.Count})
 			}
