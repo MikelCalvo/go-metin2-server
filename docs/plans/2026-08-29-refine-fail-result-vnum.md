@@ -84,5 +84,6 @@ string. Do not copy oracle source comments or Korean keys into runtime code.
 
 ## Status
 
-Docs/spec freeze only on `lane/items`. RED/GREEN intentionally deferred until
-the next items-lane run opens tests against this contract.
+GREEN on `lane/items`: template-authored `refine_info.fail_result_vnum` owns the
+downgrade-on-fail `1..99` roll outcome beside `keep_on_fail`. Catalysts / SQL
+column stay deferred.

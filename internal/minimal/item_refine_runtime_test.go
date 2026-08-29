@@ -1516,6 +1516,174 @@ func TestGameRuntimeItemRefineConfirmAfterPreviewProbability75KeepOnFailKeepsSou
 	}
 }
 
+func TestGameRuntimeItemRefineConfirmAfterPreviewProbability75FailResultVnumDowngradesAndEmitsRefineFailed(t *testing.T) {
+	restore := QueueRefineConfirmRollForTest(76)
+	t.Cleanup(restore)
+
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("RefineRollDown", 0x01030766, 0x02040766, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 666, Vnum: 11246, Count: 1, Slot: 5},
+		{ID: 667, Vnum: 27001, Count: 2, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	issuePeerTicket(t, ticketStore, "item-refine-roll-downgrade", 0x70707066, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-refine-roll-downgrade", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-refine roll-downgrade account: %v", err)
+	}
+	sourceTemplate := itemcatalog.Template{
+		Vnum:       11246,
+		Name:       "Downgrade Fail Practice Blade",
+		Stackable:  false,
+		MaxCount:   1,
+		Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{ResultVnum: 11247, Cost: 1000, Probability: 75, FailResultVnum: 11240, Materials: []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}}},
+	}
+	resultTemplate := itemcatalog.Template{Vnum: 11247, Name: "Unreached Downgrade Result Blade", Stackable: false, MaxCount: 1}
+	failResultTemplate := itemcatalog.Template{Vnum: 11240, Name: "Downgraded Practice Blade", Stackable: false, MaxCount: 1}
+	material := itemcatalog.Template{Vnum: 27001, Name: "Refine Material A", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{sourceTemplate, resultTemplate, failResultTemplate, material})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-refine roll-downgrade runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-refine-roll-downgrade", 0x70707066)
+	defer closeSessionFlow(t, flow)
+
+	previewOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 6})))
+	if err != nil || len(previewOut) != 1 {
+		t.Fatalf("expected probability-75 fail_result_vnum preview to emit one frame, got %d err=%v", len(previewOut), err)
+	}
+	if _, err := itemproto.DecodeRefineInformationNew(decodeSingleFrame(t, previewOut[0])); err != nil {
+		t.Fatalf("decode probability-75 fail_result_vnum preview: %v", err)
+	}
+
+	confirmOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 6})))
+	if err != nil {
+		t.Fatalf("unexpected probability-75 fail_result_vnum confirm packet error: %v", err)
+	}
+	if len(confirmOut) != 5 {
+		t.Fatalf("expected probability-75 fail_result_vnum burst of 5 frames, got %d", len(confirmOut))
+	}
+	materialDel, err := itemproto.DecodeDel(decodeSingleFrame(t, confirmOut[0]))
+	if err != nil {
+		t.Fatalf("decode probability-75 fail_result_vnum material ITEM_DEL: %v", err)
+	}
+	if materialDel.Position.WindowType != itemproto.WindowInventory || materialDel.Position.Cell != 6 {
+		t.Fatalf("unexpected probability-75 fail_result_vnum material delete position: %+v", materialDel.Position)
+	}
+	materialQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, confirmOut[1]))
+	if err != nil {
+		t.Fatalf("decode probability-75 fail_result_vnum material QUICKSLOT_DEL: %v", err)
+	}
+	if materialQuickslotDel.Position != 3 {
+		t.Fatalf("unexpected probability-75 fail_result_vnum material quickslot delete: %+v", materialQuickslotDel)
+	}
+	resultSet, err := itemproto.DecodeSet(decodeSingleFrame(t, confirmOut[2]))
+	if err != nil {
+		t.Fatalf("decode probability-75 fail_result_vnum result ITEM_SET: %v", err)
+	}
+	if resultSet.Position.WindowType != itemproto.WindowInventory || resultSet.Position.Cell != 5 || resultSet.Vnum != 11240 || resultSet.Count != 1 {
+		t.Fatalf("unexpected probability-75 fail_result_vnum result ITEM_SET: %+v", resultSet)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, confirmOut[3]))
+	if err != nil {
+		t.Fatalf("decode probability-75 fail_result_vnum gold point change: %v", err)
+	}
+	if goldChange.VID != owner.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != -1000 || goldChange.Value != 4000 {
+		t.Fatalf("unexpected probability-75 fail_result_vnum gold point change: %+v", goldChange)
+	}
+	assertRefineFailedCommandChat(t, confirmOut[4], 6, "probability-75 fail_result_vnum confirm")
+
+	account, err := accounts.Load("item-refine-roll-downgrade")
+	if err != nil {
+		t.Fatalf("load probability-75 fail_result_vnum refine account: %v", err)
+	}
+	if account.Characters[0].Gold != 4000 {
+		t.Fatalf("expected persisted gold 4000 after probability-75 fail_result_vnum, got %d", account.Characters[0].Gold)
+	}
+	wantInventory := []inventory.ItemInstance{{ID: 666, Vnum: 11240, Count: 1, Slot: 5}}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("expected source downgraded after probability-75 fail_result_vnum, got %#v", account.Characters[0].Inventory)
+	}
+	wantQuickslots := []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	if !reflect.DeepEqual(account.Characters[0].Quickslots, wantQuickslots) {
+		t.Fatalf("unexpected persisted quickslots after probability-75 fail_result_vnum: got %#v want %#v", account.Characters[0].Quickslots, wantQuickslots)
+	}
+}
+
+func TestGameRuntimeItemRefineConfirmAfterPreviewProbability75FailResultVnumMissingTemplateFailsClosed(t *testing.T) {
+	restore := QueueRefineConfirmRollForTest(76)
+	t.Cleanup(restore)
+
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("RefineRollMiss", 0x01030767, 0x02040767, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 668, Vnum: 11248, Count: 1, Slot: 5},
+		{ID: 669, Vnum: 27001, Count: 2, Slot: 6},
+	}
+	issuePeerTicket(t, ticketStore, "item-refine-roll-down-miss", 0x70707067, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-refine-roll-down-miss", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-refine roll-downgrade-missing account: %v", err)
+	}
+	sourceTemplate := itemcatalog.Template{
+		Vnum:       11248,
+		Name:       "Missing Fail Result Practice Blade",
+		Stackable:  false,
+		MaxCount:   1,
+		Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{ResultVnum: 11249, Cost: 1000, Probability: 75, FailResultVnum: 11239, Materials: []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}}},
+	}
+	resultTemplate := itemcatalog.Template{Vnum: 11249, Name: "Unreached Missing Fail Result Blade", Stackable: false, MaxCount: 1}
+	material := itemcatalog.Template{Vnum: 27001, Name: "Refine Material A", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{sourceTemplate, resultTemplate, material})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-refine roll-downgrade-missing runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-refine-roll-down-miss", 0x70707067)
+	defer closeSessionFlow(t, flow)
+
+	previewOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 7})))
+	if err != nil || len(previewOut) != 1 {
+		t.Fatalf("expected missing fail_result preview to emit one frame, got %d err=%v", len(previewOut), err)
+	}
+
+	confirmOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 7})))
+	if err != nil {
+		t.Fatalf("unexpected missing fail_result confirm packet error: %v", err)
+	}
+	if len(confirmOut) != 0 {
+		t.Fatalf("expected missing fail_result confirm to fail closed with no frames, got %d", len(confirmOut))
+	}
+
+	account, err := accounts.Load("item-refine-roll-down-miss")
+	if err != nil {
+		t.Fatalf("load missing fail_result refine account: %v", err)
+	}
+	if account.Characters[0].Gold != 5000 {
+		t.Fatalf("expected unchanged gold after missing fail_result confirm, got %d", account.Characters[0].Gold)
+	}
+	wantInventory := []inventory.ItemInstance{
+		{ID: 668, Vnum: 11248, Count: 1, Slot: 5},
+		{ID: 669, Vnum: 27001, Count: 2, Slot: 6},
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("expected unchanged inventory after missing fail_result confirm, got %#v", account.Characters[0].Inventory)
+	}
+}
+
 func assertRefineSucceededCommandChat(t *testing.T, frame []byte, refineType uint8, label string) {
 	t.Helper()
 	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, frame))

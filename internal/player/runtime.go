@@ -169,16 +169,32 @@ type RefineKeepFailureResult struct {
 	Cost            int32
 }
 
+// RefineDowngradeFailureResult is the live mutation outcome for remembered
+// probability values in 1..99 with template-authored fail_result_vnum when the
+// injected roll fails: gold/materials consumed, source carried vnum replaced
+// with fail_result_vnum while preserving instance id.
+type RefineDowngradeFailureResult struct {
+	SourceSlot      inventory.SlotIndex
+	ResultItem      inventory.ItemInstance
+	MaterialChanges []RefineMaterialChange
+	GoldBefore      uint64
+	Gold            uint64
+	Cost            int32
+}
+
 // RefineWithRollResult is the live mutation outcome for remembered
 // probability values in 1..99 when confirm supplies one injected roll in
-// 1..100. Exactly one of Succeeded, Destroyed, or Kept is set on acceptance.
+// 1..100. Exactly one of Succeeded, Destroyed, Kept, or Downgraded is set on
+// acceptance.
 type RefineWithRollResult struct {
-	Succeeded bool
-	Destroyed bool
-	Kept      bool
-	Success   RefineSuccessResult
-	Destroy   RefineDestroyFailureResult
-	Keep      RefineKeepFailureResult
+	Succeeded  bool
+	Destroyed  bool
+	Kept       bool
+	Downgraded bool
+	Success    RefineSuccessResult
+	Destroy    RefineDestroyFailureResult
+	Keep       RefineKeepFailureResult
+	Downgrade  RefineDowngradeFailureResult
 }
 
 // CarriedItemConsumeRequirement is one by-vnum carried-inventory debit request.
@@ -1611,11 +1627,12 @@ func (r *Runtime) ApplyRefineSuccess(slot inventory.SlotIndex, refineType uint8,
 		return RefineSuccessResult{}, false
 	}
 	if !refineInfoEqual(remembered, *sourceTemplate.RefineInfo) || !refineInfoEqual(remembered, itemcatalog.RefineInfo{
-		ResultVnum:  info.ResultVnum,
-		Cost:        info.Cost,
-		Probability: info.Probability,
-		KeepOnFail:  sourceTemplate.RefineInfo.KeepOnFail,
-		Materials:   info.Materials,
+		ResultVnum:     info.ResultVnum,
+		Cost:           info.Cost,
+		Probability:    info.Probability,
+		KeepOnFail:     sourceTemplate.RefineInfo.KeepOnFail,
+		FailResultVnum: sourceTemplate.RefineInfo.FailResultVnum,
+		Materials:      info.Materials,
 	}) {
 		return RefineSuccessResult{}, false
 	}
@@ -1703,11 +1720,12 @@ func (r *Runtime) ApplyRefineDestroyFailure(slot inventory.SlotIndex, refineType
 		return RefineDestroyFailureResult{}, false
 	}
 	if !refineInfoEqual(remembered, *sourceTemplate.RefineInfo) || !refineInfoEqual(remembered, itemcatalog.RefineInfo{
-		ResultVnum:  info.ResultVnum,
-		Cost:        info.Cost,
-		Probability: info.Probability,
-		KeepOnFail:  sourceTemplate.RefineInfo.KeepOnFail,
-		Materials:   info.Materials,
+		ResultVnum:     info.ResultVnum,
+		Cost:           info.Cost,
+		Probability:    info.Probability,
+		KeepOnFail:     sourceTemplate.RefineInfo.KeepOnFail,
+		FailResultVnum: sourceTemplate.RefineInfo.FailResultVnum,
+		Materials:      info.Materials,
 	}) {
 		return RefineDestroyFailureResult{}, false
 	}
@@ -1793,11 +1811,12 @@ func (r *Runtime) ApplyRefineKeepFailure(slot inventory.SlotIndex, refineType ui
 		return RefineKeepFailureResult{}, false
 	}
 	if !refineInfoEqual(remembered, *sourceTemplate.RefineInfo) || !refineInfoEqual(remembered, itemcatalog.RefineInfo{
-		ResultVnum:  info.ResultVnum,
-		Cost:        info.Cost,
-		Probability: info.Probability,
-		KeepOnFail:  sourceTemplate.RefineInfo.KeepOnFail,
-		Materials:   info.Materials,
+		ResultVnum:     info.ResultVnum,
+		Cost:           info.Cost,
+		Probability:    info.Probability,
+		KeepOnFail:     sourceTemplate.RefineInfo.KeepOnFail,
+		FailResultVnum: sourceTemplate.RefineInfo.FailResultVnum,
+		Materials:      info.Materials,
 	}) {
 		return RefineKeepFailureResult{}, false
 	}
@@ -1870,13 +1889,116 @@ func (r *Runtime) ApplyRefineKeepFailure(slot inventory.SlotIndex, refineType ui
 	return result, true
 }
 
+// ApplyRefineDowngradeFailure owns the fail-result downgrade mutation for
+// remembered refine_info with FailResultVnum and probability in 1..99:
+// gold/materials are consumed and the source carried vnum is replaced with
+// fail_result_vnum while preserving instance id.
+func (r *Runtime) ApplyRefineDowngradeFailure(slot inventory.SlotIndex, refineType uint8, sourceID uint64, remembered itemcatalog.RefineInfo, sourceTemplate itemcatalog.Template, resultTemplate itemcatalog.Template, failResultTemplate itemcatalog.Template) (RefineDowngradeFailureResult, bool) {
+	if r == nil || sourceID == 0 || remembered.KeepOnFail || remembered.FailResultVnum == 0 || remembered.Probability < 1 || remembered.Probability > 99 || remembered.Cost < 0 || remembered.ResultVnum == 0 || len(remembered.Materials) > itemcatalog.MaxRefineMaterialCount {
+		return RefineDowngradeFailureResult{}, false
+	}
+	info, ok := r.RefineInformation(slot, refineType, sourceTemplate)
+	if !ok || info.SourceVnum == 0 || sourceTemplate.RefineInfo == nil {
+		return RefineDowngradeFailureResult{}, false
+	}
+	if !refineInfoEqual(remembered, *sourceTemplate.RefineInfo) || !refineInfoEqual(remembered, itemcatalog.RefineInfo{
+		ResultVnum:     info.ResultVnum,
+		Cost:           info.Cost,
+		Probability:    info.Probability,
+		KeepOnFail:     sourceTemplate.RefineInfo.KeepOnFail,
+		FailResultVnum: sourceTemplate.RefineInfo.FailResultVnum,
+		Materials:      info.Materials,
+	}) {
+		return RefineDowngradeFailureResult{}, false
+	}
+	if !itemcatalog.ValidTemplate(resultTemplate) || resultTemplate.Vnum != remembered.ResultVnum {
+		return RefineDowngradeFailureResult{}, false
+	}
+	if !itemcatalog.ValidTemplate(failResultTemplate) || failResultTemplate.Vnum != remembered.FailResultVnum {
+		return RefineDowngradeFailureResult{}, false
+	}
+	if remembered.FailResultVnum == info.SourceVnum || remembered.FailResultVnum == remembered.ResultVnum {
+		return RefineDowngradeFailureResult{}, false
+	}
+	index := findInventorySlot(r.liveInventory, slot)
+	if index < 0 {
+		return RefineDowngradeFailureResult{}, false
+	}
+	sourceItem := r.liveInventory[index]
+	if sourceItem.ID != sourceID || sourceItem.Vnum != info.SourceVnum || sourceItem.Equipped || sourceItem.Locked || sourceItem.Count != 1 {
+		return RefineDowngradeFailureResult{}, false
+	}
+	cost := uint64(remembered.Cost)
+	const maxPointChangeCarrier = uint64(1<<31 - 1)
+	if cost > maxPointChangeCarrier || r.liveGold < cost || r.liveGold > maxPointChangeCarrier {
+		return RefineDowngradeFailureResult{}, false
+	}
+	nextGold := r.liveGold - cost
+	materialPlan, ok := planRefineMaterialChanges(r.liveInventory, slot, remembered.Materials)
+	if !ok {
+		return RefineDowngradeFailureResult{}, false
+	}
+
+	inventoryItems := cloneItemInstances(r.liveInventory)
+	materialChanges := make([]RefineMaterialChange, 0, len(materialPlan))
+	for _, planned := range materialPlan {
+		currentIndex := findInventorySlot(inventoryItems, planned.Slot)
+		if currentIndex < 0 {
+			return RefineDowngradeFailureResult{}, false
+		}
+		item := inventoryItems[currentIndex]
+		if item.Equipped || item.Locked || item.Vnum != planned.Vnum || item.Count < planned.Consume {
+			return RefineDowngradeFailureResult{}, false
+		}
+		change := RefineMaterialChange{Slot: planned.Slot}
+		if item.Count == planned.Consume {
+			inventoryItems = removeInventoryIndex(inventoryItems, currentIndex)
+			change.ItemRemoved = true
+		} else {
+			item.Count -= planned.Consume
+			if err := item.Validate(); err != nil {
+				return RefineDowngradeFailureResult{}, false
+			}
+			inventoryItems[currentIndex] = item
+			change.Item = item
+		}
+		materialChanges = append(materialChanges, change)
+	}
+	sourceIndex := findInventorySlot(inventoryItems, slot)
+	if sourceIndex < 0 {
+		return RefineDowngradeFailureResult{}, false
+	}
+	resultItem := inventoryItems[sourceIndex]
+	if resultItem.ID != sourceID || resultItem.Vnum != info.SourceVnum || resultItem.Count != 1 || resultItem.Equipped || resultItem.Locked {
+		return RefineDowngradeFailureResult{}, false
+	}
+	resultItem.Vnum = remembered.FailResultVnum
+	if err := resultItem.Validate(); err != nil {
+		return RefineDowngradeFailureResult{}, false
+	}
+	inventoryItems[sourceIndex] = resultItem
+	sortInventoryItems(inventoryItems)
+
+	result := RefineDowngradeFailureResult{
+		SourceSlot:      slot,
+		ResultItem:      resultItem,
+		MaterialChanges: materialChanges,
+		GoldBefore:      r.liveGold,
+		Gold:            nextGold,
+		Cost:            remembered.Cost,
+	}
+	r.liveGold = nextGold
+	r.liveInventory = inventoryItems
+	return result, true
+}
+
 // ApplyRefineWithRoll owns the first deterministic confirm path for remembered
 // refine_info.probability values in 1..99. roll must be in 1..100:
 // roll <= probability applies the owned success mutation; roll > probability
-// applies keep-on-fail when authored, otherwise the owned whole-source destroy
-// mutation. Rolls outside 1..100 and remembered probabilities outside 1..99
-// fail closed with no mutation.
-func (r *Runtime) ApplyRefineWithRoll(slot inventory.SlotIndex, refineType uint8, sourceID uint64, remembered itemcatalog.RefineInfo, sourceTemplate itemcatalog.Template, resultTemplate itemcatalog.Template, roll int) (RefineWithRollResult, bool) {
+// applies keep-on-fail when authored, otherwise fail_result_vnum downgrade when
+// authored, otherwise the owned whole-source destroy mutation. Rolls outside
+// 1..100 and remembered probabilities outside 1..99 fail closed with no mutation.
+func (r *Runtime) ApplyRefineWithRoll(slot inventory.SlotIndex, refineType uint8, sourceID uint64, remembered itemcatalog.RefineInfo, sourceTemplate itemcatalog.Template, resultTemplate itemcatalog.Template, failResultTemplate itemcatalog.Template, roll int) (RefineWithRollResult, bool) {
 	if r == nil || roll < 1 || roll > 100 || remembered.Probability < 1 || remembered.Probability > 99 {
 		return RefineWithRollResult{}, false
 	}
@@ -1889,8 +2011,10 @@ func (r *Runtime) ApplyRefineWithRoll(slot inventory.SlotIndex, refineType uint8
 	if int32(roll) <= remembered.Probability {
 		adjustedRemembered.Probability = 100
 		adjustedRemembered.KeepOnFail = false
+		adjustedRemembered.FailResultVnum = 0
 		adjustedInfo.Probability = 100
 		adjustedInfo.KeepOnFail = false
+		adjustedInfo.FailResultVnum = 0
 		adjustedSource.RefineInfo = &adjustedInfo
 		success, ok := r.ApplyRefineSuccess(slot, refineType, sourceID, adjustedRemembered, adjustedSource, resultTemplate)
 		if !ok {
@@ -1905,10 +2029,19 @@ func (r *Runtime) ApplyRefineWithRoll(slot inventory.SlotIndex, refineType uint8
 		}
 		return RefineWithRollResult{Kept: true, Keep: keep}, true
 	}
+	if remembered.FailResultVnum != 0 {
+		downgrade, ok := r.ApplyRefineDowngradeFailure(slot, refineType, sourceID, remembered, sourceTemplate, resultTemplate, failResultTemplate)
+		if !ok {
+			return RefineWithRollResult{}, false
+		}
+		return RefineWithRollResult{Downgraded: true, Downgrade: downgrade}, true
+	}
 	adjustedRemembered.Probability = 0
 	adjustedRemembered.KeepOnFail = false
+	adjustedRemembered.FailResultVnum = 0
 	adjustedInfo.Probability = 0
 	adjustedInfo.KeepOnFail = false
+	adjustedInfo.FailResultVnum = 0
 	adjustedSource.RefineInfo = &adjustedInfo
 	destroy, ok := r.ApplyRefineDestroyFailure(slot, refineType, sourceID, adjustedRemembered, adjustedSource, resultTemplate)
 	if !ok {
@@ -1983,7 +2116,7 @@ func planRefineMaterialChanges(items []inventory.ItemInstance, sourceSlot invent
 }
 
 func refineInfoEqual(left, right itemcatalog.RefineInfo) bool {
-	if left.ResultVnum != right.ResultVnum || left.Cost != right.Cost || left.Probability != right.Probability || left.KeepOnFail != right.KeepOnFail || len(left.Materials) != len(right.Materials) {
+	if left.ResultVnum != right.ResultVnum || left.Cost != right.Cost || left.Probability != right.Probability || left.KeepOnFail != right.KeepOnFail || left.FailResultVnum != right.FailResultVnum || len(left.Materials) != len(right.Materials) {
 		return false
 	}
 	for i := range left.Materials {

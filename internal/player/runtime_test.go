@@ -4109,7 +4109,7 @@ func TestRuntimeApplyRefineWithRollProbability75SuccessConsumesGoldMaterialsAndR
 	runtime := NewRuntime(persisted, SessionLink{Login: "refine-roll-success", CharacterIndex: 1})
 	sourceTemplate, resultTemplate, remembered := refineSuccessTemplates(75)
 
-	outcome, ok := runtime.ApplyRefineWithRoll(5, 3, 701, remembered, sourceTemplate, resultTemplate, 75)
+	outcome, ok := runtime.ApplyRefineWithRoll(5, 3, 701, remembered, sourceTemplate, resultTemplate, itemcatalog.Template{}, 75)
 	if !ok || !outcome.Succeeded || outcome.Destroyed {
 		t.Fatalf("expected probability-75 roll=75 to succeed, got ok=%v outcome=%+v", ok, outcome)
 	}
@@ -4134,8 +4134,8 @@ func TestRuntimeApplyRefineWithRollProbability75FailureDestroysSource(t *testing
 	runtime := NewRuntime(persisted, SessionLink{Login: "refine-roll-fail", CharacterIndex: 1})
 	sourceTemplate, resultTemplate, remembered := refineSuccessTemplates(75)
 
-	outcome, ok := runtime.ApplyRefineWithRoll(5, 3, 701, remembered, sourceTemplate, resultTemplate, 76)
-	if !ok || outcome.Succeeded || !outcome.Destroyed || outcome.Kept {
+	outcome, ok := runtime.ApplyRefineWithRoll(5, 3, 701, remembered, sourceTemplate, resultTemplate, itemcatalog.Template{}, 76)
+	if !ok || outcome.Succeeded || !outcome.Destroyed || outcome.Kept || outcome.Downgraded {
 		t.Fatalf("expected probability-75 roll=76 to destroy, got ok=%v outcome=%+v", ok, outcome)
 	}
 	if outcome.Destroy.SourceSlot != 5 || outcome.Destroy.Gold != 2500 || outcome.Destroy.Cost != 2500 {
@@ -4158,8 +4158,8 @@ func TestRuntimeApplyRefineWithRollProbability75KeepOnFailKeepsSource(t *testing
 	sourceTemplate.RefineInfo.KeepOnFail = true
 	remembered.KeepOnFail = true
 
-	outcome, ok := runtime.ApplyRefineWithRoll(5, 3, 701, remembered, sourceTemplate, resultTemplate, 76)
-	if !ok || outcome.Succeeded || outcome.Destroyed || !outcome.Kept {
+	outcome, ok := runtime.ApplyRefineWithRoll(5, 3, 701, remembered, sourceTemplate, resultTemplate, itemcatalog.Template{}, 76)
+	if !ok || outcome.Succeeded || outcome.Destroyed || !outcome.Kept || outcome.Downgraded {
 		t.Fatalf("expected probability-75 keep_on_fail roll=76 to keep source, got ok=%v outcome=%+v", ok, outcome)
 	}
 	if outcome.Keep.SourceSlot != 5 || outcome.Keep.Gold != 2500 || outcome.Keep.Cost != 2500 {
@@ -4178,16 +4178,57 @@ func TestRuntimeApplyRefineWithRollProbability75KeepOnFailKeepsSource(t *testing
 	}
 }
 
+func TestRuntimeApplyRefineWithRollProbability75FailResultVnumDowngradesSource(t *testing.T) {
+	persisted := refineSuccessSeedCharacter(5000)
+	runtime := NewRuntime(persisted, SessionLink{Login: "refine-roll-downgrade", CharacterIndex: 1})
+	sourceTemplate, resultTemplate, remembered := refineSuccessTemplates(75)
+	sourceTemplate.RefineInfo.FailResultVnum = 11199
+	remembered.FailResultVnum = 11199
+	failResultTemplate := itemcatalog.Template{Vnum: 11199, Name: "Downgraded Practice Blade", Stackable: false, MaxCount: 1}
+
+	outcome, ok := runtime.ApplyRefineWithRoll(5, 3, 701, remembered, sourceTemplate, resultTemplate, failResultTemplate, 76)
+	if !ok || outcome.Succeeded || outcome.Destroyed || outcome.Kept || !outcome.Downgraded {
+		t.Fatalf("expected probability-75 fail_result_vnum roll=76 to downgrade, got ok=%v outcome=%+v", ok, outcome)
+	}
+	if outcome.Downgrade.ResultItem != (inventory.ItemInstance{ID: 701, Vnum: 11199, Count: 1, Slot: 5}) || outcome.Downgrade.Gold != 2500 {
+		t.Fatalf("unexpected refine downgrade-failure payload: %+v", outcome.Downgrade)
+	}
+	live := runtime.LiveCharacter()
+	wantInventory := []inventory.ItemInstance{
+		{ID: 701, Vnum: 11199, Count: 1, Slot: 5},
+	}
+	if !reflect.DeepEqual(live.Inventory, wantInventory) || live.Gold != 2500 {
+		t.Fatalf("unexpected live state after refine downgrade-failure: inventory=%#v gold=%d", live.Inventory, live.Gold)
+	}
+	persistedAfter := runtime.PersistedSnapshot()
+	if !reflect.DeepEqual(persistedAfter.Inventory, persisted.Inventory) || persistedAfter.Gold != persisted.Gold {
+		t.Fatalf("refine downgrade-failure mutated persisted snapshot before commit: got %#v want %#v", persistedAfter, persisted)
+	}
+}
+
+func TestRuntimeApplyRefineWithRollProbability75FailResultVnumRejectsMissingFailTemplateWithoutMutation(t *testing.T) {
+	persisted := refineSuccessSeedCharacter(5000)
+	runtime := NewRuntime(persisted, SessionLink{Login: "refine-roll-downgrade-missing", CharacterIndex: 1})
+	sourceTemplate, resultTemplate, remembered := refineSuccessTemplates(75)
+	sourceTemplate.RefineInfo.FailResultVnum = 11199
+	remembered.FailResultVnum = 11199
+
+	if outcome, ok := runtime.ApplyRefineWithRoll(5, 3, 701, remembered, sourceTemplate, resultTemplate, itemcatalog.Template{}, 76); ok {
+		t.Fatalf("expected missing fail_result template to fail closed, got %+v", outcome)
+	}
+	assertRefineSuccessUnchanged(t, runtime, persisted)
+}
+
 func TestRuntimeApplyRefineWithRollRejectsOutOfRangeRollWithoutMutation(t *testing.T) {
 	persisted := refineSuccessSeedCharacter(5000)
 	runtime := NewRuntime(persisted, SessionLink{Login: "refine-roll-range", CharacterIndex: 1})
 	sourceTemplate, resultTemplate, remembered := refineSuccessTemplates(75)
 
-	if outcome, ok := runtime.ApplyRefineWithRoll(5, 3, 701, remembered, sourceTemplate, resultTemplate, 0); ok {
+	if outcome, ok := runtime.ApplyRefineWithRoll(5, 3, 701, remembered, sourceTemplate, resultTemplate, itemcatalog.Template{}, 0); ok {
 		t.Fatalf("expected roll=0 to fail closed, got %+v", outcome)
 	}
 	assertRefineSuccessUnchanged(t, runtime, persisted)
-	if outcome, ok := runtime.ApplyRefineWithRoll(5, 3, 701, remembered, sourceTemplate, resultTemplate, 101); ok {
+	if outcome, ok := runtime.ApplyRefineWithRoll(5, 3, 701, remembered, sourceTemplate, resultTemplate, itemcatalog.Template{}, 101); ok {
 		t.Fatalf("expected roll=101 to fail closed, got %+v", outcome)
 	}
 	assertRefineSuccessUnchanged(t, runtime, persisted)

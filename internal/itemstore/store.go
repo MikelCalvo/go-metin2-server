@@ -316,11 +316,12 @@ type PointEffect struct {
 }
 
 type RefineInfo struct {
-	ResultVnum  uint32           `json:"result_vnum"`
-	Cost        int32            `json:"cost"`
-	Probability int32            `json:"probability"`
-	KeepOnFail  bool             `json:"keep_on_fail,omitempty"`
-	Materials   []RefineMaterial `json:"materials,omitempty"`
+	ResultVnum     uint32           `json:"result_vnum"`
+	Cost           int32            `json:"cost"`
+	Probability    int32            `json:"probability"`
+	KeepOnFail     bool             `json:"keep_on_fail,omitempty"`
+	FailResultVnum uint32           `json:"fail_result_vnum,omitempty"`
+	Materials      []RefineMaterial `json:"materials,omitempty"`
 }
 
 type RefineMaterial struct {
@@ -605,9 +606,17 @@ func validRefineInfo(info *RefineInfo, template Template) bool {
 	if !template.Refineable || info.ResultVnum == 0 || info.Cost < 0 || info.Probability < 0 || info.Probability > 100 || len(info.Materials) > MaxRefineMaterialCount {
 		return false
 	}
-	// keep_on_fail is only meaningful for injected-roll confirm (probability 1..99).
+	// keep_on_fail / fail_result_vnum are only meaningful for injected-roll confirm (probability 1..99).
 	if info.KeepOnFail && (info.Probability < 1 || info.Probability > 99) {
 		return false
+	}
+	if info.FailResultVnum != 0 {
+		if info.KeepOnFail || info.Probability < 1 || info.Probability > 99 {
+			return false
+		}
+		if info.FailResultVnum == template.Vnum || info.FailResultVnum == info.ResultVnum {
+			return false
+		}
 	}
 	for _, material := range info.Materials {
 		if material.Vnum == 0 || material.Count <= 0 {
