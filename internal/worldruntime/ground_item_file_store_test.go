@@ -95,6 +95,121 @@ func TestGroundItemFileStoreRoundTripPersistsTimersAndItemID(t *testing.T) {
 	}
 }
 
+func TestGroundItemFileStoreRoundTripPersistsInstanceSocketsIncludingExplicitZero(t *testing.T) {
+	defer DisableDurableGroundItemSyncForTest()()
+
+	path := filepath.Join(t.TempDir(), "ground-items-sockets.json")
+	store := NewGroundItemFileStore(path)
+
+	itemCount := uint16(1)
+	zeroCount := uint16(1)
+	ownershipExpires := time.Date(2026, 8, 29, 12, 0, 30, 0, time.UTC)
+	despawnItem := time.Date(2026, 8, 29, 12, 5, 0, 0, time.UTC)
+	despawnZero := time.Date(2026, 8, 29, 12, 6, 0, 0, time.UTC)
+
+	want := DurableGroundItemSnapshot{GroundItems: []DurableGroundItemRecord{
+		{
+			VID:                0x07000011,
+			Vnum:               72723,
+			ItemCount:          &itemCount,
+			ItemID:             0x30010011,
+			HasSockets:         true,
+			Socket0:            1,
+			Socket1:            2,
+			Socket2:            3,
+			OwnerLogin:         "socket-owner",
+			OwnerCharacterID:   11,
+			OwnerVID:           0x02000011,
+			OwnerName:          "SocketHero",
+			MapIndex:           1,
+			X:                  1100,
+			Y:                  2100,
+			PickupRange:        450,
+			OwnershipExclusive: true,
+			OwnershipExpiresAt: &ownershipExpires,
+			DespawnAt:          despawnItem,
+		},
+		{
+			VID:                0x07000012,
+			Vnum:               72727,
+			ItemCount:          &zeroCount,
+			ItemID:             0x30010012,
+			HasSockets:         true,
+			OwnerLogin:         "socket-owner",
+			OwnerCharacterID:   11,
+			OwnerVID:           0x02000011,
+			OwnerName:          "SocketHero",
+			MapIndex:           1,
+			X:                  1110,
+			Y:                  2110,
+			PickupRange:        450,
+			OwnershipExclusive: true,
+			OwnershipExpiresAt: &ownershipExpires,
+			DespawnAt:          despawnZero,
+		},
+	}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save durable ground items with sockets: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load durable ground items with sockets: %v", err)
+	}
+	if len(got.GroundItems) != 2 {
+		t.Fatalf("expected 2 socketed ground items, got %#v", got.GroundItems)
+	}
+	active := got.GroundItems[0]
+	if !active.HasSockets || active.Socket0 != 1 || active.Socket1 != 2 || active.Socket2 != 3 {
+		t.Fatalf("expected active sockets rematerialized, got %#v", active)
+	}
+	zero := got.GroundItems[1]
+	if !zero.HasSockets || zero.Socket0 != 0 || zero.Socket1 != 0 || zero.Socket2 != 0 {
+		t.Fatalf("expected explicit-zero sockets rematerialized, got %#v", zero)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted ground items: %v", err)
+	}
+	if !strings.Contains(string(raw), `"has_sockets": true`) {
+		t.Fatalf("expected has_sockets in durable JSON, got %s", raw)
+	}
+	if !strings.Contains(string(raw), `"socket0": 1`) {
+		t.Fatalf("expected non-zero socket0 in durable JSON, got %s", raw)
+	}
+}
+
+func TestGroundItemFileStoreRejectsNonZeroSocketsWithoutHasSocketsAndGoldSockets(t *testing.T) {
+	defer DisableDurableGroundItemSyncForTest()()
+
+	path := filepath.Join(t.TempDir(), "ground-items-bad-sockets.json")
+	store := NewGroundItemFileStore(path)
+
+	itemCount := uint16(1)
+	goldAmount := uint32(10)
+	despawn := time.Now().UTC().Add(time.Minute)
+
+	badItem := DurableGroundItemSnapshot{GroundItems: []DurableGroundItemRecord{{
+		VID: 1, Vnum: 27001, ItemCount: &itemCount, ItemID: 11,
+		Socket0:    1,
+		OwnerLogin: "x", OwnerCharacterID: 1, OwnerVID: 1, OwnerName: "X",
+		MapIndex: 1, PickupRange: 300, DespawnAt: despawn,
+	}}}
+	if err := store.Save(badItem); !errors.Is(err, ErrInvalidGroundItemSnapshot) {
+		t.Fatalf("expected invalid snapshot for non-zero sockets without has_sockets, got %v", err)
+	}
+
+	badGold := DurableGroundItemSnapshot{GroundItems: []DurableGroundItemRecord{{
+		VID: 2, Vnum: 1, GoldAmount: &goldAmount, HasSockets: true,
+		OwnerLogin: "y", OwnerCharacterID: 2, OwnerVID: 2, OwnerName: "Y",
+		MapIndex: 1, PickupRange: 300, DespawnAt: despawn,
+	}}}
+	if err := store.Save(badGold); !errors.Is(err, ErrInvalidGroundItemSnapshot) {
+		t.Fatalf("expected invalid snapshot for gold sockets, got %v", err)
+	}
+}
+
 func TestGroundItemFileStoreRejectsInvalidRowsAndMissingSnapshot(t *testing.T) {
 	defer DisableDurableGroundItemSyncForTest()()
 

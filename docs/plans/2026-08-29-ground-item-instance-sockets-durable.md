@@ -64,5 +64,8 @@ silently fall back to template sockets.
 
 ## Status
 
-Docs/spec freeze only on `lane/items`. Implementation RED intentionally
-deferred to the next coding turn after this contract is committed.
+GREEN on `lane/items`: durable pending ground FileStore rematerialize
+round-trips presence-aware instance sockets (`has_sockets` + `socket0/1/2`,
+including explicit zero) through register → persist → restart → pickup.
+Gold markers stay socket-less; tip-`0010` SQL additive and safebox cell sockets
+stay deferred.

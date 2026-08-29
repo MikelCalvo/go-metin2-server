@@ -1026,6 +1026,112 @@ func TestGameRuntimePlayerDeathFloorRematerializesAcrossDaemonRestart(t *testing
 	}
 }
 
+// TestGameRuntimePendingGroundItemInstanceSocketsRematerializeAcrossDaemonRestart proves
+// durable FileStore rematerialize round-trips presence-aware instance sockets (including
+// explicit zero) so drop → gamed restart → pickup restores authoritative sockets instead
+// of silently falling back to template sockets.
+func TestGameRuntimePendingGroundItemInstanceSocketsRematerializeAcrossDaemonRestart(t *testing.T) {
+	defer worldruntime.DisableDurableGroundItemSyncForTest()()
+
+	ticketDir := t.TempDir()
+	accountDir := t.TempDir()
+	groundItemPath := filepath.Join(t.TempDir(), "ground-items.json")
+
+	ticketStore := loginticket.NewFileStore(ticketDir)
+	accounts := accountstore.NewFileStore(accountDir)
+
+	owner := peerVisibilityCharacter("GroundSocketRestartHero", 0x01030191, 0x02040191, 1100, 2100, 0, 101, 201)
+	const (
+		ownerLogin = "ground-socket-restart-hero"
+		ownerKey   = uint32(0x91919191)
+		activeVID  = uint32(0x07000091)
+		zeroVID    = uint32(0x07000092)
+	)
+	issuePeerTicket(t, ticketStore, ownerLogin, ownerKey, owner)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed ground-socket-restart owner account: %v", err)
+	}
+
+	cfg := config.Service{
+		PprofAddr:           "127.0.0.1:6060",
+		LegacyAddr:          ":13000",
+		PublicAddr:          "127.0.0.1",
+		LoginTicketStoreDir: ticketDir,
+		AccountStoreDir:     accountDir,
+		GroundItemStorePath: groundItemPath,
+	}
+	runtime, err := NewGameRuntime(cfg)
+	if err != nil {
+		t.Fatalf("unexpected ground-socket-restart runtime error: %v", err)
+	}
+	currentTime := time.Now().UTC().Truncate(time.Second)
+	runtime.now = func() time.Time { return currentTime }
+	runtime.sharedWorld.now = runtime.now
+
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, ownerKey)
+	ownerEntity, ok := runtime.sharedWorld.playerEntityByName(owner.Name)
+	if !ok || ownerEntity.Entity.ID == 0 {
+		t.Fatal("expected owner shared-world entity id after enter-game")
+	}
+	ownerID := ownerEntity.Entity.ID
+
+	activeSockets := inventory.SocketValues{1, 2, 3}
+	zeroSockets := inventory.SocketValues{}
+	if !runtime.sharedWorld.RegisterGroundItemWithPickupRange(ownerID, ownerLogin, owner, activeVID, inventory.ItemInstance{ID: 0x30010091, Vnum: 72723, Count: 1, Sockets: &activeSockets}, 450) {
+		t.Fatal("expected active-socket ground-item registration before daemon restart")
+	}
+	if !runtime.sharedWorld.RegisterGroundItemWithPickupRange(ownerID, ownerLogin, owner, zeroVID, inventory.ItemInstance{ID: 0x30010092, Vnum: 72727, Count: 1, Sockets: &zeroSockets}, 450) {
+		t.Fatal("expected explicit-zero socket ground-item registration before daemon restart")
+	}
+	persisted, err := worldruntime.NewGroundItemFileStore(groundItemPath).Load()
+	if err != nil {
+		t.Fatalf("load persisted ground items before restart: %v", err)
+	}
+	if len(persisted.GroundItems) != 2 {
+		t.Fatalf("expected 2 persisted pending ground handles before restart, got %#v", persisted.GroundItems)
+	}
+	byVID := map[uint32]worldruntime.DurableGroundItemRecord{}
+	for _, row := range persisted.GroundItems {
+		byVID[row.VID] = row
+	}
+	activeRow, ok := byVID[activeVID]
+	if !ok || !activeRow.HasSockets || activeRow.Socket0 != 1 || activeRow.Socket1 != 2 || activeRow.Socket2 != 3 {
+		t.Fatalf("expected persisted active sockets, got %#v", activeRow)
+	}
+	zeroRow, ok := byVID[zeroVID]
+	if !ok || !zeroRow.HasSockets || zeroRow.Socket0 != 0 || zeroRow.Socket1 != 0 || zeroRow.Socket2 != 0 {
+		t.Fatalf("expected persisted explicit-zero sockets, got %#v", zeroRow)
+	}
+
+	runtime.sharedWorld.SetGroundItemsChangedHook(nil)
+	closeSessionFlow(t, ownerFlow)
+
+	reloaded, err := NewGameRuntime(cfg)
+	if err != nil {
+		t.Fatalf("unexpected post-restart ground-socket rematerialize runtime error: %v", err)
+	}
+	reloaded.now = func() time.Time { return currentTime.Add(5 * time.Second) }
+	reloaded.sharedWorld.now = reloaded.now
+
+	ownerRestartFlow, _ := enterGameWithLoginTicket(t, reloaded.SessionFactory(), ownerLogin, ownerKey)
+	ownerEntity, ok = reloaded.sharedWorld.playerEntityByName(owner.Name)
+	if !ok || ownerEntity.Entity.ID == 0 {
+		t.Fatal("expected rematerialized owner entity id")
+	}
+	ownerID = ownerEntity.Entity.ID
+
+	activePickup, ok := reloaded.sharedWorld.GroundItemPickupFor(ownerID, owner, activeVID)
+	if !ok || !activePickup.Item.HasSockets() || *activePickup.Item.Sockets != activeSockets {
+		t.Fatalf("expected rematerialized active sockets on pickup, ok=%v pickup=%+v", ok, activePickup.Item)
+	}
+	zeroPickup, ok := reloaded.sharedWorld.GroundItemPickupFor(ownerID, owner, zeroVID)
+	if !ok || !zeroPickup.Item.HasSockets() || *zeroPickup.Item.Sockets != zeroSockets {
+		t.Fatalf("expected rematerialized explicit-zero sockets on pickup, ok=%v pickup=%+v", ok, zeroPickup.Item)
+	}
+
+	closeSessionFlow(t, ownerRestartFlow)
+}
+
 // TestGameRuntimePendingGroundItemAndGoldRematerializeAcrossDaemonRestart proves the
 // Track E.4 crash/restart rematerialization contract for pending bootstrap ground
 // item/gold handles: after register + FileStore persist, a fresh gameRuntime rebuilt

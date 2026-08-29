@@ -617,7 +617,7 @@ Expected result:
 - Open private shop host movement deny: with an accepted private shop open, host MOVE / SyncPosition stay fail-closed with no position change and the shop stays open until empty-sign close (no walk-away auto-close / no reject chat) (`TestGameRuntimeMyShopOpenDeniesHostMoveAndSyncPositionWithoutMutation`).
 - Durable account FileStore `myshop_unit_prices`: after silk-path private-shop open, close the shop, reconnect or restart gamed, then silk-bag USE should rematerialize the same `MyShopPriceList` lines before `OpenPrivateShop` (no GD/DB packets).
 - Migration-shaped tip-`0003` character-item-state export/quarantine/import now carries presence-aware instance sockets (`has_sockets` + `socket0/1/2`) via additive catalog `0024_character_item_instance_sockets` (export identity stays tip-`0003`; SQL import requires tip `3` + `24`). Ops: confirm `GET /local/db/migrations/catalog` tips at `24` / `character_item_instance_sockets` and that quarantined item-state rows keep deactivated auto-potion `socket0 = 0` when `has_sockets = true`.
-- Contract freeze (not yet GREEN): durable ground-item FileStore rematerialize must round-trip the same presence-aware instance sockets across drop → `gamed` restart → pickup (`docs/plans/2026-08-29-ground-item-instance-sockets-durable.md`); gold markers stay socket-less and `ITEM_GROUND_ADD` wire fields stay unchanged.
+- Durable ground-item FileStore rematerialize round-trips the same presence-aware instance sockets across drop → `gamed` restart → pickup (`TestGameRuntimePendingGroundItemInstanceSocketsRematerializeAcrossDaemonRestart`); gold markers stay socket-less and `ITEM_GROUND_ADD` wire fields stay unchanged.
 
 ### 4.5.14 Guest browse an open private shop (`ON_CLICK` → `SHOP START` / `SHOP END`)
 

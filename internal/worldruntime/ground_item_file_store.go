@@ -32,12 +32,20 @@ const (
 // DurableGroundItemRecord is the file-backed pending ground handle shape used for
 // process restart. It extends the 0010 migration projection with the minimum
 // runtime fields needed for safe rematerialize (stable item id + absolute timers).
+// Presence-aware instance sockets mirror carried FileStore / tip-0003+0024:
+// HasSockets=false / omitted means nil instance sockets (template fallback);
+// HasSockets=true including all-zero is authoritative. Gold-shaped rows stay
+// socket-less.
 type DurableGroundItemRecord struct {
 	VID                uint32     `json:"vid"`
 	Vnum               uint32     `json:"vnum"`
 	ItemCount          *uint16    `json:"item_count,omitempty"`
 	GoldAmount         *uint32    `json:"gold_amount,omitempty"`
 	ItemID             uint64     `json:"item_id,omitempty"`
+	HasSockets         bool       `json:"has_sockets,omitempty"`
+	Socket0            int32      `json:"socket0,omitempty"`
+	Socket1            int32      `json:"socket1,omitempty"`
+	Socket2            int32      `json:"socket2,omitempty"`
 	OwnerLogin         string     `json:"owner_login"`
 	OwnerCharacterID   uint32     `json:"owner_character_id"`
 	OwnerVID           uint32     `json:"owner_vid"`
@@ -479,6 +487,9 @@ func validateDurableGroundItemRecord(record DurableGroundItemRecord) error {
 		if *record.GoldAmount == 0 || *record.GoldAmount > bootstrapGroundGoldMaxAmount {
 			return fmt.Errorf("%w: ground vid %d gold amount out of bounds", ErrInvalidGroundItemSnapshot, record.VID)
 		}
+		if record.HasSockets || record.Socket0 != 0 || record.Socket1 != 0 || record.Socket2 != 0 {
+			return fmt.Errorf("%w: ground vid %d gold-shaped row must omit instance sockets", ErrInvalidGroundItemSnapshot, record.VID)
+		}
 	case hasItem:
 		if record.ItemID == 0 {
 			return fmt.Errorf("%w: ground vid %d item-shaped row requires item_id", ErrInvalidGroundItemSnapshot, record.VID)
@@ -486,8 +497,21 @@ func validateDurableGroundItemRecord(record DurableGroundItemRecord) error {
 		if *record.ItemCount == 0 || *record.ItemCount > bootstrapGroundItemMaxCount {
 			return fmt.Errorf("%w: ground vid %d item count out of bounds", ErrInvalidGroundItemSnapshot, record.VID)
 		}
+		if err := validateDurableGroundItemInstanceSockets(record); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("%w: ground vid %d has neither item count nor gold amount", ErrInvalidGroundItemSnapshot, record.VID)
+	}
+	return nil
+}
+
+func validateDurableGroundItemInstanceSockets(record DurableGroundItemRecord) error {
+	if record.HasSockets {
+		return nil
+	}
+	if record.Socket0 != 0 || record.Socket1 != 0 || record.Socket2 != 0 {
+		return fmt.Errorf("%w: ground vid %d has non-zero sockets without has_sockets", ErrInvalidGroundItemSnapshot, record.VID)
 	}
 	return nil
 }

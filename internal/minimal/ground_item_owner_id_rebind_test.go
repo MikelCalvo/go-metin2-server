@@ -156,6 +156,59 @@ func TestSharedWorldRegistryDoesNotRebindAlreadyBoundOrPublicGroundOwnerID(t *te
 	}
 }
 
+func TestSharedWorldDurableGroundItemSnapshotRoundTripsInstanceSocketsIncludingExplicitZero(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("SocketPersistOwner", 0x01030195, 0x02040195, 1100, 2100, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected owner join")
+	}
+
+	active := inventory.SocketValues{1, 2, 3}
+	zero := inventory.SocketValues{}
+	const (
+		activeVID uint32 = 0x070000A1
+		zeroVID   uint32 = 0x070000A2
+	)
+	if !registry.RegisterGroundItemWithPickupRange(ownerID, "socket-persist-owner", owner, activeVID, inventory.ItemInstance{ID: 0x300100A1, Vnum: 72723, Count: 1, Sockets: &active}, 450) {
+		t.Fatal("expected active-socket registration")
+	}
+	if !registry.RegisterGroundItemWithPickupRange(ownerID, "socket-persist-owner", owner, zeroVID, inventory.ItemInstance{ID: 0x300100A2, Vnum: 72727, Count: 1, Sockets: &zero}, 450) {
+		t.Fatal("expected explicit-zero socket registration")
+	}
+
+	snapshot := registry.DurableGroundItemSnapshot()
+	byVID := map[uint32]worldruntime.DurableGroundItemRecord{}
+	for _, row := range snapshot.GroundItems {
+		byVID[row.VID] = row
+	}
+	activeRow, ok := byVID[activeVID]
+	if !ok || !activeRow.HasSockets || activeRow.Socket0 != 1 || activeRow.Socket1 != 2 || activeRow.Socket2 != 3 {
+		t.Fatalf("expected durable snapshot active sockets, got %#v", activeRow)
+	}
+	zeroRow, ok := byVID[zeroVID]
+	if !ok || !zeroRow.HasSockets || zeroRow.Socket0 != 0 || zeroRow.Socket1 != 0 || zeroRow.Socket2 != 0 {
+		t.Fatalf("expected durable snapshot explicit-zero sockets, got %#v", zeroRow)
+	}
+
+	fresh := newSharedWorldRegistry()
+	if err := fresh.RestorePersistedGroundItems(snapshot.GroundItems); err != nil {
+		t.Fatalf("restore socketed durable snapshot: %v", err)
+	}
+	freshOwnerID, _ := fresh.Join(owner, newPendingServerFrames(), nil)
+	if freshOwnerID == 0 {
+		t.Fatal("expected restore owner join")
+	}
+	activePickup, ok := fresh.GroundItemPickupFor(freshOwnerID, owner, activeVID)
+	if !ok || !activePickup.Item.HasSockets() || *activePickup.Item.Sockets != active {
+		t.Fatalf("expected rematerialized active sockets, ok=%v item=%+v", ok, activePickup.Item)
+	}
+	zeroPickup, ok := fresh.GroundItemPickupFor(freshOwnerID, owner, zeroVID)
+	if !ok || !zeroPickup.Item.HasSockets() || *zeroPickup.Item.Sockets != zero {
+		t.Fatalf("expected rematerialized explicit-zero sockets, ok=%v item=%+v", ok, zeroPickup.Item)
+	}
+}
+
 func TestPendingGroundItemExclusiveOwnerIDRebindsOnOwnerRejoin(t *testing.T) {
 	defer worldruntime.DisableDurableGroundItemSyncForTest()()
 

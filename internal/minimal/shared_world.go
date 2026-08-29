@@ -4371,6 +4371,9 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 		OwnershipExpiresAt: now.Add(bootstrapGroundItemOwnershipDuration),
 		DespawnAt:          now.Add(bootstrapGroundItemDespawnDuration),
 	}
+	if goldAmount == 0 {
+		ground.Item.Sockets = item.CloneSockets()
+	}
 	r.groundItemsByVID[vid] = ground
 	frames := encodeGroundItemVisibleFrames(ground)
 	for _, target := range r.scopesLocked().VisibleTargets(ownerID, character) {
@@ -4736,7 +4739,19 @@ func (r *sharedWorldRegistry) groundItemPickupFor(collectorID uint64, collector 
 			}
 		}
 	}
-	return sharedGroundItemPickup{Item: ground.Item, GoldAmount: ground.GoldAmount, OwnerID: ground.OwnerID, OwnerLogin: ground.OwnerLogin, OwnerName: ownerName, Owner: ownerCharacter}, true
+	return sharedGroundItemPickup{
+		Item:       cloneSharedGroundItemInstance(ground.Item),
+		GoldAmount: ground.GoldAmount,
+		OwnerID:    ground.OwnerID,
+		OwnerLogin: ground.OwnerLogin,
+		OwnerName:  ownerName,
+		Owner:      ownerCharacter,
+	}, true
+}
+
+func cloneSharedGroundItemInstance(item inventory.ItemInstance) inventory.ItemInstance {
+	item.Sockets = item.CloneSockets()
+	return item
 }
 
 func groundItemOwnerStillMatches(ground sharedGroundItem, owner loginticket.Character) bool {
@@ -4819,6 +4834,10 @@ func (r *sharedWorldRegistry) restorePersistedGroundItemLocked(record worldrunti
 		item = inventory.ItemInstance{Vnum: 1, Count: 1}
 	} else {
 		item = inventory.ItemInstance{ID: record.ItemID, Vnum: record.Vnum, Count: *record.ItemCount}
+		if record.HasSockets {
+			sockets := inventory.SocketValues{record.Socket0, record.Socket1, record.Socket2}
+			item.Sockets = &sockets
+		}
 	}
 
 	ground := sharedGroundItem{
@@ -4886,6 +4905,13 @@ func durableGroundItemRecordFromShared(ground sharedGroundItem) worldruntime.Dur
 		count := ground.Item.Count
 		record.ItemCount = &count
 		record.ItemID = ground.Item.ID
+		if ground.Item.HasSockets() {
+			values := *ground.Item.Sockets
+			record.HasSockets = true
+			record.Socket0 = values[0]
+			record.Socket1 = values[1]
+			record.Socket2 = values[2]
+		}
 	}
 	if ground.OwnershipExclusive && !ground.OwnershipExpiresAt.IsZero() {
 		expires := ground.OwnershipExpiresAt.UTC()
