@@ -204,7 +204,7 @@ Malformed `EXCHANGE` payload sizes fail at the codec/dispatcher boundary rather 
 
 ## Cancel-on-failure coverage
 
-Busy-window and gold-carrier-cap mutual-accept / commit rejects now emit owned self-only info-chat then self/peer `GC::EXCHANGE END` and clear the shell (`docs/plans/2026-08-28-exchange-busy-gold-carrier-reject-auto-cancel.md`), matching Check/Space/gold-overflow/Other Cancel-on-failure. Mutual-accept account persistence failures likewise emit dual-sided `Unknown error` then self/peer `GC::EXCHANGE END` (`docs/plans/2026-08-28-exchange-persist-fail-reject-auto-cancel.md`). `LESS_GOLD` still leaves the shell cancellable.
+Busy-window and gold-carrier-cap mutual-accept / commit rejects now emit owned self-only info-chat then self/peer `GC::EXCHANGE END` and clear the shell (`docs/plans/2026-08-28-exchange-busy-gold-carrier-reject-auto-cancel.md`), matching Check/Space/gold-overflow/Other Cancel-on-failure. Mutual-accept account persistence failures likewise emit dual-sided `Unknown error` then self/peer `GC::EXCHANGE END` (`docs/plans/2026-08-28-exchange-persist-fail-reject-auto-cancel.md`). Accept-time requester `LESS_GOLD` now also emits self `GC::EXCHANGE LESS_GOLD` then self/peer `GC::EXCHANGE END` and clears the shell (`docs/plans/2026-08-29-exchange-less-gold-accept-auto-cancel.md`); over-budget gold-add `LESS_GOLD` still leaves the shell cancellable.
 
 ## Deferred behavior
 
