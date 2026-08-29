@@ -67,3 +67,6 @@ git diff --check
    count above stack limit:
    `docs/examples/bootstrap-invalid-merchant-catalog-count-above-stack-limit-bundle.json`
    (`docs/plans/2026-08-29-invalid-merchant-catalog-count-above-stack-limit-fixture.md`).
+   Done for merchant catalog count above non-stackable limit:
+   `docs/examples/bootstrap-invalid-merchant-catalog-count-above-non-stackable-limit-bundle.json`
+   (`docs/plans/2026-08-30-invalid-merchant-catalog-count-above-non-stackable-limit-fixture.md`).

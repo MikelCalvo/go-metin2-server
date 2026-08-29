@@ -1,0 +1,26 @@
+{
+  "item_templates": [
+    {
+      "vnum": 11200,
+      "name": "Wooden Sword",
+      "stackable": false,
+      "max_count": 1,
+      "shop_buy_price": 500
+    }
+  ],
+  "interaction_definitions": [
+    {
+      "kind": "shop_preview",
+      "ref": "npc:qa_merchant_count_above_non_stackable_limit",
+      "title": "QA Merchant Count Above Non-Stackable Limit",
+      "catalog": [
+        {
+          "slot": 0,
+          "item_vnum": 11200,
+          "price": 500,
+          "count": 2
+        }
+      ]
+    }
+  ]
+}

@@ -5390,6 +5390,25 @@ func TestCanonicalizeRejectsCheckedInMerchantCatalogCountAboveStackLimitExample(
 	}
 }
 
+func TestCanonicalizeRejectsCheckedInMerchantCatalogCountAboveNonStackableLimitExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-invalid-merchant-catalog-count-above-non-stackable-limit-bundle.json"))
+	if err != nil {
+		t.Fatalf("read invalid merchant catalog count above non-stackable limit example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode invalid merchant catalog count above non-stackable limit example bundle: %v", err)
+	}
+	if _, err := Canonicalize(bundle); !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for checked-in merchant catalog count above non-stackable limit example, got %v", err)
+	}
+}
+
 func TestCanonicalizeRejectsCheckedInRewardDropItemMissingFromItemTemplatesExample(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
