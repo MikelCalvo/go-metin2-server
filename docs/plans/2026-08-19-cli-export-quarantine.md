@@ -21,6 +21,7 @@ Supported `--kind` values:
 | `account-character-roster` | `0002_account_character_roster` |
 | `character-item-state` | `0003_character_item_state` |
 | `character-point-state` | `0011_character_point_state` |
+| `character-myshop-unit-prices` | `0023_character_myshop_unit_prices` |
 | `character-quest-state` | `0004_character_quest_state` |
 | `auth-login-ticket-handoff` | `0007_auth_login_ticket_handoff` |
 | `item-template-state` | `0009_item_template_refine_info` |
@@ -71,3 +72,4 @@ Validation:
 3. ~~Keep ground-item restart durability deferred until a real world-state repository exists.~~ Done for FileStore rematerialize + backup/restore: see [ground-item process-restart durability](2026-08-22-ground-item-process-restart-durability.md) and [ground-item file-store backup/restore](2026-08-22-ground-item-file-store-backup-restore.md). SQL import/backfill from quarantined `0010` exports remains deferred.
 4. ~~Add `character-safebox-state` once the `0014` export/quarantine seam lands.~~ Done: see [character safebox-state migration export seam](2026-08-23-character-safebox-state-migration-export-seam.md) and [ops docs 0014 safebox quarantine tip sync](2026-08-23-ops-docs-0014-safebox-quarantine-tip-sync.md).
 5. ~~Prove loopback export → retained file → offline `quarantine-export` hermetically.~~ Done: see [hermetic export → offline quarantine-export CLI proof](2026-08-25-hermetic-export-quarantine-offline-cli-proof.md).
+6. ~~Add `character-myshop-unit-prices` once the `0023` export/quarantine seam lands.~~ Done: see [character myshop unit-prices migration](2026-08-29-character-myshop-unit-prices-migration.md) and [seeded myshop unit-prices tip sync](2026-08-29-seeded-myshop-unit-prices-import-export-drill.md).

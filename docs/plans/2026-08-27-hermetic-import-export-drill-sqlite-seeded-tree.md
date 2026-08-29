@@ -46,6 +46,7 @@ printer from CLI/contrib/cron, or exposing a daemon mutation route.
    - roster `account_count: 1`
    - item `inventory_item_count: 1`
    - points `point_row_count: 255`
+   - myshop unit-prices `price_row_count: 2`
    - quest `flag_count: 1`
    - safebox `password_count: 1`
    - ticket `ticket_count: 1`
@@ -53,8 +54,10 @@ printer from CLI/contrib/cron, or exposing a daemon mutation route.
    - static `static_actor_count: 1`
    - ground `ground_item_count: 1`
 5. Focused `SELECT` assertions prove durable rows landed (accounts/characters,
-   inventory/equipment/quickslots, points, quest flags, safebox password/item,
-   ticket, template, interaction/static actor, ground item).
+   inventory/equipment/quickslots, points, myshop unit-prices, quest flags,
+   safebox password/item, ticket, template, interaction/static actor, ground
+   item). Non-empty tip-`0023` seeding is owned by [seeded myshop unit-prices
+   tip sync](2026-08-29-seeded-myshop-unit-prices-import-export-drill.md).
 6. Printed script and import-result bodies still omit concrete DSN embedding
    beyond env-var indirection.
 7. Untagged `go test ./internal/migratecli` stays free of the SQLite dependency.

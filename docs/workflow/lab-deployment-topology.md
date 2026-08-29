@@ -120,6 +120,9 @@ Keep operator evidence outside live data trees:
     character-point-state/
       export.json
       quarantine.json
+    character-myshop-unit-prices/
+      export.json
+      quarantine.json
     auth-login-ticket-handoff/
       export.json
       quarantine.json
@@ -187,7 +190,7 @@ metin2-migrate version \
   | metin2-migrate export-quarantine-drill --build-info -
 ```
 
-The printer emits a path-aware shell script that creates `YYYYMMDDTHHMMSSZ-<commit12>/`, retains both-daemon build-info, `runtime-config.json`, migration catalog, optional daemon JSON logs, a `notes.md` stub, and one subdirectory per tip-`0015` migration-shaped export kind with retained `export.json` plus offline `quarantine-export` output. It never executes the curls itself, never opens a database, never embeds a DSN, and never imports SQL from quarantined artifacts. Hermetic HTTP → offline CLI coverage for roster + tip-`0015` safebox money is owned by [hermetic export → offline quarantine-export CLI proof](../plans/2026-08-25-hermetic-export-quarantine-offline-cli-proof.md); the printer itself is owned by [CLI export → offline quarantine drill printer](../plans/2026-08-25-cli-export-quarantine-drill-printer.md); hermetic `/bin/sh` execution of the printed script against drained loopback `gamed`/`authd` ops muxes is owned by [hermetic export-quarantine drill HTTP execution proof](../plans/2026-08-25-hermetic-export-quarantine-drill-http-execution-proof.md).
+The printer emits a path-aware shell script that creates `YYYYMMDDTHHMMSSZ-<commit12>/`, retains both-daemon build-info, `runtime-config.json`, migration catalog, optional daemon JSON logs, a `notes.md` stub, and one subdirectory per tip migration-shaped export kind (including tip-`0015` safebox money and tip-`0023` `character-myshop-unit-prices`) with retained `export.json` plus offline `quarantine-export` output. It never executes the curls itself, never opens a database, never embeds a DSN, and never imports SQL from quarantined artifacts. Hermetic HTTP → offline CLI coverage for roster + tip-`0015` safebox money is owned by [hermetic export → offline quarantine-export CLI proof](../plans/2026-08-25-hermetic-export-quarantine-offline-cli-proof.md); the printer itself is owned by [CLI export → offline quarantine drill printer](../plans/2026-08-25-cli-export-quarantine-drill-printer.md); hermetic `/bin/sh` execution of the printed script against drained loopback `gamed`/`authd` ops muxes is owned by [hermetic export-quarantine drill HTTP execution proof](../plans/2026-08-25-hermetic-export-quarantine-drill-http-execution-proof.md).
 
 After that tree exists, operators can print a confirmation-gated SQL import walk that reads the DSN only from an environment variable:
 

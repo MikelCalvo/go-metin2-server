@@ -590,6 +590,25 @@ Successful responses include:
 
 The quarantine contract requires `migration_version = 11`, `migration_name = "character_point_state"`, a present (possibly empty) `points` array, `character_id > 0`, no duplicate `(character_id, point_index)` pairs, and a complete contiguous point vector for every character. Use this after retaining an export artifact and before any future DB backfill/import tool. It is not a repository write path and never emits SQL or DSNs.
 
+### `GET /local/account-store/exports/character-myshop-unit-prices`
+
+Returns a loopback-only, read-only JSON projection of committed bootstrap account snapshots onto the `0023_character_myshop_unit_prices` migration boundary. This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the account store cannot be listed or any committed snapshot would violate the roster or myshop unit-price schema shape.
+
+Successful responses include `migration_version`, `migration_name`, and deterministic `unit_prices` rows ordered by ascending `character_id` then `vnum`. Characters with an empty remembered map emit no rows. The response deliberately omits roster account rows, executable SQL, item-state rows, item-template definitions, quest state, login tickets, authored content, and runtime world state, and it does not apply migrations or mutate the account store. Use it as a tip-`0023` backfill preflight after the account/character roster export and before any future DB-backed remembered private-shop price repository work.
+
+### `POST /local/account-store/exports/character-myshop-unit-prices/quarantine`
+
+Validates and canonicalizes a retained `0023_character_myshop_unit_prices` export without opening a database or mutating account snapshots. This endpoint is registered only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects non-loopback callers with `403`, rejects oversized bodies over 1 MiB with `413`, rejects malformed/invalid-UTF-8/`null` JSON with `400`, and returns `409` when the payload fails the quarantine contract.
+
+Successful responses include:
+
+- `summary.character_count`
+- `summary.price_row_count`
+- deterministic sorted `summary.character_ids`
+- a canonicalized `export` whose rows are ordered by ascending `character_id` / `vnum`
+
+The quarantine contract requires `migration_version = 23`, `migration_name = "character_myshop_unit_prices"`, a present (possibly empty) `unit_prices` array, `character_id > 0`, non-zero `vnum`, unique `(character_id, vnum)` pairs, and at most `40` rows per character. Use this after retaining an export artifact and before any future DB backfill/import tool. It is not a repository write path and never emits SQL or DSNs.
+
 ### `GET /local/login-tickets/exports/auth-login-ticket-handoff`
 
 Returns a loopback-only, read-only JSON projection of committed pending bootstrap login-ticket snapshots onto the `0007_auth_login_ticket_handoff` migration boundary. This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the login-ticket store cannot be listed or any committed pending ticket would violate the handoff schema shape.

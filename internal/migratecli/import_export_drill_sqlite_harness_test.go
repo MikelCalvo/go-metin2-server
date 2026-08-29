@@ -175,7 +175,7 @@ func TestImportExportDrillSQLiteHermeticPrintedScriptImportsSeededTipKinds(t *te
 		"account-character-roster":     `"account_count": 1`,
 		"character-item-state":         `"inventory_item_count": 1`,
 		"character-point-state":        `"point_row_count": 255`,
-		"character-myshop-unit-prices": `"price_row_count": 0`,
+		"character-myshop-unit-prices": `"price_row_count": 2`,
 		"character-quest-state":        `"flag_count": 1`,
 		"character-safebox-state":      `"password_count": 1`,
 		"auth-login-ticket-handoff":    `"ticket_count": 1`,
@@ -399,6 +399,10 @@ func mustMaterializeSeededImportExportQuarantineTree(t *testing.T, exportTree st
 		Quickslots: []loginticket.Quickslot{
 			{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
 		},
+		MyShopUnitPrices: []loginticket.MyShopUnitPrice{
+			{Vnum: 27002, UnitPrice: 200},
+			{Vnum: 27001, UnitPrice: 500},
+		},
 	}
 	character.Points[0] = 12
 
@@ -421,6 +425,10 @@ func mustMaterializeSeededImportExportQuarantineTree(t *testing.T, exportTree st
 	pointExport, err := accountstore.ExportCharacterPointState(accounts)
 	if err != nil {
 		t.Fatalf("ExportCharacterPointState: %v", err)
+	}
+	myShopExport, err := accountstore.ExportCharacterMyShopUnitPrices(accounts)
+	if err != nil {
+		t.Fatalf("ExportCharacterMyShopUnitPrices: %v", err)
 	}
 	questExport, err := queststate.ExportCharacterQuestState(queststate.Snapshot{
 		Flags: []queststate.Flag{{
@@ -523,7 +531,7 @@ func mustMaterializeSeededImportExportQuarantineTree(t *testing.T, exportTree st
 		"account-character-roster":     rosterExport,
 		"character-item-state":         itemExport,
 		"character-point-state":        pointExport,
-		"character-myshop-unit-prices": accountstore.CharacterMyShopUnitPricesExport{MigrationVersion: accountstore.CharacterMyShopUnitPricesMigrationVersion, MigrationName: accountstore.CharacterMyShopUnitPricesMigrationName, UnitPrices: []accountstore.CharacterMyShopUnitPriceRow{}},
+		"character-myshop-unit-prices": myShopExport,
 		"character-quest-state":        questExport,
 		"character-safebox-state":      safeboxExport,
 		"auth-login-ticket-handoff":    ticketExport,
@@ -562,6 +570,7 @@ func assertSeededImportExportDrillSQLiteRows(t *testing.T, dsn string) {
 	mustCountExact(t, db, ctx, `SELECT COUNT(*) FROM character_equipment_items`, 1)
 	mustCountExact(t, db, ctx, `SELECT COUNT(*) FROM character_quickslots`, 1)
 	mustCountExact(t, db, ctx, `SELECT COUNT(*) FROM character_points`, 255)
+	mustCountExact(t, db, ctx, `SELECT COUNT(*) FROM character_myshop_unit_prices`, 2)
 	mustCountExact(t, db, ctx, `SELECT COUNT(*) FROM character_quest_flags`, 1)
 	mustCountExact(t, db, ctx, `SELECT COUNT(*) FROM character_safebox_passwords`, 1)
 	mustCountExact(t, db, ctx, `SELECT COUNT(*) FROM character_safebox_items`, 1)
@@ -600,6 +609,19 @@ func assertSeededImportExportDrillSQLiteRows(t *testing.T, dsn string) {
 	}
 	if pointValue != 12 {
 		t.Fatalf("point 0 = %d, want 12", pointValue)
+	}
+
+	var (
+		gotPriceVnum int64
+		gotUnitPrice int64
+	)
+	if err := db.QueryRowContext(ctx, `
+SELECT vnum, unit_price FROM character_myshop_unit_prices
+WHERE character_id = 11 ORDER BY vnum LIMIT 1`).Scan(&gotPriceVnum, &gotUnitPrice); err != nil {
+		t.Fatalf("select myshop unit price: %v", err)
+	}
+	if gotPriceVnum != 27001 || gotUnitPrice != 500 {
+		t.Fatalf("myshop unit price = vnum=%d unit_price=%d, want 27001/500", gotPriceVnum, gotUnitPrice)
 	}
 
 	var (
