@@ -36,15 +36,21 @@ additive `0016_static_actor_combat_profile_chase_delay`, so operators get
    Live import after return-delay landed also requires additive `0017`; that
    three-boundary gate is owned by
    [static-actor import require return-delay schema](2026-08-28-static-actor-import-require-return-delay-schema.md).
+   Live import after homeward-delay landed also requires additive `0018`; that
+   four-boundary gate is owned by
+   [static-actor import require homeward-delay schema](2026-08-28-static-actor-import-require-homeward-delay-schema.md).
 4. Missing either tip-`0013` or chase-delay `0016` returns
    `ErrStaticActorContentStateImportSchemaRequired` (wrapped with the missing
    version/name and observed tip) **before** any INSERT.
 5. Existing empty-DB missing-schema coverage stays green.
 6. Existing tip-apply import proofs for this chase-delay slice applied through
-   catalog tip `16`; current catalog tip after return-delay is `17`.
+   catalog tip `16`; catalog tip after return-delay was `17`; current catalog tip
+   after homeward-delay is `18`.
 7. Upsert / auto-run / stock production driver remain explicitly deferred.
    ~~Return-delay / `0017` import schema gate~~ Done — see
    [static-actor import require return-delay schema](2026-08-28-static-actor-import-require-return-delay-schema.md).
+   ~~Homeward-delay / `0018` import schema gate~~ Done — see
+   [static-actor import require homeward-delay schema](2026-08-28-static-actor-import-require-homeward-delay-schema.md).
 
 ## What this is not yet
 
@@ -54,6 +60,9 @@ additive `0016_static_actor_combat_profile_chase_delay`, so operators get
 - ~~world-lane `return_delay_ms` / migration `0017`~~ Done on `main` plus the
   import schema gate docs sync — see
   [static-actor import require return-delay schema](2026-08-28-static-actor-import-require-return-delay-schema.md)
+- ~~world-lane `homeward_delay_ms` / migration `0018`~~ Done on `main` plus the
+  import schema gate docs sync — see
+  [static-actor import require homeward-delay schema](2026-08-28-static-actor-import-require-homeward-delay-schema.md)
 - DB-backed runtime repositories replacing FileStores
 - loopback ops mutation endpoint / remote admin / secrets in git
 
@@ -96,6 +105,8 @@ git diff --check
 - upsert / auto-run / stock driver remain explicitly deferred
 - return-delay / `0017` follow-up is owned by
   [static-actor import require return-delay schema](2026-08-28-static-actor-import-require-return-delay-schema.md)
+- homeward-delay / `0018` follow-up is owned by
+  [static-actor import require homeward-delay schema](2026-08-28-static-actor-import-require-homeward-delay-schema.md)
 
 ## Anti-goals / ordering constraints
 

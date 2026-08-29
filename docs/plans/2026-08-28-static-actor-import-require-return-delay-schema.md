@@ -45,9 +45,14 @@ tip `0017` and the three-boundary import preflight.
    (wrapped with observed tip) **before** any INSERT.
 7. Existing empty-DB / tip-`0013`-only / tip-`0016`-only / apply-to-`17` import
    proofs stay green.
-8. Catalog tip reported by operator docs is `0017_static_actor_combat_profile_return_delay`
-   (export tip remains `0013`; safebox money export tip remains `0015`).
+8. Catalog tip reported by this return-delay slice was
+   `0017_static_actor_combat_profile_return_delay` (export tip remains `0013`;
+   safebox money export tip remains `0015`). Current catalog tip after
+   homeward-delay is `0018` — see
+   [static-actor import require homeward-delay schema](2026-08-28-static-actor-import-require-homeward-delay-schema.md).
 9. Upsert / auto-run / stock production driver remain explicitly deferred.
+   ~~Homeward-delay / `0018` import schema gate~~ Done — see
+   [static-actor import require homeward-delay schema](2026-08-28-static-actor-import-require-homeward-delay-schema.md).
 10. No new Go production code in this slice: the gate already exists; this owns
     the Track E docs/contract sync plus any residual pointer fixes.
 
@@ -56,7 +61,9 @@ tip `0017` and the three-boundary import preflight.
 - retipping static-actor exports to `migration_version=16` or `17`
 - inventing upsert / merge / truncate-and-reload policy
 - production DB engine selection as a stock default
-- homeward-delay `homeward_delay_ms` / a future `0018` migration
+- ~~homeward-delay `homeward_delay_ms` / migration `0018`~~ Done on `main` plus
+  the import schema gate docs sync — see
+  [static-actor import require homeward-delay schema](2026-08-28-static-actor-import-require-homeward-delay-schema.md)
 - DB-backed runtime repositories replacing FileStores
 - loopback ops mutation endpoint / remote admin / secrets in git
 - claiming DB-backed live static-actor loading
@@ -83,7 +90,8 @@ git diff --check
 
 Spot-check that Track E / migration-contract / development wording:
 
-- catalog tip is `0017_static_actor_combat_profile_return_delay`
+- catalog tip for this slice was `0017_static_actor_combat_profile_return_delay`
+  (later advanced to `0018` by the homeward-delay docs sync)
 - static-actor import preflight names additive `0016` **and** `0017`
 - tip-`0016`-only reject is documented beside tip-`0013`-only chase-delay reject
 - upsert / stock production driver stay deferred
@@ -93,12 +101,15 @@ Spot-check that Track E / migration-contract / development wording:
 - operator docs no longer claim catalog tip `0016` as current tip
 - return-delay import schema gate is marked done on Track E / migration-contract
 - chase-delay plan marks the deferred `0017` follow-up done via this plan
+- homeward-delay / `0018` follow-up is owned by
+  [static-actor import require homeward-delay schema](2026-08-28-static-actor-import-require-homeward-delay-schema.md)
 - stock binaries remain free of a registered production driver
 - upsert / auto-run remain explicitly deferred
 
 ## Anti-goals / ordering constraints
 
 - Do not retip export identity away from version `13` in this slice.
-- Do not invent homeward-delay migration / authorship on this lane.
+- Do not invent homeward-delay migration / authorship on this lane (owned later
+  by the homeward-delay docs sync).
 - Do not register a production driver in stock binaries.
 - Do not push `origin/main`; push only `origin/lane/persistence`.
