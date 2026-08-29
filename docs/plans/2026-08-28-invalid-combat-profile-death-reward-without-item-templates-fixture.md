@@ -60,3 +60,8 @@ git diff --check
    quest-flag reward items missing from present templates:
    `docs/examples/bootstrap-invalid-quest-flag-reward-item-missing-from-item-templates-bundle.json`
    (`docs/plans/2026-08-29-invalid-quest-flag-reward-item-missing-from-item-templates-fixture.md`).
+   ~~Also: `quest_flag` turn-in `consume_items` whose vnum is absent from a
+   present but incomplete `item_templates` collection.~~ Done for structured
+   quest-flag consume items missing from present templates:
+   `docs/examples/bootstrap-invalid-quest-flag-consume-item-missing-from-item-templates-bundle.json`
+   (`docs/plans/2026-08-29-invalid-quest-flag-consume-item-missing-from-item-templates-fixture.md`).

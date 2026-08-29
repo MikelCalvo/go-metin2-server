@@ -5407,6 +5407,25 @@ func TestCanonicalizeRejectsCheckedInQuestFlagRewardItemMissingFromItemTemplates
 	}
 }
 
+func TestCanonicalizeRejectsCheckedInQuestFlagConsumeItemMissingFromItemTemplatesExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-invalid-quest-flag-consume-item-missing-from-item-templates-bundle.json"))
+	if err != nil {
+		t.Fatalf("read invalid quest-flag consume item missing from item templates example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode invalid quest-flag consume item missing from item templates example bundle: %v", err)
+	}
+	if _, err := Canonicalize(bundle); !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for checked-in quest-flag consume item missing from item templates example, got %v", err)
+	}
+}
+
 func TestCanonicalizeKillQuestCreditAuthoringExample(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
