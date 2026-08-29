@@ -13,6 +13,7 @@ import (
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
+	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
@@ -2190,4 +2191,402 @@ func newPostFloorSafeboxChangePasswordRuntime(t *testing.T, root, safeboxPath, l
 		t.Fatalf("expected one post-floor safebox-change-password practice mob, got %#v", actors)
 	}
 	return runtime, accounts, uint32(actors[0].EntityID)
+}
+
+func TestGameSessionFlowPostFloorMyShopGuestOnClickFailsClosed(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	// Keep the host outside DefaultSpawnAggroRadius of the practice mob so proximity
+	// engagement does not silently block the dead guest's TARGET / ATTACK path.
+	host := peerVisibilityCharacter("DeadGuestOnClickHost", 0x01030b70, 0x02040b70, 900, 1900, 0, 101, 201)
+	host.Gold = 5000
+	host.Inventory = []inventory.ItemInstance{
+		{ID: 970, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 971, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	guest := peerVisibilityCharacter("DeadGuestOnClickGuest", 0x01030b71, 0x02040b71, 1120, 2120, 0, 101, 201)
+	guest.Points[bootstrapPlayerPointValueIndex] = 1
+	guest.Gold = 22222
+	hostLogin := "pf-guest-onclick-h"
+	hostLoginKey := uint32(0x19191b70)
+	guestLogin := "pf-guest-onclick-g"
+	guestLoginKey := uint32(0x19191b71)
+	issuePeerTicket(t, ticketStore, hostLogin, hostLoginKey, host)
+	issuePeerTicket(t, ticketStore, guestLogin, guestLoginKey, guest)
+	if err := accounts.Save(accountstore.Account{Login: hostLogin, Empire: host.Empire, Characters: cloneCharacters([]loginticket.Character{host})}); err != nil {
+		t.Fatalf("seed post-floor guest ON_CLICK host account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: guestLogin, Empire: guest.Empire, Characters: cloneCharacters([]loginticket.Character{guest})}); err != nil {
+		t.Fatalf("seed post-floor guest ON_CLICK guest account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected post-floor guest ON_CLICK runtime error: %v", err)
+	}
+	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_post_floor_guest_onclick",
+		Name:          "PracticeMobPostFloorGuestOnClick",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}); err != nil {
+		t.Fatalf("import post-floor guest ON_CLICK practice mob: %v", err)
+	}
+	if err := runtime.replaceItemTemplates(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+	}}); err != nil {
+		t.Fatalf("restore post-floor guest ON_CLICK templates after content import: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one post-floor guest ON_CLICK practice mob, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	hostFlow, hostEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), hostLogin, hostLoginKey)
+	if len(hostEnter) < 8 {
+		t.Fatalf("expected host bootstrap with visible practice mob, got %d frames", len(hostEnter))
+	}
+	defer closeSessionFlow(t, hostFlow)
+	guestFlow, guestEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), guestLogin, guestLoginKey)
+	if len(guestEnter) < 11 {
+		t.Fatalf("expected guest bootstrap with visible host and mob, got %d frames", len(guestEnter))
+	}
+	defer closeSessionFlow(t, guestFlow)
+	if queued := flushServerFrames(t, hostFlow); len(queued) != 3 {
+		t.Fatalf("expected host to receive guest-entry frames before post-floor guest ON_CLICK, got %d", len(queued))
+	}
+	_ = flushServerFrames(t, guestFlow)
+
+	openOut, err := hostFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      3,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected MYSHOP open before post-floor guest ON_CLICK: %v", err)
+	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, host.VID, 4, "accepted MYSHOP before post-floor guest ON_CLICK")
+	if queued := flushServerFrames(t, guestFlow); len(queued) != 1 {
+		t.Fatalf("expected guest to receive one live SHOP_SIGN around-broadcast before floor, got %d", len(queued))
+	}
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, guestFlow, guest, targetVID)
+	if queued := flushServerFrames(t, hostFlow); len(queued) != 1 {
+		t.Fatalf("expected host DEAD fanout after guest floor before ON_CLICK deny, got %d", len(queued))
+	}
+
+	denyOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: host.VID})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor guest ON_CLICK dispatch error: %v", err)
+	}
+	if len(denyOut) != 0 {
+		t.Fatalf("expected post-floor guest ON_CLICK to fail closed with no SHOP START, got %d frames", len(denyOut))
+	}
+	if queued := flushServerFrames(t, guestFlow); len(queued) != 0 {
+		t.Fatalf("expected post-floor guest ON_CLICK to queue no guest frames, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, hostFlow); len(queued) != 0 {
+		t.Fatalf("expected post-floor guest ON_CLICK to queue no host frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, guestLogin, guest, "post-floor guest ON_CLICK")
+	assertExchangeAccountUnchanged(t, accounts, hostLogin, characterAfterMyShopBagConsume(host), "post-floor guest ON_CLICK host")
+
+	restartOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_here",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here after post-floor guest ON_CLICK: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_here recovery frames after post-floor guest ON_CLICK, got %d", len(restartOut))
+	}
+	_ = flushServerFrames(t, hostFlow)
+
+	browseOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: host.VID})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart_here guest ON_CLICK: %v", err)
+	}
+	if len(browseOut) != 1 {
+		t.Fatalf("expected post-restart_here guest ON_CLICK to emit one SHOP START, got %d frames", len(browseOut))
+	}
+	start, err := shopproto.DecodeServerStart(decodeSingleFrame(t, browseOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-restart_here guest SHOP START: %v", err)
+	}
+	if start.OwnerVID != host.VID {
+		t.Fatalf("unexpected post-restart_here guest browse OwnerVID: got %#08x want %#08x", start.OwnerVID, host.VID)
+	}
+	if queued := flushServerFrames(t, hostFlow); len(queued) != 0 {
+		t.Fatalf("expected post-restart_here guest browse to queue no host frames, got %d", len(queued))
+	}
+	account, err := accounts.Load(guestLogin)
+	if err != nil {
+		t.Fatalf("load guest account after post-restart_here ON_CLICK: %v", err)
+	}
+	wantHP := initialStatsForRace(guest.RaceNum).MaxHP
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_here to persist recovered guest HP %d after ON_CLICK floor, got %+v", wantHP, account.Characters[0])
+	}
+	want := guest
+	want.Points[bootstrapPlayerPointValueIndex] = wantHP
+	assertExchangeAccountUnchanged(t, accounts, guestLogin, want, "post-restart_here guest ON_CLICK leaves inventory/gold unchanged")
+	assertExchangeAccountUnchanged(t, accounts, hostLogin, characterAfterMyShopBagConsume(host), "post-restart_here guest ON_CLICK host unchanged")
+}
+
+func TestGameSessionFlowPostFloorMyShopGuestOnClickFailsClosedBeforeRestartTown(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	sourceHost := peerVisibilityCharacter("DeadGuestOnClickTownSource", 0x01030b72, 0x02040b72, 900, 1900, 0, 101, 201)
+	sourceHost.Gold = 5000
+	sourceHost.Inventory = []inventory.ItemInstance{
+		{ID: 972, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 973, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	guest := peerVisibilityCharacter("DeadGuestOnClickTownGuest", 0x01030b73, 0x02040b73, 1120, 2120, 0, 101, 201)
+	guest.Points[bootstrapPlayerPointValueIndex] = 1
+	guest.Gold = 22222
+	townHost := peerVisibilityCharacter("DeadGuestOnClickTownHost", 0x01030b74, 0x02040b74, 52070, 166600, 4, 103, 203)
+	townHost.MapIndex = 21
+	townHost.Gold = 5000
+	townHost.Inventory = []inventory.ItemInstance{
+		{ID: 974, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 975, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	sourceLogin := "pf-guest-onclick-town-s"
+	sourceLoginKey := uint32(0x19191b72)
+	guestLogin := "pf-guest-onclick-town-g"
+	guestLoginKey := uint32(0x19191b73)
+	townLogin := "pf-guest-onclick-town-t"
+	townLoginKey := uint32(0x19191b74)
+	issuePeerTicket(t, ticketStore, sourceLogin, sourceLoginKey, sourceHost)
+	issuePeerTicket(t, ticketStore, guestLogin, guestLoginKey, guest)
+	issuePeerTicket(t, ticketStore, townLogin, townLoginKey, townHost)
+	if err := accounts.Save(accountstore.Account{Login: sourceLogin, Empire: sourceHost.Empire, Characters: cloneCharacters([]loginticket.Character{sourceHost})}); err != nil {
+		t.Fatalf("seed post-floor town guest ON_CLICK source host account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: guestLogin, Empire: guest.Empire, Characters: cloneCharacters([]loginticket.Character{guest})}); err != nil {
+		t.Fatalf("seed post-floor town guest ON_CLICK guest account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: townLogin, Empire: townHost.Empire, Characters: cloneCharacters([]loginticket.Character{townHost})}); err != nil {
+		t.Fatalf("seed post-floor town guest ON_CLICK town host account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected post-floor town guest ON_CLICK runtime error: %v", err)
+	}
+	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_post_floor_guest_onclick_town",
+		Name:          "PracticeMobPostFloorGuestOnClickTown",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}); err != nil {
+		t.Fatalf("import post-floor town guest ON_CLICK practice mob: %v", err)
+	}
+	if err := runtime.replaceItemTemplates(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+	}}); err != nil {
+		t.Fatalf("restore post-floor town guest ON_CLICK templates after content import: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one post-floor town guest ON_CLICK practice mob, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	sourceFlow, sourceEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), sourceLogin, sourceLoginKey)
+	if len(sourceEnter) < 8 {
+		t.Fatalf("expected source host bootstrap with visible practice mob, got %d frames", len(sourceEnter))
+	}
+	defer closeSessionFlow(t, sourceFlow)
+	guestFlow, guestEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), guestLogin, guestLoginKey)
+	if len(guestEnter) < 11 {
+		t.Fatalf("expected guest bootstrap with visible source host and mob, got %d frames", len(guestEnter))
+	}
+	defer closeSessionFlow(t, guestFlow)
+	if queued := flushServerFrames(t, sourceFlow); len(queued) != 3 {
+		t.Fatalf("expected source host to receive guest-entry frames before town guest ON_CLICK, got %d", len(queued))
+	}
+	_ = flushServerFrames(t, guestFlow)
+	townFlow, townEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), townLogin, townLoginKey)
+	// Town-host bootstrap includes carried inventory ITEM_SET frames, so it is longer
+	// than the empty destination-peer burst used by EXCHANGE START twins.
+	if len(townEnter) < 5 {
+		t.Fatalf("expected at least 5 bootstrap frames for town host on destination map, got %d", len(townEnter))
+	}
+	defer closeSessionFlow(t, townFlow)
+	if queued := flushServerFrames(t, sourceFlow); len(queued) != 0 {
+		t.Fatalf("expected destination-map town host join to avoid queued source frames before floor, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, guestFlow); len(queued) != 0 {
+		t.Fatalf("expected destination-map town host join to avoid queued guest frames before floor, got %d", len(queued))
+	}
+
+	sourceOpen, err := sourceFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      3,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected source MYSHOP open before town guest ON_CLICK: %v", err)
+	}
+	assertMyShopOpenSuccessBagAndSign(t, sourceOpen, sourceHost.VID, 4, "accepted source MYSHOP before town guest ON_CLICK")
+	if queued := flushServerFrames(t, guestFlow); len(queued) != 1 {
+		t.Fatalf("expected guest to receive one live SHOP_SIGN around-broadcast before town floor, got %d", len(queued))
+	}
+	townOpen, err := townFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      3,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected town MYSHOP open before guest ON_CLICK: %v", err)
+	}
+	assertMyShopOpenSuccessBagAndSign(t, townOpen, townHost.VID, 4, "accepted town MYSHOP before guest ON_CLICK")
+	if queued := flushServerFrames(t, guestFlow); len(queued) != 0 {
+		t.Fatalf("expected destination-map town MYSHOP open to avoid queued guest frames before floor, got %d", len(queued))
+	}
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, guestFlow, guest, targetVID)
+	if queued := flushServerFrames(t, sourceFlow); len(queued) != 1 {
+		t.Fatalf("expected source host DEAD fanout after guest floor before town ON_CLICK deny, got %d", len(queued))
+	}
+
+	denyOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: sourceHost.VID})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor town guest ON_CLICK dispatch error: %v", err)
+	}
+	if len(denyOut) != 0 {
+		t.Fatalf("expected post-floor town guest ON_CLICK to fail closed with no SHOP START, got %d frames", len(denyOut))
+	}
+	if queued := flushServerFrames(t, guestFlow); len(queued) != 0 {
+		t.Fatalf("expected post-floor town guest ON_CLICK to queue no guest frames, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, sourceFlow); len(queued) != 0 {
+		t.Fatalf("expected post-floor town guest ON_CLICK to queue no source frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, guestLogin, guest, "post-floor town guest ON_CLICK")
+
+	restartOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_town",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_town after post-floor guest ON_CLICK: %v", err)
+	}
+	if len(restartOut) < 9 {
+		t.Fatalf("expected at least 9 self frames from /restart_town recovery after post-floor guest ON_CLICK, got %d", len(restartOut))
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[0]))
+	if err != nil {
+		t.Fatalf("decode self character add after post-floor guest ON_CLICK /restart_town: %v", err)
+	}
+	if selfAdd.VID != guest.VID || selfAdd.X != 52070 || selfAdd.Y != 166600 {
+		t.Fatalf("expected /restart_town self bootstrap at empire town position after guest ON_CLICK floor, got %+v", selfAdd)
+	}
+	var (
+		selfPoints    worldproto.PlayerPointChangePacket
+		foundPoints   bool
+		foundTownHost bool
+	)
+	for _, raw := range restartOut {
+		fr := decodeSingleFrame(t, raw)
+		if !foundPoints {
+			if points, err := worldproto.DecodePlayerPointChange(fr); err == nil {
+				selfPoints = points
+				foundPoints = true
+				continue
+			}
+		}
+		if add, err := worldproto.DecodeCharacterAdd(fr); err == nil && add.VID == townHost.VID {
+			foundTownHost = true
+		}
+	}
+	if !foundPoints {
+		t.Fatal("expected /restart_town recovery to include self PLAYER_POINT_CHANGE after guest ON_CLICK floor")
+	}
+	wantHP := initialStatsForRace(guest.RaceNum).MaxHP
+	if selfPoints.Value != wantHP {
+		t.Fatalf("expected /restart_town to rebuild recovered guest HP %d after ON_CLICK floor, got %+v", wantHP, selfPoints)
+	}
+	if !foundTownHost {
+		t.Fatalf("expected /restart_town destination visibility delta to add town host vid %d", townHost.VID)
+	}
+	_ = flushServerFrames(t, sourceFlow)
+	townQueued := flushServerFrames(t, townFlow)
+	if len(townQueued) != 3 {
+		t.Fatalf("expected destination town host to receive 3 queued guest re-entry frames after /restart_town, got %d", len(townQueued))
+	}
+
+	browseOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: townHost.VID})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart_town guest ON_CLICK: %v", err)
+	}
+	if len(browseOut) != 1 {
+		t.Fatalf("expected post-restart_town guest ON_CLICK to emit one SHOP START, got %d frames", len(browseOut))
+	}
+	start, err := shopproto.DecodeServerStart(decodeSingleFrame(t, browseOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-restart_town guest SHOP START: %v", err)
+	}
+	if start.OwnerVID != townHost.VID {
+		t.Fatalf("unexpected post-restart_town guest browse OwnerVID: got %#08x want %#08x", start.OwnerVID, townHost.VID)
+	}
+	if queued := flushServerFrames(t, townFlow); len(queued) != 0 {
+		t.Fatalf("expected post-restart_town guest browse to queue no town host frames, got %d", len(queued))
+	}
+	account, err := accounts.Load(guestLogin)
+	if err != nil {
+		t.Fatalf("load guest account after post-restart_town ON_CLICK: %v", err)
+	}
+	if account.Characters[0].MapIndex != 21 || account.Characters[0].X != 52070 || account.Characters[0].Y != 166600 {
+		t.Fatalf("expected /restart_town to persist empire town position after guest ON_CLICK floor, got %+v", account.Characters[0])
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_town to persist recovered guest HP %d after ON_CLICK floor, got %+v", wantHP, account.Characters[0])
+	}
+	want := guest
+	want.Points[bootstrapPlayerPointValueIndex] = wantHP
+	want.MapIndex = 21
+	want.X = 52070
+	want.Y = 166600
+	assertExchangeAccountUnchanged(t, accounts, guestLogin, want, "post-restart_town guest ON_CLICK leaves inventory/gold unchanged")
+	assertExchangeAccountUnchanged(t, accounts, townLogin, characterAfterMyShopBagConsume(townHost), "post-restart_town guest ON_CLICK town host unchanged")
 }
