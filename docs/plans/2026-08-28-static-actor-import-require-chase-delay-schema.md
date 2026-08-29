@@ -39,18 +39,23 @@ additive `0016_static_actor_combat_profile_chase_delay`, so operators get
    Live import after homeward-delay landed also requires additive `0018`; that
    four-boundary gate is owned by
    [static-actor import require homeward-delay schema](2026-08-28-static-actor-import-require-homeward-delay-schema.md).
+   Live import after max-step landed also requires additive `0019`; that
+   five-boundary gate is owned by
+   [static-actor import require max-step schema](2026-08-29-static-actor-import-require-max-step-schema.md).
 4. Missing either tip-`0013` or chase-delay `0016` returns
    `ErrStaticActorContentStateImportSchemaRequired` (wrapped with the missing
    version/name and observed tip) **before** any INSERT.
 5. Existing empty-DB missing-schema coverage stays green.
 6. Existing tip-apply import proofs for this chase-delay slice applied through
-   catalog tip `16`; catalog tip after return-delay was `17`; current catalog tip
-   after homeward-delay is `18`.
+   catalog tip `16`; catalog tip after return-delay was `17`; catalog tip after
+   homeward-delay was `18`; current catalog tip after max-step is `19`.
 7. Upsert / auto-run / stock production driver remain explicitly deferred.
    ~~Return-delay / `0017` import schema gate~~ Done — see
    [static-actor import require return-delay schema](2026-08-28-static-actor-import-require-return-delay-schema.md).
    ~~Homeward-delay / `0018` import schema gate~~ Done — see
    [static-actor import require homeward-delay schema](2026-08-28-static-actor-import-require-homeward-delay-schema.md).
+   ~~Max-step / `0019` import schema gate~~ Done — see
+   [static-actor import require max-step schema](2026-08-29-static-actor-import-require-max-step-schema.md).
 
 ## What this is not yet
 
@@ -63,6 +68,9 @@ additive `0016_static_actor_combat_profile_chase_delay`, so operators get
 - ~~world-lane `homeward_delay_ms` / migration `0018`~~ Done on `main` plus the
   import schema gate docs sync — see
   [static-actor import require homeward-delay schema](2026-08-28-static-actor-import-require-homeward-delay-schema.md)
+- ~~world-lane `max_step` / migration `0019`~~ Done on `main` plus the import
+  schema gate docs sync — see
+  [static-actor import require max-step schema](2026-08-29-static-actor-import-require-max-step-schema.md)
 - DB-backed runtime repositories replacing FileStores
 - loopback ops mutation endpoint / remote admin / secrets in git
 
@@ -107,6 +115,8 @@ git diff --check
   [static-actor import require return-delay schema](2026-08-28-static-actor-import-require-return-delay-schema.md)
 - homeward-delay / `0018` follow-up is owned by
   [static-actor import require homeward-delay schema](2026-08-28-static-actor-import-require-homeward-delay-schema.md)
+- max-step / `0019` follow-up is owned by
+  [static-actor import require max-step schema](2026-08-29-static-actor-import-require-max-step-schema.md)
 
 ## Anti-goals / ordering constraints
 
