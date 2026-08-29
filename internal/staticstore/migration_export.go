@@ -16,7 +16,8 @@ const (
 	// StaticActorCombatProfileChaseDelayMigrationVersion / Name pin the additive
 	// 0016 column that ImportStaticActorContentState writes beside tip-0013 rows.
 	// Export identity stays tip-0013; SQL import preflight requires tip-0013 plus
-	// additive chase-delay, return-delay, homeward-delay, and max-step columns.
+	// additive chase-delay, return-delay, homeward-delay, max-step, and
+	// reaction-delay columns.
 	StaticActorCombatProfileChaseDelayMigrationVersion = 16
 	StaticActorCombatProfileChaseDelayMigrationName    = "static_actor_combat_profile_chase_delay"
 
@@ -34,6 +35,11 @@ const (
 	// 0019 max_step that ImportStaticActorContentState also inserts.
 	StaticActorCombatProfileMaxStepMigrationVersion = 19
 	StaticActorCombatProfileMaxStepMigrationName    = "static_actor_combat_profile_max_step"
+
+	// StaticActorCombatProfileReactionDelayMigrationVersion / Name pin additive
+	// 0020 reaction_delay_ms that ImportStaticActorContentState also inserts.
+	StaticActorCombatProfileReactionDelayMigrationVersion = 20
+	StaticActorCombatProfileReactionDelayMigrationName    = "static_actor_combat_profile_reaction_delay"
 )
 
 // StaticActorContentStateExport is a deterministic, schema-shaped projection of
@@ -153,6 +159,7 @@ type StaticActorCombatProfileRow struct {
 	ReturnDelayMs         int64  `json:"return_delay_ms"`
 	HomewardDelayMs       int64  `json:"homeward_delay_ms"`
 	MaxStep               int32  `json:"max_step"`
+	ReactionDelayMs       int64  `json:"reaction_delay_ms"`
 	RetaliationPointDelta int32  `json:"retaliation_point_delta"`
 	DeathRewardExperience uint64 `json:"death_reward_experience"`
 	DeathRewardGold       uint64 `json:"death_reward_gold"`
@@ -430,6 +437,7 @@ func staticActorCombatProfileRowForExport(profile worldruntime.StaticActorCombat
 		ReturnDelayMs:         profile.ReturnDelayMs,
 		HomewardDelayMs:       profile.HomewardDelayMs,
 		MaxStep:               profile.MaxStep,
+		ReactionDelayMs:       profile.ReactionDelayMs,
 		RetaliationPointDelta: profile.RetaliationPointDelta,
 		DeathRewardExperience: profile.DeathReward.Experience,
 		DeathRewardGold:       profile.DeathReward.Gold,

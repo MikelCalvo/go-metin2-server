@@ -4839,7 +4839,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				return
 			}
 			now := sessionNow()
-			readyAt := now.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+			delay := bootstrapPracticeMobServerOriginRetaliationDelay
+			if runtime != nil {
+				if actor, ok := runtime.SpawnGroup(uint64(targetVID)); ok {
+					delay = worldruntime.EffectiveStaticActorSpawnReactionDelay(actor.CombatProfile)
+				}
+			}
+			readyAt := now.Add(delay)
 			pendingPracticeMobServerOriginRetaliation = true
 			pendingPracticeMobServerOriginRetaliationAt = readyAt
 			pendingPracticeMobServerOriginRetaliationTargetVID = targetVID
@@ -8893,6 +8899,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					activeCombatTargetSnapshotVersion = resolution.SnapshotVersion
 					if sharedWorld != nil && sharedWorldID != 0 {
 						sharedWorld.SetSessionCombatTarget(sharedWorldID, resolution.Packet.TargetVID)
+						if pendingPracticeMobServerOriginRetaliation &&
+							pendingPracticeMobServerOriginRetaliationTargetVID == resolution.Packet.TargetVID &&
+							pendingPracticeMobServerOriginRetaliationSnapshotVersion == resolution.SnapshotVersion &&
+							!pendingPracticeMobServerOriginRetaliationAt.IsZero() {
+							sharedWorld.SetSessionCombatRetaliation(sharedWorldID, resolution.Packet.TargetVID, resolution.SnapshotVersion, pendingPracticeMobServerOriginRetaliationAt)
+						}
 					}
 					return gameflow.TargetResult{Accepted: true, Frames: [][]byte{combatproto.EncodeServerTarget(*resolution.Packet)}}
 				},
@@ -13185,6 +13197,7 @@ func contentBundleCombatProfileSnapshotMatchesDefaults(snapshot worldruntime.Sta
 		normalized.ReturnDelay == defaults.ReturnDelay &&
 		normalized.HomewardDelay == defaults.HomewardDelay &&
 		normalized.MaxStep == defaults.MaxStep &&
+		normalized.ReactionDelay == defaults.ReactionDelay &&
 		normalized.RetaliationPointDelta == defaults.RetaliationPointDelta &&
 		reflect.DeepEqual(normalized.DeathReward.Clone(), defaults.DeathReward.Clone())
 }
@@ -13209,6 +13222,10 @@ func contentBundleCombatProfileSnapshotDefaults(snapshot worldruntime.StaticActo
 	if !worldruntime.ValidStaticActorCombatProfileMaxStep(snapshot.MaxStep) {
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
+	reactionDelay, ok := worldruntime.StaticActorCombatProfileReactionDelay(snapshot.ReactionDelayMs)
+	if !ok {
+		return worldruntime.StaticActorCombatProfileDefaults{}, false
+	}
 	if !worldruntime.ValidStaticActorCombatProfileAggroRadius(snapshot.AggroRadius, snapshot.LeashRadius) {
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
@@ -13229,6 +13246,7 @@ func contentBundleCombatProfileSnapshotDefaults(snapshot worldruntime.StaticActo
 		ReturnDelay:           returnDelay,
 		HomewardDelay:         homewardDelay,
 		MaxStep:               snapshot.MaxStep,
+		ReactionDelay:         reactionDelay,
 		RetaliationPointDelta: snapshot.RetaliationPointDelta,
 		DeathReward:           snapshot.DeathReward.Clone(),
 	}
@@ -13348,6 +13366,11 @@ func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorComb
 			rollback()
 			return nil, contentbundle.ErrInvalidBundle
 		}
+		reactionDelay, ok := worldruntime.StaticActorCombatProfileReactionDelay(snapshot.ReactionDelayMs)
+		if !ok {
+			rollback()
+			return nil, contentbundle.ErrInvalidBundle
+		}
 		if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
 			MaxHP:                 snapshot.MaxHP,
 			DamagePerNormalAttack: snapshot.DamagePerNormalAttack,
@@ -13362,6 +13385,7 @@ func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorComb
 			ReturnDelay:           returnDelay,
 			HomewardDelay:         homewardDelay,
 			MaxStep:               snapshot.MaxStep,
+			ReactionDelay:         reactionDelay,
 			RetaliationPointDelta: snapshot.RetaliationPointDelta,
 			DeathReward:           snapshot.DeathReward,
 		}) {

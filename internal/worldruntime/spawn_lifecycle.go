@@ -53,6 +53,17 @@ const (
 	// MaxSpawnMaxStep is the bootstrap upper bound for optional authored
 	// combat_profiles.max_step on this Track A seam.
 	MaxSpawnMaxStep int32 = 1000
+	// DefaultSpawnReactionDelay is the bootstrap delayed server-origin
+	// retaliation arming / re-arm delay (matches
+	// bootstrapPracticeMobServerOriginRetaliationDelay).
+	DefaultSpawnReactionDelay = time.Second
+	// MinSpawnReactionDelay is the bootstrap lower bound for optional authored
+	// combat_profiles.reaction_delay_ms so reaction cadence stays independently
+	// observable beside the owned flush order.
+	MinSpawnReactionDelay = 250 * time.Millisecond
+	// MaxSpawnReactionDelay is the bootstrap upper bound for optional authored
+	// combat_profiles.reaction_delay_ms on this Track A seam.
+	MaxSpawnReactionDelay = 60 * time.Second
 )
 
 // SpawnLeashEvaluation is a pure planning result for the first mob lifecycle

@@ -129,6 +129,7 @@ type StaticActorCombatProfileDefaults struct {
 	ReturnDelay           time.Duration
 	HomewardDelay         time.Duration
 	MaxStep               int32
+	ReactionDelay         time.Duration
 	RetaliationPointDelta int32
 	DeathReward           StaticActorDeathReward
 }
@@ -148,6 +149,7 @@ type StaticActorCombatProfileSnapshot struct {
 	ReturnDelayMs         int64                  `json:"return_delay_ms,omitempty"`
 	HomewardDelayMs       int64                  `json:"homeward_delay_ms,omitempty"`
 	MaxStep               int32                  `json:"max_step,omitempty"`
+	ReactionDelayMs       int64                  `json:"reaction_delay_ms,omitempty"`
 	RetaliationPointDelta int32                  `json:"retaliation_point_delta,omitempty"`
 	DeathReward           StaticActorDeathReward `json:"death_reward"`
 }
@@ -183,6 +185,9 @@ func RegisterStaticActorCombatProfile(profile string, defaults StaticActorCombat
 		return false
 	}
 	if !ValidStaticActorCombatProfileMaxStep(defaults.MaxStep) {
+		return false
+	}
+	if !ValidStaticActorCombatProfileReactionDelay(defaults.ReactionDelay) {
 		return false
 	}
 	hasLegacyDamage := defaults.DamagePerNormalAttack != 0
@@ -270,6 +275,7 @@ func staticActorCombatProfileSnapshot(profile string, defaults StaticActorCombat
 		ReturnDelayMs:         defaults.ReturnDelay.Milliseconds(),
 		HomewardDelayMs:       defaults.HomewardDelay.Milliseconds(),
 		MaxStep:               defaults.MaxStep,
+		ReactionDelayMs:       defaults.ReactionDelay.Milliseconds(),
 		DeathReward:           defaults.DeathReward.Clone(),
 	}
 	if defaults.RetaliationPointDelta != PracticeMobBootstrapRetaliationPointDelta {
@@ -578,6 +584,63 @@ func EffectiveStaticActorSpawnMaxStep(profile string) int32 {
 // and returns its effective spawn max step.
 func EffectiveStaticActorSpawnMaxStepForActor(actor StaticEntity) int32 {
 	return EffectiveStaticActorSpawnMaxStep(staticActorCombatProfile(actor.CombatProfile, actor.CombatKind))
+}
+
+// ValidStaticActorCombatProfileReactionDelay accepts omitted/zero (bootstrap default)
+// and positive authored delays at or above MinSpawnReactionDelay and at or below the
+// bootstrap MaxSpawnReactionDelay upper bound.
+func ValidStaticActorCombatProfileReactionDelay(reactionDelay time.Duration) bool {
+	if reactionDelay < 0 {
+		return false
+	}
+	if reactionDelay == 0 {
+		return true
+	}
+	return reactionDelay >= MinSpawnReactionDelay && reactionDelay <= MaxSpawnReactionDelay
+}
+
+// StaticActorCombatProfileReactionDelay converts authored reaction_delay_ms into a
+// duration. Zero means omit/bootstrap default; negative or overflowing values
+// fail closed.
+func StaticActorCombatProfileReactionDelay(delayMs int64) (time.Duration, bool) {
+	if delayMs < 0 {
+		return 0, false
+	}
+	maxDelayMs := int64(1<<63-1) / int64(time.Millisecond)
+	if delayMs > maxDelayMs {
+		return 0, false
+	}
+	delay := time.Duration(delayMs) * time.Millisecond
+	if !ValidStaticActorCombatProfileReactionDelay(delay) {
+		return 0, false
+	}
+	return delay, true
+}
+
+// EffectiveStaticActorSpawnReactionDelayFromDefaults resolves omit/zero to the
+// bootstrap DefaultSpawnReactionDelay without consulting the profile registry.
+func EffectiveStaticActorSpawnReactionDelayFromDefaults(defaults StaticActorCombatProfileDefaults) time.Duration {
+	if defaults.ReactionDelay <= 0 {
+		return DefaultSpawnReactionDelay
+	}
+	return defaults.ReactionDelay
+}
+
+// EffectiveStaticActorSpawnReactionDelay returns the delayed server-origin
+// retaliation arming / re-arm delay for one combat profile. Omitted or unknown
+// profiles keep DefaultSpawnReactionDelay.
+func EffectiveStaticActorSpawnReactionDelay(profile string) time.Duration {
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(strings.TrimSpace(profile))
+	if !ok {
+		return DefaultSpawnReactionDelay
+	}
+	return EffectiveStaticActorSpawnReactionDelayFromDefaults(defaults)
+}
+
+// EffectiveStaticActorSpawnReactionDelayForActor resolves the actor's combat profile
+// and returns its effective delayed reaction arming delay.
+func EffectiveStaticActorSpawnReactionDelayForActor(actor StaticEntity) time.Duration {
+	return EffectiveStaticActorSpawnReactionDelay(staticActorCombatProfile(actor.CombatProfile, actor.CombatKind))
 }
 
 func validStaticActorCombatProfileName(profile string) bool {

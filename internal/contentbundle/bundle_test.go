@@ -6937,6 +6937,86 @@ func TestCanonicalizeRejectsCombatProfileMaxStepAboveBootstrapCap(t *testing.T) 
 	}
 }
 
+func TestCanonicalizeRoundTripsAuthoredCombatProfileReactionDelay(t *testing.T) {
+	const profile = "practice_authored_reaction_delay_wolf"
+
+	canonical, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.authored_reaction_delay_wolf",
+			Name:          "Authored Reaction Delay Wolf",
+			MapIndex:      42,
+			X:             1775,
+			Y:             2875,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:         profile,
+			MaxHP:           24,
+			AttackValue:     8,
+			DefenseValue:    2,
+			RespawnDelayMs:  1500,
+			ReactionDelayMs: 2000,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize authored reaction-delay combat profile: %v", err)
+	}
+	if len(canonical.CombatProfiles) != 1 || canonical.CombatProfiles[0].ReactionDelayMs != 2000 {
+		t.Fatalf("expected canonical combat profile to preserve reaction_delay_ms 2000, got %#v", canonical.CombatProfiles)
+	}
+}
+
+func TestCanonicalizeRejectsCombatProfileReactionDelayBelowBootstrapFloor(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.too_fast_reaction_delay_wolf",
+			Name:          "Too Fast Reaction Delay Wolf",
+			MapIndex:      42,
+			X:             1800,
+			Y:             2900,
+			RaceNum:       101,
+			CombatProfile: "practice_too_fast_reaction_delay_wolf",
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:         "practice_too_fast_reaction_delay_wolf",
+			MaxHP:           24,
+			AttackValue:     8,
+			DefenseValue:    2,
+			RespawnDelayMs:  1500,
+			ReactionDelayMs: 249,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for combat-profile reaction delay < 250ms, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsCombatProfileReactionDelayAboveBootstrapCap(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.too_slow_reaction_delay_wolf",
+			Name:          "Too Slow Reaction Delay Wolf",
+			MapIndex:      42,
+			X:             1800,
+			Y:             2900,
+			RaceNum:       101,
+			CombatProfile: "practice_too_slow_reaction_delay_wolf",
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:         "practice_too_slow_reaction_delay_wolf",
+			MaxHP:           24,
+			AttackValue:     8,
+			DefenseValue:    2,
+			RespawnDelayMs:  1500,
+			ReactionDelayMs: 61000,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for combat-profile reaction delay above 60s, got %v", err)
+	}
+}
+
 func TestCanonicalizeRejectsOverflowingCombatProfileRespawnDelay(t *testing.T) {
 	_, err := Canonicalize(Bundle{
 		SpawnGroups: []SpawnGroup{{

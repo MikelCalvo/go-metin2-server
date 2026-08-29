@@ -205,7 +205,7 @@ func TestRunImportExportImportsEmptyExportsAgainstRegisteredDriver(t *testing.T)
 			driver := currentMigrateCLITestDriver(t)
 			// Static-actor SQL import keeps tip-0013 export identity but requires
 			// additive 0016 chase_delay_ms, 0017 return_delay_ms, 0018
-			// homeward_delay_ms, and 0019 max_step before INSERT.
+			// homeward_delay_ms, 0019 max_step, and 0020 reaction_delay_ms before INSERT.
 			ledger := []dbmigrations.LedgerEntry{ledgerEntry(tc.version)}
 			if tc.kind == "static-actor-content-state" {
 				ledger = []dbmigrations.LedgerEntry{
@@ -214,6 +214,7 @@ func TestRunImportExportImportsEmptyExportsAgainstRegisteredDriver(t *testing.T)
 					ledgerEntry(staticstore.StaticActorCombatProfileReturnDelayMigrationVersion),
 					ledgerEntry(staticstore.StaticActorCombatProfileHomewardDelayMigrationVersion),
 					ledgerEntry(staticstore.StaticActorCombatProfileMaxStepMigrationVersion),
+					ledgerEntry(staticstore.StaticActorCombatProfileReactionDelayMigrationVersion),
 				}
 			}
 			driver.setLedger(ledger)

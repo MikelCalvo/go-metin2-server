@@ -216,6 +216,9 @@ func validCombatProfileSnapshot(profile worldruntime.StaticActorCombatProfileSna
 	if !worldruntime.ValidStaticActorCombatProfileMaxStep(profile.MaxStep) {
 		return false
 	}
+	if _, ok := worldruntime.StaticActorCombatProfileReactionDelay(profile.ReactionDelayMs); !ok {
+		return false
+	}
 	hasLegacyDamage := profile.DamagePerNormalAttack != 0
 	hasExplicitFormula := profile.AttackValue != 0
 	if profile.MaxHP == 0 || (!hasLegacyDamage && !hasExplicitFormula) || !worldruntime.ValidStaticActorCombatProfileRespawnDelayMs(profile.RespawnDelayMs) {
@@ -258,6 +261,7 @@ func combatProfileSnapshotMatchesDefaults(snapshot worldruntime.StaticActorComba
 		candidateDefaults.ReturnDelay == defaults.ReturnDelay &&
 		candidateDefaults.HomewardDelay == defaults.HomewardDelay &&
 		candidateDefaults.MaxStep == defaults.MaxStep &&
+		candidateDefaults.ReactionDelay == defaults.ReactionDelay &&
 		candidateDefaults.RetaliationPointDelta == defaults.RetaliationPointDelta &&
 		candidateDefaults.DeathReward.Experience == defaults.DeathReward.Experience &&
 		candidateDefaults.DeathReward.Gold == defaults.DeathReward.Gold &&
@@ -286,6 +290,10 @@ func combatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfil
 	if !worldruntime.ValidStaticActorCombatProfileMaxStep(snapshot.MaxStep) {
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
+	reactionDelay, ok := worldruntime.StaticActorCombatProfileReactionDelay(snapshot.ReactionDelayMs)
+	if !ok {
+		return worldruntime.StaticActorCombatProfileDefaults{}, false
+	}
 	if hasLegacyDamage && !hasExplicitFormula && uint32(snapshot.DamagePerNormalAttack)+uint32(snapshot.DefenseValue) > uint32(^uint16(0)) {
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
@@ -309,6 +317,7 @@ func combatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfil
 		ReturnDelay:           returnDelay,
 		HomewardDelay:         homewardDelay,
 		MaxStep:               snapshot.MaxStep,
+		ReactionDelay:         reactionDelay,
 		RetaliationPointDelta: snapshot.RetaliationPointDelta,
 		DeathReward:           cloneDeathRewardPreservingDropMultiplicity(snapshot.DeathReward),
 	}

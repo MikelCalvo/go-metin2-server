@@ -152,6 +152,14 @@
       "down_path": "0019_static_actor_combat_profile_max_step.down.sql",
       "up_sha256": "3ca62a66d7e7fceadb6cc0026d789351e2964a5e3e12994440afe15368f70126",
       "down_sha256": "4df2bcd8f33129949bc4e55d23516b236a5d9f79b0e8eb85f22363c50d6186cb"
+    },
+    {
+      "version": 20,
+      "name": "static_actor_combat_profile_reaction_delay",
+      "up_path": "0020_static_actor_combat_profile_reaction_delay.up.sql",
+      "down_path": "0020_static_actor_combat_profile_reaction_delay.down.sql",
+      "up_sha256": "406145d66bdeaf91828ffde4dda055eee4cb646cd49e6d2f335e6828af902701",
+      "down_sha256": "fb73fac5fa47749811e1195bc28808af9ce2590e43839d7f33fc7e37d906d839"
     }
   ]
 }
