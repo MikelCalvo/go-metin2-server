@@ -63,7 +63,7 @@ No new English INFO string. Silent deny only.
 - refine catalysts
 - changing the owned host item-mutation lock or empty-sign close path
 
-## Proof shape (later RED/GREEN — not this freeze)
+## Proof shape
 
 1. Session: accepted silk or bag `CG::MYSHOP` open → host `MOVE` / self
    `SYNC_POSITION` emit no frames and leave live/persisted position + shop
@@ -74,4 +74,9 @@ No new English INFO string. Silent deny only.
 
 ## Status
 
-Contract freeze for lane/items. RED/GREEN deferred until this freeze lands.
+GREEN on `lane/items`: open private shop denies host `CG::MOVE` /
+self-targeted `CG::SYNC_POSITION` silently with no frames and no
+live/persisted position mutation while the shop stays open
+(`TestGameRuntimeMyShopOpenDeniesHostMoveAndSyncPositionWithoutMutation`).
+Walk-away auto-close / shopkeeper polymorph / quest-running / GD/DB
+pricelist stay deferred.

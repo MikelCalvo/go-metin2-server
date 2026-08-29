@@ -6403,6 +6403,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
 						return gameflow.Result{Accepted: false}
 					}
+					if hasActiveMyShopOpen {
+						// Open private shop denies host MOVE silently; shop stays open.
+						return gameflow.Result{Accepted: false}
+					}
 					selected := selectedPlayer.LiveCharacter()
 					if selected.ID == 0 {
 						return gameflow.Result{Accepted: false}
@@ -6442,6 +6446,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					}
 					selected := selectedPlayer.LiveCharacter()
 					if selected.ID == 0 {
+						return gameflow.SyncPositionResult{Accepted: false}
+					}
+					if hasActiveMyShopOpen {
+						// Open private shop denies self-targeted SyncPosition silently; shop stays open.
 						return gameflow.SyncPositionResult{Accepted: false}
 					}
 					previous := selected

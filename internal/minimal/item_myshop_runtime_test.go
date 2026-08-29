@@ -16,6 +16,7 @@ import (
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
+	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
@@ -2518,6 +2519,124 @@ func TestGameRuntimeMyShopOpenLocksHostItemMutationsWithoutMutation(t *testing.T
 	if len(useOut) == 0 {
 		t.Fatal("expected ITEM_USE after MYSHOP close to emit frames")
 	}
+}
+
+func TestGameRuntimeMyShopOpenDeniesHostMoveAndSyncPositionWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MyShopMoveDeny", 0x01030851, 0x02040851, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 851, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 901, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	login := "myshop-move-deny"
+	issuePeerTicket(t, ticketStore, login, 0x70707151, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop move-deny account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop move-deny runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707151)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       27001,
+			Count:      3,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      1500,
+			DisplayPos: 0,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted MYSHOP before move deny: %v", err)
+	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, "accepted MYSHOP before move deny")
+
+	assertMyShopHostPosition := func(t *testing.T, wantX, wantY int32, context string) {
+		t.Helper()
+		live, ok := runtime.ConnectedCharacterSnapshot(owner.Name)
+		if !ok {
+			t.Fatalf("expected connected snapshot for %s", context)
+		}
+		if live.X != wantX || live.Y != wantY {
+			t.Fatalf("%s live position: got x=%d y=%d want x=%d y=%d", context, live.X, live.Y, wantX, wantY)
+		}
+		persisted, err := accounts.Load(login)
+		if err != nil {
+			t.Fatalf("load persisted %s account: %v", context, err)
+		}
+		if len(persisted.Characters) != 1 {
+			t.Fatalf("expected one persisted %s character, got %d", context, len(persisted.Characters))
+		}
+		got := persisted.Characters[0]
+		if got.X != wantX || got.Y != wantY {
+			t.Fatalf("%s persisted position: got x=%d y=%d want x=%d y=%d", context, got.X, got.Y, wantX, wantY)
+		}
+	}
+
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+		Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x11121314,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected MOVE while MYSHOP open error: %v", err)
+	}
+	if len(moveOut) != 0 {
+		t.Fatalf("expected MOVE while MYSHOP open to emit no frames, got %d", len(moveOut))
+	}
+	assertMyShopHostPosition(t, owner.X, owner.Y, "MOVE while MYSHOP open")
+
+	syncOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeSyncPosition(movep.SyncPositionPacket{
+		Elements: []movep.SyncPositionElement{{VID: owner.VID, X: 1600, Y: 2700}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected SyncPosition while MYSHOP open error: %v", err)
+	}
+	if len(syncOut) != 0 {
+		t.Fatalf("expected SyncPosition while MYSHOP open to emit no frames, got %d", len(syncOut))
+	}
+	assertMyShopHostPosition(t, owner.X, owner.Y, "SyncPosition while MYSHOP open")
+	assertExchangeAccountUnchanged(t, accounts, login, characterAfterMyShopBagConsume(owner), "myshop open host move deny")
+
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/close_myshop",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /close_myshop after move deny: %v", err)
+	}
+	if len(closeOut) != 1 {
+		t.Fatalf("expected /close_myshop after move deny to emit one empty SHOP_SIGN frame, got %d", len(closeOut))
+	}
+	assertMyShopEmptySignFrame(t, closeOut[0], owner.VID, "close_myshop after move deny")
+
+	moveAfterClose, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+		Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x21222324,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected MOVE after MYSHOP close error: %v", err)
+	}
+	if len(moveAfterClose) != 1 {
+		t.Fatalf("expected MOVE after MYSHOP close to emit one MOVE ack, got %d", len(moveAfterClose))
+	}
+	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, moveAfterClose[0]))
+	if err != nil {
+		t.Fatalf("decode MOVE ack after MYSHOP close: %v", err)
+	}
+	if moveAck.VID != owner.VID || moveAck.X != 1500 || moveAck.Y != 2600 {
+		t.Fatalf("unexpected MOVE ack after MYSHOP close: %+v", moveAck)
+	}
+	assertMyShopHostPosition(t, 1500, 2600, "MOVE after MYSHOP close")
 }
 
 func TestGameRuntimeMyShopOpenBroadcastsShopSignToVisiblePeer(t *testing.T) {
