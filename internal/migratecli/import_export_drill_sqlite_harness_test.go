@@ -384,6 +384,8 @@ func mustMaterializeSeededImportExportQuarantineTree(t *testing.T, exportTree st
 		characterName = "AlphaWar"
 	)
 
+	zeroSockets := inventory.SocketValues{}
+	activeSockets := inventory.SocketValues{1, 0, 7}
 	character := loginticket.Character{
 		ID:       characterID,
 		Name:     characterName,
@@ -391,10 +393,10 @@ func mustMaterializeSeededImportExportQuarantineTree(t *testing.T, exportTree st
 		MapIndex: 1,
 		Empire:   1,
 		Inventory: []inventory.ItemInstance{
-			{ID: 1001, Vnum: 27001, Count: 1, Slot: 5},
+			{ID: 1001, Vnum: 27001, Count: 1, Slot: 5, Sockets: &zeroSockets},
 		},
 		Equipment: []inventory.ItemInstance{
-			{ID: 2001, Vnum: 19, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+			{ID: 2001, Vnum: 19, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon, Sockets: &activeSockets},
 		},
 		Quickslots: []loginticket.Quickslot{
 			{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
@@ -601,6 +603,42 @@ func assertSeededImportExportDrillSQLiteRows(t *testing.T, dsn string) {
 	}
 	if gotCharacterID != 11 || gotName != "AlphaWar" || gotMapIndex != 1 {
 		t.Fatalf("character row = id=%d name=%q map=%d, want 11/AlphaWar/1", gotCharacterID, gotName, gotMapIndex)
+	}
+
+	var (
+		gotInvHasSockets int
+		gotInvSocket0    int64
+		gotInvSocket1    int64
+		gotInvSocket2    int64
+	)
+	if err := db.QueryRowContext(ctx, `
+SELECT has_sockets, socket0, socket1, socket2
+FROM character_inventory_items WHERE id = 1001`).Scan(
+		&gotInvHasSockets, &gotInvSocket0, &gotInvSocket1, &gotInvSocket2,
+	); err != nil {
+		t.Fatalf("select inventory sockets: %v", err)
+	}
+	if gotInvHasSockets != 1 || gotInvSocket0 != 0 || gotInvSocket1 != 0 || gotInvSocket2 != 0 {
+		t.Fatalf("inventory sockets = has_sockets=%d sockets=(%d,%d,%d), want 1/(0,0,0)",
+			gotInvHasSockets, gotInvSocket0, gotInvSocket1, gotInvSocket2)
+	}
+
+	var (
+		gotEquipHasSockets int
+		gotEquipSocket0    int64
+		gotEquipSocket1    int64
+		gotEquipSocket2    int64
+	)
+	if err := db.QueryRowContext(ctx, `
+SELECT has_sockets, socket0, socket1, socket2
+FROM character_equipment_items WHERE id = 2001`).Scan(
+		&gotEquipHasSockets, &gotEquipSocket0, &gotEquipSocket1, &gotEquipSocket2,
+	); err != nil {
+		t.Fatalf("select equipment sockets: %v", err)
+	}
+	if gotEquipHasSockets != 1 || gotEquipSocket0 != 1 || gotEquipSocket1 != 0 || gotEquipSocket2 != 7 {
+		t.Fatalf("equipment sockets = has_sockets=%d sockets=(%d,%d,%d), want 1/(1,0,7)",
+			gotEquipHasSockets, gotEquipSocket0, gotEquipSocket1, gotEquipSocket2)
 	}
 
 	var pointValue int64

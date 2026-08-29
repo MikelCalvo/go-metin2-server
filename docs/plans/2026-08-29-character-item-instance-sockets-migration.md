@@ -84,3 +84,4 @@ ledger owns tip-`0003` but not additive `0024`.
 2. Keep tip-`0003` export identity until a deliberate retip is needed.
 3. Prefer quest-running MYSHOP open block / GD pricelist only with a fresh
    client-visible evidence freeze.
+4. ~~Seed presence-aware instance sockets in the hermetic import-export drill + tip-sync loopback character-item-state docs.~~ Done — see [seeded item instance-sockets tip sync](2026-08-30-seeded-item-instance-sockets-import-export-drill.md).

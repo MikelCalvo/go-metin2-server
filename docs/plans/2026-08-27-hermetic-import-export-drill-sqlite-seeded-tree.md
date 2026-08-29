@@ -58,6 +58,8 @@ printer from CLI/contrib/cron, or exposing a daemon mutation route.
    safebox password/item, ticket, template, interaction/static actor, ground
    item). Non-empty tip-`0023` seeding is owned by [seeded myshop unit-prices
    tip sync](2026-08-29-seeded-myshop-unit-prices-import-export-drill.md).
+   Non-empty tip-`0003`+`0024` instance-socket seeding is owned by [seeded item
+   instance-sockets tip sync](2026-08-30-seeded-item-instance-sockets-import-export-drill.md).
 6. Printed script and import-result bodies still omit concrete DSN embedding
    beyond env-var indirection.
 7. Untagged `go test ./internal/migratecli` stays free of the SQLite dependency.
