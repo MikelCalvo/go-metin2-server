@@ -45,7 +45,7 @@ Legend used below:
   - Multiple connected sessions can exist in the same in-process world, see each other, move, chat, transfer through bootstrap seams, reconnect, and rebuild visibility. This is still a single-process bootstrap runtime, not a production channel/shard architecture.
 
 - `[~]` **M2 — Character, inventory, equipment, and economy bootstrap**
-  - Inventory/equipment replay, item move/split/merge/use/drop/pickup, quickslots, merchant buy/sell, gold mutation, a first exchange open/cancel shell plus mutual-accept finalize with fail-closed origin/partner persistence rollback, refine reject/preview plus confirm-after-preview success (`probability = 100`), destroy-failure (`probability = 0` + `RefineFailed`), and injected-roll (`probability` in `1..99`) paths, authored item-template guards, and persistence validation exist. Durable character safebox cells/password/money plus warehouse `open_safebox` password-challenge / reopen cooldown-distance / walk-away autoclose seams are owned on the file-backed path. Host-only accepted `MYSHOP` open presentation plus empty-sign close and open-MYSHOP exchange busy rejects exist; peer shop broadcast / browse / buy remain pending. Bootstrap ground-item exclusive ownership timers (30s owner-only, then blank public ownership) are owned for the in-memory path. Mall, full player-shop commerce, item sockets/bonuses, full restrictions, refine keep-grade/catalyst outcomes, restart-restored ownership timer state, and DB-backed item persistence remain future work.
+  - Inventory/equipment replay, item move/split/merge/use/drop/pickup, quickslots, merchant buy/sell, gold mutation, a first exchange open/cancel shell plus mutual-accept finalize with fail-closed origin/partner persistence rollback, refine reject/preview plus confirm-after-preview success (`probability = 100`), destroy-failure (`probability = 0` + `RefineFailed`), injected-roll (`probability` in `1..99`), and template-authored `keep_on_fail` keep-failure paths, authored item-template guards, and persistence validation exist. Durable character safebox cells/password/money plus warehouse `open_safebox` password-challenge / reopen cooldown-distance / walk-away autoclose seams are owned on the file-backed path. Host-only accepted `MYSHOP` open presentation plus empty-sign close and open-MYSHOP exchange busy rejects exist; peer shop broadcast / browse / buy remain pending. Bootstrap ground-item exclusive ownership timers (30s owner-only, then blank public ownership) are owned for the in-memory path. Mall, full player-shop commerce, item sockets/bonuses, full restrictions, refine catalyst/downgrade outcomes, restart-restored ownership timer state, and DB-backed item persistence remain future work.
 
 - `[~]` **M3 — Content and NPC authoring seam**
   - Static actors, interaction definitions, `info`/`talk`/`warp`/`shop_preview`, merchant catalogs, content bundle import/export, portable combat profiles, reward descriptors, authoring-only fixed reward tables for EXP/gold/drop descriptors, and spawn groups can drive current bootstrap content. This is useful content infrastructure, not a quest scripting system yet.
@@ -138,7 +138,7 @@ Still missing:
 - mall and full player-shop commerce beyond the owned host-only `MYSHOP` open/close presentation (peer `SHOP_SIGN` around-broadcast, browse, and buy remain pending),
 - item sockets/metins/bonuses/books/scrolls,
 - complete anti-flag/class/sex/level/equipment restrictions,
-- accepted refine keep-grade/catalyst outcomes beyond the owned `probability = 100` success, `probability = 0` destroy-failure, and `probability` in `1..99` injected-roll confirm seams,
+- accepted refine catalyst/downgrade outcomes beyond the owned `probability = 100` success, `probability = 0` destroy-failure, `probability` in `1..99` injected-roll, and template-authored `keep_on_fail` keep-failure confirm seams,
 - durable ground ownership timers and party ownership rules,
 - compatibility-grade DB-backed item/economy persistence.
 
@@ -292,7 +292,7 @@ The next challenge is no longer proving that the client can talk to a clean-room
 Near-term priorities:
 
 1. **Playable PvE vertical** — content-loaded mobs with lifecycle, targetability, death/respawn, basic AI, rewards, reconnect/restart safety, and stable visibility.
-2. **Items and economy** — finish remaining trade/exchange edges, complete peer `MYSHOP` broadcast/browse/buy, mall, ownership timers, item restrictions, refine keep-grade/catalyst outcomes, and item/economy persistence edges.
+2. **Items and economy** — finish remaining trade/exchange edges, complete peer `MYSHOP` broadcast/browse/buy, mall, ownership timers, item restrictions, refine catalyst/downgrade outcomes, and item/economy persistence edges.
 3. **Content and quests** — move beyond static interactions into quest state, richer NPC services, regen/drop tables, and validated content workflows.
 4. **DB and production ops** — introduce migration contracts, repository seams, backup/restore runbooks, crash recovery, release/deploy docs, and production-safe observability.
 5. **Social systems** — replace bootstrap party/guild fanout with membership, permissions, persistence, and gameplay effects after the PvE loop is stable.

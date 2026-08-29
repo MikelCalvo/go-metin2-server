@@ -319,6 +319,7 @@ type RefineInfo struct {
 	ResultVnum  uint32           `json:"result_vnum"`
 	Cost        int32            `json:"cost"`
 	Probability int32            `json:"probability"`
+	KeepOnFail  bool             `json:"keep_on_fail,omitempty"`
 	Materials   []RefineMaterial `json:"materials,omitempty"`
 }
 
@@ -602,6 +603,10 @@ func validRefineInfo(info *RefineInfo, template Template) bool {
 		return true
 	}
 	if !template.Refineable || info.ResultVnum == 0 || info.Cost < 0 || info.Probability < 0 || info.Probability > 100 || len(info.Materials) > MaxRefineMaterialCount {
+		return false
+	}
+	// keep_on_fail is only meaningful for injected-roll confirm (probability 1..99).
+	if info.KeepOnFail && (info.Probability < 1 || info.Probability > 99) {
 		return false
 	}
 	for _, material := range info.Materials {

@@ -158,14 +158,27 @@ type RefineDestroyFailureResult struct {
 	Cost            int32
 }
 
+// RefineKeepFailureResult is the live mutation outcome for remembered
+// probability values in 1..99 with template-authored keep_on_fail when the
+// injected roll fails: gold/materials consumed, source carried item kept.
+type RefineKeepFailureResult struct {
+	SourceSlot      inventory.SlotIndex
+	MaterialChanges []RefineMaterialChange
+	GoldBefore      uint64
+	Gold            uint64
+	Cost            int32
+}
+
 // RefineWithRollResult is the live mutation outcome for remembered
 // probability values in 1..99 when confirm supplies one injected roll in
-// 1..100. Exactly one of Succeeded or Destroyed is set on acceptance.
+// 1..100. Exactly one of Succeeded, Destroyed, or Kept is set on acceptance.
 type RefineWithRollResult struct {
 	Succeeded bool
 	Destroyed bool
+	Kept      bool
 	Success   RefineSuccessResult
 	Destroy   RefineDestroyFailureResult
+	Keep      RefineKeepFailureResult
 }
 
 // CarriedItemConsumeRequirement is one by-vnum carried-inventory debit request.
@@ -1601,6 +1614,7 @@ func (r *Runtime) ApplyRefineSuccess(slot inventory.SlotIndex, refineType uint8,
 		ResultVnum:  info.ResultVnum,
 		Cost:        info.Cost,
 		Probability: info.Probability,
+		KeepOnFail:  sourceTemplate.RefineInfo.KeepOnFail,
 		Materials:   info.Materials,
 	}) {
 		return RefineSuccessResult{}, false
@@ -1692,6 +1706,7 @@ func (r *Runtime) ApplyRefineDestroyFailure(slot inventory.SlotIndex, refineType
 		ResultVnum:  info.ResultVnum,
 		Cost:        info.Cost,
 		Probability: info.Probability,
+		KeepOnFail:  sourceTemplate.RefineInfo.KeepOnFail,
 		Materials:   info.Materials,
 	}) {
 		return RefineDestroyFailureResult{}, false
@@ -1766,11 +1781,101 @@ func (r *Runtime) ApplyRefineDestroyFailure(slot inventory.SlotIndex, refineType
 	return result, true
 }
 
+// ApplyRefineKeepFailure owns the keep-on-fail mutation for remembered
+// refine_info with KeepOnFail and probability in 1..99: gold/materials are
+// consumed while the source carried item remains in place.
+func (r *Runtime) ApplyRefineKeepFailure(slot inventory.SlotIndex, refineType uint8, sourceID uint64, remembered itemcatalog.RefineInfo, sourceTemplate itemcatalog.Template, resultTemplate itemcatalog.Template) (RefineKeepFailureResult, bool) {
+	if r == nil || sourceID == 0 || !remembered.KeepOnFail || remembered.Probability < 1 || remembered.Probability > 99 || remembered.Cost < 0 || remembered.ResultVnum == 0 || len(remembered.Materials) > itemcatalog.MaxRefineMaterialCount {
+		return RefineKeepFailureResult{}, false
+	}
+	info, ok := r.RefineInformation(slot, refineType, sourceTemplate)
+	if !ok || info.SourceVnum == 0 || sourceTemplate.RefineInfo == nil {
+		return RefineKeepFailureResult{}, false
+	}
+	if !refineInfoEqual(remembered, *sourceTemplate.RefineInfo) || !refineInfoEqual(remembered, itemcatalog.RefineInfo{
+		ResultVnum:  info.ResultVnum,
+		Cost:        info.Cost,
+		Probability: info.Probability,
+		KeepOnFail:  sourceTemplate.RefineInfo.KeepOnFail,
+		Materials:   info.Materials,
+	}) {
+		return RefineKeepFailureResult{}, false
+	}
+	if !itemcatalog.ValidTemplate(resultTemplate) || resultTemplate.Vnum != remembered.ResultVnum {
+		return RefineKeepFailureResult{}, false
+	}
+	index := findInventorySlot(r.liveInventory, slot)
+	if index < 0 {
+		return RefineKeepFailureResult{}, false
+	}
+	sourceItem := r.liveInventory[index]
+	if sourceItem.ID != sourceID || sourceItem.Vnum != info.SourceVnum || sourceItem.Equipped || sourceItem.Locked || sourceItem.Count != 1 {
+		return RefineKeepFailureResult{}, false
+	}
+	cost := uint64(remembered.Cost)
+	const maxPointChangeCarrier = uint64(1<<31 - 1)
+	if cost > maxPointChangeCarrier || r.liveGold < cost || r.liveGold > maxPointChangeCarrier {
+		return RefineKeepFailureResult{}, false
+	}
+	nextGold := r.liveGold - cost
+	materialPlan, ok := planRefineMaterialChanges(r.liveInventory, slot, remembered.Materials)
+	if !ok {
+		return RefineKeepFailureResult{}, false
+	}
+
+	inventoryItems := cloneItemInstances(r.liveInventory)
+	materialChanges := make([]RefineMaterialChange, 0, len(materialPlan))
+	for _, planned := range materialPlan {
+		currentIndex := findInventorySlot(inventoryItems, planned.Slot)
+		if currentIndex < 0 {
+			return RefineKeepFailureResult{}, false
+		}
+		item := inventoryItems[currentIndex]
+		if item.Equipped || item.Locked || item.Vnum != planned.Vnum || item.Count < planned.Consume {
+			return RefineKeepFailureResult{}, false
+		}
+		change := RefineMaterialChange{Slot: planned.Slot}
+		if item.Count == planned.Consume {
+			inventoryItems = removeInventoryIndex(inventoryItems, currentIndex)
+			change.ItemRemoved = true
+		} else {
+			item.Count -= planned.Consume
+			if err := item.Validate(); err != nil {
+				return RefineKeepFailureResult{}, false
+			}
+			inventoryItems[currentIndex] = item
+			change.Item = item
+		}
+		materialChanges = append(materialChanges, change)
+	}
+	sourceIndex := findInventorySlot(inventoryItems, slot)
+	if sourceIndex < 0 {
+		return RefineKeepFailureResult{}, false
+	}
+	kept := inventoryItems[sourceIndex]
+	if kept.ID != sourceID || kept.Vnum != info.SourceVnum || kept.Count != 1 || kept.Equipped || kept.Locked {
+		return RefineKeepFailureResult{}, false
+	}
+	sortInventoryItems(inventoryItems)
+
+	result := RefineKeepFailureResult{
+		SourceSlot:      slot,
+		MaterialChanges: materialChanges,
+		GoldBefore:      r.liveGold,
+		Gold:            nextGold,
+		Cost:            remembered.Cost,
+	}
+	r.liveGold = nextGold
+	r.liveInventory = inventoryItems
+	return result, true
+}
+
 // ApplyRefineWithRoll owns the first deterministic confirm path for remembered
 // refine_info.probability values in 1..99. roll must be in 1..100:
 // roll <= probability applies the owned success mutation; roll > probability
-// applies the owned whole-source destroy mutation. Rolls outside 1..100 and
-// remembered probabilities outside 1..99 fail closed with no mutation.
+// applies keep-on-fail when authored, otherwise the owned whole-source destroy
+// mutation. Rolls outside 1..100 and remembered probabilities outside 1..99
+// fail closed with no mutation.
 func (r *Runtime) ApplyRefineWithRoll(slot inventory.SlotIndex, refineType uint8, sourceID uint64, remembered itemcatalog.RefineInfo, sourceTemplate itemcatalog.Template, resultTemplate itemcatalog.Template, roll int) (RefineWithRollResult, bool) {
 	if r == nil || roll < 1 || roll > 100 || remembered.Probability < 1 || remembered.Probability > 99 {
 		return RefineWithRollResult{}, false
@@ -1783,7 +1888,9 @@ func (r *Runtime) ApplyRefineWithRoll(slot inventory.SlotIndex, refineType uint8
 	adjustedInfo := *sourceTemplate.RefineInfo
 	if int32(roll) <= remembered.Probability {
 		adjustedRemembered.Probability = 100
+		adjustedRemembered.KeepOnFail = false
 		adjustedInfo.Probability = 100
+		adjustedInfo.KeepOnFail = false
 		adjustedSource.RefineInfo = &adjustedInfo
 		success, ok := r.ApplyRefineSuccess(slot, refineType, sourceID, adjustedRemembered, adjustedSource, resultTemplate)
 		if !ok {
@@ -1791,8 +1898,17 @@ func (r *Runtime) ApplyRefineWithRoll(slot inventory.SlotIndex, refineType uint8
 		}
 		return RefineWithRollResult{Succeeded: true, Success: success}, true
 	}
+	if remembered.KeepOnFail {
+		keep, ok := r.ApplyRefineKeepFailure(slot, refineType, sourceID, remembered, sourceTemplate, resultTemplate)
+		if !ok {
+			return RefineWithRollResult{}, false
+		}
+		return RefineWithRollResult{Kept: true, Keep: keep}, true
+	}
 	adjustedRemembered.Probability = 0
+	adjustedRemembered.KeepOnFail = false
 	adjustedInfo.Probability = 0
+	adjustedInfo.KeepOnFail = false
 	adjustedSource.RefineInfo = &adjustedInfo
 	destroy, ok := r.ApplyRefineDestroyFailure(slot, refineType, sourceID, adjustedRemembered, adjustedSource, resultTemplate)
 	if !ok {
@@ -1867,7 +1983,7 @@ func planRefineMaterialChanges(items []inventory.ItemInstance, sourceSlot invent
 }
 
 func refineInfoEqual(left, right itemcatalog.RefineInfo) bool {
-	if left.ResultVnum != right.ResultVnum || left.Cost != right.Cost || left.Probability != right.Probability || len(left.Materials) != len(right.Materials) {
+	if left.ResultVnum != right.ResultVnum || left.Cost != right.Cost || left.Probability != right.Probability || left.KeepOnFail != right.KeepOnFail || len(left.Materials) != len(right.Materials) {
 		return false
 	}
 	for i := range left.Materials {

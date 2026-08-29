@@ -1261,6 +1261,47 @@ func TestFileStoreSaveThenLoadRoundTripPreservesRefineInformationMetadata(t *tes
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripPreservesRefineKeepOnFail(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:       11200,
+		Name:       "Keep Fail Practice Blade",
+		Stackable:  false,
+		MaxCount:   1,
+		Refineable: true,
+		RefineInfo: &RefineInfo{
+			ResultVnum:  11201,
+			Cost:        2500,
+			Probability: 75,
+			KeepOnFail:  true,
+			Materials: []RefineMaterial{
+				{Vnum: 27001, Count: 2},
+			},
+		},
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with refine keep_on_fail: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with refine keep_on_fail: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with refine keep_on_fail:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with refine keep_on_fail: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 11200,\n      \"name\": \"Keep Fail Practice Blade\",\n      \"stackable\": false,\n      \"max_count\": 1,\n      \"refineable\": true,\n      \"refine_info\": {\n        \"result_vnum\": 11201,\n        \"cost\": 2500,\n        \"probability\": 75,\n        \"keep_on_fail\": true,\n        \"materials\": [\n          {\n            \"vnum\": 27001,\n            \"count\": 2\n          }\n        ]\n      }\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with refine keep_on_fail:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
 func TestFileStoreRejectsInvalidRefineInformationMetadata(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -1329,6 +1370,28 @@ func TestFileStoreRejectsInvalidRefineInformationMetadata(t *testing.T) {
 				MaxCount:   1,
 				Refineable: true,
 				RefineInfo: &RefineInfo{ResultVnum: 11201, Cost: 2500, Probability: 101},
+			},
+		},
+		{
+			name: "keep_on_fail with probability 0",
+			template: Template{
+				Vnum:       11200,
+				Name:       "Practice Blade",
+				Stackable:  false,
+				MaxCount:   1,
+				Refineable: true,
+				RefineInfo: &RefineInfo{ResultVnum: 11201, Cost: 2500, Probability: 0, KeepOnFail: true},
+			},
+		},
+		{
+			name: "keep_on_fail with probability 100",
+			template: Template{
+				Vnum:       11200,
+				Name:       "Practice Blade",
+				Stackable:  false,
+				MaxCount:   1,
+				Refineable: true,
+				RefineInfo: &RefineInfo{ResultVnum: 11201, Cost: 2500, Probability: 100, KeepOnFail: true},
 			},
 		},
 	}

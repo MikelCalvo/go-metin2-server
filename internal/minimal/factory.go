@@ -7548,6 +7548,36 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								setActiveRefineDialog(refineDialogPresentation{}, false)
 								return gameflow.ItemRefineResult{Accepted: true, Frames: committed}
 							}
+							if outcome.Kept {
+								result := outcome.Keep
+								frames, err := refineKeepFailureResultFrames(previousSelected, result, runtime.itemTemplates, packet.Type)
+								if err != nil {
+									selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+									return gameflow.ItemRefineResult{Accepted: false}
+								}
+								var materialQuickslotFrames [][]byte
+								for _, change := range result.MaterialChanges {
+									if !change.ItemRemoved {
+										continue
+									}
+									quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, change.Slot)
+									if !ok {
+										selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+										return gameflow.ItemRefineResult{Accepted: false}
+									}
+									materialQuickslotFrames = append(materialQuickslotFrames, quickslotFrames...)
+								}
+								if len(materialQuickslotFrames) > 0 {
+									insertAt := len(result.MaterialChanges)
+									frames = append(frames[:insertAt], append(materialQuickslotFrames, frames[insertAt:]...)...)
+								}
+								committed, ok := commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+								if !ok {
+									return gameflow.ItemRefineResult{Accepted: false}
+								}
+								setActiveRefineDialog(refineDialogPresentation{}, false)
+								return gameflow.ItemRefineResult{Accepted: true, Frames: committed}
+							}
 							if !outcome.Destroyed {
 								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 								return gameflow.ItemRefineResult{Accepted: false}
@@ -7619,6 +7649,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								ResultVnum:  info.ResultVnum,
 								Cost:        info.Cost,
 								Probability: info.Probability,
+								KeepOnFail:  template.RefineInfo != nil && template.RefineInfo.KeepOnFail,
 								Materials:   append([]itemcatalog.RefineMaterial(nil), info.Materials...),
 							},
 						}
@@ -11558,6 +11589,44 @@ func refineDestroyFailureResultFrames(character loginticket.Character, result pl
 	}))
 	// Legacy TMP4 clients listen for CHAT_TYPE_COMMAND "RefineFailed <type>"
 	// to play the failure popup/sound.
+	frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+		Type:    chatproto.ChatTypeCommand,
+		VID:     0,
+		Empire:  0,
+		Message: fmt.Sprintf("RefineFailed %d", refineType),
+	}))
+	return frames, nil
+}
+
+func refineKeepFailureResultFrames(character loginticket.Character, result player.RefineKeepFailureResult, templates map[uint32]itemcatalog.Template, refineType uint8) ([][]byte, error) {
+	frames := make([][]byte, 0, len(result.MaterialChanges)+2)
+	for _, change := range result.MaterialChanges {
+		position, err := itemproto.CarriedInventoryPosition(uint16(change.Slot))
+		if err != nil {
+			return nil, err
+		}
+		if change.ItemRemoved {
+			frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: position}))
+			continue
+		}
+		updateFrame, err := encodeBootstrapItemUpdateFrameWithTemplates(position, change.Item, templates)
+		if err != nil {
+			return nil, err
+		}
+		frames = append(frames, updateFrame)
+	}
+	if result.GoldBefore < result.Gold || result.GoldBefore-result.Gold != uint64(result.Cost) || result.Gold > uint64(math.MaxInt32) || result.Cost < 0 {
+		return nil, fmt.Errorf("refine keep-failure gold point-change out of range")
+	}
+	frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+		VID:    character.VID,
+		Type:   bootstrapGoldPointType,
+		Amount: -result.Cost,
+		Value:  int32(result.Gold),
+	}))
+	// Legacy TMP4 clients listen for CHAT_TYPE_COMMAND "RefineFailed <type>"
+	// to play the failure popup/sound; keep-on-fail reuses that companion
+	// without deleting the source item.
 	frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
 		Type:    chatproto.ChatTypeCommand,
 		VID:     0,

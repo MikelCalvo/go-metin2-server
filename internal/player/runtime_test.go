@@ -4135,7 +4135,7 @@ func TestRuntimeApplyRefineWithRollProbability75FailureDestroysSource(t *testing
 	sourceTemplate, resultTemplate, remembered := refineSuccessTemplates(75)
 
 	outcome, ok := runtime.ApplyRefineWithRoll(5, 3, 701, remembered, sourceTemplate, resultTemplate, 76)
-	if !ok || outcome.Succeeded || !outcome.Destroyed {
+	if !ok || outcome.Succeeded || !outcome.Destroyed || outcome.Kept {
 		t.Fatalf("expected probability-75 roll=76 to destroy, got ok=%v outcome=%+v", ok, outcome)
 	}
 	if outcome.Destroy.SourceSlot != 5 || outcome.Destroy.Gold != 2500 || outcome.Destroy.Cost != 2500 {
@@ -4148,6 +4148,33 @@ func TestRuntimeApplyRefineWithRollProbability75FailureDestroysSource(t *testing
 	persistedAfter := runtime.PersistedSnapshot()
 	if !reflect.DeepEqual(persistedAfter.Inventory, persisted.Inventory) || persistedAfter.Gold != persisted.Gold {
 		t.Fatalf("refine roll destroy mutated persisted snapshot before commit: got %#v want %#v", persistedAfter, persisted)
+	}
+}
+
+func TestRuntimeApplyRefineWithRollProbability75KeepOnFailKeepsSource(t *testing.T) {
+	persisted := refineSuccessSeedCharacter(5000)
+	runtime := NewRuntime(persisted, SessionLink{Login: "refine-roll-keep", CharacterIndex: 1})
+	sourceTemplate, resultTemplate, remembered := refineSuccessTemplates(75)
+	sourceTemplate.RefineInfo.KeepOnFail = true
+	remembered.KeepOnFail = true
+
+	outcome, ok := runtime.ApplyRefineWithRoll(5, 3, 701, remembered, sourceTemplate, resultTemplate, 76)
+	if !ok || outcome.Succeeded || outcome.Destroyed || !outcome.Kept {
+		t.Fatalf("expected probability-75 keep_on_fail roll=76 to keep source, got ok=%v outcome=%+v", ok, outcome)
+	}
+	if outcome.Keep.SourceSlot != 5 || outcome.Keep.Gold != 2500 || outcome.Keep.Cost != 2500 {
+		t.Fatalf("unexpected refine keep-failure payload: %+v", outcome.Keep)
+	}
+	live := runtime.LiveCharacter()
+	wantInventory := []inventory.ItemInstance{
+		{ID: 701, Vnum: 11200, Count: 1, Slot: 5},
+	}
+	if !reflect.DeepEqual(live.Inventory, wantInventory) || live.Gold != 2500 {
+		t.Fatalf("unexpected live state after refine keep-failure: inventory=%#v gold=%d", live.Inventory, live.Gold)
+	}
+	persistedAfter := runtime.PersistedSnapshot()
+	if !reflect.DeepEqual(persistedAfter.Inventory, persisted.Inventory) || persistedAfter.Gold != persisted.Gold {
+		t.Fatalf("refine keep-failure mutated persisted snapshot before commit: got %#v want %#v", persistedAfter, persisted)
 	}
 }
 
