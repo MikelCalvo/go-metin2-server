@@ -4032,6 +4032,26 @@ func TestCanonicalizeRejectsMerchantCatalogMultipleNonStackableBundledItem(t *te
 	}
 }
 
+func TestCanonicalizeRejectsQuestFlagRewardItemsWithoutBundledItemTemplates(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:      interactionstore.KindQuestFlag,
+			Ref:       "quest:first_steps_kill_turnin_without_templates",
+			Text:      "Quest updated: first_steps.killed_qa_mob = 0.",
+			QuestRef:  "quest:first_steps",
+			QuestFlag: "killed_qa_mob",
+			QuestFrom: 1,
+			QuestTo:   0,
+			RewardItems: []interactionstore.RewardItemEntry{
+				{ItemVnum: 27001, Count: 1},
+			},
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for quest-flag reward items without bundled item templates, got %v", err)
+	}
+}
+
 func TestCanonicalizeRejectsQuestFlagRewardItemsMissingFromBundledItemTemplates(t *testing.T) {
 	_, err := Canonicalize(Bundle{
 		ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}},
@@ -5385,6 +5405,25 @@ func TestCanonicalizeRejectsCheckedInCombatProfileDeathRewardWithoutItemTemplate
 	}
 	if _, err := Canonicalize(bundle); !errors.Is(err, ErrInvalidBundle) {
 		t.Fatalf("expected ErrInvalidBundle for checked-in combat-profile death-reward without item templates example, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsCheckedInQuestFlagRewardItemWithoutItemTemplatesExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-invalid-quest-flag-reward-item-without-item-templates-bundle.json"))
+	if err != nil {
+		t.Fatalf("read invalid quest-flag reward item without item templates example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode invalid quest-flag reward item without item templates example bundle: %v", err)
+	}
+	if _, err := Canonicalize(bundle); !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for checked-in quest-flag reward item without item templates example, got %v", err)
 	}
 }
 
