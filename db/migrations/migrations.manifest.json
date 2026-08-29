@@ -184,6 +184,14 @@
       "down_path": "0023_character_myshop_unit_prices.down.sql",
       "up_sha256": "2601e7d972f4e65fb824680d291916cd6a91f5f0cea798211934c22f64ff632f",
       "down_sha256": "0ceec41ddafca4c178cbf94feed3fdd90e79ff17d1ca8bc967a90875ba7f4b77"
+    },
+    {
+      "version": 24,
+      "name": "character_item_instance_sockets",
+      "up_path": "0024_character_item_instance_sockets.up.sql",
+      "down_path": "0024_character_item_instance_sockets.down.sql",
+      "up_sha256": "77b20a6cf165b6a8ad3c4da9f57bfd62ad1138c9138f395212d35aa361863dd0",
+      "down_sha256": "89a8b8e486b34afb5f76ea28da2af1bc5ed6b2f60820eb9757711398598205ec"
     }
   ]
 }

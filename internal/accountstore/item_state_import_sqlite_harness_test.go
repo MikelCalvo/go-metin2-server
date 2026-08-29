@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -22,8 +23,8 @@ func TestSQLiteHarnessItemStateImportInsertsInventoryEquipmentAndQuickslots(t *t
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterItemStateMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", CharacterItemStateMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterItemInstanceSocketsMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterItemInstanceSocketsMigrationVersion, err)
 	}
 
 	accounts := []Account{
@@ -33,12 +34,14 @@ func TestSQLiteHarnessItemStateImportInsertsInventoryEquipmentAndQuickslots(t *t
 			Characters: []loginticket.Character{
 				func() loginticket.Character {
 					character := rosterExportCharacter(11, "AlphaWar")
+					active := inventory.SocketValues{1, 0, 7}
+					zero := inventory.SocketValues{}
 					character.Inventory = []inventory.ItemInstance{
-						{ID: 1002, Vnum: 27002, Count: 2, Slot: 9},
-						{ID: 1001, Vnum: 27001, Count: 3, Slot: 5, Locked: true},
+						{ID: 1002, Vnum: 27002, Count: 2, Slot: 9, Sockets: &zero},
+						{ID: 1001, Vnum: 27001, Count: 3, Slot: 5, Locked: true, Sockets: &active},
 					}
 					character.Equipment = []inventory.ItemInstance{
-						{ID: 2002, Vnum: 12200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody, Locked: true},
+						{ID: 2002, Vnum: 12200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody, Locked: true, Sockets: &active},
 						{ID: 2001, Vnum: 19, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
 					}
 					character.Quickslots = []loginticket.Quickslot{
@@ -105,17 +108,38 @@ func TestSQLiteHarnessItemStateImportInsertsInventoryEquipmentAndQuickslots(t *t
 		gotVnum        int64
 		gotCount       int
 		gotLocked      int
+		gotHasSockets  int
+		gotSocket0     int
+		gotSocket1     int
+		gotSocket2     int
 	)
 	if err := db.QueryRowContext(ctx, `
-SELECT character_id, slot, vnum, count, locked
+SELECT character_id, slot, vnum, count, locked, has_sockets, socket0, socket1, socket2
 FROM character_inventory_items WHERE id = ?`, 1001).Scan(
-		&gotCharacterID, &gotSlot, &gotVnum, &gotCount, &gotLocked,
+		&gotCharacterID, &gotSlot, &gotVnum, &gotCount, &gotLocked, &gotHasSockets, &gotSocket0, &gotSocket1, &gotSocket2,
 	); err != nil {
 		t.Fatalf("select inventory item 1001: %v", err)
 	}
-	if gotCharacterID != 11 || gotSlot != 5 || gotVnum != 27001 || gotCount != 3 || gotLocked != 1 {
-		t.Fatalf("inventory 1001 row mismatch: character=%d slot=%d vnum=%d count=%d locked=%d",
-			gotCharacterID, gotSlot, gotVnum, gotCount, gotLocked)
+	if gotCharacterID != 11 || gotSlot != 5 || gotVnum != 27001 || gotCount != 3 || gotLocked != 1 || gotHasSockets != 1 || gotSocket0 != 1 || gotSocket1 != 0 || gotSocket2 != 7 {
+		t.Fatalf("inventory 1001 row mismatch: character=%d slot=%d vnum=%d count=%d locked=%d has_sockets=%d sockets=(%d,%d,%d)",
+			gotCharacterID, gotSlot, gotVnum, gotCount, gotLocked, gotHasSockets, gotSocket0, gotSocket1, gotSocket2)
+	}
+
+	var (
+		gotZeroHasSockets int
+		gotZeroSocket0    int
+		gotZeroSocket1    int
+		gotZeroSocket2    int
+	)
+	if err := db.QueryRowContext(ctx, `
+SELECT has_sockets, socket0, socket1, socket2
+FROM character_inventory_items WHERE id = ?`, 1002).Scan(
+		&gotZeroHasSockets, &gotZeroSocket0, &gotZeroSocket1, &gotZeroSocket2,
+	); err != nil {
+		t.Fatalf("select inventory item 1002 sockets: %v", err)
+	}
+	if gotZeroHasSockets != 1 || gotZeroSocket0 != 0 || gotZeroSocket1 != 0 || gotZeroSocket2 != 0 {
+		t.Fatalf("inventory 1002 sockets mismatch: has_sockets=%d sockets=(%d,%d,%d)", gotZeroHasSockets, gotZeroSocket0, gotZeroSocket1, gotZeroSocket2)
 	}
 
 	var (
@@ -124,17 +148,21 @@ FROM character_inventory_items WHERE id = ?`, 1001).Scan(
 		gotEquipVnum        int64
 		gotEquipCount       int
 		gotEquipLocked      int
+		gotEquipHasSockets  int
+		gotEquipSocket0     int
+		gotEquipSocket1     int
+		gotEquipSocket2     int
 	)
 	if err := db.QueryRowContext(ctx, `
-SELECT character_id, equip_slot, vnum, count, locked
+SELECT character_id, equip_slot, vnum, count, locked, has_sockets, socket0, socket1, socket2
 FROM character_equipment_items WHERE id = ?`, 2002).Scan(
-		&gotEquipCharacterID, &gotEquipSlot, &gotEquipVnum, &gotEquipCount, &gotEquipLocked,
+		&gotEquipCharacterID, &gotEquipSlot, &gotEquipVnum, &gotEquipCount, &gotEquipLocked, &gotEquipHasSockets, &gotEquipSocket0, &gotEquipSocket1, &gotEquipSocket2,
 	); err != nil {
 		t.Fatalf("select equipment item 2002: %v", err)
 	}
-	if gotEquipCharacterID != 11 || gotEquipSlot != "body" || gotEquipVnum != 12200 || gotEquipCount != 1 || gotEquipLocked != 1 {
-		t.Fatalf("equipment 2002 row mismatch: character=%d slot=%q vnum=%d count=%d locked=%d",
-			gotEquipCharacterID, gotEquipSlot, gotEquipVnum, gotEquipCount, gotEquipLocked)
+	if gotEquipCharacterID != 11 || gotEquipSlot != "body" || gotEquipVnum != 12200 || gotEquipCount != 1 || gotEquipLocked != 1 || gotEquipHasSockets != 1 || gotEquipSocket0 != 1 || gotEquipSocket1 != 0 || gotEquipSocket2 != 7 {
+		t.Fatalf("equipment 2002 row mismatch: character=%d slot=%q vnum=%d count=%d locked=%d has_sockets=%d sockets=(%d,%d,%d)",
+			gotEquipCharacterID, gotEquipSlot, gotEquipVnum, gotEquipCount, gotEquipLocked, gotEquipHasSockets, gotEquipSocket0, gotEquipSocket1, gotEquipSocket2)
 	}
 
 	var (
@@ -169,8 +197,8 @@ func TestSQLiteHarnessItemStateImportRejectsDuplicatePrimaryKey(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterItemStateMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", CharacterItemStateMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterItemInstanceSocketsMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterItemInstanceSocketsMigrationVersion, err)
 	}
 
 	accounts := []Account{
@@ -240,8 +268,8 @@ func TestSQLiteHarnessItemStateImportRejectsMissingParentCharacter(t *testing.T)
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterItemStateMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", CharacterItemStateMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterItemInstanceSocketsMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterItemInstanceSocketsMigrationVersion, err)
 	}
 
 	export := CharacterItemStateExport{
@@ -273,8 +301,8 @@ func TestSQLiteHarnessItemStateImportAcceptsEmptyExport(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterItemStateMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", CharacterItemStateMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterItemInstanceSocketsMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterItemInstanceSocketsMigrationVersion, err)
 	}
 
 	export := CharacterItemStateExport{
@@ -290,6 +318,31 @@ func TestSQLiteHarnessItemStateImportAcceptsEmptyExport(t *testing.T) {
 	}
 	if result.CharacterCount != 0 || result.InventoryItemCount != 0 || result.EquipmentItemCount != 0 || result.QuickslotCount != 0 {
 		t.Fatalf("empty import result = %+v, want zero counts", result)
+	}
+}
+
+func TestSQLiteHarnessItemStateImportRejectsTipThreeOnlyLedger(t *testing.T) {
+	db := openSQLiteItemStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterItemStateMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterItemStateMigrationVersion, err)
+	}
+
+	export := CharacterItemStateExport{
+		MigrationVersion: CharacterItemStateMigrationVersion,
+		MigrationName:    CharacterItemStateMigrationName,
+		InventoryItems:   []CharacterInventoryItemRow{},
+		EquipmentItems:   []CharacterEquipmentItemRow{},
+		Quickslots:       []CharacterQuickslotRow{},
+	}
+	_, err := ImportCharacterItemState(ctx, db, export)
+	if !errors.Is(err, ErrCharacterItemStateImportSchemaRequired) {
+		t.Fatalf("ImportCharacterItemState tip-3-only error = %v, want %v", err, ErrCharacterItemStateImportSchemaRequired)
+	}
+	if err == nil || !strings.Contains(err.Error(), "24") || !strings.Contains(err.Error(), CharacterItemInstanceSocketsMigrationName) {
+		t.Fatalf("expected tip-3-only error to name additive 24, got %v", err)
 	}
 }
 

@@ -15,7 +15,8 @@ import (
 var ErrCharacterItemStateImportExecutorRequired = errors.New("character item-state import executor is required")
 
 // ErrCharacterItemStateImportSchemaRequired reports that the target database
-// has not applied the 0003_character_item_state migration boundary yet.
+// has not applied the 0003_character_item_state migration boundary and additive
+// 0024 instance-socket columns yet.
 var ErrCharacterItemStateImportSchemaRequired = errors.New("character item-state schema is not applied")
 
 // ErrCharacterItemStateImportRowCount reports that an INSERT affected an
@@ -104,26 +105,36 @@ func requireCharacterItemStateSchema(ctx context.Context, querier dbmigrations.S
 	if err != nil {
 		return fmt.Errorf("%w: read schema_migrations: %v", ErrCharacterItemStateImportSchemaRequired, err)
 	}
-	for _, entry := range ledger {
-		if entry.Version == CharacterItemStateMigrationVersion && entry.Name == CharacterItemStateMigrationName {
-			return nil
-		}
-	}
+	hasItemState := false
+	hasInstanceSockets := false
 	latest := 0
 	for _, entry := range ledger {
 		if entry.Version > latest {
 			latest = entry.Version
 		}
+		if entry.Version == CharacterItemStateMigrationVersion && entry.Name == CharacterItemStateMigrationName {
+			hasItemState = true
+		}
+		if entry.Version == CharacterItemInstanceSocketsMigrationVersion && entry.Name == CharacterItemInstanceSocketsMigrationName {
+			hasInstanceSockets = true
+		}
 	}
-	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrCharacterItemStateImportSchemaRequired, latest, CharacterItemStateMigrationVersion, CharacterItemStateMigrationName)
+	if hasItemState && hasInstanceSockets {
+		return nil
+	}
+	if !hasItemState {
+		return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrCharacterItemStateImportSchemaRequired, latest, CharacterItemStateMigrationVersion, CharacterItemStateMigrationName)
+	}
+	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrCharacterItemStateImportSchemaRequired, latest, CharacterItemInstanceSocketsMigrationVersion, CharacterItemInstanceSocketsMigrationName)
 }
 
 func insertCharacterInventoryItem(ctx context.Context, tx *sql.Tx, row CharacterInventoryItemRow) error {
 	result, err := tx.ExecContext(ctx, `
 INSERT INTO character_inventory_items (
-    id, character_id, slot, vnum, count, locked
-) VALUES (?, ?, ?, ?, ?, ?)`,
+    id, character_id, slot, vnum, count, locked, has_sockets, socket0, socket1, socket2
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		int64(row.ID), int64(row.CharacterID), int(row.Slot), int64(row.Vnum), int(row.Count), boolToSQLInt(row.Locked),
+		boolToSQLInt(row.HasSockets), int64(row.Socket0), int64(row.Socket1), int64(row.Socket2),
 	)
 	if err != nil {
 		return fmt.Errorf("insert inventory item id %d: %w", row.ID, err)
@@ -134,9 +145,10 @@ INSERT INTO character_inventory_items (
 func insertCharacterEquipmentItem(ctx context.Context, tx *sql.Tx, row CharacterEquipmentItemRow) error {
 	result, err := tx.ExecContext(ctx, `
 INSERT INTO character_equipment_items (
-    id, character_id, equip_slot, vnum, count, locked
-) VALUES (?, ?, ?, ?, ?, ?)`,
+    id, character_id, equip_slot, vnum, count, locked, has_sockets, socket0, socket1, socket2
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		int64(row.ID), int64(row.CharacterID), row.EquipSlot, int64(row.Vnum), int(row.Count), boolToSQLInt(row.Locked),
+		boolToSQLInt(row.HasSockets), int64(row.Socket0), int64(row.Socket1), int64(row.Socket2),
 	)
 	if err != nil {
 		return fmt.Errorf("insert equipment item id %d: %w", row.ID, err)

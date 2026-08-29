@@ -11,13 +11,16 @@ import (
 )
 
 func TestExportCharacterItemStateBuildsDeterministicRowsMatchingMigrationShape(t *testing.T) {
+	activeSockets := inventory.SocketValues{1, 0, 7}
+	zeroSockets := inventory.SocketValues{}
+
 	alphaWar := rosterExportCharacter(11, "AlphaWar")
 	alphaWar.Inventory = []inventory.ItemInstance{
-		{ID: 1002, Vnum: 27002, Count: 2, Slot: 9},
-		{ID: 1001, Vnum: 27001, Count: 3, Slot: 5, Locked: true},
+		{ID: 1002, Vnum: 27002, Count: 2, Slot: 9, Sockets: &zeroSockets},
+		{ID: 1001, Vnum: 27001, Count: 3, Slot: 5, Locked: true, Sockets: &activeSockets},
 	}
 	alphaWar.Equipment = []inventory.ItemInstance{
-		{ID: 2002, Vnum: 12200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody, Locked: true},
+		{ID: 2002, Vnum: 12200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody, Locked: true, Sockets: &activeSockets},
 		{ID: 2001, Vnum: 19, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
 	}
 	alphaWar.Quickslots = []loginticket.Quickslot{
@@ -41,15 +44,15 @@ func TestExportCharacterItemStateBuildsDeterministicRowsMatchingMigrationShape(t
 		t.Fatalf("unexpected migration boundary: version=%d name=%q", export.MigrationVersion, export.MigrationName)
 	}
 	wantInventory := []CharacterInventoryItemRow{
-		{ID: 1001, CharacterID: 11, Slot: 5, Vnum: 27001, Count: 3, Locked: true},
-		{ID: 1002, CharacterID: 11, Slot: 9, Vnum: 27002, Count: 2},
+		{ID: 1001, CharacterID: 11, Slot: 5, Vnum: 27001, Count: 3, Locked: true, HasSockets: true, Socket0: 1, Socket2: 7},
+		{ID: 1002, CharacterID: 11, Slot: 9, Vnum: 27002, Count: 2, HasSockets: true},
 		{ID: 3001, CharacterID: 22, Slot: 0, Vnum: 50011, Count: 1},
 	}
 	if !reflect.DeepEqual(export.InventoryItems, wantInventory) {
 		t.Fatalf("unexpected inventory item rows:\n got: %#v\nwant: %#v", export.InventoryItems, wantInventory)
 	}
 	wantEquipment := []CharacterEquipmentItemRow{
-		{ID: 2002, CharacterID: 11, EquipSlot: "body", Vnum: 12200, Count: 1, Locked: true},
+		{ID: 2002, CharacterID: 11, EquipSlot: "body", Vnum: 12200, Count: 1, Locked: true, HasSockets: true, Socket0: 1, Socket2: 7},
 		{ID: 2001, CharacterID: 11, EquipSlot: "weapon", Vnum: 19, Count: 1},
 	}
 	if !reflect.DeepEqual(export.EquipmentItems, wantEquipment) {

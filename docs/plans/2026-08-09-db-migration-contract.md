@@ -39,6 +39,11 @@ Rules frozen by tests:
   - `character_quickslots` stores owning character id plus quickslot position/type/slot tuples,
   - item ids are globally unique across carried and equipped item rows by table primary keys and exporter validation, while `(character_id, slot)`, `(character_id, equip_slot)`, and `(character_id, position)` are unique within their surfaces,
   - item templates, login tickets, authored content, world runtime state, exchange/trade state, ground-item handles, and migration execution remain out of scope.
+- the embedded catalog now also includes `0024_character_item_instance_sockets`, an additive schema-only companion for tip-`0003` after FileStore owned per-instance sockets:
+  - it adds `has_sockets` + `socket0`/`socket1`/`socket2` to `character_inventory_items` and `character_equipment_items`,
+  - `has_sockets = 0` means nil instance sockets (template fallback) and requires zero socket values; `has_sockets = 1` is authoritative including all-zero,
+  - tip-`0003` / `character_item_state` remains the export / quarantine / import-result identity; SQL INSERT requires tip `3` plus additive `24`,
+  - upsert / stock production driver / live DB inventory repositories remain out of scope.
 - the embedded catalog now also includes `0004_character_quest_state`, a schema-only contract for the standalone bootstrap quest-state snapshot:
   - `character_quest_flags` stores owning character id, quest ref, flag name, non-zero value, and timestamps,
   - `(character_id, quest_ref, flag_name)` is the primary key so duplicate flags fail closed at the database boundary,
@@ -134,7 +139,7 @@ Rules frozen by tests:
   - malformed items, duplicate item ids across carried/equipped state, invalid quickslots, or invalid roster prerequisites fail closed.
 - `gamed` exposes this projection through loopback-only read-only `GET /local/account-store/exports/character-item-state`; it reads committed bootstrap account snapshots, returns JSON, and performs no SQL or store mutation.
 - `internal/accountstore` now also exposes a fail-closed quarantine/preflight for retained `0003_character_item_state` exports:
-  - `ValidateCharacterItemStateExport` / `QuarantineCharacterItemStateExport` accept only migration version/name `3` / `character_item_state`, present inventory/equipment/quickslot slices, `character_id > 0`, globally unique item ids, unique inventory and equipment slot keys, and migration-valid quickslot tuples,
+  - `ValidateCharacterItemStateExport` / `QuarantineCharacterItemStateExport` accept only migration version/name `3` / `character_item_state`, present inventory/equipment/quickslot slices, `character_id > 0`, globally unique item ids, unique inventory and equipment slot keys, migration-valid quickslot tuples, and presence-aware optional instance sockets (`has_sockets` false requires zero sockets; `has_sockets` true including all-zero is authoritative),
   - successful quarantine returns metadata-only counts plus a canonicalized export ordered by character id and the stable inventory / equipment / quickslot sort keys,
   - loopback-only `POST /local/account-store/exports/character-item-state/quarantine` on `gamed` validates and canonicalizes a retained artifact without opening a database, writing account snapshots, or emitting SQL.
 - `internal/accountstore` now exposes a read-only character point-state projection for the `0011_character_point_state` migration boundary:

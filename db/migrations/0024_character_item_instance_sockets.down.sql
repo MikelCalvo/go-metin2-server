@@ -1,0 +1,9 @@
+-- go-metin2 migration: 0024 character_item_instance_sockets down
+ALTER TABLE character_equipment_items DROP COLUMN socket2;
+ALTER TABLE character_equipment_items DROP COLUMN socket1;
+ALTER TABLE character_equipment_items DROP COLUMN socket0;
+ALTER TABLE character_equipment_items DROP COLUMN has_sockets;
+ALTER TABLE character_inventory_items DROP COLUMN socket2;
+ALTER TABLE character_inventory_items DROP COLUMN socket1;
+ALTER TABLE character_inventory_items DROP COLUMN socket0;
+ALTER TABLE character_inventory_items DROP COLUMN has_sockets;

@@ -59,6 +59,8 @@ const (
 	expectedItemTemplateRefineFailResultVnumDownSHA256      = "019f38278f7bb2c3f7190fec70e2da75d3bd3cf39f051c216c86a7a4a7f175a7"
 	expectedCharacterMyShopUnitPricesUpSHA256               = "2601e7d972f4e65fb824680d291916cd6a91f5f0cea798211934c22f64ff632f"
 	expectedCharacterMyShopUnitPricesDownSHA256             = "0ceec41ddafca4c178cbf94feed3fdd90e79ff17d1ca8bc967a90875ba7f4b77"
+	expectedCharacterItemInstanceSocketsUpSHA256            = "77b20a6cf165b6a8ad3c4da9f57bfd62ad1138c9138f395212d35aa361863dd0"
+	expectedCharacterItemInstanceSocketsDownSHA256          = "89a8b8e486b34afb5f76ea28da2af1bc5ed6b2f60820eb9757711398598205ec"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -939,6 +941,49 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 		t.Fatalf("expected character myshop unit-prices down migration to drop table, got:\n%s", twentyThird.DownSQL)
 	}
 
+	if len(catalog) < 24 {
+		t.Fatalf("expected character item instance-sockets migration after myshop unit-prices, got %d", len(catalog))
+	}
+	twentyFourth := catalog[23]
+	if twentyFourth.Version != 24 || twentyFourth.Name != "character_item_instance_sockets" {
+		t.Fatalf("unexpected twenty-fourth migration: %#v", twentyFourth)
+	}
+	if twentyFourth.UpPath != "0024_character_item_instance_sockets.up.sql" {
+		t.Fatalf("unexpected twenty-fourth up path: %q", twentyFourth.UpPath)
+	}
+	if twentyFourth.DownPath != "0024_character_item_instance_sockets.down.sql" {
+		t.Fatalf("unexpected twenty-fourth down path: %q", twentyFourth.DownPath)
+	}
+	if twentyFourth.UpSHA256 != expectedCharacterItemInstanceSocketsUpSHA256 {
+		t.Fatalf("unexpected character item instance-sockets up checksum: got %q want %q", twentyFourth.UpSHA256, expectedCharacterItemInstanceSocketsUpSHA256)
+	}
+	if twentyFourth.DownSHA256 != expectedCharacterItemInstanceSocketsDownSHA256 {
+		t.Fatalf("unexpected character item instance-sockets down checksum: got %q want %q", twentyFourth.DownSHA256, expectedCharacterItemInstanceSocketsDownSHA256)
+	}
+	for _, want := range []string{
+		"ALTER TABLE character_inventory_items",
+		"ALTER TABLE character_equipment_items",
+		"ADD COLUMN has_sockets INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN socket0 INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN socket1 INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN socket2 INTEGER NOT NULL DEFAULT 0",
+		"has_sockets = 1 OR (socket0 = 0 AND socket1 = 0 AND socket2 = 0)",
+	} {
+		if !strings.Contains(twentyFourth.UpSQL, want) {
+			t.Fatalf("expected character item instance-sockets up migration to contain %q, got:\n%s", want, twentyFourth.UpSQL)
+		}
+	}
+	for _, want := range []string{
+		"ALTER TABLE character_equipment_items DROP COLUMN socket2",
+		"ALTER TABLE character_equipment_items DROP COLUMN has_sockets",
+		"ALTER TABLE character_inventory_items DROP COLUMN socket2",
+		"ALTER TABLE character_inventory_items DROP COLUMN has_sockets",
+	} {
+		if !strings.Contains(twentyFourth.DownSQL, want) {
+			t.Fatalf("expected character item instance-sockets down migration to contain %q, got:\n%s", want, twentyFourth.DownSQL)
+		}
+	}
+
 	for i, migration := range catalog {
 		wantVersion := i + 1
 		if migration.Version != wantVersion {
@@ -1008,7 +1053,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("built-in catalog summary: %v", err)
 	}
-	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 23 {
+	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 24 {
 		t.Fatalf("unexpected built-in catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -1018,7 +1063,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 		t.Fatalf("unexpected first built-in catalog summary row: %#v", summary.Migrations[0])
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "character_myshop_unit_prices" {
+	if latest.Version != summary.LatestVersion || latest.Name != "character_item_instance_sockets" {
 		t.Fatalf("unexpected latest built-in catalog summary row: %#v", latest)
 	}
 }

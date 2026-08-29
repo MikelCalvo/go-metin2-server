@@ -202,6 +202,9 @@ func validateQuarantineInventoryRow(row CharacterInventoryItemRow) error {
 	if row.Slot >= inventory.CarriedInventorySlotCount {
 		return fmt.Errorf("%w: inventory item %d slot %d outside migration inventory", ErrInvalidCharacterItemStateExport, row.ID, row.Slot)
 	}
+	if err := validateQuarantineInstanceSockets(row.ID, "inventory", row.HasSockets, row.Socket0, row.Socket1, row.Socket2); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -221,6 +224,9 @@ func validateQuarantineEquipmentRow(row CharacterEquipmentItemRow) error {
 	slot, ok := inventory.ParseEquipmentSlot(row.EquipSlot)
 	if !ok || !slot.Valid() {
 		return fmt.Errorf("%w: equipment item %d has invalid equip_slot %q", ErrInvalidCharacterItemStateExport, row.ID, row.EquipSlot)
+	}
+	if err := validateQuarantineInstanceSockets(row.ID, "equipment", row.HasSockets, row.Socket0, row.Socket1, row.Socket2); err != nil {
+		return err
 	}
 	return nil
 }
@@ -261,4 +267,14 @@ func equipmentSlotNameExportRank(name string) int {
 		return len(inventory.AllEquipmentSlots()) + 1
 	}
 	return equipmentSlotExportRank(slot)
+}
+
+func validateQuarantineInstanceSockets(itemID uint64, context string, hasSockets bool, socket0, socket1, socket2 int32) error {
+	if hasSockets {
+		return nil
+	}
+	if socket0 != 0 || socket1 != 0 || socket2 != 0 {
+		return fmt.Errorf("%w: %s item %d has non-zero sockets without has_sockets", ErrInvalidCharacterItemStateExport, context, itemID)
+	}
+	return nil
 }

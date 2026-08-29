@@ -12,6 +12,9 @@ import (
 const (
 	CharacterItemStateMigrationVersion = 3
 	CharacterItemStateMigrationName    = "character_item_state"
+
+	CharacterItemInstanceSocketsMigrationVersion = 24
+	CharacterItemInstanceSocketsMigrationName    = "character_item_instance_sockets"
 )
 
 // CharacterItemStateExport is a deterministic, schema-shaped projection of the
@@ -28,7 +31,9 @@ type CharacterItemStateExport struct {
 }
 
 // CharacterInventoryItemRow mirrors carried-inventory item state frozen by the
-// 0003_character_item_state migration.
+// 0003_character_item_state migration, including optional additive 0024 instance
+// sockets. HasSockets=false / omitted means nil instance sockets (template
+// fallback); HasSockets=true including all-zero is authoritative.
 type CharacterInventoryItemRow struct {
 	ID          uint64              `json:"id"`
 	CharacterID uint32              `json:"character_id"`
@@ -36,10 +41,16 @@ type CharacterInventoryItemRow struct {
 	Vnum        uint32              `json:"vnum"`
 	Count       uint16              `json:"count"`
 	Locked      bool                `json:"locked,omitempty"`
+	HasSockets  bool                `json:"has_sockets,omitempty"`
+	Socket0     int32               `json:"socket0,omitempty"`
+	Socket1     int32               `json:"socket1,omitempty"`
+	Socket2     int32               `json:"socket2,omitempty"`
 }
 
 // CharacterEquipmentItemRow mirrors equipped item state frozen by the
-// 0003_character_item_state migration.
+// 0003_character_item_state migration, including optional additive 0024 instance
+// sockets. HasSockets=false / omitted means nil instance sockets (template
+// fallback); HasSockets=true including all-zero is authoritative.
 type CharacterEquipmentItemRow struct {
 	ID          uint64 `json:"id"`
 	CharacterID uint32 `json:"character_id"`
@@ -47,6 +58,10 @@ type CharacterEquipmentItemRow struct {
 	Vnum        uint32 `json:"vnum"`
 	Count       uint16 `json:"count"`
 	Locked      bool   `json:"locked,omitempty"`
+	HasSockets  bool   `json:"has_sockets,omitempty"`
+	Socket0     int32  `json:"socket0,omitempty"`
+	Socket1     int32  `json:"socket1,omitempty"`
+	Socket2     int32  `json:"socket2,omitempty"`
 }
 
 // CharacterQuickslotRow mirrors persisted quickslot state frozen by the
@@ -110,6 +125,7 @@ func ExportCharacterItemState(accounts []Account) (CharacterItemStateExport, err
 					return CharacterItemStateExport{}, err
 				}
 				seenItemIDs[item.ID] = fmt.Sprintf("character %q inventory slot %d", character.Name, item.Slot)
+				hasSockets, socket0, socket1, socket2 := instanceSocketsExportFields(item)
 				export.InventoryItems = append(export.InventoryItems, CharacterInventoryItemRow{
 					ID:          item.ID,
 					CharacterID: character.ID,
@@ -117,6 +133,10 @@ func ExportCharacterItemState(accounts []Account) (CharacterItemStateExport, err
 					Vnum:        item.Vnum,
 					Count:       item.Count,
 					Locked:      item.Locked,
+					HasSockets:  hasSockets,
+					Socket0:     socket0,
+					Socket1:     socket1,
+					Socket2:     socket2,
 				})
 			}
 
@@ -137,6 +157,7 @@ func ExportCharacterItemState(accounts []Account) (CharacterItemStateExport, err
 					return CharacterItemStateExport{}, err
 				}
 				seenItemIDs[item.ID] = fmt.Sprintf("character %q equipment slot %s", character.Name, item.EquipSlot.String())
+				hasSockets, socket0, socket1, socket2 := instanceSocketsExportFields(item)
 				export.EquipmentItems = append(export.EquipmentItems, CharacterEquipmentItemRow{
 					ID:          item.ID,
 					CharacterID: character.ID,
@@ -144,6 +165,10 @@ func ExportCharacterItemState(accounts []Account) (CharacterItemStateExport, err
 					Vnum:        item.Vnum,
 					Count:       item.Count,
 					Locked:      item.Locked,
+					HasSockets:  hasSockets,
+					Socket0:     socket0,
+					Socket1:     socket1,
+					Socket2:     socket2,
 				})
 			}
 
@@ -220,4 +245,12 @@ func equipmentSlotExportRank(slot inventory.EquipmentSlot) int {
 		}
 	}
 	return len(inventory.AllEquipmentSlots()) + int(slot)
+}
+
+func instanceSocketsExportFields(item inventory.ItemInstance) (hasSockets bool, socket0, socket1, socket2 int32) {
+	if !item.HasSockets() {
+		return false, 0, 0, 0
+	}
+	values := *item.Sockets
+	return true, values[0], values[1], values[2]
 }
