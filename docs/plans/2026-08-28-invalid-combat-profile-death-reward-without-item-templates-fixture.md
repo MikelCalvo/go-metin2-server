@@ -48,7 +48,15 @@ git diff --check
 
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
-2. Add further checked-in negatives only when a later reject case still forces
+2. ~~Add further checked-in negatives only when a later reject case still forces
    QA to invent JSON (for example combat-profile default death-reward drop
    whose vnum is absent from a present but incomplete `item_templates`
-   collection).
+   collection).~~ Done for combat-profile death-reward drops whose vnum is
+   absent from a present templates collection:
+   `docs/examples/bootstrap-invalid-combat-profile-death-reward-item-missing-from-item-templates-bundle.json`
+   (`docs/plans/2026-08-28-invalid-combat-profile-death-reward-item-missing-from-item-templates-fixture.md`).
+   ~~Also: `quest_flag` turn-in `reward_items` whose vnum is absent from a
+   present but incomplete `item_templates` collection.~~ Done for structured
+   quest-flag reward items missing from present templates:
+   `docs/examples/bootstrap-invalid-quest-flag-reward-item-missing-from-item-templates-bundle.json`
+   (`docs/plans/2026-08-29-invalid-quest-flag-reward-item-missing-from-item-templates-fixture.md`).
