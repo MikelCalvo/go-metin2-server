@@ -16,7 +16,7 @@ var ErrItemTemplateStateImportExecutorRequired = errors.New("item-template-state
 
 // ErrItemTemplateStateImportSchemaRequired reports that the target database has
 // not applied the tip-0009 item_template_refine_info boundary and/or the
-// additive 0021 keep_on_fail column yet.
+// additive 0021 keep_on_fail / 0022 fail_result_vnum columns yet.
 var ErrItemTemplateStateImportSchemaRequired = errors.New("item-template-state schema is not applied")
 
 // ErrItemTemplateStateImportRowCount reports that an INSERT affected an
@@ -132,6 +132,7 @@ func requireItemTemplateStateSchema(ctx context.Context, querier dbmigrations.SQ
 	}
 	hasRefineInfo := false
 	hasKeepOnFail := false
+	hasFailResultVnum := false
 	latest := 0
 	for _, entry := range ledger {
 		if entry.Version > latest {
@@ -143,14 +144,20 @@ func requireItemTemplateStateSchema(ctx context.Context, querier dbmigrations.SQ
 		if entry.Version == ItemTemplateRefineKeepOnFailMigrationVersion && entry.Name == ItemTemplateRefineKeepOnFailMigrationName {
 			hasKeepOnFail = true
 		}
+		if entry.Version == ItemTemplateRefineFailResultVnumMigrationVersion && entry.Name == ItemTemplateRefineFailResultVnumMigrationName {
+			hasFailResultVnum = true
+		}
 	}
-	if hasRefineInfo && hasKeepOnFail {
+	if hasRefineInfo && hasKeepOnFail && hasFailResultVnum {
 		return nil
 	}
 	if !hasRefineInfo {
 		return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrItemTemplateStateImportSchemaRequired, latest, ItemTemplateStateMigrationVersion, ItemTemplateStateMigrationName)
 	}
-	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrItemTemplateStateImportSchemaRequired, latest, ItemTemplateRefineKeepOnFailMigrationVersion, ItemTemplateRefineKeepOnFailMigrationName)
+	if !hasKeepOnFail {
+		return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrItemTemplateStateImportSchemaRequired, latest, ItemTemplateRefineKeepOnFailMigrationVersion, ItemTemplateRefineKeepOnFailMigrationName)
+	}
+	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrItemTemplateStateImportSchemaRequired, latest, ItemTemplateRefineFailResultVnumMigrationVersion, ItemTemplateRefineFailResultVnumMigrationName)
 }
 
 func insertItemTemplate(ctx context.Context, tx *sql.Tx, row ItemTemplateRow) error {
@@ -280,9 +287,9 @@ INSERT INTO item_template_equip_effects (
 func insertItemTemplateRefineInfo(ctx context.Context, tx *sql.Tx, row ItemTemplateRefineInfoRow) error {
 	result, err := tx.ExecContext(ctx, `
 INSERT INTO item_template_refine_infos (
-    vnum, result_vnum, cost, probability, keep_on_fail
-) VALUES (?, ?, ?, ?, ?)`,
-		int64(row.Vnum), int64(row.ResultVnum), int(row.Cost), int(row.Probability), boolToSQLInt(row.KeepOnFail),
+    vnum, result_vnum, cost, probability, keep_on_fail, fail_result_vnum
+) VALUES (?, ?, ?, ?, ?, ?)`,
+		int64(row.Vnum), int64(row.ResultVnum), int(row.Cost), int(row.Probability), boolToSQLInt(row.KeepOnFail), int64(row.FailResultVnum),
 	)
 	if err != nil {
 		return fmt.Errorf("insert item template refine info vnum %d: %w", row.Vnum, err)

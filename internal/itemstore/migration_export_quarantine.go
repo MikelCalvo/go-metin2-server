@@ -266,11 +266,12 @@ func canonicalizeItemTemplateStateExport(export ItemTemplateStateExport) (ItemTe
 				materials = append(materials, RefineMaterial{Vnum: material.ItemVnum, Count: material.Count})
 			}
 			template.RefineInfo = &RefineInfo{
-				ResultVnum:  info.ResultVnum,
-				Cost:        info.Cost,
-				Probability: info.Probability,
-				KeepOnFail:  info.KeepOnFail,
-				Materials:   materials,
+				ResultVnum:     info.ResultVnum,
+				Cost:           info.Cost,
+				Probability:    info.Probability,
+				KeepOnFail:     info.KeepOnFail,
+				FailResultVnum: info.FailResultVnum,
+				Materials:      materials,
 			}
 		} else if len(refineMaterialsByVnum[vnum]) > 0 {
 			return ItemTemplateStateExport{}, ItemTemplateStateQuarantineSummary{}, fmt.Errorf("%w: refine_materials without refine_info for vnum %d", ErrInvalidItemTemplateStateExport, vnum)
@@ -331,11 +332,12 @@ func canonicalizeItemTemplateStateExport(export ItemTemplateStateExport) (ItemTe
 		}
 		if template.RefineInfo != nil {
 			canonicalRefineInfos = append(canonicalRefineInfos, ItemTemplateRefineInfoRow{
-				Vnum:        vnum,
-				ResultVnum:  template.RefineInfo.ResultVnum,
-				Cost:        template.RefineInfo.Cost,
-				Probability: template.RefineInfo.Probability,
-				KeepOnFail:  template.RefineInfo.KeepOnFail,
+				Vnum:           vnum,
+				ResultVnum:     template.RefineInfo.ResultVnum,
+				Cost:           template.RefineInfo.Cost,
+				Probability:    template.RefineInfo.Probability,
+				KeepOnFail:     template.RefineInfo.KeepOnFail,
+				FailResultVnum: template.RefineInfo.FailResultVnum,
 			})
 			for i, material := range template.RefineInfo.Materials {
 				canonicalRefineMaterials = append(canonicalRefineMaterials, ItemTemplateRefineMaterialRow{

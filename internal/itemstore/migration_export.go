@@ -7,8 +7,9 @@ import (
 
 const (
 	// ItemTemplateStateMigrationVersion / Name pin the tip-0009 export /
-	// quarantine / import-result identity. Additive 0021 adds keep_on_fail onto
-	// item_template_refine_infos without retipping that identity.
+	// quarantine / import-result identity. Additive 0021 adds keep_on_fail and
+	// additive 0022 adds fail_result_vnum onto item_template_refine_infos
+	// without retipping that identity.
 	ItemTemplateStateMigrationVersion = 9
 	ItemTemplateStateMigrationName    = "item_template_refine_info"
 
@@ -17,6 +18,12 @@ const (
 	// inserting keep_on_fail.
 	ItemTemplateRefineKeepOnFailMigrationVersion = 21
 	ItemTemplateRefineKeepOnFailMigrationName    = "item_template_refine_keep_on_fail"
+
+	// ItemTemplateRefineFailResultVnumMigrationVersion / Name pin the additive
+	// schema boundary that SQL import must require beside tip-0009 / 0021 before
+	// inserting fail_result_vnum.
+	ItemTemplateRefineFailResultVnumMigrationVersion = 22
+	ItemTemplateRefineFailResultVnumMigrationName    = "item_template_refine_fail_result_vnum"
 )
 
 type ItemTemplateStateExport struct {
@@ -119,11 +126,12 @@ type ItemTemplateEquipEffectRow struct {
 }
 
 type ItemTemplateRefineInfoRow struct {
-	Vnum        uint32 `json:"vnum"`
-	ResultVnum  uint32 `json:"result_vnum"`
-	Cost        int32  `json:"cost"`
-	Probability int32  `json:"probability"`
-	KeepOnFail  bool   `json:"keep_on_fail,omitempty"`
+	Vnum           uint32 `json:"vnum"`
+	ResultVnum     uint32 `json:"result_vnum"`
+	Cost           int32  `json:"cost"`
+	Probability    int32  `json:"probability"`
+	KeepOnFail     bool   `json:"keep_on_fail,omitempty"`
+	FailResultVnum uint32 `json:"fail_result_vnum,omitempty"`
 }
 
 type ItemTemplateRefineMaterialRow struct {
@@ -183,11 +191,12 @@ func ExportItemTemplateState(snapshot Snapshot) (ItemTemplateStateExport, error)
 		}
 		if template.RefineInfo != nil {
 			export.RefineInfos = append(export.RefineInfos, ItemTemplateRefineInfoRow{
-				Vnum:        template.Vnum,
-				ResultVnum:  template.RefineInfo.ResultVnum,
-				Cost:        template.RefineInfo.Cost,
-				Probability: template.RefineInfo.Probability,
-				KeepOnFail:  template.RefineInfo.KeepOnFail,
+				Vnum:           template.Vnum,
+				ResultVnum:     template.RefineInfo.ResultVnum,
+				Cost:           template.RefineInfo.Cost,
+				Probability:    template.RefineInfo.Probability,
+				KeepOnFail:     template.RefineInfo.KeepOnFail,
+				FailResultVnum: template.RefineInfo.FailResultVnum,
 			})
 			for i, material := range template.RefineInfo.Materials {
 				export.RefineMaterials = append(export.RefineMaterials, ItemTemplateRefineMaterialRow{Vnum: template.Vnum, Position: uint8(i), ItemVnum: material.Vnum, Count: material.Count})

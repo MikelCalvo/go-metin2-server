@@ -168,6 +168,14 @@
       "down_path": "0021_item_template_refine_keep_on_fail.down.sql",
       "up_sha256": "d30200655fde0196ed58133a10731313b3e78f95075bc96f10195f1543270ec0",
       "down_sha256": "3f9bc552194cde79abc99196670e7cf0c3b08578763a7ecca072e6e6f48068c8"
+    },
+    {
+      "version": 22,
+      "name": "item_template_refine_fail_result_vnum",
+      "up_path": "0022_item_template_refine_fail_result_vnum.up.sql",
+      "down_path": "0022_item_template_refine_fail_result_vnum.down.sql",
+      "up_sha256": "49d20bbbe9c1e8649d4adcfb67e44486c227f252884461140b8c74cda013cc67",
+      "down_sha256": "019f38278f7bb2c3f7190fec70e2da75d3bd3cf39f051c216c86a7a4a7f175a7"
     }
   ]
 }

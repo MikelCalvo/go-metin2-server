@@ -85,5 +85,6 @@ string. Do not copy oracle source comments or Korean keys into runtime code.
 ## Status
 
 GREEN on `lane/items`: template-authored `refine_info.fail_result_vnum` owns the
-downgrade-on-fail `1..99` roll outcome beside `keep_on_fail`. Catalysts / SQL
-column stay deferred.
+downgrade-on-fail `1..99` roll outcome beside `keep_on_fail`. Catalysts stay
+deferred. SQL column / tip-`0009` export-import projection is owned by
+`docs/plans/2026-08-29-item-template-refine-fail-result-vnum-migration.md`.

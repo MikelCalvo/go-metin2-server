@@ -55,6 +55,8 @@ const (
 	expectedStaticActorCombatProfileReactionDelayDownSHA256 = "fb73fac5fa47749811e1195bc28808af9ce2590e43839d7f33fc7e37d906d839"
 	expectedItemTemplateRefineKeepOnFailUpSHA256            = "d30200655fde0196ed58133a10731313b3e78f95075bc96f10195f1543270ec0"
 	expectedItemTemplateRefineKeepOnFailDownSHA256          = "3f9bc552194cde79abc99196670e7cf0c3b08578763a7ecca072e6e6f48068c8"
+	expectedItemTemplateRefineFailResultVnumUpSHA256        = "49d20bbbe9c1e8649d4adcfb67e44486c227f252884461140b8c74cda013cc67"
+	expectedItemTemplateRefineFailResultVnumDownSHA256      = "019f38278f7bb2c3f7190fec70e2da75d3bd3cf39f051c216c86a7a4a7f175a7"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -862,6 +864,43 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 		t.Fatalf("expected item-template refine keep_on_fail down migration to drop keep_on_fail, got:\n%s", twentyFirst.DownSQL)
 	}
 
+	if len(catalog) < 22 {
+		t.Fatalf("expected item-template refine fail_result_vnum migration after keep_on_fail, got %d", len(catalog))
+	}
+	twentySecond := catalog[21]
+	if twentySecond.Version != 22 || twentySecond.Name != "item_template_refine_fail_result_vnum" {
+		t.Fatalf("unexpected twenty-second migration: %#v", twentySecond)
+	}
+	if twentySecond.UpPath != "0022_item_template_refine_fail_result_vnum.up.sql" {
+		t.Fatalf("unexpected twenty-second up path: %q", twentySecond.UpPath)
+	}
+	if twentySecond.DownPath != "0022_item_template_refine_fail_result_vnum.down.sql" {
+		t.Fatalf("unexpected twenty-second down path: %q", twentySecond.DownPath)
+	}
+	if twentySecond.UpSHA256 != expectedItemTemplateRefineFailResultVnumUpSHA256 {
+		t.Fatalf("unexpected item-template refine fail_result_vnum up checksum: got %q want %q", twentySecond.UpSHA256, expectedItemTemplateRefineFailResultVnumUpSHA256)
+	}
+	if twentySecond.DownSHA256 != expectedItemTemplateRefineFailResultVnumDownSHA256 {
+		t.Fatalf("unexpected item-template refine fail_result_vnum down checksum: got %q want %q", twentySecond.DownSHA256, expectedItemTemplateRefineFailResultVnumDownSHA256)
+	}
+	for _, want := range []string{
+		"ALTER TABLE item_template_refine_infos",
+		"ADD COLUMN fail_result_vnum BIGINT NOT NULL DEFAULT 0",
+		"fail_result_vnum = 0",
+		"keep_on_fail = 0",
+		"probability >= 1",
+		"probability <= 99",
+		"fail_result_vnum != vnum",
+		"fail_result_vnum != result_vnum",
+	} {
+		if !strings.Contains(twentySecond.UpSQL, want) {
+			t.Fatalf("expected item-template refine fail_result_vnum up migration to contain %q, got:\n%s", want, twentySecond.UpSQL)
+		}
+	}
+	if !strings.Contains(twentySecond.DownSQL, "ALTER TABLE item_template_refine_infos DROP COLUMN fail_result_vnum") {
+		t.Fatalf("expected item-template refine fail_result_vnum down migration to drop fail_result_vnum, got:\n%s", twentySecond.DownSQL)
+	}
+
 	for i, migration := range catalog {
 		wantVersion := i + 1
 		if migration.Version != wantVersion {
@@ -931,7 +970,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("built-in catalog summary: %v", err)
 	}
-	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 21 {
+	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 22 {
 		t.Fatalf("unexpected built-in catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -941,7 +980,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 		t.Fatalf("unexpected first built-in catalog summary row: %#v", summary.Migrations[0])
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "item_template_refine_keep_on_fail" {
+	if latest.Version != summary.LatestVersion || latest.Name != "item_template_refine_fail_result_vnum" {
 		t.Fatalf("unexpected latest built-in catalog summary row: %#v", latest)
 	}
 }

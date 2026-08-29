@@ -253,6 +253,9 @@ func TestPlanUpToLatestUsesBuiltInCatalog(t *testing.T) {
 	if plan.Pending[20].Version != 21 || plan.Pending[20].Name != "item_template_refine_keep_on_fail" || plan.Pending[20].Direction != DirectionUp || plan.Pending[20].Path != "0021_item_template_refine_keep_on_fail.up.sql" {
 		t.Fatalf("unexpected twenty-first built-in pending step: %#v", plan.Pending[20])
 	}
+	if plan.Pending[21].Version != 22 || plan.Pending[21].Name != "item_template_refine_fail_result_vnum" || plan.Pending[21].Direction != DirectionUp || plan.Pending[21].Path != "0022_item_template_refine_fail_result_vnum.up.sql" {
+		t.Fatalf("unexpected twenty-second built-in pending step: %#v", plan.Pending[21])
+	}
 }
 
 func TestPlanJSONShapeIsStableForFuturePreflightOutput(t *testing.T) {

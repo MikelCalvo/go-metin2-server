@@ -208,7 +208,7 @@ func TestRunImportExportImportsEmptyExportsAgainstRegisteredDriver(t *testing.T)
 			// additive 0016 chase_delay_ms, 0017 return_delay_ms, 0018
 			// homeward_delay_ms, 0019 max_step, and 0020 reaction_delay_ms before INSERT.
 			// Item-template SQL import keeps tip-0009 export identity but requires
-			// additive 0021 keep_on_fail before INSERT.
+			// additive 0021 keep_on_fail and 0022 fail_result_vnum before INSERT.
 			ledger := []dbmigrations.LedgerEntry{ledgerEntry(tc.version)}
 			if tc.kind == "static-actor-content-state" {
 				ledger = []dbmigrations.LedgerEntry{
@@ -224,6 +224,7 @@ func TestRunImportExportImportsEmptyExportsAgainstRegisteredDriver(t *testing.T)
 				ledger = []dbmigrations.LedgerEntry{
 					ledgerEntry(itemstore.ItemTemplateStateMigrationVersion),
 					ledgerEntry(itemstore.ItemTemplateRefineKeepOnFailMigrationVersion),
+					ledgerEntry(itemstore.ItemTemplateRefineFailResultVnumMigrationVersion),
 				}
 			}
 			driver.setLedger(ledger)

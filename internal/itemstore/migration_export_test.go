@@ -52,6 +52,14 @@ func TestExportItemTemplateStateBuildsDeterministicRowsMatchingMigrationShape(t 
 			EquipRejectText:   "You cannot wield this.",
 			UnequipRejectText: "You cannot remove this.",
 		},
+		{
+			Vnum:       11300,
+			Name:       "Downgrade Source Blade",
+			Stackable:  false,
+			MaxCount:   1,
+			Refineable: true,
+			RefineInfo: &RefineInfo{ResultVnum: 11301, Cost: 1800, Probability: 60, FailResultVnum: 11199, Materials: []RefineMaterial{{Vnum: 27001, Count: 1}}},
+		},
 	}}
 
 	export, err := ExportItemTemplateState(snapshot)
@@ -67,6 +75,7 @@ func TestExportItemTemplateStateBuildsDeterministicRowsMatchingMigrationShape(t 
 	}
 	wantTemplates := []ItemTemplateRow{
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, Refineable: true, Save: true, Irremovable: true, AppearanceVnum: 11201, AntiMale: true, EquipSlot: "weapon", EquipRejectText: "You cannot wield this.", UnequipRejectText: "You cannot remove this."},
+		{Vnum: 11300, Name: "Downgrade Source Blade", Stackable: false, MaxCount: 1, Refineable: true},
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 50, ShopSellPrice: 13, Highlight: true, Unique: true, AntiSell: true, AntiGet: true, AntiSafebox: true, PickupRange: 750, UseRejectText: "You cannot use this yet.", BuyRejectText: "The merchant will not sell this.", DropRejectText: "You cannot drop this.", PickupRejectText: "You cannot pick this up.", SellRejectText: "The merchant refuses this.", SafeboxRejectText: "You cannot store this."},
 	}
 	if !reflect.DeepEqual(export.Templates, wantTemplates) {
@@ -92,11 +101,18 @@ func TestExportItemTemplateStateBuildsDeterministicRowsMatchingMigrationShape(t 
 	if !reflect.DeepEqual(export.EquipEffects, wantEquipEffects) {
 		t.Fatalf("unexpected item-template equip-effect rows:\n got: %#v\nwant: %#v", export.EquipEffects, wantEquipEffects)
 	}
-	wantRefineInfos := []ItemTemplateRefineInfoRow{{Vnum: 11200, ResultVnum: 11201, Cost: 2500, Probability: 75, KeepOnFail: true}}
+	wantRefineInfos := []ItemTemplateRefineInfoRow{
+		{Vnum: 11200, ResultVnum: 11201, Cost: 2500, Probability: 75, KeepOnFail: true},
+		{Vnum: 11300, ResultVnum: 11301, Cost: 1800, Probability: 60, FailResultVnum: 11199},
+	}
 	if !reflect.DeepEqual(export.RefineInfos, wantRefineInfos) {
 		t.Fatalf("unexpected item-template refine-info rows:\n got: %#v\nwant: %#v", export.RefineInfos, wantRefineInfos)
 	}
-	wantRefineMaterials := []ItemTemplateRefineMaterialRow{{Vnum: 11200, Position: 0, ItemVnum: 27001, Count: 2}, {Vnum: 11200, Position: 1, ItemVnum: 27002, Count: 3}}
+	wantRefineMaterials := []ItemTemplateRefineMaterialRow{
+		{Vnum: 11200, Position: 0, ItemVnum: 27001, Count: 2},
+		{Vnum: 11200, Position: 1, ItemVnum: 27002, Count: 3},
+		{Vnum: 11300, Position: 0, ItemVnum: 27001, Count: 1},
+	}
 	if !reflect.DeepEqual(export.RefineMaterials, wantRefineMaterials) {
 		t.Fatalf("unexpected item-template refine-material rows:\n got: %#v\nwant: %#v", export.RefineMaterials, wantRefineMaterials)
 	}

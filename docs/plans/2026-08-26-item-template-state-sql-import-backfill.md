@@ -9,8 +9,8 @@ attribute / use-effect / equip-effect / refine-info / refine-material tables
 inside one transaction, and prove the round-trip on the build-tagged SQLite
 harness after the catalog tip includes version `9`. Tip-`0009` /
 `item_template_refine_info` remains the export / quarantine / import-result
-identity; import schema now also requires additive `0021` keep_on_fail — see
-[item-template refine keep-on-fail migration](2026-08-29-item-template-refine-keep-on-fail-migration.md).
+identity; import schema now also requires additive `0021` keep_on_fail and `0022` fail_result_vnum — see
+[item-template refine keep-on-fail migration](2026-08-29-item-template-refine-keep-on-fail-migration.md) and [item-template refine fail-result-vnum migration](2026-08-29-item-template-refine-fail-result-vnum-migration.md).
 
 This extends Track E SQL import beyond the landed `0002` roster, `0003`
 item-state, `0004` quest-state, `0010` ground-item-state, `0011` point-state,

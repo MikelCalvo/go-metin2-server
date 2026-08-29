@@ -1046,7 +1046,11 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	if twentyFirst.Version != 21 || twentyFirst.Name != "item_template_refine_keep_on_fail" || twentyFirst.Direction != dbmigrations.DirectionUp || twentyFirst.Path != "0021_item_template_refine_keep_on_fail.up.sql" {
 		t.Fatalf("unexpected twenty-first pending migration step: %#v", twentyFirst)
 	}
-	for _, step := range []dbmigrations.PlanStep{first, second, third, fourth, fifth, sixth, seventh, eighth, ninth, tenth, eleventh, twelfth, thirteenth, fourteenth, fifteenth, sixteenth, seventeenth, eighteenth, nineteenth, twentieth, twentyFirst} {
+	twentySecond := plan.Pending[21]
+	if twentySecond.Version != 22 || twentySecond.Name != "item_template_refine_fail_result_vnum" || twentySecond.Direction != dbmigrations.DirectionUp || twentySecond.Path != "0022_item_template_refine_fail_result_vnum.up.sql" {
+		t.Fatalf("unexpected twenty-second pending migration step: %#v", twentySecond)
+	}
+	for _, step := range []dbmigrations.PlanStep{first, second, third, fourth, fifth, sixth, seventh, eighth, ninth, tenth, eleventh, twelfth, thirteenth, fourteenth, fifteenth, sixteenth, seventeenth, eighteenth, nineteenth, twentieth, twentyFirst, twentySecond} {
 		if step.SHA256 == "" || strings.Contains(step.Path, "CREATE TABLE") {
 			t.Fatalf("expected metadata-only pending steps with checksums, got %#v", plan.Pending)
 		}
@@ -1071,7 +1075,7 @@ func TestGameRuntimeMigrationCatalogSummaryReturnsMetadataOnlyCatalog(t *testing
 	if err != nil {
 		t.Fatalf("migration catalog summary: %v", err)
 	}
-	if summary.Format != dbmigrations.CatalogSummaryFormat || summary.LatestVersion < 21 {
+	if summary.Format != dbmigrations.CatalogSummaryFormat || summary.LatestVersion < 22 {
 		t.Fatalf("unexpected migration catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -1082,7 +1086,7 @@ func TestGameRuntimeMigrationCatalogSummaryReturnsMetadataOnlyCatalog(t *testing
 		t.Fatalf("unexpected first catalog summary row: %#v", first)
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "item_template_refine_keep_on_fail" || latest.DownSHA256 == "" {
+	if latest.Version != summary.LatestVersion || latest.Name != "item_template_refine_fail_result_vnum" || latest.DownSHA256 == "" {
 		t.Fatalf("unexpected latest catalog summary row: %#v", latest)
 	}
 	raw, err := json.Marshal(summary)
