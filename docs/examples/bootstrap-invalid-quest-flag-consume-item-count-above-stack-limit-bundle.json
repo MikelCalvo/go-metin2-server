@@ -1,0 +1,26 @@
+{
+  "item_templates": [
+    {
+      "vnum": 27001,
+      "name": "Small Red Potion",
+      "stackable": true,
+      "max_count": 10
+    }
+  ],
+  "interaction_definitions": [
+    {
+      "kind": "quest_flag",
+      "ref": "quest:first_steps_kill_turnin_consume_count_above_stack_limit",
+      "text": "Quest updated: first_steps.killed_qa_mob = 0.",
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "killed_qa_mob",
+      "quest_from": 1,
+      "consume_items": [
+        {
+          "item_vnum": 27001,
+          "count": 11
+        }
+      ]
+    }
+  ]
+}
