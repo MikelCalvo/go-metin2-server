@@ -908,6 +908,38 @@ Current implementation status:
 - migration `0019_static_actor_combat_profile_max_step` adds the SQL column; static-actor content-state SQL import requires tip `0019` beside additive chase/return/homeward delay columns
 - focused coverage: `TestGameRuntimeAuthoredMaxStepPlansHomewardAtFifty`
 
+## First owned profile-authored reaction-delay seam
+
+Question frozen here:
+
+**Once profile-authored `max_step` already owns the shared chase / return / homeward step cap, and the delayed server-origin retaliation cadence still hard-codes bootstrap `1s` (`bootstrapPracticeMobServerOriginRetaliationDelay`), what is the smallest honest authored combat-profile extension that can widen or narrow that delayed reaction arming delay per registered profile without inventing a second hostility scheduler, reaction packets, or absolute deadline rematerialize?**
+
+This is the next Track A follow-on after owned profile-authored `max_step`. Cross-map return MOVE / warp choreography remains deferred behind the packet freeze in `spawn-leash-bootstrap.md` and must not be opened as speculative RED. Absolute chase / return / homeward / reaction due-at rematerialize across daemon restart stays cancelled as re-arm-from-now. Chase / return / homeward delay and `max_step` authorship stay on their already-owned seams and are not reopened by this freeze.
+
+Contract for optional authored `reaction_delay_ms` on portable `combat_profiles` / `StaticActorCombatProfileDefaults`:
+
+- field name: `reaction_delay_ms` (JSON) / `ReactionDelay` (`time.Duration` on Go defaults) / `ReactionDelayMs` (int64 on snapshots)
+- omitempty / zero means "use bootstrap default": effective delay = `1s` (`bootstrapPracticeMobServerOriginRetaliationDelay`)
+- when present and positive, the effective delayed server-origin retaliation arming / re-arm delay for that registered profile is exactly the authored duration
+- validation fails closed when `reaction_delay_ms < 0`
+- validation fails closed when a positive authored delay is `< 250` ms (bootstrap lower bound so reaction cadence stays independently observable beside the owned flush order)
+- validation fails closed when a positive authored delay exceeds `60000` ms (bootstrap upper bound for this seam)
+- built-in `practice_mob` / `training_dummy` profiles keep effective delay `1s` and do not require an authored field
+- the pure resolver is `EffectiveStaticActorSpawnReactionDelay(profile)` (plus `EffectiveStaticActorSpawnReactionDelayForActor(actor)` / `...FromDefaults`) in `internal/worldruntime`: it returns the effective duration without mutating actor state, engagement, timers, or packets
+- live delayed server-origin retaliation arming for a spawn-backed actor must reuse that same effective delay for the actor's current combat profile on both accepted-hit and proximity-armed engagement paths; post-beat re-arm of the next non-floor delayed tick must also consume it; they must not keep hard-coding `bootstrapPracticeMobServerOriginRetaliationDelay` once a profile authors a different value
+- the one-pending-beat policy, self-only `GC POINT_CHANGE` / peer `DAMAGE_INFO` companions, zero-HP floor ordering, and engagement-release cancel rules stay on their already-owned seams
+- content-bundle import/export and file-backed static-actor combat-profile snapshots must round-trip a non-default authored `reaction_delay_ms` the same way `aggro_radius` / `leash_radius` / `chase_delay_ms` / `return_delay_ms` / `homeward_delay_ms` / `max_step` / `respawn_delay_ms` already round-trip
+- immediate hit-triggered retaliation (the accepted-hit piggyback tick) is unchanged by this seam; only the delayed server-origin follow-up cadence arming / re-arm is authored
+
+Explicit non-goals for this profile-authored reaction-delay freeze alone:
+
+- changing `max_step`, chase-step delay, return-step delay, or homeward-step delay in the same slice
+- inventing reaction packets, a second scheduler/goroutine, stacked delayed beats, or operator reaction POST surfaces
+- absolute chase / return / homeward / reaction due-at rematerialize across daemon restart (cancelled as re-arm-from-now)
+- pack AI, pathfinding, target switching, or cross-map MOVE / `GC WARP`
+- aggro hysteresis / a drop radius distinct from the acquire radius
+- changing `retaliation_point_delta` authorship or immediate hit-piggyback tick semantics
+
 ## Success definition
 
 After this document lands, the repository should be able to say:
