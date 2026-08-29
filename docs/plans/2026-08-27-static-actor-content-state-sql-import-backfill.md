@@ -40,16 +40,19 @@ claiming DB-backed live static-actor / interaction loading.
      `static_actor_combat_profile_state`, additive version `16` /
      `static_actor_combat_profile_chase_delay`, additive version `17` /
      `static_actor_combat_profile_return_delay`, additive version `18` /
-     `static_actor_combat_profile_homeward_delay`, **and** additive version `19` /
-     `static_actor_combat_profile_max_step` (empty/missing ledger, tip
+     `static_actor_combat_profile_homeward_delay`, additive version `19` /
+     `static_actor_combat_profile_max_step`, **and** additive version `20` /
+     `static_actor_combat_profile_reaction_delay` (empty/missing ledger, tip
      `< 13`, tip-`0013`-only without `0016`, tip-`0016`-only without `0017`,
-     tip-`0017`-only without `0018`, or tip-`0018`-only without `0019` fail closed with
+     tip-`0017`-only without `0018`, tip-`0018`-only without `0019`, or
+     tip-`0019`-only without `0020` fail closed with
      `ErrStaticActorContentStateImportSchemaRequired` before INSERT; see
      [static-actor import require chase-delay schema](2026-08-28-static-actor-import-require-chase-delay-schema.md),
      [static-actor import require return-delay schema](2026-08-28-static-actor-import-require-return-delay-schema.md),
      [static-actor import require homeward-delay schema](2026-08-28-static-actor-import-require-homeward-delay-schema.md),
+     [static-actor import require max-step schema](2026-08-29-static-actor-import-require-max-step-schema.md),
      and
-     [static-actor import require max-step schema](2026-08-29-static-actor-import-require-max-step-schema.md));
+     [static-actor import require reaction-delay schema](2026-08-29-static-actor-import-require-reaction-delay-schema.md));
    - inserts rows with parameterized `INSERT` statements (no `OR REPLACE` /
      upsert) in FK-safe order using durable columns only:
      1. `interaction_definitions`
@@ -130,7 +133,7 @@ claiming DB-backed live static-actor / interaction loading.
 Focused coverage:
 
 - nil executor / invalid export → error, no panic / no BeginTx
-- sqlite harness: apply to catalog tip (`>= 19`) → import sample tip-`0013`
+- sqlite harness: apply to catalog tip (`>= 20`) → import sample tip-`0013`
   export → SELECT matches definitions / merchant / quest-flag children /
   actors / reward drops / combat profiles / death-reward drops
 - sqlite harness: second import of the same primary keys fails closed (unique conflict)
@@ -143,6 +146,8 @@ Focused coverage:
   `SchemaRequired` naming missing homeward-delay version/name and inserts no rows
 - sqlite harness: apply to tip-`0018` only (no `0019`) fails closed with
   `SchemaRequired` naming missing max-step version/name and inserts no rows
+- sqlite harness: apply to tip-`0019` only (no `0020`) fails closed with
+  `SchemaRequired` naming missing reaction-delay version/name and inserts no rows
 - sqlite harness: empty export succeeds as no-op after ledger gate
 - stdout/result never embeds DSN / executable SQL
 

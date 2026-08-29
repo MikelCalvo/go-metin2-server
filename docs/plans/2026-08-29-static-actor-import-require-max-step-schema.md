@@ -12,7 +12,10 @@ SQL import targets a ledger that owns homeward-delay `0018` but **not** additive
 The hermetic gate and INSERT binding already landed with the world-lane
 max-step GREEN (`7cc42de5`). This slice is the persistence-lane ops/docs
 sync that keeps Track E / migration-contract / development runbooks honest about
-catalog tip `0019` and the five-boundary import preflight.
+catalog tip `0019` and the five-boundary import preflight at that moment.
+Current catalog tip after reaction-delay is `0020` with a six-boundary import
+preflight — see
+[static-actor import require reaction-delay schema](2026-08-29-static-actor-import-require-reaction-delay-schema.md).
 
 ## Why now
 
@@ -35,7 +38,9 @@ catalog tip `0019` and the five-boundary import preflight.
    (`migration_version=13`, `migration_name=static_actor_combat_profile_state`).
 2. `ImportStaticActorContentState` still inserts `chase_delay_ms`,
    `return_delay_ms`, `homeward_delay_ms`, and `max_step` into
-   `static_actor_combat_profiles`.
+   `static_actor_combat_profiles`. Live import after reaction-delay landed
+   also inserts `reaction_delay_ms`; that six-boundary gate is owned by
+   [static-actor import require reaction-delay schema](2026-08-29-static-actor-import-require-reaction-delay-schema.md).
 3. Schema preflight must require **all** of:
    - ledger version `13` / `static_actor_combat_profile_state`
    - ledger version `16` / `static_actor_combat_profile_chase_delay`
@@ -52,10 +57,14 @@ catalog tip `0019` and the five-boundary import preflight.
    (wrapped with observed tip) **before** any INSERT.
 9. Existing empty-DB / tip-`0013`-only / tip-`0016`-only / tip-`0017`-only /
    tip-`0018`-only / apply-to-`19` import proofs stay green.
-10. Catalog tip reported by operator docs is
+10. Catalog tip reported by this max-step slice was
     `0019_static_actor_combat_profile_max_step` (export tip remains `0013`;
-    safebox money export tip remains `0015`).
+    safebox money export tip remains `0015`). Current catalog tip after
+    reaction-delay is `0020` — see
+    [static-actor import require reaction-delay schema](2026-08-29-static-actor-import-require-reaction-delay-schema.md).
 11. Upsert / auto-run / stock production driver remain explicitly deferred.
+    ~~Reaction-delay / `0020` import schema gate~~ Done — see
+    [static-actor import require reaction-delay schema](2026-08-29-static-actor-import-require-reaction-delay-schema.md).
 12. No new Go production code in this slice: the gate already exists; this owns
     the Track E docs/contract sync plus any residual pointer fixes.
 
@@ -64,8 +73,9 @@ catalog tip `0019` and the five-boundary import preflight.
 - retipping static-actor exports to `migration_version=16`, `17`, `18`, or `19`
 - inventing upsert / merge / truncate-and-reload policy
 - production DB engine selection as a stock default
-- profile-authored `reaction_delay_ms` / a future `0020` migration (world/combat
-  lane ownership until GREEN, then a matching Track E tip sync)
+- ~~profile-authored `reaction_delay_ms` / migration `0020`~~ Done on `main` plus
+  the import schema gate docs sync — see
+  [static-actor import require reaction-delay schema](2026-08-29-static-actor-import-require-reaction-delay-schema.md)
 - DB-backed runtime repositories replacing FileStores
 - loopback ops mutation endpoint / remote admin / secrets in git
 - claiming DB-backed live static-actor loading
@@ -94,7 +104,8 @@ git diff --check
 
 Spot-check that Track E / migration-contract / development wording:
 
-- catalog tip is `0019_static_actor_combat_profile_max_step`
+- catalog tip for this slice was `0019_static_actor_combat_profile_max_step`
+  (later advanced to `0020` by the reaction-delay docs sync)
 - static-actor import preflight names additive `0016`, `0017`, `0018`, **and** `0019`
 - tip-`0018`-only reject is documented beside tip-`0017`-only homeward-delay reject
 - upsert / stock production driver stay deferred
@@ -110,6 +121,8 @@ Spot-check that Track E / migration-contract / development wording:
 ## Anti-goals / ordering constraints
 
 - Do not retip export identity away from version `13` in this slice.
-- Do not invent `reaction_delay_ms` migration / authorship on this lane.
+- Do not invent further combat-profile migrations / authorship on this lane;
+  reaction-delay / `0020` follow-up is owned by
+  [static-actor import require reaction-delay schema](2026-08-29-static-actor-import-require-reaction-delay-schema.md).
 - Do not register a production driver in stock binaries.
 - Do not push `origin/main`; push only `origin/lane/persistence`.

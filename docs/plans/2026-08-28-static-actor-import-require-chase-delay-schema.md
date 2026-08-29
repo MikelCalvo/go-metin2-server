@@ -42,13 +42,17 @@ additive `0016_static_actor_combat_profile_chase_delay`, so operators get
    Live import after max-step landed also requires additive `0019`; that
    five-boundary gate is owned by
    [static-actor import require max-step schema](2026-08-29-static-actor-import-require-max-step-schema.md).
+   Live import after reaction-delay landed also requires additive `0020`; that
+   six-boundary gate is owned by
+   [static-actor import require reaction-delay schema](2026-08-29-static-actor-import-require-reaction-delay-schema.md).
 4. Missing either tip-`0013` or chase-delay `0016` returns
    `ErrStaticActorContentStateImportSchemaRequired` (wrapped with the missing
    version/name and observed tip) **before** any INSERT.
 5. Existing empty-DB missing-schema coverage stays green.
 6. Existing tip-apply import proofs for this chase-delay slice applied through
    catalog tip `16`; catalog tip after return-delay was `17`; catalog tip after
-   homeward-delay was `18`; current catalog tip after max-step is `19`.
+   homeward-delay was `18`; catalog tip after max-step was `19`; current catalog
+   tip after reaction-delay is `20`.
 7. Upsert / auto-run / stock production driver remain explicitly deferred.
    ~~Return-delay / `0017` import schema gate~~ Done — see
    [static-actor import require return-delay schema](2026-08-28-static-actor-import-require-return-delay-schema.md).
@@ -56,6 +60,8 @@ additive `0016_static_actor_combat_profile_chase_delay`, so operators get
    [static-actor import require homeward-delay schema](2026-08-28-static-actor-import-require-homeward-delay-schema.md).
    ~~Max-step / `0019` import schema gate~~ Done — see
    [static-actor import require max-step schema](2026-08-29-static-actor-import-require-max-step-schema.md).
+   ~~Reaction-delay / `0020` import schema gate~~ Done — see
+   [static-actor import require reaction-delay schema](2026-08-29-static-actor-import-require-reaction-delay-schema.md).
 
 ## What this is not yet
 
@@ -71,6 +77,9 @@ additive `0016_static_actor_combat_profile_chase_delay`, so operators get
 - ~~world-lane `max_step` / migration `0019`~~ Done on `main` plus the import
   schema gate docs sync — see
   [static-actor import require max-step schema](2026-08-29-static-actor-import-require-max-step-schema.md)
+- ~~world-lane `reaction_delay_ms` / migration `0020`~~ Done on `main` plus the
+  import schema gate docs sync — see
+  [static-actor import require reaction-delay schema](2026-08-29-static-actor-import-require-reaction-delay-schema.md)
 - DB-backed runtime repositories replacing FileStores
 - loopback ops mutation endpoint / remote admin / secrets in git
 
@@ -117,6 +126,8 @@ git diff --check
   [static-actor import require homeward-delay schema](2026-08-28-static-actor-import-require-homeward-delay-schema.md)
 - max-step / `0019` follow-up is owned by
   [static-actor import require max-step schema](2026-08-29-static-actor-import-require-max-step-schema.md)
+- reaction-delay / `0020` follow-up is owned by
+  [static-actor import require reaction-delay schema](2026-08-29-static-actor-import-require-reaction-delay-schema.md)
 
 ## Anti-goals / ordering constraints
 

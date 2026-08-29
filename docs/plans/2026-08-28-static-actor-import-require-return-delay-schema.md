@@ -50,13 +50,17 @@ tip `0017` and the three-boundary import preflight.
    safebox money export tip remains `0015`). Catalog tip after homeward-delay
    was `0018` — see
    [static-actor import require homeward-delay schema](2026-08-28-static-actor-import-require-homeward-delay-schema.md).
-   Current catalog tip after max-step is `0019` — see
+   Catalog tip after max-step was `0019` — see
    [static-actor import require max-step schema](2026-08-29-static-actor-import-require-max-step-schema.md).
+   Current catalog tip after reaction-delay is `0020` — see
+   [static-actor import require reaction-delay schema](2026-08-29-static-actor-import-require-reaction-delay-schema.md).
 9. Upsert / auto-run / stock production driver remain explicitly deferred.
    ~~Homeward-delay / `0018` import schema gate~~ Done — see
    [static-actor import require homeward-delay schema](2026-08-28-static-actor-import-require-homeward-delay-schema.md).
    ~~Max-step / `0019` import schema gate~~ Done — see
    [static-actor import require max-step schema](2026-08-29-static-actor-import-require-max-step-schema.md).
+   ~~Reaction-delay / `0020` import schema gate~~ Done — see
+   [static-actor import require reaction-delay schema](2026-08-29-static-actor-import-require-reaction-delay-schema.md).
 10. No new Go production code in this slice: the gate already exists; this owns
     the Track E docs/contract sync plus any residual pointer fixes.
 
@@ -71,6 +75,9 @@ tip `0017` and the three-boundary import preflight.
 - ~~profile-authored `max_step` / migration `0019`~~ Done on `main` plus the
   import schema gate docs sync — see
   [static-actor import require max-step schema](2026-08-29-static-actor-import-require-max-step-schema.md)
+- ~~profile-authored `reaction_delay_ms` / migration `0020`~~ Done on `main` plus
+  the import schema gate docs sync — see
+  [static-actor import require reaction-delay schema](2026-08-29-static-actor-import-require-reaction-delay-schema.md)
 - DB-backed runtime repositories replacing FileStores
 - loopback ops mutation endpoint / remote admin / secrets in git
 - claiming DB-backed live static-actor loading
@@ -99,7 +106,7 @@ Spot-check that Track E / migration-contract / development wording:
 
 - catalog tip for this slice was `0017_static_actor_combat_profile_return_delay`
   (later advanced to `0018` by the homeward-delay docs sync, then `0019` by the
-  max-step docs sync)
+  max-step docs sync, then `0020` by the reaction-delay docs sync)
 - static-actor import preflight names additive `0016` **and** `0017`
 - tip-`0016`-only reject is documented beside tip-`0013`-only chase-delay reject
 - upsert / stock production driver stay deferred
@@ -113,6 +120,8 @@ Spot-check that Track E / migration-contract / development wording:
   [static-actor import require homeward-delay schema](2026-08-28-static-actor-import-require-homeward-delay-schema.md)
 - max-step / `0019` follow-up is owned by
   [static-actor import require max-step schema](2026-08-29-static-actor-import-require-max-step-schema.md)
+- reaction-delay / `0020` follow-up is owned by
+  [static-actor import require reaction-delay schema](2026-08-29-static-actor-import-require-reaction-delay-schema.md)
 - stock binaries remain free of a registered production driver
 - upsert / auto-run remain explicitly deferred
 
