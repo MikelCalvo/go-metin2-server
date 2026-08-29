@@ -2080,6 +2080,50 @@ func TestGameSessionFlowPostFloorExchangeStartAgainstDeadPartnerFailsClosed(t *t
 		t.Fatalf("expected living-peer EXCHANGE START against dead partner to queue no dead-owner frames, got %d", len(queued))
 	}
 	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "living-peer EXCHANGE START against dead partner")
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_here",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here after living-peer EXCHANGE START against dead partner: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_here recovery frames after living-peer EXCHANGE START against dead partner, got %d", len(restartOut))
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	freshStart, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      owner.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart_here living-peer EXCHANGE START against recovered partner: %v", err)
+	}
+	if len(freshStart) != 1 {
+		t.Fatalf("expected post-restart_here living-peer EXCHANGE START against recovered partner to succeed, got %d frames", len(freshStart))
+	}
+	if infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, freshStart[0])); err == nil {
+		t.Fatalf("expected post-restart_here living-peer EXCHANGE START success, got busy info chat %+v", infoChat)
+	}
+	assertExchangeStartFrame(t, freshStart[0], owner.VID, "post-restart_here living-peer EXCHANGE START against recovered partner")
+	ownerFreshStart := flushServerFrames(t, ownerFlow)
+	if len(ownerFreshStart) != 1 {
+		t.Fatalf("expected recovered owner EXCHANGE START after post-restart_here living-peer recovery, got %d", len(ownerFreshStart))
+	}
+	assertExchangeStartFrame(t, ownerFreshStart[0], peer.VID, "recovered owner EXCHANGE START after post-restart_here living-peer recovery")
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart_here living-peer EXCHANGE START against recovered partner: %v", err)
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_here to persist recovered owner HP %d after dead-partner EXCHANGE START floor, got %+v", wantHP, account.Characters[0])
+	}
+	want := owner
+	want.Points[bootstrapPlayerPointValueIndex] = wantHP
+	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart_here living-peer EXCHANGE START leaves inventory/gold unchanged")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "post-restart_here living-peer EXCHANGE START leaves peer inventory/gold unchanged")
 }
 
 func newPostFloorSafeboxPasswordRuntime(t *testing.T, login string, loginKey uint32, owner loginticket.Character) (*gameRuntime, accountstore.Store, uint32, uint32, uint32) {
