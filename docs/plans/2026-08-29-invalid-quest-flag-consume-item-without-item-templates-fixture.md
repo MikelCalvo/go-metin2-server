@@ -61,5 +61,8 @@ git diff --check
 
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
-2. Add further checked-in negatives only when a later reject case still forces
-   QA to invent JSON.
+2. ~~Add further checked-in negatives only when a later reject case still forces
+   QA to invent JSON.~~ Done for structured quest-flag reward items whose count
+   exceeds the bundled template `max_count`:
+   `docs/examples/bootstrap-invalid-quest-flag-reward-item-count-above-stack-limit-bundle.json`
+   (`docs/plans/2026-08-29-invalid-quest-flag-reward-item-count-above-stack-limit-fixture.md`).

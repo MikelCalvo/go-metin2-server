@@ -69,3 +69,7 @@ git diff --check
    quest-flag consume items that omit bundled `item_templates`:
    `docs/examples/bootstrap-invalid-quest-flag-consume-item-without-item-templates-bundle.json`
    (`docs/plans/2026-08-29-invalid-quest-flag-consume-item-without-item-templates-fixture.md`).
+   ~~Also: `quest_flag` `reward_items` whose count exceeds the bundled template
+   `max_count`.~~ Done for structured quest-flag reward items above stack limit:
+   `docs/examples/bootstrap-invalid-quest-flag-reward-item-count-above-stack-limit-bundle.json`
+   (`docs/plans/2026-08-29-invalid-quest-flag-reward-item-count-above-stack-limit-fixture.md`).
