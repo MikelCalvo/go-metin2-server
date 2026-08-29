@@ -63,6 +63,9 @@ git diff --check
 
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
-2. Add further checked-in negatives only when a later reject case still forces
+2. ~~Add further checked-in negatives only when a later reject case still forces
    QA to invent JSON (for example `quest_flag` `consume_items` that omit the
-   top-level `item_templates` collection entirely).
+   top-level `item_templates` collection entirely).~~ Done for structured
+   quest-flag consume items that omit bundled `item_templates`:
+   `docs/examples/bootstrap-invalid-quest-flag-consume-item-without-item-templates-bundle.json`
+   (`docs/plans/2026-08-29-invalid-quest-flag-consume-item-without-item-templates-fixture.md`).

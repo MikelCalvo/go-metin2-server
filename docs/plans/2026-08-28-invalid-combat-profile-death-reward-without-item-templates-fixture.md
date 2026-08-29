@@ -70,3 +70,8 @@ git diff --check
    reward items without bundled templates:
    `docs/examples/bootstrap-invalid-quest-flag-reward-item-without-item-templates-bundle.json`
    (`docs/plans/2026-08-29-invalid-quest-flag-reward-item-without-item-templates-fixture.md`).
+   ~~Also: `quest_flag` turn-in `consume_items` that omit the top-level
+   `item_templates` collection entirely.~~ Done for structured quest-flag
+   consume items without bundled templates:
+   `docs/examples/bootstrap-invalid-quest-flag-consume-item-without-item-templates-bundle.json`
+   (`docs/plans/2026-08-29-invalid-quest-flag-consume-item-without-item-templates-fixture.md`).
