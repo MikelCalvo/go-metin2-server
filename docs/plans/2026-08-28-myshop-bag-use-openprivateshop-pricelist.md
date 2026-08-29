@@ -59,8 +59,9 @@ is not the smallest useful seam. Bag-missing INFO is oracle-silent; quest
    silk-path `CG::MYSHOP` open success, replace the remembered map with
    `unitPrice = listed_price / listed_count` per distinct listed stock `vnum`
    (integer division). Do **not** invent durable GD/DB writes or SQL. Ordinary
-   `50200` open does not update the remembered map. Reconnect / new session
-   starts with empty remembered prices and “not yet rematerialized”.
+   `50200` open does not update the remembered map. Reconnect / new session still starts process-local rematerialize pending;
+     durable account FileStore `myshop_unit_prices` rematerialize across reconnect /
+     restart is owned by `docs/plans/2026-08-29-myshop-unit-prices-durable-filestore.md`.
 8. **Ordering / echo**: bag USE success emits only the command-chat frames
    above (no ordinary consumable `ITEM_USE` echo / point / `ITEM_UPDATE` burst).
    Packet and slash ingress share the same command burst.
@@ -82,7 +83,8 @@ comments or Korean keys into runtime code.
 
 ## Explicit non-goals
 
-- GD/DB `MYSHOP_PRICELIST_REQ` / `UPDATE` / `RES` durable cache
+- GD/DB `MYSHOP_PRICELIST_REQ` / `UPDATE` / `RES` packets / SQL myshop_pricelist tables
+  (account FileStore durable unit prices are a separate bootstrap stand-in)
 - bag-missing INFO (oracle ordinary-bag miss stays silent)
 - quest-running open block (`PC::IsRunning`)
 - zone / botaryable-map gate
@@ -115,4 +117,6 @@ GREEN on `lane/items`: silk/shop-bag `ITEM_USE` / `/use_item` emits
 unit prices from silk-path `CG::MYSHOP` open; armor / busy-shell rejects and
 non-consume proofs are owned. GD/DB `MYSHOP_PRICELIST`, quest-running,
 bag-missing INFO, shopkeeper polymorph, and refine keep-grade stay deferred;
+account FileStore durable unit-price rematerialize is owned separately
+(`docs/plans/2026-08-29-myshop-unit-prices-durable-filestore.md`).
 `LESS_GOLD` auto-cancel stays out.

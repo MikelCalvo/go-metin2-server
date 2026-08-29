@@ -2,6 +2,8 @@ package minimal
 
 import (
 	"math"
+	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
@@ -3741,7 +3743,160 @@ func TestGameRuntimeSilkBagUseAfterSilkMyShopOpenRematerializesRememberedUnitPri
 		t.Fatalf("unexpected second silk bag ITEM_USE: %v", err)
 	}
 	assertMyShopBagUseCommandBurst(t, secondUse, []string{myShopOpenPrivateShopCommandMessage}, "later silk use open only")
-	assertExchangeAccountUnchanged(t, accounts, login, owner, "silk remember path must not mutate inventory")
+	persisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load silk remember account: %v", err)
+	}
+	got := findPersistedCharacter(t, persisted, owner.Name)
+	if !sameExchangeInventory(got.Inventory, owner.Inventory) {
+		t.Fatalf("silk remember path mutated inventory: got %+v want %+v", got.Inventory, owner.Inventory)
+	}
+	if !sameExchangeQuickslots(got.Quickslots, owner.Quickslots) {
+		t.Fatalf("silk remember path mutated quickslots: got %+v want %+v", got.Quickslots, owner.Quickslots)
+	}
+	if got.Gold != owner.Gold {
+		t.Fatalf("silk remember path mutated gold: got %d want %d", got.Gold, owner.Gold)
+	}
+	wantPrices := []loginticket.MyShopUnitPrice{{Vnum: 27001, UnitPrice: 500}, {Vnum: 27002, UnitPrice: 200}}
+	if !reflect.DeepEqual(got.MyShopUnitPrices, wantPrices) {
+		t.Fatalf("unexpected durable myshop unit prices after silk open: got %#v want %#v", got.MyShopUnitPrices, wantPrices)
+	}
+}
+
+func TestGameRuntimeOrdinaryShopBagOpenDoesNotPersistMyShopUnitPrices(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("OrdinaryNoPrice", 0x01030857, 0x02040857, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 994, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 995, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	login := "ordinary-no-price"
+	const loginKey uint32 = 0x70707157
+	issuePeerTicket(t, ticketStore, login, loginKey, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed ordinary no-price account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected ordinary no-price runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{
+			{Vnum: 27001, Count: 3, Position: itemproto.InventoryPosition(5), Price: 1500, DisplayPos: 0},
+		},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected ordinary MYSHOP open: %v", err)
+	}
+	assertMyShopOpenSuccessBagAndSign(t, openOut, owner.VID, 4, "ordinary open must consume bag")
+	persisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load ordinary no-price account: %v", err)
+	}
+	got := findPersistedCharacter(t, persisted, owner.Name)
+	if len(got.MyShopUnitPrices) != 0 {
+		t.Fatalf("ordinary bag open must not persist myshop_unit_prices, got %#v", got.MyShopUnitPrices)
+	}
+}
+
+func TestGameRuntimeSilkBagUseRematerializesDurableMyShopUnitPricesAcrossProcessRestart(t *testing.T) {
+	root := t.TempDir()
+	ticketDir := filepath.Join(root, "tickets")
+	accountDir := filepath.Join(root, "accounts")
+	ticketStore := loginticket.NewFileStore(ticketDir)
+	accounts := accountstore.NewFileStore(accountDir)
+	owner := peerVisibilityCharacter("SilkDurablePrice", 0x01030856, 0x02040856, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 991, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 992, Vnum: 27002, Count: 2, Slot: 6},
+		{ID: 993, Vnum: myShopOpenSilkBagVnum, Count: 1, Slot: 3},
+	}
+	login := "silk-durable-price"
+	const loginKey uint32 = 0x70707156
+	issuePeerTicket(t, ticketStore, login, loginKey, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed durable silk price account: %v", err)
+	}
+	templates := []itemcatalog.Template{
+		{Vnum: 27001, Name: "Shop Potion A", Stackable: true, MaxCount: 200},
+		{Vnum: 27002, Name: "Shop Potion B", Stackable: true, MaxCount: 200},
+		{Vnum: myShopOpenSilkBagVnum, Name: "Silk Bag", Stackable: true, MaxCount: 200},
+	}
+	itemStore := newItemTemplateStore(t, templates)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected durable silk price runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	_ = flushServerFrames(t, flow)
+
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Private Shop",
+		Items: []shopproto.ClientMyShopItem{
+			{Vnum: 27002, Count: 2, Position: itemproto.InventoryPosition(6), Price: 400, DisplayPos: 0},
+			{Vnum: 27001, Count: 3, Position: itemproto.InventoryPosition(5), Price: 1500, DisplayPos: 1},
+		},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected silk MYSHOP open before restart: %v", err)
+	}
+	assertMyShopOpenSuccessSignOnly(t, openOut, owner.VID, "silk open before restart")
+	_ = flushServerFrames(t, flow)
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/close_myshop"}))); err != nil {
+		t.Fatalf("unexpected /close_myshop before restart: %v", err)
+	}
+	closeSessionFlow(t, flow)
+
+	persisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load durable silk prices before restart: %v", err)
+	}
+	got := findPersistedCharacter(t, persisted, owner.Name)
+	wantPrices := []loginticket.MyShopUnitPrice{{Vnum: 27001, UnitPrice: 500}, {Vnum: 27002, UnitPrice: 200}}
+	if !reflect.DeepEqual(got.MyShopUnitPrices, wantPrices) {
+		t.Fatalf("unexpected durable myshop unit prices before restart: got %#v want %#v", got.MyShopUnitPrices, wantPrices)
+	}
+
+	const postRestartLoginKey uint32 = 0x70707166
+	reloadedTickets := loginticket.NewFileStore(ticketDir)
+	issuePeerTicket(t, reloadedTickets, login, postRestartLoginKey, got)
+	reloadedAccounts := accountstore.NewFileStore(accountDir)
+	reloadedItems := newItemTemplateStore(t, templates)
+	reloaded, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, reloadedTickets, reloadedAccounts, nil, nil, reloadedItems, nil)
+	if err != nil {
+		t.Fatalf("reload runtime after durable silk price process restart: %v", err)
+	}
+	restartFlow, _ := enterGameWithLoginTicket(t, reloaded.SessionFactory(), login, postRestartLoginKey)
+	defer closeSessionFlow(t, restartFlow)
+	_ = flushServerFrames(t, restartFlow)
+
+	firstUse, err := restartFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(3)})))
+	if err != nil {
+		t.Fatalf("unexpected silk bag ITEM_USE after process restart: %v", err)
+	}
+	assertMyShopBagUseCommandBurst(t, firstUse, []string{
+		"MyShopPriceList 27001 500",
+		"MyShopPriceList 27002 200",
+		myShopOpenPrivateShopCommandMessage,
+	}, "post-restart silk use rematerialize")
+
+	secondUse, err := restartFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(3)})))
+	if err != nil {
+		t.Fatalf("unexpected second silk bag ITEM_USE after process restart: %v", err)
+	}
+	assertMyShopBagUseCommandBurst(t, secondUse, []string{myShopOpenPrivateShopCommandMessage}, "post-restart later silk use open only")
 }
 
 func TestGameRuntimeSilkBagUseArmorRejectsWithUnequipInfo(t *testing.T) {

@@ -2333,6 +2333,115 @@ func TestFileStoreSaveThenLoadRoundTripInstanceSocketsIncludingZero(t *testing.T
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripMyShopUnitPrices(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	want := Account{
+		Login:  "myshop-price-host",
+		Empire: 2,
+		Characters: []loginticket.Character{{
+			ID:       1,
+			VID:      0x01020305,
+			Name:     "PriceWar",
+			Job:      0,
+			Level:    15,
+			MapIndex: 21,
+			Empire:   2,
+			Gold:     1000,
+			Inventory: []inventory.ItemInstance{
+				{ID: 2001, Vnum: 27001, Count: 3, Slot: 5},
+			},
+			Equipment:  []inventory.ItemInstance{},
+			Quickslots: []loginticket.Quickslot{},
+			MyShopUnitPrices: []loginticket.MyShopUnitPrice{
+				{Vnum: 27002, UnitPrice: 200},
+				{Vnum: 27001, UnitPrice: 500},
+			},
+		}},
+	}
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save account with myshop unit prices: %v", err)
+	}
+	// Save canonicalizes ascending vnum order.
+	want.Characters[0].MyShopUnitPrices = []loginticket.MyShopUnitPrice{
+		{Vnum: 27001, UnitPrice: 500},
+		{Vnum: 27002, UnitPrice: 200},
+	}
+	got, err := store.Load("myshop-price-host")
+	if err != nil {
+		t.Fatalf("load account with myshop unit prices: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected account with myshop unit prices:\n got: %#v\nwant: %#v", got, want)
+	}
+	raw, err := os.ReadFile(store.accountPath("myshop-price-host"))
+	if err != nil {
+		t.Fatalf("read persisted account: %v", err)
+	}
+	if !bytes.Contains(raw, []byte(`"myshop_unit_prices"`)) {
+		t.Fatalf("expected persisted myshop_unit_prices field, got %s", string(raw))
+	}
+	if !bytes.Contains(raw, []byte(`"vnum":27001`)) || !bytes.Contains(raw, []byte(`"unit_price":500`)) {
+		t.Fatalf("expected canonical myshop unit price rows in JSON, got %s", string(raw))
+	}
+}
+
+func TestFileStoreSaveRejectsMalformedMyShopUnitPrices(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	base := loginticket.Character{
+		ID:         1,
+		VID:        0x01020306,
+		Name:       "BadPrice",
+		Level:      10,
+		MapIndex:   21,
+		Empire:     1,
+		Inventory:  []inventory.ItemInstance{},
+		Equipment:  []inventory.ItemInstance{},
+		Quickslots: []loginticket.Quickslot{},
+	}
+	cases := []struct {
+		name string
+		rows []loginticket.MyShopUnitPrice
+	}{
+		{name: "zero vnum", rows: []loginticket.MyShopUnitPrice{{Vnum: 0, UnitPrice: 1}}},
+		{name: "duplicate vnum", rows: []loginticket.MyShopUnitPrice{{Vnum: 27001, UnitPrice: 1}, {Vnum: 27001, UnitPrice: 2}}},
+		{name: "too many rows", rows: func() []loginticket.MyShopUnitPrice {
+			rows := make([]loginticket.MyShopUnitPrice, loginticket.MyShopUnitPriceMax+1)
+			for i := range rows {
+				rows[i] = loginticket.MyShopUnitPrice{Vnum: uint32(i + 1), UnitPrice: 1}
+			}
+			return rows
+		}()},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			character := base
+			character.MyShopUnitPrices = tc.rows
+			err := store.Save(Account{Login: "bad-myshop-price", Empire: 1, Characters: []loginticket.Character{character}})
+			if !errors.Is(err, ErrInvalidAccount) {
+				t.Fatalf("expected ErrInvalidAccount for %s, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
+func TestFileStoreLoadNormalizesMissingMyShopUnitPricesFromLegacySnapshot(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	legacyRaw := []byte(`{"login":"legacy-price","empire":2,"characters":[{"id":1,"name":"LegacyWar","inventory":[],"equipment":[],"quickslots":[]}]}`)
+	if err := os.WriteFile(store.accountPath("legacy-price"), legacyRaw, 0o644); err != nil {
+		t.Fatalf("write legacy account: %v", err)
+	}
+	got, err := store.Load("legacy-price")
+	if err != nil {
+		t.Fatalf("load legacy account: %v", err)
+	}
+	if len(got.Characters) != 1 {
+		t.Fatalf("expected one character, got %d", len(got.Characters))
+	}
+	if got.Characters[0].MyShopUnitPrices != nil {
+		t.Fatalf("expected nil myshop_unit_prices for legacy snapshot, got %#v", got.Characters[0].MyShopUnitPrices)
+	}
+}
+
 func TestFileStoreLoadReturnsNotFoundForUnknownLogin(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	_, err := store.Load("ghost")

@@ -56,7 +56,20 @@ type Character struct {
 	Inventory   []inventory.ItemInstance `json:"inventory"`
 	Equipment   []inventory.ItemInstance `json:"equipment"`
 	Quickslots  []Quickslot              `json:"quickslots"`
+	// MyShopUnitPrices is the optional durable private-shop unit-price map used
+	// by silk-bag MyShopPriceList rematerialize across reconnect / restart.
+	// Omitted / empty keeps older character snapshots byte-compatible.
+	MyShopUnitPrices []MyShopUnitPrice `json:"myshop_unit_prices,omitempty"`
 }
+
+// MyShopUnitPrice is one durable private-shop remembered unit price row.
+type MyShopUnitPrice struct {
+	Vnum      uint32 `json:"vnum"`
+	UnitPrice uint32 `json:"unit_price"`
+}
+
+// MyShopUnitPriceMax mirrors oracle SHOP_PRICELIST_MAX_NUM / ShopHostItemMax.
+const MyShopUnitPriceMax = 40
 
 type Quickslot struct {
 	Position uint8 `json:"position"`
@@ -74,6 +87,9 @@ func (c *Character) NormalizeItemState() {
 	if c.Quickslots == nil {
 		c.Quickslots = []Quickslot{}
 	}
+	// MyShopUnitPrices stays nil when absent so JSON omitempty and legacy
+	// DeepEqual round-trips remain byte-compatible. Writers assign canonical
+	// rows (or nil) explicitly when silk-path open persists prices.
 }
 
 func (c Character) IsEmptySlot() bool {
@@ -96,7 +112,7 @@ func (c Character) IsEmptySlot() bool {
 			return false
 		}
 	}
-	return len(c.Inventory) == 0 && len(c.Equipment) == 0 && len(c.Quickslots) == 0
+	return len(c.Inventory) == 0 && len(c.Equipment) == 0 && len(c.Quickslots) == 0 && len(c.MyShopUnitPrices) == 0
 }
 
 func CloneCharacters(characters []Character) []Character {
@@ -121,8 +137,47 @@ func CloneCharacters(characters []Character) []Character {
 		if cloned[i].Quickslots != nil {
 			cloned[i].Quickslots = append(cloned[i].Quickslots[:0:0], cloned[i].Quickslots...)
 		}
+		if cloned[i].MyShopUnitPrices != nil {
+			cloned[i].MyShopUnitPrices = append(cloned[i].MyShopUnitPrices[:0:0], cloned[i].MyShopUnitPrices...)
+		}
 	}
 	return cloned
+}
+
+// CanonicalMyShopUnitPrices copies and sorts durable unit-price rows by ascending
+// vnum. Empty / nil input returns nil so JSON omitempty stays byte-compatible.
+func CanonicalMyShopUnitPrices(rows []MyShopUnitPrice) []MyShopUnitPrice {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := append([]MyShopUnitPrice(nil), rows...)
+	sort.Slice(out, func(i, j int) bool { return out[i].Vnum < out[j].Vnum })
+	return out
+}
+
+// MyShopUnitPricesFromMap builds a canonical durable price list from a process-local
+// remembered map. Empty maps return nil.
+func MyShopUnitPricesFromMap(prices map[uint32]uint32) []MyShopUnitPrice {
+	if len(prices) == 0 {
+		return nil
+	}
+	out := make([]MyShopUnitPrice, 0, len(prices))
+	for vnum, unitPrice := range prices {
+		out = append(out, MyShopUnitPrice{Vnum: vnum, UnitPrice: unitPrice})
+	}
+	return CanonicalMyShopUnitPrices(out)
+}
+
+// MyShopUnitPriceMap converts durable rows into a process-local remembered map.
+func MyShopUnitPriceMap(rows []MyShopUnitPrice) map[uint32]uint32 {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make(map[uint32]uint32, len(rows))
+	for _, row := range rows {
+		out[row.Vnum] = row.UnitPrice
+	}
+	return out
 }
 
 type Ticket struct {

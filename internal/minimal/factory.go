@@ -4593,6 +4593,25 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			myShopRememberedUnitPrices = next
 			myShopPriceListRematerialized = false
 		}
+		hydrateMyShopUnitPricesFromCharacter := func(character loginticket.Character) {
+			myShopRememberedUnitPrices = loginticket.MyShopUnitPriceMap(character.MyShopUnitPrices)
+			myShopPriceListRematerialized = false
+		}
+		persistMyShopUnitPricesFromRemembered := func(previousSelected loginticket.Character) bool {
+			if selectedPlayer == nil {
+				return false
+			}
+			persistedSelected := selectedPlayer.PersistedSnapshot()
+			persistedSelected.MyShopUnitPrices = loginticket.MyShopUnitPricesFromMap(myShopRememberedUnitPrices)
+			updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, persistedSelected)
+			if !ok || !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				return false
+			}
+			sessionTicket.Characters = updatedCharacters
+			selectedPlayer.SetPersistedSnapshot(persistedSelected)
+			return true
+		}
 		refreshGuestMyShopBrowseFlag := func() {
 			if activeGuestMyShopHostVID == 0 {
 				return
@@ -5000,6 +5019,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			} else {
 				selectedPlayer.ApplyPersistedSnapshot(selected)
 			}
+			hydrateMyShopUnitPricesFromCharacter(selected)
 			refreshLiveCharacterRegistration()
 			return true
 		}
@@ -6307,6 +6327,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					selectedIndex = index
 					hasSelected = true
 					selectedPlayer = player.NewRuntime(selected, player.SessionLink{Login: sessionTicket.Login, CharacterIndex: index})
+					hydrateMyShopUnitPricesFromCharacter(selected)
 					activeCharacterPosition = bootstrapCharacterPositionGeneral
 					clearActiveCombatTarget()
 					refreshLiveCharacterRegistration()
@@ -9418,6 +9439,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						}
 						live := selectedPlayer.LiveCharacter()
 						rememberMyShopUnitPricesFromStock(stock)
+						if !persistMyShopUnitPricesFromRemembered(previousSelected) {
+							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+							return gameflow.ShopResult{Accepted: false}
+						}
 						setActiveMyShopOpen(sign, stock)
 						signFrame := shopproto.EncodeServerShopSign(shopproto.ServerShopSignPacket{
 							VID:  live.VID,

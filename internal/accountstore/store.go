@@ -72,6 +72,9 @@ func normalizeAccountCharacters(characters []loginticket.Character) []loginticke
 	cloned := loginticket.CloneCharacters(characters)
 	for i := range cloned {
 		cloned[i].NormalizeItemState()
+		if len(cloned[i].MyShopUnitPrices) > 0 {
+			cloned[i].MyShopUnitPrices = loginticket.CanonicalMyShopUnitPrices(cloned[i].MyShopUnitPrices)
+		}
 	}
 	return cloned
 }
@@ -946,6 +949,9 @@ func validateAccount(account Account) error {
 		if err := validateCharacterQuickslots(character); err != nil {
 			return err
 		}
+		if err := validateCharacterMyShopUnitPrices(character); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -1124,6 +1130,26 @@ func validQuickslotTuple(quickslot loginticket.Quickslot) bool {
 	default:
 		return false
 	}
+}
+
+func validateCharacterMyShopUnitPrices(character loginticket.Character) error {
+	if len(character.MyShopUnitPrices) == 0 {
+		return nil
+	}
+	if len(character.MyShopUnitPrices) > loginticket.MyShopUnitPriceMax {
+		return fmt.Errorf("%w: character id %d has %d myshop_unit_prices rows (max %d)", ErrInvalidAccount, character.ID, len(character.MyShopUnitPrices), loginticket.MyShopUnitPriceMax)
+	}
+	seen := make(map[uint32]struct{}, len(character.MyShopUnitPrices))
+	for _, row := range character.MyShopUnitPrices {
+		if row.Vnum == 0 {
+			return fmt.Errorf("%w: character id %d has myshop_unit_prices row with zero vnum", ErrInvalidAccount, character.ID)
+		}
+		if _, ok := seen[row.Vnum]; ok {
+			return fmt.Errorf("%w: character id %d has duplicate myshop_unit_prices vnum %d", ErrInvalidAccount, character.ID, row.Vnum)
+		}
+		seen[row.Vnum] = struct{}{}
+	}
+	return nil
 }
 
 func containsNUL(value string) bool {
