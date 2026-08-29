@@ -1,0 +1,26 @@
+{
+  "item_templates": [
+    {
+      "vnum": 27001,
+      "name": "Small Red Potion",
+      "stackable": true,
+      "max_count": 10,
+      "shop_buy_price": 5
+    }
+  ],
+  "interaction_definitions": [
+    {
+      "kind": "shop_preview",
+      "ref": "npc:qa_merchant_count_above_stack_limit",
+      "title": "QA Merchant Count Above Stack Limit",
+      "catalog": [
+        {
+          "slot": 0,
+          "item_vnum": 27001,
+          "price": 50,
+          "count": 11
+        }
+      ]
+    }
+  ]
+}

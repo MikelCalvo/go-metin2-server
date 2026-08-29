@@ -61,6 +61,9 @@ git diff --check
 
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
-2. Add further checked-in negatives only when a later reject case still forces
+2. ~~Add further checked-in negatives only when a later reject case still forces
    QA to invent JSON (for example merchant-catalog count above stack limit, or
-   quest-flag consume / non-stackable count twins).
+   quest-flag consume / non-stackable count twins).~~ Done for merchant catalog
+   count above stack limit:
+   `docs/examples/bootstrap-invalid-merchant-catalog-count-above-stack-limit-bundle.json`
+   (`docs/plans/2026-08-29-invalid-merchant-catalog-count-above-stack-limit-fixture.md`).
