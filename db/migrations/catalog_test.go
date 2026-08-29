@@ -49,6 +49,8 @@ const (
 	expectedStaticActorCombatProfileReturnDelayDownSHA256   = "c97dfb810f2ebfb6cbb22a5e427e2651dc62a59eb290df72551d7a1bc0186606"
 	expectedStaticActorCombatProfileHomewardDelayUpSHA256   = "406280f0b2015794eedb71b996af0ea3c46fc7c175d90c5c0b2e35b5d318e7eb"
 	expectedStaticActorCombatProfileHomewardDelayDownSHA256 = "1b940149c1cc637b4f242254c537eea07de79eb145d1143a5ba8dd7ef6f27585"
+	expectedStaticActorCombatProfileMaxStepUpSHA256         = "3ca62a66d7e7fceadb6cc0026d789351e2964a5e3e12994440afe15368f70126"
+	expectedStaticActorCombatProfileMaxStepDownSHA256       = "4df2bcd8f33129949bc4e55d23516b236a5d9f79b0e8eb85f22363c50d6186cb"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -759,6 +761,38 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 		t.Fatalf("expected combat-profile homeward-delay down migration to drop homeward_delay_ms, got:\n%s", eighteenth.DownSQL)
 	}
 
+	if len(catalog) < 19 {
+		t.Fatalf("expected combat-profile max-step migration after homeward-delay, got %d", len(catalog))
+	}
+	nineteenth := catalog[18]
+	if nineteenth.Version != 19 || nineteenth.Name != "static_actor_combat_profile_max_step" {
+		t.Fatalf("unexpected nineteenth migration: %#v", nineteenth)
+	}
+	if nineteenth.UpPath != "0019_static_actor_combat_profile_max_step.up.sql" {
+		t.Fatalf("unexpected nineteenth up path: %q", nineteenth.UpPath)
+	}
+	if nineteenth.DownPath != "0019_static_actor_combat_profile_max_step.down.sql" {
+		t.Fatalf("unexpected nineteenth down path: %q", nineteenth.DownPath)
+	}
+	if nineteenth.UpSHA256 != expectedStaticActorCombatProfileMaxStepUpSHA256 {
+		t.Fatalf("unexpected combat-profile max-step up checksum: got %q want %q", nineteenth.UpSHA256, expectedStaticActorCombatProfileMaxStepUpSHA256)
+	}
+	if nineteenth.DownSHA256 != expectedStaticActorCombatProfileMaxStepDownSHA256 {
+		t.Fatalf("unexpected combat-profile max-step down checksum: got %q want %q", nineteenth.DownSHA256, expectedStaticActorCombatProfileMaxStepDownSHA256)
+	}
+	for _, want := range []string{
+		"ALTER TABLE static_actor_combat_profiles",
+		"ADD COLUMN max_step INTEGER NOT NULL DEFAULT 0",
+		"CHECK (max_step = 0 OR (max_step >= 1 AND max_step <= 1000))",
+	} {
+		if !strings.Contains(nineteenth.UpSQL, want) {
+			t.Fatalf("expected combat-profile max-step up migration to contain %q, got:\n%s", want, nineteenth.UpSQL)
+		}
+	}
+	if !strings.Contains(nineteenth.DownSQL, "ALTER TABLE static_actor_combat_profiles DROP COLUMN max_step") {
+		t.Fatalf("expected combat-profile max-step down migration to drop max_step, got:\n%s", nineteenth.DownSQL)
+	}
+
 	for i, migration := range catalog {
 		wantVersion := i + 1
 		if migration.Version != wantVersion {
@@ -828,7 +862,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("built-in catalog summary: %v", err)
 	}
-	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 18 {
+	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 19 {
 		t.Fatalf("unexpected built-in catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -838,7 +872,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 		t.Fatalf("unexpected first built-in catalog summary row: %#v", summary.Migrations[0])
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "static_actor_combat_profile_homeward_delay" {
+	if latest.Version != summary.LatestVersion || latest.Name != "static_actor_combat_profile_max_step" {
 		t.Fatalf("unexpected latest built-in catalog summary row: %#v", latest)
 	}
 }

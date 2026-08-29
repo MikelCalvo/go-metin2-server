@@ -44,6 +44,15 @@ const (
 	// MaxSpawnHomewardDelay is the bootstrap upper bound for optional authored
 	// combat_profiles.homeward_delay_ms on this Track A seam.
 	MaxSpawnHomewardDelay = 60 * time.Second
+	// DefaultSpawnMaxStep is the bootstrap chase / return / homeward planner step
+	// cap shared by the three executors.
+	DefaultSpawnMaxStep int32 = 100
+	// MinSpawnMaxStep is the bootstrap lower bound for optional authored
+	// combat_profiles.max_step.
+	MinSpawnMaxStep int32 = 1
+	// MaxSpawnMaxStep is the bootstrap upper bound for optional authored
+	// combat_profiles.max_step on this Track A seam.
+	MaxSpawnMaxStep int32 = 1000
 )
 
 // SpawnLeashEvaluation is a pure planning result for the first mob lifecycle

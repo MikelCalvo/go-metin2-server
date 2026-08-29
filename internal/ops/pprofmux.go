@@ -6400,6 +6400,10 @@ func decodeLocalSpawnGroupReturnStepRequest(r *http.Request) (uint64, int32, boo
 		return 0, 0, false
 	}
 	maxStepValues := r.URL.Query()["max_step"]
+	if len(maxStepValues) == 0 {
+		// Omitted query uses the actor's effective profile step at the executor.
+		return entityID, 0, true
+	}
 	if len(maxStepValues) != 1 {
 		return 0, 0, false
 	}

@@ -873,7 +873,7 @@ Question frozen here:
 
 **Once profile-authored chase / return / homeward delays already own live arming / re-arm, and the live chase / return / homeward planners still hard-code bootstrap `max_step = 100`, what is the smallest honest authored combat-profile extension that can widen or narrow that shared step cap per registered profile without inventing pathfinding, a second planner family, or absolute deadline rematerialize?**
 
-This is the next Track A follow-on after owned profile-authored `homeward_delay_ms`. Cross-map return MOVE / warp choreography remains deferred behind the packet freeze in `spawn-leash-bootstrap.md` and must not be opened as speculative RED. Absolute chase / return / homeward due-at rematerialize across daemon restart stays cancelled as re-arm-from-now. Chase / return / homeward delay authorship stay on their already-owned seams and are not reopened by this freeze.
+This Track A follow-on after owned profile-authored `homeward_delay_ms` is now GREEN. Cross-map return MOVE / warp choreography remains deferred behind the packet freeze in `spawn-leash-bootstrap.md` and must not be opened as speculative RED. Absolute chase / return / homeward due-at rematerialize across daemon restart stays cancelled as re-arm-from-now. Chase / return / homeward delay authorship stay on their already-owned seams and are not reopened by this seam.
 
 Contract for optional authored `max_step` on portable `combat_profiles` / `StaticActorCombatProfileDefaults`:
 
@@ -898,6 +898,15 @@ Explicit non-goals for this profile-authored max-step freeze alone:
 - absolute chase / return / homeward due-at rematerialize across daemon restart (cancelled as re-arm-from-now)
 - cross-map MOVE / `GC WARP`
 - aggro hysteresis / a drop radius distinct from the acquire radius
+
+Current implementation status:
+- optional authored `max_step` is owned on portable `combat_profiles` / `StaticActorCombatProfileDefaults` and round-trips through content-bundle canonicalize/import/export and file-backed static-actor snapshots
+- `EffectiveStaticActorSpawnMaxStep(profile)` / `EffectiveStaticActorSpawnMaxStepForActor(actor)` / `...FromDefaults` resolve omitted/zero to `DefaultSpawnMaxStep` (`100`) and honor positive authored values in `1..1000`
+- live chase / return / homeward planning, due-step execution, and pending inspection reuse that effective step instead of hard-coding `bootstrapSpawnGroup*MaxStep`
+- operator `POST /local/spawn-groups/{entity_id}/return-step` keeps an explicit `max_step` query override and defaults omitted lookups through the actor's effective profile step
+- negative max steps and positive max steps above `1000` fail closed at registration / bundle / static-snapshot validation
+- migration `0019_static_actor_combat_profile_max_step` adds the SQL column; static-actor content-state SQL import requires tip `0019` beside additive chase/return/homeward delay columns
+- focused coverage: `TestGameRuntimeAuthoredMaxStepPlansHomewardAtFifty`
 
 ## Success definition
 

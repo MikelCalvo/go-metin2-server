@@ -16,7 +16,7 @@ const (
 	// StaticActorCombatProfileChaseDelayMigrationVersion / Name pin the additive
 	// 0016 column that ImportStaticActorContentState writes beside tip-0013 rows.
 	// Export identity stays tip-0013; SQL import preflight requires tip-0013 plus
-	// additive chase-delay, return-delay, and homeward-delay columns.
+	// additive chase-delay, return-delay, homeward-delay, and max-step columns.
 	StaticActorCombatProfileChaseDelayMigrationVersion = 16
 	StaticActorCombatProfileChaseDelayMigrationName    = "static_actor_combat_profile_chase_delay"
 
@@ -29,6 +29,11 @@ const (
 	// 0018 homeward_delay_ms that ImportStaticActorContentState also inserts.
 	StaticActorCombatProfileHomewardDelayMigrationVersion = 18
 	StaticActorCombatProfileHomewardDelayMigrationName    = "static_actor_combat_profile_homeward_delay"
+
+	// StaticActorCombatProfileMaxStepMigrationVersion / Name pin additive
+	// 0019 max_step that ImportStaticActorContentState also inserts.
+	StaticActorCombatProfileMaxStepMigrationVersion = 19
+	StaticActorCombatProfileMaxStepMigrationName    = "static_actor_combat_profile_max_step"
 )
 
 // StaticActorContentStateExport is a deterministic, schema-shaped projection of
@@ -147,6 +152,7 @@ type StaticActorCombatProfileRow struct {
 	ChaseDelayMs          int64  `json:"chase_delay_ms"`
 	ReturnDelayMs         int64  `json:"return_delay_ms"`
 	HomewardDelayMs       int64  `json:"homeward_delay_ms"`
+	MaxStep               int32  `json:"max_step"`
 	RetaliationPointDelta int32  `json:"retaliation_point_delta"`
 	DeathRewardExperience uint64 `json:"death_reward_experience"`
 	DeathRewardGold       uint64 `json:"death_reward_gold"`
@@ -423,6 +429,7 @@ func staticActorCombatProfileRowForExport(profile worldruntime.StaticActorCombat
 		ChaseDelayMs:          profile.ChaseDelayMs,
 		ReturnDelayMs:         profile.ReturnDelayMs,
 		HomewardDelayMs:       profile.HomewardDelayMs,
+		MaxStep:               profile.MaxStep,
 		RetaliationPointDelta: profile.RetaliationPointDelta,
 		DeathRewardExperience: profile.DeathReward.Experience,
 		DeathRewardGold:       profile.DeathReward.Gold,

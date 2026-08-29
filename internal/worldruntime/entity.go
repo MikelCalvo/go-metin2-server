@@ -128,6 +128,7 @@ type StaticActorCombatProfileDefaults struct {
 	ChaseDelay            time.Duration
 	ReturnDelay           time.Duration
 	HomewardDelay         time.Duration
+	MaxStep               int32
 	RetaliationPointDelta int32
 	DeathReward           StaticActorDeathReward
 }
@@ -146,6 +147,7 @@ type StaticActorCombatProfileSnapshot struct {
 	ChaseDelayMs          int64                  `json:"chase_delay_ms,omitempty"`
 	ReturnDelayMs         int64                  `json:"return_delay_ms,omitempty"`
 	HomewardDelayMs       int64                  `json:"homeward_delay_ms,omitempty"`
+	MaxStep               int32                  `json:"max_step,omitempty"`
 	RetaliationPointDelta int32                  `json:"retaliation_point_delta,omitempty"`
 	DeathReward           StaticActorDeathReward `json:"death_reward"`
 }
@@ -178,6 +180,9 @@ func RegisterStaticActorCombatProfile(profile string, defaults StaticActorCombat
 		return false
 	}
 	if !ValidStaticActorCombatProfileHomewardDelay(defaults.HomewardDelay) {
+		return false
+	}
+	if !ValidStaticActorCombatProfileMaxStep(defaults.MaxStep) {
 		return false
 	}
 	hasLegacyDamage := defaults.DamagePerNormalAttack != 0
@@ -264,6 +269,7 @@ func staticActorCombatProfileSnapshot(profile string, defaults StaticActorCombat
 		ChaseDelayMs:          defaults.ChaseDelay.Milliseconds(),
 		ReturnDelayMs:         defaults.ReturnDelay.Milliseconds(),
 		HomewardDelayMs:       defaults.HomewardDelay.Milliseconds(),
+		MaxStep:               defaults.MaxStep,
 		DeathReward:           defaults.DeathReward.Clone(),
 	}
 	if defaults.RetaliationPointDelta != PracticeMobBootstrapRetaliationPointDelta {
@@ -533,6 +539,45 @@ func EffectiveStaticActorSpawnHomewardDelay(profile string) time.Duration {
 // and returns its effective spawn homeward delay.
 func EffectiveStaticActorSpawnHomewardDelayForActor(actor StaticEntity) time.Duration {
 	return EffectiveStaticActorSpawnHomewardDelay(staticActorCombatProfile(actor.CombatProfile, actor.CombatKind))
+}
+
+// ValidStaticActorCombatProfileMaxStep accepts omitted/zero (bootstrap default)
+// and positive authored steps at or above MinSpawnMaxStep and at or below the
+// bootstrap MaxSpawnMaxStep upper bound.
+func ValidStaticActorCombatProfileMaxStep(maxStep int32) bool {
+	if maxStep < 0 {
+		return false
+	}
+	if maxStep == 0 {
+		return true
+	}
+	return maxStep >= MinSpawnMaxStep && maxStep <= MaxSpawnMaxStep
+}
+
+// EffectiveStaticActorSpawnMaxStepFromDefaults resolves omit/zero to the
+// bootstrap DefaultSpawnMaxStep without consulting the profile registry.
+func EffectiveStaticActorSpawnMaxStepFromDefaults(defaults StaticActorCombatProfileDefaults) int32 {
+	if defaults.MaxStep <= 0 {
+		return DefaultSpawnMaxStep
+	}
+	return defaults.MaxStep
+}
+
+// EffectiveStaticActorSpawnMaxStep returns the shared chase / return / homeward
+// planner step for one combat profile. Omitted or unknown profiles keep
+// DefaultSpawnMaxStep.
+func EffectiveStaticActorSpawnMaxStep(profile string) int32 {
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(strings.TrimSpace(profile))
+	if !ok {
+		return DefaultSpawnMaxStep
+	}
+	return EffectiveStaticActorSpawnMaxStepFromDefaults(defaults)
+}
+
+// EffectiveStaticActorSpawnMaxStepForActor resolves the actor's combat profile
+// and returns its effective spawn max step.
+func EffectiveStaticActorSpawnMaxStepForActor(actor StaticEntity) int32 {
+	return EffectiveStaticActorSpawnMaxStep(staticActorCombatProfile(actor.CombatProfile, actor.CombatKind))
 }
 
 func validStaticActorCombatProfileName(profile string) bool {

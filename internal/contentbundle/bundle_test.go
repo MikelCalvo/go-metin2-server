@@ -6838,6 +6838,86 @@ func TestCanonicalizeRejectsCombatProfileHomewardDelayAboveBootstrapCap(t *testi
 	}
 }
 
+func TestCanonicalizeRoundTripsAuthoredCombatProfileMaxStep(t *testing.T) {
+	const profile = "practice_authored_max_step_wolf"
+
+	canonical, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.authored_max_step_wolf",
+			Name:          "Authored Max Step Wolf",
+			MapIndex:      42,
+			X:             1775,
+			Y:             2875,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        profile,
+			MaxHP:          24,
+			AttackValue:    8,
+			DefenseValue:   2,
+			RespawnDelayMs: 1500,
+			MaxStep:        50,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize authored max-step combat profile: %v", err)
+	}
+	if len(canonical.CombatProfiles) != 1 || canonical.CombatProfiles[0].MaxStep != 50 {
+		t.Fatalf("expected canonical combat profile to preserve max_step 50, got %#v", canonical.CombatProfiles)
+	}
+}
+
+func TestCanonicalizeRejectsCombatProfileNegativeMaxStep(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.negative_max_step_wolf",
+			Name:          "Negative Max Step Wolf",
+			MapIndex:      42,
+			X:             1800,
+			Y:             2900,
+			RaceNum:       101,
+			CombatProfile: "practice_negative_max_step_wolf",
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        "practice_negative_max_step_wolf",
+			MaxHP:          24,
+			AttackValue:    8,
+			DefenseValue:   2,
+			RespawnDelayMs: 1500,
+			MaxStep:        -1,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for combat-profile negative max_step, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsCombatProfileMaxStepAboveBootstrapCap(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.too_large_max_step_wolf",
+			Name:          "Too Large Max Step Wolf",
+			MapIndex:      42,
+			X:             1800,
+			Y:             2900,
+			RaceNum:       101,
+			CombatProfile: "practice_too_large_max_step_wolf",
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        "practice_too_large_max_step_wolf",
+			MaxHP:          24,
+			AttackValue:    8,
+			DefenseValue:   2,
+			RespawnDelayMs: 1500,
+			MaxStep:        1001,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for combat-profile max_step above 1000, got %v", err)
+	}
+}
+
 func TestCanonicalizeRejectsOverflowingCombatProfileRespawnDelay(t *testing.T) {
 	_, err := Canonicalize(Bundle{
 		SpawnGroups: []SpawnGroup{{

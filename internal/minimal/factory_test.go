@@ -1034,7 +1034,11 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	if eighteenth.Version != 18 || eighteenth.Name != "static_actor_combat_profile_homeward_delay" || eighteenth.Direction != dbmigrations.DirectionUp || eighteenth.Path != "0018_static_actor_combat_profile_homeward_delay.up.sql" {
 		t.Fatalf("unexpected eighteenth pending migration step: %#v", eighteenth)
 	}
-	for _, step := range []dbmigrations.PlanStep{first, second, third, fourth, fifth, sixth, seventh, eighth, ninth, tenth, eleventh, twelfth, thirteenth, fourteenth, fifteenth, sixteenth, seventeenth, eighteenth} {
+	nineteenth := plan.Pending[18]
+	if nineteenth.Version != 19 || nineteenth.Name != "static_actor_combat_profile_max_step" || nineteenth.Direction != dbmigrations.DirectionUp || nineteenth.Path != "0019_static_actor_combat_profile_max_step.up.sql" {
+		t.Fatalf("unexpected nineteenth pending migration step: %#v", nineteenth)
+	}
+	for _, step := range []dbmigrations.PlanStep{first, second, third, fourth, fifth, sixth, seventh, eighth, ninth, tenth, eleventh, twelfth, thirteenth, fourteenth, fifteenth, sixteenth, seventeenth, eighteenth, nineteenth} {
 		if step.SHA256 == "" || strings.Contains(step.Path, "CREATE TABLE") {
 			t.Fatalf("expected metadata-only pending steps with checksums, got %#v", plan.Pending)
 		}
@@ -1059,7 +1063,7 @@ func TestGameRuntimeMigrationCatalogSummaryReturnsMetadataOnlyCatalog(t *testing
 	if err != nil {
 		t.Fatalf("migration catalog summary: %v", err)
 	}
-	if summary.Format != dbmigrations.CatalogSummaryFormat || summary.LatestVersion < 18 {
+	if summary.Format != dbmigrations.CatalogSummaryFormat || summary.LatestVersion < 19 {
 		t.Fatalf("unexpected migration catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -1070,7 +1074,7 @@ func TestGameRuntimeMigrationCatalogSummaryReturnsMetadataOnlyCatalog(t *testing
 		t.Fatalf("unexpected first catalog summary row: %#v", first)
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "static_actor_combat_profile_homeward_delay" || latest.DownSHA256 == "" {
+	if latest.Version != summary.LatestVersion || latest.Name != "static_actor_combat_profile_max_step" || latest.DownSHA256 == "" {
 		t.Fatalf("unexpected latest catalog summary row: %#v", latest)
 	}
 	raw, err := json.Marshal(summary)

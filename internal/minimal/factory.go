@@ -79,6 +79,16 @@ const bootstrapSpawnGroupHomewardStepDelay = time.Second
 const bootstrapSpawnGroupHomewardStepMaxStep int32 = 100
 const bootstrapSpawnGroupChaseStepMaxStep int32 = 100
 
+func (r *gameRuntime) effectiveSpawnGroupMaxStep(entityID uint64) int32 {
+	if r == nil {
+		return worldruntime.DefaultSpawnMaxStep
+	}
+	if actor, ok := r.SpawnGroup(entityID); ok {
+		return worldruntime.EffectiveStaticActorSpawnMaxStep(actor.CombatProfile)
+	}
+	return worldruntime.DefaultSpawnMaxStep
+}
+
 const bootstrapCharacterPositionGeneral uint8 = 0
 const bootstrapCharacterPositionSittingChair uint8 = 3
 const bootstrapCharacterPositionSittingGround uint8 = 4
@@ -2138,7 +2148,7 @@ func (r *gameRuntime) spawnGroupReturnStepSnapshot(entityID uint64, dueAt time.T
 	if !ok || actor.SpawnLeash == nil || !actor.SpawnLeash.ReturnRequired {
 		return SpawnGroupPendingReturnStepSnapshot{}, false
 	}
-	plan, ok := r.sharedWorld.PlanSpawnGroupReturnHomeStep(entityID, bootstrapSpawnGroupReturnStepMaxStep)
+	plan, ok := r.sharedWorld.PlanSpawnGroupReturnHomeStep(entityID, r.effectiveSpawnGroupMaxStep(entityID))
 	if !ok || !plan.Evaluation.ReturnRequired {
 		return SpawnGroupPendingReturnStepSnapshot{}, false
 	}
@@ -2164,7 +2174,7 @@ func (r *gameRuntime) flushDueSpawnGroupReturnSteps() {
 		return
 	}
 	for _, entityID := range r.dueSpawnGroupReturnStepIDs() {
-		step, ok := r.stepSpawnGroupReturnHome(entityID, bootstrapSpawnGroupReturnStepMaxStep, true)
+		step, ok := r.stepSpawnGroupReturnHome(entityID, r.effectiveSpawnGroupMaxStep(entityID), true)
 		if !ok {
 			if r.spawnGroupReturnStepStillRequired(entityID) {
 				r.scheduleSpawnGroupReturnStep(entityID)
@@ -2245,7 +2255,7 @@ func (r *gameRuntime) syncSpawnGroupChaseStepScheduleForEntity(entityID uint64) 
 		return
 	}
 	ownerPos := worldruntime.NewPosition(owner.MapIndex, owner.X, owner.Y)
-	if _, ok := r.sharedWorld.PlanSpawnGroupChaseStep(entityID, ownerPos, bootstrapSpawnGroupChaseStepMaxStep); !ok {
+	if _, ok := r.sharedWorld.PlanSpawnGroupChaseStep(entityID, ownerPos, r.effectiveSpawnGroupMaxStep(entityID)); !ok {
 		r.clearSpawnGroupChaseStep(entityID)
 		r.syncSpawnGroupHomewardStepScheduleForEntity(entityID)
 		return
@@ -2341,7 +2351,7 @@ func (r *gameRuntime) spawnGroupChaseStepStillEligible(entityID uint64) bool {
 		return false
 	}
 	ownerPos := worldruntime.NewPosition(owner.MapIndex, owner.X, owner.Y)
-	_, ok = r.sharedWorld.PlanSpawnGroupChaseStep(entityID, ownerPos, bootstrapSpawnGroupChaseStepMaxStep)
+	_, ok = r.sharedWorld.PlanSpawnGroupChaseStep(entityID, ownerPos, r.effectiveSpawnGroupMaxStep(entityID))
 	return ok
 }
 
@@ -2433,7 +2443,7 @@ func (r *gameRuntime) spawnGroupChaseStepSnapshot(entityID uint64, dueAt time.Ti
 		return SpawnGroupPendingChaseStepSnapshot{}, false
 	}
 	ownerPos := worldruntime.NewPosition(owner.MapIndex, owner.X, owner.Y)
-	plan, ok := r.sharedWorld.PlanSpawnGroupChaseStep(entityID, ownerPos, bootstrapSpawnGroupChaseStepMaxStep)
+	plan, ok := r.sharedWorld.PlanSpawnGroupChaseStep(entityID, ownerPos, r.effectiveSpawnGroupMaxStep(entityID))
 	if !ok {
 		return SpawnGroupPendingChaseStepSnapshot{}, false
 	}
@@ -2459,7 +2469,7 @@ func (r *gameRuntime) flushDueSpawnGroupChaseSteps() {
 		return
 	}
 	for _, entityID := range r.dueSpawnGroupChaseStepIDs() {
-		step, ok := r.stepSpawnGroupChase(entityID, bootstrapSpawnGroupChaseStepMaxStep, true)
+		step, ok := r.stepSpawnGroupChase(entityID, r.effectiveSpawnGroupMaxStep(entityID), true)
 		if !ok {
 			r.clearSpawnGroupChaseStep(entityID)
 			r.clearSpawnGroupHomewardStep(entityID)
@@ -2525,7 +2535,7 @@ func (r *gameRuntime) syncSpawnGroupHomewardStepScheduleForEntity(entityID uint6
 		r.clearSpawnGroupHomewardStep(entityID)
 		return
 	}
-	if _, ok := r.sharedWorld.PlanSpawnGroupHomewardStep(entityID, bootstrapSpawnGroupHomewardStepMaxStep); !ok {
+	if _, ok := r.sharedWorld.PlanSpawnGroupHomewardStep(entityID, r.effectiveSpawnGroupMaxStep(entityID)); !ok {
 		r.clearSpawnGroupHomewardStep(entityID)
 		return
 	}
@@ -2573,7 +2583,7 @@ func (r *gameRuntime) spawnGroupHomewardStepStillEligible(entityID uint64) bool 
 	if engagedBy != 0 {
 		return false
 	}
-	_, ok = r.sharedWorld.PlanSpawnGroupHomewardStep(entityID, bootstrapSpawnGroupHomewardStepMaxStep)
+	_, ok = r.sharedWorld.PlanSpawnGroupHomewardStep(entityID, r.effectiveSpawnGroupMaxStep(entityID))
 	return ok
 }
 
@@ -2697,7 +2707,7 @@ func (r *gameRuntime) spawnGroupHomewardStepSnapshot(entityID uint64, dueAt time
 	if !ok {
 		return SpawnGroupPendingHomewardStepSnapshot{}, false
 	}
-	plan, ok := r.sharedWorld.PlanSpawnGroupHomewardStep(entityID, bootstrapSpawnGroupHomewardStepMaxStep)
+	plan, ok := r.sharedWorld.PlanSpawnGroupHomewardStep(entityID, r.effectiveSpawnGroupMaxStep(entityID))
 	if !ok {
 		return SpawnGroupPendingHomewardStepSnapshot{}, false
 	}
@@ -2727,7 +2737,7 @@ func (r *gameRuntime) flushDueSpawnGroupHomewardSteps() {
 		return
 	}
 	for _, entityID := range r.dueSpawnGroupHomewardStepIDs() {
-		step, ok := r.stepSpawnGroupHomeward(entityID, bootstrapSpawnGroupHomewardStepMaxStep, true)
+		step, ok := r.stepSpawnGroupHomeward(entityID, r.effectiveSpawnGroupMaxStep(entityID), true)
 		if !ok {
 			if r.spawnGroupHomewardStepStillEligible(entityID) {
 				r.scheduleSpawnGroupHomewardStep(entityID)
@@ -3850,6 +3860,9 @@ func (r *gameRuntime) ReturnSpawnGroupHome(entityID uint64) (SpawnGroupLeashSnap
 }
 
 func (r *gameRuntime) StepSpawnGroupReturnHome(entityID uint64, maxStep int32) (SpawnGroupReturnStepSnapshot, bool) {
+	if maxStep <= 0 {
+		maxStep = r.effectiveSpawnGroupMaxStep(entityID)
+	}
 	return r.stepSpawnGroupReturnHome(entityID, maxStep, true)
 }
 
@@ -13171,6 +13184,7 @@ func contentBundleCombatProfileSnapshotMatchesDefaults(snapshot worldruntime.Sta
 		normalized.ChaseDelay == defaults.ChaseDelay &&
 		normalized.ReturnDelay == defaults.ReturnDelay &&
 		normalized.HomewardDelay == defaults.HomewardDelay &&
+		normalized.MaxStep == defaults.MaxStep &&
 		normalized.RetaliationPointDelta == defaults.RetaliationPointDelta &&
 		reflect.DeepEqual(normalized.DeathReward.Clone(), defaults.DeathReward.Clone())
 }
@@ -13192,6 +13206,9 @@ func contentBundleCombatProfileSnapshotDefaults(snapshot worldruntime.StaticActo
 	if !ok {
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
+	if !worldruntime.ValidStaticActorCombatProfileMaxStep(snapshot.MaxStep) {
+		return worldruntime.StaticActorCombatProfileDefaults{}, false
+	}
 	if !worldruntime.ValidStaticActorCombatProfileAggroRadius(snapshot.AggroRadius, snapshot.LeashRadius) {
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
@@ -13211,6 +13228,7 @@ func contentBundleCombatProfileSnapshotDefaults(snapshot worldruntime.StaticActo
 		ChaseDelay:            chaseDelay,
 		ReturnDelay:           returnDelay,
 		HomewardDelay:         homewardDelay,
+		MaxStep:               snapshot.MaxStep,
 		RetaliationPointDelta: snapshot.RetaliationPointDelta,
 		DeathReward:           snapshot.DeathReward.Clone(),
 	}
@@ -13326,6 +13344,10 @@ func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorComb
 			rollback()
 			return nil, contentbundle.ErrInvalidBundle
 		}
+		if !worldruntime.ValidStaticActorCombatProfileMaxStep(snapshot.MaxStep) {
+			rollback()
+			return nil, contentbundle.ErrInvalidBundle
+		}
 		if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
 			MaxHP:                 snapshot.MaxHP,
 			DamagePerNormalAttack: snapshot.DamagePerNormalAttack,
@@ -13339,6 +13361,7 @@ func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorComb
 			ChaseDelay:            chaseDelay,
 			ReturnDelay:           returnDelay,
 			HomewardDelay:         homewardDelay,
+			MaxStep:               snapshot.MaxStep,
 			RetaliationPointDelta: snapshot.RetaliationPointDelta,
 			DeathReward:           snapshot.DeathReward,
 		}) {
