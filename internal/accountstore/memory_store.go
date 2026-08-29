@@ -134,6 +134,16 @@ func (s *MemoryStore) ExportCharacterPointState() (CharacterPointStateExport, er
 	return ExportCharacterPointState(accounts)
 }
 
+// ExportCharacterMyShopUnitPrices projects committed in-memory snapshots onto
+// the 0023 character myshop unit-prices migration shape without filesystem I/O.
+func (s *MemoryStore) ExportCharacterMyShopUnitPrices() (CharacterMyShopUnitPricesExport, error) {
+	accounts, err := s.List()
+	if err != nil {
+		return CharacterMyShopUnitPricesExport{}, err
+	}
+	return ExportCharacterMyShopUnitPrices(accounts)
+}
+
 func cloneAccount(account Account) Account {
 	return Account{
 		Login:      account.Login,

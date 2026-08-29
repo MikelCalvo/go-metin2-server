@@ -1814,6 +1814,17 @@ func (r *gameRuntime) ExportCharacterPointState() (accountstore.CharacterPointSt
 	return exporter.ExportCharacterPointState()
 }
 
+func (r *gameRuntime) ExportCharacterMyShopUnitPrices() (accountstore.CharacterMyShopUnitPricesExport, error) {
+	if r == nil || r.accountStore == nil {
+		return accountstore.ExportCharacterMyShopUnitPrices(nil)
+	}
+	exporter, ok := r.accountStore.(accountstore.AccountCharacterStateExporter)
+	if !ok {
+		return accountstore.CharacterMyShopUnitPricesExport{}, fmt.Errorf("character myshop unit-prices export is not supported")
+	}
+	return exporter.ExportCharacterMyShopUnitPrices()
+}
+
 func (r *gameRuntime) ExportAuthLoginTicketHandoff() (loginticket.AuthLoginTicketHandoffExport, error) {
 	if r == nil || r.loginTicketStore == nil {
 		return loginticket.ExportAuthLoginTicketHandoff(nil)

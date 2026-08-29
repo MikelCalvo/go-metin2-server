@@ -115,6 +115,12 @@ func decodeImportExportPayload(kind string, raw []byte) (any, error) {
 			return nil, err
 		}
 		return export, nil
+	case "character-myshop-unit-prices":
+		var export accountstore.CharacterMyShopUnitPricesExport
+		if err := decodeStrictJSON(raw, &export); err != nil {
+			return nil, err
+		}
+		return export, nil
 	case "character-quest-state":
 		var export queststate.CharacterQuestStateExport
 		if err := decodeStrictJSON(raw, &export); err != nil {
@@ -167,6 +173,9 @@ func quarantineImportExportPayload(kind string, payload any) error {
 	case "character-point-state":
 		_, _, err := accountstore.QuarantineCharacterPointStateExport(payload.(accountstore.CharacterPointStateExport))
 		return err
+	case "character-myshop-unit-prices":
+		_, _, err := accountstore.QuarantineCharacterMyShopUnitPricesExport(payload.(accountstore.CharacterMyShopUnitPricesExport))
+		return err
 	case "character-quest-state":
 		_, _, err := queststate.QuarantineCharacterQuestStateExport(payload.(queststate.CharacterQuestStateExport))
 		return err
@@ -198,6 +207,8 @@ func importExportPayload(ctx context.Context, db *sql.DB, kind string, payload a
 		return accountstore.ImportCharacterItemState(ctx, db, payload.(accountstore.CharacterItemStateExport))
 	case "character-point-state":
 		return accountstore.ImportCharacterPointState(ctx, db, payload.(accountstore.CharacterPointStateExport))
+	case "character-myshop-unit-prices":
+		return accountstore.ImportCharacterMyShopUnitPrices(ctx, db, payload.(accountstore.CharacterMyShopUnitPricesExport))
 	case "character-quest-state":
 		return queststate.ImportCharacterQuestState(ctx, db, payload.(queststate.CharacterQuestStateExport))
 	case "character-safebox-state":

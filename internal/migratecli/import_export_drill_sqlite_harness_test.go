@@ -86,15 +86,16 @@ func TestImportExportDrillSQLiteHermeticPrintedScriptImportsEmptyTipKinds(t *tes
 	}
 
 	wantMarkers := map[string]string{
-		"account-character-roster":    `"account_count": 0`,
-		"character-item-state":        `"inventory_item_count": 0`,
-		"character-point-state":       `"point_row_count": 0`,
-		"character-quest-state":       `"flag_count": 0`,
-		"character-safebox-state":     `"password_count": 0`,
-		"auth-login-ticket-handoff":   `"ticket_count": 0`,
-		"item-template-state":         `"template_count": 0`,
-		"static-actor-content-state":  `"static_actor_count": 0`,
-		"bootstrap-ground-item-state": `"ground_item_count": 0`,
+		"account-character-roster":     `"account_count": 0`,
+		"character-item-state":         `"inventory_item_count": 0`,
+		"character-point-state":        `"point_row_count": 0`,
+		"character-myshop-unit-prices": `"price_row_count": 0`,
+		"character-quest-state":        `"flag_count": 0`,
+		"character-safebox-state":      `"password_count": 0`,
+		"auth-login-ticket-handoff":    `"ticket_count": 0`,
+		"item-template-state":          `"template_count": 0`,
+		"static-actor-content-state":   `"static_actor_count": 0`,
+		"bootstrap-ground-item-state":  `"ground_item_count": 0`,
 	}
 	for _, kind := range exportQuarantineKinds {
 		resultPath := filepath.Join(exportTree, kind, "import-result.json")
@@ -171,15 +172,16 @@ func TestImportExportDrillSQLiteHermeticPrintedScriptImportsSeededTipKinds(t *te
 	}
 
 	wantMarkers := map[string]string{
-		"account-character-roster":    `"account_count": 1`,
-		"character-item-state":        `"inventory_item_count": 1`,
-		"character-point-state":       `"point_row_count": 255`,
-		"character-quest-state":       `"flag_count": 1`,
-		"character-safebox-state":     `"password_count": 1`,
-		"auth-login-ticket-handoff":   `"ticket_count": 1`,
-		"item-template-state":         `"template_count": 1`,
-		"static-actor-content-state":  `"static_actor_count": 1`,
-		"bootstrap-ground-item-state": `"ground_item_count": 1`,
+		"account-character-roster":     `"account_count": 1`,
+		"character-item-state":         `"inventory_item_count": 1`,
+		"character-point-state":        `"point_row_count": 255`,
+		"character-myshop-unit-prices": `"price_row_count": 0`,
+		"character-quest-state":        `"flag_count": 1`,
+		"character-safebox-state":      `"password_count": 1`,
+		"auth-login-ticket-handoff":    `"ticket_count": 1`,
+		"item-template-state":          `"template_count": 1`,
+		"static-actor-content-state":   `"static_actor_count": 1`,
+		"bootstrap-ground-item-state":  `"ground_item_count": 1`,
 	}
 	for _, kind := range exportQuarantineKinds {
 		resultPath := filepath.Join(exportTree, kind, "import-result.json")
@@ -205,15 +207,16 @@ func TestImportExportDrillSQLiteHermeticPrintedScriptImportsSeededTipKinds(t *te
 func mustMaterializeEmptyImportExportQuarantineTree(t *testing.T, exportTree string) {
 	t.Helper()
 	payloads := map[string]string{
-		"account-character-roster":    `{"migration_version":2,"migration_name":"account_character_roster","accounts":[],"characters":[]}`,
-		"character-item-state":        `{"migration_version":3,"migration_name":"character_item_state","inventory_items":[],"equipment_items":[],"quickslots":[]}`,
-		"character-point-state":       `{"migration_version":11,"migration_name":"character_point_state","points":[]}`,
-		"character-quest-state":       `{"migration_version":4,"migration_name":"character_quest_state","flags":[]}`,
-		"character-safebox-state":     `{"migration_version":15,"migration_name":"character_safebox_money","passwords":[],"items":[]}`,
-		"auth-login-ticket-handoff":   `{"migration_version":7,"migration_name":"auth_login_ticket_handoff","tickets":[]}`,
-		"item-template-state":         `{"migration_version":9,"migration_name":"item_template_refine_info","templates":[],"sockets":[],"attributes":[],"use_effects":[],"equip_effects":[],"refine_infos":[],"refine_materials":[]}`,
-		"static-actor-content-state":  `{"migration_version":13,"migration_name":"static_actor_combat_profile_state","interaction_definitions":[],"merchant_catalog_entries":[],"quest_flag_reward_items":[],"quest_flag_consume_items":[],"static_actors":[],"reward_drops":[],"combat_profiles":[],"combat_profile_death_reward_drops":[]}`,
-		"bootstrap-ground-item-state": `{"migration_version":10,"migration_name":"bootstrap_ground_item_state","ground_items":[]}`,
+		"account-character-roster":     `{"migration_version":2,"migration_name":"account_character_roster","accounts":[],"characters":[]}`,
+		"character-item-state":         `{"migration_version":3,"migration_name":"character_item_state","inventory_items":[],"equipment_items":[],"quickslots":[]}`,
+		"character-point-state":        `{"migration_version":11,"migration_name":"character_point_state","points":[]}`,
+		"character-myshop-unit-prices": `{"migration_version":23,"migration_name":"character_myshop_unit_prices","unit_prices":[]}`,
+		"character-quest-state":        `{"migration_version":4,"migration_name":"character_quest_state","flags":[]}`,
+		"character-safebox-state":      `{"migration_version":15,"migration_name":"character_safebox_money","passwords":[],"items":[]}`,
+		"auth-login-ticket-handoff":    `{"migration_version":7,"migration_name":"auth_login_ticket_handoff","tickets":[]}`,
+		"item-template-state":          `{"migration_version":9,"migration_name":"item_template_refine_info","templates":[],"sockets":[],"attributes":[],"use_effects":[],"equip_effects":[],"refine_infos":[],"refine_materials":[]}`,
+		"static-actor-content-state":   `{"migration_version":13,"migration_name":"static_actor_combat_profile_state","interaction_definitions":[],"merchant_catalog_entries":[],"quest_flag_reward_items":[],"quest_flag_consume_items":[],"static_actors":[],"reward_drops":[],"combat_profiles":[],"combat_profile_death_reward_drops":[]}`,
+		"bootstrap-ground-item-state":  `{"migration_version":10,"migration_name":"bootstrap_ground_item_state","ground_items":[]}`,
 	}
 	for _, kind := range exportQuarantineKinds {
 		payload, ok := payloads[kind]
@@ -517,15 +520,16 @@ func mustMaterializeSeededImportExportQuarantineTree(t *testing.T, exportTree st
 	}
 
 	payloads := map[string]any{
-		"account-character-roster":    rosterExport,
-		"character-item-state":        itemExport,
-		"character-point-state":       pointExport,
-		"character-quest-state":       questExport,
-		"character-safebox-state":     safeboxExport,
-		"auth-login-ticket-handoff":   ticketExport,
-		"item-template-state":         templateExport,
-		"static-actor-content-state":  staticExport,
-		"bootstrap-ground-item-state": groundExport,
+		"account-character-roster":     rosterExport,
+		"character-item-state":         itemExport,
+		"character-point-state":        pointExport,
+		"character-myshop-unit-prices": accountstore.CharacterMyShopUnitPricesExport{MigrationVersion: accountstore.CharacterMyShopUnitPricesMigrationVersion, MigrationName: accountstore.CharacterMyShopUnitPricesMigrationName, UnitPrices: []accountstore.CharacterMyShopUnitPriceRow{}},
+		"character-quest-state":        questExport,
+		"character-safebox-state":      safeboxExport,
+		"auth-login-ticket-handoff":    ticketExport,
+		"item-template-state":          templateExport,
+		"static-actor-content-state":   staticExport,
+		"bootstrap-ground-item-state":  groundExport,
 	}
 	for _, kind := range exportQuarantineKinds {
 		payload, ok := payloads[kind]

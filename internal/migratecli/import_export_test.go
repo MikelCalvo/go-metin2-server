@@ -163,6 +163,12 @@ func TestRunImportExportImportsEmptyExportsAgainstRegisteredDriver(t *testing.T)
 			want:    `"point_row_count": 0`,
 		},
 		{
+			kind:    "character-myshop-unit-prices",
+			payload: `{"migration_version":23,"migration_name":"character_myshop_unit_prices","unit_prices":[]}`,
+			version: 23,
+			want:    `"price_row_count": 0`,
+		},
+		{
 			kind:    "character-quest-state",
 			payload: `{"migration_version":4,"migration_name":"character_quest_state","flags":[]}`,
 			version: 4,

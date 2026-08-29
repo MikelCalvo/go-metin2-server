@@ -45,6 +45,9 @@ func TestRunImportExportDrillPrintsConfirmationGatedImportCommands(t *testing.T)
 		`test -f "$EXPORT_TREE/character-point-state/quarantine.json"`,
 		`metin2-migrate import-export --kind character-point-state --export "$EXPORT_TREE/character-point-state/quarantine.json" --driver "$DRIVER" --dsn "$DSN" --i-confirm-sql-import > "$EXPORT_TREE/character-point-state/import-result.json"`,
 		`metin2-migrate import-export-status --kind character-point-state --import-result "$EXPORT_TREE/character-point-state/import-result.json" > "$EXPORT_TREE/character-point-state/import-result-status.json"`,
+		`test -f "$EXPORT_TREE/character-myshop-unit-prices/quarantine.json"`,
+		`metin2-migrate import-export --kind character-myshop-unit-prices --export "$EXPORT_TREE/character-myshop-unit-prices/quarantine.json" --driver "$DRIVER" --dsn "$DSN" --i-confirm-sql-import > "$EXPORT_TREE/character-myshop-unit-prices/import-result.json"`,
+		`metin2-migrate import-export-status --kind character-myshop-unit-prices --import-result "$EXPORT_TREE/character-myshop-unit-prices/import-result.json" > "$EXPORT_TREE/character-myshop-unit-prices/import-result-status.json"`,
 		`test -f "$EXPORT_TREE/character-quest-state/quarantine.json"`,
 		`metin2-migrate import-export --kind character-quest-state --export "$EXPORT_TREE/character-quest-state/quarantine.json" --driver "$DRIVER" --dsn "$DSN" --i-confirm-sql-import > "$EXPORT_TREE/character-quest-state/import-result.json"`,
 		`metin2-migrate import-export-status --kind character-quest-state --import-result "$EXPORT_TREE/character-quest-state/import-result.json" > "$EXPORT_TREE/character-quest-state/import-result-status.json"`,
@@ -86,15 +89,16 @@ func TestRunImportExportDrillPrintsConfirmationGatedImportCommands(t *testing.T)
 	idxRoster := strings.Index(body, `import-export --kind account-character-roster`)
 	idxItem := strings.Index(body, `import-export --kind character-item-state`)
 	idxPoint := strings.Index(body, `import-export --kind character-point-state`)
+	idxMyShop := strings.Index(body, `import-export --kind character-myshop-unit-prices`)
 	idxQuest := strings.Index(body, `import-export --kind character-quest-state`)
 	idxSafebox := strings.Index(body, `import-export --kind character-safebox-state`)
 	idxTicket := strings.Index(body, `import-export --kind auth-login-ticket-handoff`)
 	idxTemplate := strings.Index(body, `import-export --kind item-template-state`)
 	idxStatic := strings.Index(body, `import-export --kind static-actor-content-state`)
 	idxGround := strings.Index(body, `import-export --kind bootstrap-ground-item-state`)
-	if !(idxRoster < idxItem && idxItem < idxPoint && idxPoint < idxQuest && idxQuest < idxSafebox && idxSafebox < idxTicket && idxTicket < idxTemplate && idxTemplate < idxStatic && idxStatic < idxGround) {
-		t.Fatalf("expected tip-kind import ordering, got idxs roster=%d item=%d point=%d quest=%d safebox=%d ticket=%d template=%d static=%d ground=%d\n%s",
-			idxRoster, idxItem, idxPoint, idxQuest, idxSafebox, idxTicket, idxTemplate, idxStatic, idxGround, body)
+	if !(idxRoster < idxItem && idxItem < idxPoint && idxPoint < idxMyShop && idxMyShop < idxQuest && idxQuest < idxSafebox && idxSafebox < idxTicket && idxTicket < idxTemplate && idxTemplate < idxStatic && idxStatic < idxGround) {
+		t.Fatalf("expected tip-kind import ordering, got idxs roster=%d item=%d point=%d myshop=%d quest=%d safebox=%d ticket=%d template=%d static=%d ground=%d\n%s",
+			idxRoster, idxItem, idxPoint, idxMyShop, idxQuest, idxSafebox, idxTicket, idxTemplate, idxStatic, idxGround, body)
 	}
 }
 

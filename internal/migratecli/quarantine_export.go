@@ -28,6 +28,7 @@ var exportQuarantineKinds = []string{
 	"account-character-roster",
 	"character-item-state",
 	"character-point-state",
+	"character-myshop-unit-prices",
 	"character-quest-state",
 	"character-safebox-state",
 	"auth-login-ticket-handoff",
@@ -191,6 +192,16 @@ func quarantineExportJSON(kind string, raw []byte) (any, error) {
 			return nil, err
 		}
 		return accountstore.CharacterPointStateQuarantineResult{Summary: summary, Export: quarantined}, nil
+	case "character-myshop-unit-prices":
+		var export accountstore.CharacterMyShopUnitPricesExport
+		if err := decodeStrictJSON(raw, &export); err != nil {
+			return nil, err
+		}
+		quarantined, summary, err := accountstore.QuarantineCharacterMyShopUnitPricesExport(export)
+		if err != nil {
+			return nil, err
+		}
+		return accountstore.CharacterMyShopUnitPricesQuarantineResult{Summary: summary, Export: quarantined}, nil
 	case "character-quest-state":
 		var export queststate.CharacterQuestStateExport
 		if err := decodeStrictJSON(raw, &export); err != nil {

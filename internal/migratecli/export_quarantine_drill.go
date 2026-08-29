@@ -55,6 +55,7 @@ func exportQuarantineDrillKinds() []exportQuarantineDrillKind {
 		{Kind: "account-character-roster", ExportPath: "/local/account-store/exports/account-character-roster"},
 		{Kind: "character-item-state", ExportPath: "/local/account-store/exports/character-item-state"},
 		{Kind: "character-point-state", ExportPath: "/local/account-store/exports/character-point-state"},
+		{Kind: "character-myshop-unit-prices", ExportPath: "/local/account-store/exports/character-myshop-unit-prices"},
 		{Kind: "auth-login-ticket-handoff", ExportPath: "/local/login-tickets/exports/auth-login-ticket-handoff"},
 		{Kind: "character-quest-state", ExportPath: "/local/quest-state/exports/character-quest-state"},
 		{Kind: "character-safebox-state", ExportPath: "/local/safebox-store/exports/character-safebox-state"},
@@ -294,7 +295,7 @@ func renderExportQuarantineDrillScript(plan exportQuarantineDrillPlan) string {
 	b.WriteString(`BASE="${EXPORTS_BASE}/${TS}-${COMMIT12}"` + "\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== prepare lab export/quarantine retention tree =='\n")
-	b.WriteString(`mkdir -p "$BASE"/account-character-roster "$BASE"/character-item-state "$BASE"/character-point-state "$BASE"/auth-login-ticket-handoff "$BASE"/character-quest-state "$BASE"/character-safebox-state "$BASE"/item-template-state "$BASE"/static-actor-content-state "$BASE"/bootstrap-ground-item-state` + "\n")
+	b.WriteString(`mkdir -p "$BASE"/account-character-roster "$BASE"/character-item-state "$BASE"/character-point-state "$BASE"/character-myshop-unit-prices "$BASE"/auth-login-ticket-handoff "$BASE"/character-quest-state "$BASE"/character-safebox-state "$BASE"/item-template-state "$BASE"/static-actor-content-state "$BASE"/bootstrap-ground-item-state` + "\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== retain daemon identity / runtime correlation =='\n")
 	b.WriteString(`curl -sS "$OPS/local/build-info" > "$BASE/gamed-build-info.json"` + "\n")

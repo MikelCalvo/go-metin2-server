@@ -176,6 +176,14 @@
       "down_path": "0022_item_template_refine_fail_result_vnum.down.sql",
       "up_sha256": "49d20bbbe9c1e8649d4adcfb67e44486c227f252884461140b8c74cda013cc67",
       "down_sha256": "019f38278f7bb2c3f7190fec70e2da75d3bd3cf39f051c216c86a7a4a7f175a7"
+    },
+    {
+      "version": 23,
+      "name": "character_myshop_unit_prices",
+      "up_path": "0023_character_myshop_unit_prices.up.sql",
+      "down_path": "0023_character_myshop_unit_prices.down.sql",
+      "up_sha256": "2601e7d972f4e65fb824680d291916cd6a91f5f0cea798211934c22f64ff632f",
+      "down_sha256": "0ceec41ddafca4c178cbf94feed3fdd90e79ff17d1ca8bc967a90875ba7f4b77"
     }
   ]
 }

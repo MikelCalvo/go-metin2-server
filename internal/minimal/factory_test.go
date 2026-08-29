@@ -1050,7 +1050,14 @@ func TestGameRuntimeMigrationStatusPlansBuiltInCatalogWithoutExecutingSQL(t *tes
 	if twentySecond.Version != 22 || twentySecond.Name != "item_template_refine_fail_result_vnum" || twentySecond.Direction != dbmigrations.DirectionUp || twentySecond.Path != "0022_item_template_refine_fail_result_vnum.up.sql" {
 		t.Fatalf("unexpected twenty-second pending migration step: %#v", twentySecond)
 	}
-	for _, step := range []dbmigrations.PlanStep{first, second, third, fourth, fifth, sixth, seventh, eighth, ninth, tenth, eleventh, twelfth, thirteenth, fourteenth, fifteenth, sixteenth, seventeenth, eighteenth, nineteenth, twentieth, twentyFirst, twentySecond} {
+	if len(plan.Pending) < 23 {
+		t.Fatalf("expected character myshop unit-prices pending step, got %#v", plan.Pending)
+	}
+	twentyThird := plan.Pending[22]
+	if twentyThird.Version != 23 || twentyThird.Name != "character_myshop_unit_prices" || twentyThird.Direction != dbmigrations.DirectionUp || twentyThird.Path != "0023_character_myshop_unit_prices.up.sql" {
+		t.Fatalf("unexpected twenty-third pending step: %#v", twentyThird)
+	}
+	for _, step := range []dbmigrations.PlanStep{first, second, third, fourth, fifth, sixth, seventh, eighth, ninth, tenth, eleventh, twelfth, thirteenth, fourteenth, fifteenth, sixteenth, seventeenth, eighteenth, nineteenth, twentieth, twentyFirst, twentySecond, twentyThird} {
 		if step.SHA256 == "" || strings.Contains(step.Path, "CREATE TABLE") {
 			t.Fatalf("expected metadata-only pending steps with checksums, got %#v", plan.Pending)
 		}
@@ -1075,7 +1082,7 @@ func TestGameRuntimeMigrationCatalogSummaryReturnsMetadataOnlyCatalog(t *testing
 	if err != nil {
 		t.Fatalf("migration catalog summary: %v", err)
 	}
-	if summary.Format != dbmigrations.CatalogSummaryFormat || summary.LatestVersion < 22 {
+	if summary.Format != dbmigrations.CatalogSummaryFormat || summary.LatestVersion < 23 {
 		t.Fatalf("unexpected migration catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -1086,7 +1093,7 @@ func TestGameRuntimeMigrationCatalogSummaryReturnsMetadataOnlyCatalog(t *testing
 		t.Fatalf("unexpected first catalog summary row: %#v", first)
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "item_template_refine_fail_result_vnum" || latest.DownSHA256 == "" {
+	if latest.Version != summary.LatestVersion || latest.Name != "character_myshop_unit_prices" || latest.DownSHA256 == "" {
 		t.Fatalf("unexpected latest catalog summary row: %#v", latest)
 	}
 	raw, err := json.Marshal(summary)

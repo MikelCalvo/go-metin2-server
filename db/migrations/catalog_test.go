@@ -57,6 +57,8 @@ const (
 	expectedItemTemplateRefineKeepOnFailDownSHA256          = "3f9bc552194cde79abc99196670e7cf0c3b08578763a7ecca072e6e6f48068c8"
 	expectedItemTemplateRefineFailResultVnumUpSHA256        = "49d20bbbe9c1e8649d4adcfb67e44486c227f252884461140b8c74cda013cc67"
 	expectedItemTemplateRefineFailResultVnumDownSHA256      = "019f38278f7bb2c3f7190fec70e2da75d3bd3cf39f051c216c86a7a4a7f175a7"
+	expectedCharacterMyShopUnitPricesUpSHA256               = "2601e7d972f4e65fb824680d291916cd6a91f5f0cea798211934c22f64ff632f"
+	expectedCharacterMyShopUnitPricesDownSHA256             = "0ceec41ddafca4c178cbf94feed3fdd90e79ff17d1ca8bc967a90875ba7f4b77"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -901,6 +903,42 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 		t.Fatalf("expected item-template refine fail_result_vnum down migration to drop fail_result_vnum, got:\n%s", twentySecond.DownSQL)
 	}
 
+	if len(catalog) < 23 {
+		t.Fatalf("expected character myshop unit-prices migration after fail_result_vnum, got %d", len(catalog))
+	}
+	twentyThird := catalog[22]
+	if twentyThird.Version != 23 || twentyThird.Name != "character_myshop_unit_prices" {
+		t.Fatalf("unexpected twenty-third migration: %#v", twentyThird)
+	}
+	if twentyThird.UpPath != "0023_character_myshop_unit_prices.up.sql" {
+		t.Fatalf("unexpected twenty-third up path: %q", twentyThird.UpPath)
+	}
+	if twentyThird.DownPath != "0023_character_myshop_unit_prices.down.sql" {
+		t.Fatalf("unexpected twenty-third down path: %q", twentyThird.DownPath)
+	}
+	if twentyThird.UpSHA256 != expectedCharacterMyShopUnitPricesUpSHA256 {
+		t.Fatalf("unexpected character myshop unit-prices up checksum: got %q want %q", twentyThird.UpSHA256, expectedCharacterMyShopUnitPricesUpSHA256)
+	}
+	if twentyThird.DownSHA256 != expectedCharacterMyShopUnitPricesDownSHA256 {
+		t.Fatalf("unexpected character myshop unit-prices down checksum: got %q want %q", twentyThird.DownSHA256, expectedCharacterMyShopUnitPricesDownSHA256)
+	}
+	for _, want := range []string{
+		"CREATE TABLE character_myshop_unit_prices",
+		"PRIMARY KEY (character_id, vnum)",
+		"FOREIGN KEY (character_id) REFERENCES characters(id)",
+		"CHECK (character_id > 0)",
+		"vnum > 0 AND vnum <= 4294967295",
+		"unit_price >= 0 AND unit_price <= 4294967295",
+		"CREATE INDEX character_myshop_unit_prices_character_index",
+	} {
+		if !strings.Contains(twentyThird.UpSQL, want) {
+			t.Fatalf("expected character myshop unit-prices up migration to contain %q, got:\n%s", want, twentyThird.UpSQL)
+		}
+	}
+	if !strings.Contains(twentyThird.DownSQL, "DROP TABLE character_myshop_unit_prices") {
+		t.Fatalf("expected character myshop unit-prices down migration to drop table, got:\n%s", twentyThird.DownSQL)
+	}
+
 	for i, migration := range catalog {
 		wantVersion := i + 1
 		if migration.Version != wantVersion {
@@ -970,7 +1008,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("built-in catalog summary: %v", err)
 	}
-	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 22 {
+	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 23 {
 		t.Fatalf("unexpected built-in catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -980,7 +1018,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 		t.Fatalf("unexpected first built-in catalog summary row: %#v", summary.Migrations[0])
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "item_template_refine_fail_result_vnum" {
+	if latest.Version != summary.LatestVersion || latest.Name != "character_myshop_unit_prices" {
 		t.Fatalf("unexpected latest built-in catalog summary row: %#v", latest)
 	}
 }

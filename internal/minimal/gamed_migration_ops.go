@@ -32,6 +32,8 @@ func RegisterGamedMigrationQuarantineExportOps(mux *http.ServeMux, runtime *game
 	mux = ops.RegisterLocalCharacterItemStateQuarantineEndpoint(mux)
 	mux = ops.RegisterLocalCharacterPointStateExportEndpoint(mux, runtime.ExportCharacterPointState)
 	mux = ops.RegisterLocalCharacterPointStateQuarantineEndpoint(mux)
+	mux = ops.RegisterLocalCharacterMyShopUnitPricesExportEndpoint(mux, runtime.ExportCharacterMyShopUnitPrices)
+	mux = ops.RegisterLocalCharacterMyShopUnitPricesQuarantineEndpoint(mux)
 	mux = ops.RegisterLocalAuthLoginTicketHandoffExportEndpoint(mux, runtime.ExportAuthLoginTicketHandoff)
 	mux = ops.RegisterLocalAuthLoginTicketHandoffQuarantineEndpoint(mux)
 	mux = ops.RegisterLocalCharacterQuestStateExportEndpoint(mux, runtime.ExportCharacterQuestState)

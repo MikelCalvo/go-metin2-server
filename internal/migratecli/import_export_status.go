@@ -152,6 +152,12 @@ func decodeImportExportStatusResult(kind string, raw []byte) (any, error) {
 			return nil, err
 		}
 		return normalizeCharacterPointStateImportResult(result)
+	case "character-myshop-unit-prices":
+		var result accountstore.CharacterMyShopUnitPricesImportResult
+		if err := decodeStrictImportExportStatusJSON(raw, &result); err != nil {
+			return nil, err
+		}
+		return normalizeCharacterMyShopUnitPricesImportResult(result)
 	case "character-quest-state":
 		var result queststate.CharacterQuestStateImportResult
 		if err := decodeStrictImportExportStatusJSON(raw, &result); err != nil {
@@ -252,6 +258,20 @@ func normalizeCharacterPointStateImportResult(result accountstore.CharacterPoint
 	result.CharacterIDs = emptyUint32Slice(result.CharacterIDs)
 	if len(result.CharacterIDs) != result.CharacterCount {
 		return accountstore.CharacterPointStateImportResult{}, fmt.Errorf("%w: character_ids length %d does not match character_count %d", ErrImportExportStatus, len(result.CharacterIDs), result.CharacterCount)
+	}
+	return result, nil
+}
+
+func normalizeCharacterMyShopUnitPricesImportResult(result accountstore.CharacterMyShopUnitPricesImportResult) (accountstore.CharacterMyShopUnitPricesImportResult, error) {
+	if result.MigrationVersion != accountstore.CharacterMyShopUnitPricesMigrationVersion || result.MigrationName != accountstore.CharacterMyShopUnitPricesMigrationName {
+		return accountstore.CharacterMyShopUnitPricesImportResult{}, fmt.Errorf("%w: unexpected migration identity %d %q", ErrImportExportStatus, result.MigrationVersion, result.MigrationName)
+	}
+	if err := requireNonNegativeCounts("character_count", result.CharacterCount, "price_row_count", result.PriceRowCount); err != nil {
+		return accountstore.CharacterMyShopUnitPricesImportResult{}, err
+	}
+	result.CharacterIDs = emptyUint32Slice(result.CharacterIDs)
+	if len(result.CharacterIDs) != result.CharacterCount {
+		return accountstore.CharacterMyShopUnitPricesImportResult{}, fmt.Errorf("%w: character_ids length %d does not match character_count %d", ErrImportExportStatus, len(result.CharacterIDs), result.CharacterCount)
 	}
 	return result, nil
 }

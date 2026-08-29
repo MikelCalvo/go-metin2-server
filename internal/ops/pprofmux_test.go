@@ -47,6 +47,7 @@ const (
 	expectedStaticActorCombatProfileReactionDelayStatusSHA256 = "406145d66bdeaf91828ffde4dda055eee4cb646cd49e6d2f335e6828af902701"
 	expectedItemTemplateRefineKeepOnFailStatusSHA256          = "d30200655fde0196ed58133a10731313b3e78f95075bc96f10195f1543270ec0"
 	expectedItemTemplateRefineFailResultVnumStatusSHA256      = "49d20bbbe9c1e8649d4adcfb67e44486c227f252884461140b8c74cda013cc67"
+	expectedCharacterMyShopUnitPricesStatusSHA256             = "2601e7d972f4e65fb824680d291916cd6a91f5f0cea798211934c22f64ff632f"
 )
 
 func TestHealthzEndpointIncludesServiceName(t *testing.T) {
@@ -7796,7 +7797,7 @@ func TestLocalStaticActorDeleteEndpointRemovesActorForLoopbackDelete(t *testing.
 func TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet(t *testing.T) {
 	planner := &stubMigrationStatusPlanner{plan: dbmigrations.Plan{
 		CurrentVersion: 0,
-		LatestVersion:  22,
+		LatestVersion:  23,
 		UpToDate:       false,
 		Pending: []dbmigrations.PlanStep{
 			{Version: 1, Name: "bootstrap_schema_migrations", Direction: dbmigrations.DirectionUp, Path: "0001_bootstrap_schema_migrations.up.sql", SHA256: expectedBootstrapMigrationStatusSHA256},
@@ -7821,6 +7822,7 @@ func TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet(t *testing.
 			{Version: 20, Name: "static_actor_combat_profile_reaction_delay", Direction: dbmigrations.DirectionUp, Path: "0020_static_actor_combat_profile_reaction_delay.up.sql", SHA256: expectedStaticActorCombatProfileReactionDelayStatusSHA256},
 			{Version: 21, Name: "item_template_refine_keep_on_fail", Direction: dbmigrations.DirectionUp, Path: "0021_item_template_refine_keep_on_fail.up.sql", SHA256: expectedItemTemplateRefineKeepOnFailStatusSHA256},
 			{Version: 22, Name: "item_template_refine_fail_result_vnum", Direction: dbmigrations.DirectionUp, Path: "0022_item_template_refine_fail_result_vnum.up.sql", SHA256: expectedItemTemplateRefineFailResultVnumStatusSHA256},
+			{Version: 23, Name: "character_myshop_unit_prices", Direction: dbmigrations.DirectionUp, Path: "0023_character_myshop_unit_prices.up.sql", SHA256: expectedCharacterMyShopUnitPricesStatusSHA256},
 		},
 	}}
 	mux := RegisterLocalMigrationStatusEndpoint(NewPprofMux("gamed"), planner.Plan)
@@ -7841,7 +7843,7 @@ func TestLocalMigrationStatusEndpointReturnsDryRunPlanForLoopbackGet(t *testing.
 		t.Fatalf("expected application/json content type, got %q", contentType)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`"current_version":0`, `"latest_version":22`, `"up_to_date":false`, `"direction":"up"`, `"path":"0001_bootstrap_schema_migrations.up.sql"`, `"sha256":"` + expectedBootstrapMigrationStatusSHA256 + `"`, `"path":"0002_account_character_roster.up.sql"`, `"sha256":"` + expectedAccountCharacterRosterStatusSHA256 + `"`, `"path":"0003_character_item_state.up.sql"`, `"sha256":"` + expectedCharacterItemStateStatusSHA256 + `"`, `"path":"0004_character_quest_state.up.sql"`, `"sha256":"` + expectedCharacterQuestStateStatusSHA256 + `"`, `"path":"0005_item_template_state.up.sql"`, `"sha256":"` + expectedItemTemplateStateStatusSHA256 + `"`, `"path":"0006_item_template_safebox_reject_message.up.sql"`, `"sha256":"` + expectedItemTemplateSafeboxRejectStatusSHA256 + `"`, `"path":"0007_auth_login_ticket_handoff.up.sql"`, `"sha256":"` + expectedAuthLoginTicketHandoffStatusSHA256 + `"`, `"path":"0008_static_actor_content_state.up.sql"`, `"sha256":"` + expectedStaticActorContentStateStatusSHA256 + `"`, `"path":"0009_item_template_refine_info.up.sql"`, `"sha256":"` + expectedItemTemplateRefineInfoStatusSHA256 + `"`, `"path":"0010_bootstrap_ground_item_state.up.sql"`, `"sha256":"` + expectedBootstrapGroundItemStateStatusSHA256 + `"`, `"path":"0011_character_point_state.up.sql"`, `"sha256":"` + expectedCharacterPointStateStatusSHA256 + `"`, `"path":"0012_static_actor_pve_interaction_state.up.sql"`, `"sha256":"` + expectedStaticActorPVEInteractionStatusSHA256 + `"`, `"path":"0013_static_actor_combat_profile_state.up.sql"`, `"sha256":"` + expectedStaticActorCombatProfileStatusSHA256 + `"`, `"path":"0014_character_safebox_state.up.sql"`, `"sha256":"` + expectedCharacterSafeboxStateStatusSHA256 + `"`, `"path":"0015_character_safebox_money.up.sql"`, `"sha256":"` + expectedCharacterSafeboxMoneyStatusSHA256 + `"`, `"path":"0016_static_actor_combat_profile_chase_delay.up.sql"`, `"sha256":"` + expectedStaticActorCombatProfileChaseDelayStatusSHA256 + `"`, `"path":"0017_static_actor_combat_profile_return_delay.up.sql"`, `"sha256":"` + expectedStaticActorCombatProfileReturnDelayStatusSHA256 + `"`, `"path":"0018_static_actor_combat_profile_homeward_delay.up.sql"`, `"sha256":"` + expectedStaticActorCombatProfileHomewardDelayStatusSHA256 + `"`, `"path":"0019_static_actor_combat_profile_max_step.up.sql"`, `"sha256":"` + expectedStaticActorCombatProfileMaxStepStatusSHA256 + `"`, `"path":"0020_static_actor_combat_profile_reaction_delay.up.sql"`, `"sha256":"` + expectedStaticActorCombatProfileReactionDelayStatusSHA256 + `"`, `"path":"0021_item_template_refine_keep_on_fail.up.sql"`, `"sha256":"` + expectedItemTemplateRefineKeepOnFailStatusSHA256 + `"`, `"path":"0022_item_template_refine_fail_result_vnum.up.sql"`, `"sha256":"` + expectedItemTemplateRefineFailResultVnumStatusSHA256 + `"`} {
+	for _, want := range []string{`"current_version":0`, `"latest_version":23`, `"up_to_date":false`, `"direction":"up"`, `"path":"0001_bootstrap_schema_migrations.up.sql"`, `"sha256":"` + expectedBootstrapMigrationStatusSHA256 + `"`, `"path":"0002_account_character_roster.up.sql"`, `"sha256":"` + expectedAccountCharacterRosterStatusSHA256 + `"`, `"path":"0003_character_item_state.up.sql"`, `"sha256":"` + expectedCharacterItemStateStatusSHA256 + `"`, `"path":"0004_character_quest_state.up.sql"`, `"sha256":"` + expectedCharacterQuestStateStatusSHA256 + `"`, `"path":"0005_item_template_state.up.sql"`, `"sha256":"` + expectedItemTemplateStateStatusSHA256 + `"`, `"path":"0006_item_template_safebox_reject_message.up.sql"`, `"sha256":"` + expectedItemTemplateSafeboxRejectStatusSHA256 + `"`, `"path":"0007_auth_login_ticket_handoff.up.sql"`, `"sha256":"` + expectedAuthLoginTicketHandoffStatusSHA256 + `"`, `"path":"0008_static_actor_content_state.up.sql"`, `"sha256":"` + expectedStaticActorContentStateStatusSHA256 + `"`, `"path":"0009_item_template_refine_info.up.sql"`, `"sha256":"` + expectedItemTemplateRefineInfoStatusSHA256 + `"`, `"path":"0010_bootstrap_ground_item_state.up.sql"`, `"sha256":"` + expectedBootstrapGroundItemStateStatusSHA256 + `"`, `"path":"0011_character_point_state.up.sql"`, `"sha256":"` + expectedCharacterPointStateStatusSHA256 + `"`, `"path":"0012_static_actor_pve_interaction_state.up.sql"`, `"sha256":"` + expectedStaticActorPVEInteractionStatusSHA256 + `"`, `"path":"0013_static_actor_combat_profile_state.up.sql"`, `"sha256":"` + expectedStaticActorCombatProfileStatusSHA256 + `"`, `"path":"0014_character_safebox_state.up.sql"`, `"sha256":"` + expectedCharacterSafeboxStateStatusSHA256 + `"`, `"path":"0015_character_safebox_money.up.sql"`, `"sha256":"` + expectedCharacterSafeboxMoneyStatusSHA256 + `"`, `"path":"0016_static_actor_combat_profile_chase_delay.up.sql"`, `"sha256":"` + expectedStaticActorCombatProfileChaseDelayStatusSHA256 + `"`, `"path":"0017_static_actor_combat_profile_return_delay.up.sql"`, `"sha256":"` + expectedStaticActorCombatProfileReturnDelayStatusSHA256 + `"`, `"path":"0018_static_actor_combat_profile_homeward_delay.up.sql"`, `"sha256":"` + expectedStaticActorCombatProfileHomewardDelayStatusSHA256 + `"`, `"path":"0019_static_actor_combat_profile_max_step.up.sql"`, `"sha256":"` + expectedStaticActorCombatProfileMaxStepStatusSHA256 + `"`, `"path":"0020_static_actor_combat_profile_reaction_delay.up.sql"`, `"sha256":"` + expectedStaticActorCombatProfileReactionDelayStatusSHA256 + `"`, `"path":"0021_item_template_refine_keep_on_fail.up.sql"`, `"sha256":"` + expectedItemTemplateRefineKeepOnFailStatusSHA256 + `"`, `"path":"0022_item_template_refine_fail_result_vnum.up.sql"`, `"sha256":"` + expectedItemTemplateRefineFailResultVnumStatusSHA256 + `"`, `"path":"0023_character_myshop_unit_prices.up.sql"`, `"sha256":"` + expectedCharacterMyShopUnitPricesStatusSHA256 + `"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected migration status body to contain %s, got %s", want, body)
 		}
@@ -8838,6 +8840,135 @@ func TestNewPprofMuxDoesNotExposeLocalCharacterPointStateQuarantineByDefault(t *
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
+func TestLocalCharacterMyShopUnitPricesExportEndpointReturnsLoopbackJSON(t *testing.T) {
+	exporter := &stubCharacterMyShopUnitPricesExporter{export: accountstore.CharacterMyShopUnitPricesExport{
+		MigrationVersion: accountstore.CharacterMyShopUnitPricesMigrationVersion,
+		MigrationName:    accountstore.CharacterMyShopUnitPricesMigrationName,
+		UnitPrices: []accountstore.CharacterMyShopUnitPriceRow{
+			{CharacterID: 11, Vnum: 27001, UnitPrice: 500},
+		},
+	}}
+	mux := RegisterLocalCharacterMyShopUnitPricesExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/account-store/exports/character-myshop-unit-prices", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if exporter.calls != 1 {
+		t.Fatalf("exporter calls = %d, want 1", exporter.calls)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"migration_version":23`, `"migration_name":"character_myshop_unit_prices"`, `"vnum":27001`, `"unit_price":500`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("response missing %s: %s", want, body)
+		}
+	}
+}
+
+func TestLocalCharacterMyShopUnitPricesExportEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	exporter := &stubCharacterMyShopUnitPricesExporter{export: accountstore.CharacterMyShopUnitPricesExport{MigrationVersion: 23}}
+	mux := RegisterLocalCharacterMyShopUnitPricesExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+	req := httptest.NewRequest(http.MethodGet, "/local/account-store/exports/character-myshop-unit-prices", nil)
+	req.RemoteAddr = "8.8.8.8:12345"
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+	if exporter.calls != 0 {
+		t.Fatalf("exporter calls = %d, want 0", exporter.calls)
+	}
+}
+
+func TestLocalCharacterMyShopUnitPricesExportEndpointRejectsWrongMethod(t *testing.T) {
+	exporter := &stubCharacterMyShopUnitPricesExporter{export: accountstore.CharacterMyShopUnitPricesExport{MigrationVersion: 23}}
+	mux := RegisterLocalCharacterMyShopUnitPricesExportEndpoint(NewPprofMux("gamed"), exporter.Export)
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/exports/character-myshop-unit-prices", strings.NewReader("{}"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", rec.Code)
+	}
+}
+
+func TestLocalCharacterMyShopUnitPricesQuarantineEndpointReturnsCanonicalJSON(t *testing.T) {
+	body, err := json.Marshal(accountstore.CharacterMyShopUnitPricesExport{
+		MigrationVersion: accountstore.CharacterMyShopUnitPricesMigrationVersion,
+		MigrationName:    accountstore.CharacterMyShopUnitPricesMigrationName,
+		UnitPrices: []accountstore.CharacterMyShopUnitPriceRow{
+			{CharacterID: 22, Vnum: 1, UnitPrice: 0},
+			{CharacterID: 11, Vnum: 27002, UnitPrice: 200},
+			{CharacterID: 11, Vnum: 27001, UnitPrice: 500},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	mux := RegisterLocalCharacterMyShopUnitPricesQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/exports/character-myshop-unit-prices/quarantine", bytes.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	got := rec.Body.String()
+	for _, want := range []string{`"character_count":2`, `"price_row_count":3`, `"character_id":11`, `"vnum":27001`, `"unit_price":500`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("response missing %s: %s", want, got)
+		}
+	}
+}
+
+func TestLocalCharacterMyShopUnitPricesQuarantineEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	mux := RegisterLocalCharacterMyShopUnitPricesQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/exports/character-myshop-unit-prices/quarantine", strings.NewReader("{}"))
+	req.RemoteAddr = "8.8.8.8:12345"
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+}
+
+func TestLocalCharacterMyShopUnitPricesQuarantineEndpointRejectsWrongMethod(t *testing.T) {
+	mux := RegisterLocalCharacterMyShopUnitPricesQuarantineEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodGet, "/local/account-store/exports/character-myshop-unit-prices/quarantine", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", rec.Code)
+	}
+}
+
+func TestLocalCharacterMyShopUnitPricesQuarantineEndpointRejectsInvalidExport(t *testing.T) {
+	mux := RegisterLocalCharacterMyShopUnitPricesQuarantineEndpoint(NewPprofMux("gamed"))
+	body := `{"migration_version":2,"migration_name":"character_myshop_unit_prices","unit_prices":[]}`
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/exports/character-myshop-unit-prices/quarantine", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", rec.Code)
+	}
+}
+
+func TestNewPprofMuxDoesNotExposeLocalCharacterMyShopUnitPricesByDefault(t *testing.T) {
+	mux := NewPprofMux("gamed")
+	req := httptest.NewRequest(http.MethodGet, "/local/account-store/exports/character-myshop-unit-prices", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Fatal("default mux unexpectedly exposed myshop unit-prices export")
 	}
 }
 
@@ -10069,6 +10200,12 @@ type stubCharacterPointStateExporter struct {
 	calls  int
 }
 
+type stubCharacterMyShopUnitPricesExporter struct {
+	export accountstore.CharacterMyShopUnitPricesExport
+	err    error
+	calls  int
+}
+
 type stubAuthLoginTicketHandoffExporter struct {
 	export loginticket.AuthLoginTicketHandoffExport
 	err    error
@@ -10134,6 +10271,11 @@ func (e *stubCharacterItemStateExporter) Export() (accountstore.CharacterItemSta
 }
 
 func (e *stubCharacterPointStateExporter) Export() (accountstore.CharacterPointStateExport, error) {
+	e.calls++
+	return e.export, e.err
+}
+
+func (e *stubCharacterMyShopUnitPricesExporter) Export() (accountstore.CharacterMyShopUnitPricesExport, error) {
 	e.calls++
 	return e.export, e.err
 }

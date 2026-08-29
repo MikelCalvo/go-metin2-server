@@ -163,4 +163,7 @@ func TestMemoryStoreSatisfiesAccountCharacterStateExporter(t *testing.T) {
 	if _, err := exporter.ExportCharacterPointState(); err != nil {
 		t.Fatalf("empty point export: %v", err)
 	}
+	if _, err := exporter.ExportCharacterMyShopUnitPrices(); err != nil {
+		t.Fatalf("empty myshop unit-prices export: %v", err)
+	}
 }
