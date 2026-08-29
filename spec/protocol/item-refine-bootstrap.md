@@ -161,7 +161,7 @@ This note freezes the GREEN injected-roll confirm path for remembered dialogs wh
 Later slices must write a new contract before broadening this packet beyond the confirm-after-preview success seam, the deterministic `probability = 0` destroy-failure seam, the `probability` in `1..99` injected-roll confirm seam, and the template-authored `keep_on_fail` keep-failure companion above. In particular, this note still does not freeze:
 
 - refine catalyst semantics beyond the authored dialog-preview material/cost fields above
-- downgrade or safe-refine outcomes that replace the source with a lower `fail_result_vnum` (keep-on-fail leaves the current source identity unchanged)
+- downgrade / `fail_result_vnum` outcomes (contract frozen in `docs/plans/2026-08-29-refine-fail-result-vnum.md`; RED/GREEN deferred)
 - item socket, metin-stone, attribute, or bonus-changing behavior beyond preserving the existing carried instance id on success (and beyond whole-source destroy on the owned destroy-failure / omitted-`keep_on_fail` failed-roll paths)
 - broader runtime refine window/open/close choreography beyond the single self-only `REFINE_INFORMATION_NEW` preview frame, the same-socket dialog presentation / `type = 255` cancel seam, and the currently owned same-socket merchant/exchange presentation teardowns before authored refine feedback
 - dragon-soul refine packets
