@@ -9,6 +9,9 @@ usable live partner so the same living peer can freshly `EXCHANGE START` against
 the recovered owner with ordinary paired start frames and no inventory/gold
 mutation.
 
+The matching `/restart_town` destination-peer twin is owned separately in
+`2026-08-29-post-floor-exchange-dead-partner-restart-town-recovery.md`.
+
 ## Contract frozen by this slice
 
 1. Drive the owner to the retaliation HP floor with a content-loaded practice mob
@@ -30,11 +33,12 @@ mutation.
 - changing busy-shell rejects for live owners
 - reopening already-owned owner-side `EXCHANGE START` restart twins
 - inventing revive menus or broader full action-lock policy
+- `/restart_town` destination-peer recovery (owned by the town twin plan)
 
 ## Validation
 
 ```bash
-go test ./internal/minimal -run 'TestGameSessionFlowPostFloorExchangeStartAgainstDeadPartnerFailsClosed' -count=1
+go test ./internal/minimal -run 'TestGameSessionFlowPostFloorExchangeStartAgainstDeadPartnerFailsClosed$' -count=1
 gofmt -w internal/minimal/player_death_busy_shell_open_guard_test.go
 git diff --check -- internal/minimal/player_death_busy_shell_open_guard_test.go \
   spec/protocol/player-death-bootstrap.md docs/qa/manual-client-checklist.md \

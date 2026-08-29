@@ -2126,6 +2126,194 @@ func TestGameSessionFlowPostFloorExchangeStartAgainstDeadPartnerFailsClosed(t *t
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "post-restart_here living-peer EXCHANGE START leaves peer inventory/gold unchanged")
 }
 
+func TestGameSessionFlowPostFloorExchangeStartAgainstDeadPartnerFailsClosedBeforeRestartTown(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("DeadPartnerExchangeTownOwner", 0x01030b63, 0x02040b63, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	sourcePeer := peerVisibilityCharacter("DeadPartnerExchangeTownSource", 0x01030b64, 0x02040b64, 1120, 2120, 0, 101, 201)
+	townPeer := peerVisibilityCharacter("DeadPartnerExchangeTownPeer", 0x01030b65, 0x02040b65, 52070, 166600, 4, 103, 203)
+	townPeer.MapIndex = 21
+	login := "pf-dead-partner-ex-town"
+	loginKey := uint32(0x19191b63)
+	sourceLogin := "pf-dead-partner-ex-town-s"
+	sourceLoginKey := uint32(0x19191b64)
+	townLogin := "pf-dead-partner-ex-town-t"
+	townLoginKey := uint32(0x19191b65)
+	issuePeerTicket(t, ticketStore, login, loginKey, owner)
+	issuePeerTicket(t, ticketStore, sourceLogin, sourceLoginKey, sourcePeer)
+	issuePeerTicket(t, ticketStore, townLogin, townLoginKey, townPeer)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed post-floor dead-partner town exchange owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: sourceLogin, Empire: sourcePeer.Empire, Characters: cloneCharacters([]loginticket.Character{sourcePeer})}); err != nil {
+		t.Fatalf("seed post-floor dead-partner town exchange source peer account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: townLogin, Empire: townPeer.Empire, Characters: cloneCharacters([]loginticket.Character{townPeer})}); err != nil {
+		t.Fatalf("seed post-floor dead-partner town exchange town peer account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticActorStore, interactionStore, newItemTemplateStore(t, nil), nil)
+	if err != nil {
+		t.Fatalf("unexpected post-floor dead-partner town exchange runtime error: %v", err)
+	}
+	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_post_floor_dead_partner_exchange_town",
+		Name:          "PracticeMobPostFloorDeadPartnerExchangeTown",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}); err != nil {
+		t.Fatalf("import post-floor dead-partner town exchange practice mob: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one post-floor dead-partner town exchange practice mob, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	if len(ownerEnter) < 8 {
+		t.Fatalf("expected owner bootstrap with visible practice mob, got %d frames", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	sourceFlow, sourceEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), sourceLogin, sourceLoginKey)
+	if len(sourceEnter) < 11 {
+		t.Fatalf("expected source peer bootstrap with visible owner and mob, got %d frames", len(sourceEnter))
+	}
+	defer closeSessionFlow(t, sourceFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected owner to receive source peer-entry frames before dead-partner town exchange, got %d", len(queued))
+	}
+	_ = flushServerFrames(t, sourceFlow)
+	townFlow, townEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), townLogin, townLoginKey)
+	if len(townEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for town peer on destination map, got %d", len(townEnter))
+	}
+	defer closeSessionFlow(t, townFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected destination-map town peer join to avoid queued owner frames before floor, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, sourceFlow); len(queued) != 0 {
+		t.Fatalf("expected destination-map town peer join to avoid queued source frames before floor, got %d", len(queued))
+	}
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, ownerFlow, owner, targetVID)
+	if queued := flushServerFrames(t, sourceFlow); len(queued) != 1 {
+		t.Fatalf("expected source peer DEAD fanout after owner floor before dead-partner town exchange, got %d", len(queued))
+	}
+
+	out, err := sourceFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      owner.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected living-peer EXCHANGE START against dead partner dispatch error before restart_town: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected living-peer EXCHANGE START against dead partner to fail closed with no frames before restart_town, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, sourceFlow); len(queued) != 0 {
+		t.Fatalf("expected living-peer EXCHANGE START against dead partner to queue no source frames before restart_town, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected living-peer EXCHANGE START against dead partner to queue no dead-owner frames before restart_town, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "living-peer EXCHANGE START against dead partner before restart_town")
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_town",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_town after living-peer EXCHANGE START against dead partner: %v", err)
+	}
+	if len(restartOut) < 9 {
+		t.Fatalf("expected at least 9 self frames from /restart_town recovery after living-peer EXCHANGE START against dead partner, got %d", len(restartOut))
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[0]))
+	if err != nil {
+		t.Fatalf("decode self character add after dead-partner EXCHANGE START /restart_town: %v", err)
+	}
+	if selfAdd.VID != owner.VID || selfAdd.X != 52070 || selfAdd.Y != 166600 {
+		t.Fatalf("expected /restart_town self bootstrap at empire town position after dead-partner EXCHANGE START floor, got %+v", selfAdd)
+	}
+	var (
+		selfPoints    worldproto.PlayerPointChangePacket
+		foundPoints   bool
+		foundTownPeer bool
+	)
+	for _, raw := range restartOut {
+		fr := decodeSingleFrame(t, raw)
+		if !foundPoints {
+			if points, err := worldproto.DecodePlayerPointChange(fr); err == nil {
+				selfPoints = points
+				foundPoints = true
+				continue
+			}
+		}
+		if add, err := worldproto.DecodeCharacterAdd(fr); err == nil && add.VID == townPeer.VID {
+			foundTownPeer = true
+		}
+	}
+	if !foundPoints {
+		t.Fatal("expected /restart_town recovery to include self PLAYER_POINT_CHANGE after dead-partner EXCHANGE START floor")
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if selfPoints.Value != wantHP {
+		t.Fatalf("expected /restart_town to rebuild recovered owner HP %d after dead-partner EXCHANGE START floor, got %+v", wantHP, selfPoints)
+	}
+	if !foundTownPeer {
+		t.Fatalf("expected /restart_town destination visibility delta to add town peer vid %d", townPeer.VID)
+	}
+	_ = flushServerFrames(t, sourceFlow)
+	townQueued := flushServerFrames(t, townFlow)
+	if len(townQueued) != 3 {
+		t.Fatalf("expected destination town peer to receive 3 queued owner re-entry frames after /restart_town, got %d", len(townQueued))
+	}
+
+	freshStart, err := townFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+		Subheader: itemproto.ExchangeSubheaderStart,
+		Arg1:      owner.VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart_town living-peer EXCHANGE START against recovered partner: %v", err)
+	}
+	if len(freshStart) != 1 {
+		t.Fatalf("expected post-restart_town living-peer EXCHANGE START against recovered partner to succeed, got %d frames", len(freshStart))
+	}
+	if infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, freshStart[0])); err == nil {
+		t.Fatalf("expected post-restart_town living-peer EXCHANGE START success, got busy info chat %+v", infoChat)
+	}
+	assertExchangeStartFrame(t, freshStart[0], owner.VID, "post-restart_town living-peer EXCHANGE START against recovered partner")
+	ownerFreshStart := flushServerFrames(t, ownerFlow)
+	if len(ownerFreshStart) != 1 {
+		t.Fatalf("expected recovered owner EXCHANGE START after post-restart_town living-peer recovery, got %d", len(ownerFreshStart))
+	}
+	assertExchangeStartFrame(t, ownerFreshStart[0], townPeer.VID, "recovered owner EXCHANGE START after post-restart_town living-peer recovery")
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart_town living-peer EXCHANGE START against recovered partner: %v", err)
+	}
+	if account.Characters[0].MapIndex != 21 || account.Characters[0].X != 52070 || account.Characters[0].Y != 166600 {
+		t.Fatalf("expected /restart_town to persist empire town position after dead-partner EXCHANGE START floor, got %+v", account.Characters[0])
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_town to persist recovered owner HP %d after dead-partner EXCHANGE START floor, got %+v", wantHP, account.Characters[0])
+	}
+	want := owner
+	want.Points[bootstrapPlayerPointValueIndex] = wantHP
+	want.MapIndex = 21
+	want.X = 52070
+	want.Y = 166600
+	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart_town living-peer EXCHANGE START leaves inventory/gold unchanged")
+	assertExchangeAccountUnchanged(t, accounts, townLogin, townPeer, "post-restart_town living-peer EXCHANGE START leaves town peer inventory/gold unchanged")
+}
+
 func newPostFloorSafeboxPasswordRuntime(t *testing.T, login string, loginKey uint32, owner loginticket.Character) (*gameRuntime, accountstore.Store, uint32, uint32, uint32) {
 	t.Helper()
 	ticketStore := loginticket.NewFileStore(t.TempDir())

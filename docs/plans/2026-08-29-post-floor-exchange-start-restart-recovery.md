@@ -24,6 +24,9 @@ inventory/gold mutation.
    - `TestGameSessionFlowPostFloorExchangeStartAgainstDeadPartnerFailsClosed`
      (living-peer-against-dead-owner deny + `/restart_here` recovery twin; see
      `2026-08-29-post-floor-exchange-dead-partner-restart-recovery.md`)
+   - `TestGameSessionFlowPostFloorExchangeStartAgainstDeadPartnerFailsClosedBeforeRestartTown`
+     (living destination-peer-against-dead-owner deny + `/restart_town` recovery twin; see
+     `2026-08-29-post-floor-exchange-dead-partner-restart-town-recovery.md`)
 
 ## Explicit non-goals
 
