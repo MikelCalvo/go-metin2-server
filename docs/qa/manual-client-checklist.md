@@ -1207,7 +1207,7 @@ Expected result:
 - player HP is rebuilt from race create MaxHP into the persisted snapshot on accepted restart, while a still-live practice mob keeps its runtime-owned HP and requires fresh target acquisition; a zero-HP owner does not keep that mob orphan-locked against fresh targeting from another living visible client
 - `/restart_here` also preflights due mob respawn / return-step / chase-step / homeward-step timers and refreshes currently visible static actors for the recovered owner, so skipped zero-HP lifecycle frames do not leave stale local mob visuals
 - if persisted player HP is already `0`, `/restart_here` recovers that dead snapshot by writing race create MaxHP and emitting the ordinary live recovery burst
-- post-floor `ITEM_MOVE` is silent and non-mutating until a restart/recovery seam is used
+- post-floor `ITEM_MOVE` / `/inventory_move` stay silent and non-mutating while at `0` HP; after `/restart_here` / `/restart_town` the same carried move succeeds normally again (`TestGameSessionFlowPostFloorItemMoveFailsClosed`, `TestGameSessionFlowPostFloorItemMoveFailsClosedBeforeRestartTown`)
 - open bootstrap exchange windows are closed with `GC::EXCHANGE END` on the player-death edge and do not remain usable after the owner reaches the zero-HP floor
 - mob death cancels pending delayed retaliation, respawn clears any stale selected-target / aggro-lite ownership that survived to the rebuild boundary, and respawn does not resurrect stale retaliation work without fresh target acquisition
 
