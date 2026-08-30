@@ -18,9 +18,12 @@ owner is still at the practice-mob retaliation `0`-HP floor, then recover via
    - no busy/armor INFO
    - no inventory / gold / persistence mutation
 3. Later carried silk-bag `ITEM_USE` likewise fails closed with the same quiet
-   denial before `/restart_town`.
+   denial before `/restart_here` / `/restart_town`.
 4. After `/restart_here` restores live HP, shop-bag `ITEM_USE` emits only
-   `OpenPrivateShop` and leaves the bag unconsumed.
+   `OpenPrivateShop` and leaves the bag unconsumed; silk-bag `ITEM_USE` emits
+   `MyShopPriceList 1 0` then `OpenPrivateShop` and leaves the bag unconsumed
+   (`TestGameSessionFlowPostFloorSilkBagUseFailsClosed`; see also
+   `2026-08-30-post-floor-silk-bag-use-restart-here-recovery.md`).
 5. After `/restart_town` restores live HP at the owned empire town position,
    shop-bag `ITEM_USE` emits only `OpenPrivateShop` and leaves the bag
    unconsumed; silk-bag `ITEM_USE` emits `MyShopPriceList 1 0` then
@@ -28,6 +31,7 @@ owner is still at the practice-mob retaliation `0`-HP floor, then recover via
 6. Spec/QA name the focused twins:
    - `TestGameSessionFlowPostFloorShopBagUseFailsClosed`
    - `TestGameSessionFlowPostFloorShopBagUseFailsClosedBeforeRestartTown`
+   - `TestGameSessionFlowPostFloorSilkBagUseFailsClosed`
    - `TestGameSessionFlowPostFloorSilkBagUseFailsClosedBeforeRestartTown`
 
 ## Explicit non-goals
