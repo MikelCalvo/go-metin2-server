@@ -125,6 +125,86 @@ func TestFileStoreRejectsNonZeroSocketsWithoutHasSockets(t *testing.T) {
 	}
 }
 
+func TestFileStoreRoundTripPersistsInstanceAttributesIncludingExplicitZero(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "safebox-attributes.json")
+	store := NewFileStore(path)
+	active := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 4, Value: -5}}
+	zero := inventory.AttributeValues{}
+	input := Snapshot{Characters: []CharacterRow{{
+		Login:       "attr-owner",
+		CharacterID: 21,
+		Cells: []Cell{
+			{Cell: 1, ID: 9101, Vnum: 72723, Count: 1, HasAttributes: true, Attributes: &active},
+			{Cell: 3, ID: 9102, Vnum: 72727, Count: 1, HasAttributes: true, Attributes: &zero},
+		},
+	}}}
+	if err := store.Save(input); err != nil {
+		t.Fatalf("save safebox attributes: %v", err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("load safebox attributes: %v", err)
+	}
+	if len(loaded.Characters) != 1 || len(loaded.Characters[0].Cells) != 2 {
+		t.Fatalf("unexpected loaded safebox attributes snapshot: %#v", loaded)
+	}
+	activeCell := loaded.Characters[0].Cells[0]
+	if !activeCell.HasAttributes || activeCell.Attributes == nil || *activeCell.Attributes != active {
+		t.Fatalf("expected active attributes rematerialized, got %#v", activeCell)
+	}
+	zeroCell := loaded.Characters[0].Cells[1]
+	if !zeroCell.HasAttributes || zeroCell.Attributes == nil || *zeroCell.Attributes != zero {
+		t.Fatalf("expected explicit-zero attributes rematerialized, got %#v", zeroCell)
+	}
+	cells := CharacterCells(loaded, "attr-owner", 21)
+	activeItem := cells[1]
+	if !activeItem.HasAttributes() || *activeItem.Attributes != active {
+		t.Fatalf("expected CharacterCells active attributes, got %#v", activeItem)
+	}
+	zeroItem := cells[3]
+	if !zeroItem.HasAttributes() || *zeroItem.Attributes != zero {
+		t.Fatalf("expected CharacterCells explicit-zero attributes, got %#v", zeroItem)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read safebox attributes snapshot: %v", err)
+	}
+	if !strings.Contains(string(raw), `"has_attributes": true`) {
+		t.Fatalf("expected has_attributes in durable JSON, got %s", raw)
+	}
+	if !strings.Contains(string(raw), `"type": 1`) || !strings.Contains(string(raw), `"value": 25`) {
+		t.Fatalf("expected non-zero attribute cells in durable JSON, got %s", raw)
+	}
+}
+
+func TestFileStoreRejectsNonZeroAttributesWithoutHasAttributes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "safebox-bad-attributes.json")
+	store := NewFileStore(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	body := `{"characters":[{"login":"owner","character_id":1,"cells":[{"cell":0,"id":1,"vnum":10,"count":1,"attributes":[{"type":1,"value":25},{"type":0,"value":0},{"type":0,"value":0},{"type":0,"value":0},{"type":0,"value":0},{"type":0,"value":0},{"type":0,"value":0}]}]}]}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write bad attributes snapshot: %v", err)
+	}
+	_, err := store.Load()
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for non-zero attributes without has_attributes, got %v", err)
+	}
+	next, err := ReplaceCharacterCells(Snapshot{}, "owner", 1, map[uint8]inventory.ItemInstance{
+		0: {ID: 1, Vnum: 10, Count: 1},
+	})
+	if err != nil {
+		t.Fatalf("seed replace cells: %v", err)
+	}
+	active := inventory.AttributeValues{{Type: 1, Value: 25}}
+	bad := next
+	bad.Characters[0].Cells[0].Attributes = &active
+	if err := store.Save(bad); err == nil || !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected Save to reject non-zero attributes without has_attributes, got %v", err)
+	}
+}
+
 func TestFileStoreSaveIsDeterministicJSON(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "safebox.json")
 	store := NewFileStore(path)

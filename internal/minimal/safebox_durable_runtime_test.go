@@ -370,6 +370,176 @@ func TestGameRuntimeSafeboxCheckinInstanceSocketsRematerializeAcrossDaemonRestar
 	}(), "post-restart checkout inventory sockets")
 }
 
+func TestGameRuntimeSafeboxCheckinInstanceAttributesRematerializeAcrossDaemonRestart(t *testing.T) {
+	defer safeboxstore.DisableDurableSyncForTest()()
+
+	root := t.TempDir()
+	ticketDir := filepath.Join(root, "tickets")
+	accountDir := filepath.Join(root, "accounts")
+	safeboxPath := filepath.Join(root, "safebox", "safebox.json")
+	ticketStore := loginticket.NewFileStore(ticketDir)
+	accounts := accountstore.NewFileStore(accountDir)
+
+	activeAttributes := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 4, Value: -5}}
+	zeroAttributes := inventory.AttributeValues{}
+	owner := peerVisibilityCharacter("SafeboxAttrRestart", 0x010308a1, 0x020408a1, 1100, 2100, 0, 101, 201)
+	owner.Gold = 9192
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 993, Vnum: 72723, Count: 1, Slot: 5, Attributes: &activeAttributes},
+		{ID: 994, Vnum: 72727, Count: 1, Slot: 6, Attributes: &zeroAttributes},
+	}
+	login := "safebox-attr-restart"
+	const loginKey uint32 = 0x808080a1
+	issuePeerTicket(t, ticketStore, login, loginKey, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed durable safebox attribute restart owner account: %v", err)
+	}
+	templates := []itemcatalog.Template{
+		{Vnum: 72723, Name: "Red Potion", MaxCount: 1, Attributes: itemcatalog.AttributeValues{{Type: 9, Value: 9}}},
+		{Vnum: 72727, Name: "Blue Potion", MaxCount: 1, Attributes: itemcatalog.AttributeValues{{Type: 8, Value: 8}}},
+	}
+	itemStore := newItemTemplateStore(t, templates)
+	cfg := config.Service{
+		LegacyAddr:       ":13000",
+		PublicAddr:       "127.0.0.1",
+		SafeboxStorePath: safeboxPath,
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected durable safebox attribute restart runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	_ = flushServerFrames(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_safebox before attribute check-in: %v", err)
+	}
+	activeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 1,
+		Position: itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected active-attribute check-in: %v", err)
+	}
+	activeSet, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, activeOut[len(activeOut)-1]))
+	if err != nil {
+		t.Fatalf("decode active-attribute SAFEBOX_SET: %v", err)
+	}
+	wantActive := [itemproto.ItemAttributeCount]itemproto.Attribute{{Type: 1, Value: 25}, {Type: 4, Value: -5}}
+	if activeSet.Attributes != wantActive {
+		t.Fatalf("expected check-in SAFEBOX_SET active attributes, got %+v", activeSet)
+	}
+	zeroOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 2,
+		Position: itemproto.InventoryPosition(6),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected explicit-zero attribute check-in: %v", err)
+	}
+	zeroSet, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, zeroOut[len(zeroOut)-1]))
+	if err != nil {
+		t.Fatalf("decode explicit-zero SAFEBOX_SET: %v", err)
+	}
+	if zeroSet.Attributes != [itemproto.ItemAttributeCount]itemproto.Attribute{} {
+		t.Fatalf("expected check-in SAFEBOX_SET explicit-zero attributes, got %+v", zeroSet)
+	}
+
+	persisted, err := safeboxstore.NewFileStore(safeboxPath).Load()
+	if err != nil {
+		t.Fatalf("load persisted safebox before restart: %v", err)
+	}
+	cells := safeboxstore.CharacterCells(persisted, login, owner.ID)
+	if item := cells[1]; !item.HasAttributes() || *item.Attributes != activeAttributes {
+		t.Fatalf("expected persisted active attributes, got %#v", item)
+	}
+	if item := cells[2]; !item.HasAttributes() || *item.Attributes != zeroAttributes {
+		t.Fatalf("expected persisted explicit-zero attributes, got %#v", item)
+	}
+	closeSessionFlow(t, flow)
+
+	const postRestartLoginKey uint32 = 0x808080a2
+	reloadedTickets := loginticket.NewFileStore(ticketDir)
+	issuePeerTicket(t, reloadedTickets, login, postRestartLoginKey, owner)
+	reloadedAccounts := accountstore.NewFileStore(accountDir)
+	reloadedItems := newItemTemplateStore(t, templates)
+	reloaded, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg, reloadedTickets, reloadedAccounts, nil, nil, reloadedItems, nil)
+	if err != nil {
+		t.Fatalf("reload runtime after durable safebox attribute restart: %v", err)
+	}
+	restartFlow, _ := enterGameWithLoginTicket(t, reloaded.SessionFactory(), login, postRestartLoginKey)
+	defer closeSessionFlow(t, restartFlow)
+	_ = flushServerFrames(t, restartFlow)
+
+	reopenOut, err := restartFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_safebox after attribute rematerialize restart: %v", err)
+	}
+	if len(reopenOut) < 3 {
+		t.Fatalf("expected SAFEBOX_SIZE + SAFEBOX_SET frames after attribute rematerialize, got %d", len(reopenOut))
+	}
+	reopenByCell := map[uint16]itemproto.SetPacket{}
+	for _, raw := range reopenOut[1:] {
+		frame := decodeSingleFrame(t, raw)
+		if frame.Header != itemproto.HeaderSafeboxSet {
+			continue
+		}
+		set, err := itemproto.DecodeSafeboxSet(frame)
+		if err != nil {
+			t.Fatalf("decode rematerialized SAFEBOX_SET: %v", err)
+		}
+		reopenByCell[set.Position.Cell] = set
+	}
+	if got := reopenByCell[1]; got.Vnum != 72723 || got.Attributes != wantActive {
+		t.Fatalf("expected rematerialized active SAFEBOX_SET attributes, got %+v", got)
+	}
+	if got := reopenByCell[2]; got.Vnum != 72727 || got.Attributes != [itemproto.ItemAttributeCount]itemproto.Attribute{} {
+		t.Fatalf("expected rematerialized explicit-zero SAFEBOX_SET attributes, got %+v", got)
+	}
+
+	checkoutOut, err := restartFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckout(itemproto.ClientSafeboxCheckoutPacket{
+		SafeSlot: 1,
+		Position: itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart checkout: %v", err)
+	}
+	var checkoutSet itemproto.SetPacket
+	foundCheckoutSet := false
+	for _, raw := range checkoutOut {
+		frame := decodeSingleFrame(t, raw)
+		if frame.Header != itemproto.HeaderSet {
+			continue
+		}
+		set, err := itemproto.DecodeSet(frame)
+		if err != nil {
+			t.Fatalf("decode checkout ITEM_SET: %v", err)
+		}
+		if set.Position.WindowType == itemproto.WindowInventory && set.Position.Cell == 5 {
+			checkoutSet = set
+			foundCheckoutSet = true
+		}
+	}
+	if !foundCheckoutSet {
+		t.Fatalf("expected inventory ITEM_SET after checkout, frames=%d", len(checkoutOut))
+	}
+	if checkoutSet.Attributes != wantActive {
+		t.Fatalf("expected checkout to restore active attributes into inventory, got %+v", checkoutSet)
+	}
+	assertExchangeAccountUnchanged(t, reloadedAccounts, login, func() loginticket.Character {
+		updated := owner
+		updated.Inventory = []inventory.ItemInstance{
+			{ID: 993, Vnum: 72723, Count: 1, Slot: 5, Attributes: &activeAttributes},
+		}
+		return updated
+	}(), "post-restart checkout inventory attributes")
+}
+
 func TestGameRuntimeSafeboxItemMovePersistsDurableCellsWithoutInventoryMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
