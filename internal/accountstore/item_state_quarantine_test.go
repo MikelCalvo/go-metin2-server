@@ -150,6 +150,18 @@ func TestValidateCharacterItemStateExportRejectsInvalidRows(t *testing.T) {
 				Quickslots:     []CharacterQuickslotRow{},
 			},
 		},
+		{
+			name: "non-zero attributes without has_attributes",
+			export: CharacterItemStateExport{
+				MigrationVersion: CharacterItemStateMigrationVersion,
+				MigrationName:    CharacterItemStateMigrationName,
+				InventoryItems: []CharacterInventoryItemRow{
+					{ID: 1, CharacterID: 11, Slot: 0, Vnum: 27001, Count: 1, Attr0Type: 1, Attr0Value: 25},
+				},
+				EquipmentItems: []CharacterEquipmentItemRow{},
+				Quickslots:     []CharacterQuickslotRow{},
+			},
+		},
 	}
 
 	for _, tc := range cases {

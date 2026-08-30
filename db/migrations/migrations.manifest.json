@@ -208,6 +208,14 @@
       "down_path": "0026_bootstrap_ground_item_instance_sockets.down.sql",
       "up_sha256": "56a3c4641d50a9ff9ccfa093d9724be26578975a698e1394ec9d52c5614e3057",
       "down_sha256": "598b25a58b4c30c68dda8c8e0b3e895eadd3ec5ad25ce4dfdd9bb07104a1c278"
+    },
+    {
+      "version": 27,
+      "name": "character_item_instance_attributes",
+      "up_path": "0027_character_item_instance_attributes.up.sql",
+      "down_path": "0027_character_item_instance_attributes.down.sql",
+      "up_sha256": "79290176e5331cf33c968aafc7cafcb62323b24b882c9425237777b96d733085",
+      "down_sha256": "0633bafd63ba08cd4d9842b3a2ec31b1660f6f87a80b0efd4cf90de555f21ced"
     }
   ]
 }

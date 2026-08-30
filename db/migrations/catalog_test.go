@@ -65,6 +65,8 @@ const (
 	expectedCharacterSafeboxItemInstanceSocketsDownSHA256   = "40660c2b6a9a9249bc518f779e1b568383327778b54019f9a4d959c1ac2ffc92"
 	expectedBootstrapGroundItemInstanceSocketsUpSHA256      = "56a3c4641d50a9ff9ccfa093d9724be26578975a698e1394ec9d52c5614e3057"
 	expectedBootstrapGroundItemInstanceSocketsDownSHA256    = "598b25a58b4c30c68dda8c8e0b3e895eadd3ec5ad25ce4dfdd9bb07104a1c278"
+	expectedCharacterItemInstanceAttributesUpSHA256         = "79290176e5331cf33c968aafc7cafcb62323b24b882c9425237777b96d733085"
+	expectedCharacterItemInstanceAttributesDownSHA256       = "0633bafd63ba08cd4d9842b3a2ec31b1660f6f87a80b0efd4cf90de555f21ced"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -1068,6 +1070,52 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 		}
 	}
 
+	if len(catalog) < 27 {
+		t.Fatalf("expected character item instance-attributes migration after bootstrap ground item instance-sockets, got %d", len(catalog))
+	}
+	twentySeventh := catalog[26]
+	if twentySeventh.Version != 27 || twentySeventh.Name != "character_item_instance_attributes" {
+		t.Fatalf("unexpected twenty-seventh migration: %#v", twentySeventh)
+	}
+	if twentySeventh.UpPath != "0027_character_item_instance_attributes.up.sql" {
+		t.Fatalf("unexpected twenty-seventh up path: %q", twentySeventh.UpPath)
+	}
+	if twentySeventh.DownPath != "0027_character_item_instance_attributes.down.sql" {
+		t.Fatalf("unexpected twenty-seventh down path: %q", twentySeventh.DownPath)
+	}
+	if twentySeventh.UpSHA256 != expectedCharacterItemInstanceAttributesUpSHA256 {
+		t.Fatalf("unexpected character item instance-attributes up checksum: got %q want %q", twentySeventh.UpSHA256, expectedCharacterItemInstanceAttributesUpSHA256)
+	}
+	if twentySeventh.DownSHA256 != expectedCharacterItemInstanceAttributesDownSHA256 {
+		t.Fatalf("unexpected character item instance-attributes down checksum: got %q want %q", twentySeventh.DownSHA256, expectedCharacterItemInstanceAttributesDownSHA256)
+	}
+	for _, want := range []string{
+		"ALTER TABLE character_inventory_items",
+		"ALTER TABLE character_equipment_items",
+		"ADD COLUMN has_attributes INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN attr0_type INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN attr0_value INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN attr6_type INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN attr6_value INTEGER NOT NULL DEFAULT 0",
+		"has_attributes = 1",
+		"attr0_type = 0 AND attr0_value = 0",
+		"attr6_type = 0 AND attr6_value = 0",
+	} {
+		if !strings.Contains(twentySeventh.UpSQL, want) {
+			t.Fatalf("expected character item instance-attributes up migration to contain %q, got:\n%s", want, twentySeventh.UpSQL)
+		}
+	}
+	for _, want := range []string{
+		"ALTER TABLE character_equipment_items DROP COLUMN attr6_value",
+		"ALTER TABLE character_equipment_items DROP COLUMN has_attributes",
+		"ALTER TABLE character_inventory_items DROP COLUMN attr6_value",
+		"ALTER TABLE character_inventory_items DROP COLUMN has_attributes",
+	} {
+		if !strings.Contains(twentySeventh.DownSQL, want) {
+			t.Fatalf("expected character item instance-attributes down migration to contain %q, got:\n%s", want, twentySeventh.DownSQL)
+		}
+	}
+
 	for i, migration := range catalog {
 		wantVersion := i + 1
 		if migration.Version != wantVersion {
@@ -1137,7 +1185,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("built-in catalog summary: %v", err)
 	}
-	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 26 {
+	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 27 {
 		t.Fatalf("unexpected built-in catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -1147,7 +1195,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 		t.Fatalf("unexpected first built-in catalog summary row: %#v", summary.Migrations[0])
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "bootstrap_ground_item_instance_sockets" {
+	if latest.Version != summary.LatestVersion || latest.Name != "character_item_instance_attributes" {
 		t.Fatalf("unexpected latest built-in catalog summary row: %#v", latest)
 	}
 }

@@ -205,6 +205,20 @@ func validateQuarantineInventoryRow(row CharacterInventoryItemRow) error {
 	if err := validateQuarantineInstanceSockets(row.ID, "inventory", row.HasSockets, row.Socket0, row.Socket1, row.Socket2); err != nil {
 		return err
 	}
+	if err := validateQuarantineInstanceAttributes(
+		row.ID,
+		"inventory",
+		row.HasAttributes,
+		row.Attr0Type, row.Attr0Value,
+		row.Attr1Type, row.Attr1Value,
+		row.Attr2Type, row.Attr2Value,
+		row.Attr3Type, row.Attr3Value,
+		row.Attr4Type, row.Attr4Value,
+		row.Attr5Type, row.Attr5Value,
+		row.Attr6Type, row.Attr6Value,
+	); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -226,6 +240,20 @@ func validateQuarantineEquipmentRow(row CharacterEquipmentItemRow) error {
 		return fmt.Errorf("%w: equipment item %d has invalid equip_slot %q", ErrInvalidCharacterItemStateExport, row.ID, row.EquipSlot)
 	}
 	if err := validateQuarantineInstanceSockets(row.ID, "equipment", row.HasSockets, row.Socket0, row.Socket1, row.Socket2); err != nil {
+		return err
+	}
+	if err := validateQuarantineInstanceAttributes(
+		row.ID,
+		"equipment",
+		row.HasAttributes,
+		row.Attr0Type, row.Attr0Value,
+		row.Attr1Type, row.Attr1Value,
+		row.Attr2Type, row.Attr2Value,
+		row.Attr3Type, row.Attr3Value,
+		row.Attr4Type, row.Attr4Value,
+		row.Attr5Type, row.Attr5Value,
+		row.Attr6Type, row.Attr6Value,
+	); err != nil {
 		return err
 	}
 	return nil
@@ -275,6 +303,33 @@ func validateQuarantineInstanceSockets(itemID uint64, context string, hasSockets
 	}
 	if socket0 != 0 || socket1 != 0 || socket2 != 0 {
 		return fmt.Errorf("%w: %s item %d has non-zero sockets without has_sockets", ErrInvalidCharacterItemStateExport, context, itemID)
+	}
+	return nil
+}
+
+func validateQuarantineInstanceAttributes(
+	itemID uint64,
+	context string,
+	hasAttributes bool,
+	attr0Type uint8, attr0Value int16,
+	attr1Type uint8, attr1Value int16,
+	attr2Type uint8, attr2Value int16,
+	attr3Type uint8, attr3Value int16,
+	attr4Type uint8, attr4Value int16,
+	attr5Type uint8, attr5Value int16,
+	attr6Type uint8, attr6Value int16,
+) error {
+	if hasAttributes {
+		return nil
+	}
+	if attr0Type != 0 || attr0Value != 0 ||
+		attr1Type != 0 || attr1Value != 0 ||
+		attr2Type != 0 || attr2Value != 0 ||
+		attr3Type != 0 || attr3Value != 0 ||
+		attr4Type != 0 || attr4Value != 0 ||
+		attr5Type != 0 || attr5Value != 0 ||
+		attr6Type != 0 || attr6Value != 0 {
+		return fmt.Errorf("%w: %s item %d has non-zero attributes without has_attributes", ErrInvalidCharacterItemStateExport, context, itemID)
 	}
 	return nil
 }

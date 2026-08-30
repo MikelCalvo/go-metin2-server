@@ -218,7 +218,7 @@ func TestRunImportExportImportsEmptyExportsAgainstRegisteredDriver(t *testing.T)
 			// Item-template SQL import keeps tip-0009 export identity but requires
 			// additive 0021 keep_on_fail and 0022 fail_result_vnum before INSERT.
 			// Character item-state SQL import keeps tip-0003 export identity but
-			// requires additive 0024 instance sockets before INSERT.
+			// requires additive 0024 instance sockets and 0027 instance attributes before INSERT.
 			// Character safebox-state SQL import keeps tip-0015 export identity but
 			// requires additive 0025 instance sockets before INSERT.
 			// Bootstrap ground-item-state SQL import keeps tip-0010 export identity but
@@ -245,6 +245,7 @@ func TestRunImportExportImportsEmptyExportsAgainstRegisteredDriver(t *testing.T)
 				ledger = []dbmigrations.LedgerEntry{
 					ledgerEntry(accountstore.CharacterItemStateMigrationVersion),
 					ledgerEntry(accountstore.CharacterItemInstanceSocketsMigrationVersion),
+					ledgerEntry(accountstore.CharacterItemInstanceAttributesMigrationVersion),
 				}
 			}
 			if tc.kind == "character-safebox-state" {
