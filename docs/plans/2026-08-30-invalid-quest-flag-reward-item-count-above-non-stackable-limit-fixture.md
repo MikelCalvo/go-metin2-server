@@ -62,4 +62,7 @@ git diff --check
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
 2. Add further checked-in negatives only when a later reject case still forces
-   QA to invent JSON (for example quest-flag consume non-stackable count twin).
+   QA to invent JSON. Done for quest-flag consume item count above non-stackable
+   limit:
+   `docs/examples/bootstrap-invalid-quest-flag-consume-item-count-above-non-stackable-limit-bundle.json`
+   (`docs/plans/2026-08-30-invalid-quest-flag-consume-item-count-above-non-stackable-limit-fixture.md`).
