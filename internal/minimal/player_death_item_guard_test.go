@@ -356,6 +356,228 @@ func TestGameSessionFlowPostFloorItemMoveFailsClosedBeforeRestartTown(t *testing
 	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart_town ITEM_MOVE persists destination slot")
 }
 
+func TestGameSessionFlowPostFloorEquipItemFailsClosed(t *testing.T) {
+	login := "post-floor-equip-item"
+	loginKey := uint32(0x19191b60)
+	owner := peerVisibilityCharacter("DeadEquipOwner", 0x01030b60, 0x02040b60, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 12200, Count: 1, Slot: 8}}
+	owner.Equipment = []inventory.ItemInstance{}
+	templates := []itemcatalog.Template{{
+		Vnum:      12200,
+		Name:      "Post Floor Practice Blade",
+		Stackable: false,
+		MaxCount:  1,
+		EquipSlot: "weapon",
+		EquipEffect: &itemcatalog.PointEffect{
+			PointType:  bootstrapPlayerPointType,
+			PointIndex: bootstrapPlayerPointValueIndex,
+			PointDelta: 10,
+		},
+	}}
+	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, templates)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/equip_item 8 weapon",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor /equip_item dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor /equip_item to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor /equip_item to queue no frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor /equip_item")
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_here",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here after post-floor /equip_item: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_here recovery frames after post-floor /equip_item, got %d", len(restartOut))
+	}
+	_ = flushServerFrames(t, flow)
+
+	reuseOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/equip_item 8 weapon",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart /equip_item: %v", err)
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	assertPostFloorEquipItemSuccessBurst(t, reuseOut, owner.VID, owner.MainPart, owner.HairPart, 12200, wantHP+10, "post-restart /equip_item")
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart /equip_item: %v", err)
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP+10 {
+		t.Fatalf("expected /restart_here + /equip_item to persist recovered owner HP %d after equip floor, got %+v", wantHP+10, account.Characters[0])
+	}
+	want := owner
+	want.Points[bootstrapPlayerPointValueIndex] = wantHP + 10
+	want.Inventory = []inventory.ItemInstance{}
+	want.Equipment = []inventory.ItemInstance{{ID: 1001, Vnum: 12200, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
+	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart /equip_item persists equipped weapon")
+}
+
+func TestGameSessionFlowPostFloorEquipItemFailsClosedBeforeRestartTown(t *testing.T) {
+	login := "pf-equip-item-town"
+	loginKey := uint32(0x19191b61)
+	owner := peerVisibilityCharacter("DeadEquipTownOwner", 0x01030b61, 0x02040b61, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Inventory = []inventory.ItemInstance{{ID: 1002, Vnum: 12200, Count: 1, Slot: 8}}
+	owner.Equipment = []inventory.ItemInstance{}
+	templates := []itemcatalog.Template{{
+		Vnum:      12200,
+		Name:      "Post Floor Practice Blade",
+		Stackable: false,
+		MaxCount:  1,
+		EquipSlot: "weapon",
+		EquipEffect: &itemcatalog.PointEffect{
+			PointType:  bootstrapPlayerPointType,
+			PointIndex: bootstrapPlayerPointValueIndex,
+			PointDelta: 10,
+		},
+	}}
+	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, templates)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/equip_item 8 weapon",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor town /equip_item dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor town /equip_item to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor town /equip_item to queue no frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor town /equip_item")
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_town",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_town after post-floor /equip_item: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_town recovery frames after post-floor /equip_item, got %d", len(restartOut))
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[0]))
+	if err != nil {
+		t.Fatalf("decode self character add after post-floor /equip_item /restart_town: %v", err)
+	}
+	if selfAdd.VID != owner.VID || selfAdd.X != 52070 || selfAdd.Y != 166600 {
+		t.Fatalf("expected /restart_town self bootstrap at empire town position after equip floor, got %+v", selfAdd)
+	}
+	var (
+		selfPoints  worldproto.PlayerPointChangePacket
+		foundPoints bool
+	)
+	for _, raw := range restartOut {
+		fr := decodeSingleFrame(t, raw)
+		if !foundPoints {
+			if points, err := worldproto.DecodePlayerPointChange(fr); err == nil {
+				selfPoints = points
+				foundPoints = true
+			}
+		}
+	}
+	if !foundPoints {
+		t.Fatal("expected /restart_town recovery to include self PLAYER_POINT_CHANGE after equip floor")
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if selfPoints.Value != wantHP {
+		t.Fatalf("expected /restart_town to rebuild recovered owner HP %d after equip floor, got %+v", wantHP, selfPoints)
+	}
+	_ = flushServerFrames(t, flow)
+
+	reuseOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/equip_item 8 weapon",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart_town /equip_item: %v", err)
+	}
+	assertPostFloorEquipItemSuccessBurst(t, reuseOut, owner.VID, owner.MainPart, owner.HairPart, 12200, wantHP+10, "post-restart_town /equip_item")
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart_town /equip_item: %v", err)
+	}
+	if account.Characters[0].MapIndex != 21 || account.Characters[0].X != 52070 || account.Characters[0].Y != 166600 {
+		t.Fatalf("expected /restart_town to persist empire town position after equip floor, got %+v", account.Characters[0])
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP+10 {
+		t.Fatalf("expected /restart_town + /equip_item to persist recovered owner HP %d after equip floor, got %+v", wantHP+10, account.Characters[0])
+	}
+	want := owner
+	want.Points[bootstrapPlayerPointValueIndex] = wantHP + 10
+	want.MapIndex = 21
+	want.X = 52070
+	want.Y = 166600
+	want.Inventory = []inventory.ItemInstance{}
+	want.Equipment = []inventory.ItemInstance{{ID: 1002, Vnum: 12200, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
+	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart_town /equip_item persists equipped weapon")
+}
+
+func assertPostFloorEquipItemSuccessBurst(t *testing.T, frames [][]byte, ownerVID uint32, mainPart, hairPart, weaponVnum uint16, wantHP int32, context string) {
+	t.Helper()
+	if len(frames) != 4 {
+		t.Fatalf("expected %s to emit delete+set+point-change+update, got %d frames", context, len(frames))
+	}
+	itemDel, err := itemproto.DecodeDel(decodeSingleFrame(t, frames[0]))
+	if err != nil {
+		t.Fatalf("decode %s item delete: %v", context, err)
+	}
+	if itemDel.Position != itemproto.InventoryPosition(8) {
+		t.Fatalf("unexpected %s item delete position: %+v", context, itemDel.Position)
+	}
+	weaponPos, err := itemproto.EquipmentPosition(4)
+	if err != nil {
+		t.Fatalf("build %s weapon equipment position: %v", context, err)
+	}
+	itemSet, err := itemproto.DecodeSet(decodeSingleFrame(t, frames[1]))
+	if err != nil {
+		t.Fatalf("decode %s item set: %v", context, err)
+	}
+	if itemSet.Position != weaponPos || itemSet.Vnum != uint32(weaponVnum) || itemSet.Count != 1 {
+		t.Fatalf("unexpected %s item set frame: %+v", context, itemSet)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, frames[2]))
+	if err != nil {
+		t.Fatalf("decode %s point-change: %v", context, err)
+	}
+	if pointChange.VID != ownerVID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != 10 || pointChange.Value != wantHP {
+		t.Fatalf("unexpected %s point-change: %+v", context, pointChange)
+	}
+	update, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, frames[3]))
+	if err != nil {
+		t.Fatalf("decode %s character update: %v", context, err)
+	}
+	wantParts := [worldproto.CharacterEquipmentPartCount]uint16{mainPart, weaponVnum, 0, hairPart}
+	if update.VID != ownerVID || update.Parts != wantParts {
+		t.Fatalf("unexpected %s appearance update: %+v want parts %+v", context, update, wantParts)
+	}
+}
+
 func assertPostFloorItemMoveSuccessBurst(t *testing.T, frames [][]byte, sourceSlot, destinationSlot uint16, vnum uint32, count uint8, context string) {
 	t.Helper()
 	if len(frames) < 2 {
