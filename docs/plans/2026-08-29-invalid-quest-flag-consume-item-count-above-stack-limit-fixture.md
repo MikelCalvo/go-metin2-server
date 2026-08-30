@@ -64,5 +64,8 @@ git diff --check
    catalog count above non-stackable limit:
    `docs/examples/bootstrap-invalid-merchant-catalog-count-above-non-stackable-limit-bundle.json`
    (`docs/plans/2026-08-30-invalid-merchant-catalog-count-above-non-stackable-limit-fixture.md`).
-   Quest-flag reward / consume non-stackable count twins remain optional unless
-   QA still improvises that JSON.
+   Done for quest-flag reward item count above non-stackable limit:
+   `docs/examples/bootstrap-invalid-quest-flag-reward-item-count-above-non-stackable-limit-bundle.json`
+   (`docs/plans/2026-08-30-invalid-quest-flag-reward-item-count-above-non-stackable-limit-fixture.md`).
+   Quest-flag consume non-stackable count twin remains optional unless QA still
+   improvises that JSON.

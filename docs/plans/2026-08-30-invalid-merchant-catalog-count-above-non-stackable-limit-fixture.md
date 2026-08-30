@@ -62,4 +62,9 @@ git diff --check
    exists.
 2. Add further checked-in negatives only when a later reject case still forces
    QA to invent JSON (for example quest-flag reward / consume non-stackable
-   count twins).
+   count twins). Done for quest-flag reward item count above non-stackable
+   limit:
+   `docs/examples/bootstrap-invalid-quest-flag-reward-item-count-above-non-stackable-limit-bundle.json`
+   (`docs/plans/2026-08-30-invalid-quest-flag-reward-item-count-above-non-stackable-limit-fixture.md`).
+   Quest-flag consume non-stackable count twin remains optional unless QA still
+   improvises that JSON.

@@ -70,3 +70,6 @@ git diff --check
    Done for merchant catalog count above non-stackable limit:
    `docs/examples/bootstrap-invalid-merchant-catalog-count-above-non-stackable-limit-bundle.json`
    (`docs/plans/2026-08-30-invalid-merchant-catalog-count-above-non-stackable-limit-fixture.md`).
+   Done for quest-flag reward item count above non-stackable limit:
+   `docs/examples/bootstrap-invalid-quest-flag-reward-item-count-above-non-stackable-limit-bundle.json`
+   (`docs/plans/2026-08-30-invalid-quest-flag-reward-item-count-above-non-stackable-limit-fixture.md`).
