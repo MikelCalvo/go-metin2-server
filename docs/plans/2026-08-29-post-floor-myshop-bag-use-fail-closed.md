@@ -22,10 +22,12 @@ owner is still at the practice-mob retaliation `0`-HP floor, then recover via
 4. After `/restart_here` restores live HP, shop-bag `ITEM_USE` emits only
    `OpenPrivateShop` and leaves the bag unconsumed.
 5. After `/restart_town` restores live HP at the owned empire town position,
-   silk-bag `ITEM_USE` emits `MyShopPriceList 1 0` then `OpenPrivateShop` and
-   leaves the bag unconsumed.
+   shop-bag `ITEM_USE` emits only `OpenPrivateShop` and leaves the bag
+   unconsumed; silk-bag `ITEM_USE` emits `MyShopPriceList 1 0` then
+   `OpenPrivateShop` and leaves the bag unconsumed.
 6. Spec/QA name the focused twins:
    - `TestGameSessionFlowPostFloorShopBagUseFailsClosed`
+   - `TestGameSessionFlowPostFloorShopBagUseFailsClosedBeforeRestartTown`
    - `TestGameSessionFlowPostFloorSilkBagUseFailsClosedBeforeRestartTown`
 
 ## Explicit non-goals

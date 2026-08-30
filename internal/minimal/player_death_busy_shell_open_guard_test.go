@@ -1406,6 +1406,112 @@ func TestGameSessionFlowPostFloorShopBagUseFailsClosed(t *testing.T) {
 	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart shop bag ITEM_USE leaves bag unconsumed")
 }
 
+func TestGameSessionFlowPostFloorShopBagUseFailsClosedBeforeRestartTown(t *testing.T) {
+	login := "pf-shop-bag-use-town"
+	loginKey := uint32(0x19191b42)
+	owner := peerVisibilityCharacter("DeadShopBagUseTownOwner", 0x01030b42, 0x02040b42, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 993, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	templates := []itemcatalog.Template{
+		{Vnum: myShopOpenShopBagVnum, Name: "Shop Bag", Stackable: true, MaxCount: 200},
+	}
+	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, templates)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(4)})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor town shop bag ITEM_USE dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor town shop bag ITEM_USE to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor town shop bag ITEM_USE to queue no frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor town shop bag ITEM_USE")
+
+	slashOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/use_item 4",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor town shop bag /use_item dispatch error: %v", err)
+	}
+	if len(slashOut) != 0 {
+		t.Fatalf("expected post-floor town shop bag /use_item to fail closed with no frames, got %d", len(slashOut))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor town shop bag /use_item to queue no frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor town shop bag /use_item")
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_town",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_town after post-floor shop bag USE: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_town recovery frames after post-floor shop bag USE, got %d", len(restartOut))
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[0]))
+	if err != nil {
+		t.Fatalf("decode self character add after post-floor shop bag USE /restart_town: %v", err)
+	}
+	if selfAdd.VID != owner.VID || selfAdd.X != 52070 || selfAdd.Y != 166600 {
+		t.Fatalf("expected /restart_town self bootstrap at empire town position after shop bag USE floor, got %+v", selfAdd)
+	}
+	var (
+		selfPoints  worldproto.PlayerPointChangePacket
+		foundPoints bool
+	)
+	for _, raw := range restartOut {
+		fr := decodeSingleFrame(t, raw)
+		if !foundPoints {
+			if points, err := worldproto.DecodePlayerPointChange(fr); err == nil {
+				selfPoints = points
+				foundPoints = true
+			}
+		}
+	}
+	if !foundPoints {
+		t.Fatal("expected /restart_town recovery to include self PLAYER_POINT_CHANGE after shop bag USE floor")
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if selfPoints.Value != wantHP {
+		t.Fatalf("expected /restart_town to rebuild recovered owner HP %d after shop bag USE floor, got %+v", wantHP, selfPoints)
+	}
+	_ = flushServerFrames(t, flow)
+
+	reuseOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(4)})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart_town shop bag ITEM_USE: %v", err)
+	}
+	assertMyShopBagUseCommandBurst(t, reuseOut, []string{myShopOpenPrivateShopCommandMessage}, "post-restart_town shop bag ITEM_USE")
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart_town shop bag ITEM_USE: %v", err)
+	}
+	if account.Characters[0].MapIndex != 21 || account.Characters[0].X != 52070 || account.Characters[0].Y != 166600 {
+		t.Fatalf("expected /restart_town to persist empire town position after shop bag USE floor, got %+v", account.Characters[0])
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_town to persist recovered owner HP %d after shop bag USE floor, got %+v", wantHP, account.Characters[0])
+	}
+	want := owner
+	want.Points[bootstrapPlayerPointValueIndex] = wantHP
+	want.MapIndex = 21
+	want.X = 52070
+	want.Y = 166600
+	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart_town shop bag ITEM_USE leaves bag unconsumed")
+}
+
 func TestGameSessionFlowPostFloorSilkBagUseFailsClosedBeforeRestartTown(t *testing.T) {
 	login := "pf-silk-bag-use-town"
 	loginKey := uint32(0x19191b41)
