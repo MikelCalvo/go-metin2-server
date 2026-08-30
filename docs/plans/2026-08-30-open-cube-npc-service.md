@@ -38,6 +38,11 @@ static-actor NPC service through `INTERACT`, mirroring the landed
 - binary cube headers / OR-materials
 - branching craft dialog trees
 
+## Follow-up that closed the PvE fixture gap
+
+`CubeMaster` is now also authored in the composed PvE vertical fixtures — see
+[PvE vertical authoring open_cube](2026-08-30-pve-vertical-authoring-open-cube.md).
+
 ## Verification
 
 Focused:

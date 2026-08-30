@@ -54,8 +54,12 @@ preview list.
 
 - binary cube headers / OR-materials
 - branching craft dialog trees
-- adding `CubeMaster` into the PvE vertical authoring fixture
 - broader README churn beyond the focused ops/QA note required by this contract
+
+## Follow-up that closed the PvE fixture gap
+
+Adding `CubeMaster` into the composed PvE vertical authoring fixture is now
+owned — see [PvE vertical authoring open_cube](2026-08-30-pve-vertical-authoring-open-cube.md).
 
 ## TDD and validation
 

@@ -71,6 +71,15 @@
       "race_num": 20301,
       "interaction_kind": "open_safebox",
       "interaction_ref": "npc:qa_warehouse"
+    },
+    {
+      "name": "CubeMaster",
+      "map_index": 1,
+      "x": 469600,
+      "y": 964200,
+      "race_num": 20022,
+      "interaction_kind": "open_cube",
+      "interaction_ref": "npc:qa_cube"
     }
   ],
   "combat_profiles": [
@@ -166,7 +175,7 @@
     {
       "kind": "info",
       "ref": "lore:qa_square",
-      "text": "The QA square contains a merchant, teleporter, guide, hunter, warehouse, and reward mob.",
+      "text": "The QA square contains a merchant, teleporter, guide, hunter, warehouse, cube craftsman, and reward mob.",
       "quest_ref": "quest:first_steps",
       "quest_flag": "met_guide",
       "quest_from": 1
@@ -176,6 +185,14 @@
       "ref": "npc:qa_warehouse",
       "text": "The warehouse keeper unlocks the vault.",
       "size": 2,
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "met_guide",
+      "quest_from": 1
+    },
+    {
+      "kind": "open_cube",
+      "ref": "npc:qa_cube",
+      "text": "The craftsman lights the forge.",
       "quest_ref": "quest:first_steps",
       "quest_flag": "met_guide",
       "quest_from": 1

@@ -5936,7 +5936,25 @@ func TestCanonicalizePveVerticalAuthoringExampleExpandsQuestLoop(t *testing.T) {
 	if !reflect.DeepEqual(summary.OpenSafeboxRoutes, []OpenSafeboxRouteSummary{wantWarehouse}) {
 		t.Fatalf("unexpected PvE vertical open_safebox routes:\n got: %#v\nwant: %#v", summary.OpenSafeboxRoutes, []OpenSafeboxRouteSummary{wantWarehouse})
 	}
-	if len(canonical.StaticActors) != 8 || len(canonical.InteractionDefinitions) != 8 {
+	if summary.OpenCubeRouteCount != 1 {
+		t.Fatalf("expected 1 open_cube route in PvE vertical authoring example, got %d", summary.OpenCubeRouteCount)
+	}
+	wantCube := OpenCubeRouteSummary{
+		ActorName:      "CubeMaster",
+		SourceMapIndex: 1,
+		SourceX:        469600,
+		SourceY:        964200,
+		Ref:            "npc:qa_cube",
+		Text:           "The craftsman lights the forge.",
+		RaceNum:        20022,
+		QuestRef:       "quest:first_steps",
+		QuestFlag:      "met_guide",
+		QuestFrom:      1,
+	}
+	if !reflect.DeepEqual(summary.OpenCubeRoutes, []OpenCubeRouteSummary{wantCube}) {
+		t.Fatalf("unexpected PvE vertical open_cube routes:\n got: %#v\nwant: %#v", summary.OpenCubeRoutes, []OpenCubeRouteSummary{wantCube})
+	}
+	if len(canonical.StaticActors) != 9 || len(canonical.InteractionDefinitions) != 9 {
 		t.Fatalf("unexpected canonical PvE vertical counts: actors=%d defs=%d", len(canonical.StaticActors), len(canonical.InteractionDefinitions))
 	}
 }
@@ -6354,7 +6372,7 @@ func TestExampleBootstrapPveVerticalAuthoringBundleExportsOnto0013AndQuarantines
 	if export.MigrationVersion != staticstore.StaticActorContentStateMigrationVersion || export.MigrationName != staticstore.StaticActorContentStateMigrationName {
 		t.Fatalf("unexpected migration boundary: version=%d name=%q", export.MigrationVersion, export.MigrationName)
 	}
-	if len(export.InteractionDefinitions) != 8 || len(export.MerchantCatalogEntries) != 2 || len(export.QuestFlagRewardItems) != 1 || len(export.QuestFlagConsumeItems) != 1 || len(export.StaticActors) != 11 || len(export.RewardDrops) != 1 {
+	if len(export.InteractionDefinitions) != 9 || len(export.MerchantCatalogEntries) != 2 || len(export.QuestFlagRewardItems) != 1 || len(export.QuestFlagConsumeItems) != 1 || len(export.StaticActors) != 12 || len(export.RewardDrops) != 1 {
 		t.Fatalf("unexpected PvE vertical authoring export counts: defs=%d catalog=%d reward_items=%d consume_items=%d actors=%d drops=%d",
 			len(export.InteractionDefinitions), len(export.MerchantCatalogEntries), len(export.QuestFlagRewardItems), len(export.QuestFlagConsumeItems), len(export.StaticActors), len(export.RewardDrops))
 	}
@@ -6368,6 +6386,7 @@ func TestExampleBootstrapPveVerticalAuthoringBundleExportsOnto0013AndQuarantines
 	var (
 		foundTurnIn    bool
 		foundWarehouse bool
+		foundCube      bool
 		foundKillQuest bool
 		foundPackM01   bool
 		foundPackM02   bool
@@ -6384,6 +6403,11 @@ func TestExampleBootstrapPveVerticalAuthoringBundleExportsOnto0013AndQuarantines
 			if definition.Size != 2 || definition.QuestRef != "quest:first_steps" || definition.QuestFlag != "met_guide" || definition.QuestFrom != 1 {
 				t.Fatalf("unexpected Warehouse open_safebox projection: %#v", definition)
 			}
+		case definition.Kind == interactionstore.KindOpenCube && definition.Ref == "npc:qa_cube":
+			foundCube = true
+			if definition.Text != "The craftsman lights the forge." || definition.QuestRef != "quest:first_steps" || definition.QuestFlag != "met_guide" || definition.QuestFrom != 1 {
+				t.Fatalf("unexpected CubeMaster open_cube projection: %#v", definition)
+			}
 		}
 	}
 	if !foundTurnIn {
@@ -6391,6 +6415,9 @@ func TestExampleBootstrapPveVerticalAuthoringBundleExportsOnto0013AndQuarantines
 	}
 	if !foundWarehouse {
 		t.Fatal("expected npc:qa_warehouse open_safebox projection in 0013 export")
+	}
+	if !foundCube {
+		t.Fatal("expected npc:qa_cube open_cube projection in 0013 export")
 	}
 	if export.QuestFlagRewardItems[0].DefinitionRef != "quest:first_steps_kill_turnin" || export.QuestFlagRewardItems[0].ItemVnum != 11200 || export.QuestFlagRewardItems[0].Count != 1 {
 		t.Fatalf("unexpected quest_flag reward item rows: %#v", export.QuestFlagRewardItems)
@@ -6443,7 +6470,7 @@ func TestExampleBootstrapPveVerticalAuthoringBundleExportsOnto0013AndQuarantines
 	if err != nil {
 		t.Fatalf("validate PvE vertical authoring export with combat profiles: %v", err)
 	}
-	if summary.CombatProfileCount != 1 || summary.StaticActorCount != 11 {
+	if summary.CombatProfileCount != 1 || summary.StaticActorCount != 12 {
 		t.Fatalf("unexpected quarantine summary: %#v", summary)
 	}
 	quarantined, quarantinedSummary, err := staticstore.QuarantineStaticActorContentStateExport(export)

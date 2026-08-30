@@ -850,18 +850,24 @@ func TestLocalContentBundleValidateEndpointExpandsPveVerticalAuthoringExample(t 
 	if !reflect.DeepEqual(got.SpawnGroups, wantSpawn) {
 		t.Fatalf("expected validation response to expand PvE vertical authoring into gated kill-quest spawn plus multi-count pack, got %+v", got.SpawnGroups)
 	}
-	if len(got.StaticActors) != 8 || len(got.InteractionDefinitions) != 8 || len(got.QuestState) != 1 {
+	if len(got.StaticActors) != 9 || len(got.InteractionDefinitions) != 9 || len(got.QuestState) != 1 {
 		t.Fatalf("unexpected PvE vertical authoring validation counts: actors=%d defs=%d quest_state=%d", len(got.StaticActors), len(got.InteractionDefinitions), len(got.QuestState))
 	}
 	foundWarehouse := false
+	foundCube := false
 	for _, actor := range got.StaticActors {
-		if actor.Name == "Warehouse" && actor.InteractionKind == interactionstore.KindOpenSafebox && actor.InteractionRef == "npc:qa_warehouse" {
+		switch {
+		case actor.Name == "Warehouse" && actor.InteractionKind == interactionstore.KindOpenSafebox && actor.InteractionRef == "npc:qa_warehouse":
 			foundWarehouse = true
-			break
+		case actor.Name == "CubeMaster" && actor.InteractionKind == interactionstore.KindOpenCube && actor.InteractionRef == "npc:qa_cube" && actor.RaceNum == 20022 && actor.X == 469600:
+			foundCube = true
 		}
 	}
 	if !foundWarehouse {
 		t.Fatalf("expected validated PvE vertical authoring bundle to keep Warehouse open_safebox actor, got %+v", got.StaticActors)
+	}
+	if !foundCube {
+		t.Fatalf("expected validated PvE vertical authoring bundle to keep CubeMaster open_cube actor, got %+v", got.StaticActors)
 	}
 }
 

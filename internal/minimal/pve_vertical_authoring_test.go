@@ -104,7 +104,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("expected imported portable formula combat profile max_hp=20 damage=5 aggro_radius=150 leash_radius=350 chase/return/homeward/reaction_delay_ms=2000 max_step=50 retaliation_point_delta=-2, got %+v", imported.CombatProfiles)
 	}
 
-	var guideVID, hunterVID, merchantVID, warehouseVID, mobVID uint32
+	var guideVID, hunterVID, merchantVID, warehouseVID, cubeVID, mobVID uint32
 	var foundPackMembers int
 	for _, actor := range runtime.StaticActors() {
 		switch actor.Name {
@@ -116,14 +116,16 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 			merchantVID = uint32(actor.EntityID)
 		case "Warehouse":
 			warehouseVID = uint32(actor.EntityID)
+		case "CubeMaster":
+			cubeVID = uint32(actor.EntityID)
 		case "QAPveVerticalMob":
 			mobVID = uint32(actor.EntityID)
 		case "QAPveVerticalPack 1", "QAPveVerticalPack 2":
 			foundPackMembers++
 		}
 	}
-	if guideVID == 0 || hunterVID == 0 || merchantVID == 0 || warehouseVID == 0 || mobVID == 0 {
-		t.Fatalf("expected guide/hunter/merchant/warehouse/mob actors after import, got %+v", runtime.StaticActors())
+	if guideVID == 0 || hunterVID == 0 || merchantVID == 0 || warehouseVID == 0 || cubeVID == 0 || mobVID == 0 {
+		t.Fatalf("expected guide/hunter/merchant/warehouse/cube/mob actors after import, got %+v", runtime.StaticActors())
 	}
 	if foundPackMembers != 2 {
 		t.Fatalf("expected denser multi-count pack members QAPveVerticalPack 1/2 after import, found=%d actors=%+v", foundPackMembers, runtime.StaticActors())
@@ -154,6 +156,19 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	warehouseMismatchChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, warehouseMismatchOut[0]))
 	if err != nil || warehouseMismatchChat.Message != "Quest requirements are not met." {
 		t.Fatalf("unexpected gated warehouse mismatch chat: %+v err=%v", warehouseMismatchChat, err)
+	}
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	cubeMismatchOut, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: cubeVID})))
+	if err != nil {
+		t.Fatalf("unexpected gated cube mismatch interaction error: %v", err)
+	}
+	if len(cubeMismatchOut) != 1 {
+		t.Fatalf("expected 1 self-only cube mismatch frame, got %d", len(cubeMismatchOut))
+	}
+	cubeMismatchChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, cubeMismatchOut[0]))
+	if err != nil || cubeMismatchChat.Message != "Quest requirements are not met." {
+		t.Fatalf("unexpected gated cube mismatch chat: %+v err=%v", cubeMismatchChat, err)
 	}
 
 	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: mobVID}))); err != nil || len(out) != 1 {
@@ -260,6 +275,22 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if warehouseSize != (itemproto.SafeboxSizePacket{Size: 2}) {
 		t.Fatalf("unexpected unlocked warehouse SAFEBOX_SIZE: %+v", warehouseSize)
 	}
+	assertCloseSafeboxCommandChat(t, flow, "/close_safebox", "pve vertical warehouse close before cube")
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	cubeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: cubeVID})))
+	if err != nil {
+		t.Fatalf("unexpected unlocked cube interaction error: %v", err)
+	}
+	if len(cubeOut) != 2 {
+		t.Fatalf("expected chat + cube open frames after guide unlock, got %d", len(cubeOut))
+	}
+	cubeChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, cubeOut[0]))
+	if err != nil || cubeChat.Message != "The craftsman lights the forge." {
+		t.Fatalf("unexpected unlocked cube chat: %+v err=%v", cubeChat, err)
+	}
+	assertCubeCommandChatFrame(t, cubeOut[1], "cube open 20022", "pve vertical unlocked cube open")
+	assertCloseCubeCommandChat(t, flow, "/close_cube", "pve vertical cube close before reconnect")
 
 	closeSessionFlow(t, flow)
 	flow, _ = enterGameWithLoginTicket(t, runtime.SessionFactory(), "pve-vertical", 0x60606060)
