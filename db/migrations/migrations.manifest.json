@@ -216,6 +216,14 @@
       "down_path": "0027_character_item_instance_attributes.down.sql",
       "up_sha256": "79290176e5331cf33c968aafc7cafcb62323b24b882c9425237777b96d733085",
       "down_sha256": "0633bafd63ba08cd4d9842b3a2ec31b1660f6f87a80b0efd4cf90de555f21ced"
+    },
+    {
+      "version": 28,
+      "name": "character_safebox_item_instance_attributes",
+      "up_path": "0028_character_safebox_item_instance_attributes.up.sql",
+      "down_path": "0028_character_safebox_item_instance_attributes.down.sql",
+      "up_sha256": "315aaf590009a3548a4bc4a2f46a0a9f76d70bf768ba8c6f2c7d43c4e8f1b36c",
+      "down_sha256": "973c16bc5768661898e12cba55b0c7a21aa0cf5e5ef905d6d79e65b004ba61d8"
     }
   ]
 }

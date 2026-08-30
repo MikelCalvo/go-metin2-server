@@ -40,7 +40,7 @@ const (
 // Presence-aware instance attributes mirror the same rule beside sockets:
 // HasAttributes=false / omitted means nil instance attributes (template
 // fallback); HasAttributes=true including all-zero / type-zero is authoritative.
-// Tip-0015 SQL attribute companions stay deferred.
+// Tip-0015 export/import projects attributes through additive 0028.
 type Cell struct {
 	Cell          uint8                      `json:"cell"`
 	ID            uint64                     `json:"id"`

@@ -138,22 +138,50 @@ func canonicalizeCharacterSafeboxStateExport(export CharacterSafeboxStateExport)
 		if err := validateQuarantineSafeboxInstanceSockets(row.ID, row.HasSockets, row.Socket0, row.Socket1, row.Socket2); err != nil {
 			return CharacterSafeboxStateExport{}, CharacterSafeboxStateQuarantineSummary{}, err
 		}
+		if err := validateQuarantineSafeboxInstanceAttributes(
+			row.ID,
+			row.HasAttributes,
+			row.Attr0Type, row.Attr0Value,
+			row.Attr1Type, row.Attr1Value,
+			row.Attr2Type, row.Attr2Value,
+			row.Attr3Type, row.Attr3Value,
+			row.Attr4Type, row.Attr4Value,
+			row.Attr5Type, row.Attr5Value,
+			row.Attr6Type, row.Attr6Value,
+		); err != nil {
+			return CharacterSafeboxStateExport{}, CharacterSafeboxStateQuarantineSummary{}, err
+		}
 		seenItemIDs[row.ID] = struct{}{}
 		seenCells[cellKey] = struct{}{}
 		seenLoginsByID[row.CharacterID] = login
 		seenIDsByLogin[normalizedLogin] = row.CharacterID
 		items = append(items, CharacterSafeboxItemRow{
-			ID:          row.ID,
-			CharacterID: row.CharacterID,
-			Login:       login,
-			Cell:        row.Cell,
-			Vnum:        row.Vnum,
-			Count:       row.Count,
-			Locked:      row.Locked,
-			HasSockets:  row.HasSockets,
-			Socket0:     row.Socket0,
-			Socket1:     row.Socket1,
-			Socket2:     row.Socket2,
+			ID:            row.ID,
+			CharacterID:   row.CharacterID,
+			Login:         login,
+			Cell:          row.Cell,
+			Vnum:          row.Vnum,
+			Count:         row.Count,
+			Locked:        row.Locked,
+			HasSockets:    row.HasSockets,
+			Socket0:       row.Socket0,
+			Socket1:       row.Socket1,
+			Socket2:       row.Socket2,
+			HasAttributes: row.HasAttributes,
+			Attr0Type:     row.Attr0Type,
+			Attr0Value:    row.Attr0Value,
+			Attr1Type:     row.Attr1Type,
+			Attr1Value:    row.Attr1Value,
+			Attr2Type:     row.Attr2Type,
+			Attr2Value:    row.Attr2Value,
+			Attr3Type:     row.Attr3Type,
+			Attr3Value:    row.Attr3Value,
+			Attr4Type:     row.Attr4Type,
+			Attr4Value:    row.Attr4Value,
+			Attr5Type:     row.Attr5Type,
+			Attr5Value:    row.Attr5Value,
+			Attr6Type:     row.Attr6Type,
+			Attr6Value:    row.Attr6Value,
 		})
 	}
 
@@ -207,6 +235,32 @@ func validateQuarantineSafeboxInstanceSockets(itemID uint64, hasSockets bool, so
 	}
 	if socket0 != 0 || socket1 != 0 || socket2 != 0 {
 		return fmt.Errorf("%w: safebox item %d has non-zero sockets without has_sockets", ErrInvalidCharacterSafeboxStateExport, itemID)
+	}
+	return nil
+}
+
+func validateQuarantineSafeboxInstanceAttributes(
+	itemID uint64,
+	hasAttributes bool,
+	attr0Type uint8, attr0Value int16,
+	attr1Type uint8, attr1Value int16,
+	attr2Type uint8, attr2Value int16,
+	attr3Type uint8, attr3Value int16,
+	attr4Type uint8, attr4Value int16,
+	attr5Type uint8, attr5Value int16,
+	attr6Type uint8, attr6Value int16,
+) error {
+	if hasAttributes {
+		return nil
+	}
+	if attr0Type != 0 || attr0Value != 0 ||
+		attr1Type != 0 || attr1Value != 0 ||
+		attr2Type != 0 || attr2Value != 0 ||
+		attr3Type != 0 || attr3Value != 0 ||
+		attr4Type != 0 || attr4Value != 0 ||
+		attr5Type != 0 || attr5Value != 0 ||
+		attr6Type != 0 || attr6Value != 0 {
+		return fmt.Errorf("%w: safebox item %d has non-zero attributes without has_attributes", ErrInvalidCharacterSafeboxStateExport, itemID)
 	}
 	return nil
 }

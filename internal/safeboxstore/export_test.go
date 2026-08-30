@@ -3,17 +3,21 @@ package safeboxstore
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 )
 
 func TestExportCharacterSafeboxStateBuildsDeterministicRowsMatchingMigrationShape(t *testing.T) {
+	activeAttrs := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 4, Value: -5}}
+	zeroAttrs := inventory.AttributeValues{}
 	snapshot := Snapshot{Characters: []CharacterRow{{
 		Login:       "Alpha",
 		CharacterID: 7,
 		Password:    "secret",
 		Money:       1500,
 		Cells: []Cell{
-			{Cell: 1, ID: 1002, Vnum: 27002, Count: 1, HasSockets: true},
-			{Cell: 0, ID: 1001, Vnum: 27001, Count: 2, Locked: true, HasSockets: true, Socket0: 1, Socket2: 7},
+			{Cell: 1, ID: 1002, Vnum: 27002, Count: 1, HasSockets: true, HasAttributes: true, Attributes: &zeroAttrs},
+			{Cell: 0, ID: 1001, Vnum: 27001, Count: 2, Locked: true, HasSockets: true, Socket0: 1, Socket2: 7, HasAttributes: true, Attributes: &activeAttrs},
 		},
 	}, {
 		Login:       "Beta",
@@ -46,8 +50,14 @@ func TestExportCharacterSafeboxStateBuildsDeterministicRowsMatchingMigrationShap
 	if export.Items[0].Cell != 0 || export.Items[0].ID != 1001 || !export.Items[0].Locked || !export.Items[0].HasSockets || export.Items[0].Socket0 != 1 || export.Items[0].Socket1 != 0 || export.Items[0].Socket2 != 7 {
 		t.Fatalf("expected cells sorted ascending with active sockets, got %#v", export.Items)
 	}
+	if !export.Items[0].HasAttributes || export.Items[0].Attr0Type != 1 || export.Items[0].Attr0Value != 25 || export.Items[0].Attr1Type != 4 || export.Items[0].Attr1Value != -5 {
+		t.Fatalf("expected active attributes on first item, got %#v", export.Items[0])
+	}
 	if export.Items[1].Cell != 1 || export.Items[1].ID != 1002 || !export.Items[1].HasSockets || export.Items[1].Socket0 != 0 || export.Items[1].Socket1 != 0 || export.Items[1].Socket2 != 0 {
 		t.Fatalf("unexpected second item row with explicit-zero sockets: %#v", export.Items[1])
+	}
+	if !export.Items[1].HasAttributes || export.Items[1].Attr0Type != 0 || export.Items[1].Attr0Value != 0 || export.Items[1].Attr1Type != 0 || export.Items[1].Attr1Value != 0 {
+		t.Fatalf("expected explicit-zero attributes on second item, got %#v", export.Items[1])
 	}
 
 	again, err := ExportCharacterSafeboxState(snapshot)
@@ -134,8 +144,8 @@ func TestQuarantineCharacterSafeboxStateExportCanonicalizesAndRejectsDrift(t *te
 			{CharacterID: 7, Login: "Alpha", Password: "secret", Money: 2500},
 		},
 		Items: []CharacterSafeboxItemRow{
-			{ID: 1002, CharacterID: 7, Login: "Alpha", Cell: 1, Vnum: 27002, Count: 1, HasSockets: true},
-			{ID: 1001, CharacterID: 7, Login: "Alpha", Cell: 0, Vnum: 27001, Count: 2, Locked: true, HasSockets: true, Socket0: 1, Socket2: 7},
+			{ID: 1002, CharacterID: 7, Login: "Alpha", Cell: 1, Vnum: 27002, Count: 1, HasSockets: true, HasAttributes: true},
+			{ID: 1001, CharacterID: 7, Login: "Alpha", Cell: 0, Vnum: 27001, Count: 2, Locked: true, HasSockets: true, Socket0: 1, Socket2: 7, HasAttributes: true, Attr0Type: 1, Attr0Value: 25, Attr1Type: 4, Attr1Value: -5},
 		},
 	}
 
@@ -155,8 +165,14 @@ func TestQuarantineCharacterSafeboxStateExportCanonicalizesAndRejectsDrift(t *te
 	if !quarantined.Items[0].HasSockets || quarantined.Items[0].Socket0 != 1 || quarantined.Items[0].Socket2 != 7 {
 		t.Fatalf("expected active sockets to survive quarantine, got %#v", quarantined.Items[0])
 	}
+	if !quarantined.Items[0].HasAttributes || quarantined.Items[0].Attr0Type != 1 || quarantined.Items[0].Attr0Value != 25 || quarantined.Items[0].Attr1Type != 4 || quarantined.Items[0].Attr1Value != -5 {
+		t.Fatalf("expected active attributes to survive quarantine, got %#v", quarantined.Items[0])
+	}
 	if !quarantined.Items[1].HasSockets || quarantined.Items[1].Socket0 != 0 || quarantined.Items[1].Socket1 != 0 || quarantined.Items[1].Socket2 != 0 {
 		t.Fatalf("expected explicit-zero sockets to survive quarantine, got %#v", quarantined.Items[1])
+	}
+	if !quarantined.Items[1].HasAttributes || quarantined.Items[1].Attr0Type != 0 || quarantined.Items[1].Attr0Value != 0 {
+		t.Fatalf("expected explicit-zero attributes to survive quarantine, got %#v", quarantined.Items[1])
 	}
 	if _, err := ValidateCharacterSafeboxStateExport(quarantined); err != nil {
 		t.Fatalf("validate quarantined export: %v", err)
@@ -196,5 +212,14 @@ func TestQuarantineCharacterSafeboxStateExportCanonicalizesAndRejectsDrift(t *te
 	}
 	if _, _, err := QuarantineCharacterSafeboxStateExport(badSockets); err == nil {
 		t.Fatal("expected non-zero sockets without has_sockets to fail closed")
+	}
+
+	badAttributes := export
+	badAttributes.Items = append([]CharacterSafeboxItemRow{}, export.Items...)
+	badAttributes.Items[0] = CharacterSafeboxItemRow{
+		ID: 1001, CharacterID: 7, Login: "Alpha", Cell: 0, Vnum: 27001, Count: 2, Locked: true, Attr0Type: 1, Attr0Value: 25,
+	}
+	if _, _, err := QuarantineCharacterSafeboxStateExport(badAttributes); err == nil {
+		t.Fatal("expected non-zero attributes without has_attributes to fail closed")
 	}
 }

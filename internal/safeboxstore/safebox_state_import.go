@@ -16,7 +16,8 @@ var ErrCharacterSafeboxStateImportExecutorRequired = errors.New("character safeb
 
 // ErrCharacterSafeboxStateImportSchemaRequired reports that the target database
 // has not applied the 0015_character_safebox_money tip plus additive
-// 0025_character_safebox_item_instance_sockets boundary yet.
+// 0025_character_safebox_item_instance_sockets and
+// 0028_character_safebox_item_instance_attributes boundaries yet.
 var ErrCharacterSafeboxStateImportSchemaRequired = errors.New("character safebox-state schema is not applied")
 
 // ErrCharacterSafeboxStateImportRowCount reports that an INSERT affected an
@@ -100,6 +101,7 @@ func requireCharacterSafeboxStateSchema(ctx context.Context, querier dbmigration
 	}
 	hasSafeboxMoney := false
 	hasInstanceSockets := false
+	hasInstanceAttributes := false
 	latest := 0
 	for _, entry := range ledger {
 		if entry.Version > latest {
@@ -111,14 +113,20 @@ func requireCharacterSafeboxStateSchema(ctx context.Context, querier dbmigration
 		if entry.Version == CharacterSafeboxItemInstanceSocketsMigrationVersion && entry.Name == CharacterSafeboxItemInstanceSocketsMigrationName {
 			hasInstanceSockets = true
 		}
+		if entry.Version == CharacterSafeboxItemInstanceAttributesMigrationVersion && entry.Name == CharacterSafeboxItemInstanceAttributesMigrationName {
+			hasInstanceAttributes = true
+		}
 	}
-	if hasSafeboxMoney && hasInstanceSockets {
+	if hasSafeboxMoney && hasInstanceSockets && hasInstanceAttributes {
 		return nil
 	}
 	if !hasSafeboxMoney {
 		return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrCharacterSafeboxStateImportSchemaRequired, latest, CharacterSafeboxStateMigrationVersion, CharacterSafeboxStateMigrationName)
 	}
-	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrCharacterSafeboxStateImportSchemaRequired, latest, CharacterSafeboxItemInstanceSocketsMigrationVersion, CharacterSafeboxItemInstanceSocketsMigrationName)
+	if !hasInstanceSockets {
+		return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrCharacterSafeboxStateImportSchemaRequired, latest, CharacterSafeboxItemInstanceSocketsMigrationVersion, CharacterSafeboxItemInstanceSocketsMigrationName)
+	}
+	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrCharacterSafeboxStateImportSchemaRequired, latest, CharacterSafeboxItemInstanceAttributesMigrationVersion, CharacterSafeboxItemInstanceAttributesMigrationName)
 }
 
 func insertCharacterSafeboxPassword(ctx context.Context, tx *sql.Tx, row CharacterSafeboxPasswordRow) error {
@@ -137,10 +145,20 @@ INSERT INTO character_safebox_passwords (
 func insertCharacterSafeboxItem(ctx context.Context, tx *sql.Tx, row CharacterSafeboxItemRow) error {
 	result, err := tx.ExecContext(ctx, `
 INSERT INTO character_safebox_items (
-    id, character_id, login, cell, vnum, count, locked, has_sockets, socket0, socket1, socket2
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    id, character_id, login, cell, vnum, count, locked,
+    has_sockets, socket0, socket1, socket2,
+    has_attributes,
+    attr0_type, attr0_value, attr1_type, attr1_value, attr2_type, attr2_value,
+    attr3_type, attr3_value, attr4_type, attr4_value, attr5_type, attr5_value,
+    attr6_type, attr6_value
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		int64(row.ID), int64(row.CharacterID), row.Login, int(row.Cell), int64(row.Vnum), int(row.Count), boolToSQLInt(row.Locked),
 		boolToSQLInt(row.HasSockets), int64(row.Socket0), int64(row.Socket1), int64(row.Socket2),
+		boolToSQLInt(row.HasAttributes),
+		int64(row.Attr0Type), int64(row.Attr0Value), int64(row.Attr1Type), int64(row.Attr1Value),
+		int64(row.Attr2Type), int64(row.Attr2Value), int64(row.Attr3Type), int64(row.Attr3Value),
+		int64(row.Attr4Type), int64(row.Attr4Value), int64(row.Attr5Type), int64(row.Attr5Value),
+		int64(row.Attr6Type), int64(row.Attr6Value),
 	)
 	if err != nil {
 		return fmt.Errorf("insert safebox item id %d character %d cell %d: %w", row.ID, row.CharacterID, row.Cell, err)

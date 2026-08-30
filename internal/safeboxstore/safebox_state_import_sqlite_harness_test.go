@@ -14,6 +14,7 @@ import (
 
 	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 )
 
@@ -22,8 +23,8 @@ func TestSQLiteHarnessSafeboxStateImportInsertsPasswordsAndItems(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxItemInstanceSocketsMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxItemInstanceSocketsMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxItemInstanceAttributesMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxItemInstanceAttributesMigrationVersion, err)
 	}
 
 	accounts := []accountstore.Account{
@@ -58,8 +59,8 @@ func TestSQLiteHarnessSafeboxStateImportInsertsPasswordsAndItems(t *testing.T) {
 		Password:    "secret",
 		Money:       1500,
 		Cells: []Cell{
-			{Cell: 1, ID: 1002, Vnum: 27002, Count: 1, HasSockets: true},
-			{Cell: 0, ID: 1001, Vnum: 27001, Count: 2, Locked: true, HasSockets: true, Socket0: 1, Socket2: 7},
+			{Cell: 1, ID: 1002, Vnum: 27002, Count: 1, HasSockets: true, HasAttributes: true},
+			{Cell: 0, ID: 1001, Vnum: 27001, Count: 2, Locked: true, HasSockets: true, Socket0: 1, Socket2: 7, HasAttributes: true, Attributes: &inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 4, Value: -5}}},
 		},
 	}, {
 		Login:       "Beta",
@@ -101,8 +102,8 @@ func TestSQLiteHarnessSafeboxStateImportInsertsPasswordsAndItems(t *testing.T) {
 
 	assertSafeboxPasswordRow(t, db, 7, "Alpha", "secret", 1500)
 	assertSafeboxPasswordRow(t, db, 9, "Beta", "", 0)
-	assertSafeboxItemRow(t, db, 1001, 7, "Alpha", 0, 27001, 2, true, true, 1, 0, 7)
-	assertSafeboxItemRow(t, db, 1002, 7, "Alpha", 1, 27002, 1, false, true, 0, 0, 0)
+	assertSafeboxItemRow(t, db, 1001, 7, "Alpha", 0, 27001, 2, true, true, 1, 0, 7, true, 1, 25, 4, -5)
+	assertSafeboxItemRow(t, db, 1002, 7, "Alpha", 1, 27002, 1, false, true, 0, 0, 0, true, 0, 0, 0, 0)
 }
 
 func TestSQLiteHarnessSafeboxStateImportRejectsDuplicatePrimaryKey(t *testing.T) {
@@ -110,8 +111,8 @@ func TestSQLiteHarnessSafeboxStateImportRejectsDuplicatePrimaryKey(t *testing.T)
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxItemInstanceSocketsMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxItemInstanceSocketsMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxItemInstanceAttributesMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxItemInstanceAttributesMigrationVersion, err)
 	}
 
 	accounts := []accountstore.Account{{
@@ -183,8 +184,8 @@ func TestSQLiteHarnessSafeboxStateImportRejectsMissingParentCharacter(t *testing
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxItemInstanceSocketsMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxItemInstanceSocketsMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxItemInstanceAttributesMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxItemInstanceAttributesMigrationVersion, err)
 	}
 
 	export := CharacterSafeboxStateExport{
@@ -215,8 +216,8 @@ func TestSQLiteHarnessSafeboxStateImportAcceptsEmptyExport(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxItemInstanceSocketsMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxItemInstanceSocketsMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxItemInstanceAttributesMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxItemInstanceAttributesMigrationVersion, err)
 	}
 
 	export := CharacterSafeboxStateExport{
@@ -261,6 +262,30 @@ func TestSQLiteHarnessSafeboxStateImportRejectsTipFifteenOnlyLedger(t *testing.T
 	}
 }
 
+func TestSQLiteHarnessSafeboxStateImportRejectsTipTwentyFiveOnlyLedger(t *testing.T) {
+	db := openSQLiteSafeboxStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxItemInstanceSocketsMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxItemInstanceSocketsMigrationVersion, err)
+	}
+
+	export := CharacterSafeboxStateExport{
+		MigrationVersion: CharacterSafeboxStateMigrationVersion,
+		MigrationName:    CharacterSafeboxStateMigrationName,
+		Passwords:        []CharacterSafeboxPasswordRow{},
+		Items:            []CharacterSafeboxItemRow{},
+	}
+	_, err := ImportCharacterSafeboxState(ctx, db, export)
+	if !errors.Is(err, ErrCharacterSafeboxStateImportSchemaRequired) {
+		t.Fatalf("ImportCharacterSafeboxState tip-25-only error = %v, want %v", err, ErrCharacterSafeboxStateImportSchemaRequired)
+	}
+	if err == nil || !strings.Contains(err.Error(), "28") || !strings.Contains(err.Error(), CharacterSafeboxItemInstanceAttributesMigrationName) {
+		t.Fatalf("expected tip-25-only error to name additive 28, got %v", err)
+	}
+}
+
 func assertSafeboxPasswordRow(t *testing.T, db *sql.DB, characterID uint32, login, password string, money int64) {
 	t.Helper()
 
@@ -282,26 +307,32 @@ FROM character_safebox_passwords WHERE character_id = ?`,
 	}
 }
 
-func assertSafeboxItemRow(t *testing.T, db *sql.DB, id uint64, characterID uint32, login string, cell uint8, vnum uint32, count uint16, locked bool, hasSockets bool, socket0, socket1, socket2 int32) {
+func assertSafeboxItemRow(t *testing.T, db *sql.DB, id uint64, characterID uint32, login string, cell uint8, vnum uint32, count uint16, locked bool, hasSockets bool, socket0, socket1, socket2 int32, hasAttributes bool, attr0Type uint8, attr0Value int16, attr1Type uint8, attr1Value int16) {
 	t.Helper()
 
 	var (
-		gotID          int64
-		gotCharacterID int64
-		gotLogin       string
-		gotCell        int
-		gotVnum        int64
-		gotCount       int
-		gotLocked      int
-		gotHasSockets  int
-		gotSocket0     int
-		gotSocket1     int
-		gotSocket2     int
+		gotID            int64
+		gotCharacterID   int64
+		gotLogin         string
+		gotCell          int
+		gotVnum          int64
+		gotCount         int
+		gotLocked        int
+		gotHasSockets    int
+		gotSocket0       int
+		gotSocket1       int
+		gotSocket2       int
+		gotHasAttributes int
+		gotAttr0Type     int
+		gotAttr0Value    int
+		gotAttr1Type     int
+		gotAttr1Value    int
 	)
 	if err := db.QueryRowContext(context.Background(), `
-SELECT id, character_id, login, cell, vnum, count, locked, has_sockets, socket0, socket1, socket2
+SELECT id, character_id, login, cell, vnum, count, locked, has_sockets, socket0, socket1, socket2,
+       has_attributes, attr0_type, attr0_value, attr1_type, attr1_value
 FROM character_safebox_items WHERE id = ?`,
-		id).Scan(&gotID, &gotCharacterID, &gotLogin, &gotCell, &gotVnum, &gotCount, &gotLocked, &gotHasSockets, &gotSocket0, &gotSocket1, &gotSocket2); err != nil {
+		id).Scan(&gotID, &gotCharacterID, &gotLogin, &gotCell, &gotVnum, &gotCount, &gotLocked, &gotHasSockets, &gotSocket0, &gotSocket1, &gotSocket2, &gotHasAttributes, &gotAttr0Type, &gotAttr0Value, &gotAttr1Type, &gotAttr1Value); err != nil {
 		t.Fatalf("select safebox item id %d: %v", id, err)
 	}
 	wantLocked := 0
@@ -312,9 +343,13 @@ FROM character_safebox_items WHERE id = ?`,
 	if hasSockets {
 		wantHasSockets = 1
 	}
-	if gotID != int64(id) || gotCharacterID != int64(characterID) || gotLogin != login || gotCell != int(cell) || gotVnum != int64(vnum) || gotCount != int(count) || gotLocked != wantLocked || gotHasSockets != wantHasSockets || gotSocket0 != int(socket0) || gotSocket1 != int(socket1) || gotSocket2 != int(socket2) {
-		t.Fatalf("item row mismatch for id %d: got id=%d character=%d login=%q cell=%d vnum=%d count=%d locked=%d has_sockets=%d sockets=(%d,%d,%d) want character=%d login=%q cell=%d vnum=%d count=%d locked=%d has_sockets=%d sockets=(%d,%d,%d)",
-			id, gotID, gotCharacterID, gotLogin, gotCell, gotVnum, gotCount, gotLocked, gotHasSockets, gotSocket0, gotSocket1, gotSocket2, characterID, login, cell, vnum, count, wantLocked, wantHasSockets, socket0, socket1, socket2)
+	wantHasAttributes := 0
+	if hasAttributes {
+		wantHasAttributes = 1
+	}
+	if gotID != int64(id) || gotCharacterID != int64(characterID) || gotLogin != login || gotCell != int(cell) || gotVnum != int64(vnum) || gotCount != int(count) || gotLocked != wantLocked || gotHasSockets != wantHasSockets || gotSocket0 != int(socket0) || gotSocket1 != int(socket1) || gotSocket2 != int(socket2) || gotHasAttributes != wantHasAttributes || gotAttr0Type != int(attr0Type) || gotAttr0Value != int(attr0Value) || gotAttr1Type != int(attr1Type) || gotAttr1Value != int(attr1Value) {
+		t.Fatalf("item row mismatch for id %d: got id=%d character=%d login=%q cell=%d vnum=%d count=%d locked=%d has_sockets=%d sockets=(%d,%d,%d) has_attributes=%d attrs=(%d/%d,%d/%d) want character=%d login=%q cell=%d vnum=%d count=%d locked=%d has_sockets=%d sockets=(%d,%d,%d) has_attributes=%d attrs=(%d/%d,%d/%d)",
+			id, gotID, gotCharacterID, gotLogin, gotCell, gotVnum, gotCount, gotLocked, gotHasSockets, gotSocket0, gotSocket1, gotSocket2, gotHasAttributes, gotAttr0Type, gotAttr0Value, gotAttr1Type, gotAttr1Value, characterID, login, cell, vnum, count, wantLocked, wantHasSockets, socket0, socket1, socket2, wantHasAttributes, attr0Type, attr0Value, attr1Type, attr1Value)
 	}
 }
 

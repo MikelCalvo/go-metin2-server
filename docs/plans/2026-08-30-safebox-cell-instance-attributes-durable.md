@@ -70,4 +70,5 @@ silently fall back to template attributes.
 GREEN on `lane/items`: durable safebox FileStore cells round-trip presence-aware
 instance attributes (`has_attributes` + `attributes`, including explicit
 all-zero / type-zero) through check-in → persist → restart → reopen / checkout.
-Tip-`0015` SQL attribute companion stays deferred.
+Tip-`0015` SQL attribute companion is owned by
+[safebox cell instance-attributes SQL additive](2026-08-30-character-safebox-item-instance-attributes-sql-additive.md).

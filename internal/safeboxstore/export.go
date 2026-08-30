@@ -3,6 +3,8 @@ package safeboxstore
 import (
 	"errors"
 	"fmt"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 )
 
 const (
@@ -11,6 +13,9 @@ const (
 
 	CharacterSafeboxItemInstanceSocketsMigrationVersion = 25
 	CharacterSafeboxItemInstanceSocketsMigrationName    = "character_safebox_item_instance_sockets"
+
+	CharacterSafeboxItemInstanceAttributesMigrationVersion = 28
+	CharacterSafeboxItemInstanceAttributesMigrationName    = "character_safebox_item_instance_attributes"
 )
 
 // CharacterSafeboxStateExport is a deterministic, schema-shaped projection of
@@ -38,21 +43,39 @@ type CharacterSafeboxPasswordRow struct {
 }
 
 // CharacterSafeboxItemRow mirrors character_safebox_items for one durable cell,
-// including optional additive 0025 instance sockets. HasSockets=false / omitted
-// means nil instance sockets (template fallback); HasSockets=true including
-// all-zero is authoritative. Export identity stays tip-0015.
+// including optional additive 0025 instance sockets and additive 0028 instance
+// attributes. HasSockets=false / omitted means nil instance sockets (template
+// fallback); HasSockets=true including all-zero is authoritative.
+// HasAttributes=false / omitted means nil instance attributes (template
+// fallback); HasAttributes=true including all-zero / type-zero is
+// authoritative. Export identity stays tip-0015.
 type CharacterSafeboxItemRow struct {
-	ID          uint64 `json:"id"`
-	CharacterID uint32 `json:"character_id"`
-	Login       string `json:"login"`
-	Cell        uint8  `json:"cell"`
-	Vnum        uint32 `json:"vnum"`
-	Count       uint16 `json:"count"`
-	Locked      bool   `json:"locked,omitempty"`
-	HasSockets  bool   `json:"has_sockets,omitempty"`
-	Socket0     int32  `json:"socket0,omitempty"`
-	Socket1     int32  `json:"socket1,omitempty"`
-	Socket2     int32  `json:"socket2,omitempty"`
+	ID            uint64 `json:"id"`
+	CharacterID   uint32 `json:"character_id"`
+	Login         string `json:"login"`
+	Cell          uint8  `json:"cell"`
+	Vnum          uint32 `json:"vnum"`
+	Count         uint16 `json:"count"`
+	Locked        bool   `json:"locked,omitempty"`
+	HasSockets    bool   `json:"has_sockets,omitempty"`
+	Socket0       int32  `json:"socket0,omitempty"`
+	Socket1       int32  `json:"socket1,omitempty"`
+	Socket2       int32  `json:"socket2,omitempty"`
+	HasAttributes bool   `json:"has_attributes,omitempty"`
+	Attr0Type     uint8  `json:"attr0_type,omitempty"`
+	Attr0Value    int16  `json:"attr0_value,omitempty"`
+	Attr1Type     uint8  `json:"attr1_type,omitempty"`
+	Attr1Value    int16  `json:"attr1_value,omitempty"`
+	Attr2Type     uint8  `json:"attr2_type,omitempty"`
+	Attr2Value    int16  `json:"attr2_value,omitempty"`
+	Attr3Type     uint8  `json:"attr3_type,omitempty"`
+	Attr3Value    int16  `json:"attr3_value,omitempty"`
+	Attr4Type     uint8  `json:"attr4_type,omitempty"`
+	Attr4Value    int16  `json:"attr4_value,omitempty"`
+	Attr5Type     uint8  `json:"attr5_type,omitempty"`
+	Attr5Value    int16  `json:"attr5_value,omitempty"`
+	Attr6Type     uint8  `json:"attr6_type,omitempty"`
+	Attr6Value    int16  `json:"attr6_value,omitempty"`
 }
 
 // ExportCharacterSafeboxState validates a safebox snapshot and projects every
@@ -78,18 +101,34 @@ func ExportCharacterSafeboxState(snapshot Snapshot) (CharacterSafeboxStateExport
 			Money:       row.Money,
 		})
 		for _, cell := range row.Cells {
+			hasAttributes, attrs := safeboxCellAttributesExportFields(cell)
 			export.Items = append(export.Items, CharacterSafeboxItemRow{
-				ID:          cell.ID,
-				CharacterID: row.CharacterID,
-				Login:       row.Login,
-				Cell:        cell.Cell,
-				Vnum:        cell.Vnum,
-				Count:       cell.Count,
-				Locked:      cell.Locked,
-				HasSockets:  cell.HasSockets,
-				Socket0:     cell.Socket0,
-				Socket1:     cell.Socket1,
-				Socket2:     cell.Socket2,
+				ID:            cell.ID,
+				CharacterID:   row.CharacterID,
+				Login:         row.Login,
+				Cell:          cell.Cell,
+				Vnum:          cell.Vnum,
+				Count:         cell.Count,
+				Locked:        cell.Locked,
+				HasSockets:    cell.HasSockets,
+				Socket0:       cell.Socket0,
+				Socket1:       cell.Socket1,
+				Socket2:       cell.Socket2,
+				HasAttributes: hasAttributes,
+				Attr0Type:     attrs[0].Type,
+				Attr0Value:    attrs[0].Value,
+				Attr1Type:     attrs[1].Type,
+				Attr1Value:    attrs[1].Value,
+				Attr2Type:     attrs[2].Type,
+				Attr2Value:    attrs[2].Value,
+				Attr3Type:     attrs[3].Type,
+				Attr3Value:    attrs[3].Value,
+				Attr4Type:     attrs[4].Type,
+				Attr4Value:    attrs[4].Value,
+				Attr5Type:     attrs[5].Type,
+				Attr5Value:    attrs[5].Value,
+				Attr6Type:     attrs[6].Type,
+				Attr6Value:    attrs[6].Value,
 			})
 		}
 	}
@@ -130,4 +169,14 @@ func emptyCharacterSafeboxStateExport() CharacterSafeboxStateExport {
 		Passwords:        []CharacterSafeboxPasswordRow{},
 		Items:            []CharacterSafeboxItemRow{},
 	}
+}
+
+func safeboxCellAttributesExportFields(cell Cell) (bool, inventory.AttributeValues) {
+	if !cell.HasAttributes {
+		return false, inventory.AttributeValues{}
+	}
+	if cell.Attributes == nil {
+		return true, inventory.AttributeValues{}
+	}
+	return true, *cell.Attributes
 }

@@ -220,7 +220,7 @@ func TestRunImportExportImportsEmptyExportsAgainstRegisteredDriver(t *testing.T)
 			// Character item-state SQL import keeps tip-0003 export identity but
 			// requires additive 0024 instance sockets and 0027 instance attributes before INSERT.
 			// Character safebox-state SQL import keeps tip-0015 export identity but
-			// requires additive 0025 instance sockets before INSERT.
+			// requires additive 0025 instance sockets and 0028 instance attributes before INSERT.
 			// Bootstrap ground-item-state SQL import keeps tip-0010 export identity but
 			// requires additive 0026 instance sockets before INSERT.
 			ledger := []dbmigrations.LedgerEntry{ledgerEntry(tc.version)}
@@ -252,6 +252,7 @@ func TestRunImportExportImportsEmptyExportsAgainstRegisteredDriver(t *testing.T)
 				ledger = []dbmigrations.LedgerEntry{
 					ledgerEntry(safeboxstore.CharacterSafeboxStateMigrationVersion),
 					ledgerEntry(safeboxstore.CharacterSafeboxItemInstanceSocketsMigrationVersion),
+					ledgerEntry(safeboxstore.CharacterSafeboxItemInstanceAttributesMigrationVersion),
 				}
 			}
 			if tc.kind == "bootstrap-ground-item-state" {
