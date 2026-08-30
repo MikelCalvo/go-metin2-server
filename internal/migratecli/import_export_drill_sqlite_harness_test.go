@@ -566,6 +566,10 @@ func mustMaterializeSeededImportExportQuarantineTree(t *testing.T, exportTree st
 		Y:                2100,
 		Z:                2,
 		PickupRange:      450,
+		HasSockets:       true,
+		Socket0:          1,
+		Socket1:          0,
+		Socket2:          7,
 	}})
 	if err != nil {
 		t.Fatalf("ExportBootstrapGroundItemState: %v", err)
@@ -834,19 +838,31 @@ SELECT kind, ref FROM interaction_definitions`).Scan(&gotInteractionKind, &gotIn
 	}
 
 	var (
-		gotGroundVID  int64
-		gotGroundVnum int64
-		gotItemCount  sql.NullInt64
-		gotGoldAmount sql.NullInt64
-		gotOwnerID    int64
+		gotGroundVID        int64
+		gotGroundVnum       int64
+		gotItemCount        sql.NullInt64
+		gotGoldAmount       sql.NullInt64
+		gotOwnerID          int64
+		gotGroundHasSockets int
+		gotGroundSocket0    int64
+		gotGroundSocket1    int64
+		gotGroundSocket2    int64
 	)
 	if err := db.QueryRowContext(ctx, `
-SELECT vid, vnum, item_count, gold_amount, owner_character_id
-FROM bootstrap_ground_items`).Scan(&gotGroundVID, &gotGroundVnum, &gotItemCount, &gotGoldAmount, &gotOwnerID); err != nil {
+SELECT vid, vnum, item_count, gold_amount, owner_character_id,
+       has_sockets, socket0, socket1, socket2
+FROM bootstrap_ground_items`).Scan(
+		&gotGroundVID, &gotGroundVnum, &gotItemCount, &gotGoldAmount, &gotOwnerID,
+		&gotGroundHasSockets, &gotGroundSocket0, &gotGroundSocket1, &gotGroundSocket2,
+	); err != nil {
 		t.Fatalf("select ground item: %v", err)
 	}
 	if gotGroundVID != 0x0700002c || gotGroundVnum != 3001 || !gotItemCount.Valid || gotItemCount.Int64 != 1 || gotGoldAmount.Valid || gotOwnerID != 11 {
 		t.Fatalf("ground item = vid=%d vnum=%d count=%v gold=%v owner=%d", gotGroundVID, gotGroundVnum, gotItemCount, gotGoldAmount, gotOwnerID)
+	}
+	if gotGroundHasSockets != 1 || gotGroundSocket0 != 1 || gotGroundSocket1 != 0 || gotGroundSocket2 != 7 {
+		t.Fatalf("ground item sockets = has_sockets=%d sockets=(%d,%d,%d), want 1/(1,0,7)",
+			gotGroundHasSockets, gotGroundSocket0, gotGroundSocket1, gotGroundSocket2)
 	}
 }
 

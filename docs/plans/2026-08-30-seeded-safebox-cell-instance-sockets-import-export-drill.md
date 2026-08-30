@@ -37,15 +37,15 @@ companion, or README churn.
 4. Empty-payload hermetic proof stays socket-omitted / empty for tip-`0015`.
 5. Operator loopback docs for character-safebox-state name presence-aware
    `has_sockets` / `socket0..2` beside the older row fields.
-6. Upsert / stock production driver / tip-`0010` ground SQL sockets remain
-   deferred.
+6. Upsert / stock production driver remain deferred. tip-`0010` ground SQL
+   sockets seeded tip sync is owned by
+   [seeded ground-item instance-sockets tip sync](2026-08-30-seeded-ground-item-instance-sockets-import-export-drill.md).
 
 ## What this is not yet
 
 - upsert / merge / truncate-and-reload policy
 - production DB engine selection as a stock default
 - DB-backed live safebox repositories
-- additive tip-`0010` ground-item socket SQL companion
 - mall / TMP4 SAFEBOX_MONEY / attributes-on-instance
 - remote admin / daemon mutation route / secrets in git
 
@@ -73,4 +73,6 @@ git diff --check
 GREEN on `lane/items`: seeded hermetic import-export-drill proves tip-`0015`+`0025`
 presence-aware safebox cell sockets through the printed PATH + tip-order SQLite
 path, and operator loopback character-safebox-state docs name `has_sockets` /
-`socket0..2`. Upsert / stock driver / tip-`0010` ground SQL sockets remain deferred.
+`socket0..2`. Upsert / stock driver remain deferred; tip-`0010`+`0026` ground
+socket seed tip sync is owned by
+[seeded ground-item instance-sockets tip sync](2026-08-30-seeded-ground-item-instance-sockets-import-export-drill.md).

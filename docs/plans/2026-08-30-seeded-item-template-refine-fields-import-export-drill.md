@@ -47,8 +47,9 @@ fields.
 4. Empty-payload hermetic proof stays refine-omitted / empty for tip-`0009`.
 5. Operator loopback docs for item-template-state name additive
    `keep_on_fail` / `fail_result_vnum` beside tip-`0009` refine child rows.
-6. Upsert / stock production driver / tip retip / safebox cell sockets /
-   tip-`0010` ground SQL sockets remain deferred.
+6. Upsert / stock production driver / tip retip remain deferred. Safebox cell
+   sockets and tip-`0010` ground SQL sockets (including seeded tip sync) are
+   owned by later tip-sync plans.
 
 ## What this is not yet
 
@@ -56,7 +57,6 @@ fields.
 - production DB engine selection as a stock default
 - DB-backed live item-template repositories
 - retipping item-template exports to `migration_version=21` or `22`
-- safebox cell sockets / tip-`0010` ground-item socket SQL companion
 - remote admin / daemon mutation route / secrets in git
 
 ## Likely files to change

@@ -56,7 +56,9 @@ ledger owns tip-`0010` but not additive `0026`.
 - DB-backed live ground rematerialize (FileStore remains the restart path)
 - remote admin / daemon mutation route / secrets in git
 - changing `GC::ITEM_GROUND_ADD` / ownership wire layouts
-- seeded hermetic import-export-drill ground socket rows (optional follow-up)
+- ~~seeded hermetic import-export-drill ground socket rows~~ Done — see
+  [seeded ground-item instance-sockets tip
+  sync](2026-08-30-seeded-ground-item-instance-sockets-import-export-drill.md)
 
 ## Likely files to change (GREEN)
 
@@ -87,3 +89,7 @@ ledger owns tip-`0010` but not additive `0026`.
 ## Status
 
 Contract freeze + GREEN owned by this persistence-lane run.
+
+Follow-on tip sync: seeded hermetic tip-`0010`+`0026` pending ground sockets in
+the shared import-export drill are owned by
+[seeded ground-item instance-sockets tip sync](2026-08-30-seeded-ground-item-instance-sockets-import-export-drill.md).

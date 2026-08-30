@@ -43,7 +43,9 @@ runbooks after FileStore already rematerializes presence-aware sockets
    `has_sockets` / `socket0..2` beside the older row fields.
 6. Upsert / stock production driver remain deferred. tip-`0010` ground SQL
    sockets shipped as `0026` — see
-   [bootstrap ground-item instance-sockets SQL additive](2026-08-30-bootstrap-ground-item-instance-sockets-sql-additive.md).
+   [bootstrap ground-item instance-sockets SQL additive](2026-08-30-bootstrap-ground-item-instance-sockets-sql-additive.md)
+   — and seeded tip sync is owned by
+   [seeded ground-item instance-sockets tip sync](2026-08-30-seeded-ground-item-instance-sockets-import-export-drill.md).
    Safebox cell sockets shipped as `0025` and seeded tip sync is owned by
    [seeded safebox cell instance-sockets tip sync](2026-08-30-seeded-safebox-cell-instance-sockets-import-export-drill.md).
 
@@ -80,7 +82,9 @@ git diff --check
   import through the printed script
 - loopback character-item-state docs mention presence-aware sockets
 - empty hermetic proof remains green
-- upsert / stock driver / tip-`0010` ground SQL sockets remain explicitly deferred
+- upsert / stock driver remain explicitly deferred; tip-`0010`+`0026` ground
+  socket seed tip sync is owned by
+  [seeded ground-item instance-sockets tip sync](2026-08-30-seeded-ground-item-instance-sockets-import-export-drill.md)
 
 ## Anti-goals / ordering constraints
 
