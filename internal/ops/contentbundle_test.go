@@ -4264,6 +4264,117 @@ func TestLocalContentBundleOpenSafeboxRouteImportPreviewEndpointRejectsWrongMeth
 	}
 }
 
+func TestLocalContentBundleOpenCubeRouteImportPreviewEndpointReturnsActorDeltasForLoopbackPost(t *testing.T) {
+	currentCube := interactionstore.Definition{Kind: interactionstore.KindOpenCube, Ref: "npc:cube", Text: "Old forge."}
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "CubeMaster", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20022, InteractionKind: interactionstore.KindOpenCube, InteractionRef: currentCube.Ref}},
+		InteractionDefinitions: []interactionstore.Definition{currentCube},
+	}}
+	mux := RegisterLocalContentBundleOpenCubeRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/open-cube-routes/CubeMaster", strings.NewReader(`{"static_actors":[{"name":"CubeMaster","map_index":1,"x":1000,"y":2000,"race_num":20022,"interaction_kind":"open_cube","interaction_ref":"npc:cube"},{"name":"RemoteCube","map_index":3,"x":3000,"y":4000,"race_num":20023,"interaction_kind":"open_cube","interaction_ref":"npc:remote_cube"}],"interaction_definitions":[{"kind":"quest_flag","ref":"quest:first_steps","text":"Quest updated: first_steps.met_guide = 1.","quest_ref":"quest:first_steps","quest_flag":"met_guide","quest_to":1},{"kind":"open_cube","ref":"npc:cube","text":"New forge.","quest_ref":"quest:first_steps","quest_flag":"met_guide","quest_from":1},{"kind":"open_cube","ref":"npc:remote_cube","text":"Remote forge."}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected import previewer to be called once, got %d calls", previewer.calls)
+	}
+	var got []contentbundle.OpenCubeRouteDelta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode open-cube route import-preview response body: %v", err)
+	}
+	currentRoute := contentbundle.OpenCubeRouteSummary{ActorName: "CubeMaster", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:cube", Text: "Old forge.", RaceNum: 20022}
+	candidateRoute := contentbundle.OpenCubeRouteSummary{ActorName: "CubeMaster", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:cube", Text: "New forge.", RaceNum: 20022, QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1}
+	want := []contentbundle.OpenCubeRouteDelta{{ActorName: "CubeMaster", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:cube", Change: "changed", Current: &currentRoute, Candidate: &candidateRoute}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected open-cube route import-preview deltas:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleOpenCubeRouteImportPreviewEndpointReturnsNotFoundWhenActorHasNoRouteDeltas(t *testing.T) {
+	currentCube := interactionstore.Definition{Kind: interactionstore.KindOpenCube, Ref: "npc:cube", Text: "Same forge."}
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "CubeMaster", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20022, InteractionKind: interactionstore.KindOpenCube, InteractionRef: currentCube.Ref}},
+		InteractionDefinitions: []interactionstore.Definition{currentCube},
+	}}
+	mux := RegisterLocalContentBundleOpenCubeRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/open-cube-routes/CubeMaster", strings.NewReader(`{"static_actors":[{"name":"CubeMaster","map_index":1,"x":1000,"y":2000,"race_num":20022,"interaction_kind":"open_cube","interaction_ref":"npc:cube"}],"interaction_definitions":[{"kind":"open_cube","ref":"npc:cube","text":"Same forge."}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d when open-cube route deltas are absent, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
+func TestLocalContentBundleOpenCubeRouteImportPreviewEndpointRejectsMalformedActorNameBeforeCallback(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{}}
+	mux := RegisterLocalContentBundleOpenCubeRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	for _, path := range []string{
+		"/local/content-bundle/import-preview/open-cube-routes/",
+		"/local/content-bundle/import-preview/open-cube-routes/Bad%2FCube",
+		"/local/content-bundle/import-preview/open-cube-routes/CubeMaster/extra",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"interaction_definitions":[]}`))
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for malformed open-cube route import-preview path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected import previewer not to be called for malformed actor names, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleOpenCubeRouteImportPreviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{}}
+	mux := RegisterLocalContentBundleOpenCubeRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview/open-cube-routes/CubeMaster", strings.NewReader(`{"interaction_definitions":[]}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback caller, got %d", http.StatusForbidden, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected import previewer not to be called, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleOpenCubeRouteImportPreviewEndpointRejectsWrongMethod(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{}}
+	mux := RegisterLocalContentBundleOpenCubeRouteImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/import-preview/open-cube-routes/CubeMaster", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected import previewer not to be called, got %d calls", previewer.calls)
+	}
+}
+
 func TestLocalContentBundleImportPreviewEndpointReturnsWarpDestinationDeltaJSONForLoopbackPost(t *testing.T) {
 	currentGate := interactionstore.Definition{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "Old gate.", MapIndex: 2, X: 2000, Y: 3000}
 	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
@@ -5872,6 +5983,48 @@ func TestLocalContentBundleMapOpenSafeboxRoutesEndpointReturnsMatchingRoutesForL
 	}
 }
 
+func TestLocalContentBundleMapOpenCubeRoutesEndpointReturnsMatchingRoutesForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{
+			Maps: []contentbundle.MapContentSummary{
+				{MapIndex: 1, StaticActorCount: 2, OpenCubeActorCount: 2},
+				{MapIndex: 7, StaticActorCount: 1, OpenCubeActorCount: 1},
+			},
+			OpenCubeRoutes: []contentbundle.OpenCubeRouteSummary{
+				{ActorName: "Remote Cube", SourceMapIndex: 7, SourceX: 1300, SourceY: 2300, Ref: "npc:remote_cube", Text: "Remote forge.", RaceNum: 20023},
+				{ActorName: "CubeMaster", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:qa_cube", Text: "The craftsman lights the forge.", RaceNum: 20022, QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1},
+				{ActorName: "Village Forge", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:village_forge", RaceNum: 20022},
+			},
+		},
+	}
+	mux := RegisterLocalContentBundleMapOpenCubeRoutesEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/maps/1/open-cube-routes", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got []contentbundle.OpenCubeRouteSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode map open-cube-route response body: %v", err)
+	}
+	want := []contentbundle.OpenCubeRouteSummary{
+		{ActorName: "CubeMaster", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:qa_cube", Text: "The craftsman lights the forge.", RaceNum: 20022, QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1},
+		{ActorName: "Village Forge", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:village_forge", RaceNum: 20022},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle map open-cube routes:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
 func TestLocalContentBundleMapFocusedContentEndpointsReturnEmptyListForKnownMapWithoutMatches(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -5884,6 +6037,7 @@ func TestLocalContentBundleMapFocusedContentEndpointsReturnEmptyListForKnownMapW
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
 		{name: "open_safebox routes", register: RegisterLocalContentBundleMapOpenSafeboxRoutesEndpoint, path: "/local/content-bundle/maps/42/open-safebox-routes"},
+		{name: "open_cube routes", register: RegisterLocalContentBundleMapOpenCubeRoutesEndpoint, path: "/local/content-bundle/maps/42/open-cube-routes"},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
 		{name: "reward drops", register: RegisterLocalContentBundleMapRewardDropsEndpoint, path: "/local/content-bundle/maps/42/reward-drops"},
 	}
@@ -5923,6 +6077,7 @@ func TestLocalContentBundleMapFocusedContentEndpointsReturnNotFoundForMissingMap
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
 		{name: "open_safebox routes", register: RegisterLocalContentBundleMapOpenSafeboxRoutesEndpoint, path: "/local/content-bundle/maps/42/open-safebox-routes"},
+		{name: "open_cube routes", register: RegisterLocalContentBundleMapOpenCubeRoutesEndpoint, path: "/local/content-bundle/maps/42/open-cube-routes"},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
 		{name: "reward drops", register: RegisterLocalContentBundleMapRewardDropsEndpoint, path: "/local/content-bundle/maps/42/reward-drops"},
 	}
@@ -5959,6 +6114,7 @@ func TestLocalContentBundleMapFocusedContentEndpointsRejectInvalidMapIndex(t *te
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, paths: []string{"/local/content-bundle/maps/0/shop-routes", "/local/content-bundle/maps/not-a-map/shop-routes", "/local/content-bundle/maps/42/shop-routes/extra"}},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, paths: []string{"/local/content-bundle/maps/0/warp-routes", "/local/content-bundle/maps/not-a-map/warp-routes", "/local/content-bundle/maps/42/warp-routes/extra"}},
 		{name: "open_safebox routes", register: RegisterLocalContentBundleMapOpenSafeboxRoutesEndpoint, paths: []string{"/local/content-bundle/maps/0/open-safebox-routes", "/local/content-bundle/maps/not-a-map/open-safebox-routes", "/local/content-bundle/maps/42/open-safebox-routes/extra"}},
+		{name: "open_cube routes", register: RegisterLocalContentBundleMapOpenCubeRoutesEndpoint, paths: []string{"/local/content-bundle/maps/0/open-cube-routes", "/local/content-bundle/maps/not-a-map/open-cube-routes", "/local/content-bundle/maps/42/open-cube-routes/extra"}},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, paths: []string{"/local/content-bundle/maps/0/spawn-groups", "/local/content-bundle/maps/not-a-map/spawn-groups", "/local/content-bundle/maps/42/spawn-groups/extra"}},
 		{name: "reward drops", register: RegisterLocalContentBundleMapRewardDropsEndpoint, paths: []string{"/local/content-bundle/maps/0/reward-drops", "/local/content-bundle/maps/not-a-map/reward-drops", "/local/content-bundle/maps/42/reward-drops/extra"}},
 	}
@@ -5996,6 +6152,7 @@ func TestLocalContentBundleMapFocusedContentEndpointsRejectNonLoopbackRemoteAddr
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
 		{name: "open_safebox routes", register: RegisterLocalContentBundleMapOpenSafeboxRoutesEndpoint, path: "/local/content-bundle/maps/42/open-safebox-routes"},
+		{name: "open_cube routes", register: RegisterLocalContentBundleMapOpenCubeRoutesEndpoint, path: "/local/content-bundle/maps/42/open-cube-routes"},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
 		{name: "reward drops", register: RegisterLocalContentBundleMapRewardDropsEndpoint, path: "/local/content-bundle/maps/42/reward-drops"},
 	}
@@ -6032,6 +6189,7 @@ func TestLocalContentBundleMapFocusedContentEndpointsRejectWrongMethod(t *testin
 		{name: "shop routes", register: RegisterLocalContentBundleMapShopRoutesEndpoint, path: "/local/content-bundle/maps/42/shop-routes"},
 		{name: "warp routes", register: RegisterLocalContentBundleMapWarpRoutesEndpoint, path: "/local/content-bundle/maps/42/warp-routes"},
 		{name: "open_safebox routes", register: RegisterLocalContentBundleMapOpenSafeboxRoutesEndpoint, path: "/local/content-bundle/maps/42/open-safebox-routes"},
+		{name: "open_cube routes", register: RegisterLocalContentBundleMapOpenCubeRoutesEndpoint, path: "/local/content-bundle/maps/42/open-cube-routes"},
 		{name: "spawn groups", register: RegisterLocalContentBundleMapSpawnGroupsEndpoint, path: "/local/content-bundle/maps/42/spawn-groups"},
 		{name: "reward drops", register: RegisterLocalContentBundleMapRewardDropsEndpoint, path: "/local/content-bundle/maps/42/reward-drops"},
 	}
@@ -7278,6 +7436,116 @@ func TestLocalContentBundleOpenSafeboxRouteEndpointRejectsWrongMethod(t *testing
 	mux := RegisterLocalContentBundleOpenSafeboxRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
 
 	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/open-safebox-routes/Village%20Warehouse", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleOpenCubeRouteEndpointReturnsMatchingRoutesForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{
+		status: http.StatusOK,
+		summary: contentbundle.Summary{OpenCubeRoutes: []contentbundle.OpenCubeRouteSummary{
+			{ActorName: "Remote Cube", SourceMapIndex: 7, SourceX: 1300, SourceY: 2300, Ref: "npc:remote_cube", Text: "Remote forge.", RaceNum: 20023},
+			{ActorName: "CubeMaster", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:qa_cube", Text: "The craftsman lights the forge.", RaceNum: 20022, QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1},
+			{ActorName: "CubeMaster", SourceMapIndex: 2, SourceX: 1100, SourceY: 2100, Ref: "npc:qa_cube_branch", RaceNum: 20022},
+		}},
+	}
+	mux := RegisterLocalContentBundleOpenCubeRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/open-cube-routes/CubeMaster", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got []contentbundle.OpenCubeRouteSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode open-cube route response body: %v", err)
+	}
+	want := []contentbundle.OpenCubeRouteSummary{
+		{ActorName: "CubeMaster", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:qa_cube", Text: "The craftsman lights the forge.", RaceNum: 20022, QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1},
+		{ActorName: "CubeMaster", SourceMapIndex: 2, SourceX: 1100, SourceY: 2100, Ref: "npc:qa_cube_branch", RaceNum: 20022},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected content-bundle open-cube route rows:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleOpenCubeRouteEndpointReturnsNotFoundForMissingRoute(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{OpenCubeRoutes: []contentbundle.OpenCubeRouteSummary{{ActorName: "CubeMaster", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:qa_cube", RaceNum: 20022}}}}
+	mux := RegisterLocalContentBundleOpenCubeRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/open-cube-routes/Missing%20Cube", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d for missing open-cube route, got %d", http.StatusNotFound, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleOpenCubeRouteEndpointRejectsInvalidActorName(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{OpenCubeRoutes: []contentbundle.OpenCubeRouteSummary{{ActorName: "CubeMaster"}}}}
+	mux := RegisterLocalContentBundleOpenCubeRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	for _, path := range []string{"/local/content-bundle/open-cube-routes/", "/local/content-bundle/open-cube-routes/Bad%2FCube", "/local/content-bundle/open-cube-routes/CubeMaster/extra"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for invalid open-cube route path %q, got %d", http.StatusBadRequest, path, rec.Code)
+		}
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called for invalid open-cube route actor names, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleOpenCubeRouteEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{OpenCubeRoutes: []contentbundle.OpenCubeRouteSummary{{ActorName: "CubeMaster"}}}}
+	mux := RegisterLocalContentBundleOpenCubeRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/open-cube-routes/CubeMaster", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback caller, got %d", http.StatusForbidden, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleOpenCubeRouteEndpointRejectsWrongMethod(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{OpenCubeRoutes: []contentbundle.OpenCubeRouteSummary{{ActorName: "CubeMaster"}}}}
+	mux := RegisterLocalContentBundleOpenCubeRouteEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/open-cube-routes/CubeMaster", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 

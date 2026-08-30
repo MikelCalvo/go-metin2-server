@@ -3892,6 +3892,47 @@ func RegisterLocalContentBundleMapOpenSafeboxRoutesEndpoint(mux *http.ServeMux, 
 	return mux
 }
 
+func RegisterLocalContentBundleMapOpenCubeRoutesEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		mapIndex, ok := decodeLocalContentBundleMapServiceRouteIndex(r, "open-cube-routes")
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if !contentBundleSummaryHasMap(summary, mapIndex) {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		matches := make([]contentbundle.OpenCubeRouteSummary, 0)
+		for _, route := range summary.OpenCubeRoutes {
+			if route.SourceMapIndex == mapIndex {
+				matches = append(matches, route)
+			}
+		}
+		writeLocalJSONMutationResponse(w, matches, http.StatusOK)
+	}
+	mux.HandleFunc("GET /local/content-bundle/maps/{map_index}/open-cube-routes", handler)
+	mux.HandleFunc("GET /local/content-bundle/maps/{map_index}/open-cube-routes/", handler)
+	return mux
+}
+
 func RegisterLocalContentBundleMapSpawnGroupsEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
 	if mux == nil || exportContentBundleSummary == nil {
 		return mux
@@ -4688,6 +4729,45 @@ func RegisterLocalContentBundleOpenSafeboxRouteEndpoint(mux *http.ServeMux, expo
 	return mux
 }
 
+func RegisterLocalContentBundleOpenCubeRouteEndpoint(mux *http.ServeMux, exportContentBundleSummary func() (any, int)) *http.ServeMux {
+	if mux == nil || exportContentBundleSummary == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/content-bundle/open-cube-routes/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		name, ok := decodeLocalContentBundleOpenCubeRouteActorName(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		result, status := exportContentBundleSummary()
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, result, status)
+			return
+		}
+		summary, ok := result.(contentbundle.Summary)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		matches := make([]contentbundle.OpenCubeRouteSummary, 0)
+		for _, route := range summary.OpenCubeRoutes {
+			if route.ActorName == name {
+				matches = append(matches, route)
+			}
+		}
+		if len(matches) == 0 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, matches, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalContentBundleImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
 	if mux == nil || previewContentBundleImport == nil {
 		return mux
@@ -5193,6 +5273,50 @@ func RegisterLocalContentBundleOpenSafeboxRouteImportPreviewEndpoint(mux *http.S
 			return
 		}
 		deltas := contentbundle.OpenSafeboxRouteDeltasByActorName(importPreview.Deltas.OpenSafeboxRoutes, actorName)
+		if len(deltas) == 0 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, deltas, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalContentBundleOpenCubeRouteImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
+	if mux == nil || previewContentBundleImport == nil {
+		return mux
+	}
+	mux.HandleFunc("POST /local/content-bundle/import-preview/open-cube-routes/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		actorName, ok := decodeLocalContentBundleOpenCubeRouteImportPreviewActorName(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bundle, status, ok := decodeLocalContentBundleRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		normalized, err := contentbundle.Canonicalize(bundle)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		preview, status := previewContentBundleImport(normalized)
+		if status < 200 || status >= 300 {
+			writeLocalJSONMutationResponse(w, preview, status)
+			return
+		}
+		importPreview, ok := preview.(contentbundle.ImportPreview)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		deltas := contentbundle.OpenCubeRouteDeltasByActorName(importPreview.Deltas.OpenCubeRoutes, actorName)
 		if len(deltas) == 0 {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -6901,6 +7025,14 @@ func decodeLocalContentBundleOpenSafeboxRouteActorName(r *http.Request) (string,
 
 func decodeLocalContentBundleOpenSafeboxRouteImportPreviewActorName(r *http.Request) (string, bool) {
 	return decodeLocalCharacterName(r, "/local/content-bundle/import-preview/open-safebox-routes/")
+}
+
+func decodeLocalContentBundleOpenCubeRouteActorName(r *http.Request) (string, bool) {
+	return decodeLocalCharacterName(r, "/local/content-bundle/open-cube-routes/")
+}
+
+func decodeLocalContentBundleOpenCubeRouteImportPreviewActorName(r *http.Request) (string, bool) {
+	return decodeLocalCharacterName(r, "/local/content-bundle/import-preview/open-cube-routes/")
 }
 
 func decodeLocalKindRefIdentityWithPrefix(r *http.Request, prefix string) (string, string, bool) {

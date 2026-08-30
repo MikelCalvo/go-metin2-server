@@ -218,6 +218,8 @@ type Summary struct {
 	WarpRoutes                             []WarpRouteSummary                              `json:"warp_routes,omitempty"`
 	OpenSafeboxRouteCount                  int                                             `json:"open_safebox_route_count"`
 	OpenSafeboxRoutes                      []OpenSafeboxRouteSummary                       `json:"open_safebox_routes,omitempty"`
+	OpenCubeRouteCount                     int                                             `json:"open_cube_route_count"`
+	OpenCubeRoutes                         []OpenCubeRouteSummary                          `json:"open_cube_routes,omitempty"`
 	RewardExperienceTotal                  uint64                                          `json:"reward_experience_total,omitempty"`
 	RewardGoldTotal                        uint64                                          `json:"reward_gold_total,omitempty"`
 	RewardDropItemCount                    int                                             `json:"reward_drop_item_count,omitempty"`
@@ -297,6 +299,7 @@ type SummaryDeltas struct {
 	WarpDestinations                       []WarpDestinationDelta         `json:"warp_destinations,omitempty"`
 	WarpRouteCount                         SummaryCountDelta              `json:"warp_route_count"`
 	OpenSafeboxRouteCount                  SummaryCountDelta              `json:"open_safebox_route_count"`
+	OpenCubeRouteCount                     SummaryCountDelta              `json:"open_cube_route_count"`
 	RewardExperienceTotal                  SummaryAmountDelta             `json:"reward_experience_total"`
 	RewardGoldTotal                        SummaryAmountDelta             `json:"reward_gold_total"`
 	RewardDropItemCount                    SummaryCountDelta              `json:"reward_drop_item_count"`
@@ -314,6 +317,7 @@ type SummaryDeltas struct {
 	ShopRoutes                             []ShopRouteDelta               `json:"shop_routes,omitempty"`
 	WarpRoutes                             []WarpRouteDelta               `json:"warp_routes,omitempty"`
 	OpenSafeboxRoutes                      []OpenSafeboxRouteDelta        `json:"open_safebox_routes,omitempty"`
+	OpenCubeRoutes                         []OpenCubeRouteDelta           `json:"open_cube_routes,omitempty"`
 	Maps                                   []MapContentDelta              `json:"maps,omitempty"`
 }
 
@@ -485,6 +489,17 @@ type OpenSafeboxRouteDelta struct {
 	Candidate      *OpenSafeboxRouteSummary `json:"candidate,omitempty"`
 }
 
+type OpenCubeRouteDelta struct {
+	ActorName      string                `json:"actor_name"`
+	SourceMapIndex uint32                `json:"source_map_index"`
+	SourceX        int32                 `json:"source_x"`
+	SourceY        int32                 `json:"source_y"`
+	Ref            string                `json:"ref"`
+	Change         string                `json:"change"`
+	Current        *OpenCubeRouteSummary `json:"current,omitempty"`
+	Candidate      *OpenCubeRouteSummary `json:"candidate,omitempty"`
+}
+
 type MapContentDelta struct {
 	MapIndex                     uint32                  `json:"map_index"`
 	StaticActorCount             SummaryCountDelta       `json:"static_actor_count"`
@@ -496,6 +511,7 @@ type MapContentDelta struct {
 	ShopCatalogEntryCount        SummaryCountDelta       `json:"shop_catalog_entry_count,omitempty"`
 	WarpActorCount               SummaryCountDelta       `json:"warp_actor_count,omitempty"`
 	OpenSafeboxActorCount        SummaryCountDelta       `json:"open_safebox_actor_count,omitempty"`
+	OpenCubeActorCount           SummaryCountDelta       `json:"open_cube_actor_count,omitempty"`
 	SpawnGroupCount              SummaryCountDelta       `json:"spawn_group_count"`
 	QuestFlagRoutes              []QuestFlagRouteDelta   `json:"quest_flag_routes,omitempty"`
 	RewardExperienceTotal        SummaryAmountDelta      `json:"reward_experience_total,omitempty"`
@@ -506,6 +522,7 @@ type MapContentDelta struct {
 	ShopRoutes                   []ShopRouteDelta        `json:"shop_routes,omitempty"`
 	WarpRoutes                   []WarpRouteDelta        `json:"warp_routes,omitempty"`
 	OpenSafeboxRoutes            []OpenSafeboxRouteDelta `json:"open_safebox_routes,omitempty"`
+	OpenCubeRoutes               []OpenCubeRouteDelta    `json:"open_cube_routes,omitempty"`
 }
 
 type InteractionKindSummary struct {
@@ -829,6 +846,19 @@ type OpenSafeboxRouteSummary struct {
 	QuestFrom      uint32 `json:"quest_from,omitempty"`
 }
 
+type OpenCubeRouteSummary struct {
+	ActorName      string `json:"actor_name"`
+	SourceMapIndex uint32 `json:"source_map_index"`
+	SourceX        int32  `json:"source_x"`
+	SourceY        int32  `json:"source_y"`
+	Ref            string `json:"ref"`
+	Text           string `json:"text,omitempty"`
+	RaceNum        uint32 `json:"race_num"`
+	QuestRef       string `json:"quest_ref,omitempty"`
+	QuestFlag      string `json:"quest_flag,omitempty"`
+	QuestFrom      uint32 `json:"quest_from,omitempty"`
+}
+
 type MapContentSummary struct {
 	MapIndex                     uint32 `json:"map_index"`
 	StaticActorCount             int    `json:"static_actor_count"`
@@ -840,6 +870,7 @@ type MapContentSummary struct {
 	ShopCatalogEntryCount        int    `json:"shop_catalog_entry_count,omitempty"`
 	WarpActorCount               int    `json:"warp_actor_count,omitempty"`
 	OpenSafeboxActorCount        int    `json:"open_safebox_actor_count,omitempty"`
+	OpenCubeActorCount           int    `json:"open_cube_actor_count,omitempty"`
 	SpawnGroupCount              int    `json:"spawn_group_count"`
 	RewardExperienceTotal        uint64 `json:"reward_experience_total,omitempty"`
 	RewardGoldTotal              uint64 `json:"reward_gold_total,omitempty"`
@@ -1073,6 +1104,7 @@ func buildSummaryDeltas(current Summary, candidate Summary, currentBundle Bundle
 		WarpDestinations:                       buildWarpDestinationDeltas(current.WarpDestinations, candidate.WarpDestinations),
 		WarpRouteCount:                         summaryCountDelta(current.WarpRouteCount, candidate.WarpRouteCount),
 		OpenSafeboxRouteCount:                  summaryCountDelta(current.OpenSafeboxRouteCount, candidate.OpenSafeboxRouteCount),
+		OpenCubeRouteCount:                     summaryCountDelta(current.OpenCubeRouteCount, candidate.OpenCubeRouteCount),
 		RewardExperienceTotal:                  summaryAmountDelta(current.RewardExperienceTotal, candidate.RewardExperienceTotal),
 		RewardGoldTotal:                        summaryAmountDelta(current.RewardGoldTotal, candidate.RewardGoldTotal),
 		RewardDropItemCount:                    summaryCountDelta(current.RewardDropItemCount, candidate.RewardDropItemCount),
@@ -1090,6 +1122,7 @@ func buildSummaryDeltas(current Summary, candidate Summary, currentBundle Bundle
 		ShopRoutes:                             buildShopRouteDeltas(current.ShopRoutes, candidate.ShopRoutes),
 		WarpRoutes:                             buildWarpRouteDeltas(current.WarpRoutes, candidate.WarpRoutes),
 		OpenSafeboxRoutes:                      buildOpenSafeboxRouteDeltas(current.OpenSafeboxRoutes, candidate.OpenSafeboxRoutes),
+		OpenCubeRoutes:                         buildOpenCubeRouteDeltas(current.OpenCubeRoutes, candidate.OpenCubeRoutes),
 		Maps:                                   buildMapContentDeltas(current, candidate, currentBundle, candidateBundle),
 	}
 }
@@ -2316,6 +2349,57 @@ func buildOpenSafeboxRouteDeltas(currentRoutes []OpenSafeboxRouteSummary, candid
 	return deltas
 }
 
+func buildOpenCubeRouteDeltas(currentRoutes []OpenCubeRouteSummary, candidateRoutes []OpenCubeRouteSummary) []OpenCubeRouteDelta {
+	if len(currentRoutes) == 0 && len(candidateRoutes) == 0 {
+		return nil
+	}
+	currentByID := make(map[serviceRouteIdentity]OpenCubeRouteSummary, len(currentRoutes))
+	candidateByID := make(map[serviceRouteIdentity]OpenCubeRouteSummary, len(candidateRoutes))
+	idsSeen := make(map[serviceRouteIdentity]struct{}, len(currentRoutes)+len(candidateRoutes))
+	for _, route := range currentRoutes {
+		route = normalizeOpenCubeRouteSummary(route)
+		id := openCubeRouteIdentity(route)
+		currentByID[id] = route
+		idsSeen[id] = struct{}{}
+	}
+	for _, route := range candidateRoutes {
+		route = normalizeOpenCubeRouteSummary(route)
+		id := openCubeRouteIdentity(route)
+		candidateByID[id] = route
+		idsSeen[id] = struct{}{}
+	}
+	ids := sortedServiceRouteIdentities(idsSeen)
+	deltas := make([]OpenCubeRouteDelta, 0, len(ids))
+	for _, id := range ids {
+		current, currentOK := currentByID[id]
+		candidate, candidateOK := candidateByID[id]
+		delta := OpenCubeRouteDelta{ActorName: id.actorName, SourceMapIndex: id.sourceMapIndex, SourceX: id.sourceX, SourceY: id.sourceY, Ref: id.ref}
+		switch {
+		case !currentOK:
+			candidateCopy := candidate
+			delta.Change = "added"
+			delta.Candidate = &candidateCopy
+		case !candidateOK:
+			currentCopy := current
+			delta.Change = "removed"
+			delta.Current = &currentCopy
+		case !reflect.DeepEqual(current, candidate):
+			currentCopy := current
+			candidateCopy := candidate
+			delta.Change = "changed"
+			delta.Current = &currentCopy
+			delta.Candidate = &candidateCopy
+		default:
+			continue
+		}
+		deltas = append(deltas, delta)
+	}
+	if len(deltas) == 0 {
+		return nil
+	}
+	return deltas
+}
+
 func ShopRouteDeltasByActorName(deltas []ShopRouteDelta, actorName string) []ShopRouteDelta {
 	actorName = strings.TrimSpace(actorName)
 	if actorName == "" || strings.Contains(actorName, "/") {
@@ -2472,6 +2556,45 @@ func cloneOpenSafeboxRouteDelta(delta OpenSafeboxRouteDelta) OpenSafeboxRouteDel
 	return cloned
 }
 
+func OpenCubeRouteDeltasByActorName(deltas []OpenCubeRouteDelta, actorName string) []OpenCubeRouteDelta {
+	actorName = strings.TrimSpace(actorName)
+	if actorName == "" || strings.Contains(actorName, "/") {
+		return nil
+	}
+	matches := make([]OpenCubeRouteDelta, 0)
+	for _, delta := range deltas {
+		if openCubeRouteDeltaMatchesActorName(delta, actorName) {
+			matches = append(matches, cloneOpenCubeRouteDelta(delta))
+		}
+	}
+	if len(matches) == 0 {
+		return nil
+	}
+	return matches
+}
+
+func openCubeRouteDeltaMatchesActorName(delta OpenCubeRouteDelta, actorName string) bool {
+	return strings.TrimSpace(delta.ActorName) == actorName ||
+		(delta.Current != nil && strings.TrimSpace(delta.Current.ActorName) == actorName) ||
+		(delta.Candidate != nil && strings.TrimSpace(delta.Candidate.ActorName) == actorName)
+}
+
+func cloneOpenCubeRouteDelta(delta OpenCubeRouteDelta) OpenCubeRouteDelta {
+	cloned := delta
+	cloned.ActorName = strings.TrimSpace(cloned.ActorName)
+	cloned.Ref = strings.TrimSpace(cloned.Ref)
+	cloned.Change = strings.TrimSpace(cloned.Change)
+	if delta.Current != nil {
+		current := normalizeOpenCubeRouteSummary(*delta.Current)
+		cloned.Current = &current
+	}
+	if delta.Candidate != nil {
+		candidate := normalizeOpenCubeRouteSummary(*delta.Candidate)
+		cloned.Candidate = &candidate
+	}
+	return cloned
+}
+
 func normalizeQuestFlagRouteSummary(route QuestFlagRouteSummary) QuestFlagRouteSummary {
 	route.ActorName = strings.TrimSpace(route.ActorName)
 	route.Ref = strings.TrimSpace(route.Ref)
@@ -2517,6 +2640,15 @@ func normalizeOpenSafeboxRouteSummary(route OpenSafeboxRouteSummary) OpenSafebox
 	return route
 }
 
+func normalizeOpenCubeRouteSummary(route OpenCubeRouteSummary) OpenCubeRouteSummary {
+	route.ActorName = strings.TrimSpace(route.ActorName)
+	route.Ref = strings.TrimSpace(route.Ref)
+	route.Text = strings.TrimSpace(route.Text)
+	route.QuestRef = strings.TrimSpace(route.QuestRef)
+	route.QuestFlag = strings.TrimSpace(route.QuestFlag)
+	return route
+}
+
 func questFlagRouteIdentity(route QuestFlagRouteSummary) serviceRouteIdentity {
 	return serviceRouteIdentity{
 		actorName:      route.ActorName,
@@ -2548,6 +2680,16 @@ func warpRouteIdentity(route WarpRouteSummary) serviceRouteIdentity {
 }
 
 func openSafeboxRouteIdentity(route OpenSafeboxRouteSummary) serviceRouteIdentity {
+	return serviceRouteIdentity{
+		actorName:      route.ActorName,
+		sourceMapIndex: route.SourceMapIndex,
+		sourceX:        route.SourceX,
+		sourceY:        route.SourceY,
+		ref:            route.Ref,
+	}
+}
+
+func openCubeRouteIdentity(route OpenCubeRouteSummary) serviceRouteIdentity {
 	return serviceRouteIdentity{
 		actorName:      route.ActorName,
 		sourceMapIndex: route.SourceMapIndex,
@@ -2630,6 +2772,12 @@ func cloneMapContentDelta(delta MapContentDelta) MapContentDelta {
 			cloned.OpenSafeboxRoutes[i] = cloneOpenSafeboxRouteDelta(routeDelta)
 		}
 	}
+	if len(delta.OpenCubeRoutes) > 0 {
+		cloned.OpenCubeRoutes = make([]OpenCubeRouteDelta, len(delta.OpenCubeRoutes))
+		for i, routeDelta := range delta.OpenCubeRoutes {
+			cloned.OpenCubeRoutes[i] = cloneOpenCubeRouteDelta(routeDelta)
+		}
+	}
 	return cloned
 }
 
@@ -2670,6 +2818,7 @@ func buildMapContentDeltas(current Summary, candidate Summary, currentBundle Bun
 			ShopCatalogEntryCount:        summaryCountDelta(currentMap.ShopCatalogEntryCount, candidateMap.ShopCatalogEntryCount),
 			WarpActorCount:               summaryCountDelta(currentMap.WarpActorCount, candidateMap.WarpActorCount),
 			OpenSafeboxActorCount:        summaryCountDelta(currentMap.OpenSafeboxActorCount, candidateMap.OpenSafeboxActorCount),
+			OpenCubeActorCount:           summaryCountDelta(currentMap.OpenCubeActorCount, candidateMap.OpenCubeActorCount),
 			SpawnGroupCount:              summaryCountDelta(currentMap.SpawnGroupCount, candidateMap.SpawnGroupCount),
 			RewardExperienceTotal:        summaryAmountDelta(currentMap.RewardExperienceTotal, candidateMap.RewardExperienceTotal),
 			RewardGoldTotal:              summaryAmountDelta(currentMap.RewardGoldTotal, candidateMap.RewardGoldTotal),
@@ -2680,6 +2829,7 @@ func buildMapContentDeltas(current Summary, candidate Summary, currentBundle Bun
 			ShopRoutes:                   buildShopRouteDeltas(shopRouteSummariesForMap(current.ShopRoutes, index), shopRouteSummariesForMap(candidate.ShopRoutes, index)),
 			WarpRoutes:                   buildWarpRouteDeltas(warpRouteSummariesForMap(current.WarpRoutes, index), warpRouteSummariesForMap(candidate.WarpRoutes, index)),
 			OpenSafeboxRoutes:            buildOpenSafeboxRouteDeltas(openSafeboxRouteSummariesForMap(current.OpenSafeboxRoutes, index), openSafeboxRouteSummariesForMap(candidate.OpenSafeboxRoutes, index)),
+			OpenCubeRoutes:               buildOpenCubeRouteDeltas(openCubeRouteSummariesForMap(current.OpenCubeRoutes, index), openCubeRouteSummariesForMap(candidate.OpenCubeRoutes, index)),
 		}
 		if !mapContentDeltaIsZero(delta) {
 			deltas = append(deltas, delta)
@@ -2797,6 +2947,24 @@ func openSafeboxRouteSummariesForMap(routes []OpenSafeboxRouteSummary, mapIndex 
 	return filtered
 }
 
+func openCubeRouteSummariesForMap(routes []OpenCubeRouteSummary, mapIndex uint32) []OpenCubeRouteSummary {
+	if len(routes) == 0 {
+		return nil
+	}
+	filtered := make([]OpenCubeRouteSummary, 0, len(routes))
+	for _, route := range routes {
+		route = normalizeOpenCubeRouteSummary(route)
+		if route.SourceMapIndex != mapIndex {
+			continue
+		}
+		filtered = append(filtered, route)
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
+}
+
 func mapContentDeltaIsZero(delta MapContentDelta) bool {
 	return delta.StaticActorCount.Delta == 0 &&
 		delta.InteractableStaticActorCount.Delta == 0 &&
@@ -2807,6 +2975,7 @@ func mapContentDeltaIsZero(delta MapContentDelta) bool {
 		delta.ShopCatalogEntryCount.Delta == 0 &&
 		delta.WarpActorCount.Delta == 0 &&
 		delta.OpenSafeboxActorCount.Delta == 0 &&
+		delta.OpenCubeActorCount.Delta == 0 &&
 		delta.SpawnGroupCount.Delta == 0 &&
 		delta.RewardExperienceTotal.Delta == 0 &&
 		delta.RewardGoldTotal.Delta == 0 &&
@@ -2816,7 +2985,8 @@ func mapContentDeltaIsZero(delta MapContentDelta) bool {
 		len(delta.QuestFlagRoutes) == 0 &&
 		len(delta.ShopRoutes) == 0 &&
 		len(delta.WarpRoutes) == 0 &&
-		len(delta.OpenSafeboxRoutes) == 0
+		len(delta.OpenSafeboxRoutes) == 0 &&
+		len(delta.OpenCubeRoutes) == 0
 }
 
 func Summarize(bundle Bundle) (Summary, error) {
@@ -2923,6 +3093,9 @@ func Summarize(bundle Bundle) (Summary, error) {
 			if definition.Kind == interactionstore.KindOpenSafebox {
 				summary.OpenSafeboxRoutes = append(summary.OpenSafeboxRoutes, openSafeboxRouteSummary(actor, definition))
 			}
+			if definition.Kind == interactionstore.KindOpenCube {
+				summary.OpenCubeRoutes = append(summary.OpenCubeRoutes, openCubeRouteSummary(actor, definition))
+			}
 			summary.InteractableStaticActors = append(summary.InteractableStaticActors, interactableStaticActorSummary(actor, definition, itemTemplatesByVnum))
 		}
 	}
@@ -2931,6 +3104,7 @@ func Summarize(bundle Bundle) (Summary, error) {
 	summary.ShopRouteCount = len(summary.ShopRoutes)
 	summary.WarpRouteCount = len(summary.WarpRoutes)
 	summary.OpenSafeboxRouteCount = len(summary.OpenSafeboxRoutes)
+	summary.OpenCubeRouteCount = len(summary.OpenCubeRoutes)
 	rewardDropCountsByVnum := make(map[uint32]int)
 	for _, spawnGroup := range normalized.SpawnGroups {
 		entry := mapContentSummaryForIndex(mapCounts, spawnGroup.MapIndex)
@@ -3612,6 +3786,23 @@ func openSafeboxRouteSummary(actor StaticActor, definition interactionstore.Defi
 	}
 }
 
+func openCubeRouteSummary(actor StaticActor, definition interactionstore.Definition) OpenCubeRouteSummary {
+	actor = normalizeStaticActors([]StaticActor{actor})[0]
+	definition = interactionstore.NormalizeDefinition(definition)
+	return OpenCubeRouteSummary{
+		ActorName:      actor.Name,
+		SourceMapIndex: actor.MapIndex,
+		SourceX:        actor.X,
+		SourceY:        actor.Y,
+		Ref:            definition.Ref,
+		Text:           definition.Text,
+		RaceNum:        actor.RaceNum,
+		QuestRef:       definition.QuestRef,
+		QuestFlag:      definition.QuestFlag,
+		QuestFrom:      definition.QuestFrom,
+	}
+}
+
 func itemTemplateReferenceSummaries(templates []itemcatalog.Template) []ItemTemplateReferenceSummary {
 	if len(templates) == 0 {
 		return nil
@@ -3923,6 +4114,8 @@ func addMapServiceInteractionSummary(entry *MapContentSummary, definition intera
 		entry.WarpActorCount++
 	case interactionstore.KindOpenSafebox:
 		entry.OpenSafeboxActorCount++
+	case interactionstore.KindOpenCube:
+		entry.OpenCubeActorCount++
 	}
 }
 

@@ -3015,18 +3015,20 @@ func TestSummarizeAuditsServiceInteractionsPerMap(t *testing.T) {
 			{Name: "MerchantAssistant", MapIndex: 1, X: 1250, Y: 2250, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"},
 			{Name: "Teleporter", MapIndex: 1, X: 1300, Y: 2300, RaceNum: 20303, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:teleporter"},
 			{Name: "Warehouse", MapIndex: 1, X: 1350, Y: 2350, RaceNum: 20301, InteractionKind: interactionstore.KindOpenSafebox, InteractionRef: "npc:warehouse"},
+			{Name: "CubeMaster", MapIndex: 1, X: 1400, Y: 2400, RaceNum: 20022, InteractionKind: interactionstore.KindOpenCube, InteractionRef: "npc:cube"},
 		},
 		ItemTemplates: testMerchantItemTemplates(),
 		InteractionDefinitions: []interactionstore.Definition{
 			testMerchantCatalogDefinition(),
 			{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", Text: "Step through the gate.", MapIndex: 7, X: 1300, Y: 2300},
 			{Kind: interactionstore.KindOpenSafebox, Ref: "npc:warehouse", Text: "The warehouse keeper unlocks the vault.", Size: 2},
+			{Kind: interactionstore.KindOpenCube, Ref: "npc:cube", Text: "The craftsman lights the forge."},
 		},
 	})
 	if err != nil {
 		t.Fatalf("summarize per-map service interactions: %v", err)
 	}
-	want := []MapContentSummary{{MapIndex: 1, StaticActorCount: 4, InteractableStaticActorCount: 4, ShopPreviewActorCount: 2, ShopCatalogEntryCount: 4, WarpActorCount: 1, OpenSafeboxActorCount: 1}}
+	want := []MapContentSummary{{MapIndex: 1, StaticActorCount: 5, InteractableStaticActorCount: 5, ShopPreviewActorCount: 2, ShopCatalogEntryCount: 4, WarpActorCount: 1, OpenSafeboxActorCount: 1, OpenCubeActorCount: 1}}
 	if !reflect.DeepEqual(summary.Maps, want) {
 		t.Fatalf("unexpected per-map service interaction audit:\n got: %#v\nwant: %#v", summary.Maps, want)
 	}
@@ -3087,6 +3089,63 @@ func TestSummarizeReturnsQuestGateFieldsOnOpenSafeboxRoutes(t *testing.T) {
 	}
 	if !reflect.DeepEqual(summary.OpenSafeboxRoutes, want) {
 		t.Fatalf("unexpected gated open_safebox route summaries:\n got: %#v\nwant: %#v", summary.OpenSafeboxRoutes, want)
+	}
+}
+
+func TestSummarizeReturnsDeterministicOpenCubeRoutesForInteractableActors(t *testing.T) {
+	summary, err := Summarize(Bundle{
+		StaticActors: []StaticActor{
+			{Name: "RemoteCube", MapIndex: 3, X: 1200, Y: 2200, RaceNum: 20023, InteractionKind: interactionstore.KindOpenCube, InteractionRef: "npc:remote_cube"},
+			{Name: "CubeMaster", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 20022, InteractionKind: interactionstore.KindOpenCube, InteractionRef: "npc:cube"},
+		},
+		InteractionDefinitions: []interactionstore.Definition{
+			{Kind: interactionstore.KindOpenCube, Ref: "npc:remote_cube", Text: "A distant forge."},
+			{Kind: interactionstore.KindOpenCube, Ref: "npc:cube"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("summarize open_cube routes: %v", err)
+	}
+	want := []OpenCubeRouteSummary{
+		{ActorName: "CubeMaster", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:cube", RaceNum: 20022},
+		{ActorName: "RemoteCube", SourceMapIndex: 3, SourceX: 1200, SourceY: 2200, Ref: "npc:remote_cube", Text: "A distant forge.", RaceNum: 20023},
+	}
+	if summary.OpenCubeRouteCount != len(want) {
+		t.Fatalf("expected %d open_cube routes, got %d", len(want), summary.OpenCubeRouteCount)
+	}
+	if !reflect.DeepEqual(summary.OpenCubeRoutes, want) {
+		t.Fatalf("unexpected open_cube route summaries:\n got: %#v\nwant: %#v", summary.OpenCubeRoutes, want)
+	}
+}
+
+func TestSummarizeReturnsQuestGateFieldsOnOpenCubeRoutes(t *testing.T) {
+	summary, err := Summarize(Bundle{
+		StaticActors: []StaticActor{
+			{Name: "GatedCube", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 20022, InteractionKind: interactionstore.KindOpenCube, InteractionRef: "npc:gated_cube"},
+		},
+		InteractionDefinitions: []interactionstore.Definition{
+			metGuideQuestFlagWriterDefinition(),
+			{
+				Kind:      interactionstore.KindOpenCube,
+				Ref:       "npc:gated_cube",
+				Text:      "The craftsman lights the forge.",
+				QuestRef:  "quest:first_steps",
+				QuestFlag: "met_guide",
+				QuestFrom: 1,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("summarize gated open_cube routes: %v", err)
+	}
+	want := []OpenCubeRouteSummary{
+		{ActorName: "GatedCube", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:gated_cube", Text: "The craftsman lights the forge.", RaceNum: 20022, QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1},
+	}
+	if summary.OpenCubeRouteCount != len(want) {
+		t.Fatalf("expected %d open_cube routes, got %d", len(want), summary.OpenCubeRouteCount)
+	}
+	if !reflect.DeepEqual(summary.OpenCubeRoutes, want) {
+		t.Fatalf("unexpected gated open_cube route summaries:\n got: %#v\nwant: %#v", summary.OpenCubeRoutes, want)
 	}
 }
 
@@ -5992,6 +6051,45 @@ func TestExampleBootstrapNPCServiceBundleStaysValid(t *testing.T) {
 	canonicalJSON = append(canonicalJSON, '\n')
 	if string(raw) != string(canonicalJSON) {
 		t.Fatalf("example content bundle is not byte-for-byte canonical; update docs/examples/bootstrap-npc-service-bundle.json to:\n%s", string(canonicalJSON))
+	}
+}
+
+func TestSummarizeReturnsOpenCubeRouteForCheckedInNPCServiceExample(t *testing.T) {
+	_, canonical := readCanonicalExampleBundle(t, "bootstrap-npc-service-bundle.json")
+	summary, err := Summarize(canonical)
+	if err != nil {
+		t.Fatalf("summarize NPC service example: %v", err)
+	}
+	if summary.OpenCubeRouteCount != 1 {
+		t.Fatalf("expected 1 open_cube route in NPC service example, got %d", summary.OpenCubeRouteCount)
+	}
+	want := OpenCubeRouteSummary{
+		ActorName:      "CubeMaster",
+		SourceMapIndex: 1,
+		SourceX:        469575,
+		SourceY:        964200,
+		Ref:            "npc:qa_cube",
+		Text:           "The craftsman lights the forge.",
+		RaceNum:        20022,
+		QuestRef:       "quest:first_steps",
+		QuestFlag:      "met_guide",
+		QuestFrom:      1,
+	}
+	if !reflect.DeepEqual(summary.OpenCubeRoutes, []OpenCubeRouteSummary{want}) {
+		t.Fatalf("unexpected NPC service open_cube routes:\n got: %#v\nwant: %#v", summary.OpenCubeRoutes, []OpenCubeRouteSummary{want})
+	}
+	foundMap := false
+	for _, mapSummary := range summary.Maps {
+		if mapSummary.MapIndex != 1 {
+			continue
+		}
+		foundMap = true
+		if mapSummary.OpenCubeActorCount != 1 {
+			t.Fatalf("expected map 1 open_cube_actor_count=1, got %d", mapSummary.OpenCubeActorCount)
+		}
+	}
+	if !foundMap {
+		t.Fatal("expected map 1 summary for NPC service example")
 	}
 }
 
