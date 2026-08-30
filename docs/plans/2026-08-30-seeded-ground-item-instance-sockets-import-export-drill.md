@@ -70,5 +70,7 @@ git diff --check
 
 GREEN on `lane/items`: seeded hermetic import-export-drill proves tip-`0010`+`0026`
 presence-aware pending ground sockets through the printed PATH + tip-order SQLite
-path. Upsert / stock driver / live DB ground rematerialize / wire sockets remain
+path. Operator docs tip-sync after catalog tip `0026` is owned by
+[ops docs tip sync after catalog tip 0026](2026-08-30-ops-docs-0026-ground-sockets-tip-sync.md).
+Upsert / stock driver / live DB ground rematerialize / wire sockets remain
 deferred.
