@@ -7684,15 +7684,15 @@ func TestGameRuntimeImportsExampleFormulaCombatProfileBundleBeforeSpawnGroups(t 
 		t.Fatalf("expected example formula combat profile %q to register before spawn import", profile)
 	}
 	defaults, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(profile)
-	if !ok || defaults.MaxHP != 20 || defaults.DamagePerNormalAttack != 5 || defaults.AttackValue != 9 || defaults.DefenseValue != 4 || defaults.Level != worldruntime.TrainingDummyBootstrapLevel || defaults.AggroRadius != 150 || defaults.LeashRadius != 350 {
-		t.Fatalf("expected example formula profile defaults to derive damage 5 / level 1 and preserve authored aggro/leash radii, got %+v ok=%v", defaults, ok)
+	if !ok || defaults.MaxHP != 20 || defaults.DamagePerNormalAttack != 5 || defaults.AttackValue != 9 || defaults.DefenseValue != 4 || defaults.Level != worldruntime.TrainingDummyBootstrapLevel || defaults.AggroRadius != 150 || defaults.LeashRadius != 350 || defaults.ChaseDelay != 2*time.Second || defaults.ReturnDelay != 2*time.Second || defaults.HomewardDelay != 2*time.Second || defaults.MaxStep != 50 || defaults.ReactionDelay != 2*time.Second {
+		t.Fatalf("expected example formula profile defaults to derive damage 5 / level 1 and preserve authored aggro/leash/timing fields, got %+v ok=%v", defaults, ok)
 	}
 	actors := gameRuntime.StaticActors()
 	if len(actors) != 1 || actors[0].SpawnGroupRef != "practice.qa_formula_mob" || actors[0].CombatProfile != profile || actors[0].RewardExperience != 40 || actors[0].RewardGold != 25 || !reflect.DeepEqual(actors[0].RewardDropVnums, []uint32{27001}) {
 		t.Fatalf("unexpected imported example formula spawn actor: %+v", actors)
 	}
-	if len(imported.CombatProfiles) != 1 || imported.CombatProfiles[0].Profile != profile || imported.CombatProfiles[0].DamagePerNormalAttack != 5 || imported.CombatProfiles[0].Level != worldruntime.TrainingDummyBootstrapLevel || imported.CombatProfiles[0].AggroRadius != 150 || imported.CombatProfiles[0].LeashRadius != 350 {
-		t.Fatalf("expected imported example formula bundle to retain canonical profile snapshot with authored radii, got %#v", imported.CombatProfiles)
+	if len(imported.CombatProfiles) != 1 || imported.CombatProfiles[0].Profile != profile || imported.CombatProfiles[0].DamagePerNormalAttack != 5 || imported.CombatProfiles[0].Level != worldruntime.TrainingDummyBootstrapLevel || imported.CombatProfiles[0].AggroRadius != 150 || imported.CombatProfiles[0].LeashRadius != 350 || imported.CombatProfiles[0].ChaseDelayMs != 2000 || imported.CombatProfiles[0].ReturnDelayMs != 2000 || imported.CombatProfiles[0].HomewardDelayMs != 2000 || imported.CombatProfiles[0].MaxStep != 50 || imported.CombatProfiles[0].ReactionDelayMs != 2000 {
+		t.Fatalf("expected imported example formula bundle to retain canonical profile snapshot with authored radii/timing fields, got %#v", imported.CombatProfiles)
 	}
 }
 

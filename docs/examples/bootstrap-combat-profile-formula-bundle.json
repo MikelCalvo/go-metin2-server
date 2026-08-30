@@ -8,6 +8,11 @@
       "respawn_delay_ms": 2000,
       "aggro_radius": 150,
       "leash_radius": 350,
+      "chase_delay_ms": 2000,
+      "return_delay_ms": 2000,
+      "homeward_delay_ms": 2000,
+      "max_step": 50,
+      "reaction_delay_ms": 2000,
       "death_reward": {
         "experience": 40,
         "gold": 25,

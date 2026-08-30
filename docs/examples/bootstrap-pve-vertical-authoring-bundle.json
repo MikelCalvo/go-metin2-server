@@ -81,7 +81,12 @@
       "defense_value": 4,
       "respawn_delay_ms": 2000,
       "aggro_radius": 150,
-      "leash_radius": 350
+      "leash_radius": 350,
+      "chase_delay_ms": 2000,
+      "return_delay_ms": 2000,
+      "homeward_delay_ms": 2000,
+      "max_step": 50,
+      "reaction_delay_ms": 2000
     }
   ],
   "regen_spawns": [
