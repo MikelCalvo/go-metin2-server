@@ -70,4 +70,6 @@ sockets.
 Docs/spec freeze + GREEN on `lane/items`: durable safebox FileStore cells
 round-trip presence-aware instance sockets (`has_sockets` + `socket0/1/2`,
 including explicit zero) through check-in → persist → restart → reopen /
-checkout. Tip-`0015` SQL additive stays deferred.
+checkout. Tip-`0015` SQL additive is frozen separately in
+`docs/plans/2026-08-30-safebox-cell-instance-sockets-sql-additive.md` (RED
+deferred).
