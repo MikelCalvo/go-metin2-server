@@ -75,6 +75,13 @@ tip-`0009` but not additive `0021`.
 
 ## Follow-up options
 
-1. Keep `fail_result_vnum` SQL column deferred until items-lane GREEN lands.
+1. ~~Keep `fail_result_vnum` SQL column deferred until items-lane GREEN lands.~~
+   Done — see [item-template refine fail-result-vnum
+   migration](2026-08-29-item-template-refine-fail-result-vnum-migration.md).
 2. Keep upsert / stock production driver deferred.
 3. Keep tip-`0009` export identity until a deliberate retip is needed.
+4. ~~Seed tip-`0009`+`0021`/`0022` refine fields in the hermetic
+   `import-export-drill` retained tree.~~ Done — see
+   [seeded item-template refine fields tip
+   sync](2026-08-30-seeded-item-template-refine-fields-import-export-drill.md).
+   (`fail_result_vnum` SQL column already landed separately.)

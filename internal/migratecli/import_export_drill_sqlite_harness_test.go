@@ -179,7 +179,7 @@ func TestImportExportDrillSQLiteHermeticPrintedScriptImportsSeededTipKinds(t *te
 		"character-quest-state":        `"flag_count": 1`,
 		"character-safebox-state":      `"password_count": 1`,
 		"auth-login-ticket-handoff":    `"ticket_count": 1`,
-		"item-template-state":          `"template_count": 1`,
+		"item-template-state":          `"refine_info_count": 2`,
 		"static-actor-content-state":   `"static_actor_count": 1`,
 		"bootstrap-ground-item-state":  `"ground_item_count": 1`,
 	}
@@ -476,12 +476,50 @@ func mustMaterializeSeededImportExportQuarantineTree(t *testing.T, exportTree st
 		t.Fatalf("ExportAuthLoginTicketHandoff: %v", err)
 	}
 	templateExport, err := itemstore.ExportItemTemplateState(itemstore.Snapshot{
-		Templates: []itemstore.Template{{
-			Vnum:      27001,
-			Name:      "Small Red Potion",
-			Stackable: true,
-			MaxCount:  200,
-		}},
+		Templates: []itemstore.Template{
+			{
+				Vnum:      27001,
+				Name:      "Small Red Potion",
+				Stackable: true,
+				MaxCount:  200,
+			},
+			{
+				Vnum:      11199,
+				Name:      "Downgrade Blade",
+				Stackable: false,
+				MaxCount:  1,
+			},
+			{
+				Vnum:       11200,
+				Name:       "Wooden Sword",
+				Stackable:  false,
+				MaxCount:   1,
+				Refineable: true,
+				EquipSlot:  "weapon",
+				RefineInfo: &itemstore.RefineInfo{
+					ResultVnum:  11201,
+					Cost:        2500,
+					Probability: 75,
+					KeepOnFail:  true,
+					Materials:   []itemstore.RefineMaterial{{Vnum: 27001, Count: 2}},
+				},
+			},
+			{
+				Vnum:       11300,
+				Name:       "Downgrade Source Blade",
+				Stackable:  false,
+				MaxCount:   1,
+				Refineable: true,
+				EquipSlot:  "weapon",
+				RefineInfo: &itemstore.RefineInfo{
+					ResultVnum:     11301,
+					Cost:           1800,
+					Probability:    60,
+					FailResultVnum: 11199,
+					Materials:      []itemstore.RefineMaterial{{Vnum: 27001, Count: 1}},
+				},
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("ExportItemTemplateState: %v", err)
@@ -577,7 +615,9 @@ func assertSeededImportExportDrillSQLiteRows(t *testing.T, dsn string) {
 	mustCountExact(t, db, ctx, `SELECT COUNT(*) FROM character_safebox_passwords`, 1)
 	mustCountExact(t, db, ctx, `SELECT COUNT(*) FROM character_safebox_items`, 1)
 	mustCountExact(t, db, ctx, `SELECT COUNT(*) FROM auth_login_tickets`, 1)
-	mustCountExact(t, db, ctx, `SELECT COUNT(*) FROM item_templates`, 1)
+	mustCountExact(t, db, ctx, `SELECT COUNT(*) FROM item_templates`, 4)
+	mustCountExact(t, db, ctx, `SELECT COUNT(*) FROM item_template_refine_infos`, 2)
+	mustCountExact(t, db, ctx, `SELECT COUNT(*) FROM item_template_refine_materials`, 2)
 	mustCountExact(t, db, ctx, `SELECT COUNT(*) FROM interaction_definitions`, 1)
 	mustCountExact(t, db, ctx, `SELECT COUNT(*) FROM static_actors`, 1)
 	mustCountExact(t, db, ctx, `SELECT COUNT(*) FROM bootstrap_ground_items`, 1)
@@ -699,6 +739,57 @@ SELECT name, stackable, max_count FROM item_templates WHERE vnum = 27001`).Scan(
 	}
 	if gotTemplateName != "Small Red Potion" || gotStackable != 1 || gotMaxCount != 200 {
 		t.Fatalf("item template = %q/%d/%d, want Small Red Potion/1/200", gotTemplateName, gotStackable, gotMaxCount)
+	}
+
+	var (
+		gotKeepResult      int64
+		gotKeepCost        int
+		gotKeepProbability int
+		gotKeepOnFail      int
+		gotKeepFailResult  int64
+	)
+	if err := db.QueryRowContext(ctx, `
+SELECT result_vnum, cost, probability, keep_on_fail, fail_result_vnum
+FROM item_template_refine_infos WHERE vnum = 11200`).Scan(
+		&gotKeepResult, &gotKeepCost, &gotKeepProbability, &gotKeepOnFail, &gotKeepFailResult,
+	); err != nil {
+		t.Fatalf("select keep_on_fail refine info: %v", err)
+	}
+	if gotKeepResult != 11201 || gotKeepCost != 2500 || gotKeepProbability != 75 || gotKeepOnFail != 1 || gotKeepFailResult != 0 {
+		t.Fatalf("keep_on_fail refine = result=%d cost=%d prob=%d keep=%d fail=%d, want 11201/2500/75/1/0",
+			gotKeepResult, gotKeepCost, gotKeepProbability, gotKeepOnFail, gotKeepFailResult)
+	}
+
+	var (
+		gotFailResult      int64
+		gotFailCost        int
+		gotFailProbability int
+		gotFailKeepOnFail  int
+		gotFailResultVnum  int64
+	)
+	if err := db.QueryRowContext(ctx, `
+SELECT result_vnum, cost, probability, keep_on_fail, fail_result_vnum
+FROM item_template_refine_infos WHERE vnum = 11300`).Scan(
+		&gotFailResult, &gotFailCost, &gotFailProbability, &gotFailKeepOnFail, &gotFailResultVnum,
+	); err != nil {
+		t.Fatalf("select fail_result_vnum refine info: %v", err)
+	}
+	if gotFailResult != 11301 || gotFailCost != 1800 || gotFailProbability != 60 || gotFailKeepOnFail != 0 || gotFailResultVnum != 11199 {
+		t.Fatalf("fail_result_vnum refine = result=%d cost=%d prob=%d keep=%d fail=%d, want 11301/1800/60/0/11199",
+			gotFailResult, gotFailCost, gotFailProbability, gotFailKeepOnFail, gotFailResultVnum)
+	}
+
+	var (
+		gotKeepMaterialVnum  int64
+		gotKeepMaterialCount int
+	)
+	if err := db.QueryRowContext(ctx, `
+SELECT item_vnum, count FROM item_template_refine_materials
+WHERE vnum = 11200 AND position = 0`).Scan(&gotKeepMaterialVnum, &gotKeepMaterialCount); err != nil {
+		t.Fatalf("select keep_on_fail refine material: %v", err)
+	}
+	if gotKeepMaterialVnum != 27001 || gotKeepMaterialCount != 2 {
+		t.Fatalf("keep_on_fail material = vnum=%d count=%d, want 27001/2", gotKeepMaterialVnum, gotKeepMaterialCount)
 	}
 
 	var (

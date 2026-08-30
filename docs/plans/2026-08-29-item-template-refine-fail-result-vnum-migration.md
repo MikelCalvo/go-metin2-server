@@ -79,3 +79,7 @@ tip-`0009` / additive `0021` but not additive `0022`.
 1. Keep upsert / stock production driver deferred.
 2. Keep tip-`0009` export identity until a deliberate retip is needed.
 3. Keep catalysts / guild refine / peer notifications deferred.
+4. ~~Seed tip-`0009`+`0021`/`0022` refine fields in the hermetic
+   `import-export-drill` retained tree.~~ Done — see
+   [seeded item-template refine fields tip
+   sync](2026-08-30-seeded-item-template-refine-fields-import-export-drill.md).
