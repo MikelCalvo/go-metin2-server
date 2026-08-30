@@ -450,10 +450,14 @@ func mustMaterializeSeededImportExportQuarantineTree(t *testing.T, exportTree st
 			Password:    "secret",
 			Money:       1500,
 			Cells: []safeboxstore.Cell{{
-				Cell:  0,
-				ID:    3001,
-				Vnum:  27001,
-				Count: 2,
+				Cell:       0,
+				ID:         3001,
+				Vnum:       27001,
+				Count:      2,
+				HasSockets: true,
+				Socket0:    1,
+				Socket1:    0,
+				Socket2:    7,
 			}},
 		}},
 	})
@@ -726,6 +730,24 @@ SELECT password, money FROM character_safebox_passwords WHERE character_id = 11`
 	}
 	if gotPassword != "secret" || gotMoney != 1500 {
 		t.Fatalf("safebox password/money = %q/%d, want secret/1500", gotPassword, gotMoney)
+	}
+
+	var (
+		gotSafeboxHasSockets int
+		gotSafeboxSocket0    int64
+		gotSafeboxSocket1    int64
+		gotSafeboxSocket2    int64
+	)
+	if err := db.QueryRowContext(ctx, `
+SELECT has_sockets, socket0, socket1, socket2
+FROM character_safebox_items WHERE id = 3001`).Scan(
+		&gotSafeboxHasSockets, &gotSafeboxSocket0, &gotSafeboxSocket1, &gotSafeboxSocket2,
+	); err != nil {
+		t.Fatalf("select safebox item sockets: %v", err)
+	}
+	if gotSafeboxHasSockets != 1 || gotSafeboxSocket0 != 1 || gotSafeboxSocket1 != 0 || gotSafeboxSocket2 != 7 {
+		t.Fatalf("safebox item sockets = has_sockets=%d sockets=(%d,%d,%d), want 1/(1,0,7)",
+			gotSafeboxHasSockets, gotSafeboxSocket0, gotSafeboxSocket1, gotSafeboxSocket2)
 	}
 
 	var (

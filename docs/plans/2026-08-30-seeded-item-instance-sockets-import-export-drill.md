@@ -44,15 +44,14 @@ runbooks after FileStore already rematerializes presence-aware sockets
 6. Upsert / stock production driver remain deferred. tip-`0010` ground SQL
    sockets shipped as `0026` — see
    [bootstrap ground-item instance-sockets SQL additive](2026-08-30-bootstrap-ground-item-instance-sockets-sql-additive.md).
-   Safebox cell sockets shipped as `0025`.
+   Safebox cell sockets shipped as `0025` and seeded tip sync is owned by
+   [seeded safebox cell instance-sockets tip sync](2026-08-30-seeded-safebox-cell-instance-sockets-import-export-drill.md).
 
 ## What this is not yet
 
 - upsert / merge / truncate-and-reload policy
 - production DB engine selection as a stock default
 - DB-backed live inventory/equipment repositories
-- additive tip-`0010` ground-item socket SQL companion
-- safebox cell sockets
 - remote admin / daemon mutation route / secrets in git
 
 ## Likely files to change

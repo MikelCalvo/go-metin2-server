@@ -63,6 +63,9 @@ printer from CLI/contrib/cron, or exposing a daemon mutation route.
    Non-empty tip-`0009`+`0021`/`0022` refine keep-on-fail / fail-result-vnum
    seeding is owned by [seeded item-template refine fields tip
    sync](2026-08-30-seeded-item-template-refine-fields-import-export-drill.md).
+   Non-empty tip-`0015`+`0025` safebox cell instance-socket seeding is owned by
+   [seeded safebox cell instance-sockets tip
+   sync](2026-08-30-seeded-safebox-cell-instance-sockets-import-export-drill.md).
 6. Printed script and import-result bodies still omit concrete DSN embedding
    beyond env-var indirection.
 7. Untagged `go test ./internal/migratecli` stays free of the SQLite dependency.

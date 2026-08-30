@@ -84,3 +84,7 @@ tip-`0015` export/quarantine/import projection of presence-aware safebox cell
 sockets, and import preflight requiring tip-`0015` plus additive `0025`.
 FileStore rematerialize for safebox cell sockets was already shipped
 (`ea033bb6`).
+
+Follow-on tip sync: seeded hermetic tip-`0015`+`0025` safebox cell sockets in
+the shared import-export-drill plus operator loopback docs — see
+[seeded safebox cell instance-sockets tip sync](2026-08-30-seeded-safebox-cell-instance-sockets-import-export-drill.md).
