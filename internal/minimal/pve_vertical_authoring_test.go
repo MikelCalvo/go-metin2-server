@@ -100,8 +100,8 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		imported.SpawnGroups[2].CombatProfile != "qa_pve_vertical_practice_mob" {
 		t.Fatalf("expected imported PvE vertical mobs to use formula combat profile, got %+v", imported.SpawnGroups)
 	}
-	if len(imported.CombatProfiles) != 1 || imported.CombatProfiles[0].Profile != "qa_pve_vertical_practice_mob" || imported.CombatProfiles[0].MaxHP != pveVerticalMobMaxHP || imported.CombatProfiles[0].DamagePerNormalAttack != 5 || imported.CombatProfiles[0].AggroRadius != 150 || imported.CombatProfiles[0].LeashRadius != 350 || imported.CombatProfiles[0].ChaseDelayMs != 2000 || imported.CombatProfiles[0].ReturnDelayMs != 2000 || imported.CombatProfiles[0].HomewardDelayMs != 2000 || imported.CombatProfiles[0].MaxStep != 50 || imported.CombatProfiles[0].ReactionDelayMs != 2000 {
-		t.Fatalf("expected imported portable formula combat profile max_hp=20 damage=5 aggro_radius=150 leash_radius=350 chase/return/homeward/reaction_delay_ms=2000 max_step=50, got %+v", imported.CombatProfiles)
+	if len(imported.CombatProfiles) != 1 || imported.CombatProfiles[0].Profile != "qa_pve_vertical_practice_mob" || imported.CombatProfiles[0].MaxHP != pveVerticalMobMaxHP || imported.CombatProfiles[0].DamagePerNormalAttack != 5 || imported.CombatProfiles[0].AggroRadius != 150 || imported.CombatProfiles[0].LeashRadius != 350 || imported.CombatProfiles[0].ChaseDelayMs != 2000 || imported.CombatProfiles[0].ReturnDelayMs != 2000 || imported.CombatProfiles[0].HomewardDelayMs != 2000 || imported.CombatProfiles[0].MaxStep != 50 || imported.CombatProfiles[0].ReactionDelayMs != 2000 || imported.CombatProfiles[0].RetaliationPointDelta != -2 {
+		t.Fatalf("expected imported portable formula combat profile max_hp=20 damage=5 aggro_radius=150 leash_radius=350 chase/return/homeward/reaction_delay_ms=2000 max_step=50 retaliation_point_delta=-2, got %+v", imported.CombatProfiles)
 	}
 
 	var guideVID, hunterVID, merchantVID, warehouseVID, mobVID uint32
@@ -450,6 +450,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 
 func assertPveVerticalFormulaFirstHitFrames(t *testing.T, frames [][]byte, mobVID uint32, ownerVID uint32, wantMobDamage int32, context string) {
 	t.Helper()
+	const pveVerticalMobRetaliationDelta = int32(-2)
 	if len(frames) != 4 {
 		t.Fatalf("expected target refresh, retaliation, and damage-info on %s formula first hit, got %d frames", context, len(frames))
 	}
@@ -464,9 +465,9 @@ func assertPveVerticalFormulaFirstHitFrames(t *testing.T, frames [][]byte, mobVI
 	if err != nil {
 		t.Fatalf("decode %s formula first-hit retaliation point-change: %v", context, err)
 	}
-	if retaliation.VID != ownerVID || retaliation.Type != bootstrapPlayerPointType || retaliation.Amount != bootstrapPracticeMobRetaliationPointDelta {
+	if retaliation.VID != ownerVID || retaliation.Type != bootstrapPlayerPointType || retaliation.Amount != pveVerticalMobRetaliationDelta {
 		t.Fatalf("unexpected %s formula first-hit retaliation point-change: %+v", context, retaliation)
 	}
 	assertDamageInfoFrame(t, frames[2], mobVID, wantMobDamage, context+" mob damage-info")
-	assertDamageInfoFrame(t, frames[3], ownerVID, -bootstrapPracticeMobRetaliationPointDelta, context+" owner retaliation damage-info")
+	assertDamageInfoFrame(t, frames[3], ownerVID, -pveVerticalMobRetaliationDelta, context+" owner retaliation damage-info")
 }

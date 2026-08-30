@@ -13,6 +13,7 @@
       "homeward_delay_ms": 2000,
       "max_step": 50,
       "reaction_delay_ms": 2000,
+      "retaliation_point_delta": -2,
       "death_reward": {
         "experience": 40,
         "gold": 25,

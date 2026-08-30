@@ -799,6 +799,7 @@ func TestLocalContentBundleValidateEndpointExpandsPveVerticalAuthoringExample(t 
 		HomewardDelayMs:       2000,
 		MaxStep:               50,
 		ReactionDelayMs:       2000,
+		RetaliationPointDelta: -2,
 	}
 	if len(got.CombatProfiles) != 1 || !reflect.DeepEqual(got.CombatProfiles[0], wantProfile) {
 		t.Fatalf("expected validation response to keep portable PvE vertical formula combat profile, got %+v", got.CombatProfiles)
@@ -888,8 +889,8 @@ func TestLocalContentBundleValidateEndpointExpandsCombatProfileFormulaExample(t 
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode combat-profile formula validation response: %v", err)
 	}
-	if len(got.CombatProfiles) != 1 || got.CombatProfiles[0].Profile != "qa_formula_practice_mob" || got.CombatProfiles[0].DamagePerNormalAttack != 5 || got.CombatProfiles[0].AttackValue != 9 || got.CombatProfiles[0].DefenseValue != 4 || got.CombatProfiles[0].Level != 1 || got.CombatProfiles[0].MaxHP != 20 || got.CombatProfiles[0].AggroRadius != 150 || got.CombatProfiles[0].LeashRadius != 350 || got.CombatProfiles[0].ChaseDelayMs != 2000 || got.CombatProfiles[0].ReturnDelayMs != 2000 || got.CombatProfiles[0].HomewardDelayMs != 2000 || got.CombatProfiles[0].MaxStep != 50 || got.CombatProfiles[0].ReactionDelayMs != 2000 {
-		t.Fatalf("expected validation response to derive formula damage/default level and preserve authored aggro/leash/timing fields, got %+v", got.CombatProfiles)
+	if len(got.CombatProfiles) != 1 || got.CombatProfiles[0].Profile != "qa_formula_practice_mob" || got.CombatProfiles[0].DamagePerNormalAttack != 5 || got.CombatProfiles[0].AttackValue != 9 || got.CombatProfiles[0].DefenseValue != 4 || got.CombatProfiles[0].Level != 1 || got.CombatProfiles[0].MaxHP != 20 || got.CombatProfiles[0].AggroRadius != 150 || got.CombatProfiles[0].LeashRadius != 350 || got.CombatProfiles[0].ChaseDelayMs != 2000 || got.CombatProfiles[0].ReturnDelayMs != 2000 || got.CombatProfiles[0].HomewardDelayMs != 2000 || got.CombatProfiles[0].MaxStep != 50 || got.CombatProfiles[0].ReactionDelayMs != 2000 || got.CombatProfiles[0].RetaliationPointDelta != -2 {
+		t.Fatalf("expected validation response to derive formula damage/default level and preserve authored aggro/leash/timing/retaliation fields, got %+v", got.CombatProfiles)
 	}
 	wantDrops := []uint32{27001}
 	if len(got.SpawnGroups) != 1 || got.SpawnGroups[0].Ref != "practice.qa_formula_mob" || got.SpawnGroups[0].CombatProfile != "qa_formula_practice_mob" || got.SpawnGroups[0].RewardExperience != 40 || got.SpawnGroups[0].RewardGold != 25 || !reflect.DeepEqual(got.SpawnGroups[0].RewardDropVnums, wantDrops) {
