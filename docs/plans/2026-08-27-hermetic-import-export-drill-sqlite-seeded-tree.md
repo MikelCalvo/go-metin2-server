@@ -60,6 +60,8 @@ printer from CLI/contrib/cron, or exposing a daemon mutation route.
    tip sync](2026-08-29-seeded-myshop-unit-prices-import-export-drill.md).
    Non-empty tip-`0003`+`0024` instance-socket seeding is owned by [seeded item
    instance-sockets tip sync](2026-08-30-seeded-item-instance-sockets-import-export-drill.md).
+   Non-empty tip-`0003`+`0027` instance-attribute seeding is owned by [seeded item
+   instance-attributes tip sync](2026-08-31-seeded-item-instance-attributes-import-export-drill.md).
    Non-empty tip-`0009`+`0021`/`0022` refine keep-on-fail / fail-result-vnum
    seeding is owned by [seeded item-template refine fields tip
    sync](2026-08-30-seeded-item-template-refine-fields-import-export-drill.md).

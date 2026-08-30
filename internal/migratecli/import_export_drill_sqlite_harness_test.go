@@ -386,6 +386,8 @@ func mustMaterializeSeededImportExportQuarantineTree(t *testing.T, exportTree st
 
 	zeroSockets := inventory.SocketValues{}
 	activeSockets := inventory.SocketValues{1, 0, 7}
+	zeroAttributes := inventory.AttributeValues{}
+	activeAttributes := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 4, Value: -5}}
 	character := loginticket.Character{
 		ID:       characterID,
 		Name:     characterName,
@@ -393,10 +395,10 @@ func mustMaterializeSeededImportExportQuarantineTree(t *testing.T, exportTree st
 		MapIndex: 1,
 		Empire:   1,
 		Inventory: []inventory.ItemInstance{
-			{ID: 1001, Vnum: 27001, Count: 1, Slot: 5, Sockets: &zeroSockets},
+			{ID: 1001, Vnum: 27001, Count: 1, Slot: 5, Sockets: &zeroSockets, Attributes: &zeroAttributes},
 		},
 		Equipment: []inventory.ItemInstance{
-			{ID: 2001, Vnum: 19, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon, Sockets: &activeSockets},
+			{ID: 2001, Vnum: 19, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon, Sockets: &activeSockets, Attributes: &activeAttributes},
 		},
 		Quickslots: []loginticket.Quickslot{
 			{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
@@ -687,6 +689,44 @@ FROM character_equipment_items WHERE id = 2001`).Scan(
 	if gotEquipHasSockets != 1 || gotEquipSocket0 != 1 || gotEquipSocket1 != 0 || gotEquipSocket2 != 7 {
 		t.Fatalf("equipment sockets = has_sockets=%d sockets=(%d,%d,%d), want 1/(1,0,7)",
 			gotEquipHasSockets, gotEquipSocket0, gotEquipSocket1, gotEquipSocket2)
+	}
+
+	var (
+		gotInvHasAttributes int
+		gotInvAttr0Type     int
+		gotInvAttr0Value    int
+		gotInvAttr1Type     int
+		gotInvAttr1Value    int
+	)
+	if err := db.QueryRowContext(ctx, `
+SELECT has_attributes, attr0_type, attr0_value, attr1_type, attr1_value
+FROM character_inventory_items WHERE id = 1001`).Scan(
+		&gotInvHasAttributes, &gotInvAttr0Type, &gotInvAttr0Value, &gotInvAttr1Type, &gotInvAttr1Value,
+	); err != nil {
+		t.Fatalf("select inventory attributes: %v", err)
+	}
+	if gotInvHasAttributes != 1 || gotInvAttr0Type != 0 || gotInvAttr0Value != 0 || gotInvAttr1Type != 0 || gotInvAttr1Value != 0 {
+		t.Fatalf("inventory attributes = has_attributes=%d attrs=(%d/%d,%d/%d), want 1/(0/0,0/0)",
+			gotInvHasAttributes, gotInvAttr0Type, gotInvAttr0Value, gotInvAttr1Type, gotInvAttr1Value)
+	}
+
+	var (
+		gotEquipHasAttributes int
+		gotEquipAttr0Type     int
+		gotEquipAttr0Value    int
+		gotEquipAttr1Type     int
+		gotEquipAttr1Value    int
+	)
+	if err := db.QueryRowContext(ctx, `
+SELECT has_attributes, attr0_type, attr0_value, attr1_type, attr1_value
+FROM character_equipment_items WHERE id = 2001`).Scan(
+		&gotEquipHasAttributes, &gotEquipAttr0Type, &gotEquipAttr0Value, &gotEquipAttr1Type, &gotEquipAttr1Value,
+	); err != nil {
+		t.Fatalf("select equipment attributes: %v", err)
+	}
+	if gotEquipHasAttributes != 1 || gotEquipAttr0Type != 1 || gotEquipAttr0Value != 25 || gotEquipAttr1Type != 4 || gotEquipAttr1Value != -5 {
+		t.Fatalf("equipment attributes = has_attributes=%d attrs=(%d/%d,%d/%d), want 1/(1/25,4/-5)",
+			gotEquipHasAttributes, gotEquipAttr0Type, gotEquipAttr0Value, gotEquipAttr1Type, gotEquipAttr1Value)
 	}
 
 	var pointValue int64
