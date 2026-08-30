@@ -105,6 +105,10 @@ func groundItemSnapshotFromExportRow(row BootstrapGroundItemStateRow) (GroundIte
 		Y:                row.Y,
 		Z:                row.Z,
 		PickupRange:      row.PickupRange,
+		HasSockets:       row.HasSockets,
+		Socket0:          row.Socket0,
+		Socket1:          row.Socket1,
+		Socket2:          row.Socket2,
 	}
 	switch {
 	case row.ItemCount != nil && row.GoldAmount != nil:

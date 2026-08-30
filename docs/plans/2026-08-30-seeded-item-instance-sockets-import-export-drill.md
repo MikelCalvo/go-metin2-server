@@ -41,8 +41,10 @@ runbooks after FileStore already rematerializes presence-aware sockets
 4. Empty-payload hermetic proof stays socket-omitted / empty for tip-`0003`.
 5. Operator loopback docs for character-item-state name presence-aware
    `has_sockets` / `socket0..2` beside the older row fields.
-6. Upsert / stock production driver / tip-`0010` ground SQL sockets /
-   safebox cell sockets remain deferred.
+6. Upsert / stock production driver remain deferred. tip-`0010` ground SQL
+   sockets shipped as `0026` — see
+   [bootstrap ground-item instance-sockets SQL additive](2026-08-30-bootstrap-ground-item-instance-sockets-sql-additive.md).
+   Safebox cell sockets shipped as `0025`.
 
 ## What this is not yet
 

@@ -13,6 +13,9 @@ const (
 	BootstrapGroundItemStateMigrationVersion = 10
 	BootstrapGroundItemStateMigrationName    = "bootstrap_ground_item_state"
 
+	BootstrapGroundItemInstanceSocketsMigrationVersion = 26
+	BootstrapGroundItemInstanceSocketsMigrationName    = "bootstrap_ground_item_instance_sockets"
+
 	bootstrapGroundItemOwnerNameMaxBytes = 25
 	bootstrapGroundItemMaxCount          = uint16(^uint8(0))
 	bootstrapGroundGoldVnum              = 1
@@ -34,8 +37,10 @@ type BootstrapGroundItemStateExport struct {
 }
 
 // BootstrapGroundItemStateRow mirrors the bootstrap_ground_items table columns
-// frozen by migration 0010, excluding timestamps that are database-owned at
-// insert/update time.
+// frozen by migration 0010, including optional additive 0026 instance sockets.
+// HasSockets=false / omitted means nil instance sockets (template fallback);
+// HasSockets=true including all-zero is authoritative. Gold-shaped rows stay
+// socket-less. Export identity stays tip-0010.
 type BootstrapGroundItemStateRow struct {
 	VID              uint32  `json:"vid"`
 	Vnum             uint32  `json:"vnum"`
@@ -50,6 +55,10 @@ type BootstrapGroundItemStateRow struct {
 	Y                int32   `json:"y"`
 	Z                int32   `json:"z"`
 	PickupRange      int64   `json:"pickup_range"`
+	HasSockets       bool    `json:"has_sockets,omitempty"`
+	Socket0          int32   `json:"socket0,omitempty"`
+	Socket1          int32   `json:"socket1,omitempty"`
+	Socket2          int32   `json:"socket2,omitempty"`
 }
 
 // ExportBootstrapGroundItemState validates pending bootstrap ground snapshots
@@ -132,6 +141,9 @@ func bootstrapGroundItemStateRowForExport(snapshot GroundItemSnapshot) (Bootstra
 		if snapshot.GoldAmount > bootstrapGroundGoldMaxAmount {
 			return BootstrapGroundItemStateRow{}, fmt.Errorf("%w: ground vid %d gold amount %d exceeds migration bound", ErrInvalidBootstrapGroundItemStateExport, snapshot.VID, snapshot.GoldAmount)
 		}
+		if snapshot.HasSockets || snapshot.Socket0 != 0 || snapshot.Socket1 != 0 || snapshot.Socket2 != 0 {
+			return BootstrapGroundItemStateRow{}, fmt.Errorf("%w: ground vid %d gold-shaped row must omit instance sockets", ErrInvalidBootstrapGroundItemStateExport, snapshot.VID)
+		}
 		goldAmount := snapshot.GoldAmount
 		row.GoldAmount = &goldAmount
 		return row, nil
@@ -143,9 +155,26 @@ func bootstrapGroundItemStateRowForExport(snapshot GroundItemSnapshot) (Bootstra
 	if snapshot.Count > bootstrapGroundItemMaxCount {
 		return BootstrapGroundItemStateRow{}, fmt.Errorf("%w: ground vid %d item count %d exceeds migration bound", ErrInvalidBootstrapGroundItemStateExport, snapshot.VID, snapshot.Count)
 	}
+	if err := validateBootstrapGroundItemInstanceSockets(snapshot.VID, snapshot.HasSockets, snapshot.Socket0, snapshot.Socket1, snapshot.Socket2); err != nil {
+		return BootstrapGroundItemStateRow{}, err
+	}
 	itemCount := snapshot.Count
 	row.ItemCount = &itemCount
+	row.HasSockets = snapshot.HasSockets
+	row.Socket0 = snapshot.Socket0
+	row.Socket1 = snapshot.Socket1
+	row.Socket2 = snapshot.Socket2
 	return row, nil
+}
+
+func validateBootstrapGroundItemInstanceSockets(vid uint32, hasSockets bool, socket0, socket1, socket2 int32) error {
+	if hasSockets {
+		return nil
+	}
+	if socket0 != 0 || socket1 != 0 || socket2 != 0 {
+		return fmt.Errorf("%w: ground vid %d has non-zero sockets without has_sockets", ErrInvalidBootstrapGroundItemStateExport, vid)
+	}
+	return nil
 }
 
 func validBootstrapGroundOwnerMetadata(value string) bool {

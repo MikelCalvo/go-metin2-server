@@ -178,6 +178,28 @@ func TestGroundItemFileStoreRoundTripPersistsInstanceSocketsIncludingExplicitZer
 	if !strings.Contains(string(raw), `"socket0": 1`) {
 		t.Fatalf("expected non-zero socket0 in durable JSON, got %s", raw)
 	}
+
+	export, err := store.ExportBootstrapGroundItemState()
+	if err != nil {
+		t.Fatalf("export 0010 projection with sockets: %v", err)
+	}
+	if len(export.GroundItems) != 2 {
+		t.Fatalf("expected 2 projected ground items, got %#v", export.GroundItems)
+	}
+	if !export.GroundItems[0].HasSockets || export.GroundItems[0].Socket0 != 1 || export.GroundItems[0].Socket1 != 2 || export.GroundItems[0].Socket2 != 3 {
+		t.Fatalf("expected active sockets in 0010 projection, got %#v", export.GroundItems[0])
+	}
+	if !export.GroundItems[1].HasSockets || export.GroundItems[1].Socket0 != 0 || export.GroundItems[1].Socket1 != 0 || export.GroundItems[1].Socket2 != 0 {
+		t.Fatalf("expected explicit-zero sockets in 0010 projection, got %#v", export.GroundItems[1])
+	}
+
+	projected := DurableGroundItemRecordsToSnapshots(got.GroundItems)
+	if len(projected) != 2 || !projected[0].HasSockets || projected[0].Socket0 != 1 || projected[0].Socket1 != 2 || projected[0].Socket2 != 3 {
+		t.Fatalf("DurableGroundItemRecordsToSnapshots lost active sockets: %#v", projected)
+	}
+	if !projected[1].HasSockets || projected[1].Socket0 != 0 || projected[1].Socket1 != 0 || projected[1].Socket2 != 0 {
+		t.Fatalf("DurableGroundItemRecordsToSnapshots lost explicit-zero sockets: %#v", projected)
+	}
 }
 
 func TestGroundItemFileStoreRejectsNonZeroSocketsWithoutHasSocketsAndGoldSockets(t *testing.T) {

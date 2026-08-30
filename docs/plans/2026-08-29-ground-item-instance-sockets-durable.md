@@ -67,5 +67,7 @@ silently fall back to template sockets.
 GREEN on `lane/items`: durable pending ground FileStore rematerialize
 round-trips presence-aware instance sockets (`has_sockets` + `socket0/1/2`,
 including explicit zero) through register → persist → restart → pickup.
-Gold markers stay socket-less; tip-`0010` SQL additive and safebox cell sockets
-stay deferred.
+Gold markers stay socket-less; tip-`0010` SQL additive shipped as
+`0026_bootstrap_ground_item_instance_sockets` (see
+[bootstrap ground-item instance-sockets SQL additive](2026-08-30-bootstrap-ground-item-instance-sockets-sql-additive.md)).
+Safebox cell sockets are owned separately.

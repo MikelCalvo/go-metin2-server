@@ -120,6 +120,25 @@ func TestValidateBootstrapGroundItemStateExportRejectsMalformedRows(t *testing.T
 				export.GroundItems[0].MapIndex = 0
 			},
 		},
+		{
+			name: "non-zero sockets without has_sockets",
+			mutate: func(export *BootstrapGroundItemStateExport) {
+				export.GroundItems[0].HasSockets = false
+				export.GroundItems[0].Socket0 = 1
+			},
+		},
+		{
+			name: "gold-shaped with has_sockets",
+			mutate: func(export *BootstrapGroundItemStateExport) {
+				export.GroundItems[1].HasSockets = true
+			},
+		},
+		{
+			name: "gold-shaped with sockets",
+			mutate: func(export *BootstrapGroundItemStateExport) {
+				export.GroundItems[1].Socket0 = 1
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -166,7 +185,7 @@ func sampleBootstrapGroundItemStateExport() BootstrapGroundItemStateExport {
 		MigrationVersion: BootstrapGroundItemStateMigrationVersion,
 		MigrationName:    BootstrapGroundItemStateMigrationName,
 		GroundItems: []BootstrapGroundItemStateRow{
-			{VID: 0x0700002c, Vnum: 3001, ItemCount: &count, OwnerLogin: "ground-item-owner", OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c, OwnerName: "GroundItemOwner", MapIndex: 1, X: 1100, Y: 2100, Z: 2, PickupRange: 450},
+			{VID: 0x0700002c, Vnum: 3001, ItemCount: &count, OwnerLogin: "ground-item-owner", OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c, OwnerName: "GroundItemOwner", MapIndex: 1, X: 1100, Y: 2100, Z: 2, PickupRange: 450, HasSockets: true, Socket0: 1, Socket1: 2, Socket2: 3},
 			{VID: 0x0700002d, Vnum: 1, GoldAmount: &gold, OwnerLogin: "ground-gold-owner", OwnerCharacterID: 0x0103019d, OwnerVID: 0x0204019d, OwnerName: "GroundGoldOwner", MapIndex: 42, X: 1200, Y: 2200, Z: 3, PickupRange: 750},
 		},
 	}

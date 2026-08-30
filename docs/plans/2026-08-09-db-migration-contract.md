@@ -44,6 +44,12 @@ Rules frozen by tests:
   - `has_sockets = 0` means nil instance sockets (template fallback) and requires zero socket values; `has_sockets = 1` is authoritative including all-zero,
   - tip-`0003` / `character_item_state` remains the export / quarantine / import-result identity; SQL INSERT requires tip `3` plus additive `24`,
   - upsert / stock production driver / live DB inventory repositories remain out of scope.
+- the embedded catalog now also includes `0026_bootstrap_ground_item_instance_sockets`, an additive schema-only companion for tip-`0010` after FileStore owned pending ground instance sockets:
+  - it adds `has_sockets` + `socket0`/`socket1`/`socket2` to `bootstrap_ground_items`,
+  - `has_sockets = 0` means nil instance sockets (template fallback) and requires zero socket values; `has_sockets = 1` is authoritative including all-zero,
+  - gold-shaped rows stay socket-less,
+  - tip-`0010` / `bootstrap_ground_item_state` remains the export / quarantine / import-result identity; SQL INSERT requires tip `10` plus additive `26`,
+  - upsert / stock production driver / DB-backed live ground rematerialize remain out of scope.
 - the embedded catalog now also includes `0004_character_quest_state`, a schema-only contract for the standalone bootstrap quest-state snapshot:
   - `character_quest_flags` stores owning character id, quest ref, flag name, non-zero value, and timestamps,
   - `(character_id, quest_ref, flag_name)` is the primary key so duplicate flags fail closed at the database boundary,

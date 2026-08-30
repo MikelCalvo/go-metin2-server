@@ -402,9 +402,17 @@ func DurableGroundItemRecordsToSnapshots(records []DurableGroundItemRecord) []Gr
 			X:                record.X,
 			Y:                record.Y,
 			Z:                record.Z,
+			HasSockets:       record.HasSockets,
+			Socket0:          record.Socket0,
+			Socket1:          record.Socket1,
+			Socket2:          record.Socket2,
 		}
 		if record.GoldAmount != nil {
 			snapshot.GoldAmount = *record.GoldAmount
+			snapshot.HasSockets = false
+			snapshot.Socket0 = 0
+			snapshot.Socket1 = 0
+			snapshot.Socket2 = 0
 		} else if record.ItemCount != nil {
 			snapshot.Count = *record.ItemCount
 		}
