@@ -47,6 +47,84 @@ func TestFileStoreRoundTripPersistsCellsAndItemIdentity(t *testing.T) {
 	}
 }
 
+func TestFileStoreRoundTripPersistsInstanceSocketsIncludingExplicitZero(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "safebox-sockets.json")
+	store := NewFileStore(path)
+	input := Snapshot{Characters: []CharacterRow{{
+		Login:       "socket-owner",
+		CharacterID: 11,
+		Cells: []Cell{
+			{Cell: 1, ID: 9001, Vnum: 72723, Count: 1, HasSockets: true, Socket0: 1, Socket1: 2, Socket2: 3},
+			{Cell: 3, ID: 9002, Vnum: 72727, Count: 1, HasSockets: true},
+		},
+	}}}
+	if err := store.Save(input); err != nil {
+		t.Fatalf("save safebox sockets: %v", err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("load safebox sockets: %v", err)
+	}
+	if len(loaded.Characters) != 1 || len(loaded.Characters[0].Cells) != 2 {
+		t.Fatalf("unexpected loaded safebox sockets snapshot: %#v", loaded)
+	}
+	active := loaded.Characters[0].Cells[0]
+	if !active.HasSockets || active.Socket0 != 1 || active.Socket1 != 2 || active.Socket2 != 3 {
+		t.Fatalf("expected active sockets rematerialized, got %#v", active)
+	}
+	zero := loaded.Characters[0].Cells[1]
+	if !zero.HasSockets || zero.Socket0 != 0 || zero.Socket1 != 0 || zero.Socket2 != 0 {
+		t.Fatalf("expected explicit-zero sockets rematerialized, got %#v", zero)
+	}
+	cells := CharacterCells(loaded, "socket-owner", 11)
+	activeItem := cells[1]
+	if !activeItem.HasSockets() || *activeItem.Sockets != (inventory.SocketValues{1, 2, 3}) {
+		t.Fatalf("expected CharacterCells active sockets, got %#v", activeItem)
+	}
+	zeroItem := cells[3]
+	if !zeroItem.HasSockets() || *zeroItem.Sockets != (inventory.SocketValues{}) {
+		t.Fatalf("expected CharacterCells explicit-zero sockets, got %#v", zeroItem)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read safebox sockets snapshot: %v", err)
+	}
+	if !strings.Contains(string(raw), `"has_sockets": true`) {
+		t.Fatalf("expected has_sockets in durable JSON, got %s", raw)
+	}
+	if !strings.Contains(string(raw), `"socket0": 1`) {
+		t.Fatalf("expected non-zero socket0 in durable JSON, got %s", raw)
+	}
+}
+
+func TestFileStoreRejectsNonZeroSocketsWithoutHasSockets(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "safebox-bad-sockets.json")
+	store := NewFileStore(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	body := `{"characters":[{"login":"owner","character_id":1,"cells":[{"cell":0,"id":1,"vnum":10,"count":1,"socket0":1}]}]}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write bad sockets snapshot: %v", err)
+	}
+	_, err := store.Load()
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for non-zero sockets without has_sockets, got %v", err)
+	}
+	next, err := ReplaceCharacterCells(Snapshot{}, "owner", 1, map[uint8]inventory.ItemInstance{
+		0: {ID: 1, Vnum: 10, Count: 1},
+	})
+	if err != nil {
+		t.Fatalf("seed replace cells: %v", err)
+	}
+	// Force invalid cell through Save validation path.
+	bad := next
+	bad.Characters[0].Cells[0].Socket0 = 9
+	if err := store.Save(bad); err == nil || !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected Save to reject non-zero sockets without has_sockets, got %v", err)
+	}
+}
+
 func TestFileStoreSaveIsDeterministicJSON(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "safebox.json")
 	store := NewFileStore(path)
@@ -95,6 +173,7 @@ func TestFileStoreRejectsInvalidRowsAndMissingSnapshot(t *testing.T) {
 		{name: "duplicate_cell", body: `{"characters":[{"login":"owner","character_id":1,"cells":[{"cell":0,"id":1,"vnum":10,"count":1},{"cell":0,"id":2,"vnum":10,"count":1}]}]}`},
 		{name: "duplicate_character", body: `{"characters":[{"login":"owner","character_id":1,"cells":[]},{"login":"owner","character_id":1,"cells":[]}]}`},
 		{name: "zero_item_id", body: `{"characters":[{"login":"owner","character_id":1,"cells":[{"cell":0,"id":0,"vnum":10,"count":1}]}]}`},
+		{name: "nonzero_sockets_without_has_sockets", body: `{"characters":[{"login":"owner","character_id":1,"cells":[{"cell":0,"id":1,"vnum":10,"count":1,"socket0":1}]}]}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := os.WriteFile(path, []byte(tc.body), 0o644); err != nil {

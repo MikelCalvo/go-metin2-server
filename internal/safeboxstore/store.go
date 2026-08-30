@@ -34,12 +34,19 @@ const (
 )
 
 // Cell is one durable safebox slot for a selected character.
+// Presence-aware instance sockets mirror carried FileStore / tip-0003+0024 /
+// ground-item FileStore: HasSockets=false / omitted means nil instance sockets
+// (template fallback); HasSockets=true including all-zero is authoritative.
 type Cell struct {
-	Cell   uint8  `json:"cell"`
-	ID     uint64 `json:"id"`
-	Vnum   uint32 `json:"vnum"`
-	Count  uint16 `json:"count"`
-	Locked bool   `json:"locked,omitempty"`
+	Cell       uint8  `json:"cell"`
+	ID         uint64 `json:"id"`
+	Vnum       uint32 `json:"vnum"`
+	Count      uint16 `json:"count"`
+	Locked     bool   `json:"locked,omitempty"`
+	HasSockets bool   `json:"has_sockets,omitempty"`
+	Socket0    int32  `json:"socket0,omitempty"`
+	Socket1    int32  `json:"socket1,omitempty"`
+	Socket2    int32  `json:"socket2,omitempty"`
 }
 
 const (
@@ -318,11 +325,12 @@ func CharacterCells(snapshot Snapshot, login string, characterID uint32) map[uin
 		}
 		for _, cell := range row.Cells {
 			out[cell.Cell] = inventory.ItemInstance{
-				ID:     cell.ID,
-				Vnum:   cell.Vnum,
-				Count:  cell.Count,
-				Slot:   inventory.SlotIndex(cell.Cell),
-				Locked: cell.Locked,
+				ID:      cell.ID,
+				Vnum:    cell.Vnum,
+				Count:   cell.Count,
+				Slot:    inventory.SlotIndex(cell.Cell),
+				Locked:  cell.Locked,
+				Sockets: cellInstanceSockets(cell),
 			}
 		}
 		return out
@@ -372,13 +380,7 @@ func ReplaceCharacterCells(snapshot Snapshot, login string, characterID uint32, 
 		if uint8(item.Slot) != cell && item.Slot != 0 {
 			// Prefer explicit map key; slot is rewritten to match cell.
 		}
-		rowCells = append(rowCells, Cell{
-			Cell:   cell,
-			ID:     item.ID,
-			Vnum:   item.Vnum,
-			Count:  item.Count,
-			Locked: item.Locked,
-		})
+		rowCells = append(rowCells, cellFromItemInstance(cell, item))
 	}
 	filtered = append(filtered, CharacterRow{
 		Login:       login,
@@ -441,13 +443,7 @@ func ReplaceCharacterPassword(snapshot Snapshot, login string, characterID uint3
 	existingMoney := CharacterMoney(normalized, login, characterID)
 	rowCells := make([]Cell, 0, len(cells))
 	for cell, item := range cells {
-		rowCells = append(rowCells, Cell{
-			Cell:   cell,
-			ID:     item.ID,
-			Vnum:   item.Vnum,
-			Count:  item.Count,
-			Locked: item.Locked,
-		})
+		rowCells = append(rowCells, cellFromItemInstance(cell, item))
 	}
 	filtered := make([]CharacterRow, 0, len(normalized.Characters)+1)
 	for _, row := range normalized.Characters {
@@ -488,13 +484,7 @@ func ReplaceCharacterMoney(snapshot Snapshot, login string, characterID uint32, 
 	}
 	rowCells := make([]Cell, 0, len(cells))
 	for cell, item := range cells {
-		rowCells = append(rowCells, Cell{
-			Cell:   cell,
-			ID:     item.ID,
-			Vnum:   item.Vnum,
-			Count:  item.Count,
-			Locked: item.Locked,
-		})
+		rowCells = append(rowCells, cellFromItemInstance(cell, item))
 	}
 	filtered := make([]CharacterRow, 0, len(normalized.Characters)+1)
 	for _, row := range normalized.Characters {
@@ -598,12 +588,16 @@ func validateSnapshot(snapshot Snapshot) error {
 				return ErrInvalidSnapshot
 			}
 			seenCells[cell.Cell] = struct{}{}
+			if err := validateCellInstanceSockets(cell); err != nil {
+				return err
+			}
 			item := inventory.ItemInstance{
-				ID:     cell.ID,
-				Vnum:   cell.Vnum,
-				Count:  cell.Count,
-				Slot:   inventory.SlotIndex(cell.Cell),
-				Locked: cell.Locked,
+				ID:      cell.ID,
+				Vnum:    cell.Vnum,
+				Count:   cell.Count,
+				Slot:    inventory.SlotIndex(cell.Cell),
+				Locked:  cell.Locked,
+				Sockets: cellInstanceSockets(cell),
 			}
 			if err := item.Validate(); err != nil {
 				return ErrInvalidSnapshot
@@ -685,6 +679,42 @@ func cloneCells(cells []Cell) []Cell {
 	cloned := make([]Cell, len(cells))
 	copy(cloned, cells)
 	return cloned
+}
+
+func cellFromItemInstance(cell uint8, item inventory.ItemInstance) Cell {
+	out := Cell{
+		Cell:   cell,
+		ID:     item.ID,
+		Vnum:   item.Vnum,
+		Count:  item.Count,
+		Locked: item.Locked,
+	}
+	if item.HasSockets() {
+		values := *item.Sockets
+		out.HasSockets = true
+		out.Socket0 = values[0]
+		out.Socket1 = values[1]
+		out.Socket2 = values[2]
+	}
+	return out
+}
+
+func cellInstanceSockets(cell Cell) *inventory.SocketValues {
+	if !cell.HasSockets {
+		return nil
+	}
+	values := inventory.SocketValues{cell.Socket0, cell.Socket1, cell.Socket2}
+	return &values
+}
+
+func validateCellInstanceSockets(cell Cell) error {
+	if cell.HasSockets {
+		return nil
+	}
+	if cell.Socket0 != 0 || cell.Socket1 != 0 || cell.Socket2 != 0 {
+		return fmt.Errorf("%w: safebox cell %d has non-zero sockets without has_sockets", ErrInvalidSnapshot, cell.Cell)
+	}
+	return nil
 }
 
 func rejectCommittedSnapshotSymlink(path string) error {

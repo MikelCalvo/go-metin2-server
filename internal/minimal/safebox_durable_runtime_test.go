@@ -14,6 +14,7 @@ import (
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
+	"github.com/MikelCalvo/go-metin2-server/internal/safeboxstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
 
@@ -198,6 +199,175 @@ func TestGameRuntimeSafeboxCheckinSurvivesProcessRestartRematerializeOnOpen(t *t
 	if reopenSet.Position != set.Position || reopenSet.Vnum != set.Vnum || reopenSet.Count != set.Count {
 		t.Fatalf("unexpected reopen SAFEBOX_SET after process restart: %+v want %+v", reopenSet, set)
 	}
+}
+
+func TestGameRuntimeSafeboxCheckinInstanceSocketsRematerializeAcrossDaemonRestart(t *testing.T) {
+	defer safeboxstore.DisableDurableSyncForTest()()
+
+	root := t.TempDir()
+	ticketDir := filepath.Join(root, "tickets")
+	accountDir := filepath.Join(root, "accounts")
+	safeboxPath := filepath.Join(root, "safebox", "safebox.json")
+	ticketStore := loginticket.NewFileStore(ticketDir)
+	accounts := accountstore.NewFileStore(accountDir)
+
+	activeSockets := inventory.SocketValues{1, 2, 3}
+	zeroSockets := inventory.SocketValues{}
+	owner := peerVisibilityCharacter("SafeboxSocketRestart", 0x01030891, 0x02040891, 1100, 2100, 0, 101, 201)
+	owner.Gold = 9191
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 991, Vnum: 72723, Count: 1, Slot: 5, Sockets: &activeSockets},
+		{ID: 992, Vnum: 72727, Count: 1, Slot: 6, Sockets: &zeroSockets},
+	}
+	login := "safebox-socket-restart"
+	const loginKey uint32 = 0x80808091
+	issuePeerTicket(t, ticketStore, login, loginKey, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed durable safebox socket restart owner account: %v", err)
+	}
+	templates := []itemcatalog.Template{
+		{Vnum: 72723, Name: "Red Potion", MaxCount: 1, Sockets: itemcatalog.SocketValues{9, 9, 9}},
+		{Vnum: 72727, Name: "Blue Potion", MaxCount: 1, Sockets: itemcatalog.SocketValues{8, 8, 8}},
+	}
+	itemStore := newItemTemplateStore(t, templates)
+	cfg := config.Service{
+		LegacyAddr:       ":13000",
+		PublicAddr:       "127.0.0.1",
+		SafeboxStorePath: safeboxPath,
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected durable safebox socket restart runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	_ = flushServerFrames(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_safebox before socket check-in: %v", err)
+	}
+	activeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 1,
+		Position: itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected active-socket check-in: %v", err)
+	}
+	activeSet, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, activeOut[len(activeOut)-1]))
+	if err != nil {
+		t.Fatalf("decode active-socket SAFEBOX_SET: %v", err)
+	}
+	if activeSet.Sockets != [itemproto.ItemSocketCount]int32{1, 2, 3} {
+		t.Fatalf("expected check-in SAFEBOX_SET active sockets, got %+v", activeSet)
+	}
+	zeroOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 2,
+		Position: itemproto.InventoryPosition(6),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected explicit-zero socket check-in: %v", err)
+	}
+	zeroSet, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, zeroOut[len(zeroOut)-1]))
+	if err != nil {
+		t.Fatalf("decode explicit-zero SAFEBOX_SET: %v", err)
+	}
+	if zeroSet.Sockets != [itemproto.ItemSocketCount]int32{} {
+		t.Fatalf("expected check-in SAFEBOX_SET explicit-zero sockets, got %+v", zeroSet)
+	}
+
+	persisted, err := safeboxstore.NewFileStore(safeboxPath).Load()
+	if err != nil {
+		t.Fatalf("load persisted safebox before restart: %v", err)
+	}
+	cells := safeboxstore.CharacterCells(persisted, login, owner.ID)
+	if item := cells[1]; !item.HasSockets() || *item.Sockets != activeSockets {
+		t.Fatalf("expected persisted active sockets, got %#v", item)
+	}
+	if item := cells[2]; !item.HasSockets() || *item.Sockets != zeroSockets {
+		t.Fatalf("expected persisted explicit-zero sockets, got %#v", item)
+	}
+	closeSessionFlow(t, flow)
+
+	const postRestartLoginKey uint32 = 0x80808092
+	reloadedTickets := loginticket.NewFileStore(ticketDir)
+	issuePeerTicket(t, reloadedTickets, login, postRestartLoginKey, owner)
+	reloadedAccounts := accountstore.NewFileStore(accountDir)
+	reloadedItems := newItemTemplateStore(t, templates)
+	reloaded, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg, reloadedTickets, reloadedAccounts, nil, nil, reloadedItems, nil)
+	if err != nil {
+		t.Fatalf("reload runtime after durable safebox socket restart: %v", err)
+	}
+	restartFlow, _ := enterGameWithLoginTicket(t, reloaded.SessionFactory(), login, postRestartLoginKey)
+	defer closeSessionFlow(t, restartFlow)
+	_ = flushServerFrames(t, restartFlow)
+
+	reopenOut, err := restartFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_safebox after socket rematerialize restart: %v", err)
+	}
+	if len(reopenOut) < 3 {
+		t.Fatalf("expected SAFEBOX_SIZE + SAFEBOX_SET frames after socket rematerialize, got %d", len(reopenOut))
+	}
+	reopenByCell := map[uint16]itemproto.SetPacket{}
+	for _, raw := range reopenOut[1:] {
+		frame := decodeSingleFrame(t, raw)
+		if frame.Header != itemproto.HeaderSafeboxSet {
+			continue
+		}
+		set, err := itemproto.DecodeSafeboxSet(frame)
+		if err != nil {
+			t.Fatalf("decode rematerialized SAFEBOX_SET: %v", err)
+		}
+		reopenByCell[set.Position.Cell] = set
+	}
+	if got := reopenByCell[1]; got.Vnum != 72723 || got.Sockets != [itemproto.ItemSocketCount]int32{1, 2, 3} {
+		t.Fatalf("expected rematerialized active SAFEBOX_SET sockets, got %+v", got)
+	}
+	if got := reopenByCell[2]; got.Vnum != 72727 || got.Sockets != [itemproto.ItemSocketCount]int32{} {
+		t.Fatalf("expected rematerialized explicit-zero SAFEBOX_SET sockets, got %+v", got)
+	}
+
+	checkoutOut, err := restartFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckout(itemproto.ClientSafeboxCheckoutPacket{
+		SafeSlot: 1,
+		Position: itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart checkout: %v", err)
+	}
+	var checkoutSet itemproto.SetPacket
+	foundCheckoutSet := false
+	for _, raw := range checkoutOut {
+		frame := decodeSingleFrame(t, raw)
+		if frame.Header != itemproto.HeaderSet {
+			continue
+		}
+		set, err := itemproto.DecodeSet(frame)
+		if err != nil {
+			t.Fatalf("decode checkout ITEM_SET: %v", err)
+		}
+		if set.Position.WindowType == itemproto.WindowInventory && set.Position.Cell == 5 {
+			checkoutSet = set
+			foundCheckoutSet = true
+		}
+	}
+	if !foundCheckoutSet {
+		t.Fatalf("expected inventory ITEM_SET after checkout, frames=%d", len(checkoutOut))
+	}
+	if checkoutSet.Sockets != [itemproto.ItemSocketCount]int32{1, 2, 3} {
+		t.Fatalf("expected checkout to restore active sockets into inventory, got %+v", checkoutSet)
+	}
+	assertExchangeAccountUnchanged(t, reloadedAccounts, login, func() loginticket.Character {
+		updated := owner
+		updated.Inventory = []inventory.ItemInstance{
+			{ID: 991, Vnum: 72723, Count: 1, Slot: 5, Sockets: &activeSockets},
+		}
+		return updated
+	}(), "post-restart checkout inventory sockets")
 }
 
 func TestGameRuntimeSafeboxItemMovePersistsDurableCellsWithoutInventoryMutation(t *testing.T) {
