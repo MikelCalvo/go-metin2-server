@@ -4840,6 +4840,13 @@ func (r *sharedWorldRegistry) restorePersistedGroundItemLocked(record worldrunti
 			sockets := inventory.SocketValues{record.Socket0, record.Socket1, record.Socket2}
 			item.Sockets = &sockets
 		}
+		if record.HasAttributes {
+			attributes := inventory.AttributeValues{}
+			if record.Attributes != nil {
+				attributes = *record.Attributes
+			}
+			item.Attributes = &attributes
+		}
 	}
 
 	ground := sharedGroundItem{
@@ -4913,6 +4920,11 @@ func durableGroundItemRecordFromShared(ground sharedGroundItem) worldruntime.Dur
 			record.Socket0 = values[0]
 			record.Socket1 = values[1]
 			record.Socket2 = values[2]
+		}
+		if ground.Item.HasAttributes() {
+			values := *ground.Item.Attributes
+			record.HasAttributes = true
+			record.Attributes = &values
 		}
 	}
 	if ground.OwnershipExclusive && !ground.OwnershipExpiresAt.IsZero() {

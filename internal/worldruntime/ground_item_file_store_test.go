@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 )
 
 func TestGroundItemFileStoreRoundTripPersistsTimersAndItemID(t *testing.T) {
@@ -229,6 +231,136 @@ func TestGroundItemFileStoreRejectsNonZeroSocketsWithoutHasSocketsAndGoldSockets
 	}}}
 	if err := store.Save(badGold); !errors.Is(err, ErrInvalidGroundItemSnapshot) {
 		t.Fatalf("expected invalid snapshot for gold sockets, got %v", err)
+	}
+}
+
+func TestGroundItemFileStoreRoundTripPersistsInstanceAttributesIncludingExplicitZero(t *testing.T) {
+	defer DisableDurableGroundItemSyncForTest()()
+
+	path := filepath.Join(t.TempDir(), "ground-items-attributes.json")
+	store := NewGroundItemFileStore(path)
+
+	itemCount := uint16(1)
+	zeroCount := uint16(1)
+	ownershipExpires := time.Date(2026, 8, 30, 12, 0, 30, 0, time.UTC)
+	despawnItem := time.Date(2026, 8, 30, 12, 5, 0, 0, time.UTC)
+	despawnZero := time.Date(2026, 8, 30, 12, 6, 0, 0, time.UTC)
+	activeAttributes := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 4, Value: -5}}
+	zeroAttributes := inventory.AttributeValues{}
+
+	want := DurableGroundItemSnapshot{GroundItems: []DurableGroundItemRecord{
+		{
+			VID:                0x07000021,
+			Vnum:               72723,
+			ItemCount:          &itemCount,
+			ItemID:             0x30010021,
+			HasAttributes:      true,
+			Attributes:         &activeAttributes,
+			OwnerLogin:         "attr-owner",
+			OwnerCharacterID:   21,
+			OwnerVID:           0x02000021,
+			OwnerName:          "AttrHero",
+			MapIndex:           1,
+			X:                  1100,
+			Y:                  2100,
+			PickupRange:        450,
+			OwnershipExclusive: true,
+			OwnershipExpiresAt: &ownershipExpires,
+			DespawnAt:          despawnItem,
+		},
+		{
+			VID:                0x07000022,
+			Vnum:               72727,
+			ItemCount:          &zeroCount,
+			ItemID:             0x30010022,
+			HasAttributes:      true,
+			Attributes:         &zeroAttributes,
+			OwnerLogin:         "attr-owner",
+			OwnerCharacterID:   21,
+			OwnerVID:           0x02000021,
+			OwnerName:          "AttrHero",
+			MapIndex:           1,
+			X:                  1110,
+			Y:                  2110,
+			PickupRange:        450,
+			OwnershipExclusive: true,
+			OwnershipExpiresAt: &ownershipExpires,
+			DespawnAt:          despawnZero,
+		},
+	}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save durable ground items with attributes: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load durable ground items with attributes: %v", err)
+	}
+	if len(got.GroundItems) != 2 {
+		t.Fatalf("expected 2 attributed ground items, got %#v", got.GroundItems)
+	}
+	active := got.GroundItems[0]
+	if !active.HasAttributes || active.Attributes == nil || *active.Attributes != activeAttributes {
+		t.Fatalf("expected active attributes rematerialized, got %#v", active)
+	}
+	zero := got.GroundItems[1]
+	if !zero.HasAttributes || zero.Attributes == nil || *zero.Attributes != zeroAttributes {
+		t.Fatalf("expected explicit-zero attributes rematerialized, got %#v", zero)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted ground items: %v", err)
+	}
+	if !strings.Contains(string(raw), `"has_attributes": true`) {
+		t.Fatalf("expected has_attributes in durable JSON, got %s", raw)
+	}
+	if !strings.Contains(string(raw), `"type": 1`) || !strings.Contains(string(raw), `"value": 25`) {
+		t.Fatalf("expected non-zero attribute cells in durable JSON, got %s", raw)
+	}
+
+	export, err := store.ExportBootstrapGroundItemState()
+	if err != nil {
+		t.Fatalf("export 0010 projection with attributes: %v", err)
+	}
+	if len(export.GroundItems) != 2 {
+		t.Fatalf("expected 2 projected ground items, got %#v", export.GroundItems)
+	}
+	// Tip-0010 projection stays attribute-free until a later SQL companion slice.
+	projected := DurableGroundItemRecordsToSnapshots(got.GroundItems)
+	if len(projected) != 2 {
+		t.Fatalf("DurableGroundItemRecordsToSnapshots lost attributed rows: %#v", projected)
+	}
+}
+
+func TestGroundItemFileStoreRejectsNonZeroAttributesWithoutHasAttributesAndGoldAttributes(t *testing.T) {
+	defer DisableDurableGroundItemSyncForTest()()
+
+	path := filepath.Join(t.TempDir(), "ground-items-bad-attributes.json")
+	store := NewGroundItemFileStore(path)
+
+	itemCount := uint16(1)
+	goldAmount := uint32(10)
+	despawn := time.Now().UTC().Add(time.Minute)
+	active := inventory.AttributeValues{{Type: 1, Value: 25}}
+
+	badItem := DurableGroundItemSnapshot{GroundItems: []DurableGroundItemRecord{{
+		VID: 1, Vnum: 27001, ItemCount: &itemCount, ItemID: 11,
+		Attributes: &active,
+		OwnerLogin: "x", OwnerCharacterID: 1, OwnerVID: 1, OwnerName: "X",
+		MapIndex: 1, PickupRange: 300, DespawnAt: despawn,
+	}}}
+	if err := store.Save(badItem); !errors.Is(err, ErrInvalidGroundItemSnapshot) {
+		t.Fatalf("expected invalid snapshot for non-zero attributes without has_attributes, got %v", err)
+	}
+
+	badGold := DurableGroundItemSnapshot{GroundItems: []DurableGroundItemRecord{{
+		VID: 2, Vnum: 1, GoldAmount: &goldAmount, HasAttributes: true, Attributes: &active,
+		OwnerLogin: "y", OwnerCharacterID: 2, OwnerVID: 2, OwnerName: "Y",
+		MapIndex: 1, PickupRange: 300, DespawnAt: despawn,
+	}}}
+	if err := store.Save(badGold); !errors.Is(err, ErrInvalidGroundItemSnapshot) {
+		t.Fatalf("expected invalid snapshot for gold attributes, got %v", err)
 	}
 }
 

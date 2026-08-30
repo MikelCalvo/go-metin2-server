@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 )
 
 // Durable pending ground-item FileStore for process-restart rematerialization.
@@ -34,30 +36,36 @@ const (
 // runtime fields needed for safe rematerialize (stable item id + absolute timers).
 // Presence-aware instance sockets mirror carried FileStore / tip-0003+0024:
 // HasSockets=false / omitted means nil instance sockets (template fallback);
-// HasSockets=true including all-zero is authoritative. Gold-shaped rows stay
-// socket-less.
+// HasSockets=true including all-zero is authoritative. Presence-aware instance
+// attributes mirror the same rule beside sockets: HasAttributes=false / omitted
+// means nil instance attributes (template fallback); HasAttributes=true including
+// all-zero / type-zero is authoritative. Gold-shaped rows stay socket-less and
+// attribute-less. Tip-0010 SQL attribute companions stay deferred, so the 0010
+// projection still omits attribute fields.
 type DurableGroundItemRecord struct {
-	VID                uint32     `json:"vid"`
-	Vnum               uint32     `json:"vnum"`
-	ItemCount          *uint16    `json:"item_count,omitempty"`
-	GoldAmount         *uint32    `json:"gold_amount,omitempty"`
-	ItemID             uint64     `json:"item_id,omitempty"`
-	HasSockets         bool       `json:"has_sockets,omitempty"`
-	Socket0            int32      `json:"socket0,omitempty"`
-	Socket1            int32      `json:"socket1,omitempty"`
-	Socket2            int32      `json:"socket2,omitempty"`
-	OwnerLogin         string     `json:"owner_login"`
-	OwnerCharacterID   uint32     `json:"owner_character_id"`
-	OwnerVID           uint32     `json:"owner_vid"`
-	OwnerName          string     `json:"owner_name"`
-	MapIndex           uint32     `json:"map_index"`
-	X                  int32      `json:"x"`
-	Y                  int32      `json:"y"`
-	Z                  int32      `json:"z"`
-	PickupRange        int64      `json:"pickup_range"`
-	OwnershipExclusive bool       `json:"ownership_exclusive"`
-	OwnershipExpiresAt *time.Time `json:"ownership_expires_at,omitempty"`
-	DespawnAt          time.Time  `json:"despawn_at"`
+	VID                uint32                     `json:"vid"`
+	Vnum               uint32                     `json:"vnum"`
+	ItemCount          *uint16                    `json:"item_count,omitempty"`
+	GoldAmount         *uint32                    `json:"gold_amount,omitempty"`
+	ItemID             uint64                     `json:"item_id,omitempty"`
+	HasSockets         bool                       `json:"has_sockets,omitempty"`
+	Socket0            int32                      `json:"socket0,omitempty"`
+	Socket1            int32                      `json:"socket1,omitempty"`
+	Socket2            int32                      `json:"socket2,omitempty"`
+	HasAttributes      bool                       `json:"has_attributes,omitempty"`
+	Attributes         *inventory.AttributeValues `json:"attributes,omitempty"`
+	OwnerLogin         string                     `json:"owner_login"`
+	OwnerCharacterID   uint32                     `json:"owner_character_id"`
+	OwnerVID           uint32                     `json:"owner_vid"`
+	OwnerName          string                     `json:"owner_name"`
+	MapIndex           uint32                     `json:"map_index"`
+	X                  int32                      `json:"x"`
+	Y                  int32                      `json:"y"`
+	Z                  int32                      `json:"z"`
+	PickupRange        int64                      `json:"pickup_range"`
+	OwnershipExclusive bool                       `json:"ownership_exclusive"`
+	OwnershipExpiresAt *time.Time                 `json:"ownership_expires_at,omitempty"`
+	DespawnAt          time.Time                  `json:"despawn_at"`
 }
 
 // DurableGroundItemSnapshot is the committed pending-ground FileStore payload.
@@ -434,6 +442,22 @@ func normalizeDurableGroundItemRecord(record DurableGroundItemRecord) DurableGro
 	if !record.OwnershipExclusive {
 		record.OwnershipExpiresAt = nil
 	}
+	if record.HasAttributes {
+		if record.Attributes == nil {
+			zero := inventory.AttributeValues{}
+			record.Attributes = &zero
+		} else {
+			copied := *record.Attributes
+			record.Attributes = &copied
+		}
+	} else if durableGroundItemAttributesNonZero(record.Attributes) {
+		// Keep the non-zero payload so validation can fail closed; do not
+		// silently coerce malformed presence into template fallback.
+		copied := *record.Attributes
+		record.Attributes = &copied
+	} else {
+		record.Attributes = nil
+	}
 	return record
 }
 
@@ -498,6 +522,9 @@ func validateDurableGroundItemRecord(record DurableGroundItemRecord) error {
 		if record.HasSockets || record.Socket0 != 0 || record.Socket1 != 0 || record.Socket2 != 0 {
 			return fmt.Errorf("%w: ground vid %d gold-shaped row must omit instance sockets", ErrInvalidGroundItemSnapshot, record.VID)
 		}
+		if record.HasAttributes || durableGroundItemAttributesNonZero(record.Attributes) {
+			return fmt.Errorf("%w: ground vid %d gold-shaped row must omit instance attributes", ErrInvalidGroundItemSnapshot, record.VID)
+		}
 	case hasItem:
 		if record.ItemID == 0 {
 			return fmt.Errorf("%w: ground vid %d item-shaped row requires item_id", ErrInvalidGroundItemSnapshot, record.VID)
@@ -506,6 +533,9 @@ func validateDurableGroundItemRecord(record DurableGroundItemRecord) error {
 			return fmt.Errorf("%w: ground vid %d item count out of bounds", ErrInvalidGroundItemSnapshot, record.VID)
 		}
 		if err := validateDurableGroundItemInstanceSockets(record); err != nil {
+			return err
+		}
+		if err := validateDurableGroundItemInstanceAttributes(record); err != nil {
 			return err
 		}
 	default:
@@ -522,6 +552,28 @@ func validateDurableGroundItemInstanceSockets(record DurableGroundItemRecord) er
 		return fmt.Errorf("%w: ground vid %d has non-zero sockets without has_sockets", ErrInvalidGroundItemSnapshot, record.VID)
 	}
 	return nil
+}
+
+func validateDurableGroundItemInstanceAttributes(record DurableGroundItemRecord) error {
+	if record.HasAttributes {
+		return nil
+	}
+	if durableGroundItemAttributesNonZero(record.Attributes) {
+		return fmt.Errorf("%w: ground vid %d has non-zero attributes without has_attributes", ErrInvalidGroundItemSnapshot, record.VID)
+	}
+	return nil
+}
+
+func durableGroundItemAttributesNonZero(attributes *inventory.AttributeValues) bool {
+	if attributes == nil {
+		return false
+	}
+	for _, attribute := range *attributes {
+		if attribute.Type != 0 || attribute.Value != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func cloneDurableGroundItemRecords(records []DurableGroundItemRecord) []DurableGroundItemRecord {
@@ -542,6 +594,10 @@ func cloneDurableGroundItemRecords(records []DurableGroundItemRecord) []DurableG
 		if records[i].OwnershipExpiresAt != nil {
 			expires := records[i].OwnershipExpiresAt.UTC()
 			out[i].OwnershipExpiresAt = &expires
+		}
+		if records[i].Attributes != nil {
+			copied := *records[i].Attributes
+			out[i].Attributes = &copied
 		}
 	}
 	return out

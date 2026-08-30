@@ -209,6 +209,59 @@ func TestSharedWorldDurableGroundItemSnapshotRoundTripsInstanceSocketsIncludingE
 	}
 }
 
+func TestSharedWorldDurableGroundItemSnapshotRoundTripsInstanceAttributesIncludingExplicitZero(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("AttrPersistOwner", 0x010301a5, 0x020401a5, 1100, 2100, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected owner join")
+	}
+
+	active := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 4, Value: -5}}
+	zero := inventory.AttributeValues{}
+	const (
+		activeVID uint32 = 0x070000B1
+		zeroVID   uint32 = 0x070000B2
+	)
+	if !registry.RegisterGroundItemWithPickupRange(ownerID, "attr-persist-owner", owner, activeVID, inventory.ItemInstance{ID: 0x300100B1, Vnum: 72723, Count: 1, Attributes: &active}, 450) {
+		t.Fatal("expected active-attribute registration")
+	}
+	if !registry.RegisterGroundItemWithPickupRange(ownerID, "attr-persist-owner", owner, zeroVID, inventory.ItemInstance{ID: 0x300100B2, Vnum: 72727, Count: 1, Attributes: &zero}, 450) {
+		t.Fatal("expected explicit-zero attribute registration")
+	}
+
+	snapshot := registry.DurableGroundItemSnapshot()
+	byVID := map[uint32]worldruntime.DurableGroundItemRecord{}
+	for _, row := range snapshot.GroundItems {
+		byVID[row.VID] = row
+	}
+	activeRow, ok := byVID[activeVID]
+	if !ok || !activeRow.HasAttributes || activeRow.Attributes == nil || *activeRow.Attributes != active {
+		t.Fatalf("expected durable snapshot active attributes, got %#v", activeRow)
+	}
+	zeroRow, ok := byVID[zeroVID]
+	if !ok || !zeroRow.HasAttributes || zeroRow.Attributes == nil || *zeroRow.Attributes != zero {
+		t.Fatalf("expected durable snapshot explicit-zero attributes, got %#v", zeroRow)
+	}
+
+	fresh := newSharedWorldRegistry()
+	if err := fresh.RestorePersistedGroundItems(snapshot.GroundItems); err != nil {
+		t.Fatalf("restore attributed durable snapshot: %v", err)
+	}
+	freshOwnerID, _ := fresh.Join(owner, newPendingServerFrames(), nil)
+	if freshOwnerID == 0 {
+		t.Fatal("expected restore owner join")
+	}
+	activePickup, ok := fresh.GroundItemPickupFor(freshOwnerID, owner, activeVID)
+	if !ok || !activePickup.Item.HasAttributes() || *activePickup.Item.Attributes != active {
+		t.Fatalf("expected rematerialized active attributes, ok=%v item=%+v", ok, activePickup.Item)
+	}
+	zeroPickup, ok := fresh.GroundItemPickupFor(freshOwnerID, owner, zeroVID)
+	if !ok || !zeroPickup.Item.HasAttributes() || *zeroPickup.Item.Attributes != zero {
+		t.Fatalf("expected rematerialized explicit-zero attributes, ok=%v item=%+v", ok, zeroPickup.Item)
+	}
+}
+
 func TestPendingGroundItemExclusiveOwnerIDRebindsOnOwnerRejoin(t *testing.T) {
 	defer worldruntime.DisableDurableGroundItemSyncForTest()()
 
