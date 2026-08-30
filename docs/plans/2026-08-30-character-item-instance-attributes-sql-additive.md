@@ -91,8 +91,9 @@ requiring tip-`0003` + `0024` + `0027`.
 1. ~~Seed presence-aware instance attributes in the hermetic import-export drill
    + tip-sync loopback character-item-state docs.~~ Done — see [seeded item
    instance-attributes tip sync](2026-08-31-seeded-item-instance-attributes-import-export-drill.md).
-2. Prefer tip-`0010` / tip-`0015` attribute SQL companions only after durable
-   ground/safebox attribute rematerialize is owned (FileStore rematerialize is
-   already owned; SQL companions stay deferred).
+2. ~~Prefer tip-`0015` attribute SQL companion after durable safebox attribute
+   rematerialize.~~ Docs freeze owned — see [safebox cell instance-attributes SQL
+   additive](2026-08-31-safebox-cell-instance-attributes-sql-additive.md). tip-`0010`
+   ground attribute companion stays deferred.
 3. Keep upsert / stock production driver deferred.
 4. Keep tip-`0003` export identity until a deliberate retip is needed.
