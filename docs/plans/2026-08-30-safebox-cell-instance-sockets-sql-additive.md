@@ -21,7 +21,7 @@ ledger owns tip-`0015` but not additive `0025`.
 - Safer than inventing a new tip identity: sockets extend existing
   `character_safebox_items` rows while export identity stays tip `15`.
 
-## Contract frozen by this slice (docs/spec only — RED deferred)
+## Contract frozen by this slice
 
 1. Embedded catalog adds `0025_character_safebox_item_instance_sockets` after
    `0024_character_item_instance_sockets` (catalog tip moves to `25`).
@@ -79,7 +79,8 @@ ledger owns tip-`0015` but not additive `0025`.
 
 ## Status
 
-Docs/spec freeze only on `lane/items`. RED intentionally deferred until the
-next GREEN run opens migration + export/import tests against this contract.
-FileStore rematerialize for safebox cell sockets is already shipped
+GREEN shipped on `lane/persistence` (this run): additive catalog tip `0025`,
+tip-`0015` export/quarantine/import projection of presence-aware safebox cell
+sockets, and import preflight requiring tip-`0015` plus additive `0025`.
+FileStore rematerialize for safebox cell sockets was already shipped
 (`ea033bb6`).

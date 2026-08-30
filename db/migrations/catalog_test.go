@@ -61,6 +61,8 @@ const (
 	expectedCharacterMyShopUnitPricesDownSHA256             = "0ceec41ddafca4c178cbf94feed3fdd90e79ff17d1ca8bc967a90875ba7f4b77"
 	expectedCharacterItemInstanceSocketsUpSHA256            = "77b20a6cf165b6a8ad3c4da9f57bfd62ad1138c9138f395212d35aa361863dd0"
 	expectedCharacterItemInstanceSocketsDownSHA256          = "89a8b8e486b34afb5f76ea28da2af1bc5ed6b2f60820eb9757711398598205ec"
+	expectedCharacterSafeboxItemInstanceSocketsUpSHA256     = "b8147582356c6adba99a3ddd7beb532494168026362b1309286f89da6f6f4394"
+	expectedCharacterSafeboxItemInstanceSocketsDownSHA256   = "40660c2b6a9a9249bc518f779e1b568383327778b54019f9a4d959c1ac2ffc92"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -984,6 +986,46 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 		}
 	}
 
+	if len(catalog) < 25 {
+		t.Fatalf("expected character safebox item instance-sockets migration after character item instance-sockets, got %d", len(catalog))
+	}
+	twentyFifth := catalog[24]
+	if twentyFifth.Version != 25 || twentyFifth.Name != "character_safebox_item_instance_sockets" {
+		t.Fatalf("unexpected twenty-fifth migration: %#v", twentyFifth)
+	}
+	if twentyFifth.UpPath != "0025_character_safebox_item_instance_sockets.up.sql" {
+		t.Fatalf("unexpected twenty-fifth up path: %q", twentyFifth.UpPath)
+	}
+	if twentyFifth.DownPath != "0025_character_safebox_item_instance_sockets.down.sql" {
+		t.Fatalf("unexpected twenty-fifth down path: %q", twentyFifth.DownPath)
+	}
+	if twentyFifth.UpSHA256 != expectedCharacterSafeboxItemInstanceSocketsUpSHA256 {
+		t.Fatalf("unexpected character safebox item instance-sockets up checksum: got %q want %q", twentyFifth.UpSHA256, expectedCharacterSafeboxItemInstanceSocketsUpSHA256)
+	}
+	if twentyFifth.DownSHA256 != expectedCharacterSafeboxItemInstanceSocketsDownSHA256 {
+		t.Fatalf("unexpected character safebox item instance-sockets down checksum: got %q want %q", twentyFifth.DownSHA256, expectedCharacterSafeboxItemInstanceSocketsDownSHA256)
+	}
+	for _, want := range []string{
+		"ALTER TABLE character_safebox_items",
+		"ADD COLUMN has_sockets INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN socket0 INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN socket1 INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN socket2 INTEGER NOT NULL DEFAULT 0",
+		"has_sockets = 1 OR (socket0 = 0 AND socket1 = 0 AND socket2 = 0)",
+	} {
+		if !strings.Contains(twentyFifth.UpSQL, want) {
+			t.Fatalf("expected character safebox item instance-sockets up migration to contain %q, got:\n%s", want, twentyFifth.UpSQL)
+		}
+	}
+	for _, want := range []string{
+		"ALTER TABLE character_safebox_items DROP COLUMN socket2",
+		"ALTER TABLE character_safebox_items DROP COLUMN has_sockets",
+	} {
+		if !strings.Contains(twentyFifth.DownSQL, want) {
+			t.Fatalf("expected character safebox item instance-sockets down migration to contain %q, got:\n%s", want, twentyFifth.DownSQL)
+		}
+	}
+
 	for i, migration := range catalog {
 		wantVersion := i + 1
 		if migration.Version != wantVersion {
@@ -1053,7 +1095,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("built-in catalog summary: %v", err)
 	}
-	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 24 {
+	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 25 {
 		t.Fatalf("unexpected built-in catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -1063,7 +1105,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 		t.Fatalf("unexpected first built-in catalog summary row: %#v", summary.Migrations[0])
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "character_item_instance_sockets" {
+	if latest.Version != summary.LatestVersion || latest.Name != "character_safebox_item_instance_sockets" {
 		t.Fatalf("unexpected latest built-in catalog summary row: %#v", latest)
 	}
 }

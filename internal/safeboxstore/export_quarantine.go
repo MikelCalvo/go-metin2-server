@@ -135,6 +135,9 @@ func canonicalizeCharacterSafeboxStateExport(export CharacterSafeboxStateExport)
 		if _, exists := seenCells[cellKey]; exists {
 			return CharacterSafeboxStateExport{}, CharacterSafeboxStateQuarantineSummary{}, fmt.Errorf("%w: duplicate character_id=%d cell=%d", ErrInvalidCharacterSafeboxStateExport, row.CharacterID, row.Cell)
 		}
+		if err := validateQuarantineSafeboxInstanceSockets(row.ID, row.HasSockets, row.Socket0, row.Socket1, row.Socket2); err != nil {
+			return CharacterSafeboxStateExport{}, CharacterSafeboxStateQuarantineSummary{}, err
+		}
 		seenItemIDs[row.ID] = struct{}{}
 		seenCells[cellKey] = struct{}{}
 		seenLoginsByID[row.CharacterID] = login
@@ -147,6 +150,10 @@ func canonicalizeCharacterSafeboxStateExport(export CharacterSafeboxStateExport)
 			Vnum:        row.Vnum,
 			Count:       row.Count,
 			Locked:      row.Locked,
+			HasSockets:  row.HasSockets,
+			Socket0:     row.Socket0,
+			Socket1:     row.Socket1,
+			Socket2:     row.Socket2,
 		})
 	}
 
@@ -192,4 +199,14 @@ func canonicalizeCharacterSafeboxStateExport(export CharacterSafeboxStateExport)
 		summary.Logins = []string{}
 	}
 	return canonical, summary, nil
+}
+
+func validateQuarantineSafeboxInstanceSockets(itemID uint64, hasSockets bool, socket0, socket1, socket2 int32) error {
+	if hasSockets {
+		return nil
+	}
+	if socket0 != 0 || socket1 != 0 || socket2 != 0 {
+		return fmt.Errorf("%w: safebox item %d has non-zero sockets without has_sockets", ErrInvalidCharacterSafeboxStateExport, itemID)
+	}
+	return nil
 }

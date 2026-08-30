@@ -15,7 +15,8 @@ import (
 var ErrCharacterSafeboxStateImportExecutorRequired = errors.New("character safebox-state import executor is required")
 
 // ErrCharacterSafeboxStateImportSchemaRequired reports that the target database
-// has not applied the 0015_character_safebox_money migration boundary yet.
+// has not applied the 0015_character_safebox_money tip plus additive
+// 0025_character_safebox_item_instance_sockets boundary yet.
 var ErrCharacterSafeboxStateImportSchemaRequired = errors.New("character safebox-state schema is not applied")
 
 // ErrCharacterSafeboxStateImportRowCount reports that an INSERT affected an
@@ -97,18 +98,27 @@ func requireCharacterSafeboxStateSchema(ctx context.Context, querier dbmigration
 	if err != nil {
 		return fmt.Errorf("%w: read schema_migrations: %v", ErrCharacterSafeboxStateImportSchemaRequired, err)
 	}
-	for _, entry := range ledger {
-		if entry.Version == CharacterSafeboxStateMigrationVersion && entry.Name == CharacterSafeboxStateMigrationName {
-			return nil
-		}
-	}
+	hasSafeboxMoney := false
+	hasInstanceSockets := false
 	latest := 0
 	for _, entry := range ledger {
 		if entry.Version > latest {
 			latest = entry.Version
 		}
+		if entry.Version == CharacterSafeboxStateMigrationVersion && entry.Name == CharacterSafeboxStateMigrationName {
+			hasSafeboxMoney = true
+		}
+		if entry.Version == CharacterSafeboxItemInstanceSocketsMigrationVersion && entry.Name == CharacterSafeboxItemInstanceSocketsMigrationName {
+			hasInstanceSockets = true
+		}
 	}
-	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrCharacterSafeboxStateImportSchemaRequired, latest, CharacterSafeboxStateMigrationVersion, CharacterSafeboxStateMigrationName)
+	if hasSafeboxMoney && hasInstanceSockets {
+		return nil
+	}
+	if !hasSafeboxMoney {
+		return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrCharacterSafeboxStateImportSchemaRequired, latest, CharacterSafeboxStateMigrationVersion, CharacterSafeboxStateMigrationName)
+	}
+	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrCharacterSafeboxStateImportSchemaRequired, latest, CharacterSafeboxItemInstanceSocketsMigrationVersion, CharacterSafeboxItemInstanceSocketsMigrationName)
 }
 
 func insertCharacterSafeboxPassword(ctx context.Context, tx *sql.Tx, row CharacterSafeboxPasswordRow) error {
@@ -125,20 +135,24 @@ INSERT INTO character_safebox_passwords (
 }
 
 func insertCharacterSafeboxItem(ctx context.Context, tx *sql.Tx, row CharacterSafeboxItemRow) error {
-	locked := 0
-	if row.Locked {
-		locked = 1
-	}
 	result, err := tx.ExecContext(ctx, `
 INSERT INTO character_safebox_items (
-    id, character_id, login, cell, vnum, count, locked
-) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		int64(row.ID), int64(row.CharacterID), row.Login, int(row.Cell), int64(row.Vnum), int(row.Count), locked,
+    id, character_id, login, cell, vnum, count, locked, has_sockets, socket0, socket1, socket2
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		int64(row.ID), int64(row.CharacterID), row.Login, int(row.Cell), int64(row.Vnum), int(row.Count), boolToSQLInt(row.Locked),
+		boolToSQLInt(row.HasSockets), int64(row.Socket0), int64(row.Socket1), int64(row.Socket2),
 	)
 	if err != nil {
 		return fmt.Errorf("insert safebox item id %d character %d cell %d: %w", row.ID, row.CharacterID, row.Cell, err)
 	}
 	return requireExactSafeboxStateImportRows(result, "insert safebox item", int64(row.ID))
+}
+
+func boolToSQLInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func requireExactSafeboxStateImportRows(result sql.Result, action string, id int64) error {

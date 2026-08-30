@@ -12,8 +12,8 @@ func TestExportCharacterSafeboxStateBuildsDeterministicRowsMatchingMigrationShap
 		Password:    "secret",
 		Money:       1500,
 		Cells: []Cell{
-			{Cell: 1, ID: 1002, Vnum: 27002, Count: 1},
-			{Cell: 0, ID: 1001, Vnum: 27001, Count: 2, Locked: true},
+			{Cell: 1, ID: 1002, Vnum: 27002, Count: 1, HasSockets: true},
+			{Cell: 0, ID: 1001, Vnum: 27001, Count: 2, Locked: true, HasSockets: true, Socket0: 1, Socket2: 7},
 		},
 	}, {
 		Login:       "Beta",
@@ -43,11 +43,11 @@ func TestExportCharacterSafeboxStateBuildsDeterministicRowsMatchingMigrationShap
 	if len(export.Items) != 2 {
 		t.Fatalf("unexpected item rows: %#v", export.Items)
 	}
-	if export.Items[0].Cell != 0 || export.Items[0].ID != 1001 || !export.Items[0].Locked {
-		t.Fatalf("expected cells sorted ascending, got %#v", export.Items)
+	if export.Items[0].Cell != 0 || export.Items[0].ID != 1001 || !export.Items[0].Locked || !export.Items[0].HasSockets || export.Items[0].Socket0 != 1 || export.Items[0].Socket1 != 0 || export.Items[0].Socket2 != 7 {
+		t.Fatalf("expected cells sorted ascending with active sockets, got %#v", export.Items)
 	}
-	if export.Items[1].Cell != 1 || export.Items[1].ID != 1002 {
-		t.Fatalf("unexpected second item row: %#v", export.Items[1])
+	if export.Items[1].Cell != 1 || export.Items[1].ID != 1002 || !export.Items[1].HasSockets || export.Items[1].Socket0 != 0 || export.Items[1].Socket1 != 0 || export.Items[1].Socket2 != 0 {
+		t.Fatalf("unexpected second item row with explicit-zero sockets: %#v", export.Items[1])
 	}
 
 	again, err := ExportCharacterSafeboxState(snapshot)
@@ -134,8 +134,8 @@ func TestQuarantineCharacterSafeboxStateExportCanonicalizesAndRejectsDrift(t *te
 			{CharacterID: 7, Login: "Alpha", Password: "secret", Money: 2500},
 		},
 		Items: []CharacterSafeboxItemRow{
-			{ID: 1002, CharacterID: 7, Login: "Alpha", Cell: 1, Vnum: 27002, Count: 1},
-			{ID: 1001, CharacterID: 7, Login: "Alpha", Cell: 0, Vnum: 27001, Count: 2, Locked: true},
+			{ID: 1002, CharacterID: 7, Login: "Alpha", Cell: 1, Vnum: 27002, Count: 1, HasSockets: true},
+			{ID: 1001, CharacterID: 7, Login: "Alpha", Cell: 0, Vnum: 27001, Count: 2, Locked: true, HasSockets: true, Socket0: 1, Socket2: 7},
 		},
 	}
 
@@ -151,6 +151,12 @@ func TestQuarantineCharacterSafeboxStateExportCanonicalizesAndRejectsDrift(t *te
 	}
 	if quarantined.Passwords[0].Money != 2500 || quarantined.Passwords[1].Money != 0 {
 		t.Fatalf("expected money to survive quarantine, got %#v", quarantined.Passwords)
+	}
+	if !quarantined.Items[0].HasSockets || quarantined.Items[0].Socket0 != 1 || quarantined.Items[0].Socket2 != 7 {
+		t.Fatalf("expected active sockets to survive quarantine, got %#v", quarantined.Items[0])
+	}
+	if !quarantined.Items[1].HasSockets || quarantined.Items[1].Socket0 != 0 || quarantined.Items[1].Socket1 != 0 || quarantined.Items[1].Socket2 != 0 {
+		t.Fatalf("expected explicit-zero sockets to survive quarantine, got %#v", quarantined.Items[1])
 	}
 	if _, err := ValidateCharacterSafeboxStateExport(quarantined); err != nil {
 		t.Fatalf("validate quarantined export: %v", err)
@@ -181,5 +187,14 @@ func TestQuarantineCharacterSafeboxStateExportCanonicalizesAndRejectsDrift(t *te
 	})
 	if _, _, err := QuarantineCharacterSafeboxStateExport(orphanItem); err == nil {
 		t.Fatal("expected orphan item character_id to fail closed")
+	}
+
+	badSockets := export
+	badSockets.Items = append([]CharacterSafeboxItemRow{}, export.Items...)
+	badSockets.Items[0] = CharacterSafeboxItemRow{
+		ID: 1001, CharacterID: 7, Login: "Alpha", Cell: 0, Vnum: 27001, Count: 2, Locked: true, Socket0: 1,
+	}
+	if _, _, err := QuarantineCharacterSafeboxStateExport(badSockets); err == nil {
+		t.Fatal("expected non-zero sockets without has_sockets to fail closed")
 	}
 }

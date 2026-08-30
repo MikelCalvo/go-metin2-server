@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -21,8 +22,8 @@ func TestSQLiteHarnessSafeboxStateImportInsertsPasswordsAndItems(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxStateMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxStateMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxItemInstanceSocketsMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxItemInstanceSocketsMigrationVersion, err)
 	}
 
 	accounts := []accountstore.Account{
@@ -57,8 +58,8 @@ func TestSQLiteHarnessSafeboxStateImportInsertsPasswordsAndItems(t *testing.T) {
 		Password:    "secret",
 		Money:       1500,
 		Cells: []Cell{
-			{Cell: 1, ID: 1002, Vnum: 27002, Count: 1},
-			{Cell: 0, ID: 1001, Vnum: 27001, Count: 2, Locked: true},
+			{Cell: 1, ID: 1002, Vnum: 27002, Count: 1, HasSockets: true},
+			{Cell: 0, ID: 1001, Vnum: 27001, Count: 2, Locked: true, HasSockets: true, Socket0: 1, Socket2: 7},
 		},
 	}, {
 		Login:       "Beta",
@@ -100,8 +101,8 @@ func TestSQLiteHarnessSafeboxStateImportInsertsPasswordsAndItems(t *testing.T) {
 
 	assertSafeboxPasswordRow(t, db, 7, "Alpha", "secret", 1500)
 	assertSafeboxPasswordRow(t, db, 9, "Beta", "", 0)
-	assertSafeboxItemRow(t, db, 1001, 7, "Alpha", 0, 27001, 2, true)
-	assertSafeboxItemRow(t, db, 1002, 7, "Alpha", 1, 27002, 1, false)
+	assertSafeboxItemRow(t, db, 1001, 7, "Alpha", 0, 27001, 2, true, true, 1, 0, 7)
+	assertSafeboxItemRow(t, db, 1002, 7, "Alpha", 1, 27002, 1, false, true, 0, 0, 0)
 }
 
 func TestSQLiteHarnessSafeboxStateImportRejectsDuplicatePrimaryKey(t *testing.T) {
@@ -109,8 +110,8 @@ func TestSQLiteHarnessSafeboxStateImportRejectsDuplicatePrimaryKey(t *testing.T)
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxStateMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxStateMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxItemInstanceSocketsMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxItemInstanceSocketsMigrationVersion, err)
 	}
 
 	accounts := []accountstore.Account{{
@@ -182,8 +183,8 @@ func TestSQLiteHarnessSafeboxStateImportRejectsMissingParentCharacter(t *testing
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxStateMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxStateMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxItemInstanceSocketsMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxItemInstanceSocketsMigrationVersion, err)
 	}
 
 	export := CharacterSafeboxStateExport{
@@ -214,8 +215,8 @@ func TestSQLiteHarnessSafeboxStateImportAcceptsEmptyExport(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxStateMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxStateMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxItemInstanceSocketsMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxItemInstanceSocketsMigrationVersion, err)
 	}
 
 	export := CharacterSafeboxStateExport{
@@ -233,6 +234,30 @@ func TestSQLiteHarnessSafeboxStateImportAcceptsEmptyExport(t *testing.T) {
 	}
 	if len(result.CharacterIDs) != 0 {
 		t.Fatalf("empty import character ids = %+v, want empty", result.CharacterIDs)
+	}
+}
+
+func TestSQLiteHarnessSafeboxStateImportRejectsTipFifteenOnlyLedger(t *testing.T) {
+	db := openSQLiteSafeboxStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxStateMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxStateMigrationVersion, err)
+	}
+
+	export := CharacterSafeboxStateExport{
+		MigrationVersion: CharacterSafeboxStateMigrationVersion,
+		MigrationName:    CharacterSafeboxStateMigrationName,
+		Passwords:        []CharacterSafeboxPasswordRow{},
+		Items:            []CharacterSafeboxItemRow{},
+	}
+	_, err := ImportCharacterSafeboxState(ctx, db, export)
+	if !errors.Is(err, ErrCharacterSafeboxStateImportSchemaRequired) {
+		t.Fatalf("ImportCharacterSafeboxState tip-15-only error = %v, want %v", err, ErrCharacterSafeboxStateImportSchemaRequired)
+	}
+	if err == nil || !strings.Contains(err.Error(), "25") || !strings.Contains(err.Error(), CharacterSafeboxItemInstanceSocketsMigrationName) {
+		t.Fatalf("expected tip-15-only error to name additive 25, got %v", err)
 	}
 }
 
@@ -257,7 +282,7 @@ FROM character_safebox_passwords WHERE character_id = ?`,
 	}
 }
 
-func assertSafeboxItemRow(t *testing.T, db *sql.DB, id uint64, characterID uint32, login string, cell uint8, vnum uint32, count uint16, locked bool) {
+func assertSafeboxItemRow(t *testing.T, db *sql.DB, id uint64, characterID uint32, login string, cell uint8, vnum uint32, count uint16, locked bool, hasSockets bool, socket0, socket1, socket2 int32) {
 	t.Helper()
 
 	var (
@@ -268,20 +293,28 @@ func assertSafeboxItemRow(t *testing.T, db *sql.DB, id uint64, characterID uint3
 		gotVnum        int64
 		gotCount       int
 		gotLocked      int
+		gotHasSockets  int
+		gotSocket0     int
+		gotSocket1     int
+		gotSocket2     int
 	)
 	if err := db.QueryRowContext(context.Background(), `
-SELECT id, character_id, login, cell, vnum, count, locked
+SELECT id, character_id, login, cell, vnum, count, locked, has_sockets, socket0, socket1, socket2
 FROM character_safebox_items WHERE id = ?`,
-		id).Scan(&gotID, &gotCharacterID, &gotLogin, &gotCell, &gotVnum, &gotCount, &gotLocked); err != nil {
+		id).Scan(&gotID, &gotCharacterID, &gotLogin, &gotCell, &gotVnum, &gotCount, &gotLocked, &gotHasSockets, &gotSocket0, &gotSocket1, &gotSocket2); err != nil {
 		t.Fatalf("select safebox item id %d: %v", id, err)
 	}
 	wantLocked := 0
 	if locked {
 		wantLocked = 1
 	}
-	if gotID != int64(id) || gotCharacterID != int64(characterID) || gotLogin != login || gotCell != int(cell) || gotVnum != int64(vnum) || gotCount != int(count) || gotLocked != wantLocked {
-		t.Fatalf("item row mismatch for id %d: got id=%d character=%d login=%q cell=%d vnum=%d count=%d locked=%d want character=%d login=%q cell=%d vnum=%d count=%d locked=%d",
-			id, gotID, gotCharacterID, gotLogin, gotCell, gotVnum, gotCount, gotLocked, characterID, login, cell, vnum, count, wantLocked)
+	wantHasSockets := 0
+	if hasSockets {
+		wantHasSockets = 1
+	}
+	if gotID != int64(id) || gotCharacterID != int64(characterID) || gotLogin != login || gotCell != int(cell) || gotVnum != int64(vnum) || gotCount != int(count) || gotLocked != wantLocked || gotHasSockets != wantHasSockets || gotSocket0 != int(socket0) || gotSocket1 != int(socket1) || gotSocket2 != int(socket2) {
+		t.Fatalf("item row mismatch for id %d: got id=%d character=%d login=%q cell=%d vnum=%d count=%d locked=%d has_sockets=%d sockets=(%d,%d,%d) want character=%d login=%q cell=%d vnum=%d count=%d locked=%d has_sockets=%d sockets=(%d,%d,%d)",
+			id, gotID, gotCharacterID, gotLogin, gotCell, gotVnum, gotCount, gotLocked, gotHasSockets, gotSocket0, gotSocket1, gotSocket2, characterID, login, cell, vnum, count, wantLocked, wantHasSockets, socket0, socket1, socket2)
 	}
 }
 

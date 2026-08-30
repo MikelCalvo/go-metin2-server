@@ -192,6 +192,14 @@
       "down_path": "0024_character_item_instance_sockets.down.sql",
       "up_sha256": "77b20a6cf165b6a8ad3c4da9f57bfd62ad1138c9138f395212d35aa361863dd0",
       "down_sha256": "89a8b8e486b34afb5f76ea28da2af1bc5ed6b2f60820eb9757711398598205ec"
+    },
+    {
+      "version": 25,
+      "name": "character_safebox_item_instance_sockets",
+      "up_path": "0025_character_safebox_item_instance_sockets.up.sql",
+      "down_path": "0025_character_safebox_item_instance_sockets.down.sql",
+      "up_sha256": "b8147582356c6adba99a3ddd7beb532494168026362b1309286f89da6f6f4394",
+      "down_sha256": "40660c2b6a9a9249bc518f779e1b568383327778b54019f9a4d959c1ac2ffc92"
     }
   ]
 }

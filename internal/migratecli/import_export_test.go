@@ -10,6 +10,7 @@ import (
 	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/itemstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/safeboxstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 )
 
@@ -217,6 +218,8 @@ func TestRunImportExportImportsEmptyExportsAgainstRegisteredDriver(t *testing.T)
 			// additive 0021 keep_on_fail and 0022 fail_result_vnum before INSERT.
 			// Character item-state SQL import keeps tip-0003 export identity but
 			// requires additive 0024 instance sockets before INSERT.
+			// Character safebox-state SQL import keeps tip-0015 export identity but
+			// requires additive 0025 instance sockets before INSERT.
 			ledger := []dbmigrations.LedgerEntry{ledgerEntry(tc.version)}
 			if tc.kind == "static-actor-content-state" {
 				ledger = []dbmigrations.LedgerEntry{
@@ -239,6 +242,12 @@ func TestRunImportExportImportsEmptyExportsAgainstRegisteredDriver(t *testing.T)
 				ledger = []dbmigrations.LedgerEntry{
 					ledgerEntry(accountstore.CharacterItemStateMigrationVersion),
 					ledgerEntry(accountstore.CharacterItemInstanceSocketsMigrationVersion),
+				}
+			}
+			if tc.kind == "character-safebox-state" {
+				ledger = []dbmigrations.LedgerEntry{
+					ledgerEntry(safeboxstore.CharacterSafeboxStateMigrationVersion),
+					ledgerEntry(safeboxstore.CharacterSafeboxItemInstanceSocketsMigrationVersion),
 				}
 			}
 			driver.setLedger(ledger)

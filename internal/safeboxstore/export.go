@@ -8,6 +8,9 @@ import (
 const (
 	CharacterSafeboxStateMigrationVersion = 15
 	CharacterSafeboxStateMigrationName    = "character_safebox_money"
+
+	CharacterSafeboxItemInstanceSocketsMigrationVersion = 25
+	CharacterSafeboxItemInstanceSocketsMigrationName    = "character_safebox_item_instance_sockets"
 )
 
 // CharacterSafeboxStateExport is a deterministic, schema-shaped projection of
@@ -34,7 +37,10 @@ type CharacterSafeboxPasswordRow struct {
 	Money       int64  `json:"money,omitempty"`
 }
 
-// CharacterSafeboxItemRow mirrors character_safebox_items for one durable cell.
+// CharacterSafeboxItemRow mirrors character_safebox_items for one durable cell,
+// including optional additive 0025 instance sockets. HasSockets=false / omitted
+// means nil instance sockets (template fallback); HasSockets=true including
+// all-zero is authoritative. Export identity stays tip-0015.
 type CharacterSafeboxItemRow struct {
 	ID          uint64 `json:"id"`
 	CharacterID uint32 `json:"character_id"`
@@ -43,6 +49,10 @@ type CharacterSafeboxItemRow struct {
 	Vnum        uint32 `json:"vnum"`
 	Count       uint16 `json:"count"`
 	Locked      bool   `json:"locked,omitempty"`
+	HasSockets  bool   `json:"has_sockets,omitempty"`
+	Socket0     int32  `json:"socket0,omitempty"`
+	Socket1     int32  `json:"socket1,omitempty"`
+	Socket2     int32  `json:"socket2,omitempty"`
 }
 
 // ExportCharacterSafeboxState validates a safebox snapshot and projects every
@@ -76,6 +86,10 @@ func ExportCharacterSafeboxState(snapshot Snapshot) (CharacterSafeboxStateExport
 				Vnum:        cell.Vnum,
 				Count:       cell.Count,
 				Locked:      cell.Locked,
+				HasSockets:  cell.HasSockets,
+				Socket0:     cell.Socket0,
+				Socket1:     cell.Socket1,
+				Socket2:     cell.Socket2,
 			})
 		}
 	}

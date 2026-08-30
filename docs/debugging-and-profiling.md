@@ -720,13 +720,13 @@ The quarantine contract requires `migration_version = 10`, `migration_name = "bo
 
 ### `GET /local/safebox-store/exports/character-safebox-state`
 
-Returns a loopback-only, read-only JSON projection of the committed durable safebox FileStore onto the `0015_character_safebox_money` migration tip. This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the committed safebox snapshot is invalid or cannot be projected onto the schema shape.
+Returns a loopback-only, read-only JSON projection of the committed durable safebox FileStore onto the `0015_character_safebox_money` migration tip. Presence-aware additive `0025` `has_sockets` / `socket0`/`socket1`/`socket2` fields on items use the same semantics as tip-`0003`+`0024` (export identity stays tip-`0015`). This endpoint is registered only on `gamed`, rejects non-`GET` methods with `405`, rejects non-loopback callers with `403`, and returns `409` if the committed safebox snapshot is invalid or cannot be projected onto the schema shape.
 
 Successful responses include `migration_version`, `migration_name`, deterministic `passwords` rows (one per durable character key, with empty `password` meaning bootstrap default `000000`), and deterministic `items` rows for durable cells `0..14`. A missing safebox snapshot returns an empty migration-shaped export, matching `/local/safebox-store/validate`. The response deliberately omits executable SQL, account roster rows, live presentation windows, money/mall state, and runtime world state, and it does not apply migrations or mutate the safebox store. Use it as an operator/backfill preflight beside the FileStore rematerialize and `/local/safebox-store/*` backup/restore drill path.
 
 ### `POST /local/safebox-store/exports/character-safebox-state/quarantine`
 
-Validates and canonicalizes a retained `0015_character_safebox_money` export without opening a database or mutating safebox snapshots. This endpoint is registered only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects non-loopback callers with `403`, rejects oversized bodies over 1 MiB with `413`, rejects malformed/invalid-UTF-8/`null` JSON with `400`, and returns `409` when the payload fails the quarantine contract.
+Validates and canonicalizes a retained `0015_character_safebox_money` export without opening a database or mutating safebox snapshots. Presence-aware additive `0025` `has_sockets` / `socket0`/`socket1`/`socket2` on items keep tip-`0015` export identity; quarantine rejects non-zero sockets without `has_sockets` (same semantics as tip-`0003`+`0024`). This endpoint is registered only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects non-loopback callers with `403`, rejects oversized bodies over 1 MiB with `413`, rejects malformed/invalid-UTF-8/`null` JSON with `400`, and returns `409` when the payload fails the quarantine contract.
 
 Successful responses include:
 
