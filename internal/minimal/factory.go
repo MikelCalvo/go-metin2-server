@@ -11230,7 +11230,7 @@ func encodeInventoryItemUpdateFrameWithTemplates(item inventory.ItemInstance, te
 		Position:   position,
 		Count:      uint8(item.Count),
 		Sockets:    resolveItemSockets(item, template),
-		Attributes: bootstrapItemAttributes(template),
+		Attributes: resolveItemAttributes(item, template),
 	}), nil
 }
 
@@ -12127,7 +12127,7 @@ func bootstrapItemSetPacket(position itemproto.Position, instance inventory.Item
 		AntiFlags:  bootstrapItemAntiFlags(template),
 		Highlight:  bootstrapItemHighlight(template),
 		Sockets:    resolveItemSockets(instance, template),
-		Attributes: bootstrapItemAttributes(template),
+		Attributes: resolveItemAttributes(instance, template),
 	}, nil
 }
 
@@ -12246,6 +12246,19 @@ func bootstrapItemAttributes(template itemcatalog.Template) [itemproto.ItemAttri
 	return attributes
 }
 
+func resolveItemAttributes(instance inventory.ItemInstance, template itemcatalog.Template) [itemproto.ItemAttributeCount]itemproto.Attribute {
+	fallback := inventory.AttributeValues{}
+	for i, attribute := range template.Attributes {
+		fallback[i] = inventory.Attribute{Type: attribute.Type, Value: attribute.Value}
+	}
+	effective := instance.EffectiveAttributes(fallback)
+	var attributes [itemproto.ItemAttributeCount]itemproto.Attribute
+	for i, attribute := range effective {
+		attributes[i] = itemproto.Attribute{Type: attribute.Type, Value: attribute.Value}
+	}
+	return attributes
+}
+
 func bootstrapItemAntiFlags(template itemcatalog.Template) uint32 {
 	var flags uint32
 	if template.AntiFemale {
@@ -12318,7 +12331,7 @@ func encodeBootstrapItemUpdateFrameWithTemplates(position itemproto.Position, in
 		Position:   position,
 		Count:      uint8(instance.Count),
 		Sockets:    resolveItemSockets(instance, template),
-		Attributes: bootstrapItemAttributes(template),
+		Attributes: resolveItemAttributes(instance, template),
 	}), nil
 }
 

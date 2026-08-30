@@ -3386,7 +3386,7 @@ func (r *sharedWorldRegistry) OpenMyShopGuestBrowse(guestID uint64, hostVID uint
 			Count:      row.Count,
 			DisplayPos: row.DisplayPos,
 			Sockets:    resolveItemSockets(liveMatched, template),
-			Attributes: bootstrapItemAttributes(template),
+			Attributes: resolveItemAttributes(liveMatched, template),
 		}
 	}
 	r.registerMyShopGuestLocked(host.Entity.ID, guestID)
@@ -4373,6 +4373,7 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 	}
 	if goldAmount == 0 {
 		ground.Item.Sockets = item.CloneSockets()
+		ground.Item.Attributes = item.CloneAttributes()
 	}
 	r.groundItemsByVID[vid] = ground
 	frames := encodeGroundItemVisibleFrames(ground)
@@ -4751,6 +4752,7 @@ func (r *sharedWorldRegistry) groundItemPickupFor(collectorID uint64, collector 
 
 func cloneSharedGroundItemInstance(item inventory.ItemInstance) inventory.ItemInstance {
 	item.Sockets = item.CloneSockets()
+	item.Attributes = item.CloneAttributes()
 	return item
 }
 

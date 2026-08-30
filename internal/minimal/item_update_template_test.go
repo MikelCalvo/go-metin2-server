@@ -110,6 +110,62 @@ func TestInventoryItemUpdatePrefersInstanceSocketsIncludingExplicitZero(t *testi
 	}
 }
 
+func TestInventoryItemUpdatePrefersInstanceAttributesIncludingExplicitZero(t *testing.T) {
+	template := itemcatalog.Template{
+		Vnum:      72723,
+		Name:      "Auto HP Recovery S",
+		Stackable: true,
+		MaxCount:  200,
+		Sockets:   itemcatalog.SocketValues{9, 8, 7},
+		Attributes: itemcatalog.AttributeValues{
+			{Type: 1, Value: 25},
+			{Type: 7, Value: -3},
+		},
+	}
+	zero := inventory.AttributeValues{}
+	item := inventory.ItemInstance{ID: 42, Vnum: 72723, Count: 1, Slot: 5, Attributes: &zero}
+	frame, err := encodeInventoryItemUpdateFrameWithTemplates(item, map[uint32]itemcatalog.Template{72723: template})
+	if err != nil {
+		t.Fatalf("encode instance-attribute update: %v", err)
+	}
+	update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, frame))
+	if err != nil {
+		t.Fatalf("decode instance-attribute update: %v", err)
+	}
+	if update.Attributes != ([itemproto.ItemAttributeCount]itemproto.Attribute{}) {
+		t.Fatalf("expected explicit zero instance attributes to win over template, got %+v", update.Attributes)
+	}
+
+	active := inventory.AttributeValues{{Type: 3, Value: 30}, {Type: 4, Value: -5}}
+	item.Attributes = &active
+	frame, err = encodeInventoryItemUpdateFrameWithTemplates(item, map[uint32]itemcatalog.Template{72723: template})
+	if err != nil {
+		t.Fatalf("encode active instance-attribute update: %v", err)
+	}
+	update, err = itemproto.DecodeUpdate(decodeSingleFrame(t, frame))
+	if err != nil {
+		t.Fatalf("decode active instance-attribute update: %v", err)
+	}
+	wantActive := [itemproto.ItemAttributeCount]itemproto.Attribute{{Type: 3, Value: 30}, {Type: 4, Value: -5}}
+	if update.Attributes != wantActive {
+		t.Fatalf("expected instance attributes %+v, got %+v", wantActive, update.Attributes)
+	}
+
+	item.Attributes = nil
+	frame, err = encodeInventoryItemUpdateFrameWithTemplates(item, map[uint32]itemcatalog.Template{72723: template})
+	if err != nil {
+		t.Fatalf("encode template-fallback attribute update: %v", err)
+	}
+	update, err = itemproto.DecodeUpdate(decodeSingleFrame(t, frame))
+	if err != nil {
+		t.Fatalf("decode template-fallback attribute update: %v", err)
+	}
+	wantTemplate := [itemproto.ItemAttributeCount]itemproto.Attribute{{Type: 1, Value: 25}, {Type: 7, Value: -3}}
+	if update.Attributes != wantTemplate {
+		t.Fatalf("expected template fallback attributes %+v, got %+v", wantTemplate, update.Attributes)
+	}
+}
+
 func TestGroundPickupCountOnlyUpdateCarriesTemplateDisplayMetadata(t *testing.T) {
 	template := itemcatalog.Template{
 		Vnum:      27006,

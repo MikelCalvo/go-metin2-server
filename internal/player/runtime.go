@@ -1520,7 +1520,16 @@ func (r *Runtime) ExchangeItemAddDisplay(slot inventory.SlotIndex, template item
 		return ExchangeItemAddDisplay{}, false
 	}
 	sockets := itemcatalog.SocketValues(item.EffectiveSockets(inventory.SocketValues(template.Sockets)))
-	return ExchangeItemAddDisplay{Item: item, Sockets: sockets, Attributes: template.Attributes}, true
+	fallback := inventory.AttributeValues{}
+	for i, attribute := range template.Attributes {
+		fallback[i] = inventory.Attribute{Type: attribute.Type, Value: attribute.Value}
+	}
+	effective := item.EffectiveAttributes(fallback)
+	var attributes itemcatalog.AttributeValues
+	for i, attribute := range effective {
+		attributes[i] = itemcatalog.Attribute{Type: attribute.Type, Value: attribute.Value}
+	}
+	return ExchangeItemAddDisplay{Item: item, Sockets: sockets, Attributes: attributes}, true
 }
 
 func (r *Runtime) templateBackedAntiGiveInventoryItem(slot inventory.SlotIndex, template itemcatalog.Template) (inventory.ItemInstance, bool) {
@@ -2701,6 +2710,7 @@ func cloneItemInstances(items []inventory.ItemInstance) []inventory.ItemInstance
 	cloned := append([]inventory.ItemInstance(nil), items...)
 	for i := range cloned {
 		cloned[i].Sockets = items[i].CloneSockets()
+		cloned[i].Attributes = items[i].CloneAttributes()
 	}
 	return cloned
 }

@@ -17,10 +17,20 @@ var (
 const (
 	CarriedInventorySlotCount SlotIndex = 90
 	ItemSocketCount                     = 3
+	ItemAttributeCount                  = 7
 )
 
 // SocketValues is the fixed wire-width per-instance socket array.
 type SocketValues [ItemSocketCount]int32
+
+// Attribute is one opaque wire-width attribute cell.
+type Attribute struct {
+	Type  uint8 `json:"type"`
+	Value int16 `json:"value"`
+}
+
+// AttributeValues is the fixed wire-width per-instance attribute array.
+type AttributeValues [ItemAttributeCount]Attribute
 
 type ItemInstance struct {
 	ID        uint64
@@ -33,6 +43,10 @@ type ItemInstance struct {
 	// Sockets is optional per-instance socket state. nil means "fall back to
 	// template sockets"; a non-nil pointer (including all-zero) is authoritative.
 	Sockets *SocketValues `json:"sockets,omitempty"`
+	// Attributes is optional per-instance attribute state. nil means "fall back
+	// to template attributes"; a non-nil pointer (including all-zero / type-zero)
+	// is authoritative.
+	Attributes *AttributeValues `json:"attributes,omitempty"`
 }
 
 // HasSockets reports whether this instance carries authoritative socket state.
@@ -53,6 +67,28 @@ func (i ItemInstance) CloneSockets() *SocketValues {
 func (i ItemInstance) EffectiveSockets(fallback SocketValues) SocketValues {
 	if i.Sockets != nil {
 		return *i.Sockets
+	}
+	return fallback
+}
+
+// HasAttributes reports whether this instance carries authoritative attribute state.
+func (i ItemInstance) HasAttributes() bool {
+	return i.Attributes != nil
+}
+
+// CloneAttributes returns an independent copy of the instance attributes pointer.
+func (i ItemInstance) CloneAttributes() *AttributeValues {
+	if i.Attributes == nil {
+		return nil
+	}
+	copied := *i.Attributes
+	return &copied
+}
+
+// EffectiveAttributes prefers instance attributes when present; otherwise fallback.
+func (i ItemInstance) EffectiveAttributes(fallback AttributeValues) AttributeValues {
+	if i.Attributes != nil {
+		return *i.Attributes
 	}
 	return fallback
 }
@@ -101,6 +137,7 @@ func (i ItemInstance) WithInventorySlot(slot SlotIndex) (ItemInstance, error) {
 	updated.Equipped = false
 	updated.EquipSlot = EquipmentSlotNone
 	updated.Sockets = i.CloneSockets()
+	updated.Attributes = i.CloneAttributes()
 	if err := updated.Validate(); err != nil {
 		return ItemInstance{}, err
 	}

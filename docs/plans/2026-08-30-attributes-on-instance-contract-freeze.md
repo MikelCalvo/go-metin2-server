@@ -122,5 +122,16 @@ narrow substrate contract first; GREEN / SQL tip companions stay follow-on.
 
 ## Status
 
-Docs/spec freeze only on `lane/items`. RED/GREEN intentionally deferred until
-the next items-lane run opens store/runtime proofs against this contract.
+GREEN on `lane/items` for the FileStore-first substrate + encode preference:
+`inventory.ItemInstance` owns presence-aware `Attributes` (`HasAttributes` /
+`EffectiveAttributes` / `CloneAttributes`, including explicit all-zero /
+type-zero); account FileStore round-trips them; `ITEM_SET` / `ITEM_UPDATE` /
+open-presentation `SAFEBOX_SET` / guest MYSHOP browse / exchange `ITEM_ADD`
+prefer instance attributes when present and otherwise keep template fallback.
+Live drop → pickup clones preserve instance attributes in-memory.
+
+Still deferred (follow-on slices):
+- durable ground FileStore attribute rematerialize
+- durable safebox cell FileStore attribute rematerialize
+- tip-`0003` / `0010` / `0015` SQL attribute companions
+- attribute gameplay / apply formulas / refine catalysts / mall

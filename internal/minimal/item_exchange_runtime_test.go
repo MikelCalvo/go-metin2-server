@@ -1353,6 +1353,102 @@ func TestGameRuntimeItemExchangeItemAddPrefersInstanceEffectiveSocketsWithoutMut
 	}
 }
 
+func TestGameRuntimeItemExchangeItemAddPrefersInstanceEffectiveAttributesWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	zeroAttributes := inventory.AttributeValues{}
+	seededAttributes := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 7, Value: -3}}
+	cases := []struct {
+		name       string
+		loginKey   uint32
+		ownerID    uint32
+		ownerVID   uint32
+		peerID     uint32
+		peerVID    uint32
+		itemID     uint64
+		attributes *inventory.AttributeValues
+	}{
+		{name: "explicit-zero", loginKey: 0x707070b1, ownerID: 0x010307b1, ownerVID: 0x020407b1, peerID: 0x010307b2, peerVID: 0x020407b2, itemID: 901, attributes: &zeroAttributes},
+		{name: "seeded", loginKey: 0x707070b3, ownerID: 0x010307b3, ownerVID: 0x020407b3, peerID: 0x010307b4, peerVID: 0x020407b4, itemID: 902, attributes: &seededAttributes},
+		{name: "omitted", loginKey: 0x707070b5, ownerID: 0x010307b5, ownerVID: 0x020407b5, peerID: 0x010307b6, peerVID: 0x020407b6, itemID: 903, attributes: nil},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ownerLogin := "exch-attr-own-" + tc.name
+			peerLogin := "exch-attr-peer-" + tc.name
+			owner := peerVisibilityCharacter("AttrOwn"+tc.name, tc.ownerID, tc.ownerVID, 1100, 2100, 0, 101, 201)
+			owner.Gold = 12345
+			owner.Inventory = []inventory.ItemInstance{{ID: tc.itemID, Vnum: 27045, Count: 3, Slot: 5, Attributes: tc.attributes}}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			peer := peerVisibilityCharacter("AttrPeer"+tc.name, tc.peerID, tc.peerVID, 1120, 2120, 0, 101, 201)
+			peer.Gold = 22222
+			issuePeerTicket(t, ticketStore, ownerLogin, tc.loginKey, owner)
+			issuePeerTicket(t, ticketStore, peerLogin, tc.loginKey+1, peer)
+			if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed exchange instance-attribute owner account: %v", err)
+			}
+			if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+				t.Fatalf("seed exchange instance-attribute peer account: %v", err)
+			}
+			template := itemcatalog.Template{
+				Vnum:       27045,
+				Name:       "Displayed Exchange Potion",
+				Stackable:  true,
+				MaxCount:   200,
+				Sockets:    itemcatalog.SocketValues{11, 22, 33},
+				Attributes: itemcatalog.AttributeValues{{Type: 3, Value: 30}, {Type: 4, Value: -5}},
+			}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected exchange instance-attribute runtime error: %v", err)
+			}
+			ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, tc.loginKey)
+			defer closeSessionFlow(t, ownerFlow)
+			peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, tc.loginKey+1)
+			defer closeSessionFlow(t, peerFlow)
+			_ = flushServerFrames(t, ownerFlow)
+			_ = flushServerFrames(t, peerFlow)
+
+			startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+			if err != nil {
+				t.Fatalf("unexpected exchange instance-attribute start error: %v", err)
+			}
+			if len(startOut) != 1 {
+				t.Fatalf("expected exchange instance-attribute start to emit one owner frame, got %d", len(startOut))
+			}
+			assertExchangeStartFrame(t, startOut[0], peer.VID, "instance-attribute owner start")
+			queuedStart := flushServerFrames(t, peerFlow)
+			if len(queuedStart) != 1 {
+				t.Fatalf("expected exchange instance-attribute peer start frame, got %d", len(queuedStart))
+			}
+			assertExchangeStartFrame(t, queuedStart[0], owner.VID, "instance-attribute peer start")
+
+			itemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
+				Subheader: itemproto.ExchangeSubheaderItemAdd,
+				Arg2:      7,
+				Position:  itemproto.InventoryPosition(5),
+			})))
+			if err != nil {
+				t.Fatalf("unexpected exchange instance-attribute item-add error: %v", err)
+			}
+			if len(itemAddOut) != 1 {
+				t.Fatalf("expected exchange instance-attribute item-add to emit one self display frame, got %d", len(itemAddOut))
+			}
+			assertExchangeItemAddFrame(t, itemAddOut[0], 1, 7, owner.Inventory[0], template, "owner instance-attribute item-add")
+			queuedDisplay := flushServerFrames(t, peerFlow)
+			if len(queuedDisplay) != 1 {
+				t.Fatalf("expected exchange peer to receive one queued instance-attribute item-add frame, got %d", len(queuedDisplay))
+			}
+			assertExchangeItemAddFrame(t, queuedDisplay[0], 0, 7, owner.Inventory[0], template, "peer instance-attribute item-add")
+
+			assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "owner exchange instance-attribute item-add")
+			assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "peer exchange instance-attribute item-add")
+		})
+	}
+}
+
 func TestGameRuntimeItemExchangeItemAddRequiresActiveExchangeShellWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -8021,8 +8117,9 @@ func assertExchangeItemAddFrame(t *testing.T, raw []byte, isMe uint8, displaySlo
 	if packet.Sockets != wantSockets {
 		t.Fatalf("expected exchange item-add frame %s sockets %+v, got %+v", context, wantSockets, packet.Sockets)
 	}
-	if packet.Attributes != bootstrapItemAttributes(template) {
-		t.Fatalf("expected exchange item-add frame %s attributes %+v, got %+v", context, bootstrapItemAttributes(template), packet.Attributes)
+	wantAttributes := resolveItemAttributes(item, template)
+	if packet.Attributes != wantAttributes {
+		t.Fatalf("expected exchange item-add frame %s attributes %+v, got %+v", context, wantAttributes, packet.Attributes)
 	}
 }
 

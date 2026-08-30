@@ -158,3 +158,46 @@ func TestItemInstanceEffectiveSocketsPreferInstancePresenceIncludingZero(t *test
 		t.Fatalf("expected WithInventorySlot to clone sockets, got %+v", moved)
 	}
 }
+
+func TestItemInstanceEffectiveAttributesPreferInstancePresenceIncludingZero(t *testing.T) {
+	fallback := AttributeValues{{Type: 9, Value: 8}, {Type: 7, Value: -3}}
+	item := ItemInstance{ID: 1, Vnum: 72723, Count: 1, Slot: 5}
+	if got := item.EffectiveAttributes(fallback); got != fallback {
+		t.Fatalf("expected omitted attributes to fall back, got %+v", got)
+	}
+	if item.HasAttributes() {
+		t.Fatal("expected omitted attributes to report HasAttributes=false")
+	}
+
+	zero := AttributeValues{}
+	item.Attributes = &zero
+	if !item.HasAttributes() {
+		t.Fatal("expected explicit zero attributes to report HasAttributes=true")
+	}
+	if got := item.EffectiveAttributes(fallback); got != zero {
+		t.Fatalf("expected explicit zero attributes to win over template fallback, got %+v", got)
+	}
+
+	active := AttributeValues{{Type: 1, Value: 25}, {Type: 4, Value: -5}}
+	item.Attributes = &active
+	if got := item.EffectiveAttributes(fallback); got != active {
+		t.Fatalf("expected instance attributes %+v, got %+v", active, got)
+	}
+
+	cloned := item.CloneAttributes()
+	if cloned == nil || *cloned != active || cloned == item.Attributes {
+		t.Fatalf("CloneAttributes() = %v want independent copy of %+v", cloned, active)
+	}
+	cloned[0].Type = 0
+	if item.Attributes[0].Type != 1 {
+		t.Fatalf("expected CloneAttributes to leave original unchanged, got %+v", *item.Attributes)
+	}
+
+	moved, err := item.WithInventorySlot(8)
+	if err != nil {
+		t.Fatalf("WithInventorySlot() unexpected error: %v", err)
+	}
+	if !moved.HasAttributes() || moved.Attributes == item.Attributes || *moved.Attributes != active {
+		t.Fatalf("expected WithInventorySlot to clone attributes, got %+v", moved)
+	}
+}

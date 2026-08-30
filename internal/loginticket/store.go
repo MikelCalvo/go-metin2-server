@@ -126,12 +126,14 @@ func CloneCharacters(characters []Character) []Character {
 			cloned[i].Inventory = append(cloned[i].Inventory[:0:0], cloned[i].Inventory...)
 			for j := range cloned[i].Inventory {
 				cloned[i].Inventory[j].Sockets = cloned[i].Inventory[j].CloneSockets()
+				cloned[i].Inventory[j].Attributes = cloned[i].Inventory[j].CloneAttributes()
 			}
 		}
 		if cloned[i].Equipment != nil {
 			cloned[i].Equipment = append(cloned[i].Equipment[:0:0], cloned[i].Equipment...)
 			for j := range cloned[i].Equipment {
 				cloned[i].Equipment[j].Sockets = cloned[i].Equipment[j].CloneSockets()
+				cloned[i].Equipment[j].Attributes = cloned[i].Equipment[j].CloneAttributes()
 			}
 		}
 		if cloned[i].Quickslots != nil {

@@ -3645,6 +3645,61 @@ func TestRuntimeExchangeItemAddDisplayPrefersInstanceEffectiveSocketsWithoutMuta
 	}
 }
 
+func TestRuntimeExchangeItemAddDisplayPrefersInstanceEffectiveAttributesWithoutMutation(t *testing.T) {
+	templateAttributes := itemcatalog.AttributeValues{{Type: 3, Value: 30}, {Type: 4, Value: -5}}
+	zeroAttributes := inventory.AttributeValues{}
+	seededAttributes := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 7, Value: -3}}
+	cases := []struct {
+		name           string
+		instance       *inventory.AttributeValues
+		wantAttributes itemcatalog.AttributeValues
+	}{
+		{name: "explicit zero wins over template", instance: &zeroAttributes, wantAttributes: itemcatalog.AttributeValues{}},
+		{name: "seeded instance attributes win", instance: &seededAttributes, wantAttributes: itemcatalog.AttributeValues{{Type: 1, Value: 25}, {Type: 7, Value: -3}}},
+		{name: "omitted instance keeps template", instance: nil, wantAttributes: templateAttributes},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			item := inventory.ItemInstance{ID: 105, Vnum: 27045, Count: 3, Slot: 8, Attributes: tc.instance}
+			persisted := loginticket.Character{
+				ID:         0x01030126,
+				VID:        0x02040126,
+				Name:       "PeerAttr",
+				Level:      1,
+				Inventory:  []inventory.ItemInstance{item},
+				Quickslots: []loginticket.Quickslot{{Position: 4, Type: quickslotproto.TypeItem, Slot: 8}},
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-attr", CharacterIndex: 1})
+			template := itemcatalog.Template{
+				Vnum:       27045,
+				Name:       "Displayed Exchange Potion",
+				Stackable:  true,
+				MaxCount:   200,
+				Sockets:    itemcatalog.SocketValues{11, 22, 33},
+				Attributes: templateAttributes,
+			}
+
+			display, ok := runtime.ExchangeItemAddDisplay(8, template)
+			if !ok {
+				t.Fatal("expected valid carried item and template to produce exchange item display")
+			}
+			if display.Attributes != tc.wantAttributes {
+				t.Fatalf("expected exchange attributes %+v, got %+v", tc.wantAttributes, display.Attributes)
+			}
+			if display.Sockets != template.Sockets {
+				t.Fatalf("expected omitted-instance exchange sockets to keep template %+v, got %+v", template.Sockets, display.Sockets)
+			}
+			if got := runtime.LiveCharacter(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) || got.Gold != persisted.Gold || got.Points != persisted.Points {
+				t.Fatalf("exchange item display mutated live character: got %#v want %#v", got, persisted)
+			}
+			if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) || got.Gold != persisted.Gold || got.Points != persisted.Points {
+				t.Fatalf("exchange item display mutated persisted character: got %#v want %#v", got, persisted)
+			}
+		})
+	}
+}
+
 func TestRuntimeExchangeItemAddDisplayRejectsGuardedOrMalformedTemplateWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name     string

@@ -2333,6 +2333,54 @@ func TestFileStoreSaveThenLoadRoundTripInstanceSocketsIncludingZero(t *testing.T
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripInstanceAttributesIncludingZero(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	zero := inventory.AttributeValues{}
+	active := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 4, Value: -5}}
+	want := Account{
+		Login:  "attr-host",
+		Empire: 2,
+		Characters: []loginticket.Character{{
+			ID:       1,
+			VID:      0x01020314,
+			Name:     "AttrWar",
+			Job:      0,
+			Level:    15,
+			MapIndex: 21,
+			Empire:   2,
+			Gold:     1000,
+			Inventory: []inventory.ItemInstance{
+				{ID: 1001, Vnum: 72723, Count: 1, Slot: 5, Attributes: &active},
+				{ID: 1002, Vnum: 72727, Count: 1, Slot: 6, Attributes: &zero},
+				{ID: 1003, Vnum: 27001, Count: 2, Slot: 7},
+			},
+			Equipment:  []inventory.ItemInstance{},
+			Quickslots: []loginticket.Quickslot{},
+		}},
+	}
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save account with instance attributes: %v", err)
+	}
+	got, err := store.Load("attr-host")
+	if err != nil {
+		t.Fatalf("load account with instance attributes: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected account with instance attributes:\n got: %#v\nwant: %#v", got, want)
+	}
+	raw, err := os.ReadFile(store.accountPath("attr-host"))
+	if err != nil {
+		t.Fatalf("read persisted account: %v", err)
+	}
+	if !bytes.Contains(raw, []byte(`"attributes":[{"type":1,"value":25},{"type":4,"value":-5}`)) {
+		t.Fatalf("expected persisted active attributes array in JSON, got %s", string(raw))
+	}
+	// Explicit all-zero AttributeValues encodes as a 7-cell array of type/value zeros.
+	if !bytes.Contains(raw, []byte(`"attributes":[{"type":0,"value":0},{"type":0,"value":0},{"type":0,"value":0},{"type":0,"value":0},{"type":0,"value":0},{"type":0,"value":0},{"type":0,"value":0}]`)) {
+		t.Fatalf("expected persisted explicit-zero attributes array in JSON, got %s", string(raw))
+	}
+}
+
 func TestFileStoreSaveThenLoadRoundTripMyShopUnitPrices(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	want := Account{
