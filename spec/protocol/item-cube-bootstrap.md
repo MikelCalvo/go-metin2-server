@@ -44,6 +44,9 @@ See `docs/plans/2026-08-25-cube-open-close-presentation-busy-bit.md`.
 - `/open_cube` / `/open_cube <npcVnum>` → one self-only `cube open <npcVnum>`
   (default `20022`) + same-socket busy flag + peer-visible shared-world cube
   busy bit
+- authored static-actor `open_cube` `INTERACT` reuses the same open seam:
+  optional self-only info chat from the definition text, then
+  `cube open <actor.RaceNum>` with the same busy flag / busy-bit ownership
 - `/close_cube` / lifecycle / practice-mob floor / transfer → one self-only
   `cube close` when open
 - already-open / busy merchant|safebox|refine|MYSHOP|exchange → owned info-chat

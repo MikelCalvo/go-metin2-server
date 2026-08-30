@@ -91,7 +91,7 @@ Current owned warp operator-summary semantics:
 
 Current owned interaction cooldown semantics:
 - a fixed `1s` runtime cooldown now applies per live session and per target static-actor `VID`
-- the cooldown currently applies across all owned interaction kinds, including `info`, `talk`, `quest_flag`, `shop_preview`, `warp`, and `open_safebox`
+- the cooldown currently applies across all owned interaction kinds, including `info`, `talk`, `quest_flag`, `shop_preview`, `warp`, `open_safebox`, and `open_cube`
 - repeated `INTERACT` requests for the same target while that cooldown is active are consumed as a deliberate no-op with no outgoing frames
 - different players do not share a cooldown bucket with each other, and a fresh reconnect starts with a fresh cooldown state
 
@@ -124,7 +124,7 @@ Current owned shop operator-summary semantics:
 
 Current owned self-only interaction operator-summary semantics:
 - per-map `maps[]` entries now also include `info_actor_count`, `talk_actor_count`, and `quest_flag_actor_count`
-- these counts audit authored `info` / `talk` / `quest_flag` static actors separately from service-style `shop_preview`, `warp`, and `open_safebox` actors without requiring operators to expand the full `interactable_static_actors` array
+- these counts audit authored `info` / `talk` / `quest_flag` static actors separately from service-style `shop_preview`, `warp`, `open_safebox`, and `open_cube` actors without requiring operators to expand the full `interactable_static_actors` array
 - `GET /local/content-bundle/interaction-definitions/{kind}/{ref}` now returns one compact authored definition preview row with `kind`, `ref`, `preview`, and `referenced`, so operators can inspect a single `info` / `talk` / `quest_flag` / service definition summary without fetching the full bundle summary or full bundle payload
 - `GET /local/content-bundle/item-templates/{vnum}` now returns one exact summarized item-template row for local QA, including the guard/rejection metadata already exposed in content-bundle summaries, without fetching the full bundle summary or opening a merchant in-game
 
@@ -162,6 +162,31 @@ Current owned `open_safebox` operator-summary semantics:
 - this makes exact actor-to-warehouse placement inspectable without fetching the full authored bundle or applying a candidate import
 
 This remains intentionally narrow on the NPC content surface: warehouse `INTERACT` only starts the password challenge; presentation open, durable rematerialize, and mutation helpers stay on the already-owned safebox seams, while mall / client change-password packets / TMP4 CG money request header stay deferred.
+
+### 4. `open_cube`
+A visible static actor can act as a craftsman-style NPC that opens the already-owned bootstrap cube presentation path.
+
+Frozen target behavior:
+- the player sends the existing `INTERACT (0x0501)` request
+- the runtime resolves a deterministic authored `open_cube` definition behind that actor
+- that authored store-level definition may carry optional informational `text` and the same optional non-mutating selected-character quest gate used by `warp` / `shop_preview` / `open_safebox`
+- foreign fields (`size`, `title`, catalog, warp coords, reward/consume gold/experience, mutating `quest_to`) fail closed at store / content-bundle validation before runtime mutation
+- when the interaction applies and no same-socket cube presentation is already open, the runtime may deliver one self-facing informational chat message if authored text is present
+- the runtime then opens the cube presentation through the owned open seam (`openActiveCubeOpenFrames`): remember the actor's `RaceNum` as the open NPC vnum, emit self-only `CHAT_TYPE_COMMAND` `cube open <npcVnum>`, and set the same-socket busy flag / peer-visible cube busy bit
+- if the same socket already has an open cube presentation, the player receives one self-only `CHAT_TYPE_INFO` message: `The Build window is already open.` and no second open command is emitted
+- if another busy shell is already open on the same socket (merchant, safebox presentation, refine dialog, MYSHOP, or exchange), the player receives one self-only `CHAT_TYPE_INFO` message: `You cannot build something while another trade/storeroom window is open.` and cube stays closed
+- if the resolved actor has `RaceNum == 0`, the interaction fails closed with no outgoing frames
+- slash `/open_cube [npcVnum]` remains the lab/debug harness and still opens immediately without an authored static actor
+- recipe list / material info / craft binding / make / close continue on the already-owned cube slash helpers once the presentation is open
+
+Current owned `open_cube` failure semantics:
+- if an optional quest gate is present and the selected character's current flag value does not match `quest_from`, the player receives one self-only `CHAT_TYPE_INFO` message: `Quest requirements are not met.` and no cube presentation opens
+- already-open and busy-shell rejects reuse the owned cube info-chat strings rather than inventing a second craft dialog family
+- invalid authored foreign fields fail closed at store / content-bundle validation before runtime mutation
+
+Current owned `open_cube` operator-preview semantics:
+- `/local/interaction-visibility` and content-bundle definition previews render gated/ungated `open_cube` rows as `open_cube` or `<text> [open_cube]`
+- dedicated open-cube route summary endpoints remain a later operator slice; this first slice owns the authored INTERACT path and compact preview contract
 
 ## Content-bundle combat profile guardrail
 
@@ -221,8 +246,9 @@ This stage still does **not** freeze:
 
 After the currently landed and later follow-up slices, the repository should be able to say:
 - bootstrap static actors already support self-only `info` / `talk` plus merchant-style `shop_preview`
-- the current owned service-style NPC gameplay families are `warp`, merchant `shop_preview`, and warehouse `open_safebox`
+- the current owned service-style NPC gameplay families are `warp`, merchant `shop_preview`, warehouse `open_safebox`, and craftsman `open_cube`
 - `warp` is the first real NPC gameplay action and already reuses the existing transfer / rebootstrap runtime through `INTERACT`
 - `shop_preview` now already resolves through `INTERACT` into the bootstrap merchant window open / buy / close flow built on the same structured catalog seam
 - `open_safebox` now already resolves through `INTERACT` into the bootstrap safebox password challenge, with matching `/safebox_password` opening the durable presentation used by check-in / check-out / move / money
+- `open_cube` now already resolves through `INTERACT` into the bootstrap cube open presentation (`cube open <npcVnum>`) used by the owned recipe-list / craft slash helpers
 - the project still avoids speculative dialog-window, quest-script, sell-back, and mall / client change-password packet semantics until those underlying systems exist

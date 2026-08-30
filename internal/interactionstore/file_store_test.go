@@ -805,6 +805,73 @@ func TestFileStoreRejectsInvalidOpenSafeboxDefinitions(t *testing.T) {
 	}
 }
 
+func TestFileStoreSaveThenLoadOpenCubeDefinitions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	want := Snapshot{Definitions: []Definition{
+		{Kind: KindOpenCube, Ref: "npc:default_cube", Text: "The craftsman lights the forge."},
+		{Kind: KindOpenCube, Ref: "npc:qa_cube", Text: "Bring materials to craft.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1},
+	}}
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save open_cube definitions: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load open_cube definitions: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected open_cube snapshot:\n got: %#v\nwant: %#v", got, want)
+	}
+	if !HasServiceQuestGate(got.Definitions[1]) {
+		t.Fatalf("expected gated open_cube definition to report a service quest gate, got %#v", got.Definitions[1])
+	}
+}
+
+func TestFileStoreRejectsInvalidOpenCubeDefinitions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	cases := []struct {
+		name       string
+		definition Definition
+	}{
+		{
+			name:       "size not allowed",
+			definition: Definition{Kind: KindOpenCube, Ref: "npc:qa_cube", Text: "Craft.", Size: 1},
+		},
+		{
+			name:       "title not allowed",
+			definition: Definition{Kind: KindOpenCube, Ref: "npc:qa_cube", Text: "Craft.", Title: "Cube"},
+		},
+		{
+			name:       "catalog not allowed",
+			definition: Definition{Kind: KindOpenCube, Ref: "npc:qa_cube", Text: "Craft.", Catalog: []MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}}},
+		},
+		{
+			name:       "warp coords not allowed",
+			definition: Definition{Kind: KindOpenCube, Ref: "npc:qa_cube", Text: "Craft.", MapIndex: 1, X: 100, Y: 200},
+		},
+		{
+			name:       "reward gold not allowed",
+			definition: Definition{Kind: KindOpenCube, Ref: "npc:qa_cube", Text: "Craft.", RewardGold: 10},
+		},
+		{
+			name:       "quest_to mutates",
+			definition: Definition{Kind: KindOpenCube, Ref: "npc:qa_cube", Text: "Craft.", QuestRef: "quest:first_steps", QuestFlag: "met_guide", QuestFrom: 1, QuestTo: 2},
+		},
+		{
+			name:       "text with NUL",
+			definition: Definition{Kind: KindOpenCube, Ref: "npc:qa_cube", Text: "visible\x00hidden"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := store.Save(Snapshot{Definitions: []Definition{tc.definition}}); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot for %s, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
 func TestFileStoreRejectsInvalidQuestGatedServiceDefinitions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
 	store := NewFileStore(path)

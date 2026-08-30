@@ -143,7 +143,7 @@ func TestGameRuntimeImportsNpcServiceExample(t *testing.T) {
 	if len(authored.DropTables) != 0 || len(authored.RegenSpawns) != 0 {
 		t.Fatalf("expected NPC service example to be runtime-shaped without authoring-only collections, got regen=%+v drop_tables=%+v", authored.RegenSpawns, authored.DropTables)
 	}
-	if len(authored.StaticActors) != 8 || len(authored.SpawnGroups) != 1 || len(authored.InteractionDefinitions) != 8 || len(authored.ItemTemplates) != 2 || len(authored.QuestState) != 1 {
+	if len(authored.StaticActors) != 9 || len(authored.SpawnGroups) != 1 || len(authored.InteractionDefinitions) != 9 || len(authored.ItemTemplates) != 2 || len(authored.QuestState) != 1 {
 		t.Fatalf("unexpected authored NPC service example shape: static=%d spawn=%d interactions=%d items=%d quest_state=%d", len(authored.StaticActors), len(authored.SpawnGroups), len(authored.InteractionDefinitions), len(authored.ItemTemplates), len(authored.QuestState))
 	}
 
@@ -177,11 +177,12 @@ func TestGameRuntimeImportsNpcServiceExample(t *testing.T) {
 	if !reflect.DeepEqual(imported.SpawnGroups, wantGroups) {
 		t.Fatalf("unexpected imported NPC service spawn groups:\n got: %#v\nwant: %#v", imported.SpawnGroups, wantGroups)
 	}
-	if len(imported.InteractionDefinitions) != 8 {
-		t.Fatalf("expected eight imported NPC service interaction definitions, got %#v", imported.InteractionDefinitions)
+	if len(imported.InteractionDefinitions) != 9 {
+		t.Fatalf("expected nine imported NPC service interaction definitions, got %#v", imported.InteractionDefinitions)
 	}
 	wantKinds := map[string]string{
 		"lore:qa_square":                interactionstore.KindInfo,
+		"npc:qa_cube":                   interactionstore.KindOpenCube,
 		"npc:qa_warehouse":              interactionstore.KindOpenSafebox,
 		"quest:first_steps":             interactionstore.KindQuestFlag,
 		"quest:first_steps_kill_turnin": interactionstore.KindQuestFlag,
@@ -216,8 +217,8 @@ func TestGameRuntimeImportsNpcServiceExample(t *testing.T) {
 	}
 
 	actors := runtime.StaticActors()
-	if len(actors) != 9 {
-		t.Fatalf("expected eight static NPCs plus one spawn-backed reward mob, got %#v", actors)
+	if len(actors) != 10 {
+		t.Fatalf("expected nine static NPCs plus one spawn-backed reward mob, got %#v", actors)
 	}
 	byName := make(map[string]worldruntime.StaticActorSnapshot, len(actors))
 	for _, actor := range actors {
@@ -227,6 +228,7 @@ func TestGameRuntimeImportsNpcServiceExample(t *testing.T) {
 		kind string
 		ref  string
 	}{
+		"CubeMaster":      {kind: interactionstore.KindOpenCube, ref: "npc:qa_cube"},
 		"Merchant":        {kind: interactionstore.KindShopPreview, ref: "npc:qa_merchant"},
 		"QuestGuide":      {kind: interactionstore.KindQuestFlag, ref: "quest:first_steps"},
 		"QuestHunter":     {kind: interactionstore.KindQuestFlag, ref: "quest:first_steps_kill_turnin"},

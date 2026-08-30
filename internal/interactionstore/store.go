@@ -15,6 +15,7 @@ const (
 	KindWarp        = "warp"
 	KindShopPreview = "shop_preview"
 	KindOpenSafebox = "open_safebox"
+	KindOpenCube    = "open_cube"
 	KindQuestFlag   = "quest_flag"
 
 	MerchantCatalogMaxEntryPrice uint64 = 1<<32 - 1
@@ -176,7 +177,7 @@ func validateSnapshot(snapshot Snapshot) error {
 
 func validKind(kind string) bool {
 	switch kind {
-	case KindInfo, KindTalk, KindWarp, KindShopPreview, KindOpenSafebox, KindQuestFlag:
+	case KindInfo, KindTalk, KindWarp, KindShopPreview, KindOpenSafebox, KindOpenCube, KindQuestFlag:
 		return true
 	default:
 		return false
@@ -234,6 +235,10 @@ func validDefinition(definition Definition) bool {
 		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && definition.MapIndex != 0 && definition.X != 0 && definition.Y != 0 && definition.Size == 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && definition.ConsumeExperience == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
 	case KindOpenSafebox:
 		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.Size <= OpenSafeboxSizeMax && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && definition.ConsumeExperience == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
+	case KindOpenCube:
+		// open_cube reuses the live actor RaceNum as the cube NPC vnum (oracle
+		// GetRaceNum). Authored size/title/catalog/warp/reward fields stay rejected.
+		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.Size == 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && definition.ConsumeExperience == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
 	case KindQuestFlag:
 		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.Size == 0 && queststate.ValidQuestRef(definition.QuestRef) && queststate.ValidFlagName(definition.QuestFlag) && definition.QuestFrom != definition.QuestTo && definition.RewardExperience <= QuestFlagRewardExperienceMax && definition.RewardGold <= QuestFlagRewardGoldMax && definition.ConsumeGold <= QuestFlagConsumeGoldMax && definition.ConsumeExperience <= QuestFlagConsumeExperienceMax && validOptionalRewardItems(definition) && validOptionalConsumeItems(definition)
 	default:
@@ -293,7 +298,7 @@ func validOptionalConsumeItems(definition Definition) bool {
 	return true
 }
 
-// HasServiceQuestGate reports whether an info/talk/warp/shop_preview/open_safebox
+// HasServiceQuestGate reports whether an info/talk/warp/shop_preview/open_safebox/open_cube
 // definition carries an optional selected-character quest-flag prerequisite. The
 // gate is present only when both quest_ref and quest_flag are authored; quest_from
 // defaults to 0 and quest_to must remain 0 because gated non-mutating

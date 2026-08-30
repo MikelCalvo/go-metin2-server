@@ -359,7 +359,7 @@ func normalizedInteractionDefinitionsForExport(snapshot interactionstore.Snapsho
 
 func validStaticActorContentStateInteractionDefinition(definition interactionstore.Definition) bool {
 	switch definition.Kind {
-	case interactionstore.KindInfo, interactionstore.KindTalk, interactionstore.KindWarp, interactionstore.KindShopPreview, interactionstore.KindOpenSafebox, interactionstore.KindQuestFlag:
+	case interactionstore.KindInfo, interactionstore.KindTalk, interactionstore.KindWarp, interactionstore.KindShopPreview, interactionstore.KindOpenSafebox, interactionstore.KindOpenCube, interactionstore.KindQuestFlag:
 		return true
 	default:
 		return false

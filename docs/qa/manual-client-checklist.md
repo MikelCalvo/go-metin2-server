@@ -664,6 +664,9 @@ Expected result:
 - [ ] Send `/close_cube` and confirm one self-only command chat `cube close`
 - [ ] With `/open_safebox` already open, confirm `/open_cube` emits `You cannot build something while another trade/storeroom window is open.` and does not open cube
 - [ ] Confirm `/open_cube 0` / invalid args stay silent consume with no open
+- [ ] If authored QA NPC content is loaded (`docs/examples/bootstrap-npc-service-bundle.json`), interact with the visible `CubeMaster` `open_cube` actor while `quest:first_steps` / `met_guide` is unset and confirm self-only info chat `Quest requirements are not met.` with no `cube open`
+- [ ] After satisfying that gate (for example via the owned quest-flag NPC path), interact with `CubeMaster` again and confirm optional self-only info chat `The craftsman lights the forge.` plus command chat `cube open 20022`; a second interact after the 1s cooldown while still open must emit `The Build window is already open.` without a second open
+- [ ] With a merchant window already open, interact with `CubeMaster` and confirm busy info chat `You cannot build something while another trade/storeroom window is open.` with no `cube open`
 - [ ] With `/open_cube` already open on the requester, confirm `EXCHANGE START` against a living visible peer returns one self-only info chat `You cannot trade while another trade window is open.` with no pairing
 - [ ] With `/open_cube` already open on the partner, confirm requester `EXCHANGE START` returns one self-only info chat `That player cannot trade right now.` with no pairing and the partner cube stays open
 - [ ] With `/open_cube` already open, confirm `CG::MYSHOP` returns one self-only info chat `You cannot trade while another trade window is open.` with no `SHOP_SIGN`

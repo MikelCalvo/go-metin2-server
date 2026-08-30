@@ -377,6 +377,10 @@ func interactionDefinitionFromContentStateRow(row InteractionDefinitionRow) (int
 		if row.MapIndex != nil || row.X != nil || row.Y != nil || row.Title != "" || row.RewardExperience != 0 || row.RewardGold != 0 || row.ConsumeGold != 0 || row.ConsumeExperience != 0 {
 			return interactionstore.Definition{}, fmt.Errorf("%w: open_safebox definition %q carries unsupported fields", ErrInvalidStaticActorContentStateExport, row.Ref)
 		}
+	case interactionstore.KindOpenCube:
+		if row.MapIndex != nil || row.X != nil || row.Y != nil || row.Title != "" || row.Size != 0 || row.RewardExperience != 0 || row.RewardGold != 0 || row.ConsumeGold != 0 || row.ConsumeExperience != 0 {
+			return interactionstore.Definition{}, fmt.Errorf("%w: open_cube definition %q carries unsupported fields", ErrInvalidStaticActorContentStateExport, row.Ref)
+		}
 	case interactionstore.KindQuestFlag:
 		if row.MapIndex != nil || row.X != nil || row.Y != nil || row.Title != "" || row.Size != 0 {
 			return interactionstore.Definition{}, fmt.Errorf("%w: quest_flag definition %q carries unsupported fields", ErrInvalidStaticActorContentStateExport, row.Ref)

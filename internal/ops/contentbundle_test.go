@@ -519,7 +519,7 @@ func TestLocalContentBundleValidateEndpointAcceptsExampleBundle(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode example validation response: %v", err)
 	}
-	if len(got.StaticActors) != 8 || len(got.SpawnGroups) != 1 || len(got.ItemTemplates) != 2 || len(got.QuestState) != 1 || len(got.InteractionDefinitions) != 8 {
+	if len(got.StaticActors) != 9 || len(got.SpawnGroups) != 1 || len(got.ItemTemplates) != 2 || len(got.QuestState) != 1 || len(got.InteractionDefinitions) != 9 {
 		t.Fatalf("unexpected canonical example validation response: %+v", got)
 	}
 	wantSpawn := contentbundle.SpawnGroup{

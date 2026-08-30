@@ -1,6 +1,15 @@
 {
   "static_actors": [
     {
+      "name": "CubeMaster",
+      "map_index": 1,
+      "x": 469575,
+      "y": 964200,
+      "race_num": 20022,
+      "interaction_kind": "open_cube",
+      "interaction_ref": "npc:qa_cube"
+    },
+    {
       "name": "Merchant",
       "map_index": 1,
       "x": 469500,
@@ -126,6 +135,14 @@
       "kind": "info",
       "ref": "lore:qa_square",
       "text": "The QA square contains a merchant, teleporter, guide, hunter, and reward mob.",
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "met_guide",
+      "quest_from": 1
+    },
+    {
+      "kind": "open_cube",
+      "ref": "npc:qa_cube",
+      "text": "The craftsman lights the forge.",
       "quest_ref": "quest:first_steps",
       "quest_flag": "met_guide",
       "quest_from": 1

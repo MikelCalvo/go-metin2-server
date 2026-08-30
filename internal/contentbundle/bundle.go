@@ -3317,6 +3317,8 @@ func interactionDefinitionPreview(actorName string, definition interactionstore.
 		return warpDestinationPreview(definition)
 	case interactionstore.KindOpenSafebox:
 		return openSafeboxPreview(definition)
+	case interactionstore.KindOpenCube:
+		return openCubePreview(definition)
 	default:
 		return ""
 	}
@@ -3343,6 +3345,8 @@ func interactionDefinitionCatalogPreview(definition interactionstore.Definition,
 		return warpDestinationPreview(definition)
 	case interactionstore.KindOpenSafebox:
 		return openSafeboxPreview(definition)
+	case interactionstore.KindOpenCube:
+		return openCubePreview(definition)
 	default:
 		return ""
 	}
@@ -3419,6 +3423,15 @@ func warpDestinationPreview(definition interactionstore.Definition) string {
 
 func openSafeboxPreview(definition interactionstore.Definition) string {
 	summary := fmt.Sprintf("open_safebox size %d", interactionstore.EffectiveOpenSafeboxSize(definition))
+	message := strings.TrimSpace(definition.Text)
+	if message == "" {
+		return summary
+	}
+	return fmt.Sprintf("%s [%s]", message, summary)
+}
+
+func openCubePreview(definition interactionstore.Definition) string {
+	summary := "open_cube"
 	message := strings.TrimSpace(definition.Text)
 	if message == "" {
 		return summary

@@ -8928,6 +8928,35 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						markInteractionCooldown(packet.TargetVID)
 						return gameflow.InteractionResult{Accepted: true, Frames: frames}
 					}
+					if resolution.Definition.Kind == interactionstore.KindOpenCube {
+						npcVnum := resolution.Actor.RaceNum
+						if npcVnum == 0 {
+							return gameflow.InteractionResult{Accepted: false}
+						}
+						if hasActiveCubeOpen {
+							frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+								Type:    chatproto.ChatTypeInfo,
+								Message: cubeAlreadyOpenInfoMessage,
+							})}
+							markInteractionCooldown(packet.TargetVID)
+							return gameflow.InteractionResult{Accepted: true, Frames: frames}
+						}
+						if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveMyShopOpen || (ownsLiveSharedWorldSession() && sharedWorld != nil && sharedWorld.hasActiveExchange(sharedWorldID)) {
+							frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+								Type:    chatproto.ChatTypeInfo,
+								Message: cubeBusyShellInfoMessage,
+							})}
+							markInteractionCooldown(packet.TargetVID)
+							return gameflow.InteractionResult{Accepted: true, Frames: frames}
+						}
+						frames := make([][]byte, 0, 2)
+						if resolution.Delivery != nil {
+							frames = append(frames, chatproto.EncodeChatDelivery(*resolution.Delivery))
+						}
+						frames = append(frames, openActiveCubeOpenFrames(npcVnum)...)
+						markInteractionCooldown(packet.TargetVID)
+						return gameflow.InteractionResult{Accepted: true, Frames: frames}
+					}
 					if resolution.Delivery == nil {
 						return gameflow.InteractionResult{Accepted: false}
 					}
@@ -13869,6 +13898,29 @@ func (r *gameRuntime) resolveStaticActorInteraction(subjectID uint64, targetVID 
 		}
 		return resolution
 	}
+	if definition.Kind == interactionstore.KindOpenCube {
+		if !interactionstore.ValidDefinition(definition) {
+			resolution.Failure = staticActorInteractionFailureUnsupportedKind
+			resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
+			return resolution
+		}
+		if ok, err := r.serviceQuestGateSatisfied(characterName, definition); err != nil {
+			resolution.Failure = staticActorInteractionFailureUnsupportedKind
+			resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
+			return resolution
+		} else if !ok {
+			resolution.Failure = staticActorInteractionFailureQuestCurrentValueMismatch
+			resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
+			return resolution
+		}
+		resolution.Accepted = true
+		message := strings.TrimSpace(definition.Text)
+		if message != "" {
+			delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message}
+			resolution.Delivery = &delivery
+		}
+		return resolution
+	}
 	if definition.Kind == interactionstore.KindInfo || definition.Kind == interactionstore.KindTalk {
 		if !interactionstore.ValidDefinition(definition) {
 			resolution.Failure = staticActorInteractionFailureUnsupportedKind
@@ -14165,6 +14217,26 @@ func (r *gameRuntime) interactionDefinitionVisibilityPreview(characterName strin
 			}
 		}
 		summary := fmt.Sprintf("open_safebox size %d", interactionstore.EffectiveOpenSafeboxSize(definition))
+		message := strings.TrimSpace(definition.Text)
+		if message == "" {
+			return summary, true
+		}
+		return fmt.Sprintf("%s [%s]", message, summary), true
+	case interactionstore.KindOpenCube:
+		if characterName != "" && interactionstore.HasServiceQuestGate(definition) {
+			ok, err := r.serviceQuestGateSatisfied(characterName, definition)
+			if err != nil {
+				return "", false
+			}
+			if !ok {
+				message, ok := staticActorInteractionFailureMessage(staticActorInteractionFailureQuestCurrentValueMismatch)
+				if !ok {
+					return "", false
+				}
+				return message, true
+			}
+		}
+		summary := "open_cube"
 		message := strings.TrimSpace(definition.Text)
 		if message == "" {
 			return summary, true

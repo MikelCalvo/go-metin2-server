@@ -164,6 +164,35 @@ func TestGameRuntimeCreateOpenSafeboxInteractionDefinitionPersistsSnapshotAndRes
 	}
 }
 
+func TestGameRuntimeCreateOpenCubeInteractionDefinitionPersistsSnapshotAndResolvesDefinition(t *testing.T) {
+	interactionStore := newMemoryInteractionDefinitionStore(t, nil)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	wantDefinition := interactionstore.Definition{Kind: interactionstore.KindOpenCube, Ref: "npc:qa_cube", Text: "The craftsman lights the forge."}
+	definition, err := runtime.CreateInteractionDefinition(wantDefinition)
+	if err != nil {
+		t.Fatalf("create open_cube interaction definition: %v", err)
+	}
+	if !reflect.DeepEqual(definition, wantDefinition) {
+		t.Fatalf("unexpected created open_cube interaction definition: %+v", definition)
+	}
+	resolved, ok := runtime.ResolveInteractionDefinition(interactionstore.KindOpenCube, "npc:qa_cube")
+	if !ok || !reflect.DeepEqual(resolved, definition) {
+		t.Fatalf("expected created open_cube interaction definition to resolve, got definition=%+v ok=%v", resolved, ok)
+	}
+	persisted, err := interactionStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted interaction definitions: %v", err)
+	}
+	want := interactionstore.Snapshot{Definitions: []interactionstore.Definition{wantDefinition}}
+	if !reflect.DeepEqual(persisted, want) {
+		t.Fatalf("unexpected persisted open_cube interaction definitions:\n got: %#v\nwant: %#v", persisted, want)
+	}
+}
+
 func TestGameRuntimeCreateQuestFlagInteractionDefinitionPersistsSnapshotAndResolvesDefinition(t *testing.T) {
 	interactionStore := newMemoryInteractionDefinitionStore(t, nil)
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)

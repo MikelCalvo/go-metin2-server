@@ -3471,6 +3471,7 @@ func TestBootstrapNPCServiceExampleBundleCoversOwnedServiceInteractionKinds(t *t
 		interactionstore.KindWarp:        {},
 		interactionstore.KindShopPreview: {},
 		interactionstore.KindOpenSafebox: {},
+		interactionstore.KindOpenCube:    {},
 	}
 	seenDefinitions := make(map[string]struct{}, len(decoded.InteractionDefinitions))
 	for _, definition := range decoded.InteractionDefinitions {
@@ -6049,17 +6050,18 @@ func TestExampleBootstrapNPCServiceBundleExportsAndQuarantinesStaticActorPvEMigr
 		t.Fatalf("validate NPC service 0013 export: %v", err)
 	}
 	wantSummary := staticstore.StaticActorContentStateQuarantineSummary{
-		InteractionDefinitionCount:        8,
+		InteractionDefinitionCount:        9,
 		MerchantCatalogEntryCount:         2,
 		QuestFlagRewardItemCount:          1,
 		QuestFlagConsumeItemCount:         1,
-		StaticActorCount:                  9,
+		StaticActorCount:                  10,
 		RewardDropCount:                   1,
 		CombatProfileCount:                0,
 		CombatProfileDeathRewardDropCount: 0,
-		EntityIDs:                         []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9},
+		EntityIDs:                         []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
 		InteractionKinds: []string{
 			interactionstore.KindInfo,
+			interactionstore.KindOpenCube,
 			interactionstore.KindOpenSafebox,
 			interactionstore.KindQuestFlag,
 			interactionstore.KindShopPreview,
@@ -6086,6 +6088,7 @@ func TestExampleBootstrapNPCServiceBundleExportsAndQuarantinesStaticActorPvEMigr
 	var (
 		foundTurnIn    bool
 		foundWarehouse bool
+		foundCube      bool
 		foundKillQuest bool
 	)
 	for _, definition := range export.InteractionDefinitions {
@@ -6100,6 +6103,11 @@ func TestExampleBootstrapNPCServiceBundleExportsAndQuarantinesStaticActorPvEMigr
 			if definition.Size != 2 || definition.QuestRef != "quest:first_steps" || definition.QuestFlag != "met_guide" || definition.QuestFrom != 1 {
 				t.Fatalf("unexpected Warehouse open_safebox projection: %#v", definition)
 			}
+		case definition.Kind == interactionstore.KindOpenCube && definition.Ref == "npc:qa_cube":
+			foundCube = true
+			if definition.Text != "The craftsman lights the forge." || definition.QuestRef != "quest:first_steps" || definition.QuestFlag != "met_guide" || definition.QuestFrom != 1 || definition.Size != 0 {
+				t.Fatalf("unexpected CubeMaster open_cube projection: %#v", definition)
+			}
 		}
 	}
 	if !foundTurnIn {
@@ -6107,6 +6115,9 @@ func TestExampleBootstrapNPCServiceBundleExportsAndQuarantinesStaticActorPvEMigr
 	}
 	if !foundWarehouse {
 		t.Fatal("expected npc:qa_warehouse open_safebox projection in 0012 export")
+	}
+	if !foundCube {
+		t.Fatal("expected npc:qa_cube open_cube projection in 0012 export")
 	}
 	if len(export.QuestFlagRewardItems) != 1 || export.QuestFlagRewardItems[0].DefinitionRef != "quest:first_steps_kill_turnin" || export.QuestFlagRewardItems[0].ItemVnum != 11200 || export.QuestFlagRewardItems[0].Count != 1 {
 		t.Fatalf("unexpected quest_flag reward item rows: %#v", export.QuestFlagRewardItems)
