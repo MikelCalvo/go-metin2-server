@@ -39,6 +39,9 @@ cube craft smoke beside warehouse / merchant / warp / quest turn-in.
 - branching craft dialog trees
 - pack AI / synchronized respawn / random rectangle placement
 
+Related checked-in negative dry-run for illegal `open_cube` warehouse `size`:
+[invalid open-cube foreign size fixture](2026-08-30-invalid-open-cube-foreign-size-fixture.md).
+
 ## Verification
 
 ```bash
