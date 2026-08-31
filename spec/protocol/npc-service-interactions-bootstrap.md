@@ -147,7 +147,7 @@ Frozen target behavior:
 
 Current owned `open_safebox` failure semantics:
 - if an optional quest gate is present and the selected character's current flag value does not match `quest_from`, the player receives one self-only `CHAT_TYPE_INFO` message: `Quest requirements are not met.` and no password prompt / safebox presentation opens
-- invalid authored sizes and foreign fields fail closed at store / content-bundle validation before runtime mutation
+- invalid authored sizes and foreign fields fail closed at store / content-bundle validation before runtime mutation; the checked-in negative dry-run for illegal merchant `title` is `docs/examples/bootstrap-invalid-open-safebox-foreign-title-bundle.json`
 - password mismatch / malformed `/safebox_password`, reopen cooldown, and open-anchor distance rejects follow the owned safebox password contract rather than inventing a second warehouse dialog family
 
 Current owned `open_safebox` operator-summary semantics:

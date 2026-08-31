@@ -1,0 +1,10 @@
+{
+  "interaction_definitions": [
+    {
+      "kind": "open_safebox",
+      "ref": "npc:qa_warehouse_foreign_title",
+      "text": "Store your goods safely.",
+      "title": "Warehouse"
+    }
+  ]
+}

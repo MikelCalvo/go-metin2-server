@@ -74,5 +74,8 @@ git diff --check
 1. Keep branching quest scripts deferred.
 2. Keep pack AI / synchronized respawn deferred.
 3. Keep binary cube headers / OR-materials deferred on the items/cube lane.
-4. Add further checked-in foreign-field negatives for `open_cube` only when QA
-   still improvises that JSON.
+4. ~~Add further checked-in foreign-field negatives for `open_cube` only when QA
+   still improvises that JSON.~~ Adjacent warehouse foreign-`title` negative is
+   now checked in:
+   `docs/examples/bootstrap-invalid-open-safebox-foreign-title-bundle.json`
+   (`docs/plans/2026-08-31-invalid-open-safebox-foreign-title-fixture.md`).
