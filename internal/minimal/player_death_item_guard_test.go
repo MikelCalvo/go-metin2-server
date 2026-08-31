@@ -720,6 +720,198 @@ func TestGameSessionFlowPostFloorUnequipItemFailsClosedBeforeRestartTown(t *test
 	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart_town /unequip_item persists carried weapon")
 }
 
+func TestGameSessionFlowPostFloorItemDropFailsClosed(t *testing.T) {
+	login := "post-floor-item-drop"
+	loginKey := uint32(0x19191b64)
+	owner := peerVisibilityCharacter("DeadItemDropOwner", 0x01030b64, 0x02040b64, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Inventory = []inventory.ItemInstance{{ID: 1101, Vnum: 27001, Count: 3, Slot: 5}}
+	templates := []itemcatalog.Template{{Vnum: 27001, Name: "Post Floor Drop Potion", Stackable: true, MaxCount: 200}}
+	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, templates)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{
+		Position: itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor ITEM_DROP dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor ITEM_DROP to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor ITEM_DROP to queue no frames, got %d", len(queued))
+	}
+	if ground := runtime.GroundItems(); len(ground) != 0 {
+		t.Fatalf("expected post-floor ITEM_DROP to register no ground items, got %#v", ground)
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor ITEM_DROP")
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_here",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here after post-floor ITEM_DROP: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_here recovery frames after post-floor ITEM_DROP, got %d", len(restartOut))
+	}
+	_ = flushServerFrames(t, flow)
+
+	reuseOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{
+		Position: itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart ITEM_DROP: %v", err)
+	}
+	assertPostFloorItemDropSuccessBurst(t, reuseOut, owner.Name, owner.X, owner.Y, owner.Z, 5, 27001, "post-restart ITEM_DROP")
+	if ground := runtime.GroundItems(); len(ground) != 1 || ground[0].Vnum != 27001 {
+		t.Fatalf("expected one post-restart ground item after ITEM_DROP recovery, got %#v", ground)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart ITEM_DROP: %v", err)
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_here to persist recovered owner HP %d after ITEM_DROP floor, got %+v", wantHP, account.Characters[0])
+	}
+	want := owner
+	want.Points[bootstrapPlayerPointValueIndex] = wantHP
+	want.Inventory = []inventory.ItemInstance{}
+	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart ITEM_DROP clears carried inventory")
+}
+
+func TestGameSessionFlowPostFloorItemDropFailsClosedBeforeRestartTown(t *testing.T) {
+	login := "pf-item-drop-town"
+	loginKey := uint32(0x19191b65)
+	owner := peerVisibilityCharacter("DeadItemDropTownOwner", 0x01030b65, 0x02040b65, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Inventory = []inventory.ItemInstance{{ID: 1102, Vnum: 27001, Count: 3, Slot: 5}}
+	templates := []itemcatalog.Template{{Vnum: 27001, Name: "Post Floor Drop Potion", Stackable: true, MaxCount: 200}}
+	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, templates)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{
+		Position: itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor town ITEM_DROP dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor town ITEM_DROP to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor town ITEM_DROP to queue no frames, got %d", len(queued))
+	}
+	if ground := runtime.GroundItems(); len(ground) != 0 {
+		t.Fatalf("expected post-floor town ITEM_DROP to register no ground items, got %#v", ground)
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor town ITEM_DROP")
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_town",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_town after post-floor ITEM_DROP: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_town recovery frames after post-floor ITEM_DROP, got %d", len(restartOut))
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[0]))
+	if err != nil {
+		t.Fatalf("decode self character add after post-floor ITEM_DROP /restart_town: %v", err)
+	}
+	if selfAdd.VID != owner.VID || selfAdd.X != 52070 || selfAdd.Y != 166600 {
+		t.Fatalf("expected /restart_town self bootstrap at empire town position after ITEM_DROP floor, got %+v", selfAdd)
+	}
+	var (
+		selfPoints  worldproto.PlayerPointChangePacket
+		foundPoints bool
+	)
+	for _, raw := range restartOut {
+		fr := decodeSingleFrame(t, raw)
+		if !foundPoints {
+			if points, err := worldproto.DecodePlayerPointChange(fr); err == nil {
+				selfPoints = points
+				foundPoints = true
+			}
+		}
+	}
+	if !foundPoints {
+		t.Fatal("expected /restart_town recovery to include self PLAYER_POINT_CHANGE after ITEM_DROP floor")
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if selfPoints.Value != wantHP {
+		t.Fatalf("expected /restart_town to rebuild recovered owner HP %d after ITEM_DROP floor, got %+v", wantHP, selfPoints)
+	}
+	_ = flushServerFrames(t, flow)
+
+	reuseOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{
+		Position: itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart_town ITEM_DROP: %v", err)
+	}
+	assertPostFloorItemDropSuccessBurst(t, reuseOut, owner.Name, 52070, 166600, owner.Z, 5, 27001, "post-restart_town ITEM_DROP")
+	if ground := runtime.GroundItems(); len(ground) != 1 || ground[0].Vnum != 27001 {
+		t.Fatalf("expected one post-restart_town ground item after ITEM_DROP recovery, got %#v", ground)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart_town ITEM_DROP: %v", err)
+	}
+	if account.Characters[0].MapIndex != 21 || account.Characters[0].X != 52070 || account.Characters[0].Y != 166600 {
+		t.Fatalf("expected /restart_town to persist empire town position after ITEM_DROP floor, got %+v", account.Characters[0])
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_town + ITEM_DROP to persist recovered owner HP %d after ITEM_DROP floor, got %+v", wantHP, account.Characters[0])
+	}
+	want := owner
+	want.Points[bootstrapPlayerPointValueIndex] = wantHP
+	want.MapIndex = 21
+	want.X = 52070
+	want.Y = 166600
+	want.Inventory = []inventory.ItemInstance{}
+	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart_town ITEM_DROP clears carried inventory")
+}
+
+func assertPostFloorItemDropSuccessBurst(t *testing.T, frames [][]byte, ownerName string, x, y, z int32, sourceSlot uint16, vnum uint32, context string) {
+	t.Helper()
+	if len(frames) != 3 {
+		t.Fatalf("expected %s to emit ITEM_DEL + GROUND_ADD + OWNERSHIP, got %d frames", context, len(frames))
+	}
+	itemDel, err := itemproto.DecodeDel(decodeSingleFrame(t, frames[0]))
+	if err != nil {
+		t.Fatalf("decode %s item delete: %v", context, err)
+	}
+	if itemDel.Position != itemproto.InventoryPosition(sourceSlot) {
+		t.Fatalf("unexpected %s item delete position: %+v", context, itemDel.Position)
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, frames[1]))
+	if err != nil {
+		t.Fatalf("decode %s ground add: %v", context, err)
+	}
+	if ground.VID == 0 || ground.Vnum != vnum || ground.X != x || ground.Y != y || ground.Z != z {
+		t.Fatalf("unexpected %s ground add: %+v", context, ground)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, frames[2]))
+	if err != nil {
+		t.Fatalf("decode %s ownership: %v", context, err)
+	}
+	if ownership != (itemproto.OwnershipPacket{VID: ground.VID, OwnerName: ownerName}) {
+		t.Fatalf("unexpected %s ownership: got %+v want vid %d owner %q", context, ownership, ground.VID, ownerName)
+	}
+}
+
 func assertPostFloorUnequipItemSuccessBurst(t *testing.T, frames [][]byte, ownerVID uint32, mainPart, hairPart, weaponVnum uint16, inventorySlot uint16, wantHP int32, context string) {
 	t.Helper()
 	if len(frames) != 4 {
