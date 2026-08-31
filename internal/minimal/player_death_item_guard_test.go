@@ -2261,6 +2261,232 @@ func TestGameSessionFlowPostFloorItemUseFailsClosedBeforeRestartTown(t *testing.
 	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart_town ITEM_USE persists stack decrement")
 }
 
+func TestGameSessionFlowPostFloorItemUseToItemFailsClosed(t *testing.T) {
+	login := "post-floor-use-to-item"
+	loginKey := uint32(0x19191b72)
+	owner := peerVisibilityCharacter("DeadUseToItemOwner", 0x01030b72, 0x02040b72, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1401, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 1402, Vnum: 27001, Count: 4, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 6},
+	}
+	templates := []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Post Floor Merge Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{
+			PointType:  bootstrapPlayerPointType,
+			PointIndex: bootstrapPlayerPointValueIndex,
+			PointDelta: 50,
+			Message:    "consume:27001:+50",
+		},
+	}}
+	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, templates)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	useToItemPacket := itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+		Source: itemproto.InventoryPosition(5),
+		Target: itemproto.InventoryPosition(6),
+	})
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, useToItemPacket))
+	if err != nil {
+		t.Fatalf("unexpected post-floor ITEM_USE_TO_ITEM dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor ITEM_USE_TO_ITEM to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor ITEM_USE_TO_ITEM to queue no frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor ITEM_USE_TO_ITEM")
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_here",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here after post-floor ITEM_USE_TO_ITEM: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_here recovery frames after post-floor ITEM_USE_TO_ITEM, got %d", len(restartOut))
+	}
+	_ = flushServerFrames(t, flow)
+
+	reuseOut, err := flow.HandleClientFrame(decodeSingleFrame(t, useToItemPacket))
+	if err != nil {
+		t.Fatalf("unexpected post-restart ITEM_USE_TO_ITEM: %v", err)
+	}
+	assertPostFloorItemUseToItemFullMergeBurst(t, reuseOut, itemproto.InventoryPosition(5), itemproto.InventoryPosition(6), 7, 2, "post-restart ITEM_USE_TO_ITEM")
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart ITEM_USE_TO_ITEM: %v", err)
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected post-restart ITEM_USE_TO_ITEM to leave recovered HP %d unchanged, got %+v", wantHP, account.Characters[0])
+	}
+	want := owner
+	want.Points[bootstrapPlayerPointValueIndex] = wantHP
+	want.Inventory = []inventory.ItemInstance{{ID: 1402, Vnum: 27001, Count: 7, Slot: 6}}
+	want.Quickslots = []loginticket.Quickslot{
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 6},
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart ITEM_USE_TO_ITEM persists full merge")
+}
+
+func TestGameSessionFlowPostFloorItemUseToItemFailsClosedBeforeRestartTown(t *testing.T) {
+	login := "pf-use-to-item-town"
+	loginKey := uint32(0x19191b73)
+	owner := peerVisibilityCharacter("DeadUseToItemTownOwner", 0x01030b73, 0x02040b73, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1403, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 1404, Vnum: 27001, Count: 4, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 6},
+	}
+	templates := []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Post Floor Merge Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{
+			PointType:  bootstrapPlayerPointType,
+			PointIndex: bootstrapPlayerPointValueIndex,
+			PointDelta: 50,
+			Message:    "consume:27001:+50",
+		},
+	}}
+	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, templates)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	useToItemPacket := itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+		Source: itemproto.InventoryPosition(5),
+		Target: itemproto.InventoryPosition(6),
+	})
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, useToItemPacket))
+	if err != nil {
+		t.Fatalf("unexpected post-floor town ITEM_USE_TO_ITEM dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor town ITEM_USE_TO_ITEM to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor town ITEM_USE_TO_ITEM to queue no frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor town ITEM_USE_TO_ITEM")
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_town",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_town after post-floor ITEM_USE_TO_ITEM: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_town recovery frames after post-floor ITEM_USE_TO_ITEM, got %d", len(restartOut))
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[0]))
+	if err != nil {
+		t.Fatalf("decode self character add after post-floor ITEM_USE_TO_ITEM /restart_town: %v", err)
+	}
+	if selfAdd.VID != owner.VID || selfAdd.X != 52070 || selfAdd.Y != 166600 {
+		t.Fatalf("expected /restart_town self bootstrap at empire town position after ITEM_USE_TO_ITEM floor, got %+v", selfAdd)
+	}
+	var (
+		selfPoints  worldproto.PlayerPointChangePacket
+		foundPoints bool
+	)
+	for _, raw := range restartOut {
+		fr := decodeSingleFrame(t, raw)
+		if !foundPoints {
+			if points, err := worldproto.DecodePlayerPointChange(fr); err == nil {
+				selfPoints = points
+				foundPoints = true
+			}
+		}
+	}
+	if !foundPoints {
+		t.Fatal("expected /restart_town recovery to include self PLAYER_POINT_CHANGE after ITEM_USE_TO_ITEM floor")
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if selfPoints.Value != wantHP {
+		t.Fatalf("expected /restart_town to rebuild recovered owner HP %d after ITEM_USE_TO_ITEM floor, got %+v", wantHP, selfPoints)
+	}
+	_ = flushServerFrames(t, flow)
+
+	reuseOut, err := flow.HandleClientFrame(decodeSingleFrame(t, useToItemPacket))
+	if err != nil {
+		t.Fatalf("unexpected post-restart_town ITEM_USE_TO_ITEM: %v", err)
+	}
+	assertPostFloorItemUseToItemFullMergeBurst(t, reuseOut, itemproto.InventoryPosition(5), itemproto.InventoryPosition(6), 7, 2, "post-restart_town ITEM_USE_TO_ITEM")
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart_town ITEM_USE_TO_ITEM: %v", err)
+	}
+	if account.Characters[0].MapIndex != 21 || account.Characters[0].X != 52070 || account.Characters[0].Y != 166600 {
+		t.Fatalf("expected /restart_town to persist empire town position after ITEM_USE_TO_ITEM floor, got %+v", account.Characters[0])
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_town + ITEM_USE_TO_ITEM to leave recovered HP %d unchanged, got %+v", wantHP, account.Characters[0])
+	}
+	want := owner
+	want.Points[bootstrapPlayerPointValueIndex] = wantHP
+	want.MapIndex = 21
+	want.X = 52070
+	want.Y = 166600
+	want.Inventory = []inventory.ItemInstance{{ID: 1404, Vnum: 27001, Count: 7, Slot: 6}}
+	want.Quickslots = []loginticket.Quickslot{
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 6},
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart_town ITEM_USE_TO_ITEM persists full merge")
+}
+
+func assertPostFloorItemUseToItemFullMergeBurst(t *testing.T, frames [][]byte, source, target itemproto.Position, mergedCount uint8, quickslotPosition uint8, context string) {
+	t.Helper()
+	if len(frames) != 3 {
+		t.Fatalf("expected %s to emit ITEM_DEL + ITEM_UPDATE + QUICKSLOT_DEL, got %d frames", context, len(frames))
+	}
+	del, err := itemproto.DecodeDel(decodeSingleFrame(t, frames[0]))
+	if err != nil {
+		t.Fatalf("decode %s source del: %v", context, err)
+	}
+	if del.Position != source {
+		t.Fatalf("unexpected %s source del: %+v", context, del)
+	}
+	update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, frames[1]))
+	if err != nil {
+		t.Fatalf("decode %s target update: %v", context, err)
+	}
+	if update.Position != target || update.Count != mergedCount {
+		t.Fatalf("unexpected %s target update: %+v", context, update)
+	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, frames[2]))
+	if err != nil {
+		t.Fatalf("decode %s source quickslot del: %v", context, err)
+	}
+	if quickslotDel.Position != quickslotPosition {
+		t.Fatalf("expected %s to delete only source item quickslot position %d, got %+v", context, quickslotPosition, quickslotDel)
+	}
+}
+
 func assertPostFloorItemUseSuccessBurst(t *testing.T, frames [][]byte, ownerVID uint32, position itemproto.Position, vnum uint32, pointDelta int32, pointValue int32, remainingCount uint8, message string, context string) {
 	t.Helper()
 	if len(frames) != 4 {
