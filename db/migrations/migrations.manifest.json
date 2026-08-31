@@ -224,6 +224,14 @@
       "down_path": "0028_character_safebox_item_instance_attributes.down.sql",
       "up_sha256": "315aaf590009a3548a4bc4a2f46a0a9f76d70bf768ba8c6f2c7d43c4e8f1b36c",
       "down_sha256": "973c16bc5768661898e12cba55b0c7a21aa0cf5e5ef905d6d79e65b004ba61d8"
+    },
+    {
+      "version": 29,
+      "name": "bootstrap_ground_item_instance_attributes",
+      "up_path": "0029_bootstrap_ground_item_instance_attributes.up.sql",
+      "down_path": "0029_bootstrap_ground_item_instance_attributes.down.sql",
+      "up_sha256": "c7afca9b9e68e99926b644298df476dfb1bed88667246d0783d8b0a6f8c9df31",
+      "down_sha256": "5785614d646db03278f59174ffef124b4f490e2bf59362794ae7dabf0411058c"
     }
   ]
 }

@@ -108,6 +108,21 @@ type GroundItemSnapshot struct {
 	Socket0          int32  `json:"socket0,omitempty"`
 	Socket1          int32  `json:"socket1,omitempty"`
 	Socket2          int32  `json:"socket2,omitempty"`
+	HasAttributes    bool   `json:"has_attributes,omitempty"`
+	Attr0Type        uint8  `json:"attr0_type,omitempty"`
+	Attr0Value       int16  `json:"attr0_value,omitempty"`
+	Attr1Type        uint8  `json:"attr1_type,omitempty"`
+	Attr1Value       int16  `json:"attr1_value,omitempty"`
+	Attr2Type        uint8  `json:"attr2_type,omitempty"`
+	Attr2Value       int16  `json:"attr2_value,omitempty"`
+	Attr3Type        uint8  `json:"attr3_type,omitempty"`
+	Attr3Value       int16  `json:"attr3_value,omitempty"`
+	Attr4Type        uint8  `json:"attr4_type,omitempty"`
+	Attr4Value       int16  `json:"attr4_value,omitempty"`
+	Attr5Type        uint8  `json:"attr5_type,omitempty"`
+	Attr5Value       int16  `json:"attr5_value,omitempty"`
+	Attr6Type        uint8  `json:"attr6_type,omitempty"`
+	Attr6Value       int16  `json:"attr6_value,omitempty"`
 	PickupRange      int64  `json:"pickup_range,omitempty"`
 	MapIndex         uint32 `json:"map_index"`
 	X                int32  `json:"x"`

@@ -40,8 +40,8 @@ const (
 // attributes mirror the same rule beside sockets: HasAttributes=false / omitted
 // means nil instance attributes (template fallback); HasAttributes=true including
 // all-zero / type-zero is authoritative. Gold-shaped rows stay socket-less and
-// attribute-less. Tip-0010 SQL attribute companions stay deferred, so the 0010
-// projection still omits attribute fields.
+// attribute-less. Tip-0010 SQL projection now carries additive 0029
+// presence-aware attributes while export identity stays tip-0010.
 type DurableGroundItemRecord struct {
 	VID                uint32                     `json:"vid"`
 	Vnum               uint32                     `json:"vnum"`
@@ -398,6 +398,7 @@ func FilterDurableGroundItemSnapshotForRestore(snapshot DurableGroundItemSnapsho
 func DurableGroundItemRecordsToSnapshots(records []DurableGroundItemRecord) []GroundItemSnapshot {
 	out := make([]GroundItemSnapshot, 0, len(records))
 	for _, record := range records {
+		hasAttributes, attrs := durableGroundItemAttributesExportFields(record)
 		snapshot := GroundItemSnapshot{
 			VID:              record.VID,
 			Vnum:             record.Vnum,
@@ -414,6 +415,21 @@ func DurableGroundItemRecordsToSnapshots(records []DurableGroundItemRecord) []Gr
 			Socket0:          record.Socket0,
 			Socket1:          record.Socket1,
 			Socket2:          record.Socket2,
+			HasAttributes:    hasAttributes,
+			Attr0Type:        attrs[0].Type,
+			Attr0Value:       attrs[0].Value,
+			Attr1Type:        attrs[1].Type,
+			Attr1Value:       attrs[1].Value,
+			Attr2Type:        attrs[2].Type,
+			Attr2Value:       attrs[2].Value,
+			Attr3Type:        attrs[3].Type,
+			Attr3Value:       attrs[3].Value,
+			Attr4Type:        attrs[4].Type,
+			Attr4Value:       attrs[4].Value,
+			Attr5Type:        attrs[5].Type,
+			Attr5Value:       attrs[5].Value,
+			Attr6Type:        attrs[6].Type,
+			Attr6Value:       attrs[6].Value,
 		}
 		if record.GoldAmount != nil {
 			snapshot.GoldAmount = *record.GoldAmount
@@ -421,12 +437,37 @@ func DurableGroundItemRecordsToSnapshots(records []DurableGroundItemRecord) []Gr
 			snapshot.Socket0 = 0
 			snapshot.Socket1 = 0
 			snapshot.Socket2 = 0
+			snapshot.HasAttributes = false
+			snapshot.Attr0Type = 0
+			snapshot.Attr0Value = 0
+			snapshot.Attr1Type = 0
+			snapshot.Attr1Value = 0
+			snapshot.Attr2Type = 0
+			snapshot.Attr2Value = 0
+			snapshot.Attr3Type = 0
+			snapshot.Attr3Value = 0
+			snapshot.Attr4Type = 0
+			snapshot.Attr4Value = 0
+			snapshot.Attr5Type = 0
+			snapshot.Attr5Value = 0
+			snapshot.Attr6Type = 0
+			snapshot.Attr6Value = 0
 		} else if record.ItemCount != nil {
 			snapshot.Count = *record.ItemCount
 		}
 		out = append(out, snapshot)
 	}
 	return out
+}
+
+func durableGroundItemAttributesExportFields(record DurableGroundItemRecord) (bool, inventory.AttributeValues) {
+	if !record.HasAttributes {
+		return false, inventory.AttributeValues{}
+	}
+	if record.Attributes == nil {
+		return true, inventory.AttributeValues{}
+	}
+	return true, *record.Attributes
 }
 
 func normalizeDurableGroundItemRecord(record DurableGroundItemRecord) DurableGroundItemRecord {

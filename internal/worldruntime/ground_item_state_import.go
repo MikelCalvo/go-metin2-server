@@ -16,7 +16,8 @@ var ErrBootstrapGroundItemStateImportExecutorRequired = errors.New("bootstrap gr
 
 // ErrBootstrapGroundItemStateImportSchemaRequired reports that the target
 // database has not applied the 0010_bootstrap_ground_item_state migration
-// boundary and/or the additive 0026 instance-socket columns yet.
+// boundary and/or the additive 0026 instance-socket / 0029 instance-attribute
+// columns yet.
 var ErrBootstrapGroundItemStateImportSchemaRequired = errors.New("bootstrap ground-item-state schema is not applied")
 
 // ErrBootstrapGroundItemStateImportRowCount reports that an INSERT affected an
@@ -94,6 +95,7 @@ func requireBootstrapGroundItemStateSchema(ctx context.Context, querier dbmigrat
 	}
 	hasGroundState := false
 	hasInstanceSockets := false
+	hasInstanceAttributes := false
 	latest := 0
 	for _, entry := range ledger {
 		if entry.Version > latest {
@@ -105,21 +107,27 @@ func requireBootstrapGroundItemStateSchema(ctx context.Context, querier dbmigrat
 		if entry.Version == BootstrapGroundItemInstanceSocketsMigrationVersion && entry.Name == BootstrapGroundItemInstanceSocketsMigrationName {
 			hasInstanceSockets = true
 		}
+		if entry.Version == BootstrapGroundItemInstanceAttributesMigrationVersion && entry.Name == BootstrapGroundItemInstanceAttributesMigrationName {
+			hasInstanceAttributes = true
+		}
 	}
-	if hasGroundState && hasInstanceSockets {
+	if hasGroundState && hasInstanceSockets && hasInstanceAttributes {
 		return nil
 	}
 	if !hasGroundState {
 		return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrBootstrapGroundItemStateImportSchemaRequired, latest, BootstrapGroundItemStateMigrationVersion, BootstrapGroundItemStateMigrationName)
 	}
-	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrBootstrapGroundItemStateImportSchemaRequired, latest, BootstrapGroundItemInstanceSocketsMigrationVersion, BootstrapGroundItemInstanceSocketsMigrationName)
+	if !hasInstanceSockets {
+		return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrBootstrapGroundItemStateImportSchemaRequired, latest, BootstrapGroundItemInstanceSocketsMigrationVersion, BootstrapGroundItemInstanceSocketsMigrationName)
+	}
+	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrBootstrapGroundItemStateImportSchemaRequired, latest, BootstrapGroundItemInstanceAttributesMigrationVersion, BootstrapGroundItemInstanceAttributesMigrationName)
 }
 
 func insertBootstrapGroundItem(ctx context.Context, tx *sql.Tx, row BootstrapGroundItemStateRow) error {
 	result, err := tx.ExecContext(ctx, `
 INSERT INTO bootstrap_ground_items (
-    vid, vnum, item_count, gold_amount, owner_login, owner_character_id, owner_vid, owner_name, map_index, x, y, z, pickup_range, has_sockets, socket0, socket1, socket2
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    vid, vnum, item_count, gold_amount, owner_login, owner_character_id, owner_vid, owner_name, map_index, x, y, z, pickup_range, has_sockets, socket0, socket1, socket2, has_attributes, attr0_type, attr0_value, attr1_type, attr1_value, attr2_type, attr2_value, attr3_type, attr3_value, attr4_type, attr4_value, attr5_type, attr5_value, attr6_type, attr6_value
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		int64(row.VID),
 		int64(row.Vnum),
 		nullableUint16SQL(row.ItemCount),
@@ -137,6 +145,21 @@ INSERT INTO bootstrap_ground_items (
 		int64(row.Socket0),
 		int64(row.Socket1),
 		int64(row.Socket2),
+		boolToSQLInt(row.HasAttributes),
+		int64(row.Attr0Type),
+		int64(row.Attr0Value),
+		int64(row.Attr1Type),
+		int64(row.Attr1Value),
+		int64(row.Attr2Type),
+		int64(row.Attr2Value),
+		int64(row.Attr3Type),
+		int64(row.Attr3Value),
+		int64(row.Attr4Type),
+		int64(row.Attr4Value),
+		int64(row.Attr5Type),
+		int64(row.Attr5Value),
+		int64(row.Attr6Type),
+		int64(row.Attr6Value),
 	)
 	if err != nil {
 		return fmt.Errorf("insert bootstrap ground item vid %d: %w", row.VID, err)

@@ -22,8 +22,8 @@ func TestSQLiteHarnessGroundItemStateImportInsertsItemAndGoldRows(t *testing.T) 
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemInstanceSocketsMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemInstanceSocketsMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemInstanceAttributesMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemInstanceAttributesMigrationVersion, err)
 	}
 
 	accounts := []accountstore.Account{
@@ -56,7 +56,7 @@ func TestSQLiteHarnessGroundItemStateImportInsertsItemAndGoldRows(t *testing.T) 
 	gold := uint32(250)
 	snapshots := []GroundItemSnapshot{
 		{VID: 0x0700002d, Vnum: 1, GoldAmount: gold, OwnerName: "GroundGoldOwner", OwnerLogin: "ground-gold-owner", OwnerCharacterID: 0x0103019d, OwnerVID: 0x0204019d, PickupRange: 750, MapIndex: 42, X: 1200, Y: 2200, Z: 3},
-		{VID: 0x0700002c, Vnum: 3001, Count: count, OwnerName: "GroundItemOwner", OwnerLogin: "ground-item-owner", OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c, PickupRange: 450, MapIndex: 1, X: 1100, Y: 2100, Z: 2, HasSockets: true, Socket0: 1, Socket1: 2, Socket2: 3},
+		{VID: 0x0700002c, Vnum: 3001, Count: count, OwnerName: "GroundItemOwner", OwnerLogin: "ground-item-owner", OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c, PickupRange: 450, MapIndex: 1, X: 1100, Y: 2100, Z: 2, HasSockets: true, Socket0: 1, Socket1: 2, Socket2: 3, HasAttributes: true, Attr0Type: 1, Attr0Value: 10, Attr6Type: 7, Attr6Value: -3},
 	}
 	groundExport, err := ExportBootstrapGroundItemState(snapshots)
 	if err != nil {
@@ -85,8 +85,8 @@ func TestSQLiteHarnessGroundItemStateImportInsertsItemAndGoldRows(t *testing.T) 
 		t.Fatalf("ground item rows = %d, want 2", rowCount)
 	}
 
-	assertGroundItemRow(t, db, 0x0700002c, 3001, sql.NullInt64{Int64: 2, Valid: true}, sql.NullInt64{}, "ground-item-owner", 0x0103019c, 0x0204019c, "GroundItemOwner", 1, 1100, 2100, 2, 450, true, 1, 2, 3)
-	assertGroundItemRow(t, db, 0x0700002d, 1, sql.NullInt64{}, sql.NullInt64{Int64: 250, Valid: true}, "ground-gold-owner", 0x0103019d, 0x0204019d, "GroundGoldOwner", 42, 1200, 2200, 3, 750, false, 0, 0, 0)
+	assertGroundItemRow(t, db, 0x0700002c, 3001, sql.NullInt64{Int64: 2, Valid: true}, sql.NullInt64{}, "ground-item-owner", 0x0103019c, 0x0204019c, "GroundItemOwner", 1, 1100, 2100, 2, 450, true, 1, 2, 3, true, 1, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, -3)
+	assertGroundItemRow(t, db, 0x0700002d, 1, sql.NullInt64{}, sql.NullInt64{Int64: 250, Valid: true}, "ground-gold-owner", 0x0103019d, 0x0204019d, "GroundGoldOwner", 42, 1200, 2200, 3, 750, false, 0, 0, 0, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 func TestSQLiteHarnessGroundItemStateImportRejectsDuplicatePrimaryKey(t *testing.T) {
@@ -94,8 +94,8 @@ func TestSQLiteHarnessGroundItemStateImportRejectsDuplicatePrimaryKey(t *testing
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemInstanceSocketsMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemInstanceSocketsMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemInstanceAttributesMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemInstanceAttributesMigrationVersion, err)
 	}
 
 	accounts := []accountstore.Account{{
@@ -119,6 +119,7 @@ func TestSQLiteHarnessGroundItemStateImportRejectsDuplicatePrimaryKey(t *testing
 		OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c,
 		PickupRange: 300, MapIndex: 1, X: 100, Y: 200,
 		HasSockets: true, Socket0: 4, Socket1: 5, Socket2: 6,
+		HasAttributes: true, Attr0Type: 2, Attr0Value: 5,
 	}})
 	if err != nil {
 		t.Fatalf("ExportBootstrapGroundItemState: %v", err)
@@ -139,7 +140,7 @@ func TestSQLiteHarnessGroundItemStateImportRejectsDuplicatePrimaryKey(t *testing
 	if rowCount != 1 {
 		t.Fatalf("ground item rows after failed reimport = %d, want 1 (no partial second import)", rowCount)
 	}
-	assertGroundItemRow(t, db, 0x0700002c, 3001, sql.NullInt64{Int64: 1, Valid: true}, sql.NullInt64{}, "ground-item-owner", 0x0103019c, 0x0204019c, "GroundItemOwner", 1, 100, 200, 0, 300, true, 4, 5, 6)
+	assertGroundItemRow(t, db, 0x0700002c, 3001, sql.NullInt64{Int64: 1, Valid: true}, sql.NullInt64{}, "ground-item-owner", 0x0103019c, 0x0204019c, "GroundItemOwner", 1, 100, 200, 0, 300, true, 4, 5, 6, true, 2, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 func TestSQLiteHarnessGroundItemStateImportRejectsMissingSchema(t *testing.T) {
@@ -182,13 +183,36 @@ func TestSQLiteHarnessGroundItemStateImportRejectsTipTenOnlyLedger(t *testing.T)
 	}
 }
 
-func TestSQLiteHarnessGroundItemStateImportRejectsMissingParentCharacter(t *testing.T) {
+func TestSQLiteHarnessGroundItemStateImportRejectsTipTwentySixOnlyLedger(t *testing.T) {
 	db := openSQLiteGroundItemStateImportDB(t)
 	defer db.Close()
 
 	ctx := context.Background()
 	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemInstanceSocketsMigrationVersion); err != nil {
 		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemInstanceSocketsMigrationVersion, err)
+	}
+
+	export := BootstrapGroundItemStateExport{
+		MigrationVersion: BootstrapGroundItemStateMigrationVersion,
+		MigrationName:    BootstrapGroundItemStateMigrationName,
+		GroundItems:      []BootstrapGroundItemStateRow{},
+	}
+	_, err := ImportBootstrapGroundItemState(ctx, db, export)
+	if !errors.Is(err, ErrBootstrapGroundItemStateImportSchemaRequired) {
+		t.Fatalf("ImportBootstrapGroundItemState tip-26-only error = %v, want %v", err, ErrBootstrapGroundItemStateImportSchemaRequired)
+	}
+	if err == nil || !strings.Contains(err.Error(), "29") || !strings.Contains(err.Error(), BootstrapGroundItemInstanceAttributesMigrationName) {
+		t.Fatalf("expected tip-26-only error to name additive 29, got %v", err)
+	}
+}
+
+func TestSQLiteHarnessGroundItemStateImportRejectsMissingParentCharacter(t *testing.T) {
+	db := openSQLiteGroundItemStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemInstanceAttributesMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemInstanceAttributesMigrationVersion, err)
 	}
 
 	count := uint16(1)
@@ -222,8 +246,8 @@ func TestSQLiteHarnessGroundItemStateImportAcceptsEmptyExport(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemInstanceSocketsMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemInstanceSocketsMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemInstanceAttributesMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemInstanceAttributesMigrationVersion, err)
 	}
 
 	export := BootstrapGroundItemStateExport{
@@ -259,6 +283,14 @@ func assertGroundItemRow(
 	pickupRange int64,
 	hasSockets bool,
 	socket0, socket1, socket2 int32,
+	hasAttributes bool,
+	attr0Type uint8, attr0Value int16,
+	attr1Type uint8, attr1Value int16,
+	attr2Type uint8, attr2Value int16,
+	attr3Type uint8, attr3Value int16,
+	attr4Type uint8, attr4Value int16,
+	attr5Type uint8, attr5Value int16,
+	attr6Type uint8, attr6Value int16,
 ) {
 	t.Helper()
 
@@ -280,13 +312,30 @@ func assertGroundItemRow(
 		gotSocket0          int
 		gotSocket1          int
 		gotSocket2          int
+		gotHasAttributes    int
+		gotAttr0Type        int
+		gotAttr0Value       int
+		gotAttr1Type        int
+		gotAttr1Value       int
+		gotAttr2Type        int
+		gotAttr2Value       int
+		gotAttr3Type        int
+		gotAttr3Value       int
+		gotAttr4Type        int
+		gotAttr4Value       int
+		gotAttr5Type        int
+		gotAttr5Value       int
+		gotAttr6Type        int
+		gotAttr6Value       int
 	)
 	if err := db.QueryRowContext(context.Background(), `
-SELECT vid, vnum, item_count, gold_amount, owner_login, owner_character_id, owner_vid, owner_name, map_index, x, y, z, pickup_range, has_sockets, socket0, socket1, socket2
+SELECT vid, vnum, item_count, gold_amount, owner_login, owner_character_id, owner_vid, owner_name, map_index, x, y, z, pickup_range, has_sockets, socket0, socket1, socket2, has_attributes, attr0_type, attr0_value, attr1_type, attr1_value, attr2_type, attr2_value, attr3_type, attr3_value, attr4_type, attr4_value, attr5_type, attr5_value, attr6_type, attr6_value
 FROM bootstrap_ground_items WHERE vid = ?`,
 		vid).Scan(
 		&gotVID, &gotVnum, &gotItemCount, &gotGoldAmount, &gotOwnerLogin, &gotOwnerCharacterID, &gotOwnerVID, &gotOwnerName,
 		&gotMapIndex, &gotX, &gotY, &gotZ, &gotPickupRange, &gotHasSockets, &gotSocket0, &gotSocket1, &gotSocket2,
+		&gotHasAttributes, &gotAttr0Type, &gotAttr0Value, &gotAttr1Type, &gotAttr1Value, &gotAttr2Type, &gotAttr2Value,
+		&gotAttr3Type, &gotAttr3Value, &gotAttr4Type, &gotAttr4Value, &gotAttr5Type, &gotAttr5Value, &gotAttr6Type, &gotAttr6Value,
 	); err != nil {
 		t.Fatalf("select ground item vid %d: %v", vid, err)
 	}
@@ -294,12 +343,25 @@ FROM bootstrap_ground_items WHERE vid = ?`,
 	if hasSockets {
 		wantHasSockets = 1
 	}
+	wantHasAttributes := 0
+	if hasAttributes {
+		wantHasAttributes = 1
+	}
 	if gotVID != int64(vid) || gotVnum != int64(vnum) || gotOwnerLogin != ownerLogin || gotOwnerCharacterID != int64(ownerCharacterID) ||
 		gotOwnerVID != int64(ownerVID) || gotOwnerName != ownerName || gotMapIndex != int64(mapIndex) ||
 		gotX != int(x) || gotY != int(y) || gotZ != int(z) || gotPickupRange != pickupRange ||
-		gotHasSockets != wantHasSockets || gotSocket0 != int(socket0) || gotSocket1 != int(socket1) || gotSocket2 != int(socket2) {
-		t.Fatalf("ground row mismatch for vid %d: got vid=%d vnum=%d login=%q character=%d owner_vid=%d name=%q map=%d x=%d y=%d z=%d pickup=%d has_sockets=%d sockets=(%d,%d,%d)",
-			vid, gotVID, gotVnum, gotOwnerLogin, gotOwnerCharacterID, gotOwnerVID, gotOwnerName, gotMapIndex, gotX, gotY, gotZ, gotPickupRange, gotHasSockets, gotSocket0, gotSocket1, gotSocket2)
+		gotHasSockets != wantHasSockets || gotSocket0 != int(socket0) || gotSocket1 != int(socket1) || gotSocket2 != int(socket2) ||
+		gotHasAttributes != wantHasAttributes ||
+		gotAttr0Type != int(attr0Type) || gotAttr0Value != int(attr0Value) ||
+		gotAttr1Type != int(attr1Type) || gotAttr1Value != int(attr1Value) ||
+		gotAttr2Type != int(attr2Type) || gotAttr2Value != int(attr2Value) ||
+		gotAttr3Type != int(attr3Type) || gotAttr3Value != int(attr3Value) ||
+		gotAttr4Type != int(attr4Type) || gotAttr4Value != int(attr4Value) ||
+		gotAttr5Type != int(attr5Type) || gotAttr5Value != int(attr5Value) ||
+		gotAttr6Type != int(attr6Type) || gotAttr6Value != int(attr6Value) {
+		t.Fatalf("ground row mismatch for vid %d: got vid=%d vnum=%d login=%q character=%d owner_vid=%d name=%q map=%d x=%d y=%d z=%d pickup=%d has_sockets=%d sockets=(%d,%d,%d) has_attributes=%d attrs=[(%d,%d) (%d,%d) (%d,%d) (%d,%d) (%d,%d) (%d,%d) (%d,%d)]",
+			vid, gotVID, gotVnum, gotOwnerLogin, gotOwnerCharacterID, gotOwnerVID, gotOwnerName, gotMapIndex, gotX, gotY, gotZ, gotPickupRange, gotHasSockets, gotSocket0, gotSocket1, gotSocket2, gotHasAttributes,
+			gotAttr0Type, gotAttr0Value, gotAttr1Type, gotAttr1Value, gotAttr2Type, gotAttr2Value, gotAttr3Type, gotAttr3Value, gotAttr4Type, gotAttr4Value, gotAttr5Type, gotAttr5Value, gotAttr6Type, gotAttr6Value)
 	}
 	if gotItemCount.Valid != itemCount.Valid || (itemCount.Valid && gotItemCount.Int64 != itemCount.Int64) {
 		t.Fatalf("ground vid %d item_count = %+v, want %+v", vid, gotItemCount, itemCount)

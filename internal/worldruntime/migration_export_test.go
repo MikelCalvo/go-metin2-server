@@ -12,8 +12,8 @@ func TestExportBootstrapGroundItemStateBuildsDeterministicRowsMatchingMigrationS
 	gold := uint32(250)
 	snapshots := []GroundItemSnapshot{
 		{VID: 0x0700002d, Vnum: 1, GoldAmount: gold, OwnerName: "GroundGoldOwner", OwnerLogin: "ground-gold-owner", OwnerCharacterID: 0x0103019d, OwnerVID: 0x0204019d, PickupRange: 750, MapIndex: 42, X: 1200, Y: 2200, Z: 3},
-		{VID: 0x0700002c, Vnum: 3001, Count: count, OwnerName: "GroundItemOwner", OwnerLogin: "ground-item-owner", OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c, PickupRange: 450, MapIndex: 1, X: 1100, Y: 2100, Z: 2, HasSockets: true, Socket0: 1, Socket1: 2, Socket2: 3},
-		{VID: 0x0700002e, Vnum: 3002, Count: explicitZeroCount, OwnerName: "GroundZeroOwner", OwnerLogin: "ground-zero-owner", OwnerCharacterID: 0x0103019e, OwnerVID: 0x0204019e, PickupRange: 300, MapIndex: 2, X: 1300, Y: 2300, Z: 1, HasSockets: true},
+		{VID: 0x0700002c, Vnum: 3001, Count: count, OwnerName: "GroundItemOwner", OwnerLogin: "ground-item-owner", OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c, PickupRange: 450, MapIndex: 1, X: 1100, Y: 2100, Z: 2, HasSockets: true, Socket0: 1, Socket1: 2, Socket2: 3, HasAttributes: true, Attr0Type: 1, Attr0Value: 10, Attr6Type: 7, Attr6Value: -3},
+		{VID: 0x0700002e, Vnum: 3002, Count: explicitZeroCount, OwnerName: "GroundZeroOwner", OwnerLogin: "ground-zero-owner", OwnerCharacterID: 0x0103019e, OwnerVID: 0x0204019e, PickupRange: 300, MapIndex: 2, X: 1300, Y: 2300, Z: 1, HasSockets: true, HasAttributes: true},
 	}
 
 	export, err := ExportBootstrapGroundItemState(snapshots)
@@ -24,9 +24,9 @@ func TestExportBootstrapGroundItemStateBuildsDeterministicRowsMatchingMigrationS
 		t.Fatalf("unexpected migration boundary: version=%d name=%q", export.MigrationVersion, export.MigrationName)
 	}
 	want := []BootstrapGroundItemStateRow{
-		{VID: 0x0700002c, Vnum: 3001, ItemCount: &count, OwnerLogin: "ground-item-owner", OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c, OwnerName: "GroundItemOwner", MapIndex: 1, X: 1100, Y: 2100, Z: 2, PickupRange: 450, HasSockets: true, Socket0: 1, Socket1: 2, Socket2: 3},
+		{VID: 0x0700002c, Vnum: 3001, ItemCount: &count, OwnerLogin: "ground-item-owner", OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c, OwnerName: "GroundItemOwner", MapIndex: 1, X: 1100, Y: 2100, Z: 2, PickupRange: 450, HasSockets: true, Socket0: 1, Socket1: 2, Socket2: 3, HasAttributes: true, Attr0Type: 1, Attr0Value: 10, Attr6Type: 7, Attr6Value: -3},
 		{VID: 0x0700002d, Vnum: 1, GoldAmount: &gold, OwnerLogin: "ground-gold-owner", OwnerCharacterID: 0x0103019d, OwnerVID: 0x0204019d, OwnerName: "GroundGoldOwner", MapIndex: 42, X: 1200, Y: 2200, Z: 3, PickupRange: 750},
-		{VID: 0x0700002e, Vnum: 3002, ItemCount: &explicitZeroCount, OwnerLogin: "ground-zero-owner", OwnerCharacterID: 0x0103019e, OwnerVID: 0x0204019e, OwnerName: "GroundZeroOwner", MapIndex: 2, X: 1300, Y: 2300, Z: 1, PickupRange: 300, HasSockets: true},
+		{VID: 0x0700002e, Vnum: 3002, ItemCount: &explicitZeroCount, OwnerLogin: "ground-zero-owner", OwnerCharacterID: 0x0103019e, OwnerVID: 0x0204019e, OwnerName: "GroundZeroOwner", MapIndex: 2, X: 1300, Y: 2300, Z: 1, PickupRange: 300, HasSockets: true, HasAttributes: true},
 	}
 	if !reflect.DeepEqual(export.GroundItems, want) {
 		t.Fatalf("unexpected ground-item rows:\n got: %#v\nwant: %#v", export.GroundItems, want)
@@ -67,6 +67,9 @@ func TestExportBootstrapGroundItemStateRejectsRowsThatCannotTargetMigrationSchem
 		{name: "non-zero sockets without has_sockets", snapshot: withGroundSockets(valid, false, 1, 0, 0)},
 		{name: "gold-shaped with has_sockets", snapshot: withGroundSockets(withGroundGold(withGroundVnum(withGroundCount(valid, 0), 1), 250), true, 0, 0, 0)},
 		{name: "gold-shaped with sockets", snapshot: withGroundSockets(withGroundGold(withGroundVnum(withGroundCount(valid, 0), 1), 250), false, 1, 0, 0)},
+		{name: "non-zero attributes without has_attributes", snapshot: withGroundAttributes(valid, false, 1, 0)},
+		{name: "gold-shaped with has_attributes", snapshot: withGroundAttributes(withGroundGold(withGroundVnum(withGroundCount(valid, 0), 1), 250), true, 0, 0)},
+		{name: "gold-shaped with attributes", snapshot: withGroundAttributes(withGroundGold(withGroundVnum(withGroundCount(valid, 0), 1), 250), false, 1, 0)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -139,5 +142,12 @@ func withGroundSockets(snapshot GroundItemSnapshot, hasSockets bool, socket0, so
 	snapshot.Socket0 = socket0
 	snapshot.Socket1 = socket1
 	snapshot.Socket2 = socket2
+	return snapshot
+}
+
+func withGroundAttributes(snapshot GroundItemSnapshot, hasAttributes bool, attr0Type uint8, attr0Value int16) GroundItemSnapshot {
+	snapshot.HasAttributes = hasAttributes
+	snapshot.Attr0Type = attr0Type
+	snapshot.Attr0Value = attr0Value
 	return snapshot
 }

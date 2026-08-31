@@ -69,6 +69,8 @@ const (
 	expectedCharacterItemInstanceAttributesDownSHA256        = "0633bafd63ba08cd4d9842b3a2ec31b1660f6f87a80b0efd4cf90de555f21ced"
 	expectedCharacterSafeboxItemInstanceAttributesUpSHA256   = "315aaf590009a3548a4bc4a2f46a0a9f76d70bf768ba8c6f2c7d43c4e8f1b36c"
 	expectedCharacterSafeboxItemInstanceAttributesDownSHA256 = "973c16bc5768661898e12cba55b0c7a21aa0cf5e5ef905d6d79e65b004ba61d8"
+	expectedBootstrapGroundItemInstanceAttributesUpSHA256    = "c7afca9b9e68e99926b644298df476dfb1bed88667246d0783d8b0a6f8c9df31"
+	expectedBootstrapGroundItemInstanceAttributesDownSHA256  = "5785614d646db03278f59174ffef124b4f490e2bf59362794ae7dabf0411058c"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -1161,6 +1163,49 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 		}
 	}
 
+	if len(catalog) < 29 {
+		t.Fatalf("expected bootstrap ground item instance-attributes migration after character safebox item instance-attributes, got %d", len(catalog))
+	}
+	twentyNinth := catalog[28]
+	if twentyNinth.Version != 29 || twentyNinth.Name != "bootstrap_ground_item_instance_attributes" {
+		t.Fatalf("unexpected twenty-ninth migration: %#v", twentyNinth)
+	}
+	if twentyNinth.UpPath != "0029_bootstrap_ground_item_instance_attributes.up.sql" {
+		t.Fatalf("unexpected twenty-ninth up path: %q", twentyNinth.UpPath)
+	}
+	if twentyNinth.DownPath != "0029_bootstrap_ground_item_instance_attributes.down.sql" {
+		t.Fatalf("unexpected twenty-ninth down path: %q", twentyNinth.DownPath)
+	}
+	if twentyNinth.UpSHA256 != expectedBootstrapGroundItemInstanceAttributesUpSHA256 {
+		t.Fatalf("unexpected bootstrap ground item instance-attributes up checksum: got %q want %q", twentyNinth.UpSHA256, expectedBootstrapGroundItemInstanceAttributesUpSHA256)
+	}
+	if twentyNinth.DownSHA256 != expectedBootstrapGroundItemInstanceAttributesDownSHA256 {
+		t.Fatalf("unexpected bootstrap ground item instance-attributes down checksum: got %q want %q", twentyNinth.DownSHA256, expectedBootstrapGroundItemInstanceAttributesDownSHA256)
+	}
+	for _, want := range []string{
+		"ALTER TABLE bootstrap_ground_items",
+		"ADD COLUMN has_attributes INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN attr0_type INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN attr0_value INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN attr6_type INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN attr6_value INTEGER NOT NULL DEFAULT 0",
+		"has_attributes = 1",
+		"attr0_type = 0 AND attr0_value = 0",
+		"attr6_type = 0 AND attr6_value = 0",
+	} {
+		if !strings.Contains(twentyNinth.UpSQL, want) {
+			t.Fatalf("expected bootstrap ground item instance-attributes up migration to contain %q, got:\n%s", want, twentyNinth.UpSQL)
+		}
+	}
+	for _, want := range []string{
+		"ALTER TABLE bootstrap_ground_items DROP COLUMN attr6_value",
+		"ALTER TABLE bootstrap_ground_items DROP COLUMN has_attributes",
+	} {
+		if !strings.Contains(twentyNinth.DownSQL, want) {
+			t.Fatalf("expected bootstrap ground item instance-attributes down migration to contain %q, got:\n%s", want, twentyNinth.DownSQL)
+		}
+	}
+
 	for i, migration := range catalog {
 		wantVersion := i + 1
 		if migration.Version != wantVersion {
@@ -1230,7 +1275,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("built-in catalog summary: %v", err)
 	}
-	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 28 {
+	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 29 {
 		t.Fatalf("unexpected built-in catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -1240,7 +1285,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 		t.Fatalf("unexpected first built-in catalog summary row: %#v", summary.Migrations[0])
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "character_safebox_item_instance_attributes" {
+	if latest.Version != summary.LatestVersion || latest.Name != "bootstrap_ground_item_instance_attributes" {
 		t.Fatalf("unexpected latest built-in catalog summary row: %#v", latest)
 	}
 }

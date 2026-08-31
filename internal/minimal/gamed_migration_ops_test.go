@@ -89,11 +89,13 @@ func TestRegisterGamedMigrationQuarantineExportOpsServesCatalogExportAndQuaranti
 	catalogBody := catalogRec.Body.String()
 	for _, want := range []string{
 		`"format":"go-metin2-migration-catalog-summary-v1"`,
-		`"latest_version":28`,
+		`"latest_version":29`,
 		`"name":"character_item_instance_attributes"`,
 		`"up_path":"0027_character_item_instance_attributes.up.sql"`,
 		`"name":"character_safebox_item_instance_attributes"`,
 		`"up_path":"0028_character_safebox_item_instance_attributes.up.sql"`,
+		`"name":"bootstrap_ground_item_instance_attributes"`,
+		`"up_path":"0029_bootstrap_ground_item_instance_attributes.up.sql"`,
 	} {
 		if !strings.Contains(catalogBody, want) {
 			t.Fatalf("expected catalog body to contain %s, got %s", want, catalogBody)

@@ -93,6 +93,19 @@ func canonicalizeBootstrapGroundItemStateExport(export BootstrapGroundItemStateE
 }
 
 func groundItemSnapshotFromExportRow(row BootstrapGroundItemStateRow) (GroundItemSnapshot, error) {
+	if err := validateBootstrapGroundItemInstanceAttributes(
+		row.VID,
+		row.HasAttributes,
+		row.Attr0Type, row.Attr0Value,
+		row.Attr1Type, row.Attr1Value,
+		row.Attr2Type, row.Attr2Value,
+		row.Attr3Type, row.Attr3Value,
+		row.Attr4Type, row.Attr4Value,
+		row.Attr5Type, row.Attr5Value,
+		row.Attr6Type, row.Attr6Value,
+	); err != nil {
+		return GroundItemSnapshot{}, err
+	}
 	snapshot := GroundItemSnapshot{
 		VID:              row.VID,
 		Vnum:             row.Vnum,
@@ -109,6 +122,21 @@ func groundItemSnapshotFromExportRow(row BootstrapGroundItemStateRow) (GroundIte
 		Socket0:          row.Socket0,
 		Socket1:          row.Socket1,
 		Socket2:          row.Socket2,
+		HasAttributes:    row.HasAttributes,
+		Attr0Type:        row.Attr0Type,
+		Attr0Value:       row.Attr0Value,
+		Attr1Type:        row.Attr1Type,
+		Attr1Value:       row.Attr1Value,
+		Attr2Type:        row.Attr2Type,
+		Attr2Value:       row.Attr2Value,
+		Attr3Type:        row.Attr3Type,
+		Attr3Value:       row.Attr3Value,
+		Attr4Type:        row.Attr4Type,
+		Attr4Value:       row.Attr4Value,
+		Attr5Type:        row.Attr5Type,
+		Attr5Value:       row.Attr5Value,
+		Attr6Type:        row.Attr6Type,
+		Attr6Value:       row.Attr6Value,
 	}
 	switch {
 	case row.ItemCount != nil && row.GoldAmount != nil:

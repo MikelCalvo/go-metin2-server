@@ -1,0 +1,16 @@
+-- go-metin2 migration: 0029 bootstrap_ground_item_instance_attributes down
+ALTER TABLE bootstrap_ground_items DROP COLUMN attr6_value;
+ALTER TABLE bootstrap_ground_items DROP COLUMN attr6_type;
+ALTER TABLE bootstrap_ground_items DROP COLUMN attr5_value;
+ALTER TABLE bootstrap_ground_items DROP COLUMN attr5_type;
+ALTER TABLE bootstrap_ground_items DROP COLUMN attr4_value;
+ALTER TABLE bootstrap_ground_items DROP COLUMN attr4_type;
+ALTER TABLE bootstrap_ground_items DROP COLUMN attr3_value;
+ALTER TABLE bootstrap_ground_items DROP COLUMN attr3_type;
+ALTER TABLE bootstrap_ground_items DROP COLUMN attr2_value;
+ALTER TABLE bootstrap_ground_items DROP COLUMN attr2_type;
+ALTER TABLE bootstrap_ground_items DROP COLUMN attr1_value;
+ALTER TABLE bootstrap_ground_items DROP COLUMN attr1_type;
+ALTER TABLE bootstrap_ground_items DROP COLUMN attr0_value;
+ALTER TABLE bootstrap_ground_items DROP COLUMN attr0_type;
+ALTER TABLE bootstrap_ground_items DROP COLUMN has_attributes;

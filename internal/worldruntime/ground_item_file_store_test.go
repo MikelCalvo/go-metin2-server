@@ -326,10 +326,21 @@ func TestGroundItemFileStoreRoundTripPersistsInstanceAttributesIncludingExplicit
 	if len(export.GroundItems) != 2 {
 		t.Fatalf("expected 2 projected ground items, got %#v", export.GroundItems)
 	}
-	// Tip-0010 projection stays attribute-free until a later SQL companion slice.
+	if !export.GroundItems[0].HasAttributes || export.GroundItems[0].Attr0Type != 1 || export.GroundItems[0].Attr0Value != 25 || export.GroundItems[0].Attr1Type != 4 || export.GroundItems[0].Attr1Value != -5 {
+		t.Fatalf("expected tip-0010 export to project active attributes, got %#v", export.GroundItems[0])
+	}
+	if !export.GroundItems[1].HasAttributes || export.GroundItems[1].Attr0Type != 0 || export.GroundItems[1].Attr0Value != 0 {
+		t.Fatalf("expected tip-0010 export to project explicit-zero attributes, got %#v", export.GroundItems[1])
+	}
 	projected := DurableGroundItemRecordsToSnapshots(got.GroundItems)
 	if len(projected) != 2 {
 		t.Fatalf("DurableGroundItemRecordsToSnapshots lost attributed rows: %#v", projected)
+	}
+	if !projected[0].HasAttributes || projected[0].Attr0Type != 1 || projected[0].Attr0Value != 25 || projected[0].Attr1Type != 4 || projected[0].Attr1Value != -5 {
+		t.Fatalf("DurableGroundItemRecordsToSnapshots lost active attributes: %#v", projected[0])
+	}
+	if !projected[1].HasAttributes || projected[1].Attr0Type != 0 || projected[1].Attr0Value != 0 {
+		t.Fatalf("DurableGroundItemRecordsToSnapshots lost explicit-zero attributes: %#v", projected[1])
 	}
 }
 
