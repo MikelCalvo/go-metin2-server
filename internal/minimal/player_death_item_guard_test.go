@@ -912,6 +912,188 @@ func assertPostFloorItemDropSuccessBurst(t *testing.T, frames [][]byte, ownerNam
 	}
 }
 
+func TestGameSessionFlowPostFloorGoldDropFailsClosed(t *testing.T) {
+	login := "post-floor-gold-drop"
+	loginKey := uint32(0x19191b66)
+	owner := peerVisibilityCharacter("DeadGoldDropOwner", 0x01030b66, 0x02040b66, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Gold = 5000
+	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, nil)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Elk: 1200})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor gold ITEM_DROP dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor gold ITEM_DROP to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor gold ITEM_DROP to queue no frames, got %d", len(queued))
+	}
+	if ground := runtime.GroundItems(); len(ground) != 0 {
+		t.Fatalf("expected post-floor gold ITEM_DROP to register no ground items, got %#v", ground)
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor gold ITEM_DROP")
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_here",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here after post-floor gold ITEM_DROP: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_here recovery frames after post-floor gold ITEM_DROP, got %d", len(restartOut))
+	}
+	_ = flushServerFrames(t, flow)
+
+	reuseOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Elk: 1200})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart gold ITEM_DROP: %v", err)
+	}
+	assertPostFloorGoldDropSuccessBurst(t, reuseOut, owner.VID, owner.Name, owner.X, owner.Y, owner.Z, 1200, 3800, "post-restart gold ITEM_DROP")
+	if ground := runtime.GroundItems(); len(ground) != 1 || ground[0].Vnum != 1 || ground[0].GoldAmount != 1200 {
+		t.Fatalf("expected one post-restart gold ground marker after ITEM_DROP recovery, got %#v", ground)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart gold ITEM_DROP: %v", err)
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_here to persist recovered owner HP %d after gold ITEM_DROP floor, got %+v", wantHP, account.Characters[0])
+	}
+	want := owner
+	want.Points[bootstrapPlayerPointValueIndex] = wantHP
+	want.Gold = 3800
+	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart gold ITEM_DROP debits carried gold")
+}
+
+func TestGameSessionFlowPostFloorGoldDropFailsClosedBeforeRestartTown(t *testing.T) {
+	login := "pf-gold-drop-town"
+	loginKey := uint32(0x19191b67)
+	owner := peerVisibilityCharacter("DeadGoldDropTownOwner", 0x01030b67, 0x02040b67, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Gold = 5000
+	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, nil)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Elk: 1200})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor town gold ITEM_DROP dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor town gold ITEM_DROP to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor town gold ITEM_DROP to queue no frames, got %d", len(queued))
+	}
+	if ground := runtime.GroundItems(); len(ground) != 0 {
+		t.Fatalf("expected post-floor town gold ITEM_DROP to register no ground items, got %#v", ground)
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor town gold ITEM_DROP")
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_town",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_town after post-floor gold ITEM_DROP: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_town recovery frames after post-floor gold ITEM_DROP, got %d", len(restartOut))
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[0]))
+	if err != nil {
+		t.Fatalf("decode self character add after post-floor gold ITEM_DROP /restart_town: %v", err)
+	}
+	if selfAdd.VID != owner.VID || selfAdd.X != 52070 || selfAdd.Y != 166600 {
+		t.Fatalf("expected /restart_town self bootstrap at empire town position after gold ITEM_DROP floor, got %+v", selfAdd)
+	}
+	var (
+		selfPoints  worldproto.PlayerPointChangePacket
+		foundPoints bool
+	)
+	for _, raw := range restartOut {
+		fr := decodeSingleFrame(t, raw)
+		if !foundPoints {
+			if points, err := worldproto.DecodePlayerPointChange(fr); err == nil {
+				selfPoints = points
+				foundPoints = true
+			}
+		}
+	}
+	if !foundPoints {
+		t.Fatal("expected /restart_town recovery to include self PLAYER_POINT_CHANGE after gold ITEM_DROP floor")
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if selfPoints.Value != wantHP {
+		t.Fatalf("expected /restart_town to rebuild recovered owner HP %d after gold ITEM_DROP floor, got %+v", wantHP, selfPoints)
+	}
+	_ = flushServerFrames(t, flow)
+
+	reuseOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Elk: 1200})))
+	if err != nil {
+		t.Fatalf("unexpected post-restart_town gold ITEM_DROP: %v", err)
+	}
+	assertPostFloorGoldDropSuccessBurst(t, reuseOut, owner.VID, owner.Name, 52070, 166600, owner.Z, 1200, 3800, "post-restart_town gold ITEM_DROP")
+	if ground := runtime.GroundItems(); len(ground) != 1 || ground[0].Vnum != 1 || ground[0].GoldAmount != 1200 {
+		t.Fatalf("expected one post-restart_town gold ground marker after ITEM_DROP recovery, got %#v", ground)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart_town gold ITEM_DROP: %v", err)
+	}
+	if account.Characters[0].MapIndex != 21 || account.Characters[0].X != 52070 || account.Characters[0].Y != 166600 {
+		t.Fatalf("expected /restart_town to persist empire town position after gold ITEM_DROP floor, got %+v", account.Characters[0])
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_town + gold ITEM_DROP to persist recovered owner HP %d after gold ITEM_DROP floor, got %+v", wantHP, account.Characters[0])
+	}
+	want := owner
+	want.Points[bootstrapPlayerPointValueIndex] = wantHP
+	want.MapIndex = 21
+	want.X = 52070
+	want.Y = 166600
+	want.Gold = 3800
+	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart_town gold ITEM_DROP debits carried gold")
+}
+
+func assertPostFloorGoldDropSuccessBurst(t *testing.T, frames [][]byte, ownerVID uint32, ownerName string, x, y, z int32, amount int32, remainingGold int32, context string) {
+	t.Helper()
+	if len(frames) != 3 {
+		t.Fatalf("expected %s to emit POINT_CHANGE + GROUND_ADD + OWNERSHIP, got %d frames", context, len(frames))
+	}
+	point, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, frames[0]))
+	if err != nil {
+		t.Fatalf("decode %s gold point change: %v", context, err)
+	}
+	if point != (worldproto.PlayerPointChangePacket{VID: ownerVID, Type: bootstrapGoldPointType, Amount: -amount, Value: remainingGold}) {
+		t.Fatalf("unexpected %s gold point change: %+v", context, point)
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, frames[1]))
+	if err != nil {
+		t.Fatalf("decode %s gold ground add: %v", context, err)
+	}
+	if ground.VID == 0 || ground.Vnum != 1 || ground.X != x || ground.Y != y || ground.Z != z {
+		t.Fatalf("unexpected %s gold ground add: %+v", context, ground)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, frames[2]))
+	if err != nil {
+		t.Fatalf("decode %s gold ownership: %v", context, err)
+	}
+	if ownership != (itemproto.OwnershipPacket{VID: ground.VID, OwnerName: ownerName}) {
+		t.Fatalf("unexpected %s gold ownership: got %+v want vid %d owner %q", context, ownership, ground.VID, ownerName)
+	}
+}
+
 func assertPostFloorUnequipItemSuccessBurst(t *testing.T, frames [][]byte, ownerVID uint32, mainPart, hairPart, weaponVnum uint16, inventorySlot uint16, wantHP int32, context string) {
 	t.Helper()
 	if len(frames) != 4 {
