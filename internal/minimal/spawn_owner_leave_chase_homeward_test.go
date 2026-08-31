@@ -19,7 +19,8 @@ import (
 // clear the pending chase deadline and arm homeward, matching TARGET(0) /
 // death-floor / walk-away release. Slash quit/logout/phase_select clear combat
 // ownership before Leave so chase prune + within_radius homeward re-arm still
-// see the engagements that subject owned (matching abrupt close).
+// see the engagements that subject owned (matching abrupt close). Abrupt socket
+// close uses the same clear-then-Leave onClose order and now has a focused twin.
 func TestGameRuntimeSlashQuitClearsPendingSpawnGroupChaseAndArmsHomewardAfterChaseDisplace(t *testing.T) {
 	assertOwnerLeaveClearsChaseAndArmsHomewardAfterChaseDisplace(t, "/quit")
 }
@@ -32,8 +33,22 @@ func TestGameRuntimePhaseSelectClearsPendingSpawnGroupChaseAndArmsHomewardAfterC
 	assertOwnerLeaveClearsChaseAndArmsHomewardAfterChaseDisplace(t, "/phase_select")
 }
 
+func TestGameRuntimeAbruptCloseClearsPendingSpawnGroupChaseAndArmsHomewardAfterChaseDisplace(t *testing.T) {
+	assertOwnerLeaveClearsChaseAndArmsHomewardAfterChaseDisplace(t, "")
+}
+
 func assertOwnerLeaveClearsChaseAndArmsHomewardAfterChaseDisplace(t *testing.T, leaveCommand string) {
 	t.Helper()
+
+	abruptClose := leaveCommand == ""
+	leaveLabel := leaveCommand
+	refSuffix := ""
+	if abruptClose {
+		leaveLabel = "abrupt close"
+		refSuffix = "abrupt_close"
+	} else {
+		refSuffix = leaveCommand[1:]
+	}
 
 	store := loginticket.NewFileStore(t.TempDir())
 	// Owner at +200 so one due chase beat lands the mob at 1800 (within_radius).
@@ -66,11 +81,11 @@ func assertOwnerLeaveClearsChaseAndArmsHomewardAfterChaseDisplace(t *testing.T, 
 		interactionStore,
 	)
 	if err != nil {
-		t.Fatalf("unexpected game runtime error for %s chase/homeward leave: %v", leaveCommand, err)
+		t.Fatalf("unexpected game runtime error for %s chase/homeward leave: %v", leaveLabel, err)
 	}
 	runtime.now = func() time.Time { return currentTime }
 
-	ref := "practice.leave_homeward_after_chase_" + leaveCommand[1:]
+	ref := "practice.leave_homeward_after_chase_" + refSuffix
 	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
 		Ref:           ref,
 		Name:          "LeaveHomewardMob",
@@ -80,16 +95,18 @@ func assertOwnerLeaveClearsChaseAndArmsHomewardAfterChaseDisplace(t *testing.T, 
 		RaceNum:       20350,
 		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
 	}}}); err != nil {
-		t.Fatalf("import %s chase/homeward leave spawn-group bundle: %v", leaveCommand, err)
+		t.Fatalf("import %s chase/homeward leave spawn-group bundle: %v", leaveLabel, err)
 	}
 	group, ok := runtime.SpawnGroupByRef(ref)
 	if !ok {
-		t.Fatalf("expected %s chase/homeward leave spawn group to resolve by ref", leaveCommand)
+		t.Fatalf("expected %s chase/homeward leave spawn group to resolve by ref", leaveLabel)
 	}
 	targetVID := uint32(group.EntityID)
 
 	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "leave-homeward-owner", 0x50505051)
-	defer closeSessionFlow(t, ownerFlow)
+	if !abruptClose {
+		defer closeSessionFlow(t, ownerFlow)
+	}
 	flushServerFrames(t, ownerFlow)
 
 	watcherFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "leave-homeward-watcher", 0x50505052)
@@ -98,52 +115,56 @@ func assertOwnerLeaveClearsChaseAndArmsHomewardAfterChaseDisplace(t *testing.T, 
 	flushServerFrames(t, ownerFlow)
 
 	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
-		t.Fatalf("unexpected owner target error before %s chase displace: %v", leaveCommand, err)
+		t.Fatalf("unexpected owner target error before %s chase displace: %v", leaveLabel, err)
 	}
 	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
 	}))); err != nil {
-		t.Fatalf("unexpected accepted hit before %s chase displace: %v", leaveCommand, err)
+		t.Fatalf("unexpected accepted hit before %s chase displace: %v", leaveLabel, err)
 	}
 	if pending, ok := runtime.SpawnGroupChaseStep(group.EntityID); !ok || pending.EntityID != group.EntityID {
-		t.Fatalf("expected engaged hit to arm chase before %s, ok=%v snapshot=%+v", leaveCommand, ok, pending)
+		t.Fatalf("expected engaged hit to arm chase before %s, ok=%v snapshot=%+v", leaveLabel, ok, pending)
 	}
 
 	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 2 {
-		t.Fatalf("expected delayed retaliation before %s chase displace, got %d frames", leaveCommand, len(queued))
+		t.Fatalf("expected delayed retaliation before %s chase displace, got %d frames", leaveLabel, len(queued))
 	}
 	_ = flushServerFrames(t, watcherFlow)
 
 	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay - bootstrapPracticeMobServerOriginRetaliationDelay)
 	chaseQueued := flushServerFrames(t, ownerFlow)
 	if len(chaseQueued) == 0 {
-		t.Fatalf("expected due chase-step to displace actor toward owner before %s", leaveCommand)
+		t.Fatalf("expected due chase-step to displace actor toward owner before %s", leaveLabel)
 	}
 	chaseMove, err := movep.DecodeMoveAck(decodeSingleFrame(t, chaseQueued[0]))
 	if err != nil {
-		t.Fatalf("decode chase displace MOVE before %s: %v", leaveCommand, err)
+		t.Fatalf("decode chase displace MOVE before %s: %v", leaveLabel, err)
 	}
 	if chaseMove.VID != targetVID || chaseMove.X != 1800 || chaseMove.Y != 2800 {
-		t.Fatalf("expected chase displace to +100 toward owner before %s, got %+v", leaveCommand, chaseMove)
+		t.Fatalf("expected chase displace to +100 toward owner before %s, got %+v", leaveLabel, chaseMove)
 	}
 	_ = flushServerFrames(t, watcherFlow)
 
 	displaced, ok := runtime.SpawnGroup(group.EntityID)
 	if !ok || displaced.X != 1800 || displaced.Y != 2800 || displaced.SpawnLeash == nil || displaced.SpawnLeash.Status != worldruntime.SpawnLeashStatusWithinRadius {
-		t.Fatalf("expected chase-displaced within_radius actor before %s, ok=%v snapshot=%+v", leaveCommand, ok, displaced)
+		t.Fatalf("expected chase-displaced within_radius actor before %s, ok=%v snapshot=%+v", leaveLabel, ok, displaced)
 	}
 
-	leaveOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
-		Type:    chatproto.ChatTypeTalking,
-		Message: leaveCommand,
-	})))
-	if err != nil {
-		t.Fatalf("unexpected %s error after chase displace: %v", leaveCommand, err)
-	}
-	if len(leaveOut) == 0 {
-		t.Fatalf("expected %s to emit at least one close/select frame after chase displace", leaveCommand)
+	if abruptClose {
+		closeSessionFlow(t, ownerFlow)
+	} else {
+		leaveOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+			Type:    chatproto.ChatTypeTalking,
+			Message: leaveCommand,
+		})))
+		if err != nil {
+			t.Fatalf("unexpected %s error after chase displace: %v", leaveLabel, err)
+		}
+		if len(leaveOut) == 0 {
+			t.Fatalf("expected %s to emit at least one close/select frame after chase displace", leaveLabel)
+		}
 	}
 	_ = flushServerFrames(t, watcherFlow)
 
@@ -151,47 +172,47 @@ func assertOwnerLeaveClearsChaseAndArmsHomewardAfterChaseDisplace(t *testing.T, 
 	_, chaseScheduled := runtime.spawnChaseStepDueAt[group.EntityID]
 	runtime.spawnChaseMu.Unlock()
 	if chaseScheduled {
-		t.Fatalf("expected %s to clear pending chase deadline for entity %d", leaveCommand, group.EntityID)
+		t.Fatalf("expected %s to clear pending chase deadline for entity %d", leaveLabel, group.EntityID)
 	}
 	if pending, ok := runtime.SpawnGroupChaseStep(group.EntityID); ok || pending.EntityID != 0 {
-		t.Fatalf("expected chase-step inspection to omit actor after %s, ok=%v snapshot=%+v", leaveCommand, ok, pending)
+		t.Fatalf("expected chase-step inspection to omit actor after %s, ok=%v snapshot=%+v", leaveLabel, ok, pending)
 	}
 
 	runtime.spawnHomewardMu.Lock()
 	homewardDueAt, homewardScheduled := runtime.spawnHomewardStepDueAt[group.EntityID]
 	runtime.spawnHomewardMu.Unlock()
 	if !homewardScheduled {
-		t.Fatalf("expected %s engagement release on within_radius displace to arm homeward deadline for entity %d", leaveCommand, group.EntityID)
+		t.Fatalf("expected %s engagement release on within_radius displace to arm homeward deadline for entity %d", leaveLabel, group.EntityID)
 	}
 	expectedHomewardDueAt := currentTime.Add(bootstrapSpawnGroupHomewardStepDelay)
 	if !homewardDueAt.Equal(expectedHomewardDueAt) {
-		t.Fatalf("expected %s homeward deadline at %s, got %s", leaveCommand, expectedHomewardDueAt, homewardDueAt)
+		t.Fatalf("expected %s homeward deadline at %s, got %s", leaveLabel, expectedHomewardDueAt, homewardDueAt)
 	}
 
 	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
-		t.Fatalf("expected no homeward MOVE on watcher before the 1s deadline after %s, got %d frames", leaveCommand, len(queued))
+		t.Fatalf("expected no homeward MOVE on watcher before the 1s deadline after %s, got %d frames", leaveLabel, len(queued))
 	}
 
 	currentTime = currentTime.Add(bootstrapSpawnGroupHomewardStepDelay)
 	homewardQueued := flushServerFrames(t, watcherFlow)
 	if len(homewardQueued) == 0 {
-		t.Fatalf("expected due homeward-step after %s to queue retained watcher MOVE toward home", leaveCommand)
+		t.Fatalf("expected due homeward-step after %s to queue retained watcher MOVE toward home", leaveLabel)
 	}
 	homewardMove, err := movep.DecodeMoveAck(decodeSingleFrame(t, homewardQueued[0]))
 	if err != nil {
-		t.Fatalf("expected retained watcher after %s to receive MOVE replication, first frame decode err=%v", leaveCommand, err)
+		t.Fatalf("expected retained watcher after %s to receive MOVE replication, first frame decode err=%v", leaveLabel, err)
 	}
 	if homewardMove.VID != targetVID || homewardMove.X != 1700 || homewardMove.Y != 2800 {
-		t.Fatalf("expected homeward MOVE to authored home after %s, got %+v", leaveCommand, homewardMove)
+		t.Fatalf("expected homeward MOVE to authored home after %s, got %+v", leaveLabel, homewardMove)
 	}
 	returned, ok := runtime.SpawnGroup(group.EntityID)
 	if !ok || returned.X != 1700 || returned.Y != 2800 || returned.Dead || returned.SpawnLeash == nil || returned.SpawnLeash.Status != worldruntime.SpawnLeashStatusAtHome {
-		t.Fatalf("expected homeward-step after %s to restore at_home leash state, ok=%v snapshot=%+v", leaveCommand, ok, returned)
+		t.Fatalf("expected homeward-step after %s to restore at_home leash state, ok=%v snapshot=%+v", leaveLabel, ok, returned)
 	}
 	runtime.spawnHomewardMu.Lock()
 	_, stillHomeward := runtime.spawnHomewardStepDueAt[group.EntityID]
 	runtime.spawnHomewardMu.Unlock()
 	if stillHomeward {
-		t.Fatalf("expected completed at-home homeward-step after %s to clear pending deadline for entity %d", leaveCommand, group.EntityID)
+		t.Fatalf("expected completed at-home homeward-step after %s to clear pending deadline for entity %d", leaveLabel, group.EntityID)
 	}
 }
