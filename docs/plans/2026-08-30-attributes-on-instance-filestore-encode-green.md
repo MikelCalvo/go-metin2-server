@@ -41,5 +41,7 @@ SQL tip companions, or attribute gameplay.
 
 ## Status
 
-GREEN on `lane/items`. Follow-on: durable ground-item instance attribute
-rematerialize, then safebox cell attributes, then SQL tip companions.
+GREEN on `lane/items`. Follow-on durable ground-item / safebox cell attribute
+rematerialize, tip-`0003`/`0010`/`0015` SQL companions, and seeded hermetic
+drills later landed; carried inventory/equipment daemon-restart rematerialize
+is owned by [carried item instance-attributes daemon-restart rematerialize](2026-08-31-carried-item-instance-attributes-daemon-restart-rematerialize.md).

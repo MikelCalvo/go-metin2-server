@@ -635,6 +635,203 @@ func TestGameRuntimeEquipmentAndQuickslotsRematerializeAcrossDaemonRestart(t *te
 	}
 }
 
+// TestGameRuntimeCarriedItemInstanceAttributesRematerializeAcrossDaemonRestart proves
+// Track E.4 crash/restart rematerialization for presence-aware per-instance attributes
+// on carried inventory and equipment: after account FileStore owns authoritative
+// attributes (including explicit all-zero / type-zero), a fresh gameRuntime rebuilt
+// from the same FileStore paths rematerializes those attributes on EnterGame ITEM_SET
+// even when the post-restart login ticket still carries a stale attribute-less snapshot.
+// Omitted instance attributes keep template-authored fallback. This deliberately does
+// not cover pending ground / safebox attribute rematerialize (owned separately) or
+// attribute gameplay formulas.
+func TestGameRuntimeCarriedItemInstanceAttributesRematerializeAcrossDaemonRestart(t *testing.T) {
+	ticketDir := t.TempDir()
+	accountDir := t.TempDir()
+
+	ticketStore := loginticket.NewFileStore(ticketDir)
+	accounts := accountstore.NewFileStore(accountDir)
+
+	activeAttributes := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 4, Value: -5}}
+	zeroAttributes := inventory.AttributeValues{}
+	peer := peerVisibilityCharacter("CarriedAttrRestart", 0x010301b1, 0x020401b1, 1100, 2100, 0, 101, 201)
+	peer.Gold = 77
+	peer.Inventory = []inventory.ItemInstance{
+		{ID: 5101, Vnum: 72723, Count: 1, Slot: 5, Attributes: &activeAttributes},
+		{ID: 5102, Vnum: 72727, Count: 1, Slot: 6, Attributes: &zeroAttributes},
+		{ID: 5103, Vnum: 72729, Count: 1, Slot: 7},
+	}
+	peer.Equipment = []inventory.ItemInstance{
+		{ID: 5201, Vnum: 11200, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon, Attributes: &activeAttributes},
+	}
+	const (
+		login    = "carried-attr-restart"
+		loginKey = uint32(0xb1b1b1b1)
+	)
+	issuePeerTicket(t, ticketStore, login, loginKey, peer)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed carried-attr-restart account: %v", err)
+	}
+
+	templates := []itemcatalog.Template{
+		{Vnum: 72723, Name: "Active Attr Potion", MaxCount: 1, Attributes: itemcatalog.AttributeValues{{Type: 9, Value: 9}}},
+		{Vnum: 72727, Name: "Zero Attr Potion", MaxCount: 1, Attributes: itemcatalog.AttributeValues{{Type: 8, Value: 8}}},
+		{Vnum: 72729, Name: "Template Attr Potion", MaxCount: 1, Attributes: itemcatalog.AttributeValues{{Type: 2, Value: 40}, {Type: 6, Value: -2}}},
+		{Vnum: 11200, Name: "Active Attr Sword", MaxCount: 1, EquipSlot: inventory.EquipmentSlotWeapon.String(), Attributes: itemcatalog.AttributeValues{{Type: 11, Value: 11}}},
+	}
+	itemStore := newItemTemplateStore(t, templates)
+	cfg := config.Service{
+		LegacyAddr: ":13000",
+		PublicAddr: "127.0.0.1",
+	}
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(cfg, ticketStore, accounts, nil, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected carried-attr-restart runtime error: %v", err)
+	}
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	if len(enterOut) < 5 {
+		t.Fatalf("expected EnterGame bootstrap before carried-attr restart, got %d frames", len(enterOut))
+	}
+	preRestartSets := bootstrapItemSetsByVnum(t, enterOut)
+	wantActive := [itemproto.ItemAttributeCount]itemproto.Attribute{{Type: 1, Value: 25}, {Type: 4, Value: -5}}
+	wantTemplate := [itemproto.ItemAttributeCount]itemproto.Attribute{{Type: 2, Value: 40}, {Type: 6, Value: -2}}
+	if got := preRestartSets[72723]; got.Attributes != wantActive {
+		t.Fatalf("expected pre-restart active inventory attributes, got %+v", got)
+	}
+	if got := preRestartSets[72727]; got.Attributes != ([itemproto.ItemAttributeCount]itemproto.Attribute{}) {
+		t.Fatalf("expected pre-restart explicit-zero inventory attributes, got %+v", got)
+	}
+	if got := preRestartSets[72729]; got.Attributes != wantTemplate {
+		t.Fatalf("expected pre-restart template-fallback inventory attributes, got %+v", got)
+	}
+	if got := preRestartSets[11200]; got.Attributes != wantActive {
+		t.Fatalf("expected pre-restart active equipment attributes, got %+v", got)
+	}
+	closeSessionFlow(t, flow)
+
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted carried-attr account before daemon restart: %v", err)
+	}
+	if len(account.Characters) != 1 {
+		t.Fatalf("expected one persisted character before restart, got %#v", account.Characters)
+	}
+	byID := map[uint64]inventory.ItemInstance{}
+	for _, item := range account.Characters[0].Inventory {
+		byID[item.ID] = item
+	}
+	for _, item := range account.Characters[0].Equipment {
+		byID[item.ID] = item
+	}
+	if item := byID[5101]; !item.HasAttributes() || *item.Attributes != activeAttributes {
+		t.Fatalf("expected persisted active inventory attributes, got %#v", item)
+	}
+	if item := byID[5102]; !item.HasAttributes() || *item.Attributes != zeroAttributes {
+		t.Fatalf("expected persisted explicit-zero inventory attributes, got %#v", item)
+	}
+	if item := byID[5103]; item.HasAttributes() {
+		t.Fatalf("expected omitted inventory attributes to stay nil, got %#v", item)
+	}
+	if item := byID[5201]; !item.HasAttributes() || *item.Attributes != activeAttributes {
+		t.Fatalf("expected persisted active equipment attributes, got %#v", item)
+	}
+
+	// Simulate process restart: rebuild runtime from the same FileStore paths.
+	// Issue a fresh ticket that still carries the attribute-less snapshot so the
+	// account-store rematerialization path is exercised instead of ticket state.
+	stalePeer := peer
+	stalePeer.Inventory = []inventory.ItemInstance{
+		{ID: 5101, Vnum: 72723, Count: 1, Slot: 5},
+		{ID: 5102, Vnum: 72727, Count: 1, Slot: 6},
+		{ID: 5103, Vnum: 72729, Count: 1, Slot: 7},
+	}
+	stalePeer.Equipment = []inventory.ItemInstance{
+		{ID: 5201, Vnum: 11200, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+	}
+	staleTicketStore := loginticket.NewFileStore(ticketDir)
+	const postRestartLoginKey = uint32(0xb2b2b2b2)
+	issuePeerTicket(t, staleTicketStore, login, postRestartLoginKey, stalePeer)
+	staleTicket, err := staleTicketStore.Load(login, postRestartLoginKey)
+	if err != nil {
+		t.Fatalf("load stale post-restart ticket: %v", err)
+	}
+	if len(staleTicket.Characters) != 1 ||
+		len(staleTicket.Characters[0].Inventory) != 3 ||
+		staleTicket.Characters[0].Inventory[0].HasAttributes() ||
+		staleTicket.Characters[0].Inventory[1].HasAttributes() ||
+		staleTicket.Characters[0].Equipment[0].HasAttributes() {
+		t.Fatalf("expected stale post-restart ticket to omit instance attributes, got %+v", staleTicket.Characters)
+	}
+
+	reloadedAccounts := accountstore.NewFileStore(accountDir)
+	reloadedItems := newItemTemplateStore(t, templates)
+	reloaded, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(cfg, staleTicketStore, reloadedAccounts, nil, reloadedItems)
+	if err != nil {
+		t.Fatalf("reload runtime after carried-attr daemon restart: %v", err)
+	}
+
+	restartFlow, restartEnter := enterGameWithLoginTicket(t, reloaded.SessionFactory(), login, postRestartLoginKey)
+	defer closeSessionFlow(t, restartFlow)
+	if len(restartEnter) < 5 {
+		t.Fatalf("expected rematerialized EnterGame bootstrap after daemon restart, got %d frames", len(restartEnter))
+	}
+	restartSets := bootstrapItemSetsByVnum(t, restartEnter)
+	if got := restartSets[72723]; got.Vnum != 72723 || got.Position != itemproto.InventoryPosition(5) || got.Attributes != wantActive {
+		t.Fatalf("expected rematerialized active inventory ITEM_SET attributes, got %+v", got)
+	}
+	if got := restartSets[72727]; got.Vnum != 72727 || got.Position != itemproto.InventoryPosition(6) || got.Attributes != ([itemproto.ItemAttributeCount]itemproto.Attribute{}) {
+		t.Fatalf("expected rematerialized explicit-zero inventory ITEM_SET attributes, got %+v", got)
+	}
+	if got := restartSets[72729]; got.Vnum != 72729 || got.Position != itemproto.InventoryPosition(7) || got.Attributes != wantTemplate {
+		t.Fatalf("expected rematerialized template-fallback inventory ITEM_SET attributes, got %+v", got)
+	}
+	weaponPosition, err := itemproto.EquipmentPosition(4)
+	if err != nil {
+		t.Fatalf("resolve weapon equipment position: %v", err)
+	}
+	if got := restartSets[11200]; got.Vnum != 11200 || got.Position != weaponPosition || got.Attributes != wantActive {
+		t.Fatalf("expected rematerialized active equipment ITEM_SET attributes, got %+v", got)
+	}
+
+	accountAfterRestart, err := reloadedAccounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after carried-attr rematerialize restart: %v", err)
+	}
+	byID = map[uint64]inventory.ItemInstance{}
+	for _, item := range accountAfterRestart.Characters[0].Inventory {
+		byID[item.ID] = item
+	}
+	for _, item := range accountAfterRestart.Characters[0].Equipment {
+		byID[item.ID] = item
+	}
+	if item := byID[5101]; !item.HasAttributes() || *item.Attributes != activeAttributes {
+		t.Fatalf("expected account FileStore active inventory attributes after restart, got %#v", item)
+	}
+	if item := byID[5102]; !item.HasAttributes() || *item.Attributes != zeroAttributes {
+		t.Fatalf("expected account FileStore explicit-zero inventory attributes after restart, got %#v", item)
+	}
+	if item := byID[5201]; !item.HasAttributes() || *item.Attributes != activeAttributes {
+		t.Fatalf("expected account FileStore active equipment attributes after restart, got %#v", item)
+	}
+}
+
+func bootstrapItemSetsByVnum(t *testing.T, frames [][]byte) map[uint32]itemproto.SetPacket {
+	t.Helper()
+	out := make(map[uint32]itemproto.SetPacket)
+	for _, raw := range frames {
+		frame := decodeSingleFrame(t, raw)
+		if frame.Header != itemproto.HeaderSet {
+			continue
+		}
+		set, err := itemproto.DecodeSet(frame)
+		if err != nil {
+			t.Fatalf("decode bootstrap ITEM_SET: %v", err)
+		}
+		out[set.Vnum] = set
+	}
+	return out
+}
+
 // TestGameRuntimePositionAndPointsRematerializeAcrossDaemonRestart proves the
 // Track E.4 crash/restart rematerialization contract for durable PvE map/x/y and
 // character point-state: after a live item-use point mutation and a transfer-backed
