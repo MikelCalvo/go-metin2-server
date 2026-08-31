@@ -1,0 +1,12 @@
+{
+  "interaction_definitions": [
+    {
+      "kind": "open_safebox",
+      "ref": "npc:qa_warehouse_foreign_warp_coords",
+      "text": "Store your goods safely.",
+      "map_index": 1,
+      "x": 470200,
+      "y": 964200
+    }
+  ]
+}

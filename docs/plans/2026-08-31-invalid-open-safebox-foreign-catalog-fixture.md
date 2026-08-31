@@ -65,3 +65,6 @@ git diff --check
    QA to invent JSON.~~ Done for `open_cube` foreign merchant `catalog`:
    `docs/examples/bootstrap-invalid-open-cube-foreign-catalog-bundle.json`
    (`docs/plans/2026-08-31-invalid-open-cube-foreign-catalog-fixture.md`).
+   Also done for `open_safebox` foreign warp coords:
+   `docs/examples/bootstrap-invalid-open-safebox-foreign-warp-coords-bundle.json`
+   (`docs/plans/2026-08-31-invalid-open-safebox-foreign-warp-coords-fixture.md`).
