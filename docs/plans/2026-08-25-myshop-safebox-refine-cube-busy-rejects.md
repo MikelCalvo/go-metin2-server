@@ -69,4 +69,4 @@ Implemented on `lane/items`: host `CG::MYSHOP` open, guest MYSHOP browse
 open, `/open_safebox` / successful `/safebox_password`, and matching refine
 confirm all reject open lab cube with the already-owned requester busy
 info-chat (or silent confirm fail-closed for refine) and no presentation /
-mutation. Guest `SHOP SELL` / `SELL2` while browsing fail-closed is owned separately (`docs/plans/2026-08-25-myshop-guest-sell-while-browsing-fail-closed.md`); recipe make/add/list stay deferred.
+mutation. Guest `SHOP SELL` / `SELL2` while browsing fail-closed is owned separately (`docs/plans/2026-08-25-myshop-guest-sell-while-browsing-fail-closed.md`). Recipe make/add/list/cancel are now owned (`docs/plans/2026-08-26-cube-list-cancel.md`); complicated OR-materials / binary cube headers stay deferred.

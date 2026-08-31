@@ -60,5 +60,9 @@ Own open-cube busy rejects beside the already-owned merchant/safebox/refine/MYSH
 
 Implemented on `lane/items`: open cube rejects `EXCHANGE START` / `ACCEPT` /
 commit-time busy drift with the already-owned merchant/safebox/refine/MYSHOP
-busy chat strings. MYSHOP/safebox/refine open/confirm cube rejects, guest
-sell-into-PC-shop, and recipe make/add/list stay deferred.
+busy chat strings. MYSHOP/safebox/refine open/confirm cube rejects and guest
+sell-into-PC-shop were still deferred when this note landed; both busy-reject
+families and recipe make/add/list/cancel are now owned
+(`docs/plans/2026-08-25-myshop-safebox-refine-cube-busy-rejects.md`,
+`docs/plans/2026-08-26-cube-list-cancel.md`); complicated OR-materials /
+binary cube headers stay deferred.

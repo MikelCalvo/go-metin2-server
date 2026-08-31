@@ -661,7 +661,7 @@ Contract freeze: `docs/plans/2026-08-24-myshop-guest-buy-mutation-contract-freez
 Expected result:
 - one successful guest buy transfers live host stock and gold without bare `GC::SHOP OK`, keeps browse open until leave/host close, and clears the sold display slot for remaining guests
 - a still-browsing second guest sees the sold-slot `UPDATE_ITEM(vnum=0)` fan-out without inventory/gold mutation (`docs/plans/2026-08-24-myshop-guest-buy-multi-guest-update-item-fanout.md`)
-- tax/empire multipliers and recipe make/add/list stay deferred; guest `SHOP SELL` / `SELL2` while browsing are owned fail-closed (see section 4.5.15); exchange / MYSHOP / safebox / refine open-cube busy rejects are owned (see section 4.5.16)
+- tax/empire multipliers stay deferred; recipe make/add/list/cancel are owned (see section 4.5.16); guest `SHOP SELL` / `SELL2` while browsing are owned fail-closed (see section 4.5.15); exchange / MYSHOP / safebox / refine open-cube busy rejects are owned (see section 4.5.16)
 
 ### 4.5.16 Lab cube open/close presentation + exchange busy rejects
 
