@@ -5239,11 +5239,31 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					return warp.Result{Applied: true, Updated: selectedPlayer.LiveCharacter()}, true
 				},
 			})
+			// Snapshot engagements before Transfer: sharedWorld.transfer clears
+			// engaged_by before clearActiveCombatTarget runs, so homeward sync
+			// would otherwise miss within_radius actors released by relocate.
+			engagedBeforeTransfer := make([]uint64, 0)
+			if sharedWorld != nil && sharedWorldID != 0 {
+				sharedWorld.mu.Lock()
+				for entityID, engagedBy := range sharedWorld.staticActorCombatEngagedBy {
+					if engagedBy == sharedWorldID {
+						engagedBeforeTransfer = append(engagedBeforeTransfer, entityID)
+					}
+				}
+				sharedWorld.mu.Unlock()
+			}
 			if _, ok := transferFlow.Apply(selected, warp.Target{MapIndex: mapIndex, X: x, Y: y}); !ok {
 				return RelocationPreview{}, nil, false
 			}
 			transferFrames = prependTransferBusyCloseFrames(transferFrames, transferExchangeCloseFrames, rebootstrap)
 			clearActiveCombatTarget()
+			for _, entityID := range engagedBeforeTransfer {
+				runtime.clearSpawnGroupChaseStep(entityID)
+				runtime.syncSpawnGroupHomewardStepScheduleForEntity(entityID)
+				_ = runtime.persistSpawnGroupCombatState(entityID)
+			}
+			runtime.pruneSpawnGroupChaseStepSchedules()
+			runtime.pruneSpawnGroupHomewardStepSchedules()
 			return transferResult, transferFrames, true
 		}
 		applySelectedCharacterPosition := func(selectedPlayer *player.Runtime, x int32, y int32, persist bool) (loginticket.Character, bool) {
