@@ -94,6 +94,8 @@ requiring tip-`0003` + `0024` + `0027`.
 2. ~~Prefer tip-`0015` attribute SQL companion after durable safebox attribute
    rematerialize.~~ Docs freeze owned — see [safebox cell instance-attributes SQL
    additive](2026-08-31-safebox-cell-instance-attributes-sql-additive.md). tip-`0010`
-   ground attribute companion stays deferred.
+   ground attribute companion is now owned — see
+   [bootstrap ground-item instance-attributes SQL additive](2026-08-31-bootstrap-ground-item-instance-attributes-sql-additive.md)
+   and [seeded ground-item instance-attributes tip sync](2026-08-31-seeded-ground-item-instance-attributes-import-export-drill.md).
 3. Keep upsert / stock production driver deferred.
 4. Keep tip-`0003` export identity until a deliberate retip is needed.

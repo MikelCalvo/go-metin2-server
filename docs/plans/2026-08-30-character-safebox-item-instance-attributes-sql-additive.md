@@ -95,9 +95,10 @@ requiring tip-`0015` + `0025` + `0028`.
    drill + tip-sync loopback character-safebox-state docs.~~ Done:
    [seeded safebox cell instance-attributes tip
    sync](2026-08-31-seeded-safebox-cell-instance-attributes-import-export-drill.md).
-2. ~~Prefer tip-`0010` ground attribute SQL companion next.~~ Docs freeze owned —
-   see [bootstrap ground-item instance-attributes SQL
-   additive](2026-08-31-bootstrap-ground-item-instance-attributes-sql-additive.md).
-   RED/GREEN for catalog tip `0029` stays next.
+2. ~~Prefer tip-`0010` ground attribute SQL companion next.~~ Done — see
+   [bootstrap ground-item instance-attributes SQL
+   additive](2026-08-31-bootstrap-ground-item-instance-attributes-sql-additive.md)
+   and [seeded ground-item instance-attributes tip
+   sync](2026-08-31-seeded-ground-item-instance-attributes-import-export-drill.md).
 3. Keep upsert / stock production driver deferred.
 4. Keep tip-`0015` export identity until a deliberate retip is needed.

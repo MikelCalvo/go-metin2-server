@@ -28,7 +28,9 @@ attribute SQL companion, or README churn.
   sockets, so the shared PATH + tip-order proof never exercises real FK-linked
   safebox instance-attribute columns after catalog tip `28`.
 - Follow-up #1 on the `0028` GREEN plan explicitly prefers this tip sync before
-  tip-`0010` ground attribute SQL.
+  tip-`0010` ground attribute SQL (now owned via
+  [bootstrap ground-item instance-attributes SQL additive](2026-08-31-bootstrap-ground-item-instance-attributes-sql-additive.md)
+  and [seeded ground-item instance-attributes tip sync](2026-08-31-seeded-ground-item-instance-attributes-import-export-drill.md)).
 
 Those contradictions are production-ops hazards for export/quarantine/import
 runbooks after FileStore already rematerializes presence-aware attributes
@@ -51,15 +53,18 @@ runbooks after FileStore already rematerializes presence-aware attributes
    `has_attributes` / `attr0..6` beside sockets; this slice does not retip export
    identity.
 6. Upsert / stock production driver remain deferred. tip-`0010` ground attribute
-   SQL companion stays deferred until operators choose that additive companion
-   after durable FileStore rematerialize (already owned).
+   SQL companion + seeded hermetic tip sync are owned by
+   [bootstrap ground-item instance-attributes SQL additive](2026-08-31-bootstrap-ground-item-instance-attributes-sql-additive.md)
+   and [seeded ground-item instance-attributes tip sync](2026-08-31-seeded-ground-item-instance-attributes-import-export-drill.md).
 
 ## What this is not yet
 
 - upsert / merge / truncate-and-reload policy
 - production DB engine selection as a stock default
 - DB-backed live safebox repositories
-- tip-`0010` ground-item attribute SQL companion
+- tip-`0010` ground-item attribute SQL companion (owned separately via
+  [bootstrap ground-item instance-attributes SQL additive](2026-08-31-bootstrap-ground-item-instance-attributes-sql-additive.md)
+  and [seeded ground-item instance-attributes tip sync](2026-08-31-seeded-ground-item-instance-attributes-import-export-drill.md))
 - mall / TMP4 SAFEBOX_MONEY / client `SAFEBOX_CHANGE_PASSWORD` packets
 - remote admin / daemon mutation route / secrets in git
 
@@ -87,4 +92,4 @@ git diff --check
 GREEN on `lane/items`: seeded hermetic import-export-drill proves tip-`0015`+`0025`+`0028`
 presence-aware safebox cell attributes through the printed PATH + tip-order
 SQLite path. Upsert / stock driver remain deferred; tip-`0010` ground attribute
-SQL companion stays deferred.
+SQL companion + seeded hermetic tip sync are owned separately.

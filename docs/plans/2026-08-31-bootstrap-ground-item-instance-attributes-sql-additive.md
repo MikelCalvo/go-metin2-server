@@ -61,7 +61,8 @@ when the ledger owns tip-`0010` + additive `0026` but not additive `0029`.
 - remote admin / daemon mutation route / secrets in git
 - changing `GC::ITEM_GROUND_ADD` / ownership wire layouts
 - seeded hermetic tip-`0010`+`0029` pending ground attributes in the shared
-  import-export drill (deferred follow-on)
+  import-export drill (owned by
+  [seeded ground-item instance-attributes tip sync](2026-08-31-seeded-ground-item-instance-attributes-import-export-drill.md))
 
 ## Likely files to change (GREEN)
 
@@ -96,4 +97,5 @@ instance attributes through export/quarantine/import, with SQL import
 requiring tip-`0010` + `0026` + `0029`.
 
 Follow-on tip sync: seeded hermetic tip-`0010`+`0029` pending ground attributes
-in the shared import-export drill stays deferred.
+in the shared import-export drill is owned by
+[seeded ground-item instance-attributes tip sync](2026-08-31-seeded-ground-item-instance-attributes-import-export-drill.md).

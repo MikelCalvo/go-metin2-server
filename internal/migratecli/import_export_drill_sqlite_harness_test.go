@@ -574,6 +574,11 @@ func mustMaterializeSeededImportExportQuarantineTree(t *testing.T, exportTree st
 		Socket0:          1,
 		Socket1:          0,
 		Socket2:          7,
+		HasAttributes:    true,
+		Attr0Type:        1,
+		Attr0Value:       25,
+		Attr1Type:        4,
+		Attr1Value:       -5,
 	}})
 	if err != nil {
 		t.Fatalf("ExportBootstrapGroundItemState: %v", err)
@@ -899,22 +904,29 @@ SELECT kind, ref FROM interaction_definitions`).Scan(&gotInteractionKind, &gotIn
 	}
 
 	var (
-		gotGroundVID        int64
-		gotGroundVnum       int64
-		gotItemCount        sql.NullInt64
-		gotGoldAmount       sql.NullInt64
-		gotOwnerID          int64
-		gotGroundHasSockets int
-		gotGroundSocket0    int64
-		gotGroundSocket1    int64
-		gotGroundSocket2    int64
+		gotGroundVID           int64
+		gotGroundVnum          int64
+		gotItemCount           sql.NullInt64
+		gotGoldAmount          sql.NullInt64
+		gotOwnerID             int64
+		gotGroundHasSockets    int
+		gotGroundSocket0       int64
+		gotGroundSocket1       int64
+		gotGroundSocket2       int64
+		gotGroundHasAttributes int
+		gotGroundAttr0Type     int64
+		gotGroundAttr0Value    int64
+		gotGroundAttr1Type     int64
+		gotGroundAttr1Value    int64
 	)
 	if err := db.QueryRowContext(ctx, `
 SELECT vid, vnum, item_count, gold_amount, owner_character_id,
-       has_sockets, socket0, socket1, socket2
+       has_sockets, socket0, socket1, socket2,
+       has_attributes, attr0_type, attr0_value, attr1_type, attr1_value
 FROM bootstrap_ground_items`).Scan(
 		&gotGroundVID, &gotGroundVnum, &gotItemCount, &gotGoldAmount, &gotOwnerID,
 		&gotGroundHasSockets, &gotGroundSocket0, &gotGroundSocket1, &gotGroundSocket2,
+		&gotGroundHasAttributes, &gotGroundAttr0Type, &gotGroundAttr0Value, &gotGroundAttr1Type, &gotGroundAttr1Value,
 	); err != nil {
 		t.Fatalf("select ground item: %v", err)
 	}
@@ -924,6 +936,10 @@ FROM bootstrap_ground_items`).Scan(
 	if gotGroundHasSockets != 1 || gotGroundSocket0 != 1 || gotGroundSocket1 != 0 || gotGroundSocket2 != 7 {
 		t.Fatalf("ground item sockets = has_sockets=%d sockets=(%d,%d,%d), want 1/(1,0,7)",
 			gotGroundHasSockets, gotGroundSocket0, gotGroundSocket1, gotGroundSocket2)
+	}
+	if gotGroundHasAttributes != 1 || gotGroundAttr0Type != 1 || gotGroundAttr0Value != 25 || gotGroundAttr1Type != 4 || gotGroundAttr1Value != -5 {
+		t.Fatalf("ground item attributes = has_attributes=%d attrs=(%d/%d,%d/%d), want 1/(1/25,4/-5)",
+			gotGroundHasAttributes, gotGroundAttr0Type, gotGroundAttr0Value, gotGroundAttr1Type, gotGroundAttr1Value)
 	}
 }
 
