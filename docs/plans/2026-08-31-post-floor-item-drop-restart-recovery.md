@@ -28,8 +28,9 @@ succeeds normally again.
 ## Explicit non-goals
 
 - inventing a death-specific drop packet family
-- widening into gold-drop, partial `ITEM_DROP2`, pickup, or quickslot restart
-  twins in this same commit
+- widening into gold-drop, partial `ITEM_DROP2`, or quickslot restart twins in
+  this same commit (pickup restart recovery is owned separately in
+  `2026-08-31-post-floor-item-pickup-restart-recovery.md`)
 - changing already-owned live `ITEM_DROP` / `ITEM_DROP2` behavior
 
 ## Validation
