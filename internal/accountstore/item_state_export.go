@@ -26,11 +26,17 @@ const (
 // data-model/export contract only: it does not open a database, emit SQL, apply
 // migrations, or mutate the file store.
 type CharacterItemStateExport struct {
-	MigrationVersion int                         `json:"migration_version"`
-	MigrationName    string                      `json:"migration_name"`
-	InventoryItems   []CharacterInventoryItemRow `json:"inventory_items"`
-	EquipmentItems   []CharacterEquipmentItemRow `json:"equipment_items"`
-	Quickslots       []CharacterQuickslotRow     `json:"quickslots"`
+	MigrationVersion int    `json:"migration_version"`
+	MigrationName    string `json:"migration_name"`
+	// CharacterIDs optionally declares the replace/wipe character scope for
+	// ImportCharacterItemState(..., replace=true). When omitted or empty,
+	// quarantine derives the scope from inventory / equipment / quickslot rows
+	// (legacy insert-only exports stay valid). Explicit ids merge with row-derived
+	// ids so a listed character with zero child rows can still wipe-to-empty.
+	CharacterIDs   []uint32                    `json:"character_ids,omitempty"`
+	InventoryItems []CharacterInventoryItemRow `json:"inventory_items"`
+	EquipmentItems []CharacterEquipmentItemRow `json:"equipment_items"`
+	Quickslots     []CharacterQuickslotRow     `json:"quickslots"`
 }
 
 // CharacterInventoryItemRow mirrors carried-inventory item state frozen by the

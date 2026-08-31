@@ -409,6 +409,357 @@ func TestSQLiteHarnessItemStateImportRejectsTipTwentyFourOnlyLedger(t *testing.T
 	}
 }
 
+func TestSQLiteHarnessItemStateImportReplaceReimportsSameExport(t *testing.T) {
+	db := openSQLiteItemStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterItemInstanceAttributesMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterItemInstanceAttributesMigrationVersion, err)
+	}
+
+	accounts := []Account{
+		{
+			Login:  "Alpha",
+			Empire: 1,
+			Characters: []loginticket.Character{
+				func() loginticket.Character {
+					character := rosterExportCharacter(11, "AlphaWar")
+					active := inventory.SocketValues{1, 0, 7}
+					zero := inventory.SocketValues{}
+					zeroAttrs := inventory.AttributeValues{}
+					activeAttrs := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 4, Value: -5}}
+					character.Inventory = []inventory.ItemInstance{
+						{ID: 1002, Vnum: 27002, Count: 2, Slot: 9, Sockets: &zero, Attributes: &zeroAttrs},
+						{ID: 1001, Vnum: 27001, Count: 3, Slot: 5, Locked: true, Sockets: &active},
+					}
+					character.Equipment = []inventory.ItemInstance{
+						{ID: 2002, Vnum: 12200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody, Locked: true, Sockets: &active, Attributes: &activeAttrs},
+						{ID: 2001, Vnum: 19, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+					}
+					character.Quickslots = []loginticket.Quickslot{
+						{Position: 4, Type: quickslotproto.TypeSkill, Slot: 9},
+						{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+					}
+					return character
+				}(),
+			},
+		},
+	}
+	rosterExport, err := ExportAccountCharacterRoster(accounts)
+	if err != nil {
+		t.Fatalf("ExportAccountCharacterRoster: %v", err)
+	}
+	if _, err := ImportAccountCharacterRoster(ctx, db, rosterExport); err != nil {
+		t.Fatalf("ImportAccountCharacterRoster: %v", err)
+	}
+	itemExport, err := ExportCharacterItemState(accounts)
+	if err != nil {
+		t.Fatalf("ExportCharacterItemState: %v", err)
+	}
+	if _, err := ImportCharacterItemState(ctx, db, itemExport); err != nil {
+		t.Fatalf("first insert-only ImportCharacterItemState: %v", err)
+	}
+	if _, err := ImportCharacterItemState(ctx, db, itemExport); err == nil {
+		t.Fatal("second insert-only ImportCharacterItemState succeeded, want unique conflict")
+	}
+
+	result, err := ImportCharacterItemState(ctx, db, itemExport, ImportCharacterItemStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("replace ImportCharacterItemState: %v", err)
+	}
+	if !result.Replaced {
+		t.Fatalf("replace result.Replaced = false, want true")
+	}
+	if result.CharacterCount != 1 || result.InventoryItemCount != 2 || result.EquipmentItemCount != 2 || result.QuickslotCount != 2 {
+		t.Fatalf("unexpected replace counts: %+v", result)
+	}
+
+	var inventoryRows, equipmentRows, quickslotRows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_inventory_items`).Scan(&inventoryRows); err != nil {
+		t.Fatalf("count inventory after replace: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_equipment_items`).Scan(&equipmentRows); err != nil {
+		t.Fatalf("count equipment after replace: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_quickslots`).Scan(&quickslotRows); err != nil {
+		t.Fatalf("count quickslots after replace: %v", err)
+	}
+	if inventoryRows != 2 || equipmentRows != 2 || quickslotRows != 2 {
+		t.Fatalf("after replace counts inventory=%d equipment=%d quickslots=%d, want 2/2/2", inventoryRows, equipmentRows, quickslotRows)
+	}
+
+	var (
+		gotHasSockets    int
+		gotSocket0       int
+		gotSocket1       int
+		gotSocket2       int
+		gotHasAttributes int
+		gotAttr0Type     int
+		gotAttr0Value    int
+		gotAttr1Type     int
+		gotAttr1Value    int
+	)
+	if err := db.QueryRowContext(ctx, `
+SELECT has_sockets, socket0, socket1, socket2, has_attributes, attr0_type, attr0_value, attr1_type, attr1_value
+FROM character_equipment_items WHERE id = ?`, 2002).Scan(
+		&gotHasSockets, &gotSocket0, &gotSocket1, &gotSocket2, &gotHasAttributes, &gotAttr0Type, &gotAttr0Value, &gotAttr1Type, &gotAttr1Value,
+	); err != nil {
+		t.Fatalf("select equipment 2002 after replace: %v", err)
+	}
+	if gotHasSockets != 1 || gotSocket0 != 1 || gotSocket1 != 0 || gotSocket2 != 7 || gotHasAttributes != 1 || gotAttr0Type != 1 || gotAttr0Value != 25 || gotAttr1Type != 4 || gotAttr1Value != -5 {
+		t.Fatalf("equipment 2002 after replace mismatch: sockets=(%d,%d,%d,%d) attrs=(%d,%d/%d,%d/%d)",
+			gotHasSockets, gotSocket0, gotSocket1, gotSocket2, gotHasAttributes, gotAttr0Type, gotAttr0Value, gotAttr1Type, gotAttr1Value)
+	}
+}
+
+func TestSQLiteHarnessItemStateImportReplaceLeavesUnlistedCharactersUntouched(t *testing.T) {
+	db := openSQLiteItemStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterItemInstanceAttributesMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterItemInstanceAttributesMigrationVersion, err)
+	}
+
+	accounts := []Account{
+		{
+			Login:  "Alpha",
+			Empire: 1,
+			Characters: []loginticket.Character{
+				func() loginticket.Character {
+					character := rosterExportCharacter(11, "AlphaWar")
+					character.Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 27001, Count: 1, Slot: 5}}
+					character.Quickslots = []loginticket.Quickslot{{Position: 1, Type: quickslotproto.TypeItem, Slot: 5}}
+					return character
+				}(),
+			},
+		},
+		{
+			Login:  "Bravo",
+			Empire: 2,
+			Characters: []loginticket.Character{
+				func() loginticket.Character {
+					character := rosterExportCharacter(22, "BravoNinja")
+					character.Inventory = []inventory.ItemInstance{{ID: 3001, Vnum: 50011, Count: 4, Slot: 0}}
+					character.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeCommand, Slot: 7}}
+					return character
+				}(),
+			},
+		},
+	}
+	rosterExport, err := ExportAccountCharacterRoster(accounts)
+	if err != nil {
+		t.Fatalf("ExportAccountCharacterRoster: %v", err)
+	}
+	if _, err := ImportAccountCharacterRoster(ctx, db, rosterExport); err != nil {
+		t.Fatalf("ImportAccountCharacterRoster: %v", err)
+	}
+	fullExport, err := ExportCharacterItemState(accounts)
+	if err != nil {
+		t.Fatalf("ExportCharacterItemState: %v", err)
+	}
+	if _, err := ImportCharacterItemState(ctx, db, fullExport); err != nil {
+		t.Fatalf("seed ImportCharacterItemState: %v", err)
+	}
+
+	alphaOnly := CharacterItemStateExport{
+		MigrationVersion: CharacterItemStateMigrationVersion,
+		MigrationName:    CharacterItemStateMigrationName,
+		CharacterIDs:     []uint32{11},
+		InventoryItems: []CharacterInventoryItemRow{
+			{ID: 1100, CharacterID: 11, Slot: 1, Vnum: 27111, Count: 9, Locked: true, HasSockets: true, Socket0: 9, Socket1: 8, Socket2: 7, HasAttributes: true, Attr0Type: 2, Attr0Value: 11},
+		},
+		EquipmentItems: []CharacterEquipmentItemRow{},
+		Quickslots:     []CharacterQuickslotRow{{CharacterID: 11, Position: 3, Type: uint8(quickslotproto.TypeSkill), Slot: 4}},
+	}
+	result, err := ImportCharacterItemState(ctx, db, alphaOnly, ImportCharacterItemStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("scoped replace ImportCharacterItemState: %v", err)
+	}
+	if !result.Replaced || result.CharacterCount != 1 || result.InventoryItemCount != 1 || result.QuickslotCount != 1 {
+		t.Fatalf("unexpected scoped replace result: %+v", result)
+	}
+
+	var alphaInventory, bravoInventory, alphaQuickslots, bravoQuickslots int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_inventory_items WHERE character_id = 11`).Scan(&alphaInventory); err != nil {
+		t.Fatalf("count alpha inventory: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_inventory_items WHERE character_id = 22`).Scan(&bravoInventory); err != nil {
+		t.Fatalf("count bravo inventory: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_quickslots WHERE character_id = 11`).Scan(&alphaQuickslots); err != nil {
+		t.Fatalf("count alpha quickslots: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_quickslots WHERE character_id = 22`).Scan(&bravoQuickslots); err != nil {
+		t.Fatalf("count bravo quickslots: %v", err)
+	}
+	if alphaInventory != 1 || bravoInventory != 1 || alphaQuickslots != 1 || bravoQuickslots != 1 {
+		t.Fatalf("scoped replace left unexpected counts alpha_inv=%d bravo_inv=%d alpha_qs=%d bravo_qs=%d",
+			alphaInventory, bravoInventory, alphaQuickslots, bravoQuickslots)
+	}
+
+	var (
+		gotID         int64
+		gotVnum       int64
+		gotCount      int
+		gotLocked     int
+		gotHasSockets int
+		gotSocket0    int
+	)
+	if err := db.QueryRowContext(ctx, `
+SELECT id, vnum, count, locked, has_sockets, socket0
+FROM character_inventory_items WHERE character_id = 11`).Scan(
+		&gotID, &gotVnum, &gotCount, &gotLocked, &gotHasSockets, &gotSocket0,
+	); err != nil {
+		t.Fatalf("select alpha inventory after replace: %v", err)
+	}
+	if gotID != 1100 || gotVnum != 27111 || gotCount != 9 || gotLocked != 1 || gotHasSockets != 1 || gotSocket0 != 9 {
+		t.Fatalf("alpha inventory after replace mismatch: id=%d vnum=%d count=%d locked=%d sockets=(%d,%d)",
+			gotID, gotVnum, gotCount, gotLocked, gotHasSockets, gotSocket0)
+	}
+
+	var bravoID int64
+	if err := db.QueryRowContext(ctx, `SELECT id FROM character_inventory_items WHERE character_id = 22`).Scan(&bravoID); err != nil {
+		t.Fatalf("select bravo inventory after replace: %v", err)
+	}
+	if bravoID != 3001 {
+		t.Fatalf("bravo inventory id = %d, want 3001 untouched", bravoID)
+	}
+}
+
+func TestSQLiteHarnessItemStateImportReplaceWipesListedCharacterWithEmptyRows(t *testing.T) {
+	db := openSQLiteItemStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterItemInstanceAttributesMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterItemInstanceAttributesMigrationVersion, err)
+	}
+
+	accounts := []Account{
+		{
+			Login:  "Alpha",
+			Empire: 1,
+			Characters: []loginticket.Character{
+				func() loginticket.Character {
+					character := rosterExportCharacter(11, "AlphaWar")
+					character.Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 27001, Count: 1, Slot: 5}}
+					character.Equipment = []inventory.ItemInstance{{ID: 2001, Vnum: 19, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
+					character.Quickslots = []loginticket.Quickslot{{Position: 1, Type: quickslotproto.TypeItem, Slot: 5}}
+					return character
+				}(),
+			},
+		},
+	}
+	rosterExport, err := ExportAccountCharacterRoster(accounts)
+	if err != nil {
+		t.Fatalf("ExportAccountCharacterRoster: %v", err)
+	}
+	if _, err := ImportAccountCharacterRoster(ctx, db, rosterExport); err != nil {
+		t.Fatalf("ImportAccountCharacterRoster: %v", err)
+	}
+	itemExport, err := ExportCharacterItemState(accounts)
+	if err != nil {
+		t.Fatalf("ExportCharacterItemState: %v", err)
+	}
+	if _, err := ImportCharacterItemState(ctx, db, itemExport); err != nil {
+		t.Fatalf("seed ImportCharacterItemState: %v", err)
+	}
+
+	emptyWipe := CharacterItemStateExport{
+		MigrationVersion: CharacterItemStateMigrationVersion,
+		MigrationName:    CharacterItemStateMigrationName,
+		CharacterIDs:     []uint32{11},
+		InventoryItems:   []CharacterInventoryItemRow{},
+		EquipmentItems:   []CharacterEquipmentItemRow{},
+		Quickslots:       []CharacterQuickslotRow{},
+	}
+	result, err := ImportCharacterItemState(ctx, db, emptyWipe, ImportCharacterItemStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("empty wipe replace: %v", err)
+	}
+	if !result.Replaced || result.CharacterCount != 1 || result.InventoryItemCount != 0 || result.EquipmentItemCount != 0 || result.QuickslotCount != 0 {
+		t.Fatalf("unexpected empty wipe result: %+v", result)
+	}
+
+	var inventoryRows, equipmentRows, quickslotRows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_inventory_items`).Scan(&inventoryRows); err != nil {
+		t.Fatalf("count inventory after wipe: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_equipment_items`).Scan(&equipmentRows); err != nil {
+		t.Fatalf("count equipment after wipe: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_quickslots`).Scan(&quickslotRows); err != nil {
+		t.Fatalf("count quickslots after wipe: %v", err)
+	}
+	if inventoryRows != 0 || equipmentRows != 0 || quickslotRows != 0 {
+		t.Fatalf("after empty wipe counts inventory=%d equipment=%d quickslots=%d, want 0/0/0", inventoryRows, equipmentRows, quickslotRows)
+	}
+}
+
+func TestSQLiteHarnessItemStateImportReplaceNoOpForEmptyCharacterIDs(t *testing.T) {
+	db := openSQLiteItemStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterItemInstanceAttributesMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterItemInstanceAttributesMigrationVersion, err)
+	}
+
+	accounts := []Account{
+		{
+			Login:  "Alpha",
+			Empire: 1,
+			Characters: []loginticket.Character{
+				func() loginticket.Character {
+					character := rosterExportCharacter(11, "AlphaWar")
+					character.Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 27001, Count: 1, Slot: 5}}
+					return character
+				}(),
+			},
+		},
+	}
+	rosterExport, err := ExportAccountCharacterRoster(accounts)
+	if err != nil {
+		t.Fatalf("ExportAccountCharacterRoster: %v", err)
+	}
+	if _, err := ImportAccountCharacterRoster(ctx, db, rosterExport); err != nil {
+		t.Fatalf("ImportAccountCharacterRoster: %v", err)
+	}
+	itemExport, err := ExportCharacterItemState(accounts)
+	if err != nil {
+		t.Fatalf("ExportCharacterItemState: %v", err)
+	}
+	if _, err := ImportCharacterItemState(ctx, db, itemExport); err != nil {
+		t.Fatalf("seed ImportCharacterItemState: %v", err)
+	}
+
+	emptyIDs := CharacterItemStateExport{
+		MigrationVersion: CharacterItemStateMigrationVersion,
+		MigrationName:    CharacterItemStateMigrationName,
+		CharacterIDs:     []uint32{},
+		InventoryItems:   []CharacterInventoryItemRow{},
+		EquipmentItems:   []CharacterEquipmentItemRow{},
+		Quickslots:       []CharacterQuickslotRow{},
+	}
+	result, err := ImportCharacterItemState(ctx, db, emptyIDs, ImportCharacterItemStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("empty character_ids replace: %v", err)
+	}
+	if !result.Replaced || result.CharacterCount != 0 {
+		t.Fatalf("unexpected empty character_ids result: %+v", result)
+	}
+
+	var inventoryRows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_inventory_items`).Scan(&inventoryRows); err != nil {
+		t.Fatalf("count inventory after no-op replace: %v", err)
+	}
+	if inventoryRows != 1 {
+		t.Fatalf("inventory rows after no-op replace = %d, want 1", inventoryRows)
+	}
+}
+
 func openSQLiteItemStateImportDB(t *testing.T) *sql.DB {
 	t.Helper()
 

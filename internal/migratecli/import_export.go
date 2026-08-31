@@ -25,11 +25,13 @@ func runImportExport(args []string, stdin io.Reader, stdout io.Writer, stderr io
 	var driverName string
 	var dsn string
 	var confirmImport bool
+	var confirmReplaceScoped bool
 	flags.StringVar(&kind, "kind", "", "migration-shaped export kind to import")
 	flags.StringVar(&exportPath, "export", "", "path to retained export JSON, or - for stdin")
 	flags.StringVar(&driverName, "driver", "", "database/sql driver name for the import target")
 	flags.StringVar(&dsn, "dsn", "", "database/sql DSN for the import target")
 	flags.BoolVar(&confirmImport, "i-confirm-sql-import", false, "confirm CLI SQL import/backfill mutation against the supplied driver/DSN")
+	flags.BoolVar(&confirmReplaceScoped, "i-confirm-scoped-replace", false, "opt-in scoped replace for tip-0003 character-item-state only (requires --i-confirm-sql-import; other kinds reject this flag)")
 	flags.Usage = func() { printImportExportUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
@@ -51,6 +53,11 @@ func runImportExport(args []string, stdin io.Reader, stdout io.Writer, stderr io
 	}
 	if !confirmImport {
 		fmt.Fprintln(stderr, "--i-confirm-sql-import is required for import-export")
+		printImportExportUsage(stderr)
+		return exitUsage
+	}
+	if confirmReplaceScoped && kind != "character-item-state" {
+		fmt.Fprintf(stderr, "--i-confirm-scoped-replace is only supported for kind character-item-state (got %q)\n", kind)
 		printImportExportUsage(stderr)
 		return exitUsage
 	}
@@ -87,7 +94,7 @@ func runImportExport(args []string, stdin io.Reader, stdout io.Writer, stderr io
 	}
 	defer db.Close()
 
-	result, err := importExportPayload(context.Background(), db, kind, decoded)
+	result, err := importExportPayload(context.Background(), db, kind, decoded, confirmReplaceScoped)
 	if err != nil {
 		writeMigrationCommandError(stderr, dsn, "import-export: %v", err)
 		return exitError
@@ -199,12 +206,13 @@ func quarantineImportExportPayload(kind string, payload any) error {
 	}
 }
 
-func importExportPayload(ctx context.Context, db *sql.DB, kind string, payload any) (any, error) {
+func importExportPayload(ctx context.Context, db *sql.DB, kind string, payload any, replaceScoped bool) (any, error) {
 	switch kind {
 	case "account-character-roster":
 		return accountstore.ImportAccountCharacterRoster(ctx, db, payload.(accountstore.AccountCharacterRosterExport))
 	case "character-item-state":
-		return accountstore.ImportCharacterItemState(ctx, db, payload.(accountstore.CharacterItemStateExport))
+		opts := accountstore.ImportCharacterItemStateOptions{Replace: replaceScoped}
+		return accountstore.ImportCharacterItemState(ctx, db, payload.(accountstore.CharacterItemStateExport), opts)
 	case "character-point-state":
 		return accountstore.ImportCharacterPointState(ctx, db, payload.(accountstore.CharacterPointStateExport))
 	case "character-myshop-unit-prices":
@@ -228,7 +236,9 @@ func importExportPayload(ctx context.Context, db *sql.DB, kind string, payload a
 
 func printImportExportUsage(w io.Writer) {
 	fmt.Fprintln(w, "import-export usage:")
-	fmt.Fprintln(w, "  metin2-migrate import-export --kind <kind> --export <path|-> --driver <database/sql-driver> --dsn <dsn> --i-confirm-sql-import")
+	fmt.Fprintln(w, "  metin2-migrate import-export --kind <kind> --export <path|-> --driver <database/sql-driver> --dsn <dsn> --i-confirm-sql-import [--i-confirm-scoped-replace]")
+	fmt.Fprintln(w, "notes:")
+	fmt.Fprintln(w, "  --i-confirm-scoped-replace is tip-0003 character-item-state only; insert-only remains the default")
 	fmt.Fprintln(w, "kinds:")
 	for _, kind := range exportQuarantineKinds {
 		fmt.Fprintf(w, "  %s\n", kind)

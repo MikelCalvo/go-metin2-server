@@ -74,6 +74,20 @@ func canonicalizeCharacterItemStateExport(export CharacterItemStateExport) (Char
 	seenEquipmentSlots := make(map[string]struct{}, len(export.EquipmentItems))
 	seenQuickslotPositions := make(map[string]struct{}, len(export.Quickslots))
 
+	if export.CharacterIDs != nil {
+		seenDeclaredIDs := make(map[uint32]struct{}, len(export.CharacterIDs))
+		for _, characterID := range export.CharacterIDs {
+			if characterID == 0 {
+				return CharacterItemStateExport{}, CharacterItemStateQuarantineSummary{}, fmt.Errorf("%w: character_ids entries must be > 0", ErrInvalidCharacterItemStateExport)
+			}
+			if _, exists := seenDeclaredIDs[characterID]; exists {
+				return CharacterItemStateExport{}, CharacterItemStateQuarantineSummary{}, fmt.Errorf("%w: duplicate character_ids entry %d", ErrInvalidCharacterItemStateExport, characterID)
+			}
+			seenDeclaredIDs[characterID] = struct{}{}
+			characterIDs[characterID] = struct{}{}
+		}
+	}
+
 	inventoryItems := make([]CharacterInventoryItemRow, 0, len(export.InventoryItems))
 	for _, row := range export.InventoryItems {
 		if err := validateQuarantineInventoryRow(row); err != nil {
@@ -169,9 +183,13 @@ func canonicalizeCharacterItemStateExport(export CharacterItemStateExport) (Char
 	canonical := CharacterItemStateExport{
 		MigrationVersion: CharacterItemStateMigrationVersion,
 		MigrationName:    CharacterItemStateMigrationName,
+		CharacterIDs:     append([]uint32(nil), sortedCharacterIDs...),
 		InventoryItems:   inventoryItems,
 		EquipmentItems:   equipmentItems,
 		Quickslots:       quickslots,
+	}
+	if canonical.CharacterIDs == nil {
+		canonical.CharacterIDs = []uint32{}
 	}
 	summary := CharacterItemStateQuarantineSummary{
 		CharacterCount:     len(sortedCharacterIDs),

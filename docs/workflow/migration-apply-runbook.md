@@ -204,7 +204,7 @@ Do not use this runbook to justify:
 
 ## Related: quarantined export SQL import
 
-After schema migrations are applied, operators can backfill retained migration-shaped exports with `metin2-migrate import-export --kind <kind> --export <path> --driver <driver> --dsn <dsn> --i-confirm-sql-import`. This reuses the programmatic `Import*` seams (insert-only by default; no silent upsert) and still does not register a stock production driver. An opt-in scoped **replace** policy for tip-`0003` `character-item-state` is frozen in [character item-state import replace/upsert contract freeze](../plans/2026-08-31-character-item-state-import-replace-upsert-contract-freeze.md) and is not GREEN yet — shipped CLI behavior remains insert-only until that follow-on lands. See [CLI import-export](../plans/2026-08-27-cli-import-export.md).
+After schema migrations are applied, operators can backfill retained migration-shaped exports with `metin2-migrate import-export --kind <kind> --export <path> --driver <driver> --dsn <dsn> --i-confirm-sql-import`. This reuses the programmatic `Import*` seams (insert-only by default; no silent upsert) and still does not register a stock production driver. Tip-`0003` `character-item-state` may additionally pass `--i-confirm-scoped-replace` to delete-then-insert only the export's character scope (inventory / equipment / quickslots) inside one transaction — see [character item-state import scoped replace GREEN](../plans/2026-08-31-character-item-state-import-scoped-replace-green.md). Other kinds stay insert-only. See [CLI import-export](../plans/2026-08-27-cli-import-export.md).
 
 For a retained `export-quarantine-drill` tree, print the reviewable import walk without embedding a DSN via:
 

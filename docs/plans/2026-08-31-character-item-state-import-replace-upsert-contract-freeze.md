@@ -138,6 +138,6 @@ replace-contract prose so operators do not chase a finished schema gate.
 
 ## Status
 
-Docs/spec freeze only on `lane/persistence`. Insert-only import remains the
-shipped behavior until a separate GREEN slice implements the opt-in scoped
-replace path under the contract above.
+Docs/spec freeze landed first; tip-`0003` scoped replace GREEN is now owned by
+[character item-state import scoped replace GREEN](2026-08-31-character-item-state-import-scoped-replace-green.md).
+Insert-only remains the default without the replace option / CLI confirmation.

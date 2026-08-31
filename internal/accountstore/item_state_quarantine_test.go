@@ -61,6 +61,56 @@ func TestValidateCharacterItemStateExportRejectsWrongMigrationBoundary(t *testin
 	}
 }
 
+func TestValidateCharacterItemStateExportAcceptsExplicitCharacterIDsForEmptyWipeScope(t *testing.T) {
+	export := CharacterItemStateExport{
+		MigrationVersion: CharacterItemStateMigrationVersion,
+		MigrationName:    CharacterItemStateMigrationName,
+		CharacterIDs:     []uint32{22, 11},
+		InventoryItems:   []CharacterInventoryItemRow{},
+		EquipmentItems:   []CharacterEquipmentItemRow{},
+		Quickslots:       []CharacterQuickslotRow{},
+	}
+	summary, err := ValidateCharacterItemStateExport(export)
+	if err != nil {
+		t.Fatalf("validate empty wipe scope: %v", err)
+	}
+	want := CharacterItemStateQuarantineSummary{
+		CharacterCount:     2,
+		InventoryItemCount: 0,
+		EquipmentItemCount: 0,
+		QuickslotCount:     0,
+		CharacterIDs:       []uint32{11, 22},
+	}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected empty wipe summary:\n got: %#v\nwant: %#v", summary, want)
+	}
+}
+
+func TestValidateCharacterItemStateExportRejectsInvalidCharacterIDs(t *testing.T) {
+	cases := []struct {
+		name         string
+		characterIDs []uint32
+	}{
+		{name: "zero id", characterIDs: []uint32{0}},
+		{name: "duplicate id", characterIDs: []uint32{11, 11}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			export := CharacterItemStateExport{
+				MigrationVersion: CharacterItemStateMigrationVersion,
+				MigrationName:    CharacterItemStateMigrationName,
+				CharacterIDs:     tc.characterIDs,
+				InventoryItems:   []CharacterInventoryItemRow{},
+				EquipmentItems:   []CharacterEquipmentItemRow{},
+				Quickslots:       []CharacterQuickslotRow{},
+			}
+			if _, err := ValidateCharacterItemStateExport(export); !errors.Is(err, ErrInvalidCharacterItemStateExport) {
+				t.Fatalf("expected ErrInvalidCharacterItemStateExport, got %v", err)
+			}
+		})
+	}
+}
+
 func TestValidateCharacterItemStateExportRejectsInvalidRows(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -230,5 +280,8 @@ func TestQuarantineCharacterItemStateExportCanonicalizesRowOrder(t *testing.T) {
 	}
 	if !reflect.DeepEqual(quarantined.Quickslots, wantQuickslots) {
 		t.Fatalf("unexpected canonical quickslot rows:\n got: %#v\nwant: %#v", quarantined.Quickslots, wantQuickslots)
+	}
+	if !reflect.DeepEqual(quarantined.CharacterIDs, []uint32{11, 22}) {
+		t.Fatalf("unexpected canonical character ids: %#v", quarantined.CharacterIDs)
 	}
 }

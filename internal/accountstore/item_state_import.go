@@ -34,6 +34,20 @@ type CharacterItemStateImportResult struct {
 	EquipmentItemCount int      `json:"equipment_item_count"`
 	QuickslotCount     int      `json:"quickslot_count"`
 	CharacterIDs       []uint32 `json:"character_ids"`
+	// Replaced is true when ImportCharacterItemState ran with the opt-in scoped
+	// replace policy (delete then insert for listed character ids). Omitted from
+	// JSON when false so legacy insert-only import-result files stay valid.
+	Replaced bool `json:"replaced,omitempty"`
+}
+
+// ImportCharacterItemStateOptions controls opt-in mutation policy for
+// ImportCharacterItemState. The zero value keeps today's insert-only behavior.
+type ImportCharacterItemStateOptions struct {
+	// Replace, when true, deletes existing tip-0003 child rows for every
+	// character id in the quarantined export summary before inserting the
+	// canonicalized export rows, all inside one transaction. Characters not
+	// listed in the export remain untouched.
+	Replace bool
 }
 
 // ImportCharacterItemState validates a retained 0003 item-state export through
@@ -43,12 +57,21 @@ type CharacterItemStateImportResult struct {
 //
 // The caller still owns driver selection and DSN loading. Parent character rows
 // from 0002 must already exist (or the engine FK check fails closed). This
-// primitive does not mutate bootstrap file stores, does not rewrite
-// schema_migrations, and does not invent upsert / merge policy: duplicate
-// primary keys fail closed and roll the transaction back.
-func ImportCharacterItemState(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export CharacterItemStateExport) (CharacterItemStateImportResult, error) {
+// primitive does not mutate bootstrap file stores and does not rewrite
+// schema_migrations. Without options (or with Replace=false) it does not invent
+// upsert / merge policy: duplicate primary keys fail closed and roll the
+// transaction back. Pass ImportCharacterItemStateOptions{Replace: true} for the
+// opt-in scoped replace path frozen by the tip-0003 replace contract.
+func ImportCharacterItemState(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export CharacterItemStateExport, opts ...ImportCharacterItemStateOptions) (CharacterItemStateImportResult, error) {
 	if itemStateImportExecutorIsNil(executor) {
 		return CharacterItemStateImportResult{}, ErrCharacterItemStateImportExecutorRequired
+	}
+	if len(opts) > 1 {
+		return CharacterItemStateImportResult{}, fmt.Errorf("ImportCharacterItemState accepts at most one options value")
+	}
+	replace := false
+	if len(opts) == 1 {
+		replace = opts[0].Replace
 	}
 
 	canonical, summary, err := QuarantineCharacterItemStateExport(export)
@@ -64,6 +87,7 @@ func ImportCharacterItemState(ctx context.Context, executor dbmigrations.SQLMigr
 		EquipmentItemCount: summary.EquipmentItemCount,
 		QuickslotCount:     summary.QuickslotCount,
 		CharacterIDs:       append([]uint32(nil), summary.CharacterIDs...),
+		Replaced:           replace,
 	}
 	if result.CharacterIDs == nil {
 		result.CharacterIDs = []uint32{}
@@ -76,6 +100,14 @@ func ImportCharacterItemState(ctx context.Context, executor dbmigrations.SQLMigr
 
 	if err := requireCharacterItemStateSchema(ctx, tx); err != nil {
 		return CharacterItemStateImportResult{}, rollbackAfterItemStateImportFailure(tx, err)
+	}
+
+	if replace {
+		for _, characterID := range summary.CharacterIDs {
+			if err := deleteCharacterItemStateForCharacter(ctx, tx, characterID); err != nil {
+				return CharacterItemStateImportResult{}, rollbackAfterItemStateImportFailure(tx, err)
+			}
+		}
 	}
 
 	for _, row := range canonical.InventoryItems {
@@ -133,6 +165,19 @@ func requireCharacterItemStateSchema(ctx context.Context, querier dbmigrations.S
 		return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrCharacterItemStateImportSchemaRequired, latest, CharacterItemInstanceSocketsMigrationVersion, CharacterItemInstanceSocketsMigrationName)
 	}
 	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrCharacterItemStateImportSchemaRequired, latest, CharacterItemInstanceAttributesMigrationVersion, CharacterItemInstanceAttributesMigrationName)
+}
+
+func deleteCharacterItemStateForCharacter(ctx context.Context, tx *sql.Tx, characterID uint32) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM character_inventory_items WHERE character_id = ?`, int64(characterID)); err != nil {
+		return fmt.Errorf("delete inventory items for character %d: %w", characterID, err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM character_equipment_items WHERE character_id = ?`, int64(characterID)); err != nil {
+		return fmt.Errorf("delete equipment items for character %d: %w", characterID, err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM character_quickslots WHERE character_id = ?`, int64(characterID)); err != nil {
+		return fmt.Errorf("delete quickslots for character %d: %w", characterID, err)
+	}
+	return nil
 }
 
 func insertCharacterInventoryItem(ctx context.Context, tx *sql.Tx, row CharacterInventoryItemRow) error {

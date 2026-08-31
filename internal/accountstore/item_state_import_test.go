@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
@@ -61,6 +62,26 @@ func TestImportCharacterItemStateRejectsNilSlicesBeforeOpeningTransaction(t *tes
 	_, err := ImportCharacterItemState(context.Background(), failingItemStateImportExecutor{}, export)
 	if !errors.Is(err, ErrInvalidCharacterItemStateExport) {
 		t.Fatalf("ImportCharacterItemState(nil inventory) error = %v, want %v", err, ErrInvalidCharacterItemStateExport)
+	}
+}
+
+func TestImportCharacterItemStateRejectsTooManyOptions(t *testing.T) {
+	export := CharacterItemStateExport{
+		MigrationVersion: CharacterItemStateMigrationVersion,
+		MigrationName:    CharacterItemStateMigrationName,
+		InventoryItems:   []CharacterInventoryItemRow{},
+		EquipmentItems:   []CharacterEquipmentItemRow{},
+		Quickslots:       []CharacterQuickslotRow{},
+	}
+	_, err := ImportCharacterItemState(
+		context.Background(),
+		failingItemStateImportExecutor{},
+		export,
+		ImportCharacterItemStateOptions{Replace: true},
+		ImportCharacterItemStateOptions{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "at most one options") {
+		t.Fatalf("ImportCharacterItemState(too many options) error = %v, want at most one options", err)
 	}
 }
 
