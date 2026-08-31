@@ -283,7 +283,7 @@ Expected result:
 - the older same-type quickslot tuple is cleared before the new binding is added
 - if a bootstrap exchange shell is open on the same socket, an accepted quickslot add closes it first: the requester receives `GC::EXCHANGE END`, the paired peer receives one queued `GC::EXCHANGE END`, then the requester sees the quickslot delete/add refresh frames, with no exchange finalization/result frames
 - the new item/skill/command quickslot binding persists after reconnect
-- selected characters at the bootstrap zero-HP floor cannot add/delete/swap quickslots; the request fails closed with no refresh frames or persisted mutation, and after `/restart_here` / `/restart_town` the same `QUICKSLOT_ADD` succeeds normally again (`TestGameSessionFlowPostFloorQuickslotAddFailsClosed`, `TestGameSessionFlowPostFloorQuickslotAddFailsClosedBeforeRestartTown`)
+- selected characters at the bootstrap zero-HP floor cannot add/delete/swap quickslots; the request fails closed with no refresh frames or persisted mutation, and after `/restart_here` / `/restart_town` the same `QUICKSLOT_ADD`, occupied `QUICKSLOT_DEL`, and occupied-to-occupied `QUICKSLOT_SWAP` succeed normally again (`TestGameSessionFlowPostFloorQuickslotAddFailsClosed`, `TestGameSessionFlowPostFloorQuickslotAddFailsClosedBeforeRestartTown`, `TestGameSessionFlowPostFloorQuickslotDelFailsClosed`, `TestGameSessionFlowPostFloorQuickslotDelFailsClosedBeforeRestartTown`, `TestGameSessionFlowPostFloorQuickslotSwapFailsClosed`, `TestGameSessionFlowPostFloorQuickslotSwapFailsClosedBeforeRestartTown`)
 - if operator/test fixtures can force account persistence failure during an otherwise-valid `QUICKSLOT_ADD`, the binding fails closed: no quickslot refresh frame is visible, existing quickslots remain unchanged, and reconnect shows no persisted quickslot mutation
 - binding an item quickslot to a locked, malformed, authored-missing-template, mismatched-template, or over-template-max carried item fails closed: no `QUICKSLOT_ADD` is visible, existing quickslots remain unchanged, and reconnect shows no persisted quickslot mutation. Missing-file/empty-store fallback template boot still permits older ad-hoc item `vnum` smoke fixtures under the live-item validation path.
 - account/login-ticket snapshots that somehow contain the same non-item skill/command `{type, slot}` tuple at two different bar positions are now invalid and fail closed on save/load instead of replaying duplicate skill/command bindings; duplicate item-cell quickslot fixtures remain loadable for current item-removal cleanup tests
@@ -302,6 +302,7 @@ Expected result:
 - a type-none `QUICKSLOT_ADD` clear returns the same visible delete behavior: the occupied binding is cleared, no new none binding remains, and reconnect shows the binding gone
 - if packet tooling can emit a malformed type-none `QUICKSLOT_ADD` with non-zero `slot.pos`, it fails closed: no quickslot refresh frame is visible, the occupied binding remains, and reconnect shows no persisted mutation
 - deleting the empty position fails closed: no quickslot refresh frame is visible, existing quickslot bindings remain, and reconnect shows no persisted change
+- selected characters at the bootstrap zero-HP floor cannot delete quickslots; the request fails closed with no refresh frames or persisted mutation, and after `/restart_here` / `/restart_town` the same occupied `QUICKSLOT_DEL` succeeds normally again (`TestGameSessionFlowPostFloorQuickslotDelFailsClosed`, `TestGameSessionFlowPostFloorQuickslotDelFailsClosedBeforeRestartTown`)
 
 ### 4.5.5 Swap quickslots (`QUICKSLOT_SWAP`)
 
@@ -314,6 +315,7 @@ Expected result:
 - occupied-to-empty swaps move the binding to the empty target position and persist after reconnect
 - if a bootstrap exchange shell is open on the same socket, an accepted quickslot swap closes it first: the requester receives `GC::EXCHANGE END`, the paired peer receives one queued `GC::EXCHANGE END`, then the requester sees `GC::QUICKSLOT_SWAP`, with no exchange finalization/result frames
 - empty-to-empty swaps fail closed: no quickslot refresh frame is visible, existing quickslot bindings remain, and reconnect shows no persisted change
+- selected characters at the bootstrap zero-HP floor cannot swap quickslots; the request fails closed with no refresh frames or persisted mutation, and after `/restart_here` / `/restart_town` the same occupied-to-occupied `QUICKSLOT_SWAP` succeeds normally again (`TestGameSessionFlowPostFloorQuickslotSwapFailsClosed`, `TestGameSessionFlowPostFloorQuickslotSwapFailsClosedBeforeRestartTown`)
 
 ### 4.5.6 Drop and pick up a carried item or gold (`ITEM_DROP` / `ITEM_PICKUP`)
 
