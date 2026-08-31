@@ -815,6 +815,186 @@ func TestGameRuntimeCarriedItemInstanceAttributesRematerializeAcrossDaemonRestar
 	}
 }
 
+// TestGameRuntimeCarriedItemInstanceSocketsRematerializeAcrossDaemonRestart proves
+// Track E.4 crash/restart rematerialization for presence-aware per-instance sockets
+// on carried inventory and equipment: after account FileStore owns authoritative
+// sockets (including explicit all-zero), a fresh gameRuntime rebuilt from the same
+// FileStore paths rematerializes those sockets on EnterGame ITEM_SET even when the
+// post-restart login ticket still carries a stale socket-less snapshot. Omitted
+// instance sockets keep template-authored fallback. This deliberately does not
+// cover pending ground / safebox socket rematerialize (owned separately) or
+// socket gameplay formulas.
+func TestGameRuntimeCarriedItemInstanceSocketsRematerializeAcrossDaemonRestart(t *testing.T) {
+	ticketDir := t.TempDir()
+	accountDir := t.TempDir()
+
+	ticketStore := loginticket.NewFileStore(ticketDir)
+	accounts := accountstore.NewFileStore(accountDir)
+
+	activeSockets := inventory.SocketValues{1, 2, 3}
+	zeroSockets := inventory.SocketValues{}
+	peer := peerVisibilityCharacter("CarriedSocketRestart", 0x010301c1, 0x020401c1, 1100, 2100, 0, 101, 201)
+	peer.Gold = 77
+	peer.Inventory = []inventory.ItemInstance{
+		{ID: 6101, Vnum: 72723, Count: 1, Slot: 5, Sockets: &activeSockets},
+		{ID: 6102, Vnum: 72727, Count: 1, Slot: 6, Sockets: &zeroSockets},
+		{ID: 6103, Vnum: 72729, Count: 1, Slot: 7},
+	}
+	peer.Equipment = []inventory.ItemInstance{
+		{ID: 6201, Vnum: 11200, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon, Sockets: &activeSockets},
+	}
+	const (
+		login    = "carried-socket-restart"
+		loginKey = uint32(0xc1c1c1c1)
+	)
+	issuePeerTicket(t, ticketStore, login, loginKey, peer)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed carried-socket-restart account: %v", err)
+	}
+
+	templates := []itemcatalog.Template{
+		{Vnum: 72723, Name: "Active Socket Potion", MaxCount: 1, Sockets: itemcatalog.SocketValues{9, 9, 9}},
+		{Vnum: 72727, Name: "Zero Socket Potion", MaxCount: 1, Sockets: itemcatalog.SocketValues{8, 8, 8}},
+		{Vnum: 72729, Name: "Template Socket Potion", MaxCount: 1, Sockets: itemcatalog.SocketValues{4, 5, 6}},
+		{Vnum: 11200, Name: "Active Socket Sword", MaxCount: 1, EquipSlot: inventory.EquipmentSlotWeapon.String(), Sockets: itemcatalog.SocketValues{11, 11, 11}},
+	}
+	itemStore := newItemTemplateStore(t, templates)
+	cfg := config.Service{
+		LegacyAddr: ":13000",
+		PublicAddr: "127.0.0.1",
+	}
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(cfg, ticketStore, accounts, nil, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected carried-socket-restart runtime error: %v", err)
+	}
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	if len(enterOut) < 5 {
+		t.Fatalf("expected EnterGame bootstrap before carried-socket restart, got %d frames", len(enterOut))
+	}
+	preRestartSets := bootstrapItemSetsByVnum(t, enterOut)
+	wantActive := [itemproto.ItemSocketCount]int32{1, 2, 3}
+	wantTemplate := [itemproto.ItemSocketCount]int32{4, 5, 6}
+	if got := preRestartSets[72723]; got.Sockets != wantActive {
+		t.Fatalf("expected pre-restart active inventory sockets, got %+v", got)
+	}
+	if got := preRestartSets[72727]; got.Sockets != ([itemproto.ItemSocketCount]int32{}) {
+		t.Fatalf("expected pre-restart explicit-zero inventory sockets, got %+v", got)
+	}
+	if got := preRestartSets[72729]; got.Sockets != wantTemplate {
+		t.Fatalf("expected pre-restart template-fallback inventory sockets, got %+v", got)
+	}
+	if got := preRestartSets[11200]; got.Sockets != wantActive {
+		t.Fatalf("expected pre-restart active equipment sockets, got %+v", got)
+	}
+	closeSessionFlow(t, flow)
+
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted carried-socket account before daemon restart: %v", err)
+	}
+	if len(account.Characters) != 1 {
+		t.Fatalf("expected one persisted character before restart, got %#v", account.Characters)
+	}
+	byID := map[uint64]inventory.ItemInstance{}
+	for _, item := range account.Characters[0].Inventory {
+		byID[item.ID] = item
+	}
+	for _, item := range account.Characters[0].Equipment {
+		byID[item.ID] = item
+	}
+	if item := byID[6101]; !item.HasSockets() || *item.Sockets != activeSockets {
+		t.Fatalf("expected persisted active inventory sockets, got %#v", item)
+	}
+	if item := byID[6102]; !item.HasSockets() || *item.Sockets != zeroSockets {
+		t.Fatalf("expected persisted explicit-zero inventory sockets, got %#v", item)
+	}
+	if item := byID[6103]; item.HasSockets() {
+		t.Fatalf("expected omitted inventory sockets to stay nil, got %#v", item)
+	}
+	if item := byID[6201]; !item.HasSockets() || *item.Sockets != activeSockets {
+		t.Fatalf("expected persisted active equipment sockets, got %#v", item)
+	}
+
+	// Simulate process restart: rebuild runtime from the same FileStore paths.
+	// Issue a fresh ticket that still carries the socket-less snapshot so the
+	// account-store rematerialization path is exercised instead of ticket state.
+	stalePeer := peer
+	stalePeer.Inventory = []inventory.ItemInstance{
+		{ID: 6101, Vnum: 72723, Count: 1, Slot: 5},
+		{ID: 6102, Vnum: 72727, Count: 1, Slot: 6},
+		{ID: 6103, Vnum: 72729, Count: 1, Slot: 7},
+	}
+	stalePeer.Equipment = []inventory.ItemInstance{
+		{ID: 6201, Vnum: 11200, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+	}
+	staleTicketStore := loginticket.NewFileStore(ticketDir)
+	const postRestartLoginKey = uint32(0xc2c2c2c2)
+	issuePeerTicket(t, staleTicketStore, login, postRestartLoginKey, stalePeer)
+	staleTicket, err := staleTicketStore.Load(login, postRestartLoginKey)
+	if err != nil {
+		t.Fatalf("load stale post-restart ticket: %v", err)
+	}
+	if len(staleTicket.Characters) != 1 ||
+		len(staleTicket.Characters[0].Inventory) != 3 ||
+		staleTicket.Characters[0].Inventory[0].HasSockets() ||
+		staleTicket.Characters[0].Inventory[1].HasSockets() ||
+		staleTicket.Characters[0].Equipment[0].HasSockets() {
+		t.Fatalf("expected stale post-restart ticket to omit instance sockets, got %+v", staleTicket.Characters)
+	}
+
+	reloadedAccounts := accountstore.NewFileStore(accountDir)
+	reloadedItems := newItemTemplateStore(t, templates)
+	reloaded, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(cfg, staleTicketStore, reloadedAccounts, nil, reloadedItems)
+	if err != nil {
+		t.Fatalf("reload runtime after carried-socket daemon restart: %v", err)
+	}
+
+	restartFlow, restartEnter := enterGameWithLoginTicket(t, reloaded.SessionFactory(), login, postRestartLoginKey)
+	defer closeSessionFlow(t, restartFlow)
+	if len(restartEnter) < 5 {
+		t.Fatalf("expected rematerialized EnterGame bootstrap after daemon restart, got %d frames", len(restartEnter))
+	}
+	restartSets := bootstrapItemSetsByVnum(t, restartEnter)
+	if got := restartSets[72723]; got.Vnum != 72723 || got.Position != itemproto.InventoryPosition(5) || got.Sockets != wantActive {
+		t.Fatalf("expected rematerialized active inventory ITEM_SET sockets, got %+v", got)
+	}
+	if got := restartSets[72727]; got.Vnum != 72727 || got.Position != itemproto.InventoryPosition(6) || got.Sockets != ([itemproto.ItemSocketCount]int32{}) {
+		t.Fatalf("expected rematerialized explicit-zero inventory ITEM_SET sockets, got %+v", got)
+	}
+	if got := restartSets[72729]; got.Vnum != 72729 || got.Position != itemproto.InventoryPosition(7) || got.Sockets != wantTemplate {
+		t.Fatalf("expected rematerialized template-fallback inventory ITEM_SET sockets, got %+v", got)
+	}
+	weaponPosition, err := itemproto.EquipmentPosition(4)
+	if err != nil {
+		t.Fatalf("resolve weapon equipment position: %v", err)
+	}
+	if got := restartSets[11200]; got.Vnum != 11200 || got.Position != weaponPosition || got.Sockets != wantActive {
+		t.Fatalf("expected rematerialized active equipment ITEM_SET sockets, got %+v", got)
+	}
+
+	accountAfterRestart, err := reloadedAccounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after carried-socket rematerialize restart: %v", err)
+	}
+	byID = map[uint64]inventory.ItemInstance{}
+	for _, item := range accountAfterRestart.Characters[0].Inventory {
+		byID[item.ID] = item
+	}
+	for _, item := range accountAfterRestart.Characters[0].Equipment {
+		byID[item.ID] = item
+	}
+	if item := byID[6101]; !item.HasSockets() || *item.Sockets != activeSockets {
+		t.Fatalf("expected account FileStore active inventory sockets after restart, got %#v", item)
+	}
+	if item := byID[6102]; !item.HasSockets() || *item.Sockets != zeroSockets {
+		t.Fatalf("expected account FileStore explicit-zero inventory sockets after restart, got %#v", item)
+	}
+	if item := byID[6201]; !item.HasSockets() || *item.Sockets != activeSockets {
+		t.Fatalf("expected account FileStore active equipment sockets after restart, got %#v", item)
+	}
+}
+
 func bootstrapItemSetsByVnum(t *testing.T, frames [][]byte) map[uint32]itemproto.SetPacket {
 	t.Helper()
 	out := make(map[uint32]itemproto.SetPacket)

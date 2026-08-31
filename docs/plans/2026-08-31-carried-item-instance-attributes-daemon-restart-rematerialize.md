@@ -42,8 +42,7 @@ login ticket still carries a stale pre-attribute snapshot.
 
 ## What this is not yet
 
-- carried inventory/equipment instance-sockets daemon-restart twin (follow-on;
-  encode/FileStore already own sockets preference)
+- ~~carried inventory/equipment instance-sockets daemon-restart twin~~ Done — see [carried item instance-sockets daemon-restart rematerialize](2026-08-31-carried-item-instance-sockets-daemon-restart-rematerialize.md)
 - upsert / merge / truncate-and-reload policy
 - production DB engine selection as a stock default
 - DB-backed live inventory repositories replacing FileStore
