@@ -77,4 +77,6 @@ and omitted (template-fallback) instance sockets on EnterGame `ITEM_SET`.
 Follow-on ops tip-sync after carried rematerialize + tip-`0010`+`0029` ownership
 is owned by
 [ops docs tip sync after carried rematerialize](2026-08-31-ops-docs-post-carried-rematerialize-tip-sync.md).
-Upsert / stock production driver remain deferred.
+Follow-on tip-`0003` SQL import scoped replace/upsert is frozen in
+[character item-state import replace/upsert contract freeze](2026-08-31-character-item-state-import-replace-upsert-contract-freeze.md).
+Upsert/replace GREEN + stock production driver remain deferred.

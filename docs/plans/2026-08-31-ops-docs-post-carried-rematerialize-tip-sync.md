@@ -79,4 +79,7 @@ go test -tags=sqlite_harness ./internal/migratecli -run 'ImportExportDrillSQLite
 
 GREEN on `lane/persistence`: operator/QA docs + Track E / migration-contract
 pointers now match catalog tip `0029` and the landed carried rematerialize /
-tip-`0010`+`0029` ownership. Upsert / stock production driver remain deferred.
+tip-`0010`+`0029` ownership. Follow-on docs/spec freeze for tip-`0003` SQL
+import scoped replace/upsert is owned by
+[character item-state import replace/upsert contract freeze](2026-08-31-character-item-state-import-replace-upsert-contract-freeze.md);
+upsert/replace GREEN + stock production driver remain deferred.
