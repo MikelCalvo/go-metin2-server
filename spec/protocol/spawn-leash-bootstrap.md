@@ -414,6 +414,7 @@ Current implementation status:
 - operator/runtime same-map position `UpdateStaticActor` that leaves an unengaged spawn-backed actor `within_radius` now re-arms pending homeward through the shared eligibility sync (mirroring `return_required` return-step re-arm) instead of only clearing the deadline
 - slash `/quit`, `/logout`, and `/phase_select` now clear combat ownership before `Leave` so chase prune plus within_radius homeward re-arm still see the engagements that subject owned (matching abrupt close); focused coverage: `TestGameRuntimeSlashQuitClearsPendingSpawnGroupChaseAndArmsHomewardAfterChaseDisplace` plus logout / phase_select twins
 - owner transfer / relocate now snapshots the subject's engagements before `sharedWorld.transfer` clears `engaged_by`, then re-syncs chase prune + within_radius homeward after `clearActiveCombatTarget`; focused coverage: `TestGameRuntimeTransferClearsPendingSpawnGroupChaseAndArmsHomewardAfterChaseDisplace`
+- EnterGame reclaim / Join now snapshots engagements owned by reclaimable stale subjects before `removeStaleOwnership` clears `engaged_by`, then re-syncs chase prune + within_radius homeward before encoding visibility (matching slash leave / transfer); focused coverage: `TestGameRuntimeEnterGameReclaimClearsPendingSpawnGroupChaseAndArmsHomewardAfterChaseDisplace`
 
 ## First owned pending homeward-step inspection seam
 

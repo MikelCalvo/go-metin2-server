@@ -17,9 +17,9 @@ import (
 
 // Owner disappearance after a chase-displaced within_radius practice mob must
 // clear the pending chase deadline and arm homeward, matching TARGET(0) /
-// death-floor / walk-away release. Slash quit/logout/phase_select currently
-// Leave() before clearActiveCombatTarget(), so homeward sync can miss the
-// released actor unless that ordering (or an equivalent leave-owned sync) is fixed.
+// death-floor / walk-away release. Slash quit/logout/phase_select clear combat
+// ownership before Leave so chase prune + within_radius homeward re-arm still
+// see the engagements that subject owned (matching abrupt close).
 func TestGameRuntimeSlashQuitClearsPendingSpawnGroupChaseAndArmsHomewardAfterChaseDisplace(t *testing.T) {
 	assertOwnerLeaveClearsChaseAndArmsHomewardAfterChaseDisplace(t, "/quit")
 }

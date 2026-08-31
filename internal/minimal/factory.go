@@ -6402,6 +6402,27 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					var trailingFrames [][]byte
 					if !joinedSharedWorld {
 						var existingPeers []loginticket.Character
+						// Snapshot engagements owned by reclaimable stale subjects
+						// before Join: removeStaleOwnership clears engaged_by without
+						// running clearActiveCombatTarget, so within_radius homeward
+						// would otherwise miss actors released by EnterGame reclaim.
+						engagedBeforeJoin := make([]uint64, 0)
+						if sharedWorld != nil {
+							sharedWorld.mu.Lock()
+							staleIDs, liveConflict := sharedWorld.reclaimableStaleDuplicateIDsLocked(selected)
+							if !liveConflict && len(staleIDs) > 0 {
+								staleSet := make(map[uint64]struct{}, len(staleIDs))
+								for _, staleID := range staleIDs {
+									staleSet[staleID] = struct{}{}
+								}
+								for entityID, engagedBy := range sharedWorld.staticActorCombatEngagedBy {
+									if _, ok := staleSet[engagedBy]; ok {
+										engagedBeforeJoin = append(engagedBeforeJoin, entityID)
+									}
+								}
+							}
+							sharedWorld.mu.Unlock()
+						}
 						sharedWorldID, existingPeers = sharedWorld.Join(selected, pending, func(mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {
 							stateMu.Lock()
 							defer stateMu.Unlock()
@@ -6413,9 +6434,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							return worldentry.EnterGameResult{Rejected: true}
 						}
 						// EnterGame reclaim / Join can drop stale practice-mob engagement
-						// without running the live session leave helper, so prune chase
-						// deadlines that lost eligibility before encoding visibility.
+						// without running the live session leave helper, so re-sync chase
+						// prune + within_radius homeward before encoding visibility.
+						for _, entityID := range engagedBeforeJoin {
+							runtime.clearSpawnGroupChaseStep(entityID)
+							runtime.syncSpawnGroupHomewardStepScheduleForEntity(entityID)
+							_ = runtime.persistSpawnGroupCombatState(entityID)
+						}
 						runtime.pruneSpawnGroupChaseStepSchedules()
+						runtime.pruneSpawnGroupHomewardStepSchedules()
 						for _, peer := range existingPeers {
 							trailingFrames = append(trailingFrames, sharedWorld.PeerVisibilityBootstrapFramesWithMyShopSign(peer)...)
 						}
