@@ -412,6 +412,7 @@ Current implementation status:
 - operator `POST .../return-step` still no-ops `within_radius`; exact-home snap remains the controlled `return-home` trigger
 - the read-only pending homeward inspection endpoints below are now live over that already-owned schedule
 - operator/runtime same-map position `UpdateStaticActor` that leaves an unengaged spawn-backed actor `within_radius` now re-arms pending homeward through the shared eligibility sync (mirroring `return_required` return-step re-arm) instead of only clearing the deadline
+- slash `/quit`, `/logout`, and `/phase_select` now clear combat ownership before `Leave` so chase prune plus within_radius homeward re-arm still see the engagements that subject owned (matching abrupt close); focused coverage: `TestGameRuntimeSlashQuitClearsPendingSpawnGroupChaseAndArmsHomewardAfterChaseDisplace` plus logout / phase_select twins
 
 ## First owned pending homeward-step inspection seam
 

@@ -7232,30 +7232,33 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						switch command {
 						case "quit":
 							quitFrames := prependMerchantCloseFrame(prependMyShopCloseFrame(prependCubeCloseFrame(prependSafeboxCloseFrame(prependExchangeCloseFrame(nil)))))
+							// Clear combat ownership before Leave so chase prune + within_radius
+							// homeward re-arm still see the engagements this subject owned.
+							// Abrupt close already uses clear-then-Leave; slash leave must match.
+							clearActiveCombatTarget()
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
 							activeCharacterPosition = bootstrapCharacterPositionGeneral
-							clearActiveCombatTarget()
 							clearLiveCharacterRegistration()
 							delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeCommand, Message: "quit"}
 							return gameflow.ChatResult{Accepted: true, Frames: quitFrames, Delivery: &delivery}
 						case "logout":
 							logoutFrames := prependMerchantCloseFrame(prependMyShopCloseFrame(prependCubeCloseFrame(prependSafeboxCloseFrame(prependExchangeCloseFrame(nil)))))
+							clearActiveCombatTarget()
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
 							activeCharacterPosition = bootstrapCharacterPositionGeneral
-							clearActiveCombatTarget()
 							clearLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: true, Frames: logoutFrames, NextPhase: session.PhaseClose}
 						case "phase_select":
 							phaseSelectFrames := prependMerchantCloseFrame(prependMyShopCloseFrame(prependCubeCloseFrame(prependSafeboxCloseFrame(prependExchangeCloseFrame(nil)))))
+							clearActiveCombatTarget()
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
 							activeCharacterPosition = bootstrapCharacterPositionGeneral
-							clearActiveCombatTarget()
 							clearLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: true, Frames: phaseSelectFrames, NextPhase: session.PhaseSelect}
 						case "restart_here":
