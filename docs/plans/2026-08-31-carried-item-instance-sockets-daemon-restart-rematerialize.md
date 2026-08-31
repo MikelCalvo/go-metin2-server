@@ -73,3 +73,8 @@ GREEN on `lane/persistence`:
 `TestGameRuntimeCarriedItemInstanceSocketsRematerializeAcrossDaemonRestart`
 owns stale-ticket / account-FileStore rematerialize of active, explicit-zero,
 and omitted (template-fallback) instance sockets on EnterGame `ITEM_SET`.
+
+Follow-on ops tip-sync after carried rematerialize + tip-`0010`+`0029` ownership
+is owned by
+[ops docs tip sync after carried rematerialize](2026-08-31-ops-docs-post-carried-rematerialize-tip-sync.md).
+Upsert / stock production driver remain deferred.

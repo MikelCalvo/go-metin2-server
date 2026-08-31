@@ -66,9 +66,12 @@ pickup does not silently fall back to template attributes.
 GREEN on `lane/items`: durable pending ground FileStore rematerialize
 round-trips presence-aware instance attributes (`has_attributes` + `attributes`,
 including explicit all-zero / type-zero) through register → persist → restart →
-pickup. Gold markers stay attribute-less. tip-`0010` SQL attribute companion docs
-freeze is owned by
+pickup. Gold markers stay attribute-less. tip-`0010` SQL attribute companion
+(`0029`) is GREEN via
 [bootstrap ground-item instance-attributes SQL
 additive](2026-08-31-bootstrap-ground-item-instance-attributes-sql-additive.md);
-RED/GREEN stays next. Safebox cell attributes FileStore + tip-`0015`+`0028` SQL +
-seeded tip sync are owned separately.
+seeded hermetic tip-`0010`+`0029` import-export drill is owned by
+[seeded ground-item instance-attributes tip
+sync](2026-08-31-seeded-ground-item-instance-attributes-import-export-drill.md).
+Safebox cell attributes FileStore + tip-`0015`+`0028` SQL + seeded tip sync are
+owned separately.
