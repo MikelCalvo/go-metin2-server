@@ -1237,6 +1237,226 @@ func TestGameSessionFlowPostFloorQuickslotAddFailsClosedBeforeRestartTown(t *tes
 	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart_town QUICKSLOT_ADD persists new binding")
 }
 
+func TestGameSessionFlowPostFloorItemUseFailsClosed(t *testing.T) {
+	login := "post-floor-item-use"
+	loginKey := uint32(0x19191b70)
+	owner := peerVisibilityCharacter("DeadItemUseOwner", 0x01030b70, 0x02040b70, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Inventory = []inventory.ItemInstance{{ID: 1301, Vnum: 27006, Count: 2, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	templates := []itemcatalog.Template{{
+		Vnum:      27006,
+		Name:      "Post Floor Cursed Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{
+			PointType:  bootstrapPlayerPointType,
+			PointIndex: bootstrapPlayerPointValueIndex,
+			PointDelta: -25,
+			Message:    "consume:27006:-25",
+		},
+	}}
+	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, templates)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	usePacket := itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, usePacket))
+	if err != nil {
+		t.Fatalf("unexpected post-floor ITEM_USE dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor ITEM_USE to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor ITEM_USE to queue no frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor ITEM_USE")
+
+	slashOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/use_item 5",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor /use_item dispatch error: %v", err)
+	}
+	if len(slashOut) != 0 {
+		t.Fatalf("expected post-floor /use_item to fail closed with no frames, got %d", len(slashOut))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor /use_item to queue no frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor /use_item")
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_here",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here after post-floor ITEM_USE: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_here recovery frames after post-floor ITEM_USE, got %d", len(restartOut))
+	}
+	_ = flushServerFrames(t, flow)
+
+	reuseOut, err := flow.HandleClientFrame(decodeSingleFrame(t, usePacket))
+	if err != nil {
+		t.Fatalf("unexpected post-restart ITEM_USE: %v", err)
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	assertPostFloorItemUseSuccessBurst(t, reuseOut, owner.VID, itemproto.InventoryPosition(5), 27006, -25, wantHP-25, 1, "consume:27006:-25", "post-restart ITEM_USE")
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart ITEM_USE: %v", err)
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP-25 {
+		t.Fatalf("expected post-restart ITEM_USE to persist HP %d, got %+v", wantHP-25, account.Characters[0])
+	}
+	want := owner
+	want.Points[bootstrapPlayerPointValueIndex] = wantHP - 25
+	want.Inventory = []inventory.ItemInstance{{ID: 1301, Vnum: 27006, Count: 1, Slot: 5}}
+	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart ITEM_USE persists stack decrement")
+}
+
+func TestGameSessionFlowPostFloorItemUseFailsClosedBeforeRestartTown(t *testing.T) {
+	login := "pf-item-use-town"
+	loginKey := uint32(0x19191b71)
+	owner := peerVisibilityCharacter("DeadItemUseTownOwner", 0x01030b71, 0x02040b71, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Inventory = []inventory.ItemInstance{{ID: 1302, Vnum: 27006, Count: 2, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	templates := []itemcatalog.Template{{
+		Vnum:      27006,
+		Name:      "Post Floor Cursed Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{
+			PointType:  bootstrapPlayerPointType,
+			PointIndex: bootstrapPlayerPointValueIndex,
+			PointDelta: -25,
+			Message:    "consume:27006:-25",
+		},
+	}}
+	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, templates)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	usePacket := itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, usePacket))
+	if err != nil {
+		t.Fatalf("unexpected post-floor town ITEM_USE dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor town ITEM_USE to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor town ITEM_USE to queue no frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor town ITEM_USE")
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_town",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_town after post-floor ITEM_USE: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_town recovery frames after post-floor ITEM_USE, got %d", len(restartOut))
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[0]))
+	if err != nil {
+		t.Fatalf("decode self character add after post-floor ITEM_USE /restart_town: %v", err)
+	}
+	if selfAdd.VID != owner.VID || selfAdd.X != 52070 || selfAdd.Y != 166600 {
+		t.Fatalf("expected /restart_town self bootstrap at empire town position after ITEM_USE floor, got %+v", selfAdd)
+	}
+	var (
+		selfPoints  worldproto.PlayerPointChangePacket
+		foundPoints bool
+	)
+	for _, raw := range restartOut {
+		fr := decodeSingleFrame(t, raw)
+		if !foundPoints {
+			if points, err := worldproto.DecodePlayerPointChange(fr); err == nil {
+				selfPoints = points
+				foundPoints = true
+			}
+		}
+	}
+	if !foundPoints {
+		t.Fatal("expected /restart_town recovery to include self PLAYER_POINT_CHANGE after ITEM_USE floor")
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if selfPoints.Value != wantHP {
+		t.Fatalf("expected /restart_town to rebuild recovered owner HP %d after ITEM_USE floor, got %+v", wantHP, selfPoints)
+	}
+	_ = flushServerFrames(t, flow)
+
+	reuseOut, err := flow.HandleClientFrame(decodeSingleFrame(t, usePacket))
+	if err != nil {
+		t.Fatalf("unexpected post-restart_town ITEM_USE: %v", err)
+	}
+	assertPostFloorItemUseSuccessBurst(t, reuseOut, owner.VID, itemproto.InventoryPosition(5), 27006, -25, wantHP-25, 1, "consume:27006:-25", "post-restart_town ITEM_USE")
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart_town ITEM_USE: %v", err)
+	}
+	if account.Characters[0].MapIndex != 21 || account.Characters[0].X != 52070 || account.Characters[0].Y != 166600 {
+		t.Fatalf("expected /restart_town to persist empire town position after ITEM_USE floor, got %+v", account.Characters[0])
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP-25 {
+		t.Fatalf("expected /restart_town + ITEM_USE to persist HP %d after ITEM_USE floor, got %+v", wantHP-25, account.Characters[0])
+	}
+	want := owner
+	want.Points[bootstrapPlayerPointValueIndex] = wantHP - 25
+	want.MapIndex = 21
+	want.X = 52070
+	want.Y = 166600
+	want.Inventory = []inventory.ItemInstance{{ID: 1302, Vnum: 27006, Count: 1, Slot: 5}}
+	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart_town ITEM_USE persists stack decrement")
+}
+
+func assertPostFloorItemUseSuccessBurst(t *testing.T, frames [][]byte, ownerVID uint32, position itemproto.Position, vnum uint32, pointDelta int32, pointValue int32, remainingCount uint8, message string, context string) {
+	t.Helper()
+	if len(frames) != 4 {
+		t.Fatalf("expected %s to emit use echo + POINT_CHANGE + ITEM_UPDATE + INFO chat, got %d frames", context, len(frames))
+	}
+	useEcho, err := itemproto.DecodeUse(decodeSingleFrame(t, frames[0]))
+	if err != nil {
+		t.Fatalf("decode %s use echo: %v", context, err)
+	}
+	if useEcho.Position != position || useEcho.CharacterVID != ownerVID || useEcho.VictimVID != ownerVID || useEcho.Vnum != vnum {
+		t.Fatalf("unexpected %s use echo: %+v", context, useEcho)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, frames[1]))
+	if err != nil {
+		t.Fatalf("decode %s point-change: %v", context, err)
+	}
+	if pointChange.VID != ownerVID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != pointDelta || pointChange.Value != pointValue {
+		t.Fatalf("unexpected %s point-change: %+v", context, pointChange)
+	}
+	updated, err := itemproto.DecodeUpdate(decodeSingleFrame(t, frames[2]))
+	if err != nil {
+		t.Fatalf("decode %s item update: %v", context, err)
+	}
+	if updated.Position != position || updated.Count != remainingCount {
+		t.Fatalf("unexpected %s item update: %+v", context, updated)
+	}
+	info, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, frames[3]))
+	if err != nil {
+		t.Fatalf("decode %s info chat: %v", context, err)
+	}
+	if info.Type != chatproto.ChatTypeInfo || info.VID != 0 || info.Message != message {
+		t.Fatalf("unexpected %s info chat: %+v", context, info)
+	}
+}
+
 func assertPostFloorGoldDropSuccessBurst(t *testing.T, frames [][]byte, ownerVID uint32, ownerName string, x, y, z int32, amount int32, remainingGold int32, context string) {
 	t.Helper()
 	if len(frames) != 3 {
