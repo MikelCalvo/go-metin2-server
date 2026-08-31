@@ -30,9 +30,11 @@ gold `ITEM_DROP` succeeds normally again.
 ## Explicit non-goals
 
 - inventing a death-specific gold-drop packet family
-- widening into partial `ITEM_DROP2`, or quickslot restart twins in this same
-  commit (pickup restart recovery is owned separately in
-  `2026-08-31-post-floor-item-pickup-restart-recovery.md`)
+- widening into partial `ITEM_DROP2` restart twins in this same commit (pickup
+  restart recovery is owned separately in
+  `2026-08-31-post-floor-item-pickup-restart-recovery.md`; quickslot `ADD`
+  restart recovery is owned separately in
+  `2026-08-31-post-floor-quickslot-add-restart-recovery.md`)
 - changing already-owned live gold-drop behavior
 - changing already-owned whole-stack inventory `ITEM_DROP` post-floor denial /
   recovery

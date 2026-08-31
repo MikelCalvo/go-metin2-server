@@ -30,6 +30,8 @@ normally again.
 
 - inventing a death-specific unequip packet family
 - widening into drop / pickup / quickslot restart twins in this same commit
+  (quickslot `ADD` restart recovery is owned separately in
+  `2026-08-31-post-floor-quickslot-add-restart-recovery.md`)
 - changing already-owned live `/unequip_item` behavior
 - changing already-owned `/equip_item` post-floor denial / recovery
 

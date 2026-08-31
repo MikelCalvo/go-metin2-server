@@ -14,6 +14,7 @@ import (
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
+	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
@@ -1064,6 +1065,176 @@ func TestGameSessionFlowPostFloorGoldDropFailsClosedBeforeRestartTown(t *testing
 	want.Y = 166600
 	want.Gold = 3800
 	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart_town gold ITEM_DROP debits carried gold")
+}
+
+func TestGameSessionFlowPostFloorQuickslotAddFailsClosed(t *testing.T) {
+	login := "post-floor-qs-add"
+	loginKey := uint32(0x19191b68)
+	owner := peerVisibilityCharacter("DeadQuickslotAddOwner", 0x01030b68, 0x02040b68, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Inventory = []inventory.ItemInstance{{ID: 1201, Vnum: 27001, Count: 2, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeSkill, Slot: 5}}
+	templates := []itemcatalog.Template{{Vnum: 27001, Name: "Post Floor Quickslot Potion", Stackable: true, MaxCount: 200}}
+	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, templates)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	addPacket := quickslotproto.EncodeClientAdd(quickslotproto.ClientAddPacket{
+		Position: 4,
+		Slot:     quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 5},
+	})
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, addPacket))
+	if err != nil {
+		t.Fatalf("unexpected post-floor QUICKSLOT_ADD dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor QUICKSLOT_ADD to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor QUICKSLOT_ADD to queue no frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor QUICKSLOT_ADD")
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_here",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here after post-floor QUICKSLOT_ADD: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_here recovery frames after post-floor QUICKSLOT_ADD, got %d", len(restartOut))
+	}
+	_ = flushServerFrames(t, flow)
+
+	reuseOut, err := flow.HandleClientFrame(decodeSingleFrame(t, addPacket))
+	if err != nil {
+		t.Fatalf("unexpected post-restart QUICKSLOT_ADD: %v", err)
+	}
+	wantFrames := [][]byte{
+		quickslotproto.EncodeAdd(quickslotproto.AddPacket{Position: 4, Slot: quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 5}}),
+	}
+	if !reflect.DeepEqual(reuseOut, wantFrames) {
+		t.Fatalf("unexpected post-restart QUICKSLOT_ADD frames:\n got %#v\nwant %#v", reuseOut, wantFrames)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart QUICKSLOT_ADD: %v", err)
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_here to persist recovered owner HP %d after QUICKSLOT_ADD floor, got %+v", wantHP, account.Characters[0])
+	}
+	want := owner
+	want.Points[bootstrapPlayerPointValueIndex] = wantHP
+	want.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 5},
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart QUICKSLOT_ADD persists new binding")
+}
+
+func TestGameSessionFlowPostFloorQuickslotAddFailsClosedBeforeRestartTown(t *testing.T) {
+	login := "pf-qs-add-town"
+	loginKey := uint32(0x19191b69)
+	owner := peerVisibilityCharacter("DeadQuickslotAddTownOwner", 0x01030b69, 0x02040b69, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Inventory = []inventory.ItemInstance{{ID: 1202, Vnum: 27001, Count: 2, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeSkill, Slot: 5}}
+	templates := []itemcatalog.Template{{Vnum: 27001, Name: "Post Floor Quickslot Potion", Stackable: true, MaxCount: 200}}
+	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, templates)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	addPacket := quickslotproto.EncodeClientAdd(quickslotproto.ClientAddPacket{
+		Position: 4,
+		Slot:     quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 5},
+	})
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, addPacket))
+	if err != nil {
+		t.Fatalf("unexpected post-floor town QUICKSLOT_ADD dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor town QUICKSLOT_ADD to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor town QUICKSLOT_ADD to queue no frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor town QUICKSLOT_ADD")
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_town",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_town after post-floor QUICKSLOT_ADD: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_town recovery frames after post-floor QUICKSLOT_ADD, got %d", len(restartOut))
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[0]))
+	if err != nil {
+		t.Fatalf("decode self character add after post-floor QUICKSLOT_ADD /restart_town: %v", err)
+	}
+	if selfAdd.VID != owner.VID || selfAdd.X != 52070 || selfAdd.Y != 166600 {
+		t.Fatalf("expected /restart_town self bootstrap at empire town position after QUICKSLOT_ADD floor, got %+v", selfAdd)
+	}
+	var (
+		selfPoints  worldproto.PlayerPointChangePacket
+		foundPoints bool
+	)
+	for _, raw := range restartOut {
+		fr := decodeSingleFrame(t, raw)
+		if !foundPoints {
+			if points, err := worldproto.DecodePlayerPointChange(fr); err == nil {
+				selfPoints = points
+				foundPoints = true
+			}
+		}
+	}
+	if !foundPoints {
+		t.Fatal("expected /restart_town recovery to include self PLAYER_POINT_CHANGE after QUICKSLOT_ADD floor")
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if selfPoints.Value != wantHP {
+		t.Fatalf("expected /restart_town to rebuild recovered owner HP %d after QUICKSLOT_ADD floor, got %+v", wantHP, selfPoints)
+	}
+	_ = flushServerFrames(t, flow)
+
+	reuseOut, err := flow.HandleClientFrame(decodeSingleFrame(t, addPacket))
+	if err != nil {
+		t.Fatalf("unexpected post-restart_town QUICKSLOT_ADD: %v", err)
+	}
+	wantFrames := [][]byte{
+		quickslotproto.EncodeAdd(quickslotproto.AddPacket{Position: 4, Slot: quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 5}}),
+	}
+	if !reflect.DeepEqual(reuseOut, wantFrames) {
+		t.Fatalf("unexpected post-restart_town QUICKSLOT_ADD frames:\n got %#v\nwant %#v", reuseOut, wantFrames)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart_town QUICKSLOT_ADD: %v", err)
+	}
+	if account.Characters[0].MapIndex != 21 || account.Characters[0].X != 52070 || account.Characters[0].Y != 166600 {
+		t.Fatalf("expected /restart_town to persist empire town position after QUICKSLOT_ADD floor, got %+v", account.Characters[0])
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_town + QUICKSLOT_ADD to persist recovered owner HP %d after QUICKSLOT_ADD floor, got %+v", wantHP, account.Characters[0])
+	}
+	want := owner
+	want.Points[bootstrapPlayerPointValueIndex] = wantHP
+	want.MapIndex = 21
+	want.X = 52070
+	want.Y = 166600
+	want.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 5},
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart_town QUICKSLOT_ADD persists new binding")
 }
 
 func assertPostFloorGoldDropSuccessBurst(t *testing.T, frames [][]byte, ownerVID uint32, ownerName string, x, y, z int32, amount int32, remainingGold int32, context string) {
