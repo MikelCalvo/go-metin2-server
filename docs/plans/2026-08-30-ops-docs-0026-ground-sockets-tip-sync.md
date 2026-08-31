@@ -79,5 +79,8 @@ go test -tags=sqlite_harness ./internal/migratecli -run 'ImportExportDrillSQLite
 ## Status
 
 Docs tip-sync on `lane/persistence`. Schema / seeded drill / import gates remain
-already GREEN. FileStore-first attributes-on-instance GREEN is owned on
-`lane/items`; durable ground/safebox attribute rematerialize stays deferred.
+already GREEN. FileStore-first attributes-on-instance GREEN plus additive
+`0027`/`0028`/`0029` SQL companions are now owned; operator-docs tip-sync for
+those attribute companions (without claiming tip-`0010`+`0029` seeded drill) is
+owned by
+[ops docs tip sync after catalog tips 0027/0028/0029](2026-08-31-ops-docs-0027-0028-0029-attributes-tip-sync.md).
