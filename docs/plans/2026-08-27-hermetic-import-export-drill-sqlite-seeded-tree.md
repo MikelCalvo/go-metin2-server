@@ -68,6 +68,9 @@ printer from CLI/contrib/cron, or exposing a daemon mutation route.
    Non-empty tip-`0015`+`0025` safebox cell instance-socket seeding is owned by
    [seeded safebox cell instance-sockets tip
    sync](2026-08-30-seeded-safebox-cell-instance-sockets-import-export-drill.md).
+   Non-empty tip-`0015`+`0028` safebox cell instance-attribute seeding is owned by
+   [seeded safebox cell instance-attributes tip
+   sync](2026-08-31-seeded-safebox-cell-instance-attributes-import-export-drill.md).
    Non-empty tip-`0010`+`0026` pending ground instance-socket seeding is owned by
    [seeded ground-item instance-sockets tip
    sync](2026-08-30-seeded-ground-item-instance-sockets-import-export-drill.md).

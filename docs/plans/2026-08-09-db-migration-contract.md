@@ -53,7 +53,8 @@ Rules frozen by tests:
   - it adds `has_attributes` + `attr0_type`/`attr0_value` … `attr6_type`/`attr6_value` to `character_safebox_items`,
   - `has_attributes = 0` means nil instance attributes (template fallback) and requires zero attr types/values; `has_attributes = 1` is authoritative including all-zero / type-zero,
   - tip-`0015` / `character_safebox_money` remains the export / quarantine / import-result identity; SQL INSERT requires tip `15` plus additive `25` plus additive `28`,
-  - upsert / stock production driver / live DB safebox repositories / tip-`0010` attribute companion remain out of scope.
+  - upsert / stock production driver / live DB safebox repositories / tip-`0010` attribute companion remain out of scope,
+  - seeded hermetic tip-`0015`+`0025`+`0028` safebox cell instance-attribute tip sync is owned by [seeded safebox cell instance-attributes tip sync](2026-08-31-seeded-safebox-cell-instance-attributes-import-export-drill.md).
 - the embedded catalog now also includes `0026_bootstrap_ground_item_instance_sockets`, an additive schema-only companion for tip-`0010` after FileStore owned pending ground instance sockets:
   - it adds `has_sockets` + `socket0`/`socket1`/`socket2` to `bootstrap_ground_items`,
   - `has_sockets = 0` means nil instance sockets (template fallback) and requires zero socket values; `has_sockets = 1` is authoritative including all-zero,

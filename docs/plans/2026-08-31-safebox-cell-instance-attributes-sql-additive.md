@@ -89,7 +89,11 @@ when the ledger owns tip-`0015` + additive `0025` but not additive `0028`.
 
 ## Status
 
-Docs/spec freeze only on `lane/items` (this run). RED/GREEN for catalog tip
-`0028` + tip-`0015` export/quarantine/import projection stays the next
-implementation step. Seeded hermetic tip-`0015`+`0028` tip sync stays deferred
-until after GREEN.
+GREEN on `lane/items`: additive catalog tip `0028` projects presence-aware
+tip-`0015` instance attributes through export/quarantine/import with ledger
+preflight requiring tip-`0015` + `0025` + `0028`
+(`feat(db): add tip-0015 safebox cell instance attributes SQL companion`).
+
+Follow-on tip sync: seeded hermetic tip-`0015`+`0028` safebox cell attributes in
+the shared `import-export-drill` is owned by
+[seeded safebox cell instance-attributes tip sync](2026-08-31-seeded-safebox-cell-instance-attributes-import-export-drill.md).

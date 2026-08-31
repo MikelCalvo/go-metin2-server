@@ -66,5 +66,6 @@ pickup does not silently fall back to template attributes.
 GREEN on `lane/items`: durable pending ground FileStore rematerialize
 round-trips presence-aware instance attributes (`has_attributes` + `attributes`,
 including explicit all-zero / type-zero) through register → persist → restart →
-pickup. Gold markers stay attribute-less; tip-`0010` SQL attribute companion and
-safebox cell attributes stay deferred.
+pickup. Gold markers stay attribute-less; tip-`0010` SQL attribute companion stays
+deferred. Safebox cell attributes FileStore + tip-`0015`+`0028` SQL + seeded tip
+sync are owned separately.

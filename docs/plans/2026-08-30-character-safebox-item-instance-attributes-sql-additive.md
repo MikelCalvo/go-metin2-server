@@ -91,9 +91,12 @@ requiring tip-`0015` + `0025` + `0028`.
 
 ## Follow-up options
 
-1. Seed presence-aware safebox cell attributes in the hermetic import-export
-   drill + tip-sync loopback character-safebox-state docs.
-2. Prefer tip-`0010` ground attribute SQL companion only after that tip sync, or
-   seed tip-`0003`+`0027` attributes in the shared drill first.
+1. ~~Seed presence-aware safebox cell attributes in the hermetic import-export
+   drill + tip-sync loopback character-safebox-state docs.~~ Done:
+   [seeded safebox cell instance-attributes tip
+   sync](2026-08-31-seeded-safebox-cell-instance-attributes-import-export-drill.md).
+2. Prefer tip-`0010` ground attribute SQL companion next, or keep that deferred
+   until operators choose the additive companion after durable FileStore
+   rematerialize (already owned).
 3. Keep upsert / stock production driver deferred.
 4. Keep tip-`0015` export identity until a deliberate retip is needed.
