@@ -45,8 +45,8 @@ authors a merchant `catalog`, so operators do not improvise that reject during
 - new NPC service kinds
 - changing the already-owned canonicalize / store reject rule
 - further checked-in foreign-field negatives (warp coords, reward/consume
-  gold/experience, mutating `quest_to`, oversize `size`, open_cube foreign
-  catalog) unless QA still improvises that JSON later
+  gold/experience, mutating `quest_to`, oversize `size`) unless QA still
+  improvises that JSON later
 
 ## Validation
 
@@ -61,5 +61,7 @@ git diff --check
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
 2. Keep branching quest scripts deferred.
-3. Add further checked-in negatives only when a later reject case still forces
-   QA to invent JSON.
+3. ~~Add further checked-in negatives only when a later reject case still forces
+   QA to invent JSON.~~ Done for `open_cube` foreign merchant `catalog`:
+   `docs/examples/bootstrap-invalid-open-cube-foreign-catalog-bundle.json`
+   (`docs/plans/2026-08-31-invalid-open-cube-foreign-catalog-fixture.md`).

@@ -66,3 +66,6 @@ git diff --check
    Also done for `open_safebox` foreign merchant `catalog`:
    `docs/examples/bootstrap-invalid-open-safebox-foreign-catalog-bundle.json`
    (`docs/plans/2026-08-31-invalid-open-safebox-foreign-catalog-fixture.md`).
+   Also done for `open_cube` foreign merchant `catalog`:
+   `docs/examples/bootstrap-invalid-open-cube-foreign-catalog-bundle.json`
+   (`docs/plans/2026-08-31-invalid-open-cube-foreign-catalog-fixture.md`).

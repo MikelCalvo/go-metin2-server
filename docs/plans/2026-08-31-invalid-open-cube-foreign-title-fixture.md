@@ -42,9 +42,9 @@ so operators do not improvise that reject during `/local/content-bundle/validate
 - new NPC service kinds
 - binary cube headers / OR-materials / craft dialog trees
 - changing the already-owned canonicalize / store reject rule
-- further checked-in foreign-field negatives (`catalog`, warp coords,
-  reward/consume gold/experience, mutating `quest_to`, oversize `size`) unless
-  QA still improvises that JSON later
+- further checked-in foreign-field negatives (warp coords, reward/consume
+  gold/experience, mutating `quest_to`, oversize `size`) unless QA still
+  improvises that JSON later
 
 ## Validation
 
@@ -63,3 +63,6 @@ git diff --check
    QA to invent JSON.~~ Done for `open_safebox` foreign merchant `catalog`:
    `docs/examples/bootstrap-invalid-open-safebox-foreign-catalog-bundle.json`
    (`docs/plans/2026-08-31-invalid-open-safebox-foreign-catalog-fixture.md`).
+   Also done for `open_cube` foreign merchant `catalog`:
+   `docs/examples/bootstrap-invalid-open-cube-foreign-catalog-bundle.json`
+   (`docs/plans/2026-08-31-invalid-open-cube-foreign-catalog-fixture.md`).

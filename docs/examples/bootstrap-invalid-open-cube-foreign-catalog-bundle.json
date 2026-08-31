@@ -1,0 +1,17 @@
+{
+  "interaction_definitions": [
+    {
+      "kind": "open_cube",
+      "ref": "npc:qa_cube_foreign_catalog",
+      "text": "The craftsman lights the forge.",
+      "catalog": [
+        {
+          "slot": 0,
+          "item_vnum": 27001,
+          "price": 50,
+          "count": 1
+        }
+      ]
+    }
+  ]
+}
