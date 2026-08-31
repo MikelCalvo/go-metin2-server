@@ -1,0 +1,10 @@
+{
+  "interaction_definitions": [
+    {
+      "kind": "open_cube",
+      "ref": "npc:qa_cube_foreign_title",
+      "text": "The craftsman lights the forge.",
+      "title": "Cube"
+    }
+  ]
+}

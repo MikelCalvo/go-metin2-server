@@ -79,3 +79,6 @@ git diff --check
    now checked in:
    `docs/examples/bootstrap-invalid-open-safebox-foreign-title-bundle.json`
    (`docs/plans/2026-08-31-invalid-open-safebox-foreign-title-fixture.md`).
+   Also done for `open_cube` foreign merchant `title`:
+   `docs/examples/bootstrap-invalid-open-cube-foreign-title-bundle.json`
+   (`docs/plans/2026-08-31-invalid-open-cube-foreign-title-fixture.md`).

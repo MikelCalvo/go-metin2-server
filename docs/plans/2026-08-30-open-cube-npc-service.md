@@ -36,6 +36,7 @@ static-actor NPC service through `INTERACT`, mirroring the landed
 
 - ~~dedicated `/local/content-bundle/open-cube-routes` operator summary endpoints~~ Done: see [open-cube content-bundle route summary](2026-08-30-open-cube-content-bundle-route-summary.md).
 - ~~checked-in `open_cube` foreign-`size` reject fixture~~ Done: see [invalid open-cube foreign size fixture](2026-08-30-invalid-open-cube-foreign-size-fixture.md).
+- ~~checked-in `open_cube` foreign-`title` reject fixture~~ Done: see [invalid open-cube foreign title fixture](2026-08-31-invalid-open-cube-foreign-title-fixture.md).
 - binary cube headers / OR-materials
 - branching craft dialog trees
 
