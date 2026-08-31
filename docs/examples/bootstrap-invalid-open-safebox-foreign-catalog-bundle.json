@@ -1,0 +1,17 @@
+{
+  "interaction_definitions": [
+    {
+      "kind": "open_safebox",
+      "ref": "npc:qa_warehouse_foreign_catalog",
+      "text": "Store your goods safely.",
+      "catalog": [
+        {
+          "slot": 0,
+          "item_vnum": 27001,
+          "price": 50,
+          "count": 1
+        }
+      ]
+    }
+  ]
+}
