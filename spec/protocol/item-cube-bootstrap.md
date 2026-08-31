@@ -216,9 +216,16 @@ See `docs/plans/2026-08-26-cube-list-cancel.md`.
 
 - complicated OR-material text (`vnum,count|...`) / name-level merge of
   alternate recipes into one result row
-- quest-NPC interact open / distance gate beyond lab `/open_cube`
 - binary cube packet headers
 - full `cube.txt` complicated-material parity
+
+Authored static-actor `open_cube` `INTERACT`, the ordinary static-actor
+interaction distance gate, optional non-mutating quest gates, and
+content-bundle open-cube route summaries are already owned on the NPC/content
+surface (`spec/protocol/npc-service-interactions-bootstrap.md`,
+`docs/plans/2026-08-30-open-cube-npc-service.md`,
+`docs/plans/2026-08-30-open-cube-content-bundle-route-summary.md`). This note
+keeps only the remaining craft-protocol gaps deferred.
 
 ## Related docs
 
@@ -235,5 +242,8 @@ See `docs/plans/2026-08-26-cube-list-cancel.md`.
 - `docs/plans/2026-08-26-cube-make-all-loop.md`
 - `docs/plans/2026-08-26-cube-make-percent-0-always-fail.md`
 - `docs/plans/2026-08-26-cube-list-cancel.md`
+- `docs/plans/2026-08-30-open-cube-npc-service.md`
+- `docs/plans/2026-08-30-open-cube-content-bundle-route-summary.md`
 - `docs/qa/manual-client-checklist.md` section 4.5.16
+- `spec/protocol/npc-service-interactions-bootstrap.md`
 - `spec/protocol/packet-matrix.md` (command-chat cube family note)

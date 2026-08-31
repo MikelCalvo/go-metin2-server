@@ -184,9 +184,17 @@ Current owned `open_cube` failure semantics:
 - already-open and busy-shell rejects reuse the owned cube info-chat strings rather than inventing a second craft dialog family
 - invalid authored foreign fields fail closed at store / content-bundle validation before runtime mutation
 
-Current owned `open_cube` operator-preview semantics:
+Current owned `open_cube` operator-preview / route-summary semantics:
 - `/local/interaction-visibility` and content-bundle definition previews render gated/ungated `open_cube` rows as `open_cube` or `<text> [open_cube]`
-- dedicated open-cube route summary endpoints remain a later operator slice; this first slice owns the authored INTERACT path and compact preview contract
+- `GET /local/content-bundle/summary` and dry-run `POST /local/content-bundle/summary` now report deterministic `open_cube_routes` entries for every interactable static actor that resolves to an `open_cube` definition
+- each route summary entry carries `actor_name`, source `map_index`/`x`/`y`, `ref`, optional `text`, actor `race_num` (the cube NPC vnum), and any authored quest-gate fields
+- `GET /local/content-bundle/open-cube-routes/{actor_name}` now returns every exact route row for one authored craftsman actor name, so duplicated placements remain inspectable without fetching the full bundle summary or opening cube in-game
+- `GET /local/content-bundle/maps/{map_index}/open-cube-routes` now returns every route row whose source actor is on one authored map, so local QA can audit all craft NPCs on a map without filtering the full summary or knowing actor names first
+- per-map `maps[]` entries include `open_cube_actor_count`
+- `POST /local/content-bundle/import-preview` exposes the same current/candidate summary comparison and count deltas for open-cube routes before a candidate bundle is applied
+- `POST /local/content-bundle/import-preview/open-cube-routes/{actor_name}` returns every exact open-cube-route delta for one authored craftsman actor name, so local QA can inspect one craft placement impact without fetching and filtering the broad preview
+- map import-preview deltas also carry `open_cube_actor_count` and map-local `open_cube_routes` rows
+- this makes exact actor-to-craftsman placement inspectable without fetching the full authored bundle or applying a candidate import
 
 ## Content-bundle combat profile guardrail
 
