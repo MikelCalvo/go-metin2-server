@@ -22,12 +22,26 @@ import (
 )
 
 func TestGameSessionFlowPostFloorItemGiveFailsClosedBeforeAntiGiveFeedback(t *testing.T) {
-	login := "post-floor-item-give-owner"
-	loginKey := uint32(0x19191a40)
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("DeadGiveOwner", 0x01030a40, 0x02040a40, 1100, 2100, 0, 101, 201)
 	owner.Points[bootstrapPlayerPointValueIndex] = 1
 	owner.Inventory = []inventory.ItemInstance{{ID: 801, Vnum: 27042, Count: 3, Slot: 5}}
 	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: 1, Slot: 5}}
+	peer := peerVisibilityCharacter("DeadGivePeer", 0x01030a41, 0x02040a41, 1120, 2120, 0, 101, 201)
+	login := "post-floor-item-give-owner"
+	loginKey := uint32(0x19191a40)
+	peerLogin := "post-floor-item-give-peer"
+	peerLoginKey := uint32(0x19191a41)
+	issuePeerTicket(t, ticketStore, login, loginKey, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, peerLoginKey, peer)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed post-floor item-give owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed post-floor item-give peer account: %v", err)
+	}
+
 	template := itemcatalog.Template{
 		Vnum:           27042,
 		Name:           "Dead Guard Gift Potion",
@@ -36,27 +50,310 @@ func TestGameSessionFlowPostFloorItemGiveFailsClosedBeforeAntiGiveFeedback(t *te
 		AntiGive:       true,
 		GiveRejectText: "You cannot give this item.",
 	}
-	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, []itemcatalog.Template{template})
-	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
-	defer closeSessionFlow(t, flow)
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected post-floor item-give runtime error: %v", err)
+	}
+	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_post_floor_item_give",
+		Name:          "PracticeMobPostFloorItemGive",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}); err != nil {
+		t.Fatalf("import post-floor item-give practice mob: %v", err)
+	}
+	if err := runtime.replaceItemTemplates(itemcatalog.Snapshot{Templates: []itemcatalog.Template{template}}); err != nil {
+		t.Fatalf("restore post-floor item-give templates after content import: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one post-floor item-give practice mob, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
 
-	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	if len(ownerEnter) < 8 {
+		t.Fatalf("expected owner bootstrap with visible practice mob, got %d frames", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, peerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, peerLoginKey)
+	if len(peerEnter) < 11 {
+		t.Fatalf("expected peer bootstrap with visible owner and mob, got %d frames", len(peerEnter))
+	}
+	defer closeSessionFlow(t, peerFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected owner to receive peer-entry frames before post-floor ITEM_GIVE, got %d", len(queued))
+	}
+	_ = flushServerFrames(t, peerFlow)
 
-	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientGive(itemproto.ClientGivePacket{
-		TargetVID: targetVID,
+	drivePracticeMobOwnerToBootstrapHPFloor(t, ownerFlow, owner, targetVID)
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 1 {
+		t.Fatalf("expected peer DEAD fanout after owner floor before ITEM_GIVE, got %d", len(queued))
+	}
+
+	givePacket := itemproto.EncodeClientGive(itemproto.ClientGivePacket{
+		TargetVID: peer.VID,
 		Position:  itemproto.InventoryPosition(5),
 		Count:     1,
-	})))
+	})
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, givePacket))
 	if err != nil {
 		t.Fatalf("unexpected post-floor ITEM_GIVE dispatch error: %v", err)
 	}
 	if len(out) != 0 {
 		t.Fatalf("expected post-floor ITEM_GIVE to fail closed before anti-give feedback, got %d frames", len(out))
 	}
-	if queued := flushServerFrames(t, flow); len(queued) != 0 {
-		t.Fatalf("expected post-floor ITEM_GIVE to queue no frames, got %d", len(queued))
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected post-floor ITEM_GIVE to queue no owner frames, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected post-floor ITEM_GIVE to queue no peer frames, got %d", len(queued))
 	}
 	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor ITEM_GIVE")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "post-floor ITEM_GIVE peer")
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_here",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here after post-floor ITEM_GIVE: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_here recovery frames after post-floor ITEM_GIVE, got %d", len(restartOut))
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	reuseOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, givePacket))
+	if err != nil {
+		t.Fatalf("unexpected post-restart ITEM_GIVE: %v", err)
+	}
+	if len(reuseOut) != 1 {
+		t.Fatalf("expected post-restart anti-give ITEM_GIVE to emit one info-chat frame, got %d", len(reuseOut))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, reuseOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-restart anti-give ITEM_GIVE rejection info chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != template.GiveRejectText {
+		t.Fatalf("unexpected post-restart anti-give ITEM_GIVE rejection chat: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected no queued owner frames after post-restart anti-give ITEM_GIVE, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames after post-restart anti-give ITEM_GIVE, got %d", len(queued))
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart ITEM_GIVE: %v", err)
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_here to persist recovered owner HP %d after ITEM_GIVE floor, got %+v", wantHP, account.Characters[0])
+	}
+	want := owner
+	want.Points[bootstrapPlayerPointValueIndex] = wantHP
+	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart ITEM_GIVE leaves inventory unchanged")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "post-restart ITEM_GIVE peer unchanged")
+}
+
+func TestGameSessionFlowPostFloorItemGiveFailsClosedBeforeRestartTown(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("DeadGiveTownOwner", 0x01030a42, 0x02040a42, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Inventory = []inventory.ItemInstance{{ID: 802, Vnum: 27042, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: 1, Slot: 5}}
+	sourcePeer := peerVisibilityCharacter("DeadGiveTownSource", 0x01030a43, 0x02040a43, 1120, 2120, 0, 101, 201)
+	townPeer := peerVisibilityCharacter("DeadGiveTownPeer", 0x01030a44, 0x02040a44, 52070, 166600, 4, 103, 203)
+	townPeer.MapIndex = 21
+	login := "pf-item-give-town"
+	loginKey := uint32(0x19191a42)
+	sourceLogin := "pf-item-give-town-s"
+	sourceLoginKey := uint32(0x19191a43)
+	townLogin := "pf-item-give-town-t"
+	townLoginKey := uint32(0x19191a44)
+	issuePeerTicket(t, ticketStore, login, loginKey, owner)
+	issuePeerTicket(t, ticketStore, sourceLogin, sourceLoginKey, sourcePeer)
+	issuePeerTicket(t, ticketStore, townLogin, townLoginKey, townPeer)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed post-floor town item-give owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: sourceLogin, Empire: sourcePeer.Empire, Characters: cloneCharacters([]loginticket.Character{sourcePeer})}); err != nil {
+		t.Fatalf("seed post-floor town item-give source peer account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: townLogin, Empire: townPeer.Empire, Characters: cloneCharacters([]loginticket.Character{townPeer})}); err != nil {
+		t.Fatalf("seed post-floor town item-give town peer account: %v", err)
+	}
+
+	template := itemcatalog.Template{
+		Vnum:           27042,
+		Name:           "Dead Guard Gift Potion",
+		Stackable:      true,
+		MaxCount:       200,
+		AntiGive:       true,
+		GiveRejectText: "You cannot give this item.",
+	}
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected post-floor town item-give runtime error: %v", err)
+	}
+	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_post_floor_item_give_town",
+		Name:          "PracticeMobPostFloorItemGiveTown",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}); err != nil {
+		t.Fatalf("import post-floor town item-give practice mob: %v", err)
+	}
+	if err := runtime.replaceItemTemplates(itemcatalog.Snapshot{Templates: []itemcatalog.Template{template}}); err != nil {
+		t.Fatalf("restore post-floor town item-give templates after content import: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one post-floor town item-give practice mob, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	if len(ownerEnter) < 8 {
+		t.Fatalf("expected owner bootstrap with visible practice mob, got %d frames", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	sourceFlow, sourceEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), sourceLogin, sourceLoginKey)
+	if len(sourceEnter) < 11 {
+		t.Fatalf("expected source peer bootstrap with visible owner and mob, got %d frames", len(sourceEnter))
+	}
+	defer closeSessionFlow(t, sourceFlow)
+	townFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), townLogin, townLoginKey)
+	defer closeSessionFlow(t, townFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected owner to receive source peer-entry frames before post-floor town ITEM_GIVE, got %d", len(queued))
+	}
+	_ = flushServerFrames(t, sourceFlow)
+	_ = flushServerFrames(t, townFlow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, ownerFlow, owner, targetVID)
+	if queued := flushServerFrames(t, sourceFlow); len(queued) != 1 {
+		t.Fatalf("expected source peer DEAD fanout after owner floor before town ITEM_GIVE, got %d", len(queued))
+	}
+
+	sourceGivePacket := itemproto.EncodeClientGive(itemproto.ClientGivePacket{
+		TargetVID: sourcePeer.VID,
+		Position:  itemproto.InventoryPosition(5),
+		Count:     1,
+	})
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, sourceGivePacket))
+	if err != nil {
+		t.Fatalf("unexpected post-floor town ITEM_GIVE dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor town ITEM_GIVE to fail closed before anti-give feedback, got %d frames", len(out))
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected post-floor town ITEM_GIVE to queue no owner frames, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, sourceFlow); len(queued) != 0 {
+		t.Fatalf("expected post-floor town ITEM_GIVE to queue no source peer frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor town ITEM_GIVE")
+	assertExchangeAccountUnchanged(t, accounts, sourceLogin, sourcePeer, "post-floor town ITEM_GIVE source peer")
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_town",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_town after post-floor ITEM_GIVE: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_town recovery frames after post-floor ITEM_GIVE, got %d", len(restartOut))
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[0]))
+	if err != nil {
+		t.Fatalf("decode self character add after post-floor ITEM_GIVE /restart_town: %v", err)
+	}
+	if selfAdd.VID != owner.VID || selfAdd.X != 52070 || selfAdd.Y != 166600 {
+		t.Fatalf("expected /restart_town self bootstrap at empire town position after ITEM_GIVE floor, got %+v", selfAdd)
+	}
+	var (
+		selfPoints  worldproto.PlayerPointChangePacket
+		foundPoints bool
+	)
+	for _, raw := range restartOut {
+		fr := decodeSingleFrame(t, raw)
+		if !foundPoints {
+			if points, err := worldproto.DecodePlayerPointChange(fr); err == nil {
+				selfPoints = points
+				foundPoints = true
+			}
+		}
+	}
+	if !foundPoints {
+		t.Fatal("expected /restart_town recovery to include self PLAYER_POINT_CHANGE after ITEM_GIVE floor")
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if selfPoints.Value != wantHP {
+		t.Fatalf("expected /restart_town to rebuild recovered owner HP %d after ITEM_GIVE floor, got %+v", wantHP, selfPoints)
+	}
+	_ = flushServerFrames(t, sourceFlow)
+	_ = flushServerFrames(t, townFlow)
+
+	townGivePacket := itemproto.EncodeClientGive(itemproto.ClientGivePacket{
+		TargetVID: townPeer.VID,
+		Position:  itemproto.InventoryPosition(5),
+		Count:     1,
+	})
+	reuseOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, townGivePacket))
+	if err != nil {
+		t.Fatalf("unexpected post-restart_town ITEM_GIVE: %v", err)
+	}
+	if len(reuseOut) != 1 {
+		t.Fatalf("expected post-restart_town anti-give ITEM_GIVE to emit one info-chat frame, got %d", len(reuseOut))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, reuseOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-restart_town anti-give ITEM_GIVE rejection info chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != template.GiveRejectText {
+		t.Fatalf("unexpected post-restart_town anti-give ITEM_GIVE rejection chat: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected no queued owner frames after post-restart_town anti-give ITEM_GIVE, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, townFlow); len(queued) != 0 {
+		t.Fatalf("expected no queued town peer frames after post-restart_town anti-give ITEM_GIVE, got %d", len(queued))
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart_town ITEM_GIVE: %v", err)
+	}
+	if account.Characters[0].MapIndex != 21 || account.Characters[0].X != 52070 || account.Characters[0].Y != 166600 {
+		t.Fatalf("expected /restart_town to persist empire town position after ITEM_GIVE floor, got %+v", account.Characters[0])
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_town + ITEM_GIVE to persist recovered owner HP %d after ITEM_GIVE floor, got %+v", wantHP, account.Characters[0])
+	}
+	want := owner
+	want.Points[bootstrapPlayerPointValueIndex] = wantHP
+	want.MapIndex = 21
+	want.X = 52070
+	want.Y = 166600
+	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart_town ITEM_GIVE leaves inventory unchanged")
+	assertExchangeAccountUnchanged(t, accounts, townLogin, townPeer, "post-restart_town ITEM_GIVE town peer unchanged")
 }
 
 func TestGameSessionFlowPostFloorItemRefineFailsClosedBeforeRejectFeedback(t *testing.T) {
