@@ -1,0 +1,12 @@
+{
+  "interaction_definitions": [
+    {
+      "kind": "open_cube",
+      "ref": "npc:qa_cube_foreign_warp_coords",
+      "text": "The craftsman lights the forge.",
+      "map_index": 1,
+      "x": 470200,
+      "y": 964200
+    }
+  ]
+}
