@@ -31,6 +31,20 @@ type CharacterQuestStateImportResult struct {
 	CharacterCount   int      `json:"character_count"`
 	FlagCount        int      `json:"flag_count"`
 	CharacterIDs     []uint32 `json:"character_ids"`
+	// Replaced is true when ImportCharacterQuestState ran with the opt-in scoped
+	// replace policy (delete then insert for listed character ids). Omitted from
+	// JSON when false so legacy insert-only import-result files stay valid.
+	Replaced bool `json:"replaced,omitempty"`
+}
+
+// ImportCharacterQuestStateOptions controls opt-in mutation policy for
+// ImportCharacterQuestState. The zero value keeps today's insert-only behavior.
+type ImportCharacterQuestStateOptions struct {
+	// Replace, when true, deletes existing tip-0004 child rows for every
+	// character id in the quarantined export summary before inserting the
+	// canonicalized export rows, all inside one transaction. Characters not
+	// listed in the export remain untouched.
+	Replace bool
 }
 
 // ImportCharacterQuestState validates a retained 0004 quest-state export through
@@ -39,13 +53,22 @@ type CharacterQuestStateImportResult struct {
 //
 // The caller still owns driver selection and DSN loading. Parent character rows
 // from 0002 must already exist (or the engine FK check fails closed). This
-// primitive does not mutate bootstrap file stores, does not rewrite
-// schema_migrations, and does not invent upsert / merge policy: duplicate
-// primary keys fail closed and roll the transaction back. The export's
-// character name field is operator aid only and is not written to SQL.
-func ImportCharacterQuestState(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export CharacterQuestStateExport) (CharacterQuestStateImportResult, error) {
+// primitive does not mutate bootstrap file stores and does not rewrite
+// schema_migrations. Without options (or with Replace=false) it does not invent
+// upsert / merge policy: duplicate primary keys fail closed and roll the
+// transaction back. Pass ImportCharacterQuestStateOptions{Replace: true} for the
+// opt-in scoped replace path frozen by the tip-0004 replace contract. The
+// export's character name field is operator aid only and is not written to SQL.
+func ImportCharacterQuestState(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export CharacterQuestStateExport, opts ...ImportCharacterQuestStateOptions) (CharacterQuestStateImportResult, error) {
 	if questStateImportExecutorIsNil(executor) {
 		return CharacterQuestStateImportResult{}, ErrCharacterQuestStateImportExecutorRequired
+	}
+	if len(opts) > 1 {
+		return CharacterQuestStateImportResult{}, fmt.Errorf("ImportCharacterQuestState accepts at most one options value")
+	}
+	replace := false
+	if len(opts) == 1 {
+		replace = opts[0].Replace
 	}
 
 	canonical, summary, err := QuarantineCharacterQuestStateExport(export)
@@ -59,6 +82,7 @@ func ImportCharacterQuestState(ctx context.Context, executor dbmigrations.SQLMig
 		CharacterCount:   summary.CharacterCount,
 		FlagCount:        summary.FlagCount,
 		CharacterIDs:     append([]uint32(nil), summary.CharacterIDs...),
+		Replaced:         replace,
 	}
 	if result.CharacterIDs == nil {
 		result.CharacterIDs = []uint32{}
@@ -71,6 +95,14 @@ func ImportCharacterQuestState(ctx context.Context, executor dbmigrations.SQLMig
 
 	if err := requireCharacterQuestStateSchema(ctx, tx); err != nil {
 		return CharacterQuestStateImportResult{}, rollbackAfterQuestStateImportFailure(tx, err)
+	}
+
+	if replace {
+		for _, characterID := range summary.CharacterIDs {
+			if err := deleteCharacterQuestFlagsForCharacter(ctx, tx, characterID); err != nil {
+				return CharacterQuestStateImportResult{}, rollbackAfterQuestStateImportFailure(tx, err)
+			}
+		}
 	}
 
 	for _, row := range canonical.Flags {
@@ -102,6 +134,13 @@ func requireCharacterQuestStateSchema(ctx context.Context, querier dbmigrations.
 		}
 	}
 	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrCharacterQuestStateImportSchemaRequired, latest, CharacterQuestStateMigrationVersion, CharacterQuestStateMigrationName)
+}
+
+func deleteCharacterQuestFlagsForCharacter(ctx context.Context, tx *sql.Tx, characterID uint32) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM character_quest_flags WHERE character_id = ?`, int64(characterID)); err != nil {
+		return fmt.Errorf("delete quest flags for character %d: %w", characterID, err)
+	}
+	return nil
 }
 
 func insertCharacterQuestFlag(ctx context.Context, tx *sql.Tx, row CharacterQuestFlagRow) error {

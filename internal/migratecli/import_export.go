@@ -31,7 +31,7 @@ func runImportExport(args []string, stdin io.Reader, stdout io.Writer, stderr io
 	flags.StringVar(&driverName, "driver", "", "database/sql driver name for the import target")
 	flags.StringVar(&dsn, "dsn", "", "database/sql DSN for the import target")
 	flags.BoolVar(&confirmImport, "i-confirm-sql-import", false, "confirm CLI SQL import/backfill mutation against the supplied driver/DSN")
-	flags.BoolVar(&confirmReplaceScoped, "i-confirm-scoped-replace", false, "opt-in scoped replace for tip-0003 character-item-state or tip-0015 character-safebox-state (requires --i-confirm-sql-import; other kinds reject this flag)")
+	flags.BoolVar(&confirmReplaceScoped, "i-confirm-scoped-replace", false, "opt-in scoped replace for tip-0003 character-item-state, tip-0004 character-quest-state, or tip-0015 character-safebox-state (requires --i-confirm-sql-import; other kinds reject this flag)")
 	flags.Usage = func() { printImportExportUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
@@ -56,8 +56,8 @@ func runImportExport(args []string, stdin io.Reader, stdout io.Writer, stderr io
 		printImportExportUsage(stderr)
 		return exitUsage
 	}
-	if confirmReplaceScoped && kind != "character-item-state" && kind != "character-safebox-state" {
-		fmt.Fprintf(stderr, "--i-confirm-scoped-replace is only supported for kind character-item-state or character-safebox-state (got %q)\n", kind)
+	if confirmReplaceScoped && kind != "character-item-state" && kind != "character-quest-state" && kind != "character-safebox-state" {
+		fmt.Fprintf(stderr, "--i-confirm-scoped-replace is only supported for kind character-item-state, character-quest-state, or character-safebox-state (got %q)\n", kind)
 		printImportExportUsage(stderr)
 		return exitUsage
 	}
@@ -218,7 +218,8 @@ func importExportPayload(ctx context.Context, db *sql.DB, kind string, payload a
 	case "character-myshop-unit-prices":
 		return accountstore.ImportCharacterMyShopUnitPrices(ctx, db, payload.(accountstore.CharacterMyShopUnitPricesExport))
 	case "character-quest-state":
-		return queststate.ImportCharacterQuestState(ctx, db, payload.(queststate.CharacterQuestStateExport))
+		opts := queststate.ImportCharacterQuestStateOptions{Replace: replaceScoped}
+		return queststate.ImportCharacterQuestState(ctx, db, payload.(queststate.CharacterQuestStateExport), opts)
 	case "character-safebox-state":
 		opts := safeboxstore.ImportCharacterSafeboxStateOptions{Replace: replaceScoped}
 		return safeboxstore.ImportCharacterSafeboxState(ctx, db, payload.(safeboxstore.CharacterSafeboxStateExport), opts)
@@ -239,7 +240,7 @@ func printImportExportUsage(w io.Writer) {
 	fmt.Fprintln(w, "import-export usage:")
 	fmt.Fprintln(w, "  metin2-migrate import-export --kind <kind> --export <path|-> --driver <database/sql-driver> --dsn <dsn> --i-confirm-sql-import [--i-confirm-scoped-replace]")
 	fmt.Fprintln(w, "notes:")
-	fmt.Fprintln(w, "  --i-confirm-scoped-replace is tip-0003 character-item-state or tip-0015 character-safebox-state only; insert-only remains the default")
+	fmt.Fprintln(w, "  --i-confirm-scoped-replace is tip-0003 character-item-state, tip-0004 character-quest-state, or tip-0015 character-safebox-state only; insert-only remains the default")
 	fmt.Fprintln(w, "kinds:")
 	for _, kind := range exportQuarantineKinds {
 		fmt.Fprintf(w, "  %s\n", kind)

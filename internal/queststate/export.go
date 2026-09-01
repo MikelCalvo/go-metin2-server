@@ -16,9 +16,15 @@ const (
 // boundary. It is intentionally an export/backfill contract only: it does not
 // open a database, emit SQL, apply migrations, or mutate the quest-state store.
 type CharacterQuestStateExport struct {
-	MigrationVersion int                     `json:"migration_version"`
-	MigrationName    string                  `json:"migration_name"`
-	Flags            []CharacterQuestFlagRow `json:"flags"`
+	MigrationVersion int    `json:"migration_version"`
+	MigrationName    string `json:"migration_name"`
+	// CharacterIDs optionally declares the replace/wipe character scope for
+	// ImportCharacterQuestState(..., Replace: true). When omitted or empty,
+	// quarantine derives the scope from flag rows (legacy insert-only exports
+	// stay valid). Explicit ids merge with flag row-derived ids so a listed
+	// character with zero flag rows can still wipe-to-empty.
+	CharacterIDs []uint32                `json:"character_ids,omitempty"`
+	Flags        []CharacterQuestFlagRow `json:"flags"`
 }
 
 // CharacterQuestFlagRow mirrors rows for the durable character_quest_flags table

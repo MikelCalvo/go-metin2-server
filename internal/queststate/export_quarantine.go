@@ -60,7 +60,20 @@ func canonicalizeCharacterQuestStateExport(export CharacterQuestStateExport) (Ch
 	seenKeys := make(map[string]struct{}, len(export.Flags))
 	characterNamesByID := make(map[uint32]string, len(export.Flags))
 	characterIDsByName := make(map[string]uint32, len(export.Flags))
-	characterIDs := make(map[uint32]struct{}, len(export.Flags))
+	characterIDs := make(map[uint32]struct{}, len(export.Flags)+len(export.CharacterIDs))
+	if export.CharacterIDs != nil {
+		seenDeclaredIDs := make(map[uint32]struct{}, len(export.CharacterIDs))
+		for _, characterID := range export.CharacterIDs {
+			if characterID == 0 {
+				return CharacterQuestStateExport{}, CharacterQuestStateQuarantineSummary{}, fmt.Errorf("%w: character_ids entries must be > 0", ErrInvalidCharacterQuestStateExport)
+			}
+			if _, exists := seenDeclaredIDs[characterID]; exists {
+				return CharacterQuestStateExport{}, CharacterQuestStateQuarantineSummary{}, fmt.Errorf("%w: duplicate character_ids entry %d", ErrInvalidCharacterQuestStateExport, characterID)
+			}
+			seenDeclaredIDs[characterID] = struct{}{}
+			characterIDs[characterID] = struct{}{}
+		}
+	}
 	flags := make([]CharacterQuestFlagRow, 0, len(export.Flags))
 
 	for _, row := range export.Flags {
@@ -127,7 +140,11 @@ func canonicalizeCharacterQuestStateExport(export CharacterQuestStateExport) (Ch
 	canonical := CharacterQuestStateExport{
 		MigrationVersion: CharacterQuestStateMigrationVersion,
 		MigrationName:    CharacterQuestStateMigrationName,
+		CharacterIDs:     append([]uint32(nil), sortedCharacterIDs...),
 		Flags:            flags,
+	}
+	if canonical.CharacterIDs == nil {
+		canonical.CharacterIDs = []uint32{}
 	}
 	summary := CharacterQuestStateQuarantineSummary{
 		CharacterCount: len(sortedCharacterIDs),

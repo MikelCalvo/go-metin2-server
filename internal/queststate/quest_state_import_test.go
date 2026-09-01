@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -45,6 +46,66 @@ func TestImportCharacterQuestStateRejectsNilFlagsBeforeOpeningTransaction(t *tes
 	_, err := ImportCharacterQuestState(context.Background(), failingQuestStateImportExecutor{}, export)
 	if !errors.Is(err, ErrInvalidCharacterQuestStateExport) {
 		t.Fatalf("ImportCharacterQuestState(nil flags) error = %v, want %v", err, ErrInvalidCharacterQuestStateExport)
+	}
+}
+
+func TestImportCharacterQuestStateRejectsTooManyOptions(t *testing.T) {
+	export := CharacterQuestStateExport{
+		MigrationVersion: CharacterQuestStateMigrationVersion,
+		MigrationName:    CharacterQuestStateMigrationName,
+		Flags:            []CharacterQuestFlagRow{},
+	}
+	_, err := ImportCharacterQuestState(
+		context.Background(),
+		failingQuestStateImportExecutor{},
+		export,
+		ImportCharacterQuestStateOptions{Replace: true},
+		ImportCharacterQuestStateOptions{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "at most one options") {
+		t.Fatalf("ImportCharacterQuestState(too many options) error = %v, want at most one options", err)
+	}
+}
+
+func TestQuarantineCharacterQuestStateExportMergesDeclaredCharacterIDs(t *testing.T) {
+	export := CharacterQuestStateExport{
+		MigrationVersion: CharacterQuestStateMigrationVersion,
+		MigrationName:    CharacterQuestStateMigrationName,
+		CharacterIDs:     []uint32{11},
+		Flags:            []CharacterQuestFlagRow{},
+	}
+	canonical, summary, err := QuarantineCharacterQuestStateExport(export)
+	if err != nil {
+		t.Fatalf("quarantine declared wipe export: %v", err)
+	}
+	if summary.CharacterCount != 1 || len(summary.CharacterIDs) != 1 || summary.CharacterIDs[0] != 11 {
+		t.Fatalf("unexpected declared wipe summary: %#v", summary)
+	}
+	if len(canonical.CharacterIDs) != 1 || canonical.CharacterIDs[0] != 11 {
+		t.Fatalf("unexpected canonical character_ids: %#v", canonical.CharacterIDs)
+	}
+	if summary.FlagCount != 0 {
+		t.Fatalf("declared wipe should keep zero flag counts: %#v", summary)
+	}
+}
+
+func TestQuarantineCharacterQuestStateExportRejectsInvalidDeclaredCharacterIDs(t *testing.T) {
+	base := CharacterQuestStateExport{
+		MigrationVersion: CharacterQuestStateMigrationVersion,
+		MigrationName:    CharacterQuestStateMigrationName,
+		Flags:            []CharacterQuestFlagRow{},
+	}
+
+	zeroID := base
+	zeroID.CharacterIDs = []uint32{0}
+	if _, _, err := QuarantineCharacterQuestStateExport(zeroID); err == nil || !errors.Is(err, ErrInvalidCharacterQuestStateExport) {
+		t.Fatalf("zero character_ids error = %v, want invalid export", err)
+	}
+
+	dupID := base
+	dupID.CharacterIDs = []uint32{7, 7}
+	if _, _, err := QuarantineCharacterQuestStateExport(dupID); err == nil || !errors.Is(err, ErrInvalidCharacterQuestStateExport) {
+		t.Fatalf("duplicate character_ids error = %v, want invalid export", err)
 	}
 }
 

@@ -257,6 +257,318 @@ func TestSQLiteHarnessQuestStateImportAcceptsEmptyExport(t *testing.T) {
 	}
 }
 
+func TestSQLiteHarnessQuestStateImportReplaceAfterInsertOnlyConflict(t *testing.T) {
+	db := openSQLiteQuestStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterQuestStateMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterQuestStateMigrationVersion, err)
+	}
+
+	accounts := []accountstore.Account{
+		{
+			Login:  "Alpha",
+			Empire: 1,
+			Characters: []loginticket.Character{
+				questStateImportCharacter(11, "AlphaWar"),
+			},
+		},
+	}
+	rosterExport, err := accountstore.ExportAccountCharacterRoster(accounts)
+	if err != nil {
+		t.Fatalf("ExportAccountCharacterRoster: %v", err)
+	}
+	if _, err := accountstore.ImportAccountCharacterRoster(ctx, db, rosterExport); err != nil {
+		t.Fatalf("ImportAccountCharacterRoster: %v", err)
+	}
+
+	questExport := CharacterQuestStateExport{
+		MigrationVersion: CharacterQuestStateMigrationVersion,
+		MigrationName:    CharacterQuestStateMigrationName,
+		Flags: []CharacterQuestFlagRow{
+			{CharacterID: 11, Character: "AlphaWar", QuestRef: "quest:first_steps", Flag: "met_guide", Value: 1},
+			{CharacterID: 11, Character: "AlphaWar", QuestRef: "quest:first_steps", Flag: "step", Value: 3},
+		},
+	}
+	if _, err := ImportCharacterQuestState(ctx, db, questExport); err != nil {
+		t.Fatalf("first insert-only ImportCharacterQuestState: %v", err)
+	}
+	if _, err := ImportCharacterQuestState(ctx, db, questExport); err == nil {
+		t.Fatal("second insert-only ImportCharacterQuestState succeeded, want unique conflict")
+	}
+
+	replacedExport := CharacterQuestStateExport{
+		MigrationVersion: CharacterQuestStateMigrationVersion,
+		MigrationName:    CharacterQuestStateMigrationName,
+		Flags: []CharacterQuestFlagRow{
+			{CharacterID: 11, Character: "AlphaWar", QuestRef: "quest:first_steps", Flag: "met_guide", Value: 2},
+			{CharacterID: 11, Character: "AlphaWar", QuestRef: "quest:kill_qa_mob", Flag: "killed_qa_mob", Value: 4},
+		},
+	}
+	result, err := ImportCharacterQuestState(ctx, db, replacedExport, ImportCharacterQuestStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("replace ImportCharacterQuestState: %v", err)
+	}
+	if !result.Replaced {
+		t.Fatalf("replace result.Replaced = false, want true")
+	}
+	if result.CharacterCount != 1 || result.FlagCount != 2 {
+		t.Fatalf("unexpected replace counts: %+v", result)
+	}
+
+	var flagRows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_quest_flags`).Scan(&flagRows); err != nil {
+		t.Fatalf("count flags after replace: %v", err)
+	}
+	if flagRows != 2 {
+		t.Fatalf("flag rows after replace = %d, want 2", flagRows)
+	}
+
+	var (
+		gotCharacterID int64
+		gotQuestRef    string
+		gotFlagName    string
+		gotValue       int64
+	)
+	if err := db.QueryRowContext(ctx, `
+SELECT character_id, quest_ref, flag_name, value
+FROM character_quest_flags
+WHERE character_id = ? AND quest_ref = ? AND flag_name = ?`,
+		11, "quest:first_steps", "met_guide").Scan(
+		&gotCharacterID, &gotQuestRef, &gotFlagName, &gotValue,
+	); err != nil {
+		t.Fatalf("select met_guide after replace: %v", err)
+	}
+	if gotCharacterID != 11 || gotQuestRef != "quest:first_steps" || gotFlagName != "met_guide" || gotValue != 2 {
+		t.Fatalf("met_guide after replace mismatch: character=%d quest_ref=%q flag=%q value=%d",
+			gotCharacterID, gotQuestRef, gotFlagName, gotValue)
+	}
+	if err := db.QueryRowContext(ctx, `
+SELECT character_id, quest_ref, flag_name, value
+FROM character_quest_flags
+WHERE character_id = ? AND quest_ref = ? AND flag_name = ?`,
+		11, "quest:first_steps", "step").Scan(
+		&gotCharacterID, &gotQuestRef, &gotFlagName, &gotValue,
+	); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("step after replace error = %v, want sql.ErrNoRows", err)
+	}
+}
+
+func TestSQLiteHarnessQuestStateImportReplaceLeavesUnlistedCharactersUntouched(t *testing.T) {
+	db := openSQLiteQuestStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterQuestStateMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterQuestStateMigrationVersion, err)
+	}
+
+	accounts := []accountstore.Account{
+		{
+			Login:  "Alpha",
+			Empire: 1,
+			Characters: []loginticket.Character{
+				questStateImportCharacter(11, "AlphaWar"),
+			},
+		},
+		{
+			Login:  "Bravo",
+			Empire: 2,
+			Characters: []loginticket.Character{
+				questStateImportCharacter(22, "BravoNinja"),
+			},
+		},
+	}
+	rosterExport, err := accountstore.ExportAccountCharacterRoster(accounts)
+	if err != nil {
+		t.Fatalf("ExportAccountCharacterRoster: %v", err)
+	}
+	if _, err := accountstore.ImportAccountCharacterRoster(ctx, db, rosterExport); err != nil {
+		t.Fatalf("ImportAccountCharacterRoster: %v", err)
+	}
+
+	fullExport := CharacterQuestStateExport{
+		MigrationVersion: CharacterQuestStateMigrationVersion,
+		MigrationName:    CharacterQuestStateMigrationName,
+		Flags: []CharacterQuestFlagRow{
+			{CharacterID: 11, Character: "AlphaWar", QuestRef: "quest:first_steps", Flag: "met_guide", Value: 1},
+			{CharacterID: 22, Character: "BravoNinja", QuestRef: "quest:kill_qa_mob", Flag: "killed_qa_mob", Value: 2},
+		},
+	}
+	if _, err := ImportCharacterQuestState(ctx, db, fullExport); err != nil {
+		t.Fatalf("seed ImportCharacterQuestState: %v", err)
+	}
+
+	alphaOnly := CharacterQuestStateExport{
+		MigrationVersion: CharacterQuestStateMigrationVersion,
+		MigrationName:    CharacterQuestStateMigrationName,
+		CharacterIDs:     []uint32{11},
+		Flags: []CharacterQuestFlagRow{
+			{CharacterID: 11, Character: "AlphaWar", QuestRef: "quest:first_steps", Flag: "step", Value: 9},
+		},
+	}
+	result, err := ImportCharacterQuestState(ctx, db, alphaOnly, ImportCharacterQuestStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("scoped replace ImportCharacterQuestState: %v", err)
+	}
+	if !result.Replaced || result.CharacterCount != 1 || result.FlagCount != 1 {
+		t.Fatalf("unexpected scoped replace result: %+v", result)
+	}
+
+	var alphaFlags, bravoFlags int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_quest_flags WHERE character_id = 11`).Scan(&alphaFlags); err != nil {
+		t.Fatalf("count alpha flags: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_quest_flags WHERE character_id = 22`).Scan(&bravoFlags); err != nil {
+		t.Fatalf("count bravo flags: %v", err)
+	}
+	if alphaFlags != 1 || bravoFlags != 1 {
+		t.Fatalf("scoped replace left unexpected counts alpha=%d bravo=%d", alphaFlags, bravoFlags)
+	}
+
+	var (
+		gotFlag  string
+		gotValue int64
+	)
+	if err := db.QueryRowContext(ctx, `
+SELECT flag_name, value FROM character_quest_flags WHERE character_id = 11`).Scan(&gotFlag, &gotValue); err != nil {
+		t.Fatalf("select alpha flag after replace: %v", err)
+	}
+	if gotFlag != "step" || gotValue != 9 {
+		t.Fatalf("alpha flag after replace mismatch: flag=%q value=%d", gotFlag, gotValue)
+	}
+
+	var bravoFlag string
+	if err := db.QueryRowContext(ctx, `
+SELECT flag_name FROM character_quest_flags WHERE character_id = 22`).Scan(&bravoFlag); err != nil {
+		t.Fatalf("select bravo flag after replace: %v", err)
+	}
+	if bravoFlag != "killed_qa_mob" {
+		t.Fatalf("bravo flag = %q, want killed_qa_mob untouched", bravoFlag)
+	}
+}
+
+func TestSQLiteHarnessQuestStateImportReplaceWipesListedCharacterWithEmptyFlags(t *testing.T) {
+	db := openSQLiteQuestStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterQuestStateMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterQuestStateMigrationVersion, err)
+	}
+
+	accounts := []accountstore.Account{
+		{
+			Login:  "Alpha",
+			Empire: 1,
+			Characters: []loginticket.Character{
+				questStateImportCharacter(11, "AlphaWar"),
+			},
+		},
+	}
+	rosterExport, err := accountstore.ExportAccountCharacterRoster(accounts)
+	if err != nil {
+		t.Fatalf("ExportAccountCharacterRoster: %v", err)
+	}
+	if _, err := accountstore.ImportAccountCharacterRoster(ctx, db, rosterExport); err != nil {
+		t.Fatalf("ImportAccountCharacterRoster: %v", err)
+	}
+
+	seedExport := CharacterQuestStateExport{
+		MigrationVersion: CharacterQuestStateMigrationVersion,
+		MigrationName:    CharacterQuestStateMigrationName,
+		Flags: []CharacterQuestFlagRow{
+			{CharacterID: 11, Character: "AlphaWar", QuestRef: "quest:first_steps", Flag: "met_guide", Value: 1},
+		},
+	}
+	if _, err := ImportCharacterQuestState(ctx, db, seedExport); err != nil {
+		t.Fatalf("seed ImportCharacterQuestState: %v", err)
+	}
+
+	emptyWipe := CharacterQuestStateExport{
+		MigrationVersion: CharacterQuestStateMigrationVersion,
+		MigrationName:    CharacterQuestStateMigrationName,
+		CharacterIDs:     []uint32{11},
+		Flags:            []CharacterQuestFlagRow{},
+	}
+	result, err := ImportCharacterQuestState(ctx, db, emptyWipe, ImportCharacterQuestStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("empty wipe replace: %v", err)
+	}
+	if !result.Replaced || result.CharacterCount != 1 || result.FlagCount != 0 {
+		t.Fatalf("unexpected empty wipe result: %+v", result)
+	}
+
+	var flagRows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_quest_flags`).Scan(&flagRows); err != nil {
+		t.Fatalf("count flags after wipe: %v", err)
+	}
+	if flagRows != 0 {
+		t.Fatalf("flag rows after empty wipe = %d, want 0", flagRows)
+	}
+}
+
+func TestSQLiteHarnessQuestStateImportReplaceNoOpForEmptyCharacterIDs(t *testing.T) {
+	db := openSQLiteQuestStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterQuestStateMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterQuestStateMigrationVersion, err)
+	}
+
+	accounts := []accountstore.Account{
+		{
+			Login:  "Alpha",
+			Empire: 1,
+			Characters: []loginticket.Character{
+				questStateImportCharacter(11, "AlphaWar"),
+			},
+		},
+	}
+	rosterExport, err := accountstore.ExportAccountCharacterRoster(accounts)
+	if err != nil {
+		t.Fatalf("ExportAccountCharacterRoster: %v", err)
+	}
+	if _, err := accountstore.ImportAccountCharacterRoster(ctx, db, rosterExport); err != nil {
+		t.Fatalf("ImportAccountCharacterRoster: %v", err)
+	}
+
+	seedExport := CharacterQuestStateExport{
+		MigrationVersion: CharacterQuestStateMigrationVersion,
+		MigrationName:    CharacterQuestStateMigrationName,
+		Flags: []CharacterQuestFlagRow{
+			{CharacterID: 11, Character: "AlphaWar", QuestRef: "quest:first_steps", Flag: "met_guide", Value: 1},
+		},
+	}
+	if _, err := ImportCharacterQuestState(ctx, db, seedExport); err != nil {
+		t.Fatalf("seed ImportCharacterQuestState: %v", err)
+	}
+
+	emptyIDs := CharacterQuestStateExport{
+		MigrationVersion: CharacterQuestStateMigrationVersion,
+		MigrationName:    CharacterQuestStateMigrationName,
+		CharacterIDs:     []uint32{},
+		Flags:            []CharacterQuestFlagRow{},
+	}
+	result, err := ImportCharacterQuestState(ctx, db, emptyIDs, ImportCharacterQuestStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("empty character_ids replace: %v", err)
+	}
+	if !result.Replaced || result.CharacterCount != 0 {
+		t.Fatalf("unexpected empty character_ids result: %+v", result)
+	}
+
+	var flagRows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_quest_flags`).Scan(&flagRows); err != nil {
+		t.Fatalf("count flags after no-op replace: %v", err)
+	}
+	if flagRows != 1 {
+		t.Fatalf("flag rows after no-op replace = %d, want 1", flagRows)
+	}
+}
+
 func questStateImportCharacter(id uint32, name string) loginticket.Character {
 	return loginticket.Character{
 		ID:       id,
