@@ -109,7 +109,7 @@ The repository now implements this narrow bootstrap contract:
 - if this floor is reached while the dying session itself was browsing another visible peer's open MYSHOP, the same floor transition appends one self-only `GC::SHOP END` after death/clear (before host empty-sign when both close together) and clears that guest browse flag without mutating inventory/gold
 - if this floor is reached while the owner already had a lab `/open_cube` presentation open, the same floor transition now also clears that same-socket cube open flag and its peer-visible shared-world cube busy bit and appends one self-only `CHAT_TYPE_COMMAND` `cube close` after the death/clear sequence (and after any merchant `GC::SHOP END` / MYSHOP empty-sign, before any safebox `CloseSafebox` or exchange close frames); later `/close_cube` stays silent and inventory/gold stay unchanged
 - if this floor is reached while the owner already had an open `/open_safebox` presentation, the same floor transition now also clears that same-socket safebox busy flag and its shared-world busy publication and appends one self-only `CHAT_TYPE_COMMAND` `CloseSafebox` after the death/clear sequence (and after any merchant `GC::SHOP END` / MYSHOP empty-sign / lab `cube close`, before any exchange close frames); an already-open refine-dialog presentation still clears silently with no extra refine frames, so later `/restart_here` / `/restart_town` recovery does not keep orphan exchange-busy rejects
-- once this floor is reached, later owner-side peer-facing `CHAT` requests with `type = TALKING`, `PARTY`, `GUILD`, or `SHOUT` plus later owner-side `WHISPER` requests also fail closed before sender echo, queued peer delivery, or exact-name target lookup can run
+- once this floor is reached, later owner-side peer-facing `CHAT` requests with `type = TALKING`, `PARTY`, `GUILD`, or `SHOUT` plus later owner-side `WHISPER` requests also fail closed before sender echo, queued peer delivery, or exact-name target lookup can run; after `/restart_here` / `/restart_town` recovery the same owner-side talking chat, whisper, and self-only `CHAT_TYPE_INFO` succeed normally again (`TestGameSessionFlowPostFloorPeerFacingChatFailsClosed`, `TestGameSessionFlowPostFloorPeerFacingChatFailsClosedBeforeRestartTown`)
 - once this floor is reached, later peer-originated `WHISPER` requests targeting that same exact owner name also fail closed before queued target delivery or a synthetic `WHISPER_TYPE_NOT_EXIST` fallback can run
 - once this floor is reached, later peer-originated local `CHAT` requests with `type = TALKING` from still-visible sessions continue to return the live sender's ordinary self echo, but queued peer delivery skips that zero-HP owner recipient entirely
 - once this floor is reached, later peer-originated `CHAT` requests with `type = PARTY`, `GUILD`, or `SHOUT` also continue to return the live sender's ordinary self echo, but queued peer delivery skips that same zero-HP owner recipient under the current bootstrap party/global guild/empire shout routing rules
@@ -394,12 +394,14 @@ The current bootstrap player-death contract now also owns one narrow peer-facing
 - once that same floor has been reached, later owner-side `WHISPER` requests fail closed too
 - those denials happen before sender echo, queued peer fanout, or exact-name target lookup can run
 - the denial stays intentionally quiet in this slice: no self `GC_CHAT` echo, no queued peer chat delivery, no queued target whisper delivery, and no synthetic `WHISPER_TYPE_NOT_EXIST` fallback
+- after `/restart_here` / `/restart_town` recovery the same owner-side talking chat emits ordinary self echo plus queued peer delivery, and the same exact-name whisper queues one target delivery again (`TestGameSessionFlowPostFloorPeerFacingChatFailsClosed`, `TestGameSessionFlowPostFloorPeerFacingChatFailsClosedBeforeRestartTown`)
 - existing slash-command seams stay separate: `/quit`, `/logout`, `/phase_select`, and the already-owned `/shop_buy` / `/use_item` / `ITEM_USE` paths keep their current independent behavior instead of being widened by this follow-up implicitly
 - broader revive, mute/block, or general full action-lock policy still remain out of scope until a later slice writes those contracts down explicitly
 
 Why this is the current owned boundary:
 - after combat, relocation, interaction, merchant-buy, and client/slash item-use denial were already owned at the same `0`-HP floor, peer-facing chat and whisper were the next dangerous already-open player-origin surfaces because they could still fan out to other live sessions from a dead owner
 - keeping slash commands separate preserves the smallest honest rule instead of widening the whole chat seam into a blanket post-floor command lock
+- restart recovery for those same surfaces closes the remaining proof gap so a recovered owner is not left permanently muted after an otherwise successful death-floor recovery
 
 ## First owned post-floor self-only info-chat denial
 
@@ -407,6 +409,7 @@ The current bootstrap player-death contract now also owns one narrow self-only c
 - once immediate or delayed practice-mob retaliation has already driven the owner's live bootstrap HP to `0`, later owner-side `CHAT` requests with `type = CHAT_TYPE_INFO` fail closed
 - that denial happens before self `GC_CHAT` info delivery can run
 - the denial stays intentionally quiet in this slice: no self info echo, no fallback death/revive companion, and no peer-facing packet side effect are claimed
+- after `/restart_here` / `/restart_town` recovery the same owner-side `CHAT_TYPE_INFO` emits one self-only delivery again (`TestGameSessionFlowPostFloorPeerFacingChatFailsClosed`, `TestGameSessionFlowPostFloorPeerFacingChatFailsClosedBeforeRestartTown`)
 - existing slash-command seams still stay separate: `/quit`, `/logout`, and `/phase_select` keep their current independent behavior instead of being widened by this follow-up implicitly
 
 Why this is the current owned boundary:
