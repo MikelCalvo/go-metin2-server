@@ -50,8 +50,7 @@ reject during `/local/content-bundle/validate`.
 - new NPC service kinds
 - changing the already-owned canonicalize / store reject rule
 - further checked-in foreign-field negatives (reward/consume experience,
-  consume gold, mutating `quest_to`, open_cube reward-gold twin) unless QA
-  still improvises that JSON later
+  consume gold, mutating `quest_to`) unless QA still improvises that JSON later
 
 ## Validation
 
@@ -66,5 +65,7 @@ git diff --check
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
 2. Keep branching quest scripts deferred.
-3. Add further checked-in negatives only when a later reject case still forces
-   QA to invent JSON.
+3. ~~Add further checked-in negatives only when a later reject case still forces
+   QA to invent JSON.~~ Done for `open_cube` foreign turn-in `reward_gold`:
+   `docs/examples/bootstrap-invalid-open-cube-foreign-reward-gold-bundle.json`
+   (`docs/plans/2026-09-01-invalid-open-cube-foreign-reward-gold-fixture.md`).

@@ -1,0 +1,10 @@
+{
+  "interaction_definitions": [
+    {
+      "kind": "open_cube",
+      "ref": "npc:qa_cube_foreign_reward_gold",
+      "text": "The craftsman lights the forge.",
+      "reward_gold": 10
+    }
+  ]
+}

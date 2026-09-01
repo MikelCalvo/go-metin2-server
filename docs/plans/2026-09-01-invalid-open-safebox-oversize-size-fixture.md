@@ -67,3 +67,6 @@ git diff --check
    QA to invent JSON.~~ Done for `open_safebox` foreign turn-in `reward_gold`:
    `docs/examples/bootstrap-invalid-open-safebox-foreign-reward-gold-bundle.json`
    (`docs/plans/2026-09-01-invalid-open-safebox-foreign-reward-gold-fixture.md`).
+   Done for `open_cube` foreign turn-in `reward_gold`:
+   `docs/examples/bootstrap-invalid-open-cube-foreign-reward-gold-bundle.json`
+   (`docs/plans/2026-09-01-invalid-open-cube-foreign-reward-gold-fixture.md`).
