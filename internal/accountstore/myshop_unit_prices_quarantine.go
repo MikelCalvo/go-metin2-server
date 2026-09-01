@@ -43,7 +43,9 @@ func ValidateCharacterMyShopUnitPricesExport(export CharacterMyShopUnitPricesExp
 
 // QuarantineCharacterMyShopUnitPricesExport validates a retained export and
 // returns a canonicalized copy grouped by ascending character_id then ascending
-// vnum. It never opens a database or mutates account snapshots.
+// vnum. Declared character_ids merge with unit-price row-derived ids so a listed
+// character with zero price rows can wipe-to-empty under scoped replace. It never
+// opens a database or mutates account snapshots.
 func QuarantineCharacterMyShopUnitPricesExport(export CharacterMyShopUnitPricesExport) (CharacterMyShopUnitPricesExport, CharacterMyShopUnitPricesQuarantineSummary, error) {
 	return canonicalizeCharacterMyShopUnitPricesExport(export)
 }
@@ -57,6 +59,21 @@ func canonicalizeCharacterMyShopUnitPricesExport(export CharacterMyShopUnitPrice
 	}
 	if export.UnitPrices == nil {
 		return CharacterMyShopUnitPricesExport{}, CharacterMyShopUnitPricesQuarantineSummary{}, fmt.Errorf("%w: unit_prices must be present", ErrInvalidCharacterMyShopUnitPricesExport)
+	}
+
+	characterIDs := make(map[uint32]struct{}, len(export.UnitPrices)+len(export.CharacterIDs))
+	if export.CharacterIDs != nil {
+		seenDeclaredIDs := make(map[uint32]struct{}, len(export.CharacterIDs))
+		for _, characterID := range export.CharacterIDs {
+			if characterID == 0 {
+				return CharacterMyShopUnitPricesExport{}, CharacterMyShopUnitPricesQuarantineSummary{}, fmt.Errorf("%w: character_ids entries must be > 0", ErrInvalidCharacterMyShopUnitPricesExport)
+			}
+			if _, exists := seenDeclaredIDs[characterID]; exists {
+				return CharacterMyShopUnitPricesExport{}, CharacterMyShopUnitPricesQuarantineSummary{}, fmt.Errorf("%w: duplicate character_ids entry %d", ErrInvalidCharacterMyShopUnitPricesExport, characterID)
+			}
+			seenDeclaredIDs[characterID] = struct{}{}
+			characterIDs[characterID] = struct{}{}
+		}
 	}
 
 	byCharacter := make(map[uint32]map[uint32]uint32)
@@ -76,24 +93,35 @@ func canonicalizeCharacterMyShopUnitPricesExport(export CharacterMyShopUnitPrice
 			return CharacterMyShopUnitPricesExport{}, CharacterMyShopUnitPricesQuarantineSummary{}, fmt.Errorf("%w: duplicate character_id=%d vnum=%d", ErrInvalidCharacterMyShopUnitPricesExport, row.CharacterID, row.Vnum)
 		}
 		prices[row.Vnum] = row.UnitPrice
+		characterIDs[row.CharacterID] = struct{}{}
 	}
 
-	characterIDs := make([]uint32, 0, len(byCharacter))
 	for characterID, prices := range byCharacter {
 		if len(prices) > loginticket.MyShopUnitPriceMax {
 			return CharacterMyShopUnitPricesExport{}, CharacterMyShopUnitPricesQuarantineSummary{}, fmt.Errorf("%w: character %d has %d myshop_unit_prices rows (max %d)", ErrInvalidCharacterMyShopUnitPricesExport, characterID, len(prices), loginticket.MyShopUnitPriceMax)
 		}
-		characterIDs = append(characterIDs, characterID)
 	}
-	sort.Slice(characterIDs, func(i, j int) bool { return characterIDs[i] < characterIDs[j] })
+
+	sortedCharacterIDs := make([]uint32, 0, len(characterIDs))
+	for characterID := range characterIDs {
+		sortedCharacterIDs = append(sortedCharacterIDs, characterID)
+	}
+	sort.Slice(sortedCharacterIDs, func(i, j int) bool { return sortedCharacterIDs[i] < sortedCharacterIDs[j] })
 
 	canonical := CharacterMyShopUnitPricesExport{
 		MigrationVersion: CharacterMyShopUnitPricesMigrationVersion,
 		MigrationName:    CharacterMyShopUnitPricesMigrationName,
+		CharacterIDs:     append([]uint32(nil), sortedCharacterIDs...),
 		UnitPrices:       make([]CharacterMyShopUnitPriceRow, 0, len(export.UnitPrices)),
 	}
-	for _, characterID := range characterIDs {
-		prices := byCharacter[characterID]
+	if canonical.CharacterIDs == nil {
+		canonical.CharacterIDs = []uint32{}
+	}
+	for _, characterID := range sortedCharacterIDs {
+		prices, ok := byCharacter[characterID]
+		if !ok {
+			continue
+		}
 		vnums := make([]uint32, 0, len(prices))
 		for vnum := range prices {
 			vnums = append(vnums, vnum)
@@ -109,9 +137,9 @@ func canonicalizeCharacterMyShopUnitPricesExport(export CharacterMyShopUnitPrice
 	}
 
 	summary := CharacterMyShopUnitPricesQuarantineSummary{
-		CharacterCount: len(characterIDs),
+		CharacterCount: len(sortedCharacterIDs),
 		PriceRowCount:  len(canonical.UnitPrices),
-		CharacterIDs:   characterIDs,
+		CharacterIDs:   sortedCharacterIDs,
 	}
 	if summary.CharacterIDs == nil {
 		summary.CharacterIDs = []uint32{}

@@ -50,7 +50,7 @@ func TestRunImportExportRejectsUsageErrorsWithoutOpeningDatabase(t *testing.T) {
 				"--i-confirm-sql-import",
 				"--i-confirm-scoped-replace",
 			},
-			want: "--i-confirm-scoped-replace is only supported for kind character-item-state, character-quest-state, character-point-state, or character-safebox-state",
+			want: "--i-confirm-scoped-replace is only supported for kind character-item-state, character-quest-state, character-point-state, character-safebox-state, or character-myshop-unit-prices",
 		},
 		{
 			name: "unsupported-kind",
@@ -652,6 +652,64 @@ func TestRunImportExportCharacterPointStateScopedReplaceSetsReplaced(t *testing.
 		t.Fatalf("expected replaced=true, got %#v", result)
 	}
 	if result.MigrationVersion != 11 || result.MigrationName != "character_point_state" {
+		t.Fatalf("unexpected migration identity: %#v", result)
+	}
+	if !strings.Contains(stdout.String(), `"replaced": true`) {
+		t.Fatalf("expected replaced field in stdout JSON, got %q", stdout.String())
+	}
+}
+
+func TestRunImportExportCharacterMyShopUnitPricesScopedReplaceSetsReplaced(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	catalog, err := dbmigrations.Catalog()
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	ledgerEntry := func(version int) dbmigrations.LedgerEntry {
+		t.Helper()
+		for _, migration := range catalog {
+			if migration.Version == version {
+				return dbmigrations.LedgerEntry{
+					Version:  migration.Version,
+					Name:     migration.Name,
+					UpSHA256: migration.UpSHA256,
+				}
+			}
+		}
+		t.Fatalf("catalog missing version %d", version)
+		return dbmigrations.LedgerEntry{}
+	}
+	currentMigrateCLITestDriver(t).setLedger([]dbmigrations.LedgerEntry{
+		ledgerEntry(accountstore.CharacterMyShopUnitPricesMigrationVersion),
+	})
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"import-export",
+			"--kind", "character-myshop-unit-prices",
+			"--export", "-",
+			"--driver", driverName,
+			"--dsn", "memory://import-myshop-unit-prices-replace",
+			"--i-confirm-sql-import",
+			"--i-confirm-scoped-replace",
+		},
+		strings.NewReader(`{"migration_version":23,"migration_name":"character_myshop_unit_prices","character_ids":[],"unit_prices":[]}`),
+		&stdout,
+		&stderr,
+	)
+	if code != exitOK {
+		t.Fatalf("expected exit 0, got %d stderr=%q", code, stderr.String())
+	}
+	var result accountstore.CharacterMyShopUnitPricesImportResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode import result: %v\nbody:\n%s", err, stdout.String())
+	}
+	if !result.Replaced {
+		t.Fatalf("expected replaced=true, got %#v", result)
+	}
+	if result.MigrationVersion != 23 || result.MigrationName != "character_myshop_unit_prices" {
 		t.Fatalf("unexpected migration identity: %#v", result)
 	}
 	if !strings.Contains(stdout.String(), `"replaced": true`) {

@@ -163,6 +163,7 @@ would invent policy mid-implementation. Freeze first; GREEN stays follow-on.
 
 ## Status
 
-Docs/spec freeze only. Tip-`0023` scoped replace RED/GREEN stays follow-on.
+Docs/spec freeze landed. Tip-`0023` scoped replace GREEN is owned by
+[character myshop unit-prices import scoped replace GREEN](2026-09-01-character-myshop-unit-prices-import-scoped-replace-green.md).
 Insert-only remains the default without the replace option / CLI confirmation.
 Production-engine selection remains deferred.

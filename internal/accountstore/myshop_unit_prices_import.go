@@ -32,6 +32,22 @@ type CharacterMyShopUnitPricesImportResult struct {
 	CharacterCount   int      `json:"character_count"`
 	PriceRowCount    int      `json:"price_row_count"`
 	CharacterIDs     []uint32 `json:"character_ids"`
+	// Replaced is true when ImportCharacterMyShopUnitPrices ran with the opt-in
+	// scoped replace policy (delete then insert for listed character ids).
+	// Omitted from JSON when false so legacy insert-only import-result files stay
+	// valid.
+	Replaced bool `json:"replaced,omitempty"`
+}
+
+// ImportCharacterMyShopUnitPricesOptions controls opt-in mutation policy for
+// ImportCharacterMyShopUnitPrices. The zero value keeps today's insert-only
+// behavior.
+type ImportCharacterMyShopUnitPricesOptions struct {
+	// Replace, when true, deletes existing tip-0023 child rows for every
+	// character id in the quarantined export summary before inserting the
+	// canonicalized export rows, all inside one transaction. Characters not
+	// listed in the export remain untouched.
+	Replace bool
 }
 
 // ImportCharacterMyShopUnitPrices validates a retained 0023 myshop unit-prices
@@ -40,12 +56,21 @@ type CharacterMyShopUnitPricesImportResult struct {
 //
 // The caller still owns driver selection and DSN loading. Parent character rows
 // from 0002 must already exist (or the engine FK check fails closed). This
-// primitive does not mutate bootstrap file stores, does not rewrite
-// schema_migrations, and does not invent upsert / merge policy: duplicate
-// primary keys fail closed and roll the transaction back.
-func ImportCharacterMyShopUnitPrices(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export CharacterMyShopUnitPricesExport) (CharacterMyShopUnitPricesImportResult, error) {
+// primitive does not mutate bootstrap file stores and does not rewrite
+// schema_migrations. Without options (or with Replace=false) it does not invent
+// upsert / merge policy: duplicate primary keys fail closed and roll the
+// transaction back. Pass ImportCharacterMyShopUnitPricesOptions{Replace: true}
+// for the opt-in scoped replace path frozen by the tip-0023 replace contract.
+func ImportCharacterMyShopUnitPrices(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export CharacterMyShopUnitPricesExport, opts ...ImportCharacterMyShopUnitPricesOptions) (CharacterMyShopUnitPricesImportResult, error) {
 	if myShopUnitPricesImportExecutorIsNil(executor) {
 		return CharacterMyShopUnitPricesImportResult{}, ErrCharacterMyShopUnitPricesImportExecutorRequired
+	}
+	if len(opts) > 1 {
+		return CharacterMyShopUnitPricesImportResult{}, fmt.Errorf("ImportCharacterMyShopUnitPrices accepts at most one options value")
+	}
+	replace := false
+	if len(opts) == 1 {
+		replace = opts[0].Replace
 	}
 
 	canonical, summary, err := QuarantineCharacterMyShopUnitPricesExport(export)
@@ -59,6 +84,7 @@ func ImportCharacterMyShopUnitPrices(ctx context.Context, executor dbmigrations.
 		CharacterCount:   summary.CharacterCount,
 		PriceRowCount:    summary.PriceRowCount,
 		CharacterIDs:     append([]uint32(nil), summary.CharacterIDs...),
+		Replaced:         replace,
 	}
 	if result.CharacterIDs == nil {
 		result.CharacterIDs = []uint32{}
@@ -71,6 +97,14 @@ func ImportCharacterMyShopUnitPrices(ctx context.Context, executor dbmigrations.
 
 	if err := requireCharacterMyShopUnitPricesSchema(ctx, tx); err != nil {
 		return CharacterMyShopUnitPricesImportResult{}, rollbackAfterMyShopUnitPricesImportFailure(tx, err)
+	}
+
+	if replace {
+		for _, characterID := range summary.CharacterIDs {
+			if err := deleteCharacterMyShopUnitPricesForCharacter(ctx, tx, characterID); err != nil {
+				return CharacterMyShopUnitPricesImportResult{}, rollbackAfterMyShopUnitPricesImportFailure(tx, err)
+			}
+		}
 	}
 
 	for _, row := range canonical.UnitPrices {
@@ -102,6 +136,13 @@ func requireCharacterMyShopUnitPricesSchema(ctx context.Context, querier dbmigra
 		}
 	}
 	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrCharacterMyShopUnitPricesImportSchemaRequired, latest, CharacterMyShopUnitPricesMigrationVersion, CharacterMyShopUnitPricesMigrationName)
+}
+
+func deleteCharacterMyShopUnitPricesForCharacter(ctx context.Context, tx *sql.Tx, characterID uint32) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM character_myshop_unit_prices WHERE character_id = ?`, int64(characterID)); err != nil {
+		return fmt.Errorf("delete myshop unit prices for character %d: %w", characterID, err)
+	}
+	return nil
 }
 
 func insertCharacterMyShopUnitPrice(ctx context.Context, tx *sql.Tx, row CharacterMyShopUnitPriceRow) error {

@@ -40,6 +40,6 @@ without insert-only primary-key conflicts.
 ## Status
 
 GREEN on `lane/persistence`. Follow-on tip-`0023` myshop unit-prices
-scoped-replace freeze is owned by
-[character myshop unit-prices import replace/upsert contract freeze](2026-09-01-character-myshop-unit-prices-import-replace-upsert-contract-freeze.md);
+scoped-replace GREEN is owned by
+[character myshop unit-prices import scoped replace GREEN](2026-09-01-character-myshop-unit-prices-import-scoped-replace-green.md);
 production-engine selection remains deferred.

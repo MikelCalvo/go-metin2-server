@@ -143,4 +143,7 @@ func TestQuarantineCharacterMyShopUnitPricesExportCanonicalizesRowOrder(t *testi
 	if !reflect.DeepEqual(quarantined.UnitPrices, want) {
 		t.Fatalf("unexpected canonical unit prices:\n got: %#v\nwant: %#v", quarantined.UnitPrices, want)
 	}
+	if !reflect.DeepEqual(quarantined.CharacterIDs, []uint32{11, 22}) {
+		t.Fatalf("unexpected canonical character_ids: %#v", quarantined.CharacterIDs)
+	}
 }
