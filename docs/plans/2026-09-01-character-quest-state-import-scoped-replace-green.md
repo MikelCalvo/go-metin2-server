@@ -35,5 +35,7 @@ primary-key conflicts.
 
 ## Status
 
-GREEN on `lane/content`. Other tip-kind freezes and production-engine selection
-remain deferred.
+GREEN on `lane/content`. Follow-on tip-`0011` point-state scoped-replace freeze
+is owned by
+[character point-state import replace/upsert contract freeze](2026-09-01-character-point-state-import-replace-upsert-contract-freeze.md);
+production-engine selection remains deferred.
