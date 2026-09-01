@@ -1,0 +1,10 @@
+{
+  "interaction_definitions": [
+    {
+      "kind": "open_safebox",
+      "ref": "npc:qa_warehouse_oversize_size",
+      "text": "Store your goods safely.",
+      "size": 4
+    }
+  ]
+}
