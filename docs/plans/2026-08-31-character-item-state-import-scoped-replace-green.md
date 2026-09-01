@@ -34,6 +34,7 @@ conflicts.
 
 ## Status
 
-GREEN on `lane/persistence`. Follow-on tip-`0015` safebox scoped-replace freeze is
-now owned by [character safebox-state import replace/upsert contract freeze](2026-09-01-character-safebox-state-import-replace-upsert-contract-freeze.md);
+GREEN on `lane/persistence`. Follow-on tip-`0015` safebox scoped-replace is now
+owned by [character safebox-state import scoped replace GREEN](2026-09-01-character-safebox-state-import-scoped-replace-green.md)
+(freeze: [character safebox-state import replace/upsert contract freeze](2026-09-01-character-safebox-state-import-replace-upsert-contract-freeze.md));
 other tip-kind freezes and production-engine selection remain deferred.

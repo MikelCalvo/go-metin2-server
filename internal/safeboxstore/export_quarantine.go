@@ -64,7 +64,21 @@ func canonicalizeCharacterSafeboxStateExport(export CharacterSafeboxStateExport)
 		return CharacterSafeboxStateExport{}, CharacterSafeboxStateQuarantineSummary{}, fmt.Errorf("%w: items must be present", ErrInvalidCharacterSafeboxStateExport)
 	}
 
-	seenCharacterIDs := make(map[uint32]string, len(export.Passwords))
+	seenCharacterIDs := make(map[uint32]string, len(export.Passwords)+len(export.CharacterIDs))
+	seenPasswordCharacterIDs := make(map[uint32]struct{}, len(export.Passwords))
+	seenDeclaredIDs := make(map[uint32]struct{}, len(export.CharacterIDs))
+	if export.CharacterIDs != nil {
+		for _, characterID := range export.CharacterIDs {
+			if characterID == 0 {
+				return CharacterSafeboxStateExport{}, CharacterSafeboxStateQuarantineSummary{}, fmt.Errorf("%w: character_ids entries must be > 0", ErrInvalidCharacterSafeboxStateExport)
+			}
+			if _, exists := seenDeclaredIDs[characterID]; exists {
+				return CharacterSafeboxStateExport{}, CharacterSafeboxStateQuarantineSummary{}, fmt.Errorf("%w: duplicate character_ids entry %d", ErrInvalidCharacterSafeboxStateExport, characterID)
+			}
+			seenDeclaredIDs[characterID] = struct{}{}
+			seenCharacterIDs[characterID] = ""
+		}
+	}
 	seenLoginsByID := make(map[uint32]string, len(export.Passwords))
 	seenIDsByLogin := make(map[string]uint32, len(export.Passwords))
 	passwords := make([]CharacterSafeboxPasswordRow, 0, len(export.Passwords))
@@ -90,9 +104,10 @@ func canonicalizeCharacterSafeboxStateExport(export CharacterSafeboxStateExport)
 		if previousID, ok := seenIDsByLogin[normalizedLogin]; ok && previousID != row.CharacterID {
 			return CharacterSafeboxStateExport{}, CharacterSafeboxStateQuarantineSummary{}, fmt.Errorf("%w: login %q maps to both ids %d and %d", ErrInvalidCharacterSafeboxStateExport, login, previousID, row.CharacterID)
 		}
-		if _, exists := seenCharacterIDs[row.CharacterID]; exists {
+		if _, exists := seenPasswordCharacterIDs[row.CharacterID]; exists {
 			return CharacterSafeboxStateExport{}, CharacterSafeboxStateQuarantineSummary{}, fmt.Errorf("%w: duplicate character_id=%d password row", ErrInvalidCharacterSafeboxStateExport, row.CharacterID)
 		}
+		seenPasswordCharacterIDs[row.CharacterID] = struct{}{}
 		seenCharacterIDs[row.CharacterID] = login
 		seenLoginsByID[row.CharacterID] = login
 		seenIDsByLogin[normalizedLogin] = row.CharacterID
@@ -125,7 +140,7 @@ func canonicalizeCharacterSafeboxStateExport(export CharacterSafeboxStateExport)
 		if previousID, ok := seenIDsByLogin[normalizedLogin]; ok && previousID != row.CharacterID {
 			return CharacterSafeboxStateExport{}, CharacterSafeboxStateQuarantineSummary{}, fmt.Errorf("%w: login %q maps to both ids %d and %d", ErrInvalidCharacterSafeboxStateExport, login, previousID, row.CharacterID)
 		}
-		if _, ok := seenCharacterIDs[row.CharacterID]; !ok {
+		if _, ok := seenPasswordCharacterIDs[row.CharacterID]; !ok {
 			return CharacterSafeboxStateExport{}, CharacterSafeboxStateQuarantineSummary{}, fmt.Errorf("%w: item for unknown character_id=%d", ErrInvalidCharacterSafeboxStateExport, row.CharacterID)
 		}
 		if _, exists := seenItemIDs[row.ID]; exists {
@@ -199,19 +214,29 @@ func canonicalizeCharacterSafeboxStateExport(export CharacterSafeboxStateExport)
 	})
 
 	characterIDs := make([]uint32, 0, len(seenCharacterIDs))
-	logins := make([]string, 0, len(seenCharacterIDs))
+	loginSet := make(map[string]struct{}, len(seenCharacterIDs))
 	for characterID, login := range seenCharacterIDs {
 		characterIDs = append(characterIDs, characterID)
-		logins = append(logins, login)
+		if login != "" {
+			loginSet[login] = struct{}{}
+		}
 	}
 	sort.Slice(characterIDs, func(i, j int) bool { return characterIDs[i] < characterIDs[j] })
+	logins := make([]string, 0, len(loginSet))
+	for login := range loginSet {
+		logins = append(logins, login)
+	}
 	sort.Strings(logins)
 
 	canonical := CharacterSafeboxStateExport{
 		MigrationVersion: CharacterSafeboxStateMigrationVersion,
 		MigrationName:    CharacterSafeboxStateMigrationName,
+		CharacterIDs:     append([]uint32(nil), characterIDs...),
 		Passwords:        passwords,
 		Items:            items,
+	}
+	if canonical.CharacterIDs == nil {
+		canonical.CharacterIDs = []uint32{}
 	}
 	summary := CharacterSafeboxStateQuarantineSummary{
 		CharacterCount: len(characterIDs),

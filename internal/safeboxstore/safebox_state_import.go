@@ -34,6 +34,21 @@ type CharacterSafeboxStateImportResult struct {
 	PasswordCount    int      `json:"password_count"`
 	ItemCount        int      `json:"item_count"`
 	CharacterIDs     []uint32 `json:"character_ids"`
+	// Replaced is true when ImportCharacterSafeboxState ran with the opt-in
+	// scoped replace policy (delete then insert for listed character ids).
+	// Omitted from JSON when false so legacy insert-only import-result files
+	// stay valid.
+	Replaced bool `json:"replaced,omitempty"`
+}
+
+// ImportCharacterSafeboxStateOptions controls opt-in mutation policy for
+// ImportCharacterSafeboxState. The zero value keeps today's insert-only behavior.
+type ImportCharacterSafeboxStateOptions struct {
+	// Replace, when true, deletes existing tip-0015 child rows for every
+	// character id in the quarantined export summary before inserting the
+	// canonicalized export rows, all inside one transaction. Characters not
+	// listed in the export remain untouched.
+	Replace bool
 }
 
 // ImportCharacterSafeboxState validates a retained 0015 safebox-state export
@@ -43,12 +58,21 @@ type CharacterSafeboxStateImportResult struct {
 //
 // The caller still owns driver selection and DSN loading. Parent character rows
 // from 0002 must already exist (or the engine FK check fails closed). This
-// primitive does not mutate bootstrap file stores, does not rewrite
-// schema_migrations, and does not invent upsert / merge policy: duplicate
-// primary keys fail closed and roll the transaction back.
-func ImportCharacterSafeboxState(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export CharacterSafeboxStateExport) (CharacterSafeboxStateImportResult, error) {
+// primitive does not mutate bootstrap file stores and does not rewrite
+// schema_migrations. Without options (or with Replace=false) it does not invent
+// upsert / merge policy: duplicate primary keys fail closed and roll the
+// transaction back. Pass ImportCharacterSafeboxStateOptions{Replace: true} for
+// the opt-in scoped replace path frozen by the tip-0015 replace contract.
+func ImportCharacterSafeboxState(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export CharacterSafeboxStateExport, opts ...ImportCharacterSafeboxStateOptions) (CharacterSafeboxStateImportResult, error) {
 	if safeboxStateImportExecutorIsNil(executor) {
 		return CharacterSafeboxStateImportResult{}, ErrCharacterSafeboxStateImportExecutorRequired
+	}
+	if len(opts) > 1 {
+		return CharacterSafeboxStateImportResult{}, fmt.Errorf("ImportCharacterSafeboxState accepts at most one options value")
+	}
+	replace := false
+	if len(opts) == 1 {
+		replace = opts[0].Replace
 	}
 
 	canonical, summary, err := QuarantineCharacterSafeboxStateExport(export)
@@ -63,6 +87,7 @@ func ImportCharacterSafeboxState(ctx context.Context, executor dbmigrations.SQLM
 		PasswordCount:    summary.PasswordCount,
 		ItemCount:        summary.ItemCount,
 		CharacterIDs:     append([]uint32(nil), summary.CharacterIDs...),
+		Replaced:         replace,
 	}
 	if result.CharacterIDs == nil {
 		result.CharacterIDs = []uint32{}
@@ -75,6 +100,14 @@ func ImportCharacterSafeboxState(ctx context.Context, executor dbmigrations.SQLM
 
 	if err := requireCharacterSafeboxStateSchema(ctx, tx); err != nil {
 		return CharacterSafeboxStateImportResult{}, rollbackAfterSafeboxStateImportFailure(tx, err)
+	}
+
+	if replace {
+		for _, characterID := range summary.CharacterIDs {
+			if err := deleteCharacterSafeboxStateForCharacter(ctx, tx, characterID); err != nil {
+				return CharacterSafeboxStateImportResult{}, rollbackAfterSafeboxStateImportFailure(tx, err)
+			}
+		}
 	}
 
 	for _, row := range canonical.Passwords {
@@ -127,6 +160,16 @@ func requireCharacterSafeboxStateSchema(ctx context.Context, querier dbmigration
 		return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrCharacterSafeboxStateImportSchemaRequired, latest, CharacterSafeboxItemInstanceSocketsMigrationVersion, CharacterSafeboxItemInstanceSocketsMigrationName)
 	}
 	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrCharacterSafeboxStateImportSchemaRequired, latest, CharacterSafeboxItemInstanceAttributesMigrationVersion, CharacterSafeboxItemInstanceAttributesMigrationName)
+}
+
+func deleteCharacterSafeboxStateForCharacter(ctx context.Context, tx *sql.Tx, characterID uint32) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM character_safebox_items WHERE character_id = ?`, int64(characterID)); err != nil {
+		return fmt.Errorf("delete safebox items for character %d: %w", characterID, err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM character_safebox_passwords WHERE character_id = ?`, int64(characterID)); err != nil {
+		return fmt.Errorf("delete safebox password for character %d: %w", characterID, err)
+	}
+	return nil
 }
 
 func insertCharacterSafeboxPassword(ctx context.Context, tx *sql.Tx, row CharacterSafeboxPasswordRow) error {

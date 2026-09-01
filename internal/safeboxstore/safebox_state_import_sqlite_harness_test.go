@@ -286,6 +286,297 @@ func TestSQLiteHarnessSafeboxStateImportRejectsTipTwentyFiveOnlyLedger(t *testin
 	}
 }
 
+func TestSQLiteHarnessSafeboxStateImportReplaceSameExportSucceeds(t *testing.T) {
+	db := openSQLiteSafeboxStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxItemInstanceAttributesMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxItemInstanceAttributesMigrationVersion, err)
+	}
+
+	accounts := []accountstore.Account{{
+		Login:  "Alpha",
+		Empire: 1,
+		Characters: []loginticket.Character{
+			safeboxStateImportCharacter(7, "AlphaWar"),
+		},
+	}}
+	rosterExport, err := accountstore.ExportAccountCharacterRoster(accounts)
+	if err != nil {
+		t.Fatalf("ExportAccountCharacterRoster: %v", err)
+	}
+	if _, err := accountstore.ImportAccountCharacterRoster(ctx, db, rosterExport); err != nil {
+		t.Fatalf("ImportAccountCharacterRoster: %v", err)
+	}
+
+	snapshot := Snapshot{Characters: []CharacterRow{{
+		Login:       "Alpha",
+		CharacterID: 7,
+		Password:    "secret",
+		Money:       1500,
+		Cells: []Cell{
+			{Cell: 0, ID: 1001, Vnum: 27001, Count: 2, Locked: true, HasSockets: true, Socket0: 1, Socket2: 7, HasAttributes: true, Attributes: &inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 4, Value: -5}}},
+			{Cell: 1, ID: 1002, Vnum: 27002, Count: 1, HasSockets: true, HasAttributes: true},
+		},
+	}}}
+	safeboxExport, err := ExportCharacterSafeboxState(snapshot)
+	if err != nil {
+		t.Fatalf("ExportCharacterSafeboxState: %v", err)
+	}
+	if _, err := ImportCharacterSafeboxState(ctx, db, safeboxExport); err != nil {
+		t.Fatalf("first insert-only ImportCharacterSafeboxState: %v", err)
+	}
+	if _, err := ImportCharacterSafeboxState(ctx, db, safeboxExport); err == nil {
+		t.Fatal("second insert-only ImportCharacterSafeboxState succeeded, want unique conflict")
+	}
+
+	result, err := ImportCharacterSafeboxState(ctx, db, safeboxExport, ImportCharacterSafeboxStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("replace ImportCharacterSafeboxState: %v", err)
+	}
+	if !result.Replaced {
+		t.Fatalf("replace result.Replaced = false, want true")
+	}
+	if result.CharacterCount != 1 || result.PasswordCount != 1 || result.ItemCount != 2 {
+		t.Fatalf("unexpected replace counts: %+v", result)
+	}
+
+	var passwordRows, itemRows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_safebox_passwords`).Scan(&passwordRows); err != nil {
+		t.Fatalf("count passwords after replace: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_safebox_items`).Scan(&itemRows); err != nil {
+		t.Fatalf("count items after replace: %v", err)
+	}
+	if passwordRows != 1 || itemRows != 2 {
+		t.Fatalf("after replace counts passwords=%d items=%d, want 1/2", passwordRows, itemRows)
+	}
+	assertSafeboxPasswordRow(t, db, 7, "Alpha", "secret", 1500)
+	assertSafeboxItemRow(t, db, 1001, 7, "Alpha", 0, 27001, 2, true, true, 1, 0, 7, true, 1, 25, 4, -5)
+	assertSafeboxItemRow(t, db, 1002, 7, "Alpha", 1, 27002, 1, false, true, 0, 0, 0, true, 0, 0, 0, 0)
+}
+
+func TestSQLiteHarnessSafeboxStateImportReplaceLeavesUnlistedCharactersUntouched(t *testing.T) {
+	db := openSQLiteSafeboxStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxItemInstanceAttributesMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxItemInstanceAttributesMigrationVersion, err)
+	}
+
+	accounts := []accountstore.Account{
+		{
+			Login:  "Alpha",
+			Empire: 1,
+			Characters: []loginticket.Character{
+				safeboxStateImportCharacter(7, "AlphaWar"),
+			},
+		},
+		{
+			Login:  "Beta",
+			Empire: 2,
+			Characters: []loginticket.Character{
+				safeboxStateImportCharacter(9, "BetaNinja"),
+			},
+		},
+	}
+	rosterExport, err := accountstore.ExportAccountCharacterRoster(accounts)
+	if err != nil {
+		t.Fatalf("ExportAccountCharacterRoster: %v", err)
+	}
+	if _, err := accountstore.ImportAccountCharacterRoster(ctx, db, rosterExport); err != nil {
+		t.Fatalf("ImportAccountCharacterRoster: %v", err)
+	}
+
+	fullExport, err := ExportCharacterSafeboxState(Snapshot{Characters: []CharacterRow{
+		{
+			Login:       "Alpha",
+			CharacterID: 7,
+			Password:    "oldaaa",
+			Money:       100,
+			Cells:       []Cell{{Cell: 0, ID: 1001, Vnum: 27001, Count: 1}},
+		},
+		{
+			Login:       "Beta",
+			CharacterID: 9,
+			Password:    "keepbb",
+			Money:       222,
+			Cells:       []Cell{{Cell: 0, ID: 2001, Vnum: 50011, Count: 4}},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("ExportCharacterSafeboxState: %v", err)
+	}
+	if _, err := ImportCharacterSafeboxState(ctx, db, fullExport); err != nil {
+		t.Fatalf("seed ImportCharacterSafeboxState: %v", err)
+	}
+
+	alphaOnly := CharacterSafeboxStateExport{
+		MigrationVersion: CharacterSafeboxStateMigrationVersion,
+		MigrationName:    CharacterSafeboxStateMigrationName,
+		CharacterIDs:     []uint32{7},
+		Passwords: []CharacterSafeboxPasswordRow{
+			{CharacterID: 7, Login: "Alpha", Password: "newaaa", Money: 777},
+		},
+		Items: []CharacterSafeboxItemRow{
+			{ID: 1100, CharacterID: 7, Login: "Alpha", Cell: 1, Vnum: 27111, Count: 9, Locked: true, HasSockets: true, Socket0: 9, Socket1: 8, Socket2: 7, HasAttributes: true, Attr0Type: 2, Attr0Value: 11},
+		},
+	}
+	result, err := ImportCharacterSafeboxState(ctx, db, alphaOnly, ImportCharacterSafeboxStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("scoped replace ImportCharacterSafeboxState: %v", err)
+	}
+	if !result.Replaced || result.CharacterCount != 1 || result.PasswordCount != 1 || result.ItemCount != 1 {
+		t.Fatalf("unexpected scoped replace result: %+v", result)
+	}
+
+	assertSafeboxPasswordRow(t, db, 7, "Alpha", "newaaa", 777)
+	assertSafeboxPasswordRow(t, db, 9, "Beta", "keepbb", 222)
+	assertSafeboxItemRow(t, db, 1100, 7, "Alpha", 1, 27111, 9, true, true, 9, 8, 7, true, 2, 11, 0, 0)
+	assertSafeboxItemRow(t, db, 2001, 9, "Beta", 0, 50011, 4, false, false, 0, 0, 0, false, 0, 0, 0, 0)
+
+	var alphaItems, betaItems int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_safebox_items WHERE character_id = 7`).Scan(&alphaItems); err != nil {
+		t.Fatalf("count alpha items: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_safebox_items WHERE character_id = 9`).Scan(&betaItems); err != nil {
+		t.Fatalf("count beta items: %v", err)
+	}
+	if alphaItems != 1 || betaItems != 1 {
+		t.Fatalf("scoped replace left unexpected item counts alpha=%d beta=%d", alphaItems, betaItems)
+	}
+}
+
+func TestSQLiteHarnessSafeboxStateImportReplaceWipesListedCharacterWithEmptyRows(t *testing.T) {
+	db := openSQLiteSafeboxStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxItemInstanceAttributesMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxItemInstanceAttributesMigrationVersion, err)
+	}
+
+	accounts := []accountstore.Account{{
+		Login:  "Alpha",
+		Empire: 1,
+		Characters: []loginticket.Character{
+			safeboxStateImportCharacter(7, "AlphaWar"),
+		},
+	}}
+	rosterExport, err := accountstore.ExportAccountCharacterRoster(accounts)
+	if err != nil {
+		t.Fatalf("ExportAccountCharacterRoster: %v", err)
+	}
+	if _, err := accountstore.ImportAccountCharacterRoster(ctx, db, rosterExport); err != nil {
+		t.Fatalf("ImportAccountCharacterRoster: %v", err)
+	}
+
+	seedExport, err := ExportCharacterSafeboxState(Snapshot{Characters: []CharacterRow{{
+		Login:       "Alpha",
+		CharacterID: 7,
+		Password:    "wipeme",
+		Money:       50,
+		Cells:       []Cell{{Cell: 0, ID: 1001, Vnum: 27001, Count: 1}},
+	}}})
+	if err != nil {
+		t.Fatalf("ExportCharacterSafeboxState: %v", err)
+	}
+	if _, err := ImportCharacterSafeboxState(ctx, db, seedExport); err != nil {
+		t.Fatalf("seed ImportCharacterSafeboxState: %v", err)
+	}
+
+	emptyWipe := CharacterSafeboxStateExport{
+		MigrationVersion: CharacterSafeboxStateMigrationVersion,
+		MigrationName:    CharacterSafeboxStateMigrationName,
+		CharacterIDs:     []uint32{7},
+		Passwords:        []CharacterSafeboxPasswordRow{},
+		Items:            []CharacterSafeboxItemRow{},
+	}
+	result, err := ImportCharacterSafeboxState(ctx, db, emptyWipe, ImportCharacterSafeboxStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("empty wipe replace: %v", err)
+	}
+	if !result.Replaced || result.CharacterCount != 1 || result.PasswordCount != 0 || result.ItemCount != 0 {
+		t.Fatalf("unexpected empty wipe result: %+v", result)
+	}
+
+	var passwordRows, itemRows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_safebox_passwords`).Scan(&passwordRows); err != nil {
+		t.Fatalf("count passwords after wipe: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_safebox_items`).Scan(&itemRows); err != nil {
+		t.Fatalf("count items after wipe: %v", err)
+	}
+	if passwordRows != 0 || itemRows != 0 {
+		t.Fatalf("after empty wipe counts passwords=%d items=%d, want 0/0", passwordRows, itemRows)
+	}
+}
+
+func TestSQLiteHarnessSafeboxStateImportReplaceNoOpForEmptyCharacterIDs(t *testing.T) {
+	db := openSQLiteSafeboxStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxItemInstanceAttributesMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxItemInstanceAttributesMigrationVersion, err)
+	}
+
+	accounts := []accountstore.Account{{
+		Login:  "Alpha",
+		Empire: 1,
+		Characters: []loginticket.Character{
+			safeboxStateImportCharacter(7, "AlphaWar"),
+		},
+	}}
+	rosterExport, err := accountstore.ExportAccountCharacterRoster(accounts)
+	if err != nil {
+		t.Fatalf("ExportAccountCharacterRoster: %v", err)
+	}
+	if _, err := accountstore.ImportAccountCharacterRoster(ctx, db, rosterExport); err != nil {
+		t.Fatalf("ImportAccountCharacterRoster: %v", err)
+	}
+
+	seedExport, err := ExportCharacterSafeboxState(Snapshot{Characters: []CharacterRow{{
+		Login:       "Alpha",
+		CharacterID: 7,
+		Password:    "keep",
+		Money:       9,
+		Cells:       []Cell{{Cell: 0, ID: 1001, Vnum: 27001, Count: 1}},
+	}}})
+	if err != nil {
+		t.Fatalf("ExportCharacterSafeboxState: %v", err)
+	}
+	if _, err := ImportCharacterSafeboxState(ctx, db, seedExport); err != nil {
+		t.Fatalf("seed ImportCharacterSafeboxState: %v", err)
+	}
+
+	emptyIDs := CharacterSafeboxStateExport{
+		MigrationVersion: CharacterSafeboxStateMigrationVersion,
+		MigrationName:    CharacterSafeboxStateMigrationName,
+		CharacterIDs:     []uint32{},
+		Passwords:        []CharacterSafeboxPasswordRow{},
+		Items:            []CharacterSafeboxItemRow{},
+	}
+	result, err := ImportCharacterSafeboxState(ctx, db, emptyIDs, ImportCharacterSafeboxStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("empty character_ids replace: %v", err)
+	}
+	if !result.Replaced || result.CharacterCount != 0 {
+		t.Fatalf("unexpected empty character_ids result: %+v", result)
+	}
+
+	assertSafeboxPasswordRow(t, db, 7, "Alpha", "keep", 9)
+	var itemRows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_safebox_items`).Scan(&itemRows); err != nil {
+		t.Fatalf("count items after no-op replace: %v", err)
+	}
+	if itemRows != 1 {
+		t.Fatalf("item rows after no-op replace = %d, want 1", itemRows)
+	}
+}
+
 func assertSafeboxPasswordRow(t *testing.T, db *sql.DB, characterID uint32, login, password string, money int64) {
 	t.Helper()
 

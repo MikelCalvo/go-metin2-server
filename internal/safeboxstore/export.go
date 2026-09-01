@@ -24,10 +24,17 @@ const (
 // export/backfill contract only: it does not open a database, emit SQL, apply
 // migrations, or mutate the safebox store.
 type CharacterSafeboxStateExport struct {
-	MigrationVersion int                           `json:"migration_version"`
-	MigrationName    string                        `json:"migration_name"`
-	Passwords        []CharacterSafeboxPasswordRow `json:"passwords"`
-	Items            []CharacterSafeboxItemRow     `json:"items"`
+	MigrationVersion int    `json:"migration_version"`
+	MigrationName    string `json:"migration_name"`
+	// CharacterIDs optionally declares the replace/wipe character scope for
+	// ImportCharacterSafeboxState(..., Replace: true). When omitted or empty,
+	// quarantine derives the scope from password rows (legacy insert-only
+	// exports stay valid). Explicit ids merge with password/item row-derived
+	// ids so a listed character with zero password and zero item rows can still
+	// wipe-to-empty.
+	CharacterIDs []uint32                      `json:"character_ids,omitempty"`
+	Passwords    []CharacterSafeboxPasswordRow `json:"passwords"`
+	Items        []CharacterSafeboxItemRow     `json:"items"`
 }
 
 // CharacterSafeboxPasswordRow mirrors character_safebox_passwords after the

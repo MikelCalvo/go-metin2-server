@@ -144,5 +144,6 @@ would invent policy mid-implementation. Freeze first; GREEN stays follow-on.
 
 ## Status
 
-Docs/spec freeze landed first; tip-`0015` scoped replace GREEN remains follow-on.
+Docs/spec freeze landed first; tip-`0015` scoped replace GREEN is owned by
+[character safebox-state import scoped replace GREEN](2026-09-01-character-safebox-state-import-scoped-replace-green.md).
 Insert-only remains the default without the replace option / CLI confirmation.
