@@ -146,4 +146,6 @@ would invent policy mid-implementation. Freeze first; GREEN stays follow-on.
 
 Docs/spec freeze landed first; tip-`0015` scoped replace GREEN is owned by
 [character safebox-state import scoped replace GREEN](2026-09-01-character-safebox-state-import-scoped-replace-green.md).
+A parallel tip-`0004` quest-state scoped-replace freeze is now owned by
+[character quest-state import replace/upsert contract freeze](2026-09-01-character-quest-state-import-replace-upsert-contract-freeze.md).
 Insert-only remains the default without the replace option / CLI confirmation.
