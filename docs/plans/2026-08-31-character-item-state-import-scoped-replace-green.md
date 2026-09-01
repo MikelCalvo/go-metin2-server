@@ -34,5 +34,6 @@ conflicts.
 
 ## Status
 
-GREEN on `lane/persistence`. Follow-on freezes for other tip kinds remain
-deferred; production-engine selection remains deferred.
+GREEN on `lane/persistence`. Follow-on tip-`0015` safebox scoped-replace freeze is
+now owned by [character safebox-state import replace/upsert contract freeze](2026-09-01-character-safebox-state-import-replace-upsert-contract-freeze.md);
+other tip-kind freezes and production-engine selection remain deferred.
