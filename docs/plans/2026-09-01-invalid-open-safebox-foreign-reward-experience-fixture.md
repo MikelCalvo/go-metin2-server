@@ -69,4 +69,6 @@ git diff --check
    exists.
 2. Keep branching quest scripts deferred.
 3. Add further checked-in negatives only when a later reject case still forces
-   QA to invent JSON.
+   QA to invent JSON.~~ Done for `open_safebox` foreign turn-in `consume_gold`:
+   `docs/examples/bootstrap-invalid-open-safebox-foreign-consume-gold-bundle.json`
+   (`docs/plans/2026-09-01-invalid-open-safebox-foreign-consume-gold-fixture.md`).

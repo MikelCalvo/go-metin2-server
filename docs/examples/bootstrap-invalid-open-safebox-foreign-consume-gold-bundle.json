@@ -1,0 +1,10 @@
+{
+  "interaction_definitions": [
+    {
+      "kind": "open_safebox",
+      "ref": "npc:qa_warehouse_foreign_consume_gold",
+      "text": "Store your goods safely.",
+      "consume_gold": 25
+    }
+  ]
+}

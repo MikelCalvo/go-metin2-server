@@ -76,3 +76,6 @@ git diff --check
    `reward_experience`:
    `docs/examples/bootstrap-invalid-open-safebox-foreign-reward-experience-bundle.json`
    (`docs/plans/2026-09-01-invalid-open-safebox-foreign-reward-experience-fixture.md`).
+   Done for `open_safebox` foreign turn-in `consume_gold`:
+   `docs/examples/bootstrap-invalid-open-safebox-foreign-consume-gold-bundle.json`
+   (`docs/plans/2026-09-01-invalid-open-safebox-foreign-consume-gold-fixture.md`).
