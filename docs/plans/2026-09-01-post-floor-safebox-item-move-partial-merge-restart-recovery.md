@@ -31,7 +31,7 @@ compatible same-`vnum` `SAFEBOX_ITEM_MOVE` merge.
 ## Explicit non-goals
 
 - inventing a death-specific safebox packet family
-- widening into mall / whole-stack compatible-merge restart twins in this same commit
+- ~~widening into mall / whole-stack compatible-merge restart twins in this same commit~~ Done later: [post-floor whole-stack compatible-merge SAFEBOX_ITEM_MOVE restart recovery](2026-09-01-post-floor-safebox-item-move-whole-merge-restart-recovery.md)
 - refine catalysts / mall / GD-DB `MYSHOP_PRICELIST`
 
 ## Validation
