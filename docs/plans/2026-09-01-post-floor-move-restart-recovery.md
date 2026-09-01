@@ -35,9 +35,9 @@ restore a usable live owner so ordinary same-map movement succeeds again.
 ## Runtime note
 
 A focused probe already observed that `/restart_here` restores ordinary
-same-map `MOVE` success frames without further production changes. The next
-implementation step is therefore a GREEN proof twin under the names above,
-not a speculative RED against missing runtime recovery.
+same-map `MOVE` success frames without further production changes. This slice
+lands the GREEN proof twins under the names above; no production runtime change
+was required.
 
 ## Validation
 
