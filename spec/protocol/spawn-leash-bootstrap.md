@@ -416,6 +416,7 @@ Current implementation status:
 - abrupt socket close / onClose now has the matching focused twin beside those slash leave proofs: clear-then-Leave arms within_radius homeward and clears pending chase (`TestGameRuntimeAbruptCloseClearsPendingSpawnGroupChaseAndArmsHomewardAfterChaseDisplace`)
 - owner transfer / relocate now snapshots the subject's engagements before `sharedWorld.transfer` clears `engaged_by`, then re-syncs chase prune + within_radius homeward after `clearActiveCombatTarget`; focused coverage: `TestGameRuntimeTransferClearsPendingSpawnGroupChaseAndArmsHomewardAfterChaseDisplace`
 - EnterGame reclaim / Join now snapshots engagements owned by reclaimable stale subjects before `removeStaleOwnership` clears `engaged_by`, then re-syncs chase prune + within_radius homeward before encoding visibility (matching slash leave / transfer); focused coverage: `TestGameRuntimeEnterGameReclaimClearsPendingSpawnGroupChaseAndArmsHomewardAfterChaseDisplace`
+- proximity-armed chase that already displaced a practice mob `within_radius` now has the matching focused twin for leave-radius walk-away: engagement release clears pending chase and arms within_radius homeward without inventing self `TARGET(0, 0)` (`TestGameRuntimeProximityWalkAwayClearsPendingSpawnGroupChaseAndArmsHomewardAfterChaseDisplace`); the older at-home proximity walk-away twin still owns engagement / chase clear / retaliation cancel without requiring a displace
 
 ## First owned pending homeward-step inspection seam
 
