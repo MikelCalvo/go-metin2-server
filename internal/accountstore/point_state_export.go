@@ -20,9 +20,15 @@ const (
 // data-model/export contract only: it does not open a database, emit SQL, apply
 // migrations, or mutate the file store.
 type CharacterPointStateExport struct {
-	MigrationVersion int                 `json:"migration_version"`
-	MigrationName    string              `json:"migration_name"`
-	Points           []CharacterPointRow `json:"points"`
+	MigrationVersion int    `json:"migration_version"`
+	MigrationName    string `json:"migration_name"`
+	// CharacterIDs optionally declares the replace/wipe character scope for
+	// ImportCharacterPointState(..., Replace: true). When omitted or empty,
+	// quarantine derives the scope from point rows (legacy insert-only exports
+	// stay valid). Explicit ids merge with point row-derived ids so a listed
+	// character with zero point rows can still wipe-to-empty.
+	CharacterIDs []uint32            `json:"character_ids,omitempty"`
+	Points       []CharacterPointRow `json:"points"`
 }
 
 // CharacterPointRow mirrors one fixed-width character point slot frozen by the

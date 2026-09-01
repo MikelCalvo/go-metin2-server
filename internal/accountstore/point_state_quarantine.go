@@ -40,7 +40,9 @@ func ValidateCharacterPointStateExport(export CharacterPointStateExport) (Charac
 
 // QuarantineCharacterPointStateExport validates a retained export and returns a
 // canonicalized copy grouped by ascending character_id with complete 0..254
-// point vectors. It never opens a database or mutates account snapshots.
+// point vectors. Declared character_ids merge with point row-derived ids so a
+// listed character with zero point rows can wipe-to-empty under scoped replace.
+// It never opens a database or mutates account snapshots.
 func QuarantineCharacterPointStateExport(export CharacterPointStateExport) (CharacterPointStateExport, CharacterPointStateQuarantineSummary, error) {
 	return canonicalizeCharacterPointStateExport(export)
 }
@@ -54,6 +56,21 @@ func canonicalizeCharacterPointStateExport(export CharacterPointStateExport) (Ch
 	}
 	if export.Points == nil {
 		return CharacterPointStateExport{}, CharacterPointStateQuarantineSummary{}, fmt.Errorf("%w: points must be present", ErrInvalidCharacterPointStateExport)
+	}
+
+	characterIDs := make(map[uint32]struct{}, len(export.Points)/characterPointStatePointCount+1+len(export.CharacterIDs))
+	if export.CharacterIDs != nil {
+		seenDeclaredIDs := make(map[uint32]struct{}, len(export.CharacterIDs))
+		for _, characterID := range export.CharacterIDs {
+			if characterID == 0 {
+				return CharacterPointStateExport{}, CharacterPointStateQuarantineSummary{}, fmt.Errorf("%w: character_ids entries must be > 0", ErrInvalidCharacterPointStateExport)
+			}
+			if _, exists := seenDeclaredIDs[characterID]; exists {
+				return CharacterPointStateExport{}, CharacterPointStateQuarantineSummary{}, fmt.Errorf("%w: duplicate character_ids entry %d", ErrInvalidCharacterPointStateExport, characterID)
+			}
+			seenDeclaredIDs[characterID] = struct{}{}
+			characterIDs[characterID] = struct{}{}
+		}
 	}
 
 	byCharacter := make(map[uint32]map[uint8]int32, len(export.Points)/characterPointStatePointCount+1)
@@ -73,9 +90,9 @@ func canonicalizeCharacterPointStateExport(export CharacterPointStateExport) (Ch
 			return CharacterPointStateExport{}, CharacterPointStateQuarantineSummary{}, fmt.Errorf("%w: duplicate character_id=%d point_index=%d", ErrInvalidCharacterPointStateExport, row.CharacterID, row.PointIndex)
 		}
 		points[row.PointIndex] = row.Value
+		characterIDs[row.CharacterID] = struct{}{}
 	}
 
-	characterIDs := make([]uint32, 0, len(byCharacter))
 	for characterID, points := range byCharacter {
 		if len(points) != characterPointStatePointCount {
 			return CharacterPointStateExport{}, CharacterPointStateQuarantineSummary{}, fmt.Errorf("%w: character %d has %d point rows; expected %d", ErrInvalidCharacterPointStateExport, characterID, len(points), characterPointStatePointCount)
@@ -85,17 +102,28 @@ func canonicalizeCharacterPointStateExport(export CharacterPointStateExport) (Ch
 				return CharacterPointStateExport{}, CharacterPointStateQuarantineSummary{}, fmt.Errorf("%w: character %d missing point_index %d", ErrInvalidCharacterPointStateExport, characterID, index)
 			}
 		}
-		characterIDs = append(characterIDs, characterID)
 	}
-	sort.Slice(characterIDs, func(i, j int) bool { return characterIDs[i] < characterIDs[j] })
+
+	sortedCharacterIDs := make([]uint32, 0, len(characterIDs))
+	for characterID := range characterIDs {
+		sortedCharacterIDs = append(sortedCharacterIDs, characterID)
+	}
+	sort.Slice(sortedCharacterIDs, func(i, j int) bool { return sortedCharacterIDs[i] < sortedCharacterIDs[j] })
 
 	canonical := CharacterPointStateExport{
 		MigrationVersion: CharacterPointStateMigrationVersion,
 		MigrationName:    CharacterPointStateMigrationName,
-		Points:           make([]CharacterPointRow, 0, len(characterIDs)*characterPointStatePointCount),
+		CharacterIDs:     append([]uint32(nil), sortedCharacterIDs...),
+		Points:           make([]CharacterPointRow, 0, len(byCharacter)*characterPointStatePointCount),
 	}
-	for _, characterID := range characterIDs {
-		points := byCharacter[characterID]
+	if canonical.CharacterIDs == nil {
+		canonical.CharacterIDs = []uint32{}
+	}
+	for _, characterID := range sortedCharacterIDs {
+		points, ok := byCharacter[characterID]
+		if !ok {
+			continue
+		}
 		for index := 0; index < characterPointStatePointCount; index++ {
 			canonical.Points = append(canonical.Points, CharacterPointRow{
 				CharacterID: characterID,
@@ -106,9 +134,9 @@ func canonicalizeCharacterPointStateExport(export CharacterPointStateExport) (Ch
 	}
 
 	summary := CharacterPointStateQuarantineSummary{
-		CharacterCount: len(characterIDs),
+		CharacterCount: len(sortedCharacterIDs),
 		PointRowCount:  len(canonical.Points),
-		CharacterIDs:   characterIDs,
+		CharacterIDs:   sortedCharacterIDs,
 	}
 	if summary.CharacterIDs == nil {
 		summary.CharacterIDs = []uint32{}

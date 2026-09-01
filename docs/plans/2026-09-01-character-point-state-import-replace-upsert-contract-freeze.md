@@ -154,7 +154,8 @@ would invent policy mid-implementation. Freeze first; GREEN stays follow-on.
 
 ## Status
 
-Docs/spec freeze landed first; tip-`0011` scoped replace GREEN stays follow-on.
+Docs/spec freeze landed first; tip-`0011` scoped replace GREEN is now owned by
+[character point-state import scoped replace GREEN](2026-09-01-character-point-state-import-scoped-replace-green.md).
 Insert-only remains the default without the replace option / CLI confirmation.
 This freeze also folds the missing Track E / migration-contract Done marker for
 already-landed tip-`0015` scoped replace GREEN so operator next-slice pointers

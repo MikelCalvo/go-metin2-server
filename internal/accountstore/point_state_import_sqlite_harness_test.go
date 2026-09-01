@@ -217,6 +217,279 @@ func TestSQLiteHarnessPointStateImportAcceptsEmptyExport(t *testing.T) {
 	}
 }
 
+func TestSQLiteHarnessPointStateImportReplaceAfterInsertOnlyConflict(t *testing.T) {
+	db := openSQLitePointStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterPointStateMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterPointStateMigrationVersion, err)
+	}
+
+	character := rosterExportCharacter(11, "AlphaWar")
+	character.Points[0] = 12
+	character.Points[1] = -3
+	accounts := []Account{
+		{
+			Login:  "Alpha",
+			Empire: 1,
+			Characters: []loginticket.Character{
+				character,
+			},
+		},
+	}
+	rosterExport, err := ExportAccountCharacterRoster(accounts)
+	if err != nil {
+		t.Fatalf("ExportAccountCharacterRoster: %v", err)
+	}
+	if _, err := ImportAccountCharacterRoster(ctx, db, rosterExport); err != nil {
+		t.Fatalf("ImportAccountCharacterRoster: %v", err)
+	}
+
+	pointExport, err := ExportCharacterPointState(accounts)
+	if err != nil {
+		t.Fatalf("ExportCharacterPointState: %v", err)
+	}
+	if _, err := ImportCharacterPointState(ctx, db, pointExport); err != nil {
+		t.Fatalf("first insert-only ImportCharacterPointState: %v", err)
+	}
+	if _, err := ImportCharacterPointState(ctx, db, pointExport); err == nil {
+		t.Fatal("second insert-only ImportCharacterPointState succeeded, want unique conflict")
+	}
+
+	replacedCharacter := rosterExportCharacter(11, "AlphaWar")
+	replacedCharacter.Points[0] = 40
+	replacedCharacter.Points[254] = 7
+	replacedAccounts := []Account{
+		{
+			Login:  "Alpha",
+			Empire: 1,
+			Characters: []loginticket.Character{
+				replacedCharacter,
+			},
+		},
+	}
+	replacedExport, err := ExportCharacterPointState(replacedAccounts)
+	if err != nil {
+		t.Fatalf("ExportCharacterPointState(replaced): %v", err)
+	}
+	result, err := ImportCharacterPointState(ctx, db, replacedExport, ImportCharacterPointStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("replace ImportCharacterPointState: %v", err)
+	}
+	if !result.Replaced {
+		t.Fatalf("replace result.Replaced = false, want true")
+	}
+	if result.CharacterCount != 1 || result.PointRowCount != 255 {
+		t.Fatalf("unexpected replace counts: %+v", result)
+	}
+
+	var pointRows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_points`).Scan(&pointRows); err != nil {
+		t.Fatalf("count points after replace: %v", err)
+	}
+	if pointRows != 255 {
+		t.Fatalf("point rows after replace = %d, want 255", pointRows)
+	}
+	assertPointRow(t, db, 11, 0, 40)
+	assertPointRow(t, db, 11, 1, 0)
+	assertPointRow(t, db, 11, 254, 7)
+}
+
+func TestSQLiteHarnessPointStateImportReplaceLeavesUnlistedCharactersUntouched(t *testing.T) {
+	db := openSQLitePointStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterPointStateMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterPointStateMigrationVersion, err)
+	}
+
+	alphaWar := rosterExportCharacter(11, "AlphaWar")
+	alphaWar.Points[0] = 12
+	bravoNinja := rosterExportCharacter(22, "BravoNinja")
+	bravoNinja.Points[0] = 1
+	bravoNinja.Points[100] = 700
+	accounts := []Account{
+		{
+			Login:  "Alpha",
+			Empire: 1,
+			Characters: []loginticket.Character{
+				alphaWar,
+			},
+		},
+		{
+			Login:  "Bravo",
+			Empire: 2,
+			Characters: []loginticket.Character{
+				bravoNinja,
+			},
+		},
+	}
+	rosterExport, err := ExportAccountCharacterRoster(accounts)
+	if err != nil {
+		t.Fatalf("ExportAccountCharacterRoster: %v", err)
+	}
+	if _, err := ImportAccountCharacterRoster(ctx, db, rosterExport); err != nil {
+		t.Fatalf("ImportAccountCharacterRoster: %v", err)
+	}
+
+	fullExport, err := ExportCharacterPointState(accounts)
+	if err != nil {
+		t.Fatalf("ExportCharacterPointState: %v", err)
+	}
+	if _, err := ImportCharacterPointState(ctx, db, fullExport); err != nil {
+		t.Fatalf("seed ImportCharacterPointState: %v", err)
+	}
+
+	alphaOnly := CharacterPointStateExport{
+		MigrationVersion: CharacterPointStateMigrationVersion,
+		MigrationName:    CharacterPointStateMigrationName,
+		CharacterIDs:     []uint32{11},
+		Points:           fullPointVector(11, 0),
+	}
+	alphaOnly.Points[0].Value = 99
+	result, err := ImportCharacterPointState(ctx, db, alphaOnly, ImportCharacterPointStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("scoped replace ImportCharacterPointState: %v", err)
+	}
+	if !result.Replaced || result.CharacterCount != 1 || result.PointRowCount != 255 {
+		t.Fatalf("unexpected scoped replace result: %+v", result)
+	}
+
+	var alphaPoints, bravoPoints int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_points WHERE character_id = 11`).Scan(&alphaPoints); err != nil {
+		t.Fatalf("count alpha points: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_points WHERE character_id = 22`).Scan(&bravoPoints); err != nil {
+		t.Fatalf("count bravo points: %v", err)
+	}
+	if alphaPoints != 255 || bravoPoints != 255 {
+		t.Fatalf("scoped replace left unexpected counts alpha=%d bravo=%d", alphaPoints, bravoPoints)
+	}
+	assertPointRow(t, db, 11, 0, 99)
+	assertPointRow(t, db, 22, 0, 1)
+	assertPointRow(t, db, 22, 100, 700)
+}
+
+func TestSQLiteHarnessPointStateImportReplaceWipesListedCharacterWithEmptyPoints(t *testing.T) {
+	db := openSQLitePointStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterPointStateMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterPointStateMigrationVersion, err)
+	}
+
+	character := rosterExportCharacter(11, "AlphaWar")
+	character.Points[0] = 12
+	accounts := []Account{
+		{
+			Login:  "Alpha",
+			Empire: 1,
+			Characters: []loginticket.Character{
+				character,
+			},
+		},
+	}
+	rosterExport, err := ExportAccountCharacterRoster(accounts)
+	if err != nil {
+		t.Fatalf("ExportAccountCharacterRoster: %v", err)
+	}
+	if _, err := ImportAccountCharacterRoster(ctx, db, rosterExport); err != nil {
+		t.Fatalf("ImportAccountCharacterRoster: %v", err)
+	}
+
+	seedExport, err := ExportCharacterPointState(accounts)
+	if err != nil {
+		t.Fatalf("ExportCharacterPointState: %v", err)
+	}
+	if _, err := ImportCharacterPointState(ctx, db, seedExport); err != nil {
+		t.Fatalf("seed ImportCharacterPointState: %v", err)
+	}
+
+	emptyWipe := CharacterPointStateExport{
+		MigrationVersion: CharacterPointStateMigrationVersion,
+		MigrationName:    CharacterPointStateMigrationName,
+		CharacterIDs:     []uint32{11},
+		Points:           []CharacterPointRow{},
+	}
+	result, err := ImportCharacterPointState(ctx, db, emptyWipe, ImportCharacterPointStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("empty wipe replace: %v", err)
+	}
+	if !result.Replaced || result.CharacterCount != 1 || result.PointRowCount != 0 {
+		t.Fatalf("unexpected empty wipe result: %+v", result)
+	}
+
+	var pointRows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_points`).Scan(&pointRows); err != nil {
+		t.Fatalf("count points after wipe: %v", err)
+	}
+	if pointRows != 0 {
+		t.Fatalf("point rows after empty wipe = %d, want 0", pointRows)
+	}
+}
+
+func TestSQLiteHarnessPointStateImportReplaceNoOpForEmptyCharacterIDs(t *testing.T) {
+	db := openSQLitePointStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterPointStateMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterPointStateMigrationVersion, err)
+	}
+
+	character := rosterExportCharacter(11, "AlphaWar")
+	character.Points[0] = 12
+	accounts := []Account{
+		{
+			Login:  "Alpha",
+			Empire: 1,
+			Characters: []loginticket.Character{
+				character,
+			},
+		},
+	}
+	rosterExport, err := ExportAccountCharacterRoster(accounts)
+	if err != nil {
+		t.Fatalf("ExportAccountCharacterRoster: %v", err)
+	}
+	if _, err := ImportAccountCharacterRoster(ctx, db, rosterExport); err != nil {
+		t.Fatalf("ImportAccountCharacterRoster: %v", err)
+	}
+
+	seedExport, err := ExportCharacterPointState(accounts)
+	if err != nil {
+		t.Fatalf("ExportCharacterPointState: %v", err)
+	}
+	if _, err := ImportCharacterPointState(ctx, db, seedExport); err != nil {
+		t.Fatalf("seed ImportCharacterPointState: %v", err)
+	}
+
+	emptyIDs := CharacterPointStateExport{
+		MigrationVersion: CharacterPointStateMigrationVersion,
+		MigrationName:    CharacterPointStateMigrationName,
+		CharacterIDs:     []uint32{},
+		Points:           []CharacterPointRow{},
+	}
+	result, err := ImportCharacterPointState(ctx, db, emptyIDs, ImportCharacterPointStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("empty character_ids replace: %v", err)
+	}
+	if !result.Replaced || result.CharacterCount != 0 {
+		t.Fatalf("unexpected empty character_ids result: %+v", result)
+	}
+
+	var pointRows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_points`).Scan(&pointRows); err != nil {
+		t.Fatalf("count points after no-op replace: %v", err)
+	}
+	if pointRows != 255 {
+		t.Fatalf("point rows after no-op replace = %d, want 255", pointRows)
+	}
+}
+
 func assertPointRow(t *testing.T, db *sql.DB, characterID uint32, pointIndex uint8, wantValue int32) {
 	t.Helper()
 

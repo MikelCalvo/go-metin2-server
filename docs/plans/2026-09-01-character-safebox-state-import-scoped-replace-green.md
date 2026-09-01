@@ -36,7 +36,7 @@ primary-key conflicts.
 
 ## Status
 
-GREEN on `lane/items` (now on `main`). Follow-on tip-`0011` point-state
-scoped-replace freeze is owned by
-[character point-state import replace/upsert contract freeze](2026-09-01-character-point-state-import-replace-upsert-contract-freeze.md);
+GREEN on `lane/items` (now on `main`). Follow-on tip-`0011` point-state scoped
+replace GREEN is owned by
+[character point-state import scoped replace GREEN](2026-09-01-character-point-state-import-scoped-replace-green.md);
 production-engine selection remains deferred.

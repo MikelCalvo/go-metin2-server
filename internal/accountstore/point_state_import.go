@@ -31,6 +31,20 @@ type CharacterPointStateImportResult struct {
 	CharacterCount   int      `json:"character_count"`
 	PointRowCount    int      `json:"point_row_count"`
 	CharacterIDs     []uint32 `json:"character_ids"`
+	// Replaced is true when ImportCharacterPointState ran with the opt-in scoped
+	// replace policy (delete then insert for listed character ids). Omitted from
+	// JSON when false so legacy insert-only import-result files stay valid.
+	Replaced bool `json:"replaced,omitempty"`
+}
+
+// ImportCharacterPointStateOptions controls opt-in mutation policy for
+// ImportCharacterPointState. The zero value keeps today's insert-only behavior.
+type ImportCharacterPointStateOptions struct {
+	// Replace, when true, deletes existing tip-0011 child rows for every
+	// character id in the quarantined export summary before inserting the
+	// canonicalized export rows, all inside one transaction. Characters not
+	// listed in the export remain untouched.
+	Replace bool
 }
 
 // ImportCharacterPointState validates a retained 0011 point-state export through
@@ -39,12 +53,21 @@ type CharacterPointStateImportResult struct {
 //
 // The caller still owns driver selection and DSN loading. Parent character rows
 // from 0002 must already exist (or the engine FK check fails closed). This
-// primitive does not mutate bootstrap file stores, does not rewrite
-// schema_migrations, and does not invent upsert / merge policy: duplicate
-// primary keys fail closed and roll the transaction back.
-func ImportCharacterPointState(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export CharacterPointStateExport) (CharacterPointStateImportResult, error) {
+// primitive does not mutate bootstrap file stores and does not rewrite
+// schema_migrations. Without options (or with Replace=false) it does not invent
+// upsert / merge policy: duplicate primary keys fail closed and roll the
+// transaction back. Pass ImportCharacterPointStateOptions{Replace: true} for the
+// opt-in scoped replace path frozen by the tip-0011 replace contract.
+func ImportCharacterPointState(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export CharacterPointStateExport, opts ...ImportCharacterPointStateOptions) (CharacterPointStateImportResult, error) {
 	if pointStateImportExecutorIsNil(executor) {
 		return CharacterPointStateImportResult{}, ErrCharacterPointStateImportExecutorRequired
+	}
+	if len(opts) > 1 {
+		return CharacterPointStateImportResult{}, fmt.Errorf("ImportCharacterPointState accepts at most one options value")
+	}
+	replace := false
+	if len(opts) == 1 {
+		replace = opts[0].Replace
 	}
 
 	canonical, summary, err := QuarantineCharacterPointStateExport(export)
@@ -58,6 +81,7 @@ func ImportCharacterPointState(ctx context.Context, executor dbmigrations.SQLMig
 		CharacterCount:   summary.CharacterCount,
 		PointRowCount:    summary.PointRowCount,
 		CharacterIDs:     append([]uint32(nil), summary.CharacterIDs...),
+		Replaced:         replace,
 	}
 	if result.CharacterIDs == nil {
 		result.CharacterIDs = []uint32{}
@@ -70,6 +94,14 @@ func ImportCharacterPointState(ctx context.Context, executor dbmigrations.SQLMig
 
 	if err := requireCharacterPointStateSchema(ctx, tx); err != nil {
 		return CharacterPointStateImportResult{}, rollbackAfterPointStateImportFailure(tx, err)
+	}
+
+	if replace {
+		for _, characterID := range summary.CharacterIDs {
+			if err := deleteCharacterPointsForCharacter(ctx, tx, characterID); err != nil {
+				return CharacterPointStateImportResult{}, rollbackAfterPointStateImportFailure(tx, err)
+			}
+		}
 	}
 
 	for _, row := range canonical.Points {
@@ -101,6 +133,13 @@ func requireCharacterPointStateSchema(ctx context.Context, querier dbmigrations.
 		}
 	}
 	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrCharacterPointStateImportSchemaRequired, latest, CharacterPointStateMigrationVersion, CharacterPointStateMigrationName)
+}
+
+func deleteCharacterPointsForCharacter(ctx context.Context, tx *sql.Tx, characterID uint32) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM character_points WHERE character_id = ?`, int64(characterID)); err != nil {
+		return fmt.Errorf("delete points for character %d: %w", characterID, err)
+	}
+	return nil
 }
 
 func insertCharacterPoint(ctx context.Context, tx *sql.Tx, row CharacterPointRow) error {
