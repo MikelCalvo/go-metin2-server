@@ -376,7 +376,8 @@ func TestGameSessionFlowPostFloorItemRefineFailsClosedBeforeRejectFeedback(t *te
 
 	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
 
-	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 2})))
+	refinePacket := itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 2})
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, refinePacket))
 	if err != nil {
 		t.Fatalf("unexpected post-floor REFINE dispatch error: %v", err)
 	}
@@ -387,6 +388,154 @@ func TestGameSessionFlowPostFloorItemRefineFailsClosedBeforeRejectFeedback(t *te
 		t.Fatalf("expected post-floor REFINE to queue no frames, got %d", len(queued))
 	}
 	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor REFINE")
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_here",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here after post-floor REFINE: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_here recovery frames after post-floor REFINE, got %d", len(restartOut))
+	}
+	_ = flushServerFrames(t, flow)
+
+	reuseOut, err := flow.HandleClientFrame(decodeSingleFrame(t, refinePacket))
+	if err != nil {
+		t.Fatalf("unexpected post-restart REFINE: %v", err)
+	}
+	if len(reuseOut) != 1 {
+		t.Fatalf("expected post-restart template-backed REFINE to emit one info-chat frame, got %d", len(reuseOut))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, reuseOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-restart template-backed REFINE rejection info chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != template.RefineRejectText {
+		t.Fatalf("unexpected post-restart template-backed REFINE rejection chat: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after post-restart template-backed REFINE rejection, got %d", len(queued))
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart REFINE: %v", err)
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_here to persist recovered owner HP %d after REFINE floor, got %+v", wantHP, account.Characters[0])
+	}
+	want := owner
+	want.Points[bootstrapPlayerPointValueIndex] = wantHP
+	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart REFINE leaves inventory unchanged")
+}
+
+func TestGameSessionFlowPostFloorItemRefineFailsClosedBeforeRestartTown(t *testing.T) {
+	login := "pf-item-refine-town"
+	loginKey := uint32(0x19191a51)
+	owner := peerVisibilityCharacter("DeadRefineTownOwner", 0x01030a51, 0x02040a51, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Inventory = []inventory.ItemInstance{{ID: 803, Vnum: 11201, Count: 1, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: 1, Slot: 5}}
+	template := itemcatalog.Template{
+		Vnum:             11201,
+		Name:             "Dead Guard Practice Blade",
+		Stackable:        false,
+		MaxCount:         1,
+		RefineRejectText: "This item cannot be refined yet.",
+	}
+	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, []itemcatalog.Template{template})
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	refinePacket := itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 2})
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, refinePacket))
+	if err != nil {
+		t.Fatalf("unexpected post-floor town REFINE dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor town REFINE to fail closed before template reject feedback, got %d frames", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor town REFINE to queue no frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor town REFINE")
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/restart_town",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_town after post-floor REFINE: %v", err)
+	}
+	if len(restartOut) == 0 {
+		t.Fatalf("expected /restart_town recovery frames after post-floor REFINE, got %d", len(restartOut))
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[0]))
+	if err != nil {
+		t.Fatalf("decode self character add after post-floor REFINE /restart_town: %v", err)
+	}
+	if selfAdd.VID != owner.VID || selfAdd.X != 52070 || selfAdd.Y != 166600 {
+		t.Fatalf("expected /restart_town self bootstrap at empire town position after REFINE floor, got %+v", selfAdd)
+	}
+	var (
+		selfPoints  worldproto.PlayerPointChangePacket
+		foundPoints bool
+	)
+	for _, raw := range restartOut {
+		fr := decodeSingleFrame(t, raw)
+		if !foundPoints {
+			if points, err := worldproto.DecodePlayerPointChange(fr); err == nil {
+				selfPoints = points
+				foundPoints = true
+			}
+		}
+	}
+	if !foundPoints {
+		t.Fatal("expected /restart_town recovery to include self PLAYER_POINT_CHANGE after REFINE floor")
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if selfPoints.Value != wantHP {
+		t.Fatalf("expected /restart_town to rebuild recovered owner HP %d after REFINE floor, got %+v", wantHP, selfPoints)
+	}
+	_ = flushServerFrames(t, flow)
+
+	reuseOut, err := flow.HandleClientFrame(decodeSingleFrame(t, refinePacket))
+	if err != nil {
+		t.Fatalf("unexpected post-restart_town REFINE: %v", err)
+	}
+	if len(reuseOut) != 1 {
+		t.Fatalf("expected post-restart_town template-backed REFINE to emit one info-chat frame, got %d", len(reuseOut))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, reuseOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-restart_town template-backed REFINE rejection info chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != template.RefineRejectText {
+		t.Fatalf("unexpected post-restart_town template-backed REFINE rejection chat: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after post-restart_town template-backed REFINE rejection, got %d", len(queued))
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after post-restart_town REFINE: %v", err)
+	}
+	if account.Characters[0].MapIndex != 21 || account.Characters[0].X != 52070 || account.Characters[0].Y != 166600 {
+		t.Fatalf("expected /restart_town to persist empire town position after REFINE floor, got %+v", account.Characters[0])
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantHP {
+		t.Fatalf("expected /restart_town + REFINE to persist recovered owner HP %d after REFINE floor, got %+v", wantHP, account.Characters[0])
+	}
+	want := owner
+	want.Points[bootstrapPlayerPointValueIndex] = wantHP
+	want.MapIndex = 21
+	want.X = 52070
+	want.Y = 166600
+	assertExchangeAccountUnchanged(t, accounts, login, want, "post-restart_town REFINE leaves inventory unchanged")
 }
 
 func TestGameSessionFlowPostFloorStoragePacketsFailClosedWithoutMutation(t *testing.T) {
