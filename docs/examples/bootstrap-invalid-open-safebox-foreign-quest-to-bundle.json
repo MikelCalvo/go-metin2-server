@@ -1,0 +1,41 @@
+{
+  "static_actors": [
+    {
+      "name": "WarehouseForeignQuestTo",
+      "map_index": 1,
+      "x": 469500,
+      "y": 964200,
+      "race_num": 9003,
+      "interaction_kind": "open_safebox",
+      "interaction_ref": "npc:qa_warehouse_foreign_quest_to"
+    },
+    {
+      "name": "QuestGuide",
+      "map_index": 1,
+      "x": 469300,
+      "y": 964200,
+      "race_num": 20302,
+      "interaction_kind": "quest_flag",
+      "interaction_ref": "quest:first_steps"
+    }
+  ],
+  "interaction_definitions": [
+    {
+      "kind": "quest_flag",
+      "ref": "quest:first_steps",
+      "text": "Quest updated: first_steps.met_guide = 1.",
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "met_guide",
+      "quest_to": 1
+    },
+    {
+      "kind": "open_safebox",
+      "ref": "npc:qa_warehouse_foreign_quest_to",
+      "text": "Store your goods safely.",
+      "quest_ref": "quest:first_steps",
+      "quest_flag": "met_guide",
+      "quest_from": 1,
+      "quest_to": 2
+    }
+  ]
+}
