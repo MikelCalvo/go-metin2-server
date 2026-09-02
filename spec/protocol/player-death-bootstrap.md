@@ -145,6 +145,7 @@ This keeps the first recovery boundary honest:
 - partial (above-floor) selected live player points remain session/runtime-owned during the retaliation loop; the bootstrap `0`-HP floor itself is now persisted with the owned death/clear frames
 - the practice-mob HP and engagement loop remain shared-world/runtime-owned until the mob's own death/respawn reset seam runs
 - `/phase_select` is therefore only a bootstrap re-entry boundary, not a full corpse / revive / respawn system
+- once that same still-dead `/phase_select` re-entry has rebuilt the persisted floor, accepted same-socket `/restart_here` restores live combat selection and the next fresh `TARGET` + normal `ATTACK` resume against the still-live damaged practice mob (`TestGameSessionFlowPracticeMobPhaseSelectRestartHereFreshTargetResumesNormalAttack`); see `player-restart-here-bootstrap.md` for the recovery carrier details
 
 ## First owned same-socket `/restart_here` recovery boundary
 
