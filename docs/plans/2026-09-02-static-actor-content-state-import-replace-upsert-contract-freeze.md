@@ -140,8 +140,8 @@ would invent policy mid-implementation. Freeze first; GREEN stays follow-on.
    - `interaction_definition_keys` (structured `{kind, ref}` rows, or an
      equivalent GREEN encoding that preserves both halves of the PK) — merge
      with definition-row-derived `(kind, ref)` keys
-   - `combat_profiles` (`[]string`) — merge with combat-profile-row-derived
-     profile names
+   - `combat_profile_names` (`[]string`) — merge with combat-profile-row-derived
+     profile names (distinct from the existing `combat_profiles` row array)
 2. Quarantine summary `interaction_kinds` stays kinds-only metadata and is
    **not** a wipe/replace scope key. Declared wipe/replace of definitions must
    use full `(kind, ref)` keys.
@@ -239,7 +239,7 @@ would invent policy mid-implementation. Freeze first; GREEN stays follow-on.
 
 - `internal/staticstore/migration_export.go` /
   `migration_export_quarantine.go` (optional `entity_ids` /
-  `interaction_definition_keys` / `combat_profiles` merge + wipe-to-empty
+  `interaction_definition_keys` / `combat_profile_names` merge + wipe-to-empty
   exceptions)
 - `internal/staticstore/static_actor_content_state_import.go` (+ unit / sqlite
   harness tests)
