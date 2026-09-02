@@ -38,4 +38,7 @@ insert-only primary-key conflicts on `vid`.
 
 ## Status
 
-GREEN on `lane/persistence`. Production-engine selection remains deferred.
+GREEN on `lane/persistence`. Follow-on tip-`0009` item-template-state scoped
+replace freeze is owned by
+[item-template-state import replace/upsert contract freeze](2026-09-02-item-template-state-import-replace-upsert-contract-freeze.md);
+production-engine selection remains deferred.
