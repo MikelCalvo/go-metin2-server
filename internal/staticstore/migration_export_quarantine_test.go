@@ -25,7 +25,7 @@ func TestValidateStaticActorContentStateExportAcceptsCanonicalExport(t *testing.
 		RewardDropCount:                   2,
 		CombatProfileCount:                0,
 		CombatProfileDeathRewardDropCount: 0,
-		EntityIDs:                         []uint64{7, 9, 2},
+		EntityIDs:                         []uint64{2, 7, 9},
 		InteractionKinds:                  []string{interactionstore.KindInfo, interactionstore.KindShopPreview, interactionstore.KindTalk, interactionstore.KindWarp},
 		CombatProfiles:                    []string{},
 	}
@@ -236,7 +236,7 @@ func TestQuarantineStaticActorContentStateExportCanonicalizesRowOrder(t *testing
 		RewardDropCount:                   2,
 		CombatProfileCount:                0,
 		CombatProfileDeathRewardDropCount: 0,
-		EntityIDs:                         []uint64{7, 9, 2},
+		EntityIDs:                         []uint64{2, 7, 9},
 		InteractionKinds:                  []string{interactionstore.KindInfo, interactionstore.KindShopPreview, interactionstore.KindTalk, interactionstore.KindWarp},
 		CombatProfiles:                    []string{},
 	}
@@ -249,6 +249,14 @@ func sampleStaticActorContentStateExport() StaticActorContentStateExport {
 	return StaticActorContentStateExport{
 		MigrationVersion: StaticActorContentStateMigrationVersion,
 		MigrationName:    StaticActorContentStateMigrationName,
+		EntityIDs:        []uint64{2, 7, 9},
+		InteractionDefinitionKeys: []InteractionDefinitionKey{
+			{Kind: interactionstore.KindInfo, Ref: "lore:alchemist"},
+			{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant"},
+			{Kind: interactionstore.KindTalk, Ref: "npc:village_guard"},
+			{Kind: interactionstore.KindWarp, Ref: "npc:teleporter"},
+		},
+		CombatProfileNames: []string{},
 		InteractionDefinitions: []InteractionDefinitionRow{
 			{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
 			{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Title: "Village Merchant"},

@@ -40,9 +40,9 @@ func TestSQLiteHarnessStaticActorContentStateImportInsertsTip0013Rows(t *testing
 		result.CombatProfileCount != 1 || result.CombatProfileDeathRewardDropCount != 2 {
 		t.Fatalf("unexpected import counts: %+v", result)
 	}
-	// Export/quarantine order is by actor name, then entity id.
-	if len(result.EntityIDs) != 5 || result.EntityIDs[0] != 23 || result.EntityIDs[1] != 13 ||
-		result.EntityIDs[2] != 7 || result.EntityIDs[3] != 12 || result.EntityIDs[4] != 11 {
+	// Quarantine merges/sorts entity ids numerically for replace scope.
+	if len(result.EntityIDs) != 5 || result.EntityIDs[0] != 7 || result.EntityIDs[1] != 11 ||
+		result.EntityIDs[2] != 12 || result.EntityIDs[3] != 13 || result.EntityIDs[4] != 23 {
 		t.Fatalf("unexpected entity ids: %+v", result.EntityIDs)
 	}
 	if len(result.CombatProfiles) != 1 || result.CombatProfiles[0] != "practice_static_store_import_wolf" {
@@ -99,6 +99,157 @@ func TestSQLiteHarnessStaticActorContentStateImportRejectsDuplicatePrimaryKey(t 
 	}
 	if actorRows != 5 {
 		t.Fatalf("static actor rows after failed reimport = %d, want 5 (no partial second import)", actorRows)
+	}
+}
+
+func TestSQLiteHarnessStaticActorContentStateImportReplaceRewritesScopedTip0013Rows(t *testing.T) {
+	db := openSQLiteStaticActorContentStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, 20); err != nil {
+		t.Fatalf("ApplyToVersion(20): %v", err)
+	}
+
+	firstExport := sampleTip0013StaticActorContentStateImportExport(t)
+	if _, err := ImportStaticActorContentState(ctx, db, firstExport); err != nil {
+		t.Fatalf("first insert-only ImportStaticActorContentState: %v", err)
+	}
+	if _, err := ImportStaticActorContentState(ctx, db, firstExport); err == nil {
+		t.Fatal("second insert-only ImportStaticActorContentState succeeded, want unique conflict")
+	}
+
+	replacedExport := sampleTip0013StaticActorContentStateImportExport(t)
+	for i := range replacedExport.StaticActors {
+		if replacedExport.StaticActors[i].EntityID == 7 {
+			replacedExport.StaticActors[i].Name = "PracticeMob Reloaded"
+			replacedExport.StaticActors[i].RewardGold = 99
+		}
+	}
+	for i := range replacedExport.CombatProfiles {
+		if replacedExport.CombatProfiles[i].Profile == "practice_static_store_import_wolf" {
+			replacedExport.CombatProfiles[i].DeathRewardGold = 42
+			replacedExport.CombatProfiles[i].ChaseDelayMs = 1500
+		}
+	}
+
+	result, err := ImportStaticActorContentState(ctx, db, replacedExport, ImportStaticActorContentStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("replace ImportStaticActorContentState: %v", err)
+	}
+	if !result.Replaced {
+		t.Fatalf("replace result.Replaced = false, want true")
+	}
+	if result.StaticActorCount != 5 || result.CombatProfileCount != 1 || result.InteractionDefinitionCount != 6 {
+		t.Fatalf("unexpected replace counts: %+v", result)
+	}
+
+	assertStaticActorRow(t, db, 7, "PracticeMob Reloaded", 42, 1800, 2900, 101, uint32Ptr(42), int32Ptr(1700), int32Ptr(2800), worldruntime.StaticActorCombatProfilePracticeMob, nil, nil, stringPtr("practice.reward_mob"), 25, 99, "", "", 0, 0, "", "", "", 0)
+	assertCombatProfileRow(t, db, "practice_static_store_import_wolf", 24, 5, 9, 4, int(worldruntime.TrainingDummyBootstrapLevel), 0, 1500, 0, 0, 1500, 0, 0, 0, 0, 0, 15, 42)
+}
+
+func TestSQLiteHarnessStaticActorContentStateImportReplaceLeavesUnlistedIdentitiesUntouched(t *testing.T) {
+	db := openSQLiteStaticActorContentStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, 20); err != nil {
+		t.Fatalf("ApplyToVersion(20): %v", err)
+	}
+
+	fullExport := sampleTip0013StaticActorContentStateImportExport(t)
+	if _, err := ImportStaticActorContentState(ctx, db, fullExport); err != nil {
+		t.Fatalf("seed ImportStaticActorContentState: %v", err)
+	}
+
+	scoped := emptyStaticActorContentStateExport()
+	for _, actor := range fullExport.StaticActors {
+		if actor.EntityID == 7 {
+			actor.Name = "PracticeMob Scoped"
+			scoped.StaticActors = append(scoped.StaticActors, actor)
+			break
+		}
+	}
+	for _, drop := range fullExport.RewardDrops {
+		if drop.EntityID == 7 {
+			scoped.RewardDrops = append(scoped.RewardDrops, drop)
+		}
+	}
+
+	result, err := ImportStaticActorContentState(ctx, db, scoped, ImportStaticActorContentStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("scoped replace ImportStaticActorContentState: %v", err)
+	}
+	if !result.Replaced || result.StaticActorCount != 1 || len(result.EntityIDs) != 1 || result.EntityIDs[0] != 7 {
+		t.Fatalf("unexpected scoped replace result: %+v", result)
+	}
+
+	var practiceRows, warehouseRows, profileRows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM static_actors WHERE entity_id = 7`).Scan(&practiceRows); err != nil {
+		t.Fatalf("count practice actor rows: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM static_actors WHERE entity_id = 11`).Scan(&warehouseRows); err != nil {
+		t.Fatalf("count warehouse actor rows: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM static_actor_combat_profiles`).Scan(&profileRows); err != nil {
+		t.Fatalf("count combat profiles: %v", err)
+	}
+	if practiceRows != 1 || warehouseRows != 1 || profileRows != 1 {
+		t.Fatalf("scoped replace left unexpected counts practice=%d warehouse=%d profiles=%d", practiceRows, warehouseRows, profileRows)
+	}
+	assertStaticActorRow(t, db, 7, "PracticeMob Scoped", 42, 1800, 2900, 101, uint32Ptr(42), int32Ptr(1700), int32Ptr(2800), worldruntime.StaticActorCombatProfilePracticeMob, nil, nil, stringPtr("practice.reward_mob"), 25, 12, "", "", 0, 0, "", "", "", 0)
+	assertStaticActorRow(t, db, 11, "Warehouse", 1, 100, 200, 20010, nil, nil, nil, "", stringPtr("open_safebox"), stringPtr("npc:warehouse"), nil, 0, 0, "", "", 0, 0, "", "", "", 0)
+}
+
+func TestSQLiteHarnessStaticActorContentStateImportReplaceWipesListedIdentityWithEmptyRows(t *testing.T) {
+	db := openSQLiteStaticActorContentStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, 20); err != nil {
+		t.Fatalf("ApplyToVersion(20): %v", err)
+	}
+
+	seedExport := sampleTip0013StaticActorContentStateImportExport(t)
+	if _, err := ImportStaticActorContentState(ctx, db, seedExport); err != nil {
+		t.Fatalf("seed ImportStaticActorContentState: %v", err)
+	}
+
+	emptyWipe := emptyStaticActorContentStateExport()
+	emptyWipe.EntityIDs = []uint64{7}
+	emptyWipe.CombatProfileNames = []string{"practice_static_store_import_wolf"}
+	result, err := ImportStaticActorContentState(ctx, db, emptyWipe, ImportStaticActorContentStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("empty wipe replace: %v", err)
+	}
+	if !result.Replaced || result.StaticActorCount != 0 || result.CombatProfileCount != 0 {
+		t.Fatalf("unexpected empty wipe result: %+v", result)
+	}
+	if len(result.EntityIDs) != 1 || result.EntityIDs[0] != 7 {
+		t.Fatalf("unexpected empty wipe entity ids: %+v", result.EntityIDs)
+	}
+	if len(result.CombatProfiles) != 1 || result.CombatProfiles[0] != "practice_static_store_import_wolf" {
+		t.Fatalf("unexpected empty wipe combat profiles: %+v", result.CombatProfiles)
+	}
+
+	var practiceRows, dropRows, profileRows, deathDropRows, warehouseRows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM static_actors WHERE entity_id = 7`).Scan(&practiceRows); err != nil {
+		t.Fatalf("count practice actor after wipe: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM static_actor_reward_drops WHERE entity_id = 7`).Scan(&dropRows); err != nil {
+		t.Fatalf("count practice drops after wipe: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM static_actor_combat_profiles WHERE profile = 'practice_static_store_import_wolf'`).Scan(&profileRows); err != nil {
+		t.Fatalf("count wiped combat profile: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM static_actor_combat_profile_death_reward_drops WHERE profile = 'practice_static_store_import_wolf'`).Scan(&deathDropRows); err != nil {
+		t.Fatalf("count wiped death drops: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM static_actors WHERE entity_id = 11`).Scan(&warehouseRows); err != nil {
+		t.Fatalf("count warehouse after wipe: %v", err)
+	}
+	if practiceRows != 0 || dropRows != 0 || profileRows != 0 || deathDropRows != 0 || warehouseRows != 1 {
+		t.Fatalf("after wipe practice=%d drops=%d profiles=%d death=%d warehouse=%d", practiceRows, dropRows, profileRows, deathDropRows, warehouseRows)
 	}
 }
 

@@ -250,8 +250,8 @@ would invent policy mid-implementation. Freeze first; GREEN stays follow-on.
 
 ## Status
 
-Docs/spec freeze landed. Tip-`0013` scoped replace GREEN is the next
-implementation slice after this freeze. Insert-only remains the default without
-the replace option / CLI confirmation. Upsert / replace for
-`auth-login-ticket-handoff` (`0007`) stays deferred behind its own freeze.
-Production-engine selection remains deferred.
+Docs/spec freeze landed. Tip-`0013` scoped replace GREEN is Done in
+[static-actor content-state import scoped replace GREEN](2026-09-02-static-actor-content-state-import-scoped-replace-green.md).
+Insert-only remains the default without the replace option / CLI confirmation.
+Upsert / replace for `auth-login-ticket-handoff` (`0007`) stays deferred behind
+its own freeze. Production-engine selection remains deferred.

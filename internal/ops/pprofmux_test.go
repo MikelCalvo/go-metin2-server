@@ -9148,7 +9148,7 @@ func TestLocalStaticActorContentStateQuarantineEndpointReturnsCanonicalJSON(t *t
 		`"static_actor_count":3`,
 		`"reward_drop_count":2`,
 		`"combat_profile_count":0`,
-		`"entity_ids":[7,9,2]`,
+		`"entity_ids":[2,7,9]`,
 		`"migration_version":13`,
 		`"kind":"info"`,
 		`"kind":"shop_preview"`,

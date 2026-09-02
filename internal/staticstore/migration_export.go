@@ -49,8 +49,25 @@ const (
 // data-model/export contract only: it does not open a database, emit SQL, apply
 // migrations, or mutate the file stores.
 type StaticActorContentStateExport struct {
-	MigrationVersion              int                                  `json:"migration_version"`
-	MigrationName                 string                               `json:"migration_name"`
+	MigrationVersion int    `json:"migration_version"`
+	MigrationName    string `json:"migration_name"`
+	// EntityIDs optionally declares the replace/wipe static-actor entity scope
+	// for ImportStaticActorContentState(..., Replace: true). When omitted or
+	// empty, quarantine derives the scope from static-actor rows (legacy
+	// insert-only exports stay valid). Explicit ids merge with actor-row-
+	// derived entity ids so a listed id with zero actor rows can still
+	// wipe-to-empty.
+	EntityIDs []uint64 `json:"entity_ids,omitempty"`
+	// InteractionDefinitionKeys optionally declares the replace/wipe
+	// interaction-definition (kind, ref) scope. Explicit keys merge with
+	// definition-row-derived keys so a listed key with zero definition rows
+	// can still wipe-to-empty. Quarantine summary interaction_kinds stays
+	// kinds-only metadata and is never a wipe/replace key.
+	InteractionDefinitionKeys []InteractionDefinitionKey `json:"interaction_definition_keys,omitempty"`
+	// CombatProfileNames optionally declares the replace/wipe combat-profile
+	// name scope. Explicit names merge with combat-profile-row-derived names
+	// so a listed profile with zero profile rows can still wipe-to-empty.
+	CombatProfileNames            []string                             `json:"combat_profile_names,omitempty"`
 	InteractionDefinitions        []InteractionDefinitionRow           `json:"interaction_definitions"`
 	MerchantCatalogEntries        []InteractionMerchantCatalogEntryRow `json:"merchant_catalog_entries"`
 	QuestFlagRewardItems          []InteractionQuestFlagItemRow        `json:"quest_flag_reward_items"`
@@ -59,6 +76,14 @@ type StaticActorContentStateExport struct {
 	RewardDrops                   []StaticActorRewardDropRow           `json:"reward_drops"`
 	CombatProfiles                []StaticActorCombatProfileRow        `json:"combat_profiles"`
 	CombatProfileDeathRewardDrops []StaticActorCombatProfileDropRow    `json:"combat_profile_death_reward_drops"`
+}
+
+// InteractionDefinitionKey is the tip-0013 (kind, ref) primary-key pair used as
+// a declared replace/wipe scope entry for interaction_definitions and their
+// merchant / quest-flag child tables.
+type InteractionDefinitionKey struct {
+	Kind string `json:"kind"`
+	Ref  string `json:"ref"`
 }
 
 // InteractionDefinitionRow mirrors the interaction_definitions table columns

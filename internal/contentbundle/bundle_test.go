@@ -6589,8 +6589,21 @@ func TestExampleBootstrapNPCServiceBundleExportsAndQuarantinesStaticActorPvEMigr
 	if !reflect.DeepEqual(quarantineSummary, wantSummary) {
 		t.Fatalf("unexpected quarantined NPC service summary:\n got: %#v\nwant: %#v", quarantineSummary, wantSummary)
 	}
-	if !reflect.DeepEqual(quarantined, export) {
-		t.Fatalf("expected quarantine to preserve the already-canonical NPC service export")
+	cleared := quarantined
+	cleared.EntityIDs = nil
+	cleared.InteractionDefinitionKeys = nil
+	cleared.CombatProfileNames = nil
+	if !reflect.DeepEqual(cleared, export) {
+		t.Fatalf("expected quarantine to preserve NPC service export rows while materializing declared scopes:\n got cleared=%#v\nwant export=%#v\nquarantined scopes entity_ids=%v keys=%v profiles=%v", cleared, export, quarantined.EntityIDs, quarantined.InteractionDefinitionKeys, quarantined.CombatProfileNames)
+	}
+	if !reflect.DeepEqual(quarantined.EntityIDs, wantSummary.EntityIDs) {
+		t.Fatalf("unexpected quarantined entity_ids: %#v", quarantined.EntityIDs)
+	}
+	if len(quarantined.InteractionDefinitionKeys) != wantSummary.InteractionDefinitionCount {
+		t.Fatalf("unexpected quarantined interaction_definition_keys: %#v", quarantined.InteractionDefinitionKeys)
+	}
+	if !reflect.DeepEqual(quarantined.CombatProfileNames, []string{}) {
+		t.Fatalf("unexpected quarantined combat_profile_names: %#v", quarantined.CombatProfileNames)
 	}
 
 	var (
@@ -6857,8 +6870,21 @@ func TestExampleBootstrapPveVerticalAuthoringBundleExportsOnto0013AndQuarantines
 	if err != nil {
 		t.Fatalf("quarantine PvE vertical authoring export with combat profiles: %v", err)
 	}
-	if !reflect.DeepEqual(quarantined, export) {
-		t.Fatalf("unexpected canonical quarantine export:\n got: %#v\nwant: %#v", quarantined, export)
+	cleared := quarantined
+	cleared.EntityIDs = nil
+	cleared.InteractionDefinitionKeys = nil
+	cleared.CombatProfileNames = nil
+	if !reflect.DeepEqual(cleared, export) {
+		t.Fatalf("unexpected canonical quarantine export rows:\n got cleared=%#v\nwant export=%#v\nquarantined scopes entity_ids=%v keys=%v profiles=%v", cleared, export, quarantined.EntityIDs, quarantined.InteractionDefinitionKeys, quarantined.CombatProfileNames)
+	}
+	if len(quarantined.EntityIDs) != 12 {
+		t.Fatalf("unexpected quarantined entity_ids: %#v", quarantined.EntityIDs)
+	}
+	if len(quarantined.InteractionDefinitionKeys) != 9 {
+		t.Fatalf("unexpected quarantined interaction_definition_keys: %#v", quarantined.InteractionDefinitionKeys)
+	}
+	if !reflect.DeepEqual(quarantined.CombatProfileNames, []string{"qa_pve_vertical_practice_mob"}) {
+		t.Fatalf("unexpected quarantined combat_profile_names: %#v", quarantined.CombatProfileNames)
 	}
 	if !reflect.DeepEqual(quarantinedSummary, summary) {
 		t.Fatalf("unexpected quarantine summary:\n got: %#v\nwant: %#v", quarantinedSummary, summary)

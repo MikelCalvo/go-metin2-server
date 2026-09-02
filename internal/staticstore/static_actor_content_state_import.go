@@ -42,6 +42,23 @@ type StaticActorContentStateImportResult struct {
 	EntityIDs                         []uint64 `json:"entity_ids"`
 	InteractionKinds                  []string `json:"interaction_kinds"`
 	CombatProfiles                    []string `json:"combat_profiles"`
+	// Replaced is true when ImportStaticActorContentState ran with the opt-in
+	// scoped replace policy (delete then insert for listed tip-0013 identities).
+	// Omitted from JSON when false so legacy insert-only import-result files stay
+	// valid.
+	Replaced bool `json:"replaced,omitempty"`
+}
+
+// ImportStaticActorContentStateOptions controls opt-in mutation policy for
+// ImportStaticActorContentState. The zero value keeps today's insert-only
+// behavior.
+type ImportStaticActorContentStateOptions struct {
+	// Replace, when true, deletes existing tip-0013 parent+child rows for every
+	// entity id / interaction-definition key / combat-profile name in the
+	// quarantined export scope before inserting the canonicalized export rows,
+	// all inside one transaction. Identities not listed in the export remain
+	// untouched.
+	Replace bool
 }
 
 // ImportStaticActorContentState validates a retained 0013 static-actor
@@ -60,13 +77,22 @@ type StaticActorContentStateImportResult struct {
 // reaction_delay_ms. Export / quarantine identity stays tip-0013.
 //
 // The caller still owns driver selection and DSN loading. This primitive does
-// not mutate bootstrap file stores or live content indexes, does not rewrite
-// schema_migrations, and does not invent upsert / merge policy: duplicate
-// primary keys or unique-index collisions fail closed and roll the transaction
-// back.
-func ImportStaticActorContentState(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export StaticActorContentStateExport) (StaticActorContentStateImportResult, error) {
+// not mutate bootstrap file stores or live content indexes and does not rewrite
+// schema_migrations. Without options (or with Replace=false) it does not invent
+// upsert / merge policy: duplicate primary keys or unique-index collisions fail
+// closed and roll the transaction back. Pass
+// ImportStaticActorContentStateOptions{Replace: true} for the opt-in scoped
+// replace path frozen by the tip-0013 replace contract.
+func ImportStaticActorContentState(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export StaticActorContentStateExport, opts ...ImportStaticActorContentStateOptions) (StaticActorContentStateImportResult, error) {
 	if staticActorContentStateImportExecutorIsNil(executor) {
 		return StaticActorContentStateImportResult{}, ErrStaticActorContentStateImportExecutorRequired
+	}
+	if len(opts) > 1 {
+		return StaticActorContentStateImportResult{}, fmt.Errorf("ImportStaticActorContentState accepts at most one options value")
+	}
+	replace := false
+	if len(opts) == 1 {
+		replace = opts[0].Replace
 	}
 
 	canonical, summary, err := QuarantineStaticActorContentStateExport(export)
@@ -88,6 +114,7 @@ func ImportStaticActorContentState(ctx context.Context, executor dbmigrations.SQ
 		EntityIDs:                         append([]uint64(nil), summary.EntityIDs...),
 		InteractionKinds:                  append([]string(nil), summary.InteractionKinds...),
 		CombatProfiles:                    append([]string(nil), summary.CombatProfiles...),
+		Replaced:                          replace,
 	}
 	if result.EntityIDs == nil {
 		result.EntityIDs = []uint64{}
@@ -106,6 +133,24 @@ func ImportStaticActorContentState(ctx context.Context, executor dbmigrations.SQ
 
 	if err := requireStaticActorContentStateSchema(ctx, tx); err != nil {
 		return StaticActorContentStateImportResult{}, rollbackAfterStaticActorContentStateImportFailure(tx, err)
+	}
+
+	if replace {
+		for _, entityID := range canonical.EntityIDs {
+			if err := deleteStaticActorContentStateForEntity(ctx, tx, entityID); err != nil {
+				return StaticActorContentStateImportResult{}, rollbackAfterStaticActorContentStateImportFailure(tx, err)
+			}
+		}
+		for _, key := range canonical.InteractionDefinitionKeys {
+			if err := deleteStaticActorContentStateForInteractionDefinition(ctx, tx, key); err != nil {
+				return StaticActorContentStateImportResult{}, rollbackAfterStaticActorContentStateImportFailure(tx, err)
+			}
+		}
+		for _, profile := range canonical.CombatProfileNames {
+			if err := deleteStaticActorContentStateForCombatProfile(ctx, tx, profile); err != nil {
+				return StaticActorContentStateImportResult{}, rollbackAfterStaticActorContentStateImportFailure(tx, err)
+			}
+		}
 	}
 
 	for _, row := range canonical.InteractionDefinitions {
@@ -153,6 +198,51 @@ func ImportStaticActorContentState(ctx context.Context, executor dbmigrations.SQ
 		return StaticActorContentStateImportResult{}, fmt.Errorf("commit static-actor content-state import transaction: %w", err)
 	}
 	return result, nil
+}
+
+func deleteStaticActorContentStateForEntity(ctx context.Context, tx *sql.Tx, entityID uint64) error {
+	// Child tables declare FOREIGN KEY (... ) REFERENCES static_actors(entity_id)
+	// without ON DELETE CASCADE, so delete children before the parent.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM static_actor_reward_drops WHERE entity_id = ?`, int64(entityID)); err != nil {
+		return fmt.Errorf("delete static actor reward drops entity_id %d: %w", entityID, err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM static_actors WHERE entity_id = ?`, int64(entityID)); err != nil {
+		return fmt.Errorf("delete static actor entity_id %d: %w", entityID, err)
+	}
+	return nil
+}
+
+func deleteStaticActorContentStateForInteractionDefinition(ctx context.Context, tx *sql.Tx, key InteractionDefinitionKey) error {
+	// Child tables declare FOREIGN KEY (... ) REFERENCES interaction_definitions(kind, ref)
+	// without ON DELETE CASCADE, so delete children before the parent. Unscoped
+	// static_actors that still reference this definition fail closed via FK.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM interaction_quest_flag_reward_items WHERE definition_kind = ? AND definition_ref = ?`, key.Kind, key.Ref); err != nil {
+		return fmt.Errorf("delete quest-flag reward items %s:%s: %w", key.Kind, key.Ref, err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM interaction_quest_flag_consume_items WHERE definition_kind = ? AND definition_ref = ?`, key.Kind, key.Ref); err != nil {
+		return fmt.Errorf("delete quest-flag consume items %s:%s: %w", key.Kind, key.Ref, err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM interaction_merchant_catalog_entries WHERE definition_kind = ? AND definition_ref = ?`, key.Kind, key.Ref); err != nil {
+		return fmt.Errorf("delete merchant catalog entries %s:%s: %w", key.Kind, key.Ref, err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM interaction_definitions WHERE kind = ? AND ref = ?`, key.Kind, key.Ref); err != nil {
+		return fmt.Errorf("delete interaction definition %s:%s: %w", key.Kind, key.Ref, err)
+	}
+	return nil
+}
+
+func deleteStaticActorContentStateForCombatProfile(ctx context.Context, tx *sql.Tx, profile string) error {
+	// Child tables declare FOREIGN KEY (... ) REFERENCES static_actor_combat_profiles(profile)
+	// without ON DELETE CASCADE, so delete children before the parent. Actor
+	// combat_profile remains plain TEXT with no FK, so unscoped actors are left
+	// untouched.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM static_actor_combat_profile_death_reward_drops WHERE profile = ?`, profile); err != nil {
+		return fmt.Errorf("delete combat-profile death-reward drops %q: %w", profile, err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM static_actor_combat_profiles WHERE profile = ?`, profile); err != nil {
+		return fmt.Errorf("delete combat profile %q: %w", profile, err)
+	}
+	return nil
 }
 
 func requireStaticActorContentStateSchema(ctx context.Context, querier dbmigrations.SQLLedgerQuerier) error {

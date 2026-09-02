@@ -90,6 +90,54 @@ func canonicalizeStaticActorContentStateExport(export StaticActorContentStateExp
 		return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: combat_profile_death_reward_drops must be present", ErrInvalidStaticActorContentStateExport)
 	}
 
+	entityScope := make(map[uint64]struct{}, len(export.StaticActors)+len(export.EntityIDs))
+	if export.EntityIDs != nil {
+		seenDeclared := make(map[uint64]struct{}, len(export.EntityIDs))
+		for _, entityID := range export.EntityIDs {
+			if entityID == 0 {
+				return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: entity_ids entries must be > 0", ErrInvalidStaticActorContentStateExport)
+			}
+			if _, exists := seenDeclared[entityID]; exists {
+				return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: duplicate entity_ids entry %d", ErrInvalidStaticActorContentStateExport, entityID)
+			}
+			seenDeclared[entityID] = struct{}{}
+			entityScope[entityID] = struct{}{}
+		}
+	}
+
+	definitionKeyScope := make(map[string]InteractionDefinitionKey, len(export.InteractionDefinitions)+len(export.InteractionDefinitionKeys))
+	if export.InteractionDefinitionKeys != nil {
+		seenDeclared := make(map[string]struct{}, len(export.InteractionDefinitionKeys))
+		for _, key := range export.InteractionDefinitionKeys {
+			kind := key.Kind
+			ref := key.Ref
+			if kind == "" || ref == "" {
+				return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: interaction_definition_keys require non-empty kind and ref", ErrInvalidStaticActorContentStateExport)
+			}
+			encoded := interactionDefinitionExportKey(kind, ref)
+			if _, exists := seenDeclared[encoded]; exists {
+				return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: duplicate interaction_definition_keys entry %s:%s", ErrInvalidStaticActorContentStateExport, kind, ref)
+			}
+			seenDeclared[encoded] = struct{}{}
+			definitionKeyScope[encoded] = InteractionDefinitionKey{Kind: kind, Ref: ref}
+		}
+	}
+
+	profileScope := make(map[string]struct{}, len(export.CombatProfiles)+len(export.CombatProfileNames))
+	if export.CombatProfileNames != nil {
+		seenDeclared := make(map[string]struct{}, len(export.CombatProfileNames))
+		for _, profile := range export.CombatProfileNames {
+			if profile == "" {
+				return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: combat_profile_names entries must be non-empty", ErrInvalidStaticActorContentStateExport)
+			}
+			if _, exists := seenDeclared[profile]; exists {
+				return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: duplicate combat_profile_names entry %q", ErrInvalidStaticActorContentStateExport, profile)
+			}
+			seenDeclared[profile] = struct{}{}
+			profileScope[profile] = struct{}{}
+		}
+	}
+
 	staticSnapshot, interactionSnapshot, err := snapshotsFromStaticActorContentStateExport(export)
 	if err != nil {
 		return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, err
@@ -99,10 +147,30 @@ func canonicalizeStaticActorContentStateExport(export StaticActorContentStateExp
 		return StaticActorContentStateExport{}, StaticActorContentStateQuarantineSummary{}, fmt.Errorf("%w: %v", ErrInvalidStaticActorContentStateExport, err)
 	}
 
-	entityIDs := make([]uint64, 0, len(canonical.StaticActors))
 	for _, actor := range canonical.StaticActors {
-		entityIDs = append(entityIDs, actor.EntityID)
+		entityScope[actor.EntityID] = struct{}{}
 	}
+	entityIDs := make([]uint64, 0, len(entityScope))
+	for entityID := range entityScope {
+		entityIDs = append(entityIDs, entityID)
+	}
+	sort.Slice(entityIDs, func(i, j int) bool { return entityIDs[i] < entityIDs[j] })
+
+	for _, definition := range canonical.InteractionDefinitions {
+		encoded := interactionDefinitionExportKey(definition.Kind, definition.Ref)
+		definitionKeyScope[encoded] = InteractionDefinitionKey{Kind: definition.Kind, Ref: definition.Ref}
+	}
+	definitionKeys := make([]InteractionDefinitionKey, 0, len(definitionKeyScope))
+	for _, key := range definitionKeyScope {
+		definitionKeys = append(definitionKeys, key)
+	}
+	sort.Slice(definitionKeys, func(i, j int) bool {
+		if definitionKeys[i].Kind != definitionKeys[j].Kind {
+			return definitionKeys[i].Kind < definitionKeys[j].Kind
+		}
+		return definitionKeys[i].Ref < definitionKeys[j].Ref
+	})
+
 	kindSet := make(map[string]struct{}, len(canonical.InteractionDefinitions))
 	for _, definition := range canonical.InteractionDefinitions {
 		kindSet[definition.Kind] = struct{}{}
@@ -112,9 +180,27 @@ func canonicalizeStaticActorContentStateExport(export StaticActorContentStateExp
 		kinds = append(kinds, kind)
 	}
 	sort.Strings(kinds)
-	profileNames := make([]string, 0, len(canonical.CombatProfiles))
+
 	for _, profile := range canonical.CombatProfiles {
-		profileNames = append(profileNames, profile.Profile)
+		profileScope[profile.Profile] = struct{}{}
+	}
+	profileNames := make([]string, 0, len(profileScope))
+	for profile := range profileScope {
+		profileNames = append(profileNames, profile)
+	}
+	sort.Strings(profileNames)
+
+	canonical.EntityIDs = append([]uint64(nil), entityIDs...)
+	canonical.InteractionDefinitionKeys = append([]InteractionDefinitionKey(nil), definitionKeys...)
+	canonical.CombatProfileNames = append([]string(nil), profileNames...)
+	if canonical.EntityIDs == nil {
+		canonical.EntityIDs = []uint64{}
+	}
+	if canonical.InteractionDefinitionKeys == nil {
+		canonical.InteractionDefinitionKeys = []InteractionDefinitionKey{}
+	}
+	if canonical.CombatProfileNames == nil {
+		canonical.CombatProfileNames = []string{}
 	}
 
 	summary := StaticActorContentStateQuarantineSummary{
