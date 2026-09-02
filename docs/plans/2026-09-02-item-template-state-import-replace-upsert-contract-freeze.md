@@ -134,7 +134,7 @@ would invent policy mid-implementation. Freeze first; GREEN stays follow-on.
    `--i-confirm-scoped-replace` flag and widen it to also accept
    `--kind item-template-state` (still reject every other kind that has not
    frozen+GREEN'd its own replace path — today that still excludes
-   `auth-login-ticket-handoff` and `static-actor-content-state`).
+   `auth-login-ticket-handoff`; tip-`0013` `static-actor-content-state` now has its own freeze).
 2. Successful stdout remains metadata-only `ItemTemplateStateImportResult` JSON
    (no DSN, no SQL text, no template payloads). GREEN should add
    `replaced: true` (omitempty) mirroring tip-`0002` / tip-`0003` / tip-`0004` /
@@ -193,6 +193,8 @@ would invent policy mid-implementation. Freeze first; GREEN stays follow-on.
 Docs/spec freeze landed. Tip-`0009` scoped replace GREEN is owned by
 [item-template-state import scoped replace GREEN](2026-09-02-item-template-state-import-scoped-replace-green.md).
 Insert-only remains the default without the replace option / CLI confirmation.
-Production-engine selection remains deferred. Upsert / replace for
-`auth-login-ticket-handoff` (`0007`) and `static-actor-content-state` (`0013`)
-stay deferred behind their own freezes.
+Production-engine selection remains deferred. Tip-`0013` static-actor
+content-state scoped replace freeze is owned by
+[static-actor content-state import replace/upsert contract freeze](2026-09-02-static-actor-content-state-import-replace-upsert-contract-freeze.md);
+upsert / replace for `auth-login-ticket-handoff` (`0007`) stays deferred behind
+its own freeze.

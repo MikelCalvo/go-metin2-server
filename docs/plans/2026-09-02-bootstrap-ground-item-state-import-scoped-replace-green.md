@@ -41,6 +41,8 @@ insert-only primary-key conflicts on `vid`.
 GREEN on `lane/persistence`. Tip-`0009` item-template-state scoped replace GREEN
 is owned by
 [item-template-state import scoped replace GREEN](2026-09-02-item-template-state-import-scoped-replace-green.md).
-Follow-on upsert / replace freezes for `auth-login-ticket-handoff` (`0007`) and
-`static-actor-content-state` (`0013`) remain deferred; production-engine
+Tip-`0013` static-actor content-state scoped replace freeze is owned by
+[static-actor content-state import replace/upsert contract freeze](2026-09-02-static-actor-content-state-import-replace-upsert-contract-freeze.md).
+Tip-`0013` scoped replace GREEN is next; upsert / replace for
+`auth-login-ticket-handoff` (`0007`) remains deferred; production-engine
 selection remains deferred.

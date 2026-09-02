@@ -43,6 +43,9 @@ insert-only primary-key conflicts on `vnum`.
 
 ## Status
 
-GREEN on `lane/persistence`. Follow-on upsert / replace freezes for
-`auth-login-ticket-handoff` (`0007`) and `static-actor-content-state` (`0013`)
-remain deferred; production-engine selection remains deferred.
+GREEN on `lane/persistence`. Tip-`0013` static-actor content-state scoped
+replace freeze is owned by
+[static-actor content-state import replace/upsert contract freeze](2026-09-02-static-actor-content-state-import-replace-upsert-contract-freeze.md).
+Tip-`0013` scoped replace GREEN is next; upsert / replace for
+`auth-login-ticket-handoff` (`0007`) remains deferred; production-engine
+selection remains deferred.
