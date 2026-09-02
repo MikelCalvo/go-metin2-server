@@ -34,7 +34,9 @@ Prove that after abrupt disconnect / reconnect while still dead, accepted `/rest
 - claiming skill / ranged / PvP resume behavior
 - proving source-map reselect after reconnect town recovery in this same commit
   (same-socket source-map reselect after `/restart_town` is owned separately by
-  `docs/plans/2026-09-02-restart-town-source-map-reselect-resumes-attack.md`)
+  `docs/plans/2026-09-02-restart-town-source-map-reselect-resumes-attack.md`;
+  reconnect-still-dead source-map reselect is owned separately by
+  `docs/plans/2026-09-02-reconnect-restart-town-source-map-reselect-resumes-attack.md`)
 
 ## Runtime note
 

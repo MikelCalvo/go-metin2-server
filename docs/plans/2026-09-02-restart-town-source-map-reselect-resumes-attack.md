@@ -49,7 +49,8 @@ same still-live damaged practice mob.
 - changing already-owned `/restart_town` transfer / preflight choreography
 - claiming skill / ranged / PvP resume behavior
 - proving the reconnect-still-dead variant of source-map reselect in this same
-  commit
+  commit (owned separately by
+  `docs/plans/2026-09-02-reconnect-restart-town-source-map-reselect-resumes-attack.md`)
 
 ## Runtime note
 
