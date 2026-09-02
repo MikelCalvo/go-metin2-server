@@ -41,6 +41,6 @@ without insert-only primary-key conflicts.
 
 ## Status
 
-GREEN on `lane/persistence`. Follow-on tip-`0002` roster scoped-replace freeze is owned by
-[account/character roster import replace/upsert contract freeze](2026-09-02-account-character-roster-import-replace-upsert-contract-freeze.md);
+GREEN on `lane/persistence`. Follow-on tip-`0002` roster scoped-replace GREEN is owned by
+[account/character roster import scoped replace GREEN](2026-09-02-account-character-roster-import-scoped-replace-green.md);
 production-engine selection remains deferred.

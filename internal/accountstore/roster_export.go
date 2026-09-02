@@ -22,10 +22,16 @@ const maxSignedBigInt = uint64(1<<63 - 1)
 // migration boundary. It is intentionally a data-model/export contract only: it
 // does not open a database, emit SQL, apply migrations, or mutate the file store.
 type AccountCharacterRosterExport struct {
-	MigrationVersion int                                  `json:"migration_version"`
-	MigrationName    string                               `json:"migration_name"`
-	Accounts         []AccountCharacterRosterAccountRow   `json:"accounts"`
-	Characters       []AccountCharacterRosterCharacterRow `json:"characters"`
+	MigrationVersion int    `json:"migration_version"`
+	MigrationName    string `json:"migration_name"`
+	// AccountIDs optionally declares the replace/wipe account scope for
+	// ImportAccountCharacterRoster(..., Replace: true). When omitted or empty,
+	// quarantine derives the scope from account rows (legacy insert-only exports
+	// stay valid). Explicit ids merge with account-row-derived ids so a listed
+	// account with zero account/character rows can still wipe-to-empty.
+	AccountIDs []int64                              `json:"account_ids,omitempty"`
+	Accounts   []AccountCharacterRosterAccountRow   `json:"accounts"`
+	Characters []AccountCharacterRosterCharacterRow `json:"characters"`
 }
 
 // AccountCharacterRosterAccountRow mirrors the durable accounts table columns

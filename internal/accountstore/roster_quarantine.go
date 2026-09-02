@@ -43,8 +43,10 @@ func ValidateAccountCharacterRosterExport(export AccountCharacterRosterExport) (
 
 // QuarantineAccountCharacterRosterExport validates a retained export and
 // returns a canonicalized copy ordered by normalized login / account id and
-// account/slot character keys. It never opens a database or mutates account
-// snapshots.
+// account/slot character keys. Declared account_ids merge with account-row-
+// derived ids so a listed account with zero account/character rows can
+// wipe-to-empty under scoped replace. It never opens a database or mutates
+// account snapshots.
 func QuarantineAccountCharacterRosterExport(export AccountCharacterRosterExport) (AccountCharacterRosterExport, AccountCharacterRosterQuarantineSummary, error) {
 	return canonicalizeAccountCharacterRosterExport(export)
 }
@@ -63,6 +65,21 @@ func canonicalizeAccountCharacterRosterExport(export AccountCharacterRosterExpor
 		return AccountCharacterRosterExport{}, AccountCharacterRosterQuarantineSummary{}, fmt.Errorf("%w: characters must be present", ErrInvalidAccountCharacterRosterExport)
 	}
 
+	accountIDs := make(map[int64]struct{}, len(export.Accounts)+len(export.AccountIDs))
+	if export.AccountIDs != nil {
+		seenDeclaredIDs := make(map[int64]struct{}, len(export.AccountIDs))
+		for _, accountID := range export.AccountIDs {
+			if accountID <= 0 {
+				return AccountCharacterRosterExport{}, AccountCharacterRosterQuarantineSummary{}, fmt.Errorf("%w: account_ids entries must be > 0", ErrInvalidAccountCharacterRosterExport)
+			}
+			if _, exists := seenDeclaredIDs[accountID]; exists {
+				return AccountCharacterRosterExport{}, AccountCharacterRosterQuarantineSummary{}, fmt.Errorf("%w: duplicate account_ids entry %d", ErrInvalidAccountCharacterRosterExport, accountID)
+			}
+			seenDeclaredIDs[accountID] = struct{}{}
+			accountIDs[accountID] = struct{}{}
+		}
+	}
+
 	seenAccountIDs := make(map[int64]string, len(export.Accounts))
 	seenLoginNormalized := make(map[string]int64, len(export.Accounts))
 	accounts := make([]AccountCharacterRosterAccountRow, 0, len(export.Accounts))
@@ -74,6 +91,7 @@ func canonicalizeAccountCharacterRosterExport(export AccountCharacterRosterExpor
 			return AccountCharacterRosterExport{}, AccountCharacterRosterQuarantineSummary{}, fmt.Errorf("%w: account id %d is used by %q and %q", ErrInvalidAccountCharacterRosterExport, row.ID, previous, row.Login)
 		}
 		seenAccountIDs[row.ID] = row.Login
+		accountIDs[row.ID] = struct{}{}
 		if previousID, ok := seenLoginNormalized[row.LoginNormalized]; ok {
 			return AccountCharacterRosterExport{}, AccountCharacterRosterQuarantineSummary{}, fmt.Errorf("%w: login_normalized %q is used by account id %d and id %d", ErrInvalidAccountCharacterRosterExport, row.LoginNormalized, previousID, row.ID)
 		}
@@ -124,11 +142,11 @@ func canonicalizeAccountCharacterRosterExport(export AccountCharacterRosterExpor
 		return characters[i].ID < characters[j].ID
 	})
 
-	accountIDs := make([]int64, 0, len(seenAccountIDs))
-	for accountID := range seenAccountIDs {
-		accountIDs = append(accountIDs, accountID)
+	sortedAccountIDs := make([]int64, 0, len(accountIDs))
+	for accountID := range accountIDs {
+		sortedAccountIDs = append(sortedAccountIDs, accountID)
 	}
-	sort.Slice(accountIDs, func(i, j int) bool { return accountIDs[i] < accountIDs[j] })
+	sort.Slice(sortedAccountIDs, func(i, j int) bool { return sortedAccountIDs[i] < sortedAccountIDs[j] })
 	characterIDs := make([]uint32, 0, len(seenCharacterIDs))
 	for characterID := range seenCharacterIDs {
 		characterIDs = append(characterIDs, characterID)
@@ -138,13 +156,17 @@ func canonicalizeAccountCharacterRosterExport(export AccountCharacterRosterExpor
 	canonical := AccountCharacterRosterExport{
 		MigrationVersion: AccountCharacterRosterMigrationVersion,
 		MigrationName:    AccountCharacterRosterMigrationName,
+		AccountIDs:       append([]int64(nil), sortedAccountIDs...),
 		Accounts:         accounts,
 		Characters:       characters,
 	}
+	if canonical.AccountIDs == nil {
+		canonical.AccountIDs = []int64{}
+	}
 	summary := AccountCharacterRosterQuarantineSummary{
-		AccountCount:   len(accounts),
+		AccountCount:   len(sortedAccountIDs),
 		CharacterCount: len(characters),
-		AccountIDs:     accountIDs,
+		AccountIDs:     sortedAccountIDs,
 		CharacterIDs:   characterIDs,
 	}
 	if summary.AccountIDs == nil {

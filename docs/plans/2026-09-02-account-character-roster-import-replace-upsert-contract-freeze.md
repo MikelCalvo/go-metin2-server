@@ -195,6 +195,7 @@ would invent policy mid-implementation. Freeze first; GREEN stays follow-on.
 
 ## Status
 
-Docs/spec freeze only. Tip-`0002` scoped replace GREEN remains follow-on.
+Docs/spec freeze landed. Tip-`0002` scoped replace GREEN is owned by
+[account/character roster import scoped replace GREEN](2026-09-02-account-character-roster-import-scoped-replace-green.md).
 Insert-only remains the default without the replace option / CLI confirmation.
 Production-engine selection remains deferred.

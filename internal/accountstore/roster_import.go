@@ -32,6 +32,23 @@ type AccountCharacterRosterImportResult struct {
 	CharacterCount   int      `json:"character_count"`
 	AccountIDs       []int64  `json:"account_ids"`
 	CharacterIDs     []uint32 `json:"character_ids"`
+	// Replaced is true when ImportAccountCharacterRoster ran with the opt-in
+	// scoped replace policy (delete then insert for listed account ids).
+	// Omitted from JSON when false so legacy insert-only import-result files stay
+	// valid.
+	Replaced bool `json:"replaced,omitempty"`
+}
+
+// ImportAccountCharacterRosterOptions controls opt-in mutation policy for
+// ImportAccountCharacterRoster. The zero value keeps today's insert-only
+// behavior.
+type ImportAccountCharacterRosterOptions struct {
+	// Replace, when true, deletes existing tip-0002 accounts/characters rows for
+	// every account id in the quarantined export summary before inserting the
+	// canonicalized export rows, all inside one transaction. Accounts not listed
+	// in the export remain untouched. Child tip domains are not cascade-deleted;
+	// FK dependents fail closed and roll the transaction back.
+	Replace bool
 }
 
 // ImportAccountCharacterRoster validates a retained 0002 roster export through
@@ -39,12 +56,21 @@ type AccountCharacterRosterImportResult struct {
 // accounts / characters inside one transaction.
 //
 // The caller still owns driver selection and DSN loading. This primitive does
-// not mutate bootstrap file stores, does not rewrite schema_migrations, and
-// does not invent upsert / merge policy: duplicate primary keys fail closed and
-// roll the transaction back.
-func ImportAccountCharacterRoster(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export AccountCharacterRosterExport) (AccountCharacterRosterImportResult, error) {
+// not mutate bootstrap file stores and does not rewrite schema_migrations.
+// Without options (or with Replace=false) it does not invent upsert / merge
+// policy: duplicate primary keys fail closed and roll the transaction back.
+// Pass ImportAccountCharacterRosterOptions{Replace: true} for the opt-in scoped
+// replace path frozen by the tip-0002 replace contract.
+func ImportAccountCharacterRoster(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export AccountCharacterRosterExport, opts ...ImportAccountCharacterRosterOptions) (AccountCharacterRosterImportResult, error) {
 	if rosterImportExecutorIsNil(executor) {
 		return AccountCharacterRosterImportResult{}, ErrAccountCharacterRosterImportExecutorRequired
+	}
+	if len(opts) > 1 {
+		return AccountCharacterRosterImportResult{}, fmt.Errorf("ImportAccountCharacterRoster accepts at most one options value")
+	}
+	replace := false
+	if len(opts) == 1 {
+		replace = opts[0].Replace
 	}
 
 	canonical, summary, err := QuarantineAccountCharacterRosterExport(export)
@@ -59,6 +85,7 @@ func ImportAccountCharacterRoster(ctx context.Context, executor dbmigrations.SQL
 		CharacterCount:   summary.CharacterCount,
 		AccountIDs:       append([]int64(nil), summary.AccountIDs...),
 		CharacterIDs:     append([]uint32(nil), summary.CharacterIDs...),
+		Replaced:         replace,
 	}
 	if result.AccountIDs == nil {
 		result.AccountIDs = []int64{}
@@ -74,6 +101,14 @@ func ImportAccountCharacterRoster(ctx context.Context, executor dbmigrations.SQL
 
 	if err := requireAccountCharacterRosterSchema(ctx, tx); err != nil {
 		return AccountCharacterRosterImportResult{}, rollbackAfterRosterImportFailure(tx, err)
+	}
+
+	if replace {
+		for _, accountID := range summary.AccountIDs {
+			if err := deleteAccountCharacterRosterForAccount(ctx, tx, accountID); err != nil {
+				return AccountCharacterRosterImportResult{}, rollbackAfterRosterImportFailure(tx, err)
+			}
+		}
 	}
 
 	for _, account := range canonical.Accounts {
@@ -110,6 +145,20 @@ func requireAccountCharacterRosterSchema(ctx context.Context, querier dbmigratio
 		}
 	}
 	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrAccountCharacterRosterImportSchemaRequired, latest, AccountCharacterRosterMigrationVersion, AccountCharacterRosterMigrationName)
+}
+
+func deleteAccountCharacterRosterForAccount(ctx context.Context, tx *sql.Tx, accountID int64) error {
+	// Delete characters before accounts so the tip-0002 FK
+	// (characters.account_id → accounts.id) cannot fail closed mid replace.
+	// Child tip domains are intentionally not cascade-deleted; FK dependents
+	// fail closed here and roll the surrounding transaction back.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM characters WHERE account_id = ?`, accountID); err != nil {
+		return fmt.Errorf("delete characters for account %d: %w", accountID, err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM accounts WHERE id = ?`, accountID); err != nil {
+		return fmt.Errorf("delete account %d: %w", accountID, err)
+	}
+	return nil
 }
 
 func insertAccountCharacterRosterAccount(ctx context.Context, tx *sql.Tx, row AccountCharacterRosterAccountRow) error {
