@@ -68,7 +68,10 @@ git diff --check
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
 2. Keep branching quest scripts deferred.
-3. Add further checked-in negatives only when a later reject case still forces
+3. ~~Add further checked-in negatives only when a later reject case still forces
    QA to invent JSON.~~ Done for `open_safebox` foreign turn-in `consume_gold`:
    `docs/examples/bootstrap-invalid-open-safebox-foreign-consume-gold-bundle.json`
    (`docs/plans/2026-09-01-invalid-open-safebox-foreign-consume-gold-fixture.md`).
+   Done for `open_cube` foreign turn-in `consume_gold`:
+   `docs/examples/bootstrap-invalid-open-cube-foreign-consume-gold-bundle.json`
+   (`docs/plans/2026-09-01-invalid-open-cube-foreign-consume-gold-fixture.md`).
