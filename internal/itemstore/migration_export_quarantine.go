@@ -80,9 +80,23 @@ func canonicalizeItemTemplateStateExport(export ItemTemplateStateExport) (ItemTe
 		return ItemTemplateStateExport{}, ItemTemplateStateQuarantineSummary{}, fmt.Errorf("%w: refine_materials must be present", ErrInvalidItemTemplateStateExport)
 	}
 
+	vnumScope := make(map[uint32]struct{}, len(export.Templates)+len(export.Vnums))
+	if export.Vnums != nil {
+		seenDeclared := make(map[uint32]struct{}, len(export.Vnums))
+		for _, vnum := range export.Vnums {
+			if vnum == 0 {
+				return ItemTemplateStateExport{}, ItemTemplateStateQuarantineSummary{}, fmt.Errorf("%w: vnums entries must be > 0", ErrInvalidItemTemplateStateExport)
+			}
+			if _, exists := seenDeclared[vnum]; exists {
+				return ItemTemplateStateExport{}, ItemTemplateStateQuarantineSummary{}, fmt.Errorf("%w: duplicate vnums entry %d", ErrInvalidItemTemplateStateExport, vnum)
+			}
+			seenDeclared[vnum] = struct{}{}
+			vnumScope[vnum] = struct{}{}
+		}
+	}
+
 	templatesByVnum := make(map[uint32]Template, len(export.Templates))
 	canonicalTemplates := make([]ItemTemplateRow, 0, len(export.Templates))
-	vnums := make([]uint32, 0, len(export.Templates))
 
 	for _, row := range export.Templates {
 		template, err := templateFromExportRow(row)
@@ -94,7 +108,12 @@ func canonicalizeItemTemplateStateExport(export ItemTemplateStateExport) (ItemTe
 		}
 		templatesByVnum[template.Vnum] = template
 		canonicalTemplates = append(canonicalTemplates, itemTemplateRowForExport(template))
-		vnums = append(vnums, template.Vnum)
+		vnumScope[template.Vnum] = struct{}{}
+	}
+
+	vnums := make([]uint32, 0, len(vnumScope))
+	for vnum := range vnumScope {
+		vnums = append(vnums, vnum)
 	}
 
 	socketsByVnum := make(map[uint32]map[uint8]int32)
@@ -353,6 +372,7 @@ func canonicalizeItemTemplateStateExport(export ItemTemplateStateExport) (ItemTe
 	canonical := ItemTemplateStateExport{
 		MigrationVersion: ItemTemplateStateMigrationVersion,
 		MigrationName:    ItemTemplateStateMigrationName,
+		Vnums:            append([]uint32(nil), vnums...),
 		Templates:        canonicalTemplates,
 		Sockets:          canonicalSockets,
 		Attributes:       canonicalAttributes,
@@ -360,6 +380,9 @@ func canonicalizeItemTemplateStateExport(export ItemTemplateStateExport) (ItemTe
 		EquipEffects:     canonicalEquipEffects,
 		RefineInfos:      canonicalRefineInfos,
 		RefineMaterials:  canonicalRefineMaterials,
+	}
+	if canonical.Vnums == nil {
+		canonical.Vnums = []uint32{}
 	}
 	summary := ItemTemplateStateQuarantineSummary{
 		TemplateCount:       len(canonical.Templates),

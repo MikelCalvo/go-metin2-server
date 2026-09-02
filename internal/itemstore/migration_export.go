@@ -27,15 +27,21 @@ const (
 )
 
 type ItemTemplateStateExport struct {
-	MigrationVersion int                             `json:"migration_version"`
-	MigrationName    string                          `json:"migration_name"`
-	Templates        []ItemTemplateRow               `json:"templates"`
-	Sockets          []ItemTemplateSocketRow         `json:"sockets"`
-	Attributes       []ItemTemplateAttributeRow      `json:"attributes"`
-	UseEffects       []ItemTemplateUseEffectRow      `json:"use_effects"`
-	EquipEffects     []ItemTemplateEquipEffectRow    `json:"equip_effects"`
-	RefineInfos      []ItemTemplateRefineInfoRow     `json:"refine_infos"`
-	RefineMaterials  []ItemTemplateRefineMaterialRow `json:"refine_materials"`
+	MigrationVersion int    `json:"migration_version"`
+	MigrationName    string `json:"migration_name"`
+	// Vnums optionally declares the replace/wipe template vnum scope for
+	// ImportItemTemplateState(..., Replace: true). When omitted or empty,
+	// quarantine derives the scope from template rows (legacy insert-only
+	// exports stay valid). Explicit ids merge with template-row-derived vnums
+	// so a listed vnum with zero template rows can still wipe-to-empty.
+	Vnums           []uint32                        `json:"vnums,omitempty"`
+	Templates       []ItemTemplateRow               `json:"templates"`
+	Sockets         []ItemTemplateSocketRow         `json:"sockets"`
+	Attributes      []ItemTemplateAttributeRow      `json:"attributes"`
+	UseEffects      []ItemTemplateUseEffectRow      `json:"use_effects"`
+	EquipEffects    []ItemTemplateEquipEffectRow    `json:"equip_effects"`
+	RefineInfos     []ItemTemplateRefineInfoRow     `json:"refine_infos"`
+	RefineMaterials []ItemTemplateRefineMaterialRow `json:"refine_materials"`
 }
 
 type ItemTemplateRow struct {

@@ -190,8 +190,9 @@ would invent policy mid-implementation. Freeze first; GREEN stays follow-on.
 
 ## Status
 
-Docs/spec freeze landed. Tip-`0009` scoped replace GREEN is the intentional next
-RED/GREEN follow-on on `lane/persistence`. Insert-only remains the default
-without the replace option / CLI confirmation. Production-engine selection
-remains deferred. Upsert / replace for `auth-login-ticket-handoff` (`0007`) and
-`static-actor-content-state` (`0013`) stay deferred behind their own freezes.
+Docs/spec freeze landed. Tip-`0009` scoped replace GREEN is owned by
+[item-template-state import scoped replace GREEN](2026-09-02-item-template-state-import-scoped-replace-green.md).
+Insert-only remains the default without the replace option / CLI confirmation.
+Production-engine selection remains deferred. Upsert / replace for
+`auth-login-ticket-handoff` (`0007`) and `static-actor-content-state` (`0013`)
+stay deferred behind their own freezes.

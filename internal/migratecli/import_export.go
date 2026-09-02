@@ -31,7 +31,7 @@ func runImportExport(args []string, stdin io.Reader, stdout io.Writer, stderr io
 	flags.StringVar(&driverName, "driver", "", "database/sql driver name for the import target")
 	flags.StringVar(&dsn, "dsn", "", "database/sql DSN for the import target")
 	flags.BoolVar(&confirmImport, "i-confirm-sql-import", false, "confirm CLI SQL import/backfill mutation against the supplied driver/DSN")
-	flags.BoolVar(&confirmReplaceScoped, "i-confirm-scoped-replace", false, "opt-in scoped replace for tip-0002 account-character-roster, tip-0003 character-item-state, tip-0004 character-quest-state, tip-0011 character-point-state, tip-0015 character-safebox-state, tip-0023 character-myshop-unit-prices, or tip-0010 bootstrap-ground-item-state (requires --i-confirm-sql-import; other kinds reject this flag)")
+	flags.BoolVar(&confirmReplaceScoped, "i-confirm-scoped-replace", false, "opt-in scoped replace for tip-0002 account-character-roster, tip-0003 character-item-state, tip-0004 character-quest-state, tip-0011 character-point-state, tip-0015 character-safebox-state, tip-0023 character-myshop-unit-prices, tip-0010 bootstrap-ground-item-state, or tip-0009 item-template-state (requires --i-confirm-sql-import; other kinds reject this flag)")
 	flags.Usage = func() { printImportExportUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
@@ -56,8 +56,8 @@ func runImportExport(args []string, stdin io.Reader, stdout io.Writer, stderr io
 		printImportExportUsage(stderr)
 		return exitUsage
 	}
-	if confirmReplaceScoped && kind != "account-character-roster" && kind != "character-item-state" && kind != "character-quest-state" && kind != "character-point-state" && kind != "character-safebox-state" && kind != "character-myshop-unit-prices" && kind != "bootstrap-ground-item-state" {
-		fmt.Fprintf(stderr, "--i-confirm-scoped-replace is only supported for kind account-character-roster, character-item-state, character-quest-state, character-point-state, character-safebox-state, character-myshop-unit-prices, or bootstrap-ground-item-state (got %q)\n", kind)
+	if confirmReplaceScoped && kind != "account-character-roster" && kind != "character-item-state" && kind != "character-quest-state" && kind != "character-point-state" && kind != "character-safebox-state" && kind != "character-myshop-unit-prices" && kind != "bootstrap-ground-item-state" && kind != "item-template-state" {
+		fmt.Fprintf(stderr, "--i-confirm-scoped-replace is only supported for kind account-character-roster, character-item-state, character-quest-state, character-point-state, character-safebox-state, character-myshop-unit-prices, bootstrap-ground-item-state, or item-template-state (got %q)\n", kind)
 		printImportExportUsage(stderr)
 		return exitUsage
 	}
@@ -229,7 +229,8 @@ func importExportPayload(ctx context.Context, db *sql.DB, kind string, payload a
 	case "auth-login-ticket-handoff":
 		return loginticket.ImportAuthLoginTicketHandoff(ctx, db, payload.(loginticket.AuthLoginTicketHandoffExport))
 	case "item-template-state":
-		return itemstore.ImportItemTemplateState(ctx, db, payload.(itemstore.ItemTemplateStateExport))
+		opts := itemstore.ImportItemTemplateStateOptions{Replace: replaceScoped}
+		return itemstore.ImportItemTemplateState(ctx, db, payload.(itemstore.ItemTemplateStateExport), opts)
 	case "static-actor-content-state":
 		return staticstore.ImportStaticActorContentState(ctx, db, payload.(staticstore.StaticActorContentStateExport))
 	case "bootstrap-ground-item-state":
@@ -244,7 +245,7 @@ func printImportExportUsage(w io.Writer) {
 	fmt.Fprintln(w, "import-export usage:")
 	fmt.Fprintln(w, "  metin2-migrate import-export --kind <kind> --export <path|-> --driver <database/sql-driver> --dsn <dsn> --i-confirm-sql-import [--i-confirm-scoped-replace]")
 	fmt.Fprintln(w, "notes:")
-	fmt.Fprintln(w, "  --i-confirm-scoped-replace is tip-0002 account-character-roster, tip-0003 character-item-state, tip-0004 character-quest-state, tip-0011 character-point-state, tip-0015 character-safebox-state, tip-0023 character-myshop-unit-prices, or tip-0010 bootstrap-ground-item-state only; insert-only remains the default")
+	fmt.Fprintln(w, "  --i-confirm-scoped-replace is tip-0002 account-character-roster, tip-0003 character-item-state, tip-0004 character-quest-state, tip-0011 character-point-state, tip-0015 character-safebox-state, tip-0023 character-myshop-unit-prices, tip-0010 bootstrap-ground-item-state, or tip-0009 item-template-state only; insert-only remains the default")
 	fmt.Fprintln(w, "kinds:")
 	for _, kind := range exportQuarantineKinds {
 		fmt.Fprintf(w, "  %s\n", kind)

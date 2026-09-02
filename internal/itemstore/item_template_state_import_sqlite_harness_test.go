@@ -245,6 +245,195 @@ func TestSQLiteHarnessItemTemplateStateImportAcceptsEmptyExport(t *testing.T) {
 	}
 }
 
+func TestSQLiteHarnessItemTemplateStateImportReplaceOverwritesCanonicalRows(t *testing.T) {
+	db := openSQLiteItemTemplateStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, ItemTemplateRefineFailResultVnumMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", ItemTemplateRefineFailResultVnumMigrationVersion, err)
+	}
+
+	firstExport, err := ExportItemTemplateState(Snapshot{Templates: []Template{{
+		Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1,
+		Refineable: true, Save: true, EquipSlot: "weapon",
+		RefineInfo: &RefineInfo{
+			ResultVnum: 11201, Cost: 2500, Probability: 75, KeepOnFail: true,
+			Materials: []RefineMaterial{{Vnum: 27001, Count: 2}},
+		},
+		EquipEffect: &PointEffect{PointType: 1, PointIndex: 0, PointDelta: 4},
+	}}})
+	if err != nil {
+		t.Fatalf("ExportItemTemplateState: %v", err)
+	}
+	if _, err := ImportItemTemplateState(ctx, db, firstExport); err != nil {
+		t.Fatalf("first insert-only ImportItemTemplateState: %v", err)
+	}
+	if _, err := ImportItemTemplateState(ctx, db, firstExport); err == nil {
+		t.Fatal("second insert-only ImportItemTemplateState succeeded, want unique conflict")
+	}
+
+	replacedExport, err := ExportItemTemplateState(Snapshot{Templates: []Template{
+		{Vnum: 11199, Name: "Downgrade Blade", Stackable: false, MaxCount: 1},
+		{
+			Vnum: 11200, Name: "Wooden Sword+", Stackable: false, MaxCount: 1,
+			Refineable: true, Save: true, Irremovable: true, EquipSlot: "weapon",
+			RefineInfo: &RefineInfo{
+				ResultVnum: 11202, Cost: 3000, Probability: 80, FailResultVnum: 11199,
+				Materials: []RefineMaterial{{Vnum: 27001, Count: 3}, {Vnum: 27002, Count: 1}},
+			},
+			EquipEffect: &PointEffect{PointType: 2, PointIndex: 1, PointDelta: 7},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("ExportItemTemplateState(replaced): %v", err)
+	}
+	result, err := ImportItemTemplateState(ctx, db, replacedExport, ImportItemTemplateStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("replace ImportItemTemplateState: %v", err)
+	}
+	if !result.Replaced {
+		t.Fatalf("replace result.Replaced = false, want true")
+	}
+	if result.TemplateCount != 2 || result.RefineInfoCount != 1 || result.RefineMaterialCount != 2 || result.EquipEffectCount != 1 {
+		t.Fatalf("unexpected replace counts: %+v", result)
+	}
+
+	var rowCount, refineCount, materialCount, equipCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM item_templates`).Scan(&rowCount); err != nil {
+		t.Fatalf("count templates after replace: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM item_template_refine_infos`).Scan(&refineCount); err != nil {
+		t.Fatalf("count refine infos after replace: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM item_template_refine_materials`).Scan(&materialCount); err != nil {
+		t.Fatalf("count refine materials after replace: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM item_template_equip_effects`).Scan(&equipCount); err != nil {
+		t.Fatalf("count equip effects after replace: %v", err)
+	}
+	if rowCount != 2 || refineCount != 1 || materialCount != 2 || equipCount != 1 {
+		t.Fatalf("after replace counts templates=%d refine=%d materials=%d equip=%d", rowCount, refineCount, materialCount, equipCount)
+	}
+	assertItemTemplateRow(t, db, 11200, "Wooden Sword+", 0, 1, 0, 0, 1, 1, 1, 0, 0, "", "weapon",
+		"", "", "", "", "", "", "", "", 0)
+	assertItemTemplateRow(t, db, 11199, "Downgrade Blade", 0, 1, 0, 0, 0, 0, 0, 0, 0, "", "",
+		"", "", "", "", "", "", "", "", 0)
+	assertItemTemplateRefineInfo(t, db, 11200, 11202, 3000, 80, false, 11199)
+	assertItemTemplateRefineMaterial(t, db, 11200, 0, 27001, 3)
+	assertItemTemplateRefineMaterial(t, db, 11200, 1, 27002, 1)
+	assertItemTemplateEquipEffect(t, db, 11200, 2, 1, 7)
+}
+
+func TestSQLiteHarnessItemTemplateStateImportReplaceLeavesUnlistedVnumsUntouched(t *testing.T) {
+	db := openSQLiteItemTemplateStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, ItemTemplateRefineFailResultVnumMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", ItemTemplateRefineFailResultVnumMigrationVersion, err)
+	}
+
+	fullExport, err := ExportItemTemplateState(Snapshot{Templates: []Template{
+		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1},
+		{Vnum: 11300, Name: "Practice Dagger", Stackable: false, MaxCount: 1},
+	}})
+	if err != nil {
+		t.Fatalf("ExportItemTemplateState: %v", err)
+	}
+	if _, err := ImportItemTemplateState(ctx, db, fullExport); err != nil {
+		t.Fatalf("seed ImportItemTemplateState: %v", err)
+	}
+
+	swordOnly, err := ExportItemTemplateState(Snapshot{Templates: []Template{{
+		Vnum: 11200, Name: "Wooden Sword Reloaded", Stackable: false, MaxCount: 1, Save: true,
+	}}})
+	if err != nil {
+		t.Fatalf("ExportItemTemplateState(swordOnly): %v", err)
+	}
+	result, err := ImportItemTemplateState(ctx, db, swordOnly, ImportItemTemplateStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("scoped replace ImportItemTemplateState: %v", err)
+	}
+	if !result.Replaced || result.TemplateCount != 1 || len(result.Vnums) != 1 || result.Vnums[0] != 11200 {
+		t.Fatalf("unexpected scoped replace result: %+v", result)
+	}
+
+	var swordRows, daggerRows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM item_templates WHERE vnum = 11200`).Scan(&swordRows); err != nil {
+		t.Fatalf("count sword rows: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM item_templates WHERE vnum = 11300`).Scan(&daggerRows); err != nil {
+		t.Fatalf("count dagger rows: %v", err)
+	}
+	if swordRows != 1 || daggerRows != 1 {
+		t.Fatalf("scoped replace left unexpected counts sword=%d dagger=%d", swordRows, daggerRows)
+	}
+	assertItemTemplateRow(t, db, 11200, "Wooden Sword Reloaded", 0, 1, 0, 0, 0, 1, 0, 0, 0, "", "",
+		"", "", "", "", "", "", "", "", 0)
+	assertItemTemplateRow(t, db, 11300, "Practice Dagger", 0, 1, 0, 0, 0, 0, 0, 0, 0, "", "",
+		"", "", "", "", "", "", "", "", 0)
+}
+
+func TestSQLiteHarnessItemTemplateStateImportReplaceWipesListedVnumWithEmptyRows(t *testing.T) {
+	db := openSQLiteItemTemplateStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, ItemTemplateRefineFailResultVnumMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", ItemTemplateRefineFailResultVnumMigrationVersion, err)
+	}
+
+	seedExport, err := ExportItemTemplateState(Snapshot{Templates: []Template{{
+		Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1,
+		Refineable: true, EquipSlot: "weapon",
+		RefineInfo: &RefineInfo{
+			ResultVnum: 11201, Cost: 2500, Probability: 75, KeepOnFail: true,
+			Materials: []RefineMaterial{{Vnum: 27001, Count: 2}},
+		},
+	}}})
+	if err != nil {
+		t.Fatalf("ExportItemTemplateState: %v", err)
+	}
+	if _, err := ImportItemTemplateState(ctx, db, seedExport); err != nil {
+		t.Fatalf("seed ImportItemTemplateState: %v", err)
+	}
+
+	emptyWipe := ItemTemplateStateExport{
+		MigrationVersion: ItemTemplateStateMigrationVersion,
+		MigrationName:    ItemTemplateStateMigrationName,
+		Vnums:            []uint32{11200},
+		Templates:        []ItemTemplateRow{},
+		Sockets:          []ItemTemplateSocketRow{},
+		Attributes:       []ItemTemplateAttributeRow{},
+		UseEffects:       []ItemTemplateUseEffectRow{},
+		EquipEffects:     []ItemTemplateEquipEffectRow{},
+		RefineInfos:      []ItemTemplateRefineInfoRow{},
+		RefineMaterials:  []ItemTemplateRefineMaterialRow{},
+	}
+	result, err := ImportItemTemplateState(ctx, db, emptyWipe, ImportItemTemplateStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("empty wipe replace: %v", err)
+	}
+	if !result.Replaced || result.TemplateCount != 0 || len(result.Vnums) != 1 || result.Vnums[0] != 11200 {
+		t.Fatalf("unexpected empty wipe result: %+v", result)
+	}
+
+	var templateRows, refineRows, materialRows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM item_templates`).Scan(&templateRows); err != nil {
+		t.Fatalf("count templates after wipe: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM item_template_refine_infos`).Scan(&refineRows); err != nil {
+		t.Fatalf("count refine infos after wipe: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM item_template_refine_materials`).Scan(&materialRows); err != nil {
+		t.Fatalf("count refine materials after wipe: %v", err)
+	}
+	if templateRows != 0 || refineRows != 0 || materialRows != 0 {
+		t.Fatalf("after empty wipe counts templates=%d refine=%d materials=%d, want 0/0/0", templateRows, refineRows, materialRows)
+	}
+}
+
 func assertItemTemplateRow(
 	t *testing.T,
 	db *sql.DB,

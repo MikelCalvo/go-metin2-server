@@ -43,14 +43,14 @@ func TestRunImportExportRejectsUsageErrorsWithoutOpeningDatabase(t *testing.T) {
 			name: "scoped-replace-wrong-kind",
 			args: []string{
 				"import-export",
-				"--kind", "item-template-state",
+				"--kind", "auth-login-ticket-handoff",
 				"--export", "-",
 				"--driver", driverName,
 				"--dsn", "memory://import-replace-wrong-kind",
 				"--i-confirm-sql-import",
 				"--i-confirm-scoped-replace",
 			},
-			want: "--i-confirm-scoped-replace is only supported for kind account-character-roster, character-item-state, character-quest-state, character-point-state, character-safebox-state, character-myshop-unit-prices, or bootstrap-ground-item-state",
+			want: "--i-confirm-scoped-replace is only supported for kind account-character-roster, character-item-state, character-quest-state, character-point-state, character-safebox-state, character-myshop-unit-prices, bootstrap-ground-item-state, or item-template-state",
 		},
 		{
 			name: "unsupported-kind",
@@ -828,6 +828,66 @@ func TestRunImportExportBootstrapGroundItemStateScopedReplaceSetsReplaced(t *tes
 		t.Fatalf("expected replaced=true, got %#v", result)
 	}
 	if result.MigrationVersion != 10 || result.MigrationName != "bootstrap_ground_item_state" {
+		t.Fatalf("unexpected migration identity: %#v", result)
+	}
+	if !strings.Contains(stdout.String(), `"replaced": true`) {
+		t.Fatalf("expected replaced field in stdout JSON, got %q", stdout.String())
+	}
+}
+
+func TestRunImportExportItemTemplateStateScopedReplaceSetsReplaced(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	catalog, err := dbmigrations.Catalog()
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	ledgerEntry := func(version int) dbmigrations.LedgerEntry {
+		t.Helper()
+		for _, migration := range catalog {
+			if migration.Version == version {
+				return dbmigrations.LedgerEntry{
+					Version:  migration.Version,
+					Name:     migration.Name,
+					UpSHA256: migration.UpSHA256,
+				}
+			}
+		}
+		t.Fatalf("catalog missing version %d", version)
+		return dbmigrations.LedgerEntry{}
+	}
+	currentMigrateCLITestDriver(t).setLedger([]dbmigrations.LedgerEntry{
+		ledgerEntry(itemstore.ItemTemplateStateMigrationVersion),
+		ledgerEntry(itemstore.ItemTemplateRefineKeepOnFailMigrationVersion),
+		ledgerEntry(itemstore.ItemTemplateRefineFailResultVnumMigrationVersion),
+	})
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"import-export",
+			"--kind", "item-template-state",
+			"--export", "-",
+			"--driver", driverName,
+			"--dsn", "memory://import-item-template-state-replace",
+			"--i-confirm-sql-import",
+			"--i-confirm-scoped-replace",
+		},
+		strings.NewReader(`{"migration_version":9,"migration_name":"item_template_refine_info","vnums":[],"templates":[],"sockets":[],"attributes":[],"use_effects":[],"equip_effects":[],"refine_infos":[],"refine_materials":[]}`),
+		&stdout,
+		&stderr,
+	)
+	if code != exitOK {
+		t.Fatalf("expected exit 0, got %d stderr=%q", code, stderr.String())
+	}
+	var result itemstore.ItemTemplateStateImportResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode import result: %v\nbody:\n%s", err, stdout.String())
+	}
+	if !result.Replaced {
+		t.Fatalf("expected replaced=true, got %#v", result)
+	}
+	if result.MigrationVersion != 9 || result.MigrationName != "item_template_refine_info" {
 		t.Fatalf("unexpected migration identity: %#v", result)
 	}
 	if !strings.Contains(stdout.String(), `"replaced": true`) {

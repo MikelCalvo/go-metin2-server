@@ -37,6 +37,21 @@ type ItemTemplateStateImportResult struct {
 	RefineInfoCount     int      `json:"refine_info_count"`
 	RefineMaterialCount int      `json:"refine_material_count"`
 	Vnums               []uint32 `json:"vnums"`
+	// Replaced is true when ImportItemTemplateState ran with the opt-in
+	// scoped replace policy (delete then insert for listed template vnums).
+	// Omitted from JSON when false so legacy insert-only import-result files stay
+	// valid.
+	Replaced bool `json:"replaced,omitempty"`
+}
+
+// ImportItemTemplateStateOptions controls opt-in mutation policy for
+// ImportItemTemplateState. The zero value keeps today's insert-only behavior.
+type ImportItemTemplateStateOptions struct {
+	// Replace, when true, deletes existing tip-0009 parent+child rows for every
+	// template vnum in the quarantined export summary before inserting the
+	// canonicalized export rows, all inside one transaction. Vnums not listed in
+	// the export remain untouched.
+	Replace bool
 }
 
 // ImportItemTemplateState validates a retained 0009 item-template-state export
@@ -45,12 +60,21 @@ type ItemTemplateStateImportResult struct {
 // inside one transaction.
 //
 // The caller still owns driver selection and DSN loading. This primitive does
-// not mutate bootstrap file stores or live template indexes, does not rewrite
-// schema_migrations, and does not invent upsert / merge policy: duplicate
-// primary keys fail closed and roll the transaction back.
-func ImportItemTemplateState(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export ItemTemplateStateExport) (ItemTemplateStateImportResult, error) {
+// not mutate bootstrap file stores or live template indexes and does not rewrite
+// schema_migrations. Without options (or with Replace=false) it does not invent
+// upsert / merge policy: duplicate primary keys fail closed and roll the
+// transaction back. Pass ImportItemTemplateStateOptions{Replace: true} for the
+// opt-in scoped replace path frozen by the tip-0009 replace contract.
+func ImportItemTemplateState(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export ItemTemplateStateExport, opts ...ImportItemTemplateStateOptions) (ItemTemplateStateImportResult, error) {
 	if itemTemplateStateImportExecutorIsNil(executor) {
 		return ItemTemplateStateImportResult{}, ErrItemTemplateStateImportExecutorRequired
+	}
+	if len(opts) > 1 {
+		return ItemTemplateStateImportResult{}, fmt.Errorf("ImportItemTemplateState accepts at most one options value")
+	}
+	replace := false
+	if len(opts) == 1 {
+		replace = opts[0].Replace
 	}
 
 	canonical, summary, err := QuarantineItemTemplateStateExport(export)
@@ -69,6 +93,7 @@ func ImportItemTemplateState(ctx context.Context, executor dbmigrations.SQLMigra
 		RefineInfoCount:     summary.RefineInfoCount,
 		RefineMaterialCount: summary.RefineMaterialCount,
 		Vnums:               append([]uint32(nil), summary.Vnums...),
+		Replaced:            replace,
 	}
 	if result.Vnums == nil {
 		result.Vnums = []uint32{}
@@ -81,6 +106,14 @@ func ImportItemTemplateState(ctx context.Context, executor dbmigrations.SQLMigra
 
 	if err := requireItemTemplateStateSchema(ctx, tx); err != nil {
 		return ItemTemplateStateImportResult{}, rollbackAfterItemTemplateStateImportFailure(tx, err)
+	}
+
+	if replace {
+		for _, vnum := range summary.Vnums {
+			if err := deleteItemTemplateStateForVnum(ctx, tx, vnum); err != nil {
+				return ItemTemplateStateImportResult{}, rollbackAfterItemTemplateStateImportFailure(tx, err)
+			}
+		}
 	}
 
 	for _, row := range canonical.Templates {
@@ -158,6 +191,33 @@ func requireItemTemplateStateSchema(ctx context.Context, querier dbmigrations.SQ
 		return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrItemTemplateStateImportSchemaRequired, latest, ItemTemplateRefineKeepOnFailMigrationVersion, ItemTemplateRefineKeepOnFailMigrationName)
 	}
 	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrItemTemplateStateImportSchemaRequired, latest, ItemTemplateRefineFailResultVnumMigrationVersion, ItemTemplateRefineFailResultVnumMigrationName)
+}
+
+func deleteItemTemplateStateForVnum(ctx context.Context, tx *sql.Tx, vnum uint32) error {
+	// Child tables declare FOREIGN KEY (... ) REFERENCES item_templates(vnum)
+	// without ON DELETE CASCADE, so delete children before the parent.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM item_template_refine_materials WHERE vnum = ?`, int64(vnum)); err != nil {
+		return fmt.Errorf("delete item template refine materials vnum %d: %w", vnum, err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM item_template_refine_infos WHERE vnum = ?`, int64(vnum)); err != nil {
+		return fmt.Errorf("delete item template refine infos vnum %d: %w", vnum, err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM item_template_sockets WHERE vnum = ?`, int64(vnum)); err != nil {
+		return fmt.Errorf("delete item template sockets vnum %d: %w", vnum, err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM item_template_attributes WHERE vnum = ?`, int64(vnum)); err != nil {
+		return fmt.Errorf("delete item template attributes vnum %d: %w", vnum, err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM item_template_use_effects WHERE vnum = ?`, int64(vnum)); err != nil {
+		return fmt.Errorf("delete item template use effects vnum %d: %w", vnum, err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM item_template_equip_effects WHERE vnum = ?`, int64(vnum)); err != nil {
+		return fmt.Errorf("delete item template equip effects vnum %d: %w", vnum, err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM item_templates WHERE vnum = ?`, int64(vnum)); err != nil {
+		return fmt.Errorf("delete item template vnum %d: %w", vnum, err)
+	}
+	return nil
 }
 
 func insertItemTemplate(ctx context.Context, tx *sql.Tx, row ItemTemplateRow) error {
